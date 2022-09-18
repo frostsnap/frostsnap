@@ -18,16 +18,12 @@ default = ["native"]
 native = ["esp-idf-sys/native"]
 
 [dependencies]
-esp-idf-sys = { version = "=0.31.5", features = ["binstart"] }
-esp-idf-svc = { version="=0.42.1", features = ["experimental", "alloc"] }
-esp32-c3-dkc02-bsc = { path = "/home/nick/repos/espressif-trainings/common/lib/esp32-c3-dkc02-bsc" }
-schnorr_fun = { path = "/home/nick/repos/secp256kfun/schnorr_fun" }
-secp256kfun = { path = "/home/nick/repos/secp256kfun/secp256kfun" }
+esp-idf-sys = { version = "0.31.9", features = ["binstart"] }
+schnorr_fun = { git = "https://github.com/LLFourn/secp256kfun", rev = "a9a306bb2c76aff3d73bfad07087b0976737f71d" }
 # rand = "0.8.5"
-rand = "0.8.4"
+rand = "0.8"
 sha2 = "0.10"
 rng = "0.1.0"
-clightningrpc = "0.2.0"
 
 
 

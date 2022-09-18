@@ -1,4 +1,2 @@
 [toolchain]
-#channel = "nightly"
-channel = "nightly-2022-03-10" # change this line
-
+channel = "nightly"

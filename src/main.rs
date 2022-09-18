@@ -1,21 +1,15 @@
+// If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
 use esp_idf_sys as _;
-use rand::RngCore; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
-
-use secp256kfun::{marker::Public, Scalar};
-
 use schnorr_fun::{
     frost::{Frost, PointPoly, ScalarPoly, XOnlyFrostKey},
     musig::NonceKeyPair,
     nonce::Deterministic,
     Message, Schnorr,
+    fun::{marker::Public, Scalar}
 };
 use sha2::Sha256;
 
 fn main() {
-    // Temporary. Will disappear once ESP-IDF 4.4 is released, but for now it is necessary to call this function once,
-    // or else some patches to the runtime implemented by esp-idf-sys might not link properly.
-    esp_idf_sys::link_patches();
-
     let threshold: usize = 2;
     let n_parties: usize = 3;
 
@@ -26,32 +20,17 @@ fn main() {
     assert!(threshold <= n_parties);
 
     // create some scalar polynomial for each party
-    let mut scalar_polys = vec![];
-    for i in 1..=n_parties {
-        println!("Creating scalar poly {}", i);
-        let scalar_poly = (1..=threshold)
-            .map(|_| {
-                let mut rng: rand::rngs::StdRng = rand::SeedableRng::from_entropy();
-                Scalar::from(rng.next_u32())
-                    .non_zero()
-                    .expect("computationally unreachable")
-            })
-            .collect();
-        scalar_polys.push(ScalarPoly::new(scalar_poly));
-    }
+    let mut rng: rand::rngs::StdRng = rand::SeedableRng::from_entropy();
+
+    println!("generating scalar polys");
+    let scalar_polys = (0..n_parties).map(|_| ScalarPoly::random(threshold, &mut rng)).collect::<Vec<_>>();
+    println!("converting to point polys");
     let point_polys: Vec<PointPoly> = scalar_polys.iter().map(|sp| sp.to_point_poly()).collect();
 
     let keygen = frost.new_keygen(point_polys).unwrap();
 
-    let mut proofs_of_possession = vec![];
-    let mut shares_vec = vec![];
-    for (i, sp) in scalar_polys.into_iter().enumerate() {
-        println!("calculating shares and pop {}", i);
-        let (shares, pop) = frost.create_shares(&keygen, sp);
-        proofs_of_possession.push(pop);
-        shares_vec.push(shares);
-    }
-    println!("Calculated shares and pops");
+    println!("creating proofs of possetion and shares");
+    let (shares, proofs_of_possesion): (Vec<_>, Vec<_>) = scalar_polys.into_iter().map(|scalar_poly| frost.create_shares(&keygen, scalar_poly)).unzip();
 
     // collect the recieved shares for each party
     let mut recieved_shares: Vec<Vec<_>> = vec![];
@@ -59,7 +38,7 @@ fn main() {
         println!("Collecting shares for {}", party_index);
         recieved_shares.push(vec![]);
         for share_index in 0..n_parties {
-            recieved_shares[party_index].push(shares_vec[share_index][party_index].clone());
+            recieved_shares[party_index].push(shares[share_index][party_index].clone());
         }
     }
 
@@ -74,7 +53,7 @@ fn main() {
                 keygen.clone(),
                 i,
                 recieved_shares[i].clone(),
-                proofs_of_possession.clone(),
+                proofs_of_possesion.clone(),
             );
             match res.clone() {
                 Err(e) => {
@@ -179,9 +158,11 @@ fn main() {
         signatures,
     );
 
+    println!("verifying final signature");
     assert!(frost.schnorr.verify(
         &frost_keys[signer_indexes[0]].public_key(),
         Message::<Public>::plain("test", b"test"),
         &combined_sig
     ));
+    println!("SUCCESS!");
 }
