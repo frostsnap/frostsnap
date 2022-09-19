@@ -1,15 +1,16 @@
 // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
 use esp_idf_sys as _;
+
 use schnorr_fun::{
     frost::{Frost, PointPoly, ScalarPoly, XOnlyFrostKey},
+    fun::{marker::Public, Scalar},
     musig::NonceKeyPair,
     nonce::Deterministic,
     Message, Schnorr,
-    fun::{marker::Public, Scalar}
 };
 use sha2::Sha256;
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     let threshold: usize = 2;
     let n_parties: usize = 3;
 
@@ -20,17 +21,21 @@ fn main() {
     assert!(threshold <= n_parties);
 
     // create some scalar polynomial for each party
-    let mut rng: rand::rngs::StdRng = rand::SeedableRng::from_entropy();
+    let mut rng = rand::rngs::OsRng;
 
     println!("generating scalar polys");
-    let scalar_polys = (0..n_parties).map(|_| ScalarPoly::random(threshold, &mut rng)).collect::<Vec<_>>();
+    let scalar_polys = (0..n_parties)
+        .map(|_| ScalarPoly::random(threshold, &mut rng))
+        .collect::<Vec<_>>();
     println!("converting to point polys");
     let point_polys: Vec<PointPoly> = scalar_polys.iter().map(|sp| sp.to_point_poly()).collect();
-
     let keygen = frost.new_keygen(point_polys).unwrap();
 
     println!("creating proofs of possetion and shares");
-    let (shares, proofs_of_possesion): (Vec<_>, Vec<_>) = scalar_polys.into_iter().map(|scalar_poly| frost.create_shares(&keygen, scalar_poly)).unzip();
+    let (shares, proofs_of_possesion): (Vec<_>, Vec<_>) = scalar_polys
+        .into_iter()
+        .map(|scalar_poly| frost.create_shares(&keygen, scalar_poly))
+        .unzip();
 
     // collect the recieved shares for each party
     let mut recieved_shares: Vec<Vec<_>> = vec![];
@@ -42,13 +47,12 @@ fn main() {
         }
     }
 
-    println!("{:?}", recieved_shares);
+    // println!("{:?}", recieved_shares);
 
     // finish keygen for each party
     let (secret_shares, frost_keys): (Vec<Scalar>, Vec<XOnlyFrostKey>) = (0..n_parties)
         .map(|i| {
             println!("Finishing keygen for participant {}", i);
-
             let res = frost.finish_keygen(
                 keygen.clone(),
                 i,
@@ -59,9 +63,7 @@ fn main() {
                 Err(e) => {
                     println!("{:?}", e)
                 }
-                Ok(_) => {
-                    println!("OK!")
-                }
+                Ok(_) => {}
             }
 
             let (secret_share, frost_key) = res.unwrap();
@@ -71,9 +73,9 @@ fn main() {
             (secret_share, xonly_frost_key)
         })
         .unzip();
-    println!("Finished keygen!");
+    println!("Finished keygen.");
 
-    println!("selecting signers...");
+    println!("Selecting signers...");
 
     // use a boolean mask for which t participants are signers
     let mut signer_mask = vec![true; threshold];
@@ -128,30 +130,35 @@ fn main() {
         Message::plain("test", b"test"),
     );
 
-    let mut signatures = vec![];
-    for i in 0..signer_indexes.len() {
-        println!("Signing for participant {}", signer_indexes[i]);
-        let signer_index = signer_indexes[i];
-        let session = frost.start_sign_session(
-            &frost_keys[signer_index],
-            recieved_nonces.clone(),
-            Message::plain("test", b"test"),
-        );
-        let sig = frost.sign(
-            &frost_keys[signer_index],
-            &session,
-            signer_index,
-            &secret_shares[signer_index],
-            nonces[i].clone(),
-        );
-        assert!(frost.verify_signature_share(
-            &frost_keys[signer_index],
-            &session,
-            signer_index,
+    // let mut signatures = vec![];
+    // for i in 0..signer_indexes.len() {
+
+    // }
+    let signatures = (0..signer_indexes.len())
+        .map(|i| {
+            println!("Signing for participant {}", signer_indexes[i]);
+            let signer_index = signer_indexes[i];
+            let session = frost.start_sign_session(
+                &frost_keys[signer_index],
+                recieved_nonces.clone(),
+                Message::plain("test", b"test"),
+            );
+            let sig = frost.sign(
+                &frost_keys[signer_index],
+                &session,
+                signer_index,
+                &secret_shares[signer_index],
+                nonces[i].clone(),
+            );
+            assert!(frost.verify_signature_share(
+                &frost_keys[signer_index],
+                &session,
+                signer_index,
+                sig
+            ));
             sig
-        ));
-        signatures.push(sig);
-    }
+        })
+        .collect();
     let combined_sig = frost.combine_signature_shares(
         &frost_keys[signer_indexes[0]],
         &signing_session,
@@ -164,5 +171,9 @@ fn main() {
         Message::<Public>::plain("test", b"test"),
         &combined_sig
     ));
-    println!("SUCCESS!");
+    println!("Valid signature!");
+
+    drop(nonces);
+    drop(recieved_nonces);
+    Ok(())
 }
