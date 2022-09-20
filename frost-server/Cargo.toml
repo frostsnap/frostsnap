@@ -10,7 +10,9 @@ edition = "2021"
 # miniscript = "7.0.0"
 json = "0.12.4"
 #schnorr_fun = { git = "https://github.com/nickfarrow/secp256kfun", rev = "35461a6b4c280bd89aaa894ea3a26f1f734e0cbf"}
-schnorr_fun = { path = "/home/nick/repos/secp256kfun/schnorr_fun", features = ["serde"]}
+# schnorr_fun = { path = "/home/nick/repos/secp256kfun/schnorr_fun", features = ["serde"]}
+schnorr_fun = { git = "https://github.com/LLFourn/secp256kfun", rev = "a9a306bb2c76aff3d73bfad07087b0976737f71d", features = ["serde"] }
+
 sha2 = "0.9"
 rand = { version = "0.8" }
 sled = "0.34.4"

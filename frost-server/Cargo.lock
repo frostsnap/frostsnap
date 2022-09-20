@@ -1172,6 +1172,7 @@ dependencies = [
 [[package]]
 name = "schnorr_fun"
 version = "0.7.1"
+source = "git+https://github.com/LLFourn/secp256kfun?rev=a9a306bb2c76aff3d73bfad07087b0976737f71d#a9a306bb2c76aff3d73bfad07087b0976737f71d"
 dependencies = [
  "secp256kfun",
  "serde",
@@ -1186,6 +1187,7 @@ checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
 [[package]]
 name = "secp256kfun"
 version = "0.7.1"
+source = "git+https://github.com/LLFourn/secp256kfun?rev=a9a306bb2c76aff3d73bfad07087b0976737f71d#a9a306bb2c76aff3d73bfad07087b0976737f71d"
 dependencies = [
  "digest 0.10.5",
  "rand_core",
