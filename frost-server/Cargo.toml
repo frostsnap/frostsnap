@@ -1,0 +1,23 @@
+[package]
+name = "frost-server"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# bdk = "0.20.0"
+# miniscript = "7.0.0"
+json = "0.12.4"
+#schnorr_fun = { git = "https://github.com/nickfarrow/secp256kfun", rev = "35461a6b4c280bd89aaa894ea3a26f1f734e0cbf"}
+schnorr_fun = { path = "/home/nick/repos/secp256kfun/schnorr_fun", features = ["serde"]}
+sha2 = "0.9"
+rand = { version = "0.8" }
+sled = "0.34.4"
+sled-extensions = { version = "0.2.0", features = ["bincode"]}
+serde = { version = "1.0.117", features = ["derive"] }
+serde_json = "1.0.59"
+
+rocket = "0.4.5"
+rocket_contrib = "0.4.5"
+thiserror = "1.0.21"
