@@ -1,5 +1,5 @@
 [package]
-name = "myproject"
+name = "frostdevice"
 version = "0.1.0"
 authors = ["nickfarrow <nick@nickfarrow.com>"]
 edition = "2021"
@@ -18,15 +18,23 @@ default = ["native"]
 native = ["esp-idf-sys/native"]
 
 [dependencies]
-esp-idf-sys = { version = "0.31.9", features = ["binstart"] }
-schnorr_fun = { git = "https://github.com/LLFourn/secp256kfun", rev = "a9a306bb2c76aff3d73bfad07087b0976737f71d" }
-# rand = "0.8.5"
+esp-idf-svc = { version="=0.42.1", features = ["experimental", "alloc"] }
+embedded-svc = "=0.22"
+esp-idf-sys = { version = "0.31.5", features = ["binstart"] }
+esp32-c3-dkc02-bsc = { path = "../../../common/lib/esp32-c3-dkc02-bsc" }
+#schnorr_fun = { git = "https://github.com/LLFourn/secp256kfun", rev = "a9a306bb2c76aff3d73bfad07087b0976737f71d", features = ["serde"] }
+schnorr_fun = { path = "/home/nick/repos/secp256kfun/schnorr_fun", features = ["serde"] }
 rand = "0.8"
 sha2 = "0.10"
 rng = "0.1.0"
 anyhow = "1"
+toml-cfg = "0.1"
+serde = { version = "1.0.117", features = ["derive"] }
+serde_json = "1.0.59"
+log = "0.4"
+
 
 
 [build-dependencies]
-embuild = "0.29"
+embuild = "0.28"
 anyhow = "1"
