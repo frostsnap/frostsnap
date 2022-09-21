@@ -36,6 +36,10 @@ pub struct Config {
     wifi_psk: &'static str,
     #[default("")]
     frost_server: &'static str,
+    #[default("2")]
+    threshold: &'static str,
+    #[default("2")]
+    n_parties: &'static str,
 }
 
 // This `static mut` holds the queue handle we are going to get from `xQueueGenericCreate`.
@@ -202,8 +206,8 @@ fn main() -> anyhow::Result<()> {
     // FROST
     //
     // We're going to carry out 2 parties on 1 device and later separate
-    let threshold: usize = 2;
-    let n_parties: usize = 2;
+    let threshold = CONFIG.threshold.parse::<usize>().unwrap();
+    let n_parties = CONFIG.n_parties.parse::<usize>().unwrap();
 
     let frost = Frost::new(Schnorr::<Sha256, Deterministic<Sha256>>::new(
         Deterministic::<Sha256>::default(),
