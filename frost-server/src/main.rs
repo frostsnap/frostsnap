@@ -5,7 +5,6 @@ extern crate rocket;
 
 use rocket::State;
 use rocket_contrib::json::Json;
-use schnorr_fun::fun::marker::NonZero;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::{error::Error, sync::Mutex};
@@ -34,21 +33,34 @@ pub struct Response<'a, T> {
 // Submit point polys
 #[post("/keygen", data = "<poly_str>")]
 pub fn join_keygen(frost_db: State<Mutex<FrostDatabase>>, poly_str: String) -> Json<usize> {
-    let poly: PointPoly = serde_json::from_str(&poly_str).unwrap();
+    let (threshold, n_parties, poly): (usize, usize, PointPoly) =
+        serde_json::from_str(&poly_str).unwrap();
     let mut lock = frost_db.lock().unwrap();
-    let id = lock.polys.len();
-    lock.polys.insert(id, poly);
-    Json(id)
+    dbg!(&lock.polys);
+
+    let n = lock.polys.len();
+    if lock.threshold == 0 && lock.n_parties == 0 {
+        lock.threshold = threshold;
+        lock.n_parties = n_parties;
+    }
+
+    if n >= lock.n_parties {
+        dbg!("group already full!");
+    } else {
+    }
+    lock.polys.insert(n, poly);
+    Json(n)
 }
 #[get("/receive_polys")]
 pub fn receive_polys(frost_db: State<Mutex<FrostDatabase>>) -> Json<BTreeMap<usize, PointPoly>> {
     let lock = frost_db.lock().unwrap();
     let polys = lock.polys.clone();
     dbg!(&polys);
-    // TODO error checking
-    // if polys.len() <= 1 {
-    //     return Json();
-    // }
+
+    if polys.len() < lock.n_parties {
+        dbg!("group not full!");
+    }
+
     Json(polys)
 }
 
@@ -114,11 +126,25 @@ pub fn receive_sigs(frost_db: State<Mutex<FrostDatabase>>) -> Json<Vec<(usize, S
     Json(sigs)
 }
 
+// Clear
+#[get("/clear")]
+pub fn clear(frost_db: State<Mutex<FrostDatabase>>) {
+    // Clear for next time:
+    let mut lock = frost_db.lock().unwrap();
+    lock.threshold = 0;
+    lock.n_parties = 0;
+    lock.polys = BTreeMap::new();
+    lock.shares = BTreeMap::new();
+    lock.pops = BTreeMap::new();
+    lock.nonces = BTreeMap::new();
+    lock.sigs = BTreeMap::new();
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     rocket::ignite()
         .manage(Mutex::new(FrostDatabase {
-            threshold: 2,
-            n_parties: 2,
+            threshold: 0,
+            n_parties: 0,
             polys: BTreeMap::new(),
             shares: BTreeMap::new(),
             pops: BTreeMap::new(),
@@ -135,7 +161,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 send_nonce,
                 receive_nonces,
                 send_sig,
-                receive_sigs
+                receive_sigs,
+                clear,
             ],
         )
         .launch();
