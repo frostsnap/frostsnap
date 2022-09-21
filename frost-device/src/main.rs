@@ -47,45 +47,22 @@ unsafe extern "C" fn button_interrupt(_: *mut c_void) {
     xQueueGiveFromISR(EVENT_QUEUE.unwrap(), std::ptr::null_mut());
 }
 
-fn get(url: impl AsRef<str>) -> anyhow::Result<String> {
+fn request(url: impl AsRef<str>, data: Option<&[u8]>, get: bool) -> anyhow::Result<String> {
     let mut client = EspHttpClient::new_default()?;
-    let request = client.get(url.as_ref())?;
-
-    let writer = request.into_writer(0)?;
-
-    let mut response = writer.submit()?;
-    let status = response.status();
-    let mut total_size = 0;
-
-    // println!("response code: {}\n", status);
-
-    let mut response_text = "".to_string();
-    match status {
-        200..=299 => {
-            let mut buf = [0_u8; 256];
-            let mut reader = response.reader();
-            let _ = loop {
-                if let Ok(size) = Read::read(&mut reader, &mut buf) {
-                    if size == 0 {
-                        break total_size;
-                    }
-                    total_size += size;
-                    response_text += &std::str::from_utf8(&buf[..size])?.to_string();
-                    // println!("{}", response_text);
-                }
-            };
-        }
-        _ => anyhow::bail!("unexpected response code: {}", status),
+    let request = if get {
+        client.get(url.as_ref())?
+    } else {
+        client.post(url.as_ref())?
     };
-    Ok(response_text)
-}
 
-fn post(url: impl AsRef<str>, data: &[u8]) -> anyhow::Result<String> {
-    let mut client = EspHttpClient::new_default()?;
-    let request = client.post(url.as_ref())?;
-
-    let mut writer = request.into_writer(data.len())?;
-    writer.write(data)?;
+    let writer = match data {
+        Some(data) => {
+            let mut writer = request.into_writer(data.len())?;
+            writer.write(data)?;
+            writer
+        }
+        None => request.into_writer(0)?,
+    };
 
     let mut response = writer.submit()?;
     let status = response.status();
@@ -113,6 +90,14 @@ fn post(url: impl AsRef<str>, data: &[u8]) -> anyhow::Result<String> {
         _ => anyhow::bail!("unexpected response code: {}", status),
     }
     Ok(response_text)
+}
+
+fn post(url: impl AsRef<str>, data: &[u8]) -> anyhow::Result<String> {
+    request(url, Some(data), false)
+}
+
+fn get(url: impl AsRef<str>) -> anyhow::Result<String> {
+    request(url, None, true)
 }
 
 fn loop_until_press() {
@@ -218,7 +203,7 @@ fn main() -> anyhow::Result<()> {
     //
     // We're going to carry out 2 parties on 1 device and later separate
     let threshold: usize = 2;
-    let n_parties: usize = 3;
+    let n_parties: usize = 2;
 
     let frost = Frost::new(Schnorr::<Sha256, Deterministic<Sha256>>::new(
         Deterministic::<Sha256>::default(),
@@ -305,8 +290,9 @@ fn main() -> anyhow::Result<()> {
     led.set_pixel(RGB8::new(10, 10, 50))?;
 
     // Signing
-
-    println!("|\n| SIGNING \n|");
+    println!("\n| SIGNING");
+    println!("Message: {}", "test");
+    let msg = Message::plain("test", b"test");
     prompt_wait(&"create nonces for signing and share");
     let verification_shares_bytes: Vec<_> = frost_key
         .verification_shares()
@@ -358,7 +344,6 @@ fn main() -> anyhow::Result<()> {
     println!("Received nonces..");
 
     // Sign
-    let msg = Message::plain("test", b"test");
     let session = frost.start_sign_session(&frost_key, nonces.clone(), msg);
     let sig = frost.sign(&frost_key, &session, id, &secret_share, nonce);
     dbg!(&sig);
