@@ -14,12 +14,10 @@ use embedded_svc::{
 };
 use esp_idf_svc::http::client::EspHttpClient;
 
-use schnorr_fun::fun::digest::typenum::Zero;
 use schnorr_fun::Signature;
 use schnorr_fun::{
-    frost::{Frost, PointPoly, ScalarPoly, XOnlyFrostKey},
+    frost::{Frost, Nonce, PointPoly, ScalarPoly},
     fun::{marker::Public, Scalar},
-    musig::NonceKeyPair,
     nonce::Deterministic,
     Message, Schnorr,
 };
@@ -68,7 +66,7 @@ fn get(url: impl AsRef<str>) -> anyhow::Result<String> {
     Ok(response_text)
 }
 
-fn post(url: impl AsRef<str>, data: &[u8]) -> anyhow::Result<()> {
+fn post(url: impl AsRef<str>, data: &[u8]) -> anyhow::Result<String> {
     let mut client = EspHttpClient::new_default()?;
     let request = client.post(url.as_ref())?;
 
@@ -81,6 +79,7 @@ fn post(url: impl AsRef<str>, data: &[u8]) -> anyhow::Result<()> {
 
     println!("response code: {}\n", status);
 
+    let mut response_text = "".to_string();
     match status {
         200..=299 => {
             // 5. if the status is OK, read response data chunk by chunk into a buffer and print it until done
@@ -93,15 +92,13 @@ fn post(url: impl AsRef<str>, data: &[u8]) -> anyhow::Result<()> {
                     }
                     total_size += size;
                     // 6. try converting the bytes into a Rust (UTF-8) string and print it
-                    let response_text = std::str::from_utf8(&buf[..size])?;
-                    println!("{}", response_text);
+                    response_text += &std::str::from_utf8(&buf[..size])?.to_string();
                 }
             }
         }
         _ => anyhow::bail!("unexpected response code: {}", status),
     }
-    println!("{}", &total_size);
-    Ok(())
+    Ok(response_text)
 }
 
 fn main() -> anyhow::Result<()> {
@@ -123,7 +120,6 @@ fn main() -> anyhow::Result<()> {
             anyhow::bail!("could not connect to Wi-Fi network: {:?}", err)
         }
     };
-    // Blue!
     led.set_pixel(RGB8::new(0, 0, 50))?;
 
     // We're going to do all 3 devices on 1 device and later separate
@@ -149,186 +145,148 @@ fn main() -> anyhow::Result<()> {
     // !! SHARE POINT POLY
     let url = CONFIG.frost_server.to_owned() + "/keygen";
     println!("{}", url);
-    post(url.clone(), serde_json::to_string(&pp).unwrap().as_bytes())?;
-    post(url.clone(), serde_json::to_string(&pp2).unwrap().as_bytes())?;
+    let response = post(url.clone(), serde_json::to_string(&pp).unwrap().as_bytes())?;
+    let id: usize = serde_json::from_str(&response)?;
+    let response2 = post(url.clone(), serde_json::to_string(&pp2).unwrap().as_bytes())?;
+    let id2: usize = serde_json::from_str(&response2)?;
     dbg!(&pp);
     println!("Sent point poly to coordinator!");
 
     // !! RECEIVE POINT POLYS
     let url = CONFIG.frost_server.to_owned() + "/receive_polys";
     let response = &get(url).expect("got point polys");
-    let point_polys: Vec<PointPoly> = serde_json::from_str(&response)?;
+    let point_polys: BTreeMap<usize, PointPoly> = serde_json::from_str(&response)?;
 
-    let keygen = frost.new_keygen(point_polys).unwrap();
+    let keygen = frost
+        .new_keygen(point_polys.iter().map(|(_, p)| p.clone()).collect())
+        .unwrap();
 
     // !! SEND SHARES
     println!("creating proofs of posession and shares");
     let (shares, proof_of_possesion) = frost.create_shares(&keygen, sp);
     let (shares2, proof_of_possesion2) = frost.create_shares(&keygen, sp2);
     let url = CONFIG.frost_server.to_owned() + "/send_shares";
-    dbg!(&url);
     post(
         url.clone(),
-        serde_json::to_string(&(shares, proof_of_possesion))
+        serde_json::to_string(&(id, shares, proof_of_possesion))
             .unwrap()
             .as_bytes(),
     )?;
+    let url = CONFIG.frost_server.to_owned() + "/send_shares";
     post(
         url.clone(),
-        serde_json::to_string(&(shares2, proof_of_possesion2))
+        serde_json::to_string(&(id2, shares2, proof_of_possesion2))
             .unwrap()
             .as_bytes(),
     )?;
 
     let url = CONFIG.frost_server.to_owned() + "/receive_shares?i=0";
-    dbg!(&url);
     let response = &get(url).expect("got my shares");
     let (my_shares, my_pops): (Vec<Scalar>, Vec<Signature<Public>>) =
         serde_json::from_str(&response)?;
     let my_shares_zero = my_shares.into_iter().map(|s| s.mark_zero()).collect();
-    let (secret_share, frost_key) = frost.finish_keygen(keygen, 0, my_shares_zero, my_pops)?;
-    dbg!(frost_key);
+    let (secret_share, frost_key) =
+        frost.finish_keygen_to_xonly(keygen.clone(), 0, my_shares_zero, my_pops)?;
 
+    let url = CONFIG.frost_server.to_owned() + "/receive_shares?i=1";
+    let response = &get(url).expect("got my shares");
+    let (my_shares, my_pops): (Vec<Scalar>, Vec<Signature<Public>>) =
+        serde_json::from_str(&response)?;
+    let my_shares_zero = my_shares.into_iter().map(|s| s.mark_zero()).collect();
+    let (secret_share2, frost_key2) =
+        frost.finish_keygen_to_xonly(keygen, 1, my_shares_zero, my_pops)?;
+
+    dbg!(&frost_key);
     println!("Created frost key!");
 
-    // !! SEND SECRET SHARES
+    // !! SIGNING
+    let verification_shares_bytes: Vec<_> = frost_key
+        .verification_shares()
+        .map(|share| share.to_bytes())
+        .collect();
+    let sid = [
+        frost_key.public_key().to_xonly_bytes().as_slice(),
+        verification_shares_bytes.concat().as_slice(),
+        b"frost-device-test".as_slice(),
+    ]
+    .concat();
+    let nonce = frost.gen_nonce(
+        &secret_share,
+        &[sid.as_slice(), &[0]].concat(),
+        Some(frost_key.public_key().normalize()),
+        None,
+    );
+    let nonce2 = frost.gen_nonce(
+        &secret_share2,
+        &[sid.as_slice(), &[1]].concat(),
+        Some(frost_key.public_key().normalize()),
+        None,
+    );
 
-    // for party_index in 0..n_parties {
-    //     println!("Collecting shares for {}", party_index);
-    //     recieved_shares.push(vec![]);
-    //     for share_index in 0..n_parties {
-    //         recieved_shares[party_index].push(shares[share_index][party_index].clone());
-    //     }
-    // }
+    // Send Nonces
+    println!("Sharing nonces");
+    let url = CONFIG.frost_server.to_owned() + "/send_nonce";
+    dbg!((id, nonce.public().clone()));
+    dbg!((id2, nonce2.public().clone()));
+    let pub_nonce = nonce.public().clone();
+    let pub_nonce2 = nonce2.public().clone();
 
-    // // println!("{:?}", recieved_shares);
+    post(
+        url.clone(),
+        serde_json::to_string(&(id, pub_nonce)).unwrap().as_bytes(),
+    )?;
+    post(
+        url.clone(),
+        serde_json::to_string(&(id2, pub_nonce2))
+            .unwrap()
+            .as_bytes(),
+    )?;
 
-    // // finish keygen for each party
-    // let (secret_shares, frost_keys): (Vec<Scalar>, Vec<XOnlyFrostKey>) = (0..n_parties)
-    //     .map(|i| {
-    //         println!("Finishing keygen for participant {}", i);
-    //         let res = frost.finish_keygen(
-    //             keygen.clone(),
-    //             i,
-    //             recieved_shares[i].clone(),
-    //             proofs_of_possesion.clone(),
-    //         );
-    //         match res.clone() {
-    //             Err(e) => {
-    //                 println!("{:?}", e)
-    //             }
-    //             Ok(_) => {}
-    //         }
+    let url = CONFIG.frost_server.to_owned() + "/receive_nonces";
+    let response = &get(url).expect("got nonces");
+    let nonces: Vec<(usize, Nonce)> = serde_json::from_str(&response)?;
+    println!("Received nonces..");
 
-    //         let (secret_share, frost_key) = res.unwrap();
+    let msg = Message::plain("test", b"test");
+    let session = frost.start_sign_session(&frost_key, nonces.clone(), msg);
+    let session2 = frost.start_sign_session(&frost_key2, nonces.clone(), msg);
+    let sig = frost.sign(&frost_key, &session, 0, &secret_share, nonce);
+    dbg!(frost.verify_signature_share(&frost_key, &session, 0, sig));
+    let sig2 = frost.sign(&frost_key2, &session2, 1, &secret_share2, nonce2);
+    dbg!(frost.verify_signature_share(&frost_key2, &session2, 1, sig2));
+    println!("Signed, sharing partial sigs!");
 
-    //         println!("got secret share");
-    //         let xonly_frost_key = frost_key.into_xonly_key();
-    //         (secret_share, xonly_frost_key)
-    //     })
-    //     .unzip();
-    // println!("Finished keygen.");
+    // Send Sigs
+    let url = CONFIG.frost_server.to_owned() + "/send_sig";
+    post(
+        url.clone(),
+        serde_json::to_string(&(id, sig)).unwrap().as_bytes(),
+    )?;
+    post(
+        url.clone(),
+        serde_json::to_string(&(id2, sig2)).unwrap().as_bytes(),
+    )?;
 
-    // println!("Selecting signers...");
+    let url = CONFIG.frost_server.to_owned() + "/receive_sigs";
+    let response = &get(url).expect("get sigs");
+    let sigs: Vec<(usize, Scalar)> = serde_json::from_str(&response)?;
+    println!("Received signature shares..");
 
-    // // use a boolean mask for which t participants are signers
-    // let mut signer_mask = vec![true; threshold];
-    // signer_mask.append(&mut vec![false; n_parties - threshold]);
-    // // shuffle the mask for random signers
+    // !! SUBMIT SIGS
+    let combined_sig = frost.combine_signature_shares(
+        &frost_key,
+        &session,
+        sigs.iter()
+            .map(|(_, sig)| sig.clone().mark_zero().public())
+            .collect(),
+    );
 
-    // let signer_indexes: Vec<_> = signer_mask
-    //     .iter()
-    //     .enumerate()
-    //     .filter(|(_, is_signer)| **is_signer)
-    //     .map(|(i, _)| i)
-    //     .collect();
+    println!("verifying final signature");
+    assert!(frost
+        .schnorr
+        .verify(&frost_key.public_key(), msg, &combined_sig));
+    println!("Valid signature!");
 
-    // println!("Preparing for signing session...");
-
-    // let verification_shares_bytes: Vec<_> = frost_keys[signer_indexes[0]]
-    //     .verification_shares()
-    //     .map(|share| share.to_bytes())
-    //     .collect();
-
-    // let sid = [
-    //     frost_keys[signer_indexes[0]]
-    //         .public_key()
-    //         .to_xonly_bytes()
-    //         .as_slice(),
-    //     verification_shares_bytes.concat().as_slice(),
-    //     b"frost-prop-test".as_slice(),
-    // ]
-    // .concat();
-    // let nonces: Vec<NonceKeyPair> = signer_indexes
-    //     .iter()
-    //     .map(|i| {
-    //         frost.gen_nonce(
-    //             &secret_shares[*i],
-    //             &[sid.as_slice(), [*i as u8].as_slice()].concat(),
-    //             Some(frost_keys[signer_indexes[0]].public_key().normalize()),
-    //             None,
-    //         )
-    //     })
-    //     .collect();
-
-    // let mut recieved_nonces: Vec<_> = vec![];
-    // for (i, nonce) in signer_indexes.iter().zip(nonces.clone()) {
-    //     recieved_nonces.push((*i, nonce.public()));
-    // }
-    // println!("Recieved nonces..");
-
-    // // Create Frost signing session
-    // let signing_session = frost.start_sign_session(
-    //     &frost_keys[signer_indexes[0]],
-    //     recieved_nonces.clone(),
-    //     Message::plain("test", b"test"),
-    // );
-
-    // // let mut signatures = vec![];
-    // // for i in 0..signer_indexes.len() {
-
-    // // }
-    // let signatures = (0..signer_indexes.len())
-    //     .map(|i| {
-    //         println!("Signing for participant {}", signer_indexes[i]);
-    //         let signer_index = signer_indexes[i];
-    //         let session = frost.start_sign_session(
-    //             &frost_keys[signer_index],
-    //             recieved_nonces.clone(),
-    //             Message::plain("test", b"test"),
-    //         );
-    //         let sig = frost.sign(
-    //             &frost_keys[signer_index],
-    //             &session,
-    //             signer_index,
-    //             &secret_shares[signer_index],
-    //             nonces[i].clone(),
-    //         );
-    //         assert!(frost.verify_signature_share(
-    //             &frost_keys[signer_index],
-    //             &session,
-    //             signer_index,
-    //             sig
-    //         ));
-    //         sig
-    //     })
-    //     .collect();
-    // let combined_sig = frost.combine_signature_shares(
-    //     &frost_keys[signer_indexes[0]],
-    //     &signing_session,
-    //     signatures,
-    // );
-
-    // println!("verifying final signature");
-    // assert!(frost.schnorr.verify(
-    //     &frost_keys[signer_indexes[0]].public_key(),
-    //     Message::<Public>::plain("test", b"test"),
-    //     &combined_sig
-    // ));
-    // println!("Valid signature!");
-
-    // drop(nonces);
-    // drop(recieved_nonces);
     std::thread::sleep(std::time::Duration::from_secs(5));
     Ok(())
 }
