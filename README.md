@@ -18,7 +18,7 @@ vim cfg.toml
 
 Find device name with `ls -l /dev/serial/by-id/`. Run with
 ```
-cargo espflash --release --monitor /dev/ttyUSB0
+cargo espflash /dev/ttyUSB0 --monitor --speed 921600 --partition-table partitions.csv
 ```
 
 
