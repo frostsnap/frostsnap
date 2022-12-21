@@ -112,7 +112,6 @@ fn main() -> Result<()> {
     let sp = ScalarPoly::random(threshold, &mut rng);
     println!("converting to point polys");
     let pp = sp.to_point_poly();
-    dbg!(&pp);
 
     // let sp2 = ScalarPoly::random(threshold, &mut rng);
     // let pp2 = sp2.to_point_poly();
