@@ -8,6 +8,13 @@ cargo run
 you may need to `sudo ufw allow 3090`.
 
 ## Flash and run the device
+std on RISC-V toolchain installation
+```
+rustup toolchain install nightly --component rust-src
+cargo install ldproxy
+cargo install cargo-espflash
+```
+
 Copy the config file and edit with your wifi information
 and `frost-server` `http://IP_ADDRESS:3090`
 ```
@@ -20,7 +27,6 @@ Flash, run and monitor. Use a good USB cable. Default baud rate is 115200 if 921
 ```
 cargo espflash --monitor --speed 921600
 ```
-
 
 ## Notes
 
