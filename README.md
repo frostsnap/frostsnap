@@ -16,9 +16,9 @@ cp cfp_example.toml cfg.toml
 vim cfg.toml
 ```
 
-Find device name with `ls -l /dev/serial/by-id/`. Run with
+Flash, run and monitor. Use a good USB cable. Default baud rate is 115200 if 921600 doesn't work.
 ```
-cargo espflash /dev/ttyUSB0 --monitor --speed 921600 --partition-table partitions.csv
+cargo espflash --monitor --speed 921600
 ```
 
 
@@ -43,12 +43,15 @@ Can we run it no std?
 
 
 ### Devices
-Reset pipe breaks on the longer device.
-LED not changing on shorter device.
-The board has a hardware random number generator. It can be called with esp_random().
-No thread_rng:
-https://github.com/arnauorriols/streams/commit/ef98676a3b0016d5c50ed384049a1a52448d76ec
+* Reset pipe breaks on the longer device if Reset button pressed. Ctrl+R instead. 
+* LED not changing on shorter device. Will write new WS2812 LED driver that lets us instantiate the correct pin number.
 
+### RNG
+* The board has a hardware random number generator. It can be called with esp_random().
+* No thread_rng: https://github.com/arnauorriols/streams/commit/ef98676a3b0016d5c50ed384049a1a52448d76ec
+* OsRng calls ESP32's hardware RNG esp_fill_random. The output is only truly random when WiFi or Bluetooth is enabled, or bootloader_random_enable() but I can't find this function in esp-idf Rust crates. 
+    * https://github.com/mesatee/getrandom/commit/d250d7a91a1ae50f99758a8e456f44628ff00fdb.
+    * https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/random.html
 
 
 ## API outline
