@@ -4,6 +4,8 @@ use std::collections::BTreeMap;
 
 use esp_idf_hal::gpio::*;
 use esp_idf_hal::peripherals::Peripherals;
+use esp_idf_hal::rmt::{config::TransmitConfig, TxRmtDriver};
+
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -20,6 +22,7 @@ use sha2::Sha256;
 
 pub mod http;
 pub mod wifi;
+pub mod ws2812;
 
 #[toml_cfg::toml_config]
 pub struct Config {
@@ -52,30 +55,38 @@ fn main() -> Result<()> {
 
     button.set_pull(Pull::Down)?;
 
+    // Onboard RGB LED pin
+    // ESP32-C3-DevKitC-02 gpio8, esp-rs gpio2
+    let led = peripherals.pins.gpio2;
+    let channel = peripherals.rmt.channel0;
+    let config = TransmitConfig::new().clock_divider(1);
+    let mut rmt = TxRmtDriver::new(channel, led, &config)?;
+    use ws2812::neopixel;
+    neopixel(ws2812::RGB { r: 0, g: 0, b: 0 }, &mut rmt)?;
+
     let prompt_wait = |s: &str| {
         println!(" ");
         println!("Press button to {}:", s);
         // button debounce
-        sleep(Duration::from_millis(200));
+        // sleep(Duration::from_millis(200));
         loop {
             // prevent wdt trigger
             sleep(Duration::from_millis(10));
             if button.is_low() {
+                // button debounce
+                sleep(Duration::from_millis(50));
                 break;
             }
         }
     };
 
     // WIFI stuff
-    // let mut led = bsc::led::WS2812RMT::new()?;
-    // led.set_pixel(RGB8::new(10, 25, 0))?;
-
     // Connect to the Wi-Fi network
     let app_config = CONFIG;
     let _wifi = match wifi::wifi(app_config.wifi_ssid, app_config.wifi_psk, peripherals.modem) {
         Ok(inner) => inner,
         Err(err) => {
-            // led.set_pixel(RGB8::new(50, 0, 0))?;
+            neopixel(ws2812::RGB { r: 25, g: 0, b: 0 }, &mut rmt)?;
             bail!("could not connect to Wi-Fi network: {:?}", err)
         }
     };
@@ -84,14 +95,16 @@ fn main() -> Result<()> {
     let url = CONFIG.frost_server.to_owned() + "/clear";
     match get(url) {
         Err(err) => {
-            // led.set_pixel(RGB8::new(50, 0, 0))?;
+            neopixel(ws2812::RGB { r: 25, g: 0, b: 0 }, &mut rmt)?;
             bail!(
                 "could not connect to FROST coordinating server: {} {:?}",
                 CONFIG.frost_server,
                 err
             )
         }
-        Ok(_) => {}
+        Ok(_) => {
+            neopixel(ws2812::RGB { r: 25, g: 25, b: 25 }, &mut rmt)?;
+        }
     };
 
     // FROST
@@ -273,15 +286,20 @@ fn main() -> Result<()> {
         .verify(&frost_key.public_key(), msg, &combined_sig)
     {
         println!("Valid signature!");
+        // rainbow loop at 20% brightness
+        let mut i: u32 = 0;
         loop {
-            // led.set_pixel(RGB8::new(10, 10, 50))?;
-            std::thread::sleep(std::time::Duration::from_secs(1));
-            // led.set_pixel(RGB8::new(10, 50, 10))?;
-            std::thread::sleep(std::time::Duration::from_secs(1));
+            let rgb = ws2812::hsv2rgb(i, 100, 10)?;
+            neopixel(rgb, &mut rmt)?;
+            if i == 360 {
+                i = 0;
+            }
+            i += 1;
+            sleep(Duration::from_millis(10));
         }
     } else {
         println!("Invalid signature :(");
-        // led.set_pixel(RGB8::new(50, 0, 0))?;
+        neopixel(ws2812::RGB { r: 25, g: 0, b: 0 }, &mut rmt)?;
     }
     Ok(())
 }
