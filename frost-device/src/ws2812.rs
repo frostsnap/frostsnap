@@ -9,9 +9,99 @@
 //! Datasheet (PDF) for a WS2812, which explains how the pulses are to be sent:
 //! https://cdn-shop.adafruit.com/datasheets/WS2812.pdf
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Error, Result};
 use core::time::Duration;
-use esp_idf_hal::rmt::*;
+use esp_idf_hal::{gpio::OutputPin, peripheral::Peripheral, rmt::*};
+use std::thread::sleep;
+
+pub struct NeoPixel<'d> {
+    rmt: TxRmtDriver<'d>,
+}
+
+impl<'d> NeoPixel<'d> {
+    pub fn new<C: RmtChannel>(
+        channel: impl Peripheral<P = C> + 'd,
+        pin: impl Peripheral<P = impl OutputPin> + 'd,
+    ) -> Result<Self, Error> {
+        let config = config::TransmitConfig::new().clock_divider(1);
+        let rmt = TxRmtDriver::new(channel, pin, &config)?;
+        Ok(Self { rmt })
+    }
+
+    pub fn write(&mut self, rgb: RGB) -> Result<(), Error> {
+        // e.g. rgb: (1,2,4)
+        // G        R        B
+        // 7      0 7      0 7      0
+        // 00000010 00000001 00000100
+        let color: u32 = ((rgb.g as u32) << 16) | ((rgb.r as u32) << 8) | rgb.b as u32;
+        let ticks_hz = self.rmt.counter_clock()?;
+        let t0h = Pulse::new_with_duration(ticks_hz, PinState::High, &ns(350))?;
+        let t0l = Pulse::new_with_duration(ticks_hz, PinState::Low, &ns(800))?;
+        let t1h = Pulse::new_with_duration(ticks_hz, PinState::High, &ns(700))?;
+        let t1l = Pulse::new_with_duration(ticks_hz, PinState::Low, &ns(600))?;
+        let mut signal = FixedLengthSignal::<24>::new();
+        for i in (0..24).rev() {
+            let p = 2_u32.pow(i);
+            let bit = p & color != 0;
+            let (high_pulse, low_pulse) = if bit { (t1h, t1l) } else { (t0h, t0l) };
+            signal.set(23 - i as usize, &(high_pulse, low_pulse))?;
+        }
+        // let rmt = self.rmt;
+        self.rmt.start_blocking(&signal)?;
+        Ok(())
+    }
+
+    /// Turns neopixel off
+    pub fn clear(&mut self) -> Result<(), Error> {
+        self.write(RGB { r: 0, g: 0, b: 0 })?;
+        Ok(())
+    }
+
+    pub fn success(&mut self) -> Result<(), Error> {
+        self.write(RGB {
+            r: 25,
+            g: 25,
+            b: 25,
+        })?;
+        Ok(())
+    }
+
+    pub fn blink(&mut self) -> Result<(), Error> {
+        self.write(RGB { r: 0, g: 0, b: 25 })?;
+        sleep(Duration::from_millis(75));
+        self.success()?;
+        sleep(Duration::from_millis(150));
+        Ok(())
+    }
+
+    /// Set cycles 0 for infinite loop. Brightness 0-100
+    pub fn rainbow(&mut self, cycles: i32, delay: u64, brightness: u8) -> Result<(), Error> {
+        let mut i: u32 = 0;
+        let mut c = cycles;
+        loop {
+            let rgb = hsv2rgb(i, 100, brightness as u32)?;
+            self.write(rgb)?;
+            if i == 360 {
+                i = 0;
+                c -= 1;
+            }
+            i += 1;
+            if cycles > 0 {
+                if c <= 0 {
+                    break;
+                }
+            }
+            sleep(Duration::from_millis(delay));
+        }
+        self.clear()?;
+        Ok(())
+    }
+
+    pub fn error(&mut self) -> Result<(), Error> {
+        self.write(RGB { r: 25, g: 0, b: 0 })?;
+        Ok(())
+    }
+}
 
 pub struct RGB {
     pub r: u8,
@@ -21,33 +111,6 @@ pub struct RGB {
 
 fn ns(nanos: u64) -> Duration {
     Duration::from_nanos(nanos)
-}
-
-pub fn neopixel(rgb: RGB, tx: &mut TxRmtDriver) -> Result<()> {
-    // e.g. rgb: (1,2,4)
-    // G        R        B
-    // 7      0 7      0 7      0
-    // 00000010 00000001 00000100
-    let color: u32 = ((rgb.g as u32) << 16) | ((rgb.r as u32) << 8) | rgb.b as u32;
-    let ticks_hz = tx.counter_clock()?;
-    let t0h = Pulse::new_with_duration(ticks_hz, PinState::High, &ns(350))?;
-    let t0l = Pulse::new_with_duration(ticks_hz, PinState::Low, &ns(800))?;
-    let t1h = Pulse::new_with_duration(ticks_hz, PinState::High, &ns(700))?;
-    let t1l = Pulse::new_with_duration(ticks_hz, PinState::Low, &ns(600))?;
-    let mut signal = FixedLengthSignal::<24>::new();
-    for i in (0..24).rev() {
-        let p = 2_u32.pow(i);
-        let bit = p & color != 0;
-        let (high_pulse, low_pulse) = if bit {
-            (t1h, t1l)
-        } else {
-            (t0h, t0l)
-        };
-        signal.set(23 - i as usize, &(high_pulse, low_pulse))?;
-    }
-    tx.start_blocking(&signal)?;
-
-    Ok(())
 }
 
 /// Converts hue, saturation, value to RGB
