@@ -1,11 +1,9 @@
 // use log::*;
 use anyhow::{bail, Result};
-use ws2812::NeoPixel;
 use std::collections::BTreeMap;
 
 use esp_idf_hal::gpio::*;
 use esp_idf_hal::peripherals::Peripherals;
-use esp_idf_hal::rmt::{config::TransmitConfig, TxRmtDriver};
 
 use std::thread::sleep;
 use std::time::Duration;
@@ -63,31 +61,12 @@ fn main() -> Result<()> {
     let mut neopixel = ws2812::NeoPixel::new(channel, led)?;
     neopixel.clear()?;
 
-    // let config = TransmitConfig::new().clock_divider(1);
-    // let mut rmt = TxRmtDriver::new(channel, led, &config)?;
-    // use ws2812::neopixel;
-    // neopixel(ws2812::RGB { r: 0, g: 0, b: 0 }, &mut rmt)?;
-
-    let prompt_wait = |s: &str| {
-        println!(" ");
-        println!("Press button to {}:", s);
-        // button debounce
-        sleep(Duration::from_millis(200));
-        loop {
-            // prevent wdt trigger
-            sleep(Duration::from_millis(10));
-            if button.is_low() {
-                break;
-            }
-        }
-    };
-
-    let mut i = 0;
-    loop {
-        prompt_wait(format!("{}", i).as_str());
-        neopixel.rainbow(3, 5, 30)?;
-        i += 1;
-    }
+    // let mut i = 0;
+    // loop {
+    //     prompt_wait(format!("{}", i).as_str());
+    //     neopixel.rainbow(3, 5, 30)?;
+    //     i += 1;
+    // }
 
     // WIFI stuff
     // Connect to the Wi-Fi network
@@ -113,6 +92,21 @@ fn main() -> Result<()> {
         }
         Ok(_) => {
             neopixel.success()?;
+        }
+    };
+
+    let mut prompt_wait = |s: &str| {
+        println!(" ");
+        println!("Press button to {}:", s);
+        // button debounce
+        // sleep(Duration::from_millis(200));
+        neopixel.blink().unwrap();
+        loop {
+            // prevent wdt trigger
+            sleep(Duration::from_millis(10));
+            if button.is_low() {
+                break;
+            }
         }
     };
 
@@ -295,6 +289,7 @@ fn main() -> Result<()> {
         .verify(&frost_key.public_key(), msg, &combined_sig)
     {
         println!("Valid signature!");
+        neopixel.rainbow(0, 10, 10)?;
         // rainbow loop at 20% brightness
         // let mut i: u32 = 0;
         // loop {
