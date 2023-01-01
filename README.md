@@ -50,7 +50,7 @@ Can we run it no std?
 
 ### Devices
 * Reset pipe breaks on the longer device if Reset button pressed. Ctrl+R instead. 
-* LED not changing on shorter device. Will write new WS2812 LED driver that lets us instantiate the correct pin number.
+* LED not changing on different board? Check gpio pin assignment.
 
 ### RNG
 * The board has a hardware random number generator. It can be called with esp_random().
