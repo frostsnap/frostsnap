@@ -22,6 +22,7 @@ pub fn wifi(wifi_ssid: &str, wifi_psk: &str, modem: Modem) -> Result<EspWifi<'st
     // let modem = Peripherals::take().unwrap().modem;
     let sysloop = EspSystemEventLoop::take()?;
 
+    // load wifi calibration data
     let p = EspDefaultNvsPartition::take()?;
     let mut wifi = EspWifi::new(modem, sysloop.clone(), Some(p))?;
 

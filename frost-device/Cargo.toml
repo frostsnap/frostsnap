@@ -13,6 +13,8 @@ debug = true # Symbols are nice and they don't increase the size on Flash
 opt-level = "z"
 
 [features]
+default = ["c3-042lcd"]
+c3-042lcd = ["dep:ssd1306"]
 pio = ["esp-idf-sys/pio"]
 # default = ["native"]
 # native = ["esp-idf-sys/native"]
@@ -33,6 +35,9 @@ toml-cfg = "0.1.3"
 serde = { version = "1.0.150", features = ["derive"] }
 serde_json = "1.0.89"
 log = "0.4"
+embedded-graphics = "0.7.1"
+ssd1306 = { version = "0.7.1", optional = true }
+embedded-text = "0.5.0"
 
 [build-dependencies]
 embuild = { version = "0.30.4", features = ["elf"] }

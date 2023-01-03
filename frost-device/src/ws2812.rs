@@ -76,7 +76,7 @@ impl<'d> NeoPixel<'d> {
 
     /// Set cycles 0 for infinite loop. Brightness 0-100
     pub fn rainbow(&mut self, cycles: i32, delay: u64, brightness: u8) -> Result<(), Error> {
-        let mut i: u32 = 0;
+        let mut i: u32 = 120;
         let mut c = cycles;
         loop {
             let rgb = hsv2rgb(i, 100, brightness as u32)?;

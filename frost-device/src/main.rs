@@ -1,6 +1,7 @@
 // use log::*;
 use anyhow::{bail, Result};
 use std::collections::BTreeMap;
+use std::fmt::format;
 
 use esp_idf_hal::gpio::*;
 use esp_idf_hal::peripherals::Peripherals;
@@ -19,7 +20,25 @@ use schnorr_fun::{
 };
 use sha2::Sha256;
 
+// use embedded_graphics::{
+//     mono_font::{ascii::FONT_6X10, MonoTextStyle},
+//     pixelcolor::BinaryColor,
+//     prelude::*,
+//     primitives::{Circle, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle, Triangle},
+//     text::*,
+// };
+// use embedded_text::{
+//     alignment::HorizontalAlignment,
+//     style::{HeightMode, TextBoxStyleBuilder},
+//     TextBox,
+// };
+
+use esp_idf_hal::i2c::*;
+use esp_idf_hal::prelude::*;
+use ssd1306::{prelude::*, I2CDisplayInterface, Ssd1306};
+
 pub mod http;
+pub mod oled;
 pub mod wifi;
 pub mod ws2812;
 
@@ -45,6 +64,17 @@ fn get(url: impl AsRef<str>) -> Result<String> {
     http::request(Get, url, None)
 }
 
+fn multiline(str: impl AsRef<str>) -> String {
+    let mut output = String::new();
+    for (i, c) in str.as_ref().chars().enumerate() {
+        output.push(c);
+        if (i % 12) == 0 && i != 0 {
+            output.push_str("\n");
+        }
+    }
+    output
+}
+
 fn main() -> Result<()> {
     esp_idf_sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
@@ -52,7 +82,7 @@ fn main() -> Result<()> {
     let peripherals = Peripherals::take().unwrap();
     let mut button = PinDriver::input(peripherals.pins.gpio9)?;
 
-    button.set_pull(Pull::Down)?;
+    button.set_pull(Pull::Up)?;
 
     // Onboard RGB LED pin
     // ESP32-C3-DevKitC-02 gpio8, esp-rs gpio2
@@ -61,12 +91,11 @@ fn main() -> Result<()> {
     let mut neopixel = ws2812::NeoPixel::new(channel, led)?;
     neopixel.clear()?;
 
-    // let mut i = 0;
-    // loop {
-    //     prompt_wait(format!("{}", i).as_str());
-    //     neopixel.rainbow(3, 5, 30)?;
-    //     i += 1;
-    // }
+    // #[cfg(feature = "c3-042lcd")]
+    let i2c = peripherals.i2c0;
+    let sda = peripherals.pins.gpio5;
+    let scl = peripherals.pins.gpio6;
+    let mut oled = oled::Oled::new(i2c, sda, scl, DisplayRotation::Rotate0)?;
 
     // WIFI stuff
     // Connect to the Wi-Fi network
@@ -75,7 +104,9 @@ fn main() -> Result<()> {
         Ok(inner) => inner,
         Err(err) => {
             neopixel.error()?;
-            bail!("could not connect to Wi-Fi network: {:?}", err)
+            let s = format!("could not connect to Wi-Fi network: {:?}", err);
+            oled.print(&s)?;
+            bail!("{}", s)
         }
     };
 
@@ -84,20 +115,23 @@ fn main() -> Result<()> {
     match get(url) {
         Err(err) => {
             neopixel.error()?;
-            bail!(
+            let s = format!(
                 "could not connect to FROST coordinating server: {} {:?}",
-                CONFIG.frost_server,
-                err
-            )
+                CONFIG.frost_server, err
+            );
+            oled.print(&s)?;
+            bail!("{}", s);
         }
         Ok(_) => {
             neopixel.success()?;
+            oled.print(format!("connected to FROST server {}", CONFIG.frost_server))?;
         }
     };
 
     let mut prompt_wait = |s: &str| {
         println!(" ");
         println!("Press button to {}:", s);
+        // oled.print(s).unwrap();
         // button debounce
         // sleep(Duration::from_millis(200));
         neopixel.blink().unwrap();
@@ -136,10 +170,11 @@ fn main() -> Result<()> {
     let url = CONFIG.frost_server.to_owned() + "/keygen";
     let response = post(
         url.clone(),
-        serde_json::to_string(&(threshold, n_parties, pp)).unwrap(),
+        serde_json::to_string(&(threshold, n_parties, &pp)).unwrap(),
     )?;
     let id: usize = serde_json::from_str(&response)?;
     println!("Participant index: {}", id);
+    oled.print(format!("Signer {}\n{}", id, &pp.points()[id].to_string()))?;
     println!("Sent point poly to coordinator!");
 
     // let response2 = post(url.clone(), serde_json::to_string(&pp2).unwrap().as_bytes())?;
@@ -159,6 +194,7 @@ fn main() -> Result<()> {
     // Send shares
     let (shares, proof_of_possesion) = frost.create_shares(&keygen, sp);
     dbg!(&shares);
+    oled.print(format!("Shares: {}", &shares[0].to_string()))?;
     let url = CONFIG.frost_server.to_owned() + "/send_shares";
     post(
         url.clone(),
@@ -192,6 +228,7 @@ fn main() -> Result<()> {
     //     frost.finish_keygen_to_xonly(keygen, 1, my_shares_zero, my_pops)?;
 
     dbg!(&frost_key);
+    oled.print(format!("FROST key: {}", &frost_key.public_key().to_string()))?;
     println!("Created frost key!");
     // led.set_pixel(RGB8::new(10, 10, 50))?;
 
@@ -217,6 +254,7 @@ fn main() -> Result<()> {
         None,
     );
     dbg!(&nonce);
+    oled.print(format!("Signing: {}", std::str::from_utf8(&msg.bytes.as_inner())?))?;
 
     // let nonce2 = frost.gen_nonce(
     //     &secret_share2,
@@ -253,6 +291,7 @@ fn main() -> Result<()> {
     let session = frost.start_sign_session(&frost_key, nonces.clone(), msg);
     let sig = frost.sign(&frost_key, &session, id, &secret_share, nonce);
     dbg!(&sig);
+    oled.print(format!("Partial sig: {}",  &sig.to_string()))?;
     println!("Signed, sharing partial sigs!");
 
     // let session2 = frost.start_sign_session(&frost_key2, nonces.clone(), msg);
@@ -289,20 +328,11 @@ fn main() -> Result<()> {
         .verify(&frost_key.public_key(), msg, &combined_sig)
     {
         println!("Valid signature!");
+        oled.print(format!("Valid sig: {}",  &combined_sig.to_string()))?;
         neopixel.rainbow(0, 10, 10)?;
-        // rainbow loop at 20% brightness
-        // let mut i: u32 = 0;
-        // loop {
-        //     let rgb = ws2812::hsv2rgb(i, 100, 10)?;
-        //     neopixel(rgb, &mut rmt)?;
-        //     if i == 360 {
-        //         i = 0;
-        //     }
-        //     i += 1;
-        //     sleep(Duration::from_millis(10));
-        // }
     } else {
         println!("Invalid signature :(");
+        oled.print(format!("Invalid sig: {}",  &combined_sig.to_string()))?;
         neopixel.error()?;
     }
     Ok(())
