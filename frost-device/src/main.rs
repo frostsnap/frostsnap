@@ -1,7 +1,6 @@
 // use log::*;
 use anyhow::{bail, Result};
 use std::collections::BTreeMap;
-use std::fmt::format;
 
 use esp_idf_hal::gpio::*;
 use esp_idf_hal::peripherals::Peripherals;
@@ -20,22 +19,7 @@ use schnorr_fun::{
 };
 use sha2::Sha256;
 
-// use embedded_graphics::{
-//     mono_font::{ascii::FONT_6X10, MonoTextStyle},
-//     pixelcolor::BinaryColor,
-//     prelude::*,
-//     primitives::{Circle, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle, Triangle},
-//     text::*,
-// };
-// use embedded_text::{
-//     alignment::HorizontalAlignment,
-//     style::{HeightMode, TextBoxStyleBuilder},
-//     TextBox,
-// };
-
-use esp_idf_hal::i2c::*;
-use esp_idf_hal::prelude::*;
-use ssd1306::{prelude::*, I2CDisplayInterface, Ssd1306};
+use ssd1306::rotation::DisplayRotation;
 
 pub mod http;
 pub mod oled;
@@ -62,17 +46,6 @@ fn post(url: impl AsRef<str>, data: String) -> Result<String> {
 
 fn get(url: impl AsRef<str>) -> Result<String> {
     http::request(Get, url, None)
-}
-
-fn multiline(str: impl AsRef<str>) -> String {
-    let mut output = String::new();
-    for (i, c) in str.as_ref().chars().enumerate() {
-        output.push(c);
-        if (i % 12) == 0 && i != 0 {
-            output.push_str("\n");
-        }
-    }
-    output
 }
 
 fn main() -> Result<()> {
