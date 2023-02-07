@@ -2,3 +2,4 @@
 /.embuild
 /target
 /Cargo.lock
+cfg.toml
