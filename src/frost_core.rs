@@ -105,13 +105,18 @@ pub fn fetch_send_forward(
         // dbg!(&messages_to_forward);
 
         messages_to_forward = if messages_to_forward.len() == 0 {
-            println!("{}", &format!("Sharing our messages to uart {}:", io_idx));
-            dbg!(&our_messages.clone());
+            println!("{}", &format!("Sharing our messages to uart {}..", io_idx));
             our_messages.clone()
         } else {
             println!("{}", &format!("Forwarding messages to uart {}:", io_idx));
             messages_to_forward
         };
+        let message_printout = messages_to_forward
+            .iter()
+            .map(|m| &m.message)
+            .collect::<Vec<_>>();
+        dbg!(message_printout);
+        println!(" \n\n");
 
         io.write_messages(messages_to_forward);
     }
@@ -166,7 +171,6 @@ pub fn do_communication_round<ExpectedMessageType>(
         );
 
         // Have we seen a message from this peer? Handle their message appropriately
-        dbg!(new_messages.len());
         for mut new_message in new_messages.into_iter() {
             if round_messages.contains_key(&new_message.sender) {
                 eprintln!("Already received a message from {}", new_message.sender);
