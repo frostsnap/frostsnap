@@ -27,6 +27,10 @@ Flash, run and monitor. Use a good USB cable. Default baud rate is 115200 if 921
 ```
 cargo espflash --monitor --speed 921600
 ```
+or just
+```
+cargo run
+```
 
 ## Notes
 
