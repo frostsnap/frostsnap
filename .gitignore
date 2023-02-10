@@ -1,6 +1,7 @@
 /.vscode
 /.embuild
 /target
+/frost-device/target
 /Cargo.lock
 cfg.toml
 
