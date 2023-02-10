@@ -81,10 +81,10 @@ fn main() -> Result<()> {
     // let i2c_2 = bus.acquire_i2c();
 
     // // === SLAVE ===
-    // let config = I2cSlaveConfig::new()
+    // let config = i2c::I2cSlaveConfig::new()
     //     .rx_buffer_length(1024)
     //     .tx_buffer_length(1024);
-    // let mut i2c = I2cSlaveDriver::new(i2c, sda, scl, 0x21, &config)?;
+    // let i2c = i2c::I2cSlaveDriver::new(i2c, sda, scl, 0x21, &config)?;
 
     let i2cs = &mut [i2c];
     // frost_core::process_keygen(uarts);
