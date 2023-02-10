@@ -75,8 +75,8 @@ fn main() -> Result<()> {
     // === MASTER ===
     let config = i2c::I2cConfig::new().baudrate(400.kHz().into());
     let i2c = i2c::I2cDriver::new(i2c, sda, scl, &config)?;
-    // let bus = shared_bus::BusManagerSimple::new(i2c);
     // // i2c proxy for every slave participant
+    // let bus = shared_bus::BusManagerSimple::new(i2c);
     // let i2c_1 = bus.acquire_i2c();
     // let i2c_2 = bus.acquire_i2c();
 

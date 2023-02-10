@@ -88,7 +88,8 @@ pub fn read_from_i2c(i2c: &mut I2cDriver) -> Vec<u8> {
 }
 
 pub fn write_to_i2c(i2c: &mut I2cDriver, message: &Vec<u8>) {
-    i2c.write(0x21, &message[..], 1000).unwrap();
+    i2c.write(0x21, &message.as_slice(), 1000)
+        .unwrap_or_else(|e| eprintln!("Failed to write to i2c: {:?}", e));
 }
 
 pub fn flush_i2c(i2c: &mut I2cDriver) {
