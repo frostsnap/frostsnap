@@ -105,10 +105,10 @@ pub fn fetch_send_forward(
         // dbg!(&messages_to_forward);
 
         messages_to_forward = if messages_to_forward.len() == 0 {
-            println!("{}", &format!("Sharing our messages to uart {}..", io_idx));
+            println!("{}", &format!("Sharing our messages to io port {}..", io_idx));
             our_messages.clone()
         } else {
-            println!("{}", &format!("Forwarding messages to uart {}:", io_idx));
+            println!("{}", &format!("Forwarding messages to io port {}:", io_idx));
             messages_to_forward
         };
         let message_printout = messages_to_forward
@@ -252,7 +252,7 @@ pub fn process_keygen(io_ports: &mut [impl DeviceIO]) -> (Scalar, FrostKey<Norma
 
     // First let's choose our setup
     let setup = FrostSetup {
-        n_parties: 3,
+        n_parties: 2,
         threshold: 2,
         our_index: OUR_INDEX,
     };
