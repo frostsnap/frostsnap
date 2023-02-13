@@ -14,8 +14,6 @@ use esp_idf_svc::log::EspLogger;
 use log::info;
 static LOGGER: EspLogger = EspLogger;
 
-pub mod http;
-pub mod wifi;
 pub mod ws2812;
 
 #[toml_cfg::toml_config]
