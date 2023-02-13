@@ -4,6 +4,7 @@
 use esp_idf_hal::delay::BLOCK;
 use esp_idf_hal::i2c::{I2cDriver, I2cSlaveDriver};
 use esp_idf_hal::uart::{self, UartDriver};
+use log::error;
 use std::fmt::Write;
 use std::thread;
 use std::time::Duration;
@@ -58,12 +59,12 @@ impl DeviceIO for UartDriver<'_> {
         if received.len() > 0 {
             match bincode::deserialize::<Vec<FrostMessage>>(received) {
                 Ok(messages) => {
-                    // println!("Read from serial:");
-                    // dbg!(&message);
+                    // info!("Read from serial:");
+                    // debug!(&message);
                     return messages;
                 }
                 Err(e) => {
-                    eprintln!("Error reading message: {:?}", e);
+                    error!("Error reading message: {:?}", e);
                     self.flush_read().expect("flushed serial read");
                     return vec![];
                 }
