@@ -6,7 +6,8 @@ use frostdevice::frost_core;
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_hal::{
     gpio::{self, *},
-    uart,
+    i2c, uart,
+    units::*,
 };
 
 pub mod http;
@@ -68,7 +69,27 @@ fn main() -> Result<()> {
     // .unwrap();
     // let uarts = &mut [uart, uart2];
 
-    frost_core::process_keygen(uarts);
+    let i2c = peripherals.i2c0;
+    let sda = peripherals.pins.gpio0;
+    let scl = peripherals.pins.gpio1;
+    // === MASTER ===
+    let config = i2c::I2cConfig::new().baudrate(400.kHz().into());
+    let i2c = i2c::I2cDriver::new(i2c, sda, scl, &config)?;
+    // // i2c proxy for every slave participant
+    // let bus = shared_bus::BusManagerSimple::new(i2c);
+    // let i2c_1 = bus.acquire_i2c();
+    // let i2c_2 = bus.acquire_i2c();
+
+    // // === SLAVE ===
+    // let config = i2c::I2cSlaveConfig::new()
+    //     .rx_buffer_length(1024)
+    //     .tx_buffer_length(1024);
+    // let i2c = i2c::I2cSlaveDriver::new(i2c, sda, scl, 0x21, &config)?;
+
+    let i2cs = &mut [i2c];
+    // frost_core::process_keygen(uarts);
+    frost_core::process_keygen(i2cs);
+
     // neopixel.rainbow(0, 10, 10)?;
 
     Ok(())
