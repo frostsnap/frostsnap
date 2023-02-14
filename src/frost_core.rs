@@ -4,6 +4,9 @@
 
 use std::collections::HashMap;
 
+use log::debug;
+use log::error;
+use log::info;
 use rand::rngs::ThreadRng;
 use schnorr_fun::frost;
 use schnorr_fun::frost::FrostKey;
@@ -23,7 +26,7 @@ use crate::message::*;
 use crate::OUR_INDEX;
 use sha2::Sha256;
 
-/// Receive all the [`FrostMessage`]s from peers on multiple UARTs
+/// Receive all the [`FrostMessage`]s from peers on multiple IO ports
 ///
 /// Filters out our own messages (if someone sent it to us)
 /// Filters out unexpected responses (if expected_parties is set)
@@ -49,7 +52,7 @@ pub fn receive_peer_messages_from_io(
     received_messages.retain(|(_, message)| {
         if let Some(expected_parties) = &expected_parties {
             if message.sender == our_pubkey {
-                eprintln!("Received our own message from serial...");
+                error!("Received our own message from serial...");
                 return false;
             }
 
@@ -59,7 +62,7 @@ pub fn receive_peer_messages_from_io(
                 .collect::<Vec<_>>()
                 .contains(&message.sender)
             {
-                eprintln!("Already have a message from this participant..");
+                error!("Already have a message from this participant..");
                 return false;
             }
         }
@@ -68,12 +71,9 @@ pub fn receive_peer_messages_from_io(
     received_messages
 }
 
-/// Send a message over serial, read all messages from serial, and forward if appropriate.
+/// Send a message over IO, read all messages, and forward if appropriate.
 ///
 /// TODO: The schnorr signatures attached to messages should be verified against their public key.
-///
-/// TODO: This should be brought out with message.rs into some more reusable communication logic
-/// This module should take generic communication methods
 pub fn fetch_send_forward(
     io_ports: &mut [impl DeviceIO],
     our_messages: Vec<FrostMessage>,
@@ -105,18 +105,31 @@ pub fn fetch_send_forward(
         // dbg!(&messages_to_forward);
 
         messages_to_forward = if messages_to_forward.len() == 0 {
-            println!("{}", &format!("Sharing our messages to io port {}..", io_idx));
+            info!(
+                "{}",
+                &format!("Sharing our messages to io port {}..", io_idx)
+            );
             our_messages.clone()
         } else {
-            println!("{}", &format!("Forwarding messages to io port {}:", io_idx));
+            info!("{}", &format!("Forwarding messages to io port {}:", io_idx));
             messages_to_forward
         };
         let message_printout = messages_to_forward
             .iter()
             .map(|m| &m.message)
             .collect::<Vec<_>>();
-        dbg!(message_printout);
-        println!(" \n\n");
+
+        info!("{:?}", message_printout);
+
+        // messages_to_forward = if messages_to_forward.len() == 0 {
+        //     info!("{}", &format!("Sharing our messages to uart {}..", io_idx));
+        //     info!("{:?}", our_messages.clone());
+        //     our_messages.clone()
+        // } else {
+        //     info!("{}", &format!("Forwarding messages to uart {}:", io_idx));
+        //     info!("{:?}", messages_to_forward);
+        //     messages_to_forward
+        // };
 
         io.write_messages(messages_to_forward);
     }
@@ -158,7 +171,7 @@ pub fn do_communication_round<ExpectedMessageType>(
     loop {
         // If we see enough messages then we want to send an ack that we are read to move on
         if round_messages.len() == search_limit {
-            println!("We are ready to continue.. Broadcasting ack..");
+            info!("We are ready to continue.. Broadcasting ack..");
             sending_message = sending_message.clone().ready_to_continue();
             round_messages.insert(sending_message.sender, sending_message.clone());
         }
@@ -173,7 +186,7 @@ pub fn do_communication_round<ExpectedMessageType>(
         // Have we seen a message from this peer? Handle their message appropriately
         for mut new_message in new_messages.into_iter() {
             if round_messages.contains_key(&new_message.sender) {
-                eprintln!("Already received a message from {}", new_message.sender);
+                error!("Already received a message from {}", new_message.sender);
             }
 
             // If we have already seen a message from them, check whether they have sent something new:
@@ -182,7 +195,7 @@ pub fn do_communication_round<ExpectedMessageType>(
                 if existing_message.signature != new_message.signature {
                     // Update their continue ack for them..
                     if !existing_message.continue_ack && sending_message.continue_ack {
-                        eprintln!("New message does not have an ack -- assuming they were ready since we are.");
+                        error!("New message does not have an ack -- assuming they were ready since we are.");
                         let ready_old_message = existing_message.clone().ready_to_continue();
                         new_message = ready_old_message;
                     }
@@ -190,9 +203,7 @@ pub fn do_communication_round<ExpectedMessageType>(
             } else {
                 // Check we do not get too many messages!
                 if round_messages.len() >= search_limit {
-                    eprintln!(
-                        "Ignoring extra messages from other participants, this round is full"
-                    );
+                    error!("Ignoring extra messages from other participants, this round is full");
                     continue;
                 }
             }
@@ -203,7 +214,7 @@ pub fn do_communication_round<ExpectedMessageType>(
             {
                 round_messages.insert(new_message.sender, new_message);
             } else {
-                eprintln!(
+                error!(
                     "Unexpected message type: {:?} -- not storing.",
                     new_message.message
                 );
@@ -217,7 +228,7 @@ pub fn do_communication_round<ExpectedMessageType>(
             .collect::<Vec<_>>()
             .len();
 
-        println!(
+        info!(
             "Messages from {}/{} parties -- {}/{} are ready to continue.",
             round_messages.len(),
             search_limit,
@@ -228,12 +239,12 @@ pub fn do_communication_round<ExpectedMessageType>(
         // If enough people have acked, we are done
         if parties_acked_to_continue == search_limit {
             ready_counter += 1;
-            println!("Finished communication round since we have enough acks..");
+            info!("Finished communication round since we have enough acks..");
             if ready_counter > 2 {
                 break;
             }
             // } else if round_messages.len() == search_limit && acks_left <= 0 {
-            //     println!("Finished communication round early since we have enough messages..");
+            //     info!("Finished communication round early since we have enough messages..");
             //     break;
         }
     }
@@ -269,8 +280,8 @@ pub fn process_keygen(io_ports: &mut [impl DeviceIO]) -> (Scalar, FrostKey<Norma
             &device_key,
             MessageItem::SetupMessage(ShareConfig(setup)),
         );
-        println!("Finding other participants with matching Frost settings..");
-        // dbg!(&setup_message);
+        info!("Finding other participants with matching Frost settings..");
+        // debug!(&setup_message);
 
         let setup_messages = loop {
             // Let's scan for n_parties number of Messages
@@ -314,18 +325,18 @@ pub fn process_keygen(io_ports: &mut [impl DeviceIO]) -> (Scalar, FrostKey<Norma
                     break setup_messages;
                 }
             } else {
-                eprintln!("People are broadcasting duplicate partipant indexes..");
+                error!("People are broadcasting duplicate partipant indexes..");
             }
         };
         let participants = setup_messages
             .into_iter()
             .map(|(pk, setup)| (pk, setup.our_index))
             .collect::<HashMap<_, _>>();
-        println!(
+        info!(
             "Initiated FROST setup with participants: {:?}",
             &participants
         );
-        println!(" \n\n");
+        info!(" \n\n");
         participants
     };
 
@@ -336,8 +347,8 @@ pub fn process_keygen(io_ports: &mut [impl DeviceIO]) -> (Scalar, FrostKey<Norma
             &device_key,
             MessageItem::KeygenPolyMessage(KeygenPolyMessage::Polynomial(public_poly.clone())),
         );
-        println!("Sharing polynomials...");
-        // dbg!(&poly_message);
+        info!("Sharing polynomials...");
+        // debug!(&poly_message);
 
         let received_messages = do_communication_round::<KeygenPolyMessage>(
             io_ports,
@@ -346,7 +357,7 @@ pub fn process_keygen(io_ports: &mut [impl DeviceIO]) -> (Scalar, FrostKey<Norma
             Some(participants.clone()),
             None,
         );
-        dbg!(&received_messages);
+        debug!("{:?}", &received_messages);
         let mut polynomials: Vec<(_, _)> = received_messages
             .into_iter()
             .filter_map(|(sender, message)| {
@@ -363,25 +374,25 @@ pub fn process_keygen(io_ports: &mut [impl DeviceIO]) -> (Scalar, FrostKey<Norma
             })
             .collect();
 
-        println!("Received polynomials!");
-        println!(" \n\n");
+        info!("Received polynomials!");
+        info!(" \n\n");
 
         polynomials.sort_by(|a, b| a.0.cmp(&b.0));
         let collected_polys: Vec<_> = polynomials.into_iter().map(|(_, poly)| poly).collect();
         collected_polys
     };
 
-    dbg!(collected_polys.len(), setup.n_parties);
+    debug!("{} {}", collected_polys.len(), setup.n_parties);
 
-    println!("Calculating keygen...");
-    // dbg!(&collected_polys);
+    info!("Calculating keygen...");
+    // debug!(&collected_polys);
     let keygen = frost
         .new_keygen(collected_polys)
         .expect("something wrong with what was provided by other parties");
 
     // KeygenMessage:::SecretShares
     let (collected_secret_shares, collected_pops) = {
-        println!("Creating shares...");
+        info!("Creating shares...");
         let (my_shares, my_pop) = frost.create_shares(&keygen, scalar_poly);
         // For now, let's just publically broadcast all the secret shares at once
         //
@@ -391,8 +402,8 @@ pub fn process_keygen(io_ports: &mut [impl DeviceIO]) -> (Scalar, FrostKey<Norma
             &device_key,
             MessageItem::KeygenSharesMessage(KeygenSharesMessage::SecretShares(my_shares, my_pop)),
         );
-        println!("Sharing secret shares and proof of possession..");
-        // dbg!(&shares_message);
+        info!("Sharing secret shares and proof of possession..");
+        // debug!(&shares_message);
 
         let received_messages = do_communication_round::<KeygenSharesMessage>(
             io_ports,
@@ -420,11 +431,11 @@ pub fn process_keygen(io_ports: &mut [impl DeviceIO]) -> (Scalar, FrostKey<Norma
                     }
                 })
                 .unzip();
-        println!("Received secret shares!");
-        println!(" \n\n");
+        info!("Received secret shares!");
+        info!(" \n\n");
         (collected_secret_shares, collected_pops)
     };
-    dbg!(collected_secret_shares.len());
+    debug!("{}", collected_secret_shares.len());
 
     let (my_secret_share, frost_key) = frost
         .finish_keygen(
@@ -444,6 +455,6 @@ pub fn process_keygen(io_ports: &mut [impl DeviceIO]) -> (Scalar, FrostKey<Norma
         )
         .unwrap();
 
-    dbg!(&frost_key);
+    debug!("{:?}", &frost_key);
     (my_secret_share, frost_key)
 }

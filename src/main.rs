@@ -1,7 +1,7 @@
 // use log::*;
 use anyhow::Result;
 use esp_idf_hal::units::Hertz;
-use frostdevice::frost_core;
+use frostdevice::{frost_core, LOG_LEVEL};
 
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_hal::{
@@ -9,6 +9,10 @@ use esp_idf_hal::{
     i2c, uart,
     units::*,
 };
+
+use esp_idf_svc::log::EspLogger;
+use log::info;
+static LOGGER: EspLogger = EspLogger;
 
 pub mod http;
 pub mod wifi;
@@ -30,7 +34,9 @@ pub struct Config {
 
 fn main() -> Result<()> {
     esp_idf_sys::link_patches();
-    esp_idf_svc::log::EspLogger::initialize_default();
+    log::set_logger(&LOGGER).map(|()| LOGGER.initialize())?;
+    LOGGER.set_target_level("*", LOG_LEVEL);
+    info!("Log level set to {}", LOGGER.get_max_level());
 
     let peripherals = Peripherals::take().unwrap();
     let mut button = PinDriver::input(peripherals.pins.gpio9)?;
@@ -60,8 +66,8 @@ fn main() -> Result<()> {
 
     // let uart2: uart::UartDriver = uart::UartDriver::new(
     //     peripherals.uart0,
-    //     peripherals.pins.gpio3,
-    //     peripherals.pins.gpio4,
+    //     peripherals.pins.gpio0,
+    //     peripherals.pins.gpio1,
     //     Option::<gpio::Gpio0>::None,
     //     Option::<gpio::Gpio1>::None,
     //     &uart_config,
