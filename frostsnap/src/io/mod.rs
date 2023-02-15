@@ -6,8 +6,7 @@ mod i2c;
 mod uart;
 mod wifi;
 
-use crate::message::FrostMessage;
-
+use frostcore::message::FrostMessage;
 // Currently devices communication through rounds of FrostMessages
 pub trait DeviceIO {
     fn read_messages(&mut self) -> Vec<FrostMessage>;
