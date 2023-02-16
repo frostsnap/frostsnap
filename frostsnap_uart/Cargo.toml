@@ -18,7 +18,7 @@ native = ["esp-idf-sys/native"]
 pio = ["esp-idf-sys/pio"]
 
 [dependencies]
-frostcore = { path="../frostcore" }
+frostsnap_core = { path="../frostsnap_core" }
 esp-idf-svc = { version= "=0.43.5", features = ["experimental", "alloc"] }
 embedded-svc = { version = "0.23.2", features = ["experimental"] }
 esp-idf-sys = { version = "0.31.12", features = ["binstart"] }

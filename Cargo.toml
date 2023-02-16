@@ -1,6 +1,6 @@
 [workspace]
 
 members = [
-    "frostcore",
-    "frostsnap",
+    "frostsnap_core",
+    "frostsnap_uart",
 ]
