@@ -3,14 +3,13 @@ name = "frostsnap"
 version = "0.1.0"
 authors = ["nickfarrow <nick@nickfarrow.com>"]
 edition = "2021"
-resolver = "2"
 
-[profile.release]
-opt-level = "s"
+# [profile.release]
+# opt-level = "s"
 
-[profile.dev]
-debug = true # Symbols are nice and they don't increase the size on Flash
-opt-level = "z"
+# [profile.dev]
+# debug = true # Symbols are nice and they don't increase the size on Flash
+# opt-level = "z"
 
 [features]
 default = ["native"]

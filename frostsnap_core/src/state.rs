@@ -48,6 +48,3 @@
 //     signing_session: usize,
 // }
 
-struct FrostCoordinator {}
-
-struct FrostSigner {}
