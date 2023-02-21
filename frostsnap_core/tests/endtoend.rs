@@ -1,8 +1,9 @@
 use frostsnap_core::{
-    CoordinatorSend, CoordinatorState, CoordinatorToDeviceSend, CoordinatorToUserMessage, DeviceId,
-    DeviceSend, DeviceToCoordindatorMessage, DeviceToUserMessage, FrostCoordinator, FrostSigner,
-    SignerState, UserToCoordinatorMessage,
+    CoordinatorSend, CoordinatorToDeviceSend, CoordinatorToUserMessage, DeviceId, DeviceSend,
+    DeviceToCoordindatorMessage, DeviceToUserMessage, FrostCoordinator, FrostSigner, SignerState,
+    UserToCoordinatorMessage,
 };
+use schnorr_fun::{frost::FrostKey, fun::marker::Normal};
 use std::collections::BTreeMap;
 
 #[test]
@@ -19,6 +20,7 @@ fn test_end_to_end() {
         .map(|device| device.init())
         .collect::<Vec<_>>();
 
+    #[derive(Debug)]
     pub enum Send {
         UserToCoodinator(UserToCoordinatorMessage),
         CoordinatorToUser(CoordinatorToUserMessage),
@@ -35,7 +37,9 @@ fn test_end_to_end() {
     message_stack.extend(init_messages.into_iter().map(Send::DeviceToCoordinator));
 
     let mut check_keygens = BTreeMap::<DeviceId, [u8; 32]>::default();
+    let mut check_frost_keys = BTreeMap::<DeviceId, FrostKey<Normal>>::default();
     while !message_stack.is_empty() {
+        dbg!(&message_stack);
         let to_send = message_stack.pop().unwrap();
 
         match to_send {
@@ -64,6 +68,9 @@ fn test_end_to_end() {
                             DeviceSend::ToUser(message) => match message {
                                 DeviceToUserMessage::CheckKeyGen { digest } => {
                                     check_keygens.insert(destination, digest);
+                                }
+                                DeviceToUserMessage::FinishedFrostKey { frost_key } => {
+                                    check_frost_keys.insert(destination, frost_key);
                                 }
                             },
                             DeviceSend::ToCoordinator(message) => {
@@ -103,5 +110,12 @@ fn test_end_to_end() {
     let first = digests.next().unwrap();
     for digest in digests {
         assert_eq!(digest, first);
+    }
+
+    assert_eq!(check_frost_keys.len(), devices.len());
+    let frost_keys = check_frost_keys.values();
+    let first = check_frost_keys.values().next().unwrap();
+    for key in frost_keys {
+        assert_eq!(key, first);
     }
 }

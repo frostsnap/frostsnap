@@ -15,12 +15,15 @@ use alloc::{
 
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::{
-    frost::{self, generate_scalar_poly},
+    frost::{self, generate_scalar_poly, FrostKey},
     fun::{derive_nonce_rng, marker::*, KeyPair, Point, Scalar},
-    nonce,
+    nonce, Signature,
 };
-use sha2::digest::Update;
 use sha2::Sha256;
+use sha2::{
+    digest::{typenum::U32, Update},
+    Digest,
+};
 
 #[derive(Debug, Clone)]
 pub struct FrostCoordinator {
@@ -81,6 +84,10 @@ impl FrostCoordinator {
                         None => vec![],
                     }
                 }
+                DeviceToCoordindatorMessage::KeyGenFinished { frost_key } => {
+                    // Do we want to confirm everyone got the same frost key?
+                    vec![]
+                }
                 _ => todo!("error"),
             },
         }
@@ -135,6 +142,32 @@ pub enum CoordinatorState {
 #[derive(Clone, Copy, Debug, PartialEq, Hash, Eq, Ord, PartialOrd)]
 pub struct DeviceId {
     pub pubkey: Point,
+}
+
+impl DeviceId {
+    fn to_x_coord(&self) -> Scalar<Public> {
+        let x_coord =
+            Scalar::from_hash(Sha256::default().chain(self.pubkey.to_bytes().as_ref())).public();
+        x_coord
+    }
+}
+
+fn create_keygen_id<H: Digest<OutputSize = U32> + Default + Clone>(
+    device_ids: &BTreeSet<DeviceId>,
+    hasher: H,
+) -> [u8; 32] {
+    let mut keygen_hash = hasher;
+    keygen_hash.update((device_ids.len() as u32).to_be_bytes());
+    for id in device_ids {
+        keygen_hash.update(id.pubkey.to_bytes());
+    }
+    let index_id: [u8; 32] = keygen_hash.finalize().into();
+    index_id
+    // Scalar::<Public, Zero>::from_bytes(index_id)
+    //     .expect("should be impossible 1/2^224")
+    //     .public()
+    //     .non_zero()
+    //     .expect("random index can not be zero!")
 }
 
 #[derive(Clone, Debug)]
@@ -192,7 +225,7 @@ impl FrostSigner {
                 if !devices.contains(&self.device_id()) {
                     return vec![];
                 }
-                let frost = frost::new_without_nonce_generation::<Sha256>();
+                let frost = frost::new_with_deterministic_nonces::<Sha256>();
                 // XXX: Right now now duplicate pubkeys are possible because we only have it in the
                 // device id and it's given to us as a BTreeSet.
                 let pks = devices
@@ -211,15 +244,16 @@ impl FrostSigner {
 
                 let shares = devices
                     .iter()
-                    .filter(|device_id| **device_id != self.device_id())
+                    // // TODO filter ourself?
+                    // .filter(|device_id| **device_id != self.device_id())
                     .map(|device| {
-                        let x_coord = Scalar::from_hash(
-                            Sha256::default().chain(device.pubkey.to_bytes().as_ref()),
-                        )
-                        .public();
+                        let x_coord = device.to_x_coord();
                         frost.create_share(&scalar_poly, x_coord)
                     })
                     .collect();
+
+                let keygen_id = create_keygen_id(&devices, Sha256::new());
+                let proof_of_possession = frost.create_proof_of_posession(&keygen_id, &scalar_poly);
 
                 let point_poly = frost::to_point_poly(&scalar_poly);
                 self.state = SignerState::KeyGen {
@@ -228,13 +262,17 @@ impl FrostSigner {
                     threshold,
                 };
 
-                vec![DeviceSend::ToCoordinator(
-                    DeviceToCoordindatorMessage::KeyGenProvideShares(KeyGenProvideShares {
-                        from: self.device_id(),
-                        my_poly: point_poly,
-                        shares,
-                    }),
-                )]
+                vec![
+                    DeviceSend::ToCoordinator(DeviceToCoordindatorMessage::KeyGenProvideShares(
+                        KeyGenProvideShares {
+                            from: self.device_id(),
+                            my_poly: point_poly,
+                            shares,
+                            proof_of_possession,
+                        },
+                    )),
+                    DeviceSend::ToUser(DeviceToUserMessage::CheckKeyGen { digest: keygen_id }),
+                ]
             }
             (
                 SignerState::KeyGen {
@@ -244,7 +282,68 @@ impl FrostSigner {
                 },
                 FinishKeyGen { shares_provided },
             ) => {
-                vec![]
+                let frost = frost::new_without_nonce_generation::<Sha256>();
+
+                // Ugly unpack everything according to DeviceID sorting
+                let (keygen_device_ids, point_polys, secret_shares, proofs_of_possession) = {
+                    let (mut point_polys, mut secret_shares, mut proofs_of_possession) =
+                        (BTreeMap::new(), BTreeMap::new(), BTreeMap::new());
+                    for (device_id, share) in shares_provided {
+                        point_polys.insert(device_id, share.my_poly);
+                        secret_shares.insert(device_id, share.shares);
+                        proofs_of_possession.insert(device_id, share.proof_of_possession);
+                    }
+                    (
+                        point_polys.clone().into_keys().collect::<Vec<_>>(),
+                        point_polys.into_values().collect::<Vec<_>>(),
+                        secret_shares.into_values().collect::<Vec<_>>(),
+                        proofs_of_possession.into_values().collect::<Vec<_>>(),
+                    )
+                };
+
+                let my_index = self.device_id().to_x_coord();
+                let device_indexes: Vec<_> =
+                    keygen_device_ids.iter().map(|id| id.to_x_coord()).collect();
+
+                let point_polys = device_indexes
+                    .into_iter()
+                    .zip(point_polys.into_iter())
+                    .map(|(index, poly)| (index, poly))
+                    .collect();
+
+                // TODO: decrypt our shares
+                let positional_index = keygen_device_ids
+                    .iter()
+                    .position(|&x| x == self.device_id())
+                    .unwrap();
+                let our_shares = secret_shares
+                    .iter()
+                    .map(|shares| shares[positional_index].clone())
+                    .collect();
+
+                // TODO: check self.devices == keygen_device_ids
+                let keygen_id = create_keygen_id(&devices, Sha256::new());
+                let keygen = frost.new_keygen(point_polys, keygen_id).unwrap();
+
+                let (secret_share, frost_key) = frost
+                    .finish_keygen(
+                        keygen.clone(),
+                        my_index,
+                        our_shares,
+                        proofs_of_possession.clone(),
+                    )
+                    .unwrap();
+                self.state = SignerState::FrostKey {
+                    secret_share,
+                    frost_key: frost_key.clone(),
+                };
+
+                vec![
+                    DeviceSend::ToCoordinator(DeviceToCoordindatorMessage::KeyGenFinished {
+                        frost_key: frost_key.clone(),
+                    }),
+                    DeviceSend::ToUser(DeviceToUserMessage::FinishedFrostKey { frost_key }),
+                ]
             }
             _ => panic!("we received message in unexpected state"),
         }
@@ -259,6 +358,10 @@ pub enum SignerState {
         scalar_poly: Vec<Scalar>,
         devices: BTreeSet<DeviceId>,
         threshold: usize,
+    },
+    FrostKey {
+        secret_share: Scalar,
+        frost_key: FrostKey<Normal>,
     },
 }
 
@@ -296,6 +399,7 @@ pub enum CoordinatorToDeviceMessage {
 pub enum DeviceToCoordindatorMessage {
     Register { device_id: DeviceId },
     KeyGenProvideShares(KeyGenProvideShares),
+    KeyGenFinished { frost_key: FrostKey<Normal> },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -303,6 +407,7 @@ pub struct KeyGenProvideShares {
     from: DeviceId,
     my_poly: Vec<Point>,
     shares: Vec<Scalar<Secret, Zero>>,
+    proof_of_possession: Signature,
 }
 
 #[derive(Clone, Debug)]
@@ -316,4 +421,5 @@ pub enum CoordinatorToUserMessage {}
 #[derive(Clone, Debug)]
 pub enum DeviceToUserMessage {
     CheckKeyGen { digest: [u8; 32] },
+    FinishedFrostKey { frost_key: FrostKey<Normal> },
 }
