@@ -7,16 +7,17 @@ extern crate alloc;
 
 use core::ops::Deref;
 
+use crate::message::{
+    CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToDeviceSend, CoordinatorToUserMessage,
+    DeviceSend, DeviceToCoordindatorMessage, DeviceToUserMessage, KeyGenProvideShares,
+    UserToCoordinatorMessage,
+};
 use alloc::{
     collections::{BTreeMap, BTreeSet},
     string::String,
     vec::Vec,
 };
 
-use message::{
-    CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToDeviceSend, CoordinatorToUserMessage,
-    DeviceSend, DeviceToCoordindatorMessage, KeyGenProvideShares, UserToCoordinatorMessage,
-};
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::{
     frost::{self, generate_scalar_poly, FrostKey, SignSession},
@@ -29,8 +30,6 @@ use sha2::{
     digest::{typenum::U32, Update},
     Digest,
 };
-
-use crate::message::DeviceToUserMessage;
 
 #[derive(Debug, Clone)]
 pub struct FrostCoordinator {
@@ -116,8 +115,9 @@ impl FrostCoordinator {
                     frost_key: receieved_frost_key,
                     initial_nonce,
                 } => {
-                    // Update this device's nonce, they probably just finished keygen
+                    // This device has finished keygen and is giving us a nonce
                     nonce_cache.insert(from, initial_nonce);
+                    // TODO: error if the key is different. Maybe just pass the pubkey?
                     assert_eq!(receieved_frost_key, *frost_key.deref());
                     vec![]
                 }
@@ -263,7 +263,7 @@ impl FrostCoordinator {
                         .map(|(id, _)| {
                             CoordinatorSend::ToDevice(CoordinatorToDeviceSend {
                                 destination: Some(*id),
-                                message: CoordinatorToDeviceMessage::SignMessage {
+                                message: CoordinatorToDeviceMessage::RequestSign {
                                     message_to_sign: message_to_sign.clone(),
                                     nonces: signing_nonces.clone(),
                                 },
@@ -387,11 +387,11 @@ impl FrostSigner {
     ) -> Vec<DeviceSend> {
         use CoordinatorToDeviceMessage::*;
         match (&self.state, message) {
-            (_, RegisterAck {}) => {
+            (SignerState::PreRegister, RegisterAck {}) => {
                 self.state = SignerState::Registered;
                 vec![]
             }
-            (_, DoKeyGen { devices, threshold }) => {
+            (SignerState::Registered, DoKeyGen { devices, threshold }) => {
                 use schnorr_fun::fun::hash::Tag;
                 if !devices.contains(&self.device_id()) {
                     return vec![];
@@ -527,16 +527,32 @@ impl FrostSigner {
                 ]
             }
             (
-                SignerState::FrostKey {
-                    secret_share,
-                    frost_key,
-                    next_nonce,
-                },
-                SignMessage {
+                SignerState::FrostKey { .. },
+                RequestSign {
                     nonces,
                     message_to_sign,
                 },
             ) => {
+                vec![DeviceSend::ToUser(DeviceToUserMessage::SignatureRequest {
+                    message_to_sign,
+                    nonces,
+                })]
+            }
+            _ => panic!("we received message in unexpected state"),
+        }
+    }
+
+    pub fn sign(
+        &mut self,
+        message_to_sign: String,
+        nonces: Vec<(DeviceId, Nonce)>,
+    ) -> Vec<DeviceSend> {
+        match &self.state {
+            SignerState::FrostKey {
+                secret_share,
+                frost_key,
+                next_nonce,
+            } => {
                 let frost = frost::new_with_deterministic_nonces::<Sha256>();
                 let nonces_at_index = nonces
                     .into_iter()
@@ -569,18 +585,15 @@ impl FrostSigner {
                     next_nonce: new_nonce.clone(),
                 };
 
-                // TODO: We need to separate out the stages of making a ToUser SignatureRequest
-                // and then interpret some user input
-                vec![
-                    DeviceSend::ToCoordinator(DeviceToCoordindatorMessage::SignatureShare {
+                vec![DeviceSend::ToCoordinator(
+                    DeviceToCoordindatorMessage::SignatureShare {
                         signature_share: sig_share,
                         new_nonce: new_nonce.public(),
                         from: self.device_id(),
-                    }),
-                    DeviceSend::ToUser(DeviceToUserMessage::SignatureRequest { message_to_sign }),
-                ]
+                    },
+                )]
             }
-            _ => panic!("we received message in unexpected state"),
+            _ => panic!("we are not ready to sign!"),
         }
     }
 }

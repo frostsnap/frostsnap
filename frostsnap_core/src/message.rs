@@ -41,7 +41,7 @@ pub enum CoordinatorToDeviceMessage {
     FinishKeyGen {
         shares_provided: BTreeMap<DeviceId, KeyGenProvideShares>,
     },
-    SignMessage {
+    RequestSign {
         nonces: Vec<(DeviceId, Nonce)>,
         message_to_sign: String,
     },
@@ -91,7 +91,14 @@ pub enum CoordinatorToUserMessage {
 
 #[derive(Clone, Debug)]
 pub enum DeviceToUserMessage {
-    CheckKeyGen { digest: [u8; 32] },
-    FinishedFrostKey { frost_key: FrostKey<Normal> },
-    SignatureRequest { message_to_sign: String },
+    CheckKeyGen {
+        digest: [u8; 32],
+    },
+    FinishedFrostKey {
+        frost_key: FrostKey<Normal>,
+    },
+    SignatureRequest {
+        message_to_sign: String,
+        nonces: Vec<(DeviceId, Nonce)>,
+    },
 }

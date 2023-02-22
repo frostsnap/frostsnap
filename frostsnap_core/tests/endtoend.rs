@@ -15,7 +15,6 @@ use std::collections::BTreeMap;
 fn test_end_to_end() {
     let n_parties = 3;
     let threshold = 2;
-    let message_to_sign = "pyramid schmee".to_string();
     let mut coordinator = FrostCoordinator::new();
 
     let mut devices = (0..n_parties)
@@ -31,12 +30,27 @@ fn test_end_to_end() {
     #[derive(Debug)]
     pub enum Send {
         UserToCoodinator(UserToCoordinatorMessage),
+        DeviceToUser(DeviceToUserMessage),
         CoordinatorToUser(CoordinatorToUserMessage),
         DeviceToCoordinator(DeviceToCoordindatorMessage),
         CoordinatorToDevice(CoordinatorToDeviceSend),
     }
 
+    let device_id_vec = devices.clone().into_keys().collect::<Vec<_>>();
+
+    // Build a stack of messages last to be processed first
     let mut message_stack = vec![];
+    // Use select device signers
+    // todo use signers bitmask like frost proptest
+    let message_to_sign2 = "johnmcafee47".to_string();
+    message_stack.push(Send::UserToCoodinator(
+        UserToCoordinatorMessage::StartSign {
+            message_to_sign: message_to_sign2.clone(),
+            signing_parties: Some(vec![device_id_vec[0].clone(), device_id_vec[1].clone()]),
+        },
+    ));
+    // Use signers chosen by the coordinator
+    let message_to_sign = "pyramid schmee".to_string();
     message_stack.push(Send::UserToCoodinator(
         UserToCoordinatorMessage::StartSign {
             message_to_sign: message_to_sign.clone(),
@@ -87,8 +101,26 @@ fn test_end_to_end() {
                                 DeviceToUserMessage::FinishedFrostKey { frost_key } => {
                                     check_frost_keys.insert(destination, frost_key);
                                 }
-                                DeviceToUserMessage::SignatureRequest { message_to_sign } => {
-                                    check_sig_requests.insert(destination, message_to_sign);
+                                DeviceToUserMessage::SignatureRequest {
+                                    message_to_sign,
+                                    nonces,
+                                } => {
+                                    check_sig_requests.insert(destination, message_to_sign.clone());
+                                    // Simulate user pressing "sign" --> calls device.sign()
+                                    let messages = devices
+                                        .get_mut(&destination)
+                                        .unwrap()
+                                        .sign(message_to_sign.clone(), nonces);
+                                    let messages =
+                                        messages.into_iter().map(|message| match message {
+                                            DeviceSend::ToCoordinator(message) => {
+                                                Send::DeviceToCoordinator(message)
+                                            }
+                                            DeviceSend::ToUser(message) => {
+                                                Send::DeviceToUser(message)
+                                            }
+                                        });
+                                    message_stack.extend(messages);
                                 }
                             },
                             DeviceSend::ToCoordinator(message) => {
@@ -111,6 +143,7 @@ fn test_end_to_end() {
                     completed_signature_responses.push(signature);
                 }
             },
+            Send::DeviceToUser(_) => todo!(),
         }
 
         for device in devices.values() {
@@ -140,15 +173,19 @@ fn test_end_to_end() {
     }
 
     assert_eq!(check_sig_requests.len(), threshold);
-
-    assert_eq!(completed_signature_responses.len(), 1);
+    assert_eq!(completed_signature_responses.len(), 2);
 
     let frost_key = frost_keys.collect::<Vec<_>>()[0];
     let frost = frost::new_without_nonce_generation::<Sha256>();
-    let signed_message = Message::<Public>::plain("frost-device", message_to_sign.as_bytes());
-    assert!(frost.schnorr.verify(
-        &frost_key.clone().into_xonly_key().public_key(),
-        signed_message,
-        &completed_signature_responses[0]
-    ));
+    for (message, signature) in vec![message_to_sign, message_to_sign2]
+        .into_iter()
+        .zip(completed_signature_responses)
+    {
+        let signed_message = Message::<Public>::plain("frost-device", message.as_bytes());
+        assert!(frost.schnorr.verify(
+            &frost_key.clone().into_xonly_key().public_key(),
+            signed_message,
+            &signature
+        ));
+    }
 }
