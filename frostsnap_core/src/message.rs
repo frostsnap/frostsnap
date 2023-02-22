@@ -1,97 +1,97 @@
-//! A collection of communication enums for FROST gey generation and signing
-//! Includes ability to write acks out with [`FrostMessage`]s
+use crate::String;
+use crate::Vec;
+use alloc::collections::{BTreeMap, BTreeSet};
+use schnorr_fun::frost::FrostKey;
+use schnorr_fun::fun::marker::Normal;
+use schnorr_fun::fun::marker::Public;
+use schnorr_fun::fun::marker::Secret;
+use schnorr_fun::fun::marker::Zero;
+use schnorr_fun::fun::Point;
+use schnorr_fun::fun::Scalar;
+use schnorr_fun::musig::Nonce;
+use schnorr_fun::Signature;
 
-use schnorr_fun::{
-    fun::{
-        digest::generic_array::typenum::U32,
-        marker::{EvenY, Public, Secret, Zero},
-        Point, Scalar, XOnlyKeyPair,
+use crate::DeviceId;
+
+#[derive(Clone, Debug)]
+pub enum DeviceSend {
+    ToUser(DeviceToUserMessage),
+    ToCoordinator(DeviceToCoordindatorMessage),
+}
+
+#[derive(Clone, Debug)]
+pub enum CoordinatorSend {
+    ToDevice(CoordinatorToDeviceSend),
+    ToUser(CoordinatorToUserMessage),
+}
+
+#[derive(Clone, Debug)]
+pub struct CoordinatorToDeviceSend {
+    pub destination: Option<DeviceId>,
+    pub message: CoordinatorToDeviceMessage,
+}
+
+#[derive(Clone, Debug)]
+pub enum CoordinatorToDeviceMessage {
+    RegisterAck {},
+    DoKeyGen {
+        devices: BTreeSet<DeviceId>,
+        threshold: usize,
     },
-    nonce::NonceGen,
-    Message, Schnorr, Signature,
-};
-use serde::{Deserialize, Serialize};
-use sha2::Digest;
-
-#[derive(Serialize, Deserialize, Copy, Clone, Debug)]
-pub struct FrostSetup {
-    pub n_parties: usize,
-    pub threshold: usize,
-    pub our_index: usize,
+    FinishKeyGen {
+        shares_provided: BTreeMap<DeviceId, KeyGenProvideShares>,
+    },
+    SignMessage {
+        nonces: Vec<(DeviceId, Nonce)>,
+        message_to_sign: String,
+    },
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum Ack {
-    Ack,
+#[derive(Clone, Debug)]
+pub enum DeviceToCoordindatorMessage {
+    Register {
+        device_id: DeviceId,
+    },
+    KeyGenProvideShares(KeyGenProvideShares),
+    KeyGenFinished {
+        from: DeviceId,
+        frost_key: FrostKey<Normal>,
+        initial_nonce: Nonce,
+    },
+    SignatureShare {
+        signature_share: Scalar<Public, Zero>,
+        new_nonce: Nonce,
+        from: DeviceId,
+    },
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum SetupMessage {
-    ShareConfig(FrostSetup),
-    NackConfig,
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KeyGenProvideShares {
+    pub from: DeviceId,
+    pub my_poly: Vec<Point>,
+    pub shares: Vec<Scalar<Secret, Zero>>,
+    pub proof_of_possession: Signature,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum KeygenPolyMessage {
-    Polynomial(Vec<Point>),
+#[derive(Clone, Debug)]
+pub enum UserToCoordinatorMessage {
+    DoKeyGen {
+        threshold: usize,
+    },
+    StartSign {
+        message_to_sign: String,
+        signing_parties: Option<Vec<DeviceId>>,
+    },
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum KeygenSharesMessage {
-    SecretShares(Vec<Scalar<Secret, Zero>>, Signature),
-    UnacceptedPoly(usize),
-    InvalidProofOfPossession(usize),
+#[derive(Clone, Debug)]
+pub enum CoordinatorToUserMessage {
+    Signed { signature: Signature },
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum SigningMessage {
-    ShareNonce,
-    ShareSignatureShare,
-    UnacceptedNonce(usize),
-    InvalidSignatureShare(usize),
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum MessageItem {
-    SetupMessage(SetupMessage),
-    KeygenPolyMessage(KeygenPolyMessage),
-    KeygenSharesMessage(KeygenSharesMessage),
-    SigningMessage(SigningMessage),
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct FrostMessage {
-    pub message: MessageItem,
-    pub signature: Signature,
-    pub sender: Point<EvenY>,
-    pub continue_ack: bool,
-}
-
-impl FrostMessage {
-    pub fn new<NG: NonceGen, CH: Digest<OutputSize = U32> + Clone>(
-        schnorr: &Schnorr<CH, NG>,
-        keypair: &XOnlyKeyPair,
-        message: MessageItem,
-    ) -> Self {
-        Self {
-            message: message.clone(),
-            signature: schnorr.sign(
-                &keypair,
-                Message::<Public>::raw(&bincode::serialize(&message).unwrap()),
-            ),
-            sender: keypair.public_key(),
-            continue_ack: false,
-        }
-    }
-
-    // We are going to continually write messages to serial until everyone receives enough
-    // messages "continue_acks". This may not be appropriate in more reliable public boards.
-    pub fn ready_to_continue(self) -> FrostMessage {
-        FrostMessage {
-            message: self.message,
-            signature: self.signature,
-            sender: self.sender,
-            continue_ack: true,
-        }
-    }
+#[derive(Clone, Debug)]
+pub enum DeviceToUserMessage {
+    CheckKeyGen { digest: [u8; 32] },
+    FinishedFrostKey { frost_key: FrostKey<Normal> },
+    SignatureRequest { message_to_sign: String },
 }

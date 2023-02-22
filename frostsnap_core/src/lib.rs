@@ -1,9 +1,6 @@
-//! Functions for handling communication rounds based on messages, expected peers, acks, and so on
-//! Proobably needs rewriting and refactoring into something more robust, though this may depend
-//! on the method of DeviceIO used
-//!
-
 #![no_std]
+
+pub mod message;
 
 #[macro_use]
 extern crate alloc;
@@ -16,18 +13,24 @@ use alloc::{
     vec::Vec,
 };
 
+use message::{
+    CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToDeviceSend, CoordinatorToUserMessage,
+    DeviceSend, DeviceToCoordindatorMessage, KeyGenProvideShares, UserToCoordinatorMessage,
+};
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::{
     frost::{self, generate_scalar_poly, FrostKey, SignSession},
     fun::{derive_nonce_rng, marker::*, KeyPair, Point, Scalar},
     musig::{Nonce, NonceKeyPair},
-    nonce, Message, Signature,
+    nonce, Message,
 };
 use sha2::Sha256;
 use sha2::{
     digest::{typenum::U32, Update},
     Digest,
 };
+
+use crate::message::DeviceToUserMessage;
 
 #[derive(Debug, Clone)]
 pub struct FrostCoordinator {
@@ -401,7 +404,7 @@ impl FrostSigner {
                     .map(|device| device.pubkey)
                     .collect::<Vec<_>>();
                 let mut poly_rng = derive_nonce_rng! {
-                    // use Deterministic nonce gen so we reproduce it later
+                    // use Deterministic nonce gen to create our polynomial so we reproduce it later
                     nonce_gen => nonce::Deterministic::<Sha256>::default().tag(b"frostsnap/keygen"),
                     secret => self.keypair.secret_key(),
                     // session id must be unique for each key generation session
@@ -412,8 +415,6 @@ impl FrostSigner {
 
                 let shares = devices
                     .iter()
-                    // // TODO filter ourself?
-                    // .filter(|device_id| **device_id != self.device_id())
                     .map(|device| {
                         let x_coord = device.to_x_coord();
                         frost.create_share(&scalar_poly, x_coord)
@@ -601,87 +602,4 @@ pub enum SignerState {
         // See blind signature PR.
         next_nonce: NonceKeyPair,
     },
-}
-
-#[derive(Clone, Debug)]
-pub enum DeviceSend {
-    ToUser(DeviceToUserMessage),
-    ToCoordinator(DeviceToCoordindatorMessage),
-}
-
-#[derive(Clone, Debug)]
-pub enum CoordinatorSend {
-    ToDevice(CoordinatorToDeviceSend),
-    ToUser(CoordinatorToUserMessage),
-}
-
-#[derive(Clone, Debug)]
-pub struct CoordinatorToDeviceSend {
-    pub destination: Option<DeviceId>,
-    pub message: CoordinatorToDeviceMessage,
-}
-
-#[derive(Clone, Debug)]
-pub enum CoordinatorToDeviceMessage {
-    RegisterAck {},
-    DoKeyGen {
-        devices: BTreeSet<DeviceId>,
-        threshold: usize,
-    },
-    FinishKeyGen {
-        shares_provided: BTreeMap<DeviceId, KeyGenProvideShares>,
-    },
-    SignMessage {
-        nonces: Vec<(DeviceId, Nonce)>,
-        message_to_sign: String,
-    },
-}
-
-#[derive(Clone, Debug)]
-pub enum DeviceToCoordindatorMessage {
-    Register {
-        device_id: DeviceId,
-    },
-    KeyGenProvideShares(KeyGenProvideShares),
-    KeyGenFinished {
-        from: DeviceId,
-        frost_key: FrostKey<Normal>,
-        initial_nonce: Nonce,
-    },
-    SignatureShare {
-        signature_share: Scalar<Public, Zero>,
-        new_nonce: Nonce,
-        from: DeviceId,
-    },
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct KeyGenProvideShares {
-    from: DeviceId,
-    my_poly: Vec<Point>,
-    shares: Vec<Scalar<Secret, Zero>>,
-    proof_of_possession: Signature,
-}
-
-#[derive(Clone, Debug)]
-pub enum UserToCoordinatorMessage {
-    DoKeyGen {
-        threshold: usize,
-    },
-    StartSign {
-        message_to_sign: String,
-        signing_parties: Option<Vec<DeviceId>>,
-    },
-}
-
-#[derive(Clone, Debug)]
-pub enum CoordinatorToUserMessage {
-    Signed { signature: Signature },
-}
-
-#[derive(Clone, Debug)]
-pub enum DeviceToUserMessage {
-    CheckKeyGen { digest: [u8; 32] },
-    FinishedFrostKey { frost_key: FrostKey<Normal> },
-    SignatureRequest { message_to_sign: String },
 }

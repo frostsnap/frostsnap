@@ -1,8 +1,8 @@
-use frostsnap_core::{
-    CoordinatorSend, CoordinatorToDeviceSend, CoordinatorToUserMessage, DeviceId, DeviceSend,
-    DeviceToCoordindatorMessage, DeviceToUserMessage, FrostCoordinator, FrostSigner, SignerState,
-    UserToCoordinatorMessage,
+use frostsnap_core::message::{
+    CoordinatorSend, CoordinatorToDeviceSend, CoordinatorToUserMessage, DeviceSend,
+    DeviceToCoordindatorMessage, DeviceToUserMessage, UserToCoordinatorMessage,
 };
+use frostsnap_core::{DeviceId, FrostCoordinator, FrostSigner, SignerState};
 use schnorr_fun::{
     frost::{self, FrostKey},
     fun::marker::{Normal, Public},
