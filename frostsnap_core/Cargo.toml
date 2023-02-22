@@ -11,6 +11,5 @@ schnorr_fun = { path = "../../secp256kfun/schnorr_fun", features = ["alloc"] }
 rand_chacha = "0.3"
 sha2 = "0.10"
 
-
 [dev-dependencies]
 rand = "0.8"

@@ -8,8 +8,11 @@
 #[macro_use]
 extern crate alloc;
 
+use core::ops::Deref;
+
 use alloc::{
     collections::{BTreeMap, BTreeSet},
+    string::String,
     vec::Vec,
 };
 
@@ -17,7 +20,8 @@ use rand_chacha::ChaCha20Rng;
 use schnorr_fun::{
     frost::{self, generate_scalar_poly, FrostKey},
     fun::{derive_nonce_rng, marker::*, KeyPair, Point, Scalar},
-    nonce, Signature,
+    musig::{Nonce, NonceKeyPair},
+    nonce, Message, Signature,
 };
 use sha2::Sha256;
 use sha2::{
@@ -84,12 +88,42 @@ impl FrostCoordinator {
                         None => vec![],
                     }
                 }
-                DeviceToCoordindatorMessage::KeyGenFinished { frost_key } => {
+                DeviceToCoordindatorMessage::KeyGenFinished {
+                    frost_key,
+                    initial_nonce,
+                    from,
+                } => {
                     // Do we want to confirm everyone got the same frost key?
+                    let mut nonce_cache = BTreeMap::new();
+                    nonce_cache.insert(from, initial_nonce);
+                    self.state = CoordinatorState::FrostKey {
+                        frost_key,
+                        nonce_cache,
+                    };
                     vec![]
                 }
                 _ => todo!("error"),
             },
+            CoordinatorState::FrostKey {
+                frost_key,
+                nonce_cache,
+            } => match message {
+                DeviceToCoordindatorMessage::KeyGenFinished {
+                    frost_key: receieved_frost_key,
+                    from,
+                    initial_nonce,
+                } => {
+                    // Update this device's nonce, they probably just finished keygen
+                    nonce_cache.insert(from, initial_nonce);
+                    assert_eq!(receieved_frost_key, *frost_key.deref());
+                    vec![]
+                }
+                _ => todo!("error"),
+            },
+            CoordinatorState::Signing {
+                message_to_sign,
+                nonces,
+            } => todo!(),
         }
     }
 
@@ -115,9 +149,44 @@ impl FrostCoordinator {
                         },
                     })]
                 }
+                UserToCoordinatorMessage::StartSign { .. } => {
+                    panic!("We can't sign during registration, we don't have a FrostKey yet!")
+                }
             },
             CoordinatorState::KeyGen { .. } => match message {
                 UserToCoordinatorMessage::DoKeyGen { .. } => panic!("We're already doing a keygen"),
+                UserToCoordinatorMessage::StartSign { .. } => {
+                    panic!("We can't sign during a keygen")
+                }
+            },
+            CoordinatorState::FrostKey {
+                frost_key,
+                nonce_cache,
+            } => match message {
+                UserToCoordinatorMessage::DoKeyGen { .. } => {
+                    panic!("We already have a key on this device")
+                }
+                UserToCoordinatorMessage::StartSign { message_to_sign } => {
+                    self.state = CoordinatorState::Signing {
+                        nonces: BTreeMap::new(),
+                        message_to_sign: message_to_sign.clone(),
+                    };
+                    vec![CoordinatorSend::ToDevice(CoordinatorToDeviceSend {
+                        destination: None,
+                        message: CoordinatorToDeviceMessage::SignMessage { message_to_sign },
+                    })]
+                }
+            },
+            CoordinatorState::Signing {
+                message_to_sign,
+                nonces,
+            } => match message {
+                UserToCoordinatorMessage::DoKeyGen { .. } => {
+                    panic!("We already have a key and are signing!")
+                }
+                UserToCoordinatorMessage::StartSign { .. } => {
+                    todo!("We are already in a signing session.")
+                }
             },
         }
     }
@@ -136,6 +205,14 @@ pub enum CoordinatorState {
     Registration,
     KeyGen {
         shares: BTreeMap<DeviceId, Option<KeyGenProvideShares>>,
+    },
+    FrostKey {
+        frost_key: FrostKey<Normal>,
+        nonce_cache: BTreeMap<DeviceId, Nonce>,
+    },
+    Signing {
+        message_to_sign: String,
+        nonces: BTreeMap<DeviceId, Nonce>,
     },
 }
 
@@ -163,11 +240,6 @@ fn create_keygen_id<H: Digest<OutputSize = U32> + Default + Clone>(
     }
     let index_id: [u8; 32] = keygen_hash.finalize().into();
     index_id
-    // Scalar::<Public, Zero>::from_bytes(index_id)
-    //     .expect("should be impossible 1/2^224")
-    //     .public()
-    //     .non_zero()
-    //     .expect("random index can not be zero!")
 }
 
 #[derive(Clone, Debug)]
@@ -282,7 +354,7 @@ impl FrostSigner {
                 },
                 FinishKeyGen { shares_provided },
             ) => {
-                let frost = frost::new_without_nonce_generation::<Sha256>();
+                let frost = frost::new_with_deterministic_nonces::<Sha256>();
 
                 // Ugly unpack everything according to DeviceID sorting
                 let (keygen_device_ids, point_polys, secret_shares, proofs_of_possession) = {
@@ -333,14 +405,26 @@ impl FrostSigner {
                         proofs_of_possession.clone(),
                     )
                     .unwrap();
+
+                // TODO: we might want to store the nonce gen and sid?
+                let mut nonce_rng: ChaCha20Rng = frost.seed_nonce_rng(
+                    &frost_key,
+                    &secret_share,
+                    b"this should be extremely unique",
+                );
+
+                let initial_nonce = frost.gen_nonce(&mut nonce_rng);
                 self.state = SignerState::FrostKey {
                     secret_share,
                     frost_key: frost_key.clone(),
+                    next_nonce: initial_nonce.clone(),
                 };
 
                 vec![
                     DeviceSend::ToCoordinator(DeviceToCoordindatorMessage::KeyGenFinished {
                         frost_key: frost_key.clone(),
+                        initial_nonce: initial_nonce.public(),
+                        from: self.device_id(),
                     }),
                     DeviceSend::ToUser(DeviceToUserMessage::FinishedFrostKey { frost_key }),
                 ]
@@ -362,6 +446,10 @@ pub enum SignerState {
     FrostKey {
         secret_share: Scalar,
         frost_key: FrostKey<Normal>,
+        // TODO: Should we allow for a backlog of unused nonces?
+        // this is a common pattern with FROST, maybe belongs in the module to be handled securely!
+        // See blind signature PR.
+        next_nonce: NonceKeyPair,
     },
 }
 
@@ -393,13 +481,22 @@ pub enum CoordinatorToDeviceMessage {
     FinishKeyGen {
         shares_provided: BTreeMap<DeviceId, KeyGenProvideShares>,
     },
+    SignMessage {
+        message_to_sign: String,
+    },
 }
 
 #[derive(Clone, Debug)]
 pub enum DeviceToCoordindatorMessage {
-    Register { device_id: DeviceId },
+    Register {
+        device_id: DeviceId,
+    },
     KeyGenProvideShares(KeyGenProvideShares),
-    KeyGenFinished { frost_key: FrostKey<Normal> },
+    KeyGenFinished {
+        from: DeviceId,
+        frost_key: FrostKey<Normal>,
+        initial_nonce: Nonce,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -413,6 +510,7 @@ pub struct KeyGenProvideShares {
 #[derive(Clone, Debug)]
 pub enum UserToCoordinatorMessage {
     DoKeyGen { threshold: usize },
+    StartSign { message_to_sign: String },
 }
 
 #[derive(Clone, Debug)]
