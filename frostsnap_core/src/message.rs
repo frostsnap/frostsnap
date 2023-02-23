@@ -1,10 +1,10 @@
+use crate::encrypted_share::EncryptedShare;
 use crate::String;
 use crate::Vec;
 use alloc::collections::{BTreeMap, BTreeSet};
 use schnorr_fun::frost::FrostKey;
 use schnorr_fun::fun::marker::Normal;
 use schnorr_fun::fun::marker::Public;
-use schnorr_fun::fun::marker::Secret;
 use schnorr_fun::fun::marker::Zero;
 use schnorr_fun::fun::Point;
 use schnorr_fun::fun::Scalar;
@@ -69,7 +69,7 @@ pub enum DeviceToCoordindatorMessage {
 pub struct KeyGenProvideShares {
     pub from: DeviceId,
     pub my_poly: Vec<Point>,
-    pub shares: Vec<Scalar<Secret, Zero>>,
+    pub shares: Vec<EncryptedShare>,
     pub proof_of_possession: Signature,
 }
 

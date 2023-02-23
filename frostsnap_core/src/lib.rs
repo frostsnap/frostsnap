@@ -1,5 +1,6 @@
 #![no_std]
 
+pub mod encrypted_share;
 pub mod message;
 
 #[macro_use]
@@ -7,10 +8,13 @@ extern crate alloc;
 
 use core::ops::Deref;
 
-use crate::message::{
-    CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToDeviceSend, CoordinatorToUserMessage,
-    DeviceSend, DeviceToCoordindatorMessage, DeviceToUserMessage, KeyGenProvideShares,
-    UserToCoordinatorMessage,
+use crate::{
+    encrypted_share::EncryptedShare,
+    message::{
+        CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToDeviceSend,
+        CoordinatorToUserMessage, DeviceSend, DeviceToCoordindatorMessage, DeviceToUserMessage,
+        KeyGenProvideShares, UserToCoordinatorMessage,
+    },
 };
 use alloc::{
     collections::{BTreeMap, BTreeSet},
@@ -399,7 +403,8 @@ impl FrostSigner {
                     .iter()
                     .map(|device| {
                         let x_coord = device.to_x_coord();
-                        frost.create_share(&scalar_poly, x_coord)
+                        let share = frost.create_share(&scalar_poly, x_coord);
+                        EncryptedShare::new(device.pubkey, &mut poly_rng, &share)
                     })
                     .collect();
 
@@ -468,7 +473,7 @@ impl FrostSigner {
                     .unwrap();
                 let our_shares = secret_shares
                     .iter()
-                    .map(|shares| shares[positional_index].clone())
+                    .map(|shares| shares[positional_index].decrypt(self.keypair().secret_key()))
                     .collect();
 
                 let keygen_id = create_keygen_id(&devices, Sha256::new());
@@ -481,7 +486,7 @@ impl FrostSigner {
                         our_shares,
                         proofs_of_possession.clone(),
                     )
-                    .unwrap();
+                    .map_err(|_e| InvalidState::InvalidMessage)?;
 
                 // TODO: we might want to store the nonce gen and sid?
                 let mut nonce_rng: ChaCha20Rng = frost.seed_nonce_rng(
