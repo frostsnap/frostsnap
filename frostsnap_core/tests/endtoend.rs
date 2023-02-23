@@ -46,7 +46,7 @@ fn test_end_to_end() {
     message_stack.push(Send::UserToCoodinator(
         UserToCoordinatorMessage::StartSign {
             message_to_sign: message_to_sign2.clone(),
-            signing_parties: Some(vec![device_id_vec[0].clone(), device_id_vec[1].clone()]),
+            signing_parties: vec![device_id_vec[0].clone(), device_id_vec[1].clone()],
         },
     ));
     // Use signers chosen by the coordinator
@@ -54,7 +54,7 @@ fn test_end_to_end() {
     message_stack.push(Send::UserToCoodinator(
         UserToCoordinatorMessage::StartSign {
             message_to_sign: message_to_sign.clone(),
-            signing_parties: None,
+            signing_parties: vec![device_id_vec[1].clone(), device_id_vec[2].clone()],
         },
     ));
     message_stack.push(Send::UserToCoodinator(UserToCoordinatorMessage::DoKeyGen {
@@ -68,7 +68,6 @@ fn test_end_to_end() {
     let mut check_sig_requests = BTreeMap::<DeviceId, String>::default();
     let mut completed_signature_responses = vec![];
     while !message_stack.is_empty() {
-        dbg!(&message_stack);
         let to_send = message_stack.pop().unwrap();
 
         match to_send {

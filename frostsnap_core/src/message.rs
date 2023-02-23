@@ -80,7 +80,7 @@ pub enum UserToCoordinatorMessage {
     },
     StartSign {
         message_to_sign: String,
-        signing_parties: Option<Vec<DeviceId>>,
+        signing_parties: Vec<DeviceId>,
     },
 }
 

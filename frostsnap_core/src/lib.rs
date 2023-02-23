@@ -217,25 +217,15 @@ impl FrostCoordinator {
                     message_to_sign,
                     signing_parties,
                 } => {
-                    let signing_nonces: Vec<_> = match signing_parties {
-                        Some(parties) => parties
-                            .into_iter()
-                            .map(|id| {
-                                (
-                                    id,
-                                    *nonce_cache.get(&id).expect("party has left some nonce"),
-                                )
-                            })
-                            .collect(),
-                        None => {
-                            // select arbitrary nonces and devices to participate
-                            nonce_cache
-                                .into_iter()
-                                .take(frost_key.threshold())
-                                .map(|(&id, &nonce)| (id, nonce))
-                                .collect()
-                        }
-                    };
+                    let signing_nonces: Vec<_> = signing_parties
+                        .into_iter()
+                        .map(|id| {
+                            (
+                                id,
+                                *nonce_cache.get(&id).expect("party has left some nonce"),
+                            )
+                        })
+                        .collect();
                     assert_eq!(
                         signing_nonces.len(),
                         frost_key.threshold(),
@@ -272,12 +262,7 @@ impl FrostCoordinator {
                         .collect()
                 }
             },
-            CoordinatorState::Signing {
-                nonce_cache,
-                signature_shares,
-                frost_key,
-                sign_session,
-            } => match message {
+            CoordinatorState::Signing { .. } => match message {
                 UserToCoordinatorMessage::DoKeyGen { .. } => {
                     panic!("We already have a key and are signing!")
                 }
@@ -443,14 +428,7 @@ impl FrostSigner {
                     DeviceSend::ToUser(DeviceToUserMessage::CheckKeyGen { digest: keygen_id }),
                 ]
             }
-            (
-                SignerState::KeyGen {
-                    scalar_poly,
-                    devices,
-                    threshold,
-                },
-                FinishKeyGen { shares_provided },
-            ) => {
+            (SignerState::KeyGen { devices, .. }, FinishKeyGen { shares_provided }) => {
                 let frost = frost::new_with_deterministic_nonces::<Sha256>();
 
                 // Ugly unpack everything according to DeviceID sorting
