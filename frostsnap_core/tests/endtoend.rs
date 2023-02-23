@@ -65,14 +65,14 @@ fn test_end_to_end() {
 
     let mut check_keygens = BTreeMap::<DeviceId, [u8; 32]>::default();
     let mut check_frost_keys = BTreeMap::<DeviceId, FrostKey<Normal>>::default();
-    let mut check_sig_requests = BTreeMap::<DeviceId, String>::default();
+    let mut check_sig_requests = BTreeMap::<String, Vec<DeviceId>>::default();
     let mut completed_signature_responses = vec![];
     while !message_stack.is_empty() {
         let to_send = message_stack.pop().unwrap();
 
         match to_send {
             Send::DeviceToCoordinator(message) => {
-                let messages = coordinator.recv_device_message(message);
+                let messages = coordinator.recv_device_message(message).unwrap();
                 let messages = messages.into_iter().map(|message| match message {
                     CoordinatorSend::ToDevice(message) => Send::CoordinatorToDevice(message),
                     CoordinatorSend::ToUser(message) => Send::CoordinatorToUser(message),
@@ -89,7 +89,8 @@ fn test_end_to_end() {
                     let sends = devices
                         .get_mut(&destination)
                         .unwrap()
-                        .recv_coordinator_message(send.message.clone());
+                        .recv_coordinator_message(send.message.clone())
+                        .unwrap();
 
                     for send in sends {
                         match send {
@@ -104,12 +105,16 @@ fn test_end_to_end() {
                                     message_to_sign,
                                     nonces,
                                 } => {
-                                    check_sig_requests.insert(destination, message_to_sign.clone());
+                                    check_sig_requests
+                                        .entry(message_to_sign.clone())
+                                        .and_modify(|signers| signers.push(destination))
+                                        .or_insert_with(|| vec![destination]);
                                     // Simulate user pressing "sign" --> calls device.sign()
                                     let messages = devices
                                         .get_mut(&destination)
                                         .unwrap()
-                                        .sign(message_to_sign.clone(), nonces);
+                                        .sign(message_to_sign.clone(), nonces)
+                                        .unwrap();
                                     let messages =
                                         messages.into_iter().map(|message| match message {
                                             DeviceSend::ToCoordinator(message) => {
@@ -130,7 +135,7 @@ fn test_end_to_end() {
                 }
             }
             Send::UserToCoodinator(message) => {
-                let messages = coordinator.recv_user_message(message);
+                let messages = coordinator.recv_user_message(message).unwrap();
                 let messages = messages.into_iter().map(|message| match message {
                     CoordinatorSend::ToDevice(message) => Send::CoordinatorToDevice(message),
                     CoordinatorSend::ToUser(message) => Send::CoordinatorToUser(message),
@@ -171,7 +176,13 @@ fn test_end_to_end() {
         assert_eq!(key, first);
     }
 
-    assert_eq!(check_sig_requests.len(), threshold);
+    assert_eq!(check_sig_requests.len(), 2, "two messages werre signed");
+    assert!(
+        check_sig_requests
+            .values()
+            .all(|devices| devices.len() == 2),
+        "two devices signed each message"
+    );
     assert_eq!(completed_signature_responses.len(), 2);
 
     let frost_key = frost_keys.collect::<Vec<_>>()[0];
