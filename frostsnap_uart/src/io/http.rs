@@ -1,10 +1,7 @@
 use anyhow::{bail, Result};
 use log::*;
 
-use embedded_svc::{
-    http::client::*,
-    io::Write,
-};
+use embedded_svc::{http::client::*, io::Write};
 use esp_idf_svc::http::client::*;
 
 pub fn request(method: Method, url: impl AsRef<str>, data: Option<&String>) -> Result<String> {

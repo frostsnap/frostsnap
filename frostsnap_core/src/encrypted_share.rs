@@ -8,7 +8,7 @@ use sha2::{
     Sha256,
 };
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EncryptedShare {
     R: Point,
     e: [u8; 32],

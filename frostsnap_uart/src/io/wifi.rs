@@ -12,13 +12,12 @@ use std::net::Ipv4Addr;
 use esp_idf_hal::modem::Modem;
 use esp_idf_svc::eventloop::*;
 use esp_idf_svc::netif::*;
+use esp_idf_svc::nvs::*;
 use esp_idf_svc::ping;
 use esp_idf_svc::wifi::*;
-use esp_idf_svc::nvs::*;
 // use esp_idf_hal::prelude::*;
 
 pub fn wifi(wifi_ssid: &str, wifi_psk: &str, modem: Modem) -> Result<EspWifi<'static>> {
-
     // let modem = Peripherals::take().unwrap().modem;
     let sysloop = EspSystemEventLoop::take()?;
 

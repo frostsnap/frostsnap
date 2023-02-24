@@ -2,8 +2,7 @@ use crate::encrypted_share::EncryptedShare;
 use crate::String;
 use crate::Vec;
 use alloc::collections::{BTreeMap, BTreeSet};
-use schnorr_fun::frost::FrostKey;
-use schnorr_fun::fun::marker::Normal;
+use bitcoin::util::bip32::ExtendedPubKey;
 use schnorr_fun::fun::marker::Public;
 use schnorr_fun::fun::marker::Zero;
 use schnorr_fun::fun::Point;
@@ -31,9 +30,8 @@ pub struct CoordinatorToDeviceSend {
     pub message: CoordinatorToDeviceMessage,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum CoordinatorToDeviceMessage {
-    RegisterAck {},
     DoKeyGen {
         devices: BTreeSet<DeviceId>,
         threshold: usize,
@@ -42,42 +40,34 @@ pub enum CoordinatorToDeviceMessage {
         shares_provided: BTreeMap<DeviceId, KeyGenProvideShares>,
     },
     RequestSign {
-        nonces: Vec<(DeviceId, Nonce)>,
+        nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
         message_to_sign: String,
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum DeviceToCoordindatorMessage {
-    Register {
-        device_id: DeviceId,
-    },
     KeyGenProvideShares(KeyGenProvideShares),
-    KeyGenFinished {
-        from: DeviceId,
-        frost_key: FrostKey<Normal>,
-        initial_nonce: Nonce,
-    },
     SignatureShare {
         signature_share: Scalar<Public, Zero>,
-        new_nonce: Nonce,
+        new_nonces: Vec<Nonce>,
         from: DeviceId,
     },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+pub const NONCE_BATCH_SIZE: usize = 32;
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, Eq, PartialEq)]
 pub struct KeyGenProvideShares {
     pub from: DeviceId,
     pub my_poly: Vec<Point>,
-    pub shares: Vec<EncryptedShare>,
+    pub shares: BTreeMap<DeviceId, EncryptedShare>,
     pub proof_of_possession: Signature,
+    pub nonces: [Nonce; NONCE_BATCH_SIZE],
 }
 
 #[derive(Clone, Debug)]
 pub enum UserToCoordinatorMessage {
-    DoKeyGen {
-        threshold: usize,
-    },
     StartSign {
         message_to_sign: String,
         signing_parties: Vec<DeviceId>,
@@ -87,18 +77,11 @@ pub enum UserToCoordinatorMessage {
 #[derive(Clone, Debug)]
 pub enum CoordinatorToUserMessage {
     Signed { signature: Signature },
+    CheckKeyGen { xpub: ExtendedPubKey },
 }
 
 #[derive(Clone, Debug)]
 pub enum DeviceToUserMessage {
-    CheckKeyGen {
-        digest: [u8; 32],
-    },
-    FinishedFrostKey {
-        frost_key: FrostKey<Normal>,
-    },
-    SignatureRequest {
-        message_to_sign: String,
-        nonces: Vec<(DeviceId, Nonce)>,
-    },
+    CheckKeyGen { xpub: ExtendedPubKey },
+    SignatureRequest { message_to_sign: String },
 }
