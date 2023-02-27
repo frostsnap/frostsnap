@@ -409,7 +409,8 @@ impl FrostSigner {
                     .collect();
 
                 let keygen_id = create_keygen_id(&devices, Sha256::new());
-                let proof_of_possession = frost.create_proof_of_posession(&keygen_id, &scalar_poly);
+                let proof_of_possession =
+                    frost.create_proof_of_possession(Message::raw(&keygen_id), &scalar_poly);
 
                 let point_poly = frost::to_point_poly(&scalar_poly);
                 self.state = SignerState::KeyGen {
@@ -477,7 +478,7 @@ impl FrostSigner {
                     .collect();
 
                 let keygen_id = create_keygen_id(&devices, Sha256::new());
-                let keygen = frost.new_keygen(point_polys, keygen_id).unwrap();
+                let keygen = frost.new_keygen(point_polys).unwrap();
 
                 let (secret_share, frost_key) = frost
                     .finish_keygen(
@@ -485,6 +486,7 @@ impl FrostSigner {
                         my_index,
                         our_shares,
                         proofs_of_possession.clone(),
+                        Message::raw(&keygen_id),
                     )
                     .map_err(|_e| InvalidState::InvalidMessage)?;
 
