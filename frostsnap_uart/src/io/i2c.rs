@@ -3,9 +3,8 @@ use esp_idf_hal::i2c::{I2cDriver, I2cSlaveDriver};
 use std::thread;
 use std::time::Duration;
 
-use crate::message::FrostMessage;
-
-use super::DeviceIO;
+use crate::io::DeviceIO;
+use frostcore::message::FrostMessage;
 
 // Master I2C read/write all bytes
 pub fn read_from_i2c(i2c: &mut I2cDriver) -> Vec<u8> {

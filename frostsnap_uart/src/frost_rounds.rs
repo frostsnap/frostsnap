@@ -1,9 +1,4 @@
-//! Functions for handling communication rounds based on messages, expected peers, acks, and so on
-//! Proobably needs rewriting and refactoring into something more robust, though this may depend
-//! on the method of DeviceIO used
-
-use std::collections::HashMap;
-
+use crate::io::DeviceIO;
 use log::debug;
 use log::error;
 use log::info;
@@ -18,12 +13,10 @@ use schnorr_fun::fun::XOnlyKeyPair;
 use schnorr_fun::nonce::GlobalRng;
 use schnorr_fun::nonce::Synthetic;
 use schnorr_fun::Schnorr;
+use std::collections::HashMap;
 
-use crate::io::*;
-use crate::message::SetupMessage;
-use crate::message::SetupMessage::ShareConfig;
-use crate::message::*;
-use crate::OUR_INDEX;
+use frostcore::message::SetupMessage::ShareConfig;
+use frostcore::message::*;
 use sha2::Sha256;
 
 /// Receive all the [`FrostMessage`]s from peers on multiple IO ports
@@ -253,7 +246,10 @@ pub fn do_communication_round<ExpectedMessageType>(
 
 /// Complete FROST keygen by carrying out messaging sharing rounds of:
 /// [`KeygenMessage::ShareConfig`], [`KeygenMessage::Polynomial`], [`KeygenMessage::SecretShares`]
-pub fn process_keygen(io_ports: &mut [impl DeviceIO]) -> (Scalar, FrostKey<Normal>) {
+pub fn process_keygen(
+    our_index: usize,
+    io_ports: &mut [impl DeviceIO],
+) -> (Scalar, FrostKey<Normal>) {
     let nonce_gen = Synthetic::<Sha256, GlobalRng<ThreadRng>>::default();
     let schnorr = Schnorr::<Sha256, _>::new(nonce_gen.clone());
     let frost = frost::Frost::new(schnorr.clone());
@@ -265,7 +261,7 @@ pub fn process_keygen(io_ports: &mut [impl DeviceIO]) -> (Scalar, FrostKey<Norma
     let setup = FrostSetup {
         n_parties: 2,
         threshold: 2,
-        our_index: OUR_INDEX,
+        our_index,
     };
 
     // Secrets

@@ -1,6 +1,5 @@
-/.vscode
-/.embuild
-/target
-/Cargo.lock
-cfg.toml
-
+.DS_Store
+.idea
+*.log
+tmp/
+target/

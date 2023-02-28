@@ -1,7 +1,7 @@
 // use log::*;
 use anyhow::Result;
 use esp_idf_hal::units::Hertz;
-use frostdevice::{frost_core, LOG_LEVEL};
+use frostsnap::{frost_rounds, LOG_LEVEL, OUR_INDEX};
 
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_hal::{
@@ -92,7 +92,7 @@ fn main() -> Result<()> {
 
     let i2cs = &mut [i2c];
     // frost_core::process_keygen(uarts);
-    frost_core::process_keygen(i2cs);
+    frost_rounds::process_keygen(OUR_INDEX, i2cs);
 
     // neopixel.rainbow(0, 10, 10)?;
 

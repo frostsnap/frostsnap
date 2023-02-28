@@ -5,9 +5,8 @@ use std::time::Duration;
 
 use esp_idf_hal::delay::BLOCK;
 
-use crate::message::FrostMessage;
-
-use super::DeviceIO;
+use crate::io::DeviceIO;
+use frostcore::message::FrostMessage;
 
 pub fn write_to_serial(uart: &mut UartDriver, message: &str) {
     writeln!(uart, "{}", message).unwrap();

@@ -1,0 +1,18 @@
+[package]
+name = "frostsnap_core"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rand_core = { version = "0.6", default-features = false }
+schnorr_fun = { git = "https://github.com/llfourn/secp256kfun.git", rev = "51e2285be2433cdad7f0d6dc13e4b5f865cff34d", features = ["libsecp_compat", "serde", "alloc"], default-features = false }
+rand_chacha = { version = "0.3", default-features = false }
+sha2 = {  version = "0.10", default-features = false }
+chacha20 = { version = "0.9", default-features = false }
+bitcoin = { version = "0.29", features = ["no-std"], default-features = false }
+serde = { version = "1", features = ["derive"], default-features = false }
+
+[dev-dependencies]
+rand = "0.8"
