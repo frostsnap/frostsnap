@@ -3,9 +3,8 @@ use std::error::Error;
 use std::str;
 use std::time::Duration;
 
-use crate::port_writer::PortWriter;
-
-pub mod port_writer;
+pub mod serial_rw;
+use crate::serial_rw::SerialPortBincode;
 
 fn read_string() -> String {
     let mut input = String::new();
@@ -21,7 +20,7 @@ fn fetch_input(prompt: &str) -> String {
     read_string()
 }
 
-#[derive(bincode::Encode, Debug, Clone)]
+#[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
 struct FrostMessage {
     message: String,
 }
@@ -49,20 +48,33 @@ fn main() -> Result<(), Box<dyn Error>> {
             eprintln!("Failed to open \"{}\". Error: {}", &found_port, e);
             std::process::exit(1);
         });
-    let mut port_writer = PortWriter::new(port);
+    let mut port_rw = SerialPortBincode::new(port);
 
     let write_message = FrostMessage {
         message: "ayoo".to_string(),
     };
 
     loop {
-        bincode::encode_into_writer(
-            write_message.clone(),
-            &mut port_writer,
-            bincode::config::standard(),
-        )
-        .unwrap();
-        println!("Wrote!");
+        std::thread::sleep(Duration::from_millis(1000));
+        let choice = fetch_input("\nPress:\n\tr - read\n\tw - write\n");
+        if choice == "w" {
+            if let Err(e) = bincode::encode_into_writer(
+                write_message.clone(),
+                &mut port_rw,
+                bincode::config::standard(),
+            ) {
+                eprintln!("{:?}", e);
+            }
+        } else if choice == "r" {
+            let decode: Result<FrostMessage, _> =
+                bincode::decode_from_reader(&mut port_rw, bincode::config::standard());
+            match decode {
+                Ok(msg) => println!("Read: {:?}", msg),
+                Err(e) => {
+                    eprintln!("{:?}", e);
+                }
+            }
+        }
     }
 
     // loop {

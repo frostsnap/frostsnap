@@ -5,6 +5,8 @@
 pub mod uart;
 
 extern crate alloc;
+
+use crate::alloc::string::ToString;
 use alloc::string::String;
 use esp32c3_hal::{
     clock::ClockControl, gpio::IO, peripherals::Peripherals, prelude::*, timer::TimerGroup, Rtc,
@@ -12,7 +14,8 @@ use esp32c3_hal::{
 };
 use esp_backtrace as _;
 use esp_hal_common::uart::{config, TxRxPins};
-use esp_println::println;
+// use esp_println::println;
+use frostsnap_core::message::CoordinatorToDeviceMessage;
 
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
@@ -30,7 +33,7 @@ fn init_heap() {
     }
 }
 
-#[derive(bincode::Decode, Debug)]
+#[derive(bincode::Decode, Debug, bincode::Encode)]
 struct FrostMessage {
     message: String,
 }
@@ -50,6 +53,7 @@ fn main() -> ! {
     let mut wdt0 = timer_group0.wdt;
     let timer_group1 = TimerGroup::new(peripherals.TIMG1, &clocks);
     let mut wdt1 = timer_group1.wdt;
+    let mut timer0 = timer_group0.timer0;
 
     rtc.swd.disable();
     rtc.rwdt.disable();
@@ -63,20 +67,39 @@ fn main() -> ! {
         io.pins.gpio20.into_floating_input(),
     );
     let mut serial = Uart::new_with_config(
-        peripherals.UART1,
+        peripherals.UART0,
         Some(config::Config::default()),
         Some(txrx),
         &clocks,
     );
     let mut device_uart = uart::DeviceUart::new(serial);
 
+    let mut prev_time = timer0.now();
     loop {
-        let decoded: Result<FrostMessage, _> =
-            bincode::decode_from_reader(&mut device_uart, bincode::config::standard());
+        // if timer0.now() - prev_time > 10 {
+        if true {
+            prev_time = timer0.now();
+            let decoded: Result<FrostMessage, _> =
+                bincode::decode_from_reader(&mut device_uart, bincode::config::standard());
 
-        match decoded {
-            Ok(message) => println!("{:?}", message),
-            Err(e) => println!("{:?}", e),
+            let message_response = match decoded {
+                Ok(message) => {
+                    // println!("{:?}", message);
+                    "we got your message!".to_string()
+                }
+                Err(e) => {
+                    // println!("{:?}", e);
+                    "hello can you hear us".to_string()
+                }
+            };
+
+            bincode::encode_into_writer(
+                FrostMessage {
+                    message: message_response,
+                },
+                &mut device_uart,
+                bincode::config::standard(),
+            );
         }
     }
 
