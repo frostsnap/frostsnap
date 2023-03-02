@@ -1,35 +1,32 @@
-[build]
-# Uncomment the relevant target for your chip here (ESP32, ESP32-S2, ESP32-S3 or ESP32-C3)
-#target = "xtensa-esp32-espidf"
-#target = "xtensa-esp32s2-espidf"
-#target = "xtensa-esp32s3-espidf"
-target = "riscv32imc-esp-espidf"
-
-[target.xtensa-esp32-espidf]
-linker = "ldproxy"
-
-[target.xtensa-esp32s2-espidf]
-linker = "ldproxy"
-
-[target.xtensa-esp32s3-espidf]
-linker = "ldproxy"
-
-[target.riscv32imc-esp-espidf]
-linker = "ldproxy"
+[target.riscv32imc-unknown-none-elf]
 runner = "espflash --speed 921600 --monitor"
 
-# Future - necessary for the experimental "native build" of esp-idf-sys with ESP32C3
-# See also https://github.com/ivmarkov/embuild/issues/16
-rustflags = ["-C", "default-linker-libraries"]
+[build]
+rustflags = [
+  # enable the atomic codegen option for RISCV
+  "-C", "target-feature=+a",
+
+  # Tell the `core` library that we have atomics, even though it's not
+  # specified in the target definition
+  "--cfg", "target_has_atomic_load_store",
+  "--cfg", 'target_has_atomic_load_store="8"',
+  "--cfg", 'target_has_atomic_load_store="16"',
+  "--cfg", 'target_has_atomic_load_store="32"',
+  "--cfg", 'target_has_atomic_load_store="ptr"',
+  "--cfg", "target_has_atomic",
+  "--cfg", 'target_has_atomic="8"',
+  "--cfg", 'target_has_atomic="16"',
+  "--cfg", 'target_has_atomic="32"',
+  "--cfg", 'target_has_atomic="ptr"',
+
+  # Required to obtain backtraces (e.g. when using the "esp-backtrace" crate.)
+  # NOTE: May negatively impact performance of produced code
+  "-C", "force-frame-pointers",
+  "-C", "link-arg=-Tlinkall.x"
+]
+target = "riscv32imc-unknown-none-elf"
+
 
 [unstable]
-
-build-std = ["std", "panic_abort"]
-build-std-features = ["panic_immediate_abort"] # Required for older ESP-IDF versions without a realpath implementation
-
-[env]
-# Note: these variables are not used when using pio builder
-# Enables the esp-idf-sys "native" build feature (`cargo build --features native`) to build against ESP-IDF stable (v4.4)
-ESP_IDF_VERSION = { value = "branch:release/v4.4" }
-# Enables the esp-idf-sys "native" build feature (`cargo build --features native`) to build against ESP-IDF master (mainline)
-#ESP_IDF_VERSION = { value = "master" }
+build-std = ["alloc", "core"]
+# build-std = ["core"]
