@@ -21,7 +21,7 @@ use esp32c3_hal::{
 use esp_backtrace as _;
 use esp_hal_common::uart::{config, TxRxPins};
 use esp_println::println;
-use nb::{block, Error, Result};
+use nb::block;
 
 static SERIAL: Mutex<RefCell<Option<Uart<UART0>>>> = Mutex::new(RefCell::new(None));
 static RES_BUF: Mutex<RefCell<Option<vec::Vec<u8>>>> = Mutex::new(RefCell::new(None));
@@ -42,7 +42,7 @@ fn init_heap() {
     }
 }
 
-#[derive(bincode::Decode)]
+#[derive(bincode::Decode, Debug)]
 struct FrostMessage {
     message: String,
 }
@@ -84,9 +84,13 @@ fn main() -> ! {
     let mut device_uart = uart::DeviceUart::new(serial);
 
     loop {
-        let decoded: FrostMessage =
-            bincode::decode_from_reader(&mut device_uart, bincode::config::standard()).unwrap();
-        // println!("{:?}", decoded);
+        let decoded: Result<FrostMessage, _> =
+            bincode::decode_from_reader(&mut device_uart, bincode::config::standard());
+
+        match decoded {
+            Ok(message) => println!("{:?}", message),
+            Err(e) => println!("{:?}", e),
+        }
     }
 
     // loop {}

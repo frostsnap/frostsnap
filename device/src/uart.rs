@@ -1,5 +1,6 @@
 extern crate alloc;
 use crate::uart::uart::Instance;
+use alloc::format;
 use alloc::{string::String, vec};
 use bincode::de::read::Reader;
 use bincode::error::DecodeError;
@@ -26,7 +27,7 @@ impl<'a> Reader for DeviceUart<'a> {
         let mut buf: vec::Vec<u8> = vec::Vec::new();
         for i in 0..n {
             let c = match self.uart.read() {
-                Err(_) => return Err(DecodeError::LimitExceeded),
+                Err(e) => return Err(DecodeError::OtherString(format!("{:?}", e))),
                 Ok(c) => c,
             };
             bytes[i] = c;
