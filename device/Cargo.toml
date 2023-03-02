@@ -15,7 +15,7 @@ critical-section = "1.1.1"
 esp-println       = { version = "0.3.1", features = ["esp32c3"] }
 display-interface-spi = "0.4.1"
 mipidsi = { version = "0.6.0", features = ["batch"] }
-bincode = { version = "2.0.0-rc.2", default-features = false, features = ["alloc", "derive"] } 
+bincode = { version = "2.0.0-rc.2", default-features = false, features = ["alloc", "derive", "serde"] } 
 
 [package.metadata.espflash]
 # bootloader      = "bootloader.bin" # Must be a binary file

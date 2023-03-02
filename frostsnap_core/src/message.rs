@@ -1,8 +1,10 @@
 use crate::encrypted_share::EncryptedShare;
+use crate::xpub::ExtendedPubKey;
 use crate::String;
 use crate::Vec;
-use crate::xpub::ExtendedPubKey;
 use alloc::collections::{BTreeMap, BTreeSet};
+use bincode::Decode;
+use bincode::Encode;
 use schnorr_fun::fun::marker::Public;
 use schnorr_fun::fun::marker::Zero;
 use schnorr_fun::fun::Point;
@@ -24,7 +26,7 @@ pub enum CoordinatorSend {
     ToUser(CoordinatorToUserMessage),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct CoordinatorToDeviceSend {
     pub destination: Option<DeviceId>,
     pub message: CoordinatorToDeviceMessage,

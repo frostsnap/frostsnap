@@ -421,6 +421,7 @@ dependencies = [
 name = "device"
 version = "0.1.0"
 dependencies = [
+ "bincode 2.0.0-rc.2",
  "critical-section",
  "display-interface-spi",
  "esp-alloc",
@@ -428,6 +429,7 @@ dependencies = [
  "esp-hal-common",
  "esp-println",
  "esp32c3-hal",
+ "frostsnap_core",
  "mipidsi",
 ]
 
@@ -599,6 +601,7 @@ checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 name = "frostsnap_core"
 version = "0.1.0"
 dependencies = [
+ "bincode 2.0.0-rc.2",
  "chacha20",
  "rand_chacha",
  "rand_core",

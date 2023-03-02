@@ -14,7 +14,7 @@ pub struct DeviceUart<'a> {
     uart: Uart<'a, UART0>,
 }
 
-impl DeviceUart<'a> {
+impl<'a> DeviceUart<'a> {
     pub fn new(uart: Uart<'a, UART0>) -> Self {
         Self { uart }
     }
@@ -24,7 +24,6 @@ impl<'a> Reader for DeviceUart<'a> {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), DecodeError> {
         let n = bytes.len();
         let mut buf: vec::Vec<u8> = vec::Vec::new();
-
         for i in 0..n {
             let c = match self.uart.read() {
                 Err(_) => return Err(DecodeError::LimitExceeded),
@@ -32,7 +31,6 @@ impl<'a> Reader for DeviceUart<'a> {
             };
             bytes[i] = c;
         }
-
         Ok(())
     }
 }

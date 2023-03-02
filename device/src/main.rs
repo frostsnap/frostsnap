@@ -42,6 +42,11 @@ fn init_heap() {
     }
 }
 
+// #[derive(de::Decode)]
+// struct FrostMessage {
+//     message: String,
+// }
+
 #[entry]
 fn main() -> ! {
     init_heap();
@@ -78,9 +83,11 @@ fn main() -> ! {
     );
     let device_uart = uart::DeviceUart::new(serial);
 
-    loop {
-        let decoded: frostsnap_core::message::CoordinatorToDeviceSend =
-            bincode::decode_from_reader(device_uart, bincode::config::standard()).unwrap();
-        println!("{:?}", decoded);
-    }
+    // loop {
+    //     let decoded: FrostMessage =
+    //         bincode::decode_from_reader(device_uart, bincode::config::standard()).unwrap();
+    //     // println!("{:?}", decoded);
+    // }
+
+    loop {}
 }
