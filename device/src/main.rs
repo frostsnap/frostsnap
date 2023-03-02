@@ -42,10 +42,10 @@ fn init_heap() {
     }
 }
 
-// #[derive(de::Decode)]
-// struct FrostMessage {
-//     message: String,
-// }
+#[derive(bincode::Decode)]
+struct FrostMessage {
+    message: String,
+}
 
 #[entry]
 fn main() -> ! {
@@ -81,13 +81,13 @@ fn main() -> ! {
         Some(txrx),
         &clocks,
     );
-    let device_uart = uart::DeviceUart::new(serial);
+    let mut device_uart = uart::DeviceUart::new(serial);
 
-    // loop {
-    //     let decoded: FrostMessage =
-    //         bincode::decode_from_reader(device_uart, bincode::config::standard()).unwrap();
-    //     // println!("{:?}", decoded);
-    // }
+    loop {
+        let decoded: FrostMessage =
+            bincode::decode_from_reader(&mut device_uart, bincode::config::standard()).unwrap();
+        // println!("{:?}", decoded);
+    }
 
-    loop {}
+    // loop {}
 }

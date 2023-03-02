@@ -431,6 +431,7 @@ dependencies = [
  "esp32c3-hal",
  "frostsnap_core",
  "mipidsi",
+ "serde",
 ]
 
 [[package]]
