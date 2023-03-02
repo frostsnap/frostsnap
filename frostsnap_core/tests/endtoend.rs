@@ -3,9 +3,11 @@ use frostsnap_core::message::{
     DeviceToCoordindatorMessage, DeviceToUserMessage,
 };
 use frostsnap_core::{DeviceId, FrostCoordinator, FrostSigner};
+use rand_chacha::ChaCha20Rng;
 use schnorr_fun::{frost, fun::marker::Public, Message};
 use sha2::Sha256;
 use std::collections::{BTreeMap, BTreeSet};
+use rand_chacha::rand_core::SeedableRng;
 
 #[derive(Debug)]
 pub enum Send {
@@ -35,9 +37,10 @@ fn test_end_to_end() {
     let n_parties = 3;
     let threshold = 2;
     let mut coordinator = FrostCoordinator::new();
+    let mut test_rng = ChaCha20Rng::from_seed([42u8;32]);
 
     let mut devices = (0..n_parties)
-        .map(|_| FrostSigner::new_random(&mut rand::thread_rng()))
+        .map(|_| FrostSigner::new_random(&mut test_rng))
         .map(|device| (device.device_id(), device))
         .collect::<BTreeMap<_, _>>();
 

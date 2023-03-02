@@ -1,7 +1,6 @@
 #![no_std]
 
-pub use bitcoin;
-
+pub mod xpub;
 pub mod encrypted_share;
 pub mod message;
 
@@ -22,7 +21,6 @@ use alloc::{
     vec::Vec,
 };
 
-use bitcoin::util::bip32::{ChainCode, ChildNumber, ExtendedPubKey, Fingerprint};
 use rand_chacha::ChaCha20Rng;
 use rand_core::RngCore;
 use schnorr_fun::{
@@ -33,6 +31,7 @@ use schnorr_fun::{
 };
 use sha2::digest::Digest;
 use sha2::Sha256;
+use xpub::ExtendedPubKey;
 
 #[derive(Debug, Clone)]
 pub struct FrostCoordinator {
@@ -91,7 +90,7 @@ impl FrostCoordinator {
                                 Ok(frost_key) => frost_key,
                                 Err(_) => todo!("should notify user somehow that everything was fucked and we're canceling it"),
                             };
-                            let xpub = frost_key_to_xpub(frost_key.public_key(), keygen_id);
+                            let xpub = ExtendedPubKey::new(frost_key.public_key(), keygen_id);
                             let device_nonces = shares_provided
                                 .iter()
                                 .map(|(device_id, share)| {
@@ -563,7 +562,7 @@ impl FrostSigner {
                     )
                     .map_err(|_e| InvalidState::InvalidMessage)?;
 
-                let xpub = frost_key_to_xpub(frost_key.public_key(), keygen_id);
+                let xpub = ExtendedPubKey::new(frost_key.public_key(), keygen_id);
                 self.state = SignerState::FrostKey {
                     key: FrostsnapKey {
                         frost_key,
@@ -772,13 +771,3 @@ pub enum ActionError {
     WrongState,
 }
 
-fn frost_key_to_xpub(public_key: Point, keygen_id: [u8; 32]) -> ExtendedPubKey {
-    ExtendedPubKey {
-        network: bitcoin::Network::Bitcoin,
-        depth: 0,
-        parent_fingerprint: Fingerprint::default(),
-        child_number: ChildNumber::from_normal_idx(0).unwrap(),
-        public_key: public_key.into(),
-        chain_code: ChainCode::from(&keygen_id[..]),
-    }
-}

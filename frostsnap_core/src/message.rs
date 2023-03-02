@@ -1,8 +1,8 @@
 use crate::encrypted_share::EncryptedShare;
 use crate::String;
 use crate::Vec;
+use crate::xpub::ExtendedPubKey;
 use alloc::collections::{BTreeMap, BTreeSet};
-use bitcoin::util::bip32::ExtendedPubKey;
 use schnorr_fun::fun::marker::Public;
 use schnorr_fun::fun::marker::Zero;
 use schnorr_fun::fun::Point;
