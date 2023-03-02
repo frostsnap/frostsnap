@@ -1,0 +1,6 @@
+[frostdevice]
+wifi_ssid = ""
+wifi_psk = ""
+frost_server = ""
+threshold = "2"
+n_parties = "2"

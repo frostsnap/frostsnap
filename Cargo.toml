@@ -3,4 +3,5 @@
 members = [
     "frostsnap_core",
     "frostsnap_uart",
+    "device",
 ]
