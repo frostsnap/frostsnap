@@ -2,9 +2,8 @@ use crate::encrypted_share::EncryptedShare;
 use crate::xpub::ExtendedPubKey;
 use crate::String;
 use crate::Vec;
+
 use alloc::collections::{BTreeMap, BTreeSet};
-use bincode::Decode;
-use bincode::Encode;
 use schnorr_fun::fun::marker::Public;
 use schnorr_fun::fun::marker::Zero;
 use schnorr_fun::fun::Point;

@@ -5,26 +5,14 @@
 pub mod uart;
 
 extern crate alloc;
-use alloc::{string::String, vec};
-use core::{cell::RefCell, fmt::Write, str};
-use critical_section::Mutex;
+use alloc::string::String;
 use esp32c3_hal::{
-    clock::ClockControl,
-    gpio::IO,
-    interrupt,
-    peripherals::{self, Peripherals, UART0},
-    prelude::*,
-    riscv,
-    timer::TimerGroup,
-    Cpu, Delay, Rtc, Uart,
+    clock::ClockControl, gpio::IO, peripherals::Peripherals, prelude::*, timer::TimerGroup, Rtc,
+    Uart,
 };
 use esp_backtrace as _;
 use esp_hal_common::uart::{config, TxRxPins};
 use esp_println::println;
-use nb::block;
-
-static SERIAL: Mutex<RefCell<Option<Uart<UART0>>>> = Mutex::new(RefCell::new(None));
-static RES_BUF: Mutex<RefCell<Option<vec::Vec<u8>>>> = Mutex::new(RefCell::new(None));
 
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
@@ -51,7 +39,7 @@ struct FrostMessage {
 fn main() -> ! {
     init_heap();
     let peripherals = Peripherals::take();
-    let mut system = peripherals.SYSTEM.split();
+    let system = peripherals.SYSTEM.split();
     // default 80MHz
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
     // let clocks = ClockControl::configure(system.clock_control, CpuClock::Clock160MHz).freeze();
@@ -62,7 +50,6 @@ fn main() -> ! {
     let mut wdt0 = timer_group0.wdt;
     let timer_group1 = TimerGroup::new(peripherals.TIMG1, &clocks);
     let mut wdt1 = timer_group1.wdt;
-    let mut timer0 = timer_group0.timer0;
 
     rtc.swd.disable();
     rtc.rwdt.disable();
