@@ -63,7 +63,7 @@ fn main() -> ! {
         io.pins.gpio20.into_floating_input(),
     );
     let mut serial = Uart::new_with_config(
-        peripherals.UART0,
+        peripherals.UART1,
         Some(config::Config::default()),
         Some(txrx),
         &clocks,
