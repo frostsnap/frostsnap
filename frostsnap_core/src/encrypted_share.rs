@@ -42,15 +42,18 @@ impl EncryptedShare {
 #[cfg(test)]
 mod test {
     use super::*;
+    use rand_chacha::ChaCha20Rng;
+    use rand_core::SeedableRng;
     use schnorr_fun::fun::s;
 
     #[test]
     fn encryption_roundtrip() {
-        let sk = Scalar::random(&mut rand::thread_rng());
+        let sk = s!(1337);
         let pk = g!(sk * G).normalize();
         let share = s!(42).mark_zero();
+        let mut rng = ChaCha20Rng::from_seed([12u8;32]);
 
-        let ciphertext = EncryptedShare::new(pk, &mut rand::thread_rng(), &share);
+        let ciphertext = EncryptedShare::new(pk, &mut rng, &share);
         let decrypted = ciphertext.decrypt(&sk);
 
         assert_eq!(decrypted, s!(42));
