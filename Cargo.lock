@@ -232,6 +232,7 @@ name = "coordinator-cli"
 version = "0.1.0"
 dependencies = [
  "bincode 2.0.0-rc.2",
+ "frostsnap_core",
  "rand",
  "schnorr_fun 0.7.1",
  "serde",
