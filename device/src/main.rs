@@ -2,6 +2,8 @@
 #![no_std]
 #![no_main]
 
+pub mod uart;
+
 extern crate alloc;
 use alloc::{string::String, vec};
 use core::{cell::RefCell, fmt::Write, str};
@@ -14,7 +16,7 @@ use esp32c3_hal::{
     prelude::*,
     riscv,
     timer::TimerGroup,
-    uart, Cpu, Delay, Rtc, Uart,
+    Cpu, Delay, Rtc, Uart,
 };
 use esp_backtrace as _;
 use esp_hal_common::uart::{config, TxRxPins};
@@ -74,72 +76,11 @@ fn main() -> ! {
         Some(txrx),
         &clocks,
     );
-
-    timer0.start(1u64.secs());
-    let mut delay = Delay::new(&clocks);
-    delay.delay_ms(1000u32);
-
-    // let mut current_time: u64;
+    let device_uart = uart::DeviceUart::new(serial);
 
     loop {
-        let mut i = 0;
-        let mut prev_time: u64 = timer0.now();
-        let mut buf: vec::Vec<u8> = vec::Vec::new();
-        loop {
-            match serial.read() {
-                Ok(c) => {
-                    prev_time = timer0.now();
-
-                    buf.push(c);
-                    i += 1;
-
-                    // writeln!(serial, "received: {}", c as char).ok();
-                }
-                Err(_e) => {
-                    let current_time = timer0.now();
-                    // delay.delay_ms(100u32);
-                    let last_read = (current_time - prev_time) / 40_000;
-                    // println!("{} {}", last_read, i);
-
-                    if i > 0 && last_read > 100 {
-                        println!("finish reading");
-
-                        let s = String::from_utf8(buf).unwrap();
-                        writeln!(serial, "{}", s).ok();
-                        writeln!(serial, "length: {} bytes", i).ok();
-
-                        break;
-                    } else if last_read > 1000 {
-                        // println!("timeout");
-                        break;
-                    }
-
-                    continue;
-                    // match e {
-                    //     Error::WouldBlock => continue,
-                    //     _ => println!("{:?}", e)
-                    // }
-                }
-            }
-        }
-
-        // i += 1;
-        // let mut buf: vec::Vec<u8> = vec::Vec::new();
-        // let mut len = 0;
-        // while let nb::Result::Ok(c) = serial.read() {
-        //     buf.push(c);
-        //     len += 1;
-        //     // println!("{}", c as char);
-        //     writeln!(serial, "{}, {}", c as char, len).ok();
-        //     // delay.delay_us(10000u32);
-        // }
-
-        // if !buf.is_empty() {
-        //     let string = String::from_utf8(buf).unwrap();
-        //     // writeln!(serial, "received: {}, length: {} bytes", string, len).unwrap();
-        //     println!("{}, length: {}", string, len);
-        // }
-
-        // block!(timer0.wait()).unwrap();
+        let decoded: frostsnap_core::message::CoordinatorToDeviceSend =
+            bincode::decode_from_reader(device_uart, bincode::config::standard()).unwrap();
+        println!("{:?}", decoded);
     }
 }
