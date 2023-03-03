@@ -95,7 +95,6 @@ fn main() -> ! {
     let mut frost_device = frostsnap_core::FrostSigner::new(keypair);
 
     loop {
-        let mut delay = esp32c3_hal::Delay::new(&clocks);
         delay.delay_ms(3000 as u32);
         let decoded: Result<DeviceReceiveSerial, _> =
             bincode::decode_from_reader(&mut device_uart, bincode::config::standard());
