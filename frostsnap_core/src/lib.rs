@@ -1,8 +1,8 @@
 #![no_std]
 
-pub mod xpub;
 pub mod encrypted_share;
 pub mod message;
+pub mod xpub;
 
 #[macro_use]
 extern crate alloc;
@@ -381,8 +381,15 @@ impl FrostSigner {
     pub fn new(keypair: KeyPair) -> Self {
         Self {
             keypair,
-            state: SignerState::Registered,
+            state: SignerState::Unregistered,
             nonce_counter: 0,
+        }
+    }
+
+    pub fn announce(&mut self) -> DeviceToCoordindatorMessage {
+        self.state = SignerState::Registered;
+        DeviceToCoordindatorMessage::Announce {
+            from: self.device_id(),
         }
     }
 
@@ -691,6 +698,7 @@ impl FrostSigner {
 
     pub fn frost_key(&self) -> Option<&FrostKey<Normal>> {
         match self.state() {
+            SignerState::Unregistered => None,
             SignerState::Registered => None,
             SignerState::KeyGen { .. } => None,
             SignerState::FrostKey { key, .. } => Some(&key.frost_key),
@@ -701,6 +709,7 @@ impl FrostSigner {
 
 #[derive(Clone, Debug)]
 pub enum SignerState {
+    Unregistered,
     Registered,
     KeyGen {
         scalar_poly: Vec<Scalar>,
@@ -770,4 +779,3 @@ pub enum StartSignError {
 pub enum ActionError {
     WrongState,
 }
-
