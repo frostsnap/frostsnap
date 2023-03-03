@@ -1,4 +1,8 @@
-use frostsnap_core::message::CoordinatorToDeviceMessage;
+use bincode::{BorrowDecode, Decode, Encode};
+use frostsnap_core::message::{
+    CoordinatorToDeviceMessage, CoordinatorToDeviceSend, DeviceToCoordindatorMessage,
+};
+// use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::str;
 use std::time::Duration;
@@ -20,9 +24,16 @@ fn fetch_input(prompt: &str) -> String {
     read_string()
 }
 
-#[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
-struct FrostMessage {
-    message: String,
+#[derive(Encode, Debug, Clone)]
+struct CoordinatorSendSerial {
+    #[bincode(with_serde)]
+    message: CoordinatorToDeviceSend,
+}
+
+#[derive(Decode, Debug, Clone)]
+struct CoordinatorReceiveSerial {
+    #[bincode(with_serde)]
+    message: DeviceToCoordindatorMessage,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -50,30 +61,50 @@ fn main() -> Result<(), Box<dyn Error>> {
         });
     let mut port_rw = SerialPortBincode::new(port);
 
-    let write_message = FrostMessage {
-        message: "ayoo".to_string(),
-    };
+    let mut coordinator = frostsnap_core::FrostCoordinator::new();
 
     loop {
         // std::thread::sleep(Duration::from_millis(1000));
         let choice = fetch_input("\nPress:\n\tr - read\n\tw - write\n");
         if choice == "w" {
-            if let Err(e) = bincode::encode_into_writer(
-                write_message.clone(),
-                &mut port_rw,
-                bincode::config::standard(),
-            ) {
-                eprintln!("{:?}", e);
-            }
+            // if let Err(e) = bincode::encode_into_writer(
+            //     write_message.clone(),
+            //     &mut port_rw,
+            //     bincode::config::standard(),
+            // ) {
+            //     eprintln!("{:?}", e);
+            // }
+            println!("Wrote nothing..");
         } else if choice == "r" {
-            let decode: Result<FrostMessage, _> =
+            let decode: Result<CoordinatorReceiveSerial, _> =
                 bincode::decode_from_reader(&mut port_rw, bincode::config::standard());
-            match decode {
-                Ok(msg) => println!("Read: {:?}", msg),
+            let sends = match decode {
+                Ok(msg) => {
+                    println!("Read: {:?}", msg);
+                    coordinator.recv_device_message(msg.message).unwrap()
+                }
                 Err(e) => {
                     eprintln!("{:?}", e);
+                    vec![]
+                }
+            };
+            for send in sends {
+                match send {
+                    frostsnap_core::message::CoordinatorSend::ToDevice(msg) => {
+                        let serial_msg = CoordinatorSendSerial { message: msg };
+                        if let Err(e) = bincode::encode_into_writer(
+                            serial_msg.clone(),
+                            &mut port_rw,
+                            bincode::config::standard(),
+                        ) {
+                            eprintln!("{:?}", e);
+                        }
+                    }
+                    frostsnap_core::message::CoordinatorSend::ToUser(_) => todo!(),
                 }
             }
+        } else {
+            println!("Did nothing..");
         }
     }
     Ok(())

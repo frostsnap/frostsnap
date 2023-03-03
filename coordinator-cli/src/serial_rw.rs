@@ -2,6 +2,8 @@ use bincode::{de::read::Reader, enc::write::Writer};
 use serialport::SerialPort;
 use std::io::{self, Write};
 
+use crate::CoordinatorSendSerial;
+
 pub struct SerialPortBincode {
     port: Box<dyn SerialPort>,
 }
@@ -11,6 +13,14 @@ impl SerialPortBincode {
         Self { port }
     }
 }
+
+// fn write_frost_message(
+//     port_rw: SerialPortBincode,
+//     write_message: CoordinatorSendSerial,
+//     config: bincode::config::Configuration,
+// ) -> Result<(), bincode::error::EncodeError> {
+//     bincode::encode_into_writer(write_message, mut port_rw, config)
+// }
 
 impl Writer for SerialPortBincode {
     fn write(&mut self, bytes: &[u8]) -> Result<(), bincode::error::EncodeError> {
