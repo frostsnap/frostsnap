@@ -75,31 +75,27 @@ fn main() -> ! {
     let mut device_uart = uart::DeviceUart::new(serial);
 
     let mut prev_time = timer0.now();
+    let message_response = "Hello i am the device".to_string();
+    let mut delay = esp32c3_hal::Delay::new(&clocks);
     loop {
-        // if timer0.now() - prev_time > 10 {
+        delay.delay_ms((1) as u32);
         if true {
             prev_time = timer0.now();
             let decoded: Result<FrostMessage, _> =
                 bincode::decode_from_reader(&mut device_uart, bincode::config::standard());
 
-            let message_response = match decoded {
+            match decoded {
                 Ok(message) => {
-                    // println!("{:?}", message);
-                    "we got your message!".to_string()
+                    bincode::encode_into_writer(
+                        FrostMessage {
+                            message: "I am the device and I received your message".to_string(),
+                        },
+                        &mut device_uart,
+                        bincode::config::standard(),
+                    );
                 }
-                Err(e) => {
-                    // println!("{:?}", e);
-                    "hello can you hear us".to_string()
-                }
+                Err(e) => {}
             };
-
-            bincode::encode_into_writer(
-                FrostMessage {
-                    message: message_response,
-                },
-                &mut device_uart,
-                bincode::config::standard(),
-            );
         }
     }
 
