@@ -234,7 +234,7 @@ dependencies = [
  "bincode 2.0.0-rc.2",
  "frostsnap_core",
  "rand",
- "schnorr_fun 0.7.1",
+ "schnorr_fun",
  "serde",
  "serde_json",
  "serialport",
@@ -432,6 +432,7 @@ dependencies = [
  "esp32c3-hal",
  "frostsnap_core",
  "mipidsi",
+ "schnorr_fun",
 ]
 
 [[package]]
@@ -605,7 +606,7 @@ dependencies = [
  "chacha20",
  "rand_chacha",
  "rand_core",
- "schnorr_fun 0.8.2",
+ "schnorr_fun",
  "serde",
  "sha2 0.10.6",
 ]
@@ -1249,19 +1250,10 @@ checksum = "7b4b9743ed687d4b4bcedf9ff5eaa7398495ae14e61cba0a295704edbc7decde"
 
 [[package]]
 name = "schnorr_fun"
-version = "0.7.1"
-source = "git+https://github.com/LLFourn/secp256kfun?rev=a9a306bb2c76aff3d73bfad07087b0976737f71d#a9a306bb2c76aff3d73bfad07087b0976737f71d"
-dependencies = [
- "secp256kfun 0.7.1",
- "serde",
-]
-
-[[package]]
-name = "schnorr_fun"
 version = "0.8.2"
 source = "git+https://github.com/llfourn/secp256kfun.git?rev=51e2285be2433cdad7f0d6dc13e4b5f865cff34d#51e2285be2433cdad7f0d6dc13e4b5f865cff34d"
 dependencies = [
- "secp256kfun 0.8.2",
+ "secp256kfun",
 ]
 
 [[package]]
@@ -1293,17 +1285,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "83080e2c2fc1006e625be82e5d1eb6a43b7fd9578b617fcc55814daf286bba4b"
 dependencies = [
  "cc",
-]
-
-[[package]]
-name = "secp256kfun"
-version = "0.7.1"
-source = "git+https://github.com/LLFourn/secp256kfun?rev=a9a306bb2c76aff3d73bfad07087b0976737f71d#a9a306bb2c76aff3d73bfad07087b0976737f71d"
-dependencies = [
- "digest 0.10.6",
- "rand_core",
- "serde",
- "subtle-ng",
 ]
 
 [[package]]

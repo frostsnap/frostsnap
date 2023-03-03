@@ -5,17 +5,24 @@
 pub mod uart;
 
 extern crate alloc;
-
 use crate::alloc::string::ToString;
 use alloc::string::String;
+use alloc::vec;
+use bincode::{Decode, Encode};
 use esp32c3_hal::{
     clock::ClockControl, gpio::IO, peripherals::Peripherals, prelude::*, timer::TimerGroup, Rtc,
     Uart,
 };
 use esp_backtrace as _;
 use esp_hal_common::uart::{config, TxRxPins};
-// use esp_println::println;
+use esp_println::println;
 use frostsnap_core::message::CoordinatorToDeviceMessage;
+use frostsnap_core::message::CoordinatorToDeviceSend;
+use frostsnap_core::message::DeviceSend;
+use frostsnap_core::message::DeviceToCoordindatorMessage;
+use schnorr_fun::frost;
+use schnorr_fun::fun::s;
+use schnorr_fun::fun::KeyPair;
 
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
@@ -33,9 +40,16 @@ fn init_heap() {
     }
 }
 
-#[derive(bincode::Decode, Debug, bincode::Encode)]
-struct FrostMessage {
-    message: String,
+#[derive(Decode, Debug, Clone)]
+struct DeviceReceiveSerial {
+    #[bincode(with_serde)]
+    message: CoordinatorToDeviceMessage,
+}
+
+#[derive(Encode, Debug, Clone)]
+struct DeviceSendSerial {
+    #[bincode(with_serde)]
+    message: DeviceToCoordindatorMessage,
 }
 
 #[entry]
@@ -75,29 +89,44 @@ fn main() -> ! {
     let mut device_uart = uart::DeviceUart::new(serial);
 
     let mut prev_time = timer0.now();
-    let message_response = "Hello i am the device".to_string();
     let mut delay = esp32c3_hal::Delay::new(&clocks);
-    loop {
-        delay.delay_ms((1) as u32);
-        if true {
-            prev_time = timer0.now();
-            let decoded: Result<FrostMessage, _> =
-                bincode::decode_from_reader(&mut device_uart, bincode::config::standard());
 
-            match decoded {
-                Ok(message) => {
-                    bincode::encode_into_writer(
-                        FrostMessage {
-                            message: "I am the device and I received your message".to_string(),
-                        },
+    let keypair = KeyPair::new(s!(42));
+    let mut frost_device = frostsnap_core::FrostSigner::new(keypair);
+
+    loop {
+        let mut delay = esp32c3_hal::Delay::new(&clocks);
+        delay.delay_ms(3000 as u32);
+        let decoded: Result<DeviceReceiveSerial, _> =
+            bincode::decode_from_reader(&mut device_uart, bincode::config::standard());
+
+        let sends = match decoded {
+            Ok(message) => {
+                let sends = frost_device
+                    .recv_coordinator_message(message.message)
+                    .unwrap();
+                sends
+            }
+            Err(e) => {
+                let announce = frost_device.announce();
+                vec![DeviceSend::ToCoordinator(announce)]
+            }
+        };
+        for send in sends {
+            match send {
+                frostsnap_core::message::DeviceSend::ToCoordinator(msg) => {
+                    let serial_msg = DeviceSendSerial { message: msg };
+                    if let Err(e) = bincode::encode_into_writer(
+                        serial_msg.clone(),
                         &mut device_uart,
                         bincode::config::standard(),
-                    );
+                    ) {
+                        // eprintln!("{:?}", e);
+                    }
                 }
-                Err(e) => {}
-            };
+                frostsnap_core::message::DeviceSend::ToUser(_) => todo!(),
+            }
         }
     }
-
     // loop {}
 }

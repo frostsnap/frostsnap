@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 bincode = { version = "2.0.0-rc.2", default-features = false, features = ["alloc", "derive", "serde"] } 
 frostsnap_core = { path = "../frostsnap_core" }
-schnorr_fun = { git = "https://github.com/LLFourn/secp256kfun", rev = "a9a306bb2c76aff3d73bfad07087b0976737f71d", features = ["serde"] }
+schnorr_fun = { git = "https://github.com/llfourn/secp256kfun.git", rev = "51e2285be2433cdad7f0d6dc13e4b5f865cff34d", features = ["alloc"], default-features = false }
 sha2 = "0.9"
 rand = { version = "0.8" }
 sled = "0.34.4"

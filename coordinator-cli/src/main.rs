@@ -1,11 +1,14 @@
-use bincode::{BorrowDecode, Decode, Encode};
+use bincode::{Decode, Encode};
 use frostsnap_core::message::{
-    CoordinatorToDeviceMessage, CoordinatorToDeviceSend, DeviceToCoordindatorMessage,
+    CoordinatorSend, CoordinatorToDeviceSend, DeviceToCoordindatorMessage,
 };
 // use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::str;
 use std::time::Duration;
+
+extern crate alloc;
+use alloc::collections::BTreeSet;
 
 pub mod serial_rw;
 use crate::serial_rw::SerialPortBincode;
@@ -63,10 +66,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut coordinator = frostsnap_core::FrostCoordinator::new();
 
+    let mut devices = BTreeSet::new();
     loop {
+        println!("Registered devices: {:?}", &devices);
         // std::thread::sleep(Duration::from_millis(1000));
-        let choice = fetch_input("\nPress:\n\tr - read\n\tw - write\n");
-        if choice == "w" {
+        let choice = fetch_input("\nPress:\n\tr - read\n\tw - write\n\n\tk - start keygen\n");
+        let sends = if choice == "w" {
             // if let Err(e) = bincode::encode_into_writer(
             //     write_message.clone(),
             //     &mut port_rw,
@@ -75,36 +80,54 @@ fn main() -> Result<(), Box<dyn Error>> {
             //     eprintln!("{:?}", e);
             // }
             println!("Wrote nothing..");
+            vec![]
         } else if choice == "r" {
             let decode: Result<CoordinatorReceiveSerial, _> =
                 bincode::decode_from_reader(&mut port_rw, bincode::config::standard());
             let sends = match decode {
                 Ok(msg) => {
                     println!("Read: {:?}", msg);
-                    coordinator.recv_device_message(msg.message).unwrap()
+
+                    match msg.message {
+                        DeviceToCoordindatorMessage::Announce { from } => {
+                            println!("Registered new device..");
+                            devices.insert(from);
+                            vec![]
+                        }
+                        _ => coordinator.recv_device_message(msg.message).unwrap(),
+                    }
                 }
                 Err(e) => {
                     eprintln!("{:?}", e);
                     vec![]
                 }
             };
-            for send in sends {
-                match send {
-                    frostsnap_core::message::CoordinatorSend::ToDevice(msg) => {
-                        let serial_msg = CoordinatorSendSerial { message: msg };
-                        if let Err(e) = bincode::encode_into_writer(
-                            serial_msg.clone(),
-                            &mut port_rw,
-                            bincode::config::standard(),
-                        ) {
-                            eprintln!("{:?}", e);
-                        }
-                    }
-                    frostsnap_core::message::CoordinatorSend::ToUser(_) => todo!(),
-                }
-            }
+            sends
+        } else if choice == "k" {
+            coordinator
+                .do_keygen(&devices, devices.len())
+                .unwrap()
+                .into_iter()
+                .map(|msg| CoordinatorSend::ToDevice(msg))
+                .collect()
         } else {
             println!("Did nothing..");
+            vec![]
+        };
+        for send in sends {
+            match send {
+                frostsnap_core::message::CoordinatorSend::ToDevice(msg) => {
+                    let serial_msg = CoordinatorSendSerial { message: msg };
+                    if let Err(e) = bincode::encode_into_writer(
+                        serial_msg.clone(),
+                        &mut port_rw,
+                        bincode::config::standard(),
+                    ) {
+                        eprintln!("{:?}", e);
+                    }
+                }
+                frostsnap_core::message::CoordinatorSend::ToUser(_) => todo!(),
+            }
         }
     }
     Ok(())

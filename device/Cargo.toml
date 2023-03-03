@@ -16,6 +16,7 @@ esp-println       = { version = "0.3.1", features = ["esp32c3"] }
 display-interface-spi = "0.4.1"
 mipidsi = { version = "0.6.0", features = ["batch"] }
 bincode = { version = "2.0.0-rc.2", default-features = false, features = ["alloc", "derive", "serde"] } 
+schnorr_fun = { git = "https://github.com/llfourn/secp256kfun.git", rev = "51e2285be2433cdad7f0d6dc13e4b5f865cff34d", features = ["alloc"], default-features = false }
 
 [package.metadata.espflash]
 # bootloader      = "bootloader.bin" # Must be a binary file
