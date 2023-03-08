@@ -445,7 +445,7 @@ impl FrostSigner {
     ) -> MessageResult<Vec<DeviceSend>> {
         use CoordinatorToDeviceMessage::*;
         match (&self.state, message) {
-            (SignerState::Unregistered, AckAnnounce) => {
+            (_, AckAnnounce) => {
                 self.state = SignerState::Registered;
                 Ok(vec![])
             }
