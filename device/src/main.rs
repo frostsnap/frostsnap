@@ -86,9 +86,10 @@ fn main() -> ! {
         Some(txrx),
         &clocks,
     );
-    let mut device_uart = uart::DeviceUart::new(serial);
 
-    let mut prev_time = timer0.now();
+    timer0.start(1u64.secs());
+    let mut device_uart = uart::DeviceUart::new(serial, timer0);
+
     let mut delay = esp32c3_hal::Delay::new(&clocks);
 
     let keypair = KeyPair::new(s!(42));
