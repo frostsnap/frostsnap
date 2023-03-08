@@ -108,8 +108,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             vec![]
         };
 
-        println!("Sending these messages:");
-        dbg!(&sends);
+        // println!("Sending these messages:");
+        // dbg!(&sends);
 
         for send in sends {
             match send {
@@ -123,7 +123,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                         eprintln!("{:?}", e);
                     }
                 }
-                frostsnap_core::message::CoordinatorSend::ToUser(_) => todo!(),
+                frostsnap_core::message::CoordinatorSend::ToUser(message) => {
+                    fetch_input(&format!("Message to user: {:?}", message));
+                }
             }
         }
     }

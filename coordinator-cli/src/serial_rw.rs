@@ -47,7 +47,7 @@ impl Reader for SerialPortBincode {
                 }
                 Err(e) => {
                     return Err(bincode::error::DecodeError::OtherString(format!(
-                        "Coorinator read error {:?}",
+                        "Coordinator read error {:?}",
                         e
                     )))
                 }

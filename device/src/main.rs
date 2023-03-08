@@ -6,6 +6,8 @@ pub mod uart;
 
 extern crate alloc;
 
+use core::f32::consts::E;
+
 use crate::alloc::string::ToString;
 use alloc::string::String;
 use alloc::vec;
@@ -44,7 +46,7 @@ fn init_heap() {
 #[derive(Decode, Debug, Clone)]
 struct DeviceReceiveSerial {
     #[bincode(with_serde)]
-    message: CoordinatorToDeviceMessage,
+    to_device_send: CoordinatorToDeviceSend,
 }
 
 #[derive(Encode, Debug, Clone)]
@@ -75,6 +77,14 @@ fn main() -> ! {
 
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
 
+    // DEBUGGING //
+    //
+    // Swap UART0 to UART1
+    // UART0: display device logs & bootloader stuff
+    // UART1: device <--> coordinator communication.
+    //
+    // Choose different tx, rx pins to connect to a secondary USB port.
+    // Change UART0 to UART1.
     let txrx = TxRxPins::new_tx_rx(
         io.pins.gpio21.into_push_pull_output(),
         io.pins.gpio20.into_floating_input(),
@@ -101,23 +111,38 @@ fn main() -> ! {
             bincode::decode_from_reader(&mut device_uart, bincode::config::standard());
 
         let sends = match decoded {
-            Ok(message) => {
-                let sends = frost_device
-                    .recv_coordinator_message(message.message)
-                    .unwrap();
-                sends
-            }
-            Err(e) => match frost_device.announce() {
-                Some(announce) => {
-                    vec![DeviceSend::ToCoordinator(announce)]
-                }
-                None => {
+            Ok(DeviceReceiveSerial { to_device_send }) => {
+                // println!("Decoded {:?}", to_device_send);
+
+                // Is the message for us?
+                let read_message = if let Some(destination) = to_device_send.destination {
+                    destination == frost_device.device_id()
+                } else {
+                    true
+                };
+                if read_message {
+                    frost_device
+                        .recv_coordinator_message(to_device_send.message)
+                        .unwrap()
+                } else {
                     vec![]
                 }
-            },
+            }
+            Err(e) => {
+                // println!("{:?}", e);
+                match frost_device.announce() {
+                    Some(announce) => {
+                        vec![DeviceSend::ToCoordinator(announce)]
+                    }
+                    None => {
+                        vec![]
+                    }
+                }
+            }
         };
 
         for send in sends {
+            // println!("Sending: {:?}", send);
             match send {
                 frostsnap_core::message::DeviceSend::ToCoordinator(msg) => {
                     let serial_msg = DeviceSendSerial { message: msg };
