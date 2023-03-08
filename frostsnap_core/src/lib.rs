@@ -50,7 +50,17 @@ impl FrostCoordinator {
         message: DeviceToCoordindatorMessage,
     ) -> MessageResult<Vec<CoordinatorSend>> {
         match &mut self.state {
-            CoordinatorState::Registration => Err(InvalidState::MessageKind),
+            CoordinatorState::Registration => {
+                return match message {
+                    DeviceToCoordindatorMessage::Announce { from } => {
+                        Ok(vec![CoordinatorSend::ToDevice(CoordinatorToDeviceSend {
+                            destination: Some(from),
+                            message: CoordinatorToDeviceMessage::AckAnnounce,
+                        })])
+                    }
+                    _ => Err(InvalidState::MessageKind),
+                }
+            }
             CoordinatorState::KeyGen {
                 shares: shares_provided,
             } => match message {
@@ -386,10 +396,12 @@ impl FrostSigner {
         }
     }
 
-    pub fn announce(&mut self) -> DeviceToCoordindatorMessage {
-        self.state = SignerState::Registered;
-        DeviceToCoordindatorMessage::Announce {
-            from: self.device_id(),
+    pub fn announce(&mut self) -> Option<DeviceToCoordindatorMessage> {
+        match self.state {
+            SignerState::Unregistered => Some(DeviceToCoordindatorMessage::Announce {
+                from: self.device_id(),
+            }),
+            _ => None,
         }
     }
 
@@ -433,6 +445,10 @@ impl FrostSigner {
     ) -> MessageResult<Vec<DeviceSend>> {
         use CoordinatorToDeviceMessage::*;
         match (&self.state, message) {
+            (SignerState::Unregistered, AckAnnounce) => {
+                self.state = SignerState::Registered;
+                Ok(vec![])
+            }
             (SignerState::Registered, DoKeyGen { devices, threshold }) => {
                 if !devices.contains(&self.device_id()) {
                     return Ok(vec![]);

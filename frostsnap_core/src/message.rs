@@ -33,6 +33,7 @@ pub struct CoordinatorToDeviceSend {
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum CoordinatorToDeviceMessage {
+    AckAnnounce,
     DoKeyGen {
         devices: BTreeSet<DeviceId>,
         threshold: usize,
