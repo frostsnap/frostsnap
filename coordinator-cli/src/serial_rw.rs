@@ -2,8 +2,6 @@ use bincode::{de::read::Reader, enc::write::Writer};
 use serialport::SerialPort;
 use std::io::{self, Write};
 
-use crate::CoordinatorSendSerial;
-
 pub struct SerialPortBincode {
     port: Box<dyn SerialPort>,
 }
@@ -13,14 +11,6 @@ impl SerialPortBincode {
         Self { port }
     }
 }
-
-// fn write_frost_message(
-//     port_rw: SerialPortBincode,
-//     write_message: CoordinatorSendSerial,
-//     config: bincode::config::Configuration,
-// ) -> Result<(), bincode::error::EncodeError> {
-//     bincode::encode_into_writer(write_message, mut port_rw, config)
-// }
 
 impl Writer for SerialPortBincode {
     fn write(&mut self, bytes: &[u8]) -> Result<(), bincode::error::EncodeError> {
@@ -32,7 +22,10 @@ impl Writer for SerialPortBincode {
                 Err(ref e) if e.kind() == io::ErrorKind::TimedOut => (),
                 Err(e) => {
                     eprintln!("{:?}", e);
-                    return Err(bincode::error::EncodeError::OtherString(format!("{:?}", e)));
+                    return Err(bincode::error::EncodeError::OtherString(format!(
+                        "Writing error {:?}",
+                        e
+                    )));
                 }
             }
         }
@@ -41,22 +34,26 @@ impl Writer for SerialPortBincode {
 
 impl Reader for SerialPortBincode {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), bincode::error::DecodeError> {
-        return match self.port.read(bytes) {
-            Ok(t) => {
-                if t != bytes.len() {
-                    Err(bincode::error::DecodeError::ArrayLengthMismatch {
-                        required: t,
-                        found: bytes.len(),
-                    })
-                } else {
-                    Ok(())
+        loop {
+            match self.port.read(bytes) {
+                Ok(t) => {
+                    return if t != bytes.len() {
+                        Err(bincode::error::DecodeError::UnexpectedEnd {
+                            additional: t - bytes.len(),
+                        })
+                    } else {
+                        Ok(())
+                    }
                 }
-            }
-            // Err(ref e) if e.kind() == io::ErrorKind::BrokenPipe => {
-            //     eprintln!("{:?} disconnected", &self.port.name());
-            //     std::process::exit(1);
-            // }
-            Err(e) => Err(bincode::error::DecodeError::OtherString(format!("{:?}", e))),
-        };
+                Err(e) => {
+                    return Err(bincode::error::DecodeError::OtherString(format!(
+                        "Coorinator read error {:?}",
+                        e
+                    )))
+                }
+                // Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => (),
+                // Err(e) => (eprintln!("{:?}", e)),
+            };
+        }
     }
 }

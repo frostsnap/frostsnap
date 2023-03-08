@@ -5,6 +5,7 @@
 pub mod uart;
 
 extern crate alloc;
+
 use crate::alloc::string::ToString;
 use alloc::string::String;
 use alloc::vec;
@@ -57,9 +58,7 @@ fn main() -> ! {
     init_heap();
     let peripherals = Peripherals::take();
     let system = peripherals.SYSTEM.split();
-    // default 80MHz
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
-    // let clocks = ClockControl::configure(system.clock_control, CpuClock::Clock160MHz).freeze();
 
     // Disable the RTC and TIMG watchdog timers
     let mut rtc = Rtc::new(peripherals.RTC_CNTL);
@@ -95,6 +94,7 @@ fn main() -> ! {
     let keypair = KeyPair::new(s!(42));
     let mut frost_device = frostsnap_core::FrostSigner::new(keypair);
 
+    device_uart.uart.flush().unwrap();
     loop {
         delay.delay_ms(3000 as u32);
         let decoded: Result<DeviceReceiveSerial, _> =
@@ -107,11 +107,16 @@ fn main() -> ! {
                     .unwrap();
                 sends
             }
-            Err(e) => {
-                let announce = frost_device.announce();
-                vec![DeviceSend::ToCoordinator(announce)]
-            }
+            Err(e) => match frost_device.announce() {
+                Some(announce) => {
+                    vec![DeviceSend::ToCoordinator(announce)]
+                }
+                None => {
+                    vec![]
+                }
+            },
         };
+
         for send in sends {
             match send {
                 frostsnap_core::message::DeviceSend::ToCoordinator(msg) => {

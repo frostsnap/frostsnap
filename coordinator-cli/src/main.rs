@@ -72,13 +72,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         // std::thread::sleep(Duration::from_millis(1000));
         let choice = fetch_input("\nPress:\n\tr - read\n\tw - write\n\n\tk - start keygen\n");
         let sends = if choice == "w" {
-            // if let Err(e) = bincode::encode_into_writer(
-            //     write_message.clone(),
-            //     &mut port_rw,
-            //     bincode::config::standard(),
-            // ) {
-            //     eprintln!("{:?}", e);
-            // }
             println!("Wrote nothing..");
             vec![]
         } else if choice == "r" {
@@ -92,10 +85,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                         DeviceToCoordindatorMessage::Announce { from } => {
                             println!("Registered new device..");
                             devices.insert(from);
-                            vec![]
                         }
-                        _ => coordinator.recv_device_message(msg.message).unwrap(),
-                    }
+                        _ => {}
+                    };
+                    coordinator.recv_device_message(msg.message).unwrap()
                 }
                 Err(e) => {
                     eprintln!("{:?}", e);
@@ -114,6 +107,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("Did nothing..");
             vec![]
         };
+
+        println!("Sending these messages:");
+        dbg!(&sends);
+
         for send in sends {
             match send {
                 frostsnap_core::message::CoordinatorSend::ToDevice(msg) => {

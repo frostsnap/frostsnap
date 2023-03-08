@@ -12,7 +12,7 @@ use esp_hal_common::uart::Instance;
 use esp_hal_common::{timer::Instance as TimerInstance, Timer};
 use esp_println::println;
 pub struct DeviceUart<'a, T, U> {
-    uart: Uart<'a, T>,
+    pub uart: Uart<'a, T>,
     timer: Timer<U>,
 }
 
