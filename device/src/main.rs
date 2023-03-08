@@ -110,7 +110,7 @@ fn main() -> ! {
         let decoded: Result<DeviceReceiveSerial, _> =
             bincode::decode_from_reader(&mut device_uart, bincode::config::standard());
 
-        let sends = match decoded {
+        let mut sends = match decoded {
             Ok(DeviceReceiveSerial { to_device_send }) => {
                 // println!("Decoded {:?}", to_device_send);
 
@@ -130,6 +130,8 @@ fn main() -> ! {
             }
             Err(e) => {
                 // println!("{:?}", e);
+
+                // Announce ourselves if we do fail to decode anything and we are unregistered,
                 match frost_device.announce() {
                     Some(announce) => {
                         vec![DeviceSend::ToCoordinator(announce)]
@@ -141,20 +143,35 @@ fn main() -> ! {
             }
         };
 
-        for send in sends {
+        while !sends.is_empty() {
+            let send = sends.pop().unwrap();
             // println!("Sending: {:?}", send);
             match send {
                 frostsnap_core::message::DeviceSend::ToCoordinator(msg) => {
-                    let serial_msg = DeviceSendSerial { message: msg };
-                    if let Err(e) = bincode::encode_into_writer(
+                    let serial_msg = DeviceSendSerial {
+                        message: msg.clone(),
+                    };
+                    bincode::encode_into_writer(
                         serial_msg.clone(),
                         &mut device_uart,
                         bincode::config::standard(),
-                    ) {
-                        // eprintln!("{:?}", e);
-                    }
+                    )
+                    .unwrap()
                 }
-                frostsnap_core::message::DeviceSend::ToUser(_) => todo!(),
+                frostsnap_core::message::DeviceSend::ToUser(message) => {
+                    // println!("Pretending to get user input for {:?}", message);
+                    match message {
+                        frostsnap_core::message::DeviceToUserMessage::CheckKeyGen { xpub } => {
+                            frost_device.keygen_ack(true).unwrap();
+                        }
+                        frostsnap_core::message::DeviceToUserMessage::SignatureRequest {
+                            message_to_sign,
+                        } => {
+                            let more_sends = frost_device.sign_ack().unwrap();
+                            sends.extend(more_sends);
+                        }
+                    };
+                }
             }
         }
     }

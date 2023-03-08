@@ -68,10 +68,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut devices = BTreeSet::new();
     loop {
+        println!("\n------------------------------------------------------------------");
         println!("Registered devices: {:?}", &devices);
         // std::thread::sleep(Duration::from_millis(1000));
         let choice = fetch_input("\nPress:\n\tr - read\n\tw - write\n\n\tk - start keygen\n");
-        let sends = if choice == "w" {
+        let mut sends = if choice == "w" {
             println!("Wrote nothing..");
             vec![]
         } else if choice == "r" {
@@ -108,10 +109,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             vec![]
         };
 
-        // println!("Sending these messages:");
-        // dbg!(&sends);
-
-        for send in sends {
+        println!("Sending these messages:");
+        while !sends.is_empty() {
+            let send = sends.pop().unwrap();
+            dbg!(&send);
             match send {
                 frostsnap_core::message::CoordinatorSend::ToDevice(msg) => {
                     let serial_msg = CoordinatorSendSerial { message: msg };
@@ -124,10 +125,20 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
                 frostsnap_core::message::CoordinatorSend::ToUser(message) => {
-                    fetch_input(&format!("Message to user: {:?}", message));
+                    fetch_input(&format!(
+                        "Auto acking message for coordinator user: {:?}",
+                        message
+                    ));
+                    match message {
+                        frostsnap_core::message::CoordinatorToUserMessage::Signed { .. } => {}
+                        frostsnap_core::message::CoordinatorToUserMessage::CheckKeyGen {
+                            ..
+                        } => {
+                            coordinator.keygen_ack(true).unwrap();
+                        }
+                    }
                 }
             }
         }
     }
-    Ok(())
 }
