@@ -1,8 +1,5 @@
-use bincode::{Decode, Encode};
-use frostsnap_core::message::{
-    CoordinatorSend, CoordinatorToDeviceSend, DeviceToCoordindatorMessage,
-};
-// use serde::{Deserialize, Serialize};
+use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};
+use frostsnap_core::message::{CoordinatorSend, DeviceToCoordindatorMessage};
 use std::error::Error;
 use std::str;
 use std::time::Duration;
@@ -25,18 +22,6 @@ fn read_string() -> String {
 fn fetch_input(prompt: &str) -> String {
     println!("{}", prompt);
     read_string()
-}
-
-#[derive(Encode, Debug, Clone)]
-struct CoordinatorSendSerial {
-    #[bincode(with_serde)]
-    message: CoordinatorToDeviceSend,
-}
-
-#[derive(Decode, Debug, Clone)]
-struct CoordinatorReceiveSerial {
-    #[bincode(with_serde)]
-    message: DeviceToCoordindatorMessage,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -76,7 +61,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("Wrote nothing..");
             vec![]
         } else if choice == "r" {
-            let decode: Result<CoordinatorReceiveSerial, _> =
+            let decode: Result<DeviceSendSerial, _> =
                 bincode::decode_from_reader(&mut port_rw, bincode::config::standard());
             let sends = match decode {
                 Ok(msg) => {
@@ -115,13 +100,16 @@ fn main() -> Result<(), Box<dyn Error>> {
             dbg!(&send);
             match send {
                 frostsnap_core::message::CoordinatorSend::ToDevice(msg) => {
-                    let serial_msg = CoordinatorSendSerial { message: msg };
+                    let serial_msg = DeviceReceiveSerial {
+                        to_device_send: msg,
+                    };
+                    println!("Sending {:?}", serial_msg);
                     if let Err(e) = bincode::encode_into_writer(
                         serial_msg.clone(),
                         &mut port_rw,
                         bincode::config::standard(),
                     ) {
-                        eprintln!("{:?}", e);
+                        eprintln!("Error reading message from serial {:?}", e);
                     }
                 }
                 frostsnap_core::message::CoordinatorSend::ToUser(message) => {
