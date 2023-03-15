@@ -12,7 +12,7 @@ use crate::{
     message::{
         CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToDeviceSend,
         CoordinatorToUserMessage, DeviceSend, DeviceToCoordindatorMessage, DeviceToUserMessage,
-        KeyGenProvideShares, NONCE_BATCH_SIZE,
+        KeyGenProvideShares,
     },
 };
 use alloc::{
@@ -37,6 +37,8 @@ use xpub::ExtendedPubKey;
 pub struct FrostCoordinator {
     state: CoordinatorState,
 }
+
+pub const NONCE_BATCH_SIZE: usize = 2;
 
 impl FrostCoordinator {
     pub fn new() -> Self {

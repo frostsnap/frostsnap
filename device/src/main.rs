@@ -62,7 +62,7 @@ fn main() -> ! {
         io.pins.gpio4.into_push_pull_output(),
         io.pins.gpio5.into_floating_input(),
     );
-    let mut serial = Uart::new_with_config(
+    let serial = Uart::new_with_config(
         peripherals.UART1,
         Some(config::Config::default()),
         Some(txrx),
@@ -102,7 +102,7 @@ fn main() -> ! {
                 }
             }
             Err(e) => {
-                println!("{:?}", e);
+                println!("Decode error: {:?}", e);
 
                 // Announce ourselves if we do fail to decode anything and we are unregistered,
                 match frost_device.announce() {

@@ -2,6 +2,7 @@ use crate::encrypted_share::EncryptedShare;
 use crate::xpub::ExtendedPubKey;
 use crate::String;
 use crate::Vec;
+use crate::NONCE_BATCH_SIZE;
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use schnorr_fun::fun::marker::Public;
@@ -59,8 +60,6 @@ pub enum DeviceToCoordindatorMessage {
         from: DeviceId,
     },
 }
-
-pub const NONCE_BATCH_SIZE: usize = 32;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, Eq, PartialEq)]
 pub struct KeyGenProvideShares {

@@ -97,19 +97,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("Sending these messages:");
         while !sends.is_empty() {
             let send = sends.pop().unwrap();
-            dbg!(&send);
             match send {
                 frostsnap_core::message::CoordinatorSend::ToDevice(msg) => {
+                    println!("{:?}", msg);
                     let serial_msg = DeviceReceiveSerial {
                         to_device_send: msg,
                     };
-                    println!("Sending {:?}", serial_msg);
                     if let Err(e) = bincode::encode_into_writer(
-                        serial_msg.clone(),
+                        serial_msg,
                         &mut port_rw,
                         bincode::config::standard(),
                     ) {
-                        eprintln!("Error reading message from serial {:?}", e);
+                        eprintln!("Error writing message to serial {:?}", e);
                     }
                 }
                 frostsnap_core::message::CoordinatorSend::ToUser(message) => {
