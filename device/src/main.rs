@@ -56,20 +56,14 @@ fn main() -> ! {
 
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
 
-    // DEBUGGING //
-    //
-    // Swap UART0 to UART1
     // UART0: display device logs & bootloader stuff
     // UART1: device <--> coordinator communication.
-    //
-    // Choose different tx, rx pins to connect to a secondary USB port.
-    // Change UART0 to UART1.
     let txrx = TxRxPins::new_tx_rx(
-        io.pins.gpio21.into_push_pull_output(),
-        io.pins.gpio20.into_floating_input(),
+        io.pins.gpio4.into_push_pull_output(),
+        io.pins.gpio5.into_floating_input(),
     );
     let mut serial = Uart::new_with_config(
-        peripherals.UART0,
+        peripherals.UART1,
         Some(config::Config::default()),
         Some(txrx),
         &clocks,
@@ -91,7 +85,7 @@ fn main() -> ! {
 
         let mut sends = match decoded {
             Ok(DeviceReceiveSerial { to_device_send }) => {
-                // println!("Decoded {:?}", to_device_send);
+                println!("Decoded {:?}", to_device_send);
 
                 // Is the message for us?
                 let read_message = if let Some(destination) = to_device_send.destination {
@@ -108,7 +102,7 @@ fn main() -> ! {
                 }
             }
             Err(e) => {
-                // println!("{:?}", e);
+                println!("{:?}", e);
 
                 // Announce ourselves if we do fail to decode anything and we are unregistered,
                 match frost_device.announce() {
@@ -124,7 +118,7 @@ fn main() -> ! {
 
         while !sends.is_empty() {
             let send = sends.pop().unwrap();
-            // println!("Sending: {:?}", send);
+            println!("Sending: {:?}", send);
             match send {
                 frostsnap_core::message::DeviceSend::ToCoordinator(msg) => {
                     let serial_msg = DeviceSendSerial {
@@ -138,7 +132,7 @@ fn main() -> ! {
                     .unwrap()
                 }
                 frostsnap_core::message::DeviceSend::ToUser(message) => {
-                    // println!("Pretending to get user input for {:?}", message);
+                    println!("Pretending to get user input for {:?}", message);
                     match message {
                         frostsnap_core::message::DeviceToUserMessage::CheckKeyGen { xpub } => {
                             frost_device.keygen_ack(true).unwrap();
