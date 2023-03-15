@@ -1,0 +1,25 @@
+[package]
+name = "device"
+version = "0.1.0"
+authors = ["nickfarrow <nick@nickfarrow.com>"]
+edition = "2021"
+
+[dependencies]
+frostsnap_core = { path = "../frostsnap_core" }
+frostsnap_comms = { path = "../frostsnap_comms" }
+esp32c3-hal = { git = "https://github.com/esp-rs/esp-hal.git", rev = "609fa2c5074fe5afdf30a5a7c338ad72660d226f" }
+esp-hal-common = { git = "https://github.com/esp-rs/esp-hal.git", rev = "609fa2c5074fe5afdf30a5a7c338ad72660d226f" }
+# esp32c3-hal = "0.5.0"
+esp-alloc = { version = "0.1.0", features = ["oom-handler"] }
+esp-backtrace = { version = "0.4.0", features = ["esp32c3", "panic-handler"] }
+critical-section = "1.1.1"
+esp-println       = { version = "0.3.1", features = ["esp32c3"] }
+display-interface-spi = "0.4.1"
+mipidsi = { version = "0.6.0", features = ["batch"] }
+bincode = { version = "2.0.0-rc.2", default-features = false, features = ["alloc", "derive", "serde"] } 
+schnorr_fun = { git = "https://github.com/llfourn/secp256kfun.git", rev = "51e2285be2433cdad7f0d6dc13e4b5f865cff34d", features = ["alloc"], default-features = false }
+
+[package.metadata.espflash]
+# bootloader      = "bootloader.bin" # Must be a binary file
+partition_table = "partitions.csv" # Supports CSV and binary formats
+# format          = "direct-boot"    # Can be 'esp-bootloader' or 'direct-boot'

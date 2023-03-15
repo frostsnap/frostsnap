@@ -1,0 +1,20 @@
+[package]
+name = "coordinator-cli"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bincode = { version = "2.0.0-rc.2", default-features = false, features = ["alloc", "derive", "serde"] } 
+frostsnap_core = { path = "../frostsnap_core" }
+frostsnap_comms = { path = "../frostsnap_comms" }
+schnorr_fun = { git = "https://github.com/llfourn/secp256kfun.git", rev = "51e2285be2433cdad7f0d6dc13e4b5f865cff34d", features = ["alloc"], default-features = false }
+sha2 = "0.9"
+rand = { version = "0.8" }
+sled = "0.34.4"
+sled-extensions = { version = "0.2.0", features = ["bincode"]}
+serde = { version = "1", features = ["derive"], default-features = false }
+serde_json = "1.0.59"
+thiserror = "1.0.21"
+serialport = "4.2.0"

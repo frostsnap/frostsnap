@@ -1,7 +1,9 @@
 use crate::encrypted_share::EncryptedShare;
+use crate::xpub::ExtendedPubKey;
 use crate::String;
 use crate::Vec;
-use crate::xpub::ExtendedPubKey;
+use crate::NONCE_BATCH_SIZE;
+
 use alloc::collections::{BTreeMap, BTreeSet};
 use schnorr_fun::fun::marker::Public;
 use schnorr_fun::fun::marker::Zero;
@@ -24,7 +26,7 @@ pub enum CoordinatorSend {
     ToUser(CoordinatorToUserMessage),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct CoordinatorToDeviceSend {
     pub destination: Option<DeviceId>,
     pub message: CoordinatorToDeviceMessage,
@@ -32,6 +34,7 @@ pub struct CoordinatorToDeviceSend {
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum CoordinatorToDeviceMessage {
+    AckAnnounce,
     DoKeyGen {
         devices: BTreeSet<DeviceId>,
         threshold: usize,
@@ -47,6 +50,9 @@ pub enum CoordinatorToDeviceMessage {
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum DeviceToCoordindatorMessage {
+    Announce {
+        from: DeviceId,
+    },
     KeyGenProvideShares(KeyGenProvideShares),
     SignatureShare {
         signature_share: Scalar<Public, Zero>,
@@ -54,8 +60,6 @@ pub enum DeviceToCoordindatorMessage {
         from: DeviceId,
     },
 }
-
-pub const NONCE_BATCH_SIZE: usize = 32;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, Eq, PartialEq)]
 pub struct KeyGenProvideShares {

@@ -1,8 +1,8 @@
 #![no_std]
 
-pub mod xpub;
 pub mod encrypted_share;
 pub mod message;
+pub mod xpub;
 
 #[macro_use]
 extern crate alloc;
@@ -12,7 +12,7 @@ use crate::{
     message::{
         CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToDeviceSend,
         CoordinatorToUserMessage, DeviceSend, DeviceToCoordindatorMessage, DeviceToUserMessage,
-        KeyGenProvideShares, NONCE_BATCH_SIZE,
+        KeyGenProvideShares,
     },
 };
 use alloc::{
@@ -38,6 +38,8 @@ pub struct FrostCoordinator {
     state: CoordinatorState,
 }
 
+pub const NONCE_BATCH_SIZE: usize = 2;
+
 impl FrostCoordinator {
     pub fn new() -> Self {
         Self {
@@ -50,7 +52,17 @@ impl FrostCoordinator {
         message: DeviceToCoordindatorMessage,
     ) -> MessageResult<Vec<CoordinatorSend>> {
         match &mut self.state {
-            CoordinatorState::Registration => Err(InvalidState::MessageKind),
+            CoordinatorState::Registration => {
+                return match message {
+                    DeviceToCoordindatorMessage::Announce { from } => {
+                        Ok(vec![CoordinatorSend::ToDevice(CoordinatorToDeviceSend {
+                            destination: Some(from),
+                            message: CoordinatorToDeviceMessage::AckAnnounce,
+                        })])
+                    }
+                    _ => Err(InvalidState::MessageKind),
+                }
+            }
             CoordinatorState::KeyGen {
                 shares: shares_provided,
             } => match message {
@@ -381,8 +393,17 @@ impl FrostSigner {
     pub fn new(keypair: KeyPair) -> Self {
         Self {
             keypair,
-            state: SignerState::Registered,
+            state: SignerState::Unregistered,
             nonce_counter: 0,
+        }
+    }
+
+    pub fn announce(&mut self) -> Option<DeviceToCoordindatorMessage> {
+        match self.state {
+            SignerState::Unregistered => Some(DeviceToCoordindatorMessage::Announce {
+                from: self.device_id(),
+            }),
+            _ => None,
         }
     }
 
@@ -426,6 +447,10 @@ impl FrostSigner {
     ) -> MessageResult<Vec<DeviceSend>> {
         use CoordinatorToDeviceMessage::*;
         match (&self.state, message) {
+            (_, AckAnnounce) => {
+                self.state = SignerState::Registered;
+                Ok(vec![])
+            }
             (SignerState::Registered, DoKeyGen { devices, threshold }) => {
                 if !devices.contains(&self.device_id()) {
                     return Ok(vec![]);
@@ -691,6 +716,7 @@ impl FrostSigner {
 
     pub fn frost_key(&self) -> Option<&FrostKey<Normal>> {
         match self.state() {
+            SignerState::Unregistered => None,
             SignerState::Registered => None,
             SignerState::KeyGen { .. } => None,
             SignerState::FrostKey { key, .. } => Some(&key.frost_key),
@@ -701,6 +727,7 @@ impl FrostSigner {
 
 #[derive(Clone, Debug)]
 pub enum SignerState {
+    Unregistered,
     Registered,
     KeyGen {
         scalar_poly: Vec<Scalar>,
@@ -770,4 +797,3 @@ pub enum StartSignError {
 pub enum ActionError {
     WrongState,
 }
-
