@@ -40,7 +40,10 @@ where
             }
         }
 
-        println!("Peeking read {:?}", self.from_buffer_cache);
+        println!(
+            "Peeking read {} bytes: {:?}",
+            n_bytes, self.from_buffer_cache
+        );
         return if self.from_buffer_cache.len() == 0 {
             None
         } else {
@@ -65,11 +68,15 @@ where
 
         // Take bytes from existing cached first
         for byte in &self.from_buffer_cache {
+            if i == bytes.len() {
+                return Ok(());
+            }
             bytes[i] = *byte;
-            i += 1
+            i += 1;
         }
         self.consume(i);
 
+        let mut error_count = 0;
         while i < bytes.len() {
             match self.uart.read() {
                 Err(e) => {
