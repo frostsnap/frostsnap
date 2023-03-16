@@ -1,5 +1,5 @@
 use frostsnap_core::message::{
-    CoordinatorSend, CoordinatorToDeviceSend, CoordinatorToUserMessage, DeviceSend,
+    CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToUserMessage, DeviceSend,
     DeviceToCoordindatorMessage, DeviceToUserMessage,
 };
 use frostsnap_core::{DeviceId, FrostCoordinator, FrostSigner};
@@ -17,7 +17,7 @@ pub enum Send {
     },
     CoordinatorToUser(CoordinatorToUserMessage),
     DeviceToCoordinator(DeviceToCoordindatorMessage),
-    CoordinatorToDevice(CoordinatorToDeviceSend),
+    CoordinatorToDevice(CoordinatorToDeviceMessage),
     UserToCoordinator(UserToCoordinator),
 }
 
@@ -87,17 +87,10 @@ fn test_end_to_end() {
                 });
                 message_stack.extend(messages);
             }
-            Send::CoordinatorToDevice(send) => {
-                let destinations = match send.destination {
-                    Some(device) => vec![device],
-                    None => devices.keys().cloned().collect(),
-                };
-
-                for destination in destinations {
+            Send::CoordinatorToDevice(message) => {
+                for destination in devices.keys().cloned().collect::<Vec<_>>() {
                     let device = devices.get_mut(&destination).unwrap();
-                    let sends = device
-                        .recv_coordinator_message(send.message.clone())
-                        .unwrap();
+                    let sends = device.recv_coordinator_message(message.clone()).unwrap();
 
                     for send in sends {
                         match send {
