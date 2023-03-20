@@ -31,17 +31,22 @@ where
         while i < bytes.len() {
             match self.uart.read() {
                 Err(e) => {
-                    if !error_state {
-                        start = self.timer.now();
-                        error_state = true;
+                    match e {
+                        nb::Error::WouldBlock => return Err(DecodeError::LimitExceeded),
+                        _ => {
+                            if !error_state {
+                                start = self.timer.now();
+                                error_state = true;
+                            }
+                            let elapsed = (self.timer.now() - start) / 40000;
+                            // timeout, return error after 100ms
+                            if elapsed > 100 {
+                                return Err(DecodeError::OtherString(format!("{:?}", e)));
+                            }
+                            // retries uart read
+                            continue;
+                        }
                     }
-                    let elapsed = (self.timer.now() - start) / 40000;
-                    // timeout, return error after 100ms
-                    if elapsed > 100 {
-                        return Err(DecodeError::OtherString(format!("{:?}", e)));
-                    }
-                    // retries uart read
-                    continue;
                 }
                 Ok(c) => {
                     error_state = false;

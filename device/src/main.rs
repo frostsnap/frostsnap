@@ -78,6 +78,7 @@ fn main() -> ! {
     let mut frost_device = frostsnap_core::FrostSigner::new(keypair);
 
     device_uart.uart.flush().unwrap();
+    let mut last_announce_time = 0;
     loop {
         delay.delay_ms(3000 as u32);
         let decoded: Result<DeviceReceiveSerial, _> =
@@ -91,14 +92,22 @@ fn main() -> ! {
                     .unwrap()
             }
             Err(e) => {
-                println!("Decode error: {:?}", e);
+                match e {
+                    bincode::error::DecodeError::LimitExceeded => {
+                        // Wouldblock placeholder
 
-                // Announce ourselves if we do fail to decode anything and we are unregistered,
-                match frost_device.announce() {
-                    Some(announce) => {
-                        vec![DeviceSend::ToCoordinator(announce)]
+                        // Announce ourselves if we do fail to decode anything and we are unregistered,
+                        match frost_device.announce() {
+                            Some(announce) => {
+                                vec![DeviceSend::ToCoordinator(announce)]
+                            }
+                            None => {
+                                vec![]
+                            }
+                        }
                     }
-                    None => {
+                    _ => {
+                        println!("Decode error: {:?}", e);
                         vec![]
                     }
                 }
