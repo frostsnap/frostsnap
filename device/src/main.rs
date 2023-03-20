@@ -48,6 +48,7 @@ fn main() -> ! {
     let timer_group1 = TimerGroup::new(peripherals.TIMG1, &clocks);
     let mut wdt1 = timer_group1.wdt;
     let mut timer0 = timer_group0.timer0;
+    let mut timer1 = timer_group1.timer0;
 
     rtc.swd.disable();
     rtc.rwdt.disable();
@@ -70,9 +71,8 @@ fn main() -> ! {
     );
 
     timer0.start(1u64.secs());
+    timer1.start(1u64.secs());
     let mut device_uart = uart::DeviceUart::new(serial, timer0);
-
-    let mut delay = esp32c3_hal::Delay::new(&clocks);
 
     let keypair = KeyPair::new(s!(42));
     let mut frost_device = frostsnap_core::FrostSigner::new(keypair);
@@ -80,7 +80,6 @@ fn main() -> ! {
     device_uart.uart.flush().unwrap();
     let mut last_announce_time = 0;
     loop {
-        delay.delay_ms(3000 as u32);
         let decoded: Result<DeviceReceiveSerial, _> =
             bincode::decode_from_reader(&mut device_uart, bincode::config::standard());
 
@@ -95,15 +94,21 @@ fn main() -> ! {
                 match e {
                     bincode::error::DecodeError::LimitExceeded => {
                         // Wouldblock placeholder
-
-                        // Announce ourselves if we do fail to decode anything and we are unregistered,
-                        match frost_device.announce() {
-                            Some(announce) => {
-                                vec![DeviceSend::ToCoordinator(announce)]
+                        let current_time = timer1.now();
+                        // 40_000 from **clockspeed?** and 1_000ms
+                        if (current_time - last_announce_time) / 40_000 > 5_000 {
+                            last_announce_time = current_time;
+                            // Announce ourselves if we do fail to decode anything and we are unregistered,
+                            match frost_device.announce() {
+                                Some(announce) => {
+                                    vec![DeviceSend::ToCoordinator(announce)]
+                                }
+                                None => {
+                                    vec![]
+                                }
                             }
-                            None => {
-                                vec![]
-                            }
+                        } else {
+                            vec![]
                         }
                     }
                     _ => {
