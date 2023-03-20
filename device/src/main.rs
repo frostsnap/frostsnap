@@ -83,12 +83,17 @@ fn main() -> ! {
         let decoded: Result<DeviceReceiveSerial, _> =
             bincode::decode_from_reader(&mut device_uart, bincode::config::standard());
 
-        let mut sends = match decoded {
+        let mut sends = vec![];
+        match decoded {
             Ok(DeviceReceiveSerial { to_device_send }) => {
+                // Currently we are assuming all messages received on this layer are intended for us.
                 println!("Decoded {:?}", to_device_send);
-                frost_device
-                    .recv_coordinator_message(to_device_send)
-                    .unwrap()
+                sends.extend(
+                    frost_device
+                        .recv_coordinator_message(to_device_send)
+                        .unwrap()
+                        .into_iter(),
+                );
             }
             Err(e) => {
                 match e {
@@ -99,21 +104,13 @@ fn main() -> ! {
                         if (current_time - last_announce_time) / 40_000 > 5_000 {
                             last_announce_time = current_time;
                             // Announce ourselves if we do fail to decode anything and we are unregistered,
-                            match frost_device.announce() {
-                                Some(announce) => {
-                                    vec![DeviceSend::ToCoordinator(announce)]
-                                }
-                                None => {
-                                    vec![]
-                                }
+                            if let Some(announce) = frost_device.announce() {
+                                sends.push(DeviceSend::ToCoordinator(announce));
                             }
-                        } else {
-                            vec![]
                         }
                     }
                     _ => {
                         println!("Decode error: {:?}", e);
-                        vec![]
                     }
                 }
             }
@@ -137,11 +134,11 @@ fn main() -> ! {
                 frostsnap_core::message::DeviceSend::ToUser(message) => {
                     println!("Pretending to get user input for {:?}", message);
                     match message {
-                        frostsnap_core::message::DeviceToUserMessage::CheckKeyGen { xpub } => {
+                        frostsnap_core::message::DeviceToUserMessage::CheckKeyGen { .. } => {
                             frost_device.keygen_ack(true).unwrap();
                         }
                         frostsnap_core::message::DeviceToUserMessage::SignatureRequest {
-                            message_to_sign,
+                            ..
                         } => {
                             let more_sends = frost_device.sign_ack().unwrap();
                             sends.extend(more_sends);
