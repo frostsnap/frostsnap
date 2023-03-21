@@ -13,6 +13,7 @@ use esp32c3_hal::{
 use esp_backtrace as _;
 use esp_hal_common::uart::{config, TxRxPins};
 use esp_println::println;
+use frostsnap_comms::AnnounceAck;
 use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};
 use frostsnap_core::message::DeviceSend;
 use schnorr_fun::fun::s;
@@ -73,11 +74,33 @@ fn main() -> ! {
     timer0.start(1u64.secs());
     timer1.start(1u64.secs());
     let mut device_uart = uart::DeviceUart::new(serial, timer0);
+    device_uart.uart.flush().unwrap();
 
     let keypair = KeyPair::new(s!(42));
     let mut frost_device = frostsnap_core::FrostSigner::new(keypair);
 
-    device_uart.uart.flush().unwrap();
+    let announce_message = frostsnap_comms::Announce {
+        from: frost_device.device_id(),
+    };
+    let mut delay = esp32c3_hal::Delay::new(&clocks);
+    loop {
+        delay.delay(3000 as u32);
+        // Send announce to coordinator
+        bincode::encode_into_writer(
+            announce_message.clone(),
+            &mut device_uart,
+            bincode::config::standard(),
+        )
+        .unwrap();
+        let decoded: Result<AnnounceAck, _> =
+            bincode::decode_from_reader(&mut device_uart, bincode::config::standard());
+
+        if let Ok(msg) = decoded {
+            println!("Received announce ACK");
+            break;
+        }
+    }
+
     let mut last_announce_time = 0;
     loop {
         let decoded: Result<DeviceReceiveSerial, _> =
@@ -98,16 +121,16 @@ fn main() -> ! {
             Err(e) => {
                 match e {
                     bincode::error::DecodeError::LimitExceeded => {
-                        // Wouldblock placeholder
-                        let current_time = timer1.now();
-                        // 40_000 from **clockspeed?** and 1_000ms
-                        if (current_time - last_announce_time) / 40_000 > 5_000 {
-                            last_announce_time = current_time;
-                            // Announce ourselves if we do fail to decode anything and we are unregistered,
-                            if let Some(announce) = frost_device.announce() {
-                                sends.push(DeviceSend::ToCoordinator(announce));
-                            }
-                        }
+                        // // Wouldblock placeholder
+                        // let current_time = timer1.now();
+                        // // 40_000 from **clockspeed?** and 1_000ms
+                        // if (current_time - last_announce_time) / 40_000 > 5_000 {
+                        //     last_announce_time = current_time;
+                        //     // Announce ourselves if we do fail to decode anything and we are unregistered,
+                        //     if let Some(announce) = frost_device.announce() {
+                        //         sends.push(DeviceSend::ToCoordinator(announce));
+                        //     }
+                        // }
                     }
                     _ => {
                         println!("Decode error: {:?}", e);

@@ -1,5 +1,5 @@
 use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};
-use frostsnap_core::message::{CoordinatorSend, DeviceToCoordindatorMessage};
+use frostsnap_core::message::CoordinatorSend;
 use std::error::Error;
 use std::str;
 use std::time::Duration;
@@ -52,6 +52,32 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut coordinator = frostsnap_core::FrostCoordinator::new();
 
     let mut devices = BTreeSet::new();
+
+    // Registration:
+    println!("Waiting for device to send registration message");
+    loop {
+        let announcement: Result<frostsnap_comms::Announce, _> =
+            bincode::decode_from_reader(&mut port_rw, bincode::config::standard());
+        if let Ok(announcement) = announcement {
+            println!("Registered device: {:?}", announcement.from);
+            devices.insert(announcement.from);
+
+            // Ack announcement
+            if let Err(e) = bincode::encode_into_writer(
+                frostsnap_comms::AnnounceAck {},
+                &mut port_rw,
+                bincode::config::standard(),
+            ) {
+                eprintln!("Error writing message to serial {:?}", e);
+            }
+
+            let choice = fetch_input("Finished registration of devices (y/n)?");
+            if choice == "y" {
+                break;
+            }
+        }
+    }
+
     loop {
         println!("\n------------------------------------------------------------------");
         println!("Registered devices: {:?}", &devices);
@@ -66,14 +92,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             let sends = match decode {
                 Ok(msg) => {
                     println!("Read: {:?}", msg);
-
-                    match msg.message {
-                        DeviceToCoordindatorMessage::Announce { from } => {
-                            println!("Registered new device..");
-                            devices.insert(from);
-                        }
-                        _ => {}
-                    };
                     coordinator.recv_device_message(msg.message).unwrap()
                 }
                 Err(e) => {

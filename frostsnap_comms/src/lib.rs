@@ -18,6 +18,11 @@ pub struct DeviceSendSerial {
     pub message: DeviceToCoordindatorMessage,
 }
 
-struct Announce {
-    from: DeviceId,
+#[derive(Encode, Decode, Debug, Clone)]
+pub struct Announce {
+    #[bincode(with_serde)]
+    pub from: DeviceId,
 }
+
+#[derive(Encode, Decode, Debug, Clone)]
+pub struct AnnounceAck {}
