@@ -15,7 +15,6 @@ use esp_hal_common::uart::{config, TxRxPins};
 use esp_println::println;
 use frostsnap_comms::AnnounceAck;
 use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};
-use frostsnap_core::message::DeviceSend;
 use schnorr_fun::fun::s;
 use schnorr_fun::fun::KeyPair;
 
@@ -49,7 +48,6 @@ fn main() -> ! {
     let timer_group1 = TimerGroup::new(peripherals.TIMG1, &clocks);
     let mut wdt1 = timer_group1.wdt;
     let mut timer0 = timer_group0.timer0;
-    let mut timer1 = timer_group1.timer0;
 
     rtc.swd.disable();
     rtc.rwdt.disable();
@@ -69,11 +67,9 @@ fn main() -> ! {
         baudrate: 9600,
         ..Default::default()
     };
-    let mut serial =
-        Uart::new_with_config(peripherals.UART1, Some(serial_conf), Some(txrx), &clocks);
+    let serial = Uart::new_with_config(peripherals.UART1, Some(serial_conf), Some(txrx), &clocks);
 
-    // timer0.start(1u64.secs());
-    timer1.start(1u64.secs());
+    timer0.start(1u64.secs());
     let mut device_uart = uart::DeviceUart::new(serial);
     device_uart.uart.flush().unwrap();
 
@@ -83,7 +79,7 @@ fn main() -> ! {
     let announce_message = frostsnap_comms::Announce {
         from: frost_device.device_id(),
     };
-    let mut delay = esp32c3_hal::Delay::new(&clocks);
+    let delay = esp32c3_hal::Delay::new(&clocks);
     loop {
         delay.delay(3000 as u32);
         // Send announce to coordinator
@@ -96,13 +92,12 @@ fn main() -> ! {
         let decoded: Result<AnnounceAck, _> =
             bincode::decode_from_reader(&mut device_uart, bincode::config::standard());
 
-        if let Ok(msg) = decoded {
+        if let Ok(_) = decoded {
             println!("Received announce ACK");
             break;
         }
     }
 
-    let mut last_announce_time = 0;
     loop {
         let decoded: Result<DeviceReceiveSerial, _> =
             bincode::decode_from_reader(&mut device_uart, bincode::config::standard());

@@ -7,7 +7,6 @@ use bincode::error::EncodeError;
 use esp32c3_hal::prelude::_embedded_hal_serial_Read;
 use esp32c3_hal::Uart;
 use esp_hal_common::uart::Instance;
-use esp_println::{print, println};
 
 pub struct DeviceUart<'a, T> {
     pub uart: Uart<'a, T>,
@@ -27,7 +26,7 @@ where
         let mut i = 0;
         while i < bytes.len() {
             match self.uart.read() {
-                Err(e) => {
+                Err(_e) => {
                     continue;
                 }
                 Ok(c) => {
