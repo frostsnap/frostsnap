@@ -86,20 +86,9 @@ fn main() -> ! {
         let mut sends = match decoded {
             Ok(DeviceReceiveSerial { to_device_send }) => {
                 println!("Decoded {:?}", to_device_send);
-
-                // Is the message for us?
-                let read_message = if let Some(destination) = to_device_send.destination {
-                    destination == frost_device.device_id()
-                } else {
-                    true
-                };
-                if read_message {
-                    frost_device
-                        .recv_coordinator_message(to_device_send.message)
-                        .unwrap()
-                } else {
-                    vec![]
-                }
+                frost_device
+                    .recv_coordinator_message(to_device_send)
+                    .unwrap()
             }
             Err(e) => {
                 println!("Decode error: {:?}", e);

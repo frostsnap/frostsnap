@@ -22,15 +22,15 @@ pub enum DeviceSend {
 
 #[derive(Clone, Debug)]
 pub enum CoordinatorSend {
-    ToDevice(CoordinatorToDeviceSend),
+    ToDevice(CoordinatorToDeviceMessage),
     ToUser(CoordinatorToUserMessage),
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct CoordinatorToDeviceSend {
-    pub destination: Option<DeviceId>,
-    pub message: CoordinatorToDeviceMessage,
-}
+// #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+// pub struct CoordinatorToDeviceSend {
+//     pub destination: Option<DeviceId>,
+//     pub message: CoordinatorToDeviceMessage,
+// }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum CoordinatorToDeviceMessage {

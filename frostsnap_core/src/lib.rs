@@ -10,9 +10,8 @@ extern crate alloc;
 use crate::{
     encrypted_share::EncryptedShare,
     message::{
-        CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToDeviceSend,
-        CoordinatorToUserMessage, DeviceSend, DeviceToCoordindatorMessage, DeviceToUserMessage,
-        KeyGenProvideShares,
+        CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToUserMessage, DeviceSend,
+        DeviceToCoordindatorMessage, DeviceToUserMessage, KeyGenProvideShares,
     },
 };
 use alloc::{
@@ -38,7 +37,7 @@ pub struct FrostCoordinator {
     state: CoordinatorState,
 }
 
-pub const NONCE_BATCH_SIZE: usize = 2;
+pub const NONCE_BATCH_SIZE: usize = 32;
 
 impl FrostCoordinator {
     pub fn new() -> Self {
@@ -54,11 +53,10 @@ impl FrostCoordinator {
         match &mut self.state {
             CoordinatorState::Registration => {
                 return match message {
-                    DeviceToCoordindatorMessage::Announce { from } => {
-                        Ok(vec![CoordinatorSend::ToDevice(CoordinatorToDeviceSend {
-                            destination: Some(from),
-                            message: CoordinatorToDeviceMessage::AckAnnounce,
-                        })])
+                    DeviceToCoordindatorMessage::Announce { .. } => {
+                        Ok(vec![CoordinatorSend::ToDevice(
+                            CoordinatorToDeviceMessage::AckAnnounce,
+                        )])
                     }
                     _ => Err(InvalidState::MessageKind),
                 }
@@ -120,12 +118,11 @@ impl FrostCoordinator {
                                 awaiting_user: true,
                             };
                             Ok(vec![
-                                CoordinatorSend::ToDevice(CoordinatorToDeviceSend {
-                                    destination: None,
-                                    message: CoordinatorToDeviceMessage::FinishKeyGen {
+                                CoordinatorSend::ToDevice(
+                                    CoordinatorToDeviceMessage::FinishKeyGen {
                                         shares_provided: shares_provided.clone(),
                                     },
-                                }),
+                                ),
                                 CoordinatorSend::ToUser(CoordinatorToUserMessage::CheckKeyGen {
                                     xpub,
                                 }),
@@ -215,7 +212,7 @@ impl FrostCoordinator {
         &mut self,
         devices: &BTreeSet<DeviceId>,
         threshold: usize,
-    ) -> Result<Vec<CoordinatorToDeviceSend>, ActionError> {
+    ) -> Result<Vec<CoordinatorToDeviceMessage>, ActionError> {
         if devices.len() < threshold {
             panic!("caller needs to ensure that threshold < divices.len()");
         }
@@ -224,12 +221,9 @@ impl FrostCoordinator {
                 self.state = CoordinatorState::KeyGen {
                     shares: devices.iter().map(|&device_id| (device_id, None)).collect(),
                 };
-                Ok(vec![CoordinatorToDeviceSend {
-                    destination: None,
-                    message: CoordinatorToDeviceMessage::DoKeyGen {
-                        devices: devices.clone(),
-                        threshold,
-                    },
+                Ok(vec![CoordinatorToDeviceMessage::DoKeyGen {
+                    devices: devices.clone(),
+                    threshold,
                 }])
             }
             _ => Err(ActionError::WrongState),
@@ -253,7 +247,7 @@ impl FrostCoordinator {
         &mut self,
         message_to_sign: String,
         signing_parties: BTreeSet<DeviceId>,
-    ) -> Result<Vec<CoordinatorToDeviceSend>, StartSignError> {
+    ) -> Result<Vec<CoordinatorToDeviceMessage>, StartSignError> {
         match &mut self.state {
             CoordinatorState::FrostKey {
                 frost_key,
@@ -309,16 +303,10 @@ impl FrostCoordinator {
                     device_nonces: device_nonces.clone(),
                     signature_shares: BTreeMap::new(),
                 };
-                Ok(signing_nonces
-                    .iter()
-                    .map(|(id, _)| CoordinatorToDeviceSend {
-                        destination: Some(*id),
-                        message: CoordinatorToDeviceMessage::RequestSign {
-                            message_to_sign: message_to_sign.clone(),
-                            nonces: signing_nonces.clone(),
-                        },
-                    })
-                    .collect())
+                Ok(vec![CoordinatorToDeviceMessage::RequestSign {
+                    message_to_sign: message_to_sign.clone(),
+                    nonces: signing_nonces.clone(),
+                }])
             }
             _ => Err(StartSignError::WrongState),
         }
@@ -611,9 +599,10 @@ impl FrostSigner {
                     message_to_sign,
                 },
             ) => {
-                let (my_nonces, my_nonce_index, _) = nonces
-                    .get(&self.device_id())
-                    .ok_or(InvalidState::InvalidMessage)?;
+                let (my_nonces, my_nonce_index, _) = match nonces.get(&self.device_id()) {
+                    Some(nonce) => nonce,
+                    None => return Ok(Vec::new()),
+                };
                 if self.nonce_counter > *my_nonce_index {
                     return Err(InvalidState::InvalidMessage);
                 }
