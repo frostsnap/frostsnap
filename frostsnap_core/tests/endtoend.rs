@@ -64,12 +64,6 @@ fn test_end_to_end() {
     message_stack.push(Send::UserToCoordinator(UserToCoordinator::DoKeyGen {
         threshold,
     }));
-    // Announce devices
-    for device_id in devices.keys() {
-        message_stack.push(Send::DeviceToCoordinator(
-            DeviceToCoordindatorMessage::Announce { from: *device_id },
-        ));
-    }
 
     let mut check_keygens = BTreeMap::default();
     let mut coordinator_check_keygen = None;

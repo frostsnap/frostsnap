@@ -51,16 +51,7 @@ impl FrostCoordinator {
         message: DeviceToCoordindatorMessage,
     ) -> MessageResult<Vec<CoordinatorSend>> {
         match &mut self.state {
-            CoordinatorState::Registration => {
-                return match message {
-                    DeviceToCoordindatorMessage::Announce { .. } => {
-                        Ok(vec![CoordinatorSend::ToDevice(
-                            CoordinatorToDeviceMessage::AckAnnounce,
-                        )])
-                    }
-                    _ => Err(InvalidState::MessageKind),
-                }
-            }
+            CoordinatorState::Registration => Err(InvalidState::MessageKind),
             CoordinatorState::KeyGen {
                 shares: shares_provided,
             } => match message {
@@ -381,17 +372,8 @@ impl FrostSigner {
     pub fn new(keypair: KeyPair) -> Self {
         Self {
             keypair,
-            state: SignerState::Unregistered,
+            state: SignerState::Registered,
             nonce_counter: 0,
-        }
-    }
-
-    pub fn announce(&mut self) -> Option<DeviceToCoordindatorMessage> {
-        match self.state {
-            SignerState::Unregistered => Some(DeviceToCoordindatorMessage::Announce {
-                from: self.device_id(),
-            }),
-            _ => None,
         }
     }
 
@@ -435,10 +417,6 @@ impl FrostSigner {
     ) -> MessageResult<Vec<DeviceSend>> {
         use CoordinatorToDeviceMessage::*;
         match (&self.state, message) {
-            (_, AckAnnounce) => {
-                self.state = SignerState::Registered;
-                Ok(vec![])
-            }
             (SignerState::Registered, DoKeyGen { devices, threshold }) => {
                 if !devices.contains(&self.device_id()) {
                     return Ok(vec![]);
@@ -705,7 +683,6 @@ impl FrostSigner {
 
     pub fn frost_key(&self) -> Option<&FrostKey<Normal>> {
         match self.state() {
-            SignerState::Unregistered => None,
             SignerState::Registered => None,
             SignerState::KeyGen { .. } => None,
             SignerState::FrostKey { key, .. } => Some(&key.frost_key),
@@ -716,7 +693,6 @@ impl FrostSigner {
 
 #[derive(Clone, Debug)]
 pub enum SignerState {
-    Unregistered,
     Registered,
     KeyGen {
         scalar_poly: Vec<Scalar>,
