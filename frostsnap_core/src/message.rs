@@ -34,7 +34,6 @@ pub enum CoordinatorSend {
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum CoordinatorToDeviceMessage {
-    AckAnnounce,
     DoKeyGen {
         devices: BTreeSet<DeviceId>,
         threshold: usize,
@@ -50,9 +49,6 @@ pub enum CoordinatorToDeviceMessage {
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum DeviceToCoordindatorMessage {
-    Announce {
-        from: DeviceId,
-    },
     KeyGenProvideShares(KeyGenProvideShares),
     SignatureShare {
         signature_share: Scalar<Public, Zero>,

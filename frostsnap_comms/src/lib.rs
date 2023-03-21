@@ -1,7 +1,10 @@
 #![no_std]
 
 use bincode::{Decode, Encode};
-use frostsnap_core::message::{CoordinatorToDeviceMessage, DeviceToCoordindatorMessage};
+use frostsnap_core::{
+    message::{CoordinatorToDeviceMessage, DeviceToCoordindatorMessage},
+    DeviceId,
+};
 
 #[derive(Encode, Decode, Debug, Clone)]
 pub struct DeviceReceiveSerial {
@@ -13,4 +16,8 @@ pub struct DeviceReceiveSerial {
 pub struct DeviceSendSerial {
     #[bincode(with_serde)]
     pub message: DeviceToCoordindatorMessage,
+}
+
+struct Announce {
+    from: DeviceId,
 }
