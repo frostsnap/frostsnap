@@ -38,7 +38,10 @@ where
                     let elapsed = (self.timer.now() - start) / 40000;
                     // timeout, return error after 100ms
                     if elapsed > 100 {
-                        return Err(DecodeError::OtherString(format!("{:?}", e)));
+                        match e {
+                            nb::Error::WouldBlock => return Err(DecodeError::LimitExceeded),
+                            _ => return Err(DecodeError::OtherString(format!("{:?}", e))),
+                        }
                     }
                     // retries uart read
                     continue;
