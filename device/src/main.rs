@@ -23,7 +23,7 @@ use schnorr_fun::fun::KeyPair;
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
 
 fn init_heap() {
-    const HEAP_SIZE: usize = 32 * 1024;
+    const HEAP_SIZE: usize = 320 * 1024;
 
     extern "C" {
         static mut _heap_start: u32;
@@ -64,16 +64,17 @@ fn main() -> ! {
         io.pins.gpio4.into_push_pull_output(),
         io.pins.gpio5.into_floating_input(),
     );
-    let serial = Uart::new_with_config(
-        peripherals.UART1,
-        Some(config::Config::default()),
-        Some(txrx),
-        &clocks,
-    );
 
-    timer0.start(1u64.secs());
+    let serial_conf = config::Config {
+        baudrate: 9600,
+        ..Default::default()
+    };
+    let mut serial =
+        Uart::new_with_config(peripherals.UART1, Some(serial_conf), Some(txrx), &clocks);
+
+    // timer0.start(1u64.secs());
     timer1.start(1u64.secs());
-    let mut device_uart = uart::DeviceUart::new(serial, timer0);
+    let mut device_uart = uart::DeviceUart::new(serial);
     device_uart.uart.flush().unwrap();
 
     let keypair = KeyPair::new(s!(42));
@@ -122,17 +123,9 @@ fn main() -> ! {
                 match e {
                     bincode::error::DecodeError::LimitExceeded => {
                         // // Wouldblock placeholder
-                        // let current_time = timer1.now();
-                        // // 40_000 from **clockspeed?** and 1_000ms
-                        // if (current_time - last_announce_time) / 40_000 > 5_000 {
-                        //     last_announce_time = current_time;
-                        //     // Announce ourselves if we do fail to decode anything and we are unregistered,
-                        //     if let Some(announce) = frost_device.announce() {
-                        //         sends.push(DeviceSend::ToCoordinator(announce));
-                        //     }
-                        // }
                     }
                     _ => {
+                        // println!("");
                         println!("Decode error: {:?}", e);
                     }
                 }

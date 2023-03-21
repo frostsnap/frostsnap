@@ -14,6 +14,9 @@ impl SerialPortBincode {
 
 impl Writer for SerialPortBincode {
     fn write(&mut self, bytes: &[u8]) -> Result<(), bincode::error::EncodeError> {
+        for byte in bytes {
+            // print!("{:02X}", byte);
+        }
         loop {
             match self.port.write(&bytes) {
                 Ok(_t) => {
@@ -51,8 +54,6 @@ impl Reader for SerialPortBincode {
                         e
                     )))
                 }
-                // Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => (),
-                // Err(e) => (eprintln!("{:?}", e)),
             };
         }
     }
