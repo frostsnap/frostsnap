@@ -100,8 +100,16 @@ fn main() -> Result<(), Box<dyn Error>> {
                 bincode::decode_from_reader(&mut port_rw, bincode::config::standard());
             let sends = match decode {
                 Ok(msg) => {
-                    println!("Read: {:?}", msg);
-                    coordinator.recv_device_message(msg.message).unwrap()
+                    match msg {
+                        DeviceSendSerial::Core(msg) => {
+                            println!("Read core message: {:?}", msg);
+                            coordinator.recv_device_message(msg).unwrap() // TODO remove panic
+                        }
+                        DeviceSendSerial::Debug(string) => {
+                            println!("Debug message from device: {:?}", string);
+                            vec![]
+                        }
+                    }
                 }
                 Err(e) => {
                     eprintln!("{:?}", e);

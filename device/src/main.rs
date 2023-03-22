@@ -8,6 +8,7 @@ use crate::device_config::DOUBLE_ENDED;
 pub mod uart;
 
 extern crate alloc;
+use alloc::string::ToString;
 use alloc::vec;
 use esp32c3_hal::{
     clock::ClockControl,
@@ -70,14 +71,14 @@ fn main() -> ! {
             baudrate: 9600,
             ..Default::default()
         };
-        let txrx1 = TxRxPins::new_tx_rx(
+        let txrx0 = TxRxPins::new_tx_rx(
             io.pins.gpio21.into_push_pull_output(),
             io.pins.gpio20.into_floating_input(),
         );
-        let serial1 =
-            Uart::new_with_config(peripherals.UART0, Some(serial_conf), Some(txrx1), &clocks);
-        let device_uart1 = uart::DeviceUart::new(serial1);
-        device_uart1
+        let serial0 =
+            Uart::new_with_config(peripherals.UART0, Some(serial_conf), Some(txrx0), &clocks);
+        let device_uart0 = uart::DeviceUart::new(serial0);
+        device_uart0
         // if DOUBLE_ENDED {
         //     let txrx0 = TxRxPins::new_tx_rx(
         //         io.pins.gpio14.into_push_pull_output(),
@@ -90,7 +91,6 @@ fn main() -> ! {
         //     vec![device_uart1]
         // }
     };
-
     // let device_uart = device_uarts[0];
 
     let keypair = KeyPair::new(s!(42));
@@ -100,24 +100,35 @@ fn main() -> ! {
         from: frost_device.device_id(),
     };
     let delay = esp32c3_hal::Delay::new(&clocks);
+    // TODO: why is announce not continually sending?
     loop {
         delay.delay(3000 as u32);
         // Send announce to coordinator
-        bincode::encode_into_writer(
+        match bincode::encode_into_writer(
             announce_message.clone(),
             &mut device_uart,
             bincode::config::standard(),
-        )
-        .unwrap();
-        println!("Announced self");
-        let decoded: Result<AnnounceAck, _> =
-            bincode::decode_from_reader(&mut device_uart, bincode::config::standard());
+        ) {
+            Err(e) => println!("Error writing announce message: {:?}", e),
+            Ok(_) => {
+                println!("Announced self");
+                let decoded: Result<AnnounceAck, _> =
+                    bincode::decode_from_reader(&mut device_uart, bincode::config::standard());
 
-        if let Ok(_) = decoded {
-            println!("Received announce ACK");
-            break;
+                if let Ok(_) = decoded {
+                    println!("Received announce ACK");
+                    break;
+                }
+            }
         }
     }
+
+    bincode::encode_into_writer(
+        DeviceSendSerial::Debug("Registered Successfully".to_string()),
+        &mut device_uart,
+        bincode::config::standard(),
+    )
+    .unwrap();
 
     loop {
         let decoded: Result<DeviceReceiveSerial, _> =
@@ -152,9 +163,7 @@ fn main() -> ! {
             println!("Sending: {:?}", send);
             match send {
                 frostsnap_core::message::DeviceSend::ToCoordinator(msg) => {
-                    let serial_msg = DeviceSendSerial {
-                        message: msg.clone(),
-                    };
+                    let serial_msg = DeviceSendSerial::Core(msg);
                     bincode::encode_into_writer(
                         serial_msg.clone(),
                         &mut device_uart,

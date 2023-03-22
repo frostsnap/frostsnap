@@ -1,5 +1,8 @@
 #![no_std]
 
+extern crate alloc;
+
+use alloc::string::String;
 use bincode::{Decode, Encode};
 use frostsnap_core::{
     message::{CoordinatorToDeviceMessage, DeviceToCoordindatorMessage},
@@ -13,9 +16,10 @@ pub struct DeviceReceiveSerial {
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
-pub struct DeviceSendSerial {
-    #[bincode(with_serde)]
-    pub message: DeviceToCoordindatorMessage,
+pub enum DeviceSendSerial {
+    Core(#[bincode(with_serde)] DeviceToCoordindatorMessage),
+    Debug(String),
+    // pub message: DeviceToCoordindatorMessage,
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
