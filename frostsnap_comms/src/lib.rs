@@ -10,26 +10,21 @@ use frostsnap_core::{
 };
 
 #[derive(Encode, Decode, Debug, Clone)]
-pub struct DeviceReceiveSerial {
-    #[bincode(with_serde)]
-    pub to_device_send: CoordinatorToDeviceMessage,
+pub enum DeviceReceiveSerial {
+    Core(#[bincode(with_serde)] CoordinatorToDeviceMessage),
+    AnnounceAck(#[bincode(with_serde)] DeviceId),
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
 pub enum DeviceSendSerial {
     Core(#[bincode(with_serde)] DeviceToCoordindatorMessage),
-    Debug(String),
+    Debug(String), // TODO from
     // pub message: DeviceToCoordindatorMessage,
+    Announce(Announce),
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
 pub struct Announce {
-    #[bincode(with_serde)]
-    pub from: DeviceId,
-}
-
-#[derive(Encode, Decode, Debug, Clone)]
-pub struct AnnounceAck {
     #[bincode(with_serde)]
     pub from: DeviceId,
 }

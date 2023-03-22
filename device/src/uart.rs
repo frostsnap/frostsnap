@@ -1,5 +1,7 @@
 extern crate alloc;
 use alloc::format;
+use alloc::vec::Vec;
+
 use bincode::de::read::Reader;
 use bincode::enc::write::Writer;
 use bincode::error::DecodeError;
@@ -8,11 +10,25 @@ use esp32c3_hal::prelude::_embedded_hal_serial_Read;
 use esp32c3_hal::{uart::Instance, Uart};
 pub struct DeviceUart<'a, T> {
     pub uart: Uart<'a, T>,
+    pub read_buffer: Vec<u8>,
 }
 
 impl<'a, T> DeviceUart<'a, T> {
     pub fn new(uart: Uart<'a, T>) -> Self {
-        Self { uart }
+        Self {
+            uart,
+            read_buffer: Vec::new(),
+        }
+    }
+
+    pub fn poll_read(&mut self) -> bool
+    where
+        T: Instance,
+    {
+        while let Ok(c) = self.uart.read() {
+            self.read_buffer.push(c);
+        }
+        !self.read_buffer.is_empty()
     }
 }
 
@@ -21,19 +37,13 @@ where
     T: Instance,
 {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), DecodeError> {
-        let mut i = 0;
-        while i < bytes.len() {
-            match self.uart.read() {
-                Err(_e) => {
-                    continue;
-                }
-                Ok(c) => {
-                    // print!("{:02X}", c);
-                    bytes[i] = c;
-                    i += 1;
-                }
-            };
+        while self.read_buffer.len() < bytes.len() {
+            self.poll_read();
         }
+        let extra_bytes = self.read_buffer.split_off(bytes.len());
+
+        bytes.copy_from_slice(&self.read_buffer);
+        self.read_buffer = extra_bytes;
         Ok(())
     }
 }
