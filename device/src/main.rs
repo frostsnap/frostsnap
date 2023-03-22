@@ -1,17 +1,24 @@
-// UART
 #![no_std]
 #![no_main]
+
+#[macro_use]
+pub mod device_config;
+use crate::device_config::DOUBLE_ENDED;
 
 pub mod uart;
 
 extern crate alloc;
 use alloc::vec;
 use esp32c3_hal::{
-    clock::ClockControl, gpio::IO, peripherals::Peripherals, prelude::*, timer::TimerGroup, Rtc,
-    Uart, uart::{config, TxRxPins}
+    clock::ClockControl,
+    gpio::IO,
+    peripherals::Peripherals,
+    prelude::*,
+    timer::TimerGroup,
+    uart::{config, TxRxPins},
+    Rtc, Uart,
 };
 use esp_backtrace as _;
-use esp_println::println;
 use frostsnap_comms::AnnounceAck;
 use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};
 use schnorr_fun::fun::s;
@@ -47,6 +54,7 @@ fn main() -> ! {
     let timer_group1 = TimerGroup::new(peripherals.TIMG1, &clocks);
     let mut wdt1 = timer_group1.wdt;
     let mut timer0 = timer_group0.timer0;
+    timer0.start(1u64.secs());
 
     rtc.swd.disable();
     rtc.rwdt.disable();
@@ -54,23 +62,36 @@ fn main() -> ! {
     wdt1.disable();
 
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
-
     // UART0: display device logs & bootloader stuff
     // UART1: device <--> coordinator communication.
-    let txrx = TxRxPins::new_tx_rx(
-        io.pins.gpio4.into_push_pull_output(),
-        io.pins.gpio5.into_floating_input(),
-    );
 
-    let serial_conf = config::Config {
-        baudrate: 9600,
-        ..Default::default()
+    let mut device_uart = {
+        let serial_conf = config::Config {
+            baudrate: 9600,
+            ..Default::default()
+        };
+        let txrx1 = TxRxPins::new_tx_rx(
+            io.pins.gpio21.into_push_pull_output(),
+            io.pins.gpio20.into_floating_input(),
+        );
+        let serial1 =
+            Uart::new_with_config(peripherals.UART0, Some(serial_conf), Some(txrx1), &clocks);
+        let device_uart1 = uart::DeviceUart::new(serial1);
+        device_uart1
+        // if DOUBLE_ENDED {
+        //     let txrx0 = TxRxPins::new_tx_rx(
+        //         io.pins.gpio14.into_push_pull_output(),
+        //         io.pins.gpio15.into_floating_input(),
+        //     );
+        //     let serial0 =
+        //         Uart::new_with_config(peripherals.UART1, Some(serial_conf), Some(txrx0), &clocks);
+        //     vec![device_uart1, uart::DeviceUart::new(serial0)]
+        // } else {
+        //     vec![device_uart1]
+        // }
     };
-    let serial = Uart::new_with_config(peripherals.UART1, Some(serial_conf), Some(txrx), &clocks);
 
-    timer0.start(1u64.secs());
-    let mut device_uart = uart::DeviceUart::new(serial);
-    device_uart.uart.flush().unwrap();
+    // let device_uart = device_uarts[0];
 
     let keypair = KeyPair::new(s!(42));
     let mut frost_device = frostsnap_core::FrostSigner::new(keypair);
@@ -88,6 +109,7 @@ fn main() -> ! {
             bincode::config::standard(),
         )
         .unwrap();
+        println!("Announced self");
         let decoded: Result<AnnounceAck, _> =
             bincode::decode_from_reader(&mut device_uart, bincode::config::standard());
 
@@ -119,7 +141,6 @@ fn main() -> ! {
                         // // Wouldblock placeholder
                     }
                     _ => {
-                        // println!("");
                         println!("Decode error: {:?}", e);
                     }
                 }
