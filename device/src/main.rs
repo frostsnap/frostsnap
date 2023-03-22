@@ -8,10 +8,9 @@ extern crate alloc;
 use alloc::vec;
 use esp32c3_hal::{
     clock::ClockControl, gpio::IO, peripherals::Peripherals, prelude::*, timer::TimerGroup, Rtc,
-    Uart,
+    Uart, uart::{config, TxRxPins}
 };
 use esp_backtrace as _;
-use esp_hal_common::uart::{config, TxRxPins};
 use esp_println::println;
 use frostsnap_comms::AnnounceAck;
 use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};

@@ -82,7 +82,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("\n------------------------------------------------------------------");
         println!("Registered devices: {:?}", &devices);
         // std::thread::sleep(Duration::from_millis(1000));
-        let choice = fetch_input("\nPress:\n\tr - read\n\tw - write\n\n\tk - start keygen\n");
+        let choice = fetch_input(
+            "\nPress:\n\tr - read\n\tw - write\n\tk - start keygen\n\ts - start signing\n",
+        );
         let mut sends = if choice == "w" {
             println!("Wrote nothing..");
             vec![]
@@ -103,6 +105,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         } else if choice == "k" {
             coordinator
                 .do_keygen(&devices, devices.len())
+                .unwrap()
+                .into_iter()
+                .map(|msg| CoordinatorSend::ToDevice(msg))
+                .collect()
+        } else if choice == "s" {
+            let message_to_sign = fetch_input("Enter a message to be signed: ");
+            coordinator
+                .start_sign(message_to_sign, devices.clone())
                 .unwrap()
                 .into_iter()
                 .map(|msg| CoordinatorSend::ToDevice(msg))

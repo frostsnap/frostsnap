@@ -5,9 +5,7 @@ use bincode::enc::write::Writer;
 use bincode::error::DecodeError;
 use bincode::error::EncodeError;
 use esp32c3_hal::prelude::_embedded_hal_serial_Read;
-use esp32c3_hal::Uart;
-use esp_hal_common::uart::Instance;
-
+use esp32c3_hal::{uart::Instance, Uart};
 pub struct DeviceUart<'a, T> {
     pub uart: Uart<'a, T>,
 }

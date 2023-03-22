@@ -428,7 +428,6 @@ dependencies = [
  "display-interface-spi",
  "esp-alloc",
  "esp-backtrace",
- "esp-hal-common",
  "esp-println",
  "esp32c3-hal",
  "frostsnap_comms",
@@ -527,8 +526,9 @@ dependencies = [
 
 [[package]]
 name = "esp-hal-common"
-version = "0.6.0"
-source = "git+https://github.com/esp-rs/esp-hal.git?rev=609fa2c5074fe5afdf30a5a7c338ad72660d226f#609fa2c5074fe5afdf30a5a7c338ad72660d226f"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5df3ec9a2e4df155e5a99f50b76a3a6733e69941d453085d3258846e1bd0a64e"
 dependencies = [
  "cfg-if 1.0.0",
  "critical-section",
@@ -547,8 +547,9 @@ dependencies = [
 
 [[package]]
 name = "esp-hal-procmacros"
-version = "0.3.0"
-source = "git+https://github.com/esp-rs/esp-hal.git?rev=609fa2c5074fe5afdf30a5a7c338ad72660d226f#609fa2c5074fe5afdf30a5a7c338ad72660d226f"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "214510c5399a574ee6a521be48851d06aaa188b40c4b6b8f2a2c3b8d22afd12e"
 dependencies = [
  "darling",
  "proc-macro-crate",
@@ -587,8 +588,9 @@ dependencies = [
 
 [[package]]
 name = "esp32c3-hal"
-version = "0.6.0"
-source = "git+https://github.com/esp-rs/esp-hal.git?rev=609fa2c5074fe5afdf30a5a7c338ad72660d226f#609fa2c5074fe5afdf30a5a7c338ad72660d226f"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfd7f5e718f699c26e112ecb09233c2d8b401db2316625cd78a729ab75f775f9"
 dependencies = [
  "cfg-if 1.0.0",
  "embedded-hal",
