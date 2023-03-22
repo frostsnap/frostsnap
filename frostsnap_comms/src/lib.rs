@@ -25,4 +25,7 @@ pub struct Announce {
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
-pub struct AnnounceAck {}
+pub struct AnnounceAck {
+    #[bincode(with_serde)]
+    pub from: DeviceId,
+}

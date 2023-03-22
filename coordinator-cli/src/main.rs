@@ -58,22 +58,29 @@ fn main() -> Result<(), Box<dyn Error>> {
     loop {
         let announcement: Result<frostsnap_comms::Announce, _> =
             bincode::decode_from_reader(&mut port_rw, bincode::config::standard());
-        if let Ok(announcement) = announcement {
-            println!("Registered device: {:?}", announcement.from);
-            devices.insert(announcement.from);
+        match announcement {
+            Ok(announcement) => {
+                println!("Registered device: {:?}", announcement.from);
+                devices.insert(announcement.from);
 
-            // Ack announcement
-            if let Err(e) = bincode::encode_into_writer(
-                frostsnap_comms::AnnounceAck {},
-                &mut port_rw,
-                bincode::config::standard(),
-            ) {
-                eprintln!("Error writing message to serial {:?}", e);
+                // Ack announcement
+                if let Err(e) = bincode::encode_into_writer(
+                    frostsnap_comms::AnnounceAck {
+                        from: announcement.from,
+                    },
+                    &mut port_rw,
+                    bincode::config::standard(),
+                ) {
+                    eprintln!("Error writing message to serial {:?}", e);
+                }
+
+                let choice = fetch_input("Finished registration of devices (y/n)?");
+                if choice == "y" {
+                    break;
+                }
             }
-
-            let choice = fetch_input("Finished registration of devices (y/n)?");
-            if choice == "y" {
-                break;
+            Err(e) => {
+                // eprintln!("Error reading message from serial {:?}", e);
             }
         }
     }
