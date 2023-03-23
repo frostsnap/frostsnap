@@ -95,6 +95,15 @@ fn main() -> ! {
     let keypair = KeyPair::new(s!(42));
     let mut frost_device = frostsnap_core::FrostSigner::new(keypair);
 
+    // Write magic bytes
+    if let Err(e) = bincode::encode_into_writer(
+        uart::MAGICBYTES,
+        &mut device_uart0,
+        bincode::config::standard(),
+    ) {
+        println!("Failed to write magic bytes to UART0");
+    }
+
     let announce_message = DeviceSendSerial::Announce(frostsnap_comms::Announce {
         from: frost_device.device_id(),
     });
@@ -134,6 +143,11 @@ fn main() -> ! {
     let mut sends_uart1 = vec![];
     let mut sends_user = vec![];
     loop {
+        if !uart1_active {
+            device_uart1.read_for_magic_bytes(1000);
+            uart1_active = true;
+        }
+
         let decoded: Result<DeviceReceiveSerial, _> =
             bincode::decode_from_reader(&mut device_uart0, bincode::config::standard());
 
@@ -180,7 +194,7 @@ fn main() -> ! {
         if device_uart1.poll_read() {
             let decoded: Result<DeviceSendSerial, _> =
                 bincode::decode_from_reader(&mut device_uart1, bincode::config::standard());
-            uart1_active = true;
+            // uart1_active = true;
 
             sends_uart0.push(DeviceSendSerial::Debug(
                 "Someone is connected to UART1".to_string(),
