@@ -1,4 +1,3 @@
-use bincode::de::read::Reader;
 use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};
 use frostsnap_core::message::CoordinatorSend;
 use std::error::Error;

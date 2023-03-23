@@ -3,12 +3,12 @@
 
 #[macro_use]
 pub mod device_config;
-use crate::device_config::DOUBLE_ENDED;
+use crate::device_config::SILENCE_PRINTS;
 
 pub mod uart;
 
 extern crate alloc;
-use alloc::string::ToString;
+use alloc::format;
 use alloc::vec;
 use esp32c3_hal::{
     clock::ClockControl,
@@ -56,6 +56,8 @@ fn main() -> ! {
     let mut wdt1 = timer_group1.wdt;
     let mut timer0 = timer_group0.timer0;
     timer0.start(1u64.secs());
+    let mut timer1 = timer_group1.timer0;
+    timer1.start(1u64.secs());
 
     rtc.swd.disable();
     rtc.rwdt.disable();
@@ -77,7 +79,7 @@ fn main() -> ! {
         );
         let serial0 =
             Uart::new_with_config(peripherals.UART0, Some(serial_conf), Some(txrx0), &clocks);
-        let device_uart0 = uart::DeviceUart::new(serial0);
+        let device_uart0 = uart::DeviceUart::new(serial0, timer0);
 
         let txrx1 = TxRxPins::new_tx_rx(
             io.pins.gpio4.into_push_pull_output(),
@@ -85,7 +87,7 @@ fn main() -> ! {
         );
         let serial1 =
             Uart::new_with_config(peripherals.UART1, Some(serial_conf), Some(txrx1), &clocks);
-        let device_uart1 = uart::DeviceUart::new(serial1);
+        let device_uart1 = uart::DeviceUart::new(serial1, timer1);
 
         (device_uart0, device_uart1)
     };
@@ -107,36 +109,36 @@ fn main() -> ! {
     let announce_message = DeviceSendSerial::Announce(frostsnap_comms::Announce {
         from: frost_device.device_id(),
     });
-    let delay = esp32c3_hal::Delay::new(&clocks);
-    loop {
-        // Don't completely spam Announces.
-        // As we have found, delays interfere with reading from serial
-        // But in this case we are not ready to receive or forward any messages.
-        delay.delay(3_000_000 as u32);
-        // Send announce to coordinator
-        match bincode::encode_into_writer(
-            announce_message.clone(),
-            &mut device_uart0,
-            bincode::config::standard(),
-        ) {
-            Err(e) => println!("Error writing announce message: {:?}", e),
-            Ok(_) => {
-                println!("Announced self");
-                let decoded: Result<DeviceReceiveSerial, _> =
-                    bincode::decode_from_reader(&mut device_uart0, bincode::config::standard());
+    // Send announce to coordinator
+    match bincode::encode_into_writer(
+        announce_message.clone(),
+        &mut device_uart0,
+        bincode::config::standard(),
+    ) {
+        Err(e) => println!("Error writing announce message: {:?}", e),
+        Ok(_) => {
+            println!("Announced self");
+        }
+    }
 
-                if let Ok(message) = decoded {
-                    if let DeviceReceiveSerial::AnnounceAck(_) = message {
-                        println!("Received announce ACK");
-                        break;
-                    }
+    loop {
+        let decoded: Result<DeviceReceiveSerial, _> =
+            bincode::decode_from_reader(&mut device_uart0, bincode::config::standard());
+        if let Ok(message) = decoded {
+            if let DeviceReceiveSerial::AnnounceAck(device_id) = message {
+                if device_id == frost_device.device_id() {
+                    println!("Received announce ACK");
+                    break;
                 }
             }
         }
     }
 
     bincode::encode_into_writer(
-        DeviceSendSerial::Debug("Registered Successfully".to_string()),
+        DeviceSendSerial::Debug(format!(
+            "Device {:?} registered successfully",
+            frost_device.device_id()
+        )),
         &mut device_uart0,
         bincode::config::standard(),
     )
@@ -147,9 +149,15 @@ fn main() -> ! {
     let mut sends_uart1 = vec![];
     let mut sends_user = vec![];
     loop {
+        // if false && !uart1_active {
         if !uart1_active {
-            device_uart1.read_for_magic_bytes(1000);
-            uart1_active = true;
+            if device_uart1.read_for_magic_bytes(1000) {
+                uart1_active = true;
+                sends_uart0.push(DeviceSendSerial::Debug(format!(
+                    "Device {:?} read magic bytes from another device!",
+                    frost_device.device_id()
+                )));
+            }
         }
 
         let decoded: Result<DeviceReceiveSerial, _> =
@@ -165,10 +173,13 @@ fn main() -> ! {
                         if uart1_active {
                             sends_uart1.push(received_message.clone());
                         }
+                        sends_uart0.push(DeviceSendSerial::Announce(frostsnap_comms::Announce {
+                            from: frost_device.device_id(),
+                        }));
                     }
                     DeviceReceiveSerial::AnnounceAck(device_id) => {
                         // Pass on Announce Acks which belong to others
-                        if device_id != &frost_device.device_id() && uart1_active {
+                        if device_id != &frost_device.device_id() {
                             sends_uart1.push(received_message.clone());
                         }
                     }
@@ -195,18 +206,11 @@ fn main() -> ! {
             Err(e) => println!("Decode error: {:?}", e), // TODO "Restarting Message" and restart
         };
 
-        if device_uart1.poll_read() {
+        if uart1_active {
             let decoded: Result<DeviceSendSerial, _> =
                 bincode::decode_from_reader(&mut device_uart1, bincode::config::standard());
-            // uart1_active = true;
-
-            sends_uart0.push(DeviceSendSerial::Debug(
-                "Someone is connected to UART1".to_string(),
-            ));
-
             match decoded {
                 Ok(device_send) => {
-                    // Currently we are assuming all messages received on this layer are intended for us.
                     println!("Received upstream {:?}", device_send);
                     sends_uart0.push(device_send);
                 }
@@ -251,11 +255,15 @@ fn main() -> ! {
             }
         }
 
-        for send in sends_uart1.drain(..) {
-            if let Err(e) =
-                bincode::encode_into_writer(send, &mut device_uart1, bincode::config::standard())
-            {
-                println!("Error sending forwarding message: {:?}", e);
+        if uart1_active {
+            for send in sends_uart1.drain(..) {
+                if let Err(e) = bincode::encode_into_writer(
+                    send,
+                    &mut device_uart1,
+                    bincode::config::standard(),
+                ) {
+                    println!("Error sending forwarding message: {:?}", e);
+                }
             }
         }
     }
