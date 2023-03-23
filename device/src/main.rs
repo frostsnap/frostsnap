@@ -107,8 +107,12 @@ fn main() -> ! {
     let announce_message = DeviceSendSerial::Announce(frostsnap_comms::Announce {
         from: frost_device.device_id(),
     });
-    // let delay = esp32c3_hal::Delay::new(&clocks);
+    let delay = esp32c3_hal::Delay::new(&clocks);
     loop {
+        // Don't completely spam Announces.
+        // As we have found, delays interfere with reading from serial
+        // But in this case we are not ready to receive or forward any messages.
+        delay.delay(3_000_000 as u32);
         // Send announce to coordinator
         match bincode::encode_into_writer(
             announce_message.clone(),
