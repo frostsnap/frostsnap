@@ -89,6 +89,8 @@ fn main() -> ! {
 
         (device_uart0, device_uart1)
     };
+    device_uart0.uart.flush().unwrap();
+    device_uart1.uart.flush().unwrap();
 
     let keypair = KeyPair::new(s!(42));
     let mut frost_device = frostsnap_core::FrostSigner::new(keypair);
@@ -96,10 +98,8 @@ fn main() -> ! {
     let announce_message = DeviceSendSerial::Announce(frostsnap_comms::Announce {
         from: frost_device.device_id(),
     });
-    let delay = esp32c3_hal::Delay::new(&clocks);
-    // TODO: why is announce not continually sending?
+    // let delay = esp32c3_hal::Delay::new(&clocks);
     loop {
-        delay.delay(3000 as u32);
         // Send announce to coordinator
         match bincode::encode_into_writer(
             announce_message.clone(),
@@ -143,7 +143,17 @@ fn main() -> ! {
                 println!("Decoded {:?}", received_message);
 
                 match &received_message {
-                    DeviceReceiveSerial::AnnounceAck(_) => {}
+                    DeviceReceiveSerial::AnnounceCoordinator(_) => {
+                        if uart1_active {
+                            sends_uart1.push(received_message.clone());
+                        }
+                    }
+                    DeviceReceiveSerial::AnnounceAck(device_id) => {
+                        // Pass on Announce Acks which belong to others
+                        if device_id != &frost_device.device_id() && uart1_active {
+                            sends_uart1.push(received_message.clone());
+                        }
+                    }
                     DeviceReceiveSerial::Core(core_message) => {
                         if uart1_active {
                             sends_uart1.push(received_message.clone());
@@ -170,6 +180,7 @@ fn main() -> ! {
         if device_uart1.poll_read() {
             let decoded: Result<DeviceSendSerial, _> =
                 bincode::decode_from_reader(&mut device_uart1, bincode::config::standard());
+            uart1_active = true;
 
             sends_uart0.push(DeviceSendSerial::Debug(
                 "Someone is connected to UART1".to_string(),
@@ -177,12 +188,17 @@ fn main() -> ! {
 
             match decoded {
                 Ok(device_send) => {
-                    uart1_active = true;
                     // Currently we are assuming all messages received on this layer are intended for us.
                     println!("Received upstream {:?}", device_send);
                     sends_uart0.push(device_send);
                 }
-                Err(e) => println!("Decode error: {:?}", e),
+                Err(e) => {
+                    println!("Decode error: {:?}", e);
+                    // sends_uart0.push(DeviceSendSerial::Debug(format!(
+                    //     "Failed to decode on UART0 {:?}",
+                    //     e
+                    // )));
+                }
             };
         } else {
         }

@@ -59,8 +59,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             "\nPress:\n\tr - read\n\tw - write\n\tk - start keygen\n\ts - start signing\n",
         );
         let mut sends = if choice == "w" {
-            println!("Wrote nothing..");
-            vec![]
+            vec![DeviceReceiveSerial::AnnounceCoordinator(
+                "Im a laptop".to_string(),
+            )]
         } else if choice == "r" {
             let decode: Result<DeviceSendSerial, _> =
                 bincode::decode_from_reader(&mut port_rw, bincode::config::standard());
@@ -107,6 +108,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
                 Err(e) => {
                     eprintln!("{:?}", e);
+                    // Write something to serial to prevent device hanging
                     vec![]
                 }
             };

@@ -13,13 +13,13 @@ use frostsnap_core::{
 pub enum DeviceReceiveSerial {
     Core(#[bincode(with_serde)] CoordinatorToDeviceMessage),
     AnnounceAck(#[bincode(with_serde)] DeviceId),
+    AnnounceCoordinator(String),
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
 pub enum DeviceSendSerial {
     Core(#[bincode(with_serde)] DeviceToCoordindatorMessage),
     Debug(String), // TODO from
-    // pub message: DeviceToCoordindatorMessage,
     Announce(Announce),
 }
 
