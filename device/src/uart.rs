@@ -39,23 +39,18 @@ where
         !self.read_buffer.is_empty()
     }
 
-    pub fn read_for_magic_bytes(&mut self, search_lim: usize) -> bool
+    pub fn read_for_magic_bytes(&mut self) -> bool
     where
         T: Instance,
     {
         let search_bytes = MAGICBYTES.to_vec();
-        let mut read_buff = Vec::new();
-        for _ in 0..search_lim {
-            if let Ok(byte) = self.uart.read() {
-                read_buff.push(byte);
-                if read_buff.len() >= search_bytes.len() {
-                    let start_index = read_buff.len() - search_bytes.len();
-                    if read_buff[start_index..] == search_bytes {
-                        return true;
-                    }
+        while self.poll_read() {
+            if self.read_buffer.len() >= search_bytes.len() {
+                let start_index = self.read_buffer.len() - search_bytes.len();
+                if self.read_buffer[start_index..] == search_bytes {
+                    self.read_buffer = Vec::new();
+                    return true;
                 }
-            } else {
-                return false;
             }
         }
         false
@@ -72,9 +67,9 @@ where
 
         while self.read_buffer.len() < bytes.len() {
             self.poll_read();
-            // if (self.timer.now() - start_time) / 40_000 > 100 {
-            //     return Err(DecodeError::LimitExceeded);
-            // }
+            if (self.timer.now() - start_time) / 40_000 > 1_000 {
+                return Err(DecodeError::LimitExceeded);
+            }
         }
         let extra_bytes = self.read_buffer.split_off(bytes.len());
 
