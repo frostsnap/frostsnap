@@ -77,7 +77,9 @@ where
         while self.read_buffer.len() < bytes.len() {
             self.poll_read();
             if (self.timer.now() - start_time) / 40_000 > 1_000 {
-                return Err(DecodeError::LimitExceeded);
+                return Err(DecodeError::UnexpectedEnd {
+                    additional: bytes.len() - self.read_buffer.len(),
+                });
             }
         }
         let extra_bytes = self.read_buffer.split_off(bytes.len());

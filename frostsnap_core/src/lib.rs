@@ -4,6 +4,8 @@ pub mod encrypted_share;
 pub mod message;
 pub mod xpub;
 
+pub use schnorr_fun;
+
 #[macro_use]
 extern crate alloc;
 
