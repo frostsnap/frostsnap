@@ -4,6 +4,8 @@ pub mod encrypted_share;
 pub mod message;
 pub mod xpub;
 
+pub use schnorr_fun;
+
 #[macro_use]
 extern crate alloc;
 
@@ -37,7 +39,7 @@ pub struct FrostCoordinator {
     state: CoordinatorState,
 }
 
-pub const NONCE_BATCH_SIZE: usize = 32;
+pub const NONCE_BATCH_SIZE: usize = 16;
 
 impl FrostCoordinator {
     pub fn new() -> Self {

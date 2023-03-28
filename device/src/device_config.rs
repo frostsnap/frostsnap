@@ -1,10 +1,11 @@
 // Set to false if we are debugging on UART0
-pub const DOUBLE_ENDED: bool = true;
+pub const SILENCE_PRINTS: bool = true;
 
+#[macro_export]
 macro_rules! println {
     ($($arg:tt)*) => {
         {
-            if !DOUBLE_ENDED {
+            if !$crate::device_config::SILENCE_PRINTS {
                 esp_println::println!($($arg)*);
             }
         }

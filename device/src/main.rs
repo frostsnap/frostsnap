@@ -1,14 +1,12 @@
 #![no_std]
 #![no_main]
 
-#[macro_use]
 pub mod device_config;
-use crate::device_config::DOUBLE_ENDED;
-
 pub mod uart;
 
+#[macro_use]
 extern crate alloc;
-use alloc::string::ToString;
+use crate::alloc::string::ToString;
 use alloc::vec;
 use esp32c3_hal::{
     clock::ClockControl,
@@ -22,8 +20,9 @@ use esp32c3_hal::{
 use esp_backtrace as _;
 use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};
 use frostsnap_core::message::DeviceSend;
-use schnorr_fun::fun::s;
-use schnorr_fun::fun::KeyPair;
+use frostsnap_core::schnorr_fun::fun::hex;
+use frostsnap_core::schnorr_fun::fun::KeyPair;
+use frostsnap_core::schnorr_fun::fun::Scalar;
 
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
@@ -56,6 +55,8 @@ fn main() -> ! {
     let mut wdt1 = timer_group1.wdt;
     let mut timer0 = timer_group0.timer0;
     timer0.start(1u64.secs());
+    let mut timer1 = timer_group1.timer0;
+    timer1.start(1u64.secs());
 
     rtc.swd.disable();
     rtc.rwdt.disable();
@@ -77,7 +78,7 @@ fn main() -> ! {
         );
         let serial0 =
             Uart::new_with_config(peripherals.UART0, Some(serial_conf), Some(txrx0), &clocks);
-        let device_uart0 = uart::DeviceUart::new(serial0);
+        let device_uart0 = uart::DeviceUart::new(serial0, timer0);
 
         let txrx1 = TxRxPins::new_tx_rx(
             io.pins.gpio4.into_push_pull_output(),
@@ -85,122 +86,142 @@ fn main() -> ! {
         );
         let serial1 =
             Uart::new_with_config(peripherals.UART1, Some(serial_conf), Some(txrx1), &clocks);
-        let device_uart1 = uart::DeviceUart::new(serial1);
+        let device_uart1 = uart::DeviceUart::new(serial1, timer1);
 
         (device_uart0, device_uart1)
     };
     device_uart0.uart.flush().unwrap();
     device_uart1.uart.flush().unwrap();
 
-    let keypair = KeyPair::new(s!(42));
+    // TODO secure RNG
+    let mut rng = esp32c3_hal::Rng::new(peripherals.RNG);
+    let mut rand_bytes = [0u8; 32];
+    rng.read(&mut rand_bytes).unwrap();
+    let secret = Scalar::from_bytes(rand_bytes).unwrap().non_zero().unwrap();
+    let keypair = KeyPair::new(secret);
+
     let mut frost_device = frostsnap_core::FrostSigner::new(keypair);
+
+    // Write magic bytes
+    if let Err(e) = bincode::encode_into_writer(
+        uart::MAGICBYTES,
+        &mut device_uart0,
+        bincode::config::standard(),
+    ) {
+        println!("Failed to write magic bytes to UART0");
+    }
 
     let announce_message = DeviceSendSerial::Announce(frostsnap_comms::Announce {
         from: frost_device.device_id(),
     });
-    // let delay = esp32c3_hal::Delay::new(&clocks);
-    loop {
-        // Send announce to coordinator
-        match bincode::encode_into_writer(
-            announce_message.clone(),
-            &mut device_uart0,
-            bincode::config::standard(),
-        ) {
-            Err(e) => println!("Error writing announce message: {:?}", e),
-            Ok(_) => {
-                println!("Announced self");
-                let decoded: Result<DeviceReceiveSerial, _> =
-                    bincode::decode_from_reader(&mut device_uart0, bincode::config::standard());
-
-                if let Ok(message) = decoded {
-                    if let DeviceReceiveSerial::AnnounceAck(_) = message {
-                        println!("Received announce ACK");
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    bincode::encode_into_writer(
-        DeviceSendSerial::Debug("Registered Successfully".to_string()),
-        &mut device_uart0,
-        bincode::config::standard(),
-    )
-    .unwrap();
 
     let mut uart1_active = false;
-    let mut sends_uart0 = vec![];
+    let mut sends_uart0 = vec![announce_message];
     let mut sends_uart1 = vec![];
     let mut sends_user = vec![];
     loop {
-        let decoded: Result<DeviceReceiveSerial, _> =
-            bincode::decode_from_reader(&mut device_uart0, bincode::config::standard());
+        if !uart1_active {
+            if device_uart1.read_for_magic_bytes() {
+                uart1_active = true;
+                sends_uart0.push(DeviceSendSerial::Debug {
+                    error: "Device read magic bytes from another device!".to_string(),
+                    device: frost_device.device_id(),
+                });
+            }
+        }
 
-        match decoded {
-            Ok(received_message) => {
-                // Currently we are assuming all messages received on this layer are intended for us.
-                println!("Decoded {:?}", received_message);
+        // Read upstream if there is something to read (from direction of coordinator)
+        if device_uart0.poll_read() {
+            let prior_to_read_buff = device_uart0.read_buffer.clone();
+            let decoded: Result<DeviceReceiveSerial, _> =
+                bincode::decode_from_reader(&mut device_uart0, bincode::config::standard());
 
-                match &received_message {
-                    DeviceReceiveSerial::AnnounceCoordinator(_) => {
-                        if uart1_active {
-                            sends_uart1.push(received_message.clone());
-                        }
-                    }
-                    DeviceReceiveSerial::AnnounceAck(device_id) => {
-                        // Pass on Announce Acks which belong to others
-                        if device_id != &frost_device.device_id() && uart1_active {
-                            sends_uart1.push(received_message.clone());
-                        }
-                    }
-                    DeviceReceiveSerial::Core(core_message) => {
-                        if uart1_active {
-                            sends_uart1.push(received_message.clone());
-                        }
+            match decoded {
+                Ok(received_message) => {
+                    // Currently we are assuming all messages received on this layer are intended for us.
+                    println!("Decoded {:?}", received_message);
 
-                        for send in frost_device
-                            .recv_coordinator_message(core_message.clone())
-                            .unwrap()
-                            .into_iter()
-                        {
-                            match send {
-                                DeviceSend::ToUser(message) => sends_user.push(message),
-                                DeviceSend::ToCoordinator(message) => {
-                                    sends_uart0.push(DeviceSendSerial::Core(message))
-                                }
+                    match &received_message {
+                        DeviceReceiveSerial::AnnounceCoordinator(_) => {
+                            if uart1_active {
+                                sends_uart1.push(received_message.clone());
                             }
+                            sends_uart0.push(DeviceSendSerial::Announce(
+                                frostsnap_comms::Announce {
+                                    from: frost_device.device_id(),
+                                },
+                            ));
+                        }
+                        DeviceReceiveSerial::AnnounceAck(device_id) => {
+                            // Pass on Announce Acks which belong to others
+                            if device_id != &frost_device.device_id() {
+                                sends_uart1.push(received_message.clone());
+                            } else {
+                                sends_uart0.push(DeviceSendSerial::Debug {
+                                    error: "Device {:?} received its registration ACK!".to_string(),
+                                    device: frost_device.device_id(),
+                                });
+                            }
+                        }
+                        DeviceReceiveSerial::Core(core_message) => {
+                            if uart1_active {
+                                sends_uart1.push(received_message.clone());
+                            }
+
+                            match frost_device.recv_coordinator_message(core_message.clone()) {
+                                Ok(new_sends) => {
+                                    for send in new_sends.into_iter() {
+                                        match send {
+                                            DeviceSend::ToUser(message) => sends_user.push(message),
+                                            DeviceSend::ToCoordinator(message) => {
+                                                sends_uart0.push(DeviceSendSerial::Core(message))
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(e) => println!("Unexpected FROST message in this state."),
+                            }
+                            {}
                         }
                     }
                 }
-            }
-            Err(e) => println!("Decode error: {:?}", e), // TODO "Restarting Message" and restart
-        };
+                Err(e) => {
+                    match e {
+                        _ => {
+                            println!("Decode error: {:?}", e); // TODO "Restarting Message" and restart
+                            sends_uart0.push(DeviceSendSerial::Debug {
+                                error: format!(
+                                    "Device failed to read on UART0: {}",
+                                    hex::encode(&prior_to_read_buff)
+                                ),
+                                device: frost_device.device_id(),
+                            });
+                        }
+                    }
+                    break;
+                }
+            };
+        }
 
-        if device_uart1.poll_read() {
+        // Read from downstream if it is active (found magic bytes) and there is something to read
+        if uart1_active && device_uart1.poll_read() {
             let decoded: Result<DeviceSendSerial, _> =
                 bincode::decode_from_reader(&mut device_uart1, bincode::config::standard());
-            uart1_active = true;
-
-            sends_uart0.push(DeviceSendSerial::Debug(
-                "Someone is connected to UART1".to_string(),
-            ));
-
             match decoded {
                 Ok(device_send) => {
-                    // Currently we are assuming all messages received on this layer are intended for us.
                     println!("Received upstream {:?}", device_send);
                     sends_uart0.push(device_send);
                 }
-                Err(e) => {
-                    println!("Decode error: {:?}", e);
-                    // sends_uart0.push(DeviceSendSerial::Debug(format!(
-                    //     "Failed to decode on UART0 {:?}",
-                    //     e
-                    // )));
-                }
+                Err(e) => match e {
+                    _ => {
+                        println!("Decode error: {:?}", e);
+                        sends_uart0.push(DeviceSendSerial::Debug {
+                            error: "Failed to decode on UART0".to_string(),
+                            device: frost_device.device_id(),
+                        });
+                    }
+                },
             };
-        } else {
         }
 
         // Simulate user keypresses first (TODO: Poll input so we do not hang and delay forwarding)
@@ -233,13 +254,17 @@ fn main() -> ! {
             }
         }
 
-        for send in sends_uart1.drain(..) {
-            if let Err(e) =
-                bincode::encode_into_writer(send, &mut device_uart1, bincode::config::standard())
-            {
-                println!("Error sending forwarding message: {:?}", e);
+        if uart1_active {
+            for send in sends_uart1.drain(..) {
+                if let Err(e) = bincode::encode_into_writer(
+                    send,
+                    &mut device_uart1,
+                    bincode::config::standard(),
+                ) {
+                    println!("Error sending forwarding message: {:?}", e);
+                }
             }
         }
     }
-    // loop {}
+    loop {}
 }

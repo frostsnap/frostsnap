@@ -56,7 +56,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("Registered devices: {:?}", &devices);
         // std::thread::sleep(Duration::from_millis(1000));
         let choice = fetch_input(
-            "\nPress:\n\tr - read\n\tw - write\n\tk - start keygen\n\ts - start signing\n",
+            "\nPress:\n\tm - Read for device magic bytes\n\tr - read\n\tw - write\n\tk - start keygen\n\ts - start signing\n",
         );
         let mut sends = if choice == "w" {
             vec![DeviceReceiveSerial::AnnounceCoordinator(
@@ -100,8 +100,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 })
                                 .collect() // TODO remove panic
                         }
-                        DeviceSendSerial::Debug(string) => {
-                            println!("Debug message from device: {:?}", string);
+                        DeviceSendSerial::Debug { error, device } => {
+                            println!("Debug message from {:?}: {:?}", device, error);
                             vec![]
                         }
                     }
@@ -128,6 +128,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .into_iter()
                 .map(|msg| DeviceReceiveSerial::Core(msg))
                 .collect()
+        } else if choice == "m" {
+            if port_rw.read_for_magic_bytes(10_000) {
+                println!("Found magic bytes!");
+            } else {
+                println!("Failed to find magic bytes..");
+            }
+            vec![]
         } else {
             println!("Did nothing..");
             vec![]
