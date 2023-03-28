@@ -43,17 +43,26 @@ where
     where
         T: Instance,
     {
-        let search_bytes = MAGICBYTES.to_vec();
-        while self.poll_read() {
-            if self.read_buffer.len() >= search_bytes.len() {
-                let start_index = self.read_buffer.len() - search_bytes.len();
-                if self.read_buffer[start_index..] == search_bytes {
-                    self.read_buffer = Vec::new();
-                    return true;
-                }
+        if !self.poll_read() {
+            return false;
+        };
+
+        let position = self
+            .read_buffer
+            .windows(MAGICBYTES.len())
+            .position(|window| window == &MAGICBYTES[..]);
+        match position {
+            Some(position) => {
+                self.read_buffer = self.read_buffer.split_off(position + MAGICBYTES.len());
+                return true;
+            }
+            None => {
+                self.read_buffer = self
+                    .read_buffer
+                    .split_off(self.read_buffer.len().saturating_sub(MAGICBYTES.len() + 1));
+                return false;
             }
         }
-        false
     }
 }
 
