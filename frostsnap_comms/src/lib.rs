@@ -19,7 +19,11 @@ pub enum DeviceReceiveSerial {
 #[derive(Encode, Decode, Debug, Clone)]
 pub enum DeviceSendSerial {
     Core(#[bincode(with_serde)] DeviceToCoordindatorMessage),
-    Debug(String), // TODO from
+    Debug {
+        error: String,
+        #[bincode(with_serde)]
+        device: DeviceId,
+    },
     Announce(Announce),
 }
 

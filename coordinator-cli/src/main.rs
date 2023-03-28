@@ -100,8 +100,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 })
                                 .collect() // TODO remove panic
                         }
-                        DeviceSendSerial::Debug(string) => {
-                            println!("Debug message from device: {:?}", string);
+                        DeviceSendSerial::Debug { error, device } => {
+                            println!("Debug message from {:?}: {:?}", device, error);
                             vec![]
                         }
                     }

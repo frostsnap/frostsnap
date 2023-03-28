@@ -8,7 +8,7 @@ use crate::device_config::SILENCE_PRINTS;
 pub mod uart;
 
 extern crate alloc;
-use alloc::format;
+use crate::alloc::string::ToString;
 use alloc::vec;
 use esp32c3_hal::{
     clock::ClockControl,
@@ -95,7 +95,7 @@ fn main() -> ! {
     device_uart1.uart.flush().unwrap();
 
     // HARDCODED SECRET (MUST BE CHANGED WHEN USING MULTIPLE DEVICES)
-    let keypair = KeyPair::new(s!(123));
+    let keypair = KeyPair::new(s!(1243));
     let mut frost_device = frostsnap_core::FrostSigner::new(keypair);
 
     // Write magic bytes
@@ -143,10 +143,10 @@ fn main() -> ! {
         if !uart1_active {
             if device_uart1.read_for_magic_bytes() {
                 uart1_active = true;
-                sends_uart0.push(DeviceSendSerial::Debug(format!(
-                    "Device {:?} read magic bytes from another device!",
-                    frost_device.device_id()
-                )));
+                sends_uart0.push(DeviceSendSerial::Debug {
+                    error: "Device {:?} read magic bytes from another device!".to_string(),
+                    device: frost_device.device_id(),
+                });
             }
         }
 
@@ -172,10 +172,10 @@ fn main() -> ! {
                         if device_id != &frost_device.device_id() {
                             sends_uart1.push(received_message.clone());
                         } else {
-                            sends_uart0.push(DeviceSendSerial::Debug(format!(
-                                "Device {:?} received its registration ACK!",
-                                frost_device.device_id(),
-                            )));
+                            sends_uart0.push(DeviceSendSerial::Debug {
+                                error: "Device {:?} received its registration ACK!".to_string(),
+                                device: frost_device.device_id(),
+                            });
                         }
                     }
                     DeviceReceiveSerial::Core(core_message) => {
@@ -205,11 +205,10 @@ fn main() -> ! {
                     bincode::error::DecodeError::LimitExceeded => {}
                     _ => {
                         println!("Decode error: {:?}", e); // TODO "Restarting Message" and restart
-                        sends_uart0.push(DeviceSendSerial::Debug(format!(
-                            "Device {:?} failed to read on UART0: {:?}",
-                            frost_device.device_id(),
-                            e,
-                        )));
+                        sends_uart0.push(DeviceSendSerial::Debug {
+                            error: "Device {:?} failed to read on UART0: {:?}".to_string(),
+                            device: frost_device.device_id(),
+                        });
                     }
                 }
             }
@@ -227,10 +226,10 @@ fn main() -> ! {
                     bincode::error::DecodeError::LimitExceeded => {}
                     _ => {
                         println!("Decode error: {:?}", e);
-                        sends_uart0.push(DeviceSendSerial::Debug(format!(
-                            "Failed to decode on UART0 {:?}",
-                            e
-                        )));
+                        sends_uart0.push(DeviceSendSerial::Debug {
+                            error: "Failed to decode on UART0 {:?}".to_string(),
+                            device: frost_device.device_id(),
+                        });
                     }
                 },
             };
