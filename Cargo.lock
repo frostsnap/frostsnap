@@ -434,7 +434,6 @@ dependencies = [
  "frostsnap_core",
  "mipidsi",
  "nb 1.1.0",
- "schnorr_fun",
 ]
 
 [[package]]

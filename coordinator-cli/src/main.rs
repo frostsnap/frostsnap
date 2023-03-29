@@ -50,54 +50,65 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut port_rw = SerialPortBincode::new(port);
 
     let mut coordinator = frostsnap_core::FrostCoordinator::new();
-
     let mut devices = BTreeSet::new();
-
-    // Registration:
-    println!("Waiting for devices to send registration messages...");
-    loop {
-        let announcement: Result<frostsnap_comms::Announce, _> =
-            bincode::decode_from_reader(&mut port_rw, bincode::config::standard());
-        if let Ok(announcement) = announcement {
-            println!("Registered device: {:?}", announcement.from);
-            devices.insert(announcement.from);
-
-            // Ack announcement
-            if let Err(e) = bincode::encode_into_writer(
-                frostsnap_comms::AnnounceAck {},
-                &mut port_rw,
-                bincode::config::standard(),
-            ) {
-                eprintln!("Error writing message to serial {:?}", e);
-            }
-
-            let choice = fetch_input("Finished registration of devices (y/n)?");
-            if choice == "y" {
-                break;
-            }
-        }
-    }
-
     loop {
         println!("\n------------------------------------------------------------------");
         println!("Registered devices: {:?}", &devices);
         // std::thread::sleep(Duration::from_millis(1000));
         let choice = fetch_input(
-            "\nPress:\n\tr - read\n\tw - write\n\tk - start keygen\n\ts - start signing\n",
+            "\nPress:\n\tm - Read for device magic bytes\n\tr - read\n\tw - write\n\tk - start keygen\n\ts - start signing\n",
         );
         let mut sends = if choice == "w" {
-            println!("Wrote nothing..");
-            vec![]
+            vec![DeviceReceiveSerial::AnnounceCoordinator(
+                "Im a laptop".to_string(),
+            )]
         } else if choice == "r" {
             let decode: Result<DeviceSendSerial, _> =
                 bincode::decode_from_reader(&mut port_rw, bincode::config::standard());
             let sends = match decode {
                 Ok(msg) => {
-                    println!("Read: {:?}", msg);
-                    coordinator.recv_device_message(msg.message).unwrap()
+                    match &msg {
+                        DeviceSendSerial::Announce(announcement) => {
+                            println!("Registered device: {:?}", announcement.from);
+                            devices.insert(announcement.from);
+                            vec![DeviceReceiveSerial::AnnounceAck(announcement.from)]
+                        }
+                        DeviceSendSerial::Core(core_msg) => {
+                            println!("Read core message: {:?}", msg);
+
+                            let our_responses =
+                                coordinator.recv_device_message(core_msg.clone()).unwrap();
+
+                            our_responses
+                                .into_iter()
+                                .filter_map(|msg| match msg {
+                                    CoordinatorSend::ToDevice(core_message) => {
+                                        Some(DeviceReceiveSerial::Core(core_message))
+                                    }
+                                    CoordinatorSend::ToUser(to_user_message) => {
+                                        fetch_input(&format!("Ack this message for coordinator?: {:?}", to_user_message));
+                                        match to_user_message {
+                                            frostsnap_core::message::CoordinatorToUserMessage::Signed { .. } => {}
+                                            frostsnap_core::message::CoordinatorToUserMessage::CheckKeyGen {
+                                                ..
+                                            } => {
+                                                coordinator.keygen_ack(true).unwrap();
+                                            }
+                                        }
+                                        None
+                                    },
+                                })
+                                .collect() // TODO remove panic
+                        }
+                        DeviceSendSerial::Debug { error, device } => {
+                            println!("Debug message from {:?}: {:?}", device, error);
+                            vec![]
+                        }
+                    }
                 }
                 Err(e) => {
                     eprintln!("{:?}", e);
+                    // Write something to serial to prevent device hanging
                     vec![]
                 }
             };
@@ -107,7 +118,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .do_keygen(&devices, devices.len())
                 .unwrap()
                 .into_iter()
-                .map(|msg| CoordinatorSend::ToDevice(msg))
+                .map(|msg| DeviceReceiveSerial::Core(msg))
                 .collect()
         } else if choice == "s" {
             let message_to_sign = fetch_input("Enter a message to be signed: ");
@@ -115,43 +126,29 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .start_sign(message_to_sign, devices.clone())
                 .unwrap()
                 .into_iter()
-                .map(|msg| CoordinatorSend::ToDevice(msg))
+                .map(|msg| DeviceReceiveSerial::Core(msg))
                 .collect()
+        } else if choice == "m" {
+            if port_rw.read_for_magic_bytes(10_000) {
+                println!("Found magic bytes!");
+            } else {
+                println!("Failed to find magic bytes..");
+            }
+            vec![]
         } else {
             println!("Did nothing..");
             vec![]
         };
 
         println!("Sending these messages:");
-        while !sends.is_empty() {
-            let send = sends.pop().unwrap();
-            match send {
-                frostsnap_core::message::CoordinatorSend::ToDevice(msg) => {
-                    println!("{:?}", msg);
-                    let serial_msg = DeviceReceiveSerial {
-                        to_device_send: msg,
-                    };
-                    if let Err(e) = bincode::encode_into_writer(
-                        serial_msg,
-                        &mut port_rw,
-                        bincode::config::standard(),
-                    ) {
-                        eprintln!("Error writing message to serial {:?}", e);
-                    }
-                    println!("");
-                }
-                frostsnap_core::message::CoordinatorSend::ToUser(message) => {
-                    fetch_input(&format!("Ack this message for coordinator?: {:?}", message));
-                    match message {
-                        frostsnap_core::message::CoordinatorToUserMessage::Signed { .. } => {}
-                        frostsnap_core::message::CoordinatorToUserMessage::CheckKeyGen {
-                            ..
-                        } => {
-                            coordinator.keygen_ack(true).unwrap();
-                        }
-                    }
-                }
+        for send in sends.drain(..) {
+            println!("{:?}", send);
+            if let Err(e) =
+                bincode::encode_into_writer(send, &mut port_rw, bincode::config::standard())
+            {
+                eprintln!("Error writing message to serial {:?}", e);
             }
+            println!("");
         }
     }
 }
