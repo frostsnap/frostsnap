@@ -69,7 +69,7 @@ fn main() -> ! {
 
     let (mut device_uart0, mut device_uart1) = {
         let serial_conf = config::Config {
-            baudrate: 9600,
+            baudrate: frostsnap_comms::BAUDRATE,
             ..Default::default()
         };
         let txrx0 = TxRxPins::new_tx_rx(
