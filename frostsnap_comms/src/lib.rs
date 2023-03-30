@@ -9,6 +9,8 @@ use frostsnap_core::{
     DeviceId,
 };
 
+pub const BAUDRATE: u32 = 9600;
+
 #[derive(Encode, Decode, Debug, Clone)]
 pub enum DeviceReceiveSerial {
     Core(#[bincode(with_serde)] CoordinatorToDeviceMessage),

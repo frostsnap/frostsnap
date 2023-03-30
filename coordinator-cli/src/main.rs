@@ -40,7 +40,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
 
     println!("Connecting to {}", found_port);
-    let port = serialport::new(&found_port, 9600)
+    let port = serialport::new(&found_port, frostsnap_comms::BAUDRATE)
         .timeout(Duration::from_millis(10))
         .open()
         .unwrap_or_else(|e| {
