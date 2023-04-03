@@ -2,7 +2,7 @@
 #![no_main]
 
 pub mod device_config;
-pub mod uart;
+pub mod io;
 
 #[macro_use]
 extern crate alloc;
@@ -90,20 +90,19 @@ fn main() -> ! {
         );
         let serial0 =
             Uart::new_with_config(peripherals.UART0, Some(serial_conf), Some(txrx0), &clocks);
-        let device_uart0 = uart::DeviceUart::new(serial0, timer0);
-
+        let device_uart0 = io::BufferedSerialInterface::new_uart(serial0, timer0);
         let txrx1 = TxRxPins::new_tx_rx(
             io.pins.gpio4.into_push_pull_output(),
             io.pins.gpio5.into_floating_input(),
         );
         let serial1 =
             Uart::new_with_config(peripherals.UART1, Some(serial_conf), Some(txrx1), &clocks);
-        let device_uart1 = uart::DeviceUart::new(serial1, timer1);
+        let device_uart1 = io::BufferedSerialInterface::new_uart(serial1, timer1);
 
         (device_uart0, device_uart1)
     };
-    device_uart0.uart.flush().unwrap();
-    device_uart1.uart.flush().unwrap();
+    // device_uart0.uart.flush().unwrap();
+    // device_uart1.uart.flush().unwrap();
 
     // TODO secure RNG
     let mut rng = esp32c3_hal::Rng::new(peripherals.RNG);
@@ -114,14 +113,14 @@ fn main() -> ! {
 
     let mut frost_device = frostsnap_core::FrostSigner::new(keypair);
 
-    // Write magic bytes
-    if let Err(e) = bincode::encode_into_writer(
-        uart::MAGICBYTES,
-        &mut device_uart0,
-        bincode::config::standard(),
-    ) {
-        println!("Failed to write magic bytes to UART0");
-    }
+    // // Write magic bytes
+    // if let Err(e) = bincode::encode_into_writer(
+    //     frostsnap_comms::MAGICBYTES_UART,
+    //     &mut device_uart0,
+    //     bincode::config::standard(),
+    // ) {
+    //     println!("Failed to write magic bytes to UART0");
+    // }
 
     let announce_message = DeviceSendSerial::Announce(frostsnap_comms::Announce {
         from: frost_device.device_id(),

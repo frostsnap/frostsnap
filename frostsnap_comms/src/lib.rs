@@ -11,6 +11,9 @@ use frostsnap_core::{
 
 pub const BAUDRATE: u32 = 9600;
 
+pub const MAGICBYTES_JTAG: [u8; 4] = [0xb, 0xe, 0xe, 0xf];
+pub const MAGICBYTES_UART: [u8; 4] = [0xa, 0xa, 0xa, 0xa];
+
 #[derive(Encode, Decode, Debug, Clone)]
 pub enum DeviceReceiveSerial {
     Core(#[bincode(with_serde)] CoordinatorToDeviceMessage),
