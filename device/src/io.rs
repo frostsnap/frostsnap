@@ -6,12 +6,11 @@ use bincode::de::read::Reader;
 use bincode::enc::write::Writer;
 use bincode::error::DecodeError;
 use bincode::error::EncodeError;
+use esp32c3_hal::peripherals::USB_DEVICE;
 use esp32c3_hal::prelude::*;
 use esp32c3_hal::timer::Timer;
 use esp32c3_hal::uart;
 use esp32c3_hal::UsbSerialJtag;
-
-use esp32c3_hal::peripherals::USB_DEVICE;
 
 use frostsnap_comms::MAGICBYTES_JTAG;
 use frostsnap_comms::MAGICBYTES_UART;
@@ -23,6 +22,21 @@ pub struct BufferedSerialInterface<'a, T, U> {
 }
 
 impl<'a, T, U> BufferedSerialInterface<'a, T, U> {
+    pub fn find_active(
+        uart: uart::Uart<'a, U>,
+        jtag: UsbSerialJtag<'a, USB_DEVICE>,
+        timer: Timer<T>,
+    ) -> Self
+    where
+        T: esp32c3_hal::timer::Instance,
+        U: uart::Instance,
+    {
+        Self {
+            interface: SerialInterface::find_active(uart, jtag, &timer),
+            read_buffer: vec![],
+            timer,
+        }
+    }
     pub fn new_uart(uart: uart::Uart<'a, U>, timer: Timer<T>) -> Self {
         Self {
             interface: SerialInterface::Uart(uart),
@@ -56,7 +70,7 @@ impl<'a, U> SerialInterface<'a, U> {
     pub fn find_active<T>(
         mut uart0: uart::Uart<'a, U>,
         mut jtag: UsbSerialJtag<'a, USB_DEVICE>,
-        timer0: Timer<T>,
+        timer0: &Timer<T>,
     ) -> Self
     where
         T: esp32c3_hal::timer::Instance,
