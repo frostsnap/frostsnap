@@ -101,7 +101,7 @@ impl<'a, U> SerialInterface<'a, U> {
                             .windows(MAGICBYTES_UART.len())
                             .position(|window| window == &MAGICBYTES_UART[..]);
                         if let Some(_) = position {
-                            uart0.write_bytes(&MAGICBYTES_UART).unwrap();
+                            // uart0.write_bytes(&MAGICBYTES_UART).unwrap();
                             return Self::Uart(uart0);
                         }
                     }
@@ -129,7 +129,7 @@ impl<'a, U> SerialInterface<'a, U> {
                             .windows(MAGICBYTES_JTAG.len())
                             .position(|window| window == &MAGICBYTES_JTAG[..]);
                         if let Some(_) = position {
-                            jtag.write_bytes(&MAGICBYTES_JTAG).unwrap();
+                            // jtag.write_bytes(&MAGICBYTES_JTAG).unwrap();
                             return Self::Jtag(jtag);
                         }
                     }

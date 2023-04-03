@@ -117,14 +117,14 @@ fn main() -> ! {
 
     let mut frost_device = frostsnap_core::FrostSigner::new(keypair);
 
-    // // Write magic bytes
-    // if let Err(e) = bincode::encode_into_writer(
-    //     frostsnap_comms::MAGICBYTES_UART,
-    //     &mut upstream_serial,
-    //     bincode::config::standard(),
-    // ) {
-    //     println!("Failed to write magic bytes to UART0");
-    // }
+    // Write magic bytes upstream
+    if let Err(e) = bincode::encode_into_writer(
+        frostsnap_comms::MAGICBYTES_UART,
+        &mut upstream_serial,
+        bincode::config::standard(),
+    ) {
+        println!("Failed to write magic bytes to UART0");
+    }
 
     let announce_message = DeviceSendSerial::Announce(frostsnap_comms::Announce {
         from: frost_device.device_id(),
