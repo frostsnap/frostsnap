@@ -52,6 +52,13 @@ impl<'a, T, U> BufferedSerialInterface<'a, T, U> {
             timer,
         }
     }
+
+    pub fn flush(&mut self) -> Result<(), SerialInterfaceError>
+    where
+        U: uart::Instance,
+    {
+        self.interface.flush()
+    }
 }
 
 pub enum SerialInterface<'a, U> {
@@ -60,7 +67,7 @@ pub enum SerialInterface<'a, U> {
 }
 
 #[derive(Debug)]
-enum SerialInterfaceError {
+pub enum SerialInterfaceError {
     UartReadError,
     UartWriteError(uart::Error),
     JtagError,
@@ -162,6 +169,20 @@ impl<'a, U> SerialInterface<'a, U> {
             SerialInterface::Uart(uart) => uart
                 .write_bytes(words)
                 .map_err(|e| SerialInterfaceError::UartWriteError(e)),
+        }
+    }
+
+    fn flush(&mut self) -> Result<(), SerialInterfaceError>
+    where
+        U: uart::Instance,
+    {
+        match self {
+            SerialInterface::Uart(uart) => {
+                uart.flush().map_err(|_| SerialInterfaceError::JtagError)
+            }
+            SerialInterface::Jtag(jtag) => jtag
+                .flush()
+                .map_err(|_| SerialInterfaceError::UartReadError),
         }
     }
 }

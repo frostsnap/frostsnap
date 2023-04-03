@@ -105,8 +105,8 @@ fn main() -> ! {
 
         (upstream_serial, downstream_serial)
     };
-    // upstream_serial.uart.flush().unwrap();
-    // downstream_serial.uart.flush().unwrap();
+    upstream_serial.flush().unwrap();
+    downstream_serial.flush().unwrap();
 
     // TODO secure RNG
     let mut rng = esp32c3_hal::Rng::new(peripherals.RNG);
