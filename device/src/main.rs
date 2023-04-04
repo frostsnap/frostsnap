@@ -8,6 +8,7 @@ pub mod uart;
 extern crate alloc;
 use crate::alloc::string::ToString;
 use alloc::vec;
+use esp32c3_hal::Delay;
 use esp32c3_hal::{
     clock::ClockControl,
     gpio::IO,
@@ -40,6 +41,18 @@ fn init_heap() {
     }
 }
 
+/// # Pin Configuration
+///
+/// GPIO21:     USB UART0 TX
+/// GPIO20:     USB UART0 RX
+///
+/// GPIO4:      UART1 TX (connect downstream)
+/// GPIO5:      UART1 RX (connect downstream)
+///
+/// RX0:        UART0 RX (connect upstream if not using USB)
+/// TX0:        UART0 TX (connect upstream if not using USB)
+///
+/// GPIO2:      Error LED (optional)
 #[entry]
 fn main() -> ! {
     init_heap();
@@ -66,7 +79,6 @@ fn main() -> ! {
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
     // UART0: display device logs & bootloader stuff
     // UART1: device <--> coordinator communication.
-
     let (mut device_uart0, mut device_uart1) = {
         let serial_conf = config::Config {
             baudrate: frostsnap_comms::BAUDRATE,
@@ -119,6 +131,7 @@ fn main() -> ! {
     let mut sends_uart0 = vec![announce_message];
     let mut sends_uart1 = vec![];
     let mut sends_user = vec![];
+    let mut critical_error = false;
     loop {
         if !uart1_active {
             if device_uart1.read_for_magic_bytes() {
@@ -158,7 +171,7 @@ fn main() -> ! {
                                 sends_uart1.push(received_message.clone());
                             } else {
                                 sends_uart0.push(DeviceSendSerial::Debug {
-                                    error: "Device {:?} received its registration ACK!".to_string(),
+                                    error: "received registration ACK!".to_string(),
                                     device: frost_device.device_id(),
                                 });
                             }
@@ -181,7 +194,6 @@ fn main() -> ! {
                                 }
                                 Err(e) => println!("Unexpected FROST message in this state."),
                             }
-                            {}
                         }
                     }
                 }
@@ -196,9 +208,9 @@ fn main() -> ! {
                                 ),
                                 device: frost_device.device_id(),
                             });
+                            critical_error = true;
                         }
                     }
-                    break;
                 }
             };
         }
@@ -219,6 +231,7 @@ fn main() -> ! {
                             error: "Failed to decode on UART0".to_string(),
                             device: frost_device.device_id(),
                         });
+                        critical_error = true;
                     }
                 },
             };
@@ -265,6 +278,16 @@ fn main() -> ! {
                 }
             }
         }
+
+        if critical_error {
+            break;
+        }
     }
-    loop {}
+
+    let mut delay = Delay::new(&clocks);
+    let mut error_led = io.pins.gpio2.into_push_pull_output();
+    loop {
+        error_led.toggle().unwrap();
+        delay.delay_ms(50u32);
+    }
 }
