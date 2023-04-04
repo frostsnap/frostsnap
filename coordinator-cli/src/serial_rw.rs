@@ -2,44 +2,55 @@ use bincode::{de::read::Reader, enc::write::Writer};
 use serialport::SerialPort;
 use std::io::{self, Write};
 
-pub const MAGICBYTES: [u8; 4] = [0xb, 0xe, 0xe, 0xf];
-
 pub struct SerialPortBincode {
-    port: Box<dyn SerialPort>,
+    pub port: Box<dyn SerialPort>,
+    pub(crate) buffer: Vec<u8>,
 }
 
 impl SerialPortBincode {
     pub fn new(port: Box<dyn SerialPort>) -> Self {
-        Self { port }
+        Self {
+            port,
+            buffer: Vec::new(),
+        }
     }
 
-    pub fn read_for_magic_bytes(&mut self, search_lim: usize) -> bool {
-        let mut search_buff: Vec<u8> = Vec::new();
-        let search_bytes = MAGICBYTES.to_vec();
-        for _ in 0..search_lim {
-            let mut byte_buff: [u8; 1] = [0; 1];
-            match self.port.read(&mut byte_buff) {
+    pub fn read_for_magic_bytes(&mut self) -> bool {
+        let mut buff = self.buffer.clone();
+        let mut found_magic_bytes = false;
+        loop {
+            let mut byte = [0u8; 1];
+            match self.port.read(&mut byte) {
                 Ok(_) => {
-                    search_buff.push(byte_buff[0]);
-                    if search_buff.len() >= search_bytes.len() {
-                        let start_index = search_buff.len() - search_bytes.len();
-                        if search_buff[start_index..] == search_bytes {
-                            return true;
+                    buff.push(byte[0]);
+                    let position = buff
+                        .windows(frostsnap_comms::MAGICBYTES_JTAG.len())
+                        .position(|window| window == &frostsnap_comms::MAGICBYTES_JTAG[..]);
+                    match position {
+                        Some(position) => {
+                            println!("Read magic bytes");
+                            buff =
+                                buff.split_off(position + frostsnap_comms::MAGICBYTES_JTAG.len());
+                            found_magic_bytes = true;
                         }
+                        None => {}
                     }
                 }
-                Err(_) => break,
+                Err(e) => {
+                    self.buffer = buff;
+                    return found_magic_bytes;
+                }
             }
         }
-        false
+    }
+
+    pub fn get_buffer(&self) -> Vec<u8> {
+        self.buffer.clone()
     }
 }
 
 impl Writer for SerialPortBincode {
     fn write(&mut self, bytes: &[u8]) -> Result<(), bincode::error::EncodeError> {
-        // for byte in bytes {
-        // print!("{:02X}", byte);
-        // }
         loop {
             match self.port.write(&bytes) {
                 Ok(_t) => {
@@ -60,14 +71,18 @@ impl Writer for SerialPortBincode {
 
 impl Reader for SerialPortBincode {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), bincode::error::DecodeError> {
-        loop {
+        while self.buffer.len() < bytes.len() {
+            let bytes_to_read = bytes.len() - self.buffer.len();
             match self.port.read(bytes) {
                 Ok(t) => {
-                    return if t != bytes.len() {
+                    return if t < bytes_to_read {
                         Err(bincode::error::DecodeError::UnexpectedEnd {
-                            additional: t - bytes.len(),
+                            additional: bytes_to_read - t,
                         })
                     } else {
+                        for byte in bytes {
+                            self.buffer.push(*byte);
+                        }
                         Ok(())
                     }
                 }
@@ -79,5 +94,13 @@ impl Reader for SerialPortBincode {
                 }
             };
         }
+
+        let extra_bytes = self.buffer.split_off(bytes.len());
+        bytes.copy_from_slice(&self.buffer);
+        self.buffer = extra_bytes;
+
+        // println!("{:?}", bytes);
+        // println!("{:?}", self.buffer);
+        Ok(())
     }
 }

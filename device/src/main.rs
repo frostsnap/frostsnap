@@ -94,6 +94,7 @@ fn main() -> ! {
         let uart0 =
             Uart::new_with_config(peripherals.UART0, Some(serial_conf), Some(txrx0), &clocks);
         let upstream_serial = io::BufferedSerialInterface::find_active(uart0, jtag, timer0);
+        // let upstream_serial = io::BufferedSerialInterface::new_uart(uart0, timer0);
 
         let txrx1 = TxRxPins::new_tx_rx(
             io.pins.gpio4.into_push_pull_output(),
@@ -117,18 +118,17 @@ fn main() -> ! {
 
     let mut frost_device = frostsnap_core::FrostSigner::new(keypair);
 
-    // Write magic bytes upstream
-    let mut delay = Delay::new(&clocks);
-    while !upstream_serial.read_for_magic_bytes(&frostsnap_comms::MAGICBYTES_JTAG[..]) {
-        delay.delay_ms(1_000u32);
-        if let Err(e) = bincode::encode_into_writer(
-            frostsnap_comms::MAGICBYTES_JTAG,
-            &mut upstream_serial,
-            bincode::config::standard(),
-        ) {
-            println!("Failed to write magic bytes to UART0");
-        }
-    }
+    // // Write magic bytes upstream
+    // let mut delay = Delay::new(&clocks);
+    // while !upstream_serial.read_for_magic_bytes(&frostsnap_comms::MAGICBYTES_JTAG[..]) {
+    //     if let Err(e) = upstream_serial
+    //         .interface
+    //         .write_bytes(&frostsnap_comms::MAGICBYTES_JTAG)
+    //     {
+    //         println!("Failed to write magic bytes to UART0");
+    //     }
+    //     delay.delay_ms(1_000u32);
+    // }
 
     let announce_message = DeviceSendSerial::Announce(frostsnap_comms::Announce {
         from: frost_device.device_id(),

@@ -31,9 +31,10 @@ impl<'a, T, U> BufferedSerialInterface<'a, T, U> {
         T: esp32c3_hal::timer::Instance,
         U: uart::Instance,
     {
+        let (interface, read_buffer) = SerialInterface::find_active(uart, jtag, &timer);
         Self {
-            interface: SerialInterface::find_active(uart, jtag, &timer),
-            read_buffer: vec![],
+            interface,
+            read_buffer,
             timer,
         }
     }
@@ -50,6 +51,13 @@ impl<'a, T, U> BufferedSerialInterface<'a, T, U> {
             interface: SerialInterface::Jtag(jtag),
             read_buffer: vec![],
             timer,
+        }
+    }
+
+    pub fn is_jtag(&self) -> bool {
+        match self.interface {
+            SerialInterface::Uart(_) => false,
+            SerialInterface::Jtag(_) => true,
         }
     }
 
@@ -78,7 +86,7 @@ impl<'a, U> SerialInterface<'a, U> {
         mut uart0: uart::Uart<'a, U>,
         mut jtag: UsbSerialJtag<'a, USB_DEVICE>,
         timer0: &Timer<T>,
-    ) -> Self
+    ) -> (Self, Vec<u8>)
     where
         T: esp32c3_hal::timer::Instance,
         U: uart::Instance,
@@ -91,6 +99,7 @@ impl<'a, U> SerialInterface<'a, U> {
                 .modify(|_, w| w.usb_pad_enable().clear_bit());
 
             // First, try and talk to another device upstream over UART0
+            uart0.write_bytes(&MAGICBYTES_UART);
             let mut buff = vec![];
             let start_time = timer0.now();
             loop {
@@ -100,14 +109,17 @@ impl<'a, U> SerialInterface<'a, U> {
                         let position = buff
                             .windows(MAGICBYTES_UART.len())
                             .position(|window| window == &MAGICBYTES_UART[..]);
-                        if let Some(_) = position {
+                        if let Some(position) = position {
                             // uart0.write_bytes(&MAGICBYTES_UART).unwrap();
-                            return Self::Uart(uart0);
+                            return (
+                                Self::Uart(uart0),
+                                buff[(position + MAGICBYTES_UART.len())..].to_vec(),
+                            );
                         }
                     }
                     Err(_) => {
                         // every two CPU ticks the timer is incrimented by 1
-                        if ((timer0.now() - start_time) / 40_000) > 5_000 {
+                        if ((timer0.now() - start_time) / 40_000) > 1_000 {
                             break;
                         }
                     }
@@ -119,6 +131,7 @@ impl<'a, U> SerialInterface<'a, U> {
             let usb_device = unsafe { &*USB_DEVICE::PTR };
             usb_device.conf0.modify(|_, w| w.usb_pad_enable().set_bit());
 
+            jtag.write_bytes(&MAGICBYTES_JTAG);
             let mut buff = vec![];
             let start_time = timer0.now();
             loop {
@@ -128,14 +141,17 @@ impl<'a, U> SerialInterface<'a, U> {
                         let position = buff
                             .windows(MAGICBYTES_JTAG.len())
                             .position(|window| window == &MAGICBYTES_JTAG[..]);
-                        if let Some(_) = position {
+                        if let Some(position) = position {
                             // jtag.write_bytes(&MAGICBYTES_JTAG).unwrap();
-                            return Self::Jtag(jtag);
+                            return (
+                                Self::Jtag(jtag),
+                                buff[(position + MAGICBYTES_JTAG.len())..].to_vec(),
+                            );
                         }
                     }
                     Err(_) => {
                         // every two CPU ticks the timer is incrimented by 1
-                        if (timer0.now() - start_time) / 40_000 > 5_000 {
+                        if (timer0.now() - start_time) / 40_000 > 1_000 {
                             break;
                         }
                     }
@@ -158,7 +174,7 @@ impl<'a, U> SerialInterface<'a, U> {
         }
     }
 
-    fn write_bytes(&mut self, words: &[u8]) -> Result<(), SerialInterfaceError>
+    pub fn write_bytes(&mut self, words: &[u8]) -> Result<(), SerialInterfaceError>
     where
         U: uart::Instance,
     {

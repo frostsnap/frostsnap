@@ -51,7 +51,10 @@ fn fetch_input(prompt: &str) -> String {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let ports = serialport::available_ports().unwrap();
+    println!("{:?}", ports);
     // ESP32-C3 USB CDC vid and pid
+    // let usb_id: (u16, u16) = (4292, 60000);
     let usb_id: (u16, u16) = (12346, 4097);
     println!("Waiting for device {:?}", usb_id);
     let mut port_rw = SerialPortBincode::new(wait_for_device_port(usb_id));
@@ -60,44 +63,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut devices = BTreeSet::new();
 
     // Read for magic bytes
-    let mut buff = vec![];
-    'outer: loop {
-        loop {
-            let mut byte = [0u8; 1];
-            match port_rw.read(&mut byte) {
-                Ok(n) => {
-                    buff.push(byte[0]);
+    while !port_rw.read_for_magic_bytes() {}
+    println!("{:?}", port_rw.buffer);
 
-                    let position = buff
-                        .windows(frostsnap_comms::MAGICBYTES_JTAG.len())
-                        .position(|window| window == &frostsnap_comms::MAGICBYTES_JTAG[..]);
-                    match position {
-                        Some(_) => {
-                            println!("Read magic bytes");
-                            break 'outer;
-                        }
-                        None => {}
-                    }
-                }
-                Err(e) => {
-                    // println!("Failed to read: {:?}", e);
-                    break;
-                    // port_rw = wait_for_device_port(usb_id);
-                    // println!("Reconnected..");
-                }
-            }
-        }
-        // println!("{:?}", buff);
-
-        if let Err(e) = port_rw.write(&frostsnap_comms::MAGICBYTES_JTAG) {
-            println!("Failed to write to device: {:?}", e);
-            println!("Trying to reopen..");
-            port_rw = SerialPortBincode::new(wait_for_device_port(usb_id));
-            println!("Reopened device port");
-        }
-        println!("Wrote magic bytes");
-        std::thread::sleep(std::time::Duration::from_millis(1_000));
+    while let Err(e) = port_rw.write(&frostsnap_comms::MAGICBYTES_JTAG) {
+        let current_buff = port_rw.buffer.clone();
+        port_rw = SerialPortBincode::new(wait_for_device_port(usb_id));
+        port_rw.buffer = current_buff;
+        std::thread::sleep(Duration::from_millis(500));
     }
+    println!("Wrote magic bytes");
 
     loop {
         println!("\n------------------------------------------------------------------");
@@ -176,21 +151,21 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .into_iter()
                 .map(|msg| DeviceReceiveSerial::Core(msg))
                 .collect()
-        } else if choice == "m" {
-            if port_rw.read_for_magic_bytes(10_000) {
-                println!("Found magic bytes!");
-            } else {
-                println!("Failed to find magic bytes..");
-            }
+        // } else if choice == "m" {
+        //     if port_rw.read_for_magic_bytes() {
+        //         println!("Found magic bytes!");
+        //     } else {
+        //         println!("Failed to find magic bytes..");
+        //     }
 
-            if let Err(e) = port_rw.write(&frostsnap_comms::MAGICBYTES_JTAG) {
-                println!("Failed to write to device: {:?}", e);
-                println!("Trying to reopen..");
-                port_rw = SerialPortBincode::new(wait_for_device_port(usb_id));
-                println!("Reopened device port");
-            }
-            println!("Wrote magic bytes");
-            vec![]
+        //     if let Err(e) = port_rw.write(&frostsnap_comms::MAGICBYTES_JTAG) {
+        //         println!("Failed to write to device: {:?}", e);
+        //         println!("Trying to reopen..");
+        //         port_rw = SerialPortBincode::new(wait_for_device_port(usb_id));
+        //         println!("Reopened device port");
+        //     }
+        //     println!("Wrote magic bytes");
+        // vec![]
         } else {
             println!("Did nothing..");
             vec![]
