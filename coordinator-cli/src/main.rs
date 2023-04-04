@@ -1,5 +1,8 @@
+use bincode::de::read::Reader;
+use bincode::enc::write::Writer;
 use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};
 use frostsnap_core::message::CoordinatorSend;
+use serialport::SerialPort;
 use std::error::Error;
 use std::str;
 use std::time::Duration;
@@ -9,6 +12,29 @@ use alloc::collections::BTreeSet;
 
 pub mod serial_rw;
 use crate::serial_rw::SerialPortBincode;
+
+fn open_device_port(usb_id: (u16, u16)) -> Option<Box<dyn SerialPort>> {
+    let ports = serialport::available_ports().unwrap();
+    // println!("{:?}", ports);
+    let port = ports.into_iter().find(|port| match &port.port_type {
+        serialport::SerialPortType::UsbPort(port) => port.vid == usb_id.0 && port.pid == usb_id.1,
+        _ => false,
+    })?;
+    serialport::new(&port.port_name, 9600)
+        .timeout(Duration::from_millis(10))
+        .open()
+        .ok()
+}
+
+fn wait_for_device_port(usb_id: (u16, u16)) -> Box<dyn SerialPort> {
+    loop {
+        if let Some(port) = open_device_port(usb_id) {
+            return port;
+        } else {
+            std::thread::sleep(std::time::Duration::from_secs(1))
+        }
+    }
+}
 
 fn read_string() -> String {
     let mut input = String::new();
@@ -25,32 +51,54 @@ fn fetch_input(prompt: &str) -> String {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    println!("Finding serial devices...");
-    println!("");
-    let found_port: String = loop {
-        let ports = serialport::available_ports()?;
-        for (port_index, port) in ports.iter().enumerate() {
-            println!("{:?} -- {:?}", port_index, port);
-        }
-
-        match fetch_input("Type index or enter to refresh: ").parse::<usize>() {
-            Ok(index_selection) => break ports[index_selection].port_name.clone(),
-            Err(_) => {}
-        }
-    };
-
-    println!("Connecting to {}", found_port);
-    let port = serialport::new(&found_port, frostsnap_comms::BAUDRATE)
-        .timeout(Duration::from_millis(10))
-        .open()
-        .unwrap_or_else(|e| {
-            eprintln!("Failed to open \"{}\". Error: {}", &found_port, e);
-            std::process::exit(1);
-        });
-    let mut port_rw = SerialPortBincode::new(port);
-
+    // ESP32-C3 USB CDC vid and pid
+    let usb_id: (u16, u16) = (12346, 4097);
+    println!("Waiting for device {:?}", usb_id);
+    let mut port_rw = SerialPortBincode::new(wait_for_device_port(usb_id));
+    println!("Connected to device port");
     let mut coordinator = frostsnap_core::FrostCoordinator::new();
     let mut devices = BTreeSet::new();
+
+    // Read for magic bytes
+    let mut buff = vec![];
+    'outer: loop {
+        loop {
+            let mut byte = [0u8; 1];
+            match port_rw.read(&mut byte) {
+                Ok(n) => {
+                    buff.push(byte[0]);
+
+                    let position = buff
+                        .windows(frostsnap_comms::MAGICBYTES_JTAG.len())
+                        .position(|window| window == &frostsnap_comms::MAGICBYTES_JTAG[..]);
+                    match position {
+                        Some(_) => {
+                            println!("Read magic bytes");
+                            break 'outer;
+                        }
+                        None => {}
+                    }
+                }
+                Err(e) => {
+                    // println!("Failed to read: {:?}", e);
+                    break;
+                    // port_rw = wait_for_device_port(usb_id);
+                    // println!("Reconnected..");
+                }
+            }
+        }
+        // println!("{:?}", buff);
+
+        if let Err(e) = port_rw.write(&frostsnap_comms::MAGICBYTES_JTAG) {
+            println!("Failed to write to device: {:?}", e);
+            println!("Trying to reopen..");
+            port_rw = SerialPortBincode::new(wait_for_device_port(usb_id));
+            println!("Reopened device port");
+        }
+        println!("Wrote magic bytes");
+        std::thread::sleep(std::time::Duration::from_millis(1_000));
+    }
+
     loop {
         println!("\n------------------------------------------------------------------");
         println!("Registered devices: {:?}", &devices);
@@ -134,6 +182,14 @@ fn main() -> Result<(), Box<dyn Error>> {
             } else {
                 println!("Failed to find magic bytes..");
             }
+
+            if let Err(e) = port_rw.write(&frostsnap_comms::MAGICBYTES_JTAG) {
+                println!("Failed to write to device: {:?}", e);
+                println!("Trying to reopen..");
+                port_rw = SerialPortBincode::new(wait_for_device_port(usb_id));
+                println!("Reopened device port");
+            }
+            println!("Wrote magic bytes");
             vec![]
         } else {
             println!("Did nothing..");

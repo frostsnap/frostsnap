@@ -199,26 +199,24 @@ where
         !self.read_buffer.is_empty()
     }
 
-    pub fn read_for_magic_bytes(&mut self) -> bool {
+    pub fn read_for_magic_bytes(&mut self, magic_bytes: &[u8]) -> bool {
         if !self.poll_read() {
             return false;
         };
 
         let position = self
             .read_buffer
-            .windows(MAGICBYTES_UART.len())
-            .position(|window| window == &MAGICBYTES_UART[..]);
+            .windows(magic_bytes.len())
+            .position(|window| window == magic_bytes);
         match position {
             Some(position) => {
-                self.read_buffer = self.read_buffer.split_off(position + MAGICBYTES_UART.len());
+                self.read_buffer = self.read_buffer.split_off(position + magic_bytes.len());
                 return true;
             }
             None => {
-                self.read_buffer = self.read_buffer.split_off(
-                    self.read_buffer
-                        .len()
-                        .saturating_sub(MAGICBYTES_UART.len() + 1),
-                );
+                self.read_buffer = self
+                    .read_buffer
+                    .split_off(self.read_buffer.len().saturating_sub(magic_bytes.len() + 1));
                 return false;
             }
         }

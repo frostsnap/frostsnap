@@ -105,8 +105,8 @@ fn main() -> ! {
 
         (upstream_serial, downstream_serial)
     };
-    upstream_serial.flush().unwrap();
-    downstream_serial.flush().unwrap();
+    // upstream_serial.flush().unwrap();
+    // downstream_serial.flush().unwrap();
 
     // TODO secure RNG
     let mut rng = esp32c3_hal::Rng::new(peripherals.RNG);
@@ -118,12 +118,16 @@ fn main() -> ! {
     let mut frost_device = frostsnap_core::FrostSigner::new(keypair);
 
     // Write magic bytes upstream
-    if let Err(e) = bincode::encode_into_writer(
-        frostsnap_comms::MAGICBYTES_UART,
-        &mut upstream_serial,
-        bincode::config::standard(),
-    ) {
-        println!("Failed to write magic bytes to UART0");
+    let mut delay = Delay::new(&clocks);
+    while !upstream_serial.read_for_magic_bytes(&frostsnap_comms::MAGICBYTES_JTAG[..]) {
+        delay.delay_ms(1_000u32);
+        if let Err(e) = bincode::encode_into_writer(
+            frostsnap_comms::MAGICBYTES_JTAG,
+            &mut upstream_serial,
+            bincode::config::standard(),
+        ) {
+            println!("Failed to write magic bytes to UART0");
+        }
     }
 
     let announce_message = DeviceSendSerial::Announce(frostsnap_comms::Announce {
@@ -137,7 +141,7 @@ fn main() -> ! {
     let mut critical_error = false;
     loop {
         if !uart1_active {
-            if downstream_serial.read_for_magic_bytes() {
+            if downstream_serial.read_for_magic_bytes(&frostsnap_comms::MAGICBYTES_UART[..]) {
                 uart1_active = true;
                 sends_uart0.push(DeviceSendSerial::Debug {
                     error: "Device read magic bytes from another device!".to_string(),
