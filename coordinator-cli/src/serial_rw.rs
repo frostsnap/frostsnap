@@ -1,6 +1,11 @@
 use bincode::{de::read::Reader, enc::write::Writer};
 use serialport::SerialPort;
-use std::io::{self, Write};
+use std::{
+    io::{self, Write},
+    time::Duration,
+};
+
+use crate::wait_for_device_port;
 
 pub struct SerialPortBincode {
     pub port: Box<dyn SerialPort>,
@@ -12,35 +17,6 @@ impl SerialPortBincode {
         Self {
             port,
             buffer: Vec::new(),
-        }
-    }
-
-    pub fn read_for_magic_bytes(&mut self) -> bool {
-        let mut buff = self.buffer.clone();
-        let mut found_magic_bytes = false;
-        loop {
-            let mut byte = [0u8; 1];
-            match self.port.read(&mut byte) {
-                Ok(_) => {
-                    buff.push(byte[0]);
-                    let position = buff
-                        .windows(frostsnap_comms::MAGICBYTES_JTAG.len())
-                        .position(|window| window == &frostsnap_comms::MAGICBYTES_JTAG[..]);
-                    match position {
-                        Some(position) => {
-                            println!("Read magic bytes");
-                            buff =
-                                buff.split_off(position + frostsnap_comms::MAGICBYTES_JTAG.len());
-                            found_magic_bytes = true;
-                        }
-                        None => {}
-                    }
-                }
-                Err(e) => {
-                    self.buffer = buff;
-                    return found_magic_bytes;
-                }
-            }
         }
     }
 

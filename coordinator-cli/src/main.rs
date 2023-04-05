@@ -36,6 +36,53 @@ fn wait_for_device_port(usb_id: (u16, u16)) -> Box<dyn SerialPort> {
     }
 }
 
+pub fn read_for_magic_bytes(port_rw: &mut SerialPortBincode, usb_id: (u16, u16)) -> bool {
+    let mut buff = port_rw.buffer.clone();
+    let mut found_magic_bytes = false;
+
+    loop {
+        loop {
+            let mut byte = [0u8; 1];
+            match port_rw.port.read(&mut byte) {
+                Ok(_) => {
+                    buff.push(byte[0]);
+                    let position = buff
+                        .windows(frostsnap_comms::MAGICBYTES_JTAG.len())
+                        .position(|window| window == &frostsnap_comms::MAGICBYTES_JTAG[..]);
+                    match position {
+                        Some(position) => {
+                            println!("Read magic bytes");
+                            buff =
+                                buff.split_off(position + frostsnap_comms::MAGICBYTES_JTAG.len());
+                            found_magic_bytes = true;
+                        }
+                        None => {}
+                    }
+                }
+                Err(e) => {
+                    // println!("{:?}", e);
+                    port_rw.buffer = buff.clone();
+                    // We have probably found all the instances of magic bytes
+                    if found_magic_bytes {
+                        return found_magic_bytes;
+                    } else {
+                        // Write magic bytes and keep looking
+                        break;
+                    }
+                }
+            }
+        }
+        // Reconnect serial port if write fails
+        if let Err(e) = port_rw.port.write(&frostsnap_comms::MAGICBYTES_JTAG) {
+            let current_buff = port_rw.buffer.clone();
+            *port_rw = SerialPortBincode::new(wait_for_device_port(usb_id));
+            port_rw.buffer = current_buff;
+            std::thread::sleep(Duration::from_millis(500));
+        }
+        println!("Wrote magic bytes");
+    }
+}
+
 fn read_string() -> String {
     let mut input = String::new();
     std::io::stdin()
@@ -61,18 +108,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Connected to device port");
     let mut coordinator = frostsnap_core::FrostCoordinator::new();
     let mut devices = BTreeSet::new();
-
-    // Read for magic bytes
-    while !port_rw.read_for_magic_bytes() {}
-    println!("{:?}", port_rw.buffer);
-
-    while let Err(e) = port_rw.write(&frostsnap_comms::MAGICBYTES_JTAG) {
-        let current_buff = port_rw.buffer.clone();
-        port_rw = SerialPortBincode::new(wait_for_device_port(usb_id));
-        port_rw.buffer = current_buff;
-        std::thread::sleep(Duration::from_millis(500));
-    }
-    println!("Wrote magic bytes");
 
     loop {
         println!("\n------------------------------------------------------------------");
@@ -151,21 +186,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .into_iter()
                 .map(|msg| DeviceReceiveSerial::Core(msg))
                 .collect()
-        // } else if choice == "m" {
-        //     if port_rw.read_for_magic_bytes() {
-        //         println!("Found magic bytes!");
-        //     } else {
-        //         println!("Failed to find magic bytes..");
-        //     }
-
-        //     if let Err(e) = port_rw.write(&frostsnap_comms::MAGICBYTES_JTAG) {
-        //         println!("Failed to write to device: {:?}", e);
-        //         println!("Trying to reopen..");
-        //         port_rw = SerialPortBincode::new(wait_for_device_port(usb_id));
-        //         println!("Reopened device port");
-        //     }
-        //     println!("Wrote magic bytes");
-        // vec![]
+        } else if choice == "m" {
+            // Read for magic bytes
+            while !read_for_magic_bytes(&mut port_rw, usb_id) {}
+            vec![]
         } else {
             println!("Did nothing..");
             vec![]

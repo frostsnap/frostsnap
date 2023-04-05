@@ -119,7 +119,7 @@ impl<'a, U> SerialInterface<'a, U> {
                     }
                     Err(_) => {
                         // every two CPU ticks the timer is incrimented by 1
-                        if ((timer0.now() - start_time) / 40_000) > 1_000 {
+                        if ((timer0.now() - start_time) / 40_000) > 100 {
                             break;
                         }
                     }
@@ -151,7 +151,7 @@ impl<'a, U> SerialInterface<'a, U> {
                     }
                     Err(_) => {
                         // every two CPU ticks the timer is incrimented by 1
-                        if (timer0.now() - start_time) / 40_000 > 1_000 {
+                        if (timer0.now() - start_time) / 40_000 > 100 {
                             break;
                         }
                     }
