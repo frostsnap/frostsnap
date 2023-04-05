@@ -1,11 +1,6 @@
 use bincode::{de::read::Reader, enc::write::Writer};
 use serialport::SerialPort;
-use std::{
-    io::{self, Write},
-    time::Duration,
-};
-
-use crate::wait_for_device_port;
+use std::io::{self, Write};
 
 pub struct SerialPortBincode {
     pub port: Box<dyn SerialPort>,
@@ -18,6 +13,17 @@ impl SerialPortBincode {
             port,
             buffer: Vec::new(),
         }
+    }
+
+    pub fn read_into_buffer(&mut self) -> Result<(), io::Error> {
+        let n = self.port.bytes_to_read()? as usize;
+        let mut buffer = vec![0u8; n];
+
+        match self.port.read(&mut buffer) {
+            Ok(_) => self.buffer.append(&mut buffer),
+            Err(e) => return Err(e),
+        };
+        Ok(())
     }
 
     pub fn get_buffer(&self) -> Vec<u8> {
@@ -47,36 +53,19 @@ impl Writer for SerialPortBincode {
 
 impl Reader for SerialPortBincode {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), bincode::error::DecodeError> {
-        while self.buffer.len() < bytes.len() {
-            let bytes_to_read = bytes.len() - self.buffer.len();
-            match self.port.read(bytes) {
-                Ok(t) => {
-                    return if t < bytes_to_read {
-                        Err(bincode::error::DecodeError::UnexpectedEnd {
-                            additional: bytes_to_read - t,
-                        })
-                    } else {
-                        for byte in bytes {
-                            self.buffer.push(*byte);
-                        }
-                        Ok(())
-                    }
-                }
-                Err(e) => {
-                    return Err(bincode::error::DecodeError::OtherString(format!(
-                        "Coordinator read error {:?}",
-                        e
-                    )))
-                }
-            };
+        if let Err(_) = self.read_into_buffer() {
+            // eprintln!("Failed to read buffer: {:?}", e)
+        };
+
+        if self.buffer.len() < bytes.len() {
+            return Err(bincode::error::DecodeError::UnexpectedEnd {
+                additional: bytes.len() - self.buffer.len(),
+            });
+        } else {
+            let extra_bytes = self.buffer.split_off(bytes.len());
+            bytes.copy_from_slice(&self.buffer);
+            self.buffer = extra_bytes;
         }
-
-        let extra_bytes = self.buffer.split_off(bytes.len());
-        bytes.copy_from_slice(&self.buffer);
-        self.buffer = extra_bytes;
-
-        // println!("{:?}", bytes);
-        // println!("{:?}", self.buffer);
         Ok(())
     }
 }

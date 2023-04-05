@@ -99,7 +99,7 @@ impl<'a, U> SerialInterface<'a, U> {
                 .modify(|_, w| w.usb_pad_enable().clear_bit());
 
             // First, try and talk to another device upstream over UART0
-            uart0.write_bytes(&MAGICBYTES_UART);
+            // uart0.write_bytes(&MAGICBYTES_UART);
             let mut buff = vec![];
             let start_time = timer0.now();
             loop {
@@ -131,7 +131,7 @@ impl<'a, U> SerialInterface<'a, U> {
             let usb_device = unsafe { &*USB_DEVICE::PTR };
             usb_device.conf0.modify(|_, w| w.usb_pad_enable().set_bit());
 
-            jtag.write_bytes(&MAGICBYTES_JTAG);
+            // jtag.write_bytes(&MAGICBYTES_JTAG);
             let mut buff = vec![];
             let start_time = timer0.now();
             loop {

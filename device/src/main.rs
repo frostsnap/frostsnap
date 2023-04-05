@@ -93,6 +93,7 @@ fn main() -> ! {
         );
         let uart0 =
             Uart::new_with_config(peripherals.UART0, Some(serial_conf), Some(txrx0), &clocks);
+
         let upstream_serial = io::BufferedSerialInterface::find_active(uart0, jtag, timer0);
         // let upstream_serial = io::BufferedSerialInterface::new_uart(uart0, timer0);
 
@@ -109,6 +110,14 @@ fn main() -> ! {
     // upstream_serial.flush().unwrap();
     // downstream_serial.flush().unwrap();
 
+    // Write magic bytes upstream
+    if let Err(e) = upstream_serial
+        .interface
+        .write_bytes(&frostsnap_comms::MAGICBYTES_JTAG)
+    {
+        println!("Failed to write magic bytes upstream");
+    }
+
     // TODO secure RNG
     let mut rng = esp32c3_hal::Rng::new(peripherals.RNG);
     let mut rand_bytes = [0u8; 32];
@@ -118,24 +127,16 @@ fn main() -> ! {
 
     let mut frost_device = frostsnap_core::FrostSigner::new(keypair);
 
-    // // Write magic bytes upstream
-    // let mut delay = Delay::new(&clocks);
-    // while !upstream_serial.read_for_magic_bytes(&frostsnap_comms::MAGICBYTES_JTAG[..]) {
-    //     if let Err(e) = upstream_serial
-    //         .interface
-    //         .write_bytes(&frostsnap_comms::MAGICBYTES_JTAG)
-    //     {
-    //         println!("Failed to write magic bytes to UART0");
-    //     }
-    //     delay.delay_ms(1_000u32);
-    // }
-
     let announce_message = DeviceSendSerial::Announce(frostsnap_comms::Announce {
         from: frost_device.device_id(),
     });
+    let dbg_message = DeviceSendSerial::Debug {
+        error: "We sent our announce!!".to_string(),
+        device: frost_device.device_id(),
+    };
 
     let mut uart1_active = false;
-    let mut sends_uart0 = vec![announce_message];
+    let mut sends_uart0 = vec![announce_message, dbg_message];
     let mut sends_uart1 = vec![];
     let mut sends_user = vec![];
     let mut critical_error = false;
