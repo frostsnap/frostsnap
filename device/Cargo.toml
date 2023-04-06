@@ -7,9 +7,8 @@ edition = "2021"
 [dependencies]
 frostsnap_core = { path = "../frostsnap_core" }
 frostsnap_comms = { path = "../frostsnap_comms" }
-esp32c3-hal = { git = "https://github.com/esp-rs/esp-hal.git", rev = "fd4e8e27781ee2e1df644548ccb31bd80b6b7e16" }
-# esp-hal-common = { git = "https://github.com/esp-rs/esp-hal.git", rev = "609fa2c5074fe5afdf30a5a7c338ad72660d226f" }
-# esp32c3-hal = "0.7.0"
+esp32c3-hal = { git = "https://github.com/esp-rs/esp-hal.git", rev = "a0b72bdfa5a07a6c9387e4658b0d5c87f254d8ea" }
+# esp32c3-hal = "0.8.0"
 esp-alloc = { version = "0.2.0", features = ["oom-handler"] }
 esp-backtrace = { version = "0.6.0", features = ["esp32c3", "panic-handler", "print-jtag-serial"] }
 esp-println       = { version = "0.4.0", default-features = false, features = ["esp32c3", "jtag_serial"] }

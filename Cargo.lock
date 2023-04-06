@@ -385,7 +385,7 @@ dependencies = [
 [[package]]
 name = "esp-hal-common"
 version = "0.7.1"
-source = "git+https://github.com/esp-rs/esp-hal.git?rev=fd4e8e27781ee2e1df644548ccb31bd80b6b7e16#fd4e8e27781ee2e1df644548ccb31bd80b6b7e16"
+source = "git+https://github.com/esp-rs/esp-hal.git?rev=a0b72bdfa5a07a6c9387e4658b0d5c87f254d8ea#a0b72bdfa5a07a6c9387e4658b0d5c87f254d8ea"
 dependencies = [
  "cfg-if",
  "critical-section",
@@ -405,7 +405,7 @@ dependencies = [
 [[package]]
 name = "esp-hal-procmacros"
 version = "0.4.0"
-source = "git+https://github.com/esp-rs/esp-hal.git?rev=fd4e8e27781ee2e1df644548ccb31bd80b6b7e16#fd4e8e27781ee2e1df644548ccb31bd80b6b7e16"
+source = "git+https://github.com/esp-rs/esp-hal.git?rev=a0b72bdfa5a07a6c9387e4658b0d5c87f254d8ea#a0b72bdfa5a07a6c9387e4658b0d5c87f254d8ea"
 dependencies = [
  "darling",
  "proc-macro-crate",
@@ -434,9 +434,9 @@ dependencies = [
 
 [[package]]
 name = "esp32c3"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "471e4ccbeb7b898927ff8e115288353b47cf9c948c75c1d25a0e71c9b97678ae"
+checksum = "c4b88c8727d588e5720371cb38c445bea8cf1c9c15546857b07ec92b6db825ae"
 dependencies = [
  "critical-section",
  "vcell",
@@ -445,7 +445,7 @@ dependencies = [
 [[package]]
 name = "esp32c3-hal"
 version = "0.7.0"
-source = "git+https://github.com/esp-rs/esp-hal.git?rev=fd4e8e27781ee2e1df644548ccb31bd80b6b7e16#fd4e8e27781ee2e1df644548ccb31bd80b6b7e16"
+source = "git+https://github.com/esp-rs/esp-hal.git?rev=a0b72bdfa5a07a6c9387e4658b0d5c87f254d8ea#a0b72bdfa5a07a6c9387e4658b0d5c87f254d8ea"
 dependencies = [
  "cfg-if",
  "embedded-hal",

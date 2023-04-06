@@ -15,7 +15,7 @@ use esp32c3_hal::{
     clock::Clocks,
     gpio::{InputPin, OutputPin},
     i2c::{Instance, I2C},
-    Peripheral,
+    peripheral::Peripheral,
     system::PeripheralClockControl,
 };
 use fugit::HertzU32;
