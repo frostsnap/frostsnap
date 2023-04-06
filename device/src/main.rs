@@ -2,13 +2,14 @@
 #![no_main]
 
 pub mod device_config;
-pub mod uart;
+pub mod io;
 
 #[macro_use]
 extern crate alloc;
 use crate::alloc::string::ToString;
 use alloc::vec;
 use esp32c3_hal::Delay;
+use esp32c3_hal::UsbSerialJtag;
 use esp32c3_hal::{
     clock::ClockControl,
     gpio::IO,
@@ -79,7 +80,9 @@ fn main() -> ! {
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
     // UART0: display device logs & bootloader stuff
     // UART1: device <--> coordinator communication.
-    let (mut device_uart0, mut device_uart1) = {
+    let jtag = UsbSerialJtag::new(peripherals.USB_DEVICE);
+
+    let (mut upstream_serial, mut downstream_serial) = {
         let serial_conf = config::Config {
             baudrate: frostsnap_comms::BAUDRATE,
             ..Default::default()
@@ -88,22 +91,32 @@ fn main() -> ! {
             io.pins.gpio21.into_push_pull_output(),
             io.pins.gpio20.into_floating_input(),
         );
-        let serial0 =
+        let uart0 =
             Uart::new_with_config(peripherals.UART0, Some(serial_conf), Some(txrx0), &clocks);
-        let device_uart0 = uart::DeviceUart::new(serial0, timer0);
+
+        let upstream_serial = io::BufferedSerialInterface::find_active(uart0, jtag, timer0);
+        // let upstream_serial = io::BufferedSerialInterface::new_uart(uart0, timer0);
 
         let txrx1 = TxRxPins::new_tx_rx(
             io.pins.gpio4.into_push_pull_output(),
             io.pins.gpio5.into_floating_input(),
         );
-        let serial1 =
+        let uart1 =
             Uart::new_with_config(peripherals.UART1, Some(serial_conf), Some(txrx1), &clocks);
-        let device_uart1 = uart::DeviceUart::new(serial1, timer1);
+        let downstream_serial = io::BufferedSerialInterface::new_uart(uart1, timer1);
 
-        (device_uart0, device_uart1)
+        (upstream_serial, downstream_serial)
     };
-    device_uart0.uart.flush().unwrap();
-    device_uart1.uart.flush().unwrap();
+    // upstream_serial.flush().unwrap();
+    // downstream_serial.flush().unwrap();
+
+    // Write magic bytes upstream
+    if let Err(e) = upstream_serial
+        .interface
+        .write_bytes(&frostsnap_comms::MAGICBYTES_JTAG)
+    {
+        println!("Failed to write magic bytes upstream");
+    }
 
     // TODO secure RNG
     let mut rng = esp32c3_hal::Rng::new(peripherals.RNG);
@@ -114,27 +127,22 @@ fn main() -> ! {
 
     let mut frost_device = frostsnap_core::FrostSigner::new(keypair);
 
-    // Write magic bytes
-    if let Err(e) = bincode::encode_into_writer(
-        uart::MAGICBYTES,
-        &mut device_uart0,
-        bincode::config::standard(),
-    ) {
-        println!("Failed to write magic bytes to UART0");
-    }
-
     let announce_message = DeviceSendSerial::Announce(frostsnap_comms::Announce {
         from: frost_device.device_id(),
     });
+    let dbg_message = DeviceSendSerial::Debug {
+        error: "We sent our announce!!".to_string(),
+        device: frost_device.device_id(),
+    };
 
     let mut uart1_active = false;
-    let mut sends_uart0 = vec![announce_message];
+    let mut sends_uart0 = vec![announce_message, dbg_message];
     let mut sends_uart1 = vec![];
     let mut sends_user = vec![];
     let mut critical_error = false;
     loop {
         if !uart1_active {
-            if device_uart1.read_for_magic_bytes() {
+            if downstream_serial.read_for_magic_bytes(&frostsnap_comms::MAGICBYTES_UART[..]) {
                 uart1_active = true;
                 sends_uart0.push(DeviceSendSerial::Debug {
                     error: "Device read magic bytes from another device!".to_string(),
@@ -144,10 +152,10 @@ fn main() -> ! {
         }
 
         // Read upstream if there is something to read (from direction of coordinator)
-        if device_uart0.poll_read() {
-            let prior_to_read_buff = device_uart0.read_buffer.clone();
+        if upstream_serial.poll_read() {
+            let prior_to_read_buff = upstream_serial.read_buffer.clone();
             let decoded: Result<DeviceReceiveSerial, _> =
-                bincode::decode_from_reader(&mut device_uart0, bincode::config::standard());
+                bincode::decode_from_reader(&mut upstream_serial, bincode::config::standard());
 
             match decoded {
                 Ok(received_message) => {
@@ -216,9 +224,9 @@ fn main() -> ! {
         }
 
         // Read from downstream if it is active (found magic bytes) and there is something to read
-        if uart1_active && device_uart1.poll_read() {
+        if uart1_active && downstream_serial.poll_read() {
             let decoded: Result<DeviceSendSerial, _> =
-                bincode::decode_from_reader(&mut device_uart1, bincode::config::standard());
+                bincode::decode_from_reader(&mut downstream_serial, bincode::config::standard());
             match decoded {
                 Ok(device_send) => {
                     println!("Received upstream {:?}", device_send);
@@ -261,7 +269,7 @@ fn main() -> ! {
         for send in sends_uart0.drain(..) {
             println!("Sending: {:?}", send);
             if let Err(e) =
-                bincode::encode_into_writer(send, &mut device_uart0, bincode::config::standard())
+                bincode::encode_into_writer(send, &mut upstream_serial, bincode::config::standard())
             {
                 println!("Error sending uart0: {:?}", e);
             }
@@ -271,7 +279,7 @@ fn main() -> ! {
             for send in sends_uart1.drain(..) {
                 if let Err(e) = bincode::encode_into_writer(
                     send,
-                    &mut device_uart1,
+                    &mut downstream_serial,
                     bincode::config::standard(),
                 ) {
                     println!("Error sending forwarding message: {:?}", e);

@@ -2,44 +2,37 @@ use bincode::{de::read::Reader, enc::write::Writer};
 use serialport::SerialPort;
 use std::io::{self, Write};
 
-pub const MAGICBYTES: [u8; 4] = [0xb, 0xe, 0xe, 0xf];
-
 pub struct SerialPortBincode {
-    port: Box<dyn SerialPort>,
+    pub port: Box<dyn SerialPort>,
+    pub(crate) buffer: Vec<u8>,
 }
 
 impl SerialPortBincode {
     pub fn new(port: Box<dyn SerialPort>) -> Self {
-        Self { port }
+        Self {
+            port,
+            buffer: Vec::new(),
+        }
     }
 
-    pub fn read_for_magic_bytes(&mut self, search_lim: usize) -> bool {
-        let mut search_buff: Vec<u8> = Vec::new();
-        let search_bytes = MAGICBYTES.to_vec();
-        for _ in 0..search_lim {
-            let mut byte_buff: [u8; 1] = [0; 1];
-            match self.port.read(&mut byte_buff) {
-                Ok(_) => {
-                    search_buff.push(byte_buff[0]);
-                    if search_buff.len() >= search_bytes.len() {
-                        let start_index = search_buff.len() - search_bytes.len();
-                        if search_buff[start_index..] == search_bytes {
-                            return true;
-                        }
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-        false
+    pub fn read_into_buffer(&mut self) -> Result<(), io::Error> {
+        let n = self.port.bytes_to_read()? as usize;
+        let mut buffer = vec![0u8; n];
+
+        match self.port.read(&mut buffer) {
+            Ok(_) => self.buffer.append(&mut buffer),
+            Err(e) => return Err(e),
+        };
+        Ok(())
+    }
+
+    pub fn get_buffer(&self) -> Vec<u8> {
+        self.buffer.clone()
     }
 }
 
 impl Writer for SerialPortBincode {
     fn write(&mut self, bytes: &[u8]) -> Result<(), bincode::error::EncodeError> {
-        // for byte in bytes {
-        // print!("{:02X}", byte);
-        // }
         loop {
             match self.port.write(&bytes) {
                 Ok(_t) => {
@@ -60,24 +53,19 @@ impl Writer for SerialPortBincode {
 
 impl Reader for SerialPortBincode {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), bincode::error::DecodeError> {
-        loop {
-            match self.port.read(bytes) {
-                Ok(t) => {
-                    return if t != bytes.len() {
-                        Err(bincode::error::DecodeError::UnexpectedEnd {
-                            additional: t - bytes.len(),
-                        })
-                    } else {
-                        Ok(())
-                    }
-                }
-                Err(e) => {
-                    return Err(bincode::error::DecodeError::OtherString(format!(
-                        "Coordinator read error {:?}",
-                        e
-                    )))
-                }
-            };
+        if let Err(_) = self.read_into_buffer() {
+            // eprintln!("Failed to read buffer: {:?}", e)
+        };
+
+        if self.buffer.len() < bytes.len() {
+            return Err(bincode::error::DecodeError::UnexpectedEnd {
+                additional: bytes.len() - self.buffer.len(),
+            });
+        } else {
+            let extra_bytes = self.buffer.split_off(bytes.len());
+            bytes.copy_from_slice(&self.buffer);
+            self.buffer = extra_bytes;
         }
+        Ok(())
     }
 }
