@@ -7,17 +7,20 @@ edition = "2021"
 [dependencies]
 frostsnap_core = { path = "../frostsnap_core" }
 frostsnap_comms = { path = "../frostsnap_comms" }
-# esp32c3-hal = { git = "https://github.com/esp-rs/esp-hal.git", rev = "609fa2c5074fe5afdf30a5a7c338ad72660d226f" }
+esp32c3-hal = { git = "https://github.com/esp-rs/esp-hal.git", rev = "fd4e8e27781ee2e1df644548ccb31bd80b6b7e16" }
 # esp-hal-common = { git = "https://github.com/esp-rs/esp-hal.git", rev = "609fa2c5074fe5afdf30a5a7c338ad72660d226f" }
-esp32c3-hal = "0.7.0"
-esp-alloc = { version = "0.1.0", features = ["oom-handler"] }
-esp-backtrace = { version = "0.4.0", features = ["esp32c3", "panic-handler"] }
+# esp32c3-hal = "0.7.0"
+esp-alloc = { version = "0.2.0", features = ["oom-handler"] }
+esp-backtrace = { version = "0.6.0", features = ["esp32c3", "panic-handler", "print-jtag-serial"] }
+esp-println       = { version = "0.4.0", default-features = false, features = ["esp32c3", "jtag_serial"] }
 critical-section = "1.1.1"
-esp-println       = { version = "0.3.1", features = ["esp32c3"] }
-display-interface-spi = "0.4.1"
-mipidsi = { version = "0.6.0", features = ["batch"] }
 bincode = { version = "2.0.0-rc.2", default-features = false, features = ["alloc", "derive", "serde"] } 
 nb = "1.1.0"
+fugit = "0.3.6"
+display-interface = "0.4.1"
+ssd1306 = "0.7.1"
+embedded-graphics = "0.7.1"
+embedded-text = "0.5.0"
 
 [package.metadata.espflash]
 # bootloader      = "bootloader.bin" # Must be a binary file

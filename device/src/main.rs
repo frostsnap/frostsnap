@@ -3,13 +3,12 @@
 
 pub mod device_config;
 pub mod io;
+pub mod oled;
 
 #[macro_use]
 extern crate alloc;
 use crate::alloc::string::ToString;
 use alloc::vec;
-use esp32c3_hal::Delay;
-use esp32c3_hal::UsbSerialJtag;
 use esp32c3_hal::{
     clock::ClockControl,
     gpio::IO,
@@ -17,7 +16,7 @@ use esp32c3_hal::{
     prelude::*,
     timer::TimerGroup,
     uart::{config, TxRxPins},
-    Rtc, Uart,
+    Delay, Rtc, Uart, UsbSerialJtag,
 };
 use esp_backtrace as _;
 use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};
@@ -58,7 +57,7 @@ fn init_heap() {
 fn main() -> ! {
     init_heap();
     let peripherals = Peripherals::take();
-    let system = peripherals.SYSTEM.split();
+    let mut system = peripherals.SYSTEM.split();
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
     // Disable the RTC and TIMG watchdog timers
@@ -78,6 +77,18 @@ fn main() -> ! {
     wdt1.disable();
 
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
+
+    let mut display = oled::SSD1306::new(
+        peripherals.I2C0,
+        io.pins.gpio5,
+        io.pins.gpio6,
+        400u32.kHz(),
+        &mut system.peripheral_clock_control,
+        &clocks,
+    )
+    .unwrap();
+    display.print("Starting up").unwrap();
+
     // UART0: display device logs & bootloader stuff
     // UART1: device <--> coordinator communication.
     let jtag = UsbSerialJtag::new(peripherals.USB_DEVICE);
@@ -98,8 +109,8 @@ fn main() -> ! {
         // let upstream_serial = io::BufferedSerialInterface::new_uart(uart0, timer0);
 
         let txrx1 = TxRxPins::new_tx_rx(
-            io.pins.gpio4.into_push_pull_output(),
-            io.pins.gpio5.into_floating_input(),
+            io.pins.gpio3.into_push_pull_output(),
+            io.pins.gpio4.into_floating_input(),
         );
         let uart1 =
             Uart::new_with_config(peripherals.UART1, Some(serial_conf), Some(txrx1), &clocks);
