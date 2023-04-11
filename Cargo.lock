@@ -73,6 +73,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b7e4c2464d97fe331d41de9d5db0def0a96f4d823b8b32a2efd503578988973"
 
 [[package]]
+name = "basic-toml"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c0de75129aa8d0cceaf750b89013f0e08804d6ec61416da787b35ad0d7cddf1"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "bincode"
 version = "2.0.0-rc.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -384,9 +393,11 @@ dependencies = [
 
 [[package]]
 name = "esp-hal-common"
-version = "0.7.1"
-source = "git+https://github.com/esp-rs/esp-hal.git?rev=a0b72bdfa5a07a6c9387e4658b0d5c87f254d8ea#a0b72bdfa5a07a6c9387e4658b0d5c87f254d8ea"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c37621a91b6465e4d13eb5596530e67304a0ef04d186d832012b2b9d7a3cd394"
 dependencies = [
+ "basic-toml",
  "cfg-if",
  "critical-section",
  "embedded-dma",
@@ -398,14 +409,16 @@ dependencies = [
  "nb 1.1.0",
  "paste",
  "riscv-atomic-emulation-trap",
+ "serde",
  "strum",
  "void",
 ]
 
 [[package]]
 name = "esp-hal-procmacros"
-version = "0.4.0"
-source = "git+https://github.com/esp-rs/esp-hal.git?rev=a0b72bdfa5a07a6c9387e4658b0d5c87f254d8ea#a0b72bdfa5a07a6c9387e4658b0d5c87f254d8ea"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14e4123798117de04121fcbd7991f0e2c3cfccf9a31017c94f611013be401080"
 dependencies = [
  "darling",
  "proc-macro-crate",
@@ -423,20 +436,19 @@ checksum = "c33a9d1eb60882ec910021bda7b67ce789dd0d6325b886e6739ef9d8f495ae22"
 
 [[package]]
 name = "esp-riscv-rt"
-version = "0.1.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c363bf30aae3c13e849315b73227de75dca813de53f5233f1fa7064f5adea641"
+checksum = "e523ed9a26c604d4469dff4777484b14f977e864ba041f634ade1d7f47ef4151"
 dependencies = [
- "r0",
  "riscv",
  "riscv-rt-macros",
 ]
 
 [[package]]
 name = "esp32c3"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4b88c8727d588e5720371cb38c445bea8cf1c9c15546857b07ec92b6db825ae"
+checksum = "e27af709b69fba964429db0c34ea28d6aeb74202ab88d9edbe7bdd4a4ce29fd5"
 dependencies = [
  "critical-section",
  "vcell",
@@ -444,13 +456,13 @@ dependencies = [
 
 [[package]]
 name = "esp32c3-hal"
-version = "0.7.0"
-source = "git+https://github.com/esp-rs/esp-hal.git?rev=a0b72bdfa5a07a6c9387e4658b0d5c87f254d8ea#a0b72bdfa5a07a6c9387e4658b0d5c87f254d8ea"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf196521d39de7ca712d01bc78de215464ab32f57342e8ca87104f51bd914c1a"
 dependencies = [
  "cfg-if",
  "embedded-hal",
  "esp-hal-common",
- "r0",
 ]
 
 [[package]]
@@ -801,12 +813,6 @@ checksum = "4424af4bf778aae2051a77b60283332f386554255d722233d09fbfc7e30da2fc"
 dependencies = [
  "proc-macro2",
 ]
-
-[[package]]
-name = "r0"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd7a31eed1591dcbc95d92ad7161908e72f4677f8fabf2a32ca49b4237cbf211"
 
 [[package]]
 name = "rand"
