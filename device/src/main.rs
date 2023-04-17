@@ -20,6 +20,7 @@ use esp32c3_hal::{
     Delay, Rtc, Uart, UsbSerialJtag,
 };
 use esp_backtrace as _;
+use esp_storage::FlashStorage;
 use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};
 use frostsnap_core::message::DeviceSend;
 use frostsnap_core::schnorr_fun::fun::hex;
@@ -100,7 +101,8 @@ fn main() -> ! {
     .unwrap();
     display.print("frost-esp32").unwrap();
 
-    let mut flash = storage::EspNvs::new();
+    let flash = FlashStorage::new();
+    let mut flash = storage::EspNvs::new(flash, 0x9000);
     // 
 
     // TODO secure RNG

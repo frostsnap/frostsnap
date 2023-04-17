@@ -21,17 +21,17 @@ pub struct EspNvsRw<'a> {
     pos: u32,
 }
 
+// #[derive(Debug)]
+// pub enum EspNVSError {
+//     ReadError,
+//     WriteError,
+//     EncodeError(EncodeError),
+//     DecodeError(DecodeError),
+// }
+
 pub struct EspNvs {
     flash: FlashStorage,
     start_pos: u32
-}
-
-#[derive(Debug)]
-pub enum EspNVSError {
-    ReadError,
-    WriteError,
-    EncodeError(EncodeError),
-    DecodeError(DecodeError),
 }
 
 impl EspNvs
@@ -43,10 +43,11 @@ impl EspNvs
         Self { flash, start_pos }
     }
 
-    fn rw(&mut self) -> EspNvsRw<'_> {
+    pub fn rw(&mut self) -> EspNvsRw<'_> {
+        let start = self.start_pos;
         EspNvsRw {
             nvs: self,
-            pos: self.start_pos,
+            pos: start,
         }
     }
 
