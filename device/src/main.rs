@@ -4,6 +4,7 @@
 pub mod device_config;
 pub mod io;
 pub mod oled;
+pub mod storage;
 
 #[macro_use]
 extern crate alloc;
@@ -99,6 +100,24 @@ fn main() -> ! {
     .unwrap();
     display.print("frost-esp32").unwrap();
 
+    let mut flash = storage::EspNvs::new();
+    // 
+
+    // TODO secure RNG
+    let mut rng = esp32c3_hal::Rng::new(peripherals.RNG);
+    let mut rand_bytes = [0u8; 32];
+    rng.read(&mut rand_bytes).unwrap();
+    let secret = Scalar::from_bytes(rand_bytes).unwrap().non_zero().unwrap();
+    let keypair = KeyPair::new(secret.clone());
+
+    bincode::encode_into_writer(storage::State{ secret }, flash.rw(), bincode::config::standard()).unwrap();
+    let stored: storage::State = bincode::decode_from_reader(flash.rw(), bincode::config::standard()).unwrap();
+    println!("read from {:?}", stored);
+    // flash
+    //     .write_secret(frostsnap_comms::SecretStore { secret })
+    //     .unwrap();
+    loop {}
+
     // UART0: display device logs & bootloader stuff
     // UART1: device <--> coordinator communication.
     let jtag = UsbSerialJtag::new(peripherals.USB_DEVICE);
@@ -146,13 +165,6 @@ fn main() -> ! {
             .print("Failed to write magic bytes upstream")
             .unwrap();
     }
-
-    // TODO secure RNG
-    let mut rng = esp32c3_hal::Rng::new(peripherals.RNG);
-    let mut rand_bytes = [0u8; 32];
-    rng.read(&mut rand_bytes).unwrap();
-    let secret = Scalar::from_bytes(rand_bytes).unwrap().non_zero().unwrap();
-    let keypair = KeyPair::new(secret);
 
     let mut frost_device = frostsnap_core::FrostSigner::new(keypair);
 
@@ -290,8 +302,12 @@ fn main() -> ! {
                     // display.print(format!("{:?}", xpub)).unwrap();
                     display.print("Key generated").unwrap();
                 }
-                frostsnap_core::message::DeviceToUserMessage::SignatureRequest { message_to_sign } => {
-                    display.print(format!("Signing: {}", message_to_sign)).unwrap();
+                frostsnap_core::message::DeviceToUserMessage::SignatureRequest {
+                    message_to_sign,
+                } => {
+                    display
+                        .print(format!("Signing: {}", message_to_sign))
+                        .unwrap();
                     let more_sends = frost_device.sign_ack().unwrap();
                     for new_send in more_sends {
                         match new_send {

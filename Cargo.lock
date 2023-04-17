@@ -260,10 +260,12 @@ dependencies = [
  "critical-section",
  "display-interface",
  "embedded-graphics",
+ "embedded-storage",
  "embedded-text",
  "esp-alloc",
  "esp-backtrace",
  "esp-println",
+ "esp-storage",
  "esp32c3-hal",
  "frostsnap_comms",
  "frostsnap_core",
@@ -361,6 +363,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "embedded-storage"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "156d7a2fdd98ebbf9ae579cbceca3058cff946e13f8e17b90e3511db0508c723"
+
+[[package]]
 name = "embedded-text"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -442,6 +450,15 @@ checksum = "e523ed9a26c604d4469dff4777484b14f977e864ba041f634ade1d7f47ef4151"
 dependencies = [
  "riscv",
  "riscv-rt-macros",
+]
+
+[[package]]
+name = "esp-storage"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c39d2dfde1b5ee68c8380ec801afdce6fd242270b40ea4cf2e943abf6efa591e"
+dependencies = [
+ "embedded-storage",
 ]
 
 [[package]]
