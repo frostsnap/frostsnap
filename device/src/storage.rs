@@ -7,7 +7,7 @@ use bincode::{
     error::{DecodeError, EncodeError},
 };
 use embedded_storage::{ReadStorage, Storage};
-use esp_storage::FlashStorage;
+use esp_storage::{FlashStorage, FlashStorageError};
 use frostsnap_core::schnorr_fun::fun::Scalar;
 
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
@@ -22,11 +22,11 @@ pub struct EspNvsRw<'a> {
 }
 
 // #[derive(Debug)]
-// pub enum EspNVSError {
+// pub enum EspNvsError {
 //     ReadError,
-//     WriteError,
-//     EncodeError(EncodeError),
-//     DecodeError(DecodeError),
+//     WriteError(FlashStorageError),
+    // EncodeError(EncodeError),
+    // DecodeError(DecodeError),
 // }
 
 pub struct EspNvs {
@@ -51,9 +51,22 @@ impl EspNvs
         }
     }
 
+    pub fn erase(&mut self) -> Result<(), FlashStorageError> {
+        let buf = [0u8; 32];
+        match self.flash.write(self.start_pos, &buf) {
+            Ok(_) => {
+                println!("Erase success"); 
+                Ok(()) 
+            },
+            Err(e) => Err(e)
+        }
+    }
+
     // pub fn load(&mut self) -> Result<State, DecodeError> {
-    //     let magic
-    //     bincode::decode_from_reader(self.rw(), bincode::con)
+    //     match bincode::decode_from_reader(self.rw(), bincode::config::standard()) {
+    //         Ok(s) => Ok(s),
+    //         Err(e) => Err(e)
+    //     }
     // }
 
     // is_factory
@@ -67,6 +80,7 @@ impl<'a> Reader for EspNvsRw<'a> {
             .read(self.pos, bytes)
             .map_err(|e| DecodeError::OtherString(format!("Flash read error {:?}", e)))?;
         self.pos += bytes.len() as u32;
+        // println!("read {} bytes, {:02x?}", bytes.len(), bytes[0]);
         Ok(())
     }
 }

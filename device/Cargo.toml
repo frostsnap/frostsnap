@@ -13,7 +13,7 @@ esp-alloc = { version = "0.2.0", features = ["oom-handler"] }
 esp-backtrace = { version = "0.6.0", features = ["esp32c3", "panic-handler", "print-jtag-serial"] }
 esp-println       = { version = "0.4.0", default-features = false, features = ["esp32c3", "jtag_serial"] }
 critical-section = "1.1.1"
-bincode = { version = "2.0.0-rc.2", default-features = false, features = ["alloc", "derive", "serde"] } 
+bincode = { version = "2.0.0-rc.3", default-features = false, features = ["alloc", "derive", "serde"] } 
 nb = "1.1.0"
 fugit = "0.3.6"
 display-interface = "0.4.1"

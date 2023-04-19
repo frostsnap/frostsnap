@@ -103,21 +103,61 @@ fn main() -> ! {
 
     let flash = FlashStorage::new();
     let mut flash = storage::EspNvs::new(flash, 0x9000);
-    // 
+    //
 
     // TODO secure RNG
-    let mut rng = esp32c3_hal::Rng::new(peripherals.RNG);
-    let mut rand_bytes = [0u8; 32];
-    rng.read(&mut rand_bytes).unwrap();
-    let secret = Scalar::from_bytes(rand_bytes).unwrap().non_zero().unwrap();
-    let keypair = KeyPair::new(secret.clone());
+    // let mut rng = esp32c3_hal::Rng::new(peripherals.RNG);
+    // let mut rand_bytes = [0u8; 32];
+    // rng.read(&mut rand_bytes).unwrap();
+    // let secret = Scalar::from_bytes(rand_bytes).unwrap().non_zero().unwrap();
+    // let keypair = KeyPair::new(secret.clone());
 
-    bincode::encode_into_writer(storage::State{ secret }, flash.rw(), bincode::config::standard()).unwrap();
-    let stored: storage::State = bincode::decode_from_reader(flash.rw(), bincode::config::standard()).unwrap();
-    println!("read from {:?}", stored);
-    // flash
-    //     .write_secret(frostsnap_comms::SecretStore { secret })
-    //     .unwrap();
+    // flash.erase().unwrap();
+
+    // bincode::encode_into_writer(storage::State{ secret }, flash.rw(), bincode::config::standard()).unwrap();
+    let stored: storage::State =
+        match bincode::decode_from_reader(flash.rw(), bincode::config::standard()) {
+            Ok(s) => {
+                println!("secret read from flash: {}", s.secret.to_string());
+                s
+            }
+            Err(_e) => {
+                let mut rng = esp32c3_hal::Rng::new(peripherals.RNG);
+                let mut rand_bytes = [0u8; 32];
+                rng.read(&mut rand_bytes).unwrap();
+                let secret = Scalar::from_bytes(rand_bytes).unwrap().non_zero().unwrap();
+                println!("new secret generated: {}", secret.to_string());
+                // TODO user confirm new keygen
+                bincode::encode_into_writer(
+                    storage::State {
+                        secret: secret.clone(),
+                    },
+                    flash.rw(),
+                    bincode::config::standard(),
+                )
+                .unwrap();
+                storage::State { secret }
+            }
+        };
+    // let secret = match flash.load() {
+    //     Ok(s) => {
+    //         println!("secret read from flash: {}", s.secret.to_string());
+    //         s.secret
+    //     },
+    //     Err(_e) => {
+    //         let mut rng = esp32c3_hal::Rng::new(peripherals.RNG);
+    //         let mut rand_bytes = [0u8; 32];
+    //         rng.read(&mut rand_bytes).unwrap();
+    //         let secret = Scalar::from_bytes(rand_bytes).unwrap().non_zero().unwrap();
+    //         println!("new secret generated: {}", secret.to_string());
+    //         // TODO user confirm new keygen
+    //         bincode::encode_into_writer(storage::State{ secret: secret.clone() }, flash.rw(), bincode::config::standard()).unwrap();
+    //         secret
+    //     }
+    // };
+
+    let keypair = KeyPair::new(stored.secret.clone());
+
     loop {}
 
     // UART0: display device logs & bootloader stuff
