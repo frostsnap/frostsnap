@@ -2,8 +2,8 @@ extern crate alloc;
 use crate::println;
 use alloc::{format, vec::Vec};
 use bincode::{
-    de::{read::Reader},
-    enc::{write::Writer},
+    de::read::Reader,
+    enc::write::Writer,
     error::{DecodeError, EncodeError},
 };
 use embedded_storage::{ReadStorage, Storage};
@@ -21,25 +21,14 @@ pub struct EspNvsRw<'a> {
     pos: u32,
 }
 
-// #[derive(Debug)]
-// pub enum EspNvsError {
-//     ReadError,
-//     WriteError(FlashStorageError),
-    // EncodeError(EncodeError),
-    // DecodeError(DecodeError),
-// }
-
 pub struct EspNvs {
     flash: FlashStorage,
-    start_pos: u32
+    start_pos: u32,
 }
 
 impl EspNvs
-// where
-//     D: Decode
 {
     pub fn new(flash: FlashStorage, start_pos: u32) -> Self {
-        // let mut flash = FlashStorage::new();
         Self { flash, start_pos }
     }
 
@@ -55,22 +44,20 @@ impl EspNvs
         let buf = [0u8; 32];
         match self.flash.write(self.start_pos, &buf) {
             Ok(_) => {
-                println!("Erase success"); 
-                Ok(()) 
-            },
-            Err(e) => Err(e)
+                println!("Erase success");
+                Ok(())
+            }
+            Err(e) => Err(e),
         }
     }
 
-    // pub fn load(&mut self) -> Result<State, DecodeError> {
-    //     match bincode::decode_from_reader(self.rw(), bincode::config::standard()) {
-    //         Ok(s) => Ok(s),
-    //         Err(e) => Err(e)
-    //     }
-    // }
+    pub fn load(&mut self) -> Result<State, DecodeError> {
+        bincode::decode_from_reader(self.rw(), bincode::config::standard())
+    }
 
-    // is_factory
-
+    pub fn save(&mut self, state: &State) -> Result<(), EncodeError> {
+        bincode::encode_into_writer(state, self.rw(), bincode::config::standard())
+    }
 }
 
 impl<'a> Reader for EspNvsRw<'a> {
@@ -80,7 +67,6 @@ impl<'a> Reader for EspNvsRw<'a> {
             .read(self.pos, bytes)
             .map_err(|e| DecodeError::OtherString(format!("Flash read error {:?}", e)))?;
         self.pos += bytes.len() as u32;
-        // println!("read {} bytes, {:02x?}", bytes.len(), bytes[0]);
         Ok(())
     }
 }

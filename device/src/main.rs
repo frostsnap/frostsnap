@@ -103,62 +103,36 @@ fn main() -> ! {
 
     let flash = FlashStorage::new();
     let mut flash = storage::EspNvs::new(flash, 0x9000);
-    //
 
-    // TODO secure RNG
-    // let mut rng = esp32c3_hal::Rng::new(peripherals.RNG);
-    // let mut rand_bytes = [0u8; 32];
-    // rng.read(&mut rand_bytes).unwrap();
-    // let secret = Scalar::from_bytes(rand_bytes).unwrap().non_zero().unwrap();
-    // let keypair = KeyPair::new(secret.clone());
-
+    // Simulate factory reset
     // flash.erase().unwrap();
 
-    // bincode::encode_into_writer(storage::State{ secret }, flash.rw(), bincode::config::standard()).unwrap();
-    let stored: storage::State =
-        match bincode::decode_from_reader(flash.rw(), bincode::config::standard()) {
-            Ok(s) => {
-                println!("secret read from flash: {}", s.secret.to_string());
-                s
-            }
-            Err(_e) => {
-                let mut rng = esp32c3_hal::Rng::new(peripherals.RNG);
-                let mut rand_bytes = [0u8; 32];
-                rng.read(&mut rand_bytes).unwrap();
-                let secret = Scalar::from_bytes(rand_bytes).unwrap().non_zero().unwrap();
-                println!("new secret generated: {}", secret.to_string());
-                // TODO user confirm new keygen
-                bincode::encode_into_writer(
-                    storage::State {
-                        secret: secret.clone(),
-                    },
-                    flash.rw(),
-                    bincode::config::standard(),
-                )
-                .unwrap();
-                storage::State { secret }
-            }
-        };
-    // let secret = match flash.load() {
-    //     Ok(s) => {
-    //         println!("secret read from flash: {}", s.secret.to_string());
-    //         s.secret
-    //     },
-    //     Err(_e) => {
-    //         let mut rng = esp32c3_hal::Rng::new(peripherals.RNG);
-    //         let mut rand_bytes = [0u8; 32];
-    //         rng.read(&mut rand_bytes).unwrap();
-    //         let secret = Scalar::from_bytes(rand_bytes).unwrap().non_zero().unwrap();
-    //         println!("new secret generated: {}", secret.to_string());
-    //         // TODO user confirm new keygen
-    //         bincode::encode_into_writer(storage::State{ secret: secret.clone() }, flash.rw(), bincode::config::standard()).unwrap();
-    //         secret
-    //     }
-    // };
+    // Loads state from Flash memory if available. If not, generate secret and save.
+    let stored = match flash.load() {
+        Ok(state) => {
+            println!("Secret read from flash: {}", state.secret.to_string());
+            state
+        }
+        Err(_e) => {
+            // Bincode errored because device is new or something else is wrong,
+            // either way requires user to restore from backup or new secret gen
+            // TODO prompt user before secret gen
+            let mut rng = esp32c3_hal::Rng::new(peripherals.RNG);
+            let mut rand_bytes = [0u8; 32];
+            rng.read(&mut rand_bytes).unwrap();
+            let secret = Scalar::from_bytes(rand_bytes).unwrap().non_zero().unwrap();
 
-    let keypair = KeyPair::new(stored.secret.clone());
+            let state = storage::State { secret };
+            flash.save(&state).unwrap();
+            println!(
+                "New secret generated and saved: {}",
+                state.secret.to_string()
+            );
+            state
+        }
+    };
 
-    loop {}
+    let keypair = KeyPair::new(stored.secret);
 
     // UART0: display device logs & bootloader stuff
     // UART1: device <--> coordinator communication.
