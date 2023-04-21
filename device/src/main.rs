@@ -118,7 +118,9 @@ fn main() -> ! {
         Err(_e) => {
             // Bincode errored because device is new or something else is wrong,
             // either way requires user to restore from backup or new secret gen
-            display.print("Press button to generate new secret").unwrap();
+            display
+                .print("Press button to generate new secret")
+                .unwrap();
             wait_button();
             display.print("Generating new secret...").unwrap();
 
