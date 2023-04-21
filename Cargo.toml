@@ -7,3 +7,4 @@ members = [
     "coordinator-cli",
     "frostsnap_comms"
 ]
+resolver = "2"

@@ -3,13 +3,12 @@
 
 pub mod device_config;
 pub mod io;
+pub mod oled;
 
 #[macro_use]
 extern crate alloc;
 use crate::alloc::string::ToString;
 use alloc::vec;
-use esp32c3_hal::Delay;
-use esp32c3_hal::UsbSerialJtag;
 use esp32c3_hal::{
     clock::ClockControl,
     gpio::IO,
@@ -17,7 +16,7 @@ use esp32c3_hal::{
     prelude::*,
     timer::TimerGroup,
     uart::{config, TxRxPins},
-    Rtc, Uart,
+    Delay, Rtc, Uart, UsbSerialJtag,
 };
 use esp_backtrace as _;
 use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};
@@ -58,7 +57,7 @@ fn init_heap() {
 fn main() -> ! {
     init_heap();
     let peripherals = Peripherals::take();
-    let system = peripherals.SYSTEM.split();
+    let mut system = peripherals.SYSTEM.split();
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
     // Disable the RTC and TIMG watchdog timers
@@ -78,6 +77,28 @@ fn main() -> ! {
     wdt1.disable();
 
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
+
+    let mut delay = Delay::new(&clocks);
+
+    let mut button = io.pins.gpio9.into_pull_up_input();
+    let wait_button = || {
+        // wait for press
+        while button.is_high().unwrap() {}
+        // wait for release
+        while button.is_low().unwrap() {}
+    };
+
+    let mut display = oled::SSD1306::new(
+        peripherals.I2C0,
+        io.pins.gpio5,
+        io.pins.gpio6,
+        400u32.kHz(),
+        &mut system.peripheral_clock_control,
+        &clocks,
+    )
+    .unwrap();
+    display.print("frost-esp32").unwrap();
+
     // UART0: display device logs & bootloader stuff
     // UART1: device <--> coordinator communication.
     let jtag = UsbSerialJtag::new(peripherals.USB_DEVICE);
@@ -98,8 +119,8 @@ fn main() -> ! {
         // let upstream_serial = io::BufferedSerialInterface::new_uart(uart0, timer0);
 
         let txrx1 = TxRxPins::new_tx_rx(
-            io.pins.gpio4.into_push_pull_output(),
-            io.pins.gpio5.into_floating_input(),
+            io.pins.gpio3.into_push_pull_output(),
+            io.pins.gpio4.into_floating_input(),
         );
         let uart1 =
             Uart::new_with_config(peripherals.UART1, Some(serial_conf), Some(txrx1), &clocks);
@@ -110,12 +131,20 @@ fn main() -> ! {
     // upstream_serial.flush().unwrap();
     // downstream_serial.flush().unwrap();
 
+    match upstream_serial.interface {
+        io::SerialInterface::Jtag(_) => display.print("Found coordinator").unwrap(),
+        io::SerialInterface::Uart(_) => display.print("Found upstream device").unwrap(),
+    }
+
     // Write magic bytes upstream
     if let Err(e) = upstream_serial
         .interface
         .write_bytes(&frostsnap_comms::MAGICBYTES_JTAG)
     {
         println!("Failed to write magic bytes upstream");
+        display
+            .print("Failed to write magic bytes upstream")
+            .unwrap();
     }
 
     // TODO secure RNG
@@ -144,6 +173,7 @@ fn main() -> ! {
         if !uart1_active {
             if downstream_serial.read_for_magic_bytes(&frostsnap_comms::MAGICBYTES_UART[..]) {
                 uart1_active = true;
+                display.print("Found downstream device").unwrap();
                 sends_uart0.push(DeviceSendSerial::Debug {
                     error: "Device read magic bytes from another device!".to_string(),
                     device: frost_device.device_id(),
@@ -178,6 +208,7 @@ fn main() -> ! {
                             if device_id != &frost_device.device_id() {
                                 sends_uart1.push(received_message.clone());
                             } else {
+                                display.print("Device registered").unwrap();
                                 sends_uart0.push(DeviceSendSerial::Debug {
                                     error: "received registration ACK!".to_string(),
                                     device: frost_device.device_id(),
@@ -200,7 +231,10 @@ fn main() -> ! {
                                         }
                                     }
                                 }
-                                Err(e) => println!("Unexpected FROST message in this state."),
+                                Err(e) => {
+                                    println!("Unexpected FROST message in this state.");
+                                    display.print("Unexpected FROST message").unwrap();
+                                }
                             }
                         }
                     }
@@ -209,6 +243,7 @@ fn main() -> ! {
                     match e {
                         _ => {
                             println!("Decode error: {:?}", e); // TODO "Restarting Message" and restart
+                            display.print(format!("Decode error: {:?}", e)).unwrap();
                             sends_uart0.push(DeviceSendSerial::Debug {
                                 error: format!(
                                     "Device failed to read on UART0: {}",
@@ -249,10 +284,14 @@ fn main() -> ! {
         for send in sends_user.drain(..) {
             println!("Pretending to get user input for {:?}", send);
             match send {
-                frostsnap_core::message::DeviceToUserMessage::CheckKeyGen { .. } => {
+                frostsnap_core::message::DeviceToUserMessage::CheckKeyGen { xpub } => {
+                    // wait_button();
                     frost_device.keygen_ack(true).unwrap();
+                    // display.print(format!("{:?}", xpub)).unwrap();
+                    display.print("Key generated").unwrap();
                 }
-                frostsnap_core::message::DeviceToUserMessage::SignatureRequest { .. } => {
+                frostsnap_core::message::DeviceToUserMessage::SignatureRequest { message_to_sign } => {
+                    display.print(format!("Signing: {}", message_to_sign)).unwrap();
                     let more_sends = frost_device.sign_ack().unwrap();
                     for new_send in more_sends {
                         match new_send {
@@ -292,7 +331,6 @@ fn main() -> ! {
         }
     }
 
-    let mut delay = Delay::new(&clocks);
     let mut error_led = io.pins.gpio2.into_push_pull_output();
     loop {
         error_led.toggle().unwrap();
