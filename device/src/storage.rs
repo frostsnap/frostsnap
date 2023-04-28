@@ -1,5 +1,5 @@
 extern crate alloc;
-use crate::println;
+use crate::state::DeviceState;
 use alloc::format;
 use bincode::{
     de::read::Reader,
@@ -8,16 +8,9 @@ use bincode::{
 };
 use embedded_storage::{ReadStorage, Storage};
 use esp_storage::{FlashStorage, FlashStorageError};
-use frostsnap_core::schnorr_fun::fun::Scalar;
 
 pub const NVS_PARTITION_START: u32 = 0x9000;
 pub const NVS_PARTITION_SIZE: usize = 0x6000;
-
-#[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
-pub struct State {
-    #[bincode(with_serde)]
-    pub secret: Scalar,
-}
 
 pub struct DeviceStorageRw<'a> {
     nvs: &'a mut DeviceStorage,
@@ -47,11 +40,11 @@ impl DeviceStorage {
         self.flash.write(self.start_pos, &buf)
     }
 
-    pub fn load(&mut self) -> Result<State, DecodeError> {
+    pub fn load(&mut self) -> Result<DeviceState, DecodeError> {
         bincode::decode_from_reader(self.rw(), bincode::config::standard())
     }
 
-    pub fn save(&mut self, state: &State) -> Result<(), EncodeError> {
+    pub fn save(&mut self, state: &DeviceState) -> Result<(), EncodeError> {
         bincode::encode_into_writer(state, self.rw(), bincode::config::standard())
     }
 }

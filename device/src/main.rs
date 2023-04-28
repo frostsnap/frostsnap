@@ -4,6 +4,7 @@
 pub mod device_config;
 pub mod io;
 pub mod oled;
+pub mod state;
 pub mod storage;
 
 #[macro_use]
@@ -25,12 +26,11 @@ use esp_storage::FlashStorage;
 use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};
 use frostsnap_core::message::DeviceSend;
 use frostsnap_core::schnorr_fun::fun::hex;
+use frostsnap_core::schnorr_fun::fun::marker::Normal;
 use frostsnap_core::schnorr_fun::fun::KeyPair;
 use frostsnap_core::schnorr_fun::fun::Scalar;
-use smart_leds::{
-    brightness, colors,
-    SmartLedsWrite, RGB,
-};
+use frostsnap_core::SignerState::FrostKey;
+use smart_leds::{brightness, colors, SmartLedsWrite, RGB};
 
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
@@ -133,13 +133,16 @@ fn main() -> ! {
     let mut flash = storage::DeviceStorage::new(flash, storage::NVS_PARTITION_START);
 
     // Simulate factory reset
-    // flash.erase().unwrap();
+    // For now we are going to factory reset the storage on boot for easier testing and debugging.
+    // Comment out if you want the frost key to persist across reboots
+    flash.erase().unwrap();
+    // delay.delay_ms(2000u32);
 
     // Load state from Flash memory if available. If not, generate secret and save.
-    let device_state = match flash.load() {
+    let mut device_state: state::DeviceState = match flash.load() {
         Ok(state) => {
-            println!("Secret read from flash: {}", state.secret.to_string());
-            display.print("Secret read from flash").unwrap();
+            println!("Read device state from flash: {}", state.secret);
+            display.print("Read device state from flash").unwrap();
             state
         }
         Err(_e) => {
@@ -155,7 +158,10 @@ fn main() -> ! {
             rng.read(&mut rand_bytes).unwrap();
             let secret = Scalar::from_bytes(rand_bytes).unwrap().non_zero().unwrap();
 
-            let state = storage::State { secret };
+            let state = state::DeviceState {
+                secret,
+                phase: state::DevicePhase::PreKeygen,
+            };
             flash.save(&state).unwrap();
             println!(
                 "New secret generated and saved: {}",
@@ -166,7 +172,17 @@ fn main() -> ! {
         }
     };
 
-    let keypair = KeyPair::new(device_state.secret);
+    let keypair = KeyPair::<Normal>::new(device_state.secret.clone());
+    // Load the frost signer into the correct state
+    let mut frost_signer = match device_state.phase {
+        state::DevicePhase::PreKeygen => frostsnap_core::FrostSigner::new(keypair),
+        state::DevicePhase::Key { frost_signer } => {
+            display
+                .print("Loaded existing FROST key from flash!")
+                .unwrap();
+            frost_signer
+        }
+    };
 
     // UART0: display device logs & bootloader stuff
     // UART1: device <--> coordinator communication.
@@ -224,14 +240,12 @@ fn main() -> ! {
             .unwrap();
     }
 
-    let mut frost_device = frostsnap_core::FrostSigner::new(keypair);
-
     let announce_message = DeviceSendSerial::Announce(frostsnap_comms::Announce {
-        from: frost_device.device_id(),
+        from: frost_signer.device_id(),
     });
     let dbg_message = DeviceSendSerial::Debug {
         error: "We sent our announce!!".to_string(),
-        device: frost_device.device_id(),
+        device: frost_signer.device_id(),
     };
 
     let mut uart1_active = false;
@@ -246,7 +260,7 @@ fn main() -> ! {
                 display.print("Found downstream device").unwrap();
                 sends_uart0.push(DeviceSendSerial::Debug {
                     error: "Device read magic bytes from another device!".to_string(),
-                    device: frost_device.device_id(),
+                    device: frost_signer.clone().device_id(),
                 });
             }
         }
@@ -269,19 +283,19 @@ fn main() -> ! {
                             }
                             sends_uart0.push(DeviceSendSerial::Announce(
                                 frostsnap_comms::Announce {
-                                    from: frost_device.device_id(),
+                                    from: frost_signer.device_id(),
                                 },
                             ));
                         }
                         DeviceReceiveSerial::AnnounceAck(device_id) => {
                             // Pass on Announce Acks which belong to others
-                            if device_id != &frost_device.device_id() {
+                            if device_id != &frost_signer.device_id() {
                                 sends_uart1.push(received_message.clone());
                             } else {
                                 display.print("Device registered").unwrap();
                                 sends_uart0.push(DeviceSendSerial::Debug {
                                     error: "received registration ACK!".to_string(),
-                                    device: frost_device.device_id(),
+                                    device: frost_signer.device_id(),
                                 });
                             }
                         }
@@ -290,7 +304,7 @@ fn main() -> ! {
                                 sends_uart1.push(received_message.clone());
                             }
 
-                            match frost_device.recv_coordinator_message(core_message.clone()) {
+                            match frost_signer.recv_coordinator_message(core_message.clone()) {
                                 Ok(new_sends) => {
                                     for send in new_sends.into_iter() {
                                         match send {
@@ -319,7 +333,7 @@ fn main() -> ! {
                                     "Device failed to read on UART0: {}",
                                     hex::encode(&prior_to_read_buff)
                                 ),
-                                device: frost_device.device_id(),
+                                device: frost_signer.device_id(),
                             });
                             critical_error = true;
                         }
@@ -342,7 +356,7 @@ fn main() -> ! {
                         println!("Decode error: {:?}", e);
                         sends_uart0.push(DeviceSendSerial::Debug {
                             error: "Failed to decode on UART0".to_string(),
-                            device: frost_device.device_id(),
+                            device: frost_signer.device_id(),
                         });
                         critical_error = true;
                     }
@@ -356,9 +370,19 @@ fn main() -> ! {
             match send {
                 frostsnap_core::message::DeviceToUserMessage::CheckKeyGen { xpub } => {
                     // wait_button();
-                    frost_device.keygen_ack(true).unwrap();
+                    frost_signer.keygen_ack(true).unwrap();
                     // display.print(format!("{:?}", xpub)).unwrap();
-                    display.print("Key generated").unwrap();
+                    // STORE FROST KEY INTO FLASH
+                    if let FrostKey { key, awaiting_ack } = frost_signer.state() {
+                        device_state = state::DeviceState {
+                            secret: device_state.secret,
+                            phase: state::DevicePhase::Key {
+                                frost_signer: frost_signer.clone(),
+                            },
+                        };
+                        flash.save(&device_state).unwrap();
+                    }
+                    display.print("Key generated and saved to flash").unwrap();
                 }
                 frostsnap_core::message::DeviceToUserMessage::SignatureRequest {
                     message_to_sign,
@@ -366,7 +390,7 @@ fn main() -> ! {
                     display
                         .print(format!("Signing: {}", message_to_sign))
                         .unwrap();
-                    let more_sends = frost_device.sign_ack().unwrap();
+                    let more_sends = frost_signer.sign_ack().unwrap();
                     for new_send in more_sends {
                         match new_send {
                             DeviceSend::ToUser(_) => {} // TODO we should never get a second ToUser message from this?
