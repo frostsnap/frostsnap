@@ -130,13 +130,13 @@ fn main() -> ! {
     }
 
     let flash = FlashStorage::new();
-    let mut flash = storage::EspNvs::new(flash, storage::NVS_PARTITION_START);
+    let mut flash = storage::DeviceStorage::new(flash, storage::NVS_PARTITION_START);
 
     // Simulate factory reset
     // flash.erase().unwrap();
 
     // Load state from Flash memory if available. If not, generate secret and save.
-    let stored = match flash.load() {
+    let device_state = match flash.load() {
         Ok(state) => {
             println!("Secret read from flash: {}", state.secret.to_string());
             display.print("Secret read from flash").unwrap();
@@ -144,12 +144,11 @@ fn main() -> ! {
         }
         Err(_e) => {
             // Bincode errored because device is new or something else is wrong,
-            // either way requires user to restore from backup or new secret gen
+            // will require manual user interaction to start fresh, or later, restore from backup.
             display
-                .print("Press button to generate new secret")
+                .print("Press button to generate a new secret")
                 .unwrap();
             wait_button();
-            display.print("Generating new secret...").unwrap();
 
             let mut rng = esp32c3_hal::Rng::new(peripherals.RNG);
             let mut rand_bytes = [0u8; 32];
@@ -167,7 +166,7 @@ fn main() -> ! {
         }
     };
 
-    let keypair = KeyPair::new(stored.secret);
+    let keypair = KeyPair::new(device_state.secret);
 
     // UART0: display device logs & bootloader stuff
     // UART1: device <--> coordinator communication.

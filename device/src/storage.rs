@@ -1,6 +1,6 @@
 extern crate alloc;
 use crate::println;
-use alloc::{format, vec::Vec};
+use alloc::format;
 use bincode::{
     de::read::Reader,
     enc::write::Writer,
@@ -19,24 +19,24 @@ pub struct State {
     pub secret: Scalar,
 }
 
-pub struct EspNvsRw<'a> {
-    nvs: &'a mut EspNvs,
+pub struct DeviceStorageRw<'a> {
+    nvs: &'a mut DeviceStorage,
     pos: u32,
 }
 
-pub struct EspNvs {
+pub struct DeviceStorage {
     flash: FlashStorage,
     start_pos: u32,
 }
 
-impl EspNvs {
+impl DeviceStorage {
     pub fn new(flash: FlashStorage, start_pos: u32) -> Self {
         Self { flash, start_pos }
     }
 
-    pub fn rw(&mut self) -> EspNvsRw<'_> {
+    pub fn rw(&mut self) -> DeviceStorageRw<'_> {
         let start = self.start_pos;
-        EspNvsRw {
+        DeviceStorageRw {
             nvs: self,
             pos: start,
         }
@@ -56,7 +56,7 @@ impl EspNvs {
     }
 }
 
-impl<'a> Reader for EspNvsRw<'a> {
+impl<'a> Reader for DeviceStorageRw<'a> {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), DecodeError> {
         self.nvs
             .flash
@@ -67,7 +67,7 @@ impl<'a> Reader for EspNvsRw<'a> {
     }
 }
 
-impl<'a> Writer for EspNvsRw<'a> {
+impl<'a> Writer for DeviceStorageRw<'a> {
     fn write(&mut self, bytes: &[u8]) -> Result<(), EncodeError> {
         self.nvs
             .flash
