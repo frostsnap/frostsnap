@@ -100,6 +100,7 @@ fn main() -> ! {
     )
     .unwrap();
     display.print("frost-esp32").unwrap();
+    delay.delay_ms(2000u32);
 
     let flash = FlashStorage::new();
     let mut flash = storage::EspNvs::new(flash, storage::NVS_PARTITION_START);
@@ -107,16 +108,22 @@ fn main() -> ! {
     // Simulate factory reset
     // flash.erase().unwrap();
 
-    // Loads state from Flash memory if available. If not, generate secret and save.
+    // Load state from Flash memory if available. If not, generate secret and save.
     let stored = match flash.load() {
         Ok(state) => {
             println!("Secret read from flash: {}", state.secret.to_string());
+            display.print("Secret read from flash").unwrap();
             state
         }
         Err(_e) => {
             // Bincode errored because device is new or something else is wrong,
             // either way requires user to restore from backup or new secret gen
-            // TODO prompt user before secret gen
+            display
+                .print("Press button to generate new secret")
+                .unwrap();
+            wait_button();
+            display.print("Generating new secret...").unwrap();
+
             let mut rng = esp32c3_hal::Rng::new(peripherals.RNG);
             let mut rand_bytes = [0u8; 32];
             rng.read(&mut rand_bytes).unwrap();
@@ -128,6 +135,7 @@ fn main() -> ! {
                 "New secret generated and saved: {}",
                 state.secret.to_string()
             );
+            display.print("New secret generated and saved").unwrap();
             state
         }
     };
