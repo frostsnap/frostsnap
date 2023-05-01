@@ -11,6 +11,7 @@ use esp_storage::{FlashStorage, FlashStorageError};
 use frostsnap_core::schnorr_fun::fun::Scalar;
 
 pub const NVS_PARTITION_START: u32 = 0x9000;
+pub const NVS_PARTITION_SIZE: usize = 0x6000;
 
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
 pub struct State {
@@ -28,8 +29,7 @@ pub struct EspNvs {
     start_pos: u32,
 }
 
-impl EspNvs
-{
+impl EspNvs {
     pub fn new(flash: FlashStorage, start_pos: u32) -> Self {
         Self { flash, start_pos }
     }
@@ -43,14 +43,8 @@ impl EspNvs
     }
 
     pub fn erase(&mut self) -> Result<(), FlashStorageError> {
-        let buf = [0u8; 32];
-        match self.flash.write(self.start_pos, &buf) {
-            Ok(_) => {
-                println!("Erase success");
-                Ok(())
-            }
-            Err(e) => Err(e),
-        }
+        let buf = [0u8; NVS_PARTITION_SIZE];
+        self.flash.write(self.start_pos, &buf)
     }
 
     pub fn load(&mut self) -> Result<State, DecodeError> {
