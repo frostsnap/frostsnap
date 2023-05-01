@@ -1,41 +1,25 @@
-frostsnap-uart
-frostsnap-i2c
-..
-
 # Usage
 
-## Run the server
+## Run the coordinator
 
 ```
-cd frost-server/
+cd coordinator-cli/
 cargo run
 ```
 
-you may need to `sudo ufw allow 3090`.
-
 ## Flash and run the device
 
-std on RISC-V toolchain installation
+no-std on RISC-V toolchain installation
 
 ```
 rustup toolchain install nightly --component rust-src
-cargo install ldproxy
-cargo install cargo-espflash
 ```
 
-Copy the config file and edit with your wifi information
-and `frost-server` `http://IP_ADDRESS:3090`
+Flash device. Use a good USB cable.
 
 ```
-cd frost-device/
-cp cfp_example.toml cfg.toml
-vim cfg.toml
-```
-
-Flash, run and monitor. Use a good USB cable. Default baud rate is 115200 if 921600 doesn't work.
-
-```
-cargo espflash --monitor --speed 921600
+cd device/
+cargo run --release
 ```
 
 ## Notes
