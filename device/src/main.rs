@@ -82,7 +82,7 @@ fn main() -> ! {
 
     let mut delay = Delay::new(&clocks);
 
-    let mut button = io.pins.gpio9.into_pull_up_input();
+    let button = io.pins.gpio9.into_pull_up_input();
     let wait_button = || {
         // wait for press
         while button.is_high().unwrap() {}
@@ -102,7 +102,7 @@ fn main() -> ! {
     display.print("frost-esp32").unwrap();
 
     let flash = FlashStorage::new();
-    let mut flash = storage::EspNvs::new(flash, 0x9000);
+    let mut flash = storage::EspNvs::new(flash, storage::NVS_PARTITION_START);
 
     // Simulate factory reset
     // flash.erase().unwrap();

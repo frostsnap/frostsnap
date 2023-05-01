@@ -10,6 +10,8 @@ use embedded_storage::{ReadStorage, Storage};
 use esp_storage::{FlashStorage, FlashStorageError};
 use frostsnap_core::schnorr_fun::fun::Scalar;
 
+pub const NVS_PARTITION_START: u32 = 0x9000;
+
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
 pub struct State {
     #[bincode(with_serde)]
