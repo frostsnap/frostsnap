@@ -12,20 +12,25 @@ use crate::alloc::string::ToString;
 use alloc::vec;
 use esp32c3_hal::{
     clock::ClockControl,
-    gpio::IO,
     peripherals::Peripherals,
     prelude::*,
+    pulse_control::ClockSource,
     timer::TimerGroup,
     uart::{config, TxRxPins},
-    Delay, Rtc, Uart, UsbSerialJtag,
+    Delay, PulseControl, Rtc, Uart, UsbSerialJtag, IO,
 };
 use esp_backtrace as _;
+use esp_hal_smartled::{smartLedAdapter, SmartLedsAdapter};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};
 use frostsnap_core::message::DeviceSend;
 use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_core::schnorr_fun::fun::KeyPair;
 use frostsnap_core::schnorr_fun::fun::Scalar;
+use smart_leds::{
+    brightness, colors,
+    SmartLedsWrite, RGB,
+};
 
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
@@ -99,8 +104,30 @@ fn main() -> ! {
         &clocks,
     )
     .unwrap();
+
+    // RGB LED
+    // White: found coordinator
+    // Blue: found another device upstream
+    let pulse = PulseControl::new(
+        peripherals.RMT,
+        &mut system.peripheral_clock_control,
+        ClockSource::APB,
+        0,
+        0,
+        0,
+    )
+    .unwrap();
+    let mut led = <smartLedAdapter!(1)>::new(pulse.channel0, io.pins.gpio2);
+
     display.print("frost-esp32").unwrap();
-    delay.delay_ms(2000u32);
+    for i in 0..=20 {
+        led.write([RGB::new(0, i, i)].iter().cloned()).unwrap();
+        delay.delay_ms(30u32);
+    }
+    for i in (0..=20).rev() {
+        led.write([RGB::new(0, i, i)].iter().cloned()).unwrap();
+        delay.delay_ms(30u32);
+    }
 
     let flash = FlashStorage::new();
     let mut flash = storage::EspNvs::new(flash, storage::NVS_PARTITION_START);
@@ -175,8 +202,16 @@ fn main() -> ! {
     // downstream_serial.flush().unwrap();
 
     match upstream_serial.interface {
-        io::SerialInterface::Jtag(_) => display.print("Found coordinator").unwrap(),
-        io::SerialInterface::Uart(_) => display.print("Found upstream device").unwrap(),
+        io::SerialInterface::Jtag(_) => {
+            display.print("Found coordinator").unwrap();
+            led.write(brightness([colors::WHITE].iter().cloned(), 10))
+                .unwrap();
+        }
+        io::SerialInterface::Uart(_) => {
+            display.print("Found upstream device").unwrap();
+            led.write(brightness([colors::BLUE].iter().cloned(), 10))
+                .unwrap();
+        }
     }
 
     // Write magic bytes upstream
@@ -371,9 +406,5 @@ fn main() -> ! {
         }
     }
 
-    let mut error_led = io.pins.gpio2.into_push_pull_output();
-    loop {
-        error_led.toggle().unwrap();
-        delay.delay_ms(50u32);
-    }
+    loop {}
 }
