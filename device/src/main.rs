@@ -4,6 +4,7 @@
 pub mod device_config;
 pub mod io;
 pub mod oled;
+pub mod storage;
 
 #[macro_use]
 extern crate alloc;
@@ -19,6 +20,7 @@ use esp32c3_hal::{
     Delay, Rtc, Uart, UsbSerialJtag,
 };
 use esp_backtrace as _;
+use esp_storage::FlashStorage;
 use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};
 use frostsnap_core::message::DeviceSend;
 use frostsnap_core::schnorr_fun::fun::hex;
@@ -80,7 +82,7 @@ fn main() -> ! {
 
     let mut delay = Delay::new(&clocks);
 
-    let mut button = io.pins.gpio9.into_pull_up_input();
+    let button = io.pins.gpio9.into_pull_up_input();
     let wait_button = || {
         // wait for press
         while button.is_high().unwrap() {}
@@ -98,6 +100,47 @@ fn main() -> ! {
     )
     .unwrap();
     display.print("frost-esp32").unwrap();
+    delay.delay_ms(2000u32);
+
+    let flash = FlashStorage::new();
+    let mut flash = storage::EspNvs::new(flash, storage::NVS_PARTITION_START);
+
+    // Simulate factory reset
+    // flash.erase().unwrap();
+
+    // Load state from Flash memory if available. If not, generate secret and save.
+    let stored = match flash.load() {
+        Ok(state) => {
+            println!("Secret read from flash: {}", state.secret.to_string());
+            display.print("Secret read from flash").unwrap();
+            state
+        }
+        Err(_e) => {
+            // Bincode errored because device is new or something else is wrong,
+            // either way requires user to restore from backup or new secret gen
+            display
+                .print("Press button to generate new secret")
+                .unwrap();
+            wait_button();
+            display.print("Generating new secret...").unwrap();
+
+            let mut rng = esp32c3_hal::Rng::new(peripherals.RNG);
+            let mut rand_bytes = [0u8; 32];
+            rng.read(&mut rand_bytes).unwrap();
+            let secret = Scalar::from_bytes(rand_bytes).unwrap().non_zero().unwrap();
+
+            let state = storage::State { secret };
+            flash.save(&state).unwrap();
+            println!(
+                "New secret generated and saved: {}",
+                state.secret.to_string()
+            );
+            display.print("New secret generated and saved").unwrap();
+            state
+        }
+    };
+
+    let keypair = KeyPair::new(stored.secret);
 
     // UART0: display device logs & bootloader stuff
     // UART1: device <--> coordinator communication.
@@ -146,13 +189,6 @@ fn main() -> ! {
             .print("Failed to write magic bytes upstream")
             .unwrap();
     }
-
-    // TODO secure RNG
-    let mut rng = esp32c3_hal::Rng::new(peripherals.RNG);
-    let mut rand_bytes = [0u8; 32];
-    rng.read(&mut rand_bytes).unwrap();
-    let secret = Scalar::from_bytes(rand_bytes).unwrap().non_zero().unwrap();
-    let keypair = KeyPair::new(secret);
 
     let mut frost_device = frostsnap_core::FrostSigner::new(keypair);
 
@@ -290,8 +326,12 @@ fn main() -> ! {
                     // display.print(format!("{:?}", xpub)).unwrap();
                     display.print("Key generated").unwrap();
                 }
-                frostsnap_core::message::DeviceToUserMessage::SignatureRequest { message_to_sign } => {
-                    display.print(format!("Signing: {}", message_to_sign)).unwrap();
+                frostsnap_core::message::DeviceToUserMessage::SignatureRequest {
+                    message_to_sign,
+                } => {
+                    display
+                        .print(format!("Signing: {}", message_to_sign))
+                        .unwrap();
                     let more_sends = frost_device.sign_ack().unwrap();
                     for new_send in more_sends {
                         match new_send {
