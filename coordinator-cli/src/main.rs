@@ -262,8 +262,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             sends
         } else if choice == "k" {
+            let threshold = if devices.len() > 2 {
+                devices.len() - 1
+            } else {
+                devices.len()
+            };
             let do_keygen_message: Vec<_> = coordinator
-                .do_keygen(&devices, devices.len())
+                .do_keygen(&devices, threshold)
                 .unwrap()
                 .into_iter()
                 .map(|msg| DeviceReceiveSerial::Core(msg))
@@ -277,9 +282,17 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
             sends
         } else if choice == "s" {
+            let threshold = if devices.len() > 2 {
+                devices.len() - 1
+            } else {
+                devices.len()
+            };
             let message_to_sign = fetch_input("Enter a message to be signed: ");
             let sign_messages: Vec<_> = coordinator
-                .start_sign(message_to_sign, devices.clone())
+                .start_sign(
+                    message_to_sign,
+                    devices.clone().into_iter().take(threshold).collect(),
+                )
                 .unwrap()
                 .into_iter()
                 .map(|msg| DeviceReceiveSerial::Core(msg))
