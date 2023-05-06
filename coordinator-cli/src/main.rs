@@ -128,7 +128,42 @@ fn main() -> Result<(), Box<dyn Error>> {
             SerialPortBincode::new(wait_for_device_port(&serial_number), serial_number)
         })
         .collect();
-    println!("Connected to devices.");
+    println!("Connected to devices. Reading for magic bytes...");
+
+    // Read magic bytes on each port
+    for (i, port_rw) in ports.iter_mut().enumerate() {
+        loop {
+            // Write magic bytes onto JTAG
+            println!("Trying to read magic bytes on port {}", i);
+            if let Err(e) = port_rw.port.write(&frostsnap_comms::MAGICBYTES_JTAG) {
+                println!("Failed to write magic bytes: {:?}", e);
+                // drop(port_rw);
+                // *port_rw = SerialPortBincode::new(
+                //     wait_for_device_port(&port_rw.serial_number),
+                //     port_rw.serial_number.clone(),
+                // );
+                // println!("Reconnected");
+            }
+            std::thread::sleep(Duration::from_millis(500));
+
+            // Read for magic bytes response
+            match read_for_magic_bytes(port_rw, &frostsnap_comms::MAGICBYTES_JTAG) {
+                Ok(found_magic_bytes) => {
+                    if found_magic_bytes {
+                        println!("Found magic bytes!!");
+                        break;
+                    }
+                }
+                Err(e) => {
+                    println!("Failed to read magic bytes {:?}", e);
+                    *port_rw = SerialPortBincode::new(
+                        wait_for_device_port(&port_rw.serial_number),
+                        port_rw.serial_number.clone(),
+                    );
+                }
+            }
+        }
+    }
 
     let mut coordinator = frostsnap_core::FrostCoordinator::new();
     let mut devices = BTreeSet::new();
@@ -146,7 +181,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         // std::thread::sleep(Duration::from_millis(1000));
         let choice = fetch_input(
-            "\nPress:\n\tm - Read for device magic bytes\n\tr - read\n\tw - write\n\tk - start keygen\n\ts - start signing\n",
+            "\nPress:\n\tr - read messages\n\tw - announce self\n\tk - start keygen\n\ts - start signing\n",
         );
         let sends = if choice == "w" {
             let sends = (0..ports.len())
@@ -304,42 +339,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
             sends
-        } else if choice == "m" {
-            for (i, port_rw) in ports.iter_mut().enumerate() {
-                loop {
-                    // Write magic bytes onto JTAG
-                    println!("Trying to read magic bytes on port {}", i);
-                    if let Err(e) = port_rw.port.write(&frostsnap_comms::MAGICBYTES_JTAG) {
-                        println!("Failed to write magic bytes: {:?}", e);
-                        // drop(port_rw);
-                        // *port_rw = SerialPortBincode::new(
-                        //     wait_for_device_port(&port_rw.serial_number),
-                        //     port_rw.serial_number.clone(),
-                        // );
-                        // println!("Reconnected");
-                    }
-                    std::thread::sleep(Duration::from_millis(500));
-
-                    // Read for magic bytes response
-                    match read_for_magic_bytes(port_rw, &frostsnap_comms::MAGICBYTES_JTAG) {
-                        Ok(found_magic_bytes) => {
-                            if found_magic_bytes {
-                                println!("Found magic bytes!!");
-                                break;
-                            }
-                        }
-                        Err(e) => {
-                            println!("Failed to read magic bytes {:?}", e);
-                            *port_rw = SerialPortBincode::new(
-                                wait_for_device_port(&port_rw.serial_number),
-                                port_rw.serial_number.clone(),
-                            );
-                        }
-                    }
-                }
-            }
-
-            vec![]
         } else {
             println!("Did nothing..");
             vec![]
