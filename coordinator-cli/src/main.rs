@@ -106,17 +106,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     // ESP32-C3 USB CDC vid and pid
     // let usb_id: (u16, u16) = (4292, 60000);
     let usb_id: (u16, u16) = (12346, 4097);
-    let number_of_device_ports = 2;
-
-    println!(
-        "Waiting for {} devices to be plugged in..",
-        number_of_device_ports
-    );
     let connected_devices = loop {
+        println!("\n\n");
         let connected_devices = find_all_ports(usb_id);
-        if connected_devices.len() == number_of_device_ports {
-            break connected_devices;
+        for device in &connected_devices {
+            println!("{:?}", device);
         }
+        if fetch_input("All devices connected? (y)") == "y" {
+            break connected_devices;
+        };
     };
 
     println!(
