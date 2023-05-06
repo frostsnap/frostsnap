@@ -2,7 +2,6 @@ use anyhow::anyhow;
 use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};
 use frostsnap_core::message::{CoordinatorSend, CoordinatorToDeviceMessage};
 use serialport::SerialPort;
-use std::collections::BTreeMap;
 use std::error::Error;
 use std::str;
 use std::time::Duration;
@@ -156,25 +155,24 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .map(|i| {
                     (
                         i,
-                        vec![DeviceReceiveSerial::AnnounceCoordinator(
-                            "Im a laptop".to_string(),
-                        )],
+                        DeviceReceiveSerial::AnnounceCoordinator("Im a laptop".to_string()),
                     )
                 })
-                .collect::<BTreeMap<_, _>>();
+                .collect::<Vec<_>>();
             sends
         } else if choice == "r" {
-            let mut send_all_ports = BTreeMap::new();
-            let mut sends = BTreeMap::new();
-            for (i, mut port_rw) in ports.iter_mut().enumerate() {
-                println!("Reading port {}", i);
+            let mut send_all_ports = vec![];
+            let mut sends = vec![];
+            let n_ports = ports.len();
+            for (port_index, mut port_rw) in ports.iter_mut().enumerate() {
+                println!("Reading port {}", port_index);
                 if let Err(e) = port_rw.read_into_buffer() {
-                    eprintln!("Failed to read port {} into buffer: {:?}", i, e);
+                    eprintln!("Failed to read port {} into buffer: {:?}", port_index, e);
                 }
-                for byte in &port_rw.buffer {
-                    print!("{:02X}", byte);
-                }
-                println!("");
+                // for byte in &port_rw.buffer {
+                //     print!("{:02X}", byte);
+                // }
+                // println!("");
 
                 let decode: Result<DeviceSendSerial, _> =
                     bincode::decode_from_reader(&mut port_rw, bincode::config::standard());
@@ -226,22 +224,41 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 };
 
+                // Some messages need to be shared to everyone!
                 for new_send in new_sends.clone() {
-                    if let DeviceReceiveSerial::Core(core_message) = &new_send {
-                        if let CoordinatorToDeviceMessage::FinishKeyGen { .. } = core_message {
-                            send_all_ports.insert(i, new_send);
+                    if let DeviceReceiveSerial::Core(_) = new_send {
+                        match &new_send {
+                            DeviceReceiveSerial::Core(msg) => match &msg {
+                                CoordinatorToDeviceMessage::DoKeyGen { .. } => {
+                                    send_all_ports.push(new_send.clone())
+                                }
+                                CoordinatorToDeviceMessage::FinishKeyGen { .. } => {
+                                    send_all_ports.push(new_send.clone())
+                                }
+                                CoordinatorToDeviceMessage::RequestSign { .. } => {
+                                    send_all_ports.push(new_send.clone())
+                                }
+                            },
+                            DeviceReceiveSerial::AnnounceAck(_) => {}
+                            DeviceReceiveSerial::AnnounceCoordinator(_) => {
+                                send_all_ports.push(new_send.clone())
+                            }
                         }
                     };
                 }
-                sends.insert(i, new_sends);
-            }
-
-            // Some messages need to be sent to ALL ports
-            for (port_index, send_messages) in sends.iter_mut() {
-                for (original_dest, send_all_message) in &send_all_ports {
-                    if original_dest != port_index {
-                        send_messages.push(send_all_message.clone());
+                // dbg!(&new_sends);
+                // dbg!(&send_all_ports);
+                for send_all_message in send_all_ports.iter() {
+                    for other_port_index in 0..n_ports {
+                        if port_index != other_port_index {
+                            sends.push((other_port_index, send_all_message.clone()));
+                        }
                     }
+                }
+
+                // Store sends
+                for new_send in new_sends {
+                    sends.push((port_index, new_send.clone()));
                 }
             }
 
@@ -253,9 +270,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .into_iter()
                 .map(|msg| DeviceReceiveSerial::Core(msg))
                 .collect();
-            let sends = (0..ports.len())
-                .map(|i| (i, do_keygen_message.clone()))
-                .collect::<BTreeMap<_, _>>();
+
+            let mut sends = vec![];
+            for recipient_port in 0..ports.len() {
+                for msg in do_keygen_message.clone() {
+                    sends.push((recipient_port, msg));
+                }
+            }
             sends
         } else if choice == "s" {
             let message_to_sign = fetch_input("Enter a message to be signed: ");
@@ -265,9 +286,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .into_iter()
                 .map(|msg| DeviceReceiveSerial::Core(msg))
                 .collect();
-            let sends = (0..ports.len())
-                .map(|i| (i, sign_messages.clone()))
-                .collect::<BTreeMap<_, _>>();
+            let mut sends = vec![];
+            for message in sign_messages {
+                for port_index in 0..ports.len() {
+                    sends.push((port_index, message.clone()));
+                }
+            }
             sends
         } else if choice == "m" {
             for (i, port_rw) in ports.iter_mut().enumerate() {
@@ -283,7 +307,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         // );
                         // println!("Reconnected");
                     }
-                    std::thread::sleep(Duration::from_millis(50));
+                    std::thread::sleep(Duration::from_millis(500));
 
                     // Read for magic bytes response
                     match read_for_magic_bytes(port_rw, &frostsnap_comms::MAGICBYTES_JTAG) {
@@ -304,29 +328,27 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
 
-            BTreeMap::new()
+            vec![]
         } else {
             println!("Did nothing..");
-            BTreeMap::new()
+            vec![]
         };
 
         println!("Sending these messages:");
-        for (port_index, port_sends) in sends {
-            // for send in port_sends.drain(..) {
-            for send in port_sends {
-                println!("{:?}", send);
-                for (destination_port, other_port) in ports.iter_mut().enumerate() {
-                    if destination_port != port_index {
-                        continue;
-                    } else {
-                        if let Err(e) = bincode::encode_into_writer(
-                            send.clone(),
-                            other_port,
-                            bincode::config::standard(),
-                        ) {
-                            eprintln!("Error writing message to serial {:?}", e);
-                        }
+        for (port_index, send) in sends {
+            dbg!(&send);
+            for (destination_port, other_port) in ports.iter_mut().enumerate() {
+                if destination_port != port_index {
+                    continue;
+                } else {
+                    if let Err(e) = bincode::encode_into_writer(
+                        send.clone(),
+                        other_port,
+                        bincode::config::standard(),
+                    ) {
+                        eprintln!("Error writing message to serial {:?}", e);
                     }
+                    println!("send on port {}", destination_port);
                 }
 
                 println!("");
