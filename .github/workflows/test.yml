@@ -1,0 +1,79 @@
+name: Tests
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+ 
+env:
+  rust_toolchain: nightly
+  
+jobs:
+  device-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./device
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v2
+      - name: Setup | Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.rust_toolchain }}
+          components: rustfmt, clippy
+      - name: Setup | rust-src
+        run: rustup component add rust-src --toolchain ${{ env.rust_toolchain }}
+      - name: Setup | ldproxy
+        run: cargo install ldproxy
+      - name: Build | Compile
+        run: cargo build --release
+
+  coordinator-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./coordinator-cli
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v2
+      - name: Setup | Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.rust_toolchain }}
+          components: rustfmt, clippy
+      - name: Setup | libudev
+        run: sudo apt-get install -y  libudev-dev
+      - name: Build | Compile
+        run: cargo build --release
+
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+          components: rustfmt
+      - uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+
+  # doc-build:
+  #    name: doc-build
+  #    runs-on: ubuntu-latest
+  #    steps:
+  #      - uses: actions/checkout@v2
+  #      - uses: actions-rs/toolchain@v1
+  #        with:
+  #          profile: minimal
+  #          toolchain: nightly
+  #          override: true
+  #      - name: build-doc
+  #        # convoluted way to make it fail on warnings
+  #        run: "cargo doc --no-deps --workspace 2>&1 | tee /dev/fd/2 | grep -iEq '^(warning|error)' && exit 1 || exit 0"
