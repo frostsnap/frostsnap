@@ -359,7 +359,7 @@ fn gen_pop_message(device_ids: impl IntoIterator<Item = DeviceId>) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct FrostSigner {
     keypair: KeyPair,
     state: SignerState,
@@ -368,7 +368,7 @@ pub struct FrostSigner {
 
 impl FrostSigner {
     pub fn new_random(rng: &mut impl rand_core::RngCore) -> Self {
-        Self::new(KeyPair::new(Scalar::random(rng)))
+        Self::new(KeyPair::<Normal>::new(Scalar::random(rng)))
     }
 
     pub fn new(keypair: KeyPair) -> Self {
@@ -456,7 +456,7 @@ impl FrostSigner {
 
                 let pop_message = gen_pop_message(devices.iter().cloned());
                 let proof_of_possession =
-                    frost.create_proof_of_possession(Message::raw(&pop_message), &scalar_poly);
+                    frost.create_proof_of_possession(&scalar_poly, Message::raw(&pop_message));
 
                 let point_poly = frost::to_point_poly(&scalar_poly);
                 self.state = SignerState::KeyGen {
@@ -693,7 +693,7 @@ impl FrostSigner {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum SignerState {
     Registered,
     KeyGen {
@@ -713,7 +713,7 @@ pub enum SignerState {
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct FrostsnapKey {
     /// The joint key
     pub frost_key: FrostKey<Normal>,
