@@ -51,7 +51,7 @@ mod test {
         let sk = s!(1337);
         let pk = g!(sk * G).normalize();
         let share = s!(42).mark_zero();
-        let mut rng = ChaCha20Rng::from_seed([12u8;32]);
+        let mut rng = ChaCha20Rng::from_seed([12u8; 32]);
 
         let ciphertext = EncryptedShare::new(pk, &mut rng, &share);
         let decrypted = ciphertext.decrypt(&sk);
