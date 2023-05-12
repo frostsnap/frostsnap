@@ -1,7 +1,7 @@
 use schnorr_fun::fun::Point;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
-pub struct ExtendedPubKey([u8; 65]);
+pub struct ExtendedPubKey(pub [u8; 65]);
 
 impl ExtendedPubKey {
     pub fn new(public_key: Point, chain_code: [u8; 32]) -> Self {
