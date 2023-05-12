@@ -215,18 +215,20 @@ fn main() -> ! {
     // upstream_serial.flush().unwrap();
     // downstream_serial.flush().unwrap();
 
-    match upstream_serial.interface {
+    let upstream_magic_bytes = match upstream_serial.interface {
         io::SerialInterface::Jtag(_) => {
             display.print("Found coordinator").unwrap();
             led.write(brightness([colors::WHITE].iter().cloned(), 10))
                 .unwrap();
+            frostsnap_comms::MAGICBYTES_JTAG
         }
         io::SerialInterface::Uart(_) => {
             display.print("Found upstream device").unwrap();
             led.write(brightness([colors::BLUE].iter().cloned(), 10))
                 .unwrap();
+            frostsnap_comms::MAGICBYTES_UART
         }
-    }
+    };
 
     // Write magic bytes upstream
     if let Err(e) = upstream_serial
@@ -251,6 +253,13 @@ fn main() -> ! {
     loop {
         // Check if any downstream devices have been connected.
         if !downstream_active {
+            if let Err(e) = bincode::encode_into_writer(
+                &frostsnap_comms::MAGICBYTES_UART,
+                &mut downstream_serial,
+                bincode::config::standard(),
+            ) {
+                // No worries if nothing connected downstream
+            }
             if downstream_serial.read_for_magic_bytes(&frostsnap_comms::MAGICBYTES_UART[..]) {
                 downstream_active = true;
                 display.print("Found downstream device").unwrap();
