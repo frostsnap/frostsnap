@@ -85,6 +85,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     println!("Device unplugged: {:?}", device);
                     connected_ports.remove(&device);
                     pending_ports.remove(&device);
+                    open_ports.remove(&device);
                     ready_ports.remove(&device);
                 }
 
