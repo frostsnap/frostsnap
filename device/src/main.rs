@@ -199,6 +199,7 @@ fn main() -> ! {
         let uart0 =
             Uart::new_with_config(peripherals.UART0, Some(serial_conf), Some(txrx0), &clocks);
 
+        display.print("Finding upstream device").unwrap();
         let upstream_serial = io::BufferedSerialInterface::find_active(uart0, jtag, timer0);
         // let upstream_serial = io::BufferedSerialInterface::new_uart(uart0, timer0);
 
@@ -326,11 +327,11 @@ fn main() -> ! {
                 Err(e) => {
                     match e {
                         _ => {
-                            println!("Decode error: {:?}", e); // TODO "Restarting Message" and restart
-                            display.print(format!("{:?}", e)).unwrap();
+                            let hex_buf = hex::encode(&prior_to_read_buff);
+                            display.print(format!("E: {}", hex_buf)).unwrap();
                             sends_downstream.push(DeviceSendSerial::Debug {
                                 error: format!(
-                                    "Device failed to read downstream: {}",
+                                    "Device failed to read upstream: {}",
                                     hex::encode(&prior_to_read_buff)
                                 ),
                                 device: frost_signer.device_id(),
