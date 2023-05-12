@@ -90,9 +90,9 @@ fn main() -> ! {
 
     let button = io.pins.gpio9.into_pull_up_input();
     let wait_button = || {
-        // wait for press
+        // Ensure button is not pressed
         while button.is_high().unwrap() {}
-        // wait for release
+        // Wait for press
         while button.is_low().unwrap() {}
     };
 
@@ -150,10 +150,10 @@ fn main() -> ! {
         Err(_e) => {
             // Bincode errored because device is new or something else is wrong,
             // will require manual user interaction to start fresh, or later, restore from backup.
-            display
-                .print("Press button to generate a new secret")
-                .unwrap();
-            wait_button();
+            // display
+            //     .print("Press button to generate a new secret")
+            //     .unwrap();
+            // wait_button();
 
             let mut rng = esp32c3_hal::Rng::new(peripherals.RNG);
             let mut rand_bytes = [0u8; 32];
@@ -369,10 +369,12 @@ fn main() -> ! {
                 frostsnap_core::message::DeviceToUserMessage::CheckKeyGen { xpub } => {
                     led.write(brightness([colors::YELLOW].iter().cloned(), 10))
                         .unwrap();
-                    display.print(format!("Key ok?\n{:?}", hex::encode(&xpub.0)));
-                    wait_button();
+                    // display.print(format!("Key ok?\n{:?}", hex::encode(&xpub.0)));
+                    // wait_button();
                     frost_signer.keygen_ack(true).unwrap();
-
+                    display.print(format!("Key generated\n{:?}", hex::encode(&xpub.0)));
+                    led.write(brightness([colors::WHITE_SMOKE].iter().cloned(), 10))
+                        .unwrap();
                     // STORE FROST KEY INTO FLASH
                     if let FrostKey { key, awaiting_ack } = frost_signer.state() {
                         device_state = state::DeviceState {
@@ -383,19 +385,19 @@ fn main() -> ! {
                         };
                         flash.save(&device_state).unwrap();
                     }
-                    display.print(format!("Key generated\n{:?}", hex::encode(&xpub.0)));
+                    display.print(format!("Key saved\n{:?}", hex::encode(&xpub.0)));
                     led.write(brightness([colors::BLUE].iter().cloned(), 10))
                         .unwrap();
                 }
                 frostsnap_core::message::DeviceToUserMessage::SignatureRequest {
                     message_to_sign,
                 } => {
-                    display
-                        .print(format!("Sign?\n{}", message_to_sign))
-                        .unwrap();
                     led.write(brightness([colors::YELLOW].iter().cloned(), 10))
                         .unwrap();
-                    wait_button();
+                    // display
+                    //     .print(format!("Sign?\n{}", message_to_sign))
+                    //     .unwrap();
+                    // wait_button();
                     let more_sends = frost_signer.sign_ack().unwrap();
                     led.write(brightness([colors::BLUE].iter().cloned(), 10))
                         .unwrap();
