@@ -4,13 +4,15 @@ use std::io::{self, Write};
 
 pub struct SerialPortBincode {
     pub port: Box<dyn SerialPort>,
+    pub serial_number: String,
     pub(crate) buffer: Vec<u8>,
 }
 
 impl SerialPortBincode {
-    pub fn new(port: Box<dyn SerialPort>) -> Self {
+    pub fn new(port: Box<dyn SerialPort>, serial_number: String) -> Self {
         Self {
             port,
+            serial_number,
             buffer: Vec::new(),
         }
     }
