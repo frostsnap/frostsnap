@@ -39,7 +39,7 @@ pub struct FrostCoordinator {
     state: CoordinatorState,
 }
 
-pub const NONCE_BATCH_SIZE: usize = 16;
+pub const NONCE_BATCH_SIZE: usize = 2;
 
 impl FrostCoordinator {
     pub fn new() -> Self {

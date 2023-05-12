@@ -2,7 +2,6 @@
 
 members = [
     "frostsnap_core",
-    # "frostsnap_uart",
     "device",
     "coordinator-cli",
     "frostsnap_comms"
