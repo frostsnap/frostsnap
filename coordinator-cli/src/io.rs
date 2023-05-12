@@ -7,11 +7,11 @@ extern crate alloc;
 
 use crate::serial_rw::SerialPortBincode;
 
-pub fn find_all_ports(usb_id: (u16, u16)) -> Vec<String> {
+pub fn find_all_ports(usb_id: (u16, u16)) -> impl Iterator<Item = String> {
     let available_ports = serialport::available_ports().unwrap();
-    let ports = available_ports
+    available_ports
         .into_iter()
-        .filter_map(|port| match &port.port_type {
+        .filter_map(move |port| match &port.port_type {
             serialport::SerialPortType::UsbPort(port) => {
                 if port.vid == usb_id.0 && port.pid == usb_id.1 {
                     port.serial_number.clone()
@@ -21,14 +21,11 @@ pub fn find_all_ports(usb_id: (u16, u16)) -> Vec<String> {
             }
             _ => None,
         })
-        .collect();
-    ports
-    // port.vid == usb_id.0 && port.pid == usb_id.1
 }
 
 pub fn open_device_port(serial_number: &str) -> anyhow::Result<Box<dyn SerialPort>> {
     let available_ports = serialport::available_ports().unwrap();
-    println!("Ports: {:?}", available_ports);
+    // println!("Ports: {:?}", available_ports);
     let port = available_ports
         .into_iter()
         .find(|port| match &port.port_type {
