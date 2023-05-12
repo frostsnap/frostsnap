@@ -50,14 +50,6 @@ fn fetch_input(prompt: &str) -> String {
 // USB CDC vid and pid
 const USB_ID: (u16, u16) = (12346, 4097);
 
-enum ConnectState {
-    Found,
-    Opened {
-        device_port: SerialPortBincode,
-        magic_bytes_read: bool,
-    },
-}
-
 fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
     match cli.command {
@@ -67,120 +59,92 @@ fn main() -> Result<(), Box<dyn Error>> {
         } => {
             println!("Please plug in {} devices..", n_devices);
 
-            let mut connected_devices = HashSet::new();
-            let mut pending_devices = HashMap::new();
-            let mut ready_devices = HashMap::new();
-            let device_ports = loop {
+            let mut connected_ports = HashSet::new();
+            let mut pending_ports = HashSet::new();
+            let mut open_ports = HashMap::new();
+            let mut ready_ports = HashMap::new();
+            loop {
                 let connected_now: HashSet<String> =
                     io::find_all_ports(USB_ID).collect::<HashSet<_>>();
 
                 let newly_connected_devices = connected_now
-                    .difference(&connected_devices)
+                    .difference(&connected_ports)
                     .cloned()
                     .collect::<Vec<_>>();
                 for device in newly_connected_devices {
                     println!("Device plugged in: {:?}", device);
-                    connected_devices.insert(device.clone());
-                    pending_devices.insert(device.clone(), ConnectState::Found);
+                    connected_ports.insert(device.clone());
+                    pending_ports.insert(device.clone());
                 }
 
-                let unplugged_devices = connected_devices
+                let unplugged_devices = connected_ports
                     .difference(&connected_now)
                     .cloned()
                     .collect::<Vec<_>>();
                 for device in unplugged_devices {
                     println!("Device unplugged: {:?}", device);
-                    connected_devices.remove(&device);
-                    pending_devices.remove(&device);
-                    ready_devices.remove(&device);
+                    connected_ports.remove(&device);
+                    pending_ports.remove(&device);
+                    ready_ports.remove(&device);
                 }
 
-                for (serial_number, state) in pending_devices.iter_mut() {
-                    match state {
-                        ConnectState::Found => {
-                            let device_port = io::open_device_port(serial_number);
-                            match device_port {
-                                Err(e) => {
-                                    eprintln!("Failed to connect to device port: {:?}", e);
-                                }
-                                Ok(mut device_port) => {
-                                    // Write magic bytes onto JTAG
-                                    println!(
-                                        "Trying to read magic bytes on port {}",
-                                        serial_number
-                                    );
-                                    if let Err(e) =
-                                        device_port.write(&frostsnap_comms::MAGICBYTES_JTAG)
-                                    {
-                                        println!("Failed to write magic bytes: {:?}", e);
-                                    } else {
-                                        *state = ConnectState::Opened {
-                                            device_port: SerialPortBincode::new(
-                                                device_port,
-                                                serial_number.to_owned(),
-                                            ),
-                                            magic_bytes_read: false,
-                                        };
-                                    }
-                                }
-                            }
+                for serial_number in pending_ports.drain().collect::<Vec<_>>() {
+                    let device_port = io::open_device_port(&serial_number);
+                    match device_port {
+                        Err(e) => {
+                            eprintln!("Failed to connect to device port: {:?}", e);
                         }
-                        ConnectState::Opened {
-                            device_port,
-                            magic_bytes_read: ready,
-                        } => {
-                            // Read for magic bytes response
-                            if !*ready {
-                                match io::read_for_magic_bytes(
+                        Ok(mut device_port) => {
+                            // Write magic bytes onto JTAG
+                            println!(
+                                "Trying to read magic bytes on port {}",
+                                serial_number
+                            );
+                            if let Err(e) =
+                                device_port.write(&frostsnap_comms::MAGICBYTES_JTAG)
+                            {
+                                println!("Failed to write magic bytes: {:?}", e);
+                            } else {
+                                open_ports.insert(serial_number.clone(), SerialPortBincode::new(
                                     device_port,
-                                    &frostsnap_comms::MAGICBYTES_JTAG,
-                                ) {
-                                    Ok(found_magic_bytes) => {
-                                        if found_magic_bytes {
-                                            println!(
-                                                "Found magic bytes on device {}",
-                                                serial_number
-                                            );
-                                            *ready = true;
-                                        }
-                                    }
-                                    Err(e) => {
-                                        println!("Failed to read magic bytes {:?}", e);
-                                        // *device_port = SerialPortBincode::new(
-                                        //     io::wait_for_device_port(&port_rw.serial_number),
-                                        //     serial_number,
-                                        // );
-                                    }
-                                }
+                                    serial_number,
+                                ));
+                                continue;
                             }
                         }
                     }
+                    pending_ports.insert(serial_number);
                 }
 
-                for (serial_number, state) in pending_devices.drain().collect::<Vec<_>>() {
-                    match state {
-                        ConnectState::Opened {
-                            device_port,
-                            magic_bytes_read: true,
-                        } => {
-                            ready_devices.insert(serial_number, device_port);
+
+                for (serial_number, mut device_port) in open_ports.drain().collect::<Vec<_>>() {
+                    match io::read_for_magic_bytes(
+                        &mut device_port,
+                        &frostsnap_comms::MAGICBYTES_JTAG,
+                    ) {
+                        Ok(true) => {
+                            println!(
+                                "Found magic bytes on device {}",
+                                serial_number
+                            );
+                            ready_ports.insert(serial_number, device_port);
+                            continue;
                         }
-                        _ => {
-                            pending_devices.insert(serial_number, state);
+                        Ok(false) => {
+                            /* magic bytes haven't been read yet */
+                        }
+                        Err(e) => {
+                            println!("Failed to read magic bytes {:?}", e);
+                            // *device_port = SerialPortBincode::new(
+                            //     io::wait_for_device_port(&port_rw.serial_number),
+                            //     serial_number,
+                            // );
                         }
                     }
-                }
-                if ready_devices.len() >= n_devices {
-                    break ready_devices.into_values().collect::<Vec<_>>();
+
+                    open_ports.insert(serial_number, device_port);
                 }
             };
-            println!(
-                "Device ports {:?}",
-                device_ports
-                    .iter()
-                    .map(|port| port.serial_number.clone())
-                    .collect::<Vec<_>>()
-            );
         }
     }
 

@@ -62,7 +62,6 @@ pub fn read_for_magic_bytes(
         .position(|window| window == &magic_bytes[..]);
     match position {
         Some(position) => {
-            println!("Read magic bytes");
             port_rw.buffer = port_rw.buffer.split_off(position + magic_bytes.len());
             Ok(true)
         }
