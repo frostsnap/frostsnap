@@ -1,7 +1,5 @@
-use anyhow::anyhow;
 use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};
 use frostsnap_core::message::{CoordinatorSend, CoordinatorToDeviceMessage};
-use serialport::SerialPort;
 use std::error::Error;
 use std::str;
 use std::time::Duration;
@@ -9,84 +7,9 @@ use std::time::Duration;
 extern crate alloc;
 use alloc::collections::BTreeSet;
 
+pub mod io;
 pub mod serial_rw;
 use crate::serial_rw::SerialPortBincode;
-
-fn find_all_ports(usb_id: (u16, u16)) -> Vec<String> {
-    let available_ports = serialport::available_ports().unwrap();
-    let ports = available_ports
-        .into_iter()
-        .filter_map(|port| match &port.port_type {
-            serialport::SerialPortType::UsbPort(port) => {
-                if port.vid == usb_id.0 && port.pid == usb_id.1 {
-                    port.serial_number.clone()
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        })
-        .collect();
-    ports
-    // port.vid == usb_id.0 && port.pid == usb_id.1
-}
-
-fn open_device_port(serial_number: &str) -> anyhow::Result<Box<dyn SerialPort>> {
-    let available_ports = serialport::available_ports().unwrap();
-    println!("Ports: {:?}", available_ports);
-    let port = available_ports
-        .into_iter()
-        .find(|port| match &port.port_type {
-            serialport::SerialPortType::UsbPort(port) => {
-                if let Some(port_serial_number) = port.serial_number.clone() {
-                    port_serial_number == serial_number
-                } else {
-                    false
-                }
-            }
-            _ => false,
-        })
-        .ok_or(anyhow!("Failed to find device with matching usb_id"))?;
-    Ok(serialport::new(&port.port_name, 9600)
-        .timeout(Duration::from_millis(10))
-        .open()?)
-}
-
-fn wait_for_device_port(serial_number: &str) -> Box<dyn SerialPort> {
-    loop {
-        match open_device_port(serial_number) {
-            Ok(port) => return port,
-            Err(e) => eprintln!("Error opening port {:?}", e),
-        }
-        std::thread::sleep(std::time::Duration::from_secs(1))
-    }
-}
-
-pub fn read_for_magic_bytes(
-    port_rw: &mut SerialPortBincode,
-    magic_bytes: &[u8],
-) -> Result<bool, std::io::Error> {
-    let n = port_rw.port.bytes_to_read()? as usize;
-    let mut buffer = vec![0u8; n];
-
-    match port_rw.port.read(&mut buffer) {
-        Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}
-        Ok(_) => port_rw.buffer.append(&mut buffer),
-        Err(e) => return Err(e),
-    };
-    let position = port_rw
-        .buffer
-        .windows(magic_bytes.len())
-        .position(|window| window == &magic_bytes[..]);
-    match position {
-        Some(position) => {
-            println!("Read magic bytes");
-            port_rw.buffer = port_rw.buffer.split_off(position + magic_bytes.len());
-            Ok(true)
-        }
-        None => Ok(false),
-    }
-}
 
 fn read_string() -> String {
     let mut input = String::new();
@@ -108,7 +31,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let usb_id: (u16, u16) = (12346, 4097);
     let connected_devices = loop {
         println!("\n\n");
-        let connected_devices = find_all_ports(usb_id);
+        let connected_devices = io::find_all_ports(usb_id);
         for device in &connected_devices {
             println!("{:?}", device);
         }
@@ -125,7 +48,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut ports: Vec<_> = connected_devices
         .into_iter()
         .map(|serial_number| {
-            SerialPortBincode::new(wait_for_device_port(&serial_number), serial_number)
+            SerialPortBincode::new(io::wait_for_device_port(&serial_number), serial_number)
         })
         .collect();
     println!("Connected to devices. Reading for magic bytes...");
@@ -147,7 +70,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             std::thread::sleep(Duration::from_millis(500));
 
             // Read for magic bytes response
-            match read_for_magic_bytes(port_rw, &frostsnap_comms::MAGICBYTES_JTAG) {
+            match io::read_for_magic_bytes(port_rw, &frostsnap_comms::MAGICBYTES_JTAG) {
                 Ok(found_magic_bytes) => {
                     if found_magic_bytes {
                         println!("Found magic bytes!!");
@@ -157,7 +80,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Err(e) => {
                     println!("Failed to read magic bytes {:?}", e);
                     *port_rw = SerialPortBincode::new(
-                        wait_for_device_port(&port_rw.serial_number),
+                        io::wait_for_device_port(&port_rw.serial_number),
                         port_rw.serial_number.clone(),
                     );
                 }

@@ -17,3 +17,4 @@ serde_json = "1.0.59"
 thiserror = "1.0.21"
 serialport = "4.2.0"
 anyhow = "1"
+clap = { version = "4", features = ["derive"] }
