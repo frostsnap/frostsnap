@@ -54,7 +54,7 @@ enum ConnectState {
     Found,
     Opened {
         device_port: SerialPortBincode,
-        ready: bool,
+        magic_bytes_read: bool,
     },
 }
 
@@ -69,6 +69,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             let mut connected_devices = HashSet::new();
             let mut pending_devices = HashMap::new();
+            let mut ready_devices = HashMap::new();
             let device_ports = loop {
                 let connected_now: HashSet<String> =
                     io::find_all_ports(USB_ID).collect::<HashSet<_>>();
@@ -91,6 +92,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     println!("Device unplugged: {:?}", device);
                     connected_devices.remove(&device);
                     pending_devices.remove(&device);
+                    ready_devices.remove(&device);
                 }
 
                 for (serial_number, state) in pending_devices.iter_mut() {
@@ -117,13 +119,16 @@ fn main() -> Result<(), Box<dyn Error>> {
                                                 device_port,
                                                 serial_number.to_owned(),
                                             ),
-                                            ready: false,
+                                            magic_bytes_read: false,
                                         };
                                     }
                                 }
                             }
                         }
-                        ConnectState::Opened { device_port, ready } => {
+                        ConnectState::Opened {
+                            device_port,
+                            magic_bytes_read: ready,
+                        } => {
                             // Read for magic bytes response
                             if !*ready {
                                 match io::read_for_magic_bytes(
@@ -152,26 +157,21 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
 
-                let ready_devices = pending_devices
-                    .iter()
-                    .filter_map(|(serial_number, state)| match state {
-                        ConnectState::Opened { ready: true, .. } => Some(serial_number.clone()),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>();
+                for (serial_number, state) in pending_devices.drain().collect::<Vec<_>>() {
+                    match state {
+                        ConnectState::Opened {
+                            device_port,
+                            magic_bytes_read: true,
+                        } => {
+                            ready_devices.insert(serial_number, device_port);
+                        }
+                        _ => {
+                            pending_devices.insert(serial_number, state);
+                        }
+                    }
+                }
                 if ready_devices.len() >= n_devices {
-                    break ready_devices
-                        .into_iter()
-                        .map(|serial_number| {
-                            match pending_devices.remove(&serial_number).unwrap() {
-                                ConnectState::Opened {
-                                    device_port,
-                                    ready: true,
-                                } => device_port,
-                                _ => unreachable!("All of these are in this ready state"),
-                            }
-                        })
-                        .collect::<Vec<_>>();
+                    break ready_devices.into_values().collect::<Vec<_>>();
                 }
             };
             println!(

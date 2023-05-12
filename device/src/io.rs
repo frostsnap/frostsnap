@@ -119,7 +119,7 @@ impl<'a, U> SerialInterface<'a, U> {
                     }
                     Err(_) => {
                         // every two CPU ticks the timer is incrimented by 1
-                        if ((timer0.now() - start_time) / 40_000) > 100 {
+                        if ((timer0.now() - start_time) / 40_000) > 1_000 {
                             break;
                         }
                     }
@@ -138,20 +138,14 @@ impl<'a, U> SerialInterface<'a, U> {
                 match jtag.read_byte() {
                     Ok(c) => {
                         buff.push(c);
-                        let position = buff
-                            .windows(MAGICBYTES_JTAG.len())
-                            .position(|window| window == &MAGICBYTES_JTAG[..]);
-                        if let Some(position) = position {
-                            // jtag.write_bytes(&MAGICBYTES_JTAG).unwrap();
-                            return (
-                                Self::Jtag(jtag),
-                                buff[(position + MAGICBYTES_JTAG.len())..].to_vec(),
-                            );
+                        if frostsnap_comms::find_and_remove_magic_bytes(&mut buff, &MAGICBYTES_JTAG)
+                        {
+                            return (Self::Jtag(jtag), buff);
                         }
                     }
                     Err(_) => {
                         // every two CPU ticks the timer is incrimented by 1
-                        if (timer0.now() - start_time) / 40_000 > 100 {
+                        if (timer0.now() - start_time) / 40_000 > 1_000 {
                             break;
                         }
                     }

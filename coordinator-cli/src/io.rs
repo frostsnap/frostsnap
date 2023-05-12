@@ -44,16 +44,6 @@ pub fn open_device_port(serial_number: &str) -> anyhow::Result<Box<dyn SerialPor
         .open()?)
 }
 
-pub fn wait_for_device_port(serial_number: &str) -> Box<dyn SerialPort> {
-    loop {
-        match open_device_port(serial_number) {
-            Ok(port) => return port,
-            Err(e) => eprintln!("Error opening port {:?}", e),
-        }
-        std::thread::sleep(std::time::Duration::from_secs(1))
-    }
-}
-
 pub fn read_for_magic_bytes(
     port_rw: &mut SerialPortBincode,
     magic_bytes: &[u8],

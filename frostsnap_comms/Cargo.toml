@@ -9,3 +9,7 @@ edition = "2021"
 bincode = { version = "2.0.0-rc.2", default-features = false, features = ["alloc", "derive", "serde"] } 
 frostsnap_core = { path = "../frostsnap_core" }
 serde = { version = "1", features = ["derive"], default-features = false }
+
+[features]
+std = []
+default = ["std"]

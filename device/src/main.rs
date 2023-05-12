@@ -10,7 +10,7 @@ pub mod storage;
 #[macro_use]
 extern crate alloc;
 use crate::alloc::string::ToString;
-use alloc::vec;
+use alloc::vec::Vec;
 use esp32c3_hal::{
     clock::ClockControl,
     peripherals::Peripherals,
@@ -137,7 +137,7 @@ fn main() -> ! {
     // Simulate factory reset
     // For now we are going to factory reset the storage on boot for easier testing and debugging.
     // Comment out if you want the frost key to persist across reboots
-    flash.erase().unwrap();
+    // flash.erase().unwrap();
     // delay.delay_ms(2000u32);
 
     // Load state from Flash memory if available. If not, generate secret and save.
@@ -228,6 +228,7 @@ fn main() -> ! {
         }
     }
 
+    display.print("writing magic bytes").unwrap();
     // Write magic bytes upstream
     if let Err(e) = upstream_serial
         .interface
