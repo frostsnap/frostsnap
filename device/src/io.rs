@@ -1,6 +1,7 @@
 extern crate alloc;
 use alloc::format;
 use alloc::vec::Vec;
+use esp32c3_hal::peripherals::I2C0;
 
 use bincode::de::read::Reader;
 use bincode::enc::write::Writer;
@@ -14,6 +15,9 @@ use esp32c3_hal::UsbSerialJtag;
 
 use frostsnap_comms::MAGICBYTES_JTAG;
 use frostsnap_comms::MAGICBYTES_UART;
+use frostsnap_core::schnorr_fun::fun::hex;
+
+use crate::oled;
 
 pub struct SerialInterface<'a, T, U> {
     pub io: SerialIo<'a, U>,
@@ -56,13 +60,25 @@ impl<'a, T, U> SerialInterface<'a, T, U> {
     // }
 
     pub fn starts_with_magic(&self) -> bool {
-        let looking_for = match (&self.io, self.is_upstream) {
-            (SerialIo::Uart(_), true) => MAGICBYTES_UART,
-            (SerialIo::Uart(_), false) => MAGICBYTES_UART,
-            (SerialIo::Jtag(_), true) => MAGICBYTES_JTAG,
-            (SerialIo::Jtag(_), false) => unreachable!("JTAG is only used for upstream"),
-        };
+        let looking_for = self.magic_bytes_recv_expected();
         self.read_buffer.starts_with(&looking_for)
+    }
+
+    fn magic_bytes_recv_expected(&self) -> &'static [u8] {
+       match (&self.io, self.is_upstream) {
+            (SerialIo::Uart(_), true) => &MAGICBYTES_UART,
+            (SerialIo::Uart(_), false) => &MAGICBYTES_UART,
+            (SerialIo::Jtag(_), true) => &MAGICBYTES_JTAG,
+            (SerialIo::Jtag(_), false) => unreachable!("JTAG is only used for upstream"),
+        }
+    }
+
+    /// If we failed to read something because magic bytes were in the buffer we assume that bincode
+    /// only consumed one byte so the magic bytes that are left are everything except the first byte.
+    pub fn consume_magic_bytes_xxx_hack(&mut self) {
+        let magic_bytes = self.magic_bytes_recv_expected();
+        assert!(self.read_buffer.strip_prefix(&magic_bytes[1..]).is_some());
+        self.read_buffer = self.read_buffer.split_off(magic_bytes.len() - 1);
     }
 }
 
@@ -125,6 +141,7 @@ impl<'a, T, U> SerialInterface<'a, T, U> {
         mut uart0: uart::Uart<'a, U>,
         mut jtag: UsbSerialJtag<'a, USB_DEVICE>,
         timer0: Timer<T>,
+        display: &mut oled::SSD1306<I2C0>,
     ) -> Self
     where
         T: esp32c3_hal::timer::Instance,
@@ -139,8 +156,8 @@ impl<'a, T, U> SerialInterface<'a, T, U> {
                 .modify(|_, w| w.usb_pad_enable().clear_bit());
 
             // First, try and talk to another device upstream over UART0
-            let mut buff = vec![];
             let start_time = timer0.now();
+            display.print("Trying UART0").unwrap();
             loop {
                 match uart0.read() {
                     Ok(c) => {
@@ -165,12 +182,13 @@ impl<'a, T, U> SerialInterface<'a, T, U> {
             usb_device.conf0.modify(|_, w| w.usb_pad_enable().set_bit());
 
             // jtag.write_bytes(&MAGICBYTES_JTAG);
-            let mut buff = vec![];
             let start_time = timer0.now();
+            display.print("Trying JTAG").unwrap();
             loop {
                 match jtag.read_byte() {
                     Ok(c) => {
                         buff.push(c);
+                        display.print(format!("D:{}", hex::encode(&buff))).unwrap();
                         if frostsnap_comms::find_and_remove_magic_bytes(&mut buff, &MAGICBYTES_JTAG)
                         {
                             break 'outer SerialIo::Jtag(jtag);

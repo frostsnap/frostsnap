@@ -88,13 +88,13 @@ fn main() -> ! {
 
     let mut delay = Delay::new(&clocks);
 
-    let button = io.pins.gpio9.into_pull_up_input();
-    let wait_button = || {
-        // Ensure button is not pressed
-        while button.is_high().unwrap() {}
-        // Wait for press
-        while button.is_low().unwrap() {}
-    };
+    // let button = io.pins.gpio9.into_pull_up_input();
+    // let wait_button = || {
+    //     // Ensure button is not pressed
+    //     while button.is_high().unwrap() {}
+    //     // Wait for press
+    //     while button.is_low().unwrap() {}
+    // };
 
     let mut display = oled::SSD1306::new(
         peripherals.I2C0,
@@ -200,7 +200,7 @@ fn main() -> ! {
             Uart::new_with_config(peripherals.UART0, Some(serial_conf), Some(txrx0), &clocks);
 
         display.print("Finding upstream device").unwrap();
-        let upstream_serial = io::SerialInterface::find_active(uart0, jtag, timer0);
+        let upstream_serial = io::SerialInterface::find_active(uart0, jtag, timer0, &mut display);
         // let upstream_serial = io::BufferedSerialInterface::new_uart(uart0, timer0);
 
         let txrx1 = TxRxPins::new_tx_rx(
@@ -242,7 +242,7 @@ fn main() -> ! {
                 .unwrap();
             delay.delay_ms(500u32);
             if let Err(e) = upstream_serial.write_magic_bytes() {
-                display.print("Failed to write magic bytes").unwrap();
+                display.print(format!("E: {:?}", e)).unwrap();
                 continue;
             }
             soft_reset = false;
@@ -320,16 +320,12 @@ fn main() -> ! {
                         }
                     }
                 }
-                Err(e) => {
+                Err(_) => {
                     if sudden_magic_bytes {
-                        // Reset
-                        display.print("Upstream device reset. So are we!").unwrap();
-                        delay.delay_ms(1000u32);
+                        upstream_serial.consume_magic_bytes_xxx_hack();
                         soft_reset = true;
                         continue;
                     }
-                    let hex_buf = hex::encode(&prior_to_read_buff);
-                    display.print(format!("E: {}", hex_buf)).unwrap();
                     sends_upstream.push(DeviceSendSerial::Debug {
                         error: format!(
                             "Device failed to read upstream: {}",
@@ -370,11 +366,11 @@ fn main() -> ! {
                     // display.print(format!("Key ok?\n{:?}", hex::encode(&xpub.0)));
                     // wait_button();
                     frost_signer.keygen_ack(true).unwrap();
-                    display.print(format!("Key generated\n{:?}", hex::encode(&xpub.0)));
+                    display.print(format!("Key generated\n{:?}", hex::encode(&xpub.0))).unwrap();
                     led.write(brightness([colors::WHITE_SMOKE].iter().cloned(), 10))
                         .unwrap();
                     // STORE FROST KEY INTO FLASH
-                    if let FrostKey { key, awaiting_ack } = frost_signer.state() {
+                    if let FrostKey { .. } = frost_signer.state() {
                         device_state = state::FrostState {
                             secret: device_state.secret,
                             phase: state::FrostPhase::Key {
@@ -383,7 +379,7 @@ fn main() -> ! {
                         };
                         flash.save(&device_state).unwrap();
                     }
-                    display.print(format!("Key saved\n{:?}", hex::encode(&xpub.0)));
+                    display.print(format!("Key saved\n{:?}", hex::encode(&xpub.0))).unwrap();
                     led.write(brightness([colors::BLUE].iter().cloned(), 10))
                         .unwrap();
                 }
@@ -419,7 +415,7 @@ fn main() -> ! {
             display
                 .print(format!("Sending {}", gist_send(&send)))
                 .unwrap();
-            if let Err(e) =
+            if let Err(_) =
                 bincode::encode_into_writer(&send, &mut upstream_serial, bincode::config::standard())
             {
                 display
@@ -460,13 +456,9 @@ pub fn gist_send(send: &DeviceSendSerial) -> &'static str {
     match send {
         DeviceSendSerial::Core(message) => match message {
             DeviceToCoordindatorMessage::KeyGenProvideShares(_) => "KeyGenProvideShares",
-            DeviceToCoordindatorMessage::SignatureShare {
-                signature_share,
-                new_nonces,
-                from,
-            } => "SignatureShare",
+            DeviceToCoordindatorMessage::SignatureShare {..} => "SignatureShare",
         },
-        DeviceSendSerial::Debug { error, device } => "Debug",
+        DeviceSendSerial::Debug { .. } => "Debug",
         DeviceSendSerial::Announce(_) => "Announce",
     }
 }

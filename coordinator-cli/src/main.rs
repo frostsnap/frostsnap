@@ -1,4 +1,4 @@
-use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};
+use frostsnap_comms::DeviceSendSerial;
 use frostsnap_core::message::{CoordinatorSend, CoordinatorToDeviceMessage};
 use frostsnap_core::DeviceId;
 use serialport::SerialPort;

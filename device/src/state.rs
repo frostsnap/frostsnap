@@ -1,5 +1,4 @@
 use frostsnap_core::schnorr_fun::fun::Scalar;
-use frostsnap_core::FrostsnapKey;
 
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
 // TODO: Make FrostPhase an option of a key
