@@ -200,7 +200,14 @@ fn main() -> ! {
             Uart::new_with_config(peripherals.UART0, Some(serial_conf), Some(txrx0), &clocks);
 
         display.print("Finding upstream device").unwrap();
-        let upstream_serial = io::SerialInterface::find_active(uart0, jtag, timer0, &mut display);
+        let upstream_serial = match io::SerialInterface::find_active(uart0, jtag, timer0) {
+            Some(upstream_serial) => upstream_serial,
+            None => {
+                display.print("UNABLE TO DETECT COORDINATOR -- RESET DEVICE").unwrap();
+                led.write(brightness([colors::RED].iter().cloned(), 10)).unwrap();
+                loop {}
+            },
+        };
         // let upstream_serial = io::BufferedSerialInterface::new_uart(uart0, timer0);
 
         let txrx1 = TxRxPins::new_tx_rx(
