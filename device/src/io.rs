@@ -15,32 +15,18 @@ use esp32c3_hal::UsbSerialJtag;
 use frostsnap_comms::MAGICBYTES_JTAG;
 use frostsnap_comms::MAGICBYTES_UART;
 
-pub struct BufferedSerialInterface<'a, T, U> {
-    pub interface: SerialInterface<'a, U>,
+pub struct SerialInterface<'a, T, U> {
+    pub io: SerialIo<'a, U>,
     pub read_buffer: Vec<u8>,
+    pub is_upstream: bool,
     timer: Timer<T>,
 }
 
-impl<'a, T, U> BufferedSerialInterface<'a, T, U> {
-    pub fn find_active(
-        uart: uart::Uart<'a, U>,
-        jtag: UsbSerialJtag<'a, USB_DEVICE>,
-        timer: Timer<T>,
-    ) -> Self
-    where
-        T: esp32c3_hal::timer::Instance,
-        U: uart::Instance,
-    {
-        let (interface, read_buffer) = SerialInterface::find_active(uart, jtag, &timer);
+impl<'a, T, U> SerialInterface<'a, T, U> {
+    pub fn new_uart(uart: uart::Uart<'a, U>, timer: Timer<T>, is_upstream: bool) -> Self {
         Self {
-            interface,
-            read_buffer,
-            timer,
-        }
-    }
-    pub fn new_uart(uart: uart::Uart<'a, U>, timer: Timer<T>) -> Self {
-        Self {
-            interface: SerialInterface::Uart(uart),
+            io: SerialIo::Uart(uart),
+            is_upstream,
             read_buffer: vec![],
             timer,
         }
@@ -48,30 +34,83 @@ impl<'a, T, U> BufferedSerialInterface<'a, T, U> {
 
     pub fn new_jtag(jtag: UsbSerialJtag<'a, USB_DEVICE>, timer: Timer<T>) -> Self {
         Self {
-            interface: SerialInterface::Jtag(jtag),
+            io: SerialIo::Jtag(jtag),
+            is_upstream: true,
             read_buffer: vec![],
             timer,
         }
     }
 
     pub fn is_jtag(&self) -> bool {
-        match self.interface {
-            SerialInterface::Uart(_) => false,
-            SerialInterface::Jtag(_) => true,
+        match self.io {
+            SerialIo::Uart(_) => false,
+            SerialIo::Jtag(_) => true,
         }
     }
 
-    pub fn flush(&mut self) -> Result<(), SerialInterfaceError>
-    where
-        U: uart::Instance,
-    {
-        self.interface.flush()
+    // pub fn flush(&mut self) -> Result<(), SerialInterfaceError>
+    // where
+    //     U: uart::Instance,
+    // {
+    //     self.io.flush()
+    // }
+
+    pub fn starts_with_magic(&self) -> bool {
+        let looking_for = match (&self.io, self.is_upstream) {
+            (SerialIo::Uart(_), true) => MAGICBYTES_UART,
+            (SerialIo::Uart(_), false) => MAGICBYTES_UART,
+            (SerialIo::Jtag(_), true) => MAGICBYTES_JTAG,
+            (SerialIo::Jtag(_), false) => unreachable!("JTAG is only used for upstream"),
+        };
+        self.read_buffer.starts_with(&looking_for)
     }
 }
 
-pub enum SerialInterface<'a, U> {
+pub enum SerialIo<'a, U> {
     Uart(uart::Uart<'a, U>),
     Jtag(UsbSerialJtag<'a, USB_DEVICE>),
+}
+
+impl<'a, U> SerialIo<'a, U> {
+    fn read_byte(&mut self) -> Result<u8, SerialInterfaceError>
+    where
+        U: uart::Instance,
+    {
+        match self {
+            SerialIo::Jtag(jtag) => jtag
+                .read_byte()
+                .map_err(|_| SerialInterfaceError::JtagError),
+            SerialIo::Uart(uart) => uart.read().map_err(|_| SerialInterfaceError::UartReadError),
+        }
+    }
+
+    pub fn write_bytes(&mut self, words: &[u8]) -> Result<(), SerialInterfaceError>
+    where
+        U: uart::Instance,
+    {
+        match self {
+            SerialIo::Jtag(jtag) => jtag
+                .write_bytes(words)
+                .map_err(|_| SerialInterfaceError::JtagError),
+            SerialIo::Uart(uart) => uart
+                .write_bytes(words)
+                .map_err(|e| SerialInterfaceError::UartWriteError(e)),
+        }
+    }
+
+    // fn flush(&mut self) -> Result<(), SerialInterfaceError>
+    // where
+    //     U: uart::Instance,
+    // {
+    //     match self {
+    //         SerialIo::Uart(uart) => {
+    //             uart.flush().map_err(|_| SerialInterfaceError::JtagError)
+    //         }
+    //         SerialIo::Jtag(jtag) => jtag
+    //             .flush()
+    //             .map_err(|_| SerialInterfaceError::UartReadError),
+    //     }
+    // }
 }
 
 #[derive(Debug)]
@@ -81,17 +120,18 @@ pub enum SerialInterfaceError {
     JtagError,
 }
 
-impl<'a, U> SerialInterface<'a, U> {
-    pub fn find_active<T>(
+impl<'a, T, U> SerialInterface<'a, T, U> {
+    pub fn find_active(
         mut uart0: uart::Uart<'a, U>,
         mut jtag: UsbSerialJtag<'a, USB_DEVICE>,
-        timer0: &Timer<T>,
-    ) -> (Self, Vec<u8>)
+        timer0: Timer<T>,
+    ) -> Self
     where
         T: esp32c3_hal::timer::Instance,
         U: uart::Instance,
     {
-        loop {
+        let mut buff = vec![];
+        let io = 'outer: loop {
             // Clear the bit in order to use UART0
             let usb_device = unsafe { &*USB_DEVICE::PTR };
             usb_device
@@ -99,22 +139,15 @@ impl<'a, U> SerialInterface<'a, U> {
                 .modify(|_, w| w.usb_pad_enable().clear_bit());
 
             // First, try and talk to another device upstream over UART0
-            // uart0.write_bytes(&MAGICBYTES_UART);
             let mut buff = vec![];
             let start_time = timer0.now();
             loop {
                 match uart0.read() {
                     Ok(c) => {
                         buff.push(c);
-                        let position = buff
-                            .windows(MAGICBYTES_UART.len())
-                            .position(|window| window == &MAGICBYTES_UART[..]);
-                        if let Some(position) = position {
-                            // uart0.write_bytes(&MAGICBYTES_UART).unwrap();
-                            return (
-                                Self::Uart(uart0),
-                                buff[(position + MAGICBYTES_UART.len())..].to_vec(),
-                            );
+                        if frostsnap_comms::find_and_remove_magic_bytes(&mut buff, &MAGICBYTES_UART)
+                        {
+                            break 'outer SerialIo::Uart(uart0);
                         }
                     }
                     Err(_) => {
@@ -140,7 +173,7 @@ impl<'a, U> SerialInterface<'a, U> {
                         buff.push(c);
                         if frostsnap_comms::find_and_remove_magic_bytes(&mut buff, &MAGICBYTES_JTAG)
                         {
-                            return (Self::Jtag(jtag), buff);
+                            break 'outer SerialIo::Jtag(jtag);
                         }
                     }
                     Err(_) => {
@@ -151,59 +184,24 @@ impl<'a, U> SerialInterface<'a, U> {
                     }
                 }
             }
-        }
-    }
+        };
 
-    fn read(&mut self) -> Result<u8, SerialInterfaceError>
-    where
-        U: uart::Instance,
-    {
-        match self {
-            SerialInterface::Jtag(jtag) => jtag
-                .read_byte()
-                .map_err(|_| SerialInterfaceError::JtagError),
-            SerialInterface::Uart(uart) => {
-                uart.read().map_err(|_| SerialInterfaceError::UartReadError)
-            }
-        }
-    }
-
-    pub fn write_bytes(&mut self, words: &[u8]) -> Result<(), SerialInterfaceError>
-    where
-        U: uart::Instance,
-    {
-        match self {
-            SerialInterface::Jtag(jtag) => jtag
-                .write_bytes(words)
-                .map_err(|_| SerialInterfaceError::JtagError),
-            SerialInterface::Uart(uart) => uart
-                .write_bytes(words)
-                .map_err(|e| SerialInterfaceError::UartWriteError(e)),
-        }
-    }
-
-    fn flush(&mut self) -> Result<(), SerialInterfaceError>
-    where
-        U: uart::Instance,
-    {
-        match self {
-            SerialInterface::Uart(uart) => {
-                uart.flush().map_err(|_| SerialInterfaceError::JtagError)
-            }
-            SerialInterface::Jtag(jtag) => jtag
-                .flush()
-                .map_err(|_| SerialInterfaceError::UartReadError),
+        Self {
+            io,
+            read_buffer: buff,
+            is_upstream: true,
+            timer: timer0,
         }
     }
 }
 
-impl<'a, T, U> BufferedSerialInterface<'a, T, U>
+impl<'a, T, U> SerialInterface<'a, T, U>
 where
     U: uart::Instance,
     T: esp32c3_hal::timer::Instance,
 {
     pub fn poll_read(&mut self) -> bool {
-        while let Ok(c) = self.interface.read() {
+        while let Ok(c) = self.io.read_byte() {
             self.read_buffer.push(c);
         }
         !self.read_buffer.is_empty()
@@ -233,7 +231,7 @@ where
     }
 }
 
-impl<'a, T, U> Reader for BufferedSerialInterface<'a, T, U>
+impl<'a, T, U> Reader for SerialInterface<'a, T, U>
 where
     U: uart::Instance,
     T: esp32c3_hal::timer::Instance,
@@ -257,12 +255,12 @@ where
     }
 }
 
-impl<'a, T, U> Writer for BufferedSerialInterface<'a, T, U>
+impl<'a, T, U> Writer for SerialInterface<'a, T, U>
 where
     U: uart::Instance,
 {
     fn write(&mut self, bytes: &[u8]) -> Result<(), EncodeError> {
-        match self.interface.write_bytes(bytes) {
+        match self.io.write_bytes(bytes) {
             Err(e) => return Err(EncodeError::OtherString(format!("{:?}", e))),
             Ok(()) => Ok(()),
         }

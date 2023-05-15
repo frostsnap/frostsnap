@@ -200,7 +200,7 @@ fn main() -> ! {
             Uart::new_with_config(peripherals.UART0, Some(serial_conf), Some(txrx0), &clocks);
 
         display.print("Finding upstream device").unwrap();
-        let upstream_serial = io::BufferedSerialInterface::find_active(uart0, jtag, timer0);
+        let upstream_serial = io::SerialInterface::find_active(uart0, jtag, timer0);
         // let upstream_serial = io::BufferedSerialInterface::new_uart(uart0, timer0);
 
         let txrx1 = TxRxPins::new_tx_rx(
@@ -209,20 +209,20 @@ fn main() -> ! {
         );
         let uart1 =
             Uart::new_with_config(peripherals.UART1, Some(serial_conf), Some(txrx1), &clocks);
-        let downstream_serial = io::BufferedSerialInterface::new_uart(uart1, timer1);
+        let downstream_serial = io::SerialInterface::new_uart(uart1, timer1, false);
 
         (upstream_serial, downstream_serial)
     };
     // upstream_serial.flush().unwrap();
     // downstream_serial.flush().unwrap();
 
-    match upstream_serial.interface {
-        io::SerialInterface::Jtag(_) => {
+    match upstream_serial.io {
+        io::SerialIo::Jtag(_) => {
             display.print("Found coordinator").unwrap();
             led.write(brightness([colors::WHITE].iter().cloned(), 10))
                 .unwrap();
         }
-        io::SerialInterface::Uart(_) => {
+        io::SerialIo::Uart(_) => {
             display.print("Found upstream device").unwrap();
             led.write(brightness([colors::BLUE].iter().cloned(), 10))
                 .unwrap();
@@ -232,7 +232,7 @@ fn main() -> ! {
     display.print("writing magic bytes").unwrap();
     // Write magic bytes upstream
     if let Err(e) = upstream_serial
-        .interface
+        .io
         .write_bytes(&frostsnap_comms::MAGICBYTES_JTAG)
     {
         println!("Failed to write magic bytes upstream: {:?}", e);
@@ -266,9 +266,10 @@ fn main() -> ! {
         // Read upstream if there is something to read (from direction of coordinator)
         if upstream_serial.poll_read() {
             let prior_to_read_buff = upstream_serial.read_buffer.clone();
+            let sudden_magic_bytes = upstream_serial.starts_with_magic();
+
             let decoded: Result<DeviceReceiveSerial, _> =
                 bincode::decode_from_reader(&mut upstream_serial, bincode::config::standard());
-
             match decoded {
                 Ok(received_message) => {
                     // Currently we are assuming all messages received on this layer are intended for us.
@@ -325,21 +326,22 @@ fn main() -> ! {
                     }
                 }
                 Err(e) => {
-                    match e {
-                        _ => {
-                            let hex_buf = hex::encode(&prior_to_read_buff);
-                            display.print(format!("E: {}", hex_buf)).unwrap();
-                            // TODO: If magic bytes then reset
-                            sends_downstream.push(DeviceSendSerial::Debug {
-                                error: format!(
-                                    "Device failed to read upstream: {}",
-                                    hex::encode(&prior_to_read_buff)
-                                ),
-                                device: frost_signer.device_id(),
-                            });
-                            critical_error = true;
-                        }
+                    if sudden_magic_bytes {
+                        // Reset
+                        display.print("Upstream device reset. So are we!").unwrap();
+                        delay.delay_ms(1000u32);
+                        esp32c3_hal::reset::software_reset();
                     }
+                    let hex_buf = hex::encode(&prior_to_read_buff);
+                    display.print(format!("E: {}", hex_buf)).unwrap();
+                    sends_downstream.push(DeviceSendSerial::Debug {
+                        error: format!(
+                            "Device failed to read upstream: {}",
+                            hex::encode(&prior_to_read_buff)
+                        ),
+                        device: frost_signer.device_id(),
+                    });
+                    critical_error = true;
                 }
             };
         }
@@ -460,9 +462,7 @@ fn main() -> ! {
 pub fn gist_send(send: &DeviceSendSerial) -> &'static str {
     match send {
         DeviceSendSerial::Core(message) => match message {
-            DeviceToCoordindatorMessage::KeyGenProvideShares(_) => {
-                "KeyGenProvideShares"
-            }
+            DeviceToCoordindatorMessage::KeyGenProvideShares(_) => "KeyGenProvideShares",
             DeviceToCoordindatorMessage::SignatureShare {
                 signature_share,
                 new_nonces,
