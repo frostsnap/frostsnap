@@ -229,6 +229,16 @@ where
             }
         }
     }
+
+    pub fn write_magic_bytes(&mut self) -> Result<(), SerialInterfaceError> {
+        let magic_bytes = match (&self.io, self.is_upstream) {
+            (SerialIo::Uart(_), true) => MAGICBYTES_UART,
+            (SerialIo::Uart(_), false) => MAGICBYTES_UART,
+            (SerialIo::Jtag(_), true) => MAGICBYTES_JTAG,
+            (SerialIo::Jtag(_), false) => unreachable!("JTAG is only used for upstream"),
+        };
+        self.io.write_bytes(&magic_bytes)
+    }
 }
 
 impl<'a, T, U> Reader for SerialInterface<'a, T, U>

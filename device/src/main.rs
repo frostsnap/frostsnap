@@ -120,6 +120,9 @@ fn main() -> ! {
     .unwrap();
     let mut led = <smartLedAdapter!(1)>::new(pulse.channel0, io.pins.gpio2);
 
+    let flash = FlashStorage::new();
+    let mut flash = storage::DeviceStorage::new(flash, storage::NVS_PARTITION_START);
+
     // Welcome screen
     display.print("frost-esp32").unwrap();
     for i in 0..=20 {
@@ -130,9 +133,6 @@ fn main() -> ! {
         led.write([RGB::new(0, i, i)].iter().cloned()).unwrap();
         delay.delay_ms(30u32);
     }
-
-    let flash = FlashStorage::new();
-    let mut flash = storage::DeviceStorage::new(flash, storage::NVS_PARTITION_START);
 
     // Simulate factory reset
     // For now we are going to factory reset the storage on boot for easier testing and debugging.
@@ -229,34 +229,38 @@ fn main() -> ! {
         }
     }
 
-    display.print("writing magic bytes").unwrap();
-    // Write magic bytes upstream
-    if let Err(e) = upstream_serial
-        .io
-        .write_bytes(&frostsnap_comms::MAGICBYTES_JTAG)
-    {
-        println!("Failed to write magic bytes upstream: {:?}", e);
-        display
-            .print("Failed to write magic bytes upstream")
-            .unwrap();
-    }
-
-    let announce_message = DeviceSendSerial::Announce(frostsnap_comms::Announce {
-        from: frost_signer.device_id(),
-    });
-
+    let mut soft_reset = true;
     let mut downstream_active = false;
-    let mut sends_downstream = vec![announce_message];
-    let mut sends_upstream = vec![];
+    let mut sends_downstream: Vec<DeviceReceiveSerial> = vec![];
+    let mut sends_upstream: Vec<DeviceSendSerial> = vec![];
     let mut sends_user = vec![];
     let mut critical_error = false;
     loop {
+        if soft_reset {
+            display
+                .print("Initializing... writing magic bytes")
+                .unwrap();
+            delay.delay_ms(500u32);
+            if let Err(e) = upstream_serial.write_magic_bytes() {
+                display.print("Failed to write magic bytes").unwrap();
+                continue;
+            }
+            soft_reset = false;
+            sends_upstream = vec![DeviceSendSerial::Announce(frostsnap_comms::Announce {
+                from: frost_signer.device_id(),
+            })];
+            sends_user.clear();
+            sends_downstream.clear();
+            downstream_active = false;
+            critical_error = false;
+        }
+
         // Check if any downstream devices have been connected.
         if !downstream_active {
             if downstream_serial.read_for_magic_bytes(&frostsnap_comms::MAGICBYTES_UART[..]) {
                 downstream_active = true;
                 display.print("Found downstream device").unwrap();
-                sends_downstream.push(DeviceSendSerial::Debug {
+                sends_upstream.push(DeviceSendSerial::Debug {
                     error: "Device read magic bytes from another device!".to_string(),
                     device: frost_signer.clone().device_id(),
                 });
@@ -276,23 +280,13 @@ fn main() -> ! {
                     println!("Decoded {:?}", received_message);
 
                     match &received_message {
-                        DeviceReceiveSerial::AnnounceCoordinator(_) => {
-                            if downstream_active {
-                                sends_upstream.push(received_message.clone());
-                            }
-                            sends_downstream.push(DeviceSendSerial::Announce(
-                                frostsnap_comms::Announce {
-                                    from: frost_signer.device_id(),
-                                },
-                            ));
-                        }
                         DeviceReceiveSerial::AnnounceAck(device_id) => {
                             // Pass on Announce Acks which belong to others
                             if device_id != &frost_signer.device_id() {
-                                sends_upstream.push(received_message.clone());
+                                sends_downstream.push(received_message.clone());
                             } else {
                                 display.print("Device registered").unwrap();
-                                sends_downstream.push(DeviceSendSerial::Debug {
+                                sends_upstream.push(DeviceSendSerial::Debug {
                                     error: "Device received its registration ACK!".to_string(),
                                     device: frost_signer.device_id(),
                                 });
@@ -302,7 +296,7 @@ fn main() -> ! {
                         }
                         DeviceReceiveSerial::Core(core_message) => {
                             if downstream_active {
-                                sends_upstream.push(received_message.clone());
+                                sends_downstream.push(received_message.clone());
                             }
 
                             match frost_signer.recv_coordinator_message(core_message.clone()) {
@@ -310,8 +304,9 @@ fn main() -> ! {
                                     for send in new_sends.into_iter() {
                                         match send {
                                             DeviceSend::ToUser(message) => sends_user.push(message),
-                                            DeviceSend::ToCoordinator(message) => sends_downstream
-                                                .push(DeviceSendSerial::Core(message)),
+                                            DeviceSend::ToCoordinator(message) => {
+                                                sends_upstream.push(DeviceSendSerial::Core(message))
+                                            }
                                         }
                                     }
                                 }
@@ -330,11 +325,12 @@ fn main() -> ! {
                         // Reset
                         display.print("Upstream device reset. So are we!").unwrap();
                         delay.delay_ms(1000u32);
-                        esp32c3_hal::reset::software_reset();
+                        soft_reset = true;
+                        continue;
                     }
                     let hex_buf = hex::encode(&prior_to_read_buff);
                     display.print(format!("E: {}", hex_buf)).unwrap();
-                    sends_downstream.push(DeviceSendSerial::Debug {
+                    sends_upstream.push(DeviceSendSerial::Debug {
                         error: format!(
                             "Device failed to read upstream: {}",
                             hex::encode(&prior_to_read_buff)
@@ -352,19 +348,16 @@ fn main() -> ! {
                 bincode::decode_from_reader(&mut downstream_serial, bincode::config::standard());
             match decoded {
                 Ok(device_send) => {
-                    println!("Received upstream {:?}", device_send);
-                    sends_downstream.push(device_send);
+                    sends_upstream.push(device_send);
                 }
-                Err(e) => match e {
-                    _ => {
-                        println!("Decode error: {:?}", e);
-                        sends_downstream.push(DeviceSendSerial::Debug {
-                            error: "Failed to decode on downstream port".to_string(),
-                            device: frost_signer.device_id(),
-                        });
-                        critical_error = true;
-                    }
-                },
+                Err(e) => {
+                    println!("Decode error: {:?}", e);
+                    sends_upstream.push(DeviceSendSerial::Debug {
+                        error: "Failed to decode on downstream port".to_string(),
+                        device: frost_signer.device_id(),
+                    });
+                    downstream_active = false;
+                }
             };
         }
 
@@ -413,7 +406,7 @@ fn main() -> ! {
                         match new_send {
                             DeviceSend::ToUser(_) => {}
                             DeviceSend::ToCoordinator(send) => {
-                                sends_downstream.push(DeviceSendSerial::Core(send))
+                                sends_upstream.push(DeviceSendSerial::Core(send))
                             }
                         }
                     }
@@ -421,25 +414,29 @@ fn main() -> ! {
             };
         }
 
-        for send in sends_downstream.drain(..) {
+        for send in sends_upstream.drain(..) {
             println!("Sending: {:?}", send);
             display
                 .print(format!("Sending {}", gist_send(&send)))
                 .unwrap();
             if let Err(e) =
-                bincode::encode_into_writer(send, &mut upstream_serial, bincode::config::standard())
+                bincode::encode_into_writer(&send, &mut upstream_serial, bincode::config::standard())
             {
-                println!("Error sending downstream: {:?}", e);
+                display
+                    .print(format!("Error sending upstream {}", gist_send(&send)))
+                    .unwrap();
+                critical_error = true;
             }
         }
 
         if downstream_active {
-            for send in sends_upstream.drain(..) {
+            for send in sends_downstream.drain(..) {
                 if let Err(e) = bincode::encode_into_writer(
                     send,
                     &mut downstream_serial,
                     bincode::config::standard(),
                 ) {
+                    downstream_active = false;
                     println!("Error sending forwarding message: {:?}", e);
                 }
             }

@@ -23,7 +23,6 @@ pub const MAGICBYTES_UART: [u8; 4] = [0xa, 0xa, 0xa, 0xa];
 pub enum DeviceReceiveSerial {
     Core(#[bincode(with_serde)] CoordinatorToDeviceMessage),
     AnnounceAck(#[bincode(with_serde)] DeviceId),
-    AnnounceCoordinator(String),
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
