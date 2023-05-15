@@ -1,5 +1,6 @@
 use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};
 use frostsnap_core::message::{CoordinatorSend, CoordinatorToDeviceMessage};
+use frostsnap_core::DeviceId;
 use serialport::SerialPort;
 use std::collections::HashMap;
 use std::ptr::read;
@@ -63,6 +64,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let mut pending_ports = HashSet::new();
             let mut open_ports = HashMap::new();
             let mut ready_ports = HashMap::new();
+            let mut reverse_device_ports: HashMap<String, HashSet<DeviceId>> = HashMap::new();
             let mut device_ports = HashMap::new();
             loop {
                 let connected_now: HashSet<String> =
@@ -88,6 +90,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                     pending_ports.remove(&port);
                     open_ports.remove(&port);
                     ready_ports.remove(&port);
+                    if let Some(device_ids) = reverse_device_ports.remove(&port) {
+                        for device_id in device_ids {
+                            device_ports.remove(&device_id);
+                            println!("Device disconnected: {}", device_id);
+                        }
+                    }
                 }
 
                 for serial_number in pending_ports.drain().collect::<Vec<_>>() {
@@ -161,6 +169,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                             Ok(msg) => match msg {
                                 DeviceSendSerial::Announce(announce) => {
                                     device_ports.insert(announce.from, serial_number.clone());
+                                    let devices = reverse_device_ports
+                                        .entry(serial_number.clone())
+                                        .or_default();
+                                    devices.insert(announce.from);
+
                                     println!("Found device {} on {}", announce.from, serial_number);
                                 }
                                 DeviceSendSerial::Debug { error, device } => {
