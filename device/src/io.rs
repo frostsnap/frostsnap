@@ -15,7 +15,6 @@ use esp32c3_hal::UsbSerialJtag;
 use frostsnap_comms::MAGICBYTES_JTAG;
 use frostsnap_comms::MAGICBYTES_UART;
 
-
 pub struct SerialInterface<'a, T, U> {
     pub io: SerialIo<'a, U>,
     pub read_buffer: Vec<u8>,
@@ -62,7 +61,7 @@ impl<'a, T, U> SerialInterface<'a, T, U> {
     }
 
     fn magic_bytes_recv_expected(&self) -> &'static [u8] {
-       match (&self.io, self.is_upstream) {
+        match (&self.io, self.is_upstream) {
             (SerialIo::Uart(_), true) => &MAGICBYTES_UART,
             (SerialIo::Uart(_), false) => &MAGICBYTES_UART,
             (SerialIo::Jtag(_), true) => &MAGICBYTES_JTAG,
@@ -156,10 +155,9 @@ impl<'a, T, U> SerialInterface<'a, T, U> {
             match jtag.read_byte() {
                 Ok(c) => {
                     buff.push(c);
-                    if frostsnap_comms::find_and_remove_magic_bytes(&mut buff, &MAGICBYTES_JTAG)
-                    {
-                        io =  Some(SerialIo::Jtag(jtag));
-                        break
+                    if frostsnap_comms::find_and_remove_magic_bytes(&mut buff, &MAGICBYTES_JTAG) {
+                        io = Some(SerialIo::Jtag(jtag));
+                        break;
                     }
                 }
                 Err(_) => {

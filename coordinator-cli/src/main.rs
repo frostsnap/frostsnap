@@ -1,15 +1,10 @@
 use frostsnap_comms::DeviceSendSerial;
-use frostsnap_core::message::{CoordinatorSend, CoordinatorToDeviceMessage};
 use frostsnap_core::DeviceId;
-use serialport::SerialPort;
 use std::collections::HashMap;
-use std::ptr::read;
 use std::str;
-use std::time::Duration;
 use std::{collections::HashSet, error::Error};
 
 extern crate alloc;
-use alloc::collections::BTreeSet;
 
 pub mod io;
 pub mod serial_rw;
@@ -34,19 +29,19 @@ enum Command {
     },
 }
 
-fn read_string() -> String {
-    let mut input = String::new();
-    std::io::stdin()
-        .read_line(&mut input)
-        .expect("can not read user input");
-    let cleaned_input = input.trim().to_string();
-    cleaned_input
-}
+// fn read_string() -> String {
+//     let mut input = String::new();
+//     std::io::stdin()
+//         .read_line(&mut input)
+//         .expect("can not read user input");
+//     let cleaned_input = input.trim().to_string();
+//     cleaned_input
+// }
 
-fn fetch_input(prompt: &str) -> String {
-    println!("{}", prompt);
-    read_string()
-}
+// fn fetch_input(prompt: &str) -> String {
+//     println!("{}", prompt);
+//     read_string()
+// }
 
 // USB CDC vid and pid
 const USB_ID: (u16, u16) = (12346, 4097);
@@ -55,7 +50,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
     match cli.command {
         Command::Keygen {
-            threshold,
+            threshold: _threshold,
             n_devices,
         } => {
             println!("Please plug in {} devices..", n_devices);
@@ -191,7 +186,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    Ok(())
 }
 
 //     println!(

@@ -203,10 +203,13 @@ fn main() -> ! {
         let upstream_serial = match io::SerialInterface::find_active(uart0, jtag, timer0) {
             Some(upstream_serial) => upstream_serial,
             None => {
-                display.print("UNABLE TO DETECT COORDINATOR -- RESET DEVICE").unwrap();
-                led.write(brightness([colors::RED].iter().cloned(), 10)).unwrap();
+                display
+                    .print("UNABLE TO DETECT COORDINATOR -- RESET DEVICE")
+                    .unwrap();
+                led.write(brightness([colors::RED].iter().cloned(), 10))
+                    .unwrap();
                 loop {}
-            },
+            }
         };
         // let upstream_serial = io::BufferedSerialInterface::new_uart(uart0, timer0);
 
@@ -373,7 +376,9 @@ fn main() -> ! {
                     // display.print(format!("Key ok?\n{:?}", hex::encode(&xpub.0)));
                     // wait_button();
                     frost_signer.keygen_ack(true).unwrap();
-                    display.print(format!("Key generated\n{:?}", hex::encode(&xpub.0))).unwrap();
+                    display
+                        .print(format!("Key generated\n{:?}", hex::encode(&xpub.0)))
+                        .unwrap();
                     led.write(brightness([colors::WHITE_SMOKE].iter().cloned(), 10))
                         .unwrap();
                     // STORE FROST KEY INTO FLASH
@@ -386,7 +391,9 @@ fn main() -> ! {
                         };
                         flash.save(&device_state).unwrap();
                     }
-                    display.print(format!("Key saved\n{:?}", hex::encode(&xpub.0))).unwrap();
+                    display
+                        .print(format!("Key saved\n{:?}", hex::encode(&xpub.0)))
+                        .unwrap();
                     led.write(brightness([colors::BLUE].iter().cloned(), 10))
                         .unwrap();
                 }
@@ -422,9 +429,11 @@ fn main() -> ! {
             display
                 .print(format!("Sending {}", gist_send(&send)))
                 .unwrap();
-            if let Err(_) =
-                bincode::encode_into_writer(&send, &mut upstream_serial, bincode::config::standard())
-            {
+            if let Err(_) = bincode::encode_into_writer(
+                &send,
+                &mut upstream_serial,
+                bincode::config::standard(),
+            ) {
                 display
                     .print(format!("Error sending upstream {}", gist_send(&send)))
                     .unwrap();
@@ -463,7 +472,7 @@ pub fn gist_send(send: &DeviceSendSerial) -> &'static str {
     match send {
         DeviceSendSerial::Core(message) => match message {
             DeviceToCoordindatorMessage::KeyGenProvideShares(_) => "KeyGenProvideShares",
-            DeviceToCoordindatorMessage::SignatureShare {..} => "SignatureShare",
+            DeviceToCoordindatorMessage::SignatureShare { .. } => "SignatureShare",
         },
         DeviceSendSerial::Debug { .. } => "Debug",
         DeviceSendSerial::Announce(_) => "Announce",
