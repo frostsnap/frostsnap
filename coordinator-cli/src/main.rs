@@ -63,30 +63,31 @@ fn main() -> Result<(), Box<dyn Error>> {
             let mut pending_ports = HashSet::new();
             let mut open_ports = HashMap::new();
             let mut ready_ports = HashMap::new();
+            let mut device_ports = HashMap::new();
             loop {
                 let connected_now: HashSet<String> =
                     io::find_all_ports(USB_ID).collect::<HashSet<_>>();
 
-                let newly_connected_devices = connected_now
+                let newly_connected_ports = connected_now
                     .difference(&connected_ports)
                     .cloned()
                     .collect::<Vec<_>>();
-                for device in newly_connected_devices {
-                    println!("Device plugged in: {:?}", device);
-                    connected_ports.insert(device.clone());
-                    pending_ports.insert(device.clone());
+                for port in newly_connected_ports {
+                    println!("Port connected: {:?}", port);
+                    connected_ports.insert(port.clone());
+                    pending_ports.insert(port.clone());
                 }
 
-                let unplugged_devices = connected_ports
+                let disconnected_ports = connected_ports
                     .difference(&connected_now)
                     .cloned()
                     .collect::<Vec<_>>();
-                for device in unplugged_devices {
-                    println!("Device unplugged: {:?}", device);
-                    connected_ports.remove(&device);
-                    pending_ports.remove(&device);
-                    open_ports.remove(&device);
-                    ready_ports.remove(&device);
+                for port in disconnected_ports {
+                    println!("Port unplugged: {:?}", port);
+                    connected_ports.remove(&port);
+                    pending_ports.remove(&port);
+                    open_ports.remove(&port);
+                    ready_ports.remove(&port);
                 }
 
                 for serial_number in pending_ports.drain().collect::<Vec<_>>() {
@@ -97,19 +98,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                         }
                         Ok(mut device_port) => {
                             // Write magic bytes onto JTAG
-                            println!(
-                                "Trying to read magic bytes on port {}",
-                                serial_number
-                            );
-                            if let Err(e) =
-                                device_port.write(&frostsnap_comms::MAGICBYTES_JTAG)
-                            {
+                            println!("Trying to read magic bytes on port {}", serial_number);
+                            if let Err(e) = device_port.write(&frostsnap_comms::MAGICBYTES_JTAG) {
                                 println!("Failed to write magic bytes: {:?}", e);
                             } else {
-                                open_ports.insert(serial_number.clone(), SerialPortBincode::new(
-                                    device_port,
-                                    serial_number,
-                                ));
+                                open_ports.insert(
+                                    serial_number.clone(),
+                                    SerialPortBincode::new(device_port, serial_number),
+                                );
                                 continue;
                             }
                         }
@@ -117,23 +113,17 @@ fn main() -> Result<(), Box<dyn Error>> {
                     pending_ports.insert(serial_number);
                 }
 
-
                 for (serial_number, mut device_port) in open_ports.drain().collect::<Vec<_>>() {
                     match io::read_for_magic_bytes(
                         &mut device_port,
                         &frostsnap_comms::MAGICBYTES_JTAG,
                     ) {
                         Ok(true) => {
-                            println!(
-                                "Found magic bytes on device {}",
-                                serial_number
-                            );
+                            println!("Found magic bytes on device {}", serial_number);
                             ready_ports.insert(serial_number, device_port);
                             continue;
                         }
-                        Ok(false) => {
-                            /* magic bytes haven't been read yet */
-                        }
+                        Ok(false) => { /* magic bytes haven't been read yet */ }
                         Err(e) => {
                             println!("Failed to read magic bytes {:?}", e);
                             // *device_port = SerialPortBincode::new(
@@ -145,7 +135,46 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                     open_ports.insert(serial_number, device_port);
                 }
-            };
+
+                // println!("{:?}", ready_ports.keys());
+                for (serial_number, mut device_port) in ready_ports.iter_mut() {
+                    let something_to_read = match device_port.poll_read(None) {
+                        Err(e) => {
+                            eprintln!("Failed to read on port {e}");
+                            false
+                        }
+                        Ok(something_to_read) => something_to_read,
+                    };
+
+                    // println!(
+                    //     "Something to read on {:?}: {}",
+                    //     serial_number, something_to_read
+                    // );
+
+                    if something_to_read {
+                        let decode: Result<DeviceSendSerial, _> = bincode::decode_from_reader(
+                            &mut device_port,
+                            bincode::config::standard(),
+                        );
+
+                        match decode {
+                            Ok(msg) => match msg {
+                                DeviceSendSerial::Announce(announce) => {
+                                    device_ports.insert(announce.from, serial_number.clone());
+                                    println!("Found device {} on {}", announce.from, serial_number);
+                                }
+                                DeviceSendSerial::Debug { error, device } => {
+                                    eprintln!("Debug: {device:?}: {error}");
+                                }
+                                DeviceSendSerial::Core(_) => {}
+                            },
+                            Err(e) => {
+                                eprintln!("{:?}", e);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 

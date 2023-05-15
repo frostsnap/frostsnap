@@ -342,6 +342,12 @@ pub struct DeviceId {
     pub pubkey: Point,
 }
 
+impl core::fmt::Display for DeviceId {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.pubkey)
+    }
+}
+
 impl DeviceId {
     fn to_x_coord(&self) -> Scalar<Public> {
         let x_coord =

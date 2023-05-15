@@ -26,7 +26,7 @@ use esp_storage::FlashStorage;
 use smart_leds::{brightness, colors, SmartLedsWrite, RGB};
 
 use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};
-use frostsnap_core::message::DeviceSend;
+use frostsnap_core::message::{DeviceSend, DeviceToCoordindatorMessage};
 use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_core::schnorr_fun::fun::marker::Normal;
 use frostsnap_core::schnorr_fun::fun::KeyPair;
@@ -329,6 +329,7 @@ fn main() -> ! {
                         _ => {
                             let hex_buf = hex::encode(&prior_to_read_buff);
                             display.print(format!("E: {}", hex_buf)).unwrap();
+                            // TODO: If magic bytes then reset
                             sends_downstream.push(DeviceSendSerial::Debug {
                                 error: format!(
                                     "Device failed to read upstream: {}",
@@ -420,6 +421,9 @@ fn main() -> ! {
 
         for send in sends_downstream.drain(..) {
             println!("Sending: {:?}", send);
+            display
+                .print(format!("Sending {}", gist_send(&send)))
+                .unwrap();
             if let Err(e) =
                 bincode::encode_into_writer(send, &mut upstream_serial, bincode::config::standard())
             {
@@ -450,5 +454,22 @@ fn main() -> ! {
         led.write([RGB::new((i % 20) + 10, 0, 0)].iter().cloned())
             .unwrap();
         delay.delay_ms(30u32);
+    }
+}
+
+pub fn gist_send(send: &DeviceSendSerial) -> &'static str {
+    match send {
+        DeviceSendSerial::Core(message) => match message {
+            DeviceToCoordindatorMessage::KeyGenProvideShares(_) => {
+                "KeyGenProvideShares"
+            }
+            DeviceToCoordindatorMessage::SignatureShare {
+                signature_share,
+                new_nonces,
+                from,
+            } => "SignatureShare",
+        },
+        DeviceSendSerial::Debug { error, device } => "Debug",
+        DeviceSendSerial::Announce(_) => "Announce",
     }
 }

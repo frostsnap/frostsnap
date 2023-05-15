@@ -17,20 +17,24 @@ impl SerialPortBincode {
         }
     }
 
-    pub fn read_into_buffer(&mut self) -> Result<(), io::Error> {
-        let n = self.port.bytes_to_read()? as usize;
-        let mut buffer = vec![0u8; n];
-
-        match self.port.read(&mut buffer) {
-            Ok(_) => self.buffer.append(&mut buffer),
-            Err(e) => return Err(e),
+    pub fn poll_read(&mut self, limit: Option<usize>) -> Result<bool, io::Error> {
+        let n = match limit {
+            Some(limit) => limit,
+            None => self.port.bytes_to_read()? as usize,
         };
-        Ok(())
+        if n > 0 {
+            let mut buffer = vec![0u8; n];
+            match self.port.read(&mut buffer) {
+                Ok(_) => self.buffer.append(&mut buffer),
+                Err(e) => return Err(e),
+            };
+        }
+        Ok(!self.buffer.is_empty())
     }
 
-    pub fn get_buffer(&self) -> Vec<u8> {
-        self.buffer.clone()
-    }
+    // pub fn get_buffer(&self) -> Vec<u8> {
+    //     self.buffer.clone()
+    // }
 }
 
 impl Writer for SerialPortBincode {
@@ -55,19 +59,19 @@ impl Writer for SerialPortBincode {
 
 impl Reader for SerialPortBincode {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), bincode::error::DecodeError> {
-        if let Err(_) = self.read_into_buffer() {
-            // eprintln!("Failed to read buffer: {:?}", e)
-        };
-
-        if self.buffer.len() < bytes.len() {
-            return Err(bincode::error::DecodeError::UnexpectedEnd {
-                additional: bytes.len() - self.buffer.len(),
-            });
-        } else {
-            let extra_bytes = self.buffer.split_off(bytes.len());
-            bytes.copy_from_slice(&self.buffer);
-            self.buffer = extra_bytes;
+        while self.buffer.len() < bytes.len() {
+            if let Err(e) = self.poll_read(Some(bytes.len() - self.buffer.len())) {
+                return Err(bincode::error::DecodeError::Io {
+                    inner: e,
+                    additional: bytes.len() - self.buffer.len(),
+                });
+            };
         }
+
+        let extra_bytes = self.buffer.split_off(bytes.len());
+        bytes.copy_from_slice(&self.buffer);
+        self.buffer = extra_bytes;
+
         Ok(())
     }
 }
