@@ -68,3 +68,17 @@ pub fn read_for_magic_bytes(
         None => Ok(false),
     }
 }
+
+fn read_string() -> String {
+    let mut input = String::new();
+    std::io::stdin()
+        .read_line(&mut input)
+        .expect("can not read user input");
+    let cleaned_input = input.trim().to_string();
+    cleaned_input
+}
+
+pub fn fetch_input(prompt: &str) -> String {
+    println!("{}", prompt);
+    read_string()
+}

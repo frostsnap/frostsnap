@@ -1,5 +1,9 @@
+use frostsnap_comms::DeviceReceiveSerial;
 use frostsnap_comms::DeviceSendSerial;
+use frostsnap_core::message::CoordinatorSend;
+use frostsnap_core::message::CoordinatorToDeviceMessage;
 use frostsnap_core::DeviceId;
+use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::str;
 use std::{collections::HashSet, error::Error};
@@ -29,163 +33,324 @@ enum Command {
     },
 }
 
-// fn read_string() -> String {
-//     let mut input = String::new();
-//     std::io::stdin()
-//         .read_line(&mut input)
-//         .expect("can not read user input");
-//     let cleaned_input = input.trim().to_string();
-//     cleaned_input
-// }
-
-// fn fetch_input(prompt: &str) -> String {
-//     println!("{}", prompt);
-//     read_string()
-// }
-
 // USB CDC vid and pid
+
 const USB_ID: (u16, u16) = (12346, 4097);
+
+#[derive(Default)]
+struct Ports {
+    connected: HashSet<String>,
+    pending: HashSet<String>,
+    open: HashMap<String, SerialPortBincode>,
+    ready: HashMap<String, SerialPortBincode>,
+    reverse_device_ports: HashMap<String, HashSet<DeviceId>>,
+    device_ports: HashMap<DeviceId, String>,
+    registered_devices: HashSet<DeviceId>,
+}
+
+impl Ports {
+    pub fn disconnect(&mut self, port: &str) {
+        self.connected.remove(port);
+        self.pending.remove(port);
+        self.open.remove(port);
+        self.ready.remove(port);
+        if let Some(device_ids) = self.reverse_device_ports.remove(port) {
+            for device_id in device_ids {
+                self.device_ports.remove(&device_id);
+                println!("Device disconnected: {}", device_id);
+            }
+        }
+    }
+
+    pub fn send_to_all_devices(
+        &mut self,
+        send: &DeviceReceiveSerial,
+    ) -> anyhow::Result<(), bincode::error::EncodeError> {
+        let send_ports = self
+            .registered_devices
+            .iter()
+            .filter_map(|device_id| self.device_ports.get(&device_id))
+            .collect::<HashSet<_>>();
+        for send_port in send_ports {
+            let port = self.ready.get_mut(send_port).expect("must exist");
+            bincode::encode_into_writer(send, port, bincode::config::standard())?
+        }
+        Ok(())
+    }
+
+    fn register_devices(n_devices: usize) -> Self {
+        let mut ports = Ports::default();
+        loop {
+            let connected_now: HashSet<String> = io::find_all_ports(USB_ID).collect::<HashSet<_>>();
+
+            let newly_connected_ports = connected_now
+                .difference(&ports.connected)
+                .cloned()
+                .collect::<Vec<_>>();
+            for port in newly_connected_ports {
+                println!("Port connected: {:?}", port);
+                ports.connected.insert(port.clone());
+                ports.pending.insert(port.clone());
+            }
+
+            let disconnected_ports = ports
+                .connected
+                .difference(&connected_now)
+                .cloned()
+                .collect::<Vec<_>>();
+            for port in disconnected_ports {
+                println!("Port unplugged: {:?}", port);
+            }
+
+            for serial_number in ports.pending.drain().collect::<Vec<_>>() {
+                let device_port = io::open_device_port(&serial_number);
+                match device_port {
+                    Err(e) => {
+                        eprintln!("Failed to connect to device port: {:?}", e);
+                    }
+                    Ok(mut device_port) => {
+                        // Write magic bytes onto JTAG
+                        // println!("Trying to read magic bytes on port {}", serial_number);
+                        if let Err(e) = device_port.write(&frostsnap_comms::MAGICBYTES_JTAG) {
+                            eprintln!("Failed to write magic bytes: {:?}", e);
+                        } else {
+                            ports.open.insert(
+                                serial_number.clone(),
+                                SerialPortBincode::new(device_port, serial_number),
+                            );
+                            continue;
+                        }
+                    }
+                }
+                ports.pending.insert(serial_number);
+            }
+
+            for (serial_number, mut device_port) in ports.open.drain().collect::<Vec<_>>() {
+                match io::read_for_magic_bytes(&mut device_port, &frostsnap_comms::MAGICBYTES_JTAG)
+                {
+                    Ok(true) => {
+                        // println!("Found magic bytes on device {}", serial_number);
+                        ports.ready.insert(serial_number, device_port);
+                        continue;
+                    }
+                    Ok(false) => { /* magic bytes haven't been read yet */ }
+                    Err(e) => {
+                        println!("Failed to read magic bytes {:?}", e);
+                    }
+                }
+
+                ports.open.insert(serial_number, device_port);
+            }
+
+            let mut ports_to_disconnect = HashSet::new();
+            for (serial_number, mut device_port) in ports.ready.iter_mut() {
+                let something_to_read = match device_port.poll_read(None) {
+                    Err(e) => {
+                        eprintln!("Failed to read on port {e}");
+                        false
+                    }
+                    Ok(something_to_read) => something_to_read,
+                };
+
+                if something_to_read {
+                    let decode: Result<DeviceSendSerial, _> =
+                        bincode::decode_from_reader(&mut device_port, bincode::config::standard());
+
+                    match decode {
+                        Ok(msg) => match msg {
+                            DeviceSendSerial::Announce(announce) => {
+                                ports
+                                    .device_ports
+                                    .insert(announce.from, serial_number.clone());
+                                let devices = ports
+                                    .reverse_device_ports
+                                    .entry(serial_number.clone())
+                                    .or_default();
+                                devices.insert(announce.from);
+
+                                if let Err(e) = bincode::encode_into_writer(
+                                    DeviceReceiveSerial::AnnounceAck(announce.from),
+                                    device_port,
+                                    bincode::config::standard(),
+                                ) {
+                                    ports_to_disconnect.insert(serial_number.clone());
+                                }
+
+                                println!("Found device {} on {}", announce.from, serial_number);
+                            }
+                            DeviceSendSerial::Debug { error, device } => {
+                                eprintln!("Debug: {device:?}: {error}");
+                            }
+                            DeviceSendSerial::Core(_) => {}
+                        },
+                        Err(e) => {
+                            eprintln!("{:?}", e);
+                        }
+                    }
+                }
+            }
+
+            for port in ports_to_disconnect {
+                ports.disconnect(&port);
+            }
+
+            // TODO: Other conditional (should be option) ||
+            if ports.device_ports.len() >= n_devices {
+                break;
+            }
+        }
+        ports
+    }
+}
 
 fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
     match cli.command {
         Command::Keygen {
-            threshold: _threshold,
+            threshold: threshold,
             n_devices,
         } => {
             println!("Please plug in {} devices..", n_devices);
 
-            let mut connected_ports = HashSet::new();
-            let mut pending_ports = HashSet::new();
-            let mut open_ports = HashMap::new();
-            let mut ready_ports = HashMap::new();
-            let mut reverse_device_ports: HashMap<String, HashSet<DeviceId>> = HashMap::new();
-            let mut device_ports = HashMap::new();
-            loop {
-                let connected_now: HashSet<String> =
-                    io::find_all_ports(USB_ID).collect::<HashSet<_>>();
+            let mut ports = Ports::register_devices(n_devices);
+            println!("{:?}", ports.device_ports.keys());
 
-                let newly_connected_ports = connected_now
-                    .difference(&connected_ports)
-                    .cloned()
-                    .collect::<Vec<_>>();
-                for port in newly_connected_ports {
-                    println!("Port connected: {:?}", port);
-                    connected_ports.insert(port.clone());
-                    pending_ports.insert(port.clone());
-                }
+            let mut coordinator = frostsnap_core::FrostCoordinator::new();
+            let devices = ports.device_ports.into_keys().collect::<BTreeSet<_>>();
 
-                let disconnected_ports = connected_ports
-                    .difference(&connected_now)
-                    .cloned()
-                    .collect::<Vec<_>>();
-                for port in disconnected_ports {
-                    println!("Port unplugged: {:?}", port);
-                    connected_ports.remove(&port);
-                    pending_ports.remove(&port);
-                    open_ports.remove(&port);
-                    ready_ports.remove(&port);
-                    if let Some(device_ids) = reverse_device_ports.remove(&port) {
-                        for device_id in device_ids {
-                            device_ports.remove(&device_id);
-                            println!("Device disconnected: {}", device_id);
-                        }
-                    }
-                }
+            let do_keygen_message: Vec<_> = coordinator
+                .do_keygen(&devices, threshold)
+                .unwrap()
+                .into_iter()
+                .map(|msg| DeviceReceiveSerial::Core(msg))
+                .collect();
 
-                for serial_number in pending_ports.drain().collect::<Vec<_>>() {
-                    let device_port = io::open_device_port(&serial_number);
-                    match device_port {
-                        Err(e) => {
-                            eprintln!("Failed to connect to device port: {:?}", e);
-                        }
-                        Ok(mut device_port) => {
-                            // Write magic bytes onto JTAG
-                            println!("Trying to read magic bytes on port {}", serial_number);
-                            if let Err(e) = device_port.write(&frostsnap_comms::MAGICBYTES_JTAG) {
-                                println!("Failed to write magic bytes: {:?}", e);
-                            } else {
-                                open_ports.insert(
-                                    serial_number.clone(),
-                                    SerialPortBincode::new(device_port, serial_number),
-                                );
-                                continue;
-                            }
-                        }
-                    }
-                    pending_ports.insert(serial_number);
-                }
+            // for serial_number in ports.keys() {
+            //     for msg in do_keygen_message.clone() {
+            //         sends.insert(serial_number.clone(), vec![msg]);
+            //     }
+            // }
 
-                for (serial_number, mut device_port) in open_ports.drain().collect::<Vec<_>>() {
-                    match io::read_for_magic_bytes(
-                        &mut device_port,
-                        &frostsnap_comms::MAGICBYTES_JTAG,
-                    ) {
-                        Ok(true) => {
-                            println!("Found magic bytes on device {}", serial_number);
-                            ready_ports.insert(serial_number, device_port);
-                            continue;
-                        }
-                        Ok(false) => { /* magic bytes haven't been read yet */ }
-                        Err(e) => {
-                            println!("Failed to read magic bytes {:?}", e);
-                            // *device_port = SerialPortBincode::new(
-                            //     io::wait_for_device_port(&port_rw.serial_number),
-                            //     serial_number,
-                            // );
-                        }
-                    }
+            // loop {
+            //     std::thread::sleep(std::time::Duration::from_millis(1000));
+            //     // Send messages to respective ports
+            //     for (destination_port, port_sends) in sends.drain() {
+            //         for send in port_sends {
+            //             println!("Sending {:?} on port {}\n", send, destination_port);
+            //             let send_port = ports.get_mut(&destination_port).expect("port exists");
+            //             if let Err(e) = bincode::encode_into_writer(
+            //                 send.clone(),
+            //                 send_port,
+            //                 bincode::config::standard(),
+            //             ) {
+            //                 eprintln!("Error writing message to serial {:?}", e);
+            //             }
+            //         }
+            //     }
 
-                    open_ports.insert(serial_number, device_port);
-                }
+            //     // Read messages from ports
+            //     let mut new_sends = HashMap::new();
+            //     for (serial_number, port) in ports.iter_mut() {
+            //         let something_to_read = match port.poll_read(None) {
+            //             Err(e) => {
+            //                 eprintln!("Failed to read on port {e}");
+            //                 false
+            //             }
+            //             Ok(something_to_read) => something_to_read,
+            //         };
+            //         if !something_to_read {
+            //             continue;
+            //         }
 
-                // println!("{:?}", ready_ports.keys());
-                for (serial_number, mut device_port) in ready_ports.iter_mut() {
-                    let something_to_read = match device_port.poll_read(None) {
-                        Err(e) => {
-                            eprintln!("Failed to read on port {e}");
-                            false
-                        }
-                        Ok(something_to_read) => something_to_read,
-                    };
+            //         let decode: Result<DeviceSendSerial, _> =
+            //             bincode::decode_from_reader(port, bincode::config::standard());
 
-                    // println!(
-                    //     "Something to read on {:?}: {}",
-                    //     serial_number, something_to_read
-                    // );
+            //         let new_port_sends = match decode {
+            //             Ok(msg) => {
+            //                 println!("Port {} read message {:?}", serial_number, msg);
+            //                 match &msg {
+            //                     DeviceSendSerial::Core(core_msg) => {
+            //                         let our_responses =
+            //                             coordinator.recv_device_message(core_msg.clone()).unwrap();
 
-                    if something_to_read {
-                        let decode: Result<DeviceSendSerial, _> = bincode::decode_from_reader(
-                            &mut device_port,
-                            bincode::config::standard(),
-                        );
+            //                         our_responses
+            //                             .into_iter()
+            //                             .filter_map(|msg| match msg {
+            //                                 CoordinatorSend::ToDevice(core_message) => {
+            //                                     Some(DeviceReceiveSerial::Core(core_message))
+            //                                 }
+            //                                 CoordinatorSend::ToUser(to_user_message) => {
+            //                                     io::fetch_input(&format!("OK?: {:?}", to_user_message));
+            //                                     match to_user_message {
+            //                                         frostsnap_core::message::CoordinatorToUserMessage::Signed { .. } => {}
+            //                                         frostsnap_core::message::CoordinatorToUserMessage::CheckKeyGen {
+            //                                             ..
+            //                                         } => {
+            //                                             coordinator.keygen_ack(true).unwrap();
+            //                                         }
+            //                                     }
+            //                                     None
+            //                                 },
+            //                             })
+            //                             .collect() // TODO remove panic
+            //                     }
+            //                     DeviceSendSerial::Debug { error, device } => {
+            //                         println!("Debug message from {:?}: {:?}", device, error);
+            //                         vec![]
+            //                     }
+            //                     DeviceSendSerial::Announce(announce) => {
+            //                         eprintln!("Unexpected announce from device! {:?}", announce);
+            //                         vec![]
+            //                     }
+            //                 }
+            //             }
+            //             Err(e) => {
+            //                 eprintln!("{:?}", e);
+            //                 // Write something to serial to prevent device hanging
+            //                 vec![]
+            //             }
+            //         };
 
-                        match decode {
-                            Ok(msg) => match msg {
-                                DeviceSendSerial::Announce(announce) => {
-                                    device_ports.insert(announce.from, serial_number.clone());
-                                    let devices = reverse_device_ports
-                                        .entry(serial_number.clone())
-                                        .or_default();
-                                    devices.insert(announce.from);
+            //         new_sends.insert(serial_number, new_port_sends);
+            //     }
 
-                                    println!("Found device {} on {}", announce.from, serial_number);
-                                }
-                                DeviceSendSerial::Debug { error, device } => {
-                                    eprintln!("Debug: {device:?}: {error}");
-                                }
-                                DeviceSendSerial::Core(_) => {}
-                            },
-                            Err(e) => {
-                                eprintln!("{:?}", e);
-                            }
-                        }
-                    }
-                }
-            }
+            //     for (origin_port, new_port_sends) in new_sends {
+            //         // Some messages need to be sent to all ports
+
+            //         for new_send in new_port_sends {
+            //             let send_all_ports = if let DeviceReceiveSerial::Core(_) = new_send {
+            //                 match &new_send {
+            //                     DeviceReceiveSerial::Core(msg) => match &msg {
+            //                         CoordinatorToDeviceMessage::DoKeyGen { .. } => true,
+            //                         CoordinatorToDeviceMessage::FinishKeyGen { .. } => true,
+            //                         CoordinatorToDeviceMessage::RequestSign { .. } => true,
+            //                     },
+            //                     DeviceReceiveSerial::AnnounceAck(_) => false,
+            //                 }
+            //             } else {
+            //                 false
+            //             };
+
+            //             if send_all_ports {
+            //                 // Send to all ports
+            //                 for (serial_number, _) in ports.iter()() {
+            //                     sends
+            //                         .entry(serial_number.to_string())
+            //                         .and_modify(|sends| sends.push(new_send.clone()))
+            //                         .or_insert(vec![new_send.clone()]);
+            //                 }
+            //             } else {
+            //                 sends
+            //                     .entry(origin_port.to_string())
+            //                     .and_modify(|sends| sends.push(new_send.clone()))
+            //                     .or_insert(vec![new_send]);
+            //             }
+            //         }
+            // }
+            // }
         }
     }
-
+    Ok(())
 }
 
 //     println!(
