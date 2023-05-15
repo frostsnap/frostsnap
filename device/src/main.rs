@@ -141,7 +141,7 @@ fn main() -> ! {
     // delay.delay_ms(2000u32);
 
     // Load state from Flash memory if available. If not, generate secret and save.
-    let mut device_state: state::DeviceState = match flash.load() {
+    let mut device_state: state::FrostState = match flash.load() {
         Ok(state) => {
             println!("Read device state from flash: {}", state.secret);
             display.print("Read device state from flash").unwrap();
@@ -160,9 +160,9 @@ fn main() -> ! {
             rng.read(&mut rand_bytes).unwrap();
             let secret = Scalar::from_bytes(rand_bytes).unwrap().non_zero().unwrap();
 
-            let state = state::DeviceState {
+            let state = state::FrostState {
                 secret,
-                phase: state::DevicePhase::PreKeygen,
+                phase: state::FrostPhase::PreKeygen,
             };
             flash.save(&state).unwrap();
             println!(
@@ -177,8 +177,8 @@ fn main() -> ! {
     let keypair = KeyPair::<Normal>::new(device_state.secret.clone());
     // Load the frost signer into the correct state
     let mut frost_signer = match device_state.phase {
-        state::DevicePhase::PreKeygen => frostsnap_core::FrostSigner::new(keypair),
-        state::DevicePhase::Key { frost_signer } => {
+        state::FrostPhase::PreKeygen => frostsnap_core::FrostSigner::new(keypair),
+        state::FrostPhase::Key { frost_signer } => {
             display
                 .print("Loaded existing FROST key from flash!")
                 .unwrap();
@@ -382,9 +382,9 @@ fn main() -> ! {
                         .unwrap();
                     // STORE FROST KEY INTO FLASH
                     if let FrostKey { key, awaiting_ack } = frost_signer.state() {
-                        device_state = state::DeviceState {
+                        device_state = state::FrostState {
                             secret: device_state.secret,
-                            phase: state::DevicePhase::Key {
+                            phase: state::FrostPhase::Key {
                                 frost_signer: frost_signer.clone(),
                             },
                         };

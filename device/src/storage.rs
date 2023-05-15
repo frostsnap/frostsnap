@@ -1,5 +1,5 @@
 extern crate alloc;
-use crate::state::DeviceState;
+use crate::state::FrostState;
 use alloc::format;
 use bincode::{
     de::read::Reader,
@@ -40,11 +40,11 @@ impl DeviceStorage {
         self.flash.write(self.start_pos, &buf)
     }
 
-    pub fn load(&mut self) -> Result<DeviceState, DecodeError> {
+    pub fn load(&mut self) -> Result<FrostState, DecodeError> {
         bincode::decode_from_reader(self.rw(), bincode::config::standard())
     }
 
-    pub fn save(&mut self, state: &DeviceState) -> Result<(), EncodeError> {
+    pub fn save(&mut self, state: &FrostState) -> Result<(), EncodeError> {
         bincode::encode_into_writer(state, self.rw(), bincode::config::standard())
     }
 }
