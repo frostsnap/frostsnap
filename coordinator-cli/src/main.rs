@@ -1,11 +1,14 @@
+use anyhow::{anyhow, Context};
 use frostsnap_comms::DeviceReceiveSerial;
 use frostsnap_comms::DeviceSendSerial;
 use frostsnap_core::message::CoordinatorSend;
 use frostsnap_core::message::DeviceToCoordindatorMessage;
+use frostsnap_core::CoordinatorFrostKey;
 use frostsnap_core::DeviceId;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::str;
 
 extern crate alloc;
@@ -21,6 +24,8 @@ use clap::{Parser, Subcommand};
 struct Cli {
     #[command(subcommand)]
     command: Command,
+    #[arg(short, long, value_name = "FILE")]
+    db: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -31,6 +36,7 @@ enum Command {
         #[arg(short, long)]
         n_devices: usize,
     },
+    Key,
 }
 
 // USB CDC vid and pid
@@ -276,7 +282,19 @@ impl Ports {
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    let default_db_path = home::home_dir().map(|home_dir| home_dir.join(".frostsnap"));
+    let db_path = cli
+        .db
+        .or(default_db_path)
+        .ok_or(anyhow!("We could not find home dir"))?;
     match cli.command {
+        Command::Key => {
+            let key_bytes = std::fs::read(db_path)?;
+            let (key, _): (bincode::serde::Compat<CoordinatorFrostKey>, _) =
+                bincode::decode_from_slice(&key_bytes, bincode::config::standard())?;
+            let key = key.0;
+            println!("{:?}", key);
+        }
         Command::Keygen {
             threshold,
             n_devices,
@@ -320,11 +338,17 @@ fn main() -> anyhow::Result<()> {
                                             frostsnap_core::message::CoordinatorToUserMessage::CheckKeyGen {
                                                 xpub
                                             } => {
-                                                if io::fetch_input(&format!("OK? [y/n]: {}", xpub)) == "y" {
-                                                    coordinator.keygen_ack(true).unwrap();
-                                                    finished_keygen = true;
+                                                let ack = io::fetch_input(&format!("OK? [y/n]: {}", xpub)) == "y";
+                                                if let Some(key) = coordinator.keygen_ack(ack).unwrap() {
+                                                    std::fs::write(
+                                                        &db_path,
+                                                        bincode::encode_to_vec(
+                                                            bincode::serde::Compat(key),
+                                                            bincode::config::standard()).unwrap())
+                                                            .context(format!("Unable to save to {}", db_path.display()))?;
                                                 }
-                                                
+                                                finished_keygen = true;
+
                                             }
                                         }
                                     }

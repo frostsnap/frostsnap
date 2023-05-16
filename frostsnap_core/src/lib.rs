@@ -115,8 +115,10 @@ impl FrostCoordinator {
                                 .collect();
 
                             self.state = CoordinatorState::FrostKey {
-                                frost_key,
-                                device_nonces,
+                                key: CoordinatorFrostKey {
+                                    frost_key,
+                                    device_nonces,
+                                },
                                 awaiting_user: true,
                             };
                             Ok(vec![
@@ -194,8 +196,10 @@ impl FrostCoordinator {
                         );
 
                         self.state = CoordinatorState::FrostKey {
-                            frost_key: frost_key.clone(),
-                            device_nonces: device_nonces.clone(),
+                            key: CoordinatorFrostKey {
+                                frost_key: frost_key.clone(),
+                                device_nonces: device_nonces.clone(),
+                            },
                             awaiting_user: false,
                         };
 
@@ -247,14 +251,19 @@ impl FrostCoordinator {
         }
     }
 
-    pub fn keygen_ack(&mut self, ack: bool) -> Result<(), ActionError> {
+    pub fn keygen_ack(&mut self, ack: bool) -> Result<Option<CoordinatorFrostKey>, ActionError> {
         match &mut self.state {
-            CoordinatorState::FrostKey { awaiting_user, .. } if *awaiting_user == true => {
+            CoordinatorState::FrostKey { awaiting_user, key } if *awaiting_user == true => {
                 match ack {
-                    true => *awaiting_user = false,
-                    false => self.state = CoordinatorState::Registration,
+                    true => {
+                        *awaiting_user = false;
+                        Ok(Some(key.clone()))
+                    },
+                    false => {
+                        self.state = CoordinatorState::Registration;
+                        Ok(None)
+                    },
                 }
-                Ok(())
             }
             _ => Err(ActionError::WrongState {
                 in_state: self.state.name(),
@@ -270,8 +279,11 @@ impl FrostCoordinator {
     ) -> Result<Vec<CoordinatorToDeviceMessage>, StartSignError> {
         match &mut self.state {
             CoordinatorState::FrostKey {
-                frost_key,
-                device_nonces,
+                key:
+                    CoordinatorFrostKey {
+                        frost_key,
+                        device_nonces,
+                    },
                 awaiting_user: false,
             } => {
                 let selected = signing_parties.len();
@@ -337,6 +349,12 @@ impl FrostCoordinator {
     }
 }
 
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct CoordinatorFrostKey {
+    frost_key: FrostKey<Normal>,
+    device_nonces: BTreeMap<DeviceId, DeviceNonces>,
+}
+
 #[derive(Clone, Debug)]
 pub enum CoordinatorState {
     Registration,
@@ -344,8 +362,7 @@ pub enum CoordinatorState {
         shares: BTreeMap<DeviceId, Option<KeyGenProvideShares>>,
     },
     FrostKey {
-        frost_key: FrostKey<Normal>,
-        device_nonces: BTreeMap<DeviceId, DeviceNonces>,
+        key: CoordinatorFrostKey,
         awaiting_user: bool,
     },
     Signing {
@@ -367,7 +384,7 @@ impl CoordinatorState {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DeviceNonces {
     counter: usize,
     nonces: VecDeque<Nonce>,
