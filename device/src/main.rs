@@ -26,7 +26,7 @@ use esp_storage::FlashStorage;
 use smart_leds::{brightness, colors, SmartLedsWrite, RGB};
 
 use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};
-use frostsnap_core::{message::{DeviceSend, DeviceToCoordinatorBody}, schnorr_fun::frost};
+use frostsnap_core::message::{DeviceSend, DeviceToCoordinatorBody};
 use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_core::schnorr_fun::fun::marker::Normal;
 use frostsnap_core::schnorr_fun::fun::KeyPair;
@@ -174,6 +174,9 @@ fn main() -> ! {
         }
     };
 
+    delay.delay_ms(1_000u32);
+
+
     let keypair = KeyPair::<Normal>::new(device_state.secret.clone());
     // Load the frost signer into the correct state
     let mut frost_signer = match device_state.phase {
@@ -185,6 +188,8 @@ fn main() -> ! {
             frost_signer
         }
     };
+
+    delay.delay_ms(1_000u32);
 
     let jtag = UsbSerialJtag::new(peripherals.USB_DEVICE);
     let (mut upstream_serial, mut downstream_serial) = {
@@ -309,7 +314,11 @@ fn main() -> ! {
                                 sends_downstream.push(received_message.clone());
                             }
 
-                            if let frostsnap_core::message::CoordinatorToDeviceMessage::DoKeyGen { devices, .. } = &core_message {
+                            if let frostsnap_core::message::CoordinatorToDeviceMessage::DoKeyGen {
+                                devices,
+                                ..
+                            } = &core_message
+                            {
                                 if devices.contains(&frost_signer.device_id()) {
                                     frost_signer.clear_state();
                                 }
@@ -430,9 +439,14 @@ fn main() -> ! {
 
         for send in sends_upstream.drain(..) {
             println!("Sending: {:?}", send);
-            display
-                .print(format!("Sending {}", gist_send(&send)))
-                .unwrap();
+
+            if !matches!(send, DeviceSendSerial::Debug { .. }) {
+                display
+                    .print(format!("Sending {}", gist_send(&send)))
+                    .unwrap();
+
+            }
+
             if let Err(_) = bincode::encode_into_writer(
                 &send,
                 &mut upstream_serial,

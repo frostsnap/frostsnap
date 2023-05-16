@@ -54,6 +54,12 @@ impl FrostCoordinator {
         }
     }
 
+    pub fn from_stored_key(key: CoordinatorFrostKey) -> Self {
+        Self {
+            state: CoordinatorState::FrostKey { key, awaiting_user: false }
+        }
+    }
+
     pub fn recv_device_message(
         &mut self,
         message: DeviceToCoordindatorMessage,
@@ -276,7 +282,7 @@ impl FrostCoordinator {
         &mut self,
         message_to_sign: String,
         signing_parties: BTreeSet<DeviceId>,
-    ) -> Result<Vec<CoordinatorToDeviceMessage>, StartSignError> {
+    ) -> Result<CoordinatorToDeviceMessage, StartSignError> {
         match &mut self.state {
             CoordinatorState::FrostKey {
                 key:
@@ -335,10 +341,10 @@ impl FrostCoordinator {
                     device_nonces: device_nonces.clone(),
                     signature_shares: BTreeMap::new(),
                 };
-                Ok(vec![CoordinatorToDeviceMessage::RequestSign {
+                Ok(CoordinatorToDeviceMessage::RequestSign {
                     message_to_sign: message_to_sign.clone(),
                     nonces: signing_nonces.clone(),
-                }])
+                })
             }
             _ => Err(StartSignError::WrongState),
         }
@@ -353,6 +359,16 @@ impl FrostCoordinator {
 pub struct CoordinatorFrostKey {
     frost_key: FrostKey<Normal>,
     device_nonces: BTreeMap<DeviceId, DeviceNonces>,
+}
+
+impl CoordinatorFrostKey {
+    pub fn devices(&self) -> impl Iterator<Item=DeviceId> + '_ {
+        self.device_nonces.keys().cloned()
+    }
+
+    pub fn threshold(&self) -> usize {
+        self.frost_key.threshold()
+    }
 }
 
 #[derive(Clone, Debug)]

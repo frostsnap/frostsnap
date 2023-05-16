@@ -109,7 +109,7 @@ fn test_end_to_end() {
                 }
             },
             Send::UserToCoordinator(message) => {
-                let new_messages = match message {
+                let new_message = match message {
                     UserToCoordinator::DoKeyGen { threshold } => coordinator
                         .do_keygen(&devices.keys().cloned().collect(), threshold)
                         .unwrap(),
@@ -118,7 +118,7 @@ fn test_end_to_end() {
                     }
                 };
 
-                message_stack.extend(new_messages.into_iter().map(Send::CoordinatorToDevice));
+                message_stack.push(Send::CoordinatorToDevice(new_message));
             }
             Send::DeviceToUser { message, device_id } => match message {
                 DeviceToUserMessage::CheckKeyGen { xpub } => {
