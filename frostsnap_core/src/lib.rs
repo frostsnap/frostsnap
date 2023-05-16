@@ -423,6 +423,11 @@ impl FrostSigner {
         }
     }
 
+    /// temporary hack until we store multiple keygens
+    pub fn clear_state(&mut self) {
+        *self = Self::new(self.keypair.clone())
+    }
+
     pub fn keypair(&self) -> &KeyPair {
         &self.keypair
     }

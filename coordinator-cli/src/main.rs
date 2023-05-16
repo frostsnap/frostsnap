@@ -315,16 +315,18 @@ fn main() -> anyhow::Result<()> {
                                         ))?;
                                     }
                                     CoordinatorSend::ToUser(to_user_message) => {
-                                        io::fetch_input(&format!("OK?: {:?}", to_user_message));
                                         match to_user_message {
-                                        frostsnap_core::message::CoordinatorToUserMessage::Signed { .. } => {}
-                                        frostsnap_core::message::CoordinatorToUserMessage::CheckKeyGen {
-                                            ..
-                                        } => {
-                                            coordinator.keygen_ack(true).unwrap();
-                                            finished_keygen = true;
+                                            frostsnap_core::message::CoordinatorToUserMessage::Signed { .. } => {}
+                                            frostsnap_core::message::CoordinatorToUserMessage::CheckKeyGen {
+                                                xpub
+                                            } => {
+                                                if io::fetch_input(&format!("OK? [y/n]: {}", xpub)) == "y" {
+                                                    coordinator.keygen_ack(true).unwrap();
+                                                    finished_keygen = true;
+                                                }
+                                                
+                                            }
                                         }
-                                    }
                                     }
                                 }
                             }

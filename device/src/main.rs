@@ -26,7 +26,7 @@ use esp_storage::FlashStorage;
 use smart_leds::{brightness, colors, SmartLedsWrite, RGB};
 
 use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};
-use frostsnap_core::message::{DeviceSend, DeviceToCoordinatorBody};
+use frostsnap_core::{message::{DeviceSend, DeviceToCoordinatorBody}, schnorr_fun::frost};
 use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_core::schnorr_fun::fun::marker::Normal;
 use frostsnap_core::schnorr_fun::fun::KeyPair;
@@ -137,7 +137,7 @@ fn main() -> ! {
     // Simulate factory reset
     // For now we are going to factory reset the storage on boot for easier testing and debugging.
     // Comment out if you want the frost key to persist across reboots
-    flash.erase().unwrap();
+    // flash.erase().unwrap();
     // delay.delay_ms(2000u32);
 
     // Load state from Flash memory if available. If not, generate secret and save.
@@ -307,6 +307,12 @@ fn main() -> ! {
                         DeviceReceiveSerial::Core(core_message) => {
                             if downstream_active {
                                 sends_downstream.push(received_message.clone());
+                            }
+
+                            if let frostsnap_core::message::CoordinatorToDeviceMessage::DoKeyGen { devices, .. } = &core_message {
+                                if devices.contains(&frost_signer.device_id()) {
+                                    frost_signer.clear_state();
+                                }
                             }
 
                             match frost_signer.recv_coordinator_message(core_message.clone()) {
