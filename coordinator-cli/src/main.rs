@@ -1,12 +1,12 @@
 use frostsnap_comms::DeviceReceiveSerial;
 use frostsnap_comms::DeviceSendSerial;
 use frostsnap_core::message::CoordinatorSend;
-use frostsnap_core::message::CoordinatorToDeviceMessage;
+use frostsnap_core::message::DeviceToCoordindatorMessage;
 use frostsnap_core::DeviceId;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::str;
-use std::{collections::HashSet, error::Error};
 
 extern crate alloc;
 
@@ -39,13 +39,20 @@ const USB_ID: (u16, u16) = (12346, 4097);
 
 #[derive(Default)]
 struct Ports {
+    // Matches VID and PID
     connected: HashSet<String>,
+    // Initial state
     pending: HashSet<String>,
+    // After opening port and sent magic bytes
     open: HashMap<String, SerialPortBincode>,
+    // Read magic magic bytes
     ready: HashMap<String, SerialPortBincode>,
-    reverse_device_ports: HashMap<String, HashSet<DeviceId>>,
+    // Devices who Announce'd, mappings to port serial numbers
     device_ports: HashMap<DeviceId, String>,
-    registered_devices: HashSet<DeviceId>,
+    // Reverse lookup from ports to devices (daisy chaining)
+    reverse_device_ports: HashMap<String, HashSet<DeviceId>>,
+    // Devices we sent registration ACK to
+    registered_devices: BTreeSet<DeviceId>,
 }
 
 impl Ports {
@@ -66,16 +73,59 @@ impl Ports {
         &mut self,
         send: &DeviceReceiveSerial,
     ) -> anyhow::Result<(), bincode::error::EncodeError> {
-        let send_ports = self
-            .registered_devices
-            .iter()
-            .filter_map(|device_id| self.device_ports.get(&device_id))
-            .collect::<HashSet<_>>();
+        let send_ports = self.active_ports();
         for send_port in send_ports {
-            let port = self.ready.get_mut(send_port).expect("must exist");
+            println!("Sending {} to {}", send.gist(), send_port);
+            let port = self.ready.get_mut(&send_port).expect("must exist");
             bincode::encode_into_writer(send, port, bincode::config::standard())?
         }
         Ok(())
+    }
+
+    fn active_ports(&self) -> HashSet<String> {
+        self.registered_devices
+            .iter()
+            .filter_map(|device_id| self.device_ports.get(device_id))
+            .cloned()
+            .collect::<HashSet<_>>()
+    }
+
+    pub fn receive_messages(&mut self) -> Vec<DeviceToCoordindatorMessage> {
+        let mut messages = vec![];
+        for serial_number in self.active_ports() {
+            loop {
+                let port = self.ready.get_mut(&serial_number).expect("must exist");
+                match port.poll_read(None) {
+                    Err(e) => {
+                        eprintln!("Failed to read on port {e}");
+                        self.disconnect(&serial_number);
+                        break;
+                    }
+                    Ok(false) => break,
+                    Ok(true) => {}
+                }
+
+                let decode: Result<DeviceSendSerial, _> =
+                    bincode::decode_from_reader(port, bincode::config::standard());
+
+                match decode {
+                    Ok(msg) => match msg {
+                        DeviceSendSerial::Core(core_message) => messages.push(core_message),
+                        DeviceSendSerial::Debug { message, device } => {
+                            eprintln!("Debug from device {device}: {message}")
+                        }
+                        DeviceSendSerial::Announce(announce_message) => {
+                            eprintln!("Unexpected device announce {}", announce_message.from);
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!("Unable to decode message {e}");
+                        self.disconnect(&serial_number);
+                    }
+                }
+            }
+        }
+        messages
     }
 
     fn register_devices(n_devices: usize) -> Self {
@@ -100,6 +150,7 @@ impl Ports {
                 .collect::<Vec<_>>();
             for port in disconnected_ports {
                 println!("Port unplugged: {:?}", port);
+                ports.disconnect(&port);
             }
 
             for serial_number in ports.pending.drain().collect::<Vec<_>>() {
@@ -142,56 +193,76 @@ impl Ports {
                 ports.open.insert(serial_number, device_port);
             }
 
-            let mut ports_to_disconnect = HashSet::new();
-            for (serial_number, mut device_port) in ports.ready.iter_mut() {
-                let something_to_read = match device_port.poll_read(None) {
-                    Err(e) => {
-                        eprintln!("Failed to read on port {e}");
-                        false
+            // let mut ports_to_disconnect = HashSet::new();
+            for serial_number in ports.ready.keys().cloned().collect::<Vec<_>>() {
+                let decoded_message: Result<DeviceSendSerial, _> = {
+                    let mut device_port = ports.ready.get_mut(&serial_number).expect("must exist");
+                    let something_to_read = match device_port.poll_read(None) {
+                        Err(e) => {
+                            eprintln!("Failed to read on port {e}");
+                            false
+                        }
+                        Ok(something_to_read) => something_to_read,
+                    };
+
+                    if something_to_read {
+                        bincode::decode_from_reader(&mut device_port, bincode::config::standard())
+                    } else {
+                        continue;
                     }
-                    Ok(something_to_read) => something_to_read,
                 };
 
-                if something_to_read {
-                    let decode: Result<DeviceSendSerial, _> =
-                        bincode::decode_from_reader(&mut device_port, bincode::config::standard());
+                match decoded_message {
+                    Ok(msg) => match msg {
+                        DeviceSendSerial::Announce(announce) => {
+                            ports
+                                .device_ports
+                                .insert(announce.from, serial_number.clone());
+                            let devices = ports
+                                .reverse_device_ports
+                                .entry(serial_number.clone())
+                                .or_default();
+                            devices.insert(announce.from);
 
-                    match decode {
-                        Ok(msg) => match msg {
-                            DeviceSendSerial::Announce(announce) => {
-                                ports
-                                    .device_ports
-                                    .insert(announce.from, serial_number.clone());
-                                let devices = ports
-                                    .reverse_device_ports
-                                    .entry(serial_number.clone())
-                                    .or_default();
-                                devices.insert(announce.from);
+                            let wrote_ack = {
+                                let device_port =
+                                    ports.ready.get_mut(&serial_number).expect("must exist");
 
-                                if let Err(e) = bincode::encode_into_writer(
+                                bincode::encode_into_writer(
                                     DeviceReceiveSerial::AnnounceAck(announce.from),
                                     device_port,
                                     bincode::config::standard(),
-                                ) {
-                                    ports_to_disconnect.insert(serial_number.clone());
-                                }
+                                )
+                            };
 
-                                println!("Found device {} on {}", announce.from, serial_number);
+                            match wrote_ack {
+                                Ok(_) => {
+                                    println!("Registered device {}", announce.from);
+                                    ports.registered_devices.insert(announce.from);
+                                }
+                                Err(e) => {
+                                    eprintln!(
+                                        "Failed to send announce Ack back to device {} {e}",
+                                        announce.from
+                                    );
+                                    ports.disconnect(&serial_number);
+                                }
                             }
-                            DeviceSendSerial::Debug { error, device } => {
-                                eprintln!("Debug: {device:?}: {error}");
-                            }
-                            DeviceSendSerial::Core(_) => {}
-                        },
-                        Err(e) => {
-                            eprintln!("{:?}", e);
+
+                            println!("Found device {} on {}", announce.from, serial_number);
                         }
+                        DeviceSendSerial::Debug {
+                            message: error,
+                            device,
+                        } => {
+                            eprintln!("Debug: {device:?}: {error}");
+                        }
+                        DeviceSendSerial::Core(_) => {}
+                    },
+                    Err(e) => {
+                        eprintln!("{:?}", e);
                     }
                 }
-            }
-
-            for port in ports_to_disconnect {
-                ports.disconnect(&port);
             }
 
             // TODO: Other conditional (should be option) ||
@@ -203,151 +274,68 @@ impl Ports {
     }
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Command::Keygen {
-            threshold: threshold,
+            threshold,
             n_devices,
         } => {
             println!("Please plug in {} devices..", n_devices);
 
             let mut ports = Ports::register_devices(n_devices);
-            println!("{:?}", ports.device_ports.keys());
+
+            if "y"
+                != io::fetch_input(&format!(
+                    "Want to do keygen with these devices? [y/n]\n{:?}",
+                    ports.registered_devices,
+                ))
+            {
+                return Ok(());
+            };
 
             let mut coordinator = frostsnap_core::FrostCoordinator::new();
-            let devices = ports.device_ports.into_keys().collect::<BTreeSet<_>>();
 
-            let do_keygen_message: Vec<_> = coordinator
-                .do_keygen(&devices, threshold)
-                .unwrap()
-                .into_iter()
-                .map(|msg| DeviceReceiveSerial::Core(msg))
-                .collect();
+            let do_keygen_message = DeviceReceiveSerial::Core(
+                coordinator.do_keygen(&ports.registered_devices, threshold)?,
+            );
+            ports.send_to_all_devices(&do_keygen_message)?;
 
-            // for serial_number in ports.keys() {
-            //     for msg in do_keygen_message.clone() {
-            //         sends.insert(serial_number.clone(), vec![msg]);
-            //     }
-            // }
-
-            // loop {
-            //     std::thread::sleep(std::time::Duration::from_millis(1000));
-            //     // Send messages to respective ports
-            //     for (destination_port, port_sends) in sends.drain() {
-            //         for send in port_sends {
-            //             println!("Sending {:?} on port {}\n", send, destination_port);
-            //             let send_port = ports.get_mut(&destination_port).expect("port exists");
-            //             if let Err(e) = bincode::encode_into_writer(
-            //                 send.clone(),
-            //                 send_port,
-            //                 bincode::config::standard(),
-            //             ) {
-            //                 eprintln!("Error writing message to serial {:?}", e);
-            //             }
-            //         }
-            //     }
-
-            //     // Read messages from ports
-            //     let mut new_sends = HashMap::new();
-            //     for (serial_number, port) in ports.iter_mut() {
-            //         let something_to_read = match port.poll_read(None) {
-            //             Err(e) => {
-            //                 eprintln!("Failed to read on port {e}");
-            //                 false
-            //             }
-            //             Ok(something_to_read) => something_to_read,
-            //         };
-            //         if !something_to_read {
-            //             continue;
-            //         }
-
-            //         let decode: Result<DeviceSendSerial, _> =
-            //             bincode::decode_from_reader(port, bincode::config::standard());
-
-            //         let new_port_sends = match decode {
-            //             Ok(msg) => {
-            //                 println!("Port {} read message {:?}", serial_number, msg);
-            //                 match &msg {
-            //                     DeviceSendSerial::Core(core_msg) => {
-            //                         let our_responses =
-            //                             coordinator.recv_device_message(core_msg.clone()).unwrap();
-
-            //                         our_responses
-            //                             .into_iter()
-            //                             .filter_map(|msg| match msg {
-            //                                 CoordinatorSend::ToDevice(core_message) => {
-            //                                     Some(DeviceReceiveSerial::Core(core_message))
-            //                                 }
-            //                                 CoordinatorSend::ToUser(to_user_message) => {
-            //                                     io::fetch_input(&format!("OK?: {:?}", to_user_message));
-            //                                     match to_user_message {
-            //                                         frostsnap_core::message::CoordinatorToUserMessage::Signed { .. } => {}
-            //                                         frostsnap_core::message::CoordinatorToUserMessage::CheckKeyGen {
-            //                                             ..
-            //                                         } => {
-            //                                             coordinator.keygen_ack(true).unwrap();
-            //                                         }
-            //                                     }
-            //                                     None
-            //                                 },
-            //                             })
-            //                             .collect() // TODO remove panic
-            //                     }
-            //                     DeviceSendSerial::Debug { error, device } => {
-            //                         println!("Debug message from {:?}: {:?}", device, error);
-            //                         vec![]
-            //                     }
-            //                     DeviceSendSerial::Announce(announce) => {
-            //                         eprintln!("Unexpected announce from device! {:?}", announce);
-            //                         vec![]
-            //                     }
-            //                 }
-            //             }
-            //             Err(e) => {
-            //                 eprintln!("{:?}", e);
-            //                 // Write something to serial to prevent device hanging
-            //                 vec![]
-            //             }
-            //         };
-
-            //         new_sends.insert(serial_number, new_port_sends);
-            //     }
-
-            //     for (origin_port, new_port_sends) in new_sends {
-            //         // Some messages need to be sent to all ports
-
-            //         for new_send in new_port_sends {
-            //             let send_all_ports = if let DeviceReceiveSerial::Core(_) = new_send {
-            //                 match &new_send {
-            //                     DeviceReceiveSerial::Core(msg) => match &msg {
-            //                         CoordinatorToDeviceMessage::DoKeyGen { .. } => true,
-            //                         CoordinatorToDeviceMessage::FinishKeyGen { .. } => true,
-            //                         CoordinatorToDeviceMessage::RequestSign { .. } => true,
-            //                     },
-            //                     DeviceReceiveSerial::AnnounceAck(_) => false,
-            //                 }
-            //             } else {
-            //                 false
-            //             };
-
-            //             if send_all_ports {
-            //                 // Send to all ports
-            //                 for (serial_number, _) in ports.iter()() {
-            //                     sends
-            //                         .entry(serial_number.to_string())
-            //                         .and_modify(|sends| sends.push(new_send.clone()))
-            //                         .or_insert(vec![new_send.clone()]);
-            //                 }
-            //             } else {
-            //                 sends
-            //                     .entry(origin_port.to_string())
-            //                     .and_modify(|sends| sends.push(new_send.clone()))
-            //                     .or_insert(vec![new_send]);
-            //             }
-            //         }
-            // }
-            // }
+            let mut finished_keygen = false;
+            while !finished_keygen {
+                let new_messages = ports.receive_messages();
+                for message in new_messages {
+                    match coordinator.recv_device_message(message.clone()) {
+                        Ok(responses) => {
+                            for response in responses {
+                                match response {
+                                    CoordinatorSend::ToDevice(core_message) => {
+                                        ports.send_to_all_devices(&DeviceReceiveSerial::Core(
+                                            core_message,
+                                        ))?;
+                                    }
+                                    CoordinatorSend::ToUser(to_user_message) => {
+                                        io::fetch_input(&format!("OK?: {:?}", to_user_message));
+                                        match to_user_message {
+                                        frostsnap_core::message::CoordinatorToUserMessage::Signed { .. } => {}
+                                        frostsnap_core::message::CoordinatorToUserMessage::CheckKeyGen {
+                                            ..
+                                        } => {
+                                            coordinator.keygen_ack(true).unwrap();
+                                            finished_keygen = true;
+                                        }
+                                    }
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Error receiving message from {} {e}", message.from);
+                            continue;
+                        }
+                    };
+                }
+            }
         }
     }
     Ok(())

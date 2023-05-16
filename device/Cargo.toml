@@ -5,7 +5,7 @@ authors = ["nickfarrow <nick@nickfarrow.com>"]
 edition = "2021"
 
 [dependencies]
-frostsnap_core = { path = "../frostsnap_core" }
+frostsnap_core = { path = "../frostsnap_core", default-features = false }
 frostsnap_comms = { path = "../frostsnap_comms", default-features = false }
 # esp32c3-hal = { git = "https://github.com/esp-rs/esp-hal.git", rev = "a0b72bdfa5a07a6c9387e4658b0d5c87f254d8ea" }
 esp32c3-hal = "0.8.0"

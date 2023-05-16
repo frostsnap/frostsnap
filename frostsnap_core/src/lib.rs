@@ -846,6 +846,15 @@ impl core::fmt::Display for InvalidState {
     }
 }
 
+impl InvalidState {
+    pub fn gist(&self) -> String {
+        match self {
+            InvalidState::MessageKind { state, kind } => format!("mk!{} {}", kind, state),
+            InvalidState::InvalidMessage { kind } => format!("im!{}", kind),
+        }
+    }
+}
+
 pub type MessageResult<T> = Result<T, InvalidState>;
 
 #[derive(Debug, Clone)]

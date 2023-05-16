@@ -25,6 +25,16 @@ pub enum DeviceReceiveSerial {
     AnnounceAck(#[bincode(with_serde)] DeviceId),
 }
 
+impl DeviceReceiveSerial {
+    pub fn gist(&self) -> String {
+        match self {
+            DeviceReceiveSerial::Core(message) => message.kind(),
+            DeviceReceiveSerial::AnnounceAck(_) => "AnnounceAck",
+        }
+        .into()
+    }
+}
+
 #[derive(Encode, Decode, Debug, Clone)]
 pub enum DeviceSendSerial {
     Core(#[bincode(with_serde)] DeviceToCoordindatorMessage),

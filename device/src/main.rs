@@ -26,7 +26,7 @@ use esp_storage::FlashStorage;
 use smart_leds::{brightness, colors, SmartLedsWrite, RGB};
 
 use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};
-use frostsnap_core::message::{DeviceSend, DeviceToCoordindatorMessage};
+use frostsnap_core::message::{DeviceSend, DeviceToCoordinatorBody};
 use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_core::schnorr_fun::fun::marker::Normal;
 use frostsnap_core::schnorr_fun::fun::KeyPair;
@@ -137,7 +137,7 @@ fn main() -> ! {
     // Simulate factory reset
     // For now we are going to factory reset the storage on boot for easier testing and debugging.
     // Comment out if you want the frost key to persist across reboots
-    // flash.erase().unwrap();
+    flash.erase().unwrap();
     // delay.delay_ms(2000u32);
 
     // Load state from Flash memory if available. If not, generate secret and save.
@@ -271,7 +271,7 @@ fn main() -> ! {
                 downstream_active = true;
                 display.print("Found downstream device").unwrap();
                 sends_upstream.push(DeviceSendSerial::Debug {
-                    error: "Device read magic bytes from another device!".to_string(),
+                    message: "Device read magic bytes from another device!".to_string(),
                     device: frost_signer.clone().device_id(),
                 });
             }
@@ -297,7 +297,7 @@ fn main() -> ! {
                             } else {
                                 display.print("Device registered").unwrap();
                                 sends_upstream.push(DeviceSendSerial::Debug {
-                                    error: "Device received its registration ACK!".to_string(),
+                                    message: "Device received its registration ACK!".to_string(),
                                     device: frost_signer.device_id(),
                                 });
                                 led.write(brightness([colors::GREEN].iter().cloned(), 10))
@@ -322,9 +322,7 @@ fn main() -> ! {
                                 }
                                 Err(e) => {
                                     println!("Unexpected FROST message in this state. {:?}", e);
-                                    display
-                                        .print(format!("msg!{:?}", received_message))
-                                        .unwrap();
+                                    display.print(&e.gist()).unwrap();
                                 }
                             }
                         }
@@ -337,7 +335,7 @@ fn main() -> ! {
                         continue;
                     }
                     sends_upstream.push(DeviceSendSerial::Debug {
-                        error: format!(
+                        message: format!(
                             "Device failed to read upstream: {}",
                             hex::encode(&prior_to_read_buff)
                         ),
@@ -359,7 +357,7 @@ fn main() -> ! {
                 Err(e) => {
                     println!("Decode error: {:?}", e);
                     sends_upstream.push(DeviceSendSerial::Debug {
-                        error: "Failed to decode on downstream port".to_string(),
+                        message: "Failed to decode on downstream port".to_string(),
                         device: frost_signer.device_id(),
                     });
                     downstream_active = false;
@@ -470,9 +468,9 @@ fn main() -> ! {
 
 pub fn gist_send(send: &DeviceSendSerial) -> &'static str {
     match send {
-        DeviceSendSerial::Core(message) => match message {
-            DeviceToCoordindatorMessage::KeyGenProvideShares(_) => "KeyGenProvideShares",
-            DeviceToCoordindatorMessage::SignatureShare { .. } => "SignatureShare",
+        DeviceSendSerial::Core(message) => match message.body {
+            DeviceToCoordinatorBody::KeyGenProvideShares(_) => "KeyGenProvideShares",
+            DeviceToCoordinatorBody::SignatureShare { .. } => "SignatureShare",
         },
         DeviceSendSerial::Debug { .. } => "Debug",
         DeviceSendSerial::Announce(_) => "Announce",

@@ -6,8 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bincode = { version = "2.0.0-rc.2", default-features = false, features = ["derive", "serde", "std"] } 
-frostsnap_core = { path = "../frostsnap_core" }
+bincode = { version = "2.0.0-rc.3", default-features = false, features = ["derive", "serde", "std"] } 
+frostsnap_core = { path = "../frostsnap_core", features = ["std"] }
 frostsnap_comms = { path = "../frostsnap_comms" }
 schnorr_fun = { git = "https://github.com/llfourn/secp256kfun.git", rev = "51e2285be2433cdad7f0d6dc13e4b5f865cff34d", features = ["alloc"], default-features = false }
 sha2 = "0.9"
