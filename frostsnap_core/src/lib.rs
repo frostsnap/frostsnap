@@ -1,9 +1,15 @@
 #![no_std]
 
+#[cfg(feature = "std")]
+#[allow(unused)]
+#[macro_use]
+extern crate std;
+
 pub mod encrypted_share;
 pub mod message;
 pub mod xpub;
 
+use message::DeviceToCoordinatorBody;
 pub use schnorr_fun;
 
 #[macro_use]
@@ -53,13 +59,16 @@ impl FrostCoordinator {
         message: DeviceToCoordindatorMessage,
     ) -> MessageResult<Vec<CoordinatorSend>> {
         match &mut self.state {
-            CoordinatorState::Registration => Err(InvalidState::MessageKind),
+            CoordinatorState::Registration => Err(InvalidState::coordinator_message_kind(
+                &self.state,
+                &message,
+            )),
             CoordinatorState::KeyGen {
                 shares: shares_provided,
-            } => match message {
-                DeviceToCoordindatorMessage::KeyGenProvideShares(new_shares) => {
+            } => match message.body {
+                DeviceToCoordinatorBody::KeyGenProvideShares(new_shares) => {
                     if let Some(existing) =
-                        shares_provided.insert(new_shares.from, Some(new_shares.clone()))
+                        shares_provided.insert(message.from, Some(new_shares.clone()))
                     {
                         debug_assert!(existing.is_none() || existing == Some(new_shares));
                     }
@@ -128,16 +137,18 @@ impl FrostCoordinator {
                         }
                     }
                 }
-                _ => Err(InvalidState::MessageKind),
+                _ => Err(InvalidState::coordinator_message_kind(
+                    &self.state,
+                    &message,
+                )),
             },
             CoordinatorState::Signing {
                 signature_shares,
                 frost_key,
                 sign_session,
                 device_nonces,
-            } => match message {
-                DeviceToCoordindatorMessage::SignatureShare {
-                    from,
+            } => match &message.body {
+                DeviceToCoordinatorBody::SignatureShare {
                     signature_share,
                     new_nonces,
                 } => {
@@ -145,19 +156,19 @@ impl FrostCoordinator {
                     let frost = frost::new_without_nonce_generation::<Sha256>();
 
                     let nonce_for_device = device_nonces
-                        .get_mut(&from)
-                        .ok_or(InvalidState::InvalidMessage)?;
+                        .get_mut(&message.from)
+                        .ok_or(InvalidState::coordinator_invalid_message(&message))?;
 
                     if new_nonces.len() != n_signatures {
-                        return Err(InvalidState::InvalidMessage);
+                        return Err(InvalidState::coordinator_invalid_message(&message));
                     }
 
                     if sign_session
                         .participants()
-                        .find(|x_coord| *x_coord == from.to_x_coord())
+                        .find(|x_coord| *x_coord == message.from.to_x_coord())
                         .is_none()
                     {
-                        return Err(InvalidState::InvalidMessage);
+                        return Err(InvalidState::coordinator_invalid_message(&message));
                     }
 
                     // TODO: This message needs to be authenticated
@@ -167,12 +178,12 @@ impl FrostCoordinator {
                     if frost.verify_signature_share(
                         &xonly_frost_key,
                         sign_session,
-                        from.to_x_coord(),
-                        signature_share,
+                        message.from.to_x_coord(),
+                        *signature_share,
                     ) {
-                        signature_shares.insert(from, signature_share);
+                        signature_shares.insert(message.from, *signature_share);
                     } else {
-                        return Err(InvalidState::InvalidMessage);
+                        return Err(InvalidState::coordinator_invalid_message(&message));
                     }
 
                     if signature_shares.len() == frost_key.threshold() {
@@ -195,9 +206,15 @@ impl FrostCoordinator {
                         Ok(vec![])
                     }
                 }
-                _ => Err(InvalidState::MessageKind),
+                _ => Err(InvalidState::coordinator_message_kind(
+                    &self.state,
+                    &message,
+                )),
             },
-            _ => Err(InvalidState::MessageKind),
+            _ => Err(InvalidState::coordinator_message_kind(
+                &self.state,
+                &message,
+            )),
         }
     }
 
@@ -205,21 +222,28 @@ impl FrostCoordinator {
         &mut self,
         devices: &BTreeSet<DeviceId>,
         threshold: usize,
-    ) -> Result<Vec<CoordinatorToDeviceMessage>, ActionError> {
+    ) -> Result<CoordinatorToDeviceMessage, ActionError> {
         if devices.len() < threshold {
-            panic!("caller needs to ensure that threshold < divices.len()");
+            panic!(
+                "caller needs to ensure that threshold < devices.len(). Tried {}-of-{}",
+                threshold,
+                devices.len()
+            );
         }
         match self.state {
             CoordinatorState::Registration => {
                 self.state = CoordinatorState::KeyGen {
                     shares: devices.iter().map(|&device_id| (device_id, None)).collect(),
                 };
-                Ok(vec![CoordinatorToDeviceMessage::DoKeyGen {
+                Ok(CoordinatorToDeviceMessage::DoKeyGen {
                     devices: devices.clone(),
                     threshold,
-                }])
+                })
             }
-            _ => Err(ActionError::WrongState),
+            _ => Err(ActionError::WrongState {
+                in_state: self.state.name(),
+                action: "do_keygen",
+            }),
         }
     }
 
@@ -232,7 +256,10 @@ impl FrostCoordinator {
                 }
                 Ok(())
             }
-            _ => Err(ActionError::WrongState),
+            _ => Err(ActionError::WrongState {
+                in_state: self.state.name(),
+                action: "keygen_ack",
+            }),
         }
     }
 
@@ -327,6 +354,17 @@ pub enum CoordinatorState {
         device_nonces: BTreeMap<DeviceId, DeviceNonces>,
         signature_shares: BTreeMap<DeviceId, Scalar<Public, Zero>>,
     },
+}
+
+impl CoordinatorState {
+    pub fn name(&self) -> &'static str {
+        match self {
+            CoordinatorState::Registration => "Registration",
+            CoordinatorState::KeyGen { .. } => "KeyGen",
+            CoordinatorState::FrostKey { .. } => "FrostKey",
+            CoordinatorState::Signing { .. } => "Signing",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -424,7 +462,7 @@ impl FrostSigner {
         message: CoordinatorToDeviceMessage,
     ) -> MessageResult<Vec<DeviceSend>> {
         use CoordinatorToDeviceMessage::*;
-        match (&self.state, message) {
+        match (&self.state, message.clone()) {
             (SignerState::Registered, DoKeyGen { devices, threshold }) => {
                 if !devices.contains(&self.device_id()) {
                     return Ok(vec![]);
@@ -480,13 +518,16 @@ impl FrostSigner {
                     .expect("correct length");
 
                 Ok(vec![DeviceSend::ToCoordinator(
-                    DeviceToCoordindatorMessage::KeyGenProvideShares(KeyGenProvideShares {
+                    DeviceToCoordindatorMessage {
                         from: self.device_id(),
-                        my_poly: point_poly,
-                        shares,
-                        proof_of_possession,
-                        nonces,
-                    }),
+
+                        body: DeviceToCoordinatorBody::KeyGenProvideShares(KeyGenProvideShares {
+                            my_poly: point_poly,
+                            shares,
+                            proof_of_possession,
+                            nonces,
+                        }),
+                    },
                 )])
             }
             (
@@ -499,7 +540,7 @@ impl FrostSigner {
                     .iter()
                     .any(|device_id| !shares_provided.contains_key(device_id))
                 {
-                    return Err(InvalidState::InvalidMessage);
+                    return Err(InvalidState::signer_invalid_message(&message));
                 }
                 let frost = frost::new_with_deterministic_nonces::<Sha256>();
 
@@ -518,11 +559,9 @@ impl FrostSigner {
                                     Ok((
                                         *provider_id,
                                         (
-                                            share
-                                                .shares
-                                                .get(device_id_receiver)
-                                                .cloned()
-                                                .ok_or(InvalidState::InvalidMessage)?,
+                                            share.shares.get(device_id_receiver).cloned().ok_or(
+                                                InvalidState::signer_invalid_message(&message),
+                                            )?,
                                             share.proof_of_possession.clone(),
                                         ),
                                     ))
@@ -559,7 +598,7 @@ impl FrostSigner {
                         my_shares,
                         Message::raw(&pop_message),
                     )
-                    .map_err(|_e| InvalidState::InvalidMessage)?;
+                    .map_err(|_e| InvalidState::signer_invalid_message(&message))?;
 
                 let xpub = ExtendedPubKey::new(frost_key.public_key(), keygen_id);
                 self.state = SignerState::FrostKey {
@@ -590,7 +629,7 @@ impl FrostSigner {
                     None => return Ok(Vec::new()),
                 };
                 if self.nonce_counter > *my_nonce_index {
-                    return Err(InvalidState::InvalidMessage);
+                    return Err(InvalidState::signer_invalid_message(&message));
                 }
 
                 let expected_nonces = self
@@ -598,7 +637,7 @@ impl FrostSigner {
                     .map(|nonce| nonce.public())
                     .collect::<Vec<_>>();
                 if expected_nonces != *my_nonces {
-                    return Err(InvalidState::InvalidMessage);
+                    return Err(InvalidState::signer_invalid_message(&message));
                 }
 
                 self.state = SignerState::AwaitingSignAck {
@@ -610,7 +649,7 @@ impl FrostSigner {
                     DeviceToUserMessage::SignatureRequest { message_to_sign },
                 )])
             }
-            _ => Err(InvalidState::MessageKind),
+            _ => Err(InvalidState::signer_message_kind(&self.state, &message)),
         }
     }
 
@@ -624,7 +663,10 @@ impl FrostSigner {
                 }
                 Ok(())
             }
-            _ => Err(ActionError::WrongState),
+            _ => Err(ActionError::WrongState {
+                in_state: self.state.name(),
+                action: "keygen_ack",
+            }),
         }
     }
 
@@ -678,14 +720,21 @@ impl FrostSigner {
                 };
 
                 Ok(vec![DeviceSend::ToCoordinator(
-                    DeviceToCoordindatorMessage::SignatureShare {
-                        signature_share: signature_shares[0],
-                        new_nonces: replenish_nonces,
+                    DeviceToCoordindatorMessage {
                         from: self.device_id(),
+                        body: {
+                            DeviceToCoordinatorBody::SignatureShare {
+                                signature_share: signature_shares[0],
+                                new_nonces: replenish_nonces,
+                            }
+                        },
                     },
                 )])
             }
-            _ => Err(ActionError::WrongState),
+            _ => Err(ActionError::WrongState {
+                in_state: self.state.name(),
+                action: "sign_ack",
+            }),
         }
     }
 
@@ -719,6 +768,17 @@ pub enum SignerState {
     },
 }
 
+impl SignerState {
+    pub fn name(&self) -> &'static str {
+        match self {
+            SignerState::Registered => "Registered",
+            SignerState::KeyGen { .. } => "KeyGen",
+            SignerState::AwaitingSignAck { .. } => "AwaitingSignAck",
+            SignerState::FrostKey { .. } => "FrostKey",
+        }
+    }
+}
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct FrostsnapKey {
     /// The joint key
@@ -732,23 +792,57 @@ pub struct FrostsnapKey {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InvalidState {
     /// The device was not in a state where it could receive a message of that kind
-    MessageKind,
-    /// The message received was not valid with respect to the existing state
-    InvalidMessage,
+    MessageKind {
+        state: &'static str,
+        kind: &'static str,
+    },
+    /// The content of the message was invalid with respect to the state.
+    InvalidMessage { kind: &'static str },
+}
+
+impl InvalidState {
+    pub fn coordinator_message_kind(
+        state: &CoordinatorState,
+        message: &DeviceToCoordindatorMessage,
+    ) -> Self {
+        Self::MessageKind {
+            state: state.name(),
+            kind: message.body.kind(),
+        }
+    }
+
+    pub fn signer_message_kind(state: &SignerState, message: &CoordinatorToDeviceMessage) -> Self {
+        Self::MessageKind {
+            state: state.name(),
+            kind: message.kind(),
+        }
+    }
+
+    pub fn coordinator_invalid_message(message: &DeviceToCoordindatorMessage) -> Self {
+        Self::InvalidMessage {
+            kind: message.body.kind(),
+        }
+    }
+
+    pub fn signer_invalid_message(message: &CoordinatorToDeviceMessage) -> Self {
+        Self::InvalidMessage {
+            kind: message.kind(),
+        }
+    }
 }
 
 impl core::fmt::Display for InvalidState {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                InvalidState::MessageKind =>
-                    "The device was not in a state where it could receive a message of that kind",
-                InvalidState::InvalidMessage =>
-                    "The message received was not valid with respect to the existing state",
+        match *self {
+            InvalidState::MessageKind { state, kind } => write!(
+                f,
+                "Device received unexpected message of kind {} for this state {}",
+                kind, state
+            ),
+            InvalidState::InvalidMessage { kind } => {
+                write!(f, "Received an invalid message of kind {}", kind)
             }
-        )
+        }
     }
 }
 
@@ -768,5 +862,21 @@ pub enum StartSignError {
 
 #[derive(Debug, Clone)]
 pub enum ActionError {
-    WrongState,
+    WrongState {
+        in_state: &'static str,
+        action: &'static str,
+    },
 }
+
+impl core::fmt::Display for ActionError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            ActionError::WrongState { in_state, action } => {
+                write!(f, "Can not {} while in {}", action, in_state)
+            }
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for ActionError {}

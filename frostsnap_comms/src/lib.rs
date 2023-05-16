@@ -29,7 +29,7 @@ pub enum DeviceReceiveSerial {
 pub enum DeviceSendSerial {
     Core(#[bincode(with_serde)] DeviceToCoordindatorMessage),
     Debug {
-        error: String,
+        message: String,
         #[bincode(with_serde)]
         device: DeviceId,
     },

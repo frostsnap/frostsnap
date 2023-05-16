@@ -47,19 +47,42 @@ pub enum CoordinatorToDeviceMessage {
     },
 }
 
+impl CoordinatorToDeviceMessage {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            CoordinatorToDeviceMessage::DoKeyGen { .. } => "DoKeyGen",
+            CoordinatorToDeviceMessage::FinishKeyGen { .. } => "FinishKeyGen",
+            CoordinatorToDeviceMessage::RequestSign { .. } => "RequestSign",
+        }
+    }
+}
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub enum DeviceToCoordindatorMessage {
+pub struct DeviceToCoordindatorMessage {
+    pub from: DeviceId,
+    pub body: DeviceToCoordinatorBody,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub enum DeviceToCoordinatorBody {
     KeyGenProvideShares(KeyGenProvideShares),
     SignatureShare {
         signature_share: Scalar<Public, Zero>,
         new_nonces: Vec<Nonce>,
-        from: DeviceId,
     },
+}
+
+impl DeviceToCoordinatorBody {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            DeviceToCoordinatorBody::KeyGenProvideShares(_) => "KeyGenProvideShares",
+            DeviceToCoordinatorBody::SignatureShare { .. } => "SignatureShare",
+        }
+    }
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, Eq, PartialEq)]
 pub struct KeyGenProvideShares {
-    pub from: DeviceId,
     pub my_poly: Vec<Point>,
     pub shares: BTreeMap<DeviceId, EncryptedShare>,
     pub proof_of_possession: Signature,
