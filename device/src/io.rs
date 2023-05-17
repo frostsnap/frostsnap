@@ -144,25 +144,28 @@ impl<'a, T, U> SerialInterface<'a, T, U> {
     {
         let mut buff = vec![];
         let mut io = None;
-        // If we did not read MAGICBYTES on UART0, try JTAG
-        // reset the USB device bit
-        let usb_device = unsafe { &*USB_DEVICE::PTR };
-        usb_device.conf0.modify(|_, w| w.usb_pad_enable().set_bit());
 
-        // jtag.write_bytes(&MAGICBYTES_JTAG);
+        // Clear the bit in order to use UART0
+        let usb_device = unsafe { &*USB_DEVICE::PTR };
+        usb_device
+            .conf0
+            .modify(|_, w| w.usb_pad_enable().clear_bit());
+
+        // First, try and talk to another device upstream over UART0
         let start_time = timer0.now();
         loop {
-            match jtag.read_byte() {
+            match uart0.read() {
                 Ok(c) => {
                     buff.push(c);
-                    if frostsnap_comms::find_and_remove_magic_bytes(&mut buff, &MAGICBYTES_JTAG) {
-                        io = Some(SerialIo::Jtag(jtag));
+                    if frostsnap_comms::find_and_remove_magic_bytes(&mut buff, &MAGICBYTES_UART)
+                    {
+                        io = Some(SerialIo::Uart(uart0));
                         break;
                     }
                 }
                 Err(_) => {
                     // every two CPU ticks the timer is incrimented by 1
-                    if (timer0.now() - start_time) / 40_000 > 1_000 {
+                    if ((timer0.now() - start_time) / 40_000) > 1_000 {
                         break;
                     }
                 }
@@ -170,29 +173,27 @@ impl<'a, T, U> SerialInterface<'a, T, U> {
         }
 
         if io.is_none() {
-            // Clear the bit in order to use UART0
+            // If we did not read MAGICBYTES on UART0, try JTAG
+            // reset the USB device bit
             let usb_device = unsafe { &*USB_DEVICE::PTR };
-            usb_device
-                .conf0
-                .modify(|_, w| w.usb_pad_enable().clear_bit());
+            usb_device.conf0.modify(|_, w| w.usb_pad_enable().set_bit());
 
-            // First, try and talk to another device upstream over UART0
-            let start_time = timer0.now();
+            // jtag.write_bytes(&MAGICBYTES_JTAG);
+            // let start_time = timer0.now();
             loop {
-                match uart0.read() {
+                match jtag.read_byte() {
                     Ok(c) => {
                         buff.push(c);
-                        if frostsnap_comms::find_and_remove_magic_bytes(&mut buff, &MAGICBYTES_UART)
-                        {
-                            io = Some(SerialIo::Uart(uart0));
+                        if frostsnap_comms::find_and_remove_magic_bytes(&mut buff, &MAGICBYTES_JTAG) {
+                            io = Some(SerialIo::Jtag(jtag));
                             break;
                         }
                     }
                     Err(_) => {
-                        // every two CPU ticks the timer is incrimented by 1
-                        if ((timer0.now() - start_time) / 40_000) > 1_000 {
-                            break;
-                        }
+                        // // every two CPU ticks the timer is incrimented by 1
+                        // if (timer0.now() - start_time) / 40_000 > 1_000 {
+                        //     break;
+                        // }
                     }
                 }
             }

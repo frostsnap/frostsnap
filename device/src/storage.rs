@@ -45,7 +45,9 @@ impl DeviceStorage {
     }
 
     pub fn save(&mut self, state: &FrostState) -> Result<(), EncodeError> {
-        bincode::encode_into_writer(state, self.rw(), bincode::config::standard())
+        // We write it in one go to try and get atomicity
+        let bytes = bincode::encode_to_vec(state, bincode::config::standard()).unwrap();
+        self.rw().write(&bytes)
     }
 }
 

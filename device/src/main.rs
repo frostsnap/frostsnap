@@ -143,17 +143,18 @@ fn main() -> ! {
     // Load state from Flash memory if available. If not, generate secret and save.
     let mut device_state: state::FrostState = match flash.load() {
         Ok(state) => {
-            println!("Read device state from flash: {}", state.secret);
-            display.print("Read device state from flash").unwrap();
+            display.print(format!("STATE: {:?}", state.phase)).unwrap();
             state
         }
-        Err(_e) => {
+        Err(e) => {
             // Bincode errored because device is new or something else is wrong,
             // will require manual user interaction to start fresh, or later, restore from backup.
             // display
             //     .print("Press button to generate a new secret")
             //     .unwrap();
             // wait_button();
+            display.print(e.to_string()).unwrap();
+            delay.delay_ms(2_000u32);
 
             let mut rng = esp32c3_hal::Rng::new(peripherals.RNG);
             let mut rand_bytes = [0u8; 32];
@@ -394,6 +395,8 @@ fn main() -> ! {
                         .unwrap();
                     led.write(brightness([colors::WHITE_SMOKE].iter().cloned(), 10))
                         .unwrap();
+
+                    delay.delay_ms(2_000u32);
                     // STORE FROST KEY INTO FLASH
                     if let FrostKey { .. } = frost_signer.state() {
                         device_state = state::FrostState {
@@ -402,13 +405,16 @@ fn main() -> ! {
                                 frost_signer: frost_signer.clone(),
                             },
                         };
+                        display.print("ABOUT TO SAVE").unwrap();
                         flash.save(&device_state).unwrap();
-                    }
-                    display
+                        display
                         .print(format!("Key saved\n{:?}", hex::encode(&xpub.0)))
                         .unwrap();
                     led.write(brightness([colors::BLUE].iter().cloned(), 10))
                         .unwrap();
+                    } else {
+                        panic!("unreachable must be in FrostKey state");
+                    }
                 }
                 frostsnap_core::message::DeviceToUserMessage::SignatureRequest {
                     message_to_sign,
@@ -495,4 +501,45 @@ pub fn gist_send(send: &DeviceSendSerial) -> &'static str {
         DeviceSendSerial::Debug { .. } => "Debug",
         DeviceSendSerial::Announce(_) => "Announce",
     }
+}
+
+
+#[panic_handler]
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    let peripherals = unsafe { Peripherals::steal() };
+    let mut system = peripherals.SYSTEM.split();
+    // Disable the RTC and TIMG watchdog timers
+
+    // RGB LED
+    // White: found coordinator
+    // Blue: found another device upstream
+    let pulse = PulseControl::new(
+        peripherals.RMT,
+        &mut system.peripheral_clock_control,
+        ClockSource::APB,
+        0,
+        0,
+        0,
+    )
+    .unwrap();
+    let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
+
+    let mut led = <smartLedAdapter!(1)>::new(pulse.channel0, io.pins.gpio2);
+    led.write(brightness([colors::RED].iter().cloned(), 10)).unwrap();
+
+    let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
+
+    if let Ok(mut display) = oled::SSD1306::new(
+        peripherals.I2C0,
+        io.pins.gpio5,
+        io.pins.gpio6,
+        400u32.kHz(),
+        &mut system.peripheral_clock_control,
+        &clocks,
+    ) {
+        let _ = display.print(info.to_string());
+    }
+
+
+    loop {}
 }
