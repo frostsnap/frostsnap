@@ -22,14 +22,18 @@ pub const MAGICBYTES_UART: [u8; 4] = [0xa, 0xa, 0xa, 0xa];
 #[derive(Encode, Decode, Debug, Clone)]
 pub enum DeviceReceiveSerial {
     Core(#[bincode(with_serde)] CoordinatorToDeviceMessage),
-    AnnounceAck(#[bincode(with_serde)] DeviceId),
+    AnnounceAck {
+        #[bincode(with_serde)]
+        device_id: DeviceId,
+        device_label: String,
+    },
 }
 
 impl DeviceReceiveSerial {
     pub fn gist(&self) -> String {
         match self {
             DeviceReceiveSerial::Core(message) => message.kind(),
-            DeviceReceiveSerial::AnnounceAck(_) => "AnnounceAck",
+            DeviceReceiveSerial::AnnounceAck { .. } => "AnnounceAck",
         }
         .into()
     }

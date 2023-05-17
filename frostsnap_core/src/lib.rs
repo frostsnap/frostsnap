@@ -56,7 +56,10 @@ impl FrostCoordinator {
 
     pub fn from_stored_key(key: CoordinatorFrostKey) -> Self {
         Self {
-            state: CoordinatorState::FrostKey { key, awaiting_user: false }
+            state: CoordinatorState::FrostKey {
+                key,
+                awaiting_user: false,
+            },
         }
     }
 
@@ -264,11 +267,11 @@ impl FrostCoordinator {
                     true => {
                         *awaiting_user = false;
                         Ok(Some(key.clone()))
-                    },
+                    }
                     false => {
                         self.state = CoordinatorState::Registration;
                         Ok(None)
-                    },
+                    }
                 }
             }
             _ => Err(ActionError::WrongState {
@@ -362,7 +365,7 @@ pub struct CoordinatorFrostKey {
 }
 
 impl CoordinatorFrostKey {
-    pub fn devices(&self) -> impl Iterator<Item=DeviceId> + '_ {
+    pub fn devices(&self) -> impl Iterator<Item = DeviceId> + '_ {
         self.device_nonces.keys().cloned()
     }
 

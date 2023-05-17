@@ -177,7 +177,6 @@ fn main() -> ! {
 
     delay.delay_ms(1_000u32);
 
-
     let keypair = KeyPair::<Normal>::new(device_state.secret.clone());
     // Load the frost signer into the correct state
     let mut frost_signer = match device_state.phase {
@@ -296,14 +295,19 @@ fn main() -> ! {
                     println!("Decoded {:?}", received_message);
 
                     match &received_message {
-                        DeviceReceiveSerial::AnnounceAck(device_id) => {
+                        DeviceReceiveSerial::AnnounceAck {
+                            device_id,
+                            device_label,
+                        } => {
                             // Pass on Announce Acks which belong to others
                             if device_id != &frost_signer.device_id() {
                                 sends_downstream.push(received_message.clone());
                             } else {
-                                display.print("Device registered").unwrap();
+                                display
+                                    .print(&format!("Registered\n\n{}", device_label))
+                                    .unwrap();
                                 sends_upstream.push(DeviceSendSerial::Debug {
-                                    message: "Device received its registration ACK!".to_string(),
+                                    message: "Received AnnounceACK!".to_string(),
                                     device: frost_signer.device_id(),
                                 });
                                 led.write(brightness([colors::GREEN].iter().cloned(), 10))
@@ -408,10 +412,10 @@ fn main() -> ! {
                         display.print("ABOUT TO SAVE").unwrap();
                         flash.save(&device_state).unwrap();
                         display
-                        .print(format!("Key saved\n{:?}", hex::encode(&xpub.0)))
-                        .unwrap();
-                    led.write(brightness([colors::BLUE].iter().cloned(), 10))
-                        .unwrap();
+                            .print(format!("{:?}", hex::encode(&xpub.0)))
+                            .unwrap();
+                        led.write(brightness([colors::BLUE].iter().cloned(), 10))
+                            .unwrap();
                     } else {
                         panic!("unreachable must be in FrostKey state");
                     }
@@ -450,7 +454,6 @@ fn main() -> ! {
                 display
                     .print(format!("Sending {}", gist_send(&send)))
                     .unwrap();
-
             }
 
             if let Err(_) = bincode::encode_into_writer(
@@ -503,7 +506,6 @@ pub fn gist_send(send: &DeviceSendSerial) -> &'static str {
     }
 }
 
-
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     let peripherals = unsafe { Peripherals::steal() };
@@ -525,7 +527,8 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
 
     let mut led = <smartLedAdapter!(1)>::new(pulse.channel0, io.pins.gpio2);
-    led.write(brightness([colors::RED].iter().cloned(), 10)).unwrap();
+    led.write(brightness([colors::RED].iter().cloned(), 10))
+        .unwrap();
 
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
@@ -539,7 +542,6 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     ) {
         let _ = display.print(info.to_string());
     }
-
 
     loop {}
 }
