@@ -46,11 +46,10 @@ impl Writer for SerialPortBincode {
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::TimedOut => (),
                 Err(e) => {
-                    eprintln!("{:?}", e);
-                    return Err(bincode::error::EncodeError::OtherString(format!(
-                        "Writing error {:?}",
-                        e
-                    )));
+                    return Err(bincode::error::EncodeError::Io {
+                        inner: e,
+                        index: 0,
+                    })
                 }
             }
         }

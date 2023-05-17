@@ -19,3 +19,5 @@ serialport = "4.2.0"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 home = "0.5"
+tracing = "0.1"
+tracing-subscriber = "0.3"
