@@ -18,6 +18,7 @@ extern crate alloc;
 
 pub mod io;
 pub mod serial_rw;
+mod device_namer;
 use crate::serial_rw::SerialPortBincode;
 
 use clap::{Parser, Subcommand};
