@@ -1,12 +1,18 @@
 use anyhow::anyhow;
+use db::Db;
 use frostsnap_comms::DeviceReceiveSerial;
 use frostsnap_core::message::CoordinatorSend;
+use frostsnap_core::message::CoordinatorToStorageMessage;
 use frostsnap_core::message::CoordinatorToUserMessage;
 use frostsnap_core::message::DeviceToCoordinatorBody;
 use frostsnap_core::message::DeviceToCoordindatorMessage;
+use frostsnap_core::CoordinatorState;
 use frostsnap_core::DeviceId;
+use frostsnap_core::FrostCoordinator;
+use ports::Ports;
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use tracing::{event, Level};
 
@@ -58,6 +64,37 @@ enum SignArgs {
     },
 }
 
+fn process_outbox(
+    db: &mut Db,
+    coordinator: &mut FrostCoordinator,
+    outbox: &mut VecDeque<CoordinatorSend>,
+    ports: &mut Ports,
+) -> anyhow::Result<()> {
+    while let Some(message) = outbox.pop_front() {
+        match message {
+            CoordinatorSend::ToDevice(core_message) => {
+                ports.send_to_all_devices(&DeviceReceiveSerial::Core(core_message))?;
+            }
+            CoordinatorSend::ToUser(to_user_message) => match to_user_message {
+                CoordinatorToUserMessage::Signed { .. } => {}
+                CoordinatorToUserMessage::CheckKeyGen { xpub } => {
+                    let ack = io::fetch_input(&format!("OK? [y/n]: {}", xpub)) == "y";
+                    outbox.extend(coordinator.keygen_ack(ack)?);
+                }
+            },
+            CoordinatorSend::ToStorage(to_storage_message) => match to_storage_message {
+                CoordinatorToStorageMessage::UpdateState(key) => {
+                    db.save(db::State {
+                        key,
+                        device_labels: ports.device_labels().clone(),
+                    })?;
+                }
+            },
+        }
+    }
+    Ok(())
+}
+
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let subscriber = tracing_subscriber::fmt()
@@ -79,7 +116,7 @@ fn main() -> anyhow::Result<()> {
         .or(default_db_path)
         .ok_or(anyhow!("We could not find home dir"))?;
 
-    let db = db::Db::new(db_path);
+    let mut db = db::Db::new(db_path);
     let state = db.load()?;
 
     let mut ports = ports::Ports::default();
@@ -137,44 +174,18 @@ fn main() -> anyhow::Result<()> {
             );
             ports.send_to_all_devices(&do_keygen_message)?;
 
-            let mut finished_keygen = false;
-            while !finished_keygen {
+            let mut outbox = VecDeque::new();
+            loop {
                 let new_messages = ports.receive_messages();
                 for message in new_messages {
                     match coordinator.recv_device_message(message.clone()) {
-                        Ok(responses) => {
-                            for response in responses {
-                                match response {
-                                    CoordinatorSend::ToDevice(core_message) => {
-                                        ports.send_to_all_devices(&DeviceReceiveSerial::Core(
-                                            core_message,
-                                        ))?;
-                                    }
-                                    CoordinatorSend::ToUser(to_user_message) => {
-                                        match to_user_message {
-                                            frostsnap_core::message::CoordinatorToUserMessage::Signed { .. } => {}
-                                            frostsnap_core::message::CoordinatorToUserMessage::CheckKeyGen {
-                                                xpub
-                                            } => {
-                                                let ack = io::fetch_input(&format!("OK? [y/n]: {}", xpub)) == "y";
-                                                if let Some(key) = coordinator.keygen_ack(ack).unwrap() {
-                                                    db.save(db::State {
-                                                        key,
-                                                        device_labels: ports.device_labels().clone(),
-                                                    })?;
-                                                }
-                                                finished_keygen = true;
-
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                        Ok(messages) => {
+                            outbox.extend(messages);
                         }
                         Err(e) => {
                             event!(
                                 Level::ERROR,
-                                "Failed to receive message from {}: {}",
+                                "Failed to process message from {}: {}",
                                 message.from,
                                 e
                             );
@@ -182,6 +193,12 @@ fn main() -> anyhow::Result<()> {
                         }
                     };
                 }
+                if let CoordinatorState::FrostKey { .. } = coordinator.state() {
+                    if outbox.is_empty() {
+                        break;
+                    }
+                }
+                process_outbox(&mut db, &mut coordinator, &mut outbox, &mut ports)?;
             }
         }
         Command::Sign(sign_args) => {
@@ -189,7 +206,7 @@ fn main() -> anyhow::Result<()> {
             let key = state.key;
             let threshold = key.threshold();
 
-            let key_signers: HashMap<_, _> = key
+            let key_signers: BTreeMap<_, _> = key
                 .devices()
                 .map(|device_id| {
                     (
@@ -214,9 +231,8 @@ fn main() -> anyhow::Result<()> {
 
             match sign_args {
                 SignArgs::Message { message } => {
-                    // TODO remove unwrap --> anyhow
-                    let sign_request = coordinator.start_sign(message, chosen_signers).unwrap();
-
+                    let (init_sends, signature_request) =
+                        coordinator.start_sign(message, chosen_signers)?;
                     eprintln!(
                         "Plug signers:\n{}",
                         still_need_to_sign
@@ -225,59 +241,61 @@ fn main() -> anyhow::Result<()> {
                             .collect::<Vec<_>>()
                             .join("\n")
                     );
-                    loop {
+
+                    let mut outbox = VecDeque::from_iter(init_sends);
+                    let mut signature = None;
+                    let finished_signature = loop {
+                        signature = signature.or_else(|| {
+                            outbox.iter().find_map(|message| match message {
+                                CoordinatorSend::ToUser(CoordinatorToUserMessage::Signed {
+                                    signature,
+                                }) => Some(signature.clone()),
+                                _ => None,
+                            })
+                        });
+                        process_outbox(&mut db, &mut coordinator, &mut outbox, &mut ports)?;
+
+                        if let Some(finished_signature) = &signature {
+                            if outbox.is_empty() {
+                                break finished_signature;
+                            }
+                        }
+
                         let (newly_registered, new_messages) = ports.poll_devices();
                         for device in newly_registered.intersection(&still_need_to_sign) {
                             event!(Level::INFO, "asking {} to sign", device);
                             ports.send_to_single_device(
-                                &DeviceReceiveSerial::Core(sign_request.clone()),
+                                &DeviceReceiveSerial::Core(signature_request.clone()),
                                 device,
                             )?;
                         }
 
-                        for message in new_messages {
-                            match coordinator.recv_device_message(message.clone()) {
-                                Ok(responses) => {
-                                    for response in responses {
-                                        match response {
-                                            CoordinatorSend::ToDevice(core_message) => {
-                                                // TODO: Send response back to particular device?
-                                                ports.send_to_all_devices(
-                                                    &DeviceReceiveSerial::Core(core_message),
-                                                )?;
-                                            }
-                                            CoordinatorSend::ToUser(user_message) => {
-                                                if let CoordinatorToUserMessage::Signed {
-                                                    signature,
-                                                } = user_message
-                                                {
-                                                    event!(Level::INFO, "signing complete 🎉");
-                                                    println!("{}", signature);
-                                                    return Ok(());
-                                                }
-                                            }
-                                        }
+                        for incoming in new_messages {
+                            match coordinator.recv_device_message(incoming.clone()) {
+                                Ok(outgoing) => {
+                                    if let DeviceToCoordindatorMessage {
+                                        from,
+                                        body: DeviceToCoordinatorBody::SignatureShare { .. },
+                                    } = incoming
+                                    {
+                                        still_need_to_sign.remove(&from);
                                     }
+                                    outbox.extend(outgoing);
                                 }
                                 Err(e) => {
                                     event!(
                                         Level::ERROR,
-                                        error = e.to_string(),
-                                        from = message.from.to_string(),
-                                        "got invalid message"
+                                        "Failed to process message from {}: {}",
+                                        incoming.from,
+                                        e
                                     );
+                                    continue;
                                 }
-                            }
-
-                            if let DeviceToCoordindatorMessage {
-                                from,
-                                body: DeviceToCoordinatorBody::SignatureShare { .. },
-                            } = &message
-                            {
-                                still_need_to_sign.remove(from);
-                            }
+                            };
                         }
-                    }
+                    };
+
+                    println!("{}", finished_signature);
                 }
                 SignArgs::Nostr { .. } => todo!(),
                 SignArgs::Transaction { .. } => todo!(),
@@ -288,7 +306,7 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn choose_signers(
-    device_labels: &HashMap<DeviceId, String>,
+    device_labels: &BTreeMap<DeviceId, String>,
     threshold: usize,
 ) -> BTreeSet<DeviceId> {
     eprintln!("Choose {} devices to sign:", threshold);

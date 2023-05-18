@@ -1,5 +1,6 @@
 use crate::encrypted_share::EncryptedShare;
 use crate::xpub::ExtendedPubKey;
+use crate::CoordinatorFrostKey;
 use crate::String;
 use crate::Vec;
 use crate::NONCE_BATCH_SIZE;
@@ -25,6 +26,7 @@ pub enum DeviceSend {
 pub enum CoordinatorSend {
     ToDevice(CoordinatorToDeviceMessage),
     ToUser(CoordinatorToUserMessage),
+    ToStorage(CoordinatorToStorageMessage),
 }
 
 // #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -56,6 +58,11 @@ impl CoordinatorToDeviceMessage {
             CoordinatorToDeviceMessage::RequestSign { .. } => "RequestSign",
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub enum CoordinatorToStorageMessage {
+    UpdateState(CoordinatorFrostKey),
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]

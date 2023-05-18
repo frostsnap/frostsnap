@@ -9,7 +9,7 @@ pub mod encrypted_share;
 pub mod message;
 pub mod xpub;
 
-use message::DeviceToCoordinatorBody;
+use message::{CoordinatorToStorageMessage, DeviceToCoordinatorBody};
 pub use schnorr_fun;
 
 #[macro_use]
@@ -68,10 +68,9 @@ impl FrostCoordinator {
         message: DeviceToCoordindatorMessage,
     ) -> MessageResult<Vec<CoordinatorSend>> {
         match &mut self.state {
-            CoordinatorState::Registration => Err(InvalidState::coordinator_message_kind(
-                &self.state,
-                &message,
-            )),
+            CoordinatorState::Registration => {
+                Err(Error::coordinator_message_kind(&self.state, &message))
+            }
             CoordinatorState::KeyGen {
                 shares: shares_provided,
             } => match message.body {
@@ -123,14 +122,19 @@ impl FrostCoordinator {
                                 })
                                 .collect();
 
+                            let key = CoordinatorFrostKey {
+                                frost_key,
+                                device_nonces,
+                            };
                             self.state = CoordinatorState::FrostKey {
-                                key: CoordinatorFrostKey {
-                                    frost_key,
-                                    device_nonces,
-                                },
+                                key: key.clone(),
                                 awaiting_user: true,
                             };
+                            // TODO: check order
                             Ok(vec![
+                                CoordinatorSend::ToStorage(
+                                    CoordinatorToStorageMessage::UpdateState(key),
+                                ),
                                 CoordinatorSend::ToDevice(
                                     CoordinatorToDeviceMessage::FinishKeyGen {
                                         shares_provided: shares_provided.clone(),
@@ -148,16 +152,12 @@ impl FrostCoordinator {
                         }
                     }
                 }
-                _ => Err(InvalidState::coordinator_message_kind(
-                    &self.state,
-                    &message,
-                )),
+                _ => Err(Error::coordinator_message_kind(&self.state, &message)),
             },
             CoordinatorState::Signing {
                 signature_shares,
-                frost_key,
+                key,
                 sign_session,
-                device_nonces,
             } => match &message.body {
                 DeviceToCoordinatorBody::SignatureShare {
                     signature_share,
@@ -166,12 +166,18 @@ impl FrostCoordinator {
                     let n_signatures = 1;
                     let frost = frost::new_without_nonce_generation::<Sha256>();
 
-                    let nonce_for_device = device_nonces
-                        .get_mut(&message.from)
-                        .ok_or(InvalidState::coordinator_invalid_message(&message))?;
+                    let nonce_for_device = key.device_nonces.get_mut(&message.from).ok_or(
+                        Error::coordinator_invalid_message(&message, "Signer is unknown".into()),
+                    )?;
 
                     if new_nonces.len() != n_signatures {
-                        return Err(InvalidState::coordinator_invalid_message(&message));
+                        return Err(Error::coordinator_invalid_message(
+                            &message,
+                            format!(
+                                "Signer did not replenish the correct number of nonces: {}",
+                                n_signatures
+                            ),
+                        ));
                     }
 
                     if sign_session
@@ -179,12 +185,15 @@ impl FrostCoordinator {
                         .find(|x_coord| *x_coord == message.from.to_x_coord())
                         .is_none()
                     {
-                        return Err(InvalidState::coordinator_invalid_message(&message));
+                        return Err(Error::coordinator_invalid_message(
+                            &message,
+                            "Signer was not a particpant for this session".into(),
+                        ));
                     }
 
                     // TODO: This message needs to be authenticated
                     nonce_for_device.nonces.extend(new_nonces.into_iter());
-                    let xonly_frost_key = frost_key.clone().into_xonly_key();
+                    let xonly_frost_key = key.frost_key.clone().into_xonly_key();
 
                     if frost.verify_signature_share(
                         &xonly_frost_key,
@@ -194,10 +203,16 @@ impl FrostCoordinator {
                     ) {
                         signature_shares.insert(message.from, *signature_share);
                     } else {
-                        return Err(InvalidState::coordinator_invalid_message(&message));
+                        return Err(Error::coordinator_invalid_message(
+                            &message,
+                            "Invalid signature share".into(),
+                        ));
                     }
 
-                    if signature_shares.len() == frost_key.threshold() {
+                    let mut outgoing = vec![CoordinatorSend::ToStorage(
+                        CoordinatorToStorageMessage::UpdateState(key.clone()),
+                    )];
+                    if signature_shares.len() == key.frost_key.threshold() {
                         let signature = frost.combine_signature_shares(
                             &xonly_frost_key,
                             &sign_session,
@@ -205,29 +220,20 @@ impl FrostCoordinator {
                         );
 
                         self.state = CoordinatorState::FrostKey {
-                            key: CoordinatorFrostKey {
-                                frost_key: frost_key.clone(),
-                                device_nonces: device_nonces.clone(),
-                            },
+                            key: key.clone(),
                             awaiting_user: false,
                         };
 
-                        Ok(vec![CoordinatorSend::ToUser(
-                            CoordinatorToUserMessage::Signed { signature },
-                        )])
-                    } else {
-                        Ok(vec![])
+                        outgoing.push(CoordinatorSend::ToUser(CoordinatorToUserMessage::Signed {
+                            signature,
+                        }));
                     }
+
+                    Ok(outgoing)
                 }
-                _ => Err(InvalidState::coordinator_message_kind(
-                    &self.state,
-                    &message,
-                )),
+                _ => Err(Error::coordinator_message_kind(&self.state, &message)),
             },
-            _ => Err(InvalidState::coordinator_message_kind(
-                &self.state,
-                &message,
-            )),
+            _ => Err(Error::coordinator_message_kind(&self.state, &message)),
         }
     }
 
@@ -260,17 +266,19 @@ impl FrostCoordinator {
         }
     }
 
-    pub fn keygen_ack(&mut self, ack: bool) -> Result<Option<CoordinatorFrostKey>, ActionError> {
+    pub fn keygen_ack(&mut self, ack: bool) -> Result<Vec<CoordinatorSend>, ActionError> {
         match &mut self.state {
             CoordinatorState::FrostKey { awaiting_user, key } if *awaiting_user == true => {
                 match ack {
                     true => {
                         *awaiting_user = false;
-                        Ok(Some(key.clone()))
+                        Ok(vec![CoordinatorSend::ToStorage(
+                            CoordinatorToStorageMessage::UpdateState(key.clone()),
+                        )])
                     }
                     false => {
                         self.state = CoordinatorState::Registration;
-                        Ok(None)
+                        Ok(vec![])
                     }
                 }
             }
@@ -285,29 +293,29 @@ impl FrostCoordinator {
         &mut self,
         message_to_sign: String,
         signing_parties: BTreeSet<DeviceId>,
-    ) -> Result<CoordinatorToDeviceMessage, StartSignError> {
+    ) -> Result<(Vec<CoordinatorSend>, CoordinatorToDeviceMessage), StartSignError> {
         match &mut self.state {
             CoordinatorState::FrostKey {
-                key:
-                    CoordinatorFrostKey {
-                        frost_key,
-                        device_nonces,
-                    },
+                key,
                 awaiting_user: false,
             } => {
                 let selected = signing_parties.len();
-                if selected < frost_key.threshold() {
-                    return Err(StartSignError::NotEnoughDevicesSelected { selected });
+                if selected < key.frost_key.threshold() {
+                    return Err(StartSignError::NotEnoughDevicesSelected {
+                        selected,
+                        threshold: key.frost_key.threshold(),
+                    });
                 }
 
                 let n_signatures = 1;
 
                 let signing_nonces = signing_parties
                     .into_iter()
-                    .map(|id| {
-                        let nonces_for_device = device_nonces
-                            .get_mut(&id)
-                            .ok_or(StartSignError::NotEnoughNoncesForDevice { deivce_id: id })?;
+                    .map(|device_id| {
+                        let nonces_for_device = key
+                            .device_nonces
+                            .get_mut(&device_id)
+                            .ok_or(StartSignError::UnknownDevice { device_id })?;
                         let index_of_first_nonce = nonces_for_device.counter;
                         let index_of_last_nonce =
                             index_of_first_nonce + nonces_for_device.nonces.len();
@@ -318,17 +326,24 @@ impl FrostCoordinator {
                             .cloned()
                             .collect::<Vec<_>>();
                         if nonces.len() < n_signatures {
-                            return Err(StartSignError::NotEnoughNoncesForDevice { deivce_id: id });
+                            return Err(StartSignError::NotEnoughNoncesForDevice {
+                                device_id,
+                                have: nonces.len(),
+                                need: n_signatures,
+                            });
                         }
                         let mut remaining = nonces_for_device.nonces.split_off(n_signatures);
                         core::mem::swap(&mut nonces_for_device.nonces, &mut remaining);
                         nonces_for_device.counter += n_signatures;
 
-                        Ok((id, (nonces, index_of_first_nonce, index_of_last_nonce)))
+                        Ok((
+                            device_id,
+                            (nonces, index_of_first_nonce, index_of_last_nonce),
+                        ))
                     })
                     .collect::<Result<BTreeMap<_, _>, _>>()?;
 
-                let xonly_frost_key = frost_key.clone().into_xonly_key();
+                let xonly_frost_key = key.frost_key.clone().into_xonly_key();
                 let b_message = Message::plain("frost-device", message_to_sign.as_bytes());
                 let frost = frost::new_without_nonce_generation::<Sha256>();
                 let indexed_nonces = signing_nonces
@@ -338,18 +353,25 @@ impl FrostCoordinator {
                 let sign_session =
                     frost.start_sign_session(&xonly_frost_key, indexed_nonces, b_message);
 
+                let key = key.clone();
                 self.state = CoordinatorState::Signing {
-                    frost_key: frost_key.clone(),
+                    key: key.clone(),
                     sign_session,
-                    device_nonces: device_nonces.clone(),
                     signature_shares: BTreeMap::new(),
                 };
-                Ok(CoordinatorToDeviceMessage::RequestSign {
-                    message_to_sign: message_to_sign.clone(),
-                    nonces: signing_nonces.clone(),
-                })
+                Ok((
+                    vec![CoordinatorSend::ToStorage(
+                        CoordinatorToStorageMessage::UpdateState(key),
+                    )],
+                    CoordinatorToDeviceMessage::RequestSign {
+                        message_to_sign: message_to_sign.clone(),
+                        nonces: signing_nonces.clone(),
+                    },
+                ))
             }
-            _ => Err(StartSignError::WrongState),
+            _ => Err(StartSignError::WrongState {
+                in_state: self.state().name(),
+            }),
         }
     }
 
@@ -385,9 +407,8 @@ pub enum CoordinatorState {
         awaiting_user: bool,
     },
     Signing {
-        frost_key: FrostKey<Normal>,
+        key: CoordinatorFrostKey,
         sign_session: SignSession,
-        device_nonces: BTreeMap<DeviceId, DeviceNonces>,
         signature_shares: BTreeMap<DeviceId, Scalar<Public, Zero>>,
     },
 }
@@ -577,11 +598,14 @@ impl FrostSigner {
                 },
                 FinishKeyGen { shares_provided },
             ) => {
-                if devices
+                if let Some(device) = devices
                     .iter()
-                    .any(|device_id| !shares_provided.contains_key(device_id))
+                    .find(|device_id| !shares_provided.contains_key(device_id))
                 {
-                    return Err(InvalidState::signer_invalid_message(&message));
+                    return Err(Error::signer_invalid_message(
+                        &message,
+                        format!("Missing shares from {}", device),
+                    ));
                 }
                 let frost = frost::new_with_deterministic_nonces::<Sha256>();
 
@@ -601,7 +625,13 @@ impl FrostSigner {
                                         *provider_id,
                                         (
                                             share.shares.get(device_id_receiver).cloned().ok_or(
-                                                InvalidState::signer_invalid_message(&message),
+                                                Error::signer_invalid_message(
+                                                    &message,
+                                                    format!(
+                                                        "Missing shares for {}",
+                                                        device_id_receiver
+                                                    ),
+                                                ),
                                             )?,
                                             share.proof_of_possession.clone(),
                                         ),
@@ -639,7 +669,7 @@ impl FrostSigner {
                         my_shares,
                         Message::raw(&pop_message),
                     )
-                    .map_err(|_e| InvalidState::signer_invalid_message(&message))?;
+                    .map_err(|e| Error::signer_invalid_message(&message, format!("{}", e)))?;
 
                 let xpub = ExtendedPubKey::new(frost_key.public_key(), keygen_id);
                 self.state = SignerState::FrostKey {
@@ -669,20 +699,30 @@ impl FrostSigner {
                     Some(nonce) => nonce,
                     None => return Ok(Vec::new()),
                 };
-                if self.nonce_counter > *my_nonce_index {
-                    return Err(InvalidState::signer_invalid_message(&message));
-                }
-
-                // ⚠ Update nonce counter. Overflow would allow nonce reuse.
-                self.nonce_counter = my_nonce_index.saturating_add(my_nonces.len());
 
                 let expected_nonces = self
                     .generate_nonces(key.aux_rand, *my_nonce_index, my_nonces.len())
                     .map(|nonce| nonce.public())
                     .collect::<Vec<_>>();
                 if expected_nonces != *my_nonces {
-                    return Err(InvalidState::signer_invalid_message(&message));
+                    return Err(Error::signer_invalid_message(
+                        &message,
+                        "Signing request nonces do not match expected".into(),
+                    ));
                 }
+
+                if self.nonce_counter > *my_nonce_index {
+                    return Err(Error::signer_invalid_message(
+                        &message,
+                        format!(
+                            "Attempt to reuse nonces! Expected nonce >= {} but got {}",
+                            self.nonce_counter, my_nonce_index
+                        ),
+                    ));
+                }
+
+                // ⚠ Update nonce counter. Overflow would allow nonce reuse.
+                self.nonce_counter = my_nonce_index.saturating_add(my_nonces.len());
 
                 self.state = SignerState::AwaitingSignAck {
                     key: key.clone(),
@@ -693,7 +733,7 @@ impl FrostSigner {
                     DeviceToUserMessage::SignatureRequest { message_to_sign },
                 )])
             }
-            _ => Err(InvalidState::signer_message_kind(&self.state, &message)),
+            _ => Err(Error::signer_message_kind(&self.state, &message)),
         }
     }
 
@@ -834,18 +874,18 @@ pub struct FrostsnapKey {
     pub aux_rand: [u8; 32],
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InvalidState {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Error {
     /// The device was not in a state where it could receive a message of that kind
     MessageKind {
         state: &'static str,
         kind: &'static str,
     },
     /// The content of the message was invalid with respect to the state.
-    InvalidMessage { kind: &'static str },
+    InvalidMessage { kind: &'static str, reason: String },
 }
 
-impl InvalidState {
+impl Error {
     pub fn coordinator_message_kind(
         state: &CoordinatorState,
         message: &DeviceToCoordindatorMessage,
@@ -863,44 +903,49 @@ impl InvalidState {
         }
     }
 
-    pub fn coordinator_invalid_message(message: &DeviceToCoordindatorMessage) -> Self {
+    pub fn coordinator_invalid_message(
+        message: &DeviceToCoordindatorMessage,
+        reason: String,
+    ) -> Self {
         Self::InvalidMessage {
             kind: message.body.kind(),
+            reason,
         }
     }
 
-    pub fn signer_invalid_message(message: &CoordinatorToDeviceMessage) -> Self {
+    pub fn signer_invalid_message(message: &CoordinatorToDeviceMessage, reason: String) -> Self {
         Self::InvalidMessage {
             kind: message.kind(),
+            reason,
         }
     }
 }
 
-impl core::fmt::Display for InvalidState {
+impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match *self {
-            InvalidState::MessageKind { state, kind } => write!(
+        match self {
+            Error::MessageKind { state, kind } => write!(
                 f,
-                "Device received unexpected message of kind {} for this state {}",
+                "Unexpected message of kind {} for this state {}",
                 kind, state
             ),
-            InvalidState::InvalidMessage { kind } => {
-                write!(f, "Received an invalid message of kind {}", kind)
+            Error::InvalidMessage { kind, reason } => {
+                write!(f, "Invalid message of kind {}: {}", kind, reason)
             }
         }
     }
 }
 
-impl InvalidState {
+impl Error {
     pub fn gist(&self) -> String {
         match self {
-            InvalidState::MessageKind { state, kind } => format!("mk!{} {}", kind, state),
-            InvalidState::InvalidMessage { kind } => format!("im!{}", kind),
+            Error::MessageKind { state, kind } => format!("mk!{} {}", kind, state),
+            Error::InvalidMessage { kind, reason } => format!("im!{}: {}", kind, reason),
         }
     }
 }
 
-pub type MessageResult<T> = Result<T, InvalidState>;
+pub type MessageResult<T> = Result<T, Error>;
 
 #[derive(Debug, Clone)]
 pub enum DoKeyGenError {
@@ -909,10 +954,59 @@ pub enum DoKeyGenError {
 
 #[derive(Debug, Clone)]
 pub enum StartSignError {
-    NotEnoughDevicesSelected { selected: usize },
-    WrongState,
-    NotEnoughNoncesForDevice { deivce_id: DeviceId },
+    UnknownDevice {
+        device_id: DeviceId,
+    },
+    NotEnoughDevicesSelected {
+        selected: usize,
+        threshold: usize,
+    },
+    WrongState {
+        in_state: &'static str,
+    },
+    NotEnoughNoncesForDevice {
+        device_id: DeviceId,
+        have: usize,
+        need: usize,
+    },
 }
+
+impl core::fmt::Display for StartSignError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            StartSignError::NotEnoughDevicesSelected {
+                selected,
+                threshold,
+            } => {
+                write!(
+                    f,
+                    "Need more than {} signers for threshold {}",
+                    selected, threshold
+                )
+            }
+            StartSignError::WrongState { in_state } => {
+                write!(f, "Can't sign in state {}", in_state)
+            }
+            StartSignError::NotEnoughNoncesForDevice {
+                device_id,
+                have,
+                need,
+            } => {
+                write!(
+                    f,
+                    "Not enough nonces for device {}, have {}, need {}",
+                    device_id, have, need,
+                )
+            }
+            StartSignError::UnknownDevice { device_id } => {
+                write!(f, "Unknown device {}", device_id)
+            }
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for StartSignError {}
 
 #[derive(Debug, Clone)]
 pub enum ActionError {

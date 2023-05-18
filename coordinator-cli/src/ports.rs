@@ -10,6 +10,7 @@ use tracing::{event, span, Level};
 
 use crate::io;
 use crate::serial_rw::SerialPortBincode;
+use anyhow::anyhow;
 
 // USB CDC vid and pid
 const USB_ID: (u16, u16) = (12346, 4097);
@@ -78,12 +79,18 @@ impl Ports {
         &mut self,
         send: &DeviceReceiveSerial,
         device_id: &DeviceId,
-    ) -> anyhow::Result<(), bincode::error::EncodeError> {
-        // TODO handle missing devices
-        let port_serial_number = self.device_ports.get(device_id).unwrap();
+    ) -> anyhow::Result<()> {
+        let port_serial_number = self
+            .device_ports
+            .get(device_id)
+            .ok_or(anyhow!("Device not connected!"))?;
         let port = self.ready.get_mut(port_serial_number).expect("must exist");
 
-        bincode::encode_into_writer(send, port, bincode::config::standard())
+        Ok(bincode::encode_into_writer(
+            send,
+            port,
+            bincode::config::standard(),
+        )?)
     }
 
     pub fn active_ports(&self) -> HashSet<String> {
