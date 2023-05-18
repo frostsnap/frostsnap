@@ -134,7 +134,7 @@ pub enum SerialInterfaceError {
 
 impl<'a, T, U> SerialInterface<'a, T, U> {
     pub fn find_active(
-        mut uart0: uart::Uart<'a, U>,
+        mut uart: uart::Uart<'a, U>,
         mut jtag: UsbSerialJtag<'a, USB_DEVICE>,
         timer0: Timer<T>,
     ) -> Option<Self>
@@ -145,21 +145,21 @@ impl<'a, T, U> SerialInterface<'a, T, U> {
         let mut buff = vec![];
         let mut io = None;
 
-        // Clear the bit in order to use UART0
+        // Clear the bit in order to use UART
         let usb_device = unsafe { &*USB_DEVICE::PTR };
         usb_device
             .conf0
             .modify(|_, w| w.usb_pad_enable().clear_bit());
 
-        // First, try and talk to another device upstream over UART0
+        // First, try and talk to another device upstream over UART
         let start_time = timer0.now();
         loop {
-            match uart0.read() {
+            match uart.read() {
                 Ok(c) => {
                     buff.push(c);
                     if frostsnap_comms::find_and_remove_magic_bytes(&mut buff, &MAGICBYTES_UART)
                     {
-                        io = Some(SerialIo::Uart(uart0));
+                        io = Some(SerialIo::Uart(uart));
                         break;
                     }
                 }
@@ -173,7 +173,7 @@ impl<'a, T, U> SerialInterface<'a, T, U> {
         }
 
         if io.is_none() {
-            // If we did not read MAGICBYTES on UART0, try JTAG
+            // If we did not read MAGICBYTES on UART, try JTAG
             // reset the USB device bit
             let usb_device = unsafe { &*USB_DEVICE::PTR };
             usb_device.conf0.modify(|_, w| w.usb_pad_enable().set_bit());

@@ -51,16 +51,11 @@ fn init_heap() {
 
 /// # Pin Configuration
 ///
-/// GPIO21:     USB UART0 TX
-/// GPIO20:     USB UART0 RX
+/// GPIO21:     USB UART0 TX  (connect upstream)
+/// GPIO20:     USB UART0 RX  (connect upstream)
 ///
-/// GPIO4:      UART1 TX (connect downstream)
-/// GPIO5:      UART1 RX (connect downstream)
-///
-/// RX0:        UART0 RX (connect upstream if not using USB)
-/// TX0:        UART0 TX (connect upstream if not using USB)
-///
-/// GPIO2:      Error LED (optional)
+/// GPIO18:     JTAG/UART1 TX (connect downstream)
+/// GPIO19:     JTAG/UART1 RX (connect downstream)
 #[entry]
 fn main() -> ! {
     init_heap();
@@ -182,15 +177,15 @@ fn main() -> ! {
             baudrate: frostsnap_comms::BAUDRATE,
             ..Default::default()
         };
-        let txrx0 = TxRxPins::new_tx_rx(
+        let txrx1 = TxRxPins::new_tx_rx(
             io.pins.gpio18.into_push_pull_output(),
             io.pins.gpio19.into_floating_input(),
         );
-        let uart0 =
-            Uart::new_with_config(peripherals.UART1, Some(serial_conf), Some(txrx0), &clocks);
+        let uart1 =
+            Uart::new_with_config(peripherals.UART1, Some(serial_conf), Some(txrx1), &clocks);
 
         display.print("Finding upstream device").unwrap();
-        let upstream_serial = match io::SerialInterface::find_active(uart0, jtag, timer0) {
+        let upstream_serial = match io::SerialInterface::find_active(uart1, jtag, timer0) {
             Some(upstream_serial) => upstream_serial,
             None => {
                 display
@@ -203,13 +198,13 @@ fn main() -> ! {
         };
         // let upstream_serial = io::BufferedSerialInterface::new_uart(uart0, timer0);
 
-        let txrx1 = TxRxPins::new_tx_rx(
+        let txrx0 = TxRxPins::new_tx_rx(
             io.pins.gpio21.into_push_pull_output(),
             io.pins.gpio20.into_floating_input(),
         );
-        let uart1 =
-            Uart::new_with_config(peripherals.UART0, Some(serial_conf), Some(txrx1), &clocks);
-        let downstream_serial = io::SerialInterface::new_uart(uart1, timer1, false);
+        let uart0 =
+            Uart::new_with_config(peripherals.UART0, Some(serial_conf), Some(txrx0), &clocks);
+        let downstream_serial = io::SerialInterface::new_uart(uart0, timer1, false);
 
         (upstream_serial, downstream_serial)
     };
@@ -246,6 +241,11 @@ fn main() -> ! {
                 display.print(format!("E: {:?}", e)).unwrap();
                 continue;
             }
+            if let Err(e) = downstream_serial.write_magic_bytes() {
+                display.print(format!("E: {:?}", e)).unwrap();
+                continue;
+            }
+
             soft_reset = false;
             sends_upstream = vec![DeviceSendSerial::Announce(frostsnap_comms::Announce {
                 from: frost_signer.device_id(),
@@ -289,9 +289,7 @@ fn main() -> ! {
                             if device_id != &frost_signer.device_id() {
                                 sends_downstream.push(received_message.clone());
                             } else {
-                                display
-                                    .print_header(device_label)
-                                    .unwrap();
+                                display.print_header(device_label).unwrap();
                                 sends_upstream.push(DeviceSendSerial::Debug {
                                     message: "Received AnnounceACK!".to_string(),
                                     device: frost_signer.device_id(),
