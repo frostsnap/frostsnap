@@ -369,7 +369,6 @@ fn main() -> ! {
         while let Some(send) = outbox.pop_front() {
             match send {
                 DeviceSend::ToStorage(_) => {
-                    // STORE FROST KEY INTO FLASH
                     flash
                         .save(&state::FrostState {
                             signer: frost_signer.clone(),

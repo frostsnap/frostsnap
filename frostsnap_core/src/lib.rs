@@ -673,6 +673,9 @@ impl FrostSigner {
                     return Err(InvalidState::signer_invalid_message(&message));
                 }
 
+                // ⚠ Update nonce counter. Overflow would allow nonce reuse.
+                self.nonce_counter = my_nonce_index.saturating_add(my_nonces.len());
+
                 let expected_nonces = self
                     .generate_nonces(key.aux_rand, *my_nonce_index, my_nonces.len())
                     .map(|nonce| nonce.public())
@@ -760,8 +763,9 @@ impl FrostSigner {
                     awaiting_ack: false,
                 };
 
-                Ok(vec![DeviceSend::ToCoordinator(
-                    DeviceToCoordindatorMessage {
+                Ok(vec![
+                    DeviceSend::ToStorage(message::DeviceToStorageMessage::ExpendNonce),
+                    DeviceSend::ToCoordinator(DeviceToCoordindatorMessage {
                         from: self.device_id(),
                         body: {
                             DeviceToCoordinatorBody::SignatureShare {
@@ -769,8 +773,8 @@ impl FrostSigner {
                                 new_nonces: replenish_nonces,
                             }
                         },
-                    },
-                )])
+                    }),
+                ])
             }
             _ => Err(ActionError::WrongState {
                 in_state: self.state.name(),
