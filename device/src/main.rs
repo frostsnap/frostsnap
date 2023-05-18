@@ -124,7 +124,7 @@ fn main() -> ! {
     let mut flash = storage::DeviceStorage::new(flash, storage::NVS_PARTITION_START);
 
     // Welcome screen
-    display.print("frost-esp32").unwrap();
+    display.print_header("frost snap").unwrap();
     for i in 0..=20 {
         led.write([RGB::new(0, i, i)].iter().cloned()).unwrap();
         delay.delay_ms(30u32);
@@ -290,7 +290,7 @@ fn main() -> ! {
                                 sends_downstream.push(received_message.clone());
                             } else {
                                 display
-                                    .print(&format!("Registered\n\n{}", device_label))
+                                    .print_header(device_label)
                                     .unwrap();
                                 sends_upstream.push(DeviceSendSerial::Debug {
                                     message: "Received AnnounceACK!".to_string(),

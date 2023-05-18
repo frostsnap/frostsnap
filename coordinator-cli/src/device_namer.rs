@@ -10,7 +10,7 @@ pub fn gen_name39() -> String {
         .choose_multiple(&mut rng, 2)
         .into_iter()
         .collect::<Vec<_>>()
-        .join("");
+        .join(" ");
     // let num = rng.gen_range(0..=99);
     name
 }
