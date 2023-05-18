@@ -148,11 +148,17 @@ fn main() -> anyhow::Result<()> {
                 }
             }
 
+            let keygen_devices = if ports.registered_devices().len() > n_devices {
+                eprintln!("Select devices to do key generation:");
+                choose_devices(&ports.connected_device_labels(), n_devices)
+            } else {
+                ports.registered_devices().clone()
+            };
+
             if "y"
                 != io::fetch_input(&format!(
                     "Want to do keygen with these devices? [y/n]\n{}",
-                    ports
-                        .registered_devices()
+                    keygen_devices
                         .clone()
                         .into_iter()
                         .map(|device_id| ports
@@ -169,9 +175,8 @@ fn main() -> anyhow::Result<()> {
 
             let mut coordinator = frostsnap_core::FrostCoordinator::new();
 
-            let do_keygen_message = DeviceReceiveSerial::Core(
-                coordinator.do_keygen(&ports.registered_devices(), threshold)?,
-            );
+            let do_keygen_message =
+                DeviceReceiveSerial::Core(coordinator.do_keygen(&keygen_devices, threshold)?);
             ports.send_to_all_devices(&do_keygen_message)?;
 
             let mut outbox = VecDeque::new();
@@ -221,7 +226,8 @@ fn main() -> anyhow::Result<()> {
                 .collect();
 
             let chosen_signers = if key_signers.len() != threshold {
-                choose_signers(&key_signers, threshold)
+                eprintln!("Choose {} devices to sign:", threshold);
+                choose_devices(&key_signers, threshold)
             } else {
                 key_signers.keys().cloned().collect()
             };
@@ -237,7 +243,11 @@ fn main() -> anyhow::Result<()> {
                         "Plug signers:\n{}",
                         still_need_to_sign
                             .iter()
-                            .map(|d| d.to_string())
+                            .map(|device_id| ports
+                                .device_labels()
+                                .get(device_id)
+                                .expect("we must have labelled this signer")
+                                .clone())
                             .collect::<Vec<_>>()
                             .join("\n")
                     );
@@ -305,26 +315,25 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn choose_signers(
+fn choose_devices(
     device_labels: &BTreeMap<DeviceId, String>,
-    threshold: usize,
+    n_devices: usize,
 ) -> BTreeSet<DeviceId> {
-    eprintln!("Choose {} devices to sign:", threshold);
     let devices_vec = device_labels.iter().collect::<Vec<_>>();
     for (index, (_, device_label)) in devices_vec.iter().enumerate() {
         eprintln!("({}) - {}", index, device_label);
     }
 
     let mut chosen_signers: BTreeSet<DeviceId> = BTreeSet::new();
-    while chosen_signers.len() < threshold {
-        let choice = io::fetch_input("\nEnter a signer index (n): ").parse::<usize>();
+    while chosen_signers.len() < n_devices {
+        let choice = io::fetch_input("\nEnter a device index (n): ").parse::<usize>();
         match choice {
             Ok(n) => match devices_vec.get(n) {
                 Some((device_id, _)) => {
                     if !chosen_signers.contains(device_id) {
                         chosen_signers.insert(**device_id);
                     } else {
-                        eprintln!("Already chose this signer!")
+                        eprintln!("Already chose this device!")
                     }
                 }
                 None => eprintln!("no such device ({}", n),

@@ -3,6 +3,7 @@ use frostsnap_comms::DeviceSendSerial;
 
 use frostsnap_core::message::DeviceToCoordindatorMessage;
 use frostsnap_core::DeviceId;
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -334,5 +335,21 @@ impl Ports {
 
     pub fn registered_devices(&self) -> &BTreeSet<DeviceId> {
         &self.registered_devices
+    }
+
+    pub fn connected_device_labels(&self) -> BTreeMap<DeviceId, String> {
+        self.registered_devices
+            .clone()
+            .into_iter()
+            .map(|device_id| {
+                (
+                    device_id,
+                    self.device_labels
+                        .get(&device_id)
+                        .expect("registered device has label")
+                        .clone(),
+                )
+            })
+            .collect()
     }
 }
