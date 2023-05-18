@@ -189,10 +189,24 @@ fn main() -> anyhow::Result<()> {
             let key = state.key;
             let threshold = key.threshold();
 
-            let chosen_signers = if state.device_labels.len() == threshold {
-                state.device_labels.keys().cloned().collect::<BTreeSet<_>>()
+            let key_signers: HashMap<_, _> = key
+                .devices()
+                .map(|device_id| {
+                    (
+                        device_id,
+                        state
+                            .device_labels
+                            .get(&device_id)
+                            .expect("device in key must be known to coordinator")
+                            .to_string(),
+                    )
+                })
+                .collect();
+
+            let chosen_signers = if key_signers.len() != threshold {
+                choose_signers(&key_signers, threshold)
             } else {
-                choose_signers(&state.device_labels, threshold)
+                key_signers.keys().cloned().collect()
             };
 
             let mut still_need_to_sign = chosen_signers.clone();

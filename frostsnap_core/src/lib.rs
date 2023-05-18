@@ -694,7 +694,7 @@ impl FrostSigner {
         }
     }
 
-    pub fn keygen_ack(&mut self, ack: bool) -> Result<(), ActionError> {
+    pub fn keygen_ack(&mut self, ack: bool) -> Result<Vec<DeviceSend>, ActionError> {
         match &mut self.state {
             SignerState::FrostKey { awaiting_ack, .. } if *awaiting_ack == true => {
                 if ack {
@@ -702,7 +702,7 @@ impl FrostSigner {
                 } else {
                     self.state = SignerState::Registered;
                 }
-                Ok(())
+                Ok(vec![])
             }
             _ => Err(ActionError::WrongState {
                 in_state: self.state.name(),

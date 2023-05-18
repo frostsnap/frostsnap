@@ -18,6 +18,7 @@ use crate::DeviceId;
 pub enum DeviceSend {
     ToUser(DeviceToUserMessage),
     ToCoordinator(DeviceToCoordindatorMessage),
+    ToStorage(DeviceToStorageMessage),
 }
 
 #[derive(Clone, Debug)]
@@ -107,4 +108,10 @@ pub enum CoordinatorToUserMessage {
 pub enum DeviceToUserMessage {
     CheckKeyGen { xpub: ExtendedPubKey },
     SignatureRequest { message_to_sign: String },
+}
+
+#[derive(Clone, Debug)]
+pub enum DeviceToStorageMessage {
+    SaveKey,
+    ExpendNonce,
 }

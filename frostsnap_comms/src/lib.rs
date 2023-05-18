@@ -10,7 +10,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use bincode::{Decode, Encode};
 use frostsnap_core::{
-    message::{CoordinatorToDeviceMessage, DeviceToCoordindatorMessage},
+    message::{CoordinatorToDeviceMessage, DeviceToCoordinatorBody, DeviceToCoordindatorMessage},
     DeviceId,
 };
 
@@ -70,6 +70,17 @@ pub fn find_and_remove_magic_bytes(buff: &mut Vec<u8>, magic_bytes: &[u8]) -> bo
         true
     } else {
         false
+    }
+}
+
+pub fn gist_send(send: &DeviceSendSerial) -> &'static str {
+    match send {
+        DeviceSendSerial::Core(message) => match message.body {
+            DeviceToCoordinatorBody::KeyGenProvideShares(_) => "KeyGenProvideShares",
+            DeviceToCoordinatorBody::SignatureShare { .. } => "SignatureShare",
+        },
+        DeviceSendSerial::Debug { .. } => "Debug",
+        DeviceSendSerial::Announce(_) => "Announce",
     }
 }
 

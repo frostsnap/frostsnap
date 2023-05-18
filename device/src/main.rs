@@ -10,7 +10,7 @@ pub mod storage;
 #[macro_use]
 extern crate alloc;
 use crate::alloc::string::ToString;
-use alloc::vec::Vec;
+use alloc::{collections::VecDeque, vec::Vec};
 use esp32c3_hal::{
     clock::ClockControl,
     peripherals::Peripherals,
@@ -25,13 +25,13 @@ use esp_hal_smartled::{smartLedAdapter, SmartLedsAdapter};
 use esp_storage::FlashStorage;
 use smart_leds::{brightness, colors, SmartLedsWrite, RGB};
 
+use frostsnap_comms::gist_send;
 use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};
-use frostsnap_core::message::{DeviceSend, DeviceToCoordinatorBody};
+use frostsnap_core::message::{DeviceSend, DeviceToUserMessage};
 use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_core::schnorr_fun::fun::marker::Normal;
 use frostsnap_core::schnorr_fun::fun::KeyPair;
 use frostsnap_core::schnorr_fun::fun::Scalar;
-use frostsnap_core::SignerState::FrostKey;
 
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
@@ -141,10 +141,10 @@ fn main() -> ! {
     // delay.delay_ms(2000u32);
 
     // Load state from Flash memory if available. If not, generate secret and save.
-    let mut device_state: state::FrostState = match flash.load() {
+    let mut frost_signer = match flash.load() {
         Ok(state) => {
-            display.print(format!("STATE: {:?}", state.phase)).unwrap();
-            state
+            display.print(format!("STATE: {:?}", state)).unwrap();
+            state.signer
         }
         Err(e) => {
             // Bincode errored because device is new or something else is wrong,
@@ -160,31 +160,16 @@ fn main() -> ! {
             let mut rand_bytes = [0u8; 32];
             rng.read(&mut rand_bytes).unwrap();
             let secret = Scalar::from_bytes(rand_bytes).unwrap().non_zero().unwrap();
+            let keypair: KeyPair = KeyPair::<Normal>::new(secret.clone());
+            let frost_signer = frostsnap_core::FrostSigner::new(keypair);
 
-            let state = state::FrostState {
-                secret,
-                phase: state::FrostPhase::PreKeygen,
-            };
-            flash.save(&state).unwrap();
-            println!(
-                "New secret generated and saved: {}",
-                state.secret.to_string()
-            );
-            display.print("New secret generated and saved").unwrap();
-            state
-        }
-    };
-
-    delay.delay_ms(1_000u32);
-
-    let keypair = KeyPair::<Normal>::new(device_state.secret.clone());
-    // Load the frost signer into the correct state
-    let mut frost_signer = match device_state.phase {
-        state::FrostPhase::PreKeygen => frostsnap_core::FrostSigner::new(keypair),
-        state::FrostPhase::Key { frost_signer } => {
-            display
-                .print("Loaded existing FROST key from flash!")
+            flash
+                .save(&state::FrostState {
+                    signer: frost_signer.clone(),
+                })
                 .unwrap();
+            println!("New secret generated and saved: {}", secret.to_string());
+            display.print("New secret generated and saved").unwrap();
             frost_signer
         }
     };
@@ -248,7 +233,8 @@ fn main() -> ! {
     let mut downstream_active = false;
     let mut sends_downstream: Vec<DeviceReceiveSerial> = vec![];
     let mut sends_upstream: Vec<DeviceSendSerial> = vec![];
-    let mut sends_user = vec![];
+    let mut sends_user: Vec<DeviceToUserMessage> = vec![];
+    let mut outbox = VecDeque::new();
     let mut critical_error = false;
     loop {
         if soft_reset {
@@ -331,14 +317,7 @@ fn main() -> ! {
 
                             match frost_signer.recv_coordinator_message(core_message.clone()) {
                                 Ok(new_sends) => {
-                                    for send in new_sends.into_iter() {
-                                        match send {
-                                            DeviceSend::ToUser(message) => sends_user.push(message),
-                                            DeviceSend::ToCoordinator(message) => {
-                                                sends_upstream.push(DeviceSendSerial::Core(message))
-                                            }
-                                        }
-                                    }
+                                    outbox.extend(new_sends);
                                 }
                                 Err(e) => {
                                     println!("Unexpected FROST message in this state. {:?}", e);
@@ -385,68 +364,54 @@ fn main() -> ! {
             };
         }
 
-        // Simulate user keypresses first (TODO: Poll input so we do not hang and delay forwarding)
-        for send in sends_user.drain(..) {
+        // Handle message outbox to send: ToStorage, ToCoordinator, ToUser.
+        // ⚠ pop_front ensures messages are sent in order. E.g. update nonce NVS before sending sig.
+        while let Some(send) = outbox.pop_front() {
             match send {
-                frostsnap_core::message::DeviceToUserMessage::CheckKeyGen { xpub } => {
-                    led.write(brightness([colors::YELLOW].iter().cloned(), 10))
-                        .unwrap();
-                    // display.print(format!("Key ok?\n{:?}", hex::encode(&xpub.0)));
-                    // wait_button();
-                    frost_signer.keygen_ack(true).unwrap();
-                    display
-                        .print(format!("Key generated\n{:?}", hex::encode(&xpub.0)))
-                        .unwrap();
-                    led.write(brightness([colors::WHITE_SMOKE].iter().cloned(), 10))
-                        .unwrap();
-
-                    delay.delay_ms(2_000u32);
+                DeviceSend::ToStorage(_) => {
                     // STORE FROST KEY INTO FLASH
-                    if let FrostKey { .. } = frost_signer.state() {
-                        device_state = state::FrostState {
-                            secret: device_state.secret,
-                            phase: state::FrostPhase::Key {
-                                frost_signer: frost_signer.clone(),
-                            },
-                        };
-                        display.print("ABOUT TO SAVE").unwrap();
-                        flash.save(&device_state).unwrap();
-                        display
-                            .print(format!("{:?}", hex::encode(&xpub.0)))
-                            .unwrap();
-                        led.write(brightness([colors::BLUE].iter().cloned(), 10))
-                            .unwrap();
-                    } else {
-                        panic!("unreachable must be in FrostKey state");
-                    }
-                }
-                frostsnap_core::message::DeviceToUserMessage::SignatureRequest {
-                    message_to_sign,
-                } => {
-                    led.write(brightness([colors::YELLOW].iter().cloned(), 10))
+                    flash
+                        .save(&state::FrostState {
+                            signer: frost_signer.clone(),
+                        })
                         .unwrap();
-                    // display
-                    //     .print(format!("Sign?\n{}", message_to_sign))
-                    //     .unwrap();
-                    // wait_button();
-                    let more_sends = frost_signer.sign_ack().unwrap();
                     led.write(brightness([colors::BLUE].iter().cloned(), 10))
                         .unwrap();
-                    display
-                        .print(format!("Sending signature\n{}", message_to_sign))
-                        .unwrap();
-                    for new_send in more_sends {
-                        match new_send {
-                            DeviceSend::ToUser(_) => {}
-                            DeviceSend::ToCoordinator(send) => {
-                                sends_upstream.push(DeviceSendSerial::Core(send))
-                            }
-                        }
-                    }
                 }
-            };
+                DeviceSend::ToCoordinator(message) => {
+                    sends_upstream.push(DeviceSendSerial::Core(message));
+                }
+                DeviceSend::ToUser(user_send) => {
+                    match user_send {
+                        frostsnap_core::message::DeviceToUserMessage::CheckKeyGen { xpub } => {
+                            led.write(brightness([colors::YELLOW].iter().cloned(), 10))
+                                .unwrap();
+                            // display.print(format!("Key ok?\n{:?}", hex::encode(&xpub.0)));
+                            // wait_button();
+                            outbox.extend(frost_signer.keygen_ack(true).unwrap());
+                            display
+                                .print(format!("Key generated\n{:?}", hex::encode(&xpub.0)))
+                                .unwrap();
+                            led.write(brightness([colors::WHITE_SMOKE].iter().cloned(), 10))
+                                .unwrap();
+                            delay.delay_ms(2_000u32);
+                        }
+                        frostsnap_core::message::DeviceToUserMessage::SignatureRequest {
+                            message_to_sign,
+                        } => {
+                            display
+                                .print(format!("Signing\n{:?}", message_to_sign))
+                                .unwrap();
+                            led.write(brightness([colors::FUCHSIA].iter().cloned(), 10))
+                                .unwrap();
+                            outbox.extend(frost_signer.sign_ack().unwrap());
+                        }
+                    };
+                }
+            }
         }
 
+        // Send messages upstream
         for send in sends_upstream.drain(..) {
             println!("Sending: {:?}", send);
 
@@ -468,6 +433,7 @@ fn main() -> ! {
             }
         }
 
+        // Send messages downstream
         if downstream_active {
             for send in sends_downstream.drain(..) {
                 if let Err(e) = bincode::encode_into_writer(
@@ -489,20 +455,9 @@ fn main() -> ! {
     let mut i = 0;
     loop {
         i += 1;
-        led.write([RGB::new((i % 20) + 10, 0, 0)].iter().cloned())
+        led.write([RGB::new((i % 50) + 5, 0, 0)].iter().cloned())
             .unwrap();
         delay.delay_ms(30u32);
-    }
-}
-
-pub fn gist_send(send: &DeviceSendSerial) -> &'static str {
-    match send {
-        DeviceSendSerial::Core(message) => match message.body {
-            DeviceToCoordinatorBody::KeyGenProvideShares(_) => "KeyGenProvideShares",
-            DeviceToCoordinatorBody::SignatureShare { .. } => "SignatureShare",
-        },
-        DeviceSendSerial::Debug { .. } => "Debug",
-        DeviceSendSerial::Announce(_) => "Announce",
     }
 }
 
