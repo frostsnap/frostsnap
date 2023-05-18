@@ -183,11 +183,11 @@ fn main() -> ! {
             ..Default::default()
         };
         let txrx0 = TxRxPins::new_tx_rx(
-            io.pins.gpio21.into_push_pull_output(),
-            io.pins.gpio20.into_floating_input(),
+            io.pins.gpio18.into_push_pull_output(),
+            io.pins.gpio19.into_floating_input(),
         );
         let uart0 =
-            Uart::new_with_config(peripherals.UART0, Some(serial_conf), Some(txrx0), &clocks);
+            Uart::new_with_config(peripherals.UART1, Some(serial_conf), Some(txrx0), &clocks);
 
         display.print("Finding upstream device").unwrap();
         let upstream_serial = match io::SerialInterface::find_active(uart0, jtag, timer0) {
@@ -204,11 +204,11 @@ fn main() -> ! {
         // let upstream_serial = io::BufferedSerialInterface::new_uart(uart0, timer0);
 
         let txrx1 = TxRxPins::new_tx_rx(
-            io.pins.gpio3.into_push_pull_output(),
-            io.pins.gpio4.into_floating_input(),
+            io.pins.gpio21.into_push_pull_output(),
+            io.pins.gpio20.into_floating_input(),
         );
         let uart1 =
-            Uart::new_with_config(peripherals.UART1, Some(serial_conf), Some(txrx1), &clocks);
+            Uart::new_with_config(peripherals.UART0, Some(serial_conf), Some(txrx1), &clocks);
         let downstream_serial = io::SerialInterface::new_uart(uart1, timer1, false);
 
         (upstream_serial, downstream_serial)
