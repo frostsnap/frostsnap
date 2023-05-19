@@ -1,7 +1,6 @@
 use crate::encrypted_share::EncryptedShare;
 use crate::xpub::ExtendedPubKey;
 use crate::CoordinatorFrostKey;
-use crate::String;
 use crate::Vec;
 use crate::NONCE_BATCH_SIZE;
 
@@ -46,7 +45,7 @@ pub enum CoordinatorToDeviceMessage {
     },
     RequestSign {
         nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
-        message_to_sign: String,
+        messages_to_sign: Vec<Vec<u8>>,
     },
 }
 
@@ -75,7 +74,7 @@ pub struct DeviceToCoordindatorMessage {
 pub enum DeviceToCoordinatorBody {
     KeyGenProvideShares(KeyGenProvideShares),
     SignatureShare {
-        signature_share: Scalar<Public, Zero>,
+        signature_shares: Vec<Scalar<Public, Zero>>,
         new_nonces: Vec<Nonce>,
     },
 }
@@ -98,23 +97,15 @@ pub struct KeyGenProvideShares {
 }
 
 #[derive(Clone, Debug)]
-pub enum UserToCoordinatorMessage {
-    StartSign {
-        message_to_sign: String,
-        signing_parties: Vec<DeviceId>,
-    },
-}
-
-#[derive(Clone, Debug)]
 pub enum CoordinatorToUserMessage {
-    Signed { signature: Signature },
+    Signed { signatures: Vec<Signature> },
     CheckKeyGen { xpub: ExtendedPubKey },
 }
 
 #[derive(Clone, Debug)]
 pub enum DeviceToUserMessage {
     CheckKeyGen { xpub: ExtendedPubKey },
-    SignatureRequest { message_to_sign: String },
+    SignatureRequest { messages_to_sign: Vec<Vec<u8>> },
 }
 
 #[derive(Clone, Debug)]

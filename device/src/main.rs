@@ -394,10 +394,10 @@ fn main() -> ! {
                             delay.delay_ms(2_000u32);
                         }
                         frostsnap_core::message::DeviceToUserMessage::SignatureRequest {
-                            message_to_sign,
+                            messages_to_sign,
                         } => {
                             display
-                                .print(format!("Signing\n{:?}", message_to_sign))
+                                .print(format!("Signing\n{:?}", messages_to_sign))
                                 .unwrap();
                             led.write(brightness([colors::FUCHSIA].iter().cloned(), 10))
                                 .unwrap();

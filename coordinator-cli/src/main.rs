@@ -51,8 +51,7 @@ enum Command {
 #[derive(Subcommand)]
 enum SignArgs {
     Message {
-        #[arg(value_name = "message")]
-        message: String,
+        messages: Vec<Vec<u8>>,
     },
     Nostr {
         #[arg(value_name = "message")]
@@ -236,9 +235,9 @@ fn main() -> anyhow::Result<()> {
             let mut coordinator = frostsnap_core::FrostCoordinator::from_stored_key(key);
 
             match sign_args {
-                SignArgs::Message { message } => {
+                SignArgs::Message { messages } => {
                     let (init_sends, signature_request) =
-                        coordinator.start_sign(message, chosen_signers)?;
+                        coordinator.start_sign(messages, chosen_signers)?;
                     eprintln!(
                         "Plug signers:\n{}",
                         still_need_to_sign
@@ -253,21 +252,21 @@ fn main() -> anyhow::Result<()> {
                     );
 
                     let mut outbox = VecDeque::from_iter(init_sends);
-                    let mut signature = None;
-                    let finished_signature = loop {
-                        signature = signature.or_else(|| {
+                    let mut signatures = None;
+                    let finished_signatures = loop {
+                        signatures = signatures.or_else(|| {
                             outbox.iter().find_map(|message| match message {
                                 CoordinatorSend::ToUser(CoordinatorToUserMessage::Signed {
-                                    signature,
-                                }) => Some(signature.clone()),
+                                    signatures,
+                                }) => Some(signatures.clone()),
                                 _ => None,
                             })
                         });
                         process_outbox(&mut db, &mut coordinator, &mut outbox, &mut ports)?;
 
-                        if let Some(finished_signature) = &signature {
+                        if let Some(finished_signatures) = &signatures {
                             if outbox.is_empty() {
-                                break finished_signature;
+                                break finished_signatures;
                             }
                         }
 
@@ -305,7 +304,14 @@ fn main() -> anyhow::Result<()> {
                         }
                     };
 
-                    println!("{}", finished_signature);
+                    println!(
+                        "{}",
+                        finished_signatures
+                            .into_iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    );
                 }
                 SignArgs::Nostr { .. } => todo!(),
                 SignArgs::Transaction { .. } => todo!(),

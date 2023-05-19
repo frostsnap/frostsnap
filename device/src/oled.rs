@@ -9,10 +9,9 @@ use embedded_graphics::{
     pixelcolor::BinaryColor,
     prelude::*,
     primitives::*,
-    text::LineHeight,
 };
 use embedded_text::{
-    alignment::{HorizontalAlignment, VerticalAlignment},
+    alignment::HorizontalAlignment,
     style::{TextBoxStyle, TextBoxStyleBuilder},
     TextBox,
 };

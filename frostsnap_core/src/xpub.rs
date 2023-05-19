@@ -1,4 +1,4 @@
-use schnorr_fun::fun::{Point, hex};
+use schnorr_fun::fun::{hex, Point};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub struct ExtendedPubKey(pub [u8; 65]);
