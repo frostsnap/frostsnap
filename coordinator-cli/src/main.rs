@@ -32,34 +32,40 @@ use crate::io::fetch_input;
 struct Cli {
     #[command(subcommand)]
     command: Command,
+    /// Database file (default: ~/.frostsnap)
     #[arg(short, long, value_name = "FILE")]
     db: Option<PathBuf>,
+    /// Increase verbosity
     #[arg(short)]
     verbosity: bool,
 }
 
 #[derive(Subcommand)]
 enum Command {
+    /// Create a new Frostsnap key (t-of-n)
     Keygen {
         #[arg(short, long)]
         threshold: usize,
         #[arg(short, long)]
         n_devices: usize,
     },
+    /// View the existing Frostsnap key
     Key,
+    /// Sign a message, Bitcoin transaction, or Nostr post
     #[command(subcommand)]
     Sign(SignArgs),
 }
 
 #[derive(Subcommand)]
 enum SignArgs {
-    Message {
-        messages: Vec<Vec<u8>>,
-    },
+    /// Sign a plain message string
+    Message { messages: Vec<Vec<u8>> },
+    /// Sign a Nostr event and broadcast
     Nostr {
         #[arg(value_name = "message")]
         message: String,
     },
+    /// Sign a Bitcoin transaction
     Transaction {
         #[arg(value_name = "PSBT")]
         psbt_file: PathBuf,

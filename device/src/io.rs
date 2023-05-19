@@ -157,8 +157,7 @@ impl<'a, T, U> SerialInterface<'a, T, U> {
             match uart.read() {
                 Ok(c) => {
                     buff.push(c);
-                    if frostsnap_comms::find_and_remove_magic_bytes(&mut buff, &MAGICBYTES_UART)
-                    {
+                    if frostsnap_comms::find_and_remove_magic_bytes(&mut buff, &MAGICBYTES_UART) {
                         io = Some(SerialIo::Uart(uart));
                         break;
                     }
@@ -184,7 +183,8 @@ impl<'a, T, U> SerialInterface<'a, T, U> {
                 match jtag.read_byte() {
                     Ok(c) => {
                         buff.push(c);
-                        if frostsnap_comms::find_and_remove_magic_bytes(&mut buff, &MAGICBYTES_JTAG) {
+                        if frostsnap_comms::find_and_remove_magic_bytes(&mut buff, &MAGICBYTES_JTAG)
+                        {
                             io = Some(SerialIo::Jtag(jtag));
                             break;
                         }
