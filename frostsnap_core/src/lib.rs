@@ -45,7 +45,7 @@ pub struct FrostCoordinator {
     state: CoordinatorState,
 }
 
-pub const NONCE_BATCH_SIZE: usize = 2;
+pub const NONCE_BATCH_SIZE: usize = 10;
 
 impl FrostCoordinator {
     pub fn new() -> Self {
@@ -422,6 +422,10 @@ impl CoordinatorFrostKey {
 
     pub fn threshold(&self) -> usize {
         self.frost_key.threshold()
+    }
+
+    pub fn frost_key(&self) -> &FrostKey<Normal> {
+        &self.frost_key
     }
 }
 

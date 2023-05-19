@@ -21,3 +21,6 @@ clap = { version = "4", features = ["derive"] }
 home = "0.5"
 tracing = "0.1"
 tracing-subscriber = "0.3"
+nostr = "0.21.0"
+hex = "0.4.3"
+tungstenite = { version = "0.19", features = ["rustls-tls-webpki-roots"]}

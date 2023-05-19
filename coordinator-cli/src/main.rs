@@ -19,10 +19,13 @@ use tracing::{event, Level};
 pub mod db;
 mod device_namer;
 pub mod io;
+pub mod nostr;
 pub mod ports;
 pub mod serial_rw;
 
 use clap::{Parser, Subcommand};
+
+use crate::io::fetch_input;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -127,7 +130,13 @@ fn main() -> anyhow::Result<()> {
     match cli.command {
         Command::Key => match state {
             Some(state) => {
-                println!("{:?}", state.key);
+                let xonly_pk = state.key.frost_key().clone().into_xonly_key().public_key();
+                println!("{:#?}\n", &state.key.frost_key());
+                println!(
+                    "32-byte key (hex): {}\n",
+                    hex::encode(xonly_pk.to_xonly_bytes())
+                );
+                println!("Known devices: {:#?}\n", &state.device_labels);
             }
             None => eprintln!("You have not generated a key yet!"),
         },
@@ -232,93 +241,154 @@ fn main() -> anyhow::Result<()> {
             };
 
             let mut still_need_to_sign = chosen_signers.clone();
-            let mut coordinator = frostsnap_core::FrostCoordinator::from_stored_key(key);
+            let mut coordinator = frostsnap_core::FrostCoordinator::from_stored_key(key.clone());
+
+            eprintln!(
+                "Plug signers:\n{}",
+                still_need_to_sign
+                    .iter()
+                    .map(|device_id| ports
+                        .device_labels()
+                        .get(device_id)
+                        .expect("we must have labelled this signer")
+                        .clone())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            );
 
             match sign_args {
                 SignArgs::Message { messages } => {
-                    let (init_sends, signature_request) =
-                        coordinator.start_sign(messages, chosen_signers)?;
-                    eprintln!(
-                        "Plug signers:\n{}",
-                        still_need_to_sign
-                            .iter()
-                            .map(|device_id| ports
-                                .device_labels()
-                                .get(device_id)
-                                .expect("we must have labelled this signer")
-                                .clone())
-                            .collect::<Vec<_>>()
-                            .join("\n")
-                    );
-
-                    let mut outbox = VecDeque::from_iter(init_sends);
-                    let mut signatures = None;
-                    let finished_signatures = loop {
-                        signatures = signatures.or_else(|| {
-                            outbox.iter().find_map(|message| match message {
-                                CoordinatorSend::ToUser(CoordinatorToUserMessage::Signed {
-                                    signatures,
-                                }) => Some(signatures.clone()),
-                                _ => None,
-                            })
-                        });
-                        process_outbox(&mut db, &mut coordinator, &mut outbox, &mut ports)?;
-
-                        if let Some(finished_signatures) = &signatures {
-                            if outbox.is_empty() {
-                                break finished_signatures;
-                            }
-                        }
-
-                        let (newly_registered, new_messages) = ports.poll_devices();
-                        for device in newly_registered.intersection(&still_need_to_sign) {
-                            event!(Level::INFO, "asking {} to sign", device);
-                            ports.send_to_single_device(
-                                &DeviceReceiveSerial::Core(signature_request.clone()),
-                                device,
-                            )?;
-                        }
-
-                        for incoming in new_messages {
-                            match coordinator.recv_device_message(incoming.clone()) {
-                                Ok(outgoing) => {
-                                    if let DeviceToCoordindatorMessage {
-                                        from,
-                                        body: DeviceToCoordinatorBody::SignatureShare { .. },
-                                    } = incoming
-                                    {
-                                        still_need_to_sign.remove(&from);
-                                    }
-                                    outbox.extend(outgoing);
-                                }
-                                Err(e) => {
-                                    event!(
-                                        Level::ERROR,
-                                        "Failed to process message from {}: {}",
-                                        incoming.from,
-                                        e
-                                    );
-                                    continue;
-                                }
-                            };
-                        }
-                    };
+                    let finished_signatures = run_signing_process(
+                        &mut ports,
+                        &mut db,
+                        &mut coordinator,
+                        &mut still_need_to_sign,
+                        messages,
+                    )?;
 
                     println!(
                         "{}",
                         finished_signatures
                             .into_iter()
-                            .map(ToString::to_string)
+                            .map(|signature| signature.to_string())
                             .collect::<Vec<_>>()
                             .join("\n")
                     );
                 }
-                SignArgs::Nostr { .. } => todo!(),
+                SignArgs::Nostr { message } => {
+                    let public_key = key.frost_key().public_key().clone().to_xonly_bytes();
+
+                    let event =
+                        nostr::create_unsigned_nostr_event(hex::encode(public_key), &message)?;
+                    let event_id = event.id.as_bytes().to_vec();
+
+                    let finished_signature = run_signing_process(
+                        &mut ports,
+                        &mut db,
+                        &mut coordinator,
+                        &mut still_need_to_sign,
+                        vec![event_id],
+                    )?;
+                    let finished_signature = finished_signature[0].clone();
+                    let signed_event = nostr::add_signature(event, finished_signature)?;
+
+                    println!("{:#?}", signed_event);
+
+                    if "y" != fetch_input("Broadcast Frostr event? [y/n]") {
+                        return Ok(());
+                    }
+
+                    let mut relayed = false;
+                    for relay in [
+                        "wss://nostr-relay.schnitzel.world",
+                        "wss://relay.damus.io",
+                        "wss://nostr-dev.wellorder.net",
+                        "wss://nostr-relay.bitcoin.ninja",
+                    ] {
+                        match nostr::broadcast_event(signed_event.clone(), relay) {
+                            Ok(_) => {
+                                relayed = true;
+                                eprintln!("Broadcasted to {relay}");
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to relay event to {relay}: {e}");
+                            }
+                        }
+                    }
+                    if relayed {
+                        println!("View event: https://www.nostr.guru/e/{}", &signed_event.id);
+                    }
+                }
                 SignArgs::Transaction { .. } => todo!(),
             }
         }
     }
     Ok(())
+}
+
+fn run_signing_process(
+    ports: &mut Ports,
+    db: &mut Db,
+    coordinator: &mut FrostCoordinator,
+    still_need_to_sign: &mut BTreeSet<DeviceId>,
+    messages: Vec<Vec<u8>>,
+) -> anyhow::Result<Vec<frostsnap_core::schnorr_fun::Signature>> {
+    let (init_sends, signature_request) =
+        coordinator.start_sign(messages, still_need_to_sign.clone())?;
+
+    let mut outbox = VecDeque::from_iter(init_sends);
+    let mut signatures = None;
+    let finished_signatures = loop {
+        signatures = signatures.or_else(|| {
+            outbox.iter().find_map(|message| match message {
+                CoordinatorSend::ToUser(CoordinatorToUserMessage::Signed { signatures }) => {
+                    Some(signatures.clone())
+                }
+                _ => None,
+            })
+        });
+        process_outbox(db, coordinator, &mut outbox, ports)?;
+
+        if let Some(finished_signatures) = &signatures {
+            if outbox.is_empty() {
+                break finished_signatures;
+            }
+        }
+
+        let (newly_registered, new_messages) = ports.poll_devices();
+        for device in newly_registered.intersection(&still_need_to_sign) {
+            event!(Level::INFO, "asking {} to sign", device);
+            ports.send_to_single_device(
+                &DeviceReceiveSerial::Core(signature_request.clone()),
+                device,
+            )?;
+        }
+
+        for incoming in new_messages {
+            match coordinator.recv_device_message(incoming.clone()) {
+                Ok(outgoing) => {
+                    if let DeviceToCoordindatorMessage {
+                        from,
+                        body: DeviceToCoordinatorBody::SignatureShare { .. },
+                    } = incoming
+                    {
+                        still_need_to_sign.remove(&from);
+                    }
+                    outbox.extend(outgoing);
+                }
+                Err(e) => {
+                    event!(
+                        Level::ERROR,
+                        "Failed to process message from {}: {}",
+                        incoming.from,
+                        e
+                    );
+                    continue;
+                }
+            };
+        }
+    };
+    Ok(finished_signatures.clone())
 }
 
 fn choose_devices(
