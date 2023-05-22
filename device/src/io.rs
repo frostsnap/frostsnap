@@ -102,7 +102,7 @@ where
 
     pub fn receive_from_downstream(
         &mut self,
-    ) -> Result<DeviceSendSerial, bincode::error::DecodeError> {
+    ) -> Result<DeviceSendSerial<Downstream>, bincode::error::DecodeError> {
         bincode::decode_from_reader(self, bincode::config::standard())
     }
 }
@@ -114,14 +114,14 @@ where
 {
     pub fn send_to_coodinator(
         &mut self,
-        message: DeviceSendSerial,
+        message: DeviceSendSerial<Upstream>,
     ) -> Result<(), bincode::error::EncodeError> {
         bincode::encode_into_writer(&message, self, bincode::config::standard())
     }
 
     pub fn write_magic_bytes(&mut self) -> Result<(), bincode::error::EncodeError> {
         bincode::encode_into_writer(
-            &DeviceSendSerial::MagicBytes(MagicBytes::default()),
+            &DeviceSendSerial::<Upstream>::MagicBytes(MagicBytes::default()),
             self,
             bincode::config::standard(),
         )

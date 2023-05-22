@@ -116,8 +116,9 @@ impl<D> DeviceReceiveSerial<D> {
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
-pub enum DeviceSendSerial {
-    MagicBytes(MagicBytes<Upstream>),
+#[bincode(bounds = "D: Direction")]
+pub enum DeviceSendSerial<D> {
+    MagicBytes(MagicBytes<D>),
     Core(#[bincode(with_serde)] DeviceToCoordindatorMessage),
     Debug {
         message: String,
@@ -155,7 +156,7 @@ fn _find_and_remove_magic_bytes(buff: &mut Vec<u8>, magic_bytes: &[u8]) -> bool 
     }
 }
 
-pub fn gist_send(send: &DeviceSendSerial) -> &'static str {
+pub fn gist_send<D>(send: &DeviceSendSerial<D>) -> &'static str {
     match send {
         DeviceSendSerial::Core(message) => match message.body {
             DeviceToCoordinatorBody::KeyGenProvideShares(_) => "KeyGenProvideShares",

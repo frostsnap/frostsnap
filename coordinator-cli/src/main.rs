@@ -378,6 +378,7 @@ fn run_signing_process(
                         body: DeviceToCoordinatorBody::SignatureShare { .. },
                     } = incoming
                     {
+                        event!(Level::INFO, "{} signed successfully", incoming.from);
                         still_need_to_sign.remove(&from);
                     }
                     outbox.extend(outgoing);

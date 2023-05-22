@@ -26,7 +26,7 @@ use esp_storage::FlashStorage;
 use io::UpstreamDetector;
 use smart_leds::{brightness, colors, SmartLedsWrite, RGB};
 
-use frostsnap_comms::{gist_send, Downstream};
+use frostsnap_comms::{Downstream, Upstream};
 use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};
 use frostsnap_core::message::{DeviceSend, DeviceToUserMessage};
 use frostsnap_core::schnorr_fun::fun::hex;
@@ -139,7 +139,9 @@ fn main() -> ! {
     // Load state from Flash memory if available. If not, generate secret and save.
     let mut frost_signer = match flash.load() {
         Ok(state) => {
-            display.print(format!("STATE: {:?}", state)).unwrap();
+            display.print(format!("STATE: {:?}", state.signer.state())).unwrap();
+            delay.delay_ms(1_000u32);
+
             state.signer
         }
         Err(e) => {
@@ -202,16 +204,17 @@ fn main() -> ! {
     let mut soft_reset = true;
     let mut downstream_active = false;
     let mut sends_downstream: Vec<DeviceReceiveSerial<Downstream>> = vec![];
-    let mut sends_upstream: Vec<DeviceSendSerial> = vec![];
+    let mut sends_upstream: Vec<DeviceSendSerial<Upstream>> = vec![];
     let mut sends_user: Vec<DeviceToUserMessage> = vec![];
     let mut outbox = VecDeque::new();
-    let mut critical_error = false;
     let mut upstream_detector = UpstreamDetector::new(upstream_uart, upstream_jtag, &timer0);
     let mut upstream_sent_magic_bytes = false;
+    let mut upstream_received_first_message = false;
     let mut next_write_magic_bytes = 0;
 
     loop {
         if soft_reset {
+            display.print("soft resetting").unwrap();
             delay.delay_ms(500u32);
             soft_reset = false;
             sends_upstream = vec![DeviceSendSerial::Announce(frostsnap_comms::Announce {
@@ -221,15 +224,26 @@ fn main() -> ! {
             sends_downstream.clear();
             downstream_active = false;
             upstream_sent_magic_bytes = false;
-            critical_error = false;
             next_write_magic_bytes = 0;
+            upstream_received_first_message = false;
+            outbox.clear();
         }
 
         if downstream_active {
             if downstream_serial.poll_read() {
                 match downstream_serial.receive_from_downstream() {
                     Ok(device_send) => {
-                        sends_upstream.push(device_send);
+                        let forward_upstream = match device_send {
+                            DeviceSendSerial::MagicBytes(_) => {
+                                // soft reset downstream if it sends unexpected magic bytes so we restablish
+                                // downstream_active = false;
+                                DeviceSendSerial::Debug { message: format!("downstream device sent unexpected magic bytes"), device: frost_signer.device_id() }
+                            },
+                            DeviceSendSerial::Core(core) => DeviceSendSerial::Core(core),
+                            DeviceSendSerial::Debug { message, device } => DeviceSendSerial::Debug { message, device },
+                            DeviceSendSerial::Announce(message) => DeviceSendSerial::Announce(message),
+                        };
+                        sends_upstream.push(forward_upstream);
                     }
                     Err(e) => {
                         sends_upstream.push(DeviceSendSerial::Debug {
@@ -240,17 +254,22 @@ fn main() -> ! {
                     }
                 };
             }
+
+            // Send messages downstream
+            for send in sends_downstream.drain(..) {
+                downstream_serial.forward_downstream(send).expect("sending downstream");
+            }
         } else {
             let now = timer0.now();
             if now > next_write_magic_bytes {
                 next_write_magic_bytes = now + 40_000 * 100;
+                // display.print("writing magic bytes downstream").unwrap();
                 downstream_serial
                     .write_magic_bytes()
                     .expect("couldn't write magic bytes downstream");
             }
             if downstream_serial.find_and_remove_magic_bytes() {
                 downstream_active = true;
-                display.print("Found downstream device").unwrap();
                 sends_upstream.push(DeviceSendSerial::Debug {
                     message: "Device read magic bytes from another device!".to_string(),
                     device: frost_signer.clone().device_id(),
@@ -258,22 +277,39 @@ fn main() -> ! {
             }
         }
 
+        if upstream_detector.serial_interface().is_none() {
+            let scanning = if upstream_detector.switched {
+                "JTAG"
+            } else {
+                "UART"
+            };
+
+            display.print(format!("Waiting for coordinator {scanning}",)) .unwrap();
+        }
+
+
         if let Some(upstream_serial) = upstream_detector.serial_interface() {
             if !upstream_sent_magic_bytes {
-                display.print("sending magic bytes").unwrap();
                 upstream_serial
                     .write_magic_bytes()
                     .expect("failed to write magic bytes");
+                display.print("Waiting for coordinator").unwrap();
                 upstream_sent_magic_bytes = true;
             }
+
             if upstream_serial.poll_read() {
                 let prior_to_read_buff = upstream_serial.read_buffer().to_vec();
 
                 match upstream_serial.receive_from_coordinator() {
                     Ok(received_message) => {
+                        if !matches!(&received_message, DeviceReceiveSerial::MagicBytes(_)) {
+                            upstream_received_first_message = true;
+                        }
                         match received_message {
                             DeviceReceiveSerial::MagicBytes(_) => {
-                                soft_reset = true;
+                                if upstream_received_first_message {
+                                    soft_reset = true;
+                                }
                                 continue;
                             }
                             DeviceReceiveSerial::AnnounceAck {
@@ -297,6 +333,10 @@ fn main() -> ! {
                                 }
                             }
                             DeviceReceiveSerial::Core(core_message) => {
+                                if downstream_active {
+                                    sends_downstream
+                                        .push(DeviceReceiveSerial::Core(core_message));
+                                }
                                 if let frostsnap_core::message::CoordinatorToDeviceMessage::DoKeyGen {
                                     devices,
                                     ..
@@ -310,10 +350,7 @@ fn main() -> ! {
                                 match frost_signer.recv_coordinator_message(core_message.clone()) {
                                     Ok(new_sends) => {
                                         outbox.extend(new_sends);
-                                        if downstream_active {
-                                            sends_downstream
-                                                .push(DeviceReceiveSerial::Core(core_message));
-                                        }
+
                                     }
                                     Err(e) => {
                                         println!("Unexpected FROST message in this state. {:?}", e);
@@ -324,12 +361,6 @@ fn main() -> ! {
                         }
                     }
                     Err(_) => {
-                        display
-                            .print(format!(
-                                "upstream read fail: {}",
-                                hex::encode(&prior_to_read_buff)
-                            ))
-                            .unwrap();
                         sends_upstream.push(DeviceSendSerial::Debug {
                             message: format!(
                                 "Device failed to read upstream: {}",
@@ -337,33 +368,14 @@ fn main() -> ! {
                             ),
                             device: frost_signer.device_id(),
                         });
-                        critical_error = true;
+                        panic!( "upstream read fail: {}", hex::encode(&prior_to_read_buff));
                     }
                 };
             }
 
             for send in sends_upstream.drain(..) {
-                if !matches!(send, DeviceSendSerial::Debug { .. }) {
-                    display
-                        .print(format!("Sending {}", gist_send(&send)))
-                        .unwrap();
-                }
-
-                if let Err(_) = upstream_serial.send_to_coodinator(send.clone()) {
-                    display
-                        .print(format!("Error sending upstream {}", gist_send(&send)))
-                        .unwrap();
-                    critical_error = true;
-                }
+                upstream_serial.send_to_coodinator(send.clone()).expect("unable to send to coordinator");
             }
-        } else {
-            let scanning = if upstream_detector.switched {
-                "JTAG"
-            } else {
-                "UART"
-            };
-
-            display.print(format!("Scanning {scanning}",)) .unwrap();
         }
 
         // Handle message outbox to send: ToStorage, ToCoordinator, ToUser.
@@ -371,6 +383,7 @@ fn main() -> ! {
         while let Some(send) = outbox.pop_front() {
             match send {
                 DeviceSend::ToStorage(_) => {
+                    delay.delay_ms(2_000u32);
                     flash
                         .save(&state::FrostState {
                             signer: frost_signer.clone(),
@@ -412,27 +425,6 @@ fn main() -> ! {
             }
         }
 
-        // Send messages downstream
-        if downstream_active {
-            for send in sends_downstream.drain(..) {
-                if let Err(e) = downstream_serial.forward_downstream(send) {
-                    downstream_active = false;
-                    println!("Error sending forwarding message: {:?}", e);
-                }
-            }
-        }
-
-        if critical_error {
-            break;
-        }
-    }
-
-    let mut i = 0;
-    loop {
-        i += 1;
-        led.write([RGB::new((i % 50) + 5, 0, 0)].iter().cloned())
-            .unwrap();
-        delay.delay_ms(30u32);
     }
 }
 
@@ -465,7 +457,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     let message = match info.location() {
         Some(location) => format!(
             "{}:{} {}",
-            location.file(),
+            location.file().split('/').last().unwrap_or(""),
             location.line(),
             info.to_string()
         ),

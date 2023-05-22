@@ -217,7 +217,7 @@ impl Ports {
 
         // Read all messages from ready devices
         for serial_number in self.ready.keys().cloned().collect::<Vec<_>>() {
-            let decoded_message: Result<DeviceSendSerial, _> = {
+            let decoded_message: Result<DeviceSendSerial<Downstream>, _> = {
                 let mut device_port = self.ready.get_mut(&serial_number).expect("must exist");
                 match device_port.poll_read(None) {
                     Err(e) => {
@@ -261,6 +261,11 @@ impl Ports {
                             Level::DEBUG,
                             port = serial_number,
                             from = device.to_string(),
+                            name = self
+                                .device_labels
+                                .get(&device)
+                                .cloned()
+                                .unwrap_or("<unknown>".into()),
                             message
                         );
                     }

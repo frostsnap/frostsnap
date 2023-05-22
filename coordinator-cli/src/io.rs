@@ -1,5 +1,4 @@
 use anyhow::anyhow;
-use frostsnap_comms::Downstream;
 use std::str;
 use std::time::Duration;
 
