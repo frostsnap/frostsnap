@@ -1,4 +1,6 @@
 extern crate alloc;
+use core::marker::PhantomData;
+
 use alloc::format;
 use alloc::vec::Vec;
 
@@ -11,70 +13,160 @@ use esp32c3_hal::prelude::*;
 use esp32c3_hal::timer::Timer;
 use esp32c3_hal::uart;
 use esp32c3_hal::UsbSerialJtag;
+use frostsnap_comms::DeviceReceiveSerial;
+use frostsnap_comms::DeviceSendSerial;
+use frostsnap_comms::Direction;
+use frostsnap_comms::Downstream;
+use frostsnap_comms::MagicBytes;
+use frostsnap_comms::Upstream;
 
-use frostsnap_comms::MAGICBYTES_JTAG;
-use frostsnap_comms::MAGICBYTES_UART;
-
-pub struct SerialInterface<'a, T, U> {
-    pub io: SerialIo<'a, U>,
-    pub read_buffer: Vec<u8>,
-    pub is_upstream: bool,
-    timer: Timer<T>,
+pub struct SerialInterface<'a, T, U, D> {
+    io: SerialIo<'a, U>,
+    read_buffer: Vec<u8>,
+    timer: &'a Timer<T>,
+    direction: PhantomData<D>,
 }
 
-impl<'a, T, U> SerialInterface<'a, T, U> {
-    pub fn new_uart(uart: uart::Uart<'a, U>, timer: Timer<T>, is_upstream: bool) -> Self {
+impl<'a, T, U, D> SerialInterface<'a, T, U, D> {
+    pub fn new_uart(uart: uart::Uart<'a, U>, timer: &'a Timer<T>) -> Self {
         Self {
             io: SerialIo::Uart(uart),
-            is_upstream,
             read_buffer: vec![],
             timer,
+            direction: PhantomData,
         }
     }
 
-    pub fn new_jtag(jtag: UsbSerialJtag<'a, USB_DEVICE>, timer: Timer<T>) -> Self {
+    pub fn read_buffer(&self) -> &[u8] {
+        &self.read_buffer[..]
+    }
+}
+
+impl<'a, T, U> SerialInterface<'a, T, U, Upstream> {
+    pub fn new_jtag(jtag: UsbSerialJtag<'a, USB_DEVICE>, timer: &'a Timer<T>) -> Self {
         Self {
             io: SerialIo::Jtag(jtag),
-            is_upstream: true,
             read_buffer: vec![],
             timer,
+            direction: PhantomData,
         }
     }
+}
 
-    pub fn is_jtag(&self) -> bool {
-        match self.io {
-            SerialIo::Uart(_) => false,
-            SerialIo::Jtag(_) => true,
+impl<'a, T, U, D> SerialInterface<'a, T, U, D>
+where
+    U: uart::Instance,
+    T: esp32c3_hal::timer::Instance,
+{
+    pub fn poll_read(&mut self) -> bool {
+        let read_buffer = &mut self.read_buffer;
+        while let Ok(c) = self.io.read_byte() {
+            read_buffer.push(c);
         }
+        !read_buffer.is_empty()
     }
 
-    // pub fn flush(&mut self) -> Result<(), SerialInterfaceError>
-    // where
-    //     U: uart::Instance,
-    // {
-    //     self.io.flush()
-    // }
-
-    pub fn starts_with_magic(&self) -> bool {
-        let looking_for = self.magic_bytes_recv_expected();
-        self.read_buffer.starts_with(&looking_for)
+    pub fn find_and_remove_magic_bytes(&mut self) -> bool
+    where
+        D: Direction,
+    {
+        self.poll_read();
+        frostsnap_comms::find_and_remove_magic_bytes::<D>(&mut self.read_buffer)
     }
 
-    fn magic_bytes_recv_expected(&self) -> &'static [u8] {
-        match (&self.io, self.is_upstream) {
-            (SerialIo::Uart(_), true) => &MAGICBYTES_UART,
-            (SerialIo::Uart(_), false) => &MAGICBYTES_UART,
-            (SerialIo::Jtag(_), true) => &MAGICBYTES_JTAG,
-            (SerialIo::Jtag(_), false) => unreachable!("JTAG is only used for upstream"),
+}
+
+impl<'a, T, U> SerialInterface<'a, T, U, Downstream>
+where
+    U: uart::Instance,
+    T: esp32c3_hal::timer::Instance,
+{
+    pub fn forward_downstream(
+        &mut self,
+        message: DeviceReceiveSerial<Downstream>,
+    ) -> Result<(), bincode::error::EncodeError> {
+        assert!(
+            !matches!(message, DeviceReceiveSerial::MagicBytes(_)),
+            "we never forward magic bytes"
+        );
+        bincode::encode_into_writer(&message, self, bincode::config::standard())
+    }
+
+    pub fn write_magic_bytes(&mut self) -> Result<(), bincode::error::EncodeError> {
+        bincode::encode_into_writer(
+            &DeviceReceiveSerial::<Downstream>::MagicBytes(MagicBytes::default()),
+            self,
+            bincode::config::standard(),
+        )
+    }
+
+    pub fn receive_from_downstream(
+        &mut self,
+    ) -> Result<DeviceSendSerial, bincode::error::DecodeError> {
+        bincode::decode_from_reader(self, bincode::config::standard())
+    }
+}
+
+impl<'a, T, U> SerialInterface<'a, T, U, Upstream>
+where
+    U: uart::Instance,
+    T: esp32c3_hal::timer::Instance,
+{
+    pub fn send_to_coodinator(
+        &mut self,
+        message: DeviceSendSerial,
+    ) -> Result<(), bincode::error::EncodeError> {
+        bincode::encode_into_writer(&message, self, bincode::config::standard())
+    }
+
+    pub fn write_magic_bytes(&mut self) -> Result<(), bincode::error::EncodeError> {
+        bincode::encode_into_writer(
+            &DeviceSendSerial::MagicBytes(MagicBytes::default()),
+            self,
+            bincode::config::standard(),
+        )
+    }
+
+    pub fn receive_from_coordinator(
+        &mut self,
+    ) -> Result<DeviceReceiveSerial<Upstream>, bincode::error::DecodeError> {
+        bincode::decode_from_reader(self, bincode::config::standard())
+    }
+}
+
+impl<'a, T, U, D> Reader for SerialInterface<'a, T, U, D>
+where
+    U: uart::Instance,
+    T: esp32c3_hal::timer::Instance,
+{
+    fn read(&mut self, bytes: &mut [u8]) -> Result<(), DecodeError> {
+        let start_time = self.timer.now();
+
+        while self.read_buffer.len() < bytes.len() {
+            self.poll_read();
+            if (self.timer.now() - start_time) / 40_000 > 1_000 {
+                return Err(DecodeError::UnexpectedEnd {
+                    additional: bytes.len() - self.read_buffer.len(),
+                });
+            }
         }
-    }
+        let extra_bytes = self.read_buffer.split_off(bytes.len());
 
-    /// If we failed to read something because magic bytes were in the buffer we assume that bincode
-    /// only consumed one byte so the magic bytes that are left are everything except the first byte.
-    pub fn consume_magic_bytes_xxx_hack(&mut self) {
-        let magic_bytes = self.magic_bytes_recv_expected();
-        assert!(self.read_buffer.strip_prefix(&magic_bytes[1..]).is_some());
-        self.read_buffer = self.read_buffer.split_off(magic_bytes.len() - 1);
+        bytes.copy_from_slice(&self.read_buffer);
+        self.read_buffer = extra_bytes;
+        Ok(())
+    }
+}
+
+impl<'a, T, U, D> Writer for SerialInterface<'a, T, U, D>
+where
+    U: uart::Instance,
+{
+    fn write(&mut self, bytes: &[u8]) -> Result<(), EncodeError> {
+        match self.io.write_bytes(bytes) {
+            Err(e) => return Err(EncodeError::OtherString(format!("{:?}", e))),
+            Ok(()) => Ok(()),
+        }
     }
 }
 
@@ -132,160 +224,95 @@ pub enum SerialInterfaceError {
     JtagError,
 }
 
-impl<'a, T, U> SerialInterface<'a, T, U> {
-    pub fn find_active(
-        mut uart: uart::Uart<'a, U>,
-        mut jtag: UsbSerialJtag<'a, USB_DEVICE>,
-        timer0: Timer<T>,
-    ) -> Option<Self>
+pub struct UpstreamDetector<'a, T, U> {
+    timer: &'a Timer<T>,
+    switch_time: Option<u64>,
+    pub switched: bool,
+    state: DetectorState<'a, T, U>,
+}
+
+pub enum DetectorState<'a, T, U> {
+    Unreachable,
+    Detected(SerialInterface<'a, T, U, Upstream>),
+    NotDetected {
+        jtag: SerialInterface<'a, T, U, Upstream>,
+        uart: SerialInterface<'a, T, U, Upstream>,
+    },
+}
+
+impl<'a, T, U> UpstreamDetector<'a, T, U> {
+    pub fn new(
+        uart: uart::Uart<'a, U>,
+        jtag: UsbSerialJtag<'a, USB_DEVICE>,
+        timer: &'a Timer<T>,
+    ) -> Self {
+        Self {
+            timer,
+            switch_time: None,
+            switched: false,
+            state: DetectorState::NotDetected {
+                jtag: SerialInterface::new_jtag(jtag, timer),
+                uart: SerialInterface::new_uart(uart, timer),
+            },
+        }
+    }
+
+    pub fn serial_interface(&mut self) -> Option<&mut SerialInterface<'a, T, U, Upstream>>
     where
         T: esp32c3_hal::timer::Instance,
         U: uart::Instance,
     {
-        let mut buff = vec![];
-        let mut io = None;
-
-        // Clear the bit in order to use UART
-        let usb_device = unsafe { &*USB_DEVICE::PTR };
-        usb_device
-            .conf0
-            .modify(|_, w| w.usb_pad_enable().clear_bit());
-
-        // First, try and talk to another device upstream over UART
-        let start_time = timer0.now();
-        loop {
-            match uart.read() {
-                Ok(c) => {
-                    buff.push(c);
-                    if frostsnap_comms::find_and_remove_magic_bytes(&mut buff, &MAGICBYTES_UART) {
-                        io = Some(SerialIo::Uart(uart));
-                        break;
-                    }
-                }
-                Err(_) => {
-                    // every two CPU ticks the timer is incrimented by 1
-                    if ((timer0.now() - start_time) / 40_000) > 1_000 {
-                        break;
-                    }
-                }
-            }
-        }
-
-        if io.is_none() {
-            // If we did not read MAGICBYTES on UART, try JTAG
-            // reset the USB device bit
-            let usb_device = unsafe { &*USB_DEVICE::PTR };
-            usb_device.conf0.modify(|_, w| w.usb_pad_enable().set_bit());
-
-            // jtag.write_bytes(&MAGICBYTES_JTAG);
-            // let start_time = timer0.now();
-            loop {
-                match jtag.read_byte() {
-                    Ok(c) => {
-                        buff.push(c);
-                        if frostsnap_comms::find_and_remove_magic_bytes(&mut buff, &MAGICBYTES_JTAG)
-                        {
-                            io = Some(SerialIo::Jtag(jtag));
-                            break;
-                        }
-                    }
-                    Err(_) => {
-                        // // every two CPU ticks the timer is incrimented by 1
-                        // if (timer0.now() - start_time) / 40_000 > 1_000 {
-                        //     break;
-                        // }
-                    }
-                }
-            }
-        }
-
-        io.map(|io| Self {
-            io,
-            read_buffer: buff,
-            is_upstream: true,
-            timer: timer0,
-        })
-    }
-}
-
-impl<'a, T, U> SerialInterface<'a, T, U>
-where
-    U: uart::Instance,
-    T: esp32c3_hal::timer::Instance,
-{
-    pub fn poll_read(&mut self) -> bool {
-        while let Ok(c) = self.io.read_byte() {
-            self.read_buffer.push(c);
-        }
-        !self.read_buffer.is_empty()
-    }
-
-    pub fn read_for_magic_bytes(&mut self, magic_bytes: &[u8]) -> bool {
-        if !self.poll_read() {
-            return false;
-        };
-
-        let position = self
-            .read_buffer
-            .windows(magic_bytes.len())
-            .position(|window| window == magic_bytes);
-        match position {
-            Some(position) => {
-                self.read_buffer = self.read_buffer.split_off(position + magic_bytes.len());
-                return true;
-            }
-            None => {
-                self.read_buffer = self
-                    .read_buffer
-                    .split_off(self.read_buffer.len().saturating_sub(magic_bytes.len() + 1));
-                return false;
-            }
+        self.poll();
+        match &mut self.state {
+            DetectorState::Detected(serial_interface) => Some(serial_interface),
+            _ => None,
         }
     }
 
-    pub fn write_magic_bytes(&mut self) -> Result<(), SerialInterfaceError> {
-        let magic_bytes = match (&self.io, self.is_upstream) {
-            (SerialIo::Uart(_), true) => MAGICBYTES_UART,
-            (SerialIo::Uart(_), false) => MAGICBYTES_UART,
-            (SerialIo::Jtag(_), true) => MAGICBYTES_JTAG,
-            (SerialIo::Jtag(_), false) => unreachable!("JTAG is only used for upstream"),
-        };
-        self.io.write_bytes(&magic_bytes)
-    }
-}
+    pub fn poll(&mut self)
+    where
+        T: esp32c3_hal::timer::Instance,
+        U: uart::Instance,
+    {
+        let state = core::mem::replace(&mut self.state, DetectorState::Unreachable);
 
-impl<'a, T, U> Reader for SerialInterface<'a, T, U>
-where
-    U: uart::Instance,
-    T: esp32c3_hal::timer::Instance,
-{
-    fn read(&mut self, bytes: &mut [u8]) -> Result<(), DecodeError> {
-        let start_time = self.timer.now();
+        match state {
+            DetectorState::Unreachable => unreachable!(),
+            DetectorState::Detected(_) => {
+                self.state = state;
+            }
+            DetectorState::NotDetected { mut jtag, mut uart } => {
+                let now = self.timer.now();
+                let switch_time = self.switch_time.get_or_insert_with(|| {
+                    // Frist time it's run we set it the interface to uart
+                    let usb_device = unsafe { &*USB_DEVICE::PTR };
 
-        while self.read_buffer.len() < bytes.len() {
-            self.poll_read();
-            if (self.timer.now() - start_time) / 40_000 > 1_000 {
-                return Err(DecodeError::UnexpectedEnd {
-                    additional: bytes.len() - self.read_buffer.len(),
+                    usb_device
+                        .conf0
+                        .modify(|_, w| w.usb_pad_enable().clear_bit());
+
+                    now + 40_000 * 1_000
                 });
+
+                self.state = if now > *switch_time {
+                    if !self.switched {
+                        let usb_device = unsafe { &*USB_DEVICE::PTR };
+                        usb_device.conf0.modify(|_, w| w.usb_pad_enable().set_bit());
+                        self.switched = true;
+                    }
+                    if jtag.find_and_remove_magic_bytes() {
+                        DetectorState::Detected(jtag)
+                    } else {
+                        DetectorState::NotDetected { uart, jtag }
+                    }
+                } else {
+                    if uart.find_and_remove_magic_bytes() {
+                        DetectorState::Detected(uart)
+                    } else {
+                        DetectorState::NotDetected { uart, jtag }
+                    }
+                };
             }
-        }
-        let extra_bytes = self.read_buffer.split_off(bytes.len());
-
-        bytes.copy_from_slice(&self.read_buffer);
-        self.read_buffer = extra_bytes;
-        Ok(())
-    }
-}
-
-impl<'a, T, U> Writer for SerialInterface<'a, T, U>
-where
-    U: uart::Instance,
-{
-    fn write(&mut self, bytes: &[u8]) -> Result<(), EncodeError> {
-        match self.io.write_bytes(bytes) {
-            Err(e) => return Err(EncodeError::OtherString(format!("{:?}", e))),
-            Ok(()) => Ok(()),
-        }
+        };
     }
 }

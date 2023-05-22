@@ -1,4 +1,5 @@
 use bincode::{de::read::Reader, enc::write::Writer};
+use frostsnap_comms::{DeviceReceiveSerial, Downstream, MagicBytes};
 use serialport::SerialPort;
 use std::io::{self, Write};
 
@@ -32,9 +33,25 @@ impl SerialPortBincode {
         Ok(!self.buffer.is_empty())
     }
 
-    // pub fn get_buffer(&self) -> Vec<u8> {
-    //     self.buffer.clone()
-    // }
+    pub fn send_message(
+        &mut self,
+        message: DeviceReceiveSerial<Downstream>,
+    ) -> Result<(), bincode::error::EncodeError> {
+        bincode::encode_into_writer(&message, self, bincode::config::standard())
+    }
+
+    pub fn write_magic_bytes(&mut self) -> Result<(), bincode::error::EncodeError> {
+        self.send_message(DeviceReceiveSerial::<Downstream>::MagicBytes(
+            MagicBytes::default(),
+        ))
+    }
+
+    pub fn read_for_magic_bytes(&mut self) -> Result<bool, std::io::Error> {
+        self.poll_read(None)?;
+        Ok(frostsnap_comms::find_and_remove_magic_bytes::<Downstream>(
+            &mut self.buffer,
+        ))
+    }
 }
 
 impl Writer for SerialPortBincode {

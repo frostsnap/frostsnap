@@ -1,6 +1,7 @@
 use frostsnap_comms::DeviceReceiveSerial;
 use frostsnap_comms::DeviceSendSerial;
 
+use frostsnap_comms::Downstream;
 use frostsnap_core::message::DeviceToCoordindatorMessage;
 use frostsnap_core::DeviceId;
 use std::collections::BTreeMap;
@@ -61,7 +62,7 @@ impl Ports {
 
     pub fn send_to_all_devices(
         &mut self,
-        send: &DeviceReceiveSerial,
+        send: &DeviceReceiveSerial<Downstream>,
     ) -> anyhow::Result<(), bincode::error::EncodeError> {
         let send_ports = self.active_ports();
         for send_port in send_ports {
@@ -78,7 +79,7 @@ impl Ports {
 
     pub fn send_to_single_device(
         &mut self,
-        send: &DeviceReceiveSerial,
+        send: &DeviceReceiveSerial<Downstream>,
         device_id: &DeviceId,
     ) -> anyhow::Result<()> {
         let port_serial_number = self
@@ -128,7 +129,7 @@ impl Ports {
             .cloned()
             .collect::<Vec<_>>();
         for port in newly_connected_ports {
-            event!(Level::DEBUG, port = port.to_string(), "USB port connected");
+            event!(Level::INFO, port = port.to_string(), "USB port connected");
             self.connected.insert(port.clone());
             self.pending.insert(port.clone());
         }
@@ -172,20 +173,20 @@ impl Ports {
                 Ok(mut device_port) => {
                     // Write magic bytes onto JTAG
                     // println!("Trying to read magic bytes on port {}", serial_number);
-                    if let Err(e) = device_port.write(&frostsnap_comms::MAGICBYTES_JTAG) {
-                        event!(
-                            Level::ERROR,
-                            port = serial_number,
-                            e = e.to_string(),
-                            "Failed to initialize port by writing magic bytes"
-                        );
-                        self.disconnect(&serial_number);
-                    } else {
-                        self.open.insert(
-                            serial_number.clone(),
-                            SerialPortBincode::new(device_port, serial_number),
-                        );
-                        continue;
+                    match device_port.write_magic_bytes() {
+                        Ok(_) => {
+                            self.open.insert(serial_number.clone(), device_port);
+                            continue;
+                        }
+                        Err(e) => {
+                            event!(
+                                Level::ERROR,
+                                port = serial_number,
+                                e = e.to_string(),
+                                "Failed to initialize port by writing magic bytes"
+                            );
+                            self.disconnect(&serial_number);
+                        }
                     }
                 }
             }
@@ -193,21 +194,21 @@ impl Ports {
         }
 
         for (serial_number, mut device_port) in self.open.drain().collect::<Vec<_>>() {
-            match io::read_for_magic_bytes(&mut device_port, &frostsnap_comms::MAGICBYTES_JTAG) {
+            match device_port.read_for_magic_bytes() {
                 Ok(true) => {
+                    event!(Level::DEBUG, port = serial_number, "Read magic bytes");
                     // println!("Found magic bytes on device {}", serial_number);
                     self.ready.insert(serial_number, device_port);
                     continue;
                 }
-                Ok(false) => { /* magic bytes haven't been read yet */ }
+                Ok(false) => { /* not found yet */ }
                 Err(e) => {
                     event!(
-                        Level::ERROR,
+                        Level::DEBUG,
                         port = serial_number,
-                        e = e.to_string(),
-                        "Failed to initialize port by reading magic bytes"
+                        "failed to read magic bytes: {e}"
                     );
-                    self.disconnect(&serial_number);
+                    /* try again */
                 }
             }
 
@@ -230,6 +231,7 @@ impl Ports {
                         continue;
                     }
                     Ok(true) => {
+                        event!(Level::DEBUG, port = serial_number, "ready to read");
                         bincode::decode_from_reader(&mut device_port, bincode::config::standard())
                     }
                     Ok(false) => continue,
@@ -263,6 +265,10 @@ impl Ports {
                         );
                     }
                     DeviceSendSerial::Core(msg) => device_to_coord_msg.push(msg),
+                    DeviceSendSerial::MagicBytes(_) => {
+                        event!(Level::ERROR, port = serial_number, "Unexpected magic bytes");
+                        self.disconnect(&serial_number);
+                    }
                 },
                 Err(e) => {
                     event!(
@@ -285,14 +291,10 @@ impl Ports {
                 let wrote_ack = {
                     let device_port = self.ready.get_mut(&serial_number).expect("must exist");
 
-                    bincode::encode_into_writer(
-                        DeviceReceiveSerial::AnnounceAck {
-                            device_id,
-                            device_label: device_label.to_string(),
-                        },
-                        device_port,
-                        bincode::config::standard(),
-                    )
+                    device_port.send_message(DeviceReceiveSerial::AnnounceAck {
+                        device_id,
+                        device_label: device_label.to_string(),
+                    })
                 };
 
                 match wrote_ack {
