@@ -780,7 +780,9 @@ impl FrostSigner {
             SignerState::FrostKey { awaiting_ack, .. } if *awaiting_ack == true => {
                 if ack {
                     *awaiting_ack = false;
-                    Ok(vec![DeviceSend::ToStorage(message::DeviceToStorageMessage::SaveKey)])
+                    Ok(vec![DeviceSend::ToStorage(
+                        message::DeviceToStorageMessage::SaveKey,
+                    )])
                 } else {
                     self.state = SignerState::Registered;
                     Ok(vec![])

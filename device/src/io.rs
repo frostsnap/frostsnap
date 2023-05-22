@@ -73,7 +73,6 @@ where
         self.poll_read();
         frostsnap_comms::find_and_remove_magic_bytes::<D>(&mut self.read_buffer)
     }
-
 }
 
 impl<'a, T, U> SerialInterface<'a, T, U, Downstream>
