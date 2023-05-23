@@ -1,368 +1,430 @@
 use anyhow::anyhow;
-use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial};
-use frostsnap_core::message::{CoordinatorSend, CoordinatorToDeviceMessage};
-use serialport::SerialPort;
-use std::error::Error;
-use std::str;
-use std::time::Duration;
+use db::Db;
+use frostsnap_comms::DeviceReceiveSerial;
+use frostsnap_core::message::CoordinatorSend;
+use frostsnap_core::message::CoordinatorToStorageMessage;
+use frostsnap_core::message::CoordinatorToUserMessage;
+use frostsnap_core::message::DeviceToCoordinatorBody;
+use frostsnap_core::message::DeviceToCoordindatorMessage;
+use frostsnap_core::CoordinatorState;
+use frostsnap_core::DeviceId;
+use frostsnap_core::FrostCoordinator;
+use ports::Ports;
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
+use std::collections::VecDeque;
+use std::path::PathBuf;
+use tracing::{event, Level};
 
-extern crate alloc;
-use alloc::collections::BTreeSet;
-
+pub mod db;
+mod device_namer;
+pub mod io;
+pub mod nostr;
+pub mod ports;
 pub mod serial_rw;
-use crate::serial_rw::SerialPortBincode;
 
-fn find_all_ports(usb_id: (u16, u16)) -> Vec<String> {
-    let available_ports = serialport::available_ports().unwrap();
-    let ports = available_ports
-        .into_iter()
-        .filter_map(|port| match &port.port_type {
-            serialport::SerialPortType::UsbPort(port) => {
-                if port.vid == usb_id.0 && port.pid == usb_id.1 {
-                    port.serial_number.clone()
-                } else {
-                    None
-                }
+use clap::{Parser, Subcommand};
+
+use crate::io::fetch_input;
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+    /// Database file (default: ~/.frostsnap)
+    #[arg(short, long, value_name = "FILE")]
+    db: Option<PathBuf>,
+    /// Increase verbosity
+    #[arg(short)]
+    verbosity: bool,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Create a new Frostsnap key (t-of-n)
+    Keygen {
+        #[arg(short, long)]
+        threshold: usize,
+        #[arg(short, long)]
+        n_devices: usize,
+    },
+    /// View the existing Frostsnap key
+    Key,
+    /// Sign a message, Bitcoin transaction, or Nostr post
+    #[command(subcommand)]
+    Sign(SignArgs),
+}
+
+#[derive(Subcommand)]
+enum SignArgs {
+    /// Sign a plain message string
+    Message { messages: Vec<Vec<u8>> },
+    /// Sign a Nostr event and broadcast
+    Nostr {
+        #[arg(value_name = "message")]
+        message: String,
+    },
+    /// Sign a Bitcoin transaction
+    Transaction {
+        #[arg(value_name = "PSBT")]
+        psbt_file: PathBuf,
+    },
+}
+
+fn process_outbox(
+    db: &mut Db,
+    coordinator: &mut FrostCoordinator,
+    outbox: &mut VecDeque<CoordinatorSend>,
+    ports: &mut Ports,
+) -> anyhow::Result<()> {
+    while let Some(message) = outbox.pop_front() {
+        match message {
+            CoordinatorSend::ToDevice(core_message) => {
+                ports.send_to_all_devices(&DeviceReceiveSerial::Core(core_message))?;
             }
-            _ => None,
-        })
-        .collect();
-    ports
-    // port.vid == usb_id.0 && port.pid == usb_id.1
-}
-
-fn open_device_port(serial_number: &str) -> anyhow::Result<Box<dyn SerialPort>> {
-    let available_ports = serialport::available_ports().unwrap();
-    println!("Ports: {:?}", available_ports);
-    let port = available_ports
-        .into_iter()
-        .find(|port| match &port.port_type {
-            serialport::SerialPortType::UsbPort(port) => {
-                if let Some(port_serial_number) = port.serial_number.clone() {
-                    port_serial_number == serial_number
-                } else {
-                    false
+            CoordinatorSend::ToUser(to_user_message) => match to_user_message {
+                CoordinatorToUserMessage::Signed { .. } => {}
+                CoordinatorToUserMessage::CheckKeyGen { xpub } => {
+                    let ack = io::fetch_input(&format!("OK? [y/n]: {}", xpub)) == "y";
+                    outbox.extend(coordinator.keygen_ack(ack)?);
                 }
-            }
-            _ => false,
-        })
-        .ok_or(anyhow!("Failed to find device with matching usb_id"))?;
-    Ok(serialport::new(&port.port_name, 9600)
-        .timeout(Duration::from_millis(10))
-        .open()?)
-}
-
-fn wait_for_device_port(serial_number: &str) -> Box<dyn SerialPort> {
-    loop {
-        match open_device_port(serial_number) {
-            Ok(port) => return port,
-            Err(e) => eprintln!("Error opening port {:?}", e),
-        }
-        std::thread::sleep(std::time::Duration::from_secs(1))
-    }
-}
-
-pub fn read_for_magic_bytes(
-    port_rw: &mut SerialPortBincode,
-    magic_bytes: &[u8],
-) -> Result<bool, std::io::Error> {
-    let n = port_rw.port.bytes_to_read()? as usize;
-    let mut buffer = vec![0u8; n];
-
-    match port_rw.port.read(&mut buffer) {
-        Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}
-        Ok(_) => port_rw.buffer.append(&mut buffer),
-        Err(e) => return Err(e),
-    };
-    let position = port_rw
-        .buffer
-        .windows(magic_bytes.len())
-        .position(|window| window == &magic_bytes[..]);
-    match position {
-        Some(position) => {
-            println!("Read magic bytes");
-            port_rw.buffer = port_rw.buffer.split_off(position + magic_bytes.len());
-            Ok(true)
-        }
-        None => Ok(false),
-    }
-}
-
-fn read_string() -> String {
-    let mut input = String::new();
-    std::io::stdin()
-        .read_line(&mut input)
-        .expect("can not read user input");
-    let cleaned_input = input.trim().to_string();
-    cleaned_input
-}
-
-fn fetch_input(prompt: &str) -> String {
-    println!("{}", prompt);
-    read_string()
-}
-
-fn main() -> Result<(), Box<dyn Error>> {
-    // ESP32-C3 USB CDC vid and pid
-    // let usb_id: (u16, u16) = (4292, 60000);
-    let usb_id: (u16, u16) = (12346, 4097);
-    let connected_devices = loop {
-        println!("\n\n");
-        let connected_devices = find_all_ports(usb_id);
-        for device in &connected_devices {
-            println!("{:?}", device);
-        }
-        if fetch_input("All devices connected? (y)") == "y" {
-            break connected_devices;
-        };
-    };
-
-    println!(
-        "Trying to connect to device ports: {:?}",
-        &connected_devices
-    );
-
-    let mut ports: Vec<_> = connected_devices
-        .into_iter()
-        .map(|serial_number| {
-            SerialPortBincode::new(wait_for_device_port(&serial_number), serial_number)
-        })
-        .collect();
-    println!("Connected to devices. Reading for magic bytes...");
-
-    // Read magic bytes on each port
-    for (i, port_rw) in ports.iter_mut().enumerate() {
-        loop {
-            // Write magic bytes onto JTAG
-            println!("Trying to read magic bytes on port {}", i);
-            if let Err(e) = port_rw.port.write(&frostsnap_comms::MAGICBYTES_JTAG) {
-                println!("Failed to write magic bytes: {:?}", e);
-                // drop(port_rw);
-                // *port_rw = SerialPortBincode::new(
-                //     wait_for_device_port(&port_rw.serial_number),
-                //     port_rw.serial_number.clone(),
-                // );
-                // println!("Reconnected");
-            }
-            std::thread::sleep(Duration::from_millis(500));
-
-            // Read for magic bytes response
-            match read_for_magic_bytes(port_rw, &frostsnap_comms::MAGICBYTES_JTAG) {
-                Ok(found_magic_bytes) => {
-                    if found_magic_bytes {
-                        println!("Found magic bytes!!");
-                        break;
-                    }
+            },
+            CoordinatorSend::ToStorage(to_storage_message) => match to_storage_message {
+                CoordinatorToStorageMessage::UpdateState(key) => {
+                    db.save(db::State {
+                        key,
+                        device_labels: ports.device_labels().clone(),
+                    })?;
                 }
-                Err(e) => {
-                    println!("Failed to read magic bytes {:?}", e);
-                    *port_rw = SerialPortBincode::new(
-                        wait_for_device_port(&port_rw.serial_number),
-                        port_rw.serial_number.clone(),
-                    );
-                }
-            }
+            },
         }
     }
+    Ok(())
+}
 
-    let mut coordinator = frostsnap_core::FrostCoordinator::new();
-    let mut devices = BTreeSet::new();
+fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(if cli.verbosity {
+            Level::DEBUG
+        } else {
+            Level::INFO
+        })
+        .pretty()
+        .finish();
+    // use that subscriber to process traces emitted after this point
+    tracing::subscriber::set_global_default(subscriber)?;
 
-    loop {
-        println!("\n------------------------------------------------------------------");
-        println!("Registered devices: {:?}", &devices);
-        for (i, port_rw) in ports.iter().enumerate() {
-            println!(
-                "Port {} bytes in buffer {:?} -- Bytes to read: {:?}",
-                i,
-                port_rw.buffer.len(),
-                port_rw.port.bytes_to_read()
-            );
-        }
-        // std::thread::sleep(Duration::from_millis(1000));
-        let choice = fetch_input(
-            "\nPress:\n\tr - read messages\n\tw - announce self\n\tk - start keygen\n\ts - start signing\n",
-        );
-        let sends = if choice == "w" {
-            let sends = (0..ports.len())
-                .map(|i| {
-                    (
-                        i,
-                        DeviceReceiveSerial::AnnounceCoordinator("Im a laptop".to_string()),
-                    )
-                })
-                .collect::<Vec<_>>();
-            sends
-        } else if choice == "r" {
-            let mut send_all_ports = vec![];
-            let mut sends = vec![];
-            let n_ports = ports.len();
-            for (port_index, mut port_rw) in ports.iter_mut().enumerate() {
-                println!("Reading port {}", port_index);
-                if let Err(e) = port_rw.read_into_buffer() {
-                    eprintln!("Failed to read port {} into buffer: {:?}", port_index, e);
+    let default_db_path = home::home_dir().map(|home_dir| home_dir.join(".frostsnap"));
+    // use that subscriber to process traces emitted after this point
+
+    let db_path = cli
+        .db
+        .or(default_db_path)
+        .ok_or(anyhow!("We could not find home dir"))?;
+
+    let mut db = db::Db::new(db_path);
+    let state = db.load()?;
+
+    let mut ports = ports::Ports::default();
+
+    if let Some(state) = &state {
+        *ports.device_labels() = state.device_labels.clone();
+    }
+
+    match cli.command {
+        Command::Key => match state {
+            Some(state) => {
+                let xonly_pk = state.key.frost_key().clone().into_xonly_key().public_key();
+                println!("{:#?}\n", &state.key.frost_key());
+                println!(
+                    "32-byte key (hex): {}\n",
+                    hex::encode(xonly_pk.to_xonly_bytes())
+                );
+                println!("Known devices: {:#?}\n", &state.device_labels);
+            }
+            None => eprintln!("You have not generated a key yet!"),
+        },
+        Command::Keygen {
+            threshold,
+            n_devices,
+        } => {
+            eprintln!("Please plug in {} devices..", n_devices);
+
+            while ports.registered_devices().len() < n_devices {
+                ports.poll_devices();
+
+                for device_id in ports.unlabelled_devices().collect::<Vec<_>>() {
+                    let device_label = device_namer::gen_name39();
+                    eprintln!("Registered new device: {}", device_label);
+                    ports.device_labels().insert(device_id, device_label);
                 }
-                // for byte in &port_rw.buffer {
-                //     print!("{:02X}", byte);
-                // }
-                // println!("");
+            }
 
-                let decode: Result<DeviceSendSerial, _> =
-                    bincode::decode_from_reader(&mut port_rw, bincode::config::standard());
-                let new_sends = match decode {
-                    Ok(msg) => {
-                        match &msg {
-                            DeviceSendSerial::Announce(announcement) => {
-                                println!("Registered device: {:?}", announcement.from);
-                                devices.insert(announcement.from);
-                                vec![DeviceReceiveSerial::AnnounceAck(announcement.from)]
-                            }
-                            DeviceSendSerial::Core(core_msg) => {
-                                println!("Read core message: {:?}", msg);
+            let keygen_devices = if ports.registered_devices().len() > n_devices {
+                eprintln!("Select devices to do key generation:");
+                choose_devices(&ports.connected_device_labels(), n_devices)
+            } else {
+                ports.registered_devices().clone()
+            };
 
-                                let our_responses =
-                                    coordinator.recv_device_message(core_msg.clone()).unwrap();
+            if "y"
+                != io::fetch_input(&format!(
+                    "Want to do keygen with these devices? [y/n]\n{}",
+                    keygen_devices
+                        .clone()
+                        .into_iter()
+                        .map(|device_id| ports
+                            .device_labels()
+                            .get(&device_id)
+                            .expect("must exist")
+                            .clone())
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                ))
+            {
+                return Ok(());
+            };
 
-                                our_responses
-                                .into_iter()
-                                .filter_map(|msg| match msg {
-                                    CoordinatorSend::ToDevice(core_message) => {
-                                        Some(DeviceReceiveSerial::Core(core_message))
-                                    }
-                                    CoordinatorSend::ToUser(to_user_message) => {
-                                        fetch_input(&format!("Ack this message for coordinator?: {:?}", to_user_message));
-                                        match to_user_message {
-                                            frostsnap_core::message::CoordinatorToUserMessage::Signed { .. } => {}
-                                            frostsnap_core::message::CoordinatorToUserMessage::CheckKeyGen {
-                                                ..
-                                            } => {
-                                                coordinator.keygen_ack(true).unwrap();
-                                            }
-                                        }
-                                        None
-                                    },
-                                })
-                                .collect() // TODO remove panic
-                            }
-                            DeviceSendSerial::Debug { error, device } => {
-                                println!("Debug message from {:?}: {:?}", device, error);
-                                vec![]
-                            }
+            let mut coordinator = frostsnap_core::FrostCoordinator::new();
+
+            let do_keygen_message =
+                DeviceReceiveSerial::Core(coordinator.do_keygen(&keygen_devices, threshold)?);
+            ports.send_to_all_devices(&do_keygen_message)?;
+
+            let mut outbox = VecDeque::new();
+            loop {
+                let new_messages = ports.receive_messages();
+                for message in new_messages {
+                    match coordinator.recv_device_message(message.clone()) {
+                        Ok(messages) => {
+                            outbox.extend(messages);
                         }
-                    }
-                    Err(e) => {
-                        eprintln!("{:?}", e);
-                        // Write something to serial to prevent device hanging
-                        vec![]
-                    }
-                };
-
-                // Some messages need to be shared to everyone!
-                for new_send in new_sends.clone() {
-                    if let DeviceReceiveSerial::Core(_) = new_send {
-                        match &new_send {
-                            DeviceReceiveSerial::Core(msg) => match &msg {
-                                CoordinatorToDeviceMessage::DoKeyGen { .. } => {
-                                    send_all_ports.push(new_send.clone())
-                                }
-                                CoordinatorToDeviceMessage::FinishKeyGen { .. } => {
-                                    send_all_ports.push(new_send.clone())
-                                }
-                                CoordinatorToDeviceMessage::RequestSign { .. } => {
-                                    send_all_ports.push(new_send.clone())
-                                }
-                            },
-                            DeviceReceiveSerial::AnnounceAck(_) => {}
-                            DeviceReceiveSerial::AnnounceCoordinator(_) => {
-                                send_all_ports.push(new_send.clone())
-                            }
+                        Err(e) => {
+                            event!(
+                                Level::ERROR,
+                                "Failed to process message from {}: {}",
+                                message.from,
+                                e
+                            );
+                            continue;
                         }
                     };
                 }
-                // dbg!(&new_sends);
-                // dbg!(&send_all_ports);
-                for send_all_message in send_all_ports.iter() {
-                    for other_port_index in 0..n_ports {
-                        if port_index != other_port_index {
-                            sends.push((other_port_index, send_all_message.clone()));
+                if let CoordinatorState::FrostKey { .. } = coordinator.state() {
+                    if outbox.is_empty() {
+                        break;
+                    }
+                }
+                process_outbox(&mut db, &mut coordinator, &mut outbox, &mut ports)?;
+            }
+        }
+        Command::Sign(sign_args) => {
+            let state = state.ok_or(anyhow!("we can't sign because haven't done keygen yet!"))?;
+            let key = state.key;
+            let threshold = key.threshold();
+
+            let key_signers: BTreeMap<_, _> = key
+                .devices()
+                .map(|device_id| {
+                    (
+                        device_id,
+                        state
+                            .device_labels
+                            .get(&device_id)
+                            .expect("device in key must be known to coordinator")
+                            .to_string(),
+                    )
+                })
+                .collect();
+
+            let chosen_signers = if key_signers.len() != threshold {
+                eprintln!("Choose {} devices to sign:", threshold);
+                choose_devices(&key_signers, threshold)
+            } else {
+                key_signers.keys().cloned().collect()
+            };
+
+            let mut still_need_to_sign = chosen_signers.clone();
+            let mut coordinator = frostsnap_core::FrostCoordinator::from_stored_key(key.clone());
+
+            eprintln!(
+                "Plug signers:\n{}",
+                still_need_to_sign
+                    .iter()
+                    .map(|device_id| ports
+                        .device_labels()
+                        .get(device_id)
+                        .expect("we must have labelled this signer")
+                        .clone())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            );
+
+            match sign_args {
+                SignArgs::Message { messages } => {
+                    let finished_signatures = run_signing_process(
+                        &mut ports,
+                        &mut db,
+                        &mut coordinator,
+                        &mut still_need_to_sign,
+                        messages,
+                    )?;
+
+                    println!(
+                        "{}",
+                        finished_signatures
+                            .into_iter()
+                            .map(|signature| signature.to_string())
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    );
+                }
+                SignArgs::Nostr { message } => {
+                    let public_key = key.frost_key().public_key().clone().to_xonly_bytes();
+
+                    let event =
+                        nostr::create_unsigned_nostr_event(hex::encode(public_key), &message)?;
+                    let event_id = event.id.as_bytes().to_vec();
+
+                    let finished_signature = run_signing_process(
+                        &mut ports,
+                        &mut db,
+                        &mut coordinator,
+                        &mut still_need_to_sign,
+                        vec![event_id],
+                    )?;
+                    let finished_signature = finished_signature[0].clone();
+                    let signed_event = nostr::add_signature(event, finished_signature)?;
+
+                    println!("{:#?}", signed_event);
+
+                    if "y" != fetch_input("Broadcast Frostr event? [y/n]") {
+                        return Ok(());
+                    }
+
+                    let mut relayed = false;
+                    for relay in [
+                        "wss://nostr-relay.schnitzel.world",
+                        "wss://relay.damus.io",
+                        "wss://nostr-dev.wellorder.net",
+                        "wss://nostr-relay.bitcoin.ninja",
+                    ] {
+                        match nostr::broadcast_event(signed_event.clone(), relay) {
+                            Ok(_) => {
+                                relayed = true;
+                                eprintln!("Broadcasted to {relay}");
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to relay event to {relay}: {e}");
+                            }
                         }
                     }
-                }
-
-                // Store sends
-                for new_send in new_sends {
-                    sends.push((port_index, new_send.clone()));
-                }
-            }
-
-            sends
-        } else if choice == "k" {
-            let threshold = if devices.len() > 2 {
-                devices.len() - 1
-            } else {
-                devices.len()
-            };
-            let do_keygen_message: Vec<_> = coordinator
-                .do_keygen(&devices, threshold)
-                .unwrap()
-                .into_iter()
-                .map(|msg| DeviceReceiveSerial::Core(msg))
-                .collect();
-
-            let mut sends = vec![];
-            for recipient_port in 0..ports.len() {
-                for msg in do_keygen_message.clone() {
-                    sends.push((recipient_port, msg));
-                }
-            }
-            sends
-        } else if choice == "s" {
-            let threshold = if devices.len() > 2 {
-                devices.len() - 1
-            } else {
-                devices.len()
-            };
-            let message_to_sign = fetch_input("Enter a message to be signed: ");
-            let sign_messages: Vec<_> = coordinator
-                .start_sign(
-                    message_to_sign,
-                    devices.clone().into_iter().take(threshold).collect(),
-                )
-                .unwrap()
-                .into_iter()
-                .map(|msg| DeviceReceiveSerial::Core(msg))
-                .collect();
-            let mut sends = vec![];
-            for message in sign_messages {
-                for port_index in 0..ports.len() {
-                    sends.push((port_index, message.clone()));
-                }
-            }
-            sends
-        } else {
-            println!("Did nothing..");
-            vec![]
-        };
-
-        println!("Sending these messages:");
-        for (port_index, send) in sends {
-            dbg!(&send);
-            for (destination_port, other_port) in ports.iter_mut().enumerate() {
-                if destination_port != port_index {
-                    continue;
-                } else {
-                    if let Err(e) = bincode::encode_into_writer(
-                        send.clone(),
-                        other_port,
-                        bincode::config::standard(),
-                    ) {
-                        eprintln!("Error writing message to serial {:?}", e);
+                    if relayed {
+                        println!("View event: https://www.nostr.guru/e/{}", &signed_event.id);
                     }
-                    println!("send on port {}", destination_port);
                 }
-
-                println!("");
+                SignArgs::Transaction { .. } => todo!(),
             }
         }
     }
+    Ok(())
+}
+
+fn run_signing_process(
+    ports: &mut Ports,
+    db: &mut Db,
+    coordinator: &mut FrostCoordinator,
+    still_need_to_sign: &mut BTreeSet<DeviceId>,
+    messages: Vec<Vec<u8>>,
+) -> anyhow::Result<Vec<frostsnap_core::schnorr_fun::Signature>> {
+    let (init_sends, signature_request) =
+        coordinator.start_sign(messages, still_need_to_sign.clone())?;
+
+    let mut outbox = VecDeque::from_iter(init_sends);
+    let mut signatures = None;
+    let finished_signatures = loop {
+        signatures = signatures.or_else(|| {
+            outbox.iter().find_map(|message| match message {
+                CoordinatorSend::ToUser(CoordinatorToUserMessage::Signed { signatures }) => {
+                    Some(signatures.clone())
+                }
+                _ => None,
+            })
+        });
+        process_outbox(db, coordinator, &mut outbox, ports)?;
+
+        if let Some(finished_signatures) = &signatures {
+            if outbox.is_empty() {
+                break finished_signatures;
+            }
+        }
+
+        let (newly_registered, new_messages) = ports.poll_devices();
+        for device in newly_registered.intersection(&still_need_to_sign) {
+            event!(Level::INFO, "asking {} to sign", device);
+            ports.send_to_single_device(
+                &DeviceReceiveSerial::Core(signature_request.clone()),
+                device,
+            )?;
+        }
+
+        for incoming in new_messages {
+            match coordinator.recv_device_message(incoming.clone()) {
+                Ok(outgoing) => {
+                    if let DeviceToCoordindatorMessage {
+                        from,
+                        body: DeviceToCoordinatorBody::SignatureShare { .. },
+                    } = incoming
+                    {
+                        event!(Level::INFO, "{} signed successfully", incoming.from);
+                        still_need_to_sign.remove(&from);
+                    }
+                    outbox.extend(outgoing);
+                }
+                Err(e) => {
+                    event!(
+                        Level::ERROR,
+                        "Failed to process message from {}: {}",
+                        incoming.from,
+                        e
+                    );
+                    continue;
+                }
+            };
+        }
+    };
+    Ok(finished_signatures.clone())
+}
+
+fn choose_devices(
+    device_labels: &BTreeMap<DeviceId, String>,
+    n_devices: usize,
+) -> BTreeSet<DeviceId> {
+    let devices_vec = device_labels.iter().collect::<Vec<_>>();
+    for (index, (_, device_label)) in devices_vec.iter().enumerate() {
+        eprintln!("({}) - {}", index, device_label);
+    }
+
+    let mut chosen_signers: BTreeSet<DeviceId> = BTreeSet::new();
+    while chosen_signers.len() < n_devices {
+        let choice = io::fetch_input("\nEnter a device index (n): ").parse::<usize>();
+        match choice {
+            Ok(n) => match devices_vec.get(n) {
+                Some((device_id, _)) => {
+                    if !chosen_signers.contains(device_id) {
+                        chosen_signers.insert(**device_id);
+                    } else {
+                        eprintln!("Already chose this device!")
+                    }
+                }
+                None => eprintln!("no such device ({}", n),
+            },
+            Err(_) => {
+                eprintln!("Choose a number 0..{}", devices_vec.len() - 1);
+            }
+        }
+    }
+    chosen_signers
 }

@@ -2,12 +2,16 @@
 
 use display_interface::DisplayError;
 use embedded_graphics::{
-    mono_font::{ascii::FONT_6X10, MonoTextStyle},
+    mono_font::{
+        ascii::{FONT_6X10, FONT_9X18_BOLD},
+        MonoTextStyle,
+    },
     pixelcolor::BinaryColor,
     prelude::*,
     primitives::*,
 };
 use embedded_text::{
+    alignment::HorizontalAlignment,
     style::{TextBoxStyle, TextBoxStyleBuilder},
     TextBox,
 };
@@ -83,6 +87,26 @@ where
             Rectangle::new(Point::new(0, 0), Size::new(72, 40)),
             self.character_style,
             self.textbox_style,
+        )
+        .draw(&mut self.display)
+        .unwrap();
+
+        self.display.flush().unwrap();
+
+        Ok(())
+    }
+
+    pub fn print_header(&mut self, str: impl AsRef<str>) -> Result<(), DisplayError> {
+        self.display.clear();
+        TextBox::with_textbox_style(
+            str.as_ref(),
+            Rectangle::new(Point::new(0, 0), Size::new(72, 40)),
+            MonoTextStyle::new(&FONT_9X18_BOLD, BinaryColor::On),
+            TextBoxStyleBuilder::new()
+                .alignment(HorizontalAlignment::Center)
+                // .vertical_alignment(VerticalAlignment::Middle)
+                // .line_height(LineHeight::Pixels(16))
+                .build(),
         )
         .draw(&mut self.display)
         .unwrap();

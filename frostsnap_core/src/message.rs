@@ -1,6 +1,6 @@
 use crate::encrypted_share::EncryptedShare;
 use crate::xpub::ExtendedPubKey;
-use crate::String;
+use crate::CoordinatorFrostKey;
 use crate::Vec;
 use crate::NONCE_BATCH_SIZE;
 
@@ -18,12 +18,14 @@ use crate::DeviceId;
 pub enum DeviceSend {
     ToUser(DeviceToUserMessage),
     ToCoordinator(DeviceToCoordindatorMessage),
+    ToStorage(DeviceToStorageMessage),
 }
 
 #[derive(Clone, Debug)]
 pub enum CoordinatorSend {
     ToDevice(CoordinatorToDeviceMessage),
     ToUser(CoordinatorToUserMessage),
+    ToStorage(CoordinatorToStorageMessage),
 }
 
 // #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -43,23 +45,51 @@ pub enum CoordinatorToDeviceMessage {
     },
     RequestSign {
         nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
-        message_to_sign: String,
+        messages_to_sign: Vec<Vec<u8>>,
     },
 }
 
+impl CoordinatorToDeviceMessage {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            CoordinatorToDeviceMessage::DoKeyGen { .. } => "DoKeyGen",
+            CoordinatorToDeviceMessage::FinishKeyGen { .. } => "FinishKeyGen",
+            CoordinatorToDeviceMessage::RequestSign { .. } => "RequestSign",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum CoordinatorToStorageMessage {
+    UpdateState(CoordinatorFrostKey),
+}
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub enum DeviceToCoordindatorMessage {
+pub struct DeviceToCoordindatorMessage {
+    pub from: DeviceId,
+    pub body: DeviceToCoordinatorBody,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub enum DeviceToCoordinatorBody {
     KeyGenProvideShares(KeyGenProvideShares),
     SignatureShare {
-        signature_share: Scalar<Public, Zero>,
+        signature_shares: Vec<Scalar<Public, Zero>>,
         new_nonces: Vec<Nonce>,
-        from: DeviceId,
     },
+}
+
+impl DeviceToCoordinatorBody {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            DeviceToCoordinatorBody::KeyGenProvideShares(_) => "KeyGenProvideShares",
+            DeviceToCoordinatorBody::SignatureShare { .. } => "SignatureShare",
+        }
+    }
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, Eq, PartialEq)]
 pub struct KeyGenProvideShares {
-    pub from: DeviceId,
     pub my_poly: Vec<Point>,
     pub shares: BTreeMap<DeviceId, EncryptedShare>,
     pub proof_of_possession: Signature,
@@ -67,21 +97,19 @@ pub struct KeyGenProvideShares {
 }
 
 #[derive(Clone, Debug)]
-pub enum UserToCoordinatorMessage {
-    StartSign {
-        message_to_sign: String,
-        signing_parties: Vec<DeviceId>,
-    },
-}
-
-#[derive(Clone, Debug)]
 pub enum CoordinatorToUserMessage {
-    Signed { signature: Signature },
+    Signed { signatures: Vec<Signature> },
     CheckKeyGen { xpub: ExtendedPubKey },
 }
 
 #[derive(Clone, Debug)]
 pub enum DeviceToUserMessage {
     CheckKeyGen { xpub: ExtendedPubKey },
-    SignatureRequest { message_to_sign: String },
+    SignatureRequest { messages_to_sign: Vec<Vec<u8>> },
+}
+
+#[derive(Clone, Debug)]
+pub enum DeviceToStorageMessage {
+    SaveKey,
+    ExpendNonce,
 }

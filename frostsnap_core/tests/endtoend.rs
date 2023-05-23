@@ -1,6 +1,6 @@
 use frostsnap_core::message::{
     CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToUserMessage, DeviceSend,
-    DeviceToCoordindatorMessage, DeviceToUserMessage,
+    DeviceToCoordindatorMessage, DeviceToStorageMessage, DeviceToUserMessage,
 };
 use frostsnap_core::{DeviceId, FrostCoordinator, FrostSigner};
 use rand_chacha::rand_core::SeedableRng;
@@ -19,6 +19,41 @@ pub enum Send {
     DeviceToCoordinator(DeviceToCoordindatorMessage),
     CoordinatorToDevice(CoordinatorToDeviceMessage),
     UserToCoordinator(UserToCoordinator),
+    ToStorage, /* ignoring these for now */
+}
+
+impl From<CoordinatorSend> for Send {
+    fn from(value: CoordinatorSend) -> Self {
+        match value {
+            CoordinatorSend::ToDevice(v) => v.into(),
+            CoordinatorSend::ToUser(v) => v.into(),
+            CoordinatorSend::ToStorage(_) => Send::ToStorage,
+        }
+    }
+}
+
+impl From<CoordinatorToUserMessage> for Send {
+    fn from(value: CoordinatorToUserMessage) -> Self {
+        Send::CoordinatorToUser(value)
+    }
+}
+
+impl From<DeviceToCoordindatorMessage> for Send {
+    fn from(value: DeviceToCoordindatorMessage) -> Self {
+        Send::DeviceToCoordinator(value)
+    }
+}
+
+impl From<CoordinatorToDeviceMessage> for Send {
+    fn from(value: CoordinatorToDeviceMessage) -> Self {
+        Send::CoordinatorToDevice(value)
+    }
+}
+
+impl From<DeviceToStorageMessage> for Send {
+    fn from(_: DeviceToStorageMessage) -> Self {
+        Send::ToStorage
+    }
 }
 
 #[derive(Debug)]
@@ -27,7 +62,7 @@ pub enum UserToCoordinator {
         threshold: usize,
     },
     StartSign {
-        message: String,
+        messages: Vec<Vec<u8>>,
         devices: BTreeSet<DeviceId>,
     },
 }
@@ -50,15 +85,21 @@ fn test_end_to_end() {
     let mut message_stack: Vec<Send> = vec![];
     // Use select device signers
     // todo use signers bitmask like frost proptest
-    let message_to_sign2 = "johnmcafee47".to_string();
+    let message_to_sign2 = b"johnmcafee47".to_vec();
+    let message_to_sign1 = b"pyramid schmee".to_vec();
+
     message_stack.push(Send::UserToCoordinator(UserToCoordinator::StartSign {
-        message: message_to_sign2.clone(),
+        messages: vec![message_to_sign1.clone(), message_to_sign2.clone()],
+        devices: BTreeSet::from_iter([device_id_vec[1], device_id_vec[2]]),
+    }));
+
+    message_stack.push(Send::UserToCoordinator(UserToCoordinator::StartSign {
+        messages: vec![message_to_sign2.clone()],
         devices: BTreeSet::from_iter([device_id_vec[0], device_id_vec[1]]),
     }));
     // Use signers chosen by the coordinator
-    let message_to_sign = "pyramid schmee".to_string();
     message_stack.push(Send::UserToCoordinator(UserToCoordinator::StartSign {
-        message: message_to_sign.clone(),
+        messages: vec![message_to_sign1.clone()],
         devices: BTreeSet::from_iter([device_id_vec[1], device_id_vec[2]]),
     }));
     message_stack.push(Send::UserToCoordinator(UserToCoordinator::DoKeyGen {
@@ -67,7 +108,7 @@ fn test_end_to_end() {
 
     let mut check_keygens = BTreeMap::default();
     let mut coordinator_check_keygen = None;
-    let mut check_sig_requests = BTreeMap::<String, Vec<DeviceId>>::default();
+    let mut check_sig_requests = BTreeMap::<Vec<Vec<u8>>, Vec<DeviceId>>::default();
     let mut completed_signature_responses = vec![];
     while !message_stack.is_empty() {
         let to_send = message_stack.pop().unwrap();
@@ -75,10 +116,7 @@ fn test_end_to_end() {
         match to_send {
             Send::DeviceToCoordinator(message) => {
                 let messages = coordinator.recv_device_message(message).unwrap();
-                let messages = messages.into_iter().map(|message| match message {
-                    CoordinatorSend::ToDevice(message) => Send::CoordinatorToDevice(message),
-                    CoordinatorSend::ToUser(message) => Send::CoordinatorToUser(message),
-                });
+                let messages = messages.into_iter().map(Send::from);
                 message_stack.extend(messages);
             }
             Send::CoordinatorToDevice(message) => {
@@ -93,15 +131,16 @@ fn test_end_to_end() {
                                 device_id: destination,
                             }),
                             DeviceSend::ToCoordinator(message) => {
-                                message_stack.push(Send::DeviceToCoordinator(message))
+                                message_stack.push(message.into())
                             }
+                            DeviceSend::ToStorage(_) => { /* TODO: test storage */ }
                         }
                     }
                 }
             }
             Send::CoordinatorToUser(message) => match message {
-                CoordinatorToUserMessage::Signed { signature } => {
-                    completed_signature_responses.push(signature);
+                CoordinatorToUserMessage::Signed { signatures } => {
+                    completed_signature_responses.push(signatures);
                 }
                 CoordinatorToUserMessage::CheckKeyGen { xpub } => {
                     coordinator_check_keygen = Some(xpub);
@@ -110,15 +149,20 @@ fn test_end_to_end() {
             },
             Send::UserToCoordinator(message) => {
                 let new_messages = match message {
-                    UserToCoordinator::DoKeyGen { threshold } => coordinator
-                        .do_keygen(&devices.keys().cloned().collect(), threshold)
-                        .unwrap(),
-                    UserToCoordinator::StartSign { message, devices } => {
-                        coordinator.start_sign(message, devices).unwrap()
+                    UserToCoordinator::DoKeyGen { threshold } => vec![CoordinatorSend::ToDevice(
+                        coordinator
+                            .do_keygen(&devices.keys().cloned().collect(), threshold)
+                            .unwrap(),
+                    )],
+                    UserToCoordinator::StartSign { messages, devices } => {
+                        let (mut new_messages, hack) =
+                            coordinator.start_sign(messages, devices).unwrap();
+                        new_messages.push(CoordinatorSend::ToDevice(hack));
+                        new_messages
                     }
                 };
 
-                message_stack.extend(new_messages.into_iter().map(Send::CoordinatorToDevice));
+                message_stack.extend(new_messages.into_iter().map(Send::from));
             }
             Send::DeviceToUser { message, device_id } => match message {
                 DeviceToUserMessage::CheckKeyGen { xpub } => {
@@ -126,20 +170,22 @@ fn test_end_to_end() {
                     device.keygen_ack(true).unwrap();
                     check_keygens.insert(device_id, xpub);
                 }
-                DeviceToUserMessage::SignatureRequest { message_to_sign } => {
+                DeviceToUserMessage::SignatureRequest { messages_to_sign } => {
                     check_sig_requests
-                        .entry(message_to_sign.clone())
+                        .entry(messages_to_sign.clone())
                         .and_modify(|signers| signers.push(device_id))
                         .or_insert_with(|| vec![device_id]);
                     // Simulate user pressing "sign" --> calls device.sign()
                     let messages = devices.get_mut(&device_id).unwrap().sign_ack().unwrap();
                     let messages = messages.into_iter().map(|message| match message {
-                        DeviceSend::ToCoordinator(message) => Send::DeviceToCoordinator(message),
+                        DeviceSend::ToCoordinator(message) => message.into(),
                         DeviceSend::ToUser(message) => Send::DeviceToUser { message, device_id },
+                        DeviceSend::ToStorage(m) => m.into(),
                     });
                     message_stack.extend(messages);
                 }
             },
+            Send::ToStorage => { /* TODO: test storage */ }
         }
     }
 
@@ -150,14 +196,14 @@ fn test_end_to_end() {
         assert_eq!(digest, &coordinator_check_keygen);
     }
 
-    assert_eq!(check_sig_requests.len(), 2, "two messages were signed");
+    assert_eq!(check_sig_requests.len(), 3, "three messages were signed");
     assert!(
         check_sig_requests
             .values()
             .all(|devices| devices.len() == 2),
         "two devices signed each message"
     );
-    assert_eq!(completed_signature_responses.len(), 2);
+    assert_eq!(completed_signature_responses.len(), 3);
 
     let frost_key = {
         let mut devices = devices.iter();
@@ -169,15 +215,22 @@ fn test_end_to_end() {
     };
 
     let frost = frost::new_without_nonce_generation::<Sha256>();
-    for (message, signature) in vec![message_to_sign, message_to_sign2]
-        .into_iter()
-        .zip(completed_signature_responses)
+
+    for (messages, signatures) in vec![
+        vec![message_to_sign1.clone()],
+        vec![message_to_sign2.clone()],
+        vec![message_to_sign1, message_to_sign2],
+    ]
+    .into_iter()
+    .zip(completed_signature_responses)
     {
-        let signed_message = Message::<Public>::plain("frost-device", message.as_bytes());
-        assert!(frost.schnorr.verify(
-            &frost_key.clone().into_xonly_key().public_key(),
-            signed_message,
-            &signature
-        ));
+        for (i, message) in messages.iter().enumerate() {
+            let signed_message = Message::<Public>::raw(&message[..]);
+            assert!(frost.schnorr.verify(
+                &frost_key.clone().into_xonly_key().public_key(),
+                signed_message,
+                &signatures[i]
+            ));
+        }
     }
 }

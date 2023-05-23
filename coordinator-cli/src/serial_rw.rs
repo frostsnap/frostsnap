@@ -1,4 +1,5 @@
 use bincode::{de::read::Reader, enc::write::Writer};
+use frostsnap_comms::{DeviceReceiveSerial, Downstream, MagicBytes};
 use serialport::SerialPort;
 use std::io::{self, Write};
 
@@ -17,19 +18,39 @@ impl SerialPortBincode {
         }
     }
 
-    pub fn read_into_buffer(&mut self) -> Result<(), io::Error> {
-        let n = self.port.bytes_to_read()? as usize;
-        let mut buffer = vec![0u8; n];
-
-        match self.port.read(&mut buffer) {
-            Ok(_) => self.buffer.append(&mut buffer),
-            Err(e) => return Err(e),
+    pub fn poll_read(&mut self, limit: Option<usize>) -> Result<bool, io::Error> {
+        let n = match limit {
+            Some(limit) => limit,
+            None => self.port.bytes_to_read()? as usize,
         };
-        Ok(())
+        if n > 0 {
+            let mut buffer = vec![0u8; n];
+            match self.port.read(&mut buffer) {
+                Ok(_) => self.buffer.append(&mut buffer),
+                Err(e) => return Err(e),
+            };
+        }
+        Ok(!self.buffer.is_empty())
     }
 
-    pub fn get_buffer(&self) -> Vec<u8> {
-        self.buffer.clone()
+    pub fn send_message(
+        &mut self,
+        message: DeviceReceiveSerial<Downstream>,
+    ) -> Result<(), bincode::error::EncodeError> {
+        bincode::encode_into_writer(&message, self, bincode::config::standard())
+    }
+
+    pub fn write_magic_bytes(&mut self) -> Result<(), bincode::error::EncodeError> {
+        self.send_message(DeviceReceiveSerial::<Downstream>::MagicBytes(
+            MagicBytes::default(),
+        ))
+    }
+
+    pub fn read_for_magic_bytes(&mut self) -> Result<bool, std::io::Error> {
+        self.poll_read(None)?;
+        Ok(frostsnap_comms::find_and_remove_magic_bytes::<Downstream>(
+            &mut self.buffer,
+        ))
     }
 }
 
@@ -41,13 +62,7 @@ impl Writer for SerialPortBincode {
                     return Ok(());
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::TimedOut => (),
-                Err(e) => {
-                    eprintln!("{:?}", e);
-                    return Err(bincode::error::EncodeError::OtherString(format!(
-                        "Writing error {:?}",
-                        e
-                    )));
-                }
+                Err(e) => return Err(bincode::error::EncodeError::Io { inner: e, index: 0 }),
             }
         }
     }
@@ -55,19 +70,19 @@ impl Writer for SerialPortBincode {
 
 impl Reader for SerialPortBincode {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), bincode::error::DecodeError> {
-        if let Err(_) = self.read_into_buffer() {
-            // eprintln!("Failed to read buffer: {:?}", e)
-        };
-
-        if self.buffer.len() < bytes.len() {
-            return Err(bincode::error::DecodeError::UnexpectedEnd {
-                additional: bytes.len() - self.buffer.len(),
-            });
-        } else {
-            let extra_bytes = self.buffer.split_off(bytes.len());
-            bytes.copy_from_slice(&self.buffer);
-            self.buffer = extra_bytes;
+        while self.buffer.len() < bytes.len() {
+            if let Err(e) = self.poll_read(Some(bytes.len() - self.buffer.len())) {
+                return Err(bincode::error::DecodeError::Io {
+                    inner: e,
+                    additional: bytes.len() - self.buffer.len(),
+                });
+            };
         }
+
+        let extra_bytes = self.buffer.split_off(bytes.len());
+        bytes.copy_from_slice(&self.buffer);
+        self.buffer = extra_bytes;
+
         Ok(())
     }
 }
