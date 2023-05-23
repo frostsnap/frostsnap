@@ -198,6 +198,7 @@ dependencies = [
  "bech32",
  "bitcoin-private",
  "bitcoin_hashes 0.12.0",
+ "core2",
  "hex_lit",
  "secp256k1 0.27.0",
 ]
@@ -221,6 +222,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d7066118b13d4b20b23645932dfb3a81ce7e29f95726c2036fa33cd7b092501"
 dependencies = [
  "bitcoin-private",
+ "core2",
  "serde",
 ]
 
@@ -396,7 +398,7 @@ dependencies = [
  "home",
  "nostr",
  "rand",
- "schnorr_fun 0.8.2 (git+https://github.com/llfourn/secp256kfun.git?rev=51e2285be2433cdad7f0d6dc13e4b5f865cff34d)",
+ "schnorr_fun 0.8.2",
  "serde",
  "serde_json",
  "serialport",
@@ -405,6 +407,15 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tungstenite",
+]
+
+[[package]]
+name = "core2"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "239fa3ae9b63c2dc74bd3fa852d4792b8b305ae64eeede946265b6af62f1fff3"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]
@@ -789,10 +800,11 @@ dependencies = [
 name = "frostsnap_core"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
  "chacha20",
  "rand_chacha",
  "rand_core",
- "schnorr_fun 0.8.2 (git+https://github.com/llfourn/secp256kfun.git)",
+ "schnorr_fun 0.9.0",
  "serde",
  "sha2 0.10.6",
 ]
@@ -1628,15 +1640,15 @@ name = "schnorr_fun"
 version = "0.8.2"
 source = "git+https://github.com/llfourn/secp256kfun.git?rev=51e2285be2433cdad7f0d6dc13e4b5f865cff34d#51e2285be2433cdad7f0d6dc13e4b5f865cff34d"
 dependencies = [
- "secp256kfun 0.8.2 (git+https://github.com/llfourn/secp256kfun.git?rev=51e2285be2433cdad7f0d6dc13e4b5f865cff34d)",
+ "secp256kfun 0.8.2",
 ]
 
 [[package]]
 name = "schnorr_fun"
-version = "0.8.2"
-source = "git+https://github.com/llfourn/secp256kfun.git#c4991d4bf1fa1c9399b81a3f3cbfffd8f4772ffb"
+version = "0.9.0"
+source = "git+https://github.com/llfourn/secp256kfun.git#2bbac08749b79fc9ec21e5286d1c888b03bd8c03"
 dependencies = [
- "secp256kfun 0.8.2 (git+https://github.com/llfourn/secp256kfun.git)",
+ "secp256kfun 0.9.0",
 ]
 
 [[package]]
@@ -1666,16 +1678,6 @@ dependencies = [
 
 [[package]]
 name = "secp256k1"
-version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "550fc3b723a478be77bf74718947cdcdd75144d508aaa70f0a320036905df2a8"
-dependencies = [
- "secp256k1-sys 0.7.0",
- "serde",
-]
-
-[[package]]
-name = "secp256k1"
 version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "25996b82292a7a57ed3508f052cfff8640d38d32018784acd714758b43da9c8f"
@@ -1691,15 +1693,6 @@ name = "secp256k1-sys"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "83080e2c2fc1006e625be82e5d1eb6a43b7fd9578b617fcc55814daf286bba4b"
-dependencies = [
- "cc",
-]
-
-[[package]]
-name = "secp256k1-sys"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8058e28ae464daf5ac14c5c0f78110b58616e796c4e4e28cfcca38fdb13d8f22"
 dependencies = [
  "cc",
 ]
@@ -1727,13 +1720,13 @@ dependencies = [
 
 [[package]]
 name = "secp256kfun"
-version = "0.8.2"
-source = "git+https://github.com/llfourn/secp256kfun.git#c4991d4bf1fa1c9399b81a3f3cbfffd8f4772ffb"
+version = "0.9.0"
+source = "git+https://github.com/llfourn/secp256kfun.git#2bbac08749b79fc9ec21e5286d1c888b03bd8c03"
 dependencies = [
  "bincode",
  "digest 0.10.7",
  "rand_core",
- "secp256k1 0.25.0",
+ "secp256k1 0.27.0",
  "serde",
  "subtle-ng",
 ]

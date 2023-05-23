@@ -418,9 +418,7 @@ fn main() -> ! {
                             // display.print(format!("Key ok?\n{:?}", hex::encode(&xpub.0)));
                             // wait_button();
                             outbox.extend(frost_signer.keygen_ack(true).unwrap());
-                            display
-                                .print(format!("Key generated\n{:?}", hex::encode(&xpub.0)))
-                                .unwrap();
+                            display.print(format!("Key generated\n{}", xpub)).unwrap();
                             led.write(brightness([colors::WHITE_SMOKE].iter().cloned(), 10))
                                 .unwrap();
                             delay.delay_ms(2_000u32);
