@@ -362,13 +362,22 @@ fn run_signing_process(
         }
 
         let (newly_registered, new_messages) = ports.poll_devices();
-        for device in newly_registered.intersection(&still_need_to_sign) {
-            event!(Level::INFO, "asking {} to sign", device);
-            ports.send_to_single_device(
-                &DeviceReceiveSerial::Core(signature_request.clone()),
-                device,
-            )?;
-        }
+        let asking_to_sign = newly_registered
+            .intersection(&still_need_to_sign)
+            .cloned()
+            .collect::<BTreeSet<_>>();
+
+        // Add a destination on request to sign
+        // Add an impl for messages to determine destinations
+        // Add a message queue on Ports which acts as a (destination, message) outbox,
+        // Queue messages until the appropriate recipient is connected
+
+        dbg!(&newly_registered);
+        dbg!(&asking_to_sign);
+        ports.send_to_devices(
+            &DeviceReceiveSerial::Core(signature_request.clone()),
+            &asking_to_sign,
+        )?;
 
         for incoming in new_messages {
             match coordinator.recv_device_message(incoming.clone()) {

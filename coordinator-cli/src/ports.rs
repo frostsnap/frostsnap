@@ -12,7 +12,6 @@ use tracing::{event, span, Level};
 
 use crate::io;
 use crate::serial_rw::SerialPortBincode;
-use anyhow::anyhow;
 
 // USB CDC vid and pid
 const USB_ID: (u16, u16) = (12346, 4097);
@@ -77,22 +76,51 @@ impl Ports {
         Ok(())
     }
 
-    pub fn send_to_single_device(
+    // // Retired in place of [`send_to_devices`]
+    // // since repeated calls of this function would send duplicate messages along a daisy chain.
+    // pub fn send_to_single_device(
+    //     &mut self,
+    //     send: &DeviceReceiveSerial<Downstream>,
+    //     device_id: &DeviceId,
+    // ) -> anyhow::Result<()> {
+    //     let port_serial_number = self
+    //         .device_ports
+    //         .get(device_id)
+    //         .ok_or(anyhow!("Device not connected!"))?;
+    //     let port = self.ready.get_mut(port_serial_number).expect("must exist");
+
+    //     Ok(bincode::encode_into_writer(
+    //         send,
+    //         port,
+    //         bincode::config::standard(),
+    //     )?)
+    // }
+
+    pub fn send_to_devices(
         &mut self,
         send: &DeviceReceiveSerial<Downstream>,
-        device_id: &DeviceId,
+        devices: &BTreeSet<DeviceId>,
     ) -> anyhow::Result<()> {
-        let port_serial_number = self
-            .device_ports
-            .get(device_id)
-            .ok_or(anyhow!("Device not connected!"))?;
-        let port = self.ready.get_mut(port_serial_number).expect("must exist");
+        // Get appropriate ports without duplicates
+        let ports_to_send_on = devices
+            .iter()
+            .map(|device_id| {
+                self.device_ports
+                    .get(device_id)
+                    .expect("device must be known")
+            })
+            .collect::<BTreeSet<_>>();
 
-        Ok(bincode::encode_into_writer(
-            send,
-            port,
-            bincode::config::standard(),
-        )?)
+        dbg!(&ports_to_send_on);
+
+        ports_to_send_on
+            .into_iter()
+            .map(|port_serial_number| {
+                let port = self.ready.get_mut(port_serial_number).expect("must exist");
+                bincode::encode_into_writer(send, port, bincode::config::standard())?;
+                Ok(())
+            })
+            .collect::<anyhow::Result<_>>()
     }
 
     pub fn active_ports(&self) -> HashSet<String> {
