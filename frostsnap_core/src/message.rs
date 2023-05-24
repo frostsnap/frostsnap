@@ -4,7 +4,7 @@ use crate::Vec;
 use crate::NONCE_BATCH_SIZE;
 
 use alloc::collections::{BTreeMap, BTreeSet};
-use bitcoin::bip32::ExtendedPubKey;
+use alloc::string::String;
 use schnorr_fun::fun::marker::Public;
 use schnorr_fun::fun::marker::Zero;
 use schnorr_fun::fun::Point;
@@ -40,6 +40,7 @@ pub enum CoordinatorToDeviceMessage {
     RequestSign {
         nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
         messages_to_sign: Vec<Vec<u8>>,
+        tap_tweak: bool,
     },
 }
 
@@ -107,13 +108,18 @@ pub struct KeyGenProvideShares {
 #[derive(Clone, Debug)]
 pub enum CoordinatorToUserMessage {
     Signed { signatures: Vec<Signature> },
-    CheckKeyGen { xpub: ExtendedPubKey },
+    CheckKeyGen { xpub: String },
 }
 
 #[derive(Clone, Debug)]
 pub enum DeviceToUserMessage {
-    CheckKeyGen { xpub: ExtendedPubKey },
-    SignatureRequest { messages_to_sign: Vec<Vec<u8>> },
+    CheckKeyGen {
+        xpub: String,
+    },
+    SignatureRequest {
+        messages_to_sign: Vec<Vec<u8>>,
+        tap_tweak: bool,
+    },
 }
 
 #[derive(Clone, Debug)]
