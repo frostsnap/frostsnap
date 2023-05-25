@@ -24,10 +24,13 @@ jobs:
         run: |
           git clone https://github.com/riscv/riscv-gnu-toolchain 
           cd riscv-gnu-toolchain
-          ./configure --prefix=/opt/riscv --with-arch=rv32gc --with-abi=ilp32d
-          sudo make -j $(nproc) linux
+          ./configure --prefix=$GITHUB_WORKSPACE/riscv --with-arch=rv32gc --with-abi=ilp32d
+          sudo make -j $(nproc) install linux
       - name: Setup | Add RISC-V gcc to path
-        run: echo "PATH=$PATH:/opt/riscv/bin" >> $GITHUB_ENV
+        run: |
+          echo "PATH=$PATH:$GITHUB_WORKSPACE/riscv/bin" >> $GITHUB_ENV
+          echo $PATH
+          ls $GITHUB_WORKSPACE/riscv/bin
       - name: Setup | Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -39,7 +42,7 @@ jobs:
         run: cargo install ldproxy
       - name: Build | Compile
         run: |
-          PATH=$PATH:/opt/riscv/bin
+          PATH=$PATH:$GITHUB_WORKSPACE/riscv/bin
           cargo build --release
 
   coordinator-build:
