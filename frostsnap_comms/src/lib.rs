@@ -10,8 +10,8 @@ extern crate std;
 extern crate alloc;
 use core::marker::PhantomData;
 
-use alloc::string::String;
 use alloc::vec::Vec;
+use alloc::{collections::BTreeSet, string::String};
 use bincode::{de::read::Reader, enc::write::Writer, Decode, Encode};
 use frostsnap_core::{
     message::{CoordinatorToDeviceMessage, DeviceToCoordinatorBody, DeviceToCoordindatorMessage},
@@ -33,32 +33,20 @@ pub enum DeviceReceiveSerial<D> {
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
-pub enum DeviceReceiveMessage {
+pub struct DeviceReceiveMessage {
+    #[bincode(with_serde)]
+    pub target_destinations: BTreeSet<DeviceId>,
+    pub message_body: DeviceReceiveBody,
+}
+
+#[derive(Encode, Decode, Debug, Clone)]
+pub enum DeviceReceiveBody {
     Core(#[bincode(with_serde)] CoordinatorToDeviceMessage),
     AnnounceAck {
         #[bincode(with_serde)]
         device_id: DeviceId,
         device_label: String,
     },
-}
-
-impl DeviceReceiveMessage {
-    pub fn destination(&self) -> Vec<DeviceId> {
-        match self {
-            DeviceReceiveMessage::Core(core_message) => match core_message {
-                CoordinatorToDeviceMessage::DoKeyGen { devices, .. } => {
-                    devices.into_iter().cloned().collect::<Vec<_>>()
-                }
-                CoordinatorToDeviceMessage::FinishKeyGen { shares_provided } => {
-                    shares_provided.keys().cloned().collect::<Vec<_>>()
-                }
-                CoordinatorToDeviceMessage::RequestSign { nonces, .. } => {
-                    nonces.keys().cloned().collect::<Vec<_>>()
-                }
-            },
-            DeviceReceiveMessage::AnnounceAck { device_id, .. } => vec![*device_id],
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -133,9 +121,9 @@ impl<D> DeviceReceiveSerial<D> {
     pub fn gist(&self) -> String {
         match self {
             DeviceReceiveSerial::MagicBytes(_) => "MagicBytes".into(),
-            DeviceReceiveSerial::Message(message) => match message {
-                DeviceReceiveMessage::Core(message) => message.kind().into(),
-                DeviceReceiveMessage::AnnounceAck { .. } => "AnnounceAck".into(),
+            DeviceReceiveSerial::Message(message) => match &message.message_body {
+                DeviceReceiveBody::Core(message) => message.kind().into(),
+                DeviceReceiveBody::AnnounceAck { .. } => "AnnounceAck".into(),
             },
         }
     }

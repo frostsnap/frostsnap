@@ -26,10 +26,10 @@ use esp_storage::FlashStorage;
 use io::UpstreamDetector;
 use smart_leds::{brightness, colors, SmartLedsWrite, RGB};
 
-use frostsnap_comms::Downstream;
 use frostsnap_comms::{
-    DeviceReceiveMessage, DeviceReceiveSerial, DeviceSendMessage, DeviceSendSerial,
+    DeviceReceiveBody, DeviceReceiveSerial, DeviceSendMessage, DeviceSendSerial,
 };
+use frostsnap_comms::{DeviceReceiveMessage, Downstream};
 use frostsnap_core::message::{CoordinatorToDeviceMessage, DeviceSend, DeviceToUserMessage};
 use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_core::schnorr_fun::fun::marker::Normal;
@@ -330,16 +330,26 @@ fn main() -> ! {
                             DeviceReceiveSerial::Message(message) => {
                                 // We have recieved a first message (if this is not a magic bytes message)
                                 upstream_received_first_message = true;
+                                // Forward messages downstream if there are other target destinations
                                 if downstream_active {
-                                    sends_downstream.push(message.clone());
+                                    let mut forwarding_message = message.clone();
+                                    let _ = forwarding_message
+                                        .target_destinations
+                                        .remove(&frost_signer.device_id());
+                                    if forwarding_message.target_destinations.len() > 0 {
+                                        sends_downstream.push(forwarding_message);
+                                    }
                                 }
                                 // Skip processing of messages which are not destined for us
-                                if !message.destination().contains(&frost_signer.device_id()) {
+                                if !message
+                                    .target_destinations
+                                    .contains(&frost_signer.device_id())
+                                {
                                     continue;
                                 }
 
-                                match message {
-                                    DeviceReceiveMessage::AnnounceAck { device_label, .. } => {
+                                match message.message_body {
+                                    DeviceReceiveBody::AnnounceAck { device_label, .. } => {
                                         display.print_header(device_label).unwrap();
                                         sends_upstream.push(DeviceSendMessage::Debug {
                                             message: "Received AnnounceACK!".to_string(),
@@ -348,7 +358,7 @@ fn main() -> ! {
                                         led.write(brightness([colors::GREEN].iter().cloned(), 10))
                                             .unwrap();
                                     }
-                                    DeviceReceiveMessage::Core(core_message) => {
+                                    DeviceReceiveBody::Core(core_message) => {
                                         if let CoordinatorToDeviceMessage::DoKeyGen {
                                             devices,
                                             ..

@@ -28,12 +28,6 @@ pub enum CoordinatorSend {
     ToStorage(CoordinatorToStorageMessage),
 }
 
-// #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-// pub struct CoordinatorToDeviceSend {
-//     pub destination: Option<DeviceId>,
-//     pub message: CoordinatorToDeviceMessage,
-// }
-
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum CoordinatorToDeviceMessage {
     DoKeyGen {

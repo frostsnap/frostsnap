@@ -1,5 +1,6 @@
 use anyhow::anyhow;
 use db::Db;
+use frostsnap_comms::DeviceReceiveBody;
 use frostsnap_comms::DeviceReceiveMessage;
 use frostsnap_comms::DeviceReceiveSerial;
 use frostsnap_core::message::CoordinatorSend;
@@ -82,9 +83,14 @@ fn process_outbox(
     while let Some(message) = outbox.pop_front() {
         match message {
             CoordinatorSend::ToDevice(core_message) => {
-                ports.send_to_all_devices(&DeviceReceiveSerial::Message(
-                    DeviceReceiveMessage::Core(core_message),
-                ))?;
+                ports.send_to_all_devices(&DeviceReceiveSerial::Message(DeviceReceiveMessage {
+                    target_destinations: ports
+                        .connected_device_labels()
+                        .keys()
+                        .cloned()
+                        .collect::<BTreeSet<_>>(),
+                    message_body: DeviceReceiveBody::Core(core_message),
+                }))?;
             }
             CoordinatorSend::ToUser(to_user_message) => match to_user_message {
                 CoordinatorToUserMessage::Signed { .. } => {}
@@ -192,9 +198,12 @@ fn main() -> anyhow::Result<()> {
 
             let mut coordinator = frostsnap_core::FrostCoordinator::new();
 
-            let do_keygen_message = DeviceReceiveSerial::Message(DeviceReceiveMessage::Core(
-                coordinator.do_keygen(&keygen_devices, threshold)?,
-            ));
+            let do_keygen_message = DeviceReceiveSerial::Message(DeviceReceiveMessage {
+                target_destinations: keygen_devices.clone(),
+                message_body: DeviceReceiveBody::Core(
+                    coordinator.do_keygen(&keygen_devices, threshold)?,
+                ),
+            });
             ports.send_to_all_devices(&do_keygen_message)?;
 
             let mut outbox = VecDeque::new();
@@ -371,15 +380,11 @@ fn run_signing_process(
             .cloned()
             .collect::<BTreeSet<_>>();
 
-        // Add a destination on request to sign
-        // Add an impl for messages to determine destinations
-        // Add a message queue on Ports which acts as a (destination, message) outbox,
-        // Queue messages until the appropriate recipient is connected
-
-        dbg!(&newly_registered);
-        dbg!(&asking_to_sign);
         ports.send_to_devices(
-            &DeviceReceiveSerial::Message(DeviceReceiveMessage::Core(signature_request.clone())),
+            &DeviceReceiveSerial::Message(DeviceReceiveMessage {
+                target_destinations: asking_to_sign.clone(),
+                message_body: DeviceReceiveBody::Core(signature_request.clone()),
+            }),
             &asking_to_sign,
         )?;
 

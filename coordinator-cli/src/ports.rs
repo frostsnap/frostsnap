@@ -1,6 +1,7 @@
+use frostsnap_comms::DeviceReceiveMessage;
 use frostsnap_comms::DeviceReceiveSerial;
 use frostsnap_comms::DeviceSendSerial;
-use frostsnap_comms::{DeviceReceiveMessage, DeviceSendMessage};
+use frostsnap_comms::{DeviceReceiveBody, DeviceSendMessage};
 
 use frostsnap_comms::Downstream;
 use frostsnap_core::message::DeviceToCoordindatorMessage;
@@ -77,26 +78,6 @@ impl Ports {
         Ok(())
     }
 
-    // // Retired in place of [`send_to_devices`]
-    // // since repeated calls of this function would send duplicate messages along a daisy chain.
-    // pub fn send_to_single_device(
-    //     &mut self,
-    //     send: &DeviceReceiveSerial<Downstream>,
-    //     device_id: &DeviceId,
-    // ) -> anyhow::Result<()> {
-    //     let port_serial_number = self
-    //         .device_ports
-    //         .get(device_id)
-    //         .ok_or(anyhow!("Device not connected!"))?;
-    //     let port = self.ready.get_mut(port_serial_number).expect("must exist");
-
-    //     Ok(bincode::encode_into_writer(
-    //         send,
-    //         port,
-    //         bincode::config::standard(),
-    //     )?)
-    // }
-
     pub fn send_to_devices(
         &mut self,
         send: &DeviceReceiveSerial<Downstream>,
@@ -111,8 +92,6 @@ impl Ports {
                     .expect("device must be known")
             })
             .collect::<BTreeSet<_>>();
-
-        dbg!(&ports_to_send_on);
 
         ports_to_send_on
             .into_iter()
@@ -339,12 +318,13 @@ impl Ports {
                 let wrote_ack = {
                     let device_port = self.ready.get_mut(&serial_number).expect("must exist");
 
-                    device_port.send_message(DeviceReceiveSerial::Message(
-                        DeviceReceiveMessage::AnnounceAck {
+                    device_port.send_message(DeviceReceiveSerial::Message(DeviceReceiveMessage {
+                        message_body: DeviceReceiveBody::AnnounceAck {
                             device_id,
                             device_label: device_label.to_string(),
                         },
-                    ))
+                        target_destinations: BTreeSet::from([device_id]),
+                    }))
                 };
 
                 match wrote_ack {
