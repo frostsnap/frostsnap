@@ -38,7 +38,6 @@ use schnorr_fun::{
 };
 use sha2::digest::Digest;
 use sha2::Sha256;
-use xpub::ExtendedPubKey;
 
 #[derive(Debug, Clone)]
 pub struct FrostCoordinator {
@@ -103,14 +102,16 @@ impl FrostCoordinator {
                                 .collect();
                             let frost = frost::new_without_nonce_generation::<Sha256>();
                             let keygen = frost.new_keygen(point_polys).unwrap();
-                            let keygen_id = frost.keygen_id(&keygen);
+                            // let keygen_id = frost.keygen_id(&keygen);
                             let pop_message = gen_pop_message(shares_provided.keys().cloned());
 
                             let frost_key = match frost.finish_keygen_coordinator(keygen, proofs_of_possession, Message::raw(&pop_message)) {
                                 Ok(frost_key) => frost_key,
                                 Err(_) => todo!("should notify user somehow that everything was fucked and we're canceling it"),
                             };
-                            let xpub = ExtendedPubKey::new(frost_key.public_key(), keygen_id);
+
+                            let xpub = xpub::new(frost_key.public_key());
+
                             let device_nonces = shares_provided
                                 .iter()
                                 .map(|(device_id, share)| {
@@ -484,8 +485,7 @@ impl core::fmt::Display for DeviceId {
 impl DeviceId {
     fn to_x_coord(&self) -> Scalar<Public> {
         let x_coord =
-            Scalar::from_hash(Sha256::default().chain_update(self.pubkey.to_bytes().as_ref()))
-                .public();
+            Scalar::from_hash(Sha256::default().chain_update(self.pubkey.to_bytes())).public();
         x_coord
     }
 }
@@ -698,7 +698,6 @@ impl FrostSigner {
 
                 let pop_message = gen_pop_message(devices.iter().cloned());
                 let keygen = frost.new_keygen(point_polys).unwrap();
-                let keygen_id = frost.keygen_id(&keygen);
 
                 let (secret_share, frost_key) = frost
                     .finish_keygen(
@@ -709,7 +708,8 @@ impl FrostSigner {
                     )
                     .map_err(|e| Error::signer_invalid_message(&message, format!("{}", e)))?;
 
-                let xpub = ExtendedPubKey::new(frost_key.public_key(), keygen_id);
+                let xpub = xpub::new(frost_key.public_key());
+
                 self.state = SignerState::FrostKey {
                     key: FrostsnapKey {
                         frost_key,

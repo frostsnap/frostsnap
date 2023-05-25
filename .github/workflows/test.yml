@@ -18,6 +18,14 @@ jobs:
     steps:
       - name: Setup | Checkout
         uses: actions/checkout@v2
+      - name: Setup | RISC-V GCC prerequisites
+        run: sudo apt-get install autoconf automake autotools-dev curl python3 libmpc-dev libmpfr-dev libgmp-dev gawk build-essential bison flex texinfo gperf libtool patchutils bc zlib1g-dev libexpat-dev ninja-build
+      - name: Setup | RISCV GCC
+        run: |
+          wget -nv https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2023.05.24/riscv32-elf-ubuntu-22.04-nightly-2023.05.24-nightly.tar.gz
+          tar -zxf riscv32-elf-ubuntu-22.04-nightly-2023.05.24-nightly.tar.gz
+          echo "$PATH=$PATH:${GITHUB_WORKSPACE}/device/riscv/bin" >> $GITHUB_ENV
+          ls ${GITHUB_WORKSPACE}/device/riscv/bin
       - name: Setup | Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -28,7 +36,11 @@ jobs:
       - name: Setup | ldproxy
         run: cargo install ldproxy
       - name: Build | Compile
-        run: cargo build --release
+        run: |
+          echo "$PATH=$PATH:${GITHUB_WORKSPACE}/device/riscv/bin" >> $GITHUB_ENV
+          PATH=$PATH:$GITHUB_WORKSPACE/device/riscv/bin
+          echo $PATH
+          cargo build --release
 
   coordinator-build:
     runs-on: ubuntu-latest
