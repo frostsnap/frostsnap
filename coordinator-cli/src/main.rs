@@ -1,5 +1,6 @@
 use anyhow::anyhow;
 use db::Db;
+use frostsnap_comms::DeviceReceiveMessage;
 use frostsnap_comms::DeviceReceiveSerial;
 use frostsnap_core::message::CoordinatorSend;
 use frostsnap_core::message::CoordinatorToStorageMessage;
@@ -81,7 +82,9 @@ fn process_outbox(
     while let Some(message) = outbox.pop_front() {
         match message {
             CoordinatorSend::ToDevice(core_message) => {
-                ports.send_to_all_devices(&DeviceReceiveSerial::Core(core_message))?;
+                ports.send_to_all_devices(&DeviceReceiveSerial::Message(
+                    DeviceReceiveMessage::Core(core_message),
+                ))?;
             }
             CoordinatorSend::ToUser(to_user_message) => match to_user_message {
                 CoordinatorToUserMessage::Signed { .. } => {}
@@ -189,8 +192,9 @@ fn main() -> anyhow::Result<()> {
 
             let mut coordinator = frostsnap_core::FrostCoordinator::new();
 
-            let do_keygen_message =
-                DeviceReceiveSerial::Core(coordinator.do_keygen(&keygen_devices, threshold)?);
+            let do_keygen_message = DeviceReceiveSerial::Message(DeviceReceiveMessage::Core(
+                coordinator.do_keygen(&keygen_devices, threshold)?,
+            ));
             ports.send_to_all_devices(&do_keygen_message)?;
 
             let mut outbox = VecDeque::new();
@@ -375,7 +379,7 @@ fn run_signing_process(
         dbg!(&newly_registered);
         dbg!(&asking_to_sign);
         ports.send_to_devices(
-            &DeviceReceiveSerial::Core(signature_request.clone()),
+            &DeviceReceiveSerial::Message(DeviceReceiveMessage::Core(signature_request.clone())),
             &asking_to_sign,
         )?;
 

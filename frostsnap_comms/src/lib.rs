@@ -29,12 +29,36 @@ const MAGICBYTES_SEND_DOWNSTREAM: [u8; 10] =
 #[bincode(bounds = "D: Direction")]
 pub enum DeviceReceiveSerial<D> {
     MagicBytes(MagicBytes<D>),
+    Message(DeviceReceiveMessage),
+}
+
+#[derive(Encode, Decode, Debug, Clone)]
+pub enum DeviceReceiveMessage {
     Core(#[bincode(with_serde)] CoordinatorToDeviceMessage),
     AnnounceAck {
         #[bincode(with_serde)]
         device_id: DeviceId,
         device_label: String,
     },
+}
+
+impl DeviceReceiveMessage {
+    pub fn destination(&self) -> Vec<DeviceId> {
+        match self {
+            DeviceReceiveMessage::Core(core_message) => match core_message {
+                CoordinatorToDeviceMessage::DoKeyGen { devices, .. } => {
+                    devices.into_iter().cloned().collect::<Vec<_>>()
+                }
+                CoordinatorToDeviceMessage::FinishKeyGen { shares_provided } => {
+                    shares_provided.keys().cloned().collect::<Vec<_>>()
+                }
+                CoordinatorToDeviceMessage::RequestSign { nonces, .. } => {
+                    nonces.keys().cloned().collect::<Vec<_>>()
+                }
+            },
+            DeviceReceiveMessage::AnnounceAck { device_id, .. } => vec![*device_id],
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -108,9 +132,11 @@ impl<'de, O: Direction> bincode::BorrowDecode<'de> for MagicBytes<O> {
 impl<D> DeviceReceiveSerial<D> {
     pub fn gist(&self) -> String {
         match self {
-            DeviceReceiveSerial::Core(message) => message.kind().into(),
-            DeviceReceiveSerial::AnnounceAck { .. } => "AnnounceAck".into(),
             DeviceReceiveSerial::MagicBytes(_) => "MagicBytes".into(),
+            DeviceReceiveSerial::Message(message) => match message {
+                DeviceReceiveMessage::Core(message) => message.kind().into(),
+                DeviceReceiveMessage::AnnounceAck { .. } => "AnnounceAck".into(),
+            },
         }
     }
 }
@@ -119,6 +145,11 @@ impl<D> DeviceReceiveSerial<D> {
 #[bincode(bounds = "D: Direction")]
 pub enum DeviceSendSerial<D> {
     MagicBytes(MagicBytes<D>),
+    Message(DeviceSendMessage),
+}
+
+#[derive(Encode, Decode, Debug, Clone)]
+pub enum DeviceSendMessage {
     Core(#[bincode(with_serde)] DeviceToCoordindatorMessage),
     Debug {
         message: String,
@@ -158,13 +189,15 @@ fn _find_and_remove_magic_bytes(buff: &mut Vec<u8>, magic_bytes: &[u8]) -> bool 
 
 pub fn gist_send<D>(send: &DeviceSendSerial<D>) -> &'static str {
     match send {
-        DeviceSendSerial::Core(message) => match message.body {
-            DeviceToCoordinatorBody::KeyGenProvideShares(_) => "KeyGenProvideShares",
-            DeviceToCoordinatorBody::SignatureShare { .. } => "SignatureShare",
-        },
-        DeviceSendSerial::Debug { .. } => "Debug",
-        DeviceSendSerial::Announce(_) => "Announce",
         DeviceSendSerial::MagicBytes(_) => "MagicBytes",
+        DeviceSendSerial::Message(message) => match message {
+            DeviceSendMessage::Core(message) => match message.body {
+                DeviceToCoordinatorBody::KeyGenProvideShares(_) => "KeyGenProvideShares",
+                DeviceToCoordinatorBody::SignatureShare { .. } => "SignatureShare",
+            },
+            DeviceSendMessage::Debug { .. } => "Debug",
+            DeviceSendMessage::Announce(_) => "Announce",
+        },
     }
 }
 

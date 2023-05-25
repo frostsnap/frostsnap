@@ -1,5 +1,6 @@
 use frostsnap_comms::DeviceReceiveSerial;
 use frostsnap_comms::DeviceSendSerial;
+use frostsnap_comms::{DeviceReceiveMessage, DeviceSendMessage};
 
 use frostsnap_comms::Downstream;
 use frostsnap_core::message::DeviceToCoordindatorMessage;
@@ -280,40 +281,42 @@ impl Ports {
 
             match decoded_message {
                 Ok(msg) => match msg {
-                    DeviceSendSerial::Announce(announce) => {
-                        self.device_ports
-                            .insert(announce.from, serial_number.clone());
-                        let devices = self
-                            .reverse_device_ports
-                            .entry(serial_number.clone())
-                            .or_default();
-                        devices.insert(announce.from);
-
-                        event!(
-                            Level::DEBUG,
-                            port = serial_number,
-                            id = announce.from.to_string(),
-                            "Announced!"
-                        );
-                    }
-                    DeviceSendSerial::Debug { message, device } => {
-                        event!(
-                            Level::DEBUG,
-                            port = serial_number,
-                            from = device.to_string(),
-                            name = self
-                                .device_labels
-                                .get(&device)
-                                .cloned()
-                                .unwrap_or("<unknown>".into()),
-                            message
-                        );
-                    }
-                    DeviceSendSerial::Core(msg) => device_to_coord_msg.push(msg),
                     DeviceSendSerial::MagicBytes(_) => {
                         event!(Level::ERROR, port = serial_number, "Unexpected magic bytes");
                         self.disconnect(&serial_number);
                     }
+                    DeviceSendSerial::Message(message) => match message {
+                        DeviceSendMessage::Announce(announce) => {
+                            self.device_ports
+                                .insert(announce.from, serial_number.clone());
+                            let devices = self
+                                .reverse_device_ports
+                                .entry(serial_number.clone())
+                                .or_default();
+                            devices.insert(announce.from);
+
+                            event!(
+                                Level::DEBUG,
+                                port = serial_number,
+                                id = announce.from.to_string(),
+                                "Announced!"
+                            );
+                        }
+                        DeviceSendMessage::Debug { message, device } => {
+                            event!(
+                                Level::DEBUG,
+                                port = serial_number,
+                                from = device.to_string(),
+                                name = self
+                                    .device_labels
+                                    .get(&device)
+                                    .cloned()
+                                    .unwrap_or("<unknown>".into()),
+                                message
+                            );
+                        }
+                        DeviceSendMessage::Core(msg) => device_to_coord_msg.push(msg),
+                    },
                 },
                 Err(e) => {
                     event!(
@@ -336,10 +339,12 @@ impl Ports {
                 let wrote_ack = {
                     let device_port = self.ready.get_mut(&serial_number).expect("must exist");
 
-                    device_port.send_message(DeviceReceiveSerial::AnnounceAck {
-                        device_id,
-                        device_label: device_label.to_string(),
-                    })
+                    device_port.send_message(DeviceReceiveSerial::Message(
+                        DeviceReceiveMessage::AnnounceAck {
+                            device_id,
+                            device_label: device_label.to_string(),
+                        },
+                    ))
                 };
 
                 match wrote_ack {
