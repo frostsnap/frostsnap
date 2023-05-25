@@ -23,8 +23,8 @@ pub struct Ports {
     connected: HashSet<String>,
     /// Initial state
     pending: HashSet<String>,
-    /// After opening port and sent magic bytes
-    open: HashMap<String, SerialPortBincode>,
+    /// After opening port and awaiting magic bytes
+    awaiting_magic: HashMap<String, SerialPortBincode>,
     /// Read magic magic bytes
     ready: HashMap<String, SerialPortBincode>,
     /// ports that seems to be busy
@@ -44,7 +44,7 @@ impl Ports {
         event!(Level::INFO, port = port, "disconnecting port");
         self.connected.remove(port);
         self.pending.remove(port);
-        self.open.remove(port);
+        self.awaiting_magic.remove(port);
         self.ready.remove(port);
         self.ignored.remove(port);
         if let Some(device_ids) = self.reverse_device_ports.remove(port) {
@@ -170,49 +170,61 @@ impl Ports {
                         );
                     }
                 }
-                Ok(mut device_port) => {
-                    // Write magic bytes onto JTAG
-                    // println!("Trying to read magic bytes on port {}", serial_number);
+                Ok(mut device_port) => match device_port.write_magic_bytes() {
+                    Ok(_) => {
+                        self.awaiting_magic
+                            .insert(serial_number.clone(), device_port);
+                        // println!("Wrote magic bytes on device {}", serial_number);
+                        continue;
+                    }
+                    Err(e) => {
+                        event!(
+                            Level::ERROR,
+                            port = serial_number,
+                            e = e.to_string(),
+                            "Failed to initialize port by writing magic bytes"
+                        );
+                        self.disconnect(&serial_number);
+                    }
+                },
+            }
+            self.pending.insert(serial_number);
+        }
+
+        for (serial_number, mut device_port) in self.awaiting_magic.drain().collect::<Vec<_>>() {
+            match device_port.read_for_magic_bytes() {
+                Ok(true) => {
+                    event!(Level::DEBUG, port = serial_number, "Read magic bytes");
+                    println!("Found magic bytes on device {}", serial_number);
+                    self.ready.insert(serial_number, device_port);
+                    continue;
+                }
+                Ok(false) => {
+                    // println!("Did not read magic bytes {}", serial_number);
                     match device_port.write_magic_bytes() {
                         Ok(_) => {
-                            self.open.insert(serial_number.clone(), device_port);
-                            continue;
+                            // println!("Wrote magic bytes on device {}", serial_number);
                         }
                         Err(e) => {
                             event!(
                                 Level::ERROR,
                                 port = serial_number,
                                 e = e.to_string(),
-                                "Failed to initialize port by writing magic bytes"
+                                "Failed to write magic bytes"
                             );
                             self.disconnect(&serial_number);
                         }
                     }
                 }
-            }
-            self.pending.insert(serial_number);
-        }
-
-        for (serial_number, mut device_port) in self.open.drain().collect::<Vec<_>>() {
-            match device_port.read_for_magic_bytes() {
-                Ok(true) => {
-                    event!(Level::DEBUG, port = serial_number, "Read magic bytes");
-                    // println!("Found magic bytes on device {}", serial_number);
-                    self.ready.insert(serial_number, device_port);
-                    continue;
-                }
-                Ok(false) => { /* not found yet */ }
                 Err(e) => {
                     event!(
                         Level::DEBUG,
                         port = serial_number,
                         "failed to read magic bytes: {e}"
                     );
-                    /* try again */
                 }
             }
-
-            self.open.insert(serial_number, device_port);
+            self.awaiting_magic.insert(serial_number, device_port);
         }
 
         // Read all messages from ready devices
