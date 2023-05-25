@@ -18,6 +18,7 @@ use wallet::Wallet;
 
 pub mod db;
 mod device_namer;
+pub mod frost_address;
 pub mod io;
 pub mod nostr;
 pub mod ports;

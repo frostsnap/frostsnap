@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 rand_core = { version = "0.6", default-features = false }
-schnorr_fun = { git = "https://github.com/llfourn/secp256kfun.git", features = ["serde", "alloc", "libsecp_compat"], default-features = false }
+schnorr_fun = { git = "https://github.com/llfourn/secp256kfun.git", features = ["serde", "alloc"], default-features = false }
 rand_chacha = { version = "0.3", default-features = false }
 sha2 = {  version = "0.10", default-features = false }
 chacha20 = { version = "0.9", default-features = false }

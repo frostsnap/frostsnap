@@ -7,7 +7,6 @@ extern crate std;
 
 pub mod encrypted_share;
 pub mod message;
-pub mod xpub;
 
 use bitcoin::XOnlyPublicKey;
 use message::{CoordinatorToStorageMessage, DeviceToCoordinatorBody};
