@@ -68,42 +68,33 @@ impl Ports {
         for mut send in self.port_outbox.drain(..) {
             // We have a send that has target_destinations
             // We need to determine which target destinations are connected on which ports
-            // Keeping track of which target destinations are not connected at all
+            // We overwrite the target destinations with any non-connected devices at the end
+            let remaining_target_recipients = send.target_destinations.clone();
 
-            // Send to recipient devices along connected ports with updated target recipient sets
-            // If this message still has waiting recipients, append back to outbox with those targets
-            let mut remaining_target_recipients = send.target_destinations.clone();
-
-            for (serial_number, connected_devices) in &self.reverse_device_ports {
-                let connected_devices = connected_devices
-                    .clone()
-                    .into_iter()
-                    .collect::<BTreeSet<_>>();
-                let remaining_recipients = remaining_target_recipients.clone();
-
-                let connected_port_recipients: BTreeSet<_> = connected_devices
-                    .intersection(&remaining_recipients)
-                    .cloned()
-                    .collect();
-
-                if connected_port_recipients.len() > 0 {
-                    for connected_device in connected_port_recipients.clone() {
-                        remaining_target_recipients.remove(&connected_device);
+            let mut still_need_to_send = BTreeSet::new();
+            let ports_to_send_on = remaining_target_recipients
+                .into_iter()
+                .filter_map(|device_id| match self.device_ports.get(&device_id) {
+                    Some(serial_number) => Some(serial_number.clone()),
+                    None => {
+                        still_need_to_send.insert(device_id);
+                        None
                     }
-                    send.target_destinations = connected_port_recipients.clone();
-                    let port = self.ready.get_mut(serial_number).expect("must exist");
-                    // TODO re-push send with this target recipient on writer error
+                })
+                .collect::<BTreeSet<String>>();
 
-                    bincode::encode_into_writer(
-                        DeviceReceiveSerial::<Downstream>::Message(send.clone()),
-                        port,
-                        bincode::config::standard(),
-                    )?;
-                }
+            for serial_number in ports_to_send_on {
+                let port = self.ready.get_mut(&serial_number).expect("must exist");
+
+                bincode::encode_into_writer(
+                    DeviceReceiveSerial::<Downstream>::Message(send.clone()),
+                    port,
+                    bincode::config::standard(),
+                )?;
             }
 
-            if remaining_target_recipients.len() > 0 {
-                send.target_destinations = remaining_target_recipients;
+            if still_need_to_send.len() > 0 {
+                send.target_destinations = still_need_to_send;
                 leftover_sends.push(send);
             }
         }
