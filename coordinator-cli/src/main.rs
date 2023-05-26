@@ -2,7 +2,6 @@ use anyhow::anyhow;
 use db::Db;
 use frostsnap_comms::DeviceReceiveBody;
 use frostsnap_comms::DeviceReceiveMessage;
-use frostsnap_comms::DeviceReceiveSerial;
 use frostsnap_core::message::CoordinatorSend;
 use frostsnap_core::message::CoordinatorToStorageMessage;
 use frostsnap_core::message::CoordinatorToUserMessage;
@@ -83,14 +82,10 @@ fn process_outbox(
     while let Some(message) = outbox.pop_front() {
         match message {
             CoordinatorSend::ToDevice(core_message) => {
-                ports.send_to_all_devices(&DeviceReceiveSerial::Message(DeviceReceiveMessage {
-                    target_destinations: ports
-                        .connected_device_labels()
-                        .keys()
-                        .cloned()
-                        .collect::<BTreeSet<_>>(),
+                ports.queue_in_port_outbox(vec![DeviceReceiveMessage {
+                    target_destinations: core_message.default_destinations(),
                     message_body: DeviceReceiveBody::Core(core_message),
-                }))?;
+                }]);
             }
             CoordinatorSend::ToUser(to_user_message) => match to_user_message {
                 CoordinatorToUserMessage::Signed { .. } => {}
@@ -198,13 +193,13 @@ fn main() -> anyhow::Result<()> {
 
             let mut coordinator = frostsnap_core::FrostCoordinator::new();
 
-            let do_keygen_message = DeviceReceiveSerial::Message(DeviceReceiveMessage {
+            let do_keygen_message = DeviceReceiveMessage {
                 target_destinations: keygen_devices.clone(),
                 message_body: DeviceReceiveBody::Core(
                     coordinator.do_keygen(&keygen_devices, threshold)?,
                 ),
-            });
-            ports.send_to_all_devices(&do_keygen_message)?;
+            };
+            ports.queue_in_port_outbox(vec![do_keygen_message]);
 
             let mut outbox = VecDeque::new();
             loop {
@@ -231,6 +226,7 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
                 process_outbox(&mut db, &mut coordinator, &mut outbox, &mut ports)?;
+                ports.send_to_devices()?;
             }
         }
         Command::Sign(sign_args) => {
@@ -380,13 +376,11 @@ fn run_signing_process(
             .cloned()
             .collect::<BTreeSet<_>>();
 
-        ports.send_to_devices(
-            &DeviceReceiveSerial::Message(DeviceReceiveMessage {
-                target_destinations: asking_to_sign.clone(),
-                message_body: DeviceReceiveBody::Core(signature_request.clone()),
-            }),
-            &asking_to_sign,
-        )?;
+        ports.queue_in_port_outbox(vec![DeviceReceiveMessage {
+            target_destinations: asking_to_sign.clone(),
+            message_body: DeviceReceiveBody::Core(signature_request.clone()),
+        }]);
+        ports.send_to_devices()?;
 
         for incoming in new_messages {
             match coordinator.recv_device_message(incoming.clone()) {

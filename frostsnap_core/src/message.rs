@@ -44,6 +44,20 @@ pub enum CoordinatorToDeviceMessage {
 }
 
 impl CoordinatorToDeviceMessage {
+    pub fn default_destinations(&self) -> BTreeSet<DeviceId> {
+        match self {
+            CoordinatorToDeviceMessage::DoKeyGen { devices, .. } => devices.clone(),
+            CoordinatorToDeviceMessage::FinishKeyGen { shares_provided } => {
+                shares_provided.keys().cloned().collect()
+            }
+            CoordinatorToDeviceMessage::RequestSign { nonces, .. } => {
+                nonces.keys().cloned().collect()
+            }
+        }
+    }
+}
+
+impl CoordinatorToDeviceMessage {
     pub fn kind(&self) -> &'static str {
         match self {
             CoordinatorToDeviceMessage::DoKeyGen { .. } => "DoKeyGen",

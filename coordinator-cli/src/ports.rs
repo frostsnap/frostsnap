@@ -38,6 +38,8 @@ pub struct Ports {
     registered_devices: BTreeSet<DeviceId>,
     /// Device labels
     device_labels: HashMap<DeviceId, String>,
+    /// Messages to devices outbox
+    port_outbox: Vec<DeviceReceiveMessage>,
 }
 
 impl Ports {
@@ -61,46 +63,58 @@ impl Ports {
         }
     }
 
-    pub fn send_to_all_devices(
-        &mut self,
-        send: &DeviceReceiveSerial<Downstream>,
-    ) -> anyhow::Result<(), bincode::error::EncodeError> {
-        let send_ports = self.active_ports();
-        for send_port in send_ports {
-            event!(
-                Level::DEBUG,
-                port = send_port,
-                "sending message to devices on port"
-            );
-            let port = self.ready.get_mut(&send_port).expect("must exist");
-            bincode::encode_into_writer(send, port, bincode::config::standard())?
+    pub fn send_to_devices(&mut self) -> anyhow::Result<()> {
+        let mut leftover_sends = vec![];
+        for mut send in self.port_outbox.drain(..) {
+            // We have a send that has target_destinations
+            // We need to determine which target destinations are connected on which ports
+            // Keeping track of which target destinations are not connected at all
+
+            // Send to recipient devices along connected ports with updated target recipient sets
+            // If this message still has waiting recipients, append back to outbox with those targets
+            let mut remaining_target_recipients = send.target_destinations.clone();
+
+            for (serial_number, connected_devices) in &self.reverse_device_ports {
+                let connected_devices = connected_devices
+                    .clone()
+                    .into_iter()
+                    .collect::<BTreeSet<_>>();
+                let remaining_recipients = remaining_target_recipients.clone();
+
+                let connected_port_recipients: BTreeSet<_> = connected_devices
+                    .intersection(&remaining_recipients)
+                    .cloned()
+                    .collect();
+
+                if connected_port_recipients.len() > 0 {
+                    for connected_device in connected_port_recipients.clone() {
+                        remaining_target_recipients.remove(&connected_device);
+                    }
+                    send.target_destinations = connected_port_recipients.clone();
+                    let port = self.ready.get_mut(serial_number).expect("must exist");
+                    // TODO re-push send with this target recipient on writer error
+
+                    bincode::encode_into_writer(
+                        DeviceReceiveSerial::<Downstream>::Message(send.clone()),
+                        port,
+                        bincode::config::standard(),
+                    )?;
+                }
+            }
+
+            if remaining_target_recipients.len() > 0 {
+                send.target_destinations = remaining_target_recipients;
+                leftover_sends.push(send);
+            }
         }
+
+        self.port_outbox = leftover_sends;
+
         Ok(())
     }
 
-    pub fn send_to_devices(
-        &mut self,
-        send: &DeviceReceiveSerial<Downstream>,
-        devices: &BTreeSet<DeviceId>,
-    ) -> anyhow::Result<()> {
-        // Get appropriate ports without duplicates
-        let ports_to_send_on = devices
-            .iter()
-            .map(|device_id| {
-                self.device_ports
-                    .get(device_id)
-                    .expect("device must be known")
-            })
-            .collect::<BTreeSet<_>>();
-
-        ports_to_send_on
-            .into_iter()
-            .map(|port_serial_number| {
-                let port = self.ready.get_mut(port_serial_number).expect("must exist");
-                bincode::encode_into_writer(send, port, bincode::config::standard())?;
-                Ok(())
-            })
-            .collect::<anyhow::Result<_>>()
+    pub fn queue_in_port_outbox(&mut self, sends: Vec<DeviceReceiveMessage>) {
+        self.port_outbox.extend(sends);
     }
 
     pub fn active_ports(&self) -> HashSet<String> {
