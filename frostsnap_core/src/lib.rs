@@ -561,9 +561,11 @@ impl FrostSigner {
         &mut self,
         message: CoordinatorToDeviceMessage,
     ) -> MessageResult<Vec<DeviceSend>> {
-        use CoordinatorToDeviceMessage::*;
         match (&self.state, message.clone()) {
-            (SignerState::Registered, DoKeyGen { devices, threshold }) => {
+            (
+                SignerState::Registered,
+                CoordinatorToDeviceMessage::DoKeyGen { devices, threshold },
+            ) => {
                 if !devices.contains(&self.device_id()) {
                     return Ok(vec![]);
                 }
@@ -634,7 +636,7 @@ impl FrostSigner {
                 SignerState::KeyGen {
                     devices, aux_rand, ..
                 },
-                FinishKeyGen { shares_provided },
+                CoordinatorToDeviceMessage::FinishKeyGen { shares_provided },
             ) => {
                 if let Some(device) = devices
                     .iter()
@@ -728,7 +730,7 @@ impl FrostSigner {
                     key,
                     awaiting_ack: false,
                 },
-                RequestSign {
+                CoordinatorToDeviceMessage::RequestSign {
                     nonces,
                     messages_to_sign,
                 },

@@ -1,5 +1,5 @@
 use frostsnap_core::message::{
-    CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToUserMessage, DeviceSend,
+    CoordinatorSend, CoordinatorToDeviceBody, CoordinatorToUserMessage, DeviceSend,
     DeviceToCoordindatorMessage, DeviceToStorageMessage, DeviceToUserMessage,
 };
 use frostsnap_core::{DeviceId, FrostCoordinator, FrostSigner};
@@ -17,7 +17,7 @@ pub enum Send {
     },
     CoordinatorToUser(CoordinatorToUserMessage),
     DeviceToCoordinator(DeviceToCoordindatorMessage),
-    CoordinatorToDevice(CoordinatorToDeviceMessage),
+    CoordinatorToDevice(CoordinatorToDeviceBody),
     UserToCoordinator(UserToCoordinator),
     ToStorage, /* ignoring these for now */
 }
@@ -44,8 +44,8 @@ impl From<DeviceToCoordindatorMessage> for Send {
     }
 }
 
-impl From<CoordinatorToDeviceMessage> for Send {
-    fn from(value: CoordinatorToDeviceMessage) -> Self {
+impl From<CoordinatorToDeviceBody> for Send {
+    fn from(value: CoordinatorToDeviceBody) -> Self {
         Send::CoordinatorToDevice(value)
     }
 }

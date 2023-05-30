@@ -1,5 +1,7 @@
+use frostsnap_comms::DeviceReceiveMessage;
 use frostsnap_comms::DeviceReceiveSerial;
 use frostsnap_comms::DeviceSendSerial;
+use frostsnap_comms::{DeviceReceiveBody, DeviceSendMessage};
 
 use frostsnap_comms::Downstream;
 use frostsnap_core::message::DeviceToCoordindatorMessage;
@@ -12,7 +14,6 @@ use tracing::{event, span, Level};
 
 use crate::io;
 use crate::serial_rw::SerialPortBincode;
-use anyhow::anyhow;
 
 // USB CDC vid and pid
 const USB_ID: (u16, u16) = (12346, 4097);
@@ -37,6 +38,8 @@ pub struct Ports {
     registered_devices: BTreeSet<DeviceId>,
     /// Device labels
     device_labels: HashMap<DeviceId, String>,
+    /// Messages to devices outbox
+    port_outbox: Vec<DeviceReceiveMessage>,
 }
 
 impl Ports {
@@ -60,39 +63,49 @@ impl Ports {
         }
     }
 
-    pub fn send_to_all_devices(
-        &mut self,
-        send: &DeviceReceiveSerial<Downstream>,
-    ) -> anyhow::Result<(), bincode::error::EncodeError> {
-        let send_ports = self.active_ports();
-        for send_port in send_ports {
-            event!(
-                Level::DEBUG,
-                port = send_port,
-                "sending message to devices on port"
-            );
-            let port = self.ready.get_mut(&send_port).expect("must exist");
-            bincode::encode_into_writer(send, port, bincode::config::standard())?
+    pub fn send_to_devices(&mut self) -> anyhow::Result<()> {
+        let mut leftover_sends = vec![];
+        for mut send in self.port_outbox.drain(..) {
+            // We have a send that has target_destinations
+            // We need to determine which target destinations are connected on which ports
+            // We overwrite the target destinations with any non-connected devices at the end
+            let remaining_target_recipients = send.target_destinations.clone();
+
+            let mut still_need_to_send = BTreeSet::new();
+            let ports_to_send_on = remaining_target_recipients
+                .into_iter()
+                .filter_map(|device_id| match self.device_ports.get(&device_id) {
+                    Some(serial_number) => Some(serial_number.clone()),
+                    None => {
+                        still_need_to_send.insert(device_id);
+                        None
+                    }
+                })
+                .collect::<BTreeSet<String>>();
+
+            for serial_number in ports_to_send_on {
+                let port = self.ready.get_mut(&serial_number).expect("must exist");
+
+                bincode::encode_into_writer(
+                    DeviceReceiveSerial::<Downstream>::Message(send.clone()),
+                    port,
+                    bincode::config::standard(),
+                )?;
+            }
+
+            if still_need_to_send.len() > 0 {
+                send.target_destinations = still_need_to_send;
+                leftover_sends.push(send);
+            }
         }
+
+        self.port_outbox = leftover_sends;
+
         Ok(())
     }
 
-    pub fn send_to_single_device(
-        &mut self,
-        send: &DeviceReceiveSerial<Downstream>,
-        device_id: &DeviceId,
-    ) -> anyhow::Result<()> {
-        let port_serial_number = self
-            .device_ports
-            .get(device_id)
-            .ok_or(anyhow!("Device not connected!"))?;
-        let port = self.ready.get_mut(port_serial_number).expect("must exist");
-
-        Ok(bincode::encode_into_writer(
-            send,
-            port,
-            bincode::config::standard(),
-        )?)
+    pub fn queue_in_port_outbox(&mut self, sends: Vec<DeviceReceiveMessage>) {
+        self.port_outbox.extend(sends);
     }
 
     pub fn active_ports(&self) -> HashSet<String> {
@@ -252,40 +265,42 @@ impl Ports {
 
             match decoded_message {
                 Ok(msg) => match msg {
-                    DeviceSendSerial::Announce(announce) => {
-                        self.device_ports
-                            .insert(announce.from, serial_number.clone());
-                        let devices = self
-                            .reverse_device_ports
-                            .entry(serial_number.clone())
-                            .or_default();
-                        devices.insert(announce.from);
-
-                        event!(
-                            Level::DEBUG,
-                            port = serial_number,
-                            id = announce.from.to_string(),
-                            "Announced!"
-                        );
-                    }
-                    DeviceSendSerial::Debug { message, device } => {
-                        event!(
-                            Level::DEBUG,
-                            port = serial_number,
-                            from = device.to_string(),
-                            name = self
-                                .device_labels
-                                .get(&device)
-                                .cloned()
-                                .unwrap_or("<unknown>".into()),
-                            message
-                        );
-                    }
-                    DeviceSendSerial::Core(msg) => device_to_coord_msg.push(msg),
                     DeviceSendSerial::MagicBytes(_) => {
                         event!(Level::ERROR, port = serial_number, "Unexpected magic bytes");
                         self.disconnect(&serial_number);
                     }
+                    DeviceSendSerial::Message(message) => match message {
+                        DeviceSendMessage::Announce(announce) => {
+                            self.device_ports
+                                .insert(announce.from, serial_number.clone());
+                            let devices = self
+                                .reverse_device_ports
+                                .entry(serial_number.clone())
+                                .or_default();
+                            devices.insert(announce.from);
+
+                            event!(
+                                Level::DEBUG,
+                                port = serial_number,
+                                id = announce.from.to_string(),
+                                "Announced!"
+                            );
+                        }
+                        DeviceSendMessage::Debug { message, device } => {
+                            event!(
+                                Level::DEBUG,
+                                port = serial_number,
+                                from = device.to_string(),
+                                name = self
+                                    .device_labels
+                                    .get(&device)
+                                    .cloned()
+                                    .unwrap_or("<unknown>".into()),
+                                message
+                            );
+                        }
+                        DeviceSendMessage::Core(msg) => device_to_coord_msg.push(msg),
+                    },
                 },
                 Err(e) => {
                     event!(
@@ -308,10 +323,13 @@ impl Ports {
                 let wrote_ack = {
                     let device_port = self.ready.get_mut(&serial_number).expect("must exist");
 
-                    device_port.send_message(DeviceReceiveSerial::AnnounceAck {
-                        device_id,
-                        device_label: device_label.to_string(),
-                    })
+                    device_port.send_message(DeviceReceiveSerial::Message(DeviceReceiveMessage {
+                        message_body: DeviceReceiveBody::AnnounceAck {
+                            device_id,
+                            device_label: device_label.to_string(),
+                        },
+                        target_destinations: BTreeSet::from([device_id]),
+                    }))
                 };
 
                 match wrote_ack {

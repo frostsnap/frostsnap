@@ -28,12 +28,6 @@ pub enum CoordinatorSend {
     ToStorage(CoordinatorToStorageMessage),
 }
 
-// #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-// pub struct CoordinatorToDeviceSend {
-//     pub destination: Option<DeviceId>,
-//     pub message: CoordinatorToDeviceMessage,
-// }
-
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum CoordinatorToDeviceMessage {
     DoKeyGen {
@@ -47,6 +41,20 @@ pub enum CoordinatorToDeviceMessage {
         nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
         messages_to_sign: Vec<Vec<u8>>,
     },
+}
+
+impl CoordinatorToDeviceMessage {
+    pub fn default_destinations(&self) -> BTreeSet<DeviceId> {
+        match self {
+            CoordinatorToDeviceMessage::DoKeyGen { devices, .. } => devices.clone(),
+            CoordinatorToDeviceMessage::FinishKeyGen { shares_provided } => {
+                shares_provided.keys().cloned().collect()
+            }
+            CoordinatorToDeviceMessage::RequestSign { nonces, .. } => {
+                nonces.keys().cloned().collect()
+            }
+        }
+    }
 }
 
 impl CoordinatorToDeviceMessage {

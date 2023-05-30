@@ -10,8 +10,8 @@ extern crate std;
 extern crate alloc;
 use core::marker::PhantomData;
 
-use alloc::string::String;
 use alloc::vec::Vec;
+use alloc::{collections::BTreeSet, string::String};
 use bincode::{de::read::Reader, enc::write::Writer, Decode, Encode};
 use frostsnap_core::{
     message::{CoordinatorToDeviceMessage, DeviceToCoordinatorBody, DeviceToCoordindatorMessage},
@@ -29,6 +29,18 @@ const MAGICBYTES_SEND_DOWNSTREAM: [u8; 10] =
 #[bincode(bounds = "D: Direction")]
 pub enum DeviceReceiveSerial<D> {
     MagicBytes(MagicBytes<D>),
+    Message(DeviceReceiveMessage),
+}
+
+#[derive(Encode, Decode, Debug, Clone)]
+pub struct DeviceReceiveMessage {
+    #[bincode(with_serde)]
+    pub target_destinations: BTreeSet<DeviceId>,
+    pub message_body: DeviceReceiveBody,
+}
+
+#[derive(Encode, Decode, Debug, Clone)]
+pub enum DeviceReceiveBody {
     Core(#[bincode(with_serde)] CoordinatorToDeviceMessage),
     AnnounceAck {
         #[bincode(with_serde)]
@@ -108,9 +120,11 @@ impl<'de, O: Direction> bincode::BorrowDecode<'de> for MagicBytes<O> {
 impl<D> DeviceReceiveSerial<D> {
     pub fn gist(&self) -> String {
         match self {
-            DeviceReceiveSerial::Core(message) => message.kind().into(),
-            DeviceReceiveSerial::AnnounceAck { .. } => "AnnounceAck".into(),
             DeviceReceiveSerial::MagicBytes(_) => "MagicBytes".into(),
+            DeviceReceiveSerial::Message(message) => match &message.message_body {
+                DeviceReceiveBody::Core(message) => message.kind().into(),
+                DeviceReceiveBody::AnnounceAck { .. } => "AnnounceAck".into(),
+            },
         }
     }
 }
@@ -119,6 +133,11 @@ impl<D> DeviceReceiveSerial<D> {
 #[bincode(bounds = "D: Direction")]
 pub enum DeviceSendSerial<D> {
     MagicBytes(MagicBytes<D>),
+    Message(DeviceSendMessage),
+}
+
+#[derive(Encode, Decode, Debug, Clone)]
+pub enum DeviceSendMessage {
     Core(#[bincode(with_serde)] DeviceToCoordindatorMessage),
     Debug {
         message: String,
@@ -158,13 +177,15 @@ fn _find_and_remove_magic_bytes(buff: &mut Vec<u8>, magic_bytes: &[u8]) -> bool 
 
 pub fn gist_send<D>(send: &DeviceSendSerial<D>) -> &'static str {
     match send {
-        DeviceSendSerial::Core(message) => match message.body {
-            DeviceToCoordinatorBody::KeyGenProvideShares(_) => "KeyGenProvideShares",
-            DeviceToCoordinatorBody::SignatureShare { .. } => "SignatureShare",
-        },
-        DeviceSendSerial::Debug { .. } => "Debug",
-        DeviceSendSerial::Announce(_) => "Announce",
         DeviceSendSerial::MagicBytes(_) => "MagicBytes",
+        DeviceSendSerial::Message(message) => match message {
+            DeviceSendMessage::Core(message) => match message.body {
+                DeviceToCoordinatorBody::KeyGenProvideShares(_) => "KeyGenProvideShares",
+                DeviceToCoordinatorBody::SignatureShare { .. } => "SignatureShare",
+            },
+            DeviceSendMessage::Debug { .. } => "Debug",
+            DeviceSendMessage::Announce(_) => "Announce",
+        },
     }
 }
 
