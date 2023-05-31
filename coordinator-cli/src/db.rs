@@ -1,43 +1,69 @@
+use bdk_file_store::Store;
+use frostsnap_core::{CoordinatorFrostKey, DeviceId};
 use std::{collections::HashMap, path::PathBuf};
 
-use anyhow::Context;
-use frostsnap_core::{CoordinatorFrostKey, DeviceId};
-
-pub struct Db {
-    path: PathBuf,
+#[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct ChangeSet {
+    pub frostsnap: Option<State>,
+    pub wallet: crate::wallet::ChangeSet,
 }
 
-#[derive(bincode::Encode, bincode::Decode)]
+impl From<crate::wallet::ChangeSet> for ChangeSet {
+    fn from(value: crate::wallet::ChangeSet) -> Self {
+        Self {
+            wallet: value,
+            ..Default::default()
+        }
+    }
+}
+
+impl bdk_chain::Append for ChangeSet {
+    fn append(&mut self, other: ChangeSet) {
+        if other.frostsnap.is_some() {
+            self.frostsnap = other.frostsnap;
+        }
+        self.wallet.append(other.wallet);
+    }
+
+    fn is_empty(&self) -> bool {
+        self.frostsnap.is_none() && self.wallet.is_empty()
+    }
+}
+
+impl From<State> for ChangeSet {
+    fn from(value: State) -> Self {
+        ChangeSet {
+            frostsnap: Some(value),
+            ..Default::default()
+        }
+    }
+}
+
+pub static FILE_MAGIC_BYTES: &[u8] = "🥶❄❆❅🥶".as_bytes();
+
+pub struct Db {
+    store: Store<'static, ChangeSet>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct State {
-    #[bincode(with_serde)]
     pub key: CoordinatorFrostKey,
-    #[bincode(with_serde)]
     pub device_labels: HashMap<DeviceId, String>,
 }
 
 impl Db {
-    pub fn new(path: PathBuf) -> Self {
-        Self { path }
+    pub fn new(path: PathBuf) -> anyhow::Result<Self> {
+        let store = Store::new_from_path(FILE_MAGIC_BYTES, &path)?;
+        Ok(Self { store })
     }
 
-    pub fn load(&self) -> anyhow::Result<Option<State>> {
-        let state = if self.path.exists() {
-            let state_bytes = std::fs::read(&self.path)?;
-            let (state, _): (State, _) =
-                bincode::decode_from_slice(&state_bytes, bincode::config::standard())?;
-            Some(state)
-        } else {
-            None
-        };
-        Ok(state)
+    pub fn load(&mut self) -> anyhow::Result<ChangeSet> {
+        let (changeset, res) = self.store.aggregate_changesets();
+        res?;
+        Ok(changeset)
     }
 
-    pub fn save(&self, state: State) -> anyhow::Result<()> {
-        std::fs::write(
-            &self.path,
-            bincode::encode_to_vec(state, bincode::config::standard()).unwrap(),
-        )
-        .context(format!("Unable to save to {}", self.path.display()))?;
-        Ok(())
+    pub fn save<C: Into<ChangeSet>>(&mut self, changeset: C) -> anyhow::Result<()> {
+        Ok(self.store.append_changeset(&changeset.into())?)
     }
 }

@@ -1,4 +1,4 @@
-use nostr::{prelude::*, secp256k1::schnorr::Signature};
+pub use nostr::{prelude::*, secp256k1::schnorr::Signature};
 use tungstenite::Message as WsMessage;
 
 pub fn create_unsigned_nostr_event(pk: String, message: &str) -> anyhow::Result<UnsignedEvent> {

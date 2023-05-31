@@ -35,6 +35,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ahash"
+version = "0.3.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8fd72866655d1904d6b0997d0b07ba561047d070fbe29de039031c641b61217"
+
+[[package]]
 name = "aho-corasick"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -148,10 +154,53 @@ dependencies = [
 ]
 
 [[package]]
+name = "bdk_chain"
+version = "0.4.0"
+source = "git+https://github.com/evanlinjin/bdk.git?rev=cd096df9568a1bb7160482f7c36c807cce1b0b5d#cd096df9568a1bb7160482f7c36c807cce1b0b5d"
+dependencies = [
+ "bitcoin 0.29.2",
+ "miniscript",
+ "serde",
+]
+
+[[package]]
+name = "bdk_coin_select"
+version = "0.1.0"
+source = "git+https://github.com/llfourn/bdk.git?rev=9129b43f1ee75185f3cc3a0f27edcd00df59a61d#9129b43f1ee75185f3cc3a0f27edcd00df59a61d"
+
+[[package]]
+name = "bdk_electrum"
+version = "0.2.0"
+source = "git+https://github.com/evanlinjin/bdk.git?rev=cd096df9568a1bb7160482f7c36c807cce1b0b5d#cd096df9568a1bb7160482f7c36c807cce1b0b5d"
+dependencies = [
+ "bdk_chain",
+ "electrum-client",
+]
+
+[[package]]
+name = "bdk_file_store"
+version = "0.1.0"
+source = "git+https://github.com/evanlinjin/bdk.git?rev=cd096df9568a1bb7160482f7c36c807cce1b0b5d#cd096df9568a1bb7160482f7c36c807cce1b0b5d"
+dependencies = [
+ "bdk_chain",
+ "bincode 1.3.3",
+ "serde",
+]
+
+[[package]]
 name = "bech32"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d86b93f97252c47b41663388e6d155714a9d0c398b99f1005cbc5f978b29f445"
+
+[[package]]
+name = "bincode"
+version = "1.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "bincode"
@@ -191,6 +240,20 @@ checksum = "dc827186963e592360843fb5ba4b973e145841266c1357f7180c43526f2e5b61"
 
 [[package]]
 name = "bitcoin"
+version = "0.29.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0694ea59225b0c5f3cb405ff3f670e4828358ed26aec49dc352f730f0cb1a8a3"
+dependencies = [
+ "bech32",
+ "bitcoin_hashes 0.11.0",
+ "core2",
+ "hashbrown 0.8.2",
+ "secp256k1 0.24.3",
+ "serde",
+]
+
+[[package]]
+name = "bitcoin"
 version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b36f4c848f6bd9ff208128f08751135846cc23ae57d66ab10a22efff1c675f3c"
@@ -198,7 +261,6 @@ dependencies = [
  "bech32",
  "bitcoin-private",
  "bitcoin_hashes 0.12.0",
- "core2",
  "hex_lit",
  "secp256k1 0.27.0",
 ]
@@ -214,6 +276,10 @@ name = "bitcoin_hashes"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90064b8dee6815a6470d60bad07bbbaee885c0e12d04177138fa3291a01b7bc4"
+dependencies = [
+ "core2",
+ "serde",
+]
 
 [[package]]
 name = "bitcoin_hashes"
@@ -222,7 +288,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d7066118b13d4b20b23645932dfb3a81ce7e29f95726c2036fa33cd7b092501"
 dependencies = [
  "bitcoin-private",
- "core2",
  "serde",
 ]
 
@@ -390,7 +455,11 @@ name = "coordinator-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bincode",
+ "bdk_chain",
+ "bdk_coin_select",
+ "bdk_electrum",
+ "bdk_file_store",
+ "bincode 2.0.0-rc.3",
  "clap",
  "frostsnap_comms",
  "frostsnap_core",
@@ -398,7 +467,6 @@ dependencies = [
  "home",
  "nostr",
  "rand",
- "schnorr_fun 0.8.2",
  "serde",
  "serde_json",
  "serialport",
@@ -488,7 +556,7 @@ checksum = "c2e66c9d817f1720209181c316d28635c050fa304f9c79e47a520882661b7308"
 name = "device"
 version = "0.1.0"
 dependencies = [
- "bincode",
+ "bincode 2.0.0-rc.3",
  "critical-section",
  "display-interface",
  "embedded-graphics",
@@ -559,6 +627,24 @@ name = "either"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7fcaabb2fef8c910e7f4c7ce9f67a1283a1715879a7c230ca9d6d1ae31f16d91"
+
+[[package]]
+name = "electrum-client"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8e1e1e452aef3ee772d19cc6272ef642f22ce0f4a9fb715ffe98010934e2ae1"
+dependencies = [
+ "bitcoin 0.29.2",
+ "byteorder",
+ "libc",
+ "log",
+ "rustls 0.20.8",
+ "serde",
+ "serde_json",
+ "webpki",
+ "webpki-roots 0.22.6",
+ "winapi",
+]
 
 [[package]]
 name = "embedded-dma"
@@ -791,7 +877,7 @@ dependencies = [
 name = "frostsnap_comms"
 version = "0.1.0"
 dependencies = [
- "bincode",
+ "bincode 2.0.0-rc.3",
  "frostsnap_core",
  "serde",
 ]
@@ -800,11 +886,11 @@ dependencies = [
 name = "frostsnap_core"
 version = "0.1.0"
 dependencies = [
- "bitcoin",
+ "bitcoin 0.29.2",
  "chacha20",
  "rand_chacha",
  "rand_core",
- "schnorr_fun 0.9.0",
+ "schnorr_fun",
  "serde",
  "sha2 0.10.6",
 ]
@@ -934,6 +1020,16 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e91b62f79061a0bc2e046024cb7ba44b08419ed238ecbd9adbd787434b9e8c25"
+dependencies = [
+ "ahash",
+ "autocfg",
+]
+
+[[package]]
+name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
@@ -1049,7 +1145,7 @@ checksum = "0646026eb1b3eea4cd9ba47912ea5ce9cc07713d105b1a14698f4e6433d348b7"
 dependencies = [
  "http",
  "hyper",
- "rustls",
+ "rustls 0.21.1",
  "tokio",
  "tokio-rustls",
 ]
@@ -1077,7 +1173,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bd070e393353796e801d209ad339e89596eb4c8d430d18ede6a1cced8fafbd99"
 dependencies = [
  "autocfg",
- "hashbrown",
+ "hashbrown 0.12.3",
 ]
 
 [[package]]
@@ -1236,6 +1332,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
 
 [[package]]
+name = "miniscript"
+version = "9.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9601439f168c13bdc5bf84349c2e61c815be4a4dcebe8c4ff4af58f4e8a6d20"
+dependencies = [
+ "bitcoin 0.29.2",
+]
+
+[[package]]
 name = "mio"
 version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1294,7 +1399,7 @@ dependencies = [
  "base64",
  "bech32",
  "bip39",
- "bitcoin",
+ "bitcoin 0.30.0",
  "bitcoin_hashes 0.12.0",
  "cbc",
  "getrandom",
@@ -1509,7 +1614,7 @@ dependencies = [
  "once_cell",
  "percent-encoding",
  "pin-project-lite",
- "rustls",
+ "rustls 0.21.1",
  "rustls-pemfile",
  "serde",
  "serde_json",
@@ -1594,6 +1699,18 @@ dependencies = [
 
 [[package]]
 name = "rustls"
+version = "0.20.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fff78fc74d175294f4e83b28343315ffcfb114b156f0185e9741cb5570f50e2f"
+dependencies = [
+ "log",
+ "ring",
+ "sct",
+ "webpki",
+]
+
+[[package]]
+name = "rustls"
 version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c911ba11bc8433e811ce56fde130ccf32f5127cab0e0194e9c68c5a5b671791e"
@@ -1637,18 +1754,10 @@ checksum = "f91339c0467de62360649f8d3e185ca8de4224ff281f66000de5eb2a77a79041"
 
 [[package]]
 name = "schnorr_fun"
-version = "0.8.2"
-source = "git+https://github.com/llfourn/secp256kfun.git?rev=51e2285be2433cdad7f0d6dc13e4b5f865cff34d#51e2285be2433cdad7f0d6dc13e4b5f865cff34d"
-dependencies = [
- "secp256kfun 0.8.2",
-]
-
-[[package]]
-name = "schnorr_fun"
 version = "0.9.0"
 source = "git+https://github.com/llfourn/secp256kfun.git#2bbac08749b79fc9ec21e5286d1c888b03bd8c03"
 dependencies = [
- "secp256kfun 0.9.0",
+ "secp256kfun",
 ]
 
 [[package]]
@@ -1673,7 +1782,9 @@ version = "0.24.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b1629c9c557ef9b293568b338dddfc8208c98a18c59d722a9d53f859d9c9b62"
 dependencies = [
+ "bitcoin_hashes 0.11.0",
  "secp256k1-sys 0.6.1",
+ "serde",
 ]
 
 [[package]]
@@ -1708,22 +1819,10 @@ dependencies = [
 
 [[package]]
 name = "secp256kfun"
-version = "0.8.2"
-source = "git+https://github.com/llfourn/secp256kfun.git?rev=51e2285be2433cdad7f0d6dc13e4b5f865cff34d#51e2285be2433cdad7f0d6dc13e4b5f865cff34d"
-dependencies = [
- "digest 0.10.7",
- "rand_core",
- "secp256k1 0.24.3",
- "serde",
- "subtle-ng",
-]
-
-[[package]]
-name = "secp256kfun"
 version = "0.9.0"
 source = "git+https://github.com/llfourn/secp256kfun.git#2bbac08749b79fc9ec21e5286d1c888b03bd8c03"
 dependencies = [
- "bincode",
+ "bincode 2.0.0-rc.3",
  "digest 0.10.7",
  "rand_core",
  "secp256k1 0.27.0",
@@ -2032,7 +2131,7 @@ version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e0d409377ff5b1e3ca6437aa86c1eb7d40c134bfec254e44c830defa92669db5"
 dependencies = [
- "rustls",
+ "rustls 0.21.1",
  "tokio",
 ]
 
@@ -2162,7 +2261,7 @@ dependencies = [
  "httparse",
  "log",
  "rand",
- "rustls",
+ "rustls 0.21.1",
  "sha1",
  "thiserror",
  "url",

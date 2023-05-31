@@ -5,8 +5,6 @@ use frostsnap_comms::DeviceReceiveMessage;
 use frostsnap_core::message::CoordinatorSend;
 use frostsnap_core::message::CoordinatorToStorageMessage;
 use frostsnap_core::message::CoordinatorToUserMessage;
-use frostsnap_core::message::DeviceToCoordinatorBody;
-use frostsnap_core::message::DeviceToCoordindatorMessage;
 use frostsnap_core::CoordinatorState;
 use frostsnap_core::DeviceId;
 use frostsnap_core::FrostCoordinator;
@@ -16,6 +14,7 @@ use std::collections::BTreeSet;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use tracing::{event, Level};
+use wallet::Wallet;
 
 pub mod db;
 mod device_namer;
@@ -23,6 +22,8 @@ pub mod io;
 pub mod nostr;
 pub mod ports;
 pub mod serial_rw;
+pub mod signer;
+pub mod wallet;
 
 use clap::{Parser, Subcommand};
 
@@ -55,6 +56,9 @@ enum Command {
     /// Sign a message, Bitcoin transaction, or Nostr post
     #[command(subcommand)]
     Sign(SignArgs),
+
+    #[clap(flatten)]
+    WalletCmd(wallet::Commands),
 }
 
 #[derive(Subcommand)]
@@ -73,7 +77,7 @@ enum SignArgs {
     },
 }
 
-fn process_outbox(
+pub fn process_outbox(
     db: &mut Db,
     coordinator: &mut FrostCoordinator,
     outbox: &mut VecDeque<CoordinatorSend>,
@@ -128,17 +132,30 @@ fn main() -> anyhow::Result<()> {
         .or(default_db_path)
         .ok_or(anyhow!("We could not find home dir"))?;
 
-    let mut db = db::Db::new(db_path);
-    let state = db.load()?;
+    let mut db = db::Db::new(db_path)?;
+    let changeset = db.load()?;
 
+    // TODO ports::new(device_labels)
     let mut ports = ports::Ports::default();
 
-    if let Some(state) = &state {
+    if let Some(state) = &changeset.frostsnap {
         *ports.device_labels() = state.device_labels.clone();
     }
 
     match cli.command {
-        Command::Key => match state {
+        Command::WalletCmd(command) => {
+            let frostsnap = changeset
+                .frostsnap
+                .ok_or(anyhow!("you haven't generated a key yet!"))?;
+            let mut wallet = Wallet::new(frostsnap.key, changeset.wallet);
+            command.run(
+                &mut wallet,
+                &mut db,
+                &mut ports,
+                bdk_chain::bitcoin::Network::Signet,
+            )?;
+        }
+        Command::Key => match changeset.frostsnap {
             Some(state) => {
                 let xonly_pk = state.key.frost_key().clone().into_xonly_key().public_key();
                 println!("{:#?}\n", &state.key.frost_key());
@@ -230,56 +247,15 @@ fn main() -> anyhow::Result<()> {
             }
         }
         Command::Sign(sign_args) => {
-            let state = state.ok_or(anyhow!("we can't sign because haven't done keygen yet!"))?;
-            let key = state.key;
-            let threshold = key.threshold();
-
-            let key_signers: BTreeMap<_, _> = key
-                .devices()
-                .map(|device_id| {
-                    (
-                        device_id,
-                        state
-                            .device_labels
-                            .get(&device_id)
-                            .expect("device in key must be known to coordinator")
-                            .to_string(),
-                    )
-                })
-                .collect();
-
-            let chosen_signers = if key_signers.len() != threshold {
-                eprintln!("Choose {} devices to sign:", threshold);
-                choose_devices(&key_signers, threshold)
-            } else {
-                key_signers.keys().cloned().collect()
-            };
-
-            let mut still_need_to_sign = chosen_signers.clone();
-            let mut coordinator = frostsnap_core::FrostCoordinator::from_stored_key(key.clone());
-
-            eprintln!(
-                "Plug signers:\n{}",
-                still_need_to_sign
-                    .iter()
-                    .map(|device_id| ports
-                        .device_labels()
-                        .get(device_id)
-                        .expect("we must have labelled this signer")
-                        .clone())
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            );
+            let state = changeset
+                .frostsnap
+                .ok_or(anyhow!("we can't sign because haven't done keygen yet!"))?;
+            let coordinator = FrostCoordinator::from_stored_key(state.key);
+            let mut signer = signer::Signer::new(&mut db, &mut ports, coordinator);
 
             match sign_args {
                 SignArgs::Message { messages } => {
-                    let finished_signatures = run_signing_process(
-                        &mut ports,
-                        &mut db,
-                        &mut coordinator,
-                        &mut still_need_to_sign,
-                        messages,
-                    )?;
+                    let finished_signatures = signer.sign_plain_message(messages)?;
 
                     println!(
                         "{}",
@@ -291,25 +267,11 @@ fn main() -> anyhow::Result<()> {
                     );
                 }
                 SignArgs::Nostr { message } => {
-                    let public_key = key.frost_key().public_key().clone().to_xonly_bytes();
-
-                    let event =
-                        nostr::create_unsigned_nostr_event(hex::encode(public_key), &message)?;
-                    let event_id = event.id.as_bytes().to_vec();
-
-                    let finished_signature = run_signing_process(
-                        &mut ports,
-                        &mut db,
-                        &mut coordinator,
-                        &mut still_need_to_sign,
-                        vec![event_id],
-                    )?;
-                    let finished_signature = finished_signature[0].clone();
-                    let signed_event = nostr::add_signature(event, finished_signature)?;
+                    let signed_event = signer.sign_nostr(message)?;
 
                     println!("{:#?}", signed_event);
 
-                    if "y" != fetch_input("Broadcast Frostr event? [y/n]") {
+                    if "y" != crate::fetch_input("Broadcast Frostr event? [y/n]") {
                         return Ok(());
                     }
 
@@ -341,76 +303,7 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn run_signing_process(
-    ports: &mut Ports,
-    db: &mut Db,
-    coordinator: &mut FrostCoordinator,
-    still_need_to_sign: &mut BTreeSet<DeviceId>,
-    messages: Vec<Vec<u8>>,
-) -> anyhow::Result<Vec<frostsnap_core::schnorr_fun::Signature>> {
-    let (init_sends, signature_request) =
-        coordinator.start_sign(messages, still_need_to_sign.clone())?;
-
-    let mut outbox = VecDeque::from_iter(init_sends);
-    let mut signatures = None;
-    let finished_signatures = loop {
-        signatures = signatures.or_else(|| {
-            outbox.iter().find_map(|message| match message {
-                CoordinatorSend::ToUser(CoordinatorToUserMessage::Signed { signatures }) => {
-                    Some(signatures.clone())
-                }
-                _ => None,
-            })
-        });
-        process_outbox(db, coordinator, &mut outbox, ports)?;
-
-        if let Some(finished_signatures) = &signatures {
-            if outbox.is_empty() {
-                break finished_signatures;
-            }
-        }
-
-        let (newly_registered, new_messages) = ports.poll_devices();
-        let asking_to_sign = newly_registered
-            .intersection(&still_need_to_sign)
-            .cloned()
-            .collect::<BTreeSet<_>>();
-
-        ports.queue_in_port_outbox(vec![DeviceReceiveMessage {
-            target_destinations: asking_to_sign.clone(),
-            message_body: DeviceReceiveBody::Core(signature_request.clone()),
-        }]);
-        ports.send_to_devices()?;
-
-        for incoming in new_messages {
-            match coordinator.recv_device_message(incoming.clone()) {
-                Ok(outgoing) => {
-                    if let DeviceToCoordindatorMessage {
-                        from,
-                        body: DeviceToCoordinatorBody::SignatureShare { .. },
-                    } = incoming
-                    {
-                        event!(Level::INFO, "{} signed successfully", incoming.from);
-                        still_need_to_sign.remove(&from);
-                    }
-                    outbox.extend(outgoing);
-                }
-                Err(e) => {
-                    event!(
-                        Level::ERROR,
-                        "Failed to process message from {}: {}",
-                        incoming.from,
-                        e
-                    );
-                    continue;
-                }
-            };
-        }
-    };
-    Ok(finished_signatures.clone())
-}
-
-fn choose_devices(
+pub fn choose_devices(
     device_labels: &BTreeMap<DeviceId, String>,
     n_devices: usize,
 ) -> BTreeSet<DeviceId> {
