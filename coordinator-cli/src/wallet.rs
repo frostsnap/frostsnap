@@ -11,7 +11,7 @@ use bdk_chain::miniscript::{descriptor::Tr, Descriptor, DescriptorPublicKey};
 use bdk_electrum::electrum_client::ElectrumApi;
 use bdk_electrum::{electrum_client, v2::ElectrumExt};
 use bitcoin::util::bip32::DerivationPath;
-use bitcoin::{Address, Network};
+use bitcoin::Network;
 use frostsnap_core::CoordinatorFrostKey;
 use tracing::{event, Level};
 
@@ -59,7 +59,7 @@ fn get_descriptor(frost_key: &FrostKey<Normal>) -> Descriptor<DescriptorPublicKe
         wildcard: Wildcard::Unhardened,
     });
 
-    println!("{}", key);
+    // eprintln!("{}", key);
     let tr = Tr::new(key, None).expect("infallible since it's None");
     let descriptor = Descriptor::Tr(tr);
     descriptor
@@ -88,7 +88,7 @@ impl Wallet {
         network: bitcoin::Network,
         db: &mut Db,
     ) -> anyhow::Result<bitcoin::Address> {
-        let ((index, spk), derivation_additions) = self.graph.index.next_unused_spk(&());
+        let ((_index, spk), derivation_additions) = self.graph.index.next_unused_spk(&());
 
         let new_changeset = ChangeSet {
             chain_changeset: Default::default(),
@@ -144,27 +144,23 @@ impl Commands {
                 let client = electrum_client::Client::from_config(electrum_url, config)?;
                 let c = wallet.chain.blocks().clone();
 
-                // let (_next_address_index, _used) = wallet.graph.index.next_index(&(()));
-                // let ((_index, spk), derivation_additions) =
-                //     wallet.graph.index.next_unused_spk(&(())).clone();
-
                 let spks = wallet.graph.index.spks_of_all_keychains();
 
-                let spks = spks
-                    .into_iter()
-                    .map(|(_, spk)| {
-                        (
-                            (),
-                            spk.inspect(|(index, spk)| {
-                                println!(
-                                    "{}: {}",
-                                    index,
-                                    Address::from_script(spk, network).unwrap()
-                                );
-                            }),
-                        )
-                    })
-                    .collect();
+                // let spks = spks
+                //     .into_iter()
+                //     .map(|(_, spk)| {
+                //         (
+                //             (),
+                //             spk.inspect(|(index, spk)| {
+                //                 println!(
+                //                     "{}: {}",
+                //                     index,
+                //                     Address::from_script(spk, network).unwrap()
+                //                 );
+                //             }),
+                //         )
+                //     })
+                //     .collect();
 
                 let response = client
                     .scan(&c, spks, core::iter::empty(), core::iter::empty(), 10, 10)
