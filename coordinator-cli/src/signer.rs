@@ -34,9 +34,9 @@ impl<'a, 'b> Signer<'a, 'b> {
 
     pub fn sign_plain_message(
         &mut self,
-        messages: Vec<Vec<u8>>,
+        message: frostsnap_ext::sign_messages::RequestSignMessage,
     ) -> anyhow::Result<Vec<schnorr_fun::Signature>> {
-        let finished_signatures = self.run_signing_process(messages, false)?;
+        let finished_signatures = self.run_signing_process(message, false)?;
         Ok(finished_signatures)
     }
 
@@ -45,26 +45,27 @@ impl<'a, 'b> Signer<'a, 'b> {
             .coordinator
             .key()
             .ok_or(anyhow!("Incorrect state to start signing"))?;
-        let public_key = key.frost_key().public_key().clone().to_xonly_bytes();
+        let public_key = key.frost_key().clone().into_xonly_key().public_key();
+        let time_now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("Failed to retrieve system time")
+            .as_secs();
 
-        let event = nostr::create_unsigned_nostr_event(hex::encode(public_key), &message)?;
-        let event_id = event.id.as_bytes().to_vec();
+        let event = nostr::UnsignedEvent::new(public_key, 1, vec![], message, time_now as i64);
 
         let finished_signature = self.run_signing_process(
-            // coordinator,
-            // still_need_to_sign,
-            vec![event_id],
+            frostsnap_ext::sign_messages::RequestSignMessage::Nostr(event.clone()),
             false,
         )?;
         let finished_signature = finished_signature[0].clone();
-        let signed_event = nostr::add_signature(event, finished_signature)?;
+        let signed_event = event.add_signature(finished_signature);
 
         Ok(signed_event)
     }
 
     fn run_signing_process(
         &mut self,
-        messages: Vec<Vec<u8>>,
+        message: frostsnap_ext::sign_messages::RequestSignMessage,
         tap_tweak: bool,
     ) -> anyhow::Result<Vec<frostsnap_core::schnorr_fun::Signature>> {
         let key = self
@@ -111,7 +112,7 @@ impl<'a, 'b> Signer<'a, 'b> {
 
         let (init_sends, signature_request) =
             self.coordinator
-                .start_sign(messages, tap_tweak, still_need_to_sign.clone())?;
+                .start_sign(message, tap_tweak, still_need_to_sign.clone())?;
 
         let mut outbox = VecDeque::from_iter(init_sends);
         let mut signatures = None;
@@ -176,10 +177,12 @@ impl<'a, 'b> Signer<'a, 'b> {
         &mut self,
         tx_sighashes: Vec<TapSighashHash>,
     ) -> anyhow::Result<Vec<schnorr_fun::Signature>> {
-        let messages = tx_sighashes
+        let message_sighashes = tx_sighashes
             .into_iter()
             .map(|sighash| sighash.to_vec())
             .collect();
+        let messages =
+            frostsnap_ext::sign_messages::RequestSignMessage::SigHashes(message_sighashes);
         let finished_signatures = self.run_signing_process(messages, true)?;
         Ok(finished_signatures)
     }

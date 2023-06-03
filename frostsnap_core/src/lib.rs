@@ -337,7 +337,7 @@ impl FrostCoordinator {
 
     pub fn start_sign(
         &mut self,
-        messages_to_sign: Vec<Vec<u8>>,
+        message_to_sign: frostsnap_ext::sign_messages::RequestSignMessage,
         tap_tweak: bool,
         signing_parties: BTreeSet<DeviceId>,
     ) -> Result<(Vec<CoordinatorSend>, CoordinatorToDeviceMessage), StartSignError> {
@@ -354,6 +354,7 @@ impl FrostCoordinator {
                     });
                 }
 
+                let messages_to_sign = message_to_sign.clone().message_chunks_to_sign();
                 let n_signatures = messages_to_sign.len();
 
                 let signing_nonces = signing_parties
@@ -432,7 +433,7 @@ impl FrostCoordinator {
                         CoordinatorToStorageMessage::UpdateState(key),
                     )],
                     CoordinatorToDeviceMessage::RequestSign {
-                        messages_to_sign: messages_to_sign.clone(),
+                        message_to_sign: message_to_sign.clone(),
                         nonces: signing_nonces.clone(),
                         tap_tweak,
                     },
@@ -782,7 +783,7 @@ impl FrostSigner {
                 },
                 CoordinatorToDeviceMessage::RequestSign {
                     nonces,
-                    messages_to_sign,
+                    message_to_sign,
                     tap_tweak,
                 },
             ) => {
@@ -817,13 +818,13 @@ impl FrostSigner {
 
                 self.state = SignerState::AwaitingSignAck {
                     key: key.clone(),
-                    messages: messages_to_sign.clone(),
+                    message: message_to_sign.clone(),
                     nonces,
                     tap_tweak,
                 };
                 Ok(vec![DeviceSend::ToUser(
                     DeviceToUserMessage::SignatureRequest {
-                        messages_to_sign,
+                        message_to_sign,
                         tap_tweak,
                     },
                 )])
@@ -856,10 +857,12 @@ impl FrostSigner {
         match &self.state {
             SignerState::AwaitingSignAck {
                 key,
-                messages,
+                message,
                 nonces,
                 tap_tweak,
             } => {
+                let messages = message.clone().message_chunks_to_sign();
+
                 let frost = frost::new_with_deterministic_nonces::<Sha256>();
                 let (_, my_nonce_index, my_replenish_index) =
                     nonces.get(&self.device_id()).expect("already checked");
@@ -965,7 +968,7 @@ pub enum SignerState {
     },
     AwaitingSignAck {
         key: FrostsnapKey,
-        messages: Vec<Vec<u8>>,
+        message: frostsnap_ext::sign_messages::RequestSignMessage,
         nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
         tap_tweak: bool,
     },

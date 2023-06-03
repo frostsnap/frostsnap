@@ -39,7 +39,7 @@ pub enum CoordinatorToDeviceMessage {
     },
     RequestSign {
         nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
-        messages_to_sign: Vec<Vec<u8>>,
+        message_to_sign: frostsnap_ext::sign_messages::RequestSignMessage,
         tap_tweak: bool,
     },
 }
@@ -117,7 +117,7 @@ pub enum DeviceToUserMessage {
         xpub: String,
     },
     SignatureRequest {
-        messages_to_sign: Vec<Vec<u8>>,
+        message_to_sign: frostsnap_ext::sign_messages::RequestSignMessage,
         tap_tweak: bool,
     },
 }

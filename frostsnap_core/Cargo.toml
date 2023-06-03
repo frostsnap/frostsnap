@@ -13,6 +13,7 @@ sha2 = {  version = "0.10", default-features = false }
 chacha20 = { version = "0.9", default-features = false }
 serde = { version = "1", features = ["derive"], default-features = false }
 bitcoin = { version = "0.29", features = ["no-std"], default-features = false }
+frostsnap_ext = { path = "../frostsnap_ext", default-features = false }
 
 [features]
 std = []
