@@ -328,7 +328,12 @@ impl Commands {
                 );
                 let mut signer = Signer::new(db, ports, coordinator);
 
-                let signatures = signer.sign_tap_tweaked(messages)?;
+                let request_sign_message =
+                    frostsnap_ext::sign_messages::RequestSignMessage::Transaction {
+                        tx_template: tx_template.clone(),
+                        prevouts: prevouts.into_iter().cloned().collect(),
+                    };
+                let signatures = signer.sign_message_request(request_sign_message, true)?;
 
                 assert_eq!(signatures.len(), tx_template.input.len());
                 for (txin, signature) in tx_template.input.iter_mut().zip(signatures) {
