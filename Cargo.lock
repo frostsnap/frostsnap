@@ -139,18 +139,19 @@ dependencies = [
 [[package]]
 name = "bdk_chain"
 version = "0.4.0"
-dependencies = [
- "bitcoin",
-]
-
-[[package]]
-name = "bdk_chain"
-version = "0.4.0"
 source = "git+https://github.com/evanlinjin/bdk.git?rev=cd096df9568a1bb7160482f7c36c807cce1b0b5d#cd096df9568a1bb7160482f7c36c807cce1b0b5d"
 dependencies = [
  "bitcoin",
  "miniscript",
  "serde",
+]
+
+[[package]]
+name = "bdk_chain"
+version = "0.4.0"
+source = "git+https://github.com/nickfarrow/bdk.git#ac402c1fa82dd10359fbeb79aabc876fd8064960"
+dependencies = [
+ "bitcoin",
 ]
 
 [[package]]
@@ -817,7 +818,7 @@ name = "frostsnap_ext"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bdk_chain 0.4.0",
+ "bdk_chain 0.4.0 (git+https://github.com/nickfarrow/bdk.git)",
  "schnorr_fun",
  "serde",
  "serde_json",
