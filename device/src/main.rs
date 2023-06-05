@@ -440,7 +440,7 @@ fn main() -> ! {
                         }
                         frostsnap_core::message::DeviceToUserMessage::SignatureRequest {
                             message_to_sign,
-                            tap_tweak,
+                            ..
                         } => {
                             display.print(format!("Sign {}", message_to_sign)).unwrap();
                             led.write(brightness([colors::FUCHSIA].iter().cloned(), 10))

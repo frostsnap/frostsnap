@@ -71,7 +71,7 @@ pub struct Event {
 #[cfg(all(feature = "tungstenite", feature = "anyhow"))]
 pub fn broadcast_event(event: Event, relay: &str) -> anyhow::Result<()> {
     let (mut socket, _) = tungstenite::connect(relay)?;
-    let msg = json!(event).to_string();
+    let msg = json!(["EVENT", event]).to_string();
     socket.write_message(tungstenite::Message::Text(msg))?;
     Ok(())
 }

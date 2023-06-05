@@ -255,8 +255,9 @@ fn main() -> anyhow::Result<()> {
 
             match sign_args {
                 SignArgs::Message { messages } => {
-                    let finished_signatures = signer.sign_plain_message(
+                    let finished_signatures = signer.sign_message_request(
                         frostsnap_ext::sign_messages::RequestSignMessage::Plain(messages.into()),
+                        false,
                     )?;
 
                     println!(
@@ -269,7 +270,26 @@ fn main() -> anyhow::Result<()> {
                     );
                 }
                 SignArgs::Nostr { message } => {
-                    let signed_event = signer.sign_nostr(message)?;
+                    let public_key = signer
+                        .coordinator_frost_key()?
+                        .frost_key()
+                        .clone()
+                        .into_xonly_key()
+                        .public_key();
+                    let time_now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .expect("Failed to retrieve system time")
+                        .as_secs();
+
+                    let event =
+                        nostr::UnsignedEvent::new(public_key, 1, vec![], message, time_now as i64);
+
+                    let finished_signature = signer.sign_message_request(
+                        frostsnap_ext::sign_messages::RequestSignMessage::Nostr(event.clone()),
+                        false,
+                    )?;
+                    let finished_signature = finished_signature[0].clone();
+                    let signed_event = event.add_signature(finished_signature);
 
                     println!("{}", serde_json::json!(signed_event).to_string());
 

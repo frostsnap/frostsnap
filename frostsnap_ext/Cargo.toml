@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+bdk_chain = { path = "../../bdk/crates/chain", default-features = false }
 schnorr_fun = { git = "https://github.com/llfourn/secp256kfun.git", features = ["serde", "alloc", "libsecp_compat"], default-features = false }
 serde = { version = "1", features = ["derive"], default-features = false }
 serde_json = { version = "1", features = ["alloc"], default-features = false }

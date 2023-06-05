@@ -1,13 +1,12 @@
-use bdk_chain::bitcoin::util::taproot::TapSighashHash;
 use frostsnap_comms::{DeviceReceiveBody, DeviceReceiveMessage};
 use frostsnap_core::message::{
     CoordinatorSend, CoordinatorToUserMessage, DeviceToCoordinatorBody, DeviceToCoordindatorMessage,
 };
-use frostsnap_core::schnorr_fun;
+use frostsnap_core::{schnorr_fun, CoordinatorFrostKey};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use tracing::{event, Level};
 
-use crate::{db::Db, nostr, ports::Ports};
+use crate::{db::Db, ports::Ports};
 
 use anyhow::anyhow;
 
@@ -32,35 +31,20 @@ impl<'a, 'b> Signer<'a, 'b> {
         }
     }
 
-    pub fn sign_plain_message(
+    pub fn sign_message_request(
         &mut self,
         message: frostsnap_ext::sign_messages::RequestSignMessage,
+        tap_tweak: bool,
     ) -> anyhow::Result<Vec<schnorr_fun::Signature>> {
-        let finished_signatures = self.run_signing_process(message, false)?;
+        let finished_signatures = self.run_signing_process(message, tap_tweak)?;
         Ok(finished_signatures)
     }
 
-    pub fn sign_nostr(&mut self, message: String) -> anyhow::Result<nostr::Event> {
-        let key = self
+    pub fn coordinator_frost_key(&self) -> anyhow::Result<&CoordinatorFrostKey> {
+        Ok(self
             .coordinator
             .key()
-            .ok_or(anyhow!("Incorrect state to start signing"))?;
-        let public_key = key.frost_key().clone().into_xonly_key().public_key();
-        let time_now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("Failed to retrieve system time")
-            .as_secs();
-
-        let event = nostr::UnsignedEvent::new(public_key, 1, vec![], message, time_now as i64);
-
-        let finished_signature = self.run_signing_process(
-            frostsnap_ext::sign_messages::RequestSignMessage::Nostr(event.clone()),
-            false,
-        )?;
-        let finished_signature = finished_signature[0].clone();
-        let signed_event = event.add_signature(finished_signature);
-
-        Ok(signed_event)
+            .ok_or(anyhow!("Incorrect state to start signing"))?)
     }
 
     fn run_signing_process(
@@ -171,19 +155,5 @@ impl<'a, 'b> Signer<'a, 'b> {
             }
         };
         Ok(finished_signatures.clone())
-    }
-
-    pub fn sign_tap_tweaked(
-        &mut self,
-        tx_sighashes: Vec<TapSighashHash>,
-    ) -> anyhow::Result<Vec<schnorr_fun::Signature>> {
-        let message_sighashes = tx_sighashes
-            .into_iter()
-            .map(|sighash| sighash.to_vec())
-            .collect();
-        let messages =
-            frostsnap_ext::sign_messages::RequestSignMessage::SigHashes(message_sighashes);
-        let finished_signatures = self.run_signing_process(messages, true)?;
-        Ok(finished_signatures)
     }
 }
