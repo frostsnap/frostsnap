@@ -1,32 +1,15 @@
 use crate::nostr::UnsignedEvent;
 use alloc::{string::String, vec::Vec};
 use bdk_chain::bitcoin::{
-    self, util::sighash::SighashCache, SchnorrSighashType, Transaction, TxOut,
+    self, util::sighash::SighashCache, Address, Network, SchnorrSighashType, Transaction, TxOut,
 };
 
-// The coordinator will have some <transaction> with N inputs, requiring N signatures.
-/// We want to pass the entire transaction (PSBT or otherwise) through to the device,
-/// Such that the device can validate the [address, amount] pairs.
-/// (Can validate more data, e.g. txid, but this will do for now).
-///
-/// So we will need to make a signature request with some [`SignRequestMessage`],
-/// that is an instruction to sign N signatures.
-
-/// Currently a RequestSign looks like
-///
-/// RequestSign {
-///     nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
-///     messages_to_sign: Vec<Vec<u8>>,
-///     tap_tweak: bool,
-/// },
-///
 /// Do we still want the functionality of signing multiple messages at once?
 /// E.g. Signing two independent transactions Vec<PSBT> at once?
 /// Or just a single PSBT which contains multiple messages?
 ///
-/// I think we still want to sign a Vec of messages. I.e. a Vec of PSBTs of inputs:
+/// I think eventually we want to support signing a Vec of messages. I.e. a Vec of PSBTs:
 /// Vec<RequestSignMessage>
-///
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum RequestSignMessage {
@@ -38,9 +21,6 @@ pub enum RequestSignMessage {
     }, // N nonces and sigs
 }
 
-/// For M [`RequestSignMessage::Psbt`]s we would need M*N nonces to produce M*N signatures
-/// Should we allow a device to reject some proportion of the M signing requests?
-
 // What to show on the device for signing requests
 impl core::fmt::Display for RequestSignMessage {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -49,11 +29,20 @@ impl core::fmt::Display for RequestSignMessage {
                 write!(f, "Plain:{}", String::from_utf8_lossy(message))
             }
             RequestSignMessage::Nostr(event) => write!(f, "Nostr: {}", event.content),
-            RequestSignMessage::Transaction { .. } => write!(f, "Tx:{:?}", "dog"),
+            RequestSignMessage::Transaction { tx_template, .. } => {
+                let mut lines = vec![];
+                for output in &tx_template.output {
+                    let address = Address::from_script(&output.script_pubkey, Network::Signet)
+                        .expect("valid address");
+                    lines.push(format!("{} to {}", output.value, address));
+                }
+                write!(f, "{}", lines.join("\n"))
+            }
         }
     }
 }
 
+// The bytes which need to be signed
 impl RequestSignMessage {
     pub fn message_chunks_to_sign(self) -> Vec<Vec<u8>> {
         match self {
