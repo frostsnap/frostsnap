@@ -5,6 +5,5 @@ members = [
     "device",
     "coordinator-cli",
     "frostsnap_comms",
-    "frostsnap_ext"
 ]
 resolver = "2"

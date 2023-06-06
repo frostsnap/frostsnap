@@ -3,11 +3,12 @@ use alloc::vec::Vec;
 
 use schnorr_fun::fun::{marker::EvenY, Point};
 use schnorr_fun::Signature;
-use serde_json::json;
 use sha2::Digest;
 use sha2::Sha256;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash, Ord, PartialOrd,
+)]
 pub struct UnsignedEvent {
     pub id: String,
     pubkey: Point<EvenY>,
@@ -19,6 +20,8 @@ pub struct UnsignedEvent {
 }
 
 impl UnsignedEvent {
+    /// HACK: we only need `new` on the coordinator and serde_json doesn't work with no_std so we feature gate `new`.
+    #[cfg(feature = "serde_json")]
     pub fn new(
         pubkey: Point<EvenY>,
         kind: u64,
@@ -26,7 +29,14 @@ impl UnsignedEvent {
         content: String,
         created_at: i64,
     ) -> Self {
-        let serialized_event = json!([0, pubkey, created_at, kind, json!(tags), content]);
+        let serialized_event = serde_json::json!([
+            0,
+            pubkey,
+            created_at,
+            kind,
+            serde_json::json!(tags),
+            content
+        ]);
 
         let mut hash = Sha256::default();
         hash.update(serialized_event.to_string().as_bytes());

@@ -1,4 +1,4 @@
-use frostsnap_ext::nostr::Event;
+use frostsnap_core::nostr::Event;
 
 pub fn broadcast_event(event: Event, relay: &str) -> anyhow::Result<()> {
     let (mut socket, _) = tungstenite::connect(relay)?;

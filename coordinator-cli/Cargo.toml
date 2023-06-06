@@ -9,7 +9,6 @@ edition = "2021"
 bincode = { version = "2.0.0-rc.3", default-features = false, features = ["derive", "serde", "std"] } 
 frostsnap_core = { path = "../frostsnap_core", features = ["std"] }
 frostsnap_comms = { path = "../frostsnap_comms" }
-frostsnap_ext = { path = "../frostsnap_ext" }
 hex = "0.4.3"
 sha2 = "0.9"
 rand = { version = "0.8" }

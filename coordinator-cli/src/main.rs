@@ -260,7 +260,7 @@ fn main() -> anyhow::Result<()> {
             match sign_args {
                 SignArgs::Message { messages } => {
                     let finished_signatures = signer.sign_message_request(
-                        frostsnap_ext::sign_messages::RequestSignMessage::Plain(messages.into()),
+                        RequestSignMessage::Plain(messages.into()),
                         false,
                     )?;
 
@@ -285,7 +285,7 @@ fn main() -> anyhow::Result<()> {
                         .expect("Failed to retrieve system time")
                         .as_secs();
 
-                    let event = frostsnap_ext::nostr::UnsignedEvent::new(
+                    let event = frostsnap_core::nostr::UnsignedEvent::new(
                         public_key,
                         1,
                         vec![],
@@ -294,7 +294,7 @@ fn main() -> anyhow::Result<()> {
                     );
 
                     let finished_signature = signer.sign_message_request(
-                        frostsnap_ext::sign_messages::RequestSignMessage::Nostr(event.clone()),
+                        RequestSignMessage::Nostr(event.clone()),
                         false,
                     )?;
                     let finished_signature = finished_signature[0].clone();

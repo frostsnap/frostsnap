@@ -7,6 +7,7 @@ extern crate std;
 
 pub mod encrypted_share;
 pub mod message;
+pub mod nostr;
 pub mod xpub;
 
 use bitcoin::XOnlyPublicKey;
@@ -20,7 +21,7 @@ use crate::{
     encrypted_share::EncryptedShare,
     message::{
         CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToUserMessage, DeviceSend,
-        DeviceToCoordindatorMessage, DeviceToUserMessage, KeyGenProvideShares,
+        DeviceToCoordindatorMessage, DeviceToUserMessage, KeyGenProvideShares, RequestSignMessage,
     },
 };
 use alloc::{
@@ -337,7 +338,7 @@ impl FrostCoordinator {
 
     pub fn start_sign(
         &mut self,
-        message_to_sign: frostsnap_ext::sign_messages::RequestSignMessage,
+        message_to_sign: RequestSignMessage,
         tap_tweak: bool,
         signing_parties: BTreeSet<DeviceId>,
     ) -> Result<(Vec<CoordinatorSend>, CoordinatorToDeviceMessage), StartSignError> {
@@ -968,7 +969,7 @@ pub enum SignerState {
     },
     AwaitingSignAck {
         key: FrostsnapKey,
-        message: frostsnap_ext::sign_messages::RequestSignMessage,
+        message: RequestSignMessage,
         nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
         tap_tweak: bool,
     },

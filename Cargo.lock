@@ -147,14 +147,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bdk_chain"
-version = "0.4.0"
-source = "git+https://github.com/nickfarrow/bdk.git#ac402c1fa82dd10359fbeb79aabc876fd8064960"
-dependencies = [
- "bitcoin",
-]
-
-[[package]]
 name = "bdk_coin_select"
 version = "0.1.0"
 source = "git+https://github.com/llfourn/bdk.git?rev=9129b43f1ee75185f3cc3a0f27edcd00df59a61d#9129b43f1ee75185f3cc3a0f27edcd00df59a61d"
@@ -164,7 +156,7 @@ name = "bdk_electrum"
 version = "0.2.0"
 source = "git+https://github.com/evanlinjin/bdk.git?rev=cd096df9568a1bb7160482f7c36c807cce1b0b5d#cd096df9568a1bb7160482f7c36c807cce1b0b5d"
 dependencies = [
- "bdk_chain 0.4.0 (git+https://github.com/evanlinjin/bdk.git?rev=cd096df9568a1bb7160482f7c36c807cce1b0b5d)",
+ "bdk_chain",
  "electrum-client",
 ]
 
@@ -173,7 +165,7 @@ name = "bdk_file_store"
 version = "0.1.0"
 source = "git+https://github.com/evanlinjin/bdk.git?rev=cd096df9568a1bb7160482f7c36c807cce1b0b5d#cd096df9568a1bb7160482f7c36c807cce1b0b5d"
 dependencies = [
- "bdk_chain 0.4.0 (git+https://github.com/evanlinjin/bdk.git?rev=cd096df9568a1bb7160482f7c36c807cce1b0b5d)",
+ "bdk_chain",
  "bincode 1.3.3",
  "serde",
 ]
@@ -388,7 +380,7 @@ name = "coordinator-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bdk_chain 0.4.0 (git+https://github.com/evanlinjin/bdk.git?rev=cd096df9568a1bb7160482f7c36c807cce1b0b5d)",
+ "bdk_chain",
  "bdk_coin_select",
  "bdk_electrum",
  "bdk_file_store",
@@ -397,7 +389,6 @@ dependencies = [
  "clap",
  "frostsnap_comms",
  "frostsnap_core",
- "frostsnap_ext",
  "hex",
  "home",
  "rand",
@@ -807,19 +798,8 @@ version = "0.1.0"
 dependencies = [
  "bitcoin",
  "chacha20",
- "frostsnap_ext",
  "rand_chacha",
  "rand_core",
- "schnorr_fun",
- "serde",
- "sha2 0.10.6",
-]
-
-[[package]]
-name = "frostsnap_ext"
-version = "0.1.0"
-dependencies = [
- "bdk_chain 0.4.0 (git+https://github.com/nickfarrow/bdk.git)",
  "schnorr_fun",
  "serde",
  "serde_json",

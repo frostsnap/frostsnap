@@ -1,6 +1,6 @@
 use frostsnap_core::message::{
-    CoordinatorSend, CoordinatorToDeviceBody, CoordinatorToUserMessage, DeviceSend,
-    DeviceToCoordindatorMessage, DeviceToStorageMessage, DeviceToUserMessage,
+    CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToUserMessage, DeviceSend,
+    DeviceToCoordindatorMessage, DeviceToStorageMessage, DeviceToUserMessage, RequestSignMessage,
 };
 use frostsnap_core::{DeviceId, FrostCoordinator, FrostSigner};
 use rand_chacha::rand_core::SeedableRng;
@@ -17,7 +17,7 @@ pub enum Send {
     },
     CoordinatorToUser(CoordinatorToUserMessage),
     DeviceToCoordinator(DeviceToCoordindatorMessage),
-    CoordinatorToDevice(CoordinatorToDeviceBody),
+    CoordinatorToDevice(CoordinatorToDeviceMessage),
     UserToCoordinator(UserToCoordinator),
     ToStorage, /* ignoring these for now */
 }
@@ -44,8 +44,8 @@ impl From<DeviceToCoordindatorMessage> for Send {
     }
 }
 
-impl From<CoordinatorToDeviceBody> for Send {
-    fn from(value: CoordinatorToDeviceBody) -> Self {
+impl From<CoordinatorToDeviceMessage> for Send {
+    fn from(value: CoordinatorToDeviceMessage) -> Self {
         Send::CoordinatorToDevice(value)
     }
 }
@@ -62,7 +62,7 @@ pub enum UserToCoordinator {
         threshold: usize,
     },
     StartSign {
-        messages: Vec<Vec<u8>>,
+        message: RequestSignMessage,
         devices: BTreeSet<DeviceId>,
     },
 }
@@ -89,17 +89,12 @@ fn test_end_to_end() {
     let message_to_sign1 = b"pyramid schmee".to_vec();
 
     message_stack.push(Send::UserToCoordinator(UserToCoordinator::StartSign {
-        messages: vec![message_to_sign1.clone(), message_to_sign2.clone()],
-        devices: BTreeSet::from_iter([device_id_vec[1], device_id_vec[2]]),
-    }));
-
-    message_stack.push(Send::UserToCoordinator(UserToCoordinator::StartSign {
-        messages: vec![message_to_sign2.clone()],
+        message: RequestSignMessage::Plain(message_to_sign2.clone()),
         devices: BTreeSet::from_iter([device_id_vec[0], device_id_vec[1]]),
     }));
     // Use signers chosen by the coordinator
     message_stack.push(Send::UserToCoordinator(UserToCoordinator::StartSign {
-        messages: vec![message_to_sign1.clone()],
+        message: RequestSignMessage::Plain(message_to_sign1.clone()),
         devices: BTreeSet::from_iter([device_id_vec[1], device_id_vec[2]]),
     }));
     message_stack.push(Send::UserToCoordinator(UserToCoordinator::DoKeyGen {
@@ -108,7 +103,7 @@ fn test_end_to_end() {
 
     let mut check_keygens = BTreeMap::default();
     let mut coordinator_check_keygen = None;
-    let mut check_sig_requests = BTreeMap::<Vec<Vec<u8>>, Vec<DeviceId>>::default();
+    let mut check_sig_requests = BTreeMap::<RequestSignMessage, Vec<DeviceId>>::default();
     let mut completed_signature_responses = vec![];
     while !message_stack.is_empty() {
         let to_send = message_stack.pop().unwrap();
@@ -154,9 +149,9 @@ fn test_end_to_end() {
                             .do_keygen(&devices.keys().cloned().collect(), threshold)
                             .unwrap(),
                     )],
-                    UserToCoordinator::StartSign { messages, devices } => {
+                    UserToCoordinator::StartSign { message, devices } => {
                         let (mut new_messages, hack) =
-                            coordinator.start_sign(messages, false, devices).unwrap();
+                            coordinator.start_sign(message, false, devices).unwrap();
                         new_messages.push(CoordinatorSend::ToDevice(hack));
                         new_messages
                     }
@@ -171,11 +166,11 @@ fn test_end_to_end() {
                     check_keygens.insert(device_id, xpub);
                 }
                 DeviceToUserMessage::SignatureRequest {
-                    messages_to_sign,
+                    message_to_sign,
                     tap_tweak: _,
                 } => {
                     check_sig_requests
-                        .entry(messages_to_sign.clone())
+                        .entry(message_to_sign.clone())
                         .and_modify(|signers| signers.push(device_id))
                         .or_insert_with(|| vec![device_id]);
                     // Simulate user pressing "sign" --> calls device.sign()
@@ -199,14 +194,14 @@ fn test_end_to_end() {
         assert_eq!(digest, &coordinator_check_keygen);
     }
 
-    assert_eq!(check_sig_requests.len(), 3, "three messages were signed");
+    assert_eq!(check_sig_requests.len(), 2, "three messages were signed");
     assert!(
         check_sig_requests
             .values()
             .all(|devices| devices.len() == 2),
         "two devices signed each message"
     );
-    assert_eq!(completed_signature_responses.len(), 3);
+    assert_eq!(completed_signature_responses.len(), 2);
 
     let frost_key = {
         let mut devices = devices.iter();
