@@ -1,6 +1,6 @@
 use frostsnap_comms::{DeviceReceiveBody, DeviceReceiveMessage};
 use frostsnap_core::message::{
-    RequestSignMessage,
+    SignTask,
     CoordinatorSend, CoordinatorToUserMessage, DeviceToCoordinatorBody, DeviceToCoordindatorMessage,
 };
 use frostsnap_core::{schnorr_fun, CoordinatorFrostKey};
@@ -34,7 +34,7 @@ impl<'a, 'b> Signer<'a, 'b> {
 
     pub fn sign_message_request(
         &mut self,
-        message: RequestSignMessage,
+        message: SignTask,
         tap_tweak: bool,
     ) -> anyhow::Result<Vec<schnorr_fun::Signature>> {
         let finished_signatures = self.run_signing_process(message, tap_tweak)?;
@@ -50,7 +50,7 @@ impl<'a, 'b> Signer<'a, 'b> {
 
     fn run_signing_process(
         &mut self,
-        message: RequestSignMessage,
+        message: SignTask,
         tap_tweak: bool,
     ) -> anyhow::Result<Vec<frostsnap_core::schnorr_fun::Signature>> {
         let key = self

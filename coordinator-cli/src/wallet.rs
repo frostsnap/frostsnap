@@ -316,7 +316,7 @@ impl Commands {
                 let mut signer = Signer::new(db, ports, coordinator);
 
                 let request_sign_message =
-                    RequestSignMessage::Transaction {
+                    SignTask::Transaction {
                         tx_template: tx_template.clone(),
                         prevouts: prevouts.into_iter().cloned().collect(),
                     };

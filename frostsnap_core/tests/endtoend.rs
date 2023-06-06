@@ -1,6 +1,6 @@
 use frostsnap_core::message::{
     CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToUserMessage, DeviceSend,
-    DeviceToCoordindatorMessage, DeviceToStorageMessage, DeviceToUserMessage, RequestSignMessage,
+    DeviceToCoordindatorMessage, DeviceToStorageMessage, DeviceToUserMessage, SignTask,
 };
 use frostsnap_core::{DeviceId, FrostCoordinator, FrostSigner};
 use rand_chacha::rand_core::SeedableRng;
@@ -62,7 +62,7 @@ pub enum UserToCoordinator {
         threshold: usize,
     },
     StartSign {
-        message: RequestSignMessage,
+        message: SignTask,
         devices: BTreeSet<DeviceId>,
     },
 }
@@ -89,12 +89,12 @@ fn test_end_to_end() {
     let message_to_sign1 = b"pyramid schmee".to_vec();
 
     message_stack.push(Send::UserToCoordinator(UserToCoordinator::StartSign {
-        message: RequestSignMessage::Plain(message_to_sign2.clone()),
+        message: SignTask::Plain(message_to_sign2.clone()),
         devices: BTreeSet::from_iter([device_id_vec[0], device_id_vec[1]]),
     }));
     // Use signers chosen by the coordinator
     message_stack.push(Send::UserToCoordinator(UserToCoordinator::StartSign {
-        message: RequestSignMessage::Plain(message_to_sign1.clone()),
+        message: SignTask::Plain(message_to_sign1.clone()),
         devices: BTreeSet::from_iter([device_id_vec[1], device_id_vec[2]]),
     }));
     message_stack.push(Send::UserToCoordinator(UserToCoordinator::DoKeyGen {
@@ -103,7 +103,7 @@ fn test_end_to_end() {
 
     let mut check_keygens = BTreeMap::default();
     let mut coordinator_check_keygen = None;
-    let mut check_sig_requests = BTreeMap::<RequestSignMessage, Vec<DeviceId>>::default();
+    let mut check_sig_requests = BTreeMap::<SignTask, Vec<DeviceId>>::default();
     let mut completed_signature_responses = vec![];
     while !message_stack.is_empty() {
         let to_send = message_stack.pop().unwrap();

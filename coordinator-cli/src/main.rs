@@ -260,7 +260,7 @@ fn main() -> anyhow::Result<()> {
             match sign_args {
                 SignArgs::Message { messages } => {
                     let finished_signatures = signer.sign_message_request(
-                        RequestSignMessage::Plain(messages.into()),
+                        SignTask::Plain(messages.into()),
                         false,
                     )?;
 
@@ -294,7 +294,7 @@ fn main() -> anyhow::Result<()> {
                     );
 
                     let finished_signature = signer.sign_message_request(
-                        RequestSignMessage::Nostr(event.clone()),
+                        SignTask::Nostr(event.clone()),
                         false,
                     )?;
                     let finished_signature = finished_signature[0].clone();

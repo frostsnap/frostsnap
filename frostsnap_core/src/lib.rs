@@ -21,7 +21,7 @@ use crate::{
     encrypted_share::EncryptedShare,
     message::{
         CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToUserMessage, DeviceSend,
-        DeviceToCoordindatorMessage, DeviceToUserMessage, KeyGenProvideShares, RequestSignMessage,
+        DeviceToCoordindatorMessage, DeviceToUserMessage, KeyGenProvideShares, SignTask,
     },
 };
 use alloc::{
@@ -338,7 +338,7 @@ impl FrostCoordinator {
 
     pub fn start_sign(
         &mut self,
-        message_to_sign: RequestSignMessage,
+        message_to_sign: SignTask,
         tap_tweak: bool,
         signing_parties: BTreeSet<DeviceId>,
     ) -> Result<(Vec<CoordinatorSend>, CoordinatorToDeviceMessage), StartSignError> {
@@ -355,7 +355,7 @@ impl FrostCoordinator {
                     });
                 }
 
-                let messages_to_sign = message_to_sign.clone().message_chunks_to_sign();
+                let messages_to_sign = message_to_sign.clone().messages_to_sign();
                 let n_signatures = messages_to_sign.len();
 
                 let signing_nonces = signing_parties
@@ -404,12 +404,14 @@ impl FrostCoordinator {
                         .tweak(Scalar::<Public, Zero>::from_slice(&tweak.to_be_bytes()).unwrap())
                         .unwrap();
                 }
+
+                let frost = frost::new_without_nonce_generation::<Sha256>();
+
                 let sessions = messages_to_sign
                     .iter()
                     .enumerate()
                     .map(|(i, message)| {
                         let b_message = Message::raw(&message[..]);
-                        let frost = frost::new_without_nonce_generation::<Sha256>();
                         let indexed_nonces = signing_nonces
                             .iter()
                             .map(|(id, (nonce, _, _))| (id.to_x_coord(), nonce[i]))
@@ -862,7 +864,7 @@ impl FrostSigner {
                 nonces,
                 tap_tweak,
             } => {
-                let messages = message.clone().message_chunks_to_sign();
+                let messages = message.messages_to_sign();
 
                 let frost = frost::new_with_deterministic_nonces::<Sha256>();
                 let (_, my_nonce_index, my_replenish_index) =
@@ -969,7 +971,7 @@ pub enum SignerState {
     },
     AwaitingSignAck {
         key: FrostsnapKey,
-        message: RequestSignMessage,
+        message: SignTask,
         nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
         tap_tweak: bool,
     },
