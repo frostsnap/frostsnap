@@ -21,6 +21,7 @@ use wallet::Wallet;
 pub mod db;
 mod device_namer;
 pub mod io;
+pub mod nostr;
 pub mod ports;
 pub mod serial_rw;
 pub mod signer;
@@ -29,7 +30,6 @@ pub mod wallet;
 use clap::{Parser, Subcommand};
 
 use crate::io::fetch_input;
-use frostsnap_ext::nostr;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -285,8 +285,13 @@ fn main() -> anyhow::Result<()> {
                         .expect("Failed to retrieve system time")
                         .as_secs();
 
-                    let event =
-                        nostr::UnsignedEvent::new(public_key, 1, vec![], message, time_now as i64);
+                    let event = frostsnap_ext::nostr::UnsignedEvent::new(
+                        public_key,
+                        1,
+                        vec![],
+                        message,
+                        time_now as i64,
+                    );
 
                     let finished_signature = signer.sign_message_request(
                         frostsnap_ext::sign_messages::RequestSignMessage::Nostr(event.clone()),

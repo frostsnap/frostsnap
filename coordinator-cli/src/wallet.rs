@@ -1,6 +1,5 @@
 use anyhow::Context;
 use bdk_chain::bitcoin::secp256k1::schnorr;
-use bdk_chain::bitcoin::util::sighash::SighashCache;
 use bdk_chain::bitcoin::{
     self, PackedLockTime, SchnorrSig, SchnorrSighashType, Script, Sequence, Transaction, TxIn,
     TxOut, Witness,
@@ -296,18 +295,7 @@ impl Commands {
                     prevouts.push(&full_txout.txout);
                 }
 
-                let mut messages = vec![];
-                let _sighash_tx = tx_template.clone();
                 let schnorr_sighashty = SchnorrSighashType::Default;
-                for (i, _) in tx_template.input.iter().enumerate() {
-                    let mut sighash_cache = SighashCache::new(&_sighash_tx);
-                    let sighash = sighash_cache.taproot_key_spend_signature_hash(
-                        i,
-                        &bitcoin::psbt::Prevouts::All(&prevouts),
-                        schnorr_sighashty,
-                    )?;
-                    messages.push(sighash);
-                }
 
                 println!(
                     "inputs {:?}",
@@ -321,7 +309,6 @@ impl Commands {
                         .map(|x| x.value)
                         .collect::<Vec<_>>()
                 );
-                println!("{:?}", messages);
 
                 let coordinator = frostsnap_core::FrostCoordinator::from_stored_key(
                     wallet.coordinator_frost_key.clone(),

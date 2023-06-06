@@ -408,6 +408,7 @@ dependencies = [
  "thiserror",
  "tracing",
  "tracing-subscriber",
+ "tungstenite",
 ]
 
 [[package]]
@@ -818,13 +819,11 @@ dependencies = [
 name = "frostsnap_ext"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "bdk_chain 0.4.0 (git+https://github.com/nickfarrow/bdk.git)",
  "schnorr_fun",
  "serde",
  "serde_json",
  "sha2 0.10.6",
- "tungstenite",
 ]
 
 [[package]]

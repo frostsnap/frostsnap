@@ -9,7 +9,7 @@ edition = "2021"
 bincode = { version = "2.0.0-rc.3", default-features = false, features = ["derive", "serde", "std"] } 
 frostsnap_core = { path = "../frostsnap_core", features = ["std"] }
 frostsnap_comms = { path = "../frostsnap_comms" }
-frostsnap_ext = { path = "../frostsnap_ext", features = ["tungstenite", "std"] }
+frostsnap_ext = { path = "../frostsnap_ext" }
 hex = "0.4.3"
 sha2 = "0.9"
 rand = { version = "0.8" }
@@ -27,3 +27,4 @@ bdk_electrum = { rev = "cd096df9568a1bb7160482f7c36c807cce1b0b5d", git = "https:
 bdk_file_store = { rev = "cd096df9568a1bb7160482f7c36c807cce1b0b5d", git = "https://github.com/evanlinjin/bdk.git" }
 bdk_coin_select = { rev = "9129b43f1ee75185f3cc3a0f27edcd00df59a61d", git = "https://github.com/llfourn/bdk.git" }
 bech32 = "0.9.1"
+tungstenite = { version = "0.19", features = ["rustls-tls-webpki-roots"], optional = true}
