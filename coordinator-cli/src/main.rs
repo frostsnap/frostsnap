@@ -1,33 +1,17 @@
 use anyhow::anyhow;
-use db::Db;
+use clap::{Parser, Subcommand};
+use coordinator_core::io::fetch_input;
+use coordinator_core::wallet::Wallet;
 use frostsnap_comms::DeviceReceiveBody;
 use frostsnap_comms::DeviceReceiveMessage;
-use frostsnap_core::message::CoordinatorSend;
-use frostsnap_core::message::CoordinatorToStorageMessage;
-use frostsnap_core::message::CoordinatorToUserMessage;
 use frostsnap_core::CoordinatorState;
-use frostsnap_core::DeviceId;
 use frostsnap_core::FrostCoordinator;
-use ports::Ports;
-use std::collections::BTreeMap;
-use std::collections::BTreeSet;
+use frostsnap_ext::nostr;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use tracing::{event, Level};
-use wallet::Wallet;
 
-pub mod db;
-mod device_namer;
-pub mod io;
-pub mod ports;
-pub mod serial_rw;
-pub mod signer;
 pub mod wallet;
-
-use clap::{Parser, Subcommand};
-
-use crate::io::fetch_input;
-use frostsnap_ext::nostr;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -77,40 +61,6 @@ enum SignArgs {
     },
 }
 
-pub fn process_outbox(
-    db: &mut Db,
-    coordinator: &mut FrostCoordinator,
-    outbox: &mut VecDeque<CoordinatorSend>,
-    ports: &mut Ports,
-) -> anyhow::Result<()> {
-    while let Some(message) = outbox.pop_front() {
-        match message {
-            CoordinatorSend::ToDevice(core_message) => {
-                ports.queue_in_port_outbox(vec![DeviceReceiveMessage {
-                    target_destinations: core_message.default_destinations(),
-                    message_body: DeviceReceiveBody::Core(core_message),
-                }]);
-            }
-            CoordinatorSend::ToUser(to_user_message) => match to_user_message {
-                CoordinatorToUserMessage::Signed { .. } => {}
-                CoordinatorToUserMessage::CheckKeyGen { xpub } => {
-                    let ack = io::fetch_input(&format!("OK? [y/n]: {}", xpub)) == "y";
-                    outbox.extend(coordinator.keygen_ack(ack)?);
-                }
-            },
-            CoordinatorSend::ToStorage(to_storage_message) => match to_storage_message {
-                CoordinatorToStorageMessage::UpdateState(key) => {
-                    db.save(db::State {
-                        key,
-                        device_labels: ports.device_labels().clone(),
-                    })?;
-                }
-            },
-        }
-    }
-    Ok(())
-}
-
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let subscriber = tracing_subscriber::fmt()
@@ -132,11 +82,11 @@ fn main() -> anyhow::Result<()> {
         .or(default_db_path)
         .ok_or(anyhow!("We could not find home dir"))?;
 
-    let mut db = db::Db::new(db_path)?;
+    let mut db = coordinator_core::db::Db::new(db_path)?;
     let changeset = db.load()?;
 
     // TODO ports::new(device_labels)
-    let mut ports = ports::Ports::default();
+    let mut ports = coordinator_core::ports::Ports::default();
 
     if let Some(state) = &changeset.frostsnap {
         *ports.device_labels() = state.device_labels.clone();
@@ -177,7 +127,7 @@ fn main() -> anyhow::Result<()> {
                 ports.poll_devices();
 
                 for device_id in ports.unlabelled_devices().collect::<Vec<_>>() {
-                    let device_label = device_namer::gen_name39();
+                    let device_label = coordinator_core::device_namer::gen_name39();
                     eprintln!("Registered new device: {}", device_label);
                     ports.device_labels().insert(device_id, device_label);
                 }
@@ -185,13 +135,13 @@ fn main() -> anyhow::Result<()> {
 
             let keygen_devices = if ports.registered_devices().len() > n_devices {
                 eprintln!("Select devices to do key generation:");
-                choose_devices(&ports.connected_device_labels(), n_devices)
+                coordinator_core::choose_devices(&ports.connected_device_labels(), n_devices)
             } else {
                 ports.registered_devices().clone()
             };
 
             if "y"
-                != io::fetch_input(&format!(
+                != coordinator_core::io::fetch_input(&format!(
                     "Want to do keygen with these devices? [y/n]\n{}",
                     keygen_devices
                         .clone()
@@ -242,7 +192,12 @@ fn main() -> anyhow::Result<()> {
                         break;
                     }
                 }
-                process_outbox(&mut db, &mut coordinator, &mut outbox, &mut ports)?;
+                coordinator_core::process_outbox(
+                    &mut db,
+                    &mut coordinator,
+                    &mut outbox,
+                    &mut ports,
+                )?;
                 ports.send_to_devices()?;
             }
         }
@@ -251,7 +206,8 @@ fn main() -> anyhow::Result<()> {
                 .frostsnap
                 .ok_or(anyhow!("we can't sign because haven't done keygen yet!"))?;
             let coordinator = FrostCoordinator::from_stored_key(state.key);
-            let mut signer = signer::Signer::new(&mut db, &mut ports, coordinator);
+            let mut signer =
+                coordinator_core::signer::Signer::new(&mut db, &mut ports, coordinator);
 
             match sign_args {
                 SignArgs::Message { messages } => {
@@ -323,35 +279,4 @@ fn main() -> anyhow::Result<()> {
         }
     }
     Ok(())
-}
-
-pub fn choose_devices(
-    device_labels: &BTreeMap<DeviceId, String>,
-    n_devices: usize,
-) -> BTreeSet<DeviceId> {
-    let devices_vec = device_labels.iter().collect::<Vec<_>>();
-    for (index, (_, device_label)) in devices_vec.iter().enumerate() {
-        eprintln!("({}) - {}", index, device_label);
-    }
-
-    let mut chosen_signers: BTreeSet<DeviceId> = BTreeSet::new();
-    while chosen_signers.len() < n_devices {
-        let choice = io::fetch_input("\nEnter a device index (n): ").parse::<usize>();
-        match choice {
-            Ok(n) => match devices_vec.get(n) {
-                Some((device_id, _)) => {
-                    if !chosen_signers.contains(device_id) {
-                        chosen_signers.insert(**device_id);
-                    } else {
-                        eprintln!("Already chose this device!")
-                    }
-                }
-                None => eprintln!("no such device ({}", n),
-            },
-            Err(_) => {
-                eprintln!("Choose a number 0..{}", devices_vec.len() - 1);
-            }
-        }
-    }
-    chosen_signers
 }

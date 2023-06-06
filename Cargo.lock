@@ -392,6 +392,32 @@ dependencies = [
  "bdk_coin_select",
  "bdk_electrum",
  "bdk_file_store",
+ "clap",
+ "coordinator_core",
+ "frostsnap_comms",
+ "frostsnap_core",
+ "frostsnap_ext",
+ "hex",
+ "home",
+ "rand",
+ "serde",
+ "serde_json",
+ "serialport",
+ "sha2 0.9.9",
+ "thiserror",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "coordinator_core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bdk_chain 0.4.0 (git+https://github.com/evanlinjin/bdk.git?rev=cd096df9568a1bb7160482f7c36c807cce1b0b5d)",
+ "bdk_coin_select",
+ "bdk_electrum",
+ "bdk_file_store",
  "bincode 2.0.0-rc.3",
  "clap",
  "frostsnap_comms",
