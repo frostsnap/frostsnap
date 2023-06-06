@@ -798,6 +798,7 @@ version = "0.1.0"
 dependencies = [
  "bitcoin",
  "chacha20",
+ "rand",
  "rand_chacha",
  "rand_core",
  "schnorr_fun",

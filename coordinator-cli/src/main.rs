@@ -260,8 +260,7 @@ fn main() -> anyhow::Result<()> {
             match sign_args {
                 SignArgs::Message { messages } => {
                     let finished_signatures = signer.sign_message_request(
-                        SignTask::Plain(messages.into()),
-                        false,
+                        frostsnap_core::message::SignTask::Plain(messages.into()),
                     )?;
 
                     println!(
@@ -294,8 +293,7 @@ fn main() -> anyhow::Result<()> {
                     );
 
                     let finished_signature = signer.sign_message_request(
-                        SignTask::Nostr(event.clone()),
-                        false,
+                        frostsnap_core::message::SignTask::Nostr(event.clone()),
                     )?;
                     let finished_signature = finished_signature[0].clone();
                     let signed_event = event.add_signature(finished_signature);

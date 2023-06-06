@@ -151,7 +151,7 @@ fn test_end_to_end() {
                     )],
                     UserToCoordinator::StartSign { message, devices } => {
                         let (mut new_messages, hack) =
-                            coordinator.start_sign(message, false, devices).unwrap();
+                            coordinator.start_sign(message, devices).unwrap();
                         new_messages.push(CoordinatorSend::ToDevice(hack));
                         new_messages
                     }
@@ -165,10 +165,7 @@ fn test_end_to_end() {
                     device.keygen_ack(true).unwrap();
                     check_keygens.insert(device_id, xpub);
                 }
-                DeviceToUserMessage::SignatureRequest {
-                    message_to_sign,
-                    tap_tweak: _,
-                } => {
+                DeviceToUserMessage::SignatureRequest { message_to_sign } => {
                     check_sig_requests
                         .entry(message_to_sign.clone())
                         .and_modify(|signers| signers.push(device_id))

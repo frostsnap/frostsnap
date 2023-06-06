@@ -42,7 +42,6 @@ pub enum CoordinatorToDeviceMessage {
         // mechanism
         nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
         message_to_sign: SignTask,
-        tap_tweak: bool,
     },
 }
 
@@ -115,13 +114,8 @@ pub enum CoordinatorToUserMessage {
 
 #[derive(Clone, Debug)]
 pub enum DeviceToUserMessage {
-    CheckKeyGen {
-        xpub: String,
-    },
-    SignatureRequest {
-        message_to_sign: SignTask,
-        tap_tweak: bool,
-    },
+    CheckKeyGen { xpub: String },
+    SignatureRequest { message_to_sign: SignTask },
 }
 
 #[derive(Clone, Debug)]
@@ -138,8 +132,24 @@ pub enum SignTask {
     Nostr(crate::nostr::UnsignedEvent), // 1 nonce & sig
     Transaction {
         tx_template: bitcoin::Transaction,
-        prevouts: Vec<bitcoin::TxOut>,
+        prevouts: Vec<TxInput>,
     }, // N nonces and sigs
+}
+
+#[derive(
+    Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash, Ord, PartialOrd,
+)]
+pub struct TxInput {
+    /// The txout we're spending.
+    pub prevout: bitcoin::TxOut,
+    /// The derivation path of our ket if it's ours
+    pub bip32_path: Option<Vec<u32>>,
+}
+
+impl core::borrow::Borrow<bitcoin::TxOut> for TxInput {
+    fn borrow(&self) -> &bitcoin::TxOut {
+        &self.prevout
+    }
 }
 
 // What to show on the device for signing requests
@@ -168,10 +178,18 @@ impl core::fmt::Display for SignTask {
 
 // The bytes which need to be signed
 impl SignTask {
-    pub fn messages_to_sign(&self) -> Vec<Vec<u8>> {
+    pub fn sign_items(&self) -> Vec<SignItem> {
         match self {
-            SignTask::Plain(message) => vec![message.to_vec()],
-            SignTask::Nostr(event) => vec![event.hash_bytes.clone()],
+            SignTask::Plain(message) => vec![SignItem {
+                message: message.clone(),
+                tap_tweak: false,
+                bip32_path: vec![],
+            }],
+            SignTask::Nostr(event) => vec![SignItem {
+                message: event.hash_bytes.clone(),
+                tap_tweak: false,
+                bip32_path: vec![],
+            }],
             SignTask::Transaction {
                 tx_template,
                 prevouts,
@@ -193,11 +211,25 @@ impl SignTask {
                 }
                 let messages = tx_sighashes
                     .into_iter()
-                    .map(|sighash| sighash.to_vec())
+                    .zip(prevouts.iter())
+                    .filter_map(|(sighash, input)| {
+                        Some(SignItem {
+                            message: sighash.to_vec(),
+                            bip32_path: input.bip32_path.clone()?,
+                            tap_tweak: true,
+                        })
+                    })
                     .collect();
 
                 messages
             }
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct SignItem {
+    pub message: Vec<u8>,
+    pub tap_tweak: bool,
+    pub bip32_path: Vec<u32>,
 }

@@ -292,7 +292,7 @@ impl Commands {
                         witness: Witness::new(),
                     });
 
-                    prevouts.push(&full_txout.txout);
+                    prevouts.push(full_txout.txout.clone());
                 }
 
                 let schnorr_sighashty = SchnorrSighashType::Default;
@@ -315,12 +315,17 @@ impl Commands {
                 );
                 let mut signer = Signer::new(db, ports, coordinator);
 
-                let request_sign_message =
-                    SignTask::Transaction {
-                        tx_template: tx_template.clone(),
-                        prevouts: prevouts.into_iter().cloned().collect(),
-                    };
-                let signatures = signer.sign_message_request(request_sign_message, true)?;
+                let request_sign_message = frostsnap_core::message::SignTask::Transaction {
+                    tx_template: tx_template.clone(),
+                    prevouts: prevouts
+                        .into_iter()
+                        .map(|prevout| frostsnap_core::message::TxInput {
+                            prevout,
+                            bip32_path: Some(vec![]),
+                        })
+                        .collect(),
+                };
+                let signatures = signer.sign_message_request(request_sign_message)?;
 
                 assert_eq!(signatures.len(), tx_template.input.len());
                 for (txin, signature) in tx_template.input.iter_mut().zip(signatures) {

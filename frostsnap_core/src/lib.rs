@@ -158,11 +158,7 @@ impl FrostCoordinator {
                 }
                 _ => Err(Error::coordinator_message_kind(&self.state, &message)),
             },
-            CoordinatorState::Signing {
-                key,
-                sessions,
-                tap_tweak,
-            } => match &message.body {
+            CoordinatorState::Signing { key, sessions } => match &message.body {
                 DeviceToCoordinatorBody::SignatureShare {
                     signature_shares,
                     new_nonces,
@@ -183,23 +179,6 @@ impl FrostCoordinator {
                             ),
                         ));
                     }
-                    let mut xonly_frost_key = key.frost_key.clone().into_xonly_key();
-
-                    if *tap_tweak {
-                        let tweak = bitcoin::util::taproot::TapTweakHash::from_key_and_tweak(
-                            XOnlyPublicKey::from_slice(
-                                &xonly_frost_key.public_key().to_xonly_bytes(),
-                            )
-                            .unwrap(),
-                            None,
-                        )
-                        .to_scalar();
-                        xonly_frost_key = xonly_frost_key
-                            .tweak(
-                                Scalar::<Public, Zero>::from_slice(&tweak.to_be_bytes()).unwrap(),
-                            )
-                            .unwrap();
-                    }
 
                     if signature_shares.len() != n_signatures {
                         return Err(Error::coordinator_invalid_message(&message, format!("signer did not provide the right number of signature shares. Got {}, expected {}", signature_shares.len(), sessions.len())));
@@ -209,6 +188,7 @@ impl FrostCoordinator {
                         sessions.iter_mut().zip(signature_shares)
                     {
                         let session = &mut session_progress.sign_session;
+                        let xonly_frost_key = &session_progress.key;
                         if session
                             .participants()
                             .find(|x_coord| *x_coord == message.from.to_x_coord())
@@ -221,7 +201,7 @@ impl FrostCoordinator {
                         }
 
                         if frost.verify_signature_share(
-                            &xonly_frost_key,
+                            xonly_frost_key,
                             session,
                             message.from.to_x_coord(),
                             *signature_share,
@@ -255,7 +235,7 @@ impl FrostCoordinator {
                             .iter()
                             .map(|session_progress| {
                                 frost.combine_signature_shares(
-                                    &xonly_frost_key,
+                                    &session_progress.key,
                                     &session_progress.sign_session,
                                     session_progress
                                         .signature_shares
@@ -339,7 +319,6 @@ impl FrostCoordinator {
     pub fn start_sign(
         &mut self,
         message_to_sign: SignTask,
-        tap_tweak: bool,
         signing_parties: BTreeSet<DeviceId>,
     ) -> Result<(Vec<CoordinatorSend>, CoordinatorToDeviceMessage), StartSignError> {
         match &mut self.state {
@@ -355,8 +334,8 @@ impl FrostCoordinator {
                     });
                 }
 
-                let messages_to_sign = message_to_sign.clone().messages_to_sign();
-                let n_signatures = messages_to_sign.len();
+                let sign_items = message_to_sign.sign_items();
+                let n_signatures = sign_items.len();
 
                 let signing_nonces = signing_parties
                     .into_iter()
@@ -392,34 +371,45 @@ impl FrostCoordinator {
                     })
                     .collect::<Result<BTreeMap<_, _>, _>>()?;
 
-                let mut xonly_frost_key = key.frost_key.clone().into_xonly_key();
-                if tap_tweak {
-                    let tweak = bitcoin::util::taproot::TapTweakHash::from_key_and_tweak(
-                        XOnlyPublicKey::from_slice(&xonly_frost_key.public_key().to_xonly_bytes())
-                            .unwrap(),
-                        None,
-                    )
-                    .to_scalar();
-                    xonly_frost_key = xonly_frost_key
-                        .tweak(Scalar::<Public, Zero>::from_slice(&tweak.to_be_bytes()).unwrap())
-                        .unwrap();
-                }
-
                 let frost = frost::new_without_nonce_generation::<Sha256>();
 
-                let sessions = messages_to_sign
+                let sessions = sign_items
                     .iter()
                     .enumerate()
-                    .map(|(i, message)| {
-                        let b_message = Message::raw(&message[..]);
+                    .map(|(i, sign_item)| {
+                        let b_message = Message::raw(&sign_item.message[..]);
                         let indexed_nonces = signing_nonces
                             .iter()
                             .map(|(id, (nonce, _, _))| (id.to_x_coord(), nonce[i]))
                             .collect();
+
+                        let mut frost_xpub = crate::xpub::FrostXpub::new(key.frost_key.clone());
+
+                        frost_xpub.derive_bip32(&sign_item.bip32_path);
+
+                        let mut xonly_frost_key = frost_xpub.frost_key().clone().into_xonly_key();
+
+                        if sign_item.tap_tweak {
+                            let tweak = bitcoin::util::taproot::TapTweakHash::from_key_and_tweak(
+                                XOnlyPublicKey::from_slice(
+                                    &xonly_frost_key.public_key().to_xonly_bytes(),
+                                )
+                                .unwrap(),
+                                None,
+                            )
+                            .to_scalar();
+                            xonly_frost_key = xonly_frost_key
+                                .tweak(
+                                    Scalar::<Public, Zero>::from_slice(&tweak.to_be_bytes())
+                                        .unwrap(),
+                                )
+                                .unwrap();
+                        }
                         let sign_session =
                             frost.start_sign_session(&xonly_frost_key, indexed_nonces, b_message);
                         SignSessionProgress {
                             sign_session,
+                            key: xonly_frost_key,
                             signature_shares: Default::default(),
                         }
                     })
@@ -429,7 +419,6 @@ impl FrostCoordinator {
                 self.state = CoordinatorState::Signing {
                     key: key.clone(),
                     sessions,
-                    tap_tweak,
                 };
                 Ok((
                     vec![CoordinatorSend::ToStorage(
@@ -438,7 +427,6 @@ impl FrostCoordinator {
                     CoordinatorToDeviceMessage::RequestSign {
                         message_to_sign: message_to_sign.clone(),
                         nonces: signing_nonces.clone(),
-                        tap_tweak,
                     },
                 ))
             }
@@ -496,7 +484,6 @@ pub enum CoordinatorState {
     Signing {
         key: CoordinatorFrostKey,
         sessions: Vec<SignSessionProgress>,
-        tap_tweak: bool,
     },
 }
 
@@ -504,6 +491,7 @@ pub enum CoordinatorState {
 pub struct SignSessionProgress {
     sign_session: SignSession,
     signature_shares: BTreeMap<DeviceId, Scalar<Public, Zero>>,
+    key: FrostKey<EvenY>,
 }
 
 impl CoordinatorState {
@@ -787,7 +775,6 @@ impl FrostSigner {
                 CoordinatorToDeviceMessage::RequestSign {
                     nonces,
                     message_to_sign,
-                    tap_tweak,
                 },
             ) => {
                 let (my_nonces, my_nonce_index, _) = match nonces.get(&self.device_id()) {
@@ -823,13 +810,9 @@ impl FrostSigner {
                     key: key.clone(),
                     message: message_to_sign.clone(),
                     nonces,
-                    tap_tweak,
                 };
                 Ok(vec![DeviceSend::ToUser(
-                    DeviceToUserMessage::SignatureRequest {
-                        message_to_sign,
-                        tap_tweak,
-                    },
+                    DeviceToUserMessage::SignatureRequest { message_to_sign },
                 )])
             }
             _ => Err(Error::signer_message_kind(&self.state, &message)),
@@ -862,43 +845,47 @@ impl FrostSigner {
                 key,
                 message,
                 nonces,
-                tap_tweak,
             } => {
-                let messages = message.messages_to_sign();
+                let sign_items = message.sign_items();
 
                 let frost = frost::new_with_deterministic_nonces::<Sha256>();
                 let (_, my_nonce_index, my_replenish_index) =
                     nonces.get(&self.device_id()).expect("already checked");
 
                 let secret_nonces =
-                    self.generate_nonces(key.aux_rand, *my_nonce_index, messages.len());
+                    self.generate_nonces(key.aux_rand, *my_nonce_index, sign_items.len());
 
                 let mut signature_shares = vec![];
-                let xonly_frost_key = key.frost_key.clone().into_xonly_key();
 
-                let xonly_frost_key = if *tap_tweak {
-                    let tweak = bitcoin::util::taproot::TapTweakHash::from_key_and_tweak(
-                        XOnlyPublicKey::from_slice(&xonly_frost_key.public_key().to_xonly_bytes())
-                            .unwrap(),
-                        None,
-                    )
-                    .to_scalar();
-                    xonly_frost_key
-                        .tweak(Scalar::<Public, Zero>::from_slice(&tweak.to_be_bytes()).unwrap())
-                        .unwrap()
-                } else {
-                    xonly_frost_key
-                };
-
-                for (nonce_index, (message, secret_nonce)) in
-                    messages.iter().zip(secret_nonces).enumerate()
+                for (nonce_index, (sign_item, secret_nonce)) in
+                    sign_items.iter().zip(secret_nonces).enumerate()
                 {
                     let nonces_at_index = nonces
                         .into_iter()
                         .map(|(id, (nonces, _, _))| (id.to_x_coord(), nonces[nonce_index]))
                         .collect();
 
-                    let message = Message::raw(&message[..]);
+                    let mut frost_xpub = crate::xpub::FrostXpub::new(key.frost_key.clone());
+                    frost_xpub.derive_bip32(&sign_item.bip32_path);
+                    let mut xonly_frost_key = frost_xpub.frost_key().clone().into_xonly_key();
+
+                    if sign_item.tap_tweak {
+                        let tweak = bitcoin::util::taproot::TapTweakHash::from_key_and_tweak(
+                            XOnlyPublicKey::from_slice(
+                                &xonly_frost_key.public_key().to_xonly_bytes(),
+                            )
+                            .unwrap(),
+                            None,
+                        )
+                        .to_scalar();
+                        xonly_frost_key = xonly_frost_key
+                            .tweak(
+                                Scalar::<Public, Zero>::from_slice(&tweak.to_be_bytes()).unwrap(),
+                            )
+                            .expect("computationally unreachable");
+                    }
+
+                    let message = Message::raw(&sign_item.message[..]);
                     let sign_session =
                         frost.start_sign_session(&xonly_frost_key, nonces_at_index, message);
 
@@ -921,7 +908,7 @@ impl FrostSigner {
                 }
 
                 let replenish_nonces = self
-                    .generate_nonces(key.aux_rand, *my_replenish_index, messages.len())
+                    .generate_nonces(key.aux_rand, *my_replenish_index, sign_items.len())
                     .map(|nonce| nonce.public())
                     .collect();
 
@@ -973,7 +960,6 @@ pub enum SignerState {
         key: FrostsnapKey,
         message: SignTask,
         nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
-        tap_tweak: bool,
     },
     FrostKey {
         key: FrostsnapKey,

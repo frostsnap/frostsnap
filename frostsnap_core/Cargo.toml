@@ -15,6 +15,9 @@ serde = { version = "1", features = ["derive"], default-features = false }
 bitcoin = { version = "0.29", features = ["no-std", "serde"], default-features = false }
 serde_json = { version = "1", optional = true }
 
+[dev-dependencies]
+rand = "0.8"
+
 [features]
 std = []
 default = ["std", "serde_json"]
