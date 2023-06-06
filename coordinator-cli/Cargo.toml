@@ -26,4 +26,4 @@ bdk_electrum = { rev = "cd096df9568a1bb7160482f7c36c807cce1b0b5d", git = "https:
 bdk_file_store = { rev = "cd096df9568a1bb7160482f7c36c807cce1b0b5d", git = "https://github.com/evanlinjin/bdk.git" }
 bdk_coin_select = { rev = "9129b43f1ee75185f3cc3a0f27edcd00df59a61d", git = "https://github.com/llfourn/bdk.git" }
 bech32 = "0.9.1"
-tungstenite = { version = "0.19", features = ["rustls-tls-webpki-roots"], optional = true}
+tungstenite = { version = "0.19", features = ["rustls-tls-webpki-roots"] }

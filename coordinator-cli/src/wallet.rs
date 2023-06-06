@@ -1,12 +1,13 @@
 use anyhow::Context;
 use bdk_chain::bitcoin::secp256k1::schnorr;
 use bdk_chain::bitcoin::{
-    self, PackedLockTime, SchnorrSig, SchnorrSighashType, Script, Sequence, Transaction, TxIn,
-    TxOut, Witness,
+    self, Address, PackedLockTime, SchnorrSig, SchnorrSighashType, Script, Sequence, Transaction,
+    TxIn, TxOut, Witness,
 };
+use bdk_chain::keychain::{DerivationAdditions, KeychainTxOutIndex};
 use bdk_chain::miniscript::{
     descriptor::Tr,
-    descriptor::{SinglePub, SinglePubKey},
+    descriptor::{DescriptorXKey, Wildcard},
     Descriptor, DescriptorPublicKey,
 };
 use bdk_electrum::electrum_client::ElectrumApi;
@@ -19,7 +20,7 @@ use bdk_chain::{
     indexed_tx_graph::IndexedAdditions,
     indexed_tx_graph::IndexedTxGraph,
     local_chain::{self, LocalChain},
-    ChainOracle, ConfirmationTimeAnchor, SpkTxOutIndex,
+    ChainOracle, ConfirmationTimeAnchor,
 };
 use frostsnap_core::schnorr_fun::{frost::FrostKey, fun::marker::Normal};
 
@@ -31,13 +32,13 @@ use crate::signer::Signer;
 pub struct Wallet {
     coordinator_frost_key: frostsnap_core::CoordinatorFrostKey,
     chain: LocalChain,
-    graph: IndexedTxGraph<ConfirmationTimeAnchor, SpkTxOutIndex<()>>,
+    graph: IndexedTxGraph<ConfirmationTimeAnchor, KeychainTxOutIndex<()>>,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize, Default)]
 pub struct ChangeSet {
     pub chain_changeset: local_chain::ChangeSet,
-    pub indexed_additions: IndexedAdditions<ConfirmationTimeAnchor, ()>,
+    pub indexed_additions: IndexedAdditions<ConfirmationTimeAnchor, DerivationAdditions<()>>,
 }
 
 impl bdk_chain::Append for ChangeSet {
@@ -51,17 +52,16 @@ impl bdk_chain::Append for ChangeSet {
     }
 }
 
-fn get_descriptor(key: &FrostKey<Normal>) -> Descriptor<DescriptorPublicKey> {
-    let key: bitcoin::secp256k1::PublicKey =
-        bitcoin::secp256k1::PublicKey::from_slice(key.public_key().to_bytes().as_ref()).unwrap();
-    let key = bitcoin::PublicKey {
-        compressed: true,
-        inner: key,
-    };
-    let key = DescriptorPublicKey::Single(SinglePub {
+fn get_descriptor(frost_key: &FrostKey<Normal>) -> Descriptor<DescriptorPublicKey> {
+    use bitcoin::util::bip32::DerivationPath;
+    let frost_xpub = frostsnap_core::xpub::FrostXpub::new(frost_key.clone());
+    let key = DescriptorPublicKey::XPub(DescriptorXKey {
         origin: None,
-        key: SinglePubKey::FullKey(key),
+        xkey: frost_xpub.xpub().clone(),
+        derivation_path: DerivationPath::master(),
+        wildcard: Wildcard::Unhardened,
     });
+
     let tr = Tr::new(key, None).expect("infallible since it's None");
     let descriptor = Descriptor::Tr(tr);
     descriptor
@@ -72,11 +72,11 @@ impl Wallet {
         let descriptor = get_descriptor(coordinator_frost_key.frost_key());
         let mut chain: LocalChain = Default::default();
         chain.apply_changeset(changeset.chain_changeset);
-        let index = SpkTxOutIndex::default();
+
+        let mut index = KeychainTxOutIndex::default();
+        index.add_keychain((), descriptor);
+
         let mut graph = IndexedTxGraph::new(index);
-        graph
-            .index
-            .insert_spk((), descriptor.at_derivation_index(0).script_pubkey());
         graph.apply_additions(changeset.indexed_additions);
         Self {
             coordinator_frost_key,
@@ -85,14 +85,15 @@ impl Wallet {
         }
     }
 
-    pub fn next_address(&mut self, network: bitcoin::Network) -> bitcoin::Address {
-        let spk = self.graph.index.spk_at_index(&()).unwrap();
-        bitcoin::Address::from_script(spk, network).unwrap()
-    }
+    pub fn next_unused_spk(&mut self, db: &mut Db) -> anyhow::Result<&bitcoin::Script> {
+        let ((_index, spk), derivation_additions) = self.graph.index.next_unused_spk(&());
 
-    pub fn next_change_script_pubkey(&mut self) -> bitcoin::Script {
-        let spk = self.graph.index.spk_at_index(&()).unwrap();
-        spk.clone()
+        let new_changeset = ChangeSet {
+            chain_changeset: Default::default(),
+            indexed_additions: derivation_additions.into(),
+        };
+        db.save(new_changeset)?;
+        Ok(spk)
     }
 }
 
@@ -133,16 +134,26 @@ impl Commands {
                 let client = electrum_client::Client::from_config(electrum_url, config)?;
                 let c = wallet.chain.blocks().clone();
 
-                let spk = wallet.graph.index.spk_at_index(&()).unwrap().clone();
+                let spks = wallet.graph.index.spks_of_all_keychains();
+
+                let spks = spks
+                    .into_iter()
+                    .map(|(_, spk)| {
+                        (
+                            (),
+                            spk.inspect(|(index, spk)| {
+                                println!(
+                                    "{}: {}",
+                                    index,
+                                    Address::from_script(spk, network).unwrap()
+                                );
+                            }),
+                        )
+                    })
+                    .collect();
 
                 let response = client
-                    .scan_without_keychain(
-                        &c,
-                        core::iter::once(spk),
-                        core::iter::empty(),
-                        core::iter::empty(),
-                        1,
-                    )
+                    .scan(&c, spks, core::iter::empty(), core::iter::empty(), 10, 10)
                     .context("scanning the blockchain")?;
 
                 let missing_txids = response.missing_full_txs(&wallet.graph.graph());
@@ -159,7 +170,9 @@ impl Commands {
                 Ok(())
             }
             Commands::Address => {
-                println!("{}", wallet.next_address(network));
+                let spk = wallet.next_unused_spk(db)?;
+                let address = Address::from_script(spk, network).expect("has address form");
+                println!("{}", address);
                 Ok(())
             }
             Commands::Balance => {
@@ -277,14 +290,14 @@ impl Commands {
                 if change_output.is_some() {
                     tx_template.output.push(TxOut {
                         value: change_output.value,
-                        script_pubkey: wallet.next_change_script_pubkey(),
+                        script_pubkey: wallet.next_unused_spk(db)?.clone(),
                     });
                 }
 
                 let mut prevouts = vec![];
 
                 for (index, _candidate) in coin_selector.selected() {
-                    let full_txout = &unspents[index].1;
+                    let ((_keychain, derivation_index), full_txout) = &unspents[index];
                     tx_template.input.push(TxIn {
                         previous_output: full_txout.outpoint,
                         script_sig: Script::default(),
@@ -292,23 +305,26 @@ impl Commands {
                         witness: Witness::new(),
                     });
 
-                    prevouts.push(full_txout.txout.clone());
+                    prevouts.push(frostsnap_core::message::TxInput {
+                        prevout: full_txout.txout.clone(),
+                        bip32_path: Some(vec![*derivation_index]),
+                    });
                 }
 
                 let schnorr_sighashty = SchnorrSighashType::Default;
 
-                println!(
-                    "inputs {:?}",
-                    prevouts.iter().map(|x| x.value).collect::<Vec<_>>()
-                );
-                println!(
-                    "outputs {:?}",
-                    tx_template
-                        .output
-                        .iter()
-                        .map(|x| x.value)
-                        .collect::<Vec<_>>()
-                );
+                // println!(
+                //     "inputs {:?}",
+                //     prevouts.iter().map(|x| x.value).collect::<Vec<_>>()
+                // );
+                // println!(
+                //     "outputs {:?}",
+                //     tx_template
+                //         .output
+                //         .iter()
+                //         .map(|x| x.value)
+                //         .collect::<Vec<_>>()
+                // );
 
                 let coordinator = frostsnap_core::FrostCoordinator::from_stored_key(
                     wallet.coordinator_frost_key.clone(),
@@ -317,13 +333,7 @@ impl Commands {
 
                 let request_sign_message = frostsnap_core::message::SignTask::Transaction {
                     tx_template: tx_template.clone(),
-                    prevouts: prevouts
-                        .into_iter()
-                        .map(|prevout| frostsnap_core::message::TxInput {
-                            prevout,
-                            bip32_path: Some(vec![]),
-                        })
-                        .collect(),
+                    prevouts,
                 };
                 let signatures = signer.sign_message_request(request_sign_message)?;
 
