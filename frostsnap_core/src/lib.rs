@@ -10,7 +10,7 @@ pub mod message;
 pub mod xpub;
 
 use bitcoin::XOnlyPublicKey;
-use message::{CoordinatorToStorageMessage, DeviceToCoordinatorBody};
+use message::{CoordinatorToStorageMessage, DeviceToCoordinatorBody, KeyGenResponse, KeyGenProvideShares};
 pub use schnorr_fun;
 
 #[macro_use]
@@ -20,7 +20,7 @@ use crate::{
     encrypted_share::EncryptedShare,
     message::{
         CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToUserMessage, DeviceSend,
-        DeviceToCoordindatorMessage, DeviceToUserMessage, KeyGenProvideShares,
+        DeviceToCoordindatorMessage, DeviceToUserMessage,
     },
 };
 use alloc::{
@@ -73,39 +73,39 @@ impl FrostCoordinator {
                 Err(Error::coordinator_message_kind(&self.state, &message))
             }
             CoordinatorState::KeyGen {
-                shares: shares_provided,
+                responses,
             } => match message.body {
-                DeviceToCoordinatorBody::KeyGenProvideShares(new_shares) => {
+                DeviceToCoordinatorBody::KeyGenResponse(new_shares) => {
                     if let Some(existing) =
-                        shares_provided.insert(message.from, Some(new_shares.clone()))
+                        responses.insert(message.from, Some(new_shares.clone()))
                     {
                         debug_assert!(existing.is_none() || existing == Some(new_shares));
                     }
 
-                    let shares_provided = shares_provided
+                    let responses = responses
                         .clone()
                         .into_iter()
                         .map(|(device_id, shares)| Some((device_id, shares?)))
                         .collect::<Option<BTreeMap<_, _>>>();
 
-                    match shares_provided {
-                        Some(shares_provided) => {
-                            let point_polys = shares_provided
+                    match responses {
+                        Some(responses) => {
+                            let point_polys = responses
                                 .iter()
-                                .map(|(device_id, share)| {
-                                    (device_id.to_x_coord(), share.my_poly.clone())
+                                .map(|(device_id, response)| {
+                                    (device_id.to_x_coord(), response.shares.my_poly.clone())
                                 })
                                 .collect();
-                            let proofs_of_possession = shares_provided
+                            let proofs_of_possession = responses
                                 .iter()
-                                .map(|(device_id, share)| {
-                                    (device_id.to_x_coord(), share.proof_of_possession.clone())
+                                .map(|(device_id, response)| {
+                                    (device_id.to_x_coord(), response.shares.proof_of_possession.clone())
                                 })
                                 .collect();
                             let frost = frost::new_without_nonce_generation::<Sha256>();
                             let keygen = frost.new_keygen(point_polys).unwrap();
                             // let keygen_id = frost.keygen_id(&keygen);
-                            let pop_message = gen_pop_message(shares_provided.keys().cloned());
+                            let pop_message = gen_pop_message(responses.keys().cloned());
 
                             let frost_key = match frost.finish_keygen_coordinator(keygen, proofs_of_possession, Message::raw(&pop_message)) {
                                 Ok(frost_key) => frost_key,
@@ -114,12 +114,12 @@ impl FrostCoordinator {
 
                             let xpub = frost_key.public_key().to_string();
 
-                            let device_nonces = shares_provided
+                            let device_nonces = responses
                                 .iter()
-                                .map(|(device_id, share)| {
+                                .map(|(device_id, response)| {
                                     let device_nonces = DeviceNonces {
                                         counter: 0,
-                                        nonces: share.nonces.iter().cloned().collect(),
+                                        nonces: response.nonces.iter().cloned().collect(),
                                     };
                                     (*device_id, device_nonces)
                                 })
@@ -140,7 +140,7 @@ impl FrostCoordinator {
                                 ),
                                 CoordinatorSend::ToDevice(
                                     CoordinatorToDeviceMessage::FinishKeyGen {
-                                        shares_provided: shares_provided.clone(),
+                                        shares_provided: responses.into_iter().map(|(id, response)| (id, response.shares)).collect(),
                                     },
                                 ),
                                 CoordinatorSend::ToUser(CoordinatorToUserMessage::CheckKeyGen {
@@ -298,7 +298,7 @@ impl FrostCoordinator {
         match self.state {
             CoordinatorState::Registration => {
                 self.state = CoordinatorState::KeyGen {
-                    shares: devices.iter().map(|&device_id| (device_id, None)).collect(),
+                    responses: devices.iter().map(|&device_id| (device_id, None)).collect(),
                 };
                 Ok(CoordinatorToDeviceMessage::DoKeyGen {
                     devices: devices.clone(),
@@ -484,7 +484,7 @@ impl CoordinatorFrostKey {
 pub enum CoordinatorState {
     Registration,
     KeyGen {
-        shares: BTreeMap<DeviceId, Option<KeyGenProvideShares>>,
+        responses: BTreeMap<DeviceId, Option<KeyGenResponse>>,
     },
     FrostKey {
         key: CoordinatorFrostKey,
@@ -674,10 +674,12 @@ impl FrostSigner {
                     DeviceToCoordindatorMessage {
                         from: self.device_id(),
 
-                        body: DeviceToCoordinatorBody::KeyGenProvideShares(KeyGenProvideShares {
-                            my_poly: point_poly,
-                            shares,
-                            proof_of_possession,
+                        body: DeviceToCoordinatorBody::KeyGenResponse(KeyGenResponse {
+                            shares: KeyGenProvideShares {
+                                my_poly: point_poly,
+                                shares,
+                                proof_of_possession,
+                            },
                             nonces,
                         }),
                     },

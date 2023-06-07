@@ -81,7 +81,7 @@ pub struct DeviceToCoordindatorMessage {
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum DeviceToCoordinatorBody {
-    KeyGenProvideShares(KeyGenProvideShares),
+    KeyGenResponse(KeyGenResponse),
     SignatureShare {
         signature_shares: Vec<Scalar<Public, Zero>>,
         new_nonces: Vec<Nonce>,
@@ -91,7 +91,7 @@ pub enum DeviceToCoordinatorBody {
 impl DeviceToCoordinatorBody {
     pub fn kind(&self) -> &'static str {
         match self {
-            DeviceToCoordinatorBody::KeyGenProvideShares(_) => "KeyGenProvideShares",
+            DeviceToCoordinatorBody::KeyGenResponse(_) => "KeyGenProvideShares",
             DeviceToCoordinatorBody::SignatureShare { .. } => "SignatureShare",
         }
     }
@@ -102,6 +102,11 @@ pub struct KeyGenProvideShares {
     pub my_poly: Vec<Point>,
     pub shares: BTreeMap<DeviceId, EncryptedShare>,
     pub proof_of_possession: Signature,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, Eq, PartialEq)]
+pub struct KeyGenResponse {
+    pub shares: KeyGenProvideShares,
     pub nonces: [Nonce; NONCE_BATCH_SIZE],
 }
 
