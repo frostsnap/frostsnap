@@ -86,6 +86,7 @@ impl Ports {
             for serial_number in ports_to_send_on {
                 let port = self.ready.get_mut(&serial_number).expect("must exist");
 
+                event!(Level::DEBUG, "sending {:?}", send.message_body);
                 bincode::encode_into_writer(
                     DeviceReceiveSerial::<Downstream>::Message(send.clone()),
                     port,
