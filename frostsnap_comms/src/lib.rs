@@ -180,7 +180,7 @@ pub fn gist_send<D>(send: &DeviceSendSerial<D>) -> &'static str {
         DeviceSendSerial::MagicBytes(_) => "MagicBytes",
         DeviceSendSerial::Message(message) => match message {
             DeviceSendMessage::Core(message) => match message.body {
-                DeviceToCoordinatorBody::KeyGenProvideShares(_) => "KeyGenProvideShares",
+                DeviceToCoordinatorBody::KeyGenResponse(_) => "KeyGenResponse",
                 DeviceToCoordinatorBody::SignatureShare { .. } => "SignatureShare",
             },
             DeviceSendMessage::Debug { .. } => "Debug",
