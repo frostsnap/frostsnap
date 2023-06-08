@@ -217,6 +217,10 @@ fn main() -> ! {
     let mut upstream_received_first_message = false;
     let mut next_write_magic_bytes = 0;
 
+    let mut user_confirm = true;
+    let mut user_prompt = false;
+    let mut user_confirm_message: String = "".to_string();
+
     loop {
         if soft_reset {
             display.print("soft resetting").unwrap();
@@ -232,6 +236,34 @@ fn main() -> ! {
             next_write_magic_bytes = 0;
             upstream_received_first_message = false;
             outbox.clear();
+        }
+
+        if user_prompt {
+            match buttons.sample_buttons() {
+                ButtonDirection::Center => {
+                    if user_confirm {
+                        outbox.extend(frost_signer.sign_ack().unwrap());
+                        display.print("Request to sign accepted").unwrap();
+                    } else {
+                        display.print("Request to sign rejected").unwrap();
+                    }
+                    user_prompt = false;
+                }
+                ButtonDirection::Right => {
+                    user_confirm = true;
+                    display
+                        .confirm_view(&user_confirm_message, user_confirm)
+                        .unwrap();
+                }
+                ButtonDirection::Left => {
+                    user_confirm = false;
+                    display
+                        .confirm_view(&user_confirm_message, user_confirm)
+                        .unwrap();
+                }
+                ButtonDirection::Unpressed => {}
+                _ => {}
+            }
         }
 
         if downstream_active {
@@ -437,28 +469,36 @@ fn main() -> ! {
                             message_to_sign,
                             ..
                         } => {
-                            let mut choice = true;
-                            loop {
-                                display.confirm_view(format!("Sign {}", message_to_sign), choice).unwrap();
+                            user_prompt = true;
+                            user_confirm_message = format!("Sign {}", message_to_sign);
+                            display
+                                .confirm_view(&user_confirm_message, user_confirm)
+                                .unwrap();
 
-                                match buttons.wait_for_press() {
-                                    ButtonDirection::Center => break,
-                                    ButtonDirection::Left => {
-                                        choice = false;
-                                    }
-                                    ButtonDirection::Right => {
-                                        choice = true;
-                                    }
-                                    _ => {}
-                                }
-                            }
+                            // let mut choice = true;
+                            // loop {
+                            //     display
+                            //         .confirm_view(format!("Sign {}", message_to_sign), choice)
+                            //         .unwrap();
 
-                            if choice {
-                                outbox.extend(frost_signer.sign_ack().unwrap());
-                                display.print("Request to sign accepted").unwrap();
-                            } else {
-                                display.print("Request to sign rejected").unwrap();
-                            }
+                            //     match buttons.wait_for_press() {
+                            //         ButtonDirection::Center => break,
+                            //         ButtonDirection::Left => {
+                            //             choice = false;
+                            //         }
+                            //         ButtonDirection::Right => {
+                            //             choice = true;
+                            //         }
+                            //         _ => {}
+                            //     }
+                            // }
+
+                            // if choice {
+                            //     outbox.extend(frost_signer.sign_ack().unwrap());
+                            //     display.print("Request to sign accepted").unwrap();
+                            // } else {
+                            //     display.print("Request to sign rejected").unwrap();
+                            // }
                         }
                     };
                 }
