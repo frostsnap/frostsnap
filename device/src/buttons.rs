@@ -17,6 +17,7 @@ pub enum ButtonDirection {
     Down,
     Right,
     Left,
+    Unpressed
 }
 
 pub struct Buttons<RA, IRA>
@@ -52,6 +53,26 @@ where
             down: down.into_pull_up_input(),
             right: right.into_pull_up_input(),
             left: left.into_pull_up_input(),
+        }
+    }
+
+    pub fn sample_buttons(&mut self) -> ButtonDirection {
+        if self.center.is_low().unwrap() {
+            ButtonDirection::Center
+        }
+        else if self.up.is_low().unwrap() {
+            ButtonDirection::Up
+        }
+        else if self.down.is_low().unwrap() {
+            ButtonDirection::Down
+        }
+        else if self.right.is_low().unwrap() {
+            ButtonDirection::Right
+        }
+        else if self.left.is_low().unwrap() {
+            ButtonDirection::Left
+        } else {
+            ButtonDirection::Unpressed
         }
     }
 
