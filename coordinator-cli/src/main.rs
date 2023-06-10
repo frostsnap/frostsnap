@@ -1,4 +1,6 @@
 use anyhow::anyhow;
+use bech32::ToBase32;
+use bech32::Variant;
 use db::Db;
 use frostsnap_comms::DeviceReceiveBody;
 use frostsnap_comms::DeviceReceiveMessage;
@@ -158,11 +160,13 @@ fn main() -> anyhow::Result<()> {
         Command::Key => match changeset.frostsnap {
             Some(state) => {
                 let xonly_pk = state.key.frost_key().clone().into_xonly_key().public_key();
+                let pk_bytes = xonly_pk.to_xonly_bytes();
+                let encoded =
+                    bech32::encode("npub", pk_bytes.to_base32(), Variant::Bech32).unwrap();
+
                 println!("{:#?}\n", &state.key.frost_key());
-                println!(
-                    "32-byte key (hex): {}\n",
-                    hex::encode(xonly_pk.to_xonly_bytes())
-                );
+                println!("32-byte key (hex): {}", hex::encode(pk_bytes));
+                println!("Nostr: {}\n", encoded);
                 println!("Known devices: {:#?}\n", &state.device_labels);
             }
             None => eprintln!("You have not generated a key yet!"),

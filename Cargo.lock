@@ -392,6 +392,7 @@ dependencies = [
  "bdk_coin_select",
  "bdk_electrum",
  "bdk_file_store",
+ "bech32",
  "bincode 2.0.0-rc.3",
  "clap",
  "frostsnap_comms",
