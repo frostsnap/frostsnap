@@ -1,6 +1,7 @@
 use frostsnap_comms::{DeviceReceiveBody, DeviceReceiveMessage};
 use frostsnap_core::message::{
-    CoordinatorSend, CoordinatorToUserMessage, DeviceToCoordinatorBody, DeviceToCoordindatorMessage,
+    CoordinatorSend, CoordinatorToUserMessage, DeviceToCoordinatorBody,
+    DeviceToCoordindatorMessage, SignTask,
 };
 use frostsnap_core::{schnorr_fun, CoordinatorFrostKey};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -33,10 +34,9 @@ impl<'a, 'b> Signer<'a, 'b> {
 
     pub fn sign_message_request(
         &mut self,
-        message: frostsnap_ext::sign_messages::RequestSignMessage,
-        tap_tweak: bool,
+        message: SignTask,
     ) -> anyhow::Result<Vec<schnorr_fun::Signature>> {
-        let finished_signatures = self.run_signing_process(message, tap_tweak)?;
+        let finished_signatures = self.run_signing_process(message)?;
         Ok(finished_signatures)
     }
 
@@ -49,8 +49,7 @@ impl<'a, 'b> Signer<'a, 'b> {
 
     fn run_signing_process(
         &mut self,
-        message: frostsnap_ext::sign_messages::RequestSignMessage,
-        tap_tweak: bool,
+        message: SignTask,
     ) -> anyhow::Result<Vec<frostsnap_core::schnorr_fun::Signature>> {
         let key = self
             .coordinator
@@ -94,9 +93,9 @@ impl<'a, 'b> Signer<'a, 'b> {
                 .join("\n")
         );
 
-        let (init_sends, signature_request) =
-            self.coordinator
-                .start_sign(message, tap_tweak, still_need_to_sign.clone())?;
+        let (init_sends, signature_request) = self
+            .coordinator
+            .start_sign(message, still_need_to_sign.clone())?;
 
         let mut outbox = VecDeque::from_iter(init_sends);
         let mut signatures = None;
