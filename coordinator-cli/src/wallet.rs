@@ -136,22 +136,6 @@ impl Commands {
 
                 let spks = wallet.graph.index.spks_of_all_keychains();
 
-                let spks = spks
-                    .into_iter()
-                    .map(|(_, spk)| {
-                        (
-                            (),
-                            spk.inspect(|(index, spk)| {
-                                println!(
-                                    "{}: {}",
-                                    index,
-                                    Address::from_script(spk, network).unwrap()
-                                );
-                            }),
-                        )
-                    })
-                    .collect();
-
                 let response = client
                     .scan(&c, spks, core::iter::empty(), core::iter::empty(), 10, 10)
                     .context("scanning the blockchain")?;
@@ -312,19 +296,6 @@ impl Commands {
                 }
 
                 let schnorr_sighashty = SchnorrSighashType::Default;
-
-                // println!(
-                //     "inputs {:?}",
-                //     prevouts.iter().map(|x| x.value).collect::<Vec<_>>()
-                // );
-                // println!(
-                //     "outputs {:?}",
-                //     tx_template
-                //         .output
-                //         .iter()
-                //         .map(|x| x.value)
-                //         .collect::<Vec<_>>()
-                // );
 
                 let coordinator = frostsnap_core::FrostCoordinator::from_stored_key(
                     wallet.coordinator_frost_key.clone(),
