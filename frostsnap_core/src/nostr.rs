@@ -1,10 +1,8 @@
-use alloc::string::{String, ToString};
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use schnorr_fun::fun::{marker::EvenY, Point};
 use schnorr_fun::Signature;
-use sha2::Digest;
-use sha2::Sha256;
 
 #[derive(
     Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash, Ord, PartialOrd,
@@ -29,6 +27,10 @@ impl UnsignedEvent {
         content: String,
         created_at: i64,
     ) -> Self {
+        use alloc::string::ToString;
+        use sha2::Digest;
+        use sha2::Sha256;
+
         let serialized_event = serde_json::json!([
             0,
             pubkey,

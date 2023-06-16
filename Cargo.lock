@@ -487,33 +487,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2e66c9d817f1720209181c316d28635c050fa304f9c79e47a520882661b7308"
 
 [[package]]
-name = "device"
-version = "0.1.0"
-dependencies = [
- "bincode 2.0.0-rc.3",
- "critical-section",
- "display-interface",
- "display-interface-spi",
- "embedded-graphics",
- "embedded-graphics-framebuf",
- "embedded-storage",
- "embedded-text",
- "esp-alloc",
- "esp-backtrace",
- "esp-hal-smartled",
- "esp-println",
- "esp-storage",
- "esp32c3-hal",
- "frostsnap_comms",
- "frostsnap_core",
- "fugit",
- "mipidsi",
- "nb 1.1.0",
- "smart-leds",
- "ssd1306",
-]
-
-[[package]]
 name = "digest"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -833,6 +806,33 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.7",
+]
+
+[[package]]
+name = "frostsnap_device"
+version = "0.1.0"
+dependencies = [
+ "bincode 2.0.0-rc.3",
+ "critical-section",
+ "display-interface",
+ "display-interface-spi",
+ "embedded-graphics",
+ "embedded-graphics-framebuf",
+ "embedded-storage",
+ "embedded-text",
+ "esp-alloc",
+ "esp-backtrace",
+ "esp-hal-smartled",
+ "esp-println",
+ "esp-storage",
+ "esp32c3-hal",
+ "frostsnap_comms",
+ "frostsnap_core",
+ "fugit",
+ "mipidsi",
+ "nb 1.1.0",
+ "smart-leds",
+ "ssd1306",
 ]
 
 [[package]]

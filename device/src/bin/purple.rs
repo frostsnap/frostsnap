@@ -3,31 +3,31 @@
 
 #[macro_use]
 extern crate alloc;
-use frostsnap_device::{buttons, io, st7735, state, storage};
+
+use frostsnap_device::{io, oled, state, storage};
 
 use crate::alloc::string::ToString;
-use alloc::{collections::VecDeque, string::String, vec::Vec};
+use alloc::{collections::VecDeque, vec::Vec};
 use esp32c3_hal::{
     clock::ClockControl,
     peripherals::Peripherals,
     prelude::*,
+    pulse_control::ClockSource,
     timer::TimerGroup,
     uart::{config, TxRxPins},
-    Delay, Rtc, Uart, UsbSerialJtag, IO,
+    Delay, PulseControl, Rtc, Uart, UsbSerialJtag, IO,
 };
 use esp_backtrace as _;
+use esp_hal_smartled::{smartLedAdapter, SmartLedsAdapter};
 use esp_storage::FlashStorage;
+use io::UpstreamDetector;
+use smart_leds::{brightness, colors, SmartLedsWrite, RGB};
+
 use frostsnap_comms::{
     DeviceReceiveBody, DeviceReceiveSerial, DeviceSendMessage, DeviceSendSerial,
 };
 use frostsnap_comms::{DeviceReceiveMessage, Downstream};
 use frostsnap_core::message::{CoordinatorToDeviceMessage, DeviceSend, DeviceToUserMessage};
-use io::UpstreamDetector;
-
-use buttons::ButtonDirection;
-use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
-use embedded_graphics_framebuf::FrameBuf;
-
 use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_core::schnorr_fun::fun::marker::Normal;
 use frostsnap_core::schnorr_fun::fun::KeyPair;
@@ -83,49 +83,51 @@ fn main() -> ! {
 
     let mut delay = Delay::new(&clocks);
 
-    // construct the 5-position button on the Air101 LCD board
-    // orientation: usb-c port on the right
-    // down button shares same pin as D5 LED, which pulls the input down enough to cause problems.
-    // remove the LED
-    let mut buttons = buttons::Buttons::new(
-        io.pins.gpio4,
-        io.pins.gpio8,
-        io.pins.gpio13,
-        io.pins.gpio9,
-        io.pins.gpio5,
-    );
+    // let button = io.pins.gpio9.into_pull_up_input();
+    // let wait_button = || {
+    //     // Ensure button is not pressed
+    //     while button.is_high().unwrap() {}
+    //     // Wait for press
+    //     while button.is_low().unwrap() {}
+    // };
 
-    let mut bl = io.pins.gpio11.into_push_pull_output();
-    // Turn off backlight to hide artifacts as display initializes
-    bl.set_low().unwrap();
-    let mut framearray = [Rgb565::WHITE; 160 * 80];
-    let framebuf = FrameBuf::new(&mut framearray, 160, 80);
-    let mut display = st7735::ST7735::new(
-        // &mut bl,
-        io.pins.gpio6.into_push_pull_output(),
-        io.pins.gpio10.into_push_pull_output(),
-        peripherals.SPI2,
-        io.pins.gpio2,
-        io.pins.gpio7,
-        io.pins.gpio3,
-        io.pins.gpio12,
+    let mut display = oled::SSD1306::new(
+        peripherals.I2C0,
+        io.pins.gpio5,
+        io.pins.gpio6,
+        400u32.kHz(),
         &mut system.peripheral_clock_control,
         &clocks,
-        framebuf,
     )
     .unwrap();
+
+    // RGB LED
+    // White: found coordinator
+    // Blue: found another device upstream
+    let pulse = PulseControl::new(
+        peripherals.RMT,
+        &mut system.peripheral_clock_control,
+        ClockSource::APB,
+        0,
+        0,
+        0,
+    )
+    .unwrap();
+    let mut led = <smartLedAdapter!(1)>::new(pulse.channel0, io.pins.gpio2);
 
     let flash = FlashStorage::new();
     let mut flash = storage::DeviceStorage::new(flash, storage::NVS_PARTITION_START);
 
     // Welcome screen
-    // Some delay before turning on backlight to hide screen flicker
-    delay.delay_ms(20u32);
-    bl.set_high().unwrap();
-    display.splash_screen().unwrap();
-    display.clear(Rgb565::BLACK).unwrap();
-    display.header("frostsnap").unwrap();
-    display.flush().unwrap();
+    display.print_header("frost snap").unwrap();
+    for i in 0..=20 {
+        led.write([RGB::new(0, i, i)].iter().cloned()).unwrap();
+        delay.delay_ms(30u32);
+    }
+    for i in (0..=20).rev() {
+        led.write([RGB::new(0, i, i)].iter().cloned()).unwrap();
+        delay.delay_ms(30u32);
+    }
 
     // Simulate factory reset
     // For now we are going to factory reset the storage on boot for easier testing and debugging.
@@ -210,10 +212,6 @@ fn main() -> ! {
     let mut upstream_received_first_message = false;
     let mut next_write_magic_bytes = 0;
 
-    let mut user_confirm = true;
-    let mut user_prompt = false;
-    let mut user_confirm_message: String = "".to_string();
-
     loop {
         if soft_reset {
             display.print("soft resetting").unwrap();
@@ -229,34 +227,6 @@ fn main() -> ! {
             next_write_magic_bytes = 0;
             upstream_received_first_message = false;
             outbox.clear();
-        }
-
-        if user_prompt {
-            match buttons.sample_buttons() {
-                ButtonDirection::Center => {
-                    if user_confirm {
-                        outbox.extend(frost_signer.sign_ack().unwrap());
-                        display.print("Request to sign accepted").unwrap();
-                    } else {
-                        display.print("Request to sign rejected").unwrap();
-                    }
-                    user_prompt = false;
-                }
-                ButtonDirection::Right => {
-                    user_confirm = true;
-                    display
-                        .confirm_view(&user_confirm_message, user_confirm)
-                        .unwrap();
-                }
-                ButtonDirection::Left => {
-                    user_confirm = false;
-                    display
-                        .confirm_view(&user_confirm_message, user_confirm)
-                        .unwrap();
-                }
-                ButtonDirection::Unpressed => {}
-                _ => {}
-            }
         }
 
         if downstream_active {
@@ -376,13 +346,13 @@ fn main() -> ! {
 
                                 match message.message_body {
                                     DeviceReceiveBody::AnnounceAck { device_label, .. } => {
-                                        display.print_header(&device_label).unwrap();
-                                        display.header(device_label).unwrap();
-                                        display.flush().unwrap();
+                                        display.print_header(device_label).unwrap();
                                         sends_upstream.push(DeviceSendMessage::Debug {
                                             message: "Received AnnounceACK!".to_string(),
                                             device: frost_signer.device_id(),
                                         });
+                                        led.write(brightness([colors::GREEN].iter().cloned(), 10))
+                                            .unwrap();
                                     }
                                     DeviceReceiveBody::Core(core_message) => {
                                         if let CoordinatorToDeviceMessage::DoKeyGen {
@@ -402,7 +372,7 @@ fn main() -> ! {
                                                 outbox.extend(new_sends);
                                             }
                                             Err(e) => {
-                                                display.print(e.gist()).unwrap();
+                                                display.print(&e.gist()).unwrap();
                                             }
                                         }
                                     }
@@ -441,6 +411,8 @@ fn main() -> ! {
                             signer: frost_signer.clone(),
                         })
                         .unwrap();
+                    led.write(brightness([colors::BLUE].iter().cloned(), 10))
+                        .unwrap();
                 }
                 DeviceSend::ToCoordinator(message) => {
                     sends_upstream.push(DeviceSendMessage::Core(message));
@@ -448,46 +420,25 @@ fn main() -> ! {
                 DeviceSend::ToUser(user_send) => {
                     match user_send {
                         DeviceToUserMessage::CheckKeyGen { xpub } => {
+                            led.write(brightness([colors::YELLOW].iter().cloned(), 10))
+                                .unwrap();
                             // display.print(format!("Key ok?\n{:?}", hex::encode(&xpub.0)));
                             // wait_button();
                             outbox.extend(frost_signer.keygen_ack(true).unwrap());
                             display.print(format!("Key generated\n{}", xpub)).unwrap();
+                            led.write(brightness([colors::WHITE_SMOKE].iter().cloned(), 10))
+                                .unwrap();
                             delay.delay_ms(2_000u32);
                         }
                         frostsnap_core::message::DeviceToUserMessage::SignatureRequest {
                             message_to_sign,
                             ..
                         } => {
-                            user_prompt = true;
-                            user_confirm_message = format!("Sign {}", message_to_sign);
-                            display
-                                .confirm_view(&user_confirm_message, user_confirm)
+                            display.print(format!("Sign {}", message_to_sign)).unwrap();
+                            led.write(brightness([colors::FUCHSIA].iter().cloned(), 10))
                                 .unwrap();
 
-                            // let mut choice = true;
-                            // loop {
-                            //     display
-                            //         .confirm_view(format!("Sign {}", message_to_sign), choice)
-                            //         .unwrap();
-
-                            //     match buttons.wait_for_press() {
-                            //         ButtonDirection::Center => break,
-                            //         ButtonDirection::Left => {
-                            //             choice = false;
-                            //         }
-                            //         ButtonDirection::Right => {
-                            //             choice = true;
-                            //         }
-                            //         _ => {}
-                            //     }
-                            // }
-
-                            // if choice {
-                            //     outbox.extend(frost_signer.sign_ack().unwrap());
-                            //     display.print("Request to sign accepted").unwrap();
-                            // } else {
-                            //     display.print("Request to sign rejected").unwrap();
-                            // }
+                            outbox.extend(frost_signer.sign_ack().unwrap());
                         }
                     };
                 }
@@ -502,7 +453,23 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     let mut system = peripherals.SYSTEM.split();
     // Disable the RTC and TIMG watchdog timers
 
+    // RGB LED
+    // White: found coordinator
+    // Blue: found another device upstream
+    let pulse = PulseControl::new(
+        peripherals.RMT,
+        &mut system.peripheral_clock_control,
+        ClockSource::APB,
+        0,
+        0,
+        0,
+    )
+    .unwrap();
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
+
+    let mut led = <smartLedAdapter!(1)>::new(pulse.channel0, io.pins.gpio2);
+    led.write(brightness([colors::RED].iter().cloned(), 10))
+        .unwrap();
 
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
@@ -516,23 +483,15 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         None => info.to_string(),
     };
 
-    let mut framearray = [Rgb565::WHITE; 160 * 80];
-    let framebuf = FrameBuf::new(&mut framearray, 160, 80);
-    // let mut bl = io.pins.gpio11.into_push_pull_output();
-    if let Ok(mut display) = st7735::ST7735::new(
-        // &mut bl,
-        io.pins.gpio6.into_push_pull_output(),
-        io.pins.gpio10.into_push_pull_output(),
-        peripherals.SPI2,
-        io.pins.gpio2,
-        io.pins.gpio7,
-        io.pins.gpio3,
-        io.pins.gpio12,
+    if let Ok(mut display) = oled::SSD1306::new(
+        peripherals.I2C0,
+        io.pins.gpio5,
+        io.pins.gpio6,
+        400u32.kHz(),
         &mut system.peripheral_clock_control,
         &clocks,
-        framebuf,
     ) {
-        let _ = display.error_print(message);
+        let _ = display.print(message);
     }
 
     loop {}
