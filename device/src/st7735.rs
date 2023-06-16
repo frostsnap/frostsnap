@@ -3,24 +3,24 @@
 use display_interface_spi::SPIInterfaceNoCS;
 use embedded_graphics::{
     mono_font::{
-        ascii::{FONT_10X20, FONT_5X8, FONT_6X10, FONT_7X14, FONT_7X14_BOLD},
+        ascii::{FONT_10X20, FONT_5X8, FONT_7X14, FONT_7X14_BOLD},
         MonoTextStyle,
     },
-    pixelcolor::{self, Rgb565},
+    pixelcolor::Rgb565,
     prelude::*,
     primitives::*,
 };
 use embedded_graphics_framebuf::FrameBuf;
 use embedded_text::{
     alignment::{HorizontalAlignment, VerticalAlignment},
-    style::{HeightMode, TextBoxStyle, TextBoxStyleBuilder},
+    style::{TextBoxStyle, TextBoxStyleBuilder},
     TextBox,
 };
 use esp32c3_hal::{
     clock::Clocks,
     gpio::{
-        BankGpioRegisterAccess, Gpio10Signals, Gpio11Signals, Gpio6Signals, GpioPin,
-        InputOutputPinType, InputPin, InteruptStatusRegisterAccess, Output, OutputPin, PushPull,
+        BankGpioRegisterAccess, Gpio10Signals, Gpio6Signals, GpioPin, InputOutputPinType, InputPin,
+        InteruptStatusRegisterAccess, Output, OutputPin, PushPull,
     },
     peripheral::Peripheral,
     prelude::*,
@@ -28,7 +28,6 @@ use esp32c3_hal::{
     system::PeripheralClockControl,
     Delay,
 };
-use esp_println::println;
 use mipidsi::{models::ST7735s, Display, Error};
 
 pub struct ST7735<'d, RA, IRA, SPI>

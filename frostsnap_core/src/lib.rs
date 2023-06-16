@@ -11,7 +11,6 @@ pub mod nostr;
 pub mod xpub;
 
 use bitcoin::XOnlyPublicKey;
-use message::{CoordinatorToStorageMessage, DeviceToCoordinatorBody, KeyGenResponse, KeyGenProvideShares};
 pub use schnorr_fun;
 
 #[macro_use]
@@ -19,10 +18,7 @@ extern crate alloc;
 
 use crate::{
     encrypted_share::EncryptedShare,
-    message::{
-        CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToUserMessage, DeviceSend,
-        DeviceToCoordindatorMessage, DeviceToUserMessage, KeyGenProvideShares, SignTask,
-    },
+    message::*,
 };
 use alloc::{
     collections::{BTreeMap, BTreeSet, VecDeque},

@@ -1,5 +1,5 @@
 [package]
-name = "device"
+name = "frostsnap_device"
 version = "0.1.0"
 authors = ["nickfarrow <nick@nickfarrow.com>"]
 edition = "2021"
@@ -15,6 +15,7 @@ air101 = [
 air101-r225 = []
 air101-r2223 = []
 rgb-led = ["dep:esp-hal-smartled", "dep:smart-leds"]
+purple = [ "dep:ssd1306", "dep:display-interface-spi", "dep:display-interface", "dep:esp-hal-smartled", "dep:smart-leds" ]
 
 [dependencies]
 frostsnap_core = { path = "../frostsnap_core", default-features = false }
@@ -43,6 +44,7 @@ embedded-text = "0.5.0"
 
 esp-hal-smartled  = { version = "0.1.0", features = ["esp32c3"], optional = true }
 smart-leds        = { version = "0.3.0", optional = true }
+
 
 # [package.metadata.espflash]
 # bootloader      = "bootloader.bin"

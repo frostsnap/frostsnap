@@ -3,6 +3,7 @@
 
 #[macro_use]
 extern crate alloc;
+
 use frostsnap_device::{buttons, io, st7735, state, storage};
 
 use crate::alloc::string::ToString;
