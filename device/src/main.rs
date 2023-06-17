@@ -2,6 +2,7 @@
 #![no_main]
 
 pub mod device_config;
+pub mod device_interface;
 pub mod io;
 pub mod oled;
 pub mod state;
@@ -25,6 +26,8 @@ use esp_hal_smartled::{smartLedAdapter, SmartLedsAdapter};
 use esp_storage::FlashStorage;
 use io::UpstreamDetector;
 use smart_leds::{brightness, colors, SmartLedsWrite, RGB};
+
+use crate::device_interface::Device;
 
 use frostsnap_comms::{
     DeviceReceiveBody, DeviceReceiveSerial, DeviceSendMessage, DeviceSendSerial,
@@ -62,148 +65,56 @@ fn init_heap() {
 #[entry]
 fn main() -> ! {
     init_heap();
-    let peripherals = Peripherals::take();
-    let mut system = peripherals.SYSTEM.split();
-    let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
-    // Disable the RTC and TIMG watchdog timers
-    let mut rtc = Rtc::new(peripherals.RTC_CNTL);
-    let timer_group0 = TimerGroup::new(peripherals.TIMG0, &clocks);
-    let mut wdt0 = timer_group0.wdt;
-    let timer_group1 = TimerGroup::new(peripherals.TIMG1, &clocks);
-    let mut wdt1 = timer_group1.wdt;
-    let mut timer0 = timer_group0.timer0;
-    timer0.start(1u64.secs());
-    let mut timer1 = timer_group1.timer0;
-    timer1.start(1u64.secs());
-
-    rtc.swd.disable();
-    rtc.rwdt.disable();
-    wdt0.disable();
-    wdt1.disable();
-
-    let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
-
-    let mut delay = Delay::new(&clocks);
-
-    // let button = io.pins.gpio9.into_pull_up_input();
-    // let wait_button = || {
-    //     // Ensure button is not pressed
-    //     while button.is_high().unwrap() {}
-    //     // Wait for press
-    //     while button.is_low().unwrap() {}
-    // };
-
-    let mut display = oled::SSD1306::new(
-        peripherals.I2C0,
-        io.pins.gpio5,
-        io.pins.gpio6,
-        400u32.kHz(),
-        &mut system.peripheral_clock_control,
-        &clocks,
-    )
-    .unwrap();
-
-    // RGB LED
-    // White: found coordinator
-    // Blue: found another device upstream
-    let pulse = PulseControl::new(
-        peripherals.RMT,
-        &mut system.peripheral_clock_control,
-        ClockSource::APB,
-        0,
-        0,
-        0,
-    )
-    .unwrap();
-    let mut led = <smartLedAdapter!(1)>::new(pulse.channel0, io.pins.gpio2);
-
-    let flash = FlashStorage::new();
-    let mut flash = storage::DeviceStorage::new(flash, storage::NVS_PARTITION_START);
-
-    // Welcome screen
-    display.print_header("frost snap").unwrap();
-    for i in 0..=20 {
-        led.write([RGB::new(0, i, i)].iter().cloned()).unwrap();
-        delay.delay_ms(30u32);
-    }
-    for i in (0..=20).rev() {
-        led.write([RGB::new(0, i, i)].iter().cloned()).unwrap();
-        delay.delay_ms(30u32);
-    }
-
-    // Simulate factory reset
-    // For now we are going to factory reset the storage on boot for easier testing and debugging.
-    // Comment out if you want the frost key to persist across reboots
-    // flash.erase().unwrap();
-    // delay.delay_ms(2000u32);
+    let device = device_interface::PurpleDevice::new();
 
     // Load state from Flash memory if available. If not, generate secret and save.
-    let mut frost_signer = match flash.load() {
+    let mut frost_signer = match device.flash_load() {
         Ok(state) => {
-            display
+            device
                 .print(format!("STATE: {:?}", state.signer.state()))
                 .unwrap();
-            delay.delay_ms(1_000u32);
+            device.delay_ms(1_000u32);
 
             state.signer
         }
         Err(e) => {
             // Bincode errored because device is new or something else is wrong,
             // will require manual user interaction to start fresh, or later, restore from backup.
-            // display
+            // device
             //     .print("Press button to generate a new secret")
             //     .unwrap();
             // wait_button();
-            display.print(e.to_string()).unwrap();
-            delay.delay_ms(2_000u32);
+            device.print(e.to_string()).unwrap();
+            device.delay_ms(2_000u32);
 
-            let mut rng = esp32c3_hal::Rng::new(peripherals.RNG);
             let mut rand_bytes = [0u8; 32];
-            rng.read(&mut rand_bytes).unwrap();
+            device.read_rng(&mut rand_bytes).unwrap();
             let secret = Scalar::from_bytes(rand_bytes).unwrap().non_zero().unwrap();
             let keypair: KeyPair = KeyPair::<Normal>::new(secret.clone());
             let frost_signer = frostsnap_core::FrostSigner::new(keypair);
 
-            flash
-                .save(&state::FrostState {
+            device
+                .flash_save(&state::FrostState {
                     signer: frost_signer.clone(),
                 })
                 .unwrap();
             println!("New secret generated and saved: {}", secret.to_string());
-            display.print("New secret generated and saved").unwrap();
+            device.print("New secret generated and saved").unwrap();
             frost_signer
         }
     };
 
-    delay.delay_ms(1_000u32);
-
-    let mut downstream_serial = {
-        let serial_conf = config::Config {
-            baudrate: frostsnap_comms::BAUDRATE,
-            ..Default::default()
-        };
-        let txrx0 = TxRxPins::new_tx_rx(
-            io.pins.gpio21.into_push_pull_output(),
-            io.pins.gpio20.into_floating_input(),
-        );
-        let uart0 =
-            Uart::new_with_config(peripherals.UART0, Some(serial_conf), Some(txrx0), &clocks);
-        io::SerialInterface::<_, _, Downstream>::new_uart(uart0, &timer1)
-    };
-
-    let upstream_uart = {
-        let serial_conf = config::Config {
-            baudrate: frostsnap_comms::BAUDRATE,
-            ..Default::default()
-        };
-        let txrx1 = TxRxPins::new_tx_rx(
-            io.pins.gpio18.into_push_pull_output(),
-            io.pins.gpio19.into_floating_input(),
-        );
-        Uart::new_with_config(peripherals.UART1, Some(serial_conf), Some(txrx1), &clocks)
-    };
-    let upstream_jtag = UsbSerialJtag::new(peripherals.USB_DEVICE);
+    // Welcome screen
+    device.print_header("frost snap").unwrap();
+    for i in 0..=20 {
+        device.led_write(RGB::new(0, i, i)).unwrap();
+        device.delay_ms(30u32);
+    }
+    for i in (0..=20).rev() {
+        device.led_write(RGB::new(0, i, i)).unwrap();
+        device.delay_ms(30u32);
+    }
 
     let mut soft_reset = true;
     let mut downstream_active = false;
@@ -211,15 +122,15 @@ fn main() -> ! {
     let mut sends_upstream: Vec<DeviceSendMessage> = vec![];
     let mut sends_user: Vec<DeviceToUserMessage> = vec![];
     let mut outbox = VecDeque::new();
-    let mut upstream_detector = UpstreamDetector::new(upstream_uart, upstream_jtag, &timer0);
+    // let mut device.upstream_detector = UpstreamDetector::new(upstream_uart, upstream_jtag, &timer0);
     let mut upstream_sent_magic_bytes = false;
     let mut upstream_received_first_message = false;
     let mut next_write_magic_bytes = 0;
 
     loop {
         if soft_reset {
-            display.print("soft resetting").unwrap();
-            delay.delay_ms(500u32);
+            device.print("soft resetting").unwrap();
+            device.delay_ms(500u32);
             soft_reset = false;
             sends_upstream = vec![DeviceSendMessage::Announce(frostsnap_comms::Announce {
                 from: frost_signer.device_id(),
@@ -234,8 +145,8 @@ fn main() -> ! {
         }
 
         if downstream_active {
-            if downstream_serial.poll_read() {
-                match downstream_serial.receive_from_downstream() {
+            if device.poll_read_downstream() {
+                match device.receive_from_downstream() {
                     Ok(device_send) => {
                         let forward_upstream = match device_send {
                             DeviceSendSerial::MagicBytes(_) => {
@@ -272,20 +183,22 @@ fn main() -> ! {
 
             // Send messages downstream
             for send in sends_downstream.drain(..) {
-                downstream_serial
+                device
+                    .downstream_serial
                     .forward_downstream(DeviceReceiveSerial::Message(send))
                     .expect("sending downstream");
             }
         } else {
-            let now = timer0.now();
+            let now = device.now();
             if now > next_write_magic_bytes {
                 next_write_magic_bytes = now + 40_000 * 100;
-                // display.print("writing magic bytes downstream").unwrap();
-                downstream_serial
+                // device.print("writing magic bytes downstream").unwrap();
+                device
+                    .downstream_serial
                     .write_magic_bytes()
                     .expect("couldn't write magic bytes downstream");
             }
-            if downstream_serial.find_and_remove_magic_bytes() {
+            if device.downstream_serial.find_and_remove_magic_bytes() {
                 downstream_active = true;
                 sends_upstream.push(DeviceSendMessage::Debug {
                     message: "Device read magic bytes from another device!".to_string(),
@@ -294,24 +207,24 @@ fn main() -> ! {
             }
         }
 
-        if upstream_detector.serial_interface().is_none() {
-            let scanning = if upstream_detector.switched {
+        if device.upstream_serial_interface().is_none() {
+            let scanning = if device.upstream_serial_detector_status() {
                 "JTAG"
             } else {
                 "UART"
             };
 
-            display
+            device
                 .print(format!("Waiting for coordinator {scanning}",))
                 .unwrap();
         }
 
-        if let Some(upstream_serial) = upstream_detector.serial_interface() {
+        if let Some(upstream_serial) = device.upstream_serial_interface() {
             if !upstream_sent_magic_bytes {
                 upstream_serial
                     .write_magic_bytes()
                     .expect("failed to write magic bytes");
-                display.print("Waiting for coordinator").unwrap();
+                device.print("Waiting for coordinator").unwrap();
                 upstream_sent_magic_bytes = true;
             }
 
@@ -350,13 +263,12 @@ fn main() -> ! {
 
                                 match message.message_body {
                                     DeviceReceiveBody::AnnounceAck { device_label, .. } => {
-                                        display.print_header(device_label).unwrap();
+                                        device.print_header(&device_label).unwrap();
                                         sends_upstream.push(DeviceSendMessage::Debug {
                                             message: "Received AnnounceACK!".to_string(),
                                             device: frost_signer.device_id(),
                                         });
-                                        led.write(brightness([colors::GREEN].iter().cloned(), 10))
-                                            .unwrap();
+                                        device.led_write(RGB::new(0, 255, 0)).unwrap();
                                     }
                                     DeviceReceiveBody::Core(core_message) => {
                                         if let CoordinatorToDeviceMessage::DoKeyGen {
@@ -380,7 +292,7 @@ fn main() -> ! {
                                                     "Unexpected FROST message in this state. {:?}",
                                                     e
                                                 );
-                                                display.print(&e.gist()).unwrap();
+                                                device.print(&e.gist()).unwrap();
                                             }
                                         }
                                     }
@@ -413,14 +325,13 @@ fn main() -> ! {
         while let Some(send) = outbox.pop_front() {
             match send {
                 DeviceSend::ToStorage(_) => {
-                    delay.delay_ms(2_000u32);
-                    flash
-                        .save(&state::FrostState {
+                    device.delay_ms(2_000u32);
+                    device
+                        .flash_save(&state::FrostState {
                             signer: frost_signer.clone(),
                         })
                         .unwrap();
-                    led.write(brightness([colors::BLUE].iter().cloned(), 10))
-                        .unwrap();
+                    device.led_write(RGB::new(0, 0, 255)).unwrap();
                 }
                 DeviceSend::ToCoordinator(message) => {
                     sends_upstream.push(DeviceSendMessage::Core(message));
@@ -428,23 +339,20 @@ fn main() -> ! {
                 DeviceSend::ToUser(user_send) => {
                     match user_send {
                         DeviceToUserMessage::CheckKeyGen { xpub } => {
-                            led.write(brightness([colors::YELLOW].iter().cloned(), 10))
-                                .unwrap();
-                            // display.print(format!("Key ok?\n{:?}", hex::encode(&xpub.0)));
+                            device.led_write(RGB::new(255, 255, 0)).unwrap();
+                            // device.print(format!("Key ok?\n{:?}", hex::encode(&xpub.0)));
                             // wait_button();
                             outbox.extend(frost_signer.keygen_ack(true).unwrap());
-                            display.print(format!("Key generated\n{}", xpub)).unwrap();
-                            led.write(brightness([colors::WHITE_SMOKE].iter().cloned(), 10))
-                                .unwrap();
-                            delay.delay_ms(2_000u32);
+                            device.print(&format!("Key generated\n{}", xpub)).unwrap();
+                            device.led_write(RGB::new(255, 255, 255)).unwrap();
+                            device.delay_ms(2_000u32);
                         }
                         frostsnap_core::message::DeviceToUserMessage::SignatureRequest {
                             message_to_sign,
                             ..
                         } => {
-                            display.print(format!("Sign {}", message_to_sign)).unwrap();
-                            led.write(brightness([colors::FUCHSIA].iter().cloned(), 10))
-                                .unwrap();
+                            device.print(&format!("Sign {}", message_to_sign)).unwrap();
+                            device.led_write(RGB::new(255, 0, 255)).unwrap();
 
                             outbox.extend(frost_signer.sign_ack().unwrap());
                         }
