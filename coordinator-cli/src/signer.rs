@@ -116,7 +116,21 @@ impl<'a, 'b> Signer<'a, 'b> {
                 }
             }
 
-            let (newly_registered, new_messages) = self.ports.poll_devices();
+            // Give some time for devices to register if we are daisy-chain signing, before responding
+            let mut newly_registered = BTreeSet::new();
+            let mut new_messages = vec![];
+            loop {
+                let (just_now_registered_devices, just_now_new_messages) =
+                    self.ports.poll_devices();
+                new_messages.extend(just_now_new_messages);
+                newly_registered.extend(just_now_registered_devices.clone());
+
+                if just_now_registered_devices.len() > 0 {
+                    std::thread::sleep(std::time::Duration::from_millis(3000));
+                } else {
+                    break;
+                }
+            }
             let asking_to_sign = newly_registered
                 .intersection(&still_need_to_sign)
                 .cloned()
