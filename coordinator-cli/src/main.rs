@@ -96,7 +96,13 @@ pub fn process_outbox(
             CoordinatorSend::ToUser(to_user_message) => match to_user_message {
                 CoordinatorToUserMessage::Signed { .. } => {}
                 CoordinatorToUserMessage::CheckKeyGen { xpub } => {
-                    let ack = io::fetch_input(&format!("OK? [y/n]: {}", xpub)) == "y";
+                    let ack = io::fetch_input(&format!(
+                        "Coordinator received keygen shares from all devices.\nSchnorr Public Key: {}\nOk? [y/n]",
+                        xpub
+                    )) == "y";
+                    if ack {
+                        eprintln!("\nSharing keygen shares amongst devices... 🧙🪄");
+                    }
                     outbox.extend(coordinator.keygen_ack(ack)?);
                 }
             },
@@ -121,6 +127,7 @@ fn main() -> anyhow::Result<()> {
         } else {
             Level::INFO
         })
+        .without_time()
         .pretty()
         .finish();
     // use that subscriber to process traces emitted after this point
@@ -196,7 +203,7 @@ fn main() -> anyhow::Result<()> {
 
             if "y"
                 != io::fetch_input(&format!(
-                    "Want to do keygen with these devices? [y/n]\n{}",
+                    "🤖 {}\n\nWant to do keygen with these devices? [y/n]",
                     keygen_devices
                         .clone()
                         .into_iter()
@@ -206,11 +213,12 @@ fn main() -> anyhow::Result<()> {
                             .expect("must exist")
                             .clone())
                         .collect::<Vec<_>>()
-                        .join("\n"),
+                        .join("\n🤖 "),
                 ))
             {
                 return Ok(());
             };
+            eprintln!("\nStarting FROST key generation...");
 
             let mut coordinator = frostsnap_core::FrostCoordinator::new();
 
@@ -298,9 +306,12 @@ fn main() -> anyhow::Result<()> {
                     let finished_signature = finished_signature[0].clone();
                     let signed_event = event.add_signature(finished_signature);
 
-                    println!("{}", serde_json::json!(signed_event).to_string());
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!(signed_event))?
+                    );
 
-                    if "y" != crate::fetch_input("Broadcast Frostr event? [y/n]") {
+                    if "y" != crate::fetch_input("\n⚡❄ Broadcast Frostr event? [y/n]") {
                         return Ok(());
                     }
 
@@ -314,7 +325,7 @@ fn main() -> anyhow::Result<()> {
                         match nostr::broadcast_event(signed_event.clone(), relay) {
                             Ok(_) => {
                                 relayed = true;
-                                eprintln!("Broadcasted to {relay}");
+                                eprintln!("📡 Broadcasted to {relay}");
                             }
                             Err(e) => {
                                 eprintln!("Failed to relay event to {relay}: {e}");
@@ -322,7 +333,10 @@ fn main() -> anyhow::Result<()> {
                         }
                     }
                     if relayed {
-                        println!("View event: https://www.nostr.guru/e/{}", &signed_event.id);
+                        println!(
+                            "\n🔍 View event: https://www.nostr.guru/e/{}",
+                            &signed_event.id
+                        );
                     }
                 }
                 SignArgs::Transaction { .. } => todo!(),

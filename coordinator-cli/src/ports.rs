@@ -208,7 +208,6 @@ impl Ports {
             match device_port.read_for_magic_bytes() {
                 Ok(true) => {
                     event!(Level::DEBUG, port = serial_number, "Read magic bytes");
-                    println!("Found magic bytes on device {}", serial_number);
                     self.ready.insert(serial_number, device_port);
                     continue;
                 }
