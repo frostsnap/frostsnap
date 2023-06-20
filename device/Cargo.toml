@@ -5,7 +5,7 @@ authors = ["nickfarrow <nick@nickfarrow.com>"]
 edition = "2021"
 
 [features]
-default = ["air101", "air101-r225"]
+blue = ["air101", "air101-r225"]
 ai-042c3 = ["rgb-led", "dep:display-interface", "dep:ssd1306"]
 air101 = [
     "dep:display-interface-spi", 
@@ -44,6 +44,15 @@ embedded-text = "0.5.0"
 
 esp-hal-smartled  = { version = "0.1.0", features = ["esp32c3"], optional = true }
 smart-leds        = { version = "0.3.0", optional = true }
+
+
+[[bin]]
+name = "purple"
+required-features = ["purple"]
+
+[[bin]]
+name = "blue"
+required-features = ["blue"]
 
 
 # [package.metadata.espflash]

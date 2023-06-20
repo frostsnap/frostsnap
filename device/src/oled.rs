@@ -29,7 +29,6 @@ pub struct SSD1306<'d, T>
 where
     // DI: WriteOnlyDataCommand,
     // SIZE: DisplaySize,
-    T: Instance,
 {
     pub display:
         Ssd1306<I2CInterface<I2C<'d, T>>, DisplaySize72x40, BufferedGraphicsMode<DisplaySize72x40>>,
