@@ -694,7 +694,7 @@ impl FrostSigner {
                 }
                 let frost = frost::new_with_deterministic_nonces::<Sha256>();
 
-                let point_polys: BTreeMap<Scalar<Public>, Vec<Point>> = shares_provided
+                let point_polys: BTreeMap<_, _> = shares_provided
                     .iter()
                     .map(|(device_id, share)| (device_id.to_x_coord(), share.my_poly.clone()))
                     .collect();
@@ -754,18 +754,6 @@ impl FrostSigner {
                         )
                     })
                     .collect::<BTreeMap<_, _>>();
-                // Confirm our keygen shares match what we sent out
-                if my_shares
-                    .get(&self.device_id().to_x_coord())
-                    .expect("shares are destined for us in this finish keygen")
-                    .0
-                    != frost.create_share(&scalar_poly, self.device_id().to_x_coord())
-                {
-                    return Err(Error::signer_invalid_message(
-                            &message,
-                            format!("Encrypted keygen shares for our own index does not match what we expected. Tampered?"),
-                        ));
-                }
 
                 let pop_message = gen_pop_message(devices.iter().cloned());
                 let keygen = frost.new_keygen(point_polys).unwrap();
