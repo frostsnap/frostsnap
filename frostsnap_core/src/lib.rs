@@ -852,13 +852,20 @@ impl FrostSigner {
         }
     }
 
-    pub fn sign_ack(&mut self) -> Result<Vec<DeviceSend>, ActionError> {
+    pub fn sign_ack(&mut self, ack: bool) -> Result<Vec<DeviceSend>, ActionError> {
         match &self.state {
             SignerState::AwaitingSignAck {
                 key,
                 message,
                 nonces,
             } => {
+                if !ack {
+                    self.state = SignerState::FrostKey {
+                        key: key.clone(),
+                        awaiting_ack: false,
+                    };
+                    return Ok(vec![])
+                }
                 let sign_items = message.sign_items();
 
                 let frost = frost::new_with_deterministic_nonces::<Sha256>();

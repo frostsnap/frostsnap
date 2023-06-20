@@ -4,35 +4,28 @@
 #[macro_use]
 extern crate alloc;
 
-use frostsnap_device::{buttons, io, st7735, state, storage};
+use frostsnap_device::{
+    buttons::{self, Buttons},
+    esp32_run::{self, UserInteraction},
+    st7735::{self, ST7735},
+};
 
-use crate::alloc::string::ToString;
-use alloc::{collections::VecDeque, string::String, vec::Vec};
+use crate::alloc::string::{String, ToString};
+use esp32c3_hal::gpio::BankGpioRegisterAccess;
+use esp32c3_hal::gpio::InteruptStatusRegisterAccess;
 use esp32c3_hal::{
     clock::ClockControl,
     peripherals::Peripherals,
     prelude::*,
-    timer::TimerGroup,
+    spi, timer,
     uart::{config, TxRxPins},
-    Delay, Rtc, Uart, UsbSerialJtag, IO,
+    Delay, IO,
 };
 use esp_backtrace as _;
-use esp_storage::FlashStorage;
-use frostsnap_comms::{
-    DeviceReceiveBody, DeviceReceiveSerial, DeviceSendMessage, DeviceSendSerial,
-};
-use frostsnap_comms::{DeviceReceiveMessage, Downstream};
-use frostsnap_core::message::{CoordinatorToDeviceMessage, DeviceSend, DeviceToUserMessage};
-use io::UpstreamDetector;
 
 use buttons::ButtonDirection;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use embedded_graphics_framebuf::FrameBuf;
-
-use frostsnap_core::schnorr_fun::fun::hex;
-use frostsnap_core::schnorr_fun::fun::marker::Normal;
-use frostsnap_core::schnorr_fun::fun::KeyPair;
-use frostsnap_core::schnorr_fun::fun::Scalar;
 
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
@@ -65,10 +58,10 @@ fn main() -> ! {
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
     // Disable the RTC and TIMG watchdog timers
-    let mut rtc = Rtc::new(peripherals.RTC_CNTL);
-    let timer_group0 = TimerGroup::new(peripherals.TIMG0, &clocks);
+    let mut rtc = esp32c3_hal::Rtc::new(peripherals.RTC_CNTL);
+    let timer_group0 = timer::TimerGroup::new(peripherals.TIMG0, &clocks);
     let mut wdt0 = timer_group0.wdt;
-    let timer_group1 = TimerGroup::new(peripherals.TIMG1, &clocks);
+    let timer_group1 = timer::TimerGroup::new(peripherals.TIMG1, &clocks);
     let mut wdt1 = timer_group1.wdt;
     let mut timer0 = timer_group0.timer0;
     timer0.start(1u64.secs());
@@ -88,7 +81,7 @@ fn main() -> ! {
     // orientation: usb-c port on the right
     // down button shares same pin as D5 LED, which pulls the input down enough to cause problems.
     // remove the LED
-    let mut buttons = buttons::Buttons::new(
+    let buttons = buttons::Buttons::new(
         io.pins.gpio4,
         io.pins.gpio8,
         io.pins.gpio13,
@@ -101,7 +94,7 @@ fn main() -> ! {
     bl.set_low().unwrap();
     let mut framearray = [Rgb565::WHITE; 160 * 80];
     let framebuf = FrameBuf::new(&mut framearray, 160, 80);
-    let mut display = st7735::ST7735::new(
+    let display = st7735::ST7735::new(
         // &mut bl,
         io.pins.gpio6.into_push_pull_output(),
         io.pins.gpio10.into_push_pull_output(),
@@ -116,76 +109,14 @@ fn main() -> ! {
     )
     .unwrap();
 
-    let flash = FlashStorage::new();
-    let mut flash = storage::DeviceStorage::new(flash, storage::NVS_PARTITION_START);
-
-    // Welcome screen
-    // Some delay before turning on backlight to hide screen flicker
-    delay.delay_ms(20u32);
-    bl.set_high().unwrap();
-    display.splash_screen().unwrap();
-    display.clear(Rgb565::BLACK).unwrap();
-    display.header("frostsnap").unwrap();
-    display.flush().unwrap();
-
-    // Simulate factory reset
-    // For now we are going to factory reset the storage on boot for easier testing and debugging.
-    // Comment out if you want the frost key to persist across reboots
-    // flash.erase().unwrap();
-    // delay.delay_ms(2000u32);
-
-    // Load state from Flash memory if available. If not, generate secret and save.
-    let mut frost_signer = match flash.load() {
-        Ok(state) => {
-            display
-                .print(format!("STATE: {:?}", state.signer.state()))
-                .unwrap();
-            delay.delay_ms(1_000u32);
-
-            state.signer
-        }
-        Err(e) => {
-            // Bincode errored because device is new or something else is wrong,
-            // will require manual user interaction to start fresh, or later, restore from backup.
-            // display
-            //     .print("Press button to generate a new secret")
-            //     .unwrap();
-            // wait_button();
-            display.print(e.to_string()).unwrap();
-            delay.delay_ms(2_000u32);
-
-            let mut rng = esp32c3_hal::Rng::new(peripherals.RNG);
-            let mut rand_bytes = [0u8; 32];
-            rng.read(&mut rand_bytes).unwrap();
-            let secret = Scalar::from_bytes(rand_bytes).unwrap().non_zero().unwrap();
-            let keypair: KeyPair = KeyPair::<Normal>::new(secret.clone());
-            let frost_signer = frostsnap_core::FrostSigner::new(keypair);
-
-            flash
-                .save(&state::FrostState {
-                    signer: frost_signer.clone(),
-                })
-                .unwrap();
-            display.print("New secret generated and saved").unwrap();
-            frost_signer
-        }
+    let ui = BlueUi {
+        buttons,
+        display,
+        user_confirm: true,
+        user_prompt: None,
     };
 
-    delay.delay_ms(1_000u32);
-
-    let mut downstream_serial = {
-        let serial_conf = config::Config {
-            baudrate: frostsnap_comms::BAUDRATE,
-            ..Default::default()
-        };
-        let txrx0 = TxRxPins::new_tx_rx(
-            io.pins.gpio21.into_push_pull_output(),
-            io.pins.gpio20.into_floating_input(),
-        );
-        let uart0 =
-            Uart::new_with_config(peripherals.UART0, Some(serial_conf), Some(txrx0), &clocks);
-        io::SerialInterface::<_, _, Downstream>::new_uart(uart0, &timer1)
-    };
+    let upstream_jtag = esp32c3_hal::UsbSerialJtag::new(peripherals.USB_DEVICE);
 
     let upstream_uart = {
         let serial_conf = config::Config {
@@ -196,304 +127,179 @@ fn main() -> ! {
             io.pins.gpio18.into_push_pull_output(),
             io.pins.gpio19.into_floating_input(),
         );
-        Uart::new_with_config(peripherals.UART1, Some(serial_conf), Some(txrx1), &clocks)
+        esp32c3_hal::Uart::new_with_config(
+            peripherals.UART1,
+            Some(serial_conf),
+            Some(txrx1),
+            &clocks,
+        )
     };
-    let upstream_jtag = UsbSerialJtag::new(peripherals.USB_DEVICE);
 
-    let mut soft_reset = true;
-    let mut downstream_active = false;
-    let mut sends_downstream: Vec<DeviceReceiveMessage> = vec![];
-    let mut sends_upstream: Vec<DeviceSendMessage> = vec![];
-    let mut sends_user: Vec<DeviceToUserMessage> = vec![];
-    let mut outbox = VecDeque::new();
-    let mut upstream_detector = UpstreamDetector::new(upstream_uart, upstream_jtag, &timer0);
-    let mut upstream_sent_magic_bytes = false;
-    let mut upstream_received_first_message = false;
-    let mut next_write_magic_bytes = 0;
+    let downstream_uart = {
+        let serial_conf = config::Config {
+            baudrate: frostsnap_comms::BAUDRATE,
+            ..Default::default()
+        };
+        let txrx0 = TxRxPins::new_tx_rx(
+            io.pins.gpio21.into_push_pull_output(),
+            io.pins.gpio20.into_floating_input(),
+        );
+        esp32c3_hal::Uart::new_with_config(
+            peripherals.UART0,
+            Some(serial_conf),
+            Some(txrx0),
+            &clocks,
+        )
+    };
 
-    let mut user_confirm = true;
-    let mut user_prompt = false;
-    let mut user_confirm_message: String = "".to_string();
+    let rng = esp32c3_hal::Rng::new(peripherals.RNG);
+    bl.set_high().unwrap();
+    delay.delay_ms(20u32);
 
-    loop {
-        if soft_reset {
-            display.print("soft resetting").unwrap();
-            delay.delay_ms(500u32);
-            soft_reset = false;
-            sends_upstream = vec![DeviceSendMessage::Announce(frostsnap_comms::Announce {
-                from: frost_signer.device_id(),
-            })];
-            sends_user.clear();
-            sends_downstream.clear();
-            downstream_active = false;
-            upstream_sent_magic_bytes = false;
-            next_write_magic_bytes = 0;
-            upstream_received_first_message = false;
-            outbox.clear();
+    esp32_run::Run {
+        upstream_jtag,
+        upstream_uart,
+        downstream_uart,
+        clocks,
+        rng,
+        ui,
+        timer: timer0,
+    }
+    .run()
+}
+
+pub struct BlueUi<'d, RA, IRA, SPI>
+where
+    RA: BankGpioRegisterAccess,
+    IRA: InteruptStatusRegisterAccess,
+    SPI: spi::Instance,
+{
+    buttons: Buttons<RA, IRA>,
+    display: ST7735<'d, RA, IRA, SPI>,
+    user_confirm: bool,
+    user_prompt: Option<PromptState>,
+}
+
+#[derive(Clone, Debug)]
+enum PromptState {
+    KeyGen(String),
+    Signing(String),
+}
+
+impl<'d, RA, IRA, SPI> BlueUi<'d, RA, IRA, SPI>
+where
+    RA: BankGpioRegisterAccess,
+    IRA: InteruptStatusRegisterAccess,
+    SPI: spi::Instance,
+{
+    fn render(&mut self) {
+        match &self.user_prompt {
+            Some(PromptState::Signing(task)) => {
+                self.display
+                    .confirm_view(format!("Sign {}", task), self.user_confirm)
+                    .unwrap();
+            }
+            Some(PromptState::KeyGen(xpub)) => {
+                self.display
+                    .confirm_view(format!("Ok {}", xpub), self.user_confirm)
+                    .unwrap();
+            }
+            None => {
+                /* we should not have an option rather we should just have a view with many states */
+            }
         }
+    }
+}
 
-        if user_prompt {
-            match buttons.sample_buttons() {
-                ButtonDirection::Center => {
-                    if user_confirm {
-                        outbox.extend(frost_signer.sign_ack().unwrap());
-                        display.print("Request to sign accepted").unwrap();
-                    } else {
-                        display.print("Request to sign rejected").unwrap();
-                    }
-                    user_prompt = false;
+impl<'d, RA, IRA, SPI> UserInteraction for BlueUi<'d, RA, IRA, SPI>
+where
+    RA: BankGpioRegisterAccess,
+    IRA: InteruptStatusRegisterAccess,
+    SPI: spi::Instance,
+{
+    fn splash_screen(&mut self) {
+        self.display.splash_screen().unwrap();
+        self.display.clear(Rgb565::BLACK).unwrap();
+        self.display.header("frostsnap").unwrap();
+        self.display.flush().unwrap();
+    }
+
+    fn waiting_for_upstream(&mut self, looking_at_jtag: bool) {
+        self.display
+            .print(format!(
+                "Waiting for coordinator {}",
+                match looking_at_jtag {
+                    true => "JTAG",
+                    false => "UART",
                 }
-                ButtonDirection::Right => {
-                    user_confirm = true;
-                    display
-                        .confirm_view(&user_confirm_message, user_confirm)
-                        .unwrap();
-                }
-                ButtonDirection::Left => {
-                    user_confirm = false;
-                    display
-                        .confirm_view(&user_confirm_message, user_confirm)
-                        .unwrap();
-                }
-                ButtonDirection::Unpressed => {}
-                _ => {}
-            }
-        }
+            ))
+            .unwrap();
+    }
 
-        if downstream_active {
-            if downstream_serial.poll_read() {
-                match downstream_serial.receive_from_downstream() {
-                    Ok(device_send) => {
-                        let forward_upstream = match device_send {
-                            DeviceSendSerial::MagicBytes(_) => {
-                                // soft reset downstream if it sends unexpected magic bytes so we restablish
-                                // downstream_active = false;
-                                DeviceSendMessage::Debug {
-                                    message: format!(
-                                        "downstream device sent unexpected magic bytes"
-                                    ),
-                                    device: frost_signer.device_id(),
-                                }
-                            }
-                            DeviceSendSerial::Message(message) => match message {
-                                DeviceSendMessage::Core(core) => DeviceSendMessage::Core(core),
-                                DeviceSendMessage::Debug { message, device } => {
-                                    DeviceSendMessage::Debug { message, device }
-                                }
-                                DeviceSendMessage::Announce(message) => {
-                                    DeviceSendMessage::Announce(message)
-                                }
-                            },
-                        };
-                        sends_upstream.push(forward_upstream);
-                    }
-                    Err(e) => {
-                        sends_upstream.push(DeviceSendMessage::Debug {
-                            message: format!("Failed to decode on downstream port: {e}"),
-                            device: frost_signer.device_id(),
-                        });
-                        downstream_active = false;
-                    }
-                };
-            }
+    fn await_instructions(&mut self, name: &str) {
+        self.display.print_header(name).unwrap();
+        self.display.header(name).unwrap();
+        self.display.flush().unwrap();
+    }
 
-            // Send messages downstream
-            for send in sends_downstream.drain(..) {
-                downstream_serial
-                    .forward_downstream(DeviceReceiveSerial::Message(send))
-                    .expect("sending downstream");
-            }
-        } else {
-            let now = timer0.now();
-            if now > next_write_magic_bytes {
-                next_write_magic_bytes = now + 40_000 * 100;
-                // display.print("writing magic bytes downstream").unwrap();
-                downstream_serial
-                    .write_magic_bytes()
-                    .expect("couldn't write magic bytes downstream");
-            }
-            if downstream_serial.find_and_remove_magic_bytes() {
-                downstream_active = true;
-                sends_upstream.push(DeviceSendMessage::Debug {
-                    message: "Device read magic bytes from another device!".to_string(),
-                    device: frost_signer.clone().device_id(),
-                });
-            }
-        }
+    fn confirm_sign(&mut self, sign_task: &frostsnap_core::message::SignTask) {
+        self.user_prompt = Some(PromptState::Signing(sign_task.to_string()));
+        self.user_confirm = true;
+        self.render()
+    }
 
-        if upstream_detector.serial_interface().is_none() {
-            let scanning = if upstream_detector.switched {
-                "JTAG"
-            } else {
-                "UART"
-            };
+    fn confirm_key_generated(&mut self, xpub: &str) {
+        self.user_prompt = Some(PromptState::KeyGen(xpub.into()));
+        self.user_confirm = true;
+        self.render()
+    }
 
-            display
-                .print(format!("Waiting for coordinator {scanning}",))
-                .unwrap();
-        }
+    fn display_error(&mut self, message: &str) {
+        self.display.error_print(message).unwrap();
+    }
 
-        if let Some(upstream_serial) = upstream_detector.serial_interface() {
-            if !upstream_sent_magic_bytes {
-                upstream_serial
-                    .write_magic_bytes()
-                    .expect("failed to write magic bytes");
-                display.print("Waiting for coordinator").unwrap();
-                upstream_sent_magic_bytes = true;
-            }
-
-            if upstream_serial.poll_read() {
-                let prior_to_read_buff = upstream_serial.read_buffer().to_vec();
-
-                match upstream_serial.receive_from_coordinator() {
-                    Ok(received_message) => {
-                        match received_message {
-                            DeviceReceiveSerial::MagicBytes(_) => {
-                                if upstream_received_first_message {
-                                    soft_reset = true;
-                                }
-                                continue;
-                            }
-                            DeviceReceiveSerial::Message(message) => {
-                                // We have recieved a first message (if this is not a magic bytes message)
-                                upstream_received_first_message = true;
-                                // Forward messages downstream if there are other target destinations
-                                if downstream_active {
-                                    let mut forwarding_message = message.clone();
-                                    let _ = forwarding_message
-                                        .target_destinations
-                                        .remove(&frost_signer.device_id());
-                                    if forwarding_message.target_destinations.len() > 0 {
-                                        sends_downstream.push(forwarding_message);
-                                    }
-                                }
-                                // Skip processing of messages which are not destined for us
-                                if !message
-                                    .target_destinations
-                                    .contains(&frost_signer.device_id())
-                                {
-                                    continue;
-                                }
-
-                                match message.message_body {
-                                    DeviceReceiveBody::AnnounceAck { device_label, .. } => {
-                                        display.print_header(&device_label).unwrap();
-                                        display.header(device_label).unwrap();
-                                        display.flush().unwrap();
-                                        sends_upstream.push(DeviceSendMessage::Debug {
-                                            message: "Received AnnounceACK!".to_string(),
-                                            device: frost_signer.device_id(),
-                                        });
-                                    }
-                                    DeviceReceiveBody::Core(core_message) => {
-                                        if let CoordinatorToDeviceMessage::DoKeyGen {
-                                            devices,
-                                            ..
-                                        } = &core_message
-                                        {
-                                            if devices.contains(&frost_signer.device_id()) {
-                                                frost_signer.clear_state();
-                                            }
-                                        }
-
-                                        match frost_signer
-                                            .recv_coordinator_message(core_message.clone())
-                                        {
-                                            Ok(new_sends) => {
-                                                outbox.extend(new_sends);
-                                            }
-                                            Err(e) => {
-                                                display.print(e.gist()).unwrap();
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+    fn poll(&mut self) -> Option<esp32_run::UiEvent> {
+        match self.buttons.sample_buttons() {
+            ButtonDirection::Center => {
+                if let Some(prompt) = &self.user_prompt {
+                    let ui_event = match prompt {
+                        PromptState::KeyGen(_) => {
+                            esp32_run::UiEvent::KeyGenConfirm(self.user_confirm)
                         }
-                    }
-                    Err(_) => {
-                        sends_upstream.push(DeviceSendMessage::Debug {
-                            message: format!(
-                                "Device failed to read upstream: {}",
-                                hex::encode(&prior_to_read_buff)
-                            ),
-                            device: frost_signer.device_id(),
-                        });
-                        panic!("upstream read fail: {}", hex::encode(&prior_to_read_buff));
-                    }
-                };
-            }
-
-            for send in sends_upstream.drain(..) {
-                upstream_serial
-                    .send_to_coodinator(DeviceSendSerial::Message(send.clone()))
-                    .expect("unable to send to coordinator");
-            }
-        }
-
-        // Handle message outbox to send: ToStorage, ToCoordinator, ToUser.
-        // ⚠ pop_front ensures messages are sent in order. E.g. update nonce NVS before sending sig.
-        while let Some(send) = outbox.pop_front() {
-            match send {
-                DeviceSend::ToStorage(_) => {
-                    delay.delay_ms(2_000u32);
-                    flash
-                        .save(&state::FrostState {
-                            signer: frost_signer.clone(),
-                        })
-                        .unwrap();
-                }
-                DeviceSend::ToCoordinator(message) => {
-                    sends_upstream.push(DeviceSendMessage::Core(message));
-                }
-                DeviceSend::ToUser(user_send) => {
-                    match user_send {
-                        DeviceToUserMessage::CheckKeyGen { xpub } => {
-                            // display.print(format!("Key ok?\n{:?}", hex::encode(&xpub.0)));
-                            // wait_button();
-                            outbox.extend(frost_signer.keygen_ack(true).unwrap());
-                            display.print(format!("Key generated\n{}", xpub)).unwrap();
-                            delay.delay_ms(2_000u32);
-                        }
-                        frostsnap_core::message::DeviceToUserMessage::SignatureRequest {
-                            message_to_sign,
-                            ..
-                        } => {
-                            user_prompt = true;
-                            user_confirm_message = format!("Sign {}", message_to_sign);
-                            display
-                                .confirm_view(&user_confirm_message, user_confirm)
-                                .unwrap();
-
-                            // let mut choice = true;
-                            // loop {
-                            //     display
-                            //         .confirm_view(format!("Sign {}", message_to_sign), choice)
-                            //         .unwrap();
-
-                            //     match buttons.wait_for_press() {
-                            //         ButtonDirection::Center => break,
-                            //         ButtonDirection::Left => {
-                            //             choice = false;
-                            //         }
-                            //         ButtonDirection::Right => {
-                            //             choice = true;
-                            //         }
-                            //         _ => {}
-                            //     }
-                            // }
-
-                            // if choice {
-                            //     outbox.extend(frost_signer.sign_ack().unwrap());
-                            //     display.print("Request to sign accepted").unwrap();
-                            // } else {
-                            //     display.print("Request to sign rejected").unwrap();
-                            // }
+                        PromptState::Signing(_) => {
+                            esp32_run::UiEvent::SigningConfirm(self.user_confirm)
                         }
                     };
+
+                    let print = match ui_event {
+                        esp32_run::UiEvent::KeyGenConfirm(true) => "Key accepted",
+                        esp32_run::UiEvent::SigningConfirm(true) => "Signing request accepted",
+                        esp32_run::UiEvent::KeyGenConfirm(false) => "Key rejected",
+                        esp32_run::UiEvent::SigningConfirm(false) => "Signing request rejected",
+                    };
+
+                    self.display.print(print).unwrap();
+                    self.user_prompt = None;
+                    return Some(ui_event);
                 }
             }
+            ButtonDirection::Right => {
+                self.user_confirm = true;
+                self.render();
+            }
+            ButtonDirection::Left => {
+                self.user_confirm = false;
+                self.render();
+            }
+            ButtonDirection::Unpressed => {}
+            _ => {}
         }
+
+        None
+    }
+
+    fn misc_print(&mut self, string: &str) {
+        self.display.print(string).unwrap();
     }
 }
 

@@ -256,6 +256,10 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
         }
     }
 
+    pub fn looking_at_jtag(&self) -> bool {
+        self.switched
+    }
+
     pub fn serial_interface(&mut self) -> Option<&mut SerialInterface<'a, T, U, Upstream>>
     where
         T: esp32c3_hal::timer::Instance,
