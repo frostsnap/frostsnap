@@ -7,7 +7,7 @@ on:
   pull_request:
  
 env:
-  rust_toolchain: nightly
+  rust_toolchain: stable
   
 jobs:
   device-build:
@@ -68,7 +68,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly
+          toolchain: stable
           override: true
           components: rustfmt
       - uses: actions-rs/cargo@v1
