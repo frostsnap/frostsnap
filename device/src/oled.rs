@@ -27,8 +27,8 @@ use ssd1306::{mode::BufferedGraphicsMode, prelude::*, I2CDisplayInterface, Ssd13
 
 pub struct SSD1306<'d, T>
 where
-    // DI: WriteOnlyDataCommand,
-    // SIZE: DisplaySize,
+// DI: WriteOnlyDataCommand,
+// SIZE: DisplaySize,
 {
     pub display:
         Ssd1306<I2CInterface<I2C<'d, T>>, DisplaySize72x40, BufferedGraphicsMode<DisplaySize72x40>>,

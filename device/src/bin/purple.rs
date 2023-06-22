@@ -4,18 +4,21 @@
 #[macro_use]
 extern crate alloc;
 
-use frostsnap_device::{oled, esp32_run::{self, UserInteraction}};
+use frostsnap_device::{
+    esp32_run::{self, UserInteraction},
+    oled,
+};
 
 use crate::alloc::string::ToString;
 use esp32c3_hal::{
     clock::ClockControl,
+    i2c,
     peripherals::Peripherals,
     prelude::*,
     pulse_control::{ClockSource, ConfiguredChannel},
     timer::TimerGroup,
     uart::{config, TxRxPins},
-    Delay, PulseControl, Rtc,  IO,
-    i2c
+    Delay, PulseControl, Rtc, IO,
 };
 use esp_backtrace as _;
 use esp_hal_smartled::{smartLedAdapter, SmartLedsAdapter};
@@ -137,7 +140,7 @@ fn main() -> ! {
         led,
         display,
         prompt: None,
-        delay
+        delay,
     };
     esp32_run::Run {
         upstream_jtag,
@@ -151,20 +154,24 @@ fn main() -> ! {
     .run()
 }
 
-struct PurpleUi<'a,C, I>  {
+struct PurpleUi<'a, C, I> {
     led: SmartLedsAdapter<C, 25>,
     display: oled::SSD1306<'a, I>,
     prompt: Option<PromptState>,
-    delay: Delay
+    delay: Delay,
 }
 
 #[derive(Clone, Copy, Debug)]
 enum PromptState {
     Signing,
-    KeyGen
+    KeyGen,
 }
 
-impl<'a, C, I> UserInteraction for PurpleUi<'a, C, I> where C: ConfiguredChannel, I: i2c::Instance {
+impl<'a, C, I> UserInteraction for PurpleUi<'a, C, I>
+where
+    C: ConfiguredChannel,
+    I: i2c::Instance,
+{
     fn splash_screen(&mut self) {
         self.display.print_header("frost snap").unwrap();
         for i in 0..=20 {
@@ -187,14 +194,13 @@ impl<'a, C, I> UserInteraction for PurpleUi<'a, C, I> where C: ConfiguredChannel
                 }
             ))
             .unwrap();
-
     }
 
     fn await_instructions(&mut self, name: &str) {
         self.display.print_header(name).unwrap();
-        self.led.write(brightness([colors::GREEN].iter().cloned(), 10))
-           .unwrap();
-
+        self.led
+            .write(brightness([colors::GREEN].iter().cloned(), 10))
+            .unwrap();
     }
 
     fn confirm_sign(&mut self, sign_task: &frostsnap_core::message::SignTask) {
@@ -203,7 +209,9 @@ impl<'a, C, I> UserInteraction for PurpleUi<'a, C, I> where C: ConfiguredChannel
     }
 
     fn confirm_key_generated(&mut self, xpub: &str) {
-        self.display.print(format!("Key generated: {}", xpub)).unwrap();
+        self.display
+            .print(format!("Key generated: {}", xpub))
+            .unwrap();
         self.prompt = Some(PromptState::KeyGen);
     }
 

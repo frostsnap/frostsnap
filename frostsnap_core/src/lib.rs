@@ -16,10 +16,7 @@ pub use schnorr_fun;
 #[macro_use]
 extern crate alloc;
 
-use crate::{
-    encrypted_share::EncryptedShare,
-    message::*,
-};
+use crate::{encrypted_share::EncryptedShare, message::*};
 use alloc::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     string::String,
@@ -69,12 +66,9 @@ impl FrostCoordinator {
             CoordinatorState::Registration => {
                 Err(Error::coordinator_message_kind(&self.state, &message))
             }
-            CoordinatorState::KeyGen {
-                responses,
-            } => match message.body {
+            CoordinatorState::KeyGen { responses } => match message.body {
                 DeviceToCoordinatorBody::KeyGenResponse(new_shares) => {
-                    if let Some(existing) =
-                        responses.insert(message.from, Some(new_shares.clone()))
+                    if let Some(existing) = responses.insert(message.from, Some(new_shares.clone()))
                     {
                         debug_assert!(existing.is_none() || existing == Some(new_shares));
                     }
@@ -96,7 +90,10 @@ impl FrostCoordinator {
                             let proofs_of_possession = responses
                                 .iter()
                                 .map(|(device_id, response)| {
-                                    (device_id.to_x_coord(), response.shares.proof_of_possession.clone())
+                                    (
+                                        device_id.to_x_coord(),
+                                        response.shares.proof_of_possession.clone(),
+                                    )
                                 })
                                 .collect();
                             let frost = frost::new_without_nonce_generation::<Sha256>();
@@ -137,7 +134,10 @@ impl FrostCoordinator {
                                 ),
                                 CoordinatorSend::ToDevice(
                                     CoordinatorToDeviceMessage::FinishKeyGen {
-                                        shares_provided: responses.into_iter().map(|(id, response)| (id, response.shares)).collect(),
+                                        shares_provided: responses
+                                            .into_iter()
+                                            .map(|(id, response)| (id, response.shares))
+                                            .collect(),
                                     },
                                 ),
                                 CoordinatorSend::ToUser(CoordinatorToUserMessage::CheckKeyGen {
@@ -849,7 +849,7 @@ impl FrostSigner {
                         key: key.clone(),
                         awaiting_ack: false,
                     };
-                    return Ok(vec![])
+                    return Ok(vec![]);
                 }
                 let sign_items = message.sign_items();
 
