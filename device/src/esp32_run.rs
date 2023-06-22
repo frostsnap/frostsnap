@@ -293,12 +293,12 @@ where
 
             if let Some(ui_event) = ui.poll() {
                 let outgoing = match ui_event {
-                    UiEvent::KeyGenConfirm(ack) => {
-                        frost_signer.keygen_ack(ack).expect("We must still be waiting for keygen ack")
-                    },
-                    UiEvent::SigningConfirm(ack) => {
-                        frost_signer.sign_ack(ack).expect("We must still be waiting for signing ack")
-                    }
+                    UiEvent::KeyGenConfirm(ack) => frost_signer
+                        .keygen_ack(ack)
+                        .expect("We must still be waiting for keygen ack"),
+                    UiEvent::SigningConfirm(ack) => frost_signer
+                        .sign_ack(ack)
+                        .expect("We must still be waiting for signing ack"),
                 };
 
                 outbox.extend(outgoing)
