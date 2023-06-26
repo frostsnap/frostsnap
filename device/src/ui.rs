@@ -1,8 +1,6 @@
 use alloc::string::String;
 
 pub trait UserInteraction {
-    fn splash_screen(&mut self);
-
     fn set_downstream_connection_state(&mut self, connected: bool);
 
     fn set_device_label(&mut self, label: String);
