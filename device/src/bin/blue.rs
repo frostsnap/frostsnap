@@ -165,7 +165,6 @@ fn main() -> ! {
         upstream_jtag,
         upstream_uart,
         downstream_uart,
-        clocks,
         rng,
         ui,
         timer: timer0,
@@ -337,6 +336,7 @@ where
                 true => Rgb565::GREEN,
                 false => Rgb565::RED,
             });
+
     }
 }
 
