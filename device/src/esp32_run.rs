@@ -1,5 +1,5 @@
 use alloc::{collections::VecDeque, string::ToString, vec::Vec};
-use esp32c3_hal::{clock::Clocks, peripherals::USB_DEVICE, prelude::*, uart, UsbSerialJtag};
+use esp32c3_hal::{peripherals::USB_DEVICE, prelude::*, uart, UsbSerialJtag};
 
 use crate::{
     io::{self, UpstreamDetector},
@@ -23,7 +23,6 @@ pub struct Run<'a, UpstreamUart, DownstreamUart, Ui, T> {
     pub upstream_jtag: UsbSerialJtag<'a, USB_DEVICE>,
     pub upstream_uart: uart::Uart<'a, UpstreamUart>,
     pub downstream_uart: uart::Uart<'a, DownstreamUart>,
-    pub clocks: Clocks<'a>,
     pub rng: esp32c3_hal::Rng<'a>,
     pub ui: Ui,
     pub timer: esp32c3_hal::timer::Timer<T>,
@@ -41,7 +40,6 @@ where
             upstream_jtag,
             upstream_uart,
             downstream_uart,
-            clocks,
             mut rng,
             mut ui,
             timer,
@@ -99,7 +97,7 @@ where
             }
 
             if downstream_active {
-                if downstream_serial.poll_read() {
+                while downstream_serial.poll_read() {
                     match downstream_serial.receive_from_downstream() {
                         Ok(device_send) => {
                             let forward_upstream = match device_send {
@@ -176,7 +174,7 @@ where
                     ui.set_workflow(ui::Workflow::WaitingFor(ui::WaitingFor::CoordinatorAck))
                 }
 
-                if upstream_serial.poll_read() {
+                while upstream_serial.poll_read() {
                     let prior_to_read_buff = upstream_serial.read_buffer().to_vec();
 
                     match upstream_serial.receive_from_coordinator() {

@@ -53,6 +53,7 @@ impl Ports {
         if let Some(device_ids) = self.reverse_device_ports.remove(port) {
             for device_id in device_ids {
                 self.device_ports.remove(&device_id);
+                self.registered_devices.remove(&device_id);
                 event!(
                     Level::DEBUG,
                     port = port,

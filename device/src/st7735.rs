@@ -180,7 +180,7 @@ where
         self.clear(Rgb565::BLACK).unwrap();
 
         TextBox::with_textbox_style(
-            "frost",
+            "Frost",
             Rectangle::new(
                 Point::new((-30.0 * incomplete) as i32, 0),
                 Size::new(80, 80),
@@ -195,7 +195,7 @@ where
         .draw(&mut self.framebuf)
         .unwrap();
         TextBox::with_textbox_style(
-            "snap",
+            "Snap",
             Rectangle::new(
                 Point::new(80 + (30.0 * incomplete) as i32, 0),
                 Size::new(80, 80),
