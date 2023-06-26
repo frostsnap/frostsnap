@@ -116,21 +116,48 @@ impl<'a, 'b> Signer<'a, 'b> {
                 }
             }
 
-            // Give some time for devices to register if we are daisy-chain signing, before responding
             let mut newly_registered = BTreeSet::new();
-            let mut new_messages = vec![];
+            let mut start = std::time::Instant::now();
+
+            // this loop is here to wait a bit before sending out signing requests to devices
+            // because often a big bunch of devices will register at similar times if they are daisy
+            // chained together.
             loop {
-                let (just_now_registered_devices, just_now_new_messages) =
-                    self.ports.poll_devices();
-                new_messages.extend(just_now_new_messages);
-                newly_registered.extend(just_now_registered_devices.clone());
+                let (just_now_registered_devices, new_messages) = self.ports.poll_devices();
+
+                for incoming in new_messages {
+                    match self.coordinator.recv_device_message(incoming.clone()) {
+                        Ok(outgoing) => {
+                            if let DeviceToCoordindatorMessage {
+                                from,
+                                body: DeviceToCoordinatorBody::SignatureShare { .. },
+                            } = incoming
+                            {
+                                event!(Level::INFO, "{} signed successfully", incoming.from);
+                                still_need_to_sign.remove(&from);
+                            }
+                            outbox.extend(outgoing);
+                        }
+                        Err(e) => {
+                            event!(
+                                Level::ERROR,
+                                "Failed to process message from {}: {}",
+                                incoming.from,
+                                e
+                            );
+                            continue;
+                        }
+                    };
+                }
 
                 if just_now_registered_devices.len() > 0 {
-                    std::thread::sleep(std::time::Duration::from_millis(3000));
-                } else {
+                    start = std::time::Instant::now();
+                    newly_registered.extend(just_now_registered_devices);
+                } else if start.elapsed().as_millis() > 2_000 {
                     break;
                 }
             }
+
             let asking_to_sign = newly_registered
                 .intersection(&still_need_to_sign)
                 .cloned()
@@ -141,32 +168,8 @@ impl<'a, 'b> Signer<'a, 'b> {
                 message_body: DeviceReceiveBody::Core(signature_request.clone()),
             }]);
             self.ports.send_to_devices()?;
-
-            for incoming in new_messages {
-                match self.coordinator.recv_device_message(incoming.clone()) {
-                    Ok(outgoing) => {
-                        if let DeviceToCoordindatorMessage {
-                            from,
-                            body: DeviceToCoordinatorBody::SignatureShare { .. },
-                        } = incoming
-                        {
-                            event!(Level::INFO, "{} signed successfully", incoming.from);
-                            still_need_to_sign.remove(&from);
-                        }
-                        outbox.extend(outgoing);
-                    }
-                    Err(e) => {
-                        event!(
-                            Level::ERROR,
-                            "Failed to process message from {}: {}",
-                            incoming.from,
-                            e
-                        );
-                        continue;
-                    }
-                };
-            }
         };
+
         Ok(finished_signatures.clone())
     }
 }
