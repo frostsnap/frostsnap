@@ -4,6 +4,7 @@ use esp32c3_hal::{clock::Clocks, peripherals::USB_DEVICE, prelude::*, uart, Dela
 use crate::{
     io::{self, UpstreamDetector},
     state, storage,
+    ui::{self, UiEvent, UserInteraction},
 };
 use esp_storage::FlashStorage;
 use frostsnap_comms::{
@@ -11,38 +12,12 @@ use frostsnap_comms::{
 };
 use frostsnap_comms::{DeviceReceiveMessage, Downstream};
 use frostsnap_core::message::{
-    CoordinatorToDeviceMessage, DeviceSend, DeviceToUserMessage, SignTask,
+    CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorBody, DeviceToUserMessage,
 };
 use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_core::schnorr_fun::fun::marker::Normal;
 use frostsnap_core::schnorr_fun::fun::KeyPair;
 use frostsnap_core::schnorr_fun::fun::Scalar;
-
-pub trait UserInteraction {
-    fn splash_screen(&mut self);
-
-    fn waiting_for_upstream(&mut self, looking_at_jtag: bool);
-
-    fn await_instructions(&mut self, name: &str);
-
-    fn confirm_sign(&mut self, sign_task: &SignTask);
-
-    // TODO: This needs to check a transcript of the session
-    fn confirm_key_generated(&mut self, xpub: &str);
-
-    fn display_error(&mut self, message: &str);
-
-    fn poll(&mut self) -> Option<UiEvent>;
-
-    /// try not to use this
-    fn misc_print(&mut self, string: &str);
-}
-
-#[derive(Clone, Debug)]
-pub enum UiEvent {
-    KeyGenConfirm(bool),
-    SigningConfirm(bool),
-}
 
 pub struct Run<'a, UpstreamUart, DownstreamUart, Ui, T> {
     pub upstream_jtag: UsbSerialJtag<'a, USB_DEVICE>,
@@ -118,7 +93,6 @@ where
         loop {
             if soft_reset {
                 ui.misc_print("soft resetting");
-                delay.delay_ms(500u32);
                 soft_reset = false;
                 sends_upstream = vec![DeviceSendMessage::Announce(frostsnap_comms::Announce {
                     from: frost_signer.device_id(),
@@ -172,19 +146,20 @@ where
                 // Send messages downstream
                 for send in sends_downstream.drain(..) {
                     downstream_serial
-                        .forward_downstream(DeviceReceiveSerial::Message(send))
+                        .forward_downstream(DeviceReceiveSerial::Message(send.clone()))
                         .expect("sending downstream");
                 }
             } else {
                 let now = timer.now();
                 if now > next_write_magic_bytes {
-                    next_write_magic_bytes = now + 40_000 * 100;
+                    next_write_magic_bytes = now + 40_000 * 300;
                     downstream_serial
                         .write_magic_bytes()
                         .expect("couldn't write magic bytes downstream");
                 }
                 if downstream_serial.find_and_remove_magic_bytes() {
                     downstream_active = true;
+                    ui.set_downstream_connection_state(true);
                     sends_upstream.push(DeviceSendMessage::Debug {
                         message: "Device read magic bytes from another device!".to_string(),
                         device: frost_signer.clone().device_id(),
@@ -193,7 +168,11 @@ where
             }
 
             if upstream_detector.serial_interface().is_none() {
-                ui.waiting_for_upstream(upstream_detector.looking_at_jtag());
+                ui.set_workflow(ui::Workflow::WaitingFor(
+                    ui::WaitingFor::LookingForUpstream {
+                        jtag: upstream_detector.looking_at_jtag(),
+                    },
+                ))
             }
 
             if let Some(upstream_serial) = upstream_detector.serial_interface() {
@@ -202,6 +181,7 @@ where
                         .write_magic_bytes()
                         .expect("failed to write magic bytes");
                     upstream_sent_magic_bytes = true;
+                    ui.set_workflow(ui::Workflow::WaitingFor(ui::WaitingFor::CoordinatorAck))
                 }
 
                 if upstream_serial.poll_read() {
@@ -238,8 +218,13 @@ where
                                     }
 
                                     match message.message_body {
-                                        DeviceReceiveBody::AnnounceAck { device_label, .. } => {
-                                            ui.await_instructions(&device_label);
+                                        DeviceReceiveBody::AnnounceAck { device_label } => {
+                                            ui.set_device_label(device_label);
+                                            ui.set_workflow(ui::Workflow::WaitingFor(
+                                                ui::WaitingFor::CoordinatorInstruction {
+                                                    completed_task: None,
+                                                },
+                                            ));
                                             sends_upstream.push(DeviceSendMessage::Debug {
                                                 message: "Received AnnounceACK!".to_string(),
                                                 device: frost_signer.device_id(),
@@ -252,6 +237,9 @@ where
                                             } = &core_message
                                             {
                                                 if devices.contains(&frost_signer.device_id()) {
+                                                    ui.set_workflow(ui::Workflow::BusyDoing(
+                                                        ui::BusyTask::KeyGen,
+                                                    ));
                                                     frost_signer.clear_state();
                                                 }
                                             }
@@ -271,15 +259,14 @@ where
                                 }
                             }
                         }
-                        Err(_) => {
-                            sends_upstream.push(DeviceSendMessage::Debug {
-                                message: format!(
-                                    "Device failed to read upstream: {}",
-                                    hex::encode(&prior_to_read_buff)
-                                ),
-                                device: frost_signer.device_id(),
-                            });
-                            panic!("upstream read fail: {}", hex::encode(&prior_to_read_buff));
+                        Err(e) => {
+                            panic!(
+                                "upstream read fail (got label: {}) {} ({}) {}",
+                                ui.get_device_label().is_some(),
+                                e,
+                                prior_to_read_buff.len(),
+                                hex::encode(&prior_to_read_buff)
+                            );
                         }
                     };
                 }
@@ -316,18 +303,26 @@ where
                             .unwrap();
                     }
                     DeviceSend::ToCoordinator(message) => {
+                        if matches!(message.body, DeviceToCoordinatorBody::KeyGenResponse(_)) {
+                            ui.set_workflow(ui::Workflow::WaitingFor(
+                                ui::WaitingFor::CoordinatorResponse(ui::WaitingResponse::KeyGen),
+                            ));
+                        }
+
                         sends_upstream.push(DeviceSendMessage::Core(message));
                     }
                     DeviceSend::ToUser(user_send) => {
                         match user_send {
                             DeviceToUserMessage::CheckKeyGen { xpub } => {
-                                ui.confirm_key_generated(&xpub);
+                                ui.set_workflow(ui::Workflow::UserPrompt(ui::Prompt::KeyGen(xpub)));
                             }
                             frostsnap_core::message::DeviceToUserMessage::SignatureRequest {
                                 message_to_sign,
                                 ..
                             } => {
-                                ui.confirm_sign(&message_to_sign);
+                                ui.set_workflow(ui::Workflow::UserPrompt(ui::Prompt::Signing(
+                                    message_to_sign.to_string(),
+                                )));
                             }
                         };
                     }

@@ -215,6 +215,15 @@ where
         Ok(())
     }
 
+    pub fn set_top_left_square(&mut self, color: Rgb565) {
+        Rectangle::new(Point::new(0, 0), Size::new(10, 10))
+            .into_styled(PrimitiveStyleBuilder::new().fill_color(color).build())
+            .draw(&mut self.framebuf)
+            .unwrap();
+
+        self.flush().unwrap();
+    }
+
     pub fn header(&mut self, device_label: impl AsRef<str>) -> Result<(), Error> {
         Rectangle::new(Point::zero(), Size::new(160, 10))
             .into_styled(
@@ -228,7 +237,7 @@ where
         let header_charstyle = MonoTextStyle::new(&FONT_5X8, Rgb565::WHITE);
         TextBox::with_textbox_style(
             device_label.as_ref(),
-            Rectangle::new(Point::new(1, 1), Size::new(160, 10)),
+            Rectangle::new(Point::new(10, 1), Size::new(160, 10)),
             header_charstyle,
             self.textbox_style,
         )

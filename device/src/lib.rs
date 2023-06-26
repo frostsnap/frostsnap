@@ -13,3 +13,4 @@ pub mod oled;
 pub mod st7735;
 pub mod state;
 pub mod storage;
+pub mod ui;
