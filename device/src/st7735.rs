@@ -48,7 +48,6 @@ where
     character_style: MonoTextStyle<'d, Rgb565>,
     textbox_style: TextBoxStyle,
     framebuf: FrameBuf<Rgb565, &'d mut [Rgb565; 12800]>,
-    delay: Delay,
 }
 
 impl<'d, RA, IRA, SPI> ST7735<'d, RA, IRA, SPI>
@@ -119,7 +118,6 @@ where
             character_style,
             textbox_style,
             framebuf,
-            delay,
         })
     }
 
@@ -177,41 +175,42 @@ where
         Ok(())
     }
 
-    pub fn splash_screen(&mut self) -> Result<(), Error> {
-        let mut i = 30;
-        while i > 0 {
-            self.clear(Rgb565::BLACK).unwrap();
+    pub fn splash_screen(&mut self, percent: f32) -> Result<(), Error> {
+        let incomplete = 1.0 - percent;
+        self.clear(Rgb565::BLACK).unwrap();
 
-            TextBox::with_textbox_style(
-                "frost",
-                Rectangle::new(Point::new(-i, 0), Size::new(80, 80)),
-                MonoTextStyle::new(&FONT_10X20, Rgb565::CYAN),
-                TextBoxStyleBuilder::new()
-                    .alignment(HorizontalAlignment::Right)
-                    .vertical_alignment(VerticalAlignment::Middle)
-                    // .line_height(LineHeight::Pixels(16))
-                    .build(),
-            )
-            .draw(&mut self.framebuf)
-            .unwrap();
-            TextBox::with_textbox_style(
-                "snap",
-                Rectangle::new(Point::new(80 + i, 0), Size::new(80, 80)),
-                MonoTextStyle::new(&FONT_10X20, Rgb565::CYAN),
-                TextBoxStyleBuilder::new()
-                    .alignment(HorizontalAlignment::Left)
-                    .vertical_alignment(VerticalAlignment::Middle)
-                    // .line_height(LineHeight::Pixels(16))
-                    .build(),
-            )
-            .draw(&mut self.framebuf)
-            .unwrap();
+        TextBox::with_textbox_style(
+            "frost",
+            Rectangle::new(
+                Point::new((-30.0 * incomplete) as i32, 0),
+                Size::new(80, 80),
+            ),
+            MonoTextStyle::new(&FONT_10X20, Rgb565::CYAN),
+            TextBoxStyleBuilder::new()
+                .alignment(HorizontalAlignment::Right)
+                .vertical_alignment(VerticalAlignment::Middle)
+                // .line_height(LineHeight::Pixels(16))
+                .build(),
+        )
+        .draw(&mut self.framebuf)
+        .unwrap();
+        TextBox::with_textbox_style(
+            "snap",
+            Rectangle::new(
+                Point::new(80 + (30.0 * incomplete) as i32, 0),
+                Size::new(80, 80),
+            ),
+            MonoTextStyle::new(&FONT_10X20, Rgb565::CYAN),
+            TextBoxStyleBuilder::new()
+                .alignment(HorizontalAlignment::Left)
+                .vertical_alignment(VerticalAlignment::Middle)
+                // .line_height(LineHeight::Pixels(16))
+                .build(),
+        )
+        .draw(&mut self.framebuf)
+        .unwrap();
 
-            self.flush().unwrap();
-            i -= 2;
-            // self.delay.delay_ms(1u32);
-        }
-        self.delay.delay_ms(400u32);
+        self.flush().unwrap();
         Ok(())
     }
 

@@ -110,15 +110,6 @@ fn main() -> ! {
     )
     .unwrap();
 
-    let ui = BlueUi {
-        buttons,
-        display,
-        user_confirm: true,
-        downstream_connected: false,
-        workflow: Default::default(),
-        device_label: Default::default(),
-    };
-
     let upstream_jtag = esp32c3_hal::UsbSerialJtag::new(peripherals.USB_DEVICE);
 
     let upstream_uart = {
@@ -156,9 +147,20 @@ fn main() -> ! {
     };
 
     let rng = esp32c3_hal::Rng::new(peripherals.RNG);
+    delay.delay_ms(600u32);
     bl.set_high().unwrap();
-    delay.delay_ms(20u32);
 
+    let ui = BlueUi {
+        buttons,
+        display,
+        user_confirm: true,
+        downstream_connected: false,
+        workflow: Default::default(),
+        device_label: Default::default(),
+        splash_state: SplashState::new(&timer1),
+    };
+
+    let _now1 = timer1.now();
     esp32_run::Run {
         upstream_jtag,
         upstream_uart,
@@ -171,7 +173,7 @@ fn main() -> ! {
     .run()
 }
 
-pub struct BlueUi<'d, RA, IRA, SPI>
+pub struct BlueUi<'t, 'd, T, RA, IRA, SPI>
 where
     RA: BankGpioRegisterAccess,
     IRA: InteruptStatusRegisterAccess,
@@ -183,15 +185,84 @@ where
     workflow: Workflow,
     user_confirm: bool,
     device_label: Option<String>,
+    splash_state: SplashState<'t, T>,
 }
 
-impl<'d, RA, IRA, SPI> BlueUi<'d, RA, IRA, SPI>
+const SPLASH_SCREEN_DURATION: u64 = 40_000 * 1_500;
+
+struct SplashState<'t, T> {
+    timer: &'t esp32c3_hal::timer::Timer<T>,
+    splash_screen_start: Option<u64>,
+    finished: bool,
+}
+
+impl<'t, T> SplashState<'t, T>
+where
+    T: esp32c3_hal::timer::Instance,
+{
+    pub fn new(timer: &'t esp32c3_hal::timer::Timer<T>) -> Self {
+        Self {
+            timer,
+            splash_screen_start: None,
+            finished: false,
+        }
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.finished
+    }
+
+    pub fn poll(&mut self) -> SplashProgress {
+        if self.finished {
+            return SplashProgress::Done;
+        }
+        let now = self.timer.now();
+        match self.splash_screen_start {
+            Some(start) => {
+                let duration = now.saturating_sub(start);
+                if duration < SPLASH_SCREEN_DURATION {
+                    SplashProgress::Progress(duration as f32 / SPLASH_SCREEN_DURATION as f32)
+                } else {
+                    self.finished = true;
+                    SplashProgress::FinalTick
+                }
+            }
+            None => {
+                self.splash_screen_start = Some(now);
+                self.poll()
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum SplashProgress {
+    Progress(f32),
+    FinalTick,
+    Done,
+}
+
+impl<'t, 'd, T, RA, IRA, SPI> BlueUi<'t, 'd, T, RA, IRA, SPI>
 where
     RA: BankGpioRegisterAccess,
     IRA: InteruptStatusRegisterAccess,
     SPI: spi::Instance,
+    T: esp32c3_hal::timer::Instance,
 {
     fn render(&mut self) {
+        let splash_progress = self.splash_state.poll();
+        match splash_progress {
+            SplashProgress::Progress(progress) => {
+                self.display.splash_screen(progress).unwrap();
+                return;
+            }
+            SplashProgress::FinalTick => {
+                self.display.clear(Rgb565::BLACK).unwrap();
+                self.display.header("frostsnap").unwrap();
+            }
+            SplashProgress::Done => { /* splash is done no need to anything */ }
+        }
+
         match &self.workflow {
             Workflow::None => { /* do nothing */ }
             Workflow::WaitingFor(waiting_for) => match waiting_for {
@@ -269,19 +340,13 @@ where
     }
 }
 
-impl<'d, RA, IRA, SPI> UserInteraction for BlueUi<'d, RA, IRA, SPI>
+impl<'d, 't, T, RA, IRA, SPI> UserInteraction for BlueUi<'d, 't, T, RA, IRA, SPI>
 where
     RA: BankGpioRegisterAccess,
     IRA: InteruptStatusRegisterAccess,
     SPI: spi::Instance,
+    T: timer::Instance,
 {
-    fn splash_screen(&mut self) {
-        self.display.splash_screen().unwrap();
-        self.display.clear(Rgb565::BLACK).unwrap();
-        self.display.header("frostsnap").unwrap();
-        self.display.flush().unwrap();
-    }
-
     fn set_downstream_connection_state(&mut self, connected: bool) {
         self.downstream_connected = connected;
         self.render();
@@ -302,6 +367,10 @@ where
     }
 
     fn poll(&mut self) -> Option<UiEvent> {
+        if !self.splash_state.is_finished() {
+            self.render();
+            return None;
+        }
         if let Workflow::UserPrompt(prompt) = &self.workflow {
             match self.buttons.sample_buttons() {
                 ButtonDirection::Center => {

@@ -1,5 +1,5 @@
 use alloc::{collections::VecDeque, string::ToString, vec::Vec};
-use esp32c3_hal::{clock::Clocks, peripherals::USB_DEVICE, prelude::*, uart, Delay, UsbSerialJtag};
+use esp32c3_hal::{clock::Clocks, peripherals::USB_DEVICE, prelude::*, uart, UsbSerialJtag};
 
 use crate::{
     io::{self, UpstreamDetector},
@@ -46,14 +46,9 @@ where
             mut ui,
             timer,
         } = self;
-        let mut delay = Delay::new(&clocks);
 
         let flash = FlashStorage::new();
         let mut flash = storage::DeviceStorage::new(flash, storage::NVS_PARTITION_START);
-
-        // Welcome screen
-        // Some delay before turning on backlight to hide screen flicker
-        ui.splash_screen();
 
         // Load state from Flash memory if available. If not, generate secret and save.
         let mut frost_signer = match flash.load() {
@@ -75,8 +70,6 @@ where
             }
         };
 
-        delay.delay_ms(1_000u32);
-
         let mut downstream_serial =
             io::SerialInterface::<_, _, Downstream>::new_uart(downstream_uart, &timer);
         let mut soft_reset = true;
@@ -92,7 +85,6 @@ where
 
         loop {
             if soft_reset {
-                ui.misc_print("soft resetting");
                 soft_reset = false;
                 sends_upstream = vec![DeviceSendMessage::Announce(frostsnap_comms::Announce {
                     from: frost_signer.device_id(),
