@@ -336,7 +336,6 @@ where
                 true => Rgb565::GREEN,
                 false => Rgb565::RED,
             });
-
     }
 }
 
