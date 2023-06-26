@@ -325,7 +325,6 @@ impl Ports {
 
                     device_port.send_message(DeviceReceiveSerial::Message(DeviceReceiveMessage {
                         message_body: DeviceReceiveBody::AnnounceAck {
-                            device_id,
                             device_label: device_label.to_string(),
                         },
                         target_destinations: BTreeSet::from([device_id]),

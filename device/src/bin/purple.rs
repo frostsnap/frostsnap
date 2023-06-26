@@ -5,8 +5,8 @@
 extern crate alloc;
 
 use frostsnap_device::{
-    esp32_run::{self, UserInteraction},
-    oled,
+    esp32_run, oled,
+    ui::{UserInteraction, WaitingFor},
 };
 
 use crate::alloc::string::ToString;
@@ -184,23 +184,20 @@ where
         }
     }
 
-    fn waiting_for_upstream(&mut self, looking_at_jtag: bool) {
-        self.display
-            .print(format!(
-                "Waiting for coordinator {}",
-                match looking_at_jtag {
-                    true => "JTAG",
-                    false => "UART",
-                }
-            ))
-            .unwrap();
-    }
-
-    fn await_instructions(&mut self, name: &str) {
-        self.display.print_header(name).unwrap();
-        self.led
-            .write(brightness([colors::GREEN].iter().cloned(), 10))
-            .unwrap();
+    fn waiting_for(&mut self, waiting_for: WaitingFor) {
+        let msg = match waiting_for {
+            WaitingFor::LookingForUpstreamDevice => "looking for upstream device",
+            WaitingFor::LookingForUpstreamCoordinator => "looking for upstream coordinator",
+            WaitingFor::CoordinatorAck => "I'm Ready\n...Waiting for FrostSnap app",
+            WaitingFor::CoordinatorInstruction { device_label } => {
+                self.display.print_header(device_label).unwrap();
+                self.led
+                    .write(brightness([colors::GREEN].iter().cloned(), 10))
+                    .unwrap();
+                return;
+            }
+        };
+        self.display.print(msg).unwrap();
     }
 
     fn confirm_sign(&mut self, sign_task: &frostsnap_core::message::SignTask) {

@@ -201,17 +201,19 @@ impl<'a, U> SerialIo<'a, U> {
         }
     }
 
-    // fn flush(&mut self) -> Result<(), SerialInterfaceError>
+    // NOTE: flush is useless on these devices except for blokcking until writing is finished.
+    // This comment is here to stop you thinking it's useful and re-implementing it.
+    // fn flush(&mut self)
     // where
     //     U: uart::Instance,
     // {
     //     match self {
     //         SerialIo::Uart(uart) => {
-    //             uart.flush().map_err(|_| SerialInterfaceError::JtagError)
+    //             while let Err(_) = uart.flush() {}
     //         }
-    //         SerialIo::Jtag(jtag) => jtag
-    //             .flush()
-    //             .map_err(|_| SerialInterfaceError::UartReadError),
+    //         SerialIo::Jtag(jtag) => {
+    //             let _ = jtag.flush().unwrap();
+    //         },
     //     }
     // }
 }

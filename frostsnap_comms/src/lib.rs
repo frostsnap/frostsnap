@@ -19,11 +19,12 @@ use frostsnap_core::{
 };
 
 pub const BAUDRATE: u32 = 9600;
+const MAGIC_BYTES_LEN: usize = 7;
 
-const MAGICBYTES_SEND_UPSTREAM: [u8; 10] =
-    [0x7c, 0xe4, 0x31, 0xb8, 0x01, 0x8b, 0x06, 0x99, 0x92, 0xcc];
-const MAGICBYTES_SEND_DOWNSTREAM: [u8; 10] =
-    [0xe9, 0x5d, 0xa3, 0x85, 0xd4, 0xee, 0x5a, 0xd7, 0xee, 0xc0];
+const MAGICBYTES_SEND_UPSTREAM: [u8; MAGIC_BYTES_LEN] =
+    [0x7c, 0xe4, 0x31, 0xb8, 0x02, 0x8b, 0x06];
+const MAGICBYTES_SEND_DOWNSTREAM: [u8; MAGIC_BYTES_LEN] =
+    [0xe9, 0x5d, 0xa3, 0x85, 0xd4, 0xee, 0x5a];
 
 #[derive(Encode, Decode, Debug, Clone)]
 #[bincode(bounds = "D: Direction")]
@@ -43,8 +44,6 @@ pub struct DeviceReceiveMessage {
 pub enum DeviceReceiveBody {
     Core(#[bincode(with_serde)] CoordinatorToDeviceMessage),
     AnnounceAck {
-        #[bincode(with_serde)]
-        device_id: DeviceId,
         device_label: String,
     },
 }
@@ -58,26 +57,26 @@ pub struct Upstream;
 pub struct Downstream;
 
 pub trait Direction {
-    fn magic_bytes_send() -> [u8; 10];
-    fn magic_bytes_recv() -> [u8; 10];
+    fn magic_bytes_send() -> [u8; MAGIC_BYTES_LEN];
+    fn magic_bytes_recv() -> [u8; MAGIC_BYTES_LEN];
 }
 
 impl Direction for Upstream {
-    fn magic_bytes_send() -> [u8; 10] {
+    fn magic_bytes_send() -> [u8; MAGIC_BYTES_LEN] {
         MAGICBYTES_SEND_UPSTREAM
     }
 
-    fn magic_bytes_recv() -> [u8; 10] {
+    fn magic_bytes_recv() -> [u8; MAGIC_BYTES_LEN] {
         MAGICBYTES_SEND_DOWNSTREAM
     }
 }
 
 impl Direction for Downstream {
-    fn magic_bytes_send() -> [u8; 10] {
+    fn magic_bytes_send() -> [u8; MAGIC_BYTES_LEN] {
         MAGICBYTES_SEND_DOWNSTREAM
     }
 
-    fn magic_bytes_recv() -> [u8; 10] {
+    fn magic_bytes_recv() -> [u8; MAGIC_BYTES_LEN] {
         MAGICBYTES_SEND_UPSTREAM
     }
 }
@@ -95,7 +94,7 @@ impl<O: Direction> bincode::Decode for MagicBytes<O> {
     fn decode<D: bincode::de::Decoder>(
         decoder: &mut D,
     ) -> Result<Self, bincode::error::DecodeError> {
-        let mut bytes = [0u8; 10];
+        let mut bytes = [0u8; MAGIC_BYTES_LEN];
         decoder.reader().read(&mut bytes)?;
         if bytes == O::magic_bytes_recv() {
             Ok(MagicBytes(PhantomData))

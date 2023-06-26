@@ -6,8 +6,9 @@ extern crate alloc;
 
 use frostsnap_device::{
     buttons::{self, Buttons},
-    esp32_run::{self, UserInteraction},
+    esp32_run,
     st7735::{self, ST7735},
+    ui::{BusyTask, Prompt, UiEvent, UserInteraction, WaitingFor, WaitingResponse, Workflow},
 };
 
 use crate::alloc::string::{String, ToString};
@@ -113,7 +114,9 @@ fn main() -> ! {
         buttons,
         display,
         user_confirm: true,
-        user_prompt: None,
+        downstream_connected: false,
+        workflow: Default::default(),
+        device_label: Default::default(),
     };
 
     let upstream_jtag = esp32c3_hal::UsbSerialJtag::new(peripherals.USB_DEVICE);
@@ -176,14 +179,10 @@ where
 {
     buttons: Buttons<RA, IRA>,
     display: ST7735<'d, RA, IRA, SPI>,
+    downstream_connected: bool,
+    workflow: Workflow,
     user_confirm: bool,
-    user_prompt: Option<PromptState>,
-}
-
-#[derive(Clone, Debug)]
-enum PromptState {
-    KeyGen(String),
-    Signing(String),
+    device_label: Option<String>,
 }
 
 impl<'d, RA, IRA, SPI> BlueUi<'d, RA, IRA, SPI>
@@ -193,21 +192,80 @@ where
     SPI: spi::Instance,
 {
     fn render(&mut self) {
-        match &self.user_prompt {
-            Some(PromptState::Signing(task)) => {
-                self.display
-                    .confirm_view(format!("Sign {}", task), self.user_confirm)
-                    .unwrap();
-            }
-            Some(PromptState::KeyGen(xpub)) => {
-                self.display
-                    .confirm_view(format!("Ok {}", xpub), self.user_confirm)
-                    .unwrap();
-            }
-            None => {
-                /* we should not have an option rather we should just have a view with many states */
-            }
+        match &self.workflow {
+            Workflow::None => { /* do nothing */ }
+            Workflow::WaitingFor(waiting_for) => match waiting_for {
+                WaitingFor::LookingForUpstream { jtag } => {
+                    if *jtag {
+                        self.display
+                            .print("Looking for coordinator USB host")
+                            .unwrap();
+                    } else {
+                        self.display.print("Looking for upstream device").unwrap();
+                    }
+                }
+                WaitingFor::CoordinatorAck => {
+                    self.display.print("Waiting for FrostSnap app").unwrap();
+                }
+                WaitingFor::CoordinatorInstruction { completed_task } => {
+                    let label = self
+                        .device_label
+                        .as_ref()
+                        .expect("label should have been set by now");
+                    let mut body = String::new();
+                    match completed_task {
+                        Some(task) => match task {
+                            UiEvent::KeyGenConfirm(ack) => {
+                                if *ack {
+                                    body.push_str("Key SAVED!\n");
+                                }
+                            }
+                            UiEvent::SigningConfirm(ack) => {
+                                if *ack {
+                                    body.push_str("SIGNED!\n");
+                                }
+                            }
+                        },
+                        None => body.push_str("\n"),
+                    };
+                    body.push_str(&format!("NAME: {}\n", label));
+
+                    body.push_str("Ready..");
+                    self.display.header(label).unwrap();
+                    self.display.print(body).unwrap();
+                }
+                WaitingFor::CoordinatorResponse(response) => match response {
+                    WaitingResponse::KeyGen => {
+                        self.display
+                            .print("Finished!\nWaiting for coordinator..")
+                            .unwrap();
+                    }
+                },
+            },
+            Workflow::UserPrompt(prompt) => match prompt {
+                Prompt::Signing(task) => {
+                    self.display
+                        .confirm_view(format!("Sign {}", task), self.user_confirm)
+                        .unwrap();
+                }
+                Prompt::KeyGen(xpub) => {
+                    self.display
+                        .confirm_view(format!("Ok {}", xpub), self.user_confirm)
+                        .unwrap();
+                }
+            },
+            Workflow::BusyDoing(task) => match task {
+                BusyTask::KeyGen => self.display.print("Generating key..").unwrap(),
+                BusyTask::Signing => self.display.print("Signing..").unwrap(),
+                BusyTask::VerifyingKey => self.display.print("Verifying key..").unwrap(),
+            },
         }
+
+        self.display
+            .set_top_left_square(match self.downstream_connected {
+                true => Rgb565::GREEN,
+                false => Rgb565::RED,
+            });
     }
 }
 
@@ -224,82 +282,62 @@ where
         self.display.flush().unwrap();
     }
 
-    fn waiting_for_upstream(&mut self, looking_at_jtag: bool) {
-        self.display
-            .print(format!(
-                "Waiting for coordinator {}",
-                match looking_at_jtag {
-                    true => "JTAG",
-                    false => "UART",
-                }
-            ))
-            .unwrap();
+    fn set_downstream_connection_state(&mut self, connected: bool) {
+        self.downstream_connected = connected;
+        self.render();
     }
 
-    fn await_instructions(&mut self, name: &str) {
-        self.display.print_header(name).unwrap();
-        self.display.header(name).unwrap();
-        self.display.flush().unwrap();
+    fn set_device_label(&mut self, label: String) {
+        self.device_label = Some(label);
     }
 
-    fn confirm_sign(&mut self, sign_task: &frostsnap_core::message::SignTask) {
-        self.user_prompt = Some(PromptState::Signing(sign_task.to_string()));
+    fn get_device_label(&self) -> Option<&str> {
+        self.device_label.as_ref().map(String::as_str)
+    }
+
+    fn set_workflow(&mut self, workflow: Workflow) {
+        self.workflow = workflow;
         self.user_confirm = true;
-        self.render()
+        self.render();
     }
 
-    fn confirm_key_generated(&mut self, xpub: &str) {
-        self.user_prompt = Some(PromptState::KeyGen(xpub.into()));
-        self.user_confirm = true;
-        self.render()
-    }
-
-    fn display_error(&mut self, message: &str) {
-        self.display.error_print(message).unwrap();
-    }
-
-    fn poll(&mut self) -> Option<esp32_run::UiEvent> {
-        match self.buttons.sample_buttons() {
-            ButtonDirection::Center => {
-                if let Some(prompt) = &self.user_prompt {
+    fn poll(&mut self) -> Option<UiEvent> {
+        if let Workflow::UserPrompt(prompt) = &self.workflow {
+            match self.buttons.sample_buttons() {
+                ButtonDirection::Center => {
                     let ui_event = match prompt {
-                        PromptState::KeyGen(_) => {
-                            esp32_run::UiEvent::KeyGenConfirm(self.user_confirm)
-                        }
-                        PromptState::Signing(_) => {
-                            esp32_run::UiEvent::SigningConfirm(self.user_confirm)
-                        }
+                        Prompt::KeyGen(_) => UiEvent::KeyGenConfirm(self.user_confirm),
+                        Prompt::Signing(_) => UiEvent::SigningConfirm(self.user_confirm),
                     };
 
-                    let print = match ui_event {
-                        esp32_run::UiEvent::KeyGenConfirm(true) => "Key accepted",
-                        esp32_run::UiEvent::SigningConfirm(true) => "Signing request accepted",
-                        esp32_run::UiEvent::KeyGenConfirm(false) => "Key rejected",
-                        esp32_run::UiEvent::SigningConfirm(false) => "Signing request rejected",
-                    };
-
-                    self.display.print(print).unwrap();
-                    self.user_prompt = None;
+                    self.set_workflow(Workflow::WaitingFor(WaitingFor::CoordinatorInstruction {
+                        completed_task: Some(ui_event.clone()),
+                    }));
+                    self.render();
                     return Some(ui_event);
                 }
+                ButtonDirection::Right => {
+                    self.user_confirm = true;
+                    self.render();
+                }
+                ButtonDirection::Left => {
+                    self.user_confirm = false;
+                    self.render();
+                }
+                ButtonDirection::Unpressed => {}
+                _ => {}
             }
-            ButtonDirection::Right => {
-                self.user_confirm = true;
-                self.render();
-            }
-            ButtonDirection::Left => {
-                self.user_confirm = false;
-                self.render();
-            }
-            ButtonDirection::Unpressed => {}
-            _ => {}
         }
 
         None
     }
 
     fn misc_print(&mut self, string: &str) {
-        self.display.print(string).unwrap();
+        self.display.print(string).unwrap()
+    }
+
+    fn display_error(&mut self, message: &str) {
+        self.display.error_print(message).unwrap();
     }
 }
 
