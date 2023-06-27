@@ -6,10 +6,10 @@ extern crate alloc;
 
 use frostsnap_device::{
     esp32_run, oled,
-    ui::{UserInteraction, WaitingFor},
+    ui::{BusyTask, Prompt, UiEvent, UserInteraction, WaitingFor, WaitingResponse, Workflow},
 };
 
-use crate::alloc::string::ToString;
+use crate::alloc::string::{String, ToString};
 use esp32c3_hal::{
     clock::ClockControl,
     i2c,
@@ -22,7 +22,7 @@ use esp32c3_hal::{
 };
 use esp_backtrace as _;
 use esp_hal_smartled::{smartLedAdapter, SmartLedsAdapter};
-use smart_leds::{brightness, colors, SmartLedsWrite, RGB};
+use smart_leds::{brightness, colors, SmartLedsWrite};
 
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
@@ -72,7 +72,7 @@ fn main() -> ! {
 
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
 
-    let delay = Delay::new(&clocks);
+    let mut delay = Delay::new(&clocks);
 
     let display = oled::SSD1306::new(
         peripherals.I2C0,
@@ -139,14 +139,16 @@ fn main() -> ! {
     let ui = PurpleUi {
         led,
         display,
-        prompt: None,
-        delay,
+        device_label: Default::default(),
+        workflow: Workflow::None,
     };
+
+    delay.delay_ms(500u32); // To wait for ESP32c3 timers to stop being bonkers
+
     esp32_run::Run {
         upstream_jtag,
         upstream_uart,
         downstream_uart,
-        clocks,
         rng,
         ui,
         timer: timer0,
@@ -157,14 +159,104 @@ fn main() -> ! {
 struct PurpleUi<'a, C, I> {
     led: SmartLedsAdapter<C, 25>,
     display: oled::SSD1306<'a, I>,
-    prompt: Option<PromptState>,
-    delay: Delay,
+    workflow: Workflow,
+    device_label: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug)]
-enum PromptState {
-    Signing,
-    KeyGen,
+impl<'a, C, I> PurpleUi<'a, C, I>
+where
+    C: ConfiguredChannel,
+    I: i2c::Instance,
+{
+    fn render(&mut self) {
+        match &self.workflow {
+            Workflow::None => {
+                self.led
+                    .write(brightness([colors::WHITE].iter().cloned(), 10))
+                    .unwrap();
+            }
+            Workflow::WaitingFor(waiting_for) => match waiting_for {
+                WaitingFor::LookingForUpstream { jtag } => {
+                    self.led
+                        .write(brightness([colors::PURPLE].iter().cloned(), 10))
+                        .unwrap();
+
+                    if *jtag {
+                        self.display.print("Looking for USB host").unwrap();
+                    } else {
+                        self.display.print("Looking for upstream device").unwrap();
+                    }
+                }
+                WaitingFor::CoordinatorAck => {
+                    self.led
+                        .write(brightness([colors::PURPLE].iter().cloned(), 10))
+                        .unwrap();
+
+                    self.display.print("Waiting app").unwrap();
+                }
+                WaitingFor::CoordinatorInstruction { completed_task } => {
+                    self.led
+                        .write(brightness([colors::GREEN].iter().cloned(), 10))
+                        .unwrap();
+
+                    let label = self
+                        .device_label
+                        .as_ref()
+                        .expect("label should have been set by now");
+                    let mut body = String::new();
+
+                    match completed_task {
+                        Some(task) => match task {
+                            UiEvent::KeyGenConfirm(ack) => {
+                                if *ack {
+                                    body.push_str("Key SAVED!\n");
+                                }
+                            }
+                            UiEvent::SigningConfirm(ack) => {
+                                if *ack {
+                                    body.push_str("SIGNED!\n");
+                                }
+                            }
+                        },
+                        None => body.push_str("\n"),
+                    };
+                    body.push_str(&format!("{}", label));
+                    self.display.print_header(label).unwrap();
+                    self.display.print(body).unwrap();
+                }
+                WaitingFor::CoordinatorResponse(response) => match response {
+                    WaitingResponse::KeyGen => {
+                        self.display.print("Finished keygen!").unwrap();
+                    }
+                },
+            },
+            Workflow::UserPrompt(prompt) => {
+                self.led
+                    .write(brightness([colors::YELLOW].iter().cloned(), 10))
+                    .unwrap();
+
+                match prompt {
+                    Prompt::Signing(task) => {
+                        self.display.print(format!("Sign {}", task)).unwrap();
+                    }
+                    Prompt::KeyGen(xpub) => {
+                        self.display.print(format!("KeyGen {}", xpub)).unwrap();
+                    }
+                }
+            }
+            Workflow::BusyDoing(task) => {
+                self.led
+                    .write(brightness([colors::YELLOW].iter().cloned(), 10))
+                    .unwrap();
+
+                match task {
+                    BusyTask::KeyGen => self.display.print("Generating key..").unwrap(),
+                    BusyTask::Signing => self.display.print("Signing..").unwrap(),
+                    BusyTask::VerifyingKey => self.display.print("Verifying key..").unwrap(),
+                }
+            }
+        }
+    }
 }
 
 impl<'a, C, I> UserInteraction for PurpleUi<'a, C, I>
@@ -172,55 +264,38 @@ where
     C: ConfiguredChannel,
     I: i2c::Instance,
 {
-    fn splash_screen(&mut self) {
-        self.display.print_header("frost snap").unwrap();
-        for i in 0..=20 {
-            self.led.write([RGB::new(0, i, i)].iter().cloned()).unwrap();
-            self.delay.delay_ms(30u32);
-        }
-        for i in (0..=20).rev() {
-            self.led.write([RGB::new(0, i, i)].iter().cloned()).unwrap();
-            self.delay.delay_ms(30u32);
-        }
+    fn set_downstream_connection_state(&mut self, _connected: bool) {}
+
+    fn set_device_label(&mut self, label: String) {
+        self.device_label = Some(label);
     }
 
-    fn waiting_for(&mut self, waiting_for: WaitingFor) {
-        let msg = match waiting_for {
-            WaitingFor::LookingForUpstreamDevice => "looking for upstream device",
-            WaitingFor::LookingForUpstreamCoordinator => "looking for upstream coordinator",
-            WaitingFor::CoordinatorAck => "I'm Ready\n...Waiting for FrostSnap app",
-            WaitingFor::CoordinatorInstruction { device_label } => {
-                self.display.print_header(device_label).unwrap();
-                self.led
-                    .write(brightness([colors::GREEN].iter().cloned(), 10))
-                    .unwrap();
-                return;
-            }
-        };
-        self.display.print(msg).unwrap();
+    fn get_device_label(&self) -> Option<&str> {
+        self.device_label.as_ref().map(String::as_str)
     }
 
-    fn confirm_sign(&mut self, sign_task: &frostsnap_core::message::SignTask) {
-        self.display.print(format!("Sign {}", sign_task)).unwrap();
-        self.prompt = Some(PromptState::Signing);
-    }
-
-    fn confirm_key_generated(&mut self, xpub: &str) {
-        self.display
-            .print(format!("Key generated: {}", xpub))
-            .unwrap();
-        self.prompt = Some(PromptState::KeyGen);
+    fn set_workflow(&mut self, workflow: Workflow) {
+        self.workflow = workflow;
+        self.render();
     }
 
     fn display_error(&mut self, message: &str) {
-        self.display.print(format!("E: {}", message)).unwrap();
+        self.led
+            .write(brightness([colors::RED].iter().cloned(), 10))
+            .unwrap();
+
+        self.display.print(message).unwrap()
     }
 
-    fn poll(&mut self) -> Option<esp32_run::UiEvent> {
-        self.prompt.take().map(|prompt| match prompt {
-            PromptState::Signing => esp32_run::UiEvent::SigningConfirm(true),
-            PromptState::KeyGen => esp32_run::UiEvent::KeyGenConfirm(true),
-        })
+    fn poll(&mut self) -> Option<UiEvent> {
+        if let Workflow::UserPrompt(prompt) = &self.workflow {
+            return match prompt {
+                Prompt::KeyGen(_) => Some(UiEvent::KeyGenConfirm(true)),
+                Prompt::Signing(_) => Some(UiEvent::SigningConfirm(true)),
+            };
+        }
+
+        None
     }
 
     fn misc_print(&mut self, string: &str) {
