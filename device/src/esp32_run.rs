@@ -272,11 +272,17 @@ where
                 let outgoing = match ui_event {
                     UiEvent::KeyGenConfirm(ack) => frost_signer
                         .keygen_ack(ack)
-                        .expect("We must still be waiting for keygen ack"),
+                        .expect("ui should not emit this multiple times."),
                     UiEvent::SigningConfirm(ack) => frost_signer
                         .sign_ack(ack)
-                        .expect("We must still be waiting for signing ack"),
+                        .expect("ui should not emit this multiple times."),
                 };
+
+                ui.set_workflow(ui::Workflow::WaitingFor(
+                    ui::WaitingFor::CoordinatorInstruction {
+                        completed_task: Some(ui_event.clone()),
+                    },
+                ));
 
                 outbox.extend(outgoing)
             }

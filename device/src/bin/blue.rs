@@ -378,10 +378,6 @@ where
                         Prompt::Signing(_) => UiEvent::SigningConfirm(self.user_confirm),
                     };
 
-                    self.set_workflow(Workflow::WaitingFor(WaitingFor::CoordinatorInstruction {
-                        completed_task: Some(ui_event.clone()),
-                    }));
-                    self.render();
                     return Some(ui_event);
                 }
                 ButtonDirection::Right => {

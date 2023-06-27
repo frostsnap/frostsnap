@@ -12,6 +12,9 @@ env:
 jobs:
   device-build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        board: ['blue', 'purple']
     defaults:
       run:
         working-directory: ./device
@@ -38,7 +41,7 @@ jobs:
       - name: Build | Compile
         run: |
           echo $PATH
-          cargo build --release
+          cargo build --release --features ${{ matrix.board }} --bin ${{ matrix.board }}
 
   coordinator-build:
     runs-on: ubuntu-latest
