@@ -28,6 +28,9 @@ pub struct Run<'a, UpstreamUart, DownstreamUart, Ui, T> {
     pub timer: esp32c3_hal::timer::Timer<T>,
 }
 
+/// Write magic bytes once every 100ms
+const MAGIC_BYTES_PERIOD: u64 = 100;
+
 impl<'a, UpstreamUart, DownstreamUart, Ui, T> Run<'a, UpstreamUart, DownstreamUart, Ui, T>
 where
     UpstreamUart: uart::Instance,
@@ -76,7 +79,8 @@ where
         let mut sends_upstream: Vec<DeviceSendMessage> = vec![];
         let mut sends_user: Vec<DeviceToUserMessage> = vec![];
         let mut outbox = VecDeque::new();
-        let mut upstream_detector = UpstreamDetector::new(upstream_uart, upstream_jtag, &timer);
+        let mut upstream_detector =
+            UpstreamDetector::new(upstream_uart, upstream_jtag, &timer, MAGIC_BYTES_PERIOD);
         let mut upstream_sent_magic_bytes = false;
         let mut upstream_received_first_message = false;
         let mut next_write_magic_bytes = 0;
@@ -142,7 +146,7 @@ where
             } else {
                 let now = timer.now();
                 if now > next_write_magic_bytes {
-                    next_write_magic_bytes = now + 40_000 * 300;
+                    next_write_magic_bytes = now + 40_000 * MAGIC_BYTES_PERIOD;
                     downstream_serial
                         .write_magic_bytes()
                         .expect("couldn't write magic bytes downstream");
