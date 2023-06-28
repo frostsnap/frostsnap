@@ -11,7 +11,7 @@ use bdk_chain::miniscript::{
     Descriptor, DescriptorPublicKey,
 };
 use bdk_electrum::electrum_client::ElectrumApi;
-use bdk_electrum::{electrum_client, v2::ElectrumExt};
+use bdk_electrum::{electrum_client, ElectrumExt};
 use bitcoin::Network;
 use frostsnap_core::CoordinatorFrostKey;
 use tracing::{event, Level};
