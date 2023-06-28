@@ -274,13 +274,10 @@ where
 
             if let Some(ui_event) = ui.poll() {
                 let outgoing = match ui_event {
-                    UiEvent::KeyGenConfirm(ack) => frost_signer
-                        .keygen_ack(ack)
-                        .expect("ui should not emit this multiple times."),
-                    UiEvent::SigningConfirm(ack) => frost_signer
-                        .sign_ack(ack)
-                        .expect("ui should not emit this multiple times."),
-                };
+                    UiEvent::KeyGenConfirm(ack) => frost_signer.keygen_ack(ack),
+                    UiEvent::SigningConfirm(ack) => frost_signer.sign_ack(ack),
+                }
+                .expect("core state should not change without changing workflow");
 
                 ui.set_workflow(ui::Workflow::WaitingFor(
                     ui::WaitingFor::CoordinatorInstruction {
