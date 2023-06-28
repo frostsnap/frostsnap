@@ -230,6 +230,7 @@ pub struct UpstreamDetector<'a, T, U> {
     switch_time: Option<u64>,
     pub switched: bool,
     state: DetectorState<'a, T, U>,
+    magic_bytes_freq: u64,
 }
 
 pub enum DetectorState<'a, T, U> {
@@ -246,6 +247,7 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
         uart: uart::Uart<'a, U>,
         jtag: UsbSerialJtag<'a, USB_DEVICE>,
         timer: &'a Timer<T>,
+        magic_bytes_period: u64, // after how many ms is magic bytes sent again
     ) -> Self {
         Self {
             timer,
@@ -255,6 +257,7 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
                 jtag: SerialInterface::new_jtag(jtag, timer),
                 uart: SerialInterface::new_uart(uart, timer),
             },
+            magic_bytes_freq: magic_bytes_period,
         }
     }
 
@@ -295,8 +298,7 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
                     usb_device
                         .conf0
                         .modify(|_, w| w.usb_pad_enable().clear_bit());
-
-                    now + 40_000 * 1_000
+                    now + 40_000 * (self.magic_bytes_freq + self.magic_bytes_freq / 2)
                 });
 
                 self.state = if now > *switch_time {
