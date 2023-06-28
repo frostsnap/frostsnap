@@ -19,11 +19,14 @@ use frostsnap_core::{
 };
 
 pub const BAUDRATE: u32 = 9600;
+/// Magic bytes are 7 bytes in length so when the bincode prefixes it with `00` it is 8 bytes long.
+/// A nice round number here is desirable (but not strictly necessary) because TX and TX buffers
+/// will be some multiple of 8 and so it should overflow the ring buffers neatly.
 const MAGIC_BYTES_LEN: usize = 7;
 
-const MAGICBYTES_SEND_UPSTREAM: [u8; MAGIC_BYTES_LEN] = [0x7c, 0xe4, 0x31, 0xb8, 0x02, 0x8b, 0x06];
+const MAGICBYTES_SEND_UPSTREAM: [u8; MAGIC_BYTES_LEN] = [0xff, 0xe4, 0x31, 0xb8, 0x02, 0x8b, 0x06];
 const MAGICBYTES_SEND_DOWNSTREAM: [u8; MAGIC_BYTES_LEN] =
-    [0xe9, 0x5d, 0xa3, 0x85, 0xd4, 0xee, 0x5a];
+    [0xff, 0x5d, 0xa3, 0x85, 0xd4, 0xee, 0x5a];
 
 #[derive(Encode, Decode, Debug, Clone)]
 #[bincode(bounds = "D: Direction")]
