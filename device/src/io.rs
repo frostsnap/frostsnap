@@ -43,7 +43,7 @@ impl<'a, T, U, D> SerialInterface<'a, T, U, D> {
 }
 
 impl<'a, T, U> SerialInterface<'a, T, U, Upstream> {
-    pub fn new_jtag(jtag: UsbSerialJtag<'a, USB_DEVICE>, timer: &'a Timer<T>) -> Self {
+    pub fn new_jtag(jtag: UsbSerialJtag<'a>, timer: &'a Timer<T>) -> Self {
         Self {
             io: SerialIo::Jtag(jtag),
             read_buffer: vec![],
@@ -171,7 +171,7 @@ where
 
 pub enum SerialIo<'a, U> {
     Uart(uart::Uart<'a, U>),
-    Jtag(UsbSerialJtag<'a, USB_DEVICE>),
+    Jtag(UsbSerialJtag<'a>),
 }
 
 impl<'a, U> SerialIo<'a, U> {
@@ -245,7 +245,7 @@ pub enum DetectorState<'a, T, U> {
 impl<'a, T, U> UpstreamDetector<'a, T, U> {
     pub fn new(
         uart: uart::Uart<'a, U>,
-        jtag: UsbSerialJtag<'a, USB_DEVICE>,
+        jtag: UsbSerialJtag<'a>,
         timer: &'a Timer<T>,
         magic_bytes_period: u64, // after how many ms is magic bytes sent again
     ) -> Self {

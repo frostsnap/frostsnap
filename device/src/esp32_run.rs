@@ -1,5 +1,5 @@
 use alloc::{collections::VecDeque, string::ToString, vec::Vec};
-use esp32c3_hal::{peripherals::USB_DEVICE, prelude::*, uart, UsbSerialJtag};
+use esp32c3_hal::{prelude::*, uart, UsbSerialJtag};
 
 use crate::{
     io::{self, UpstreamDetector},
@@ -20,7 +20,7 @@ use frostsnap_core::schnorr_fun::fun::KeyPair;
 use frostsnap_core::schnorr_fun::fun::Scalar;
 
 pub struct Run<'a, UpstreamUart, DownstreamUart, Ui, T> {
-    pub upstream_jtag: UsbSerialJtag<'a, USB_DEVICE>,
+    pub upstream_jtag: UsbSerialJtag<'a>,
     pub upstream_uart: uart::Uart<'a, UpstreamUart>,
     pub downstream_uart: uart::Uart<'a, DownstreamUart>,
     pub rng: esp32c3_hal::Rng<'a>,

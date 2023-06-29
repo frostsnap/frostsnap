@@ -60,9 +60,17 @@ fn main() -> ! {
 
     // Disable the RTC and TIMG watchdog timers
     let mut rtc = esp32c3_hal::Rtc::new(peripherals.RTC_CNTL);
-    let timer_group0 = timer::TimerGroup::new(peripherals.TIMG0, &clocks);
+    let timer_group0 = timer::TimerGroup::new(
+        peripherals.TIMG0,
+        &clocks,
+        &mut system.peripheral_clock_control,
+    );
     let mut wdt0 = timer_group0.wdt;
-    let timer_group1 = timer::TimerGroup::new(peripherals.TIMG1, &clocks);
+    let timer_group1 = timer::TimerGroup::new(
+        peripherals.TIMG1,
+        &clocks,
+        &mut system.peripheral_clock_control,
+    );
     let mut wdt1 = timer_group1.wdt;
     let mut timer0 = timer_group0.timer0;
     timer0.start(1u64.secs());
@@ -110,7 +118,10 @@ fn main() -> ! {
     )
     .unwrap();
 
-    let upstream_jtag = esp32c3_hal::UsbSerialJtag::new(peripherals.USB_DEVICE);
+    let upstream_jtag = esp32c3_hal::UsbSerialJtag::new(
+        peripherals.USB_DEVICE,
+        &mut system.peripheral_clock_control,
+    );
 
     let upstream_uart = {
         let serial_conf = config::Config {
@@ -126,6 +137,7 @@ fn main() -> ! {
             Some(serial_conf),
             Some(txrx1),
             &clocks,
+            &mut system.peripheral_clock_control,
         )
     };
 
@@ -143,6 +155,7 @@ fn main() -> ! {
             Some(serial_conf),
             Some(txrx0),
             &clocks,
+            &mut system.peripheral_clock_control,
         )
     };
 
