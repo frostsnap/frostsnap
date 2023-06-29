@@ -251,9 +251,9 @@ checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
 name = "bitflags"
-version = "2.0.2"
+version = "2.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "487f1e0fcbe47deb8b0574e646def1c903389d95241dd1bbcc6ce4a715dfc0c1"
+checksum = "630be753d4e58660abd17930c71b647fe46c27ea6b63cc59e1e3851406972e42"
 
 [[package]]
 name = "block-buffer"
@@ -649,9 +649,9 @@ dependencies = [
 
 [[package]]
 name = "esp-alloc"
-version = "0.2.1"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b46ad395d4b5ebec5a36483b3d8d84fecb8a80ad38c143392249990a83d8f23"
+checksum = "83792eb7261a375bb838679fea2b45654b8f4a48da6bef10a96da5054aa81c7d"
 dependencies = [
  "critical-section",
  "linked_list_allocator",
@@ -659,20 +659,21 @@ dependencies = [
 
 [[package]]
 name = "esp-backtrace"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e628c86c7f56b0511f7ce1d6b1fe9abe070d89556f227e297ed0c8122b9aaef6"
+checksum = "b151ef7db21143b1a3b7a378c16d97ae13d0a5e3cb9682ed1f11bba821cce42d"
 dependencies = [
  "esp-println",
 ]
 
 [[package]]
 name = "esp-hal-common"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c37621a91b6465e4d13eb5596530e67304a0ef04d186d832012b2b9d7a3cd394"
+checksum = "d077ffedaa2632004cf73e713438a18706d6d04d2fb0632ffe5a5f02bb9c17e0"
 dependencies = [
  "basic-toml",
+ "bitflags 2.3.3",
  "cfg-if",
  "critical-section",
  "embedded-dma",
@@ -705,9 +706,9 @@ dependencies = [
 
 [[package]]
 name = "esp-hal-smartled"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9f798ae33a9a0fb1c329727acf811e3142739065b5d8635453dd0a96103ee0d"
+checksum = "ad44c81ca3bbb4d92bba61b1da1bcb5f954b18241518bfaa35d15bad79c58148"
 dependencies = [
  "esp-hal-common",
  "fugit",
@@ -716,9 +717,9 @@ dependencies = [
 
 [[package]]
 name = "esp-println"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c33a9d1eb60882ec910021bda7b67ce789dd0d6325b886e6739ef9d8f495ae22"
+checksum = "af6a511d37dba5fb8f01bf5485bc619a1a1959e1aaf666a7597df8fe615a0816"
 
 [[package]]
 name = "esp-riscv-rt"
@@ -741,9 +742,9 @@ dependencies = [
 
 [[package]]
 name = "esp32c3"
-version = "0.13.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e27af709b69fba964429db0c34ea28d6aeb74202ab88d9edbe7bdd4a4ce29fd5"
+checksum = "1b6fdc5f5a2774cd7255c1bcee3056569301a657a59ad01ff7dc9a32370c694d"
 dependencies = [
  "critical-section",
  "vcell",
@@ -751,9 +752,9 @@ dependencies = [
 
 [[package]]
 name = "esp32c3-hal"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf196521d39de7ca712d01bc78de215464ab32f57342e8ca87104f51bd914c1a"
+checksum = "bb3469727f70c746eb2ad046f86e5f9e1f4b352d4976c16d1a3e58c0a6cac7e4"
 dependencies = [
  "cfg-if",
  "embedded-hal",
@@ -1628,7 +1629,7 @@ checksum = "353dc2cbfc67c9a14a89a1292a9d8e819bd51066b083e08c1974ba08e3f48c62"
 dependencies = [
  "CoreFoundation-sys",
  "IOKit-sys",
- "bitflags 2.0.2",
+ "bitflags 1.3.2",
  "cfg-if",
  "libudev",
  "mach2",
