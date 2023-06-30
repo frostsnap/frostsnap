@@ -274,7 +274,6 @@ where
             }
             SplashProgress::Done => { /* splash is done no need to anything */ }
         }
-
         match &self.workflow {
             Workflow::None => { /* do nothing */ }
             Workflow::WaitingFor(waiting_for) => match waiting_for {
@@ -287,7 +286,7 @@ where
                         self.display.print("Looking for upstream device").unwrap();
                     }
                 }
-                WaitingFor::CoordinatorAck => {
+                WaitingFor::CoordinatorAnnounceAck => {
                     self.display.print("Waiting for FrostSnap app").unwrap();
                 }
                 WaitingFor::CoordinatorInstruction { completed_task } => {
@@ -340,7 +339,7 @@ where
             Workflow::BusyDoing(task) => match task {
                 BusyTask::KeyGen => self.display.print("Generating key..").unwrap(),
                 BusyTask::Signing => self.display.print("Signing..").unwrap(),
-                BusyTask::VerifyingKey => self.display.print("Verifying key..").unwrap(),
+                BusyTask::VerifyingShare => self.display.print("Verifying key..").unwrap(),
             },
         }
 

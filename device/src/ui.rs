@@ -19,9 +19,13 @@ pub trait UserInteraction {
 
 #[derive(Clone, Debug)]
 pub enum WaitingFor {
+    /// Looking for upstream device
     LookingForUpstream { jtag: bool },
-    CoordinatorAck,
+    /// Waitinf for the announce ack
+    CoordinatorAnnounceAck,
+    /// Waiting to be told to do something
     CoordinatorInstruction { completed_task: Option<UiEvent> },
+    /// Waiting for the coordinator to respond to a message its sent
     CoordinatorResponse(WaitingResponse),
 }
 
@@ -54,7 +58,7 @@ pub enum Prompt {
 pub enum BusyTask {
     KeyGen,
     Signing,
-    VerifyingKey,
+    VerifyingShare,
 }
 
 #[derive(Clone, Debug)]

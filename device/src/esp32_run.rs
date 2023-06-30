@@ -175,7 +175,9 @@ where
                         .write_magic_bytes()
                         .expect("failed to write magic bytes");
                     upstream_sent_magic_bytes = true;
-                    ui.set_workflow(ui::Workflow::WaitingFor(ui::WaitingFor::CoordinatorAck))
+                    ui.set_workflow(ui::Workflow::WaitingFor(
+                        ui::WaitingFor::CoordinatorAnnounceAck,
+                    ))
                 }
 
                 while upstream_serial.poll_read() {
@@ -225,17 +227,21 @@ where
                                             });
                                         }
                                         DeviceReceiveBody::Core(core_message) => {
-                                            if let CoordinatorToDeviceMessage::DoKeyGen {
-                                                devices,
-                                                ..
-                                            } = &core_message
-                                            {
-                                                if devices.contains(&frost_signer.device_id()) {
+                                            match &core_message {
+                                                CoordinatorToDeviceMessage::DoKeyGen { .. } => {
                                                     ui.set_workflow(ui::Workflow::BusyDoing(
                                                         ui::BusyTask::KeyGen,
                                                     ));
                                                     frost_signer.clear_state();
                                                 }
+                                                CoordinatorToDeviceMessage::FinishKeyGen {
+                                                    ..
+                                                } => ui.set_workflow(ui::Workflow::BusyDoing(
+                                                    ui::BusyTask::VerifyingShare,
+                                                )),
+                                                CoordinatorToDeviceMessage::RequestSign {
+                                                    ..
+                                                } => { /* no workflow to trigger */ }
                                             }
 
                                             match frost_signer
@@ -275,7 +281,12 @@ where
             if let Some(ui_event) = ui.poll() {
                 let outgoing = match ui_event {
                     UiEvent::KeyGenConfirm(ack) => frost_signer.keygen_ack(ack),
-                    UiEvent::SigningConfirm(ack) => frost_signer.sign_ack(ack),
+                    UiEvent::SigningConfirm(ack) => {
+                        if ack {
+                            ui.set_workflow(ui::Workflow::BusyDoing(ui::BusyTask::Signing));
+                        }
+                        frost_signer.sign_ack(ack)
+                    }
                 }
                 .expect("core state should not change without changing workflow");
 

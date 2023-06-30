@@ -200,7 +200,7 @@ where
                         self.display.print("Looking for upstream device").unwrap();
                     }
                 }
-                WaitingFor::CoordinatorAck => {
+                WaitingFor::CoordinatorAnnounceAck => {
                     self.led
                         .write(brightness([colors::PURPLE].iter().cloned(), 10))
                         .unwrap();
@@ -265,7 +265,7 @@ where
                 match task {
                     BusyTask::KeyGen => self.display.print("Generating key..").unwrap(),
                     BusyTask::Signing => self.display.print("Signing..").unwrap(),
-                    BusyTask::VerifyingKey => self.display.print("Verifying key..").unwrap(),
+                    BusyTask::VerifyingShare => self.display.print("Verifying key..").unwrap(),
                 }
             }
         }
