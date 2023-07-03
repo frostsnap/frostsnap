@@ -53,9 +53,3 @@ required-features = ["purple"]
 [[bin]]
 name = "blue"
 required-features = ["blue"]
-
-
-# [package.metadata.espflash]
-# bootloader      = "bootloader.bin"
-# partition_table = "partitions.csv"
-# format          = "direct-boot"

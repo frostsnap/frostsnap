@@ -41,7 +41,7 @@ impl DeviceStorage {
     }
 
     pub fn load(&mut self) -> Result<FrostState, DecodeError> {
-        // TODO when this errors we need to know whethe rit was because it's a fresh device or
+        // TODO when this errors we need to know whether it was because it's a fresh device or
         // because it's corrupted.
         bincode::decode_from_reader(self.rw(), bincode::config::standard())
     }

@@ -106,7 +106,6 @@ fn main() -> ! {
     .unwrap();
     let led = <smartLedAdapter!(1)>::new(pulse.channel0, io.pins.gpio2);
 
-    // Welcome screen
     let upstream_jtag = esp32c3_hal::UsbSerialJtag::new(
         peripherals.USB_DEVICE,
         &mut system.peripheral_clock_control,

@@ -201,7 +201,7 @@ impl<'a, U> SerialIo<'a, U> {
         }
     }
 
-    // NOTE: flush is useless on these devices except for blokcking until writing is finished.
+    // NOTE: flush is useless on these devices except for blocking until writing is finished.
     // This comment is here to stop you thinking it's useful and re-implementing it.
     // fn flush(&mut self)
     // where

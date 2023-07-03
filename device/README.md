@@ -25,5 +25,3 @@ Flash device. Use a good USB cable.
 cd device/
 cargo run --release --target blue --features blue
 ```
-
-
