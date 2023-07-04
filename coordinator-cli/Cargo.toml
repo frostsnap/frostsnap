@@ -21,9 +21,9 @@ clap = { version = "4", features = ["derive"] }
 home = "0.5"
 tracing = "0.1"
 tracing-subscriber = "0.3"
-bdk_chain = { rev = "cd096df9568a1bb7160482f7c36c807cce1b0b5d", git = "https://github.com/evanlinjin/bdk.git", features = ["serde"]  }
-bdk_electrum = { rev = "cd096df9568a1bb7160482f7c36c807cce1b0b5d", git = "https://github.com/evanlinjin/bdk.git"  }
-bdk_file_store = { rev = "cd096df9568a1bb7160482f7c36c807cce1b0b5d", git = "https://github.com/evanlinjin/bdk.git" }
+bdk_chain = { rev = "26ade1172622f66cb95c831c4a8e7535409e8e81", git = "https://github.com/bitcoindevkit/bdk.git", features = ["serde"]  }
+bdk_electrum = { rev = "26ade1172622f66cb95c831c4a8e7535409e8e81", git = "https://github.com/bitcoindevkit/bdk.git"  }
+bdk_file_store = { rev = "26ade1172622f66cb95c831c4a8e7535409e8e81", git = "https://github.com/bitcoindevkit/bdk.git" }
 bdk_coin_select = { rev = "9129b43f1ee75185f3cc3a0f27edcd00df59a61d", git = "https://github.com/llfourn/bdk.git" }
 bech32 = "0.9.1"
 tungstenite = { version = "0.19", features = ["rustls-tls-webpki-roots"] }
