@@ -5,14 +5,14 @@ authors = ["nickfarrow <nick@nickfarrow.com>"]
 edition = "2021"
 
 [features]
-blue = ["air101", "air101-r225"]
+blue = ["air101"]
 ai-042c3 = ["rgb-led", "dep:display-interface", "dep:ssd1306"]
 air101 = [
     "dep:display-interface-spi", 
     "dep:mipidsi", 
     "dep:embedded-graphics-framebuf"
 ]
-air101-r225 = []
+# By default blue board uses air101-r225 but you can change it to r2223 with this flag
 air101-r2223 = []
 rgb-led = ["dep:esp-hal-smartled", "dep:smart-leds"]
 purple = [ "dep:ssd1306", "dep:display-interface-spi", "dep:display-interface", "dep:esp-hal-smartled", "dep:smart-leds" ]

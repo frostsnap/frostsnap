@@ -84,20 +84,23 @@ where
         let di = SPIInterfaceNoCS::new(spi, dc);
         let mut delay = Delay::new(&clocks);
 
-        #[cfg(feature = "air101-r225")]
+        // default values are for the air101-r225
+        const OFFSET_HANDLER: (u16, u16) = {
+            let _val = (1, 26);
+            #[cfg(feature = "air101-r2223")]
+            let _val = (0, 24);
+            _val
+        };
+        const INVERT_COLORS: bool = {
+            let _val = true;
+            #[cfg(feature = "air101-r2223")]
+            let _val = false;
+            _val
+        };
         let mut display = mipidsi::Builder::st7735s(di)
             .with_display_size(80, 160)
-            .with_window_offset_handler(|_| -> (u16, u16) { (1, 26) })
-            .with_invert_colors(true)
-            .with_color_order(mipidsi::options::ColorOrder::Bgr)
-            .init(&mut delay, Some(rst))
-            .unwrap();
-
-        #[cfg(feature = "air101-r2223")]
-        let mut display = mipidsi::Builder::st7735s(di)
-            .with_display_size(80, 160)
-            .with_window_offset_handler(|_| -> (u16, u16) { (0, 24) })
-            .with_invert_colors(false)
+            .with_window_offset_handler(|_| OFFSET_HANDLER)
+            .with_invert_colors(INVERT_COLORS)
             .with_color_order(mipidsi::options::ColorOrder::Bgr)
             .init(&mut delay, Some(rst))
             .unwrap();
