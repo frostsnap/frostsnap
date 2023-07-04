@@ -48,7 +48,7 @@ where
     >,
     character_style: MonoTextStyle<'d, Rgb565>,
     textbox_style: TextBoxStyle,
-    framebuf: FrameBuf<Rgb565, &'d mut [Rgb565; 12800]>,
+    framebuf: FrameBuf<Rgb565, [Rgb565; 12800]>,
 }
 
 impl<'d, RA, IRA, SPI> ST7735<'d, RA, IRA, SPI>
@@ -68,7 +68,7 @@ where
         miso: impl Peripheral<P = MISO> + 'd,
         peripheral_clock_control: &mut PeripheralClockControl,
         clocks: &Clocks,
-        framebuf: FrameBuf<Rgb565, &'d mut [Rgb565; 12800]>,
+        framebuf: FrameBuf<Rgb565, [Rgb565; 12800]>,
     ) -> Result<Self, Error> {
         let spi = Spi::new(
             spi,

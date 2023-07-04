@@ -101,8 +101,8 @@ fn main() -> ! {
     let mut bl = io.pins.gpio11.into_push_pull_output();
     // Turn off backlight to hide artifacts as display initializes
     bl.set_low().unwrap();
-    let mut framearray = [Rgb565::WHITE; 160 * 80];
-    let framebuf = FrameBuf::new(&mut framearray, 160, 80);
+    let framearray = [Rgb565::WHITE; 160 * 80];
+    let framebuf = FrameBuf::new(framearray, 160, 80);
     let display = st7735::ST7735::new(
         // &mut bl,
         io.pins.gpio6.into_push_pull_output(),
@@ -437,8 +437,8 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         None => info.to_string(),
     };
 
-    let mut framearray = [Rgb565::WHITE; 160 * 80];
-    let framebuf = FrameBuf::new(&mut framearray, 160, 80);
+    let framearray = [Rgb565::WHITE; 160 * 80];
+    let framebuf = FrameBuf::new(framearray, 160, 80);
     // let mut bl = io.pins.gpio11.into_push_pull_output();
     if let Ok(mut display) = st7735::ST7735::new(
         // &mut bl,
