@@ -676,7 +676,10 @@ impl FrostSigner {
             }
             (
                 SignerState::KeyGen {
-                    devices, aux_rand, ..
+                    devices,
+                    aux_rand,
+                    scalar_poly,
+                    ..
                 },
                 CoordinatorToDeviceMessage::FinishKeyGen { shares_provided },
             ) => {
@@ -691,10 +694,22 @@ impl FrostSigner {
                 }
                 let frost = frost::new_with_deterministic_nonces::<Sha256>();
 
-                let point_polys = shares_provided
+                let point_polys: BTreeMap<_, _> = shares_provided
                     .iter()
                     .map(|(device_id, share)| (device_id.to_x_coord(), share.my_poly.clone()))
                     .collect();
+                // Confirm our point poly matches what we expect
+                if point_polys
+                    .get(&self.device_id().to_x_coord())
+                    .expect("we have a point poly in this finish keygen")
+                    != &frost::to_point_poly(&scalar_poly)
+                {
+                    return Err(Error::signer_invalid_message(
+                        &message,
+                        format!("Coordinator told us we are using a different point poly than we expected"),
+                    ));
+                }
+
                 let transpose_shares = shares_provided
                     .keys()
                     .map(|device_id_receiver| {
