@@ -58,7 +58,7 @@ where
             .into_buffered_graphics_mode();
 
         display.init().unwrap();
-        display.clear();
+        display.clear_buffer();
         display.flush().unwrap();
 
         let character_style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
@@ -80,7 +80,7 @@ where
     }
 
     pub fn print(&mut self, str: impl AsRef<str>) -> Result<(), DisplayError> {
-        self.display.clear();
+        self.clear().unwrap();
         TextBox::with_textbox_style(
             str.as_ref(),
             Rectangle::new(Point::new(0, 0), Size::new(72, 40)),
@@ -96,7 +96,7 @@ where
     }
 
     pub fn print_header(&mut self, str: impl AsRef<str>) -> Result<(), DisplayError> {
-        self.display.clear();
+        self.clear().unwrap();
         TextBox::with_textbox_style(
             str.as_ref(),
             Rectangle::new(Point::new(0, 0), Size::new(72, 40)),
@@ -116,7 +116,7 @@ where
     }
 
     pub fn clear(&mut self) -> Result<(), DisplayError> {
-        self.display.clear();
+        self.display.clear_buffer();
         Ok(())
     }
 }

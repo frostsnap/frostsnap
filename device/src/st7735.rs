@@ -28,6 +28,7 @@ use esp32c3_hal::{
     system::PeripheralClockControl,
     Delay,
 };
+use mipidsi::ColorInversion;
 use mipidsi::{models::ST7735s, Display, Error};
 
 pub struct ST7735<'d, RA, IRA, SPI>
@@ -91,10 +92,10 @@ where
             let _val = (0, 24);
             _val
         };
-        const INVERT_COLORS: bool = {
-            let _val = true;
+        const INVERT_COLORS: ColorInversion = {
+            let _val = ColorInversion::Inverted;
             #[cfg(feature = "air101-r2223")]
-            let _val = false;
+            let _val = ColorInversion::Normal;
             _val
         };
         let mut display = mipidsi::Builder::st7735s(di)
@@ -109,29 +110,30 @@ where
             .set_orientation(mipidsi::options::Orientation::Landscape(true))
             .unwrap();
 
-        display.clear(Rgb565::BLACK).unwrap();
-        // backlight always on, so commenting this out for now
-        // bl.set_low().unwrap();
-
         let character_style = MonoTextStyle::new(&FONT_7X14, Rgb565::WHITE);
         let textbox_style = TextBoxStyleBuilder::new()
             // .alignment(HorizontalAlignment::Center)
             // .vertical_alignment(VerticalAlignment::Middle)
             // .line_height(LineHeight::Pixels(16))
             .build();
-        Ok(Self {
-            // bl,
+
+        let mut _self = Self {
             display,
             character_style,
             textbox_style,
             framebuf,
-        })
+        };
+
+        _self.clear(Rgb565::BLACK).unwrap();
+        _self.flush().unwrap();
+
+        Ok(_self)
     }
 
     pub fn flush(&mut self) -> Result<(), Error> {
         let area = Rectangle::new(Point::new(0, 0), self.framebuf.size());
         self.display
-            .fill_contiguous(&area, self.framebuf.data.clone())
+            .fill_contiguous(&area, self.framebuf.data)
             .unwrap();
         Ok(())
     }
