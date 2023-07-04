@@ -155,7 +155,7 @@ fn main() -> ! {
         workflow: Workflow::None,
     };
 
-    delay.delay_ms(500u32); // To wait for ESP32c3 timers to stop being bonkers
+    delay.delay_ms(600u32); // To wait for ESP32c3 timers to stop being bonkers
 
     esp32_run::Run {
         upstream_jtag,

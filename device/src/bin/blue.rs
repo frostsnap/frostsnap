@@ -160,7 +160,7 @@ fn main() -> ! {
     };
 
     let rng = esp32c3_hal::Rng::new(peripherals.RNG);
-    delay.delay_ms(600u32);
+    delay.delay_ms(600u32); // To wait for ESP32c3 timers to stop being bonkers
     bl.set_high().unwrap();
 
     let ui = BlueUi {
