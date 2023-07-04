@@ -10,6 +10,7 @@ use embedded_graphics::{
     prelude::*,
     primitives::*,
 };
+use mipidsi::ColorInversion;
 use embedded_graphics_framebuf::FrameBuf;
 use embedded_text::{
     alignment::{HorizontalAlignment, VerticalAlignment},
