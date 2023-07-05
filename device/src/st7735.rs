@@ -10,7 +10,6 @@ use embedded_graphics::{
     prelude::*,
     primitives::*,
 };
-use mipidsi::ColorInversion;
 use embedded_graphics_framebuf::FrameBuf;
 use embedded_text::{
     alignment::{HorizontalAlignment, VerticalAlignment},
@@ -186,39 +185,78 @@ where
     }
 
     pub fn splash_screen(&mut self, percent: f32) -> Result<(), Error> {
-        let incomplete = 1.0 - percent;
+        use u8g2_fonts::{
+            fonts,
+            types::{FontColor, HorizontalAlignment, VerticalPosition},
+            FontRenderer,
+        };
+        let mut incomplete = 1.0 - (percent / 0.60);
+        if incomplete < 0.0 {
+            incomplete = 0.0;
+        }
         self.clear(Rgb565::BLACK).unwrap();
 
-        TextBox::with_textbox_style(
+        use embedded_graphics::image::Image;
+        use embedded_iconoir::prelude::*;
+        let frost_pos = Point::new((30.0 + -100.0 * incomplete) as i32, 15);
+        {
+            let icon = icons::size24px::weather::SnowFlake::new(Rgb565::CYAN);
+            let flake_pos = frost_pos + Point::new(-8, 10);
+            let image = Image::new(&icon, flake_pos);
+            image.draw(&mut self.framebuf).unwrap();
+        }
+
+        let font = FontRenderer::new::<fonts::u8g2_font_luBIS19_tr>();
+        font.render_aligned(
             "Frost",
-            Rectangle::new(
-                Point::new((-30.0 * incomplete) as i32, 0),
-                Size::new(80, 80),
-            ),
-            MonoTextStyle::new(&FONT_10X20, Rgb565::CYAN),
-            TextBoxStyleBuilder::new()
-                .alignment(HorizontalAlignment::Right)
-                .vertical_alignment(VerticalAlignment::Middle)
-                // .line_height(LineHeight::Pixels(16))
-                .build(),
+            frost_pos,
+            VerticalPosition::Top,
+            HorizontalAlignment::Left,
+            FontColor::Transparent(Rgb565::CYAN),
+            &mut self.framebuf,
         )
-        .draw(&mut self.framebuf)
         .unwrap();
-        TextBox::with_textbox_style(
+
+        font.render_aligned(
             "Snap",
-            Rectangle::new(
-                Point::new(80 + (30.0 * incomplete) as i32, 0),
-                Size::new(80, 80),
-            ),
-            MonoTextStyle::new(&FONT_10X20, Rgb565::CYAN),
-            TextBoxStyleBuilder::new()
-                .alignment(HorizontalAlignment::Left)
-                .vertical_alignment(VerticalAlignment::Middle)
-                // .line_height(LineHeight::Pixels(16))
-                .build(),
+            Point::new((60.0 + 100.0 * incomplete) as i32, 45),
+            VerticalPosition::Top,
+            HorizontalAlignment::Left,
+            FontColor::Transparent(Rgb565::CYAN),
+            &mut self.framebuf,
         )
-        .draw(&mut self.framebuf)
         .unwrap();
+
+        // TextBox::with_textbox_style(
+        //     "Frost",
+        //     Rectangle::new(
+        //         frost_pos,
+        //         Size::new(80, 80),
+        //     ),
+        //     MonoTextStyle::new(&FONT_10X20, Rgb565::CYAN),
+        //     TextBoxStyleBuilder::new()
+        //         .alignment(HorizontalAlignment::Right)
+        //         .vertical_alignment(VerticalAlignment::Middle)
+        //         // .line_height(LineHeight::Pixels(16))
+        //         .build(),
+        // )
+        // .draw(&mut self.framebuf)
+        // .unwrap();
+        // TextBox::with_textbox_style(
+        //     "Snap",
+        //     Rectangle::new(
+        //         Point::new(80 + (30.0 * incomplete) as i32, 0),
+        //         Size::new(80, 80),
+        //     ),
+        //     MonoTextStyle::new(&FONT_10X20, Rgb565::CYAN),
+        //     TextBoxStyleBuilder::new()
+        //         .alignment(HorizontalAlignment::Left)
+        //         .vertical_alignment(VerticalAlignment::Middle)
+        //         // .line_height(LineHeight::Pixels(16))
+        //         .build(),
+        // )
+        // .draw(&mut self.framebuf)
+        // .unwrap();
 
         self.flush().unwrap();
         Ok(())
@@ -336,10 +374,11 @@ where
     }
 
     pub fn clear(&mut self, c: Rgb565) -> Result<(), Error> {
-        Rectangle::new(Point::new(0, 0), Size::new(160, 80))
-            .into_styled(PrimitiveStyleBuilder::new().fill_color(c).build())
-            .draw(&mut self.framebuf)
-            .unwrap();
+        self.framebuf.clear(c).unwrap();
+        // Rectangle::new(Point::new(0, 0), Size::new(160, 80))
+        //     .into_styled(PrimitiveStyleBuilder::new().fill_color(c).build())
+        //     .draw(&mut self.framebuf)
+        //     .unwrap();
 
         Ok(())
     }

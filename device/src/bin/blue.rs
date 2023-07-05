@@ -200,7 +200,7 @@ where
     splash_state: SplashState<'t, T>,
 }
 
-const SPLASH_SCREEN_DURATION: u64 = 40_000 * 1_500;
+const SPLASH_SCREEN_DURATION: u64 = 40_000 * 1_800;
 
 struct SplashState<'t, T> {
     timer: &'t esp32c3_hal::timer::Timer<T>,
