@@ -66,49 +66,4 @@ where
             ButtonDirection::Unpressed
         }
     }
-
-    pub fn wait_for_press(&mut self) -> ButtonDirection {
-        let mut pressed = false;
-        let mut position: ButtonDirection = ButtonDirection::Center;
-        loop {
-            while self.center.is_low().unwrap() {
-                if !pressed {
-                    position = ButtonDirection::Center;
-                    pressed = true;
-                }
-            }
-
-            while self.up.is_low().unwrap() {
-                if !pressed {
-                    position = ButtonDirection::Up;
-                    pressed = true;
-                }
-            }
-
-            while self.down.is_low().unwrap() {
-                if !pressed {
-                    position = ButtonDirection::Down;
-                    pressed = true;
-                }
-            }
-
-            while self.right.is_low().unwrap() {
-                if !pressed {
-                    position = ButtonDirection::Right;
-                    pressed = true;
-                }
-            }
-
-            while self.left.is_low().unwrap() {
-                if !pressed {
-                    position = ButtonDirection::Left;
-                    pressed = true;
-                }
-            }
-
-            if pressed {
-                return position;
-            }
-        }
-    }
 }
