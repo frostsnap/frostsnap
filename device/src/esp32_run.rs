@@ -133,6 +133,7 @@ where
                                 device: frost_signer.device_id(),
                             });
                             downstream_active = false;
+                            ui.set_downstream_connection_state(false);
                         }
                     };
                 }

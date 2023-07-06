@@ -224,8 +224,14 @@ where
     }
 
     pub fn set_top_left_square(&mut self, color: Rgb565) {
-        Rectangle::new(Point::new(0, 0), Size::new(10, 10))
-            .into_styled(PrimitiveStyleBuilder::new().fill_color(color).build())
+        Rectangle::new(Point::zero(), Size::new_equal(10))
+            .into_styled(
+                PrimitiveStyleBuilder::new()
+                    .stroke_color(Rgb565::new(4, 8, 17))
+                    .stroke_width(1)
+                    .fill_color(color)
+                    .build(),
+            )
             .draw(&mut self.framebuf)
             .unwrap();
 
@@ -243,11 +249,14 @@ where
             .unwrap();
 
         let header_charstyle = MonoTextStyle::new(&FONT_5X8, Rgb565::WHITE);
+        let textbox_style = TextBoxStyleBuilder::new()
+            .alignment(HorizontalAlignment::Center)
+            .build();
         TextBox::with_textbox_style(
             device_label.as_ref(),
-            Rectangle::new(Point::new(10, 1), Size::new(160, 10)),
+            Rectangle::new(Point::new(10, 1), Size::new(140, 10)),
             header_charstyle,
-            self.textbox_style,
+            textbox_style,
         )
         .draw(&mut self.framebuf)
         .unwrap();

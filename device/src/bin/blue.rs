@@ -200,7 +200,7 @@ where
     splash_state: SplashState<'t, T>,
 }
 
-const SPLASH_SCREEN_DURATION: u64 = 40_000 * 1_500;
+const SPLASH_SCREEN_DURATION: u64 = 40_000 * 600;
 
 struct SplashState<'t, T> {
     timer: &'t esp32c3_hal::timer::Timer<T>,
@@ -359,8 +359,11 @@ where
     T: timer::Instance,
 {
     fn set_downstream_connection_state(&mut self, connected: bool) {
-        self.downstream_connected = connected;
-        self.render();
+        if self.downstream_connected != connected {
+            // stops downstream poll error handler from spamming render
+            self.downstream_connected = connected;
+            self.render();
+        }
     }
 
     fn set_device_label(&mut self, label: String) {
