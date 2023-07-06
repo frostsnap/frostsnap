@@ -53,6 +53,7 @@ impl Ports {
         if let Some(device_ids) = self.reverse_device_ports.remove(port) {
             for device_id in device_ids {
                 self.device_ports.remove(&device_id);
+                self.registered_devices.remove(&device_id);
                 event!(
                     Level::DEBUG,
                     port = port,
@@ -86,6 +87,7 @@ impl Ports {
             for serial_number in ports_to_send_on {
                 let port = self.ready.get_mut(&serial_number).expect("must exist");
 
+                event!(Level::DEBUG, "sending {:?}", send.message_body);
                 bincode::encode_into_writer(
                     DeviceReceiveSerial::<Downstream>::Message(send.clone()),
                     port,
@@ -324,7 +326,6 @@ impl Ports {
 
                     device_port.send_message(DeviceReceiveSerial::Message(DeviceReceiveMessage {
                         message_body: DeviceReceiveBody::AnnounceAck {
-                            device_id,
                             device_label: device_label.to_string(),
                         },
                         target_destinations: BTreeSet::from([device_id]),

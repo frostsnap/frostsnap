@@ -43,7 +43,7 @@ impl<'a, T, U, D> SerialInterface<'a, T, U, D> {
 }
 
 impl<'a, T, U> SerialInterface<'a, T, U, Upstream> {
-    pub fn new_jtag(jtag: UsbSerialJtag<'a, USB_DEVICE>, timer: &'a Timer<T>) -> Self {
+    pub fn new_jtag(jtag: UsbSerialJtag<'a>, timer: &'a Timer<T>) -> Self {
         Self {
             io: SerialIo::Jtag(jtag),
             read_buffer: vec![],
@@ -171,7 +171,7 @@ where
 
 pub enum SerialIo<'a, U> {
     Uart(uart::Uart<'a, U>),
-    Jtag(UsbSerialJtag<'a, USB_DEVICE>),
+    Jtag(UsbSerialJtag<'a>),
 }
 
 impl<'a, U> SerialIo<'a, U> {
@@ -201,17 +201,19 @@ impl<'a, U> SerialIo<'a, U> {
         }
     }
 
-    // fn flush(&mut self) -> Result<(), SerialInterfaceError>
+    // NOTE: flush is useless on these devices except for blocking until writing is finished.
+    // This comment is here to stop you thinking it's useful and re-implementing it.
+    // fn flush(&mut self)
     // where
     //     U: uart::Instance,
     // {
     //     match self {
     //         SerialIo::Uart(uart) => {
-    //             uart.flush().map_err(|_| SerialInterfaceError::JtagError)
+    //             while let Err(_) = uart.flush() {}
     //         }
-    //         SerialIo::Jtag(jtag) => jtag
-    //             .flush()
-    //             .map_err(|_| SerialInterfaceError::UartReadError),
+    //         SerialIo::Jtag(jtag) => {
+    //             let _ = jtag.flush().unwrap();
+    //         },
     //     }
     // }
 }
@@ -228,6 +230,7 @@ pub struct UpstreamDetector<'a, T, U> {
     switch_time: Option<u64>,
     pub switched: bool,
     state: DetectorState<'a, T, U>,
+    magic_bytes_freq: u64,
 }
 
 pub enum DetectorState<'a, T, U> {
@@ -242,8 +245,9 @@ pub enum DetectorState<'a, T, U> {
 impl<'a, T, U> UpstreamDetector<'a, T, U> {
     pub fn new(
         uart: uart::Uart<'a, U>,
-        jtag: UsbSerialJtag<'a, USB_DEVICE>,
+        jtag: UsbSerialJtag<'a>,
         timer: &'a Timer<T>,
+        magic_bytes_period: u64, // after how many ms is magic bytes sent again
     ) -> Self {
         Self {
             timer,
@@ -253,7 +257,12 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
                 jtag: SerialInterface::new_jtag(jtag, timer),
                 uart: SerialInterface::new_uart(uart, timer),
             },
+            magic_bytes_freq: magic_bytes_period,
         }
+    }
+
+    pub fn looking_at_jtag(&self) -> bool {
+        self.switched
     }
 
     pub fn serial_interface(&mut self) -> Option<&mut SerialInterface<'a, T, U, Upstream>>
@@ -289,8 +298,7 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
                     usb_device
                         .conf0
                         .modify(|_, w| w.usb_pad_enable().clear_bit());
-
-                    now + 40_000 * 1_000
+                    now + 40_000 * (self.magic_bytes_freq + self.magic_bytes_freq / 2)
                 });
 
                 self.state = if now > *switch_time {

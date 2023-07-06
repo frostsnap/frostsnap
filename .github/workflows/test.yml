@@ -7,11 +7,14 @@ on:
   pull_request:
  
 env:
-  rust_toolchain: nightly
+  rust_toolchain: stable
   
 jobs:
   device-build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        board: ['blue', 'purple']
     defaults:
       run:
         working-directory: ./device
@@ -24,7 +27,7 @@ jobs:
         run: |
           wget -nv https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2023.05.24/riscv32-elf-ubuntu-22.04-nightly-2023.05.24-nightly.tar.gz
           tar -zxf riscv32-elf-ubuntu-22.04-nightly-2023.05.24-nightly.tar.gz
-          echo "$PATH=$PATH:${GITHUB_WORKSPACE}/device/riscv/bin" >> $GITHUB_ENV
+          echo "PATH=$PATH:${GITHUB_WORKSPACE}/device/riscv/bin" >> $GITHUB_ENV
           ls ${GITHUB_WORKSPACE}/device/riscv/bin
       - name: Setup | Rust
         uses: actions-rs/toolchain@v1
@@ -37,10 +40,8 @@ jobs:
         run: cargo install ldproxy
       - name: Build | Compile
         run: |
-          echo "$PATH=$PATH:${GITHUB_WORKSPACE}/device/riscv/bin" >> $GITHUB_ENV
-          PATH=$PATH:$GITHUB_WORKSPACE/device/riscv/bin
           echo $PATH
-          cargo build --release
+          cargo build --release --features ${{ matrix.board }} --bin ${{ matrix.board }}
 
   coordinator-build:
     runs-on: ubuntu-latest
@@ -68,7 +69,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly
+          toolchain: stable
           override: true
           components: rustfmt
       - uses: actions-rs/cargo@v1
