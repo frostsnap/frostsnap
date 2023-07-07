@@ -40,14 +40,14 @@ This repository is comprised of the following components:
 
 All of this code is completely free open source software under the XXX license.
 
-## DIY: I want a frost-esp32 signing device right now!
+## Flashing a Dev Board
 
-It is possible to DIY build a frost-esp32 signing device. Though custom hardware is required for double-ended USBC devices which can form a daisy chain.
+It is possible to DIY flash a frost signing device **for development**, but will require custom hardware modifications.
 
-Currently we support the following ESP32C3 boards:
+Currently we support the following base ESP32C3 boards:
 
-- "Blue boards": [ESP32C3-CORE](https://wiki.luatos.com/chips/esp32c3/board.html)
-- "Purple boards": [ESP32-C3-0.42LCD](https://github.com/01Space/ESP32-C3-0.42LCD)
+- "Purple boards": [ESP32-C3-0.42LCD](https://github.com/01Space/ESP32-C3-0.42LCD) - Optional requirement of soldering an additional USBC port for daisy chaining devices. Currently lacks button interaction.
+- "Blue boards": [ESP32C3-CORE](https://wiki.luatos.com/chips/esp32c3/board.html) - Requires additional hardware for a screen and buttons. Optional requirement of soldering an additional USBC port for daisy chaining devices.
 
 ## Security & Disclaimer
 
