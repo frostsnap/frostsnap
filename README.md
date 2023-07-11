@@ -1,4 +1,4 @@
-[![Frostsnap](https://frostsnap.com/frostsnap_colour_shadow.png)](https://frostsnap.com)
+[![Frostsnap](https://frostsnap.com/assets/logo.svg)](https://frostsnap.com)
 
 _Control Your Keys - The Future of Bitcoin Security_
 
@@ -33,12 +33,12 @@ Frostsnap uses our FROST implementation from [secp256kfun](https://docs.rs/schno
 
 This repository is comprised of the following components:
 
-- [device/](/device/) - The firmware which runs on esp-32 microprocessors, handles message IO, user interaction, and display.
+- [device/](/device/) - The firmware which runs on ESP-32 microprocessors, handles message IO, user interaction, and display.
 - [coordinator-cli/](/coordinator-cli/) - A simple CLI Bitcoin wallet which instructs devices what to do over USB serial. It can also post to Nostr!
 - [frostsnap_core/](/frostsnap_core/) - Software library for handling the state of Frostsnap coordinators and devices, and how they respond to messages of different kinds.
 - [frostsnap_comms/](/frostsnap_comms/) - Software library for how the devices and coordinators serialize different types of bincode messages.
 
-All of this code is completely free open source software under the XXX license.
+All of this code is completely free open source software under the MIT license.
 
 ## Flashing a Dev Board
 
@@ -73,4 +73,4 @@ We suggest this because there's a good chance we've already considered what you 
 
 ---
 
-We hope you're excited for the future of Bitcoin security.
+Check out the code!
