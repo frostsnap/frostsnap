@@ -171,7 +171,7 @@ fn test_end_to_end() {
                         .and_modify(|signers| signers.push(device_id))
                         .or_insert_with(|| vec![device_id]);
                     // Simulate user pressing "sign" --> calls device.sign()
-                    let messages = devices.get_mut(&device_id).unwrap().sign_ack().unwrap();
+                    let messages = devices.get_mut(&device_id).unwrap().sign_ack(true).unwrap();
                     let messages = messages.into_iter().map(|message| match message {
                         DeviceSend::ToCoordinator(message) => message.into(),
                         DeviceSend::ToUser(message) => Send::DeviceToUser { message, device_id },

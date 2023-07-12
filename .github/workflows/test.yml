@@ -61,6 +61,18 @@ jobs:
       - name: Build | Compile
         run: cargo build --release
 
+  non-device-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frostsnap_core
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v2
+      - name: Test | Run tests
+        # TODO add coordinator code to this but I didn't do this because of libudev. When it's split into a library it should be here.
+        run: RUSTFLAGS='-D warnings' cargo test --release -p frostsnap_comms -p frostsnap_core --all-features
+
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
