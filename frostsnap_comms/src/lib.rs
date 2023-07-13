@@ -8,11 +8,11 @@ extern crate std;
 #[allow(unused)]
 #[macro_use]
 extern crate alloc;
-use core::marker::PhantomData;
-
 use alloc::vec::Vec;
 use alloc::{collections::BTreeSet, string::String};
 use bincode::{de::read::Reader, enc::write::Writer, Decode, Encode};
+use core::marker::PhantomData;
+use frostsnap_core::bincode;
 use frostsnap_core::{
     message::{CoordinatorToDeviceMessage, DeviceToCoordinatorBody, DeviceToCoordindatorMessage},
     DeviceId,
@@ -37,14 +37,13 @@ pub enum DeviceReceiveSerial<D> {
 
 #[derive(Encode, Decode, Debug, Clone)]
 pub struct DeviceReceiveMessage {
-    #[bincode(with_serde)]
     pub target_destinations: BTreeSet<DeviceId>,
     pub message_body: DeviceReceiveBody,
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
 pub enum DeviceReceiveBody {
-    Core(#[bincode(with_serde)] CoordinatorToDeviceMessage),
+    Core(CoordinatorToDeviceMessage),
     AnnounceAck { device_label: String },
 }
 
@@ -137,18 +136,13 @@ pub enum DeviceSendSerial<D> {
 
 #[derive(Encode, Decode, Debug, Clone)]
 pub enum DeviceSendMessage {
-    Core(#[bincode(with_serde)] DeviceToCoordindatorMessage),
-    Debug {
-        message: String,
-        #[bincode(with_serde)]
-        device: DeviceId,
-    },
+    Core(DeviceToCoordindatorMessage),
+    Debug { message: String, device: DeviceId },
     Announce(Announce),
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
 pub struct Announce {
-    #[bincode(with_serde)]
     pub from: DeviceId,
 }
 

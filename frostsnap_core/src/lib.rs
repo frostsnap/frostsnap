@@ -5,6 +5,8 @@
 #[macro_use]
 extern crate std;
 
+pub use bincode;
+
 pub mod encrypted_share;
 pub mod message;
 pub mod nostr;
@@ -24,6 +26,7 @@ use alloc::{
     vec::Vec,
 };
 
+use bincode::{Decode, Encode};
 use rand_chacha::ChaCha20Rng;
 use rand_core::RngCore;
 use schnorr_fun::{
@@ -32,6 +35,7 @@ use schnorr_fun::{
     musig::{Nonce, NonceKeyPair},
     nonce, Message,
 };
+use serde::{Deserialize, Serialize};
 use sha2::digest::Digest;
 use sha2::Sha256;
 
@@ -450,7 +454,7 @@ impl FrostCoordinator {
     }
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, serde::Serialize, serde::Deserialize)]
 pub struct CoordinatorFrostKey {
     frost_key: FrostKey<Normal>,
     device_nonces: BTreeMap<DeviceId, DeviceNonces>,
@@ -504,14 +508,14 @@ impl CoordinatorState {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode, serde::Serialize, serde::Deserialize)]
 pub struct DeviceNonces {
     counter: usize,
     nonces: VecDeque<Nonce>,
 }
 
 #[derive(
-    Clone, Copy, Debug, PartialEq, Hash, Eq, Ord, PartialOrd, serde::Serialize, serde::Deserialize,
+    Clone, Copy, Debug, PartialEq, Hash, Eq, Ord, PartialOrd, Encode, Decode, Serialize, Deserialize,
 )]
 pub struct DeviceId {
     pub pubkey: Point,
@@ -537,7 +541,7 @@ pub fn gen_pop_message(device_ids: impl IntoIterator<Item = DeviceId>) -> [u8; 3
     hasher.finalize().into()
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub struct FrostSigner {
     keypair: KeyPair,
     state: SignerState,
@@ -954,7 +958,7 @@ impl FrostSigner {
     }
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub enum SignerState {
     Registered,
     KeyGen {
@@ -985,7 +989,7 @@ impl SignerState {
     }
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub struct FrostsnapKey {
     /// The joint key
     pub frost_key: FrostKey<Normal>,

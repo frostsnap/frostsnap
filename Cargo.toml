@@ -11,3 +11,9 @@ resolver = "2"
 
 [patch.crates-io]
 miniscript = { version = "9", git = 'https://github.com/apoelstra/rust-miniscript', rev = "f1c12724d04b7ad28d25c866383a948cd493e698" }
+
+[workspace.dependencies]
+bincode = {  version = "2.0.0-rc.3", features = ["serde", "alloc", "derive"], default-features = false }
+serde = { version = "1", features = ["derive","alloc"], default-features = false }
+frostsnap_core = { path = "frostsnap_core", default-features = false }
+frostsnap_comms = { path = "frostsnap_comms", default-features = false }
