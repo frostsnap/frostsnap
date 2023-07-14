@@ -16,7 +16,7 @@ pub use schnorr_fun;
 #[macro_use]
 extern crate alloc;
 
-use crate::{encrypted_share::EncryptedShare, message::*};
+use crate::message::*;
 use alloc::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     string::String,
@@ -84,15 +84,18 @@ impl FrostCoordinator {
                             let point_polys = responses
                                 .iter()
                                 .map(|(device_id, response)| {
-                                    (device_id.to_x_coord(), response.shares.my_poly.clone())
+                                    (
+                                        device_id.to_poly_index(),
+                                        response.encrypted_shares.my_poly.clone(),
+                                    )
                                 })
                                 .collect();
                             let proofs_of_possession = responses
                                 .iter()
                                 .map(|(device_id, response)| {
                                     (
-                                        device_id.to_x_coord(),
-                                        response.shares.proof_of_possession.clone(),
+                                        device_id.to_poly_index(),
+                                        response.encrypted_shares.proof_of_possession.clone(),
                                     )
                                 })
                                 .collect();
@@ -136,7 +139,7 @@ impl FrostCoordinator {
                                     CoordinatorToDeviceMessage::FinishKeyGen {
                                         shares_provided: responses
                                             .into_iter()
-                                            .map(|(id, response)| (id, response.shares))
+                                            .map(|(id, response)| (id, response.encrypted_shares))
                                             .collect(),
                                     },
                                 ),
@@ -187,7 +190,7 @@ impl FrostCoordinator {
                         let xonly_frost_key = &session_progress.key;
                         if session
                             .participants()
-                            .find(|x_coord| *x_coord == message.from.to_x_coord())
+                            .find(|x_coord| *x_coord == message.from.to_poly_index())
                             .is_none()
                         {
                             return Err(Error::coordinator_invalid_message(
@@ -199,7 +202,7 @@ impl FrostCoordinator {
                         if frost.verify_signature_share(
                             xonly_frost_key,
                             session,
-                            message.from.to_x_coord(),
+                            message.from.to_poly_index(),
                             *signature_share,
                         ) {
                             session_progress
@@ -376,7 +379,7 @@ impl FrostCoordinator {
                         let b_message = Message::raw(&sign_item.message[..]);
                         let indexed_nonces = signing_nonces
                             .iter()
-                            .map(|(id, (nonce, _, _))| (id.to_x_coord(), nonce[i]))
+                            .map(|(id, (nonce, _, _))| (id.to_poly_index(), nonce[i]))
                             .collect();
 
                         let mut frost_xpub = crate::xpub::FrostXpub::new(key.frost_key.clone());
@@ -521,14 +524,12 @@ impl core::fmt::Display for DeviceId {
 }
 
 impl DeviceId {
-    fn to_x_coord(&self) -> Scalar<Public> {
-        let x_coord =
-            Scalar::from_hash(Sha256::default().chain_update(self.pubkey.to_bytes())).public();
-        x_coord
+    pub fn to_poly_index(&self) -> Scalar<Public> {
+        Scalar::from_hash(Sha256::default().chain_update(self.pubkey.to_bytes())).public()
     }
 }
 
-fn gen_pop_message(device_ids: impl IntoIterator<Item = DeviceId>) -> [u8; 32] {
+pub fn gen_pop_message(device_ids: impl IntoIterator<Item = DeviceId>) -> [u8; 32] {
     let mut hasher = Sha256::default().tag(b"frostsnap/pop");
     for id in device_ids {
         hasher.update(&id.pubkey.to_bytes());
@@ -626,23 +627,9 @@ impl FrostSigner {
                 let mut aux_rand = [0u8; 32];
                 poly_rng.fill_bytes(&mut aux_rand);
 
-                let shares = devices
-                    .iter()
-                    .map(|&device| {
-                        let x_coord = device.to_x_coord();
-                        let share = frost.create_share(&scalar_poly, x_coord);
-                        (
-                            device,
-                            EncryptedShare::new(device.pubkey, &mut poly_rng, &share),
-                        )
-                    })
-                    .collect::<BTreeMap<_, _>>();
+                let encrypted_shares =
+                    KeyGenProvideShares::generate(&frost, &scalar_poly, &devices, &mut poly_rng);
 
-                let pop_message = gen_pop_message(devices.iter().cloned());
-                let proof_of_possession =
-                    frost.create_proof_of_possession(&scalar_poly, Message::raw(&pop_message));
-
-                let point_poly = frost::to_point_poly(&scalar_poly);
                 self.state = SignerState::KeyGen {
                     scalar_poly,
                     devices,
@@ -662,11 +649,7 @@ impl FrostSigner {
                         from: self.device_id(),
 
                         body: DeviceToCoordinatorBody::KeyGenResponse(KeyGenResponse {
-                            shares: KeyGenProvideShares {
-                                my_poly: point_poly,
-                                shares,
-                                proof_of_possession,
-                            },
+                            encrypted_shares,
                             nonces,
                         }),
                     },
@@ -694,11 +677,11 @@ impl FrostSigner {
 
                 let point_polys: BTreeMap<_, _> = shares_provided
                     .iter()
-                    .map(|(device_id, share)| (device_id.to_x_coord(), share.my_poly.clone()))
+                    .map(|(device_id, share)| (device_id.to_poly_index(), share.my_poly.clone()))
                     .collect();
                 // Confirm our point poly matches what we expect
                 if point_polys
-                    .get(&self.device_id().to_x_coord())
+                    .get(&self.device_id().to_poly_index())
                     .expect("we have a point poly in this finish keygen")
                     != &frost::to_point_poly(&scalar_poly)
                 {
@@ -719,15 +702,17 @@ impl FrostSigner {
                                     Ok((
                                         *provider_id,
                                         (
-                                            share.shares.get(device_id_receiver).cloned().ok_or(
-                                                Error::signer_invalid_message(
+                                            share
+                                                .encrypted_shares
+                                                .get(device_id_receiver)
+                                                .cloned()
+                                                .ok_or(Error::signer_invalid_message(
                                                     &message,
                                                     format!(
                                                         "Missing shares for {}",
                                                         device_id_receiver
                                                     ),
-                                                ),
-                                            )?,
+                                                ))?,
                                             share.proof_of_possession.clone(),
                                         ),
                                     ))
@@ -737,14 +722,14 @@ impl FrostSigner {
                     })
                     .collect::<Result<BTreeMap<_, _>, _>>()?;
 
-                let my_index = self.device_id().to_x_coord();
+                let my_index = self.device_id().to_poly_index();
                 let my_shares = transpose_shares
                     .get(&self.device_id())
                     .expect("this device is part of the keygen")
                     .into_iter()
                     .map(|(provider_id, (encrypted_secret_share, pop))| {
                         (
-                            provider_id.to_x_coord(),
+                            provider_id.to_poly_index(),
                             (
                                 encrypted_secret_share.decrypt(self.keypair().secret_key()),
                                 pop.clone(),
@@ -754,7 +739,9 @@ impl FrostSigner {
                     .collect::<BTreeMap<_, _>>();
 
                 let pop_message = gen_pop_message(devices.iter().cloned());
-                let keygen = frost.new_keygen(point_polys).unwrap();
+                let keygen = frost
+                    .new_keygen(point_polys)
+                    .map_err(|e| Error::signer_message_error(&message, e))?;
 
                 let (secret_share, frost_key) = frost
                     .finish_keygen(
@@ -763,7 +750,7 @@ impl FrostSigner {
                         my_shares,
                         Message::raw(&pop_message),
                     )
-                    .map_err(|e| Error::signer_invalid_message(&message, format!("{}", e)))?;
+                    .map_err(|e| Error::signer_message_error(&message, e))?;
 
                 let xpub = frost_key.public_key().to_string();
 
@@ -882,7 +869,7 @@ impl FrostSigner {
                 {
                     let nonces_at_index = nonces
                         .into_iter()
-                        .map(|(id, (nonces, _, _))| (id.to_x_coord(), nonces[nonce_index]))
+                        .map(|(id, (nonces, _, _))| (id.to_poly_index(), nonces[nonce_index]))
                         .collect();
 
                     let mut frost_xpub = crate::xpub::FrostXpub::new(key.frost_key.clone());
@@ -912,7 +899,7 @@ impl FrostSigner {
                     let sig_share = frost.sign(
                         &xonly_frost_key,
                         &sign_session,
-                        self.device_id().to_x_coord(),
+                        self.device_id().to_poly_index(),
                         &key.secret_share,
                         secret_nonce,
                     );
@@ -920,7 +907,7 @@ impl FrostSigner {
                     assert!(frost.verify_signature_share(
                         &xonly_frost_key,
                         &sign_session,
-                        self.device_id().to_x_coord(),
+                        self.device_id().to_poly_index(),
                         sig_share,
                     ));
 
@@ -1051,6 +1038,16 @@ impl Error {
         Self::InvalidMessage {
             kind: message.kind(),
             reason,
+        }
+    }
+
+    pub fn signer_message_error(
+        message: &CoordinatorToDeviceMessage,
+        e: impl alloc::string::ToString,
+    ) -> Self {
+        Self::InvalidMessage {
+            kind: message.kind(),
+            reason: e.to_string(),
         }
     }
 }

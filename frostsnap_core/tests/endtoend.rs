@@ -8,8 +8,8 @@ use schnorr_fun::{frost, fun::marker::Public, Message};
 use sha2::Sha256;
 use std::collections::{BTreeMap, BTreeSet};
 
-mod test_utils;
-use crate::test_utils::{Send, UserToCoordinator};
+mod common;
+use crate::common::{Send, UserToCoordinator};
 
 #[test]
 fn test_end_to_end() {
