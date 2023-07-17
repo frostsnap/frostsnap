@@ -162,120 +162,121 @@ where
                 }
             }
 
-            if upstream_detector.serial_interface().is_none() {
-                ui.set_workflow(ui::Workflow::WaitingFor(
+            match upstream_detector.serial_interface() {
+                None => ui.set_workflow(ui::Workflow::WaitingFor(
                     ui::WaitingFor::LookingForUpstream {
                         jtag: upstream_detector.looking_at_jtag(),
                     },
-                ))
-            }
+                )),
+                Some(upstream_serial) => {
+                    if !upstream_sent_magic_bytes {
+                        upstream_serial
+                            .write_magic_bytes()
+                            .expect("failed to write magic bytes");
+                        upstream_sent_magic_bytes = true;
+                        ui.set_workflow(ui::Workflow::WaitingFor(
+                            ui::WaitingFor::CoordinatorAnnounceAck,
+                        ))
+                    }
 
-            if let Some(upstream_serial) = upstream_detector.serial_interface() {
-                if !upstream_sent_magic_bytes {
-                    upstream_serial
-                        .write_magic_bytes()
-                        .expect("failed to write magic bytes");
-                    upstream_sent_magic_bytes = true;
-                    ui.set_workflow(ui::Workflow::WaitingFor(
-                        ui::WaitingFor::CoordinatorAnnounceAck,
-                    ))
-                }
+                    while upstream_serial.poll_read() {
+                        let prior_to_read_buff = upstream_serial.read_buffer().to_vec();
 
-                while upstream_serial.poll_read() {
-                    let prior_to_read_buff = upstream_serial.read_buffer().to_vec();
-
-                    match upstream_serial.receive_from_coordinator() {
-                        Ok(received_message) => {
-                            match received_message {
-                                DeviceReceiveSerial::MagicBytes(_) => {
-                                    if upstream_received_first_message {
-                                        soft_reset = true;
-                                    }
-                                    continue;
-                                }
-                                DeviceReceiveSerial::Message(message) => {
-                                    // We have recieved a first message (if this is not a magic bytes message)
-                                    upstream_received_first_message = true;
-                                    // Forward messages downstream if there are other target destinations
-                                    if downstream_active {
-                                        let mut forwarding_message = message.clone();
-                                        let _ = forwarding_message
-                                            .target_destinations
-                                            .remove(&frost_signer.device_id());
-                                        if forwarding_message.target_destinations.len() > 0 {
-                                            sends_downstream.push(forwarding_message);
+                        match upstream_serial.receive_from_coordinator() {
+                            Ok(received_message) => {
+                                match received_message {
+                                    DeviceReceiveSerial::MagicBytes(_) => {
+                                        if upstream_received_first_message {
+                                            soft_reset = true;
                                         }
-                                    }
-                                    // Skip processing of messages which are not destined for us
-                                    if !message
-                                        .target_destinations
-                                        .contains(&frost_signer.device_id())
-                                    {
                                         continue;
                                     }
-
-                                    match message.message_body {
-                                        DeviceReceiveBody::AnnounceAck { device_label } => {
-                                            ui.set_device_label(device_label);
-                                            ui.set_workflow(ui::Workflow::WaitingFor(
-                                                ui::WaitingFor::CoordinatorInstruction {
-                                                    completed_task: None,
-                                                },
-                                            ));
-                                            sends_upstream.push(DeviceSendMessage::Debug {
-                                                message: "Received AnnounceACK!".to_string(),
-                                                device: frost_signer.device_id(),
-                                            });
-                                        }
-                                        DeviceReceiveBody::Core(core_message) => {
-                                            match &core_message {
-                                                CoordinatorToDeviceMessage::DoKeyGen { .. } => {
-                                                    ui.set_workflow(ui::Workflow::BusyDoing(
-                                                        ui::BusyTask::KeyGen,
-                                                    ));
-                                                    frost_signer.clear_state();
-                                                }
-                                                CoordinatorToDeviceMessage::FinishKeyGen {
-                                                    ..
-                                                } => ui.set_workflow(ui::Workflow::BusyDoing(
-                                                    ui::BusyTask::VerifyingShare,
-                                                )),
-                                                CoordinatorToDeviceMessage::RequestSign {
-                                                    ..
-                                                } => { /* no workflow to trigger */ }
+                                    DeviceReceiveSerial::Message(message) => {
+                                        // We have recieved a first message (if this is not a magic bytes message)
+                                        upstream_received_first_message = true;
+                                        // Forward messages downstream if there are other target destinations
+                                        if downstream_active {
+                                            let mut forwarding_message = message.clone();
+                                            let _ = forwarding_message
+                                                .target_destinations
+                                                .remove(&frost_signer.device_id());
+                                            if forwarding_message.target_destinations.len() > 0 {
+                                                sends_downstream.push(forwarding_message);
                                             }
+                                        }
+                                        // Skip processing of messages which are not destined for us
+                                        if !message
+                                            .target_destinations
+                                            .contains(&frost_signer.device_id())
+                                        {
+                                            continue;
+                                        }
 
-                                            match frost_signer
-                                                .recv_coordinator_message(core_message.clone())
-                                            {
-                                                Ok(new_sends) => {
-                                                    outbox.extend(new_sends);
+                                        match message.message_body {
+                                            DeviceReceiveBody::AnnounceAck { device_label } => {
+                                                ui.set_device_label(device_label);
+                                                ui.set_workflow(ui::Workflow::WaitingFor(
+                                                    ui::WaitingFor::CoordinatorInstruction {
+                                                        completed_task: None,
+                                                    },
+                                                ));
+                                                sends_upstream.push(DeviceSendMessage::Debug {
+                                                    message: "Received AnnounceACK!".to_string(),
+                                                    device: frost_signer.device_id(),
+                                                });
+                                            }
+                                            DeviceReceiveBody::Core(core_message) => {
+                                                match &core_message {
+                                                    CoordinatorToDeviceMessage::DoKeyGen {
+                                                        ..
+                                                    } => {
+                                                        ui.set_workflow(ui::Workflow::BusyDoing(
+                                                            ui::BusyTask::KeyGen,
+                                                        ));
+                                                        frost_signer.clear_state();
+                                                    }
+                                                    CoordinatorToDeviceMessage::FinishKeyGen {
+                                                        ..
+                                                    } => ui.set_workflow(ui::Workflow::BusyDoing(
+                                                        ui::BusyTask::VerifyingShare,
+                                                    )),
+                                                    CoordinatorToDeviceMessage::RequestSign {
+                                                        ..
+                                                    } => { /* no workflow to trigger */ }
                                                 }
-                                                Err(e) => {
-                                                    ui.display_error(&e.gist());
+
+                                                match frost_signer
+                                                    .recv_coordinator_message(core_message.clone())
+                                                {
+                                                    Ok(new_sends) => {
+                                                        outbox.extend(new_sends);
+                                                    }
+                                                    Err(e) => {
+                                                        ui.display_error(&e.gist());
+                                                    }
                                                 }
                                             }
                                         }
                                     }
                                 }
                             }
-                        }
-                        Err(e) => {
-                            panic!(
-                                "upstream read fail (got label: {}) {} ({}) {}",
-                                ui.get_device_label().is_some(),
-                                e,
-                                prior_to_read_buff.len(),
-                                hex::encode(&prior_to_read_buff)
-                            );
-                        }
-                    };
-                }
+                            Err(e) => {
+                                panic!(
+                                    "upstream read fail (got label: {}) {} ({}) {}",
+                                    ui.get_device_label().is_some(),
+                                    e,
+                                    prior_to_read_buff.len(),
+                                    hex::encode(&prior_to_read_buff)
+                                );
+                            }
+                        };
+                    }
 
-                for send in sends_upstream.drain(..) {
-                    upstream_serial
-                        .send_to_coodinator(DeviceSendSerial::Message(send.clone()))
-                        .expect("unable to send to coordinator");
+                    for send in sends_upstream.drain(..) {
+                        upstream_serial
+                            .send_to_coodinator(DeviceSendSerial::Message(send.clone()))
+                            .expect("unable to send to coordinator");
+                    }
                 }
             }
 
