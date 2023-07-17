@@ -7,3 +7,7 @@ members = [
     "frostsnap_comms",
 ]
 resolver = "2"
+
+
+[patch.crates-io]
+miniscript = { version = "9", git = 'https://github.com/apoelstra/rust-miniscript', rev = "f1c12724d04b7ad28d25c866383a948cd493e698" }
