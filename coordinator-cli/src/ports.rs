@@ -324,12 +324,19 @@ impl Ports {
                 let wrote_ack = {
                     let device_port = self.ready.get_mut(&serial_number).expect("must exist");
 
-                    device_port.send_message(DeviceReceiveSerial::Message(DeviceReceiveMessage {
+                    let announce_ack = DeviceReceiveSerial::Message(DeviceReceiveMessage {
                         message_body: DeviceReceiveBody::AnnounceAck {
                             device_label: device_label.to_string(),
                         },
                         target_destinations: BTreeSet::from([device_id]),
-                    }))
+                    });
+                    event!(
+                        Level::DEBUG,
+                        port = serial_number,
+                        "About to write announce ack {}",
+                        format!("{:?}", announce_ack),
+                    );
+                    device_port.send_message(announce_ack)
                 };
 
                 match wrote_ack {

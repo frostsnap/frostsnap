@@ -39,6 +39,14 @@ impl SerialPortBincode {
         &mut self,
         message: DeviceReceiveSerial<Downstream>,
     ) -> Result<(), bincode::error::EncodeError> {
+        let mut slice = [0u8; 200];
+        bincode::encode_into_slice(&message, &mut slice, bincode::config::standard()).unwrap();
+
+        for byte in slice {
+            print!("{} ", byte);
+        }
+        println!();
+
         bincode::encode_into_writer(&message, self, bincode::config::standard())
     }
 
