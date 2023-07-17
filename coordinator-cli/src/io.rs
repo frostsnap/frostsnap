@@ -46,6 +46,7 @@ pub fn open_device_port(serial_number: &str) -> anyhow::Result<SerialPortBincode
         port: io_port,
         serial_number: serial_number.into(),
         buffer: Default::default(),
+        next_write_magic: 0,
     })
 }
 

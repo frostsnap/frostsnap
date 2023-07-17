@@ -7,6 +7,7 @@ pub struct SerialPortBincode {
     pub port: Box<dyn SerialPort>,
     pub serial_number: String,
     pub(crate) buffer: Vec<u8>,
+    pub next_write_magic: u128,
 }
 
 impl SerialPortBincode {
@@ -15,6 +16,7 @@ impl SerialPortBincode {
             port,
             serial_number,
             buffer: Vec::new(),
+            next_write_magic: 0,
         }
     }
 
@@ -41,9 +43,19 @@ impl SerialPortBincode {
     }
 
     pub fn write_magic_bytes(&mut self) -> Result<(), bincode::error::EncodeError> {
-        self.send_message(DeviceReceiveSerial::<Downstream>::MagicBytes(
-            MagicBytes::default(),
-        ))
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("time went backwards")
+            .as_millis();
+
+        if now > self.next_write_magic {
+            self.next_write_magic = now + 1_000; // 100ms
+            self.send_message(DeviceReceiveSerial::<Downstream>::MagicBytes(
+                MagicBytes::default(),
+            ))
+        } else {
+            Ok(())
+        }
     }
 
     pub fn read_for_magic_bytes(&mut self) -> Result<bool, std::io::Error> {
