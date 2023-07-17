@@ -424,8 +424,8 @@ impl FrostCoordinator {
                         CoordinatorToStorageMessage::UpdateState(key),
                     )],
                     CoordinatorToDeviceMessage::RequestSign {
-                        message_to_sign: message_to_sign.clone(),
-                        nonces: signing_nonces.clone(),
+                        message_to_sign,
+                        nonces: signing_nonces,
                     },
                 ))
             }
@@ -726,7 +726,7 @@ impl FrostSigner {
                 let my_shares = transpose_shares
                     .get(&self.device_id())
                     .expect("this device is part of the keygen")
-                    .into_iter()
+                    .iter()
                     .map(|(provider_id, (encrypted_secret_share, pop))| {
                         (
                             provider_id.to_poly_index(),
@@ -744,12 +744,7 @@ impl FrostSigner {
                     .map_err(|e| Error::signer_message_error(&message, e))?;
 
                 let (secret_share, frost_key) = frost
-                    .finish_keygen(
-                        keygen.clone(),
-                        my_index,
-                        my_shares,
-                        Message::raw(&pop_message),
-                    )
+                    .finish_keygen(keygen, my_index, my_shares, Message::raw(&pop_message))
                     .map_err(|e| Error::signer_message_error(&message, e))?;
 
                 let xpub = frost_key.public_key().to_string();
@@ -868,7 +863,7 @@ impl FrostSigner {
                     sign_items.iter().zip(secret_nonces).enumerate()
                 {
                     let nonces_at_index = nonces
-                        .into_iter()
+                        .iter()
                         .map(|(id, (nonces, _, _))| (id.to_poly_index(), nonces[nonce_index]))
                         .collect();
 

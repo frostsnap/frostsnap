@@ -180,7 +180,7 @@ where
                     }
 
                     while upstream_serial.poll_read() {
-                        let prior_to_read_buff = upstream_serial.read_buffer().to_vec();
+                        // let prior_to_read_buff = upstream_serial.read_buffer().to_vec();
 
                         match upstream_serial.receive_from_coordinator() {
                             Ok(received_message) => {
@@ -262,11 +262,9 @@ where
                             }
                             Err(e) => {
                                 panic!(
-                                    "upstream read fail (got label: {}) {} ({}) {}",
+                                    "upstream read fail (got label: {}) {}",
                                     ui.get_device_label().is_some(),
                                     e,
-                                    prior_to_read_buff.len(),
-                                    hex::encode(&prior_to_read_buff)
                                 );
                             }
                         };
@@ -294,7 +292,7 @@ where
 
                 ui.set_workflow(ui::Workflow::WaitingFor(
                     ui::WaitingFor::CoordinatorInstruction {
-                        completed_task: Some(ui_event.clone()),
+                        completed_task: Some(ui_event),
                     },
                 ));
 
