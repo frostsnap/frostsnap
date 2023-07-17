@@ -1,11 +1,7 @@
 // Air101 5 way button driver
 
 use esp32c3_hal::{
-    gpio::{
-        BankGpioRegisterAccess, Gpio13Signals, Gpio4Signals, Gpio5Signals, Gpio8Signals,
-        Gpio9Signals, GpioPin, Input, InputOutputAnalogPinType, InputOutputPinType,
-        InteruptStatusRegisterAccess, PullUp, Unknown,
-    },
+    gpio::{AnyPin, Input, PullUp},
     prelude::_embedded_hal_digital_v2_InputPin,
 };
 
@@ -18,36 +14,28 @@ pub enum ButtonDirection {
     Unpressed,
 }
 
-pub struct Buttons<RA, IRA>
-where
-    RA: BankGpioRegisterAccess,
-    IRA: InteruptStatusRegisterAccess,
-{
-    center: GpioPin<Input<PullUp>, RA, IRA, InputOutputAnalogPinType, Gpio4Signals, 4>,
-    up: GpioPin<Input<PullUp>, RA, IRA, InputOutputPinType, Gpio8Signals, 8>,
-    down: GpioPin<Input<PullUp>, RA, IRA, InputOutputPinType, Gpio13Signals, 13>,
-    right: GpioPin<Input<PullUp>, RA, IRA, InputOutputPinType, Gpio9Signals, 9>,
-    left: GpioPin<Input<PullUp>, RA, IRA, InputOutputAnalogPinType, Gpio5Signals, 5>,
+pub struct Buttons {
+    center: AnyPin<Input<PullUp>>,
+    up: AnyPin<Input<PullUp>>,
+    down: AnyPin<Input<PullUp>>,
+    right: AnyPin<Input<PullUp>>,
+    left: AnyPin<Input<PullUp>>,
 }
 
-impl<'d, RA, IRA> Buttons<RA, IRA>
-where
-    RA: BankGpioRegisterAccess,
-    IRA: InteruptStatusRegisterAccess,
-{
+impl Buttons {
     pub fn new(
-        center: GpioPin<Unknown, RA, IRA, InputOutputAnalogPinType, Gpio4Signals, 4>,
-        up: GpioPin<Unknown, RA, IRA, InputOutputPinType, Gpio8Signals, 8>,
-        down: GpioPin<Unknown, RA, IRA, InputOutputPinType, Gpio13Signals, 13>,
-        right: GpioPin<Unknown, RA, IRA, InputOutputPinType, Gpio9Signals, 9>,
-        left: GpioPin<Unknown, RA, IRA, InputOutputAnalogPinType, Gpio5Signals, 5>,
+        center: AnyPin<Input<PullUp>>,
+        up: AnyPin<Input<PullUp>>,
+        down: AnyPin<Input<PullUp>>,
+        right: AnyPin<Input<PullUp>>,
+        left: AnyPin<Input<PullUp>>,
     ) -> Self {
         Self {
-            center: center.into_pull_up_input(),
-            up: up.into_pull_up_input(),
-            down: down.into_pull_up_input(),
-            right: right.into_pull_up_input(),
-            left: left.into_pull_up_input(),
+            center,
+            up,
+            down,
+            right,
+            left,
         }
     }
 

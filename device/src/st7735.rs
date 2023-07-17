@@ -18,10 +18,7 @@ use embedded_text::{
 };
 use esp32c3_hal::{
     clock::Clocks,
-    gpio::{
-        BankGpioRegisterAccess, Gpio10Signals, Gpio6Signals, GpioPin, InputOutputPinType, InputPin,
-        InteruptStatusRegisterAccess, Output, OutputPin, PushPull,
-    },
+    gpio::{AnyPin, InputPin, Output, OutputPin, PushPull},
     peripheral::Peripheral,
     prelude::*,
     spi::{FullDuplexMode, Instance, Spi, SpiMode},
@@ -31,36 +28,29 @@ use esp32c3_hal::{
 use mipidsi::ColorInversion;
 use mipidsi::{models::ST7735s, Display, Error};
 
-pub struct ST7735<'d, RA, IRA, SPI>
+pub struct ST7735<'d, SPI>
 where
-    RA: BankGpioRegisterAccess,
-    IRA: InteruptStatusRegisterAccess,
     SPI: Instance,
 {
     // pub bl: &'d mut GpioPin<Output<PushPull>, RA, IRA, InputOutputPinType, Gpio11Signals, 11>,
     pub display: Display<
-        SPIInterfaceNoCS<
-            Spi<'d, SPI, FullDuplexMode>,
-            GpioPin<Output<PushPull>, RA, IRA, InputOutputPinType, Gpio6Signals, 6>,
-        >,
+        SPIInterfaceNoCS<Spi<'d, SPI, FullDuplexMode>, AnyPin<Output<PushPull>>>,
         ST7735s,
-        GpioPin<Output<PushPull>, RA, IRA, InputOutputPinType, Gpio10Signals, 10>,
+        AnyPin<Output<PushPull>>,
     >,
     character_style: MonoTextStyle<'d, Rgb565>,
     textbox_style: TextBoxStyle,
     framebuf: FrameBuf<Rgb565, [Rgb565; 12800]>,
 }
 
-impl<'d, RA, IRA, SPI> ST7735<'d, RA, IRA, SPI>
+impl<'d, SPI> ST7735<'d, SPI>
 where
-    RA: BankGpioRegisterAccess,
-    IRA: InteruptStatusRegisterAccess,
     SPI: Instance,
 {
     pub fn new<SCK: OutputPin, MOSI: OutputPin, MISO: InputPin, CS: OutputPin>(
         // bl: &'d mut GpioPin<Output<PushPull>, RA, IRA, InputOutputPinType, Gpio11Signals, 11>,
-        dc: GpioPin<Output<PushPull>, RA, IRA, InputOutputPinType, Gpio6Signals, 6>,
-        rst: GpioPin<Output<PushPull>, RA, IRA, InputOutputPinType, Gpio10Signals, 10>,
+        dc: AnyPin<Output<PushPull>>,
+        rst: AnyPin<Output<PushPull>>,
         spi: impl Peripheral<P = SPI> + 'd,
         sck: impl Peripheral<P = SCK> + 'd,
         cs: impl Peripheral<P = CS> + 'd,
