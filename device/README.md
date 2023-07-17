@@ -16,5 +16,5 @@ Flash the device (use a good USB cable)
 
 ```
 cd device/
-cargo run --release --target blue --features blue
+cargo run --release --bin blue --features blue
 ```
