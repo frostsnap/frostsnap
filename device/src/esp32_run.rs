@@ -58,7 +58,7 @@ where
                 let mut rand_bytes = [0u8; 32];
                 rng.read(&mut rand_bytes).unwrap();
                 let secret = Scalar::from_bytes(rand_bytes).unwrap().non_zero().unwrap();
-                let keypair: KeyPair = KeyPair::<Normal>::new(secret.clone());
+                let keypair: KeyPair = KeyPair::<Normal>::new(secret);
                 let frost_signer = frostsnap_core::FrostSigner::new(keypair);
 
                 flash
@@ -141,7 +141,7 @@ where
                 // Send messages downstream
                 for send in sends_downstream.drain(..) {
                     downstream_serial
-                        .forward_downstream(DeviceReceiveSerial::Message(send.clone()))
+                        .forward_downstream(DeviceReceiveSerial::Message(send))
                         .expect("sending downstream");
                 }
             } else {
@@ -157,7 +157,7 @@ where
                     ui.set_downstream_connection_state(true);
                     sends_upstream.push(DeviceSendMessage::Debug {
                         message: "Device read magic bytes from another device!".to_string(),
-                        device: frost_signer.clone().device_id(),
+                        device: frost_signer.device_id(),
                     });
                 }
             }
@@ -246,7 +246,7 @@ where
                                                 }
 
                                                 match frost_signer
-                                                    .recv_coordinator_message(core_message.clone())
+                                                    .recv_coordinator_message(core_message)
                                                 {
                                                     Ok(new_sends) => {
                                                         outbox.extend(new_sends);
@@ -274,7 +274,7 @@ where
 
                     for send in sends_upstream.drain(..) {
                         upstream_serial
-                            .send_to_coodinator(DeviceSendSerial::Message(send.clone()))
+                            .send_to_coodinator(DeviceSendSerial::Message(send))
                             .expect("unable to send to coordinator");
                     }
                 }
