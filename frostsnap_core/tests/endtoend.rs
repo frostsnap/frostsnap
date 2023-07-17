@@ -1,6 +1,5 @@
 use frostsnap_core::message::{
-    CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToUserMessage, DeviceSend,
-    DeviceToCoordindatorMessage, DeviceToStorageMessage, DeviceToUserMessage, SignTask,
+    CoordinatorSend, CoordinatorToUserMessage, DeviceSend, DeviceToUserMessage, SignTask,
 };
 use frostsnap_core::{DeviceId, FrostCoordinator, FrostSigner};
 use rand_chacha::rand_core::SeedableRng;
@@ -9,63 +8,8 @@ use schnorr_fun::{frost, fun::marker::Public, Message};
 use sha2::Sha256;
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Debug)]
-pub enum Send {
-    DeviceToUser {
-        message: DeviceToUserMessage,
-        device_id: DeviceId,
-    },
-    CoordinatorToUser(CoordinatorToUserMessage),
-    DeviceToCoordinator(DeviceToCoordindatorMessage),
-    CoordinatorToDevice(CoordinatorToDeviceMessage),
-    UserToCoordinator(UserToCoordinator),
-    ToStorage, /* ignoring these for now */
-}
-
-impl From<CoordinatorSend> for Send {
-    fn from(value: CoordinatorSend) -> Self {
-        match value {
-            CoordinatorSend::ToDevice(v) => v.into(),
-            CoordinatorSend::ToUser(v) => v.into(),
-            CoordinatorSend::ToStorage(_) => Send::ToStorage,
-        }
-    }
-}
-
-impl From<CoordinatorToUserMessage> for Send {
-    fn from(value: CoordinatorToUserMessage) -> Self {
-        Send::CoordinatorToUser(value)
-    }
-}
-
-impl From<DeviceToCoordindatorMessage> for Send {
-    fn from(value: DeviceToCoordindatorMessage) -> Self {
-        Send::DeviceToCoordinator(value)
-    }
-}
-
-impl From<CoordinatorToDeviceMessage> for Send {
-    fn from(value: CoordinatorToDeviceMessage) -> Self {
-        Send::CoordinatorToDevice(value)
-    }
-}
-
-impl From<DeviceToStorageMessage> for Send {
-    fn from(_: DeviceToStorageMessage) -> Self {
-        Send::ToStorage
-    }
-}
-
-#[derive(Debug)]
-pub enum UserToCoordinator {
-    DoKeyGen {
-        threshold: usize,
-    },
-    StartSign {
-        message: SignTask,
-        devices: BTreeSet<DeviceId>,
-    },
-}
+mod common;
+use crate::common::{Send, UserToCoordinator};
 
 #[test]
 fn test_end_to_end() {
