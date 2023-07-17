@@ -101,13 +101,13 @@ impl DeviceToCoordinatorBody {
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, Eq, PartialEq)]
 pub struct KeyGenProvideShares {
     pub my_poly: Vec<Point>,
-    pub shares: BTreeMap<DeviceId, EncryptedShare>,
+    pub encrypted_shares: BTreeMap<DeviceId, EncryptedShare>,
     pub proof_of_possession: Signature,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, Eq, PartialEq)]
 pub struct KeyGenResponse {
-    pub shares: KeyGenProvideShares,
+    pub encrypted_shares: KeyGenProvideShares,
     pub nonces: [Nonce; NONCE_BATCH_SIZE],
 }
 

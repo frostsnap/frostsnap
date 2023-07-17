@@ -5,7 +5,6 @@ use frostsnap_core::message::{
 use frostsnap_core::DeviceId;
 use std::collections::BTreeSet;
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub enum Send {
     DeviceToUser {
@@ -53,7 +52,6 @@ impl From<DeviceToStorageMessage> for Send {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub enum UserToCoordinator {
     DoKeyGen {
