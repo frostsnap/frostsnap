@@ -9,7 +9,7 @@ Requires `gcc-riscv64-unknown-elf` to compile rust bitcoin for the device ([Debi
 Install no-std for RISC-V toolchain installation
 
 ```
-rustup toolchain install stable --component rust-src
+rustup toolchain install nightly --component rust-src
 ```
 
 Flash the device (use a good USB cable)
