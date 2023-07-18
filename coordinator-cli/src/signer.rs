@@ -124,7 +124,7 @@ impl<'a, 'b> Signer<'a, 'b> {
             // because often a big bunch of devices will register at similar times if they are daisy
             // chained together.
             loop {
-                let (just_now_registered_devices, new_messages) = self.ports.poll_devices();
+                let (just_now_registered_devices, new_messages) = self.ports.poll_ports();
 
                 for incoming in new_messages {
                     match self.coordinator.recv_device_message(incoming.clone()) {
@@ -164,11 +164,10 @@ impl<'a, 'b> Signer<'a, 'b> {
                 .cloned()
                 .collect::<BTreeSet<_>>();
 
-            self.ports.queue_in_port_outbox(vec![DeviceReceiveMessage {
+            self.ports.queue_in_port_outbox(DeviceReceiveMessage {
                 target_destinations: asking_to_sign.clone(),
                 message_body: DeviceReceiveBody::Core(signature_request.clone()),
-            }]);
-            self.ports.send_to_devices()?;
+            });
         };
 
         Ok(finished_signatures.clone())

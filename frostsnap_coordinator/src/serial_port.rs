@@ -51,10 +51,10 @@ impl<S: Serial> FramedSerialPort<S> {
 
     pub fn send_message(
         &mut self,
-        message: DeviceReceiveSerial<Downstream>,
+        message: &DeviceReceiveSerial<Downstream>,
     ) -> Result<(), bincode::error::EncodeError> {
         let _bytes_written = bincode::encode_into_std_write(
-            &message,
+            message,
             self.inner.get_mut(),
             bincode::config::standard(),
         )?;
@@ -62,7 +62,7 @@ impl<S: Serial> FramedSerialPort<S> {
     }
 
     pub fn write_magic_bytes(&mut self) -> Result<(), bincode::error::EncodeError> {
-        self.send_message(DeviceReceiveSerial::<Downstream>::MagicBytes(
+        self.send_message(&DeviceReceiveSerial::<Downstream>::MagicBytes(
             MagicBytes::default(),
         ))
     }

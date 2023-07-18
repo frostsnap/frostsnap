@@ -75,7 +75,7 @@ enum SignArgs {
     },
 }
 
-pub fn process_outbox(
+fn process_outbox(
     db: &mut Db,
     coordinator: &mut FrostCoordinator,
     outbox: &mut VecDeque<CoordinatorSend>,
@@ -84,10 +84,10 @@ pub fn process_outbox(
     while let Some(message) = outbox.pop_front() {
         match message {
             CoordinatorSend::ToDevice(core_message) => {
-                ports.queue_in_port_outbox(vec![DeviceReceiveMessage {
+                ports.queue_in_port_outbox(DeviceReceiveMessage {
                     target_destinations: core_message.default_destinations(),
                     message_body: DeviceReceiveBody::Core(core_message),
-                }]);
+                });
             }
             CoordinatorSend::ToUser(to_user_message) => match to_user_message {
                 CoordinatorToUserMessage::Signed { .. } => {}
@@ -140,7 +140,6 @@ fn main() -> anyhow::Result<()> {
     let mut db = db::Db::new(db_path)?;
     let changeset = db.load()?;
 
-    // TODO ports::new(device_labels)
     let mut ports = frostsnap_coordinator::UsbSerialManager::new(DesktopSerial);
 
     if let Some(state) = &changeset.frostsnap {
@@ -181,7 +180,7 @@ fn main() -> anyhow::Result<()> {
             eprintln!("Please plug in {} devices..", n_devices);
 
             while ports.registered_devices().len() < n_devices {
-                ports.poll_devices();
+                ports.poll_ports();
 
                 for device_id in ports.unlabelled_devices().collect::<Vec<_>>() {
                     let device_label = device_namer::gen_name39();
@@ -224,12 +223,20 @@ fn main() -> anyhow::Result<()> {
                     coordinator.do_keygen(&keygen_devices, threshold)?,
                 ),
             };
-            ports.queue_in_port_outbox(vec![do_keygen_message]);
+            ports.queue_in_port_outbox(do_keygen_message);
 
             let mut outbox = VecDeque::new();
             loop {
-                let new_messages = ports.receive_messages();
+                let (_, new_messages) = ports.poll_ports();
+
                 for message in new_messages {
+                    event!(
+                        Level::DEBUG,
+                        from = message.from.to_string(),
+                        kind = message.body.kind(),
+                        "received message during keygen"
+                    );
+
                     match coordinator.recv_device_message(message.clone()) {
                         Ok(messages) => {
                             outbox.extend(messages);
@@ -251,7 +258,6 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
                 process_outbox(&mut db, &mut coordinator, &mut outbox, &mut ports)?;
-                ports.send_to_devices()?;
             }
         }
         Command::Sign(sign_args) => {

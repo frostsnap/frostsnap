@@ -80,46 +80,8 @@ impl<S: Serial> UsbSerialManager<S> {
         }
     }
 
-    pub fn send_to_devices(&mut self) -> anyhow::Result<()> {
-        let mut leftover_sends = vec![];
-        for mut send in self.port_outbox.drain(..) {
-            // We have a send that has target_destinations
-            // We need to determine which target destinations are connected on which ports
-            // We overwrite the target destinations with any non-connected devices at the end
-            let remaining_target_recipients = send.target_destinations.clone();
-
-            let mut still_need_to_send = BTreeSet::new();
-            let ports_to_send_on = remaining_target_recipients
-                .into_iter()
-                .filter_map(|device_id| match self.device_ports.get(&device_id) {
-                    Some(serial_number) => Some(serial_number.clone()),
-                    None => {
-                        still_need_to_send.insert(device_id);
-                        None
-                    }
-                })
-                .collect::<BTreeSet<String>>();
-
-            for serial_number in ports_to_send_on {
-                let port = self.ready.get_mut(&serial_number).expect("must exist");
-
-                event!(Level::DEBUG, "sending {:?}", send.message_body);
-                port.send_message(DeviceReceiveSerial::<Downstream>::Message(send.clone()))?;
-            }
-
-            if still_need_to_send.len() > 0 {
-                send.target_destinations = still_need_to_send;
-                leftover_sends.push(send);
-            }
-        }
-
-        self.port_outbox = leftover_sends;
-
-        Ok(())
-    }
-
-    pub fn queue_in_port_outbox(&mut self, sends: Vec<DeviceReceiveMessage>) {
-        self.port_outbox.extend(sends);
+    pub fn queue_in_port_outbox(&mut self, send: DeviceReceiveMessage) {
+        self.port_outbox.push(send);
     }
 
     pub fn active_ports(&self) -> HashSet<String> {
@@ -130,21 +92,7 @@ impl<S: Serial> UsbSerialManager<S> {
             .collect::<HashSet<_>>()
     }
 
-    pub fn receive_messages(&mut self) -> Vec<DeviceToCoordindatorMessage> {
-        let mut messages = vec![];
-
-        loop {
-            let (_new_devices, mut new_messages) = self.poll_devices();
-            if new_messages.is_empty() {
-                break;
-            }
-            messages.append(&mut new_messages);
-        }
-
-        messages
-    }
-
-    pub fn poll_devices(&mut self) -> (BTreeSet<DeviceId>, Vec<DeviceToCoordindatorMessage>) {
+    pub fn poll_ports(&mut self) -> (BTreeSet<DeviceId>, Vec<DeviceToCoordindatorMessage>) {
         let span = span!(Level::DEBUG, "poll_devices");
         let _enter = span.enter();
         let mut device_to_coord_msg = vec![];
@@ -204,6 +152,7 @@ impl<S: Serial> UsbSerialManager<S> {
                             error = e.to_string(),
                             "Failed to open port"
                         );
+                        self.pending.insert(serial_number);
                     }
                 }
                 Ok(mut device_port) => {
@@ -212,8 +161,6 @@ impl<S: Serial> UsbSerialManager<S> {
                         Ok(_) => {
                             self.awaiting_magic
                                 .insert(serial_number.clone(), device_port);
-                            // println!("Wrote magic bytes on device {}", serial_number);
-                            continue;
                         }
                         Err(e) => {
                             event!(
@@ -223,12 +170,10 @@ impl<S: Serial> UsbSerialManager<S> {
                                 "Failed to initialize port by writing magic bytes"
                             );
                             self.disconnect(&serial_number);
-                            continue;
                         }
                     }
                 }
             }
-            self.pending.insert(serial_number);
         }
 
         for (serial_number, mut device_port) in self.awaiting_magic.drain().collect::<Vec<_>>() {
@@ -236,11 +181,12 @@ impl<S: Serial> UsbSerialManager<S> {
                 Ok(true) => {
                     event!(Level::DEBUG, port = serial_number, "Read magic bytes");
                     self.ready.insert(serial_number, device_port);
-                    continue;
                 }
                 Ok(false) => match device_port.write_magic_bytes() {
                     Ok(_) => {
                         event!(Level::DEBUG, port = serial_number, "Wrote magic bytes");
+                        // we still need to read them so go again
+                        self.awaiting_magic.insert(serial_number, device_port);
                     }
                     Err(e) => {
                         event!(
@@ -249,6 +195,7 @@ impl<S: Serial> UsbSerialManager<S> {
                             e = e.to_string(),
                             "Failed to write magic bytes"
                         );
+                        self.disconnect(&serial_number);
                     }
                 },
                 Err(e) => {
@@ -259,10 +206,8 @@ impl<S: Serial> UsbSerialManager<S> {
                         "failed to read magic bytes"
                     );
                     self.disconnect(&serial_number);
-                    continue;
                 }
             }
-            self.awaiting_magic.insert(serial_number, device_port);
         }
 
         // Read all messages from ready devices
@@ -284,6 +229,13 @@ impl<S: Serial> UsbSerialManager<S> {
                     Ok(Some(message)) => message,
                 }
             };
+
+            event!(
+                Level::DEBUG,
+                port = serial_number,
+                gist = decoded_message.gist(),
+                "decoded message"
+            );
 
             match decoded_message {
                 DeviceSendSerial::MagicBytes(_) => {
@@ -325,46 +277,87 @@ impl<S: Serial> UsbSerialManager<S> {
             }
         }
 
-        for (device_id, serial_number) in self.device_ports.clone() {
+        let mut outbox = core::mem::take(&mut self.port_outbox);
+
+        for (device_id, _) in &self.device_ports {
             if self.registered_devices.contains(&device_id) {
                 continue;
             }
 
             if let Some(device_label) = self.device_labels.get(&device_id) {
-                let wrote_ack = {
-                    let device_port = self.ready.get_mut(&serial_number).expect("must exist");
+                outbox.push(DeviceReceiveMessage {
+                    message_body: DeviceReceiveBody::AnnounceAck {
+                        device_label: device_label.to_string(),
+                    },
+                    target_destinations: BTreeSet::from([*device_id]),
+                });
 
-                    device_port.send_message(DeviceReceiveSerial::Message(DeviceReceiveMessage {
-                        message_body: DeviceReceiveBody::AnnounceAck {
-                            device_label: device_label.to_string(),
-                        },
-                        target_destinations: BTreeSet::from([device_id]),
-                    }))
-                };
+                event!(
+                    Level::INFO,
+                    device_id = device_id.to_string(),
+                    "Registered device"
+                );
+                self.registered_devices.insert(*device_id);
+                newly_registered.insert(*device_id);
+            }
+        }
 
-                match wrote_ack {
-                    Ok(_) => {
-                        event!(
-                            Level::INFO,
-                            device_id = device_id.to_string(),
-                            "Registered device"
-                        );
-                        if self.registered_devices.insert(device_id) {
-                            newly_registered.insert(device_id);
-                        }
+        outbox.retain_mut(|send| {
+            let mut ports_to_send_on = HashSet::new();
+            let mut wire_message = send.clone();
+            wire_message.target_destinations.clear();
+
+            send.target_destinations.retain(|destination| {
+                match self.device_ports.get(destination) {
+                    Some(port) => {
+                        ports_to_send_on.insert(port.clone());
+                        wire_message.target_destinations.insert(*destination);
+                        false
                     }
+                    None => true,
+                }
+            });
+
+            let wire_message = DeviceReceiveSerial::<Downstream>::Message(wire_message);
+            let gist = wire_message.gist();
+
+            for serial_number in ports_to_send_on {
+                let span = tracing::span!(
+                    Level::ERROR,
+                    "send on port",
+                    port = serial_number,
+                    gist = gist
+                );
+                let _enter = span.enter();
+                let port = match self.ready.get_mut(&serial_number) {
+                    Some(port) => port,
+                    None => {
+                        event!(
+                            Level::DEBUG,
+                            "not sending message because port was disconnected"
+                        );
+                        continue;
+                    }
+                };
+                match port.send_message(&wire_message) {
                     Err(e) => {
                         event!(
                             Level::ERROR,
-                            port = serial_number,
                             error = e.to_string(),
-                            "Failed to write to port to Ack announcement"
+                            "Failed to send message",
                         );
                         self.disconnect(&serial_number);
                     }
+                    Ok(_) => {
+                        event!(Level::DEBUG, "Sent message",);
+                    }
                 }
             }
-        }
+
+            !send.target_destinations.is_empty()
+        });
+
+        self.port_outbox = outbox;
 
         (newly_registered, device_to_coord_msg)
     }
