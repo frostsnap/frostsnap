@@ -1,5 +1,5 @@
 use bdk_file_store::Store;
-use frostsnap_core::{bincode, CoordinatorFrostKey, DeviceId};
+use frostsnap_core::{CoordinatorFrostKey, DeviceId};
 use std::{collections::HashMap, path::PathBuf};
 
 #[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]

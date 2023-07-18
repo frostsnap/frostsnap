@@ -7,7 +7,8 @@ use frostsnap_core::{schnorr_fun, CoordinatorFrostKey};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use tracing::{event, Level};
 
-use crate::{db::Db, ports::Ports};
+use crate::db::Db;
+use crate::serial::DesktopSerial;
 
 use anyhow::anyhow;
 
@@ -15,14 +16,14 @@ pub struct Signer<'a, 'b> {
     // key: CoordinatorFrostKey,
     // still_need_to_sign: BTreeSet<DeviceId>,
     coordinator: frostsnap_core::FrostCoordinator,
-    ports: &'a mut Ports,
+    ports: &'a mut frostsnap_coordinator::UsbSerialManager<DesktopSerial>,
     db: &'b mut Db,
 }
 
 impl<'a, 'b> Signer<'a, 'b> {
     pub fn new(
         db: &'b mut Db,
-        ports: &'a mut Ports,
+        ports: &'a mut frostsnap_coordinator::UsbSerialManager<DesktopSerial>,
         coordinator: frostsnap_core::FrostCoordinator,
     ) -> Self {
         Self {

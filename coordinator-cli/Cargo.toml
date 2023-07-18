@@ -8,17 +8,18 @@ edition = "2021"
 [dependencies]
 frostsnap_core = { workspace = true, features = ["std", "serde_json"] }
 frostsnap_comms = { workspace = true }
+frostsnap_coordinator = { workspace = true }
 hex = "0.4.3"
 sha2 = "0.9"
 rand = { version = "0.8" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "1.0.21"
-serialport = "4.2.0"
+serialport = "4.2.1"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 home = "0.5"
-tracing = "0.1"
+tracing = { workspace = true }
 tracing-subscriber = "0.3"
 bdk_chain = { rev = "26ade1172622f66cb95c831c4a8e7535409e8e81", git = "https://github.com/bitcoindevkit/bdk.git", features = ["serde"]  }
 bdk_electrum = { rev = "26ade1172622f66cb95c831c4a8e7535409e8e81", git = "https://github.com/bitcoindevkit/bdk.git"  }

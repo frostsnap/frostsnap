@@ -1,9 +1,13 @@
+// USB CDC vid and pid
+const USB_VID: u16 = 12346;
+const USB_PID: u16 = 4097;
+
+use crate::{FramedSerialPort, Serial};
 use frostsnap_comms::DeviceReceiveMessage;
 use frostsnap_comms::DeviceReceiveSerial;
 use frostsnap_comms::DeviceSendSerial;
-use frostsnap_comms::{DeviceReceiveBody, DeviceSendMessage};
-
 use frostsnap_comms::Downstream;
+use frostsnap_comms::{DeviceReceiveBody, DeviceSendMessage};
 use frostsnap_core::message::DeviceToCoordindatorMessage;
 use frostsnap_core::DeviceId;
 use std::collections::BTreeMap;
@@ -12,22 +16,18 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use tracing::{event, span, Level};
 
-use crate::io;
-use crate::serial_rw::SerialPortBincode;
-
-// USB CDC vid and pid
-const USB_ID: (u16, u16) = (12346, 4097);
-
-#[derive(Default)]
-pub struct Ports {
+/// Manages the communication between coordinator and USB serial device ports given Some `S` serial
+/// system API.
+pub struct UsbSerialManager<S: Serial> {
+    serial_impl: S,
     /// Matches VID and PID
     connected: HashSet<String>,
     /// Initial state
     pending: HashSet<String>,
     /// After opening port and awaiting magic bytes
-    awaiting_magic: HashMap<String, SerialPortBincode>,
+    awaiting_magic: HashMap<String, FramedSerialPort<S>>,
     /// Read magic magic bytes
-    ready: HashMap<String, SerialPortBincode>,
+    ready: HashMap<String, FramedSerialPort<S>>,
     /// ports that seems to be busy
     ignored: HashSet<String>,
     /// Devices who Announce'd, mappings to port serial numbers
@@ -42,7 +42,23 @@ pub struct Ports {
     port_outbox: Vec<DeviceReceiveMessage>,
 }
 
-impl Ports {
+impl<S: Serial> UsbSerialManager<S> {
+    pub fn new(serial_api: S) -> Self {
+        Self {
+            serial_impl: serial_api,
+            connected: Default::default(),
+            pending: Default::default(),
+            awaiting_magic: Default::default(),
+            ready: Default::default(),
+            ignored: Default::default(),
+            device_ports: Default::default(),
+            reverse_device_ports: Default::default(),
+            registered_devices: Default::default(),
+            device_labels: Default::default(),
+            port_outbox: Default::default(),
+        }
+    }
+
     pub fn disconnect(&mut self, port: &str) {
         event!(Level::INFO, port = port, "disconnecting port");
         self.connected.remove(port);
@@ -88,11 +104,7 @@ impl Ports {
                 let port = self.ready.get_mut(&serial_number).expect("must exist");
 
                 event!(Level::DEBUG, "sending {:?}", send.message_body);
-                bincode::encode_into_writer(
-                    DeviceReceiveSerial::<Downstream>::Message(send.clone()),
-                    port,
-                    bincode::config::standard(),
-                )?;
+                port.send_message(DeviceReceiveSerial::<Downstream>::Message(send.clone()))?;
             }
 
             if still_need_to_send.len() > 0 {
@@ -137,7 +149,13 @@ impl Ports {
         let _enter = span.enter();
         let mut device_to_coord_msg = vec![];
         let mut newly_registered = BTreeSet::new();
-        let connected_now: HashSet<String> = io::find_all_ports(USB_ID).collect::<HashSet<_>>();
+        let connected_now: HashSet<String> = self
+            .serial_impl
+            .available_ports()
+            .into_iter()
+            .filter(|desc| desc.vid == USB_VID && desc.pid == USB_PID)
+            .map(|desc| desc.unique_id)
+            .collect();
 
         let newly_connected_ports = connected_now
             .difference(&self.connected)
@@ -164,7 +182,10 @@ impl Ports {
         }
 
         for serial_number in self.pending.drain().collect::<Vec<_>>() {
-            let device_port = io::open_device_port(&serial_number);
+            let device_port = self
+                .serial_impl
+                .open_device_port(&serial_number, frostsnap_comms::BAUDRATE)
+                .map(FramedSerialPort::new);
             match device_port {
                 Err(e) => {
                     if &e.to_string() == "Device or resource busy" {
@@ -185,23 +206,27 @@ impl Ports {
                         );
                     }
                 }
-                Ok(mut device_port) => match device_port.write_magic_bytes() {
-                    Ok(_) => {
-                        self.awaiting_magic
-                            .insert(serial_number.clone(), device_port);
-                        // println!("Wrote magic bytes on device {}", serial_number);
-                        continue;
+                Ok(mut device_port) => {
+                    event!(Level::DEBUG, port = serial_number, "Opened port");
+                    match device_port.write_magic_bytes() {
+                        Ok(_) => {
+                            self.awaiting_magic
+                                .insert(serial_number.clone(), device_port);
+                            // println!("Wrote magic bytes on device {}", serial_number);
+                            continue;
+                        }
+                        Err(e) => {
+                            event!(
+                                Level::ERROR,
+                                port = serial_number,
+                                e = e.to_string(),
+                                "Failed to initialize port by writing magic bytes"
+                            );
+                            self.disconnect(&serial_number);
+                            continue;
+                        }
                     }
-                    Err(e) => {
-                        event!(
-                            Level::ERROR,
-                            port = serial_number,
-                            e = e.to_string(),
-                            "Failed to initialize port by writing magic bytes"
-                        );
-                        self.disconnect(&serial_number);
-                    }
-                },
+                }
             }
             self.pending.insert(serial_number);
         }
@@ -213,29 +238,28 @@ impl Ports {
                     self.ready.insert(serial_number, device_port);
                     continue;
                 }
-                Ok(false) => {
-                    // println!("Did not read magic bytes {}", serial_number);
-                    match device_port.write_magic_bytes() {
-                        Ok(_) => {
-                            // println!("Wrote magic bytes on device {}", serial_number);
-                        }
-                        Err(e) => {
-                            event!(
-                                Level::ERROR,
-                                port = serial_number,
-                                e = e.to_string(),
-                                "Failed to write magic bytes"
-                            );
-                            self.disconnect(&serial_number);
-                        }
+                Ok(false) => match device_port.write_magic_bytes() {
+                    Ok(_) => {
+                        event!(Level::DEBUG, port = serial_number, "Wrote magic bytes");
                     }
-                }
+                    Err(e) => {
+                        event!(
+                            Level::ERROR,
+                            port = serial_number,
+                            e = e.to_string(),
+                            "Failed to write magic bytes"
+                        );
+                    }
+                },
                 Err(e) => {
                     event!(
                         Level::DEBUG,
                         port = serial_number,
-                        "failed to read magic bytes: {e}"
+                        e = e.to_string(),
+                        "failed to read magic bytes"
                     );
+                    self.disconnect(&serial_number);
+                    continue;
                 }
             }
             self.awaiting_magic.insert(serial_number, device_port);
@@ -243,75 +267,61 @@ impl Ports {
 
         // Read all messages from ready devices
         for serial_number in self.ready.keys().cloned().collect::<Vec<_>>() {
-            let decoded_message: Result<DeviceSendSerial<Downstream>, _> = {
-                let mut device_port = self.ready.get_mut(&serial_number).expect("must exist");
-                match device_port.poll_read(None) {
+            let decoded_message = {
+                let device_port = self.ready.get_mut(&serial_number).expect("must exist");
+                match device_port.try_read_message() {
                     Err(e) => {
                         event!(
                             Level::ERROR,
                             port = serial_number,
                             error = e.to_string(),
-                            "failed to poll port for reading"
+                            "failed to read message from port"
                         );
                         self.disconnect(&serial_number);
                         continue;
                     }
-                    Ok(true) => {
-                        event!(Level::DEBUG, port = serial_number, "ready to read");
-                        bincode::decode_from_reader(&mut device_port, bincode::config::standard())
-                    }
-                    Ok(false) => continue,
+                    Ok(None) => continue,
+                    Ok(Some(message)) => message,
                 }
             };
 
             match decoded_message {
-                Ok(msg) => match msg {
-                    DeviceSendSerial::MagicBytes(_) => {
-                        event!(Level::ERROR, port = serial_number, "Unexpected magic bytes");
-                        self.disconnect(&serial_number);
-                    }
-                    DeviceSendSerial::Message(message) => match message {
-                        DeviceSendMessage::Announce(announce) => {
-                            self.device_ports
-                                .insert(announce.from, serial_number.clone());
-                            let devices = self
-                                .reverse_device_ports
-                                .entry(serial_number.clone())
-                                .or_default();
-                            devices.insert(announce.from);
-
-                            event!(
-                                Level::DEBUG,
-                                port = serial_number,
-                                id = announce.from.to_string(),
-                                "Announced!"
-                            );
-                        }
-                        DeviceSendMessage::Debug { message, device } => {
-                            event!(
-                                Level::DEBUG,
-                                port = serial_number,
-                                from = device.to_string(),
-                                name = self
-                                    .device_labels
-                                    .get(&device)
-                                    .cloned()
-                                    .unwrap_or("<unknown>".into()),
-                                message
-                            );
-                        }
-                        DeviceSendMessage::Core(msg) => device_to_coord_msg.push(msg),
-                    },
-                },
-                Err(e) => {
-                    event!(
-                        Level::ERROR,
-                        port = serial_number,
-                        error = e.to_string(),
-                        "failed to read message from port"
-                    );
+                DeviceSendSerial::MagicBytes(_) => {
+                    event!(Level::ERROR, port = serial_number, "Unexpected magic bytes");
                     self.disconnect(&serial_number);
                 }
+                DeviceSendSerial::Message(message) => match message {
+                    DeviceSendMessage::Announce(announce) => {
+                        self.device_ports
+                            .insert(announce.from, serial_number.clone());
+                        let devices = self
+                            .reverse_device_ports
+                            .entry(serial_number.clone())
+                            .or_default();
+                        devices.insert(announce.from);
+
+                        event!(
+                            Level::DEBUG,
+                            port = serial_number,
+                            id = announce.from.to_string(),
+                            "Announced!"
+                        );
+                    }
+                    DeviceSendMessage::Debug { message, device } => {
+                        event!(
+                            Level::DEBUG,
+                            port = serial_number,
+                            from = device.to_string(),
+                            name = self
+                                .device_labels
+                                .get(&device)
+                                .cloned()
+                                .unwrap_or("<unknown>".into()),
+                            message
+                        );
+                    }
+                    DeviceSendMessage::Core(msg) => device_to_coord_msg.push(msg),
+                },
             }
         }
 

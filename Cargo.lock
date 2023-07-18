@@ -374,6 +374,7 @@ dependencies = [
  "bincode 2.0.0-rc.3",
  "clap",
  "frostsnap_comms",
+ "frostsnap_coordinator",
  "frostsnap_core",
  "hex",
  "home",
@@ -770,6 +771,17 @@ dependencies = [
  "bincode 2.0.0-rc.3",
  "frostsnap_core",
  "serde",
+]
+
+[[package]]
+name = "frostsnap_coordinator"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode 2.0.0-rc.3",
+ "frostsnap_comms",
+ "frostsnap_core",
+ "tracing",
 ]
 
 [[package]]
