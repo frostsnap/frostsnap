@@ -2,34 +2,17 @@
 
 _Easy, Personalized, Secure Bitcoin Multisig_
 
-Read out post [Introducing Frostsnap](https://frostsnap.com/introducing-frostsnap.html).
-
 <img alt="Frostsnap daisy chain" src="https://frostsnap.com/frostsnap.png" width=600>
 
 Frostsnap devices seamlessly connect together in a daisy-chain. An easy way to create a Bitcoin wallet protected behind multiple devices (e.g. a `3-of-5`).
 
-After key generation, you can geographically separate your Frostsnap devices or share them amongst individuals you trust.
-
-You can then derive Bitcoin addresses from your FROST key, and receive bitcoin to your new wallet. To spend bitcoin, you can sign on each device one-at-a-time, keeping your Bitcoin secure at all times.
+For an introduction on what this is all about, read our post [Introducing Frostsnap](https://frostsnap.com/introducing-frostsnap.html).
 
 Find us on [frostsnap.com](https://frostsnap.com) or [@FrostsnapTech](https://twitter.com/FrostsnapTech).
 
-## What is FROST?
-
-[FROST](https://eprint.iacr.org/2020/852.pdf) is a signature scheme that fixes many problems with today's multisigs. FROST achieves its threshold (`t-of-n`) nature through mathematics, rather than Bitcoin script.
-
-FROST allows major advancements in:
-
-- User experience - A much more powerful and flexible multisig user experience, especially with Frostsnap devices. Unlike script multisig, it is possible to **add, remove, or recover signers** after key generation while keeping the public key the same.
-- Spending policies - You will be able to **create custom signing policies based on your personal needs**. No need to do any risky or hacky methods like passphrases, splitting seeds, or shamir secret sharing. Secure your Bitcoin correctly.
-- Privacy - **FROST leaves no multisig footprint onchain**, and is identical to single-signature taproot wallets. Unlike script multisigs which can be trivially identified,
-- Fees - **Constant transaction witness sizes**, regardless of whether you are doing a `1-of-2`, `5-of-8`, or `50-of-100` the fees will be the same. FROST produces single signatures for the single public key, the Bitcoin script is always the same size regardless of the underlying multisig.
-
-Take a listen to [Nick's podcast with Stephan Livera](https://stephanlivera.com/episode/476/) about FROST.
-
-Frostsnap uses our **experimental** FROST implementation from [secp256kfun](https://docs.rs/schnorr_fun/latest/schnorr_fun/frost/index.html).
-
 ## Code
+
+Frostsnap uses our **experimental** [FROST](https://eprint.iacr.org/2020/852.pdf) implementation from [secp256kfun](https://docs.rs/schnorr_fun/latest/schnorr_fun/frost/index.html).
 
 This repository is comprised of the following components:
 
@@ -40,18 +23,9 @@ This repository is comprised of the following components:
 
 All of this code is completely free open source software under the MIT license.
 
-## Flashing a Dev Board
-
-It is possible to DIY flash a frost signing device for development, but will require custom hardware modifications.
-
-Currently we support the following base ESP32C3 boards:
-
-- "Purple boards": [ESP32-C3-0.42LCD](https://github.com/01Space/ESP32-C3-0.42LCD) - Optional requirement of soldering an additional USBC port for daisy chaining devices. Currently lacks button interaction.
-- "Blue boards": [ESP32C3-CORE](https://wiki.luatos.com/chips/esp32c3/board.html) - Requires additional hardware for a screen and buttons. Optional requirement of soldering an additional USBC port for daisy chaining devices.
-
 ## Security & Disclaimer
 
-Rather than worrying about hardware wallet or a physical seed, Frostsnap distributes security across a number of devices.
+Rather than worrying about access to a single hardware wallet or a physical seed, Frostsnap distributes security across a number of devices.
 
 You can separate your signing devices geographically or share them amongst individuals you trust.
 
