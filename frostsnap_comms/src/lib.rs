@@ -145,12 +145,19 @@ pub struct Announce {
     pub from: DeviceId,
 }
 
-pub fn make_progress_on_magic_bytes<D: Direction>(remaining: &[u8], progress: usize) -> (usize, usize, bool) {
+pub fn make_progress_on_magic_bytes<D: Direction>(
+    remaining: &[u8],
+    progress: usize,
+) -> (usize, usize, bool) {
     let magic_bytes = D::magic_bytes_recv();
     _make_progress_on_magic_bytes(remaining, &magic_bytes, progress)
 }
 
-fn _make_progress_on_magic_bytes(remaining: &[u8], magic_bytes: &[u8], mut progress: usize) -> (usize, usize, bool) {
+fn _make_progress_on_magic_bytes(
+    remaining: &[u8],
+    magic_bytes: &[u8],
+    mut progress: usize,
+) -> (usize, usize, bool) {
     let mut consumed = 0;
 
     for byte in remaining.iter() {
@@ -158,7 +165,7 @@ fn _make_progress_on_magic_bytes(remaining: &[u8], magic_bytes: &[u8], mut progr
         if *byte == magic_bytes[progress] {
             progress += 1;
             if progress == magic_bytes.len() {
-                return (consumed, 0, true)
+                return (consumed, 0, true);
             }
         } else {
             progress = 0;
@@ -168,30 +175,19 @@ fn _make_progress_on_magic_bytes(remaining: &[u8], magic_bytes: &[u8], mut progr
     (consumed, progress, false)
 }
 
-
-
 pub fn find_and_remove_magic_bytes<D: Direction>(buff: &mut Vec<u8>) -> bool {
     let magic_bytes = D::magic_bytes_recv();
     _find_and_remove_magic_bytes(buff, &magic_bytes[..])
 }
 
 fn _find_and_remove_magic_bytes(buff: &mut Vec<u8>, magic_bytes: &[u8]) -> bool {
-    let (mut consumed,_, found) = _make_progress_on_magic_bytes(&buff[..], magic_bytes, 0);
+    let (consumed, _, found) = _make_progress_on_magic_bytes(&buff[..], magic_bytes, 0);
+
     if found {
-        loop {
-            let (add_consumed, _, found_again) = _make_progress_on_magic_bytes(&buff[consumed..], magic_bytes, 0);
-            if found_again {
-                consumed += add_consumed;
-            } else {
-                break;
-            }
-        }
+        *buff = buff.split_off(consumed);
     }
 
-    *buff = buff.split_off(consumed);
-
     found
-
 }
 
 pub fn gist_send<D>(send: &DeviceSendSerial<D>) -> &'static str {
@@ -224,7 +220,7 @@ mod test {
 
         let mut bytes = b"hello magicmagic world".to_vec();
         assert!(_find_and_remove_magic_bytes(&mut bytes, b"magic"));
-        assert_eq!(bytes, b" world");
+        assert_eq!(bytes, b"magic world");
 
         let mut bytes = b"magic".to_vec();
         assert!(_find_and_remove_magic_bytes(&mut bytes, b"magic"));
