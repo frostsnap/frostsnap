@@ -133,6 +133,22 @@ pub enum DeviceSendSerial<D> {
     Message(DeviceSendMessage),
 }
 
+impl<D> DeviceSendSerial<D> {
+    pub fn gist(&self) -> &'static str {
+        match self {
+            DeviceSendSerial::MagicBytes(_) => "MagicBytes",
+            DeviceSendSerial::Message(message) => match message {
+                DeviceSendMessage::Core(message) => match message.body {
+                    DeviceToCoordinatorBody::KeyGenResponse(_) => "KeyGenResponse",
+                    DeviceToCoordinatorBody::SignatureShare { .. } => "SignatureShare",
+                },
+                DeviceSendMessage::Debug { .. } => "Debug",
+                DeviceSendMessage::Announce(_) => "Announce",
+            },
+        }
+    }
+}
+
 #[derive(Encode, Decode, Debug, Clone)]
 pub enum DeviceSendMessage {
     Core(DeviceToCoordindatorMessage),
@@ -188,20 +204,6 @@ fn _find_and_remove_magic_bytes(buff: &mut Vec<u8>, magic_bytes: &[u8]) -> bool 
     }
 
     found
-}
-
-pub fn gist_send<D>(send: &DeviceSendSerial<D>) -> &'static str {
-    match send {
-        DeviceSendSerial::MagicBytes(_) => "MagicBytes",
-        DeviceSendSerial::Message(message) => match message {
-            DeviceSendMessage::Core(message) => match message.body {
-                DeviceToCoordinatorBody::KeyGenResponse(_) => "KeyGenResponse",
-                DeviceToCoordinatorBody::SignatureShare { .. } => "SignatureShare",
-            },
-            DeviceSendMessage::Debug { .. } => "Debug",
-            DeviceSendMessage::Announce(_) => "Announce",
-        },
-    }
 }
 
 #[cfg(test)]
