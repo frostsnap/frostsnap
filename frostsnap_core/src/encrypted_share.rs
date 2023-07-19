@@ -12,8 +12,7 @@ use sha2::{
 };
 
 use crate::DeviceId;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, bincode::Encode, bincode::Decode)]
 pub struct EncryptedShare {
     R: Point,
     e: [u8; 32],

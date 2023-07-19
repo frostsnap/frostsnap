@@ -28,7 +28,7 @@ pub enum CoordinatorSend {
     ToStorage(CoordinatorToStorageMessage),
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub enum CoordinatorToDeviceMessage {
     DoKeyGen {
         devices: BTreeSet<DeviceId>,
@@ -74,13 +74,13 @@ pub enum CoordinatorToStorageMessage {
     UpdateState(CoordinatorFrostKey),
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub struct DeviceToCoordindatorMessage {
     pub from: DeviceId,
     pub body: DeviceToCoordinatorBody,
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub enum DeviceToCoordinatorBody {
     KeyGenResponse(KeyGenResponse),
     SignatureShare {
@@ -98,14 +98,14 @@ impl DeviceToCoordinatorBody {
     }
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, Eq, PartialEq)]
 pub struct KeyGenProvideShares {
     pub my_poly: Vec<Point>,
     pub encrypted_shares: BTreeMap<DeviceId, EncryptedShare>,
     pub proof_of_possession: Signature,
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, Eq, PartialEq)]
 pub struct KeyGenResponse {
     pub encrypted_shares: KeyGenProvideShares,
     pub nonces: [Nonce; NONCE_BATCH_SIZE],
@@ -129,23 +129,21 @@ pub enum DeviceToStorageMessage {
     ExpendNonce,
 }
 
-#[derive(
-    Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash, Ord, PartialOrd,
-)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum SignTask {
-    Plain(Vec<u8>),                     // 1 nonce & sig
-    Nostr(crate::nostr::UnsignedEvent), // 1 nonce & sig
+    Plain(Vec<u8>),                                            // 1 nonce & sig
+    Nostr(#[bincode(with_serde)] crate::nostr::UnsignedEvent), // 1 nonce & sig
     Transaction {
+        #[bincode(with_serde)]
         tx_template: bitcoin::Transaction,
         prevouts: Vec<TxInput>,
     }, // N nonces and sigs
 }
 
-#[derive(
-    Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash, Ord, PartialOrd,
-)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct TxInput {
     /// The txout we're spending.
+    #[bincode(with_serde)]
     pub prevout: bitcoin::TxOut,
     /// The derivation path of our ket if it's ours
     pub bip32_path: Option<Vec<u32>>,
