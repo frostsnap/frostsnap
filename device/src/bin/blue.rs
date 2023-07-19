@@ -12,8 +12,6 @@ use frostsnap_device::{
 };
 
 use crate::alloc::string::{String, ToString};
-use esp32c3_hal::gpio::BankGpioRegisterAccess;
-use esp32c3_hal::gpio::InteruptStatusRegisterAccess;
 use esp32c3_hal::{
     clock::ClockControl,
     peripherals::Peripherals,
@@ -91,11 +89,11 @@ fn main() -> ! {
     // down button shares same pin as D5 LED, which pulls the input down enough to cause problems.
     // remove the LED
     let buttons = buttons::Buttons::new(
-        io.pins.gpio4,
-        io.pins.gpio8,
-        io.pins.gpio13,
-        io.pins.gpio9,
-        io.pins.gpio5,
+        io.pins.gpio4.into_pull_up_input().into(),
+        io.pins.gpio8.into_pull_up_input().into(),
+        io.pins.gpio13.into_pull_up_input().into(),
+        io.pins.gpio9.into_pull_up_input().into(),
+        io.pins.gpio5.into_pull_up_input().into(),
     );
 
     let mut bl = io.pins.gpio11.into_push_pull_output();
@@ -105,8 +103,8 @@ fn main() -> ! {
     let framebuf = FrameBuf::new(framearray, 160, 80);
     let display = st7735::ST7735::new(
         // &mut bl,
-        io.pins.gpio6.into_push_pull_output(),
-        io.pins.gpio10.into_push_pull_output(),
+        io.pins.gpio6.into_push_pull_output().into(),
+        io.pins.gpio10.into_push_pull_output().into(),
         peripherals.SPI2,
         io.pins.gpio2,
         io.pins.gpio7,
@@ -185,14 +183,12 @@ fn main() -> ! {
     .run()
 }
 
-pub struct BlueUi<'t, 'd, T, RA, IRA, SPI>
+pub struct BlueUi<'t, 'd, T, SPI>
 where
-    RA: BankGpioRegisterAccess,
-    IRA: InteruptStatusRegisterAccess,
     SPI: spi::Instance,
 {
-    buttons: Buttons<RA, IRA>,
-    display: ST7735<'d, RA, IRA, SPI>,
+    buttons: Buttons,
+    display: ST7735<'d, SPI>,
     downstream_connected: bool,
     workflow: Workflow,
     user_confirm: bool,
@@ -254,10 +250,8 @@ pub enum SplashProgress {
     Done,
 }
 
-impl<'t, 'd, T, RA, IRA, SPI> BlueUi<'t, 'd, T, RA, IRA, SPI>
+impl<'t, 'd, T, SPI> BlueUi<'t, 'd, T, SPI>
 where
-    RA: BankGpioRegisterAccess,
-    IRA: InteruptStatusRegisterAccess,
     SPI: spi::Instance,
     T: esp32c3_hal::timer::Instance,
 {
@@ -351,10 +345,8 @@ where
     }
 }
 
-impl<'d, 't, T, RA, IRA, SPI> UserInteraction for BlueUi<'d, 't, T, RA, IRA, SPI>
+impl<'d, 't, T, SPI> UserInteraction for BlueUi<'d, 't, T, SPI>
 where
-    RA: BankGpioRegisterAccess,
-    IRA: InteruptStatusRegisterAccess,
     SPI: spi::Instance,
     T: timer::Instance,
 {
@@ -445,8 +437,8 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     // let mut bl = io.pins.gpio11.into_push_pull_output();
     if let Ok(mut display) = st7735::ST7735::new(
         // &mut bl,
-        io.pins.gpio6.into_push_pull_output(),
-        io.pins.gpio10.into_push_pull_output(),
+        io.pins.gpio6.into_push_pull_output().into(),
+        io.pins.gpio10.into_push_pull_output().into(),
         peripherals.SPI2,
         io.pins.gpio2,
         io.pins.gpio7,

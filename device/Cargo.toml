@@ -21,7 +21,7 @@ purple = [ "dep:ssd1306", "dep:display-interface-spi", "dep:display-interface", 
 frostsnap_core = { workspace = true }
 frostsnap_comms = { workspace = true }
 # esp32c3-hal = { git = "https://github.com/esp-rs/esp-hal.git", rev = "a0b72bdfa5a07a6c9387e4658b0d5c87f254d8ea" }
-esp32c3-hal = "0.9.0"
+esp32c3-hal = "0.10.0"
 esp-alloc = "0.3.0"
 esp-backtrace = { version = "0.7.0", features = ["esp32c3", "print-jtag-serial"] }
 esp-println       = { version = "0.5.0", default-features = false, features = ["esp32c3", "jtag_serial"] }
@@ -29,7 +29,7 @@ critical-section = "1.1.1"
 nb = "1.1.0"
 fugit = "0.3.6"
 embedded-storage = "0.3.0"
-esp-storage = { version = "0.1.0", features = ["esp32c3"] }
+esp-storage = { version = "0.2.0", features = ["esp32c3"] }
 bincode = { workspace = true }
 
 display-interface = { version = "0.4.1", optional = true }
@@ -42,7 +42,7 @@ embedded-graphics-framebuf = { version = "0.4", optional = true }
 embedded-graphics = "0.8"
 embedded-text = "0.6"
 
-esp-hal-smartled  = { version = "0.2.0", features = ["esp32c3"], optional = true }
+esp-hal-smartled  = { version = "0.3.0", features = ["esp32c3"], optional = true }
 smart-leds        = { version = "0.3.0", optional = true }
 
 
