@@ -2,7 +2,6 @@ extern crate alloc;
 use core::marker::PhantomData;
 
 use alloc::format;
-use alloc::vec::Vec;
 
 use bincode::de::read::Reader;
 use bincode::enc::write::Writer;
@@ -22,31 +21,34 @@ use frostsnap_comms::Upstream;
 
 pub struct SerialInterface<'a, T, U, D> {
     io: SerialIo<'a, U>,
-    read_buffer: Vec<u8>,
+    read_buffer: &'a mut [u8],
+    buffer_filled: usize,
     timer: &'a Timer<T>,
     direction: PhantomData<D>,
 }
 
 impl<'a, T, U, D> SerialInterface<'a, T, U, D> {
-    pub fn new_uart(uart: uart::Uart<'a, U>, timer: &'a Timer<T>) -> Self {
+    pub fn new_uart(uart: uart::Uart<'a, U>, timer: &'a Timer<T>, buffer: &'a mut [u8]) -> Self {
         Self {
             io: SerialIo::Uart(uart),
-            read_buffer: vec![],
+            read_buffer: buffer,
+            buffer_filled: 0,
             timer,
             direction: PhantomData,
         }
     }
 
     pub fn read_buffer(&self) -> &[u8] {
-        &self.read_buffer[..]
+        &self.read_buffer[..self.buffer_filled]
     }
 }
 
 impl<'a, T, U> SerialInterface<'a, T, U, Upstream> {
-    pub fn new_jtag(jtag: UsbSerialJtag<'a>, timer: &'a Timer<T>) -> Self {
+    pub fn new_jtag(jtag: UsbSerialJtag<'a>, timer: &'a Timer<T>, buffer: &'a mut [u8]) -> Self {
         Self {
             io: SerialIo::Jtag(jtag),
-            read_buffer: vec![],
+            read_buffer: buffer,
+            buffer_filled: 0,
             timer,
             direction: PhantomData,
         }
@@ -59,11 +61,15 @@ where
     T: esp32c3_hal::timer::Instance,
 {
     pub fn poll_read(&mut self) -> bool {
-        let read_buffer = &mut self.read_buffer;
+        let initial_filled = self.buffer_filled.clone();
         while let Ok(c) = self.io.read_byte() {
-            read_buffer.push(c);
+            self.read_buffer[self.buffer_filled] = c;
+            self.buffer_filled += 1;
+            if self.buffer_filled >= self.read_buffer.len() {
+                panic!("serial interface buffer overflow");
+            }
         }
-        !read_buffer.is_empty()
+        initial_filled != self.buffer_filled
     }
 
     pub fn find_and_remove_magic_bytes(&mut self) -> bool
@@ -71,7 +77,15 @@ where
         D: Direction,
     {
         self.poll_read();
-        frostsnap_comms::find_and_remove_magic_bytes::<D>(&mut self.read_buffer)
+        let (consumed, found) = frostsnap_comms::find_and_remove_magic_bytes::<D>(
+            &mut self.read_buffer[..self.buffer_filled],
+        );
+        // Doing consuming out here for now
+        if found {
+            self.buffer_filled -= consumed;
+            self.read_buffer.rotate_left(consumed);
+        }
+        found
     }
 }
 
@@ -141,18 +155,19 @@ where
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), DecodeError> {
         let start_time = self.timer.now();
 
-        while self.read_buffer.len() < bytes.len() {
+        while self.buffer_filled < bytes.len() {
             self.poll_read();
             if (self.timer.now() - start_time) / 40_000 > 1_000 {
                 return Err(DecodeError::UnexpectedEnd {
-                    additional: bytes.len() - self.read_buffer.len(),
+                    additional: bytes.len() - self.buffer_filled,
                 });
             }
         }
-        let extra_bytes = self.read_buffer.split_off(bytes.len());
+        bytes.copy_from_slice(&self.read_buffer[0..bytes.len()]);
+        // Update the buffer to remove the read data
+        self.read_buffer.rotate_left(bytes.len());
+        self.buffer_filled -= bytes.len();
 
-        bytes.copy_from_slice(&self.read_buffer);
-        self.read_buffer = extra_bytes;
         Ok(())
     }
 }
@@ -247,6 +262,8 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
         uart: uart::Uart<'a, U>,
         jtag: UsbSerialJtag<'a>,
         timer: &'a Timer<T>,
+        buffer_uart: &'a mut [u8],
+        buffer_jtag: &'a mut [u8],
         magic_bytes_period: u64, // after how many ms is magic bytes sent again
     ) -> Self {
         Self {
@@ -254,8 +271,8 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
             switch_time: None,
             switched: false,
             state: DetectorState::NotDetected {
-                jtag: SerialInterface::new_jtag(jtag, timer),
-                uart: SerialInterface::new_uart(uart, timer),
+                jtag: SerialInterface::new_jtag(jtag, timer, buffer_jtag),
+                uart: SerialInterface::new_uart(uart, timer, buffer_uart),
             },
             magic_bytes_freq: magic_bytes_period,
         }

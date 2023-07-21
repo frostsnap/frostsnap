@@ -8,7 +8,6 @@ extern crate std;
 #[allow(unused)]
 #[macro_use]
 extern crate alloc;
-use alloc::vec::Vec;
 use alloc::{collections::BTreeSet, string::String};
 use bincode::{de::read::Reader, enc::write::Writer, Decode, Encode};
 use core::marker::PhantomData;
@@ -191,19 +190,15 @@ fn _make_progress_on_magic_bytes(
     (consumed, progress, false)
 }
 
-pub fn find_and_remove_magic_bytes<D: Direction>(buff: &mut Vec<u8>) -> bool {
+pub fn find_and_remove_magic_bytes<D: Direction>(buff: &mut [u8]) -> (usize, bool) {
     let magic_bytes = D::magic_bytes_recv();
     _find_and_remove_magic_bytes(buff, &magic_bytes[..])
 }
 
-fn _find_and_remove_magic_bytes(buff: &mut Vec<u8>, magic_bytes: &[u8]) -> bool {
+fn _find_and_remove_magic_bytes(buff: &mut [u8], magic_bytes: &[u8]) -> (usize, bool) {
     let (consumed, _, found) = _make_progress_on_magic_bytes(&buff[..], magic_bytes, 0);
 
-    if found {
-        *buff = buff.split_off(consumed);
-    }
-
-    found
+    (consumed, found)
 }
 
 #[cfg(test)]

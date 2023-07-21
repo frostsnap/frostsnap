@@ -30,6 +30,7 @@ pub struct Run<'a, UpstreamUart, DownstreamUart, Ui, T> {
 
 /// Write magic bytes once every 100ms
 const MAGIC_BYTES_PERIOD: u64 = 100;
+const RING_BUFFER_SIZE: usize = 2usize.pow(14);
 
 impl<'a, UpstreamUart, DownstreamUart, Ui, T> Run<'a, UpstreamUart, DownstreamUart, Ui, T>
 where
@@ -71,16 +72,29 @@ where
             }
         };
 
-        let mut downstream_serial =
-            io::SerialInterface::<_, _, Downstream>::new_uart(downstream_uart, &timer);
+        let mut downstream_buffer = [0u8; RING_BUFFER_SIZE];
+        let mut upstream_buffer_jtag = [0u8; RING_BUFFER_SIZE];
+        let mut upstream_buffer_uart = [0u8; RING_BUFFER_SIZE];
+
+        let mut downstream_serial = io::SerialInterface::<_, _, Downstream>::new_uart(
+            downstream_uart,
+            &timer,
+            &mut downstream_buffer,
+        );
         let mut soft_reset = true;
         let mut downstream_active = false;
         let mut sends_downstream: Vec<DeviceReceiveMessage> = vec![];
         let mut sends_upstream: Vec<DeviceSendMessage> = vec![];
         let mut sends_user: Vec<DeviceToUserMessage> = vec![];
         let mut outbox = VecDeque::new();
-        let mut upstream_detector =
-            UpstreamDetector::new(upstream_uart, upstream_jtag, &timer, MAGIC_BYTES_PERIOD);
+        let mut upstream_detector = UpstreamDetector::new(
+            upstream_uart,
+            upstream_jtag,
+            &timer,
+            &mut upstream_buffer_uart,
+            &mut upstream_buffer_jtag,
+            MAGIC_BYTES_PERIOD,
+        );
         let mut upstream_sent_magic_bytes = false;
         let mut upstream_received_first_message = false;
         let mut next_write_magic_bytes = 0;
