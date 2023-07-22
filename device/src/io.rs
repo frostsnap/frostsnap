@@ -19,16 +19,20 @@ use frostsnap_comms::Downstream;
 use frostsnap_comms::MagicBytes;
 use frostsnap_comms::Upstream;
 
+pub const RING_BUFFER_SIZE: usize = 2usize.pow(11);
+
+pub type SerialBuffer = *mut [u8; RING_BUFFER_SIZE];
+
 pub struct SerialInterface<'a, T, U, D> {
     io: SerialIo<'a, U>,
-    read_buffer: &'a mut [u8],
+    read_buffer: SerialBuffer,
     buffer_filled: usize,
     timer: &'a Timer<T>,
     direction: PhantomData<D>,
 }
 
 impl<'a, T, U, D> SerialInterface<'a, T, U, D> {
-    pub fn new_uart(uart: uart::Uart<'a, U>, timer: &'a Timer<T>, buffer: &'a mut [u8]) -> Self {
+    pub fn new_uart(uart: uart::Uart<'a, U>, timer: &'a Timer<T>, buffer: SerialBuffer) -> Self {
         Self {
             io: SerialIo::Uart(uart),
             read_buffer: buffer,
@@ -38,13 +42,14 @@ impl<'a, T, U, D> SerialInterface<'a, T, U, D> {
         }
     }
 
-    pub fn read_buffer(&self) -> &[u8] {
-        &self.read_buffer[..self.buffer_filled]
+    pub fn read_buffer(&'a self) -> &'a [u8] {
+        let buffer: &mut [u8] = unsafe { &mut (*self.read_buffer) };
+        &buffer[..self.buffer_filled]
     }
 }
 
 impl<'a, T, U> SerialInterface<'a, T, U, Upstream> {
-    pub fn new_jtag(jtag: UsbSerialJtag<'a>, timer: &'a Timer<T>, buffer: &'a mut [u8]) -> Self {
+    pub fn new_jtag(jtag: UsbSerialJtag<'a>, timer: &'a Timer<T>, buffer: SerialBuffer) -> Self {
         Self {
             io: SerialIo::Jtag(jtag),
             read_buffer: buffer,
@@ -62,10 +67,12 @@ where
 {
     pub fn poll_read(&mut self) -> bool {
         let initial_filled = self.buffer_filled.clone();
+        let buffer: &mut [u8] = unsafe { &mut (*self.read_buffer) };
+
         while let Ok(c) = self.io.read_byte() {
-            self.read_buffer[self.buffer_filled] = c;
+            buffer[self.buffer_filled] = c;
             self.buffer_filled += 1;
-            if self.buffer_filled >= self.read_buffer.len() {
+            if self.buffer_filled >= buffer.len() {
                 panic!("serial interface buffer overflow");
             }
         }
@@ -76,13 +83,14 @@ where
     where
         D: Direction,
     {
+        let buffer: &mut [u8] = unsafe { &mut (*self.read_buffer) };
         self.poll_read();
         let (consumed, found) =
-            frostsnap_comms::find_magic_bytes::<D>(&mut self.read_buffer[..self.buffer_filled]);
+            frostsnap_comms::find_magic_bytes::<D>(&mut buffer[..self.buffer_filled]);
         // Doing consuming out here for now
         if found {
             self.buffer_filled -= consumed;
-            self.read_buffer.rotate_left(consumed);
+            buffer.rotate_left(consumed);
         }
         found
     }
@@ -152,6 +160,7 @@ where
     T: esp32c3_hal::timer::Instance,
 {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), DecodeError> {
+        let buffer: &mut [u8] = unsafe { &mut (*self.read_buffer) };
         let start_time = self.timer.now();
 
         while self.buffer_filled < bytes.len() {
@@ -162,9 +171,9 @@ where
                 });
             }
         }
-        bytes.copy_from_slice(&self.read_buffer[0..bytes.len()]);
+        bytes.copy_from_slice(&buffer[0..bytes.len()]);
         // Update the buffer to remove the read data
-        self.read_buffer.rotate_left(bytes.len());
+        buffer.rotate_left(bytes.len());
         self.buffer_filled -= bytes.len();
 
         Ok(())
@@ -261,8 +270,7 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
         uart: uart::Uart<'a, U>,
         jtag: UsbSerialJtag<'a>,
         timer: &'a Timer<T>,
-        buffer_uart: &'a mut [u8],
-        buffer_jtag: &'a mut [u8],
+        buffer: SerialBuffer,
         magic_bytes_period: u64, // after how many ms is magic bytes sent again
     ) -> Self {
         Self {
@@ -270,8 +278,8 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
             switch_time: None,
             switched: false,
             state: DetectorState::NotDetected {
-                jtag: SerialInterface::new_jtag(jtag, timer, buffer_jtag),
-                uart: SerialInterface::new_uart(uart, timer, buffer_uart),
+                jtag: SerialInterface::new_jtag(jtag, timer, buffer),
+                uart: SerialInterface::new_uart(uart, timer, buffer),
             },
             magic_bytes_freq: magic_bytes_period,
         }

@@ -2,7 +2,7 @@ use alloc::{collections::VecDeque, string::ToString, vec::Vec};
 use esp32c3_hal::{prelude::*, uart, UsbSerialJtag};
 
 use crate::{
-    io::{self, UpstreamDetector},
+    io::{self, SerialBuffer, UpstreamDetector, RING_BUFFER_SIZE},
     state, storage,
     ui::{self, UiEvent, UserInteraction},
 };
@@ -30,7 +30,6 @@ pub struct Run<'a, UpstreamUart, DownstreamUart, Ui, T> {
 
 /// Write magic bytes once every 100ms
 const MAGIC_BYTES_PERIOD: u64 = 100;
-const RING_BUFFER_SIZE: usize = 2usize.pow(14);
 
 impl<'a, UpstreamUart, DownstreamUart, Ui, T> Run<'a, UpstreamUart, DownstreamUart, Ui, T>
 where
@@ -72,14 +71,13 @@ where
             }
         };
 
-        let mut downstream_buffer = [0u8; RING_BUFFER_SIZE];
-        let mut upstream_buffer_jtag = [0u8; RING_BUFFER_SIZE];
-        let mut upstream_buffer_uart = [0u8; RING_BUFFER_SIZE];
+        let downstream_buffer: SerialBuffer = &mut [0u8; RING_BUFFER_SIZE] as *mut _;
+        let upstream_buffer: SerialBuffer = &mut [0u8; RING_BUFFER_SIZE] as *mut _;
 
         let mut downstream_serial = io::SerialInterface::<_, _, Downstream>::new_uart(
             downstream_uart,
             &timer,
-            &mut downstream_buffer,
+            downstream_buffer,
         );
         let mut soft_reset = true;
         let mut downstream_active = false;
@@ -91,8 +89,7 @@ where
             upstream_uart,
             upstream_jtag,
             &timer,
-            &mut upstream_buffer_uart,
-            &mut upstream_buffer_jtag,
+            upstream_buffer,
             MAGIC_BYTES_PERIOD,
         );
         let mut upstream_sent_magic_bytes = false;
