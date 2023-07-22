@@ -190,15 +190,15 @@ fn _make_progress_on_magic_bytes(
     (consumed, progress, false)
 }
 
-pub fn find_and_remove_magic_bytes<D: Direction>(buff: &mut [u8]) -> (usize, bool) {
+pub fn find_magic_bytes<D: Direction>(buff: &mut [u8]) -> (usize, bool) {
     let magic_bytes = D::magic_bytes_recv();
-    _find_and_remove_magic_bytes(buff, &magic_bytes[..])
+    _find_magic_bytes(buff, &magic_bytes[..])
 }
 
-fn _find_and_remove_magic_bytes(buff: &mut [u8], magic_bytes: &[u8]) -> (usize, bool) {
-    let (consumed, _, found) = _make_progress_on_magic_bytes(&buff[..], magic_bytes, 0);
+fn _find_magic_bytes(buff: &mut [u8], magic_bytes: &[u8]) -> (usize, bool) {
+    let (consume_up_to, _, found) = _make_progress_on_magic_bytes(&buff[..], magic_bytes, 0);
 
-    (consumed, found)
+    (consume_up_to, found)
 }
 
 #[cfg(test)]
@@ -208,19 +208,22 @@ mod test {
     #[test]
     fn remove_magic_bytes() {
         let mut bytes = b"hello world".to_vec();
-        assert!(!_find_and_remove_magic_bytes(&mut bytes, b"magic"));
+        let (_consume_up_to, found) = _find_magic_bytes(&mut bytes, b"magic");
+        assert!(!found);
 
         let mut bytes = b"hello magic world".to_vec();
-
-        assert!(_find_and_remove_magic_bytes(&mut bytes, b"magic"));
-        assert_eq!(bytes, b" world");
+        let (consume_up_to, found) = _find_magic_bytes(&mut bytes, b"magic");
+        assert!(found);
+        assert_eq!(&bytes[consume_up_to..], b" world");
 
         let mut bytes = b"hello magicmagic world".to_vec();
-        assert!(_find_and_remove_magic_bytes(&mut bytes, b"magic"));
-        assert_eq!(bytes, b"magic world");
+        let (consume_up_to, found) = _find_magic_bytes(&mut bytes, b"magic");
+        assert!(found);
+        assert_eq!(&bytes[consume_up_to..], b"magic world");
 
         let mut bytes = b"magic".to_vec();
-        assert!(_find_and_remove_magic_bytes(&mut bytes, b"magic"));
-        assert_eq!(bytes, b"");
+        let (consume_up_to, found) = _find_magic_bytes(&mut bytes, b"magic");
+        assert!(found);
+        assert_eq!(&bytes[consume_up_to..], b"");
     }
 }

@@ -77,9 +77,8 @@ where
         D: Direction,
     {
         self.poll_read();
-        let (consumed, found) = frostsnap_comms::find_and_remove_magic_bytes::<D>(
-            &mut self.read_buffer[..self.buffer_filled],
-        );
+        let (consumed, found) =
+            frostsnap_comms::find_magic_bytes::<D>(&mut self.read_buffer[..self.buffer_filled]);
         // Doing consuming out here for now
         if found {
             self.buffer_filled -= consumed;
