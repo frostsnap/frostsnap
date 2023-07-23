@@ -196,7 +196,7 @@ pub fn find_magic_bytes<D: Direction>(buff: &mut [u8]) -> (usize, bool) {
 }
 
 fn _find_magic_bytes(buff: &mut [u8], magic_bytes: &[u8]) -> (usize, bool) {
-    let (consume_up_to, _, found) = _make_progress_on_magic_bytes(&buff[..], magic_bytes, 0);
+    let (consume_up_to, _, found) = _make_progress_on_magic_bytes(buff, magic_bytes, 0);
 
     (consume_up_to, found)
 }

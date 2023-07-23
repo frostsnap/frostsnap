@@ -30,7 +30,7 @@ pub struct Run<'a, UpstreamUart, DownstreamUart, Ui, T> {
 
 /// Write magic bytes once every 100ms
 const MAGIC_BYTES_PERIOD: u64 = 100;
-const RING_BUFFER_SIZE: usize = 2usize.pow(14);
+const RING_BUFFER_SIZE: usize = 2usize.pow(11);
 
 impl<'a, UpstreamUart, DownstreamUart, Ui, T> Run<'a, UpstreamUart, DownstreamUart, Ui, T>
 where
@@ -194,7 +194,7 @@ where
                     }
 
                     while upstream_serial.poll_read() {
-                        let prior_to_read_buff = upstream_serial.read_buffer().to_vec();
+                        let prior_to_read_buff = upstream_serial.peek_buffer().to_vec();
 
                         match upstream_serial.receive_from_coordinator() {
                             Ok(received_message) => {
