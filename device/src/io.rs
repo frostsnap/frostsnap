@@ -19,10 +19,17 @@ use frostsnap_comms::Direction;
 use frostsnap_comms::Downstream;
 use frostsnap_comms::MagicBytes;
 use frostsnap_comms::Upstream;
+use ringbuffer::RingBufferExt;
+use ringbuffer::RingBufferRead;
+use ringbuffer::RingBufferWrite;
+use ringbuffer::{AllocRingBuffer, RingBuffer};
+
+pub const RING_BUFFER_SIZE: usize = 2usize.pow(13);
 
 pub struct SerialInterface<'a, T, U, D> {
     io: SerialIo<'a, U>,
-    read_buffer: Vec<u8>,
+    ring_buffer: AllocRingBuffer<u8>,
+    magic_bytes_progress: usize,
     timer: &'a Timer<T>,
     direction: PhantomData<D>,
 }
@@ -31,14 +38,15 @@ impl<'a, T, U, D> SerialInterface<'a, T, U, D> {
     pub fn new_uart(uart: uart::Uart<'a, U>, timer: &'a Timer<T>) -> Self {
         Self {
             io: SerialIo::Uart(uart),
-            read_buffer: vec![],
+            ring_buffer: AllocRingBuffer::with_capacity(RING_BUFFER_SIZE),
+            magic_bytes_progress: 0,
             timer,
             direction: PhantomData,
         }
     }
 
-    pub fn read_buffer(&self) -> &[u8] {
-        &self.read_buffer[..]
+    pub fn clone_buffer_to_vec(&self) -> Vec<u8> {
+        self.ring_buffer.clone().drain().collect::<Vec<u8>>()
     }
 }
 
@@ -46,7 +54,8 @@ impl<'a, T, U> SerialInterface<'a, T, U, Upstream> {
     pub fn new_jtag(jtag: UsbSerialJtag<'a>, timer: &'a Timer<T>) -> Self {
         Self {
             io: SerialIo::Jtag(jtag),
-            read_buffer: vec![],
+            ring_buffer: AllocRingBuffer::with_capacity(RING_BUFFER_SIZE),
+            magic_bytes_progress: 0,
             timer,
             direction: PhantomData,
         }
@@ -59,11 +68,12 @@ where
     T: esp32c3_hal::timer::Instance,
 {
     pub fn poll_read(&mut self) -> bool {
-        let read_buffer = &mut self.read_buffer;
+        let mut read_something = false;
         while let Ok(c) = self.io.read_byte() {
-            read_buffer.push(c);
+            self.ring_buffer.push(c);
+            read_something = true;
         }
-        !read_buffer.is_empty()
+        read_something
     }
 
     pub fn find_and_remove_magic_bytes(&mut self) -> bool
@@ -71,7 +81,19 @@ where
         D: Direction,
     {
         self.poll_read();
-        frostsnap_comms::find_and_remove_magic_bytes::<D>(&mut self.read_buffer)
+        if self.ring_buffer.len() == 0 {
+            return false;
+        }
+
+        let (consume, progress, found) = frostsnap_comms::make_progress_on_magic_bytes::<D>(
+            &self.clone_buffer_to_vec()[..],
+            self.magic_bytes_progress,
+        );
+        self.magic_bytes_progress = progress;
+        for _ in 0..consume {
+            self.ring_buffer.skip();
+        }
+        found
     }
 }
 
@@ -141,18 +163,23 @@ where
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), DecodeError> {
         let start_time = self.timer.now();
 
-        while self.read_buffer.len() < bytes.len() {
+        while self.ring_buffer.len() < bytes.len() {
             self.poll_read();
             if (self.timer.now() - start_time) / 40_000 > 1_000 {
                 return Err(DecodeError::UnexpectedEnd {
-                    additional: bytes.len() - self.read_buffer.len(),
+                    additional: bytes.len() - self.ring_buffer.len(),
                 });
             }
         }
-        let extra_bytes = self.read_buffer.split_off(bytes.len());
 
-        bytes.copy_from_slice(&self.read_buffer);
-        self.read_buffer = extra_bytes;
+        for target_byte in bytes.iter_mut() {
+            if let Some(byte) = self.ring_buffer.get(0) {
+                *target_byte = *byte;
+                self.ring_buffer.dequeue();
+            } else {
+                panic!("Less bytes exist than we just read into buffer!");
+            }
+        }
         Ok(())
     }
 }
