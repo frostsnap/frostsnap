@@ -180,7 +180,7 @@ where
                     }
 
                     while upstream_serial.poll_read() {
-                        let prior_to_read_buff = upstream_serial.read_buffer().to_vec();
+                        let prior_to_read_buff = upstream_serial.clone_buffer_to_vec();
 
                         match upstream_serial.receive_from_coordinator() {
                             Ok(received_message) => {
