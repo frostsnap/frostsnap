@@ -40,6 +40,7 @@ pub enum Workflow {
     WaitingFor(WaitingFor),
     BusyDoing(BusyTask),
     UserPrompt(Prompt),
+    OnScreenDebug(String),
 }
 
 impl Default for Workflow {

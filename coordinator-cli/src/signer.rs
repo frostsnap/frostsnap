@@ -154,7 +154,7 @@ impl<'a, 'b> Signer<'a, 'b> {
                 if just_now_registered_devices.len() > 0 {
                     start = std::time::Instant::now();
                     newly_registered.extend(just_now_registered_devices);
-                } else if start.elapsed().as_millis() > 2_000 {
+                } else if start.elapsed().as_millis() > 3_000 {
                     break;
                 }
             }
@@ -163,11 +163,13 @@ impl<'a, 'b> Signer<'a, 'b> {
                 .intersection(&still_need_to_sign)
                 .cloned()
                 .collect::<BTreeSet<_>>();
-
-            self.ports.queue_in_port_outbox(DeviceReceiveMessage {
+            let message = DeviceReceiveMessage {
                 target_destinations: asking_to_sign.clone(),
                 message_body: DeviceReceiveBody::Core(signature_request.clone()),
-            });
+            };
+
+            dbg!(&message);
+            self.ports.queue_in_port_outbox(message);
         };
 
         Ok(finished_signatures.clone())

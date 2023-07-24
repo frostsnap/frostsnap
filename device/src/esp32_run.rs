@@ -8,7 +8,7 @@ use crate::{
 };
 use esp_storage::FlashStorage;
 use frostsnap_comms::{
-    DeviceReceiveBody, DeviceReceiveSerial, DeviceSendMessage, DeviceSendSerial,
+    DeviceReceiveBody, DeviceReceiveSerial, DeviceSendMessage, DeviceSendSerial, Upstream,
 };
 use frostsnap_comms::{DeviceReceiveMessage, Downstream};
 use frostsnap_core::message::{
@@ -284,6 +284,17 @@ where
                                 );
                             }
                         };
+                    }
+
+                    let gists = sends_upstream
+                        .iter()
+                        .map(|send| DeviceSendSerial::<Upstream>::Message(send.clone()).gist())
+                        .collect::<Vec<_>>();
+
+                    if gists.len() > 0 {
+                        ui.set_workflow(ui::Workflow::OnScreenDebug(
+                            ["m: ", &gists.join(" ")].concat(),
+                        ));
                     }
 
                     for send in sends_upstream.drain(..) {
