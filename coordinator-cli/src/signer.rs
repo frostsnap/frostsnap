@@ -7,7 +7,8 @@ use frostsnap_core::{schnorr_fun, CoordinatorFrostKey};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use tracing::{event, Level};
 
-use crate::{db::Db, ports::Ports};
+use crate::db::Db;
+use crate::serial::DesktopSerial;
 
 use anyhow::anyhow;
 
@@ -15,14 +16,14 @@ pub struct Signer<'a, 'b> {
     // key: CoordinatorFrostKey,
     // still_need_to_sign: BTreeSet<DeviceId>,
     coordinator: frostsnap_core::FrostCoordinator,
-    ports: &'a mut Ports,
+    ports: &'a mut frostsnap_coordinator::UsbSerialManager<DesktopSerial>,
     db: &'b mut Db,
 }
 
 impl<'a, 'b> Signer<'a, 'b> {
     pub fn new(
         db: &'b mut Db,
-        ports: &'a mut Ports,
+        ports: &'a mut frostsnap_coordinator::UsbSerialManager<DesktopSerial>,
         coordinator: frostsnap_core::FrostCoordinator,
     ) -> Self {
         Self {
@@ -123,7 +124,7 @@ impl<'a, 'b> Signer<'a, 'b> {
             // because often a big bunch of devices will register at similar times if they are daisy
             // chained together.
             loop {
-                let (just_now_registered_devices, new_messages) = self.ports.poll_devices();
+                let (just_now_registered_devices, new_messages) = self.ports.poll_ports();
 
                 for incoming in new_messages {
                     match self.coordinator.recv_device_message(incoming.clone()) {
@@ -163,11 +164,10 @@ impl<'a, 'b> Signer<'a, 'b> {
                 .cloned()
                 .collect::<BTreeSet<_>>();
 
-            self.ports.queue_in_port_outbox(vec![DeviceReceiveMessage {
+            self.ports.queue_in_port_outbox(DeviceReceiveMessage {
                 target_destinations: asking_to_sign.clone(),
                 message_body: DeviceReceiveBody::Core(signature_request.clone()),
-            }]);
-            self.ports.send_to_devices()?;
+            });
         };
 
         Ok(finished_signatures.clone())

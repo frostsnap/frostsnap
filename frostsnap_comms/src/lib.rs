@@ -12,7 +12,6 @@ use alloc::vec::Vec;
 use alloc::{collections::BTreeSet, string::String};
 use bincode::{de::read::Reader, enc::write::Writer, Decode, Encode};
 use core::marker::PhantomData;
-use frostsnap_core::bincode;
 use frostsnap_core::{
     message::{CoordinatorToDeviceMessage, DeviceToCoordinatorBody, DeviceToCoordindatorMessage},
     DeviceId,
@@ -134,6 +133,22 @@ pub enum DeviceSendSerial<D> {
     Message(DeviceSendMessage),
 }
 
+impl<D> DeviceSendSerial<D> {
+    pub fn gist(&self) -> &'static str {
+        match self {
+            DeviceSendSerial::MagicBytes(_) => "MagicBytes",
+            DeviceSendSerial::Message(message) => match message {
+                DeviceSendMessage::Core(message) => match message.body {
+                    DeviceToCoordinatorBody::KeyGenResponse(_) => "KeyGenResponse",
+                    DeviceToCoordinatorBody::SignatureShare { .. } => "SignatureShare",
+                },
+                DeviceSendMessage::Debug { .. } => "Debug",
+                DeviceSendMessage::Announce(_) => "Announce",
+            },
+        }
+    }
+}
+
 #[derive(Encode, Decode, Debug, Clone)]
 pub enum DeviceSendMessage {
     Core(DeviceToCoordindatorMessage),
@@ -146,40 +161,49 @@ pub struct Announce {
     pub from: DeviceId,
 }
 
+pub fn make_progress_on_magic_bytes<D: Direction>(
+    remaining: &[u8],
+    progress: usize,
+) -> (usize, usize, bool) {
+    let magic_bytes = D::magic_bytes_recv();
+    _make_progress_on_magic_bytes(remaining, &magic_bytes, progress)
+}
+
+fn _make_progress_on_magic_bytes(
+    remaining: &[u8],
+    magic_bytes: &[u8],
+    mut progress: usize,
+) -> (usize, usize, bool) {
+    let mut consumed = 0;
+
+    for byte in remaining.iter() {
+        consumed += 1;
+        if *byte == magic_bytes[progress] {
+            progress += 1;
+            if progress == magic_bytes.len() {
+                return (consumed, 0, true);
+            }
+        } else {
+            progress = 0;
+        }
+    }
+
+    (consumed, progress, false)
+}
+
 pub fn find_and_remove_magic_bytes<D: Direction>(buff: &mut Vec<u8>) -> bool {
     let magic_bytes = D::magic_bytes_recv();
     _find_and_remove_magic_bytes(buff, &magic_bytes[..])
 }
 
 fn _find_and_remove_magic_bytes(buff: &mut Vec<u8>, magic_bytes: &[u8]) -> bool {
-    let position = buff
-        .windows(magic_bytes.len())
-        .position(|window| window == &magic_bytes[..]);
-    if let Some(mut position) = position {
-        while buff.len() >= magic_bytes.len()
-            && &buff[position..position + magic_bytes.len()] == magic_bytes
-        {
-            *buff = buff.split_off(position + magic_bytes.len());
-            position = 0;
-        }
-        true
-    } else {
-        false
-    }
-}
+    let (consumed, _, found) = _make_progress_on_magic_bytes(&buff[..], magic_bytes, 0);
 
-pub fn gist_send<D>(send: &DeviceSendSerial<D>) -> &'static str {
-    match send {
-        DeviceSendSerial::MagicBytes(_) => "MagicBytes",
-        DeviceSendSerial::Message(message) => match message {
-            DeviceSendMessage::Core(message) => match message.body {
-                DeviceToCoordinatorBody::KeyGenResponse(_) => "KeyGenResponse",
-                DeviceToCoordinatorBody::SignatureShare { .. } => "SignatureShare",
-            },
-            DeviceSendMessage::Debug { .. } => "Debug",
-            DeviceSendMessage::Announce(_) => "Announce",
-        },
+    if found {
+        *buff = buff.split_off(consumed);
     }
+
+    found
 }
 
 #[cfg(test)]
@@ -198,7 +222,7 @@ mod test {
 
         let mut bytes = b"hello magicmagic world".to_vec();
         assert!(_find_and_remove_magic_bytes(&mut bytes, b"magic"));
-        assert_eq!(bytes, b" world");
+        assert_eq!(bytes, b"magic world");
 
         let mut bytes = b"magic".to_vec();
         assert!(_find_and_remove_magic_bytes(&mut bytes, b"magic"));

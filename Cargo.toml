@@ -4,6 +4,7 @@ members = [
     "frostsnap_core",
     "device",
     "coordinator-cli",
+    "frostsnap_coordinator",
     "frostsnap_comms",
 ]
 resolver = "2"
@@ -17,3 +18,5 @@ bincode = {  version = "2.0.0-rc.3", features = ["serde", "alloc", "derive"], de
 serde = { version = "1", features = ["derive","alloc"], default-features = false }
 frostsnap_core = { path = "frostsnap_core", default-features = false }
 frostsnap_comms = { path = "frostsnap_comms", default-features = false }
+frostsnap_coordinator = { path = "frostsnap_coordinator" }
+tracing = { version = "0.1" }

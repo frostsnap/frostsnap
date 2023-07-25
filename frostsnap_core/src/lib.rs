@@ -4,9 +4,7 @@
 #[allow(unused)]
 #[macro_use]
 extern crate std;
-
-pub use bincode;
-
+use bincode;
 pub mod encrypted_share;
 pub mod message;
 pub mod nostr;

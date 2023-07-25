@@ -10,7 +10,7 @@ use frostsnap_core::message::CoordinatorToUserMessage;
 use frostsnap_core::CoordinatorState;
 use frostsnap_core::DeviceId;
 use frostsnap_core::FrostCoordinator;
-use ports::Ports;
+use serial::DesktopSerial;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::VecDeque;
@@ -20,16 +20,12 @@ use wallet::Wallet;
 
 pub mod db;
 mod device_namer;
-pub mod io;
 pub mod nostr;
-pub mod ports;
-pub mod serial_rw;
+pub mod serial;
 pub mod signer;
 pub mod wallet;
 
 use clap::{Parser, Subcommand};
-
-use crate::io::fetch_input;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -79,24 +75,24 @@ enum SignArgs {
     },
 }
 
-pub fn process_outbox(
+fn process_outbox(
     db: &mut Db,
     coordinator: &mut FrostCoordinator,
     outbox: &mut VecDeque<CoordinatorSend>,
-    ports: &mut Ports,
+    ports: &mut frostsnap_coordinator::UsbSerialManager<DesktopSerial>,
 ) -> anyhow::Result<()> {
     while let Some(message) = outbox.pop_front() {
         match message {
             CoordinatorSend::ToDevice(core_message) => {
-                ports.queue_in_port_outbox(vec![DeviceReceiveMessage {
+                ports.queue_in_port_outbox(DeviceReceiveMessage {
                     target_destinations: core_message.default_destinations(),
                     message_body: DeviceReceiveBody::Core(core_message),
-                }]);
+                });
             }
             CoordinatorSend::ToUser(to_user_message) => match to_user_message {
                 CoordinatorToUserMessage::Signed { .. } => {}
                 CoordinatorToUserMessage::CheckKeyGen { xpub } => {
-                    let ack = io::fetch_input(&format!(
+                    let ack = fetch_input(&format!(
                         "Coordinator received keygen shares from all devices.\nSchnorr Public Key: {}\nOk? [y/n]",
                         xpub
                     )) == "y";
@@ -144,8 +140,7 @@ fn main() -> anyhow::Result<()> {
     let mut db = db::Db::new(db_path)?;
     let changeset = db.load()?;
 
-    // TODO ports::new(device_labels)
-    let mut ports = ports::Ports::default();
+    let mut ports = frostsnap_coordinator::UsbSerialManager::new(DesktopSerial);
 
     if let Some(state) = &changeset.frostsnap {
         *ports.device_labels() = state.device_labels.clone();
@@ -185,7 +180,7 @@ fn main() -> anyhow::Result<()> {
             eprintln!("Please plug in {} devices..", n_devices);
 
             while ports.registered_devices().len() < n_devices {
-                ports.poll_devices();
+                ports.poll_ports();
 
                 for device_id in ports.unlabelled_devices().collect::<Vec<_>>() {
                     let device_label = device_namer::gen_name39();
@@ -202,7 +197,7 @@ fn main() -> anyhow::Result<()> {
             };
 
             if "y"
-                != io::fetch_input(&format!(
+                != fetch_input(&format!(
                     "🤖 {}\n\nWant to do keygen with these devices? [y/n]",
                     keygen_devices
                         .clone()
@@ -228,12 +223,20 @@ fn main() -> anyhow::Result<()> {
                     coordinator.do_keygen(&keygen_devices, threshold)?,
                 ),
             };
-            ports.queue_in_port_outbox(vec![do_keygen_message]);
+            ports.queue_in_port_outbox(do_keygen_message);
 
             let mut outbox = VecDeque::new();
             loop {
-                let new_messages = ports.receive_messages();
+                let (_, new_messages) = ports.poll_ports();
+
                 for message in new_messages {
+                    event!(
+                        Level::DEBUG,
+                        from = message.from.to_string(),
+                        kind = message.body.kind(),
+                        "received message during keygen"
+                    );
+
                     match coordinator.recv_device_message(message.clone()) {
                         Ok(messages) => {
                             outbox.extend(messages);
@@ -255,7 +258,6 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
                 process_outbox(&mut db, &mut coordinator, &mut outbox, &mut ports)?;
-                ports.send_to_devices()?;
             }
         }
         Command::Sign(sign_args) => {
@@ -357,7 +359,7 @@ pub fn choose_devices(
 
     let mut chosen_signers: BTreeSet<DeviceId> = BTreeSet::new();
     while chosen_signers.len() < n_devices {
-        let choice = io::fetch_input("\nEnter a device index (n): ").parse::<usize>();
+        let choice = fetch_input("\nEnter a device index (n): ").parse::<usize>();
         match choice {
             Ok(n) => match devices_vec.get(n) {
                 Some((device_id, _)) => {
@@ -375,4 +377,18 @@ pub fn choose_devices(
         }
     }
     chosen_signers
+}
+
+fn read_string() -> String {
+    let mut input = String::new();
+    std::io::stdin()
+        .read_line(&mut input)
+        .expect("can not read user input");
+    let cleaned_input = input.trim().to_string();
+    cleaned_input
+}
+
+pub fn fetch_input(prompt: &str) -> String {
+    println!("{}", prompt);
+    read_string()
 }
