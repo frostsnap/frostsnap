@@ -102,7 +102,7 @@ impl<S: Serial> UsbSerialManager<S> {
             .available_ports()
             .into_iter()
             .filter(|desc| desc.vid == USB_VID && desc.pid == USB_PID)
-            .map(|desc| desc.unique_id)
+            .map(|desc| desc.id)
             .collect();
 
         let newly_connected_ports = connected_now

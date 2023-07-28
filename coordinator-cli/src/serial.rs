@@ -17,7 +17,7 @@ impl Serial for DesktopSerial {
             .into_iter()
             .filter_map(|port| match port.port_type {
                 serialport::SerialPortType::UsbPort(usb_port) => Some(PortDesc {
-                    unique_id: port.port_name,
+                    id: port.port_name,
                     vid: usb_port.vid,
                     pid: usb_port.pid,
                 }),

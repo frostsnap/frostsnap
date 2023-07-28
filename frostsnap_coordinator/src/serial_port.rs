@@ -17,7 +17,7 @@ pub trait Serial {
 
 #[derive(Debug, Clone)]
 pub struct PortDesc {
-    pub unique_id: String,
+    pub id: String,
     pub vid: u16,
     pub pid: u16,
 }
