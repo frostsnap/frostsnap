@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 
 pub trait Serial {
     type Port: Read + Write;
-    type OpenError: std::error::Error;
+    type OpenError: core::fmt::Display;
 
     fn available_ports(&self) -> Vec<PortDesc>;
     fn open_device_port(
