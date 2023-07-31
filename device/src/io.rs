@@ -173,9 +173,8 @@ where
         }
 
         for target_byte in bytes.iter_mut() {
-            if let Some(byte) = self.ring_buffer.get(0) {
-                *target_byte = *byte;
-                self.ring_buffer.dequeue();
+            if let Some(byte) = self.ring_buffer.dequeue() {
+                *target_byte = byte;
             } else {
                 panic!("Less bytes exist than we just read into buffer!");
             }
