@@ -267,6 +267,7 @@ where
                     BusyTask::VerifyingShare => self.display.print("Verifying key..").unwrap(),
                 }
             }
+            Workflow::OnScreenDebug(str) => self.display.print(str).unwrap(),
         }
     }
 }

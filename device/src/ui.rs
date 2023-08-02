@@ -1,4 +1,5 @@
 use alloc::string::String;
+use alloc::vec::Vec;
 
 pub trait UserInteraction {
     fn set_downstream_connection_state(&mut self, connected: bool);
@@ -35,11 +36,35 @@ pub enum WaitingResponse {
 }
 
 #[derive(Clone, Debug)]
+pub struct DebugLog {
+    log: Vec<String>,
+}
+
+impl DebugLog {
+    pub fn new() -> Self {
+        Self { log: vec![] }
+    }
+    pub fn update(&mut self, str: String) {
+        self.log.push(str);
+    }
+
+    pub fn to_string(&self) -> String {
+        let mut print_msg = String::new();
+        for item in self.log[(self.log.len().saturating_sub(5))..].into_iter() {
+            print_msg.push_str(&item.chars().take(20).collect::<String>());
+            print_msg.push_str("|");
+        }
+        print_msg
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum Workflow {
     None,
     WaitingFor(WaitingFor),
     BusyDoing(BusyTask),
     UserPrompt(Prompt),
+    OnScreenDebug(DebugLog),
 }
 
 impl Default for Workflow {

@@ -19,7 +19,6 @@ use frostsnap_comms::Direction;
 use frostsnap_comms::Downstream;
 use frostsnap_comms::MagicBytes;
 use frostsnap_comms::Upstream;
-use ringbuffer::RingBufferExt;
 use ringbuffer::RingBufferRead;
 use ringbuffer::RingBufferWrite;
 use ringbuffer::{AllocRingBuffer, RingBuffer};

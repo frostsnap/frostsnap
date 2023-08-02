@@ -4,7 +4,7 @@ use esp32c3_hal::{prelude::*, uart, UsbSerialJtag};
 use crate::{
     io::{self, UpstreamDetector},
     state, storage,
-    ui::{self, UiEvent, UserInteraction},
+    ui::{self, DebugLog, UiEvent, UserInteraction},
 };
 use esp_storage::FlashStorage;
 use frostsnap_comms::{
@@ -29,7 +29,7 @@ pub struct Run<'a, UpstreamUart, DownstreamUart, Ui, T> {
 }
 
 /// Write magic bytes once every 100ms
-const MAGIC_BYTES_PERIOD: u64 = 100;
+const MAGIC_BYTES_PERIOD: u64 = 1000;
 
 impl<'a, UpstreamUart, DownstreamUart, Ui, T> Run<'a, UpstreamUart, DownstreamUart, Ui, T>
 where
@@ -71,6 +71,8 @@ where
             }
         };
 
+        let mut debug_log = DebugLog::new();
+
         let mut downstream_serial =
             io::SerialInterface::<_, _, Downstream>::new_uart(downstream_uart, &timer);
         let mut soft_reset = true;
@@ -85,8 +87,12 @@ where
         let mut upstream_received_first_message = false;
         let mut next_write_magic_bytes = 0;
 
+        let now = timer.now();
+
         loop {
             if soft_reset {
+                debug_log.update("<!SR>".to_string());
+                ui.set_workflow(ui::Workflow::OnScreenDebug(debug_log.clone()));
                 soft_reset = false;
                 sends_upstream = vec![DeviceSendMessage::Announce(frostsnap_comms::Announce {
                     from: frost_signer.device_id(),
@@ -140,6 +146,10 @@ where
 
                 // Send messages downstream
                 for send in sends_downstream.drain(..) {
+                    if let DeviceReceiveBody::AnnounceAck { ref device_label } = send.message_body {
+                        debug_log.update(format!("aa={}", device_label));
+                        ui.set_workflow(ui::Workflow::OnScreenDebug(debug_log.clone()));
+                    }
                     downstream_serial
                         .forward_downstream(DeviceReceiveSerial::Message(send.clone()))
                         .expect("sending downstream");
@@ -273,6 +283,10 @@ where
                     }
 
                     for send in sends_upstream.drain(..) {
+                        if let DeviceSendMessage::Announce(ref announce) = send {
+                            debug_log.update(format!("a={}", announce.from.clone()));
+                            ui.set_workflow(ui::Workflow::OnScreenDebug(debug_log.clone()));
+                        }
                         upstream_serial
                             .send_to_coodinator(DeviceSendSerial::Message(send.clone()))
                             .expect("unable to send to coordinator");

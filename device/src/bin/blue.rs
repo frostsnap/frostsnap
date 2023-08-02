@@ -273,15 +273,15 @@ where
             Workflow::WaitingFor(waiting_for) => match waiting_for {
                 WaitingFor::LookingForUpstream { jtag } => {
                     if *jtag {
-                        self.display
-                            .print("Looking for coordinator USB host")
-                            .unwrap();
+                        // self.display
+                        //     .print("Looking for coordinator USB host")
+                        //     .unwrap();
                     } else {
-                        self.display.print("Looking for upstream device").unwrap();
+                        // self.display.print("Looking for upstream device").unwrap();
                     }
                 }
                 WaitingFor::CoordinatorAnnounceAck => {
-                    self.display.print("Waiting for FrostSnap app").unwrap();
+                    // self.display.print("Waiting for FrostSnap app").unwrap();
                 }
                 WaitingFor::CoordinatorInstruction { completed_task } => {
                     let label = self
@@ -307,14 +307,14 @@ where
                     body.push_str(&format!("NAME: {}\n", label));
 
                     body.push_str("Ready..");
-                    self.display.header(label).unwrap();
-                    self.display.print(body).unwrap();
+                    // self.display.header(label).unwrap();
+                    // self.display.print(body).unwrap();
                 }
                 WaitingFor::CoordinatorResponse(response) => match response {
                     WaitingResponse::KeyGen => {
-                        self.display
-                            .print("Finished!\nWaiting for coordinator..")
-                            .unwrap();
+                        // self.display
+                        // .print("Finished!\nWaiting for coordinator..")
+                        // .unwrap();
                     }
                 },
             },
@@ -335,6 +335,9 @@ where
                 BusyTask::Signing => self.display.print("Signing..").unwrap(),
                 BusyTask::VerifyingShare => self.display.print("Verifying key..").unwrap(),
             },
+            Workflow::OnScreenDebug(onscreen_debug) => {
+                self.display.print(onscreen_debug.to_string()).unwrap()
+            }
         }
 
         self.display
