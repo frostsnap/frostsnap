@@ -6,6 +6,7 @@ edition = "2021"
 
 [features]
 blue = ["air101"]
+frostypede = ["air101", "air101-r2223", "rgb-led"]
 ai-042c3 = ["rgb-led", "dep:display-interface", "dep:ssd1306"]
 air101 = [
     "dep:display-interface-spi", 
@@ -53,3 +54,7 @@ required-features = ["purple"]
 [[bin]]
 name = "blue"
 required-features = ["blue"]
+
+[[bin]]
+name = "frostypede"
+required-features = ["frostypede"]
