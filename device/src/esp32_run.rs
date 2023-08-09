@@ -83,6 +83,14 @@ where
         let mut upstream_sent_magic_bytes = false;
         let mut upstream_received_first_message = false;
         let mut next_write_magic_bytes = 0;
+        // FIXME: If we keep getting magic bytes instead of getting a proper message we have to accept that
+        // the upstream doesn't think we're awake yet and we should soft reset again and send our
+        // magic bytes again.
+        //
+        // We wouldn't need this if announce ack was guaranteed to be sent right away (but instead
+        // it waits until we've named it). Announcing and labeling has been sorted out this counter
+        // thingy will go away naturally.
+        let mut upstream_first_message_timeout_counter = 0;
 
         loop {
             if soft_reset {
@@ -90,6 +98,7 @@ where
                 sends_upstream = vec![DeviceSendMessage::Announce(frostsnap_comms::Announce {
                     from: frost_signer.device_id(),
                 })];
+                frost_signer.cancel_action();
                 sends_user.clear();
                 sends_downstream.clear();
                 downstream_active = false;
@@ -172,6 +181,7 @@ where
                             .write_magic_bytes()
                             .expect("failed to write magic bytes");
                         upstream_sent_magic_bytes = true;
+                        upstream_first_message_timeout_counter = 0;
                         ui.set_workflow(ui::Workflow::WaitingFor(
                             ui::WaitingFor::CoordinatorAnnounceAck,
                         ))
@@ -182,8 +192,12 @@ where
                             Ok(received_message) => {
                                 match received_message {
                                     DeviceReceiveSerial::MagicBytes(_) => {
-                                        if upstream_received_first_message {
+                                        if upstream_received_first_message
+                                            || upstream_first_message_timeout_counter > 10
+                                        {
                                             soft_reset = true;
+                                        } else {
+                                            upstream_first_message_timeout_counter += 1;
                                         }
                                         continue;
                                     }

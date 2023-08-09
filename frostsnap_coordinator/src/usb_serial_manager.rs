@@ -2,6 +2,7 @@
 const USB_VID: u16 = 12346;
 const USB_PID: u16 = 4097;
 
+use crate::PortOpenError;
 use crate::{FramedSerialPort, Serial};
 use frostsnap_comms::DeviceReceiveMessage;
 use frostsnap_comms::DeviceReceiveSerial;
@@ -18,16 +19,16 @@ use tracing::{event, span, Level};
 
 /// Manages the communication between coordinator and USB serial device ports given Some `S` serial
 /// system API.
-pub struct UsbSerialManager<S: Serial> {
-    serial_impl: S,
+pub struct UsbSerialManager {
+    serial_impl: Box<dyn Serial>,
     /// Matches VID and PID
     connected: HashSet<String>,
     /// Initial state
     pending: HashSet<String>,
     /// After opening port and awaiting magic bytes
-    awaiting_magic: HashMap<String, FramedSerialPort<S>>,
+    awaiting_magic: HashMap<String, FramedSerialPort>,
     /// Read magic magic bytes
-    ready: HashMap<String, FramedSerialPort<S>>,
+    ready: HashMap<String, FramedSerialPort>,
     /// ports that seems to be busy
     ignored: HashSet<String>,
     /// Devices who Announce'd, mappings to port serial numbers
@@ -42,10 +43,10 @@ pub struct UsbSerialManager<S: Serial> {
     port_outbox: Vec<DeviceReceiveMessage>,
 }
 
-impl<S: Serial> UsbSerialManager<S> {
-    pub fn new(serial_api: S) -> Self {
+impl UsbSerialManager {
+    pub fn new(serial_impl: Box<dyn Serial>) -> Self {
         Self {
-            serial_impl: serial_api,
+            serial_impl,
             connected: Default::default(),
             pending: Default::default(),
             awaiting_magic: Default::default(),
@@ -59,7 +60,7 @@ impl<S: Serial> UsbSerialManager<S> {
         }
     }
 
-    pub fn disconnect(&mut self, port: &str) {
+    fn disconnect(&mut self, port: &str, changes: &mut Vec<DeviceChange>) {
         event!(Level::INFO, port = port, "disconnecting port");
         self.connected.remove(port);
         self.pending.remove(port);
@@ -68,7 +69,9 @@ impl<S: Serial> UsbSerialManager<S> {
         self.ignored.remove(port);
         if let Some(device_ids) = self.reverse_device_ports.remove(port) {
             for device_id in device_ids {
-                self.device_ports.remove(&device_id);
+                if self.device_ports.remove(&device_id).is_some() {
+                    changes.push(DeviceChange::Disconnected(device_id));
+                }
                 self.registered_devices.remove(&device_id);
                 event!(
                     Level::DEBUG,
@@ -92,11 +95,11 @@ impl<S: Serial> UsbSerialManager<S> {
             .collect::<HashSet<_>>()
     }
 
-    pub fn poll_ports(&mut self) -> (BTreeSet<DeviceId>, Vec<DeviceToCoordindatorMessage>) {
-        let span = span!(Level::DEBUG, "poll_devices");
+    pub fn poll_ports(&mut self) -> PortChanges {
+        let span = span!(Level::DEBUG, "poll_ports");
         let _enter = span.enter();
         let mut device_to_coord_msg = vec![];
-        let mut newly_registered = BTreeSet::new();
+        let mut device_changes = vec![];
         let connected_now: HashSet<String> = self
             .serial_impl
             .available_ports()
@@ -126,7 +129,7 @@ impl<S: Serial> UsbSerialManager<S> {
                 port = port.to_string(),
                 "USB port disconnected"
             );
-            self.disconnect(&port);
+            self.disconnect(&port, &mut device_changes);
         }
 
         for serial_number in self.pending.drain().collect::<Vec<_>>() {
@@ -135,8 +138,8 @@ impl<S: Serial> UsbSerialManager<S> {
                 .open_device_port(&serial_number, frostsnap_comms::BAUDRATE)
                 .map(FramedSerialPort::new);
             match device_port {
-                Err(e) => {
-                    if &e.to_string() == "Device or resource busy" {
+                Err(e) => match e {
+                    PortOpenError::DeviceBusy => {
                         if !self.ignored.contains(&serial_number) {
                             event!(
                                 Level::ERROR,
@@ -145,7 +148,8 @@ impl<S: Serial> UsbSerialManager<S> {
                             );
                             self.ignored.insert(serial_number.clone());
                         }
-                    } else {
+                    }
+                    PortOpenError::Other(e) => {
                         event!(
                             Level::ERROR,
                             port = serial_number,
@@ -154,7 +158,7 @@ impl<S: Serial> UsbSerialManager<S> {
                         );
                         self.pending.insert(serial_number);
                     }
-                }
+                },
                 Ok(mut device_port) => {
                     event!(Level::DEBUG, port = serial_number, "Opened port");
                     match device_port.write_magic_bytes() {
@@ -169,7 +173,7 @@ impl<S: Serial> UsbSerialManager<S> {
                                 e = e.to_string(),
                                 "Failed to initialize port by writing magic bytes"
                             );
-                            self.disconnect(&serial_number);
+                            self.disconnect(&serial_number, &mut device_changes);
                         }
                     }
                 }
@@ -195,7 +199,7 @@ impl<S: Serial> UsbSerialManager<S> {
                             e = e.to_string(),
                             "Failed to write magic bytes"
                         );
-                        self.disconnect(&serial_number);
+                        self.disconnect(&serial_number, &mut device_changes);
                     }
                 },
                 Err(e) => {
@@ -205,7 +209,7 @@ impl<S: Serial> UsbSerialManager<S> {
                         e = e.to_string(),
                         "failed to read magic bytes"
                     );
-                    self.disconnect(&serial_number);
+                    self.disconnect(&serial_number, &mut device_changes);
                 }
             }
         }
@@ -222,7 +226,7 @@ impl<S: Serial> UsbSerialManager<S> {
                             error = e.to_string(),
                             "failed to read message from port"
                         );
-                        self.disconnect(&serial_number);
+                        self.disconnect(&serial_number, &mut device_changes);
                         continue;
                     }
                     Ok(None) => continue,
@@ -240,17 +244,19 @@ impl<S: Serial> UsbSerialManager<S> {
             match decoded_message {
                 DeviceSendSerial::MagicBytes(_) => {
                     event!(Level::ERROR, port = serial_number, "Unexpected magic bytes");
-                    self.disconnect(&serial_number);
+                    self.disconnect(&serial_number, &mut device_changes);
                 }
                 DeviceSendSerial::Message(message) => match message {
                     DeviceSendMessage::Announce(announce) => {
                         self.device_ports
                             .insert(announce.from, serial_number.clone());
+
                         let devices = self
                             .reverse_device_ports
                             .entry(serial_number.clone())
                             .or_default();
                         devices.insert(announce.from);
+                        device_changes.push(DeviceChange::Added(announce.from));
 
                         event!(
                             Level::DEBUG,
@@ -298,7 +304,10 @@ impl<S: Serial> UsbSerialManager<S> {
                     "Registered device"
                 );
                 self.registered_devices.insert(*device_id);
-                newly_registered.insert(*device_id);
+                device_changes.push(DeviceChange::Registered(
+                    *device_id,
+                    device_label.to_string(),
+                ));
             }
         }
 
@@ -346,7 +355,7 @@ impl<S: Serial> UsbSerialManager<S> {
                             error = e.to_string(),
                             "Failed to send message",
                         );
-                        self.disconnect(&serial_number);
+                        self.disconnect(&serial_number, &mut device_changes);
                     }
                     Ok(_) => {
                         event!(Level::DEBUG, "Sent message",);
@@ -359,18 +368,29 @@ impl<S: Serial> UsbSerialManager<S> {
 
         self.port_outbox = outbox;
 
-        (newly_registered, device_to_coord_msg)
+        PortChanges {
+            device_changes,
+            new_messages: device_to_coord_msg,
+        }
     }
 
-    pub fn device_labels(&mut self) -> &mut HashMap<DeviceId, String> {
+    pub fn device_labels_mut(&mut self) -> &mut HashMap<DeviceId, String> {
         &mut self.device_labels
     }
 
     pub fn unlabelled_devices(&self) -> impl Iterator<Item = DeviceId> + '_ {
+        self.announced_devices()
+            .filter(|(_, label)| label.is_none())
+            .map(|(device, _)| device)
+    }
+    pub fn device_labels(&self) -> &HashMap<DeviceId, String> {
+        &self.device_labels
+    }
+
+    pub fn announced_devices(&self) -> impl Iterator<Item = (DeviceId, Option<String>)> + '_ {
         self.device_ports
             .keys()
-            .cloned()
-            .filter(|device_id| !self.device_labels.contains_key(device_id))
+            .map(|device| (*device, self.device_labels.get(&device).cloned()))
     }
 
     pub fn registered_devices(&self) -> &BTreeSet<DeviceId> {
@@ -392,4 +412,25 @@ impl<S: Serial> UsbSerialManager<S> {
             })
             .collect()
     }
+
+    pub fn serial_impl(&self) -> &Box<dyn Serial> {
+        &self.serial_impl
+    }
+
+    pub fn serial_impl_mut(&mut self) -> &mut Box<dyn Serial> {
+        &mut self.serial_impl
+    }
+}
+
+#[derive(Debug)]
+pub struct PortChanges {
+    pub device_changes: Vec<DeviceChange>,
+    pub new_messages: Vec<DeviceToCoordindatorMessage>,
+}
+
+#[derive(Debug)]
+pub enum DeviceChange {
+    Added(DeviceId),
+    Registered(DeviceId, String),
+    Disconnected(DeviceId),
 }

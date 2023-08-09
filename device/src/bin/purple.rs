@@ -5,7 +5,9 @@
 extern crate alloc;
 
 use frostsnap_device::{
-    esp32_run, oled,
+    esp32_run,
+    io::{set_upstream_port_mode_jtag, set_upstream_port_mode_uart},
+    oled,
     ui::{BusyTask, Prompt, UiEvent, UserInteraction, WaitingFor, WaitingResponse, Workflow},
 };
 
@@ -49,6 +51,7 @@ fn init_heap() {
 /// GPIO19:     JTAG/UART1 RX (connect downstream)
 #[entry]
 fn main() -> ! {
+    set_upstream_port_mode_uart();
     init_heap();
     let peripherals = Peripherals::take();
     let mut system = peripherals.SYSTEM.split();
@@ -317,6 +320,7 @@ where
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
+    set_upstream_port_mode_jtag();
     let peripherals = unsafe { Peripherals::steal() };
     let mut system = peripherals.SYSTEM.split();
     // Disable the RTC and TIMG watchdog timers

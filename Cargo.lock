@@ -385,7 +385,6 @@ dependencies = [
  "rand",
  "serde",
  "serde_json",
- "serialport",
  "sha2 0.9.9",
  "thiserror",
  "tracing",
@@ -764,6 +763,7 @@ dependencies = [
  "bincode 2.0.0-rc.3",
  "frostsnap_comms",
  "frostsnap_core",
+ "serialport",
  "tracing",
 ]
 
