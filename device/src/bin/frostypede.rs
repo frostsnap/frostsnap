@@ -1,4 +1,8 @@
 // Frostsnap custom PCB rev 1.1
+// GPIO8 Downstream detection
+// GPIO5 Left button
+// GPIO9 Right button
+// GPIO0 RGB LED
 
 #![no_std]
 #![no_main]
