@@ -224,8 +224,28 @@ where
             )
             .draw(&mut self.framebuf)
             .unwrap();
+    }
 
-        self.flush().unwrap();
+    pub fn set_mem_debug(&mut self, used: usize, free: usize) {
+        Rectangle::new(Point::new(90, 70), Size::new(70, 10))
+            .into_styled(
+                PrimitiveStyleBuilder::new()
+                    .fill_color(Rgb565::BLACK)
+                    .build(),
+            )
+            .draw(&mut self.framebuf)
+            .unwrap();
+
+        TextBox::with_textbox_style(
+            &format!("{}/{}", used, free),
+            Rectangle::new(Point::new(90, 70), Size::new(70, 10)),
+            MonoTextStyle::new(&FONT_5X8, Rgb565::WHITE),
+            TextBoxStyleBuilder::new()
+                .alignment(HorizontalAlignment::Right)
+                .build(),
+        )
+        .draw(&mut self.framebuf)
+        .unwrap();
     }
 
     pub fn header(&mut self, device_label: impl AsRef<str>) -> Result<(), Error> {
@@ -278,34 +298,6 @@ where
         .draw(&mut self.framebuf)
         .unwrap();
 
-        // println!("{}, {}", _overflow, _overflow.len());
-
-        self.flush().unwrap();
-
-        // for i in (-1..0).rev() {
-        // Rectangle::new(Point::new(0, 11), Size::new(160, 69))
-        //     .into_styled(
-        //         PrimitiveStyleBuilder::new()
-        //             .fill_color(Rgb565::WHITE)
-        //             .build(),
-        //     )
-        //     .draw(&mut self.framebuf)
-        //     .unwrap();
-
-        // let overflow = TextBox::with_textbox_style(
-        //     str.as_ref(),
-        //     Rectangle::new(Point::new(1, 11), Size::new(160, 69)),
-        //     self.character_style,
-        //     self.textbox_style,
-        // )
-        // .set_vertical_offset(i)
-        // .draw(&mut self.framebuf)
-        // .unwrap();
-
-        // self.flush().unwrap();
-        // self.delay.delay_ms(10u32);
-        // }
-
         Ok(())
     }
 
@@ -327,8 +319,6 @@ where
         )
         .draw(&mut self.framebuf)
         .unwrap();
-
-        self.flush().unwrap();
 
         Ok(())
     }
@@ -451,8 +441,6 @@ where
             .draw(&mut self.framebuf)
             .unwrap();
         }
-
-        self.flush().unwrap();
 
         Ok(())
     }

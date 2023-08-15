@@ -338,10 +338,15 @@ where
         }
 
         self.display
+            .set_mem_debug(ALLOCATOR.used(), ALLOCATOR.free());
+
+        self.display
             .set_top_left_square(match self.downstream_connected {
                 true => Rgb565::GREEN,
                 false => Rgb565::RED,
             });
+
+        self.display.flush().unwrap()
     }
 }
 
@@ -399,6 +404,10 @@ where
                 _ => {}
             }
         }
+
+        self.display
+            .set_mem_debug(ALLOCATOR.used(), ALLOCATOR.free());
+        self.display.flush().unwrap();
 
         None
     }
