@@ -12,6 +12,7 @@ extern crate alloc;
 
 use frostsnap_device::{
     esp32_run,
+    io::{set_upstream_port_mode_jtag, set_upstream_port_mode_uart},
     st7735::{self, ST7735},
     ui::{BusyTask, Prompt, UiEvent, UserInteraction, WaitingFor, WaitingResponse, Workflow},
 };
@@ -59,6 +60,11 @@ fn init_heap() {
 /// GPIO19:     JTAG/UART1 RX (connect downstream)
 #[entry]
 fn main() -> ! {
+    // First thing we do otherwise it appears as JTAG to the OS first and then it switches. If this
+    // is annoying maybe we can make a feature flag to do it later because it seems that espflash
+    // relies on the device being in jtag mode immediately after reseting it.
+    set_upstream_port_mode_uart();
+
     init_heap();
     let peripherals = Peripherals::take();
     let mut system = peripherals.SYSTEM.split();
@@ -460,6 +466,7 @@ where
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
+    set_upstream_port_mode_jtag();
     let peripherals = unsafe { Peripherals::steal() };
     let mut system = peripherals.SYSTEM.split();
     // Disable the RTC and TIMG watchdog timers
