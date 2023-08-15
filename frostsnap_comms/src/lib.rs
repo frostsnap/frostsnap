@@ -162,33 +162,31 @@ pub struct Announce {
 }
 
 pub fn make_progress_on_magic_bytes<D: Direction>(
-    remaining: &[u8],
+    remaining: impl Iterator<Item = u8>,
     progress: usize,
-) -> (usize, usize, bool) {
+) -> (usize, bool) {
     let magic_bytes = D::magic_bytes_recv();
     _make_progress_on_magic_bytes(remaining, &magic_bytes, progress)
 }
 
 fn _make_progress_on_magic_bytes(
-    remaining: &[u8],
+    remaining: impl Iterator<Item = u8>,
     magic_bytes: &[u8],
     mut progress: usize,
-) -> (usize, usize, bool) {
-    let mut consumed = 0;
+) -> (usize, bool) {
 
-    for byte in remaining.iter() {
-        consumed += 1;
-        if *byte == magic_bytes[progress] {
+    for byte in remaining {
+        if byte == magic_bytes[progress] {
             progress += 1;
             if progress == magic_bytes.len() {
-                return (consumed, 0, true);
+                return (0, true);
             }
         } else {
             progress = 0;
         }
     }
 
-    (consumed, progress, false)
+    (progress, false)
 }
 
 pub fn find_and_remove_magic_bytes<D: Direction>(buff: &mut Vec<u8>) -> bool {
@@ -197,7 +195,8 @@ pub fn find_and_remove_magic_bytes<D: Direction>(buff: &mut Vec<u8>) -> bool {
 }
 
 fn _find_and_remove_magic_bytes(buff: &mut Vec<u8>, magic_bytes: &[u8]) -> bool {
-    let (consumed, _, found) = _make_progress_on_magic_bytes(&buff[..], magic_bytes, 0);
+    let mut consumed = 0;
+    let (_, found) = _make_progress_on_magic_bytes(buff.iter().cloned().inspect(|_| consumed += 1), magic_bytes, 0);
 
     if found {
         *buff = buff.split_off(consumed);

@@ -19,12 +19,11 @@ use frostsnap_comms::Direction;
 use frostsnap_comms::Downstream;
 use frostsnap_comms::MagicBytes;
 use frostsnap_comms::Upstream;
-use ringbuffer::RingBufferExt;
 use ringbuffer::RingBufferRead;
 use ringbuffer::RingBufferWrite;
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 
-pub const RING_BUFFER_SIZE: usize = 2usize.pow(13);
+const RING_BUFFER_SIZE_LOG_2: usize = 8; // i.e. 256 bytes
 
 pub struct SerialInterface<'a, T, U, D> {
     io: SerialIo<'a, U>,
@@ -38,7 +37,7 @@ impl<'a, T, U, D> SerialInterface<'a, T, U, D> {
     pub fn new_uart(uart: uart::Uart<'a, U>, timer: &'a Timer<T>) -> Self {
         Self {
             io: SerialIo::Uart(uart),
-            ring_buffer: AllocRingBuffer::with_capacity(RING_BUFFER_SIZE),
+            ring_buffer: AllocRingBuffer::with_capacity_power_of_2(RING_BUFFER_SIZE_LOG_2),
             magic_bytes_progress: 0,
             timer,
             direction: PhantomData,
@@ -54,7 +53,7 @@ impl<'a, T, U> SerialInterface<'a, T, U, Upstream> {
     pub fn new_jtag(jtag: UsbSerialJtag<'a>, timer: &'a Timer<T>) -> Self {
         Self {
             io: SerialIo::Jtag(jtag),
-            ring_buffer: AllocRingBuffer::with_capacity(RING_BUFFER_SIZE),
+            ring_buffer: AllocRingBuffer::with_capacity_power_of_2(RING_BUFFER_SIZE_LOG_2),
             magic_bytes_progress: 0,
             timer,
             direction: PhantomData,
@@ -67,32 +66,28 @@ where
     U: uart::Instance,
     T: esp32c3_hal::timer::Instance,
 {
-    pub fn poll_read(&mut self) -> bool {
-        let mut read_something = false;
+    fn fill_buffer(&mut self) {
         while let Ok(c) = self.io.read_byte() {
             self.ring_buffer.push(c);
-            read_something = true;
+            if self.ring_buffer.is_full() {
+                break;
+            }
         }
-        read_something
     }
 
     pub fn find_and_remove_magic_bytes(&mut self) -> bool
     where
         D: Direction,
     {
-        self.poll_read();
-        if self.ring_buffer.len() == 0 {
+        self.fill_buffer();
+        if self.ring_buffer.is_empty() {
             return false;
         }
-
-        let (consume, progress, found) = frostsnap_comms::make_progress_on_magic_bytes::<D>(
-            &self.clone_buffer_to_vec()[..],
+        let (progress, found) = frostsnap_comms::make_progress_on_magic_bytes::<D>(
+            self.ring_buffer.drain(),
             self.magic_bytes_progress,
         );
         self.magic_bytes_progress = progress;
-        for _ in 0..consume {
-            self.ring_buffer.skip();
-        }
         found
     }
 }
@@ -123,8 +118,16 @@ where
 
     pub fn receive_from_downstream(
         &mut self,
-    ) -> Result<DeviceSendSerial<Downstream>, bincode::error::DecodeError> {
-        bincode::decode_from_reader(self, bincode::config::standard())
+    ) -> Option<Result<DeviceSendSerial<Downstream>, bincode::error::DecodeError>> {
+        self.fill_buffer();
+        if !self.ring_buffer.is_empty() {
+            Some(bincode::decode_from_reader(
+                self,
+                bincode::config::standard(),
+            ))
+        } else {
+            None
+        }
     }
 }
 
@@ -150,8 +153,16 @@ where
 
     pub fn receive_from_coordinator(
         &mut self,
-    ) -> Result<DeviceReceiveSerial<Upstream>, bincode::error::DecodeError> {
-        bincode::decode_from_reader(self, bincode::config::standard())
+    ) -> Option<Result<DeviceReceiveSerial<Upstream>, bincode::error::DecodeError>> {
+        self.fill_buffer();
+        if !self.ring_buffer.is_empty() {
+            Some(bincode::decode_from_reader(
+                self,
+                bincode::config::standard(),
+            ))
+        } else {
+            None
+        }
     }
 }
 
@@ -161,24 +172,24 @@ where
     T: esp32c3_hal::timer::Instance,
 {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), DecodeError> {
-        let start_time = self.timer.now();
+        for (i, target_byte) in bytes.iter_mut().enumerate() {
+            let start_time = self.timer.now();
 
-        while self.ring_buffer.len() < bytes.len() {
-            self.poll_read();
-            if (self.timer.now() - start_time) / 40_000 > 1_000 {
-                return Err(DecodeError::UnexpectedEnd {
-                    additional: bytes.len() - self.ring_buffer.len(),
-                });
-            }
-        }
+            *target_byte = loop {
+                // eagerly fill the buffer so we pull bytes from the hardware serial buffer as fast
+                // as possible.
+                self.fill_buffer();
 
-        for target_byte in bytes.iter_mut() {
-            if let Some(byte) = self.ring_buffer.get(0) {
-                *target_byte = *byte;
-                self.ring_buffer.dequeue();
-            } else {
-                panic!("Less bytes exist than we just read into buffer!");
-            }
+                if let Some(next_byte) = self.ring_buffer.dequeue() {
+                    break next_byte;
+                }
+
+                if (self.timer.now() - start_time) / 40_000 > 1_000 {
+                    return Err(DecodeError::UnexpectedEnd {
+                        additional: bytes.len() - i + 1,
+                    });
+                }
+            };
         }
         Ok(())
     }

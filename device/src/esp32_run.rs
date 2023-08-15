@@ -14,7 +14,6 @@ use frostsnap_comms::{DeviceReceiveMessage, Downstream};
 use frostsnap_core::message::{
     CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorBody, DeviceToUserMessage,
 };
-use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_core::schnorr_fun::fun::marker::Normal;
 use frostsnap_core::schnorr_fun::fun::KeyPair;
 use frostsnap_core::schnorr_fun::fun::Scalar;
@@ -101,8 +100,8 @@ where
             }
 
             if downstream_active {
-                while downstream_serial.poll_read() {
-                    match downstream_serial.receive_from_downstream() {
+                while let Some(device_send) = downstream_serial.receive_from_downstream() {
+                    match device_send {
                         Ok(device_send) => {
                             let forward_upstream = match device_send {
                                 DeviceSendSerial::MagicBytes(_) => {
@@ -179,10 +178,8 @@ where
                         ))
                     }
 
-                    while upstream_serial.poll_read() {
-                        let prior_to_read_buff = upstream_serial.clone_buffer_to_vec();
-
-                        match upstream_serial.receive_from_coordinator() {
+                    while let Some(received_message) = upstream_serial.receive_from_coordinator() {
+                        match received_message {
                             Ok(received_message) => {
                                 match received_message {
                                     DeviceReceiveSerial::MagicBytes(_) => {
@@ -262,11 +259,8 @@ where
                             }
                             Err(e) => {
                                 panic!(
-                                    "upstream read fail (got label: {}) {} ({}) {}",
+                                    "upstream read fail (got label: {}): {e}",
                                     ui.get_device_label().is_some(),
-                                    e,
-                                    prior_to_read_buff.len(),
-                                    hex::encode(&prior_to_read_buff)
                                 );
                             }
                         };
