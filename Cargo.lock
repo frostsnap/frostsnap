@@ -125,8 +125,9 @@ dependencies = [
 
 [[package]]
 name = "bdk_chain"
-version = "0.4.0"
-source = "git+https://github.com/bitcoindevkit/bdk.git?rev=26ade1172622f66cb95c831c4a8e7535409e8e81#26ade1172622f66cb95c831c4a8e7535409e8e81"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eaba1449489201f5e6d4d3905b7e02aad6270b9215665c649c4a4dcee5bde4e0"
 dependencies = [
  "bitcoin",
  "miniscript",
@@ -140,8 +141,9 @@ source = "git+https://github.com/llfourn/bdk.git?rev=9129b43f1ee75185f3cc3a0f27e
 
 [[package]]
 name = "bdk_electrum"
-version = "0.2.0"
-source = "git+https://github.com/bitcoindevkit/bdk.git?rev=26ade1172622f66cb95c831c4a8e7535409e8e81#26ade1172622f66cb95c831c4a8e7535409e8e81"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75596d1c2df9cbef4f8dfcfe9319742a13d4f20e9f9b9e4201896c8a04ed70c6"
 dependencies = [
  "bdk_chain",
  "electrum-client",
@@ -149,8 +151,9 @@ dependencies = [
 
 [[package]]
 name = "bdk_file_store"
-version = "0.1.0"
-source = "git+https://github.com/bitcoindevkit/bdk.git?rev=26ade1172622f66cb95c831c4a8e7535409e8e81#26ade1172622f66cb95c831c4a8e7535409e8e81"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f01e42205ce74e7a52f51877784bf4538a0b0ad15c003ba7e2d9c55292c593d4"
 dependencies = [
  "bdk_chain",
  "bincode 1.3.3",
