@@ -9,7 +9,7 @@ pub mod esp32_run;
 pub mod io;
 #[cfg(feature = "purple")]
 pub mod oled;
-#[cfg(feature = "blue")]
+#[cfg(any(feature = "blue", feature = "frostypede"))]
 pub mod st7735;
 pub mod state;
 pub mod storage;
