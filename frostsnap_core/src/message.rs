@@ -206,7 +206,7 @@ impl SignTask {
                     let sighash = sighash_cache
                         .taproot_key_spend_signature_hash(
                             i,
-                            &bitcoin::psbt::Prevouts::All(&prevouts),
+                            &bitcoin::psbt::Prevouts::All(prevouts),
                             schnorr_sighashty,
                         )
                         .unwrap(); // TODO remove unwrap

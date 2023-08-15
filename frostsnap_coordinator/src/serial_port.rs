@@ -42,7 +42,11 @@ impl<S: Serial> FramedSerialPort<S> {
         self.inner.fill_buf()?;
         let mut consumed = 0;
         let (progress, found) = frostsnap_comms::make_progress_on_magic_bytes::<Downstream>(
-            self.inner.buffer().iter().cloned().inspect(|_| consumed += 1),
+            self.inner
+                .buffer()
+                .iter()
+                .cloned()
+                .inspect(|_| consumed += 1),
             self.magic_bytes_progress,
         );
         self.inner.consume(consumed);

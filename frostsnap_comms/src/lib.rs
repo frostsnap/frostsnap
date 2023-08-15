@@ -5,7 +5,6 @@
 #[macro_use]
 extern crate std;
 
-#[allow(unused)]
 #[macro_use]
 extern crate alloc;
 use alloc::vec::Vec;
@@ -174,7 +173,6 @@ fn _make_progress_on_magic_bytes(
     magic_bytes: &[u8],
     mut progress: usize,
 ) -> (usize, bool) {
-
     for byte in remaining {
         if byte == magic_bytes[progress] {
             progress += 1;
@@ -196,7 +194,11 @@ pub fn find_and_remove_magic_bytes<D: Direction>(buff: &mut Vec<u8>) -> bool {
 
 fn _find_and_remove_magic_bytes(buff: &mut Vec<u8>, magic_bytes: &[u8]) -> bool {
     let mut consumed = 0;
-    let (_, found) = _make_progress_on_magic_bytes(buff.iter().cloned().inspect(|_| consumed += 1), magic_bytes, 0);
+    let (_, found) = _make_progress_on_magic_bytes(
+        buff.iter().cloned().inspect(|_| consumed += 1),
+        magic_bytes,
+        0,
+    );
 
     if found {
         *buff = buff.split_off(consumed);
