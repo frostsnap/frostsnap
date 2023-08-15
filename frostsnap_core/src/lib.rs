@@ -1,10 +1,8 @@
 #![no_std]
 
 #[cfg(feature = "std")]
-#[allow(unused)]
 #[macro_use]
 extern crate std;
-use bincode;
 pub mod encrypted_share;
 pub mod message;
 pub mod nostr;
@@ -37,7 +35,7 @@ use serde::{Deserialize, Serialize};
 use sha2::digest::Digest;
 use sha2::Sha256;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FrostCoordinator {
     state: CoordinatorState,
 }
@@ -190,10 +188,9 @@ impl FrostCoordinator {
                     {
                         let session = &mut session_progress.sign_session;
                         let xonly_frost_key = &session_progress.key;
-                        if session
+                        if !session
                             .participants()
-                            .find(|x_coord| *x_coord == message.from.to_poly_index())
-                            .is_none()
+                            .any(|x_coord| x_coord == message.from.to_poly_index())
                         {
                             return Err(Error::coordinator_invalid_message(
                                 &message,
@@ -221,7 +218,7 @@ impl FrostCoordinator {
                         }
                     }
 
-                    nonce_for_device.nonces.extend(new_nonces.into_iter());
+                    nonce_for_device.nonces.extend(new_nonces.iter());
 
                     let mut outgoing = vec![CoordinatorSend::ToStorage(
                         CoordinatorToStorageMessage::UpdateState(key.clone()),
@@ -296,20 +293,18 @@ impl FrostCoordinator {
 
     pub fn keygen_ack(&mut self, ack: bool) -> Result<Vec<CoordinatorSend>, ActionError> {
         match &mut self.state {
-            CoordinatorState::FrostKey { awaiting_user, key } if *awaiting_user == true => {
-                match ack {
-                    true => {
-                        *awaiting_user = false;
-                        Ok(vec![CoordinatorSend::ToStorage(
-                            CoordinatorToStorageMessage::UpdateState(key.clone()),
-                        )])
-                    }
-                    false => {
-                        self.state = CoordinatorState::Registration;
-                        Ok(vec![])
-                    }
+            CoordinatorState::FrostKey { awaiting_user, key } if *awaiting_user => match ack {
+                true => {
+                    *awaiting_user = false;
+                    Ok(vec![CoordinatorSend::ToStorage(
+                        CoordinatorToStorageMessage::UpdateState(key.clone()),
+                    )])
                 }
-            }
+                false => {
+                    self.state = CoordinatorState::Registration;
+                    Ok(vec![])
+                }
+            },
             _ => Err(ActionError::WrongState {
                 in_state: self.state.name(),
                 action: "keygen_ack",
@@ -495,6 +490,12 @@ pub struct SignSessionProgress {
     key: FrostKey<EvenY>,
 }
 
+impl Default for CoordinatorState {
+    fn default() -> Self {
+        Self::Registration
+    }
+}
+
 impl CoordinatorState {
     pub fn name(&self) -> &'static str {
         match self {
@@ -534,7 +535,7 @@ impl DeviceId {
 pub fn gen_pop_message(device_ids: impl IntoIterator<Item = DeviceId>) -> [u8; 32] {
     let mut hasher = Sha256::default().tag(b"frostsnap/pop");
     for id in device_ids {
-        hasher.update(&id.pubkey.to_bytes());
+        hasher.update(id.pubkey.to_bytes());
     }
     hasher.finalize().into()
 }
@@ -685,11 +686,12 @@ impl FrostSigner {
                 if point_polys
                     .get(&self.device_id().to_poly_index())
                     .expect("we have a point poly in this finish keygen")
-                    != &frost::to_point_poly(&scalar_poly)
+                    != &frost::to_point_poly(scalar_poly)
                 {
                     return Err(Error::signer_invalid_message(
                         &message,
-                        format!("Coordinator told us we are using a different point poly than we expected"),
+                        "Coordinator told us we are using a different point poly than we expected"
+                            .to_string(),
                     ));
                 }
 
@@ -728,7 +730,7 @@ impl FrostSigner {
                 let my_shares = transpose_shares
                     .get(&self.device_id())
                     .expect("this device is part of the keygen")
-                    .into_iter()
+                    .iter()
                     .map(|(provider_id, (encrypted_secret_share, pop))| {
                         (
                             provider_id.to_poly_index(),
@@ -823,7 +825,7 @@ impl FrostSigner {
 
     pub fn keygen_ack(&mut self, ack: bool) -> Result<Vec<DeviceSend>, ActionError> {
         match &mut self.state {
-            SignerState::FrostKey { awaiting_ack, .. } if *awaiting_ack == true => {
+            SignerState::FrostKey { awaiting_ack, .. } if *awaiting_ack => {
                 if ack {
                     *awaiting_ack = false;
                     Ok(vec![DeviceSend::ToStorage(
@@ -870,7 +872,7 @@ impl FrostSigner {
                     sign_items.iter().zip(secret_nonces).enumerate()
                 {
                     let nonces_at_index = nonces
-                        .into_iter()
+                        .iter()
                         .map(|(id, (nonces, _, _))| (id.to_poly_index(), nonces[nonce_index]))
                         .collect();
 

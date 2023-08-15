@@ -108,9 +108,8 @@ where
                                     // soft reset downstream if it sends unexpected magic bytes so we restablish
                                     // downstream_active = false;
                                     DeviceSendMessage::Debug {
-                                        message: format!(
-                                            "downstream device sent unexpected magic bytes"
-                                        ),
+                                        message: "downstream device sent unexpected magic bytes"
+                                            .to_string(),
                                         device: frost_signer.device_id(),
                                     }
                                 }
@@ -197,7 +196,7 @@ where
                                             let _ = forwarding_message
                                                 .target_destinations
                                                 .remove(&frost_signer.device_id());
-                                            if forwarding_message.target_destinations.len() > 0 {
+                                            if !forwarding_message.target_destinations.is_empty() {
                                                 sends_downstream.push(forwarding_message);
                                             }
                                         }

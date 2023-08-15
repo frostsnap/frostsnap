@@ -52,12 +52,12 @@ impl crate::KeyGenProvideShares {
     ) -> Self {
         let pop_message = crate::gen_pop_message(devices.clone());
         let proof_of_possession =
-            frost.create_proof_of_possession(&my_poly, schnorr_fun::Message::raw(&pop_message));
+            frost.create_proof_of_possession(my_poly, schnorr_fun::Message::raw(&pop_message));
 
         let encrypted_shares = devices
             .iter()
             .map(|&device| {
-                let share = frost.create_share(&my_poly, device.to_poly_index());
+                let share = frost.create_share(my_poly, device.to_poly_index());
                 (
                     device,
                     EncryptedShare::new(device.pubkey, secure_rng, &share),
@@ -66,7 +66,7 @@ impl crate::KeyGenProvideShares {
             .collect();
 
         Self {
-            my_poly: schnorr_fun::frost::to_point_poly(&my_poly),
+            my_poly: schnorr_fun::frost::to_point_poly(my_poly),
             proof_of_possession,
             encrypted_shares,
         }

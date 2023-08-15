@@ -201,7 +201,7 @@ where
 {
     fn write(&mut self, bytes: &[u8]) -> Result<(), EncodeError> {
         match self.io.write_bytes(bytes) {
-            Err(e) => return Err(EncodeError::OtherString(format!("{:?}", e))),
+            Err(e) => Err(EncodeError::OtherString(format!("{:?}", e))),
             Ok(()) => Ok(()),
         }
     }
@@ -235,7 +235,7 @@ impl<'a, U> SerialIo<'a, U> {
                 .map_err(|_| SerialInterfaceError::JtagError),
             SerialIo::Uart(uart) => uart
                 .write_bytes(words)
-                .map_err(|e| SerialInterfaceError::UartWriteError(e)),
+                .map_err(SerialInterfaceError::UartWriteError),
         }
     }
 
@@ -350,12 +350,10 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
                     } else {
                         DetectorState::NotDetected { uart, jtag }
                     }
+                } else if uart.find_and_remove_magic_bytes() {
+                    DetectorState::Detected(uart)
                 } else {
-                    if uart.find_and_remove_magic_bytes() {
-                        DetectorState::Detected(uart)
-                    } else {
-                        DetectorState::NotDetected { uart, jtag }
-                    }
+                    DetectorState::NotDetected { uart, jtag }
                 };
             }
         };
