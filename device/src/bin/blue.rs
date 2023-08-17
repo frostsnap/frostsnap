@@ -335,6 +335,9 @@ where
                 BusyTask::Signing => self.display.print("Signing..").unwrap(),
                 BusyTask::VerifyingShare => self.display.print("Verifying key..").unwrap(),
             },
+            Workflow::OnScreenDebug(onscreen_debug) => {
+                self.display.print(onscreen_debug.to_string()).unwrap()
+            }
         }
 
         self.display

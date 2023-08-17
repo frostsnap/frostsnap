@@ -1,4 +1,6 @@
+use alloc::collections::VecDeque;
 use alloc::string::String;
+use alloc::vec::Vec;
 
 pub trait UserInteraction {
     fn set_downstream_connection_state(&mut self, connected: bool);
@@ -35,11 +37,42 @@ pub enum WaitingResponse {
 }
 
 #[derive(Clone, Debug)]
+pub struct DebugLog {
+    log: VecDeque<String>,
+    max_items: usize,
+}
+
+impl DebugLog {
+    pub fn new(max_items: usize) -> Self {
+        Self {
+            log: VecDeque::new(),
+            max_items,
+        }
+    }
+    pub fn add(&mut self, str: String) {
+        if self.log.len() >= self.max_items {
+            self.log.pop_front();
+        }
+        self.log.push_back(str);
+    }
+
+    pub fn to_string(&self) -> String {
+        let mut print_msg = String::new();
+        for item in &self.log {
+            print_msg.push_str(&item.chars().take(20).collect::<String>());
+            print_msg.push_str("|");
+        }
+        print_msg
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum Workflow {
     None,
     WaitingFor(WaitingFor),
     BusyDoing(BusyTask),
     UserPrompt(Prompt),
+    OnScreenDebug(DebugLog),
 }
 
 impl Default for Workflow {
