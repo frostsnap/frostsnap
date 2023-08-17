@@ -57,6 +57,9 @@ enum Command {
 
     #[clap(flatten)]
     WalletCmd(wallet::Commands),
+
+    /// Listen, debug device messages
+    Listen,
 }
 
 #[derive(Subcommand)]
@@ -344,6 +347,9 @@ fn main() -> anyhow::Result<()> {
                 SignArgs::Transaction { .. } => todo!(),
             }
         }
+        Command::Listen => loop {
+            ports.poll_ports();
+        },
     }
     Ok(())
 }
