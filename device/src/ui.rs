@@ -1,6 +1,5 @@
 use alloc::collections::VecDeque;
 use alloc::string::String;
-use alloc::vec::Vec;
 
 pub trait UserInteraction {
     fn set_downstream_connection_state(&mut self, connected: bool);
