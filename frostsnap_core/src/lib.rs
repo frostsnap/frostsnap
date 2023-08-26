@@ -16,6 +16,7 @@ extern crate alloc;
 
 use crate::message::*;
 use alloc::{
+    boxed::Box,
     collections::{BTreeMap, BTreeSet, VecDeque},
     string::String,
     string::ToString,
@@ -653,7 +654,7 @@ impl FrostSigner {
 
                         body: DeviceToCoordinatorBody::KeyGenResponse(KeyGenResponse {
                             encrypted_shares,
-                            nonces,
+                            nonces: Box::new(nonces),
                         }),
                     },
                 )])
