@@ -3,6 +3,7 @@ use crate::CoordinatorFrostKey;
 use crate::Vec;
 use crate::NONCE_BATCH_SIZE;
 
+use alloc::boxed::Box;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 use schnorr_fun::fun::marker::Public;
@@ -108,7 +109,7 @@ pub struct KeyGenProvideShares {
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, Eq, PartialEq)]
 pub struct KeyGenResponse {
     pub encrypted_shares: KeyGenProvideShares,
-    pub nonces: [Nonce; NONCE_BATCH_SIZE],
+    pub nonces: Box<[Nonce; NONCE_BATCH_SIZE]>,
 }
 
 #[derive(Clone, Debug)]
