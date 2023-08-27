@@ -10,6 +10,30 @@ env:
   rust_toolchain: stable
   
 jobs:
+  frostsnap-core-clippy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frostsnap_core
+    steps:
+      - uses: actions/checkout@v3
+      - name: Clippy Setup
+        run: rustup component add clippy --toolchain ${{ env.rust_toolchain }}
+      - name: Frostsnap_core Clippy
+        run: cargo clippy
+
+  frostsnap-comms-clippy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frostsnap_comms
+    steps:
+      - uses: actions/checkout@v3
+      - name: Clippy Setup
+        run: rustup component add clippy --toolchain ${{ env.rust_toolchain }}
+      - name: Frostsnap_comms Clippy
+        run: cargo clippy
+
   device-build:
     runs-on: ubuntu-latest
     strategy:
