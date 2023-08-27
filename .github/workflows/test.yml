@@ -8,6 +8,8 @@ on:
  
 env:
   rust_toolchain: stable
+  # Make sure CI fails on all warnings, including Clippy lints
+  RUSTFLAGS: "-Dwarnings"
 
 jobs:
   frostsnap-core-clippy:
