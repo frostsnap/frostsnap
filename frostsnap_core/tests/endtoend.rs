@@ -32,15 +32,17 @@ fn test_end_to_end() {
     let message_to_sign2 = b"johnmcafee47".to_vec();
     let message_to_sign1 = b"pyramid schmee".to_vec();
 
+    // Sign a different message with all three devices
     message_stack.push(Send::UserToCoordinator(UserToCoordinator::StartSign {
         message: SignTask::Plain(message_to_sign2.clone()),
-        devices: BTreeSet::from_iter([device_id_vec[0], device_id_vec[1]]),
+        devices: BTreeSet::from_iter([device_id_vec[0], device_id_vec[1], device_id_vec[2]]),
     }));
-    // Use signers chosen by the coordinator
+    // Sign a message with two signers
     message_stack.push(Send::UserToCoordinator(UserToCoordinator::StartSign {
         message: SignTask::Plain(message_to_sign1.clone()),
-        devices: BTreeSet::from_iter([device_id_vec[1], device_id_vec[2]]),
+        devices: BTreeSet::from_iter([device_id_vec[2], device_id_vec[1]]),
     }));
+    // Do keygen
     message_stack.push(Send::UserToCoordinator(UserToCoordinator::DoKeyGen {
         threshold,
     }));
@@ -135,12 +137,20 @@ fn test_end_to_end() {
         assert_eq!(digest, &coordinator_check_keygen);
     }
 
-    assert_eq!(check_sig_requests.len(), 2, "three messages were signed");
+    assert_eq!(
+        check_sig_requests.len(),
+        2,
+        "something other than two signature requests were made"
+    );
+
+    // We sign with three devices in the first signing session, and three in the second
     assert!(
         check_sig_requests
             .values()
-            .all(|devices| devices.len() == 2),
-        "two devices signed each message"
+            .map(|session_participants| session_participants.len())
+            .sum::<usize>()
+            == 5,
+        "a total of 5 signature requests should have been made to the user"
     );
     assert_eq!(completed_signature_responses.len(), 2);
 

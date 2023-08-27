@@ -227,9 +227,10 @@ impl FrostCoordinator {
                         CoordinatorToStorageMessage::UpdateState(key.clone()),
                     )];
 
-                    let all_finished = sessions
-                        .iter()
-                        .all(|session| session.signature_shares.len() == key.frost_key.threshold());
+                    let all_finished = sessions.iter().all(|session| {
+                        session.signature_shares.len()
+                            == session.sign_session.participants().count()
+                    });
 
                     if all_finished {
                         let signatures = sessions
