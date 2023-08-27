@@ -1,6 +1,7 @@
 #![no_std]
 
 #[cfg(feature = "std")]
+#[allow(clippy::useless_attribute)]
 #[allow(unused)]
 #[macro_use]
 extern crate std;

@@ -8,7 +8,7 @@ on:
  
 env:
   rust_toolchain: stable
-  
+
 jobs:
   frostsnap-core-clippy:
     runs-on: ubuntu-latest
@@ -32,7 +32,7 @@ jobs:
       - name: Clippy Setup
         run: rustup component add clippy --toolchain ${{ env.rust_toolchain }}
       - name: Frostsnap_comms Clippy
-        run: cargo clippy
+        run: cargo clippy -- -Dwarnings
 
   device-build:
     runs-on: ubuntu-latest
@@ -57,15 +57,12 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           toolchain: ${{ env.rust_toolchain }}
-          components: rustfmt, clippy
       - name: Setup | rust-src
         run: rustup component add rust-src --toolchain ${{ env.rust_toolchain }}
       - name: Setup | ldproxy
         run: cargo install ldproxy
       - name: Build | Compile
-        run: |
-          echo $PATH
-          cargo build --release --features ${{ matrix.board }} --bin ${{ matrix.board }}
+        run: cargo build --release --features ${{ matrix.board }} --bin ${{ matrix.board }}
 
   coordinator-build:
     runs-on: ubuntu-latest
@@ -79,7 +76,6 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           toolchain: ${{ env.rust_toolchain }}
-          components: rustfmt, clippy
       - name: Setup | libudev
         run: sudo apt-get install -y  libudev-dev
       - name: Build | Compile
