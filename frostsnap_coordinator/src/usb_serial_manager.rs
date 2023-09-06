@@ -279,12 +279,12 @@ impl<S: Serial> UsbSerialManager<S> {
 
         let mut outbox = core::mem::take(&mut self.port_outbox);
 
-        for (device_id, _) in &self.device_ports {
-            if self.registered_devices.contains(&device_id) {
+        for device_id in self.device_ports.keys() {
+            if self.registered_devices.contains(device_id) {
                 continue;
             }
 
-            if let Some(device_label) = self.device_labels.get(&device_id) {
+            if let Some(device_label) = self.device_labels.get(device_id) {
                 outbox.push(DeviceReceiveMessage {
                     message_body: DeviceReceiveBody::AnnounceAck {
                         device_label: device_label.to_string(),
