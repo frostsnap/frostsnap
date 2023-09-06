@@ -19,10 +19,14 @@ use frostsnap_comms::Direction;
 use frostsnap_comms::Downstream;
 use frostsnap_comms::MagicBytes;
 use frostsnap_comms::Upstream;
+use ringbuffer::{AllocRingBuffer, RingBuffer};
+
+const RING_BUFFER_SIZE_LOG_2: usize = 8; // i.e. 256 bytes
 
 pub struct SerialInterface<'a, T, U, D> {
     io: SerialIo<'a, U>,
-    read_buffer: Vec<u8>,
+    ring_buffer: AllocRingBuffer<u8>,
+    magic_bytes_progress: usize,
     timer: &'a Timer<T>,
     direction: PhantomData<D>,
 }
@@ -31,14 +35,15 @@ impl<'a, T, U, D> SerialInterface<'a, T, U, D> {
     pub fn new_uart(uart: uart::Uart<'a, U>, timer: &'a Timer<T>) -> Self {
         Self {
             io: SerialIo::Uart(uart),
-            read_buffer: vec![],
+            ring_buffer: AllocRingBuffer::with_capacity_power_of_2(RING_BUFFER_SIZE_LOG_2),
+            magic_bytes_progress: 0,
             timer,
             direction: PhantomData,
         }
     }
 
-    pub fn read_buffer(&self) -> &[u8] {
-        &self.read_buffer[..]
+    pub fn clone_buffer_to_vec(&self) -> Vec<u8> {
+        self.ring_buffer.clone().drain().collect::<Vec<u8>>()
     }
 }
 
@@ -46,7 +51,8 @@ impl<'a, T, U> SerialInterface<'a, T, U, Upstream> {
     pub fn new_jtag(jtag: UsbSerialJtag<'a>, timer: &'a Timer<T>) -> Self {
         Self {
             io: SerialIo::Jtag(jtag),
-            read_buffer: vec![],
+            ring_buffer: AllocRingBuffer::with_capacity_power_of_2(RING_BUFFER_SIZE_LOG_2),
+            magic_bytes_progress: 0,
             timer,
             direction: PhantomData,
         }
@@ -58,20 +64,29 @@ where
     U: uart::Instance,
     T: esp32c3_hal::timer::Instance,
 {
-    pub fn poll_read(&mut self) -> bool {
-        let read_buffer = &mut self.read_buffer;
+    fn fill_buffer(&mut self) {
         while let Ok(c) = self.io.read_byte() {
-            read_buffer.push(c);
+            self.ring_buffer.push(c);
+            if self.ring_buffer.is_full() {
+                break;
+            }
         }
-        !read_buffer.is_empty()
     }
 
     pub fn find_and_remove_magic_bytes(&mut self) -> bool
     where
         D: Direction,
     {
-        self.poll_read();
-        frostsnap_comms::find_and_remove_magic_bytes::<D>(&mut self.read_buffer)
+        self.fill_buffer();
+        if self.ring_buffer.is_empty() {
+            return false;
+        }
+        let (progress, found) = frostsnap_comms::make_progress_on_magic_bytes::<D>(
+            self.ring_buffer.drain(),
+            self.magic_bytes_progress,
+        );
+        self.magic_bytes_progress = progress;
+        found
     }
 }
 
@@ -101,8 +116,16 @@ where
 
     pub fn receive_from_downstream(
         &mut self,
-    ) -> Result<DeviceSendSerial<Downstream>, bincode::error::DecodeError> {
-        bincode::decode_from_reader(self, bincode::config::standard())
+    ) -> Option<Result<DeviceSendSerial<Downstream>, bincode::error::DecodeError>> {
+        self.fill_buffer();
+        if !self.ring_buffer.is_empty() {
+            Some(bincode::decode_from_reader(
+                self,
+                bincode::config::standard(),
+            ))
+        } else {
+            None
+        }
     }
 }
 
@@ -128,8 +151,16 @@ where
 
     pub fn receive_from_coordinator(
         &mut self,
-    ) -> Result<DeviceReceiveSerial<Upstream>, bincode::error::DecodeError> {
-        bincode::decode_from_reader(self, bincode::config::standard())
+    ) -> Option<Result<DeviceReceiveSerial<Upstream>, bincode::error::DecodeError>> {
+        self.fill_buffer();
+        if !self.ring_buffer.is_empty() {
+            Some(bincode::decode_from_reader(
+                self,
+                bincode::config::standard(),
+            ))
+        } else {
+            None
+        }
     }
 }
 
@@ -139,20 +170,25 @@ where
     T: esp32c3_hal::timer::Instance,
 {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), DecodeError> {
-        let start_time = self.timer.now();
+        for (i, target_byte) in bytes.iter_mut().enumerate() {
+            let start_time = self.timer.now();
 
-        while self.read_buffer.len() < bytes.len() {
-            self.poll_read();
-            if (self.timer.now() - start_time) / 40_000 > 1_000 {
-                return Err(DecodeError::UnexpectedEnd {
-                    additional: bytes.len() - self.read_buffer.len(),
-                });
-            }
+            *target_byte = loop {
+                // eagerly fill the buffer so we pull bytes from the hardware serial buffer as fast
+                // as possible.
+                self.fill_buffer();
+
+                if let Some(next_byte) = self.ring_buffer.dequeue() {
+                    break next_byte;
+                }
+
+                if (self.timer.now() - start_time) / 40_000 > 1_000 {
+                    return Err(DecodeError::UnexpectedEnd {
+                        additional: bytes.len() - i + 1,
+                    });
+                }
+            };
         }
-        let extra_bytes = self.read_buffer.split_off(bytes.len());
-
-        bytes.copy_from_slice(&self.read_buffer);
-        self.read_buffer = extra_bytes;
         Ok(())
     }
 }
@@ -163,7 +199,7 @@ where
 {
     fn write(&mut self, bytes: &[u8]) -> Result<(), EncodeError> {
         match self.io.write_bytes(bytes) {
-            Err(e) => return Err(EncodeError::OtherString(format!("{:?}", e))),
+            Err(e) => Err(EncodeError::OtherString(format!("{:?}", e))),
             Ok(()) => Ok(()),
         }
     }
@@ -197,7 +233,7 @@ impl<'a, U> SerialIo<'a, U> {
                 .map_err(|_| SerialInterfaceError::JtagError),
             SerialIo::Uart(uart) => uart
                 .write_bytes(words)
-                .map_err(|e| SerialInterfaceError::UartWriteError(e)),
+                .map_err(SerialInterfaceError::UartWriteError),
         }
     }
 
@@ -312,12 +348,10 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
                     } else {
                         DetectorState::NotDetected { uart, jtag }
                     }
+                } else if uart.find_and_remove_magic_bytes() {
+                    DetectorState::Detected(uart)
                 } else {
-                    if uart.find_and_remove_magic_bytes() {
-                        DetectorState::Detected(uart)
-                    } else {
-                        DetectorState::NotDetected { uart, jtag }
-                    }
+                    DetectorState::NotDetected { uart, jtag }
                 };
             }
         };
