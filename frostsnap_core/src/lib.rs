@@ -315,7 +315,7 @@ impl FrostCoordinator {
 
     pub fn start_sign(
         &mut self,
-        message_to_sign: SignTask,
+        sign_task: SignTask,
         signing_parties: BTreeSet<DeviceId>,
     ) -> Result<(Vec<CoordinatorSend>, CoordinatorToDeviceMessage), StartSignError> {
         match &mut self.state {
@@ -331,7 +331,7 @@ impl FrostCoordinator {
                     });
                 }
 
-                let sign_items = message_to_sign.sign_items();
+                let sign_items = sign_task.sign_items();
                 let n_signatures = sign_items.len();
 
                 let signing_nonces = signing_parties
@@ -422,7 +422,7 @@ impl FrostCoordinator {
                         CoordinatorToStorageMessage::UpdateState(key),
                     )],
                     CoordinatorToDeviceMessage::RequestSign {
-                        message_to_sign: message_to_sign.clone(),
+                        sign_task,
                         nonces: signing_nonces.clone(),
                     },
                 ))
@@ -779,7 +779,7 @@ impl FrostSigner {
                 },
                 CoordinatorToDeviceMessage::RequestSign {
                     nonces,
-                    message_to_sign,
+                    sign_task,
                 },
             ) => {
                 let (my_nonces, my_nonce_index, _) = match nonces.get(&self.device_id()) {
@@ -813,11 +813,11 @@ impl FrostSigner {
 
                 self.state = SignerState::AwaitingSignAck {
                     key: key.clone(),
-                    message: message_to_sign.clone(),
+                    sign_task: sign_task.clone(),
                     nonces,
                 };
                 Ok(vec![DeviceSend::ToUser(
-                    DeviceToUserMessage::SignatureRequest { message_to_sign },
+                    DeviceToUserMessage::SignatureRequest { sign_task },
                 )])
             }
             _ => Err(Error::signer_message_kind(&self.state, &message)),
@@ -848,7 +848,7 @@ impl FrostSigner {
         match &self.state {
             SignerState::AwaitingSignAck {
                 key,
-                message,
+                sign_task: message,
                 nonces,
             } => {
                 if !ack {
@@ -970,7 +970,7 @@ pub enum SignerState {
     },
     AwaitingSignAck {
         key: FrostsnapKey,
-        message: SignTask,
+        sign_task: SignTask,
         nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
     },
     FrostKey {

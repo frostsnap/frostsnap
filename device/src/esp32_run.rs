@@ -320,11 +320,11 @@ where
                                 ui.set_workflow(ui::Workflow::UserPrompt(ui::Prompt::KeyGen(xpub)));
                             }
                             frostsnap_core::message::DeviceToUserMessage::SignatureRequest {
-                                message_to_sign,
+                                sign_task,
                                 ..
                             } => {
                                 ui.set_workflow(ui::Workflow::UserPrompt(ui::Prompt::Signing(
-                                    message_to_sign.to_string(),
+                                    sign_task.to_string(),
                                 )));
                             }
                         };

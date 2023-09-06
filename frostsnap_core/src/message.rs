@@ -42,7 +42,7 @@ pub enum CoordinatorToDeviceMessage {
         // TODO: explain these `usize` and create a nicely documented struct which explains the
         // mechanism
         nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
-        message_to_sign: SignTask,
+        sign_task: SignTask,
     },
 }
 
@@ -121,7 +121,7 @@ pub enum CoordinatorToUserMessage {
 #[derive(Clone, Debug)]
 pub enum DeviceToUserMessage {
     CheckKeyGen { xpub: String },
-    SignatureRequest { message_to_sign: SignTask },
+    SignatureRequest { sign_task: SignTask },
 }
 
 #[derive(Clone, Debug)]
