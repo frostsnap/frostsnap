@@ -41,6 +41,13 @@ impl EncryptedShare {
         cipher.apply_keystream(&mut self.e);
         Scalar::from_bytes_mod_order(self.e)
     }
+
+    pub fn random(rng: &mut impl RngCore) -> Self {
+        let mut e = [0u8; 32];
+        rng.fill_bytes(&mut e);
+        let R = Point::random(rng);
+        Self { R, e }
+    }
 }
 
 impl crate::KeyGenProvideShares {
@@ -60,7 +67,11 @@ impl crate::KeyGenProvideShares {
                 let share = frost.create_share(my_poly, device.to_poly_index());
                 (
                     device,
-                    EncryptedShare::new(device.pubkey, secure_rng, &share),
+                    match device.pubkey() {
+                        Some(pubkey) => EncryptedShare::new(pubkey, secure_rng, &share),
+                        // Encrypt garbage if device id is not a valid public key
+                        None => EncryptedShare::random(secure_rng),
+                    },
                 )
             })
             .collect();
