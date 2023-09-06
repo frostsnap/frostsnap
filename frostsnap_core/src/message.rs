@@ -132,8 +132,8 @@ pub enum DeviceToStorageMessage {
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum SignTask {
-    Plain(Vec<u8>),                                            // 1 nonce & sig
-    Nostr(#[bincode(with_serde)] crate::nostr::UnsignedEvent), // 1 nonce & sig
+    Plain(Vec<u8>),                                                 // 1 nonce & sig
+    Nostr(#[bincode(with_serde)] Box<crate::nostr::UnsignedEvent>), // 1 nonce & sig
     Transaction {
         #[bincode(with_serde)]
         tx_template: bitcoin::Transaction,
