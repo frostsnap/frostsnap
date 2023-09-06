@@ -19,8 +19,6 @@ use frostsnap_comms::Direction;
 use frostsnap_comms::Downstream;
 use frostsnap_comms::MagicBytes;
 use frostsnap_comms::Upstream;
-use ringbuffer::RingBufferRead;
-use ringbuffer::RingBufferWrite;
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 
 const RING_BUFFER_SIZE_LOG_2: usize = 8; // i.e. 256 bytes
