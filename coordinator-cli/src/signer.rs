@@ -42,10 +42,9 @@ impl<'a, 'b> Signer<'a, 'b> {
     }
 
     pub fn coordinator_frost_key(&self) -> anyhow::Result<&CoordinatorFrostKey> {
-        Ok(self
-            .coordinator
+        self.coordinator
             .key()
-            .ok_or(anyhow!("Incorrect state to start signing"))?)
+            .ok_or(anyhow!("Incorrect state to start signing"))
     }
 
     fn run_signing_process(
@@ -151,7 +150,7 @@ impl<'a, 'b> Signer<'a, 'b> {
                     };
                 }
 
-                if just_now_registered_devices.len() > 0 {
+                if !just_now_registered_devices.is_empty() {
                     start = std::time::Instant::now();
                     newly_registered.extend(just_now_registered_devices);
                 } else if start.elapsed().as_millis() > 2_000 {

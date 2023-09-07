@@ -57,14 +57,13 @@ fn get_descriptor(frost_key: &FrostKey<Normal>) -> Descriptor<DescriptorPublicKe
     let frost_xpub = frostsnap_core::xpub::FrostXpub::new(frost_key.clone());
     let key = DescriptorPublicKey::XPub(DescriptorXKey {
         origin: None,
-        xkey: frost_xpub.xpub().clone(),
+        xkey: *frost_xpub.xpub(),
         derivation_path: DerivationPath::master(),
         wildcard: Wildcard::Unhardened,
     });
 
     let tr = Tr::new(key, None).expect("infallible since it's None");
-    let descriptor = Descriptor::Tr(tr);
-    descriptor
+    Descriptor::Tr(tr)
 }
 
 impl Wallet {
@@ -140,7 +139,7 @@ impl Commands {
                     .scan(&c, spks, core::iter::empty(), core::iter::empty(), 10, 10)
                     .context("scanning the blockchain")?;
 
-                let missing_txids = response.missing_full_txs(&wallet.graph.graph());
+                let missing_txids = response.missing_full_txs(wallet.graph.graph());
 
                 let update =
                     response.finalize_as_confirmation_time(&client, None, missing_txids)?;
@@ -252,7 +251,7 @@ impl Commands {
                         change_policy,
                     })
                     .take(100_000)
-                    .filter_map(|x| x)
+                    .flatten()
                     .next();
 
                 match bnb {

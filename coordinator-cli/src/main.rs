@@ -303,7 +303,7 @@ fn main() -> anyhow::Result<()> {
                     );
 
                     let finished_signature = signer.sign_message_request(
-                        frostsnap_core::message::SignTask::Nostr(event.clone()),
+                        frostsnap_core::message::SignTask::Nostr(Box::new(event.clone())),
                     )?;
                     let finished_signature = finished_signature[0].clone();
                     let signed_event = event.add_signature(finished_signature);

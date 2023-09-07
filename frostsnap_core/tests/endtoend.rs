@@ -109,7 +109,9 @@ fn test_end_to_end() {
                     device.keygen_ack(true).unwrap();
                     check_keygens.insert(device_id, xpub);
                 }
-                DeviceToUserMessage::SignatureRequest { message_to_sign } => {
+                DeviceToUserMessage::SignatureRequest {
+                    sign_task: message_to_sign,
+                } => {
                     check_sig_requests
                         .entry(message_to_sign.clone())
                         .and_modify(|signers| signers.push(device_id))

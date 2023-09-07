@@ -7,20 +7,19 @@ on:
   pull_request:
  
 env:
-  rust_toolchain: stable
-  
+  LIB_PACKAGES: -p frostsnap_comms -p frostsnap_core -p frostsnap_coordinator
+
 jobs:
   device-build:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        board: ['blue', 'purple']
+        board: ['blue', 'purple', 'frostypede']
     defaults:
       run:
         working-directory: ./device
     steps:
-      - name: Setup | Checkout
-        uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Setup | RISC-V GCC prerequisites
         run: sudo apt-get install autoconf automake autotools-dev curl python3 libmpc-dev libmpfr-dev libgmp-dev gawk build-essential bison flex texinfo gperf libtool patchutils bc zlib1g-dev libexpat-dev ninja-build
       - name: Setup | RISCV GCC
@@ -29,76 +28,44 @@ jobs:
           tar -zxf riscv32-elf-ubuntu-22.04-nightly-2023.05.24-nightly.tar.gz
           echo "PATH=$PATH:${GITHUB_WORKSPACE}/device/riscv/bin" >> $GITHUB_ENV
           ls ${GITHUB_WORKSPACE}/device/riscv/bin
-      - name: Setup | Rust
-        uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@nightly
         with:
-          toolchain: ${{ env.rust_toolchain }}
-          components: rustfmt, clippy
-      - name: Setup | rust-src
-        run: rustup component add rust-src --toolchain ${{ env.rust_toolchain }}
-      - name: Setup | ldproxy
-        run: cargo install ldproxy
-      - name: Build | Compile
-        run: |
-          echo $PATH
-          cargo build --release --features ${{ matrix.board }} --bin ${{ matrix.board }}
+          targets: riscv32imc-unknown-none-elf
+          components: clippy
+      - run: cargo install ldproxy
+      - run: cargo build --release --features ${{ matrix.board }} --bin ${{ matrix.board }}
+      - run: cargo clippy -- -Dwarnings
 
-  coordinator-build:
+  coordinator-cli-test:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: ./coordinator-cli
     steps:
-      - name: Setup | Checkout
-        uses: actions/checkout@v2
-      - name: Setup | Rust
-        uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ env.rust_toolchain }}
           components: rustfmt, clippy
-      - name: Setup | libudev
-        run: sudo apt-get install -y  libudev-dev
-      - name: Build | Compile
-        run: cargo build --release
+      - run: sudo apt-get install -y  libudev-dev
+      - run: cargo test --release --all-features
+      - run: cargo clippy -- -Dwarnings
 
-  non-device-tests:
+  lib-tests:
+    name: Library tests
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./frostsnap_core
     steps:
       - name: Setup | Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Test | Run tests
-        # TODO add coordinator code to this but I didn't do this because of libudev. When it's split into a library it should be here.
-        run: RUSTFLAGS='-D warnings' cargo test --release -p frostsnap_comms -p frostsnap_core --all-features
+        run: RUSTFLAGS='-D warnings' cargo test --release $LIB_PACKAGES --all-features
 
-  fmt:
-    name: Rustfmt
+  lib-lint:
+    name: Library Lints
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
-          toolchain: stable
-          override: true
-          components: rustfmt
-      - uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
-
-  # doc-build:
-  #    name: doc-build
-  #    runs-on: ubuntu-latest
-  #    steps:
-  #      - uses: actions/checkout@v2
-  #      - uses: actions-rs/toolchain@v1
-  #        with:
-  #          profile: minimal
-  #          toolchain: nightly
-  #          override: true
-  #      - name: build-doc
-  #        # convoluted way to make it fail on warnings
-  #        run: "cargo doc --no-deps --workspace 2>&1 | tee /dev/fd/2 | grep -iEq '^(warning|error)' && exit 1 || exit 0"
+          components: rustfmt,clippy
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy $LIB_PACKAGES -- -Dwarnings

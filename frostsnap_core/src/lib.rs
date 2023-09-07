@@ -4,9 +4,12 @@
 #[macro_use]
 extern crate std;
 pub mod encrypted_share;
+mod macros;
 pub mod message;
 pub mod nostr;
 pub mod xpub;
+pub use bincode;
+pub use serde;
 
 use bitcoin::XOnlyPublicKey;
 pub use schnorr_fun;
@@ -23,16 +26,14 @@ use alloc::{
     vec::Vec,
 };
 
-use bincode::{Decode, Encode};
 use rand_chacha::ChaCha20Rng;
 use rand_core::RngCore;
 use schnorr_fun::{
     frost::{self, generate_scalar_poly, FrostKey, SignSession},
-    fun::{derive_nonce_rng, marker::*, KeyPair, Point, Scalar, Tag},
+    fun::{derive_nonce_rng, hex, marker::*, KeyPair, Point, Scalar, Tag},
     musig::{Nonce, NonceKeyPair},
     nonce, Message,
 };
-use serde::{Deserialize, Serialize};
 use sha2::digest::Digest;
 use sha2::Sha256;
 
@@ -315,7 +316,7 @@ impl FrostCoordinator {
 
     pub fn start_sign(
         &mut self,
-        message_to_sign: SignTask,
+        sign_task: SignTask,
         signing_parties: BTreeSet<DeviceId>,
     ) -> Result<(Vec<CoordinatorSend>, CoordinatorToDeviceMessage), StartSignError> {
         match &mut self.state {
@@ -331,7 +332,7 @@ impl FrostCoordinator {
                     });
                 }
 
-                let sign_items = message_to_sign.sign_items();
+                let sign_items = sign_task.sign_items();
                 let n_signatures = sign_items.len();
 
                 let signing_nonces = signing_parties
@@ -422,7 +423,7 @@ impl FrostCoordinator {
                         CoordinatorToStorageMessage::UpdateState(key),
                     )],
                     CoordinatorToDeviceMessage::RequestSign {
-                        message_to_sign: message_to_sign.clone(),
+                        sign_task,
                         nonces: signing_nonces.clone(),
                     },
                 ))
@@ -514,29 +515,44 @@ pub struct DeviceNonces {
     nonces: VecDeque<Nonce>,
 }
 
-#[derive(
-    Clone, Copy, Debug, PartialEq, Hash, Eq, Ord, PartialOrd, Encode, Decode, Serialize, Deserialize,
-)]
-pub struct DeviceId {
-    pub pubkey: Point,
+#[derive(Clone, Copy, Debug, PartialEq, Hash, Eq, Ord, PartialOrd)]
+pub struct DeviceId([u8; 33]);
+
+impl_display_serialize! {
+    fn to_bytes(device_id: &DeviceId) -> [u8;33] {
+        device_id.0
+    }
 }
 
-impl core::fmt::Display for DeviceId {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}", self.pubkey)
+impl_fromstr_deserialize! {
+    name => "device id",
+    fn from_bytes(bytes: [u8;33]) -> DeviceId {
+        DeviceId(bytes)
     }
 }
 
 impl DeviceId {
     pub fn to_poly_index(&self) -> Scalar<Public> {
-        Scalar::from_hash(Sha256::default().chain_update(self.pubkey.to_bytes())).public()
+        Scalar::from_hash(Sha256::default().chain_update(self.0)).public()
+    }
+
+    pub fn new(point: Point) -> Self {
+        Self(point.to_bytes())
+    }
+
+    pub fn pubkey(&self) -> Option<Point> {
+        Point::from_bytes(self.0)
+    }
+
+    pub fn as_bytes(&self) -> &[u8; 33] {
+        &self.0
     }
 }
 
 pub fn gen_pop_message(device_ids: impl IntoIterator<Item = DeviceId>) -> [u8; 32] {
     let mut hasher = Sha256::default().tag(b"frostsnap/pop");
     for id in device_ids {
-        hasher.update(id.pubkey.to_bytes());
+        hasher.update(id.as_bytes());
     }
     hasher.finalize().into()
 }
@@ -571,9 +587,7 @@ impl FrostSigner {
     }
 
     pub fn device_id(&self) -> DeviceId {
-        DeviceId {
-            pubkey: self.keypair().public_key(),
-        }
+        DeviceId::new(self.keypair().public_key())
     }
 
     pub fn generate_nonces(
@@ -615,16 +629,16 @@ impl FrostSigner {
                 let frost = frost::new_with_deterministic_nonces::<Sha256>();
                 // XXX: Right now now duplicate pubkeys are possible because we only have it in the
                 // device id and it's given to us as a BTreeSet.
-                let pks = devices
+                let device_ids = devices
                     .iter()
-                    .map(|device| device.pubkey)
+                    .map(|device| device.as_bytes())
                     .collect::<Vec<_>>();
                 let mut poly_rng = derive_nonce_rng! {
                     // use Deterministic nonce gen to create our polynomial so we reproduce it later
                     nonce_gen => nonce::Deterministic::<Sha256>::default().tag(b"frostsnap/keygen"),
                     secret => self.keypair.secret_key(),
                     // session id must be unique for each key generation session
-                    public => [(threshold as u32).to_be_bytes(), &pks[..]],
+                    public => [(threshold as u32).to_be_bytes(), &device_ids[..]],
                     seedable_rng => ChaCha20Rng
                 };
                 let scalar_poly = generate_scalar_poly(threshold, &mut poly_rng);
@@ -777,10 +791,7 @@ impl FrostSigner {
                     key,
                     awaiting_ack: false,
                 },
-                CoordinatorToDeviceMessage::RequestSign {
-                    nonces,
-                    message_to_sign,
-                },
+                CoordinatorToDeviceMessage::RequestSign { nonces, sign_task },
             ) => {
                 let (my_nonces, my_nonce_index, _) = match nonces.get(&self.device_id()) {
                     Some(nonce) => nonce,
@@ -813,11 +824,11 @@ impl FrostSigner {
 
                 self.state = SignerState::AwaitingSignAck {
                     key: key.clone(),
-                    message: message_to_sign.clone(),
+                    sign_task: sign_task.clone(),
                     nonces,
                 };
                 Ok(vec![DeviceSend::ToUser(
-                    DeviceToUserMessage::SignatureRequest { message_to_sign },
+                    DeviceToUserMessage::SignatureRequest { sign_task },
                 )])
             }
             _ => Err(Error::signer_message_kind(&self.state, &message)),
@@ -848,7 +859,7 @@ impl FrostSigner {
         match &self.state {
             SignerState::AwaitingSignAck {
                 key,
-                message,
+                sign_task: message,
                 nonces,
             } => {
                 if !ack {
@@ -970,7 +981,7 @@ pub enum SignerState {
     },
     AwaitingSignAck {
         key: FrostsnapKey,
-        message: SignTask,
+        sign_task: SignTask,
         nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
     },
     FrostKey {

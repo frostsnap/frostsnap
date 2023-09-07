@@ -42,7 +42,7 @@ pub enum CoordinatorToDeviceMessage {
         // TODO: explain these `usize` and create a nicely documented struct which explains the
         // mechanism
         nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
-        message_to_sign: SignTask,
+        sign_task: SignTask,
     },
 }
 
@@ -121,7 +121,7 @@ pub enum CoordinatorToUserMessage {
 #[derive(Clone, Debug)]
 pub enum DeviceToUserMessage {
     CheckKeyGen { xpub: String },
-    SignatureRequest { message_to_sign: SignTask },
+    SignatureRequest { sign_task: SignTask },
 }
 
 #[derive(Clone, Debug)]
@@ -132,8 +132,8 @@ pub enum DeviceToStorageMessage {
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum SignTask {
-    Plain(Vec<u8>),                                            // 1 nonce & sig
-    Nostr(#[bincode(with_serde)] crate::nostr::UnsignedEvent), // 1 nonce & sig
+    Plain(Vec<u8>),                                                 // 1 nonce & sig
+    Nostr(#[bincode(with_serde)] Box<crate::nostr::UnsignedEvent>), // 1 nonce & sig
     Transaction {
         #[bincode(with_serde)]
         tx_template: bitcoin::Transaction,
