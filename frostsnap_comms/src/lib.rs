@@ -138,6 +138,7 @@ impl<D> DeviceSendSerial<D> {
                 DeviceSendMessage::Core(message) => match message.body {
                     DeviceToCoordinatorBody::KeyGenResponse(_) => "KeyGenResponse",
                     DeviceToCoordinatorBody::SignatureShare { .. } => "SignatureShare",
+                    DeviceToCoordinatorBody::DownstreamDisconnect => "DownstreamDisconnect",
                 },
                 DeviceSendMessage::Debug { .. } => "Debug",
                 DeviceSendMessage::Announce(_) => "Announce",

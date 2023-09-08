@@ -157,6 +157,10 @@ impl FrostCoordinator {
                         }
                     }
                 }
+                DeviceToCoordinatorBody::DownstreamDisconnect => {
+                    // For now, take no action with the hope that the device is reconnected
+                    Ok(vec![])
+                }
                 _ => Err(Error::coordinator_message_kind(&self.state, &message)),
             },
             CoordinatorState::Signing { key, sessions } => match &message.body {
@@ -257,6 +261,10 @@ impl FrostCoordinator {
                     }
 
                     Ok(outgoing)
+                }
+                DeviceToCoordinatorBody::DownstreamDisconnect => {
+                    // For now, take no action with the hope that the device is reconnected
+                    Ok(vec![])
                 }
                 _ => Err(Error::coordinator_message_kind(&self.state, &message)),
             },

@@ -88,6 +88,7 @@ pub enum DeviceToCoordinatorBody {
         signature_shares: Vec<Scalar<Public, Zero>>,
         new_nonces: Vec<Nonce>,
     },
+    DownstreamDisconnect,
 }
 
 impl DeviceToCoordinatorBody {
@@ -95,6 +96,7 @@ impl DeviceToCoordinatorBody {
         match self {
             DeviceToCoordinatorBody::KeyGenResponse(_) => "KeyGenProvideShares",
             DeviceToCoordinatorBody::SignatureShare { .. } => "SignatureShare",
+            DeviceToCoordinatorBody::DownstreamDisconnect => "DownstreamDisconnect",
         }
     }
 }

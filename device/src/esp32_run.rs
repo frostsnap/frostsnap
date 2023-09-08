@@ -12,7 +12,8 @@ use frostsnap_comms::{
 };
 use frostsnap_comms::{DeviceReceiveMessage, Downstream};
 use frostsnap_core::message::{
-    CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorBody, DeviceToUserMessage,
+    CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorBody, DeviceToCoordindatorMessage,
+    DeviceToUserMessage,
 };
 use frostsnap_core::schnorr_fun::fun::marker::Normal;
 use frostsnap_core::schnorr_fun::fun::KeyPair;
@@ -130,6 +131,12 @@ where
                                 message: format!("Failed to decode on downstream port: {e}"),
                                 device: frost_signer.device_id(),
                             });
+                            sends_upstream.push(DeviceSendMessage::Core(
+                                DeviceToCoordindatorMessage {
+                                    from: frost_signer.device_id(),
+                                    body: DeviceToCoordinatorBody::DownstreamDisconnect,
+                                },
+                            ));
                             downstream_active = false;
                             ui.set_downstream_connection_state(false);
                         }
