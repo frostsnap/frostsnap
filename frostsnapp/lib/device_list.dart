@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:frostsnapp/coordinator.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
+import 'dart:developer' as developer;
 
 typedef DeviceId = String;
 
 class UnlabeledDeviceTextField extends StatelessWidget {
   final ValueChanged<String> onNameSubmit;
 
-  UnlabeledDeviceTextField({required this.onNameSubmit, super.key});
+  const UnlabeledDeviceTextField({required this.onNameSubmit, super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -22,16 +24,14 @@ class UnlabeledDeviceTextField extends StatelessWidget {
 }
 
 class DeviceListWidget extends StatefulWidget {
-  final FfiCoordinator coordinator;
-  final Stream<List<DeviceChange>> deviceEvents;
-  const DeviceListWidget(
-      {required this.coordinator, required this.deviceEvents, super.key});
+  const DeviceListWidget({super.key});
 
   @override
   State<StatefulWidget> createState() => DeviceListWidgetState();
 }
 
-class DeviceListWidgetState extends State<DeviceListWidget> {
+class DeviceListWidgetState extends State<DeviceListWidget>
+    with WidgetsBindingObserver {
   final GlobalKey<AnimatedListState> deviceListKey =
       GlobalKey<AnimatedListState>();
   late DeviceList _deviceList;
@@ -39,9 +39,11 @@ class DeviceListWidgetState extends State<DeviceListWidget> {
   @override
   void initState() {
     super.initState();
+
+    WidgetsBinding.instance.addObserver(this);
     _deviceList =
         DeviceList(listKey: deviceListKey, removedDeviceBuilder: _buildDevice);
-    widget.deviceEvents.forEach((deviceChanges) {
+    global_coordinator.subDeviceEvents().forEach((deviceChanges) {
       for (final change in deviceChanges) {
         switch (change) {
           case DeviceChange_Added(:final id):
@@ -59,6 +61,21 @@ class DeviceListWidgetState extends State<DeviceListWidget> {
         }
       }
     });
+
+    @override
+    void dispose() {
+      WidgetsBinding.instance.removeObserver(this);
+      super.dispose();
+    }
+
+    // This is meant to make sure we catch any devices plugged in while the app
+    // wasn't in foreground but for some reason it doesn't work.
+    @override
+    void didChangeAppLifecycleState(AppLifecycleState state) {
+      if (state == AppLifecycleState.resumed) {
+        global_coordinator.scanDevices();
+      }
+    }
   }
 
   @override
@@ -71,8 +88,7 @@ class DeviceListWidgetState extends State<DeviceListWidget> {
     Widget child;
     if (label == null) {
       child = UnlabeledDeviceTextField(onNameSubmit: (name) {
-        api.setDeviceLabel(
-            coordinator: widget.coordinator, deviceId: id, label: name);
+        global_coordinator.setDeviceLabel(id, name);
       });
     } else {
       child = LabeledDeviceText(label);
@@ -93,7 +109,8 @@ class DeviceBoxContainer extends StatelessWidget {
   final Animation<double> animation;
   final Widget child;
 
-  DeviceBoxContainer({required this.child, required this.animation, super.key});
+  const DeviceBoxContainer(
+      {required this.child, required this.animation, super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -117,11 +134,11 @@ class DeviceBoxContainer extends StatelessWidget {
 class LabeledDeviceText extends StatelessWidget {
   final String name;
 
-  LabeledDeviceText(this.name, {super.key});
+  const LabeledDeviceText(this.name, {super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Text(name, style: TextStyle(fontSize: 30));
+    return Text(name, style: const TextStyle(fontSize: 30));
   }
 }
 

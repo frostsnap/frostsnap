@@ -266,7 +266,7 @@ pub struct UpstreamDetector<'a, T, U> {
     switch_time: Option<u64>,
     pub switched: bool,
     state: DetectorState<'a, T, U>,
-    magic_bytes_freq: u64,
+    magic_bytes_period: u64,
 }
 
 pub enum DetectorState<'a, T, U> {
@@ -293,7 +293,7 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
                 jtag: SerialInterface::new_jtag(jtag, timer),
                 uart: SerialInterface::new_uart(uart, timer),
             },
-            magic_bytes_freq: magic_bytes_period,
+            magic_bytes_period,
         }
     }
 
@@ -329,7 +329,7 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
                 let now = self.timer.now();
                 let switch_time = self.switch_time.get_or_insert_with(|| {
                     // we assume we are in uart mode to start with
-                    now + 40_000 * (self.magic_bytes_freq + self.magic_bytes_freq / 2)
+                    now + 40_000 * (self.magic_bytes_period + self.magic_bytes_period / 2)
                 });
 
                 self.state = if now > *switch_time {

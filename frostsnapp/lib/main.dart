@@ -5,7 +5,6 @@ import 'dart:developer' as developer;
 import 'dart:io';
 import 'package:usb_serial/usb_serial.dart';
 import 'package:flutter/services.dart';
-import 'serialport.dart';
 import 'device_list.dart';
 
 Timer? timer;
@@ -58,47 +57,14 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  // These futures belong to the state and are only initialized once,
-  // in the initState method.
-  late Future<FfiCoordinator> ffi;
-  FfiCoordinator? coordinator;
-  Map<String, SerialPort> openPorts = {};
-
   @override
   void initState() {
     super.initState();
-    ffi = api.newFfiCoordinator(hostHandlesSerial: Platform.isAndroid);
-
     if (Platform.isAndroid) {
       api.turnLogcatLoggingOn(level: Level.Debug);
-      UsbSerial.usbEventStream?.listen((UsbEvent msg) {
-        if (msg.event == UsbEvent.ACTION_USB_DETACHED) {
-          openPorts.remove(msg.device?.deviceName);
-        }
-        announceDevices();
-      });
     } else {
       api.turnStderrLoggingOn(level: Level.Debug);
     }
-  }
-
-  SerialPort _getPort(String id) {
-    var port = openPorts[id];
-    if (port == null) {
-      throw "port $id has been disconnected";
-    }
-    return port;
-  }
-
-  void announceDevices() async {
-    var ctx = await ffi;
-    List<UsbDevice> devices = await UsbSerial.listDevices();
-    final List<PortDesc> portDescriptions = devices
-        .where((device) => device.vid != null && device.pid != null)
-        .map((device) =>
-            PortDesc(id: device.deviceName, pid: device.pid!, vid: device.vid!))
-        .toList();
-    await api.announceAvailablePorts(coordinator: ctx, ports: portDescriptions);
   }
 
   @override
@@ -129,7 +95,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
         // We await two unrelated futures here, so the type has to be
         // List<dynamic>.
-        future: Future.wait([this.ffi]),
+        future: Future.wait([]),
         builder: (context, snap) {
           final style = Theme.of(context).textTheme.headlineMedium;
           if (snap.error != null) {
@@ -145,55 +111,11 @@ class _MyHomePageState extends State<MyHomePage> {
           // Guard return here, the data is not ready yet.
           final data = snap.data;
           if (data == null) return const CircularProgressIndicator();
-          final coordinator = data[0];
 
-          final deviceEvents = api.subDeviceEvents();
-          api.initEvents().forEach((event) async {
-            switch (event) {
-              case CoordinatorEvent_PortOpen(:final request):
-                {
-                  try {
-                    var port = openPorts[request.id];
-                    port ??=
-                        await SerialPort.open(request.id, request.baudRate);
-                    openPorts[request.id] = port;
-                    request.satisfy();
-                  } catch (e) {
-                    request.satisfy(err: e.toString());
-                  }
-                }
-              case CoordinatorEvent_PortRead(:final request):
-                {
-                  try {
-                    var port = _getPort(request.id);
-                    var newBytes = port.read(request.len);
-                    request.satisfy(bytes: newBytes);
-                  } catch (e) {
-                    request.satisfy(bytes: Uint8List(0), err: e.toString());
-                  }
-                }
-              case CoordinatorEvent_PortWrite(:final request):
-                {
-                  try {
-                    var port = _getPort(request.id);
-                    port.write(request.bytes);
-                    request.satisfy();
-                  } catch (e) {
-                    request.satisfy(err: e.toString());
-                  }
-                }
-              case CoordinatorEvent_PortBytesToRead(:final request):
-                {
-                  var port = openPorts[request.id];
-                  request.satisfy(bytesToRead: port?.buffer.length ?? 0);
-                }
-            }
-          });
           return Container(
               width: 400,
               alignment: Alignment.bottomLeft,
-              child: DeviceListWidget(
-                  coordinator: coordinator, deviceEvents: deviceEvents));
+              child: const DeviceListWidget());
         },
       )),
     );

@@ -4,11 +4,11 @@ const USB_PID: u16 = 4097;
 
 use crate::PortOpenError;
 use crate::{FramedSerialPort, Serial};
-use frostsnap_comms::DeviceReceiveMessage;
 use frostsnap_comms::DeviceReceiveSerial;
 use frostsnap_comms::DeviceSendSerial;
 use frostsnap_comms::Downstream;
 use frostsnap_comms::{DeviceReceiveBody, DeviceSendMessage};
+use frostsnap_comms::{DeviceReceiveMessage, MAGIC_BYTES_PERIOD};
 use frostsnap_core::message::DeviceToCoordindatorMessage;
 use frostsnap_core::DeviceId;
 use std::collections::BTreeMap;
@@ -26,7 +26,7 @@ pub struct UsbSerialManager {
     /// Initial state
     pending: HashSet<String>,
     /// After opening port and awaiting magic bytes
-    awaiting_magic: HashMap<String, FramedSerialPort>,
+    awaiting_magic: HashMap<String, AwaitingMagic>,
     /// Read magic magic bytes
     ready: HashMap<String, FramedSerialPort>,
     /// ports that seems to be busy
@@ -41,6 +41,14 @@ pub struct UsbSerialManager {
     device_labels: HashMap<DeviceId, String>,
     /// Messages to devices outbox
     port_outbox: Vec<DeviceReceiveMessage>,
+}
+
+const COORDINATOR_MAGIC_BYTES_PERDIOD: std::time::Duration =
+    std::time::Duration::from_millis(MAGIC_BYTES_PERIOD);
+
+struct AwaitingMagic {
+    port: FramedSerialPort,
+    last_wrote_magic_bytes: Option<std::time::Instant>,
 }
 
 impl UsbSerialManager {
@@ -163,8 +171,13 @@ impl UsbSerialManager {
                     event!(Level::DEBUG, port = serial_number, "Opened port");
                     match device_port.write_magic_bytes() {
                         Ok(_) => {
-                            self.awaiting_magic
-                                .insert(serial_number.clone(), device_port);
+                            self.awaiting_magic.insert(
+                                serial_number.clone(),
+                                AwaitingMagic {
+                                    port: device_port,
+                                    last_wrote_magic_bytes: None,
+                                },
+                            );
                         }
                         Err(e) => {
                             event!(
@@ -180,28 +193,43 @@ impl UsbSerialManager {
             }
         }
 
-        for (serial_number, mut device_port) in self.awaiting_magic.drain().collect::<Vec<_>>() {
+        for (serial_number, mut awaiting_magic) in self.awaiting_magic.drain().collect::<Vec<_>>() {
+            let device_port = &mut awaiting_magic.port;
             match device_port.read_for_magic_bytes() {
                 Ok(true) => {
                     event!(Level::DEBUG, port = serial_number, "Read magic bytes");
-                    self.ready.insert(serial_number, device_port);
+                    self.ready.insert(serial_number, awaiting_magic.port);
                 }
-                Ok(false) => match device_port.write_magic_bytes() {
-                    Ok(_) => {
-                        event!(Level::DEBUG, port = serial_number, "Wrote magic bytes");
-                        // we still need to read them so go again
-                        self.awaiting_magic.insert(serial_number, device_port);
+                Ok(false) => {
+                    let time_since_last_wrote_magic = awaiting_magic
+                        .last_wrote_magic_bytes
+                        .as_ref()
+                        .map(std::time::Instant::elapsed)
+                        .unwrap_or(std::time::Duration::MAX);
+
+                    if time_since_last_wrote_magic < COORDINATOR_MAGIC_BYTES_PERDIOD {
+                        self.awaiting_magic.insert(serial_number, awaiting_magic);
+                        continue;
                     }
-                    Err(e) => {
-                        event!(
-                            Level::ERROR,
-                            port = serial_number,
-                            e = e.to_string(),
-                            "Failed to write magic bytes"
-                        );
-                        self.disconnect(&serial_number, &mut device_changes);
+
+                    match device_port.write_magic_bytes() {
+                        Ok(_) => {
+                            event!(Level::DEBUG, port = serial_number, "Wrote magic bytes");
+                            awaiting_magic.last_wrote_magic_bytes = Some(std::time::Instant::now());
+                            // we still need to read them so go again
+                            self.awaiting_magic.insert(serial_number, awaiting_magic);
+                        }
+                        Err(e) => {
+                            event!(
+                                Level::ERROR,
+                                port = serial_number,
+                                e = e.to_string(),
+                                "Failed to write magic bytes"
+                            );
+                            self.disconnect(&serial_number, &mut device_changes);
+                        }
                     }
-                },
+                }
                 Err(e) => {
                     event!(
                         Level::DEBUG,

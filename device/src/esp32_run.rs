@@ -10,7 +10,7 @@ use esp_storage::FlashStorage;
 use frostsnap_comms::{
     DeviceReceiveBody, DeviceReceiveSerial, DeviceSendMessage, DeviceSendSerial,
 };
-use frostsnap_comms::{DeviceReceiveMessage, Downstream};
+use frostsnap_comms::{DeviceReceiveMessage, Downstream, MAGIC_BYTES_PERIOD};
 use frostsnap_core::message::{
     CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorBody, DeviceToUserMessage,
 };
@@ -26,9 +26,6 @@ pub struct Run<'a, UpstreamUart, DownstreamUart, Ui, T> {
     pub ui: Ui,
     pub timer: esp32c3_hal::timer::Timer<T>,
 }
-
-/// Write magic bytes once every 100ms
-const MAGIC_BYTES_PERIOD: u64 = 100;
 
 impl<'a, UpstreamUart, DownstreamUart, Ui, T> Run<'a, UpstreamUart, DownstreamUart, Ui, T>
 where
