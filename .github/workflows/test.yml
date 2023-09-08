@@ -7,7 +7,7 @@ on:
   pull_request:
  
 env:
-  LIB_PACKAGES: -p frostsnap_comms -p frostsnap_core -p frostsnap_coordinator
+  NON_DEVICE_PACKAGES: -p frostsnap_comms -p frostsnap_core -p frostsnap_coordinator
 
 jobs:
   device-build:
@@ -32,40 +32,26 @@ jobs:
         with:
           targets: riscv32imc-unknown-none-elf
           components: clippy
-      - run: cargo install ldproxy
       - run: cargo build --release --features ${{ matrix.board }} --bin ${{ matrix.board }}
       - run: cargo clippy -- -Dwarnings
 
-  coordinator-cli-test:
+  non-device:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./coordinator-cli
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - run: sudo apt-get install -y  libudev-dev
-      - run: cargo test --release --all-features
       - run: cargo clippy -- -Dwarnings
+      - run: RUSTFLAGS='-D warnings' cargo test --release NON_DEVICE_PACKAGES --all-features
 
-  lib-tests:
-    name: Library tests
-    runs-on: ubuntu-latest
-    steps:
-      - name: Setup | Checkout
-        uses: actions/checkout@v3
-      - name: Test | Run tests
-        run: RUSTFLAGS='-D warnings' cargo test --release $LIB_PACKAGES --all-features
-
-  lib-lint:
+  format:
     name: Library Lints
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt,clippy
+          components: rustfmt
       - run: cargo fmt --all -- --check
-      - run: cargo clippy $LIB_PACKAGES -- -Dwarnings
