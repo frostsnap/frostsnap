@@ -10,6 +10,9 @@ gen:
         --dart-decl-output lib/bridge_definitions.dart \
         --wasm
 
+build TARGET:
+    flutter build -v {{TARGET}}
+
 lint:
     cd native && cargo fmt
     dart format .
@@ -17,7 +20,22 @@ lint:
 clean:
     flutter clean
     cd native && cargo clean
-    
+
+flutter_rust_bridge_version:
+    #!/bin/sh
+    flutter_rust_bridge_version=$(perl -0777 -nE '/name = "flutter_rust_bridge".*?version = "(.*?)"/s && print $1' < ../Cargo.lock)
+    echo $flutter_rust_bridge_version
+
+install-rust-deps:
+    #!/bin/sh
+    flutter_rust_bridge_version=$(just flutter_rust_bridge_version)
+    if test "$flutter_rust_bridge_version"; then
+        cargo install "flutter_rust_bridge_codegen@$flutter_rust_bridge_version" cargo-ndk
+    else
+        echo "coudln't determine version for flutter_rust_bridge" >&2;
+        exit 1
+    fi
+
 serve *args='':
     flutter pub run flutter_rust_bridge:serve {{args}}
 

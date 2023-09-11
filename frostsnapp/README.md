@@ -7,13 +7,15 @@ libraries via `flutter_rust_bridge`.
 
 To begin, ensure that you have a working installation of the following items:
 - [Flutter SDK](https://docs.flutter.dev/get-started/install)
+- install [`just`](https://github.com/casey/just)
 - [Rust language](https://rustup.rs/)
-- `flutter_rust_bridge_codegen` [cargo package](https://cjycode.com/flutter_rust_bridge/integrate/deps.html#build-time-dependencies) -- **Make sure to install the same version as in the project's [`Cargo.lock`](../Cargo.lock)**  
+- `flutter_rust_bridge_codegen` [cargo package](https://cjycode.com/flutter_rust_bridge/integrate/deps.html#build-time-dependencies) -- **Make sure to install the same version as in the project's [`Cargo.lock`](../Cargo.lock)** (run `just frostsnapp/flutter_rust_bridge_version`) 
 - Appropriate [Rust targets](https://rust-lang.github.io/rustup/cross-compilation.html) for cross-compiling to your device
 - For Android targets:
     - Install [cargo-ndk](https://github.com/bbqsrc/cargo-ndk#installing)
-    - Install [Android NDK 22](https://github.com/android/ndk/wiki/Unsupported-Downloads#r22b), then put its path in one of the `gradle.properties`, e.g.:
+    - Install [Android NDK](https://github.com/android/ndk/wiki)
 - install [cargo expand](https://github.com/dtolnay/cargo-expand)
+- install [ninja](https://ninja-build.org/) ( e.g. `sudo api install ninja-build` )
 
 ```
 echo "ANDROID_NDK=.." >> ~/.gradle/gradle.properties

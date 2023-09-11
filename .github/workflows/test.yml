@@ -47,3 +47,27 @@ jobs:
       - run: sudo apt-get install -y libudev-dev
       - run: just lint-non-device --release
       - run: just test --release
+
+  app-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+      - uses: taiki-e/install-action@just
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+      - uses: actions/setup-java@v3
+        with:
+          distribution: zulu
+          java-version: 18
+          cache: gradle
+      - uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r25c
+      - run: just frostsnapp/install-rust-deps
+      - run: sudo apt install -y ninja-build libstdc++-12-dev libgtk-3-0 libgtk-3-dev libudev-dev
+      - run: just frostsnapp/build linux
+      - run: just frostsnapp/build appbundle
