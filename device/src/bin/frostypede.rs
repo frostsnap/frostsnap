@@ -344,7 +344,7 @@ where
                                 }
                             }
                         },
-                        None => body.push_str("\n"),
+                        None => body.push('\n'),
                     };
                     body.push_str(&format!("NAME: {}\n", label));
 
@@ -418,7 +418,7 @@ where
     }
 
     fn get_device_label(&self) -> Option<&str> {
-        self.device_label.as_ref().map(String::as_str)
+        self.device_label.as_deref()
     }
 
     fn set_workflow(&mut self, workflow: Workflow) {
@@ -497,7 +497,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
             "{}:{} {}",
             location.file().split('/').last().unwrap_or(""),
             location.line(),
-            info.to_string()
+            info
         ),
         None => info.to_string(),
     };

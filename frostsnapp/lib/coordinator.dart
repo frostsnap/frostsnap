@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'package:usb_serial/usb_serial.dart';
-import 'ffi.dart';
 import 'serialport.dart';
 import 'dart:io';
 
@@ -12,16 +11,16 @@ class Coordinator {
   Map<String, SerialPort> openPorts = {};
 
   Coordinator() {
-    this.ffi = api.newFfiCoordinator(hostHandlesSerial: Platform.isAndroid);
+    ffi = api.newFfiCoordinator(hostHandlesSerial: Platform.isAndroid);
     UsbSerial.usbEventStream?.listen((UsbEvent msg) {
       if (msg.event == UsbEvent.ACTION_USB_DETACHED) {
         openPorts.remove(msg.device?.deviceName);
       }
       scanDevices();
     });
-    api.initEvents().forEach((event) async {
+    api.subPortEvents().forEach((event) async {
       switch (event) {
-        case CoordinatorEvent_PortOpen(:final request):
+        case PortEvent_Open(:final request):
           {
             try {
               var port = openPorts[request.id];
@@ -32,7 +31,7 @@ class Coordinator {
               request.satisfy(err: e.toString());
             }
           }
-        case CoordinatorEvent_PortRead(:final request):
+        case PortEvent_Read(:final request):
           {
             try {
               var port = _getPort(request.id);
@@ -42,7 +41,7 @@ class Coordinator {
               request.satisfy(bytes: Uint8List(0), err: e.toString());
             }
           }
-        case CoordinatorEvent_PortWrite(:final request):
+        case PortEvent_Write(:final request):
           {
             try {
               var port = _getPort(request.id);
@@ -52,7 +51,7 @@ class Coordinator {
               request.satisfy(err: e.toString());
             }
           }
-        case CoordinatorEvent_PortBytesToRead(:final request):
+        case PortEvent_BytesToRead(:final request):
           {
             var port = openPorts[request.id];
             request.satisfy(bytesToRead: port?.buffer.length ?? 0);

@@ -139,8 +139,7 @@ fn main() -> anyhow::Result<()> {
     let mut db = db::Db::new(db_path)?;
     let changeset = db.load()?;
 
-    let mut ports =
-        frostsnap_coordinator::UsbSerialManager::new(Box::new(DesktopSerial::default()));
+    let mut ports = frostsnap_coordinator::UsbSerialManager::new(Box::new(DesktopSerial));
 
     if let Some(state) = &changeset.frostsnap {
         *ports.device_labels_mut() = state.device_labels.clone();

@@ -28,16 +28,15 @@ use esp32c3_hal::{
 use mipidsi::ColorInversion;
 use mipidsi::{models::ST7735s, Display, Error};
 
+pub type SpiInterface<'d, SPI> =
+    SPIInterfaceNoCS<Spi<'d, SPI, FullDuplexMode>, AnyPin<Output<PushPull>>>;
+
 pub struct ST7735<'d, SPI>
 where
     SPI: Instance,
 {
     // pub bl: &'d mut GpioPin<Output<PushPull>, RA, IRA, InputOutputPinType, Gpio11Signals, 11>,
-    pub display: Display<
-        SPIInterfaceNoCS<Spi<'d, SPI, FullDuplexMode>, AnyPin<Output<PushPull>>>,
-        ST7735s,
-        AnyPin<Output<PushPull>>,
-    >,
+    pub display: Display<SpiInterface<'d, SPI>, ST7735s, AnyPin<Output<PushPull>>>,
     character_style: MonoTextStyle<'d, Rgb565>,
     textbox_style: TextBoxStyle,
     framebuf: FrameBuf<Rgb565, [Rgb565; 12800]>,
@@ -47,6 +46,7 @@ impl<'d, SPI> ST7735<'d, SPI>
 where
     SPI: Instance,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new<SCK: OutputPin, MOSI: OutputPin, MISO: InputPin, CS: OutputPin>(
         // bl: &'d mut GpioPin<Output<PushPull>, RA, IRA, InputOutputPinType, Gpio11Signals, 11>,
         dc: AnyPin<Output<PushPull>>,
@@ -73,7 +73,7 @@ where
         );
 
         let di = SPIInterfaceNoCS::new(spi, dc);
-        let mut delay = Delay::new(&clocks);
+        let mut delay = Delay::new(clocks);
 
         // default values are for the air101-r225
         const OFFSET_HANDLER: (u16, u16) = {

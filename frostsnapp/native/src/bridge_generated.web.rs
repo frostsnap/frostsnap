@@ -2,8 +2,8 @@ use super::*;
 // Section: wire functions
 
 #[wasm_bindgen]
-pub fn wire_init_events(port_: MessagePort) {
-    wire_init_events_impl(port_)
+pub fn wire_sub_port_events(port_: MessagePort) {
+    wire_sub_port_events_impl(port_)
 }
 
 #[wasm_bindgen]

@@ -418,7 +418,7 @@ impl UsbSerialManager {
     pub fn announced_devices(&self) -> impl Iterator<Item = (DeviceId, Option<String>)> + '_ {
         self.device_ports
             .keys()
-            .map(|device| (*device, self.device_labels.get(&device).cloned()))
+            .map(|device| (*device, self.device_labels.get(device).cloned()))
     }
 
     pub fn registered_devices(&self) -> &BTreeSet<DeviceId> {
@@ -441,12 +441,12 @@ impl UsbSerialManager {
             .collect()
     }
 
-    pub fn serial_impl(&self) -> &Box<dyn Serial> {
-        &self.serial_impl
+    pub fn serial_impl(&self) -> &dyn Serial {
+        &*self.serial_impl
     }
 
-    pub fn serial_impl_mut(&mut self) -> &mut Box<dyn Serial> {
-        &mut self.serial_impl
+    pub fn serial_impl_mut(&mut self) -> &mut dyn Serial {
+        &mut *self.serial_impl
     }
 }
 

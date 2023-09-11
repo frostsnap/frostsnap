@@ -1,4 +1,4 @@
-use crate::api::CoordinatorEvent;
+use crate::api::PortEvent;
 use flutter_rust_bridge::RustOpaque;
 use frostsnap_coordinator::serialport;
 use frostsnap_coordinator::{
@@ -126,7 +126,7 @@ impl Serial for FfiSerial {
     fn open_device_port(&self, id: &str, baud_rate: u32) -> Result<SerialPort, PortOpenError> {
         let (tx, rx) = std::sync::mpsc::sync_channel(0);
 
-        crate::api::emit_event(CoordinatorEvent::PortOpen {
+        crate::api::emit_event(PortEvent::Open {
             request: crate::api::PortOpen {
                 id: id.into(),
                 baud_rate,
@@ -154,7 +154,7 @@ pub struct FfiSerialPort {
 impl io::Read for FfiSerialPort {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let (tx, rx) = std::sync::mpsc::sync_channel::<Result<Vec<u8>, String>>(0);
-        crate::api::emit_event(CoordinatorEvent::PortRead {
+        crate::api::emit_event(PortEvent::Read {
             request: crate::api::PortRead {
                 id: self.id.clone(),
                 len: buf.len(),
@@ -178,7 +178,7 @@ impl std::io::Write for FfiSerialPort {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let (tx, rx) = std::sync::mpsc::sync_channel(0);
 
-        crate::api::emit_event(CoordinatorEvent::PortWrite {
+        crate::api::emit_event(PortEvent::Write {
             request: crate::api::PortWrite {
                 id: self.id.clone(),
                 bytes: buf.to_vec(),
@@ -201,7 +201,7 @@ impl std::io::Write for FfiSerialPort {
 
 mod _impl {
     use super::serialport::*;
-    use super::{CoordinatorEvent, PortBytesToReadSender, RustOpaque};
+    use super::{PortBytesToReadSender, PortEvent, RustOpaque};
 
     #[allow(unused)]
     impl SerialPort for super::FfiSerialPort {
@@ -214,7 +214,7 @@ mod _impl {
         fn bytes_to_read(&self) -> Result<u32> {
             let (tx, rx) = std::sync::mpsc::sync_channel(0);
 
-            crate::api::emit_event(CoordinatorEvent::PortBytesToRead {
+            crate::api::emit_event(PortEvent::BytesToRead {
                 request: crate::api::PortBytesToRead {
                     id: self.id.clone(),
                     ready: RustOpaque::new(PortBytesToReadSender(tx)),

@@ -2,8 +2,8 @@ use super::*;
 // Section: wire functions
 
 #[no_mangle]
-pub extern "C" fn wire_init_events(port_: i64) {
-    wire_init_events_impl(port_)
+pub extern "C" fn wire_sub_port_events(port_: i64) {
+    wire_sub_port_events_impl(port_)
 }
 
 #[no_mangle]

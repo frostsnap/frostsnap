@@ -327,10 +327,10 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
             }
             DetectorState::NotDetected { mut jtag, mut uart } => {
                 let now = self.timer.now();
-                let switch_time = self.switch_time.get_or_insert_with(|| {
+                let switch_time = self.switch_time.get_or_insert(
                     // we assume we are in uart mode to start with
-                    now + 40_000 * (self.magic_bytes_period + self.magic_bytes_period / 2)
-                });
+                    now + 40_000 * (self.magic_bytes_period + self.magic_bytes_period / 2),
+                );
 
                 self.state = if now > *switch_time {
                     if !self.switched {

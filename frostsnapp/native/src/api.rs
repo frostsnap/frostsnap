@@ -12,13 +12,13 @@ pub use std::sync::{Mutex, RwLock};
 use tracing::{event, Level as TLevel};
 
 lazy_static! {
-    static ref EVENT_STREAM: RwLock<Option<StreamSink<CoordinatorEvent>>> = RwLock::default();
+    static ref EVENT_STREAM: RwLock<Option<StreamSink<PortEvent>>> = RwLock::default();
     static ref DEVICE_EVENT_STREAM: RwLock<Option<StreamSink<Vec<DeviceChange>>>> =
         RwLock::default();
     static ref PENDING_DEVICE_EVENTS: Mutex<Vec<DeviceChange>> = Default::default();
 }
 
-pub fn init_events(event_stream: StreamSink<CoordinatorEvent>) {
+pub fn sub_port_events(event_stream: StreamSink<PortEvent>) {
     let mut v = EVENT_STREAM.write().expect("lock must not be poisoned");
     *v = Some(event_stream);
 }
@@ -28,7 +28,7 @@ pub fn sub_device_events(stream: StreamSink<Vec<DeviceChange>>) {
     emit_device_events(vec![]);
 }
 
-pub(crate) fn emit_event(event: CoordinatorEvent) -> anyhow::Result<()> {
+pub(crate) fn emit_event(event: PortEvent) -> anyhow::Result<()> {
     let stream = EVENT_STREAM.read().expect("lock must not be poisoned");
 
     let stream = stream.as_ref().expect("init_events must be called first");
@@ -60,11 +60,11 @@ pub struct _PortDesc {
 pub type DeviceId = String;
 
 #[derive(Debug)]
-pub enum CoordinatorEvent {
-    PortOpen { request: PortOpen },
-    PortWrite { request: PortWrite },
-    PortRead { request: PortRead },
-    PortBytesToRead { request: PortBytesToRead },
+pub enum PortEvent {
+    Open { request: PortOpen },
+    Write { request: PortWrite },
+    Read { request: PortRead },
+    BytesToRead { request: PortBytesToRead },
 }
 
 #[derive(Debug)]

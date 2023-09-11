@@ -14,9 +14,9 @@ import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'bridge_definitions.freezed.dart';
 
 abstract class Native {
-  Stream<CoordinatorEvent> initEvents({dynamic hint});
+  Stream<PortEvent> subPortEvents({dynamic hint});
 
-  FlutterRustBridgeTaskConstMeta get kInitEventsConstMeta;
+  FlutterRustBridgeTaskConstMeta get kSubPortEventsConstMeta;
 
   Stream<List<DeviceChange>> subDeviceEvents({dynamic hint});
 
@@ -171,22 +171,6 @@ class PortWriteSender extends FrbOpaque {
 }
 
 @freezed
-sealed class CoordinatorEvent with _$CoordinatorEvent {
-  const factory CoordinatorEvent.portOpen({
-    required PortOpen request,
-  }) = CoordinatorEvent_PortOpen;
-  const factory CoordinatorEvent.portWrite({
-    required PortWrite request,
-  }) = CoordinatorEvent_PortWrite;
-  const factory CoordinatorEvent.portRead({
-    required PortRead request,
-  }) = CoordinatorEvent_PortRead;
-  const factory CoordinatorEvent.portBytesToRead({
-    required PortBytesToRead request,
-  }) = CoordinatorEvent_PortBytesToRead;
-}
-
-@freezed
 sealed class DeviceChange with _$DeviceChange {
   const factory DeviceChange.added({
     required String id,
@@ -233,6 +217,22 @@ class PortDesc {
     required this.vid,
     required this.pid,
   });
+}
+
+@freezed
+sealed class PortEvent with _$PortEvent {
+  const factory PortEvent.open({
+    required PortOpen request,
+  }) = PortEvent_Open;
+  const factory PortEvent.write({
+    required PortWrite request,
+  }) = PortEvent_Write;
+  const factory PortEvent.read({
+    required PortRead request,
+  }) = PortEvent_Read;
+  const factory PortEvent.bytesToRead({
+    required PortBytesToRead request,
+  }) = PortEvent_BytesToRead;
 }
 
 class PortOpen {

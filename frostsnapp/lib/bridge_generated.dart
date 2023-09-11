@@ -20,19 +20,19 @@ class NativeImpl implements Native {
   factory NativeImpl.wasm(FutureOr<WasmModule> module) =>
       NativeImpl(module as ExternalLibrary);
   NativeImpl.raw(this._platform);
-  Stream<CoordinatorEvent> initEvents({dynamic hint}) {
+  Stream<PortEvent> subPortEvents({dynamic hint}) {
     return _platform.executeStream(FlutterRustBridgeTask(
-      callFfi: (port_) => _platform.inner.wire_init_events(port_),
-      parseSuccessData: _wire2api_coordinator_event,
-      constMeta: kInitEventsConstMeta,
+      callFfi: (port_) => _platform.inner.wire_sub_port_events(port_),
+      parseSuccessData: _wire2api_port_event,
+      constMeta: kSubPortEventsConstMeta,
       argValues: [],
       hint: hint,
     ));
   }
 
-  FlutterRustBridgeTaskConstMeta get kInitEventsConstMeta =>
+  FlutterRustBridgeTaskConstMeta get kSubPortEventsConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
-        debugName: "init_events",
+        debugName: "sub_port_events",
         argNames: [],
       );
 
@@ -316,29 +316,6 @@ class NativeImpl implements Native {
     return _wire2api_port_write(raw);
   }
 
-  CoordinatorEvent _wire2api_coordinator_event(dynamic raw) {
-    switch (raw[0]) {
-      case 0:
-        return CoordinatorEvent_PortOpen(
-          request: _wire2api_box_autoadd_port_open(raw[1]),
-        );
-      case 1:
-        return CoordinatorEvent_PortWrite(
-          request: _wire2api_box_autoadd_port_write(raw[1]),
-        );
-      case 2:
-        return CoordinatorEvent_PortRead(
-          request: _wire2api_box_autoadd_port_read(raw[1]),
-        );
-      case 3:
-        return CoordinatorEvent_PortBytesToRead(
-          request: _wire2api_box_autoadd_port_bytes_to_read(raw[1]),
-        );
-      default:
-        throw Exception("unreachable");
-    }
-  }
-
   DeviceChange _wire2api_device_change(dynamic raw) {
     switch (raw[0]) {
       case 0:
@@ -372,6 +349,29 @@ class NativeImpl implements Native {
       id: _wire2api_String(arr[0]),
       ready: _wire2api_PortBytesToReadSender(arr[1]),
     );
+  }
+
+  PortEvent _wire2api_port_event(dynamic raw) {
+    switch (raw[0]) {
+      case 0:
+        return PortEvent_Open(
+          request: _wire2api_box_autoadd_port_open(raw[1]),
+        );
+      case 1:
+        return PortEvent_Write(
+          request: _wire2api_box_autoadd_port_write(raw[1]),
+        );
+      case 2:
+        return PortEvent_Read(
+          request: _wire2api_box_autoadd_port_read(raw[1]),
+        );
+      case 3:
+        return PortEvent_BytesToRead(
+          request: _wire2api_box_autoadd_port_bytes_to_read(raw[1]),
+        );
+      default:
+        throw Exception("unreachable");
+    }
   }
 
   PortOpen _wire2api_port_open(dynamic raw) {

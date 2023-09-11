@@ -158,7 +158,7 @@ impl<'a, 'b> Signer<'a, 'b> {
                             asking_to_sign.remove(device_id);
                         }
                         DeviceChange::Registered(device_id, _) => {
-                            if still_need_to_sign.contains(&device_id) {
+                            if still_need_to_sign.contains(device_id) {
                                 asking_to_sign.insert(*device_id);
                             }
                         }

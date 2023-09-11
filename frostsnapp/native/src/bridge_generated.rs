@@ -22,19 +22,15 @@ use std::sync::Arc;
 
 // Section: wire functions
 
-fn wire_init_events_impl(port_: MessagePort) {
+fn wire_sub_port_events_impl(port_: MessagePort) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, ()>(
         WrapInfo {
-            debug_name: "init_events",
+            debug_name: "sub_port_events",
             port: Some(port_),
             mode: FfiCallMode::Stream,
         },
         move || {
-            move |task_callback| {
-                Ok(init_events(
-                    task_callback.stream_sink::<_, CoordinatorEvent>(),
-                ))
-            }
+            move |task_callback| Ok(sub_port_events(task_callback.stream_sink::<_, PortEvent>()))
         },
     )
 }
@@ -275,28 +271,6 @@ impl Wire2Api<usize> for usize {
 }
 // Section: impl IntoDart
 
-impl support::IntoDart for CoordinatorEvent {
-    fn into_dart(self) -> support::DartAbi {
-        match self {
-            Self::PortOpen { request } => vec![0.into_dart(), request.into_into_dart().into_dart()],
-            Self::PortWrite { request } => {
-                vec![1.into_dart(), request.into_into_dart().into_dart()]
-            }
-            Self::PortRead { request } => vec![2.into_dart(), request.into_into_dart().into_dart()],
-            Self::PortBytesToRead { request } => {
-                vec![3.into_dart(), request.into_into_dart().into_dart()]
-            }
-        }
-        .into_dart()
-    }
-}
-impl support::IntoDartExceptPrimitive for CoordinatorEvent {}
-impl rust2dart::IntoIntoDart<CoordinatorEvent> for CoordinatorEvent {
-    fn into_into_dart(self) -> Self {
-        self
-    }
-}
-
 impl support::IntoDart for DeviceChange {
     fn into_dart(self) -> support::DartAbi {
         match self {
@@ -325,6 +299,26 @@ impl support::IntoDart for PortBytesToRead {
 }
 impl support::IntoDartExceptPrimitive for PortBytesToRead {}
 impl rust2dart::IntoIntoDart<PortBytesToRead> for PortBytesToRead {
+    fn into_into_dart(self) -> Self {
+        self
+    }
+}
+
+impl support::IntoDart for PortEvent {
+    fn into_dart(self) -> support::DartAbi {
+        match self {
+            Self::Open { request } => vec![0.into_dart(), request.into_into_dart().into_dart()],
+            Self::Write { request } => vec![1.into_dart(), request.into_into_dart().into_dart()],
+            Self::Read { request } => vec![2.into_dart(), request.into_into_dart().into_dart()],
+            Self::BytesToRead { request } => {
+                vec![3.into_dart(), request.into_into_dart().into_dart()]
+            }
+        }
+        .into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for PortEvent {}
+impl rust2dart::IntoIntoDart<PortEvent> for PortEvent {
     fn into_into_dart(self) -> Self {
         self
     }

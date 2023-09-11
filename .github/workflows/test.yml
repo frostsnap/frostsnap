@@ -10,7 +10,7 @@ env:
   NON_DEVICE_PACKAGES: -p frostsnap_comms -p frostsnap_core -p frostsnap_coordinator
 
 jobs:
-  device-build:
+  device:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -20,6 +20,7 @@ jobs:
         working-directory: ./device
     steps:
       - uses: actions/checkout@v3
+      - uses: taiki-e/install-action@just
       - name: Setup | RISC-V GCC prerequisites
         run: sudo apt-get install autoconf automake autotools-dev curl python3 libmpc-dev libmpfr-dev libgmp-dev gawk build-essential bison flex texinfo gperf libtool patchutils bc zlib1g-dev libexpat-dev ninja-build
       - name: Setup | RISCV GCC
@@ -32,26 +33,17 @@ jobs:
         with:
           targets: riscv32imc-unknown-none-elf
           components: clippy
-      - run: cargo build --release --features ${{ matrix.board }} --bin ${{ matrix.board }}
-      - run: cargo clippy -- -Dwarnings
+      - run: just lint-device --release
+      - run: just build-device ${{ matrix.board }} --release
 
   non-device:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      - uses: taiki-e/install-action@just
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - run: sudo apt-get install -y  libudev-dev
-      - run: cargo clippy -- -Dwarnings
-      - run: RUSTFLAGS='-D warnings' cargo test --release NON_DEVICE_PACKAGES --all-features
-
-  format:
-    name: Library Lints
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-      - run: cargo fmt --all -- --check
+      - run: sudo apt-get install -y libudev-dev
+      - run: just lint-non-device --release
+      - run: just test --release
