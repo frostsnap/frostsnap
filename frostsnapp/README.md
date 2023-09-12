@@ -9,13 +9,16 @@ To begin, ensure that you have a working installation of the following items:
 - [Flutter SDK](https://docs.flutter.dev/get-started/install)
 - install [`just`](https://github.com/casey/just)
 - [Rust language](https://rustup.rs/)
-- `flutter_rust_bridge_codegen` [cargo package](https://cjycode.com/flutter_rust_bridge/integrate/deps.html#build-time-dependencies) -- **Make sure to install the same version as in the project's [`Cargo.lock`](../Cargo.lock)** (run `just frostsnapp/flutter_rust_bridge_version`) 
-- Appropriate [Rust targets](https://rust-lang.github.io/rustup/cross-compilation.html) for cross-compiling to your device
+- Appropriate [Rust targets](https://rust-lang.github.io/rustup/cross-compilation.html) for cross-compiling the app for different platforms.
 - For Android targets:
     - Install [cargo-ndk](https://github.com/bbqsrc/cargo-ndk#installing)
-    - Install [Android NDK](https://github.com/android/ndk/wiki)
-- install [cargo expand](https://github.com/dtolnay/cargo-expand)
-- install [ninja](https://ninja-build.org/) ( e.g. `sudo api install ninja-build` )
+    - Install [Android NDK](https://github.com/android/ndk/wiki) (can be done through android studio)
+- install cargo build tools: `just install-rust-deps`
+- Install the following development libraries
+
+``` sh
+sudo apt install -y ninja-build libstdc++-12-dev libgtk-3-0 libgtk-3-dev libudev-dev
+```
 
 ```
 echo "ANDROID_NDK=.." >> ~/.gradle/gradle.properties
