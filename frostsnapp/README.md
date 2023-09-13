@@ -11,8 +11,10 @@ To begin, ensure that you have a working installation of the following items:
 - [Rust language](https://rustup.rs/)
 - Appropriate [Rust targets](https://rust-lang.github.io/rustup/cross-compilation.html) for cross-compiling the app for different platforms.
 - For Android targets:
+    - Install [Android Studio](https://docs.flutter.dev/get-started/install/linux#install-android-studio) and SDK tools required by Flutter
+    - Install [Android NDK](https://github.com/android/ndk/wiki) (can be done through Android Studio > SDK Manager > SDK Tools > NDK (Side by side))
     - Install [cargo-ndk](https://github.com/bbqsrc/cargo-ndk#installing)
-    - Install [Android NDK](https://github.com/android/ndk/wiki) (can be done through android studio)
+    - ```export ANDROID_NDK_HOME=/home/$USER/Android/Sdk/ndk/<version installed>/```
 - install cargo build tools: `just install-rust-deps`
 - Install the following development libraries
 
@@ -34,6 +36,12 @@ just gen
 
 ``` sh
 flutter run
+```
+
+## Build
+```
+just build linux
+just build apk
 ```
 
 When this doesn't work figure out why and fix these instructions please. If you want to run on android it may help to open the project in android studio
