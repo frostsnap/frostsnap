@@ -112,8 +112,7 @@ where
                         Ok(device_send) => {
                             let forward_upstream = match device_send {
                                 DeviceSendSerial::MagicBytes(_) => {
-                                    // soft reset downstream if it sends unexpected magic bytes so we restablish
-                                    // downstream_active = false;
+                                    // FIXME: decide what to do when downstream sends unexpected magic bytes
                                     DeviceSendMessageBody::Debug {
                                         message: "downstream device sent unexpected magic bytes"
                                             .to_string(),
