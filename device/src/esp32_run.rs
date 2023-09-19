@@ -8,11 +8,12 @@ use crate::{
 };
 use esp_storage::FlashStorage;
 use frostsnap_comms::{
-    DeviceReceiveBody, DeviceReceiveSerial, DeviceSendMessage, DeviceSendSerial,
+    DeviceReceiveBody, DeviceReceiveSerial, DeviceSendMessage, DeviceSendMessageBody,
+    DeviceSendSerial,
 };
 use frostsnap_comms::{DeviceReceiveMessage, Downstream, MAGIC_BYTES_PERIOD};
 use frostsnap_core::message::{
-    CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorBody, DeviceToUserMessage,
+    CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, DeviceToUserMessage,
 };
 use frostsnap_core::schnorr_fun::fun::marker::Normal;
 use frostsnap_core::schnorr_fun::fun::KeyPair;
@@ -72,7 +73,7 @@ where
         let mut soft_reset = true;
         let mut downstream_active = false;
         let mut sends_downstream: Vec<DeviceReceiveMessage> = vec![];
-        let mut sends_upstream: Vec<DeviceSendMessage> = vec![];
+        let mut sends_upstream: Vec<DeviceSendMessageBody> = vec![];
         let mut sends_user: Vec<DeviceToUserMessage> = vec![];
         let mut outbox = VecDeque::new();
         let mut upstream_detector =
@@ -92,9 +93,9 @@ where
         loop {
             if soft_reset {
                 soft_reset = false;
-                sends_upstream = vec![DeviceSendMessage::Announce(frostsnap_comms::Announce {
-                    from: frost_signer.device_id(),
-                })];
+                sends_upstream = vec![DeviceSendMessageBody::Announce(
+                    frostsnap_comms::Announce {},
+                )];
                 frost_signer.cancel_action();
                 sends_user.clear();
                 sends_downstream.clear();
@@ -113,28 +114,28 @@ where
                                 DeviceSendSerial::MagicBytes(_) => {
                                     // soft reset downstream if it sends unexpected magic bytes so we restablish
                                     // downstream_active = false;
-                                    DeviceSendMessage::Debug {
+                                    DeviceSendMessageBody::Debug {
                                         message: "downstream device sent unexpected magic bytes"
                                             .to_string(),
-                                        device: frost_signer.device_id(),
                                     }
                                 }
-                                DeviceSendSerial::Message(message) => match message {
-                                    DeviceSendMessage::Core(core) => DeviceSendMessage::Core(core),
-                                    DeviceSendMessage::Debug { message, device } => {
-                                        DeviceSendMessage::Debug { message, device }
+                                DeviceSendSerial::Message(message) => match message.body {
+                                    DeviceSendMessageBody::Core(core) => {
+                                        DeviceSendMessageBody::Core(core)
                                     }
-                                    DeviceSendMessage::Announce(message) => {
-                                        DeviceSendMessage::Announce(message)
+                                    DeviceSendMessageBody::Debug { message } => {
+                                        DeviceSendMessageBody::Debug { message }
+                                    }
+                                    DeviceSendMessageBody::Announce(message) => {
+                                        DeviceSendMessageBody::Announce(message)
                                     }
                                 },
                             };
                             sends_upstream.push(forward_upstream);
                         }
                         Err(e) => {
-                            sends_upstream.push(DeviceSendMessage::Debug {
+                            sends_upstream.push(DeviceSendMessageBody::Debug {
                                 message: format!("Failed to decode on downstream port: {e}"),
-                                device: frost_signer.device_id(),
                             });
                             downstream_active = false;
                             ui.set_downstream_connection_state(false);
@@ -159,9 +160,8 @@ where
                 if downstream_serial.find_and_remove_magic_bytes() {
                     downstream_active = true;
                     ui.set_downstream_connection_state(true);
-                    sends_upstream.push(DeviceSendMessage::Debug {
+                    sends_upstream.push(DeviceSendMessageBody::Debug {
                         message: "Device read magic bytes from another device!".to_string(),
-                        device: frost_signer.clone().device_id(),
                     });
                 }
             }
@@ -227,9 +227,8 @@ where
                                                         completed_task: None,
                                                     },
                                                 ));
-                                                sends_upstream.push(DeviceSendMessage::Debug {
+                                                sends_upstream.push(DeviceSendMessageBody::Debug {
                                                     message: "Received AnnounceACK!".to_string(),
-                                                    device: frost_signer.device_id(),
                                                 });
                                             }
                                             DeviceReceiveBody::Core(core_message) => {
@@ -278,7 +277,10 @@ where
 
                     for send in sends_upstream.drain(..) {
                         upstream_serial
-                            .send_to_coodinator(DeviceSendSerial::Message(send.clone()))
+                            .send_to_coodinator(DeviceSendSerial::Message(DeviceSendMessage {
+                                body: send.clone(),
+                                from: frost_signer.device_id(),
+                            }))
                             .expect("unable to send to coordinator");
                     }
                 }
@@ -317,13 +319,13 @@ where
                             .unwrap();
                     }
                     DeviceSend::ToCoordinator(message) => {
-                        if matches!(message.body, DeviceToCoordinatorBody::KeyGenResponse(_)) {
+                        if matches!(message, DeviceToCoordinatorMessage::KeyGenResponse(_)) {
                             ui.set_workflow(ui::Workflow::WaitingFor(
                                 ui::WaitingFor::CoordinatorResponse(ui::WaitingResponse::KeyGen),
                             ));
                         }
 
-                        sends_upstream.push(DeviceSendMessage::Core(message));
+                        sends_upstream.push(DeviceSendMessageBody::Core(message));
                     }
                     DeviceSend::ToUser(user_send) => {
                         match user_send {

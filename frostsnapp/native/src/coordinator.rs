@@ -61,16 +61,16 @@ impl FfiCoordinator {
                     new_messages
                 };
 
-                for message in new_messages {
-                    match core_coordinator.recv_device_message(message.clone()) {
+                for (from, message) in new_messages {
+                    match core_coordinator.recv_device_message(from, message.clone()) {
                         Ok(messages) => {
                             outbox.extend(messages);
                         }
                         Err(e) => {
                             event!(
                                 Level::ERROR,
-                                "Failed to process message from {}: {}",
-                                message.from,
+                                from = from.to_string(),
+                                "Failed to process message: {}",
                                 e
                             );
                             continue;

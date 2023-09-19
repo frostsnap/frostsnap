@@ -10,7 +10,7 @@ use alloc::{collections::BTreeSet, string::String};
 use bincode::{de::read::Reader, enc::write::Writer, Decode, Encode};
 use core::marker::PhantomData;
 use frostsnap_core::{
-    message::{CoordinatorToDeviceMessage, DeviceToCoordinatorBody, DeviceToCoordindatorMessage},
+    message::{CoordinatorToDeviceMessage, DeviceToCoordinatorMessage},
     DeviceId,
 };
 
@@ -137,29 +137,33 @@ impl<D> DeviceSendSerial<D> {
     pub fn gist(&self) -> &'static str {
         match self {
             DeviceSendSerial::MagicBytes(_) => "MagicBytes",
-            DeviceSendSerial::Message(message) => match message {
-                DeviceSendMessage::Core(message) => match message.body {
-                    DeviceToCoordinatorBody::KeyGenResponse(_) => "KeyGenResponse",
-                    DeviceToCoordinatorBody::SignatureShare { .. } => "SignatureShare",
+            DeviceSendSerial::Message(message) => match &message.body {
+                DeviceSendMessageBody::Core(message) => match message {
+                    DeviceToCoordinatorMessage::KeyGenResponse(_) => "KeyGenResponse",
+                    DeviceToCoordinatorMessage::SignatureShare { .. } => "SignatureShare",
                 },
-                DeviceSendMessage::Debug { .. } => "Debug",
-                DeviceSendMessage::Announce(_) => "Announce",
+                DeviceSendMessageBody::Debug { .. } => "Debug",
+                DeviceSendMessageBody::Announce(_) => "Announce",
             },
         }
     }
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
-pub enum DeviceSendMessage {
-    Core(DeviceToCoordindatorMessage),
-    Debug { message: String, device: DeviceId },
+pub struct DeviceSendMessage {
+    pub from: DeviceId,
+    pub body: DeviceSendMessageBody,
+}
+
+#[derive(Encode, Decode, Debug, Clone)]
+pub enum DeviceSendMessageBody {
+    Core(DeviceToCoordinatorMessage),
+    Debug { message: String },
     Announce(Announce),
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
-pub struct Announce {
-    pub from: DeviceId,
-}
+pub struct Announce {}
 
 pub fn make_progress_on_magic_bytes<D: Direction>(
     remaining: impl Iterator<Item = u8>,

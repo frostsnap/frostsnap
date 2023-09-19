@@ -7,7 +7,7 @@ flash BOARD=default_board +ARGS="":
 build-device BOARD=default_board +ARGS="":
     cd device && cargo build {{ARGS}} --features {{BOARD}} --bin {{BOARD}}
 
-test +ARGS:
+test +ARGS="":
     cargo test {{ARGS}} {{non_device_packages}}
 
 check-non-device +ARGS="":

@@ -7,9 +7,9 @@ use crate::{FramedSerialPort, Serial};
 use frostsnap_comms::DeviceReceiveSerial;
 use frostsnap_comms::DeviceSendSerial;
 use frostsnap_comms::Downstream;
-use frostsnap_comms::{DeviceReceiveBody, DeviceSendMessage};
+use frostsnap_comms::{DeviceReceiveBody, DeviceSendMessageBody};
 use frostsnap_comms::{DeviceReceiveMessage, MAGIC_BYTES_PERIOD};
-use frostsnap_core::message::DeviceToCoordindatorMessage;
+use frostsnap_core::message::DeviceToCoordinatorMessage;
 use frostsnap_core::DeviceId;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
@@ -274,39 +274,43 @@ impl UsbSerialManager {
                     event!(Level::ERROR, port = serial_number, "Unexpected magic bytes");
                     self.disconnect(&serial_number, &mut device_changes);
                 }
-                DeviceSendSerial::Message(message) => match message {
-                    DeviceSendMessage::Announce(announce) => {
+                DeviceSendSerial::Message(message) => match message.body {
+                    DeviceSendMessageBody::Announce(_announce) => {
                         self.device_ports
-                            .insert(announce.from, serial_number.clone());
+                            .insert(message.from, serial_number.clone());
 
                         let devices = self
                             .reverse_device_ports
                             .entry(serial_number.clone())
                             .or_default();
-                        devices.insert(announce.from);
-                        device_changes.push(DeviceChange::Added(announce.from));
+                        devices.insert(message.from);
+                        device_changes.push(DeviceChange::Added(message.from));
 
                         event!(
                             Level::DEBUG,
                             port = serial_number,
-                            id = announce.from.to_string(),
+                            id = message.from.to_string(),
                             "Announced!"
                         );
                     }
-                    DeviceSendMessage::Debug { message, device } => {
+                    DeviceSendMessageBody::Debug {
+                        message: dbg_message,
+                    } => {
                         event!(
                             Level::DEBUG,
                             port = serial_number,
-                            from = device.to_string(),
+                            from = message.from.to_string(),
                             name = self
                                 .device_labels
-                                .get(&device)
+                                .get(&message.from)
                                 .cloned()
                                 .unwrap_or("<unknown>".into()),
-                            message
+                            dbg_message
                         );
                     }
-                    DeviceSendMessage::Core(msg) => device_to_coord_msg.push(msg),
+                    DeviceSendMessageBody::Core(core_msg) => {
+                        device_to_coord_msg.push((message.from, core_msg))
+                    }
                 },
             }
         }
@@ -453,7 +457,7 @@ impl UsbSerialManager {
 #[derive(Debug)]
 pub struct PortChanges {
     pub device_changes: Vec<DeviceChange>,
-    pub new_messages: Vec<DeviceToCoordindatorMessage>,
+    pub new_messages: Vec<(DeviceId, DeviceToCoordinatorMessage)>,
 }
 
 #[derive(Debug)]

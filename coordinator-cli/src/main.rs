@@ -228,23 +228,23 @@ fn main() -> anyhow::Result<()> {
             loop {
                 let port_changes = ports.poll_ports();
 
-                for message in port_changes.new_messages {
+                for (from, message) in port_changes.new_messages {
                     event!(
                         Level::DEBUG,
-                        from = message.from.to_string(),
-                        kind = message.body.kind(),
+                        from = from.to_string(),
+                        kind = message.kind(),
                         "received message during keygen"
                     );
 
-                    match coordinator.recv_device_message(message.clone()) {
+                    match coordinator.recv_device_message(from, message) {
                         Ok(messages) => {
                             outbox.extend(messages);
                         }
                         Err(e) => {
                             event!(
                                 Level::ERROR,
-                                "Failed to process message from {}: {}",
-                                message.from,
+                                from = from.to_string(),
+                                "Failed to process message {}",
                                 e
                             );
                             continue;
