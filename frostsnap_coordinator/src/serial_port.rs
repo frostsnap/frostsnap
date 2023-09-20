@@ -1,4 +1,4 @@
-use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial, Downstream, MagicBytes};
+use frostsnap_comms::{Downstream, MagicBytes, ReceiveSerial, Upstream};
 pub use serialport;
 use std::io::{BufRead, BufReader};
 
@@ -70,7 +70,7 @@ impl FramedSerialPort {
 
     pub fn send_message(
         &mut self,
-        message: &DeviceReceiveSerial<Downstream>,
+        message: &ReceiveSerial<Upstream>,
     ) -> Result<(), bincode::error::EncodeError> {
         let _bytes_written = bincode::encode_into_std_write(
             message,
@@ -81,14 +81,12 @@ impl FramedSerialPort {
     }
 
     pub fn write_magic_bytes(&mut self) -> Result<(), bincode::error::EncodeError> {
-        self.send_message(&DeviceReceiveSerial::<Downstream>::MagicBytes(
-            MagicBytes::default(),
-        ))
+        self.send_message(&ReceiveSerial::<Upstream>::MagicBytes(MagicBytes::default()))
     }
 
     pub fn try_read_message(
         &mut self,
-    ) -> Result<Option<DeviceSendSerial<Downstream>>, bincode::error::DecodeError> {
+    ) -> Result<Option<ReceiveSerial<Downstream>>, bincode::error::DecodeError> {
         if !self.anything_to_read() && self.inner.buffer().is_empty() {
             return Ok(None);
         }

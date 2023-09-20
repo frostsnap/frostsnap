@@ -1181,3 +1181,8 @@ impl core::fmt::Display for ActionError {
 
 #[cfg(feature = "std")]
 impl std::error::Error for ActionError {}
+
+/// Output very basic debug info about a type
+pub trait Gist {
+    fn gist(&self) -> String;
+}

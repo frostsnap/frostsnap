@@ -1,4 +1,4 @@
-use frostsnap_comms::{DeviceReceiveBody, DeviceReceiveMessage};
+use frostsnap_comms::{CoordinatorSendBody, CoordinatorSendMessage};
 use frostsnap_coordinator::DeviceChange;
 use frostsnap_core::message::{
     CoordinatorSend, CoordinatorToUserMessage, DeviceToCoordinatorMessage, SignTask,
@@ -172,9 +172,9 @@ impl<'a, 'b> Signer<'a, 'b> {
                 }
             }
 
-            self.ports.queue_in_port_outbox(DeviceReceiveMessage {
+            self.ports.queue_in_port_outbox(CoordinatorSendMessage {
                 target_destinations: std::mem::take(&mut asking_to_sign),
-                message_body: DeviceReceiveBody::Core(signature_request.clone()),
+                message_body: CoordinatorSendBody::Core(signature_request.clone()),
             });
         };
 

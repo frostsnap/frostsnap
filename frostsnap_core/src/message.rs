@@ -1,5 +1,6 @@
 use crate::encrypted_share::EncryptedShare;
 use crate::CoordinatorFrostKey;
+use crate::Gist;
 use crate::Vec;
 use crate::NONCE_BATCH_SIZE;
 
@@ -46,6 +47,12 @@ pub enum CoordinatorToDeviceMessage {
     },
 }
 
+impl Gist for CoordinatorToDeviceMessage {
+    fn gist(&self) -> String {
+        self.kind().into()
+    }
+}
+
 impl CoordinatorToDeviceMessage {
     pub fn default_destinations(&self) -> BTreeSet<DeviceId> {
         match self {
@@ -82,6 +89,12 @@ pub enum DeviceToCoordinatorMessage {
         signature_shares: Vec<Scalar<Public, Zero>>,
         new_nonces: Vec<Nonce>,
     },
+}
+
+impl Gist for DeviceToCoordinatorMessage {
+    fn gist(&self) -> String {
+        self.kind().into()
+    }
 }
 
 impl DeviceToCoordinatorMessage {

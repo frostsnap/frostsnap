@@ -23,5 +23,13 @@ lint-non-device +ARGS="":
 lint-device +ARGS="":
     cd device && cargo clippy {{ARGS}} --all-features --bins -- -Dwarnings
 
+keygen THRESHOLD TOTAL:
+    cargo run -p coordinator-cli -- -v keygen -t {{THRESHOLD}} -n {{TOTAL}}
+
+fix:
+    cargo fmt --all
+    cargo clippy --fix --allow-dirty --allow-staged {{non_device_packages}} --all-features --tests --bins
+    cd device && cargo clippy --fix --allow-dirty --allow-staged --all-features --bins
+
 check: check-non-device check-device
 lint: lint-non-device lint-device

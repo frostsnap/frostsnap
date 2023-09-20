@@ -4,13 +4,11 @@ const USB_PID: u16 = 4097;
 
 use crate::PortOpenError;
 use crate::{FramedSerialPort, Serial};
-use frostsnap_comms::DeviceReceiveSerial;
-use frostsnap_comms::DeviceSendSerial;
-use frostsnap_comms::Downstream;
-use frostsnap_comms::{DeviceReceiveBody, DeviceSendMessageBody};
-use frostsnap_comms::{DeviceReceiveMessage, MAGIC_BYTES_PERIOD};
+use frostsnap_comms::{CoordinatorSendBody, DeviceSendBody};
+use frostsnap_comms::{CoordinatorSendMessage, MAGIC_BYTES_PERIOD};
+use frostsnap_comms::{ReceiveSerial, Upstream};
 use frostsnap_core::message::DeviceToCoordinatorMessage;
-use frostsnap_core::DeviceId;
+use frostsnap_core::{DeviceId, Gist};
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
@@ -40,7 +38,7 @@ pub struct UsbSerialManager {
     /// Device labels
     device_labels: HashMap<DeviceId, String>,
     /// Messages to devices outbox
-    port_outbox: Vec<DeviceReceiveMessage>,
+    port_outbox: Vec<CoordinatorSendMessage>,
 }
 
 const COORDINATOR_MAGIC_BYTES_PERDIOD: std::time::Duration =
@@ -91,7 +89,7 @@ impl UsbSerialManager {
         }
     }
 
-    pub fn queue_in_port_outbox(&mut self, send: DeviceReceiveMessage) {
+    pub fn queue_in_port_outbox(&mut self, send: CoordinatorSendMessage) {
         self.port_outbox.push(send);
     }
 
@@ -270,12 +268,12 @@ impl UsbSerialManager {
             );
 
             match decoded_message {
-                DeviceSendSerial::MagicBytes(_) => {
+                ReceiveSerial::MagicBytes(_) => {
                     event!(Level::ERROR, port = serial_number, "Unexpected magic bytes");
                     self.disconnect(&serial_number, &mut device_changes);
                 }
-                DeviceSendSerial::Message(message) => match message.body {
-                    DeviceSendMessageBody::Announce(_announce) => {
+                ReceiveSerial::Message(message) => match message.body {
+                    DeviceSendBody::Announce(_announce) => {
                         self.device_ports
                             .insert(message.from, serial_number.clone());
 
@@ -293,7 +291,7 @@ impl UsbSerialManager {
                             "Announced!"
                         );
                     }
-                    DeviceSendMessageBody::Debug {
+                    DeviceSendBody::Debug {
                         message: dbg_message,
                     } => {
                         event!(
@@ -308,7 +306,7 @@ impl UsbSerialManager {
                             dbg_message
                         );
                     }
-                    DeviceSendMessageBody::Core(core_msg) => {
+                    DeviceSendBody::Core(core_msg) => {
                         device_to_coord_msg.push((message.from, core_msg))
                     }
                 },
@@ -323,8 +321,8 @@ impl UsbSerialManager {
             }
 
             if let Some(device_label) = self.device_labels.get(device_id) {
-                outbox.push(DeviceReceiveMessage {
-                    message_body: DeviceReceiveBody::AnnounceAck {
+                outbox.push(CoordinatorSendMessage {
+                    message_body: CoordinatorSendBody::AnnounceAck {
                         device_label: device_label.to_string(),
                     },
                     target_destinations: BTreeSet::from([*device_id]),
@@ -359,7 +357,7 @@ impl UsbSerialManager {
                 }
             });
 
-            let wire_message = DeviceReceiveSerial::<Downstream>::Message(wire_message);
+            let wire_message = ReceiveSerial::<Upstream>::Message(wire_message);
             let gist = wire_message.gist();
 
             for serial_number in ports_to_send_on {

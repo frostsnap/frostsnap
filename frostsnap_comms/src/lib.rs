@@ -9,10 +9,7 @@ use alloc::vec::Vec;
 use alloc::{collections::BTreeSet, string::String};
 use bincode::{de::read::Reader, enc::write::Writer, Decode, Encode};
 use core::marker::PhantomData;
-use frostsnap_core::{
-    message::{CoordinatorToDeviceMessage, DeviceToCoordinatorMessage},
-    DeviceId,
-};
+use frostsnap_core::{DeviceId, Gist};
 
 pub const BAUDRATE: u32 = 9600;
 /// Magic bytes are 7 bytes in length so when the bincode prefixes it with `00` it is 8 bytes long.
@@ -20,34 +17,67 @@ pub const BAUDRATE: u32 = 9600;
 /// will be some multiple of 8 and so it should overflow the ring buffers neatly.
 const MAGIC_BYTES_LEN: usize = 7;
 
-const MAGICBYTES_SEND_UPSTREAM: [u8; MAGIC_BYTES_LEN] = [0xff, 0xe4, 0x31, 0xb8, 0x02, 0x8b, 0x06];
-const MAGICBYTES_SEND_DOWNSTREAM: [u8; MAGIC_BYTES_LEN] =
-    [0xff, 0x5d, 0xa3, 0x85, 0xd4, 0xee, 0x5a];
+const MAGICBYTES_RECV_DOWNSTREAM: [u8; MAGIC_BYTES_LEN] =
+    [0xff, 0xe4, 0x31, 0xb8, 0x02, 0x8b, 0x06];
+const MAGICBYTES_RECV_UPSTREAM: [u8; MAGIC_BYTES_LEN] = [0xff, 0x5d, 0xa3, 0x85, 0xd4, 0xee, 0x5a];
 
 /// Write magic bytes once every 100ms
 pub const MAGIC_BYTES_PERIOD: u64 = 100;
 
 #[derive(Encode, Decode, Debug, Clone)]
 #[bincode(bounds = "D: Direction")]
-pub enum DeviceReceiveSerial<D> {
+pub enum ReceiveSerial<D: Direction> {
     MagicBytes(MagicBytes<D>),
-    Message(DeviceReceiveMessage),
+    Message(D::RecvType),
 }
 
+impl<D: Direction> Gist for ReceiveSerial<D> {
+    fn gist(&self) -> String {
+        match self {
+            ReceiveSerial::MagicBytes(_) => "MagicBytes".into(),
+            ReceiveSerial::Message(msg) => msg.gist(),
+        }
+    }
+}
+
+/// A message sent from a coordinator
 #[derive(Encode, Decode, Debug, Clone)]
-pub struct DeviceReceiveMessage {
+pub struct CoordinatorSendMessage {
     pub target_destinations: BTreeSet<DeviceId>,
-    pub message_body: DeviceReceiveBody,
+    pub message_body: CoordinatorSendBody,
+}
+
+impl Gist for CoordinatorSendMessage {
+    fn gist(&self) -> String {
+        self.message_body.gist()
+    }
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
-pub enum DeviceReceiveBody {
-    Core(CoordinatorToDeviceMessage),
+pub enum CoordinatorSendBody {
+    Core(frostsnap_core::message::CoordinatorToDeviceMessage),
     AnnounceAck { device_label: String },
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+impl Gist for CoordinatorSendBody {
+    fn gist(&self) -> String {
+        match self {
+            CoordinatorSendBody::Core(core) => core.gist(),
+            CoordinatorSendBody::AnnounceAck { device_label } => {
+                format!("AnnoucneAck({})", device_label)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct MagicBytes<O>(PhantomData<O>);
+
+impl<O> Default for MagicBytes<O> {
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Upstream;
@@ -55,28 +85,21 @@ pub struct Upstream;
 pub struct Downstream;
 
 pub trait Direction {
-    fn magic_bytes_send() -> [u8; MAGIC_BYTES_LEN];
-    fn magic_bytes_recv() -> [u8; MAGIC_BYTES_LEN];
+    type RecvType: bincode::Decode + bincode::Encode + for<'a> bincode::BorrowDecode<'a> + Gist;
+    type Opposite: Direction;
+    const MAGIC_BYTES_RECV: [u8; MAGIC_BYTES_LEN];
 }
 
 impl Direction for Upstream {
-    fn magic_bytes_send() -> [u8; MAGIC_BYTES_LEN] {
-        MAGICBYTES_SEND_UPSTREAM
-    }
-
-    fn magic_bytes_recv() -> [u8; MAGIC_BYTES_LEN] {
-        MAGICBYTES_SEND_DOWNSTREAM
-    }
+    type RecvType = CoordinatorSendMessage;
+    type Opposite = Downstream;
+    const MAGIC_BYTES_RECV: [u8; MAGIC_BYTES_LEN] = MAGICBYTES_RECV_UPSTREAM;
 }
 
 impl Direction for Downstream {
-    fn magic_bytes_send() -> [u8; MAGIC_BYTES_LEN] {
-        MAGICBYTES_SEND_DOWNSTREAM
-    }
-
-    fn magic_bytes_recv() -> [u8; MAGIC_BYTES_LEN] {
-        MAGICBYTES_SEND_UPSTREAM
-    }
+    type RecvType = DeviceSendMessage;
+    type Opposite = Upstream;
+    const MAGIC_BYTES_RECV: [u8; MAGIC_BYTES_LEN] = MAGICBYTES_RECV_DOWNSTREAM;
 }
 
 impl<O: Direction> bincode::Encode for MagicBytes<O> {
@@ -84,7 +107,7 @@ impl<O: Direction> bincode::Encode for MagicBytes<O> {
         &self,
         encoder: &mut E,
     ) -> Result<(), bincode::error::EncodeError> {
-        encoder.writer().write(&O::magic_bytes_send())
+        encoder.writer().write(&O::MAGIC_BYTES_RECV)
     }
 }
 
@@ -94,12 +117,12 @@ impl<O: Direction> bincode::Decode for MagicBytes<O> {
     ) -> Result<Self, bincode::error::DecodeError> {
         let mut bytes = [0u8; MAGIC_BYTES_LEN];
         decoder.reader().read(&mut bytes)?;
-        if bytes == O::magic_bytes_recv() {
+        if bytes == O::MAGIC_BYTES_RECV {
             Ok(MagicBytes(PhantomData))
         } else {
             Err(bincode::error::DecodeError::OtherString(format!(
                 "was expecting magic bytes {:02x?} but got {:02x?}",
-                O::magic_bytes_recv(),
+                O::MAGIC_BYTES_RECV,
                 bytes
             )))
         }
@@ -114,52 +137,34 @@ impl<'de, O: Direction> bincode::BorrowDecode<'de> for MagicBytes<O> {
     }
 }
 
-impl<D> DeviceReceiveSerial<D> {
-    pub fn gist(&self) -> String {
-        match self {
-            DeviceReceiveSerial::MagicBytes(_) => "MagicBytes".into(),
-            DeviceReceiveSerial::Message(message) => match &message.message_body {
-                DeviceReceiveBody::Core(message) => message.kind().into(),
-                DeviceReceiveBody::AnnounceAck { .. } => "AnnounceAck".into(),
-            },
-        }
-    }
-}
-
-#[derive(Encode, Decode, Debug, Clone)]
-#[bincode(bounds = "D: Direction")]
-pub enum DeviceSendSerial<D> {
-    MagicBytes(MagicBytes<D>),
-    Message(DeviceSendMessage),
-}
-
-impl<D> DeviceSendSerial<D> {
-    pub fn gist(&self) -> &'static str {
-        match self {
-            DeviceSendSerial::MagicBytes(_) => "MagicBytes",
-            DeviceSendSerial::Message(message) => match &message.body {
-                DeviceSendMessageBody::Core(message) => match message {
-                    DeviceToCoordinatorMessage::KeyGenResponse(_) => "KeyGenResponse",
-                    DeviceToCoordinatorMessage::SignatureShare { .. } => "SignatureShare",
-                },
-                DeviceSendMessageBody::Debug { .. } => "Debug",
-                DeviceSendMessageBody::Announce(_) => "Announce",
-            },
-        }
-    }
-}
-
+/// Message sent from a device
 #[derive(Encode, Decode, Debug, Clone)]
 pub struct DeviceSendMessage {
     pub from: DeviceId,
-    pub body: DeviceSendMessageBody,
+    pub body: DeviceSendBody,
+}
+
+impl Gist for DeviceSendMessage {
+    fn gist(&self) -> String {
+        format!("{} <= {}", self.body.gist(), self.from)
+    }
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
-pub enum DeviceSendMessageBody {
-    Core(DeviceToCoordinatorMessage),
+pub enum DeviceSendBody {
+    Core(frostsnap_core::message::DeviceToCoordinatorMessage),
     Debug { message: String },
     Announce(Announce),
+}
+
+impl Gist for DeviceSendBody {
+    fn gist(&self) -> String {
+        match self {
+            DeviceSendBody::Core(msg) => msg.gist(),
+            DeviceSendBody::Debug { message } => format!("debug: {message}"),
+            DeviceSendBody::Announce(_) => "Announce".into(),
+        }
+    }
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
@@ -169,7 +174,7 @@ pub fn make_progress_on_magic_bytes<D: Direction>(
     remaining: impl Iterator<Item = u8>,
     progress: usize,
 ) -> (usize, bool) {
-    let magic_bytes = D::magic_bytes_recv();
+    let magic_bytes = D::MAGIC_BYTES_RECV;
     _make_progress_on_magic_bytes(remaining, &magic_bytes, progress)
 }
 
@@ -193,7 +198,7 @@ fn _make_progress_on_magic_bytes(
 }
 
 pub fn find_and_remove_magic_bytes<D: Direction>(buff: &mut Vec<u8>) -> bool {
-    let magic_bytes = D::magic_bytes_recv();
+    let magic_bytes = D::MAGIC_BYTES_RECV;
     _find_and_remove_magic_bytes(buff, &magic_bytes[..])
 }
 
