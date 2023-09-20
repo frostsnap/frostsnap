@@ -1,5 +1,5 @@
 // Frostsnap custom PCB rev 1.1
-// GPIO8 Downstream detection
+// GPIO13 Downstream detection
 // GPIO5 Left button
 // GPIO9 Right button
 // GPIO0 RGB LED
@@ -99,12 +99,12 @@ fn main() -> ! {
 
     let mut delay = Delay::new(&clocks);
 
-    // construct the toggle and select buttons on the fsboard
+    // construct the toggle and select buttons
     let toggle_button = io.pins.gpio5.into_pull_up_input();
     let select_button = io.pins.gpio9.into_pull_up_input();
     let downstream_detect = io.pins.gpio13.into_pull_up_input();
 
-    let mut bl = io.pins.gpio11.into_push_pull_output();
+    let mut bl = io.pins.gpio1.into_push_pull_output();
     // Turn off backlight to hide artifacts as display initializes
     bl.set_low().unwrap();
     let framearray = [Rgb565::WHITE; 160 * 80];
