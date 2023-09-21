@@ -6,6 +6,7 @@ members = [
     "coordinator-cli",
     "frostsnap_coordinator",
     "frostsnap_comms",
+    "frostsnapp/native"
 ]
 resolver = "2"
 

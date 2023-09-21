@@ -1,0 +1,31 @@
+name: Issues Cleanup
+on:
+  schedule:
+    - cron: '0 18 * * *'
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  cleanup:
+    name: Close Stale Issues
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v5
+        with:
+          days-before-issue-stale: 14
+          days-before-issue-close: 7
+          days-before-pr-stale: 30
+          days-before-pr-close: -1
+          stale-issue-label: 'stale'
+          stale-pr-label: 'stale'
+          stale-issue-message: |
+            This issue has been marked as stale because it has no activity recently.
+            Please remove the 'stale' label, or comment if the issue persists.
+          stale-pr-message: |
+            This pull request has been marked as stale because it has no activity recently.
+            Please remove the 'stale' label, comment or push new commits to unstall the pull request.
+          close-issue-message: |
+            This issue has been closed after a period of inactivity.
+            Please reopen this issue if the problem persists, or open a new one if you have a similar problem.

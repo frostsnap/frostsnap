@@ -24,6 +24,9 @@ const MAGICBYTES_SEND_UPSTREAM: [u8; MAGIC_BYTES_LEN] = [0xff, 0xe4, 0x31, 0xb8,
 const MAGICBYTES_SEND_DOWNSTREAM: [u8; MAGIC_BYTES_LEN] =
     [0xff, 0x5d, 0xa3, 0x85, 0xd4, 0xee, 0x5a];
 
+/// Write magic bytes once every 100ms
+pub const MAGIC_BYTES_PERIOD: u64 = 100;
+
 #[derive(Encode, Decode, Debug, Clone)]
 #[bincode(bounds = "D: Direction")]
 pub enum DeviceReceiveSerial<D> {

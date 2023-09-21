@@ -266,7 +266,7 @@ pub struct UpstreamDetector<'a, T, U> {
     switch_time: Option<u64>,
     pub switched: bool,
     state: DetectorState<'a, T, U>,
-    magic_bytes_freq: u64,
+    magic_bytes_period: u64,
 }
 
 pub enum DetectorState<'a, T, U> {
@@ -293,7 +293,7 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
                 jtag: SerialInterface::new_jtag(jtag, timer),
                 uart: SerialInterface::new_uart(uart, timer),
             },
-            magic_bytes_freq: magic_bytes_period,
+            magic_bytes_period,
         }
     }
 
@@ -327,20 +327,14 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
             }
             DetectorState::NotDetected { mut jtag, mut uart } => {
                 let now = self.timer.now();
-                let switch_time = self.switch_time.get_or_insert_with(|| {
-                    // Frist time it's run we set it the interface to uart
-                    let usb_device = unsafe { &*USB_DEVICE::PTR };
-
-                    usb_device
-                        .conf0
-                        .modify(|_, w| w.usb_pad_enable().clear_bit());
-                    now + 40_000 * (self.magic_bytes_freq + self.magic_bytes_freq / 2)
-                });
+                let switch_time = self.switch_time.get_or_insert(
+                    // we assume we are in uart mode to start with
+                    now + 40_000 * (self.magic_bytes_period + self.magic_bytes_period / 2),
+                );
 
                 self.state = if now > *switch_time {
                     if !self.switched {
-                        let usb_device = unsafe { &*USB_DEVICE::PTR };
-                        usb_device.conf0.modify(|_, w| w.usb_pad_enable().set_bit());
+                        set_upstream_port_mode_jtag();
                         self.switched = true;
                     }
                     if jtag.find_and_remove_magic_bytes() {
@@ -356,4 +350,16 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
             }
         };
     }
+}
+
+pub fn set_upstream_port_mode_jtag() {
+    let usb_device = unsafe { &*USB_DEVICE::PTR };
+    usb_device.conf0.modify(|_, w| w.usb_pad_enable().set_bit());
+}
+
+pub fn set_upstream_port_mode_uart() {
+    let usb_device = unsafe { &*USB_DEVICE::PTR };
+    usb_device
+        .conf0
+        .modify(|_, w| w.usb_pad_enable().clear_bit());
 }

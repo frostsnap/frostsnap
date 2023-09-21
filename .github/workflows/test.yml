@@ -7,10 +7,10 @@ on:
   pull_request:
  
 env:
-  LIB_PACKAGES: -p frostsnap_comms -p frostsnap_core -p frostsnap_coordinator
+  NON_DEVICE_PACKAGES: -p frostsnap_comms -p frostsnap_core -p frostsnap_coordinator
 
 jobs:
-  device-build:
+  device:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -20,8 +20,9 @@ jobs:
         working-directory: ./device
     steps:
       - uses: actions/checkout@v3
+      - uses: taiki-e/install-action@just
       - name: Setup | RISC-V GCC prerequisites
-        run: sudo apt-get install autoconf automake autotools-dev curl python3 libmpc-dev libmpfr-dev libgmp-dev gawk build-essential bison flex texinfo gperf libtool patchutils bc zlib1g-dev libexpat-dev ninja-build
+        run: sudo apt-get update && sudo apt-get install autoconf automake autotools-dev curl python3 libmpc-dev libmpfr-dev libgmp-dev gawk build-essential bison flex texinfo gperf libtool patchutils bc zlib1g-dev libexpat-dev ninja-build
       - name: Setup | RISCV GCC
         run: |
           wget -nv https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2023.05.24/riscv32-elf-ubuntu-22.04-nightly-2023.05.24-nightly.tar.gz
@@ -32,40 +33,43 @@ jobs:
         with:
           targets: riscv32imc-unknown-none-elf
           components: clippy
-      - run: cargo install ldproxy
-      - run: cargo build --release --features ${{ matrix.board }} --bin ${{ matrix.board }}
-      - run: cargo clippy -- -Dwarnings
+      - run: just lint-device --release
+      - run: just build-device ${{ matrix.board }} --release
 
-  coordinator-cli-test:
+  non-device:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./coordinator-cli
     steps:
       - uses: actions/checkout@v3
+      - uses: taiki-e/install-action@just
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - run: sudo apt-get install -y  libudev-dev
-      - run: cargo test --release --all-features
-      - run: cargo clippy -- -Dwarnings
+      - run: sudo apt-get update
+      - run: sudo apt-get install -y libudev-dev
+      - run: just lint-non-device --release
+      - run: just test --release
 
-  lib-tests:
-    name: Library tests
-    runs-on: ubuntu-latest
-    steps:
-      - name: Setup | Checkout
-        uses: actions/checkout@v3
-      - name: Test | Run tests
-        run: RUSTFLAGS='-D warnings' cargo test --release $LIB_PACKAGES --all-features
-
-  lib-lint:
-    name: Library Lints
+  app-build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt,clippy
-      - run: cargo fmt --all -- --check
-      - run: cargo clippy $LIB_PACKAGES -- -Dwarnings
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+      - uses: taiki-e/install-action@just
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+      - uses: actions/setup-java@v3
+        with:
+          distribution: zulu
+          java-version: 18
+          cache: gradle
+      - uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r25c
+      - run: just frostsnapp/install-rust-deps
+      - run: sudo apt-get update
+      - run: sudo apt install -y ninja-build libstdc++-12-dev libgtk-3-0 libgtk-3-dev libudev-dev
+      - run: just frostsnapp/build linux
+      - run: just frostsnapp/build appbundle

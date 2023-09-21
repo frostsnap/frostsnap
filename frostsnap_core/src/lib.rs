@@ -582,6 +582,21 @@ impl FrostSigner {
         *self = Self::new(self.keypair.clone())
     }
 
+    pub fn cancel_action(&mut self) {
+        match &self.state {
+            SignerState::KeyGen { .. } => {
+                self.state = SignerState::Registered;
+            }
+            SignerState::AwaitingSignAck { key, .. } => {
+                self.state = SignerState::FrostKey {
+                    key: key.clone(),
+                    awaiting_ack: false,
+                };
+            }
+            SignerState::FrostKey { .. } | SignerState::Registered => { /* do nothing */ }
+        }
+    }
+
     pub fn keypair(&self) -> &KeyPair {
         &self.keypair
     }

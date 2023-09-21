@@ -49,9 +49,7 @@ fn test_end_to_end() {
     let mut coordinator_check_keygen = None;
     let mut check_sig_requests = BTreeMap::<SignTask, Vec<DeviceId>>::default();
     let mut completed_signature_responses = vec![];
-    while !message_stack.is_empty() {
-        let to_send = message_stack.pop().unwrap();
-
+    while let Some(to_send) = message_stack.pop() {
         match to_send {
             Send::DeviceToCoordinator(message) => {
                 let messages = coordinator.recv_device_message(message).unwrap();

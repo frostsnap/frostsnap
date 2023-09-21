@@ -1,42 +1,56 @@
 use frostsnap_comms::{DeviceReceiveSerial, DeviceSendSerial, Downstream, MagicBytes};
-use std::io::{BufRead, BufReader, Read, Write};
+pub use serialport;
+use std::io::{BufRead, BufReader};
 
-pub trait Serial {
-    type Port: Read + Write;
-    type OpenError: std::error::Error;
+pub type SerialPort = Box<dyn serialport::SerialPort>;
 
+// NOTE: This trait is not really necessary anymore because it seesm the serialport library works on
+// enough platforms that we could just use it everywhere. This trait is sticking around because it's
+// work to remove and maybe I'm wrong.
+pub trait Serial: Send {
     fn available_ports(&self) -> Vec<PortDesc>;
     fn open_device_port(
         &self,
         unique_id: &str,
         baud_rate: u32,
-    ) -> Result<Self::Port, Self::OpenError>;
-    /// Allows querying whether there is anything to read without blocking
-    fn anything_to_read(port: &Self::Port) -> bool;
+    ) -> Result<SerialPort, PortOpenError>;
+}
+
+pub enum PortOpenError {
+    DeviceBusy,
+    Other(Box<dyn std::error::Error + Send + Sync>),
 }
 
 #[derive(Debug, Clone)]
 pub struct PortDesc {
-    pub unique_id: String,
+    pub id: String,
     pub vid: u16,
     pub pid: u16,
 }
 
-pub struct FramedSerialPort<S: Serial> {
+pub struct FramedSerialPort {
     magic_bytes_progress: usize,
-    inner: BufReader<S::Port>,
+    inner: BufReader<SerialPort>,
 }
 
-impl<S: Serial> FramedSerialPort<S> {
-    pub fn new(port: S::Port) -> Self {
+impl FramedSerialPort {
+    pub fn new(port: SerialPort) -> Self {
         Self {
             inner: BufReader::new(port),
             magic_bytes_progress: 0,
         }
     }
 
+    fn anything_to_read(&self) -> bool {
+        match self.inner.get_ref().bytes_to_read() {
+            Ok(len) => len > 0,
+            // just say there's something there to get the caller to read and get the error rather than returing it here
+            Err(_) => true,
+        }
+    }
+
     pub fn read_for_magic_bytes(&mut self) -> Result<bool, std::io::Error> {
-        if !S::anything_to_read(self.inner.get_ref()) {
+        if !self.anything_to_read() {
             return Ok(false);
         }
         self.inner.fill_buf()?;
@@ -75,12 +89,65 @@ impl<S: Serial> FramedSerialPort<S> {
     pub fn try_read_message(
         &mut self,
     ) -> Result<Option<DeviceSendSerial<Downstream>>, bincode::error::DecodeError> {
-        if !S::anything_to_read(self.inner.get_ref()) && self.inner.buffer().is_empty() {
+        if !self.anything_to_read() && self.inner.buffer().is_empty() {
             return Ok(None);
         }
         Ok(Some(bincode::decode_from_reader(
             &mut self.inner,
             bincode::config::standard(),
         )?))
+    }
+}
+
+use std::time::Duration;
+
+/// impl using the serialport crate
+#[derive(Clone, Default, Debug)]
+pub struct DesktopSerial;
+
+impl Serial for DesktopSerial {
+    fn available_ports(&self) -> Vec<PortDesc> {
+        serialport::available_ports()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|port| match port.port_type {
+                serialport::SerialPortType::UsbPort(usb_port) => Some(PortDesc {
+                    id: port.port_name,
+                    vid: usb_port.vid,
+                    pid: usb_port.pid,
+                }),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn open_device_port(&self, id: &str, baud_rate: u32) -> Result<SerialPort, PortOpenError> {
+        serialport::new(id, baud_rate)
+            // This timeout should never be hit in any normal circumstance but it's important to
+            // have in case a device is bisbehaving. Note: 10ms is too low and leads to errors when
+            // writing.
+            .timeout(Duration::from_millis(1_000))
+            .open()
+            .map_err(|e| {
+                if e.to_string() == "Device or resource busy" {
+                    PortOpenError::DeviceBusy
+                } else {
+                    PortOpenError::Other(Box::new(e))
+                }
+            })
+    }
+}
+
+impl<T: Serial + Sync> Serial for std::sync::Arc<T> {
+    fn available_ports(&self) -> Vec<PortDesc> {
+        self.as_ref().available_ports()
+    }
+
+    fn open_device_port(
+        &self,
+        unique_id: &str,
+        baud_rate: u32,
+    ) -> Result<SerialPort, PortOpenError> {
+        self.as_ref().open_device_port(unique_id, baud_rate)
     }
 }

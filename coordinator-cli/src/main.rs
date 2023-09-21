@@ -4,13 +4,13 @@ use bech32::Variant;
 use db::Db;
 use frostsnap_comms::DeviceReceiveBody;
 use frostsnap_comms::DeviceReceiveMessage;
+use frostsnap_coordinator::DesktopSerial;
 use frostsnap_core::message::CoordinatorSend;
 use frostsnap_core::message::CoordinatorToStorageMessage;
 use frostsnap_core::message::CoordinatorToUserMessage;
 use frostsnap_core::CoordinatorState;
 use frostsnap_core::DeviceId;
 use frostsnap_core::FrostCoordinator;
-use serial::DesktopSerial;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::VecDeque;
@@ -21,7 +21,6 @@ use wallet::Wallet;
 pub mod db;
 mod device_namer;
 pub mod nostr;
-pub mod serial;
 pub mod signer;
 pub mod wallet;
 
@@ -79,7 +78,7 @@ fn process_outbox(
     db: &mut Db,
     coordinator: &mut FrostCoordinator,
     outbox: &mut VecDeque<CoordinatorSend>,
-    ports: &mut frostsnap_coordinator::UsbSerialManager<DesktopSerial>,
+    ports: &mut frostsnap_coordinator::UsbSerialManager,
 ) -> anyhow::Result<()> {
     while let Some(message) = outbox.pop_front() {
         match message {
@@ -140,10 +139,10 @@ fn main() -> anyhow::Result<()> {
     let mut db = db::Db::new(db_path)?;
     let changeset = db.load()?;
 
-    let mut ports = frostsnap_coordinator::UsbSerialManager::new(DesktopSerial);
+    let mut ports = frostsnap_coordinator::UsbSerialManager::new(Box::new(DesktopSerial));
 
     if let Some(state) = &changeset.frostsnap {
-        *ports.device_labels() = state.device_labels.clone();
+        *ports.device_labels_mut() = state.device_labels.clone();
     }
 
     match cli.command {
@@ -185,7 +184,7 @@ fn main() -> anyhow::Result<()> {
                 for device_id in ports.unlabelled_devices().collect::<Vec<_>>() {
                     let device_label = device_namer::gen_name39();
                     eprintln!("Registered new device: {}", device_label);
-                    ports.device_labels().insert(device_id, device_label);
+                    ports.device_labels_mut().insert(device_id, device_label);
                 }
             }
 
@@ -227,9 +226,9 @@ fn main() -> anyhow::Result<()> {
 
             let mut outbox = VecDeque::new();
             loop {
-                let (_, new_messages) = ports.poll_ports();
+                let port_changes = ports.poll_ports();
 
-                for message in new_messages {
+                for message in port_changes.new_messages {
                     event!(
                         Level::DEBUG,
                         from = message.from.to_string(),

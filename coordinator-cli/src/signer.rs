@@ -1,14 +1,14 @@
 use frostsnap_comms::{DeviceReceiveBody, DeviceReceiveMessage};
+use frostsnap_coordinator::DeviceChange;
 use frostsnap_core::message::{
     CoordinatorSend, CoordinatorToUserMessage, DeviceToCoordinatorBody,
     DeviceToCoordindatorMessage, SignTask,
 };
-use frostsnap_core::{schnorr_fun, CoordinatorFrostKey};
+use frostsnap_core::{schnorr_fun, CoordinatorFrostKey, DeviceId};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use tracing::{event, Level};
 
 use crate::db::Db;
-use crate::serial::DesktopSerial;
 
 use anyhow::anyhow;
 
@@ -16,14 +16,14 @@ pub struct Signer<'a, 'b> {
     // key: CoordinatorFrostKey,
     // still_need_to_sign: BTreeSet<DeviceId>,
     coordinator: frostsnap_core::FrostCoordinator,
-    ports: &'a mut frostsnap_coordinator::UsbSerialManager<DesktopSerial>,
+    ports: &'a mut frostsnap_coordinator::UsbSerialManager,
     db: &'b mut Db,
 }
 
 impl<'a, 'b> Signer<'a, 'b> {
     pub fn new(
         db: &'b mut Db,
-        ports: &'a mut frostsnap_coordinator::UsbSerialManager<DesktopSerial>,
+        ports: &'a mut frostsnap_coordinator::UsbSerialManager,
         coordinator: frostsnap_core::FrostCoordinator,
     ) -> Self {
         Self {
@@ -78,6 +78,10 @@ impl<'a, 'b> Signer<'a, 'b> {
         };
 
         let mut still_need_to_sign = chosen_signers.clone();
+        let mut asking_to_sign: BTreeSet<DeviceId> = still_need_to_sign
+            .intersection(self.ports.registered_devices())
+            .cloned()
+            .collect();
 
         eprintln!(
             "Plug signers:\n{}",
@@ -116,16 +120,14 @@ impl<'a, 'b> Signer<'a, 'b> {
                 }
             }
 
-            let mut newly_registered = BTreeSet::new();
-            let mut start = std::time::Instant::now();
+            let mut waiting_start = std::time::Instant::now();
 
             // this loop is here to wait a bit before sending out signing requests to devices
             // because often a big bunch of devices will register at similar times if they are daisy
             // chained together.
             loop {
-                let (just_now_registered_devices, new_messages) = self.ports.poll_ports();
-
-                for incoming in new_messages {
+                let port_changes = self.ports.poll_ports();
+                for incoming in port_changes.new_messages {
                     match self.coordinator.recv_device_message(incoming.clone()) {
                         Ok(outgoing) => {
                             if let DeviceToCoordindatorMessage {
@@ -150,21 +152,29 @@ impl<'a, 'b> Signer<'a, 'b> {
                     };
                 }
 
-                if !just_now_registered_devices.is_empty() {
-                    start = std::time::Instant::now();
-                    newly_registered.extend(just_now_registered_devices);
-                } else if start.elapsed().as_millis() > 2_000 {
+                for device_change in &port_changes.device_changes {
+                    match device_change {
+                        DeviceChange::Disconnected(device_id) => {
+                            asking_to_sign.remove(device_id);
+                        }
+                        DeviceChange::Registered(device_id, _) => {
+                            if still_need_to_sign.contains(device_id) {
+                                asking_to_sign.insert(*device_id);
+                            }
+                        }
+                        DeviceChange::Added(_) => { /* do nothing until it's registered */ }
+                    }
+                }
+
+                if !port_changes.device_changes.is_empty() {
+                    waiting_start = std::time::Instant::now();
+                } else if waiting_start.elapsed().as_millis() > 2_000 {
                     break;
                 }
             }
 
-            let asking_to_sign = newly_registered
-                .intersection(&still_need_to_sign)
-                .cloned()
-                .collect::<BTreeSet<_>>();
-
             self.ports.queue_in_port_outbox(DeviceReceiveMessage {
-                target_destinations: asking_to_sign.clone(),
+                target_destinations: std::mem::take(&mut asking_to_sign),
                 message_body: DeviceReceiveBody::Core(signature_request.clone()),
             });
         };

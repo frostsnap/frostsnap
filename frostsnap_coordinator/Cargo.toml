@@ -11,3 +11,4 @@ frostsnap_comms = { workspace = true }
 frostsnap_core = { workspace = true }
 bincode = { workspace = true, features = ["std"] }
 tracing = { workspace = true }
+serialport = "4.2"

@@ -25,7 +25,6 @@ use bdk_chain::{
 use frostsnap_core::schnorr_fun::{frost::FrostKey, fun::marker::Normal};
 
 use crate::db::Db;
-use crate::serial::DesktopSerial;
 use crate::signer::Signer;
 
 #[derive(Debug)]
@@ -114,7 +113,7 @@ impl Commands {
         &self,
         wallet: &mut Wallet,
         db: &mut Db,
-        ports: &mut frostsnap_coordinator::UsbSerialManager<DesktopSerial>,
+        ports: &mut frostsnap_coordinator::UsbSerialManager,
         network: Network,
     ) -> anyhow::Result<()> {
         let electrum_url = match network {

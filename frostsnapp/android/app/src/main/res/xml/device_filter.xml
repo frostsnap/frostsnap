@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<resources>
+    <!--    esp32c3 JTAG serial device-->
+    <usb-device vendor-id="12346" product-id="4097" />
+</resources>
