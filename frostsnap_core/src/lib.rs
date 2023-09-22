@@ -63,11 +63,12 @@ impl FrostCoordinator {
     pub fn recv_device_message(
         &mut self,
         message: DeviceToCoordindatorMessage,
-    ) -> MessageResult<Vec<CoordinatorSend>> {
+    ) -> CoordinatorResult<Vec<CoordinatorSend>> {
         match &mut self.state {
-            CoordinatorState::Registration => {
-                Err(Error::coordinator_message_kind(&self.state, &message))
-            }
+            CoordinatorState::Registration => Err(CoordinatorError::coordinator_message_kind(
+                &self.state,
+                &message,
+            )),
             CoordinatorState::KeyGen { responses } => match message.body {
                 DeviceToCoordinatorBody::KeyGenResponse(new_shares) => {
                     if let Some(existing) = responses.insert(message.from, Some(new_shares.clone()))
@@ -157,7 +158,10 @@ impl FrostCoordinator {
                         }
                     }
                 }
-                _ => Err(Error::coordinator_message_kind(&self.state, &message)),
+                _ => Err(CoordinatorError::coordinator_message_kind(
+                    &self.state,
+                    &message,
+                )),
             },
             CoordinatorState::Signing { key, sessions } => match &message.body {
                 DeviceToCoordinatorBody::SignatureShare {
@@ -168,11 +172,14 @@ impl FrostCoordinator {
                     let frost = frost::new_without_nonce_generation::<Sha256>();
 
                     let nonce_for_device = key.device_nonces.get_mut(&message.from).ok_or(
-                        Error::coordinator_invalid_message(&message, "Signer is unknown".into()),
+                        CoordinatorError::coordinator_invalid_message(
+                            &message,
+                            "Signer is unknown".into(),
+                        ),
                     )?;
 
                     if new_nonces.len() != n_signatures {
-                        return Err(Error::coordinator_invalid_message(
+                        return Err(CoordinatorError::coordinator_invalid_message(
                             &message,
                             format!(
                                 "Signer did not replenish the correct number of nonces: {}",
@@ -182,7 +189,7 @@ impl FrostCoordinator {
                     }
 
                     if signature_shares.len() != n_signatures {
-                        return Err(Error::coordinator_invalid_message(&message, format!("signer did not provide the right number of signature shares. Got {}, expected {}", signature_shares.len(), sessions.len())));
+                        return Err(CoordinatorError::coordinator_invalid_message(&message, format!("signer did not provide the right number of signature shares. Got {}, expected {}", signature_shares.len(), sessions.len())));
                     }
 
                     for (session_progress, signature_share) in
@@ -194,7 +201,7 @@ impl FrostCoordinator {
                             .participants()
                             .any(|x_coord| x_coord == message.from.to_poly_index())
                         {
-                            return Err(Error::coordinator_invalid_message(
+                            return Err(CoordinatorError::coordinator_invalid_message(
                                 &message,
                                 "Signer was not a particpant for this session".into(),
                             ));
@@ -210,7 +217,7 @@ impl FrostCoordinator {
                                 .signature_shares
                                 .insert(message.from, *signature_share);
                         } else {
-                            return Err(Error::coordinator_invalid_message(
+                            return Err(CoordinatorError::coordinator_invalid_message(
                                 &message,
                                 format!(
                                     "Inavlid signature share under key {}",
@@ -258,9 +265,15 @@ impl FrostCoordinator {
 
                     Ok(outgoing)
                 }
-                _ => Err(Error::coordinator_message_kind(&self.state, &message)),
+                _ => Err(CoordinatorError::coordinator_message_kind(
+                    &self.state,
+                    &message,
+                )),
             },
-            _ => Err(Error::coordinator_message_kind(&self.state, &message)),
+            _ => Err(CoordinatorError::coordinator_message_kind(
+                &self.state,
+                &message,
+            )),
         }
     }
 
@@ -509,6 +522,65 @@ impl CoordinatorState {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CoordinatorError {
+    MessageKind {
+        state: &'static str,
+        kind: &'static str,
+    },
+    InvalidMessage {
+        kind: &'static str,
+        reason: String,
+    },
+}
+
+impl CoordinatorError {
+    pub fn coordinator_message_kind(
+        state: &CoordinatorState,
+        message: &DeviceToCoordindatorMessage,
+    ) -> Self {
+        Self::MessageKind {
+            state: state.name(),
+            kind: message.body.kind(),
+        }
+    }
+    pub fn coordinator_invalid_message(
+        message: &DeviceToCoordindatorMessage,
+        reason: String,
+    ) -> Self {
+        Self::InvalidMessage {
+            kind: message.body.kind(),
+            reason,
+        }
+    }
+}
+
+impl core::fmt::Display for CoordinatorError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            CoordinatorError::MessageKind { state, kind } => write!(
+                f,
+                "Unexpected message of kind {} for this state {}",
+                kind, state
+            ),
+            CoordinatorError::InvalidMessage { kind, reason } => {
+                write!(f, "Invalid message of kind {}: {}", kind, reason)
+            }
+        }
+    }
+}
+
+impl CoordinatorError {
+    pub fn gist(&self) -> String {
+        match self {
+            CoordinatorError::MessageKind { state, kind } => format!("mk!{} {}", kind, state),
+            CoordinatorError::InvalidMessage { kind, reason } => format!("im!{}: {}", kind, reason),
+        }
+    }
+}
+
+pub type CoordinatorResult<T> = Result<T, CoordinatorError>;
+
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, serde::Serialize, serde::Deserialize)]
 pub struct DeviceNonces {
     counter: usize,
@@ -632,7 +704,7 @@ impl FrostSigner {
     pub fn recv_coordinator_message(
         &mut self,
         message: CoordinatorToDeviceMessage,
-    ) -> MessageResult<Vec<DeviceSend>> {
+    ) -> SignerResult<Vec<DeviceSend>> {
         match (&self.state, message.clone()) {
             (
                 SignerState::Registered,
@@ -701,7 +773,7 @@ impl FrostSigner {
                     .iter()
                     .find(|device_id| !shares_provided.contains_key(device_id))
                 {
-                    return Err(Error::signer_invalid_message(
+                    return Err(SignerError::signer_invalid_message(
                         &message,
                         format!("Missing shares from {}", device),
                     ));
@@ -718,7 +790,7 @@ impl FrostSigner {
                     .expect("we have a point poly in this finish keygen")
                     != &frost::to_point_poly(scalar_poly)
                 {
-                    return Err(Error::signer_invalid_message(
+                    return Err(SignerError::signer_invalid_message(
                         &message,
                         "Coordinator told us we are using a different point poly than we expected"
                             .to_string(),
@@ -740,7 +812,7 @@ impl FrostSigner {
                                                 .encrypted_shares
                                                 .get(device_id_receiver)
                                                 .cloned()
-                                                .ok_or(Error::signer_invalid_message(
+                                                .ok_or(SignerError::signer_invalid_message(
                                                     &message,
                                                     format!(
                                                         "Missing shares for {}",
@@ -775,7 +847,7 @@ impl FrostSigner {
                 let pop_message = gen_pop_message(devices.iter().cloned());
                 let keygen = frost
                     .new_keygen(point_polys)
-                    .map_err(|e| Error::signer_message_error(&message, e))?;
+                    .map_err(|e| SignerError::signer_message_error(&message, e))?;
 
                 let (secret_share, frost_key) = frost
                     .finish_keygen(
@@ -784,7 +856,7 @@ impl FrostSigner {
                         my_shares,
                         Message::raw(&pop_message),
                     )
-                    .map_err(|e| Error::signer_message_error(&message, e))?;
+                    .map_err(|e| SignerError::signer_message_error(&message, e))?;
 
                 let xpub = frost_key.public_key().to_string();
 
@@ -818,14 +890,14 @@ impl FrostSigner {
                     .map(|nonce| nonce.public())
                     .collect::<Vec<_>>();
                 if expected_nonces != *my_nonces {
-                    return Err(Error::signer_invalid_message(
+                    return Err(SignerError::signer_invalid_message(
                         &message,
                         "Signing request nonces do not match expected".into(),
                     ));
                 }
 
                 if self.nonce_counter > *my_nonce_index {
-                    return Err(Error::signer_invalid_message(
+                    return Err(SignerError::signer_invalid_message(
                         &message,
                         format!(
                             "Attempt to reuse nonces! Expected nonce >= {} but got {}",
@@ -846,7 +918,7 @@ impl FrostSigner {
                     DeviceToUserMessage::SignatureRequest { sign_task },
                 )])
             }
-            _ => Err(Error::signer_message_kind(&self.state, &message)),
+            _ => Err(SignerError::signer_message_kind(&self.state, &message)),
         }
     }
 
@@ -1026,18 +1098,7 @@ pub struct FrostsnapKey {
     pub aux_rand: [u8; 32],
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Error {
-    /// The device was not in a state where it could receive a message of that kind
-    MessageKind {
-        state: &'static str,
-        kind: &'static str,
-    },
-    /// The content of the message was invalid with respect to the state.
-    InvalidMessage { kind: &'static str, reason: String },
-}
-
-impl Error {
+impl SignerError {
     pub fn coordinator_message_kind(
         state: &CoordinatorState,
         message: &DeviceToCoordindatorMessage,
@@ -1047,14 +1108,6 @@ impl Error {
             kind: message.body.kind(),
         }
     }
-
-    pub fn signer_message_kind(state: &SignerState, message: &CoordinatorToDeviceMessage) -> Self {
-        Self::MessageKind {
-            state: state.name(),
-            kind: message.kind(),
-        }
-    }
-
     pub fn coordinator_invalid_message(
         message: &DeviceToCoordindatorMessage,
         reason: String,
@@ -1064,7 +1117,28 @@ impl Error {
             reason,
         }
     }
+}
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+
+pub enum SignerError {
+    MessageKind {
+        state: &'static str,
+        kind: &'static str,
+    },
+    InvalidMessage {
+        kind: &'static str,
+        reason: String,
+    },
+}
+
+impl SignerError {
+    pub fn signer_message_kind(state: &SignerState, message: &CoordinatorToDeviceMessage) -> Self {
+        Self::MessageKind {
+            state: state.name(),
+            kind: message.kind(),
+        }
+    }
     pub fn signer_invalid_message(message: &CoordinatorToDeviceMessage, reason: String) -> Self {
         Self::InvalidMessage {
             kind: message.kind(),
@@ -1083,31 +1157,31 @@ impl Error {
     }
 }
 
-impl core::fmt::Display for Error {
+impl core::fmt::Display for SignerError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Error::MessageKind { state, kind } => write!(
+            SignerError::MessageKind { state, kind } => write!(
                 f,
                 "Unexpected message of kind {} for this state {}",
                 kind, state
             ),
-            Error::InvalidMessage { kind, reason } => {
+            SignerError::InvalidMessage { kind, reason } => {
                 write!(f, "Invalid message of kind {}: {}", kind, reason)
             }
         }
     }
 }
 
-impl Error {
+impl SignerError {
     pub fn gist(&self) -> String {
         match self {
-            Error::MessageKind { state, kind } => format!("mk!{} {}", kind, state),
-            Error::InvalidMessage { kind, reason } => format!("im!{}: {}", kind, reason),
+            SignerError::MessageKind { state, kind } => format!("mk!{} {}", kind, state),
+            SignerError::InvalidMessage { kind, reason } => format!("im!{}: {}", kind, reason),
         }
     }
 }
 
-pub type MessageResult<T> = Result<T, Error>;
+pub type SignerResult<T> = Result<T, SignerError>;
 
 #[derive(Debug, Clone)]
 pub enum DoKeyGenError {
