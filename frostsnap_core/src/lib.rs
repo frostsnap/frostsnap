@@ -171,25 +171,20 @@ impl FrostCoordinator {
                     let n_signatures = sessions.len();
                     let frost = frost::new_without_nonce_generation::<Sha256>();
 
-                    let nonce_for_device = key.device_nonces.get_mut(&message.from).ok_or(
-                        CoordinatorError::coordinator_invalid_message(
-                            &message,
-                            "Signer is unknown".into(),
-                        ),
-                    )?;
+                    let nonce_for_device = key
+                        .device_nonces
+                        .get_mut(&message.from)
+                        .ok_or(CoordinatorError::UnknownSigner(message.from))?;
 
                     if new_nonces.len() != n_signatures {
-                        return Err(CoordinatorError::coordinator_invalid_message(
-                            &message,
-                            format!(
-                                "Signer did not replenish the correct number of nonces: {}",
-                                n_signatures
-                            ),
-                        ));
+                        return Err(CoordinatorError::NoncesUnreplenished(n_signatures));
                     }
 
                     if signature_shares.len() != n_signatures {
-                        return Err(CoordinatorError::coordinator_invalid_message(&message, format!("signer did not provide the right number of signature shares. Got {}, expected {}", signature_shares.len(), sessions.len())));
+                        return Err(CoordinatorError::WrongNumberOfSigShares {
+                            got: signature_shares.len(),
+                            expected: sessions.len(),
+                        });
                     }
 
                     for (session_progress, signature_share) in
@@ -201,9 +196,8 @@ impl FrostCoordinator {
                             .participants()
                             .any(|x_coord| x_coord == message.from.to_poly_index())
                         {
-                            return Err(CoordinatorError::coordinator_invalid_message(
-                                &message,
-                                "Signer was not a particpant for this session".into(),
+                            return Err(CoordinatorError::SignerNotSessionParticipant(
+                                message.from,
                             ));
                         }
 
@@ -217,13 +211,7 @@ impl FrostCoordinator {
                                 .signature_shares
                                 .insert(message.from, *signature_share);
                         } else {
-                            return Err(CoordinatorError::coordinator_invalid_message(
-                                &message,
-                                format!(
-                                    "Inavlid signature share under key {}",
-                                    xonly_frost_key.public_key()
-                                ),
-                            ));
+                            return Err(CoordinatorError::InvalidSignatureShare(message.from));
                         }
                     }
 
@@ -528,10 +516,15 @@ pub enum CoordinatorError {
         state: &'static str,
         kind: &'static str,
     },
-    InvalidMessage {
-        kind: &'static str,
-        reason: String,
+    StartSignError(StartSignError),
+    UnknownSigner(DeviceId),
+    NoncesUnreplenished(usize),
+    WrongNumberOfSigShares {
+        got: usize,
+        expected: usize,
     },
+    SignerNotSessionParticipant(DeviceId),
+    InvalidSignatureShare(DeviceId),
 }
 
 impl CoordinatorError {
@@ -544,15 +537,6 @@ impl CoordinatorError {
             kind: message.body.kind(),
         }
     }
-    pub fn coordinator_invalid_message(
-        message: &DeviceToCoordindatorMessage,
-        reason: String,
-    ) -> Self {
-        Self::InvalidMessage {
-            kind: message.body.kind(),
-            reason,
-        }
-    }
 }
 
 impl core::fmt::Display for CoordinatorError {
@@ -563,20 +547,77 @@ impl core::fmt::Display for CoordinatorError {
                 "Unexpected message of kind {} for this state {}",
                 kind, state
             ),
-            CoordinatorError::InvalidMessage { kind, reason } => {
-                write!(f, "Invalid message of kind {}: {}", kind, reason)
+            CoordinatorError::UnknownSigner(device_id) => {
+                write!(f, "Signer is unknown {}", device_id)
             }
+            CoordinatorError::NoncesUnreplenished(n_nonces) => {
+                write!(
+                    f,
+                    "Signer did not replenish the correct number of nonces: {}",
+                    n_nonces
+                )
+            }
+            CoordinatorError::WrongNumberOfSigShares { got, expected } => {
+                write!(f, "signer did not provide the right number of signature shares. Got {}, expected {}", got, expected)
+            }
+            CoordinatorError::SignerNotSessionParticipant(device_id) => write!(
+                f,
+                "Signer was not a particpant for this session {}",
+                device_id
+            ),
+            CoordinatorError::InvalidSignatureShare(device_id) => {
+                write!(f, "Inavlid signature share under key {}", device_id)
+            }
+            CoordinatorError::StartSignError(start_sign_error) => match start_sign_error {
+                StartSignError::NotEnoughDevicesSelected {
+                    selected,
+                    threshold,
+                } => {
+                    write!(
+                        f,
+                        "Need more than {} signers for threshold {}",
+                        selected, threshold
+                    )
+                }
+                StartSignError::WrongState { in_state } => {
+                    write!(f, "Can't sign in state {}", in_state)
+                }
+                StartSignError::NotEnoughNoncesForDevice {
+                    device_id,
+                    have,
+                    need,
+                } => {
+                    write!(
+                        f,
+                        "Not enough nonces for device {}, have {}, need {}",
+                        device_id, have, need,
+                    )
+                }
+                StartSignError::UnknownDevice { device_id } => {
+                    write!(f, "Unknown device {}", device_id)
+                }
+            },
         }
     }
 }
 
-impl CoordinatorError {
-    pub fn gist(&self) -> String {
-        match self {
-            CoordinatorError::MessageKind { state, kind } => format!("mk!{} {}", kind, state),
-            CoordinatorError::InvalidMessage { kind, reason } => format!("im!{}: {}", kind, reason),
-        }
-    }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StartSignError {
+    UnknownDevice {
+        device_id: DeviceId,
+    },
+    NotEnoughDevicesSelected {
+        selected: usize,
+        threshold: usize,
+    },
+    WrongState {
+        in_state: &'static str,
+    },
+    NotEnoughNoncesForDevice {
+        device_id: DeviceId,
+        have: usize,
+        need: usize,
+    },
 }
 
 pub type CoordinatorResult<T> = Result<T, CoordinatorError>;
@@ -1182,67 +1223,6 @@ impl SignerError {
 }
 
 pub type SignerResult<T> = Result<T, SignerError>;
-
-#[derive(Debug, Clone)]
-pub enum DoKeyGenError {
-    WrongState,
-}
-
-#[derive(Debug, Clone)]
-pub enum StartSignError {
-    UnknownDevice {
-        device_id: DeviceId,
-    },
-    NotEnoughDevicesSelected {
-        selected: usize,
-        threshold: usize,
-    },
-    WrongState {
-        in_state: &'static str,
-    },
-    NotEnoughNoncesForDevice {
-        device_id: DeviceId,
-        have: usize,
-        need: usize,
-    },
-}
-
-impl core::fmt::Display for StartSignError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            StartSignError::NotEnoughDevicesSelected {
-                selected,
-                threshold,
-            } => {
-                write!(
-                    f,
-                    "Need more than {} signers for threshold {}",
-                    selected, threshold
-                )
-            }
-            StartSignError::WrongState { in_state } => {
-                write!(f, "Can't sign in state {}", in_state)
-            }
-            StartSignError::NotEnoughNoncesForDevice {
-                device_id,
-                have,
-                need,
-            } => {
-                write!(
-                    f,
-                    "Not enough nonces for device {}, have {}, need {}",
-                    device_id, have, need,
-                )
-            }
-            StartSignError::UnknownDevice { device_id } => {
-                write!(f, "Unknown device {}", device_id)
-            }
-        }
-    }
-}
-
-#[cfg(feature = "std")]
-impl std::error::Error for StartSignError {}
 
 #[derive(Debug, Clone)]
 pub enum ActionError {
