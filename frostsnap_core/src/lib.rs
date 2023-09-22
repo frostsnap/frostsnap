@@ -29,7 +29,7 @@ use alloc::{
 use rand_chacha::ChaCha20Rng;
 use rand_core::RngCore;
 use schnorr_fun::{
-    frost::{self, generate_scalar_poly, FrostKey, SignSession},
+    frost::{self, generate_scalar_poly, FinishKeyGenError, FrostKey, NewKeyGenError, SignSession},
     fun::{derive_nonce_rng, hex, marker::*, KeyPair, Point, Scalar, Tag},
     musig::{Nonce, NonceKeyPair},
     nonce, Message,
@@ -568,35 +568,9 @@ impl core::fmt::Display for CoordinatorError {
             CoordinatorError::InvalidSignatureShare(device_id) => {
                 write!(f, "Inavlid signature share under key {}", device_id)
             }
-            CoordinatorError::StartSignError(start_sign_error) => match start_sign_error {
-                StartSignError::NotEnoughDevicesSelected {
-                    selected,
-                    threshold,
-                } => {
-                    write!(
-                        f,
-                        "Need more than {} signers for threshold {}",
-                        selected, threshold
-                    )
-                }
-                StartSignError::WrongState { in_state } => {
-                    write!(f, "Can't sign in state {}", in_state)
-                }
-                StartSignError::NotEnoughNoncesForDevice {
-                    device_id,
-                    have,
-                    need,
-                } => {
-                    write!(
-                        f,
-                        "Not enough nonces for device {}, have {}, need {}",
-                        device_id, have, need,
-                    )
-                }
-                StartSignError::UnknownDevice { device_id } => {
-                    write!(f, "Unknown device {}", device_id)
-                }
-            },
+            CoordinatorError::StartSignError(start_sign_error) => {
+                write!(f, "Inavlid signature share under key {}", start_sign_error)
+            }
         }
     }
 }
@@ -618,6 +592,40 @@ pub enum StartSignError {
         have: usize,
         need: usize,
     },
+}
+
+impl core::fmt::Display for StartSignError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            StartSignError::NotEnoughDevicesSelected {
+                selected,
+                threshold,
+            } => {
+                write!(
+                    f,
+                    "Need more than {} signers for threshold {}",
+                    selected, threshold
+                )
+            }
+            StartSignError::WrongState { in_state } => {
+                write!(f, "Can't sign in state {}", in_state)
+            }
+            StartSignError::NotEnoughNoncesForDevice {
+                device_id,
+                have,
+                need,
+            } => {
+                write!(
+                    f,
+                    "Not enough nonces for device {}, have {}, need {}",
+                    device_id, have, need,
+                )
+            }
+            StartSignError::UnknownDevice { device_id } => {
+                write!(f, "Unknown device {}", device_id)
+            }
+        }
+    }
 }
 
 pub type CoordinatorResult<T> = Result<T, CoordinatorError>;
@@ -814,10 +822,7 @@ impl FrostSigner {
                     .iter()
                     .find(|device_id| !shares_provided.contains_key(device_id))
                 {
-                    return Err(SignerError::signer_invalid_message(
-                        &message,
-                        format!("Missing shares from {}", device),
-                    ));
+                    return Err(SignerError::MissingShares(*device));
                 }
                 let frost = frost::new_with_deterministic_nonces::<Sha256>();
 
@@ -831,11 +836,7 @@ impl FrostSigner {
                     .expect("we have a point poly in this finish keygen")
                     != &frost::to_point_poly(scalar_poly)
                 {
-                    return Err(SignerError::signer_invalid_message(
-                        &message,
-                        "Coordinator told us we are using a different point poly than we expected"
-                            .to_string(),
-                    ));
+                    return Err(SignerError::ToldWrongPoly);
                 }
 
                 let transpose_shares = shares_provided
@@ -853,12 +854,8 @@ impl FrostSigner {
                                                 .encrypted_shares
                                                 .get(device_id_receiver)
                                                 .cloned()
-                                                .ok_or(SignerError::signer_invalid_message(
-                                                    &message,
-                                                    format!(
-                                                        "Missing shares for {}",
-                                                        device_id_receiver
-                                                    ),
+                                                .ok_or(SignerError::MissingShares(
+                                                    *device_id_receiver,
                                                 ))?,
                                             share.proof_of_possession.clone(),
                                         ),
@@ -888,7 +885,7 @@ impl FrostSigner {
                 let pop_message = gen_pop_message(devices.iter().cloned());
                 let keygen = frost
                     .new_keygen(point_polys)
-                    .map_err(|e| SignerError::signer_message_error(&message, e))?;
+                    .map_err(SignerError::KeygenError)?;
 
                 let (secret_share, frost_key) = frost
                     .finish_keygen(
@@ -897,7 +894,7 @@ impl FrostSigner {
                         my_shares,
                         Message::raw(&pop_message),
                     )
-                    .map_err(|e| SignerError::signer_message_error(&message, e))?;
+                    .map_err(SignerError::FinishKeyGenError)?;
 
                 let xpub = frost_key.public_key().to_string();
 
@@ -931,20 +928,14 @@ impl FrostSigner {
                     .map(|nonce| nonce.public())
                     .collect::<Vec<_>>();
                 if expected_nonces != *my_nonces {
-                    return Err(SignerError::signer_invalid_message(
-                        &message,
-                        "Signing request nonces do not match expected".into(),
-                    ));
+                    return Err(SignerError::WrongNoncesRequest);
                 }
 
                 if self.nonce_counter > *my_nonce_index {
-                    return Err(SignerError::signer_invalid_message(
-                        &message,
-                        format!(
-                            "Attempt to reuse nonces! Expected nonce >= {} but got {}",
-                            self.nonce_counter, my_nonce_index
-                        ),
-                    ));
+                    return Err(SignerError::NonceReuseRequest {
+                        ours: self.nonce_counter,
+                        requested: *my_nonce_index,
+                    });
                 }
 
                 // ⚠ Update nonce counter. Overflow would allow nonce reuse.
@@ -1149,27 +1140,23 @@ impl SignerError {
             kind: message.body.kind(),
         }
     }
-    pub fn coordinator_invalid_message(
-        message: &DeviceToCoordindatorMessage,
-        reason: String,
-    ) -> Self {
-        Self::InvalidMessage {
-            kind: message.body.kind(),
-            reason,
-        }
-    }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 
 pub enum SignerError {
     MessageKind {
         state: &'static str,
         kind: &'static str,
     },
-    InvalidMessage {
-        kind: &'static str,
-        reason: String,
+    MissingShares(DeviceId),
+    ToldWrongPoly,
+    KeygenError(NewKeyGenError),
+    FinishKeyGenError(FinishKeyGenError),
+    WrongNoncesRequest,
+    NonceReuseRequest {
+        ours: usize,
+        requested: usize,
     },
 }
 
@@ -1180,23 +1167,10 @@ impl SignerError {
             kind: message.kind(),
         }
     }
-    pub fn signer_invalid_message(message: &CoordinatorToDeviceMessage, reason: String) -> Self {
-        Self::InvalidMessage {
-            kind: message.kind(),
-            reason,
-        }
-    }
-
-    pub fn signer_message_error(
-        message: &CoordinatorToDeviceMessage,
-        e: impl alloc::string::ToString,
-    ) -> Self {
-        Self::InvalidMessage {
-            kind: message.kind(),
-            reason: e.to_string(),
-        }
-    }
 }
+
+#[cfg(feature = "std")]
+impl std::error::Error for StartSignError {}
 
 impl core::fmt::Display for SignerError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -1206,8 +1180,26 @@ impl core::fmt::Display for SignerError {
                 "Unexpected message of kind {} for this state {}",
                 kind, state
             ),
-            SignerError::InvalidMessage { kind, reason } => {
-                write!(f, "Invalid message of kind {}: {}", kind, reason)
+            SignerError::MissingShares(device_id) => write!(f, "Missing shares from {}", device_id),
+            SignerError::ToldWrongPoly => write!(
+                f,
+                "Coordinator told us we are using a different point poly than we expected"
+            ),
+            SignerError::KeygenError(keygen_error) => {
+                write!(f, "FROST keygen error {}", keygen_error)
+            }
+            SignerError::FinishKeyGenError(keygen_error) => {
+                write!(f, "FROST finish keygen error {}", keygen_error)
+            }
+            SignerError::WrongNoncesRequest => {
+                write!(f, "Signing request nonces do not match expected")
+            }
+            SignerError::NonceReuseRequest { ours, requested } => {
+                write!(
+                    f,
+                    "Attempt to reuse nonces! Expected nonce >= {} but got {}",
+                    ours, requested
+                )
             }
         }
     }
@@ -1217,7 +1209,14 @@ impl SignerError {
     pub fn gist(&self) -> String {
         match self {
             SignerError::MessageKind { state, kind } => format!("mk!{} {}", kind, state),
-            SignerError::InvalidMessage { kind, reason } => format!("im!{}: {}", kind, reason),
+            SignerError::MissingShares(device_id) => format!("missing shares {}", device_id),
+            SignerError::ToldWrongPoly => "wrong poly".to_string(),
+            SignerError::KeygenError(e) => format!("kg!{}", e),
+            SignerError::FinishKeyGenError(e) => format!("fkg!{}", e),
+            SignerError::WrongNoncesRequest => "wrong nonces".to_string(),
+            SignerError::NonceReuseRequest { ours, requested } => {
+                format!("nonce reuse {} {}", ours, requested)
+            }
         }
     }
 }

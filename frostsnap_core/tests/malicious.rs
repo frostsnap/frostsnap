@@ -31,6 +31,6 @@ fn keygen_maliciously_replace_public_poly() {
     });
     assert!(matches!(
         result,
-        Err(frostsnap_core::SignerError::InvalidMessage { .. })
+        Err(frostsnap_core::SignerError::ToldWrongPoly)
     ))
 }
