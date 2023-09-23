@@ -4,6 +4,9 @@ non_device_packages := "-p native -p frostsnap_core -p coordinator-cli -p frosts
 flash BOARD=default_board +ARGS="":
     cd device && cargo run --release --features {{BOARD}} --bin {{BOARD}}
 
+erase-device BOARD=default_board +ARGS="":
+    cd device && cargo run --release --features {{BOARD}} --bin {{BOARD}} -- --erase-data-parts nvs --partition-table partitions.csv
+
 build-device BOARD=default_board +ARGS="":
     cd device && cargo build {{ARGS}} --features {{BOARD}} --bin {{BOARD}}
 
