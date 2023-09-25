@@ -274,15 +274,23 @@ impl UsbSerialManager {
                 }
                 ReceiveSerial::Message(message) => match message.body {
                     DeviceSendBody::Announce(_announce) => {
-                        self.device_ports
-                            .insert(message.from, serial_number.clone());
+                        match self
+                            .device_ports
+                            .insert(message.from, serial_number.clone())
+                        {
+                            Some(old_serial_number) => {
+                                self.reverse_device_ports
+                                    .entry(old_serial_number)
+                                    .or_default()
+                                    .remove(&message.from);
+                            }
+                            None => device_changes.push(DeviceChange::Added(message.from)),
+                        }
 
-                        let devices = self
-                            .reverse_device_ports
+                        self.reverse_device_ports
                             .entry(serial_number.clone())
-                            .or_default();
-                        devices.insert(message.from);
-                        device_changes.push(DeviceChange::Added(message.from));
+                            .or_default()
+                            .insert(message.from);
 
                         event!(
                             Level::DEBUG,
