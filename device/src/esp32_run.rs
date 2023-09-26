@@ -110,8 +110,9 @@ where
                         Ok(device_send) => {
                             match device_send {
                                 ReceiveSerial::MagicBytes(_) => {
-                                    sends_upstream
-                                        .debug("downstream device sent unexpected magic bytes");
+                                    sends_upstream.send_debug(
+                                        "downstream device sent unexpected magic bytes",
+                                    );
                                     // FIXME: decide what to do when downstream sends unexpected magic bytes
                                 }
                                 ReceiveSerial::Message(message) => {
@@ -121,7 +122,7 @@ where
                         }
                         Err(e) => {
                             sends_upstream
-                                .debug(format!("Failed to decode on downstream port: {e}"));
+                                .send_debug(format!("Failed to decode on downstream port: {e}"));
                             downstream_active = false;
                             ui.set_downstream_connection_state(false);
                         }
@@ -143,7 +144,7 @@ where
                 if downstream_serial.find_and_remove_magic_bytes() {
                     downstream_active = true;
                     ui.set_downstream_connection_state(true);
-                    sends_upstream.debug("Device read magic bytes from another device!");
+                    sends_upstream.send_debug("Device read magic bytes from another device!");
                 }
             }
 
@@ -208,7 +209,7 @@ where
                                                         completed_task: None,
                                                     },
                                                 ));
-                                                sends_upstream.debug("Received AnnounceACK!");
+                                                sends_upstream.send_debug("Received AnnounceACK!");
                                             }
                                             CoordinatorSendBody::Core(core_message) => {
                                                 match &core_message {
@@ -344,7 +345,7 @@ impl UpstreamSends {
         });
     }
 
-    fn debug(&mut self, message: impl ToString) {
+    fn send_debug(&mut self, message: impl ToString) {
         self.send(DeviceSendBody::Debug {
             message: message.to_string(),
         })
