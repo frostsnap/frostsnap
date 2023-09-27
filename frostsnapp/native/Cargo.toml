@@ -10,7 +10,7 @@ crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 anyhow = "1"
-flutter_rust_bridge = "1.81"
+flutter_rust_bridge = "1.82"
 frostsnap_coordinator = { workspace = true }
 lazy_static = "1.4"
 tracing-subscriber = "0.3"
