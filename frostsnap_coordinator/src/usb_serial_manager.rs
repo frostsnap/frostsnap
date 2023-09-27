@@ -32,7 +32,7 @@ pub struct UsbSerialManager {
     /// Devices who Announce'd, mappings to port serial numbers
     device_ports: HashMap<DeviceId, String>,
     /// Reverse lookup from ports to devices (daisy chaining)
-    reverse_device_ports: HashMap<String, HashSet<DeviceId>>,
+    reverse_device_ports: HashMap<String, Vec<DeviceId>>,
     /// Devices we sent registration ACK to
     registered_devices: BTreeSet<DeviceId>,
     /// Device labels
@@ -273,6 +273,24 @@ impl UsbSerialManager {
                     self.disconnect(&serial_number, &mut device_changes);
                 }
                 ReceiveSerial::Message(message) => match message.body {
+                    DeviceSendBody::DisconnectDownstream => {
+                        if let Some(device_list) = self.reverse_device_ports.get_mut(&serial_number)
+                        {
+                            if let Some((i, _)) = device_list
+                                .iter()
+                                .enumerate()
+                                .find(|(_, device_id)| **device_id == message.from)
+                            {
+                                let index_of_disconnection = i + 1;
+                                while device_list.len() > index_of_disconnection {
+                                    let device_id = device_list.pop().unwrap();
+                                    self.device_ports.remove(&device_id);
+                                    self.registered_devices.remove(&device_id);
+                                    device_changes.push(DeviceChange::Disconnected(device_id));
+                                }
+                            }
+                        }
+                    }
                     DeviceSendBody::Announce(_announce) => {
                         match self
                             .device_ports
@@ -282,7 +300,7 @@ impl UsbSerialManager {
                                 self.reverse_device_ports
                                     .entry(old_serial_number)
                                     .or_default()
-                                    .remove(&message.from);
+                                    .retain(|device_id| *device_id != message.from);
                             }
                             None => device_changes.push(DeviceChange::Added(message.from)),
                         }
@@ -290,7 +308,7 @@ impl UsbSerialManager {
                         self.reverse_device_ports
                             .entry(serial_number.clone())
                             .or_default()
-                            .insert(message.from);
+                            .push(message.from);
 
                         event!(
                             Level::DEBUG,

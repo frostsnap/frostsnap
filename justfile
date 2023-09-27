@@ -31,5 +31,8 @@ fix:
     cargo clippy --fix --allow-dirty --allow-staged {{non_device_packages}} --all-features --tests --bins
     cd device && cargo clippy --fix --allow-dirty --allow-staged --all-features --bins
 
+run:
+    just frostsnapp/run
+
 check: check-non-device check-device
 lint: lint-non-device lint-device

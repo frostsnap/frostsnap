@@ -10,8 +10,11 @@ gen:
         --dart-decl-output lib/bridge_definitions.dart \
         --wasm
 
-build TARGET:
+build TARGET="linux":
     flutter build -v {{TARGET}}
+
+run:
+    flutter run
 
 lint:
     cd native && cargo fmt

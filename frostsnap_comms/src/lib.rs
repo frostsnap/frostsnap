@@ -155,6 +155,7 @@ pub enum DeviceSendBody {
     Core(frostsnap_core::message::DeviceToCoordinatorMessage),
     Debug { message: String },
     Announce(Announce),
+    DisconnectDownstream,
 }
 
 impl Gist for DeviceSendBody {
@@ -163,6 +164,7 @@ impl Gist for DeviceSendBody {
             DeviceSendBody::Core(msg) => msg.gist(),
             DeviceSendBody::Debug { message } => format!("debug: {message}"),
             DeviceSendBody::Announce(_) => "Announce".into(),
+            DeviceSendBody::DisconnectDownstream => "DisconnectedDownstream".into(),
         }
     }
 }

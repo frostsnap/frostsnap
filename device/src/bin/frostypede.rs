@@ -15,6 +15,7 @@ use frostsnap_device::{
     io::{set_upstream_port_mode_jtag, set_upstream_port_mode_uart},
     st7735::{self, ST7735},
     ui::{BusyTask, Prompt, UiEvent, UserInteraction, WaitingFor, WaitingResponse, Workflow},
+    ConnectionState,
 };
 
 use crate::alloc::string::{String, ToString};
@@ -101,6 +102,7 @@ fn main() -> ! {
     // construct the toggle and select buttons on the fsboard
     let toggle_button = io.pins.gpio5.into_pull_up_input();
     let select_button = io.pins.gpio9.into_pull_up_input();
+    let downstream_detect = io.pins.gpio13.into_pull_up_input();
 
     let mut bl = io.pins.gpio11.into_push_pull_output();
     // Turn off backlight to hide artifacts as display initializes
@@ -188,10 +190,11 @@ fn main() -> ! {
         led,
         display,
         user_confirm: true,
-        downstream_connected: false,
+        downstream_connection_state: ConnectionState::Disconnected,
         workflow: Default::default(),
         device_label: Default::default(),
         splash_state: SplashState::new(&timer1),
+        changes: false,
     };
 
     let _now1 = timer1.now();
@@ -202,6 +205,7 @@ fn main() -> ! {
         rng,
         ui,
         timer: timer0,
+        downstream_detect,
     }
     .run()
 }
@@ -215,11 +219,12 @@ where
     toggled: bool,
     led: SmartLedsAdapter<C, 25>,
     display: ST7735<'d, SPI>,
-    downstream_connected: bool,
+    downstream_connection_state: ConnectionState,
     workflow: Workflow,
     user_confirm: bool,
     device_label: Option<String>,
     splash_state: SplashState<'t, T>,
+    changes: bool,
 }
 
 const SPLASH_SCREEN_DURATION: u64 = 40_000 * 600;
@@ -389,12 +394,16 @@ where
                     BusyTask::VerifyingShare => self.display.print("Verifying key..").unwrap(),
                 }
             }
+            Workflow::Debug(string) => {
+                self.display.print(string).unwrap();
+            }
         }
 
         self.display
-            .set_top_left_square(match self.downstream_connected {
-                true => Rgb565::GREEN,
-                false => Rgb565::RED,
+            .set_top_left_square(match self.downstream_connection_state {
+                ConnectionState::Disconnected => Rgb565::RED,
+                ConnectionState::Connected => Rgb565::YELLOW,
+                ConnectionState::Established => Rgb565::GREEN,
             });
     }
 }
@@ -405,16 +414,16 @@ where
     C: ConfiguredChannel,
     T: timer::Instance,
 {
-    fn set_downstream_connection_state(&mut self, connected: bool) {
-        if self.downstream_connected != connected {
-            // stops downstream poll error handler from spamming render
-            self.downstream_connected = connected;
-            self.render();
+    fn set_downstream_connection_state(&mut self, state: ConnectionState) {
+        if state != self.downstream_connection_state {
+            self.changes = true;
+            self.downstream_connection_state = state;
         }
     }
 
     fn set_device_label(&mut self, label: String) {
         self.device_label = Some(label);
+        self.changes = true;
     }
 
     fn get_device_label(&self) -> Option<&str> {
@@ -424,43 +433,38 @@ where
     fn set_workflow(&mut self, workflow: Workflow) {
         self.workflow = workflow;
         self.user_confirm = true;
-        self.render();
+        self.changes = true;
     }
 
     fn poll(&mut self) -> Option<UiEvent> {
+        let mut event = None;
         if !self.splash_state.is_finished() {
             self.render();
-            return None;
+            return event;
         }
+
         if let Workflow::UserPrompt(prompt) = &self.workflow {
             if self.select_button.is_low().unwrap() {
                 let ui_event = match prompt {
                     Prompt::KeyGen(_) => UiEvent::KeyGenConfirm(self.user_confirm),
                     Prompt::Signing(_) => UiEvent::SigningConfirm(self.user_confirm),
                 };
-                return Some(ui_event);
+                event = Some(ui_event);
             } else if self.toggle_button.is_high().unwrap() {
                 self.toggled = false;
             } else if self.toggle_button.is_low().unwrap() && !self.toggled {
                 self.user_confirm = !self.user_confirm;
                 self.toggled = true;
-                self.render();
+                self.changes = true;
             }
         }
 
-        None
-    }
+        if self.changes {
+            self.changes = false;
+            self.render();
+        }
 
-    fn misc_print(&mut self, string: &str) {
-        self.display.print(string).unwrap()
-    }
-
-    fn display_error(&mut self, message: &str) {
-        self.led
-            .write(brightness([colors::RED].iter().cloned(), 10))
-            .unwrap();
-
-        self.display.error_print(message).unwrap();
+        event
     }
 }
 
