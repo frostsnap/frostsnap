@@ -29,7 +29,8 @@ keygen THRESHOLD TOTAL:
 fix:
     cargo fmt --all
     cargo clippy --fix --allow-dirty --allow-staged {{non_device_packages}} --all-features --tests --bins
-    cd device && cargo clippy --fix --allow-dirty --allow-staged --all-features --bins
+    ( cd device && cargo clippy --fix --allow-dirty --allow-staged --all-features --bins; )
+    ( cd frostsnapp && dart format .; )
 
 run:
     just frostsnapp/run

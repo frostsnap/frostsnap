@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/coordinator.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
-import 'dart:developer' as developer;
 
 typedef DeviceId = String;
 
@@ -17,14 +16,16 @@ class UnlabeledDeviceTextField extends StatelessWidget {
         textAlign: TextAlign.center,
         style: TextStyle(fontSize: 30),
         decoration: InputDecoration(
-          hintText: "name this device",
+          hintText: "name me",
+          hintStyle: TextStyle(color: Colors.grey.withOpacity(0.6)),
           border: InputBorder.none,
         ));
   }
 }
 
 class DeviceListWidget extends StatefulWidget {
-  const DeviceListWidget({super.key});
+  final Orientation orientation;
+  const DeviceListWidget({required this.orientation, super.key});
 
   @override
   State<StatefulWidget> createState() => DeviceListWidgetState();
@@ -80,7 +81,13 @@ class DeviceListWidgetState extends State<DeviceListWidget>
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedList(key: deviceListKey, itemBuilder: _buildItem);
+    return AnimatedList(
+        key: deviceListKey,
+        itemBuilder: _buildItem,
+        initialItemCount: _deviceList.length,
+        scrollDirection: widget.orientation == Orientation.landscape
+            ? Axis.horizontal
+            : Axis.vertical);
   }
 
   Widget _buildDevice(BuildContext context, DeviceId id, String? label,
@@ -94,7 +101,8 @@ class DeviceListWidgetState extends State<DeviceListWidget>
       child = LabeledDeviceText(label);
     }
 
-    return DeviceBoxContainer(animation: animation, child: child);
+    return DeviceBoxContainer(
+        orientation: widget.orientation, animation: animation, child: child);
   }
 
   Widget _buildItem(
@@ -108,19 +116,27 @@ class DeviceListWidgetState extends State<DeviceListWidget>
 class DeviceBoxContainer extends StatelessWidget {
   final Animation<double> animation;
   final Widget child;
+  final Orientation orientation;
 
   const DeviceBoxContainer(
-      {required this.child, required this.animation, super.key});
+      {required this.child,
+      required this.orientation,
+      required this.animation,
+      super.key});
 
   @override
   Widget build(BuildContext context) {
+    var animationBegin = orientation == Orientation.landscape
+        ? const Offset(8.0, 0.0)
+        : const Offset(0.0, 8.0);
     return Padding(
         padding: const EdgeInsets.all(2.0),
         child: SlideTransition(
-            position: animation.drive(Tween(
-                begin: const Offset(0.0, 8.0), end: const Offset(0.0, 0.0))),
+            position: animation.drive(
+                Tween(begin: animationBegin, end: const Offset(0.0, 0.0))),
             child: SizedBox(
               height: 80.0,
+              width: 200.0,
               child: Card(
                 color: Colors.white70,
                 child: Center(
