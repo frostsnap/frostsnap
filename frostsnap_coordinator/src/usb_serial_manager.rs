@@ -4,13 +4,11 @@ const USB_PID: u16 = 4097;
 
 use crate::PortOpenError;
 use crate::{FramedSerialPort, Serial};
-use frostsnap_comms::DeviceReceiveSerial;
-use frostsnap_comms::DeviceSendSerial;
-use frostsnap_comms::Downstream;
-use frostsnap_comms::{DeviceReceiveBody, DeviceSendMessage};
-use frostsnap_comms::{DeviceReceiveMessage, MAGIC_BYTES_PERIOD};
-use frostsnap_core::message::DeviceToCoordindatorMessage;
-use frostsnap_core::DeviceId;
+use frostsnap_comms::{CoordinatorSendBody, DeviceSendBody};
+use frostsnap_comms::{CoordinatorSendMessage, MAGIC_BYTES_PERIOD};
+use frostsnap_comms::{ReceiveSerial, Upstream};
+use frostsnap_core::message::DeviceToCoordinatorMessage;
+use frostsnap_core::{DeviceId, Gist};
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
@@ -34,13 +32,13 @@ pub struct UsbSerialManager {
     /// Devices who Announce'd, mappings to port serial numbers
     device_ports: HashMap<DeviceId, String>,
     /// Reverse lookup from ports to devices (daisy chaining)
-    reverse_device_ports: HashMap<String, HashSet<DeviceId>>,
+    reverse_device_ports: HashMap<String, Vec<DeviceId>>,
     /// Devices we sent registration ACK to
     registered_devices: BTreeSet<DeviceId>,
     /// Device labels
     device_labels: HashMap<DeviceId, String>,
     /// Messages to devices outbox
-    port_outbox: Vec<DeviceReceiveMessage>,
+    port_outbox: Vec<CoordinatorSendMessage>,
 }
 
 const COORDINATOR_MAGIC_BYTES_PERDIOD: std::time::Duration =
@@ -91,7 +89,7 @@ impl UsbSerialManager {
         }
     }
 
-    pub fn queue_in_port_outbox(&mut self, send: DeviceReceiveMessage) {
+    pub fn queue_in_port_outbox(&mut self, send: CoordinatorSendMessage) {
         self.port_outbox.push(send);
     }
 
@@ -270,43 +268,73 @@ impl UsbSerialManager {
             );
 
             match decoded_message {
-                DeviceSendSerial::MagicBytes(_) => {
+                ReceiveSerial::MagicBytes(_) => {
                     event!(Level::ERROR, port = serial_number, "Unexpected magic bytes");
                     self.disconnect(&serial_number, &mut device_changes);
                 }
-                DeviceSendSerial::Message(message) => match message {
-                    DeviceSendMessage::Announce(announce) => {
-                        self.device_ports
-                            .insert(announce.from, serial_number.clone());
+                ReceiveSerial::Message(message) => match message.body {
+                    DeviceSendBody::DisconnectDownstream => {
+                        if let Some(device_list) = self.reverse_device_ports.get_mut(&serial_number)
+                        {
+                            if let Some((i, _)) = device_list
+                                .iter()
+                                .enumerate()
+                                .find(|(_, device_id)| **device_id == message.from)
+                            {
+                                let index_of_disconnection = i + 1;
+                                while device_list.len() > index_of_disconnection {
+                                    let device_id = device_list.pop().unwrap();
+                                    self.device_ports.remove(&device_id);
+                                    self.registered_devices.remove(&device_id);
+                                    device_changes.push(DeviceChange::Disconnected(device_id));
+                                }
+                            }
+                        }
+                    }
+                    DeviceSendBody::Announce(_announce) => {
+                        match self
+                            .device_ports
+                            .insert(message.from, serial_number.clone())
+                        {
+                            Some(old_serial_number) => {
+                                self.reverse_device_ports
+                                    .entry(old_serial_number)
+                                    .or_default()
+                                    .retain(|device_id| *device_id != message.from);
+                            }
+                            None => device_changes.push(DeviceChange::Added(message.from)),
+                        }
 
-                        let devices = self
-                            .reverse_device_ports
+                        self.reverse_device_ports
                             .entry(serial_number.clone())
-                            .or_default();
-                        devices.insert(announce.from);
-                        device_changes.push(DeviceChange::Added(announce.from));
+                            .or_default()
+                            .push(message.from);
 
                         event!(
                             Level::DEBUG,
                             port = serial_number,
-                            id = announce.from.to_string(),
+                            id = message.from.to_string(),
                             "Announced!"
                         );
                     }
-                    DeviceSendMessage::Debug { message, device } => {
+                    DeviceSendBody::Debug {
+                        message: dbg_message,
+                    } => {
                         event!(
                             Level::DEBUG,
                             port = serial_number,
-                            from = device.to_string(),
+                            from = message.from.to_string(),
                             name = self
                                 .device_labels
-                                .get(&device)
+                                .get(&message.from)
                                 .cloned()
                                 .unwrap_or("<unknown>".into()),
-                            message
+                            dbg_message
                         );
                     }
-                    DeviceSendMessage::Core(msg) => device_to_coord_msg.push(msg),
+                    DeviceSendBody::Core(core_msg) => {
+                        device_to_coord_msg.push((message.from, core_msg))
+                    }
                 },
             }
         }
@@ -319,8 +347,8 @@ impl UsbSerialManager {
             }
 
             if let Some(device_label) = self.device_labels.get(device_id) {
-                outbox.push(DeviceReceiveMessage {
-                    message_body: DeviceReceiveBody::AnnounceAck {
+                outbox.push(CoordinatorSendMessage {
+                    message_body: CoordinatorSendBody::AnnounceAck {
                         device_label: device_label.to_string(),
                     },
                     target_destinations: BTreeSet::from([*device_id]),
@@ -355,7 +383,7 @@ impl UsbSerialManager {
                 }
             });
 
-            let wire_message = DeviceReceiveSerial::<Downstream>::Message(wire_message);
+            let wire_message = ReceiveSerial::<Upstream>::Message(wire_message);
             let gist = wire_message.gist();
 
             for serial_number in ports_to_send_on {
@@ -453,7 +481,7 @@ impl UsbSerialManager {
 #[derive(Debug)]
 pub struct PortChanges {
     pub device_changes: Vec<DeviceChange>,
-    pub new_messages: Vec<DeviceToCoordindatorMessage>,
+    pub new_messages: Vec<(DeviceId, DeviceToCoordinatorMessage)>,
 }
 
 #[derive(Debug)]

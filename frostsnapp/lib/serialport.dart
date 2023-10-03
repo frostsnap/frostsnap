@@ -2,7 +2,6 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'package:usb_serial/usb_serial.dart';
 import 'package:collection/collection.dart';
-import 'dart:developer' as developer;
 
 class SerialPort {
   UsbPort? port = null;

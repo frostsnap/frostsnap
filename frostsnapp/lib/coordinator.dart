@@ -12,12 +12,14 @@ class Coordinator {
 
   Coordinator() {
     ffi = api.newFfiCoordinator(hostHandlesSerial: Platform.isAndroid);
-    UsbSerial.usbEventStream?.listen((UsbEvent msg) {
-      if (msg.event == UsbEvent.ACTION_USB_DETACHED) {
-        openPorts.remove(msg.device?.deviceName);
-      }
-      scanDevices();
-    });
+    if (Platform.isAndroid) {
+      UsbSerial.usbEventStream?.listen((UsbEvent msg) {
+        if (msg.event == UsbEvent.ACTION_USB_DETACHED) {
+          openPorts.remove(msg.device?.deviceName);
+        }
+        scanDevices();
+      });
+    }
     api.subPortEvents().forEach((event) async {
       switch (event) {
         case PortEvent_Open(:final request):

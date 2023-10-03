@@ -7,7 +7,7 @@ flash BOARD=default_board +ARGS="":
 build-device BOARD=default_board +ARGS="":
     cd device && cargo build {{ARGS}} --features {{BOARD}} --bin {{BOARD}}
 
-test +ARGS:
+test +ARGS="":
     cargo test {{ARGS}} {{non_device_packages}}
 
 check-non-device +ARGS="":
@@ -22,6 +22,18 @@ lint-non-device +ARGS="":
 
 lint-device +ARGS="":
     cd device && cargo clippy {{ARGS}} --all-features --bins -- -Dwarnings
+
+keygen THRESHOLD TOTAL:
+    cargo run -p coordinator-cli -- -v keygen -t {{THRESHOLD}} -n {{TOTAL}}
+
+fix:
+    cargo fmt --all
+    cargo clippy --fix --allow-dirty --allow-staged {{non_device_packages}} --all-features --tests --bins
+    ( cd device && cargo clippy --fix --allow-dirty --allow-staged --all-features --bins; )
+    ( cd frostsnapp && dart format .; )
+
+run:
+    just frostsnapp/run
 
 check: check-non-device check-device
 lint: lint-non-device lint-device

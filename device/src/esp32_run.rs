@@ -1,36 +1,39 @@
 use alloc::{collections::VecDeque, string::ToString, vec::Vec};
-use esp32c3_hal::{prelude::*, uart, UsbSerialJtag};
+use esp32c3_hal::{gpio, prelude::*, uart, UsbSerialJtag};
 
 use crate::{
     io::{self, UpstreamDetector},
     state, storage,
     ui::{self, UiEvent, UserInteraction},
+    ConnectionState,
 };
 use esp_storage::FlashStorage;
-use frostsnap_comms::{
-    DeviceReceiveBody, DeviceReceiveSerial, DeviceSendMessage, DeviceSendSerial,
-};
-use frostsnap_comms::{DeviceReceiveMessage, Downstream, MAGIC_BYTES_PERIOD};
+use frostsnap_comms::{CoordinatorSendBody, DeviceSendBody, DeviceSendMessage, ReceiveSerial};
+use frostsnap_comms::{CoordinatorSendMessage, Downstream, MAGIC_BYTES_PERIOD};
 use frostsnap_core::message::{
-    CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorBody, DeviceToUserMessage,
+    CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, DeviceToUserMessage,
 };
 use frostsnap_core::schnorr_fun::fun::marker::Normal;
 use frostsnap_core::schnorr_fun::fun::KeyPair;
 use frostsnap_core::schnorr_fun::fun::Scalar;
+use frostsnap_core::DeviceId;
 
-pub struct Run<'a, UpstreamUart, DownstreamUart, Ui, T> {
+pub struct Run<'a, UpstreamUart, DownstreamUart, DownstreamDetect, Ui, T> {
     pub upstream_jtag: UsbSerialJtag<'a>,
     pub upstream_uart: uart::Uart<'a, UpstreamUart>,
     pub downstream_uart: uart::Uart<'a, DownstreamUart>,
     pub rng: esp32c3_hal::Rng<'a>,
     pub ui: Ui,
     pub timer: esp32c3_hal::timer::Timer<T>,
+    pub downstream_detect: DownstreamDetect,
 }
 
-impl<'a, UpstreamUart, DownstreamUart, Ui, T> Run<'a, UpstreamUart, DownstreamUart, Ui, T>
+impl<'a, UpstreamUart, DownstreamUart, DownstreamDetect, Ui, T>
+    Run<'a, UpstreamUart, DownstreamUart, DownstreamDetect, Ui, T>
 where
     UpstreamUart: uart::Instance,
     DownstreamUart: uart::Instance,
+    DownstreamDetect: gpio::InputPin,
     Ui: UserInteraction,
     T: esp32c3_hal::timer::Instance,
 {
@@ -42,6 +45,7 @@ where
             mut rng,
             mut ui,
             timer,
+            downstream_detect,
         } = self;
 
         let flash = FlashStorage::new();
@@ -62,7 +66,7 @@ where
                         signer: frost_signer.clone(),
                     })
                     .unwrap();
-                ui.misc_print("New secret generated and saved");
+                ui.dispaly_debug("New secret generated and saved");
                 frost_signer
             }
         };
@@ -70,9 +74,9 @@ where
         let mut downstream_serial =
             io::SerialInterface::<_, _, Downstream>::new_uart(downstream_uart, &timer);
         let mut soft_reset = true;
-        let mut downstream_active = false;
-        let mut sends_downstream: Vec<DeviceReceiveMessage> = vec![];
-        let mut sends_upstream: Vec<DeviceSendMessage> = vec![];
+        let mut downstream_connection_state = ConnectionState::Disconnected;
+        let mut sends_downstream: Vec<CoordinatorSendMessage> = vec![];
+        let mut sends_upstream = UpstreamSends::new(frost_signer.device_id());
         let mut sends_user: Vec<DeviceToUserMessage> = vec![];
         let mut outbox = VecDeque::new();
         let mut upstream_detector =
@@ -92,77 +96,79 @@ where
         loop {
             if soft_reset {
                 soft_reset = false;
-                sends_upstream = vec![DeviceSendMessage::Announce(frostsnap_comms::Announce {
-                    from: frost_signer.device_id(),
-                })];
+                sends_upstream.messages.clear();
                 frost_signer.cancel_action();
                 sends_user.clear();
                 sends_downstream.clear();
-                downstream_active = false;
+                downstream_connection_state = ConnectionState::Disconnected;
                 upstream_sent_magic_bytes = false;
                 next_write_magic_bytes = 0;
                 upstream_received_first_message = false;
                 outbox.clear();
+                sends_upstream.send(DeviceSendBody::Announce(frostsnap_comms::Announce {}));
             }
 
-            if downstream_active {
-                while let Some(device_send) = downstream_serial.receive_from_downstream() {
+            let is_usb_connected_downstream = !downstream_detect.is_input_high();
+
+            match (is_usb_connected_downstream, downstream_connection_state) {
+                (true, ConnectionState::Disconnected) => {
+                    downstream_connection_state = ConnectionState::Connected;
+                    ui.set_downstream_connection_state(downstream_connection_state);
+                }
+                (true, ConnectionState::Connected) => {
+                    let now = timer.now();
+                    if now > next_write_magic_bytes {
+                        next_write_magic_bytes = now + 40_000 * MAGIC_BYTES_PERIOD;
+                        downstream_serial
+                            .write_magic_bytes()
+                            .expect("couldn't write magic bytes downstream");
+                    }
+                    if downstream_serial.find_and_remove_magic_bytes() {
+                        downstream_connection_state = ConnectionState::Established;
+                        ui.set_downstream_connection_state(downstream_connection_state);
+                        sends_upstream.send_debug("Device read magic bytes from another device!");
+                    }
+                }
+                (
+                    false,
+                    state @ ConnectionState::Established | state @ ConnectionState::Connected,
+                ) => {
+                    downstream_connection_state = ConnectionState::Disconnected;
+                    ui.set_downstream_connection_state(downstream_connection_state);
+                    if state == ConnectionState::Established {
+                        sends_upstream.send(DeviceSendBody::DisconnectDownstream);
+                    }
+                }
+                _ => { /* nothing to do */ }
+            }
+
+            if downstream_connection_state == ConnectionState::Established {
+                while let Some(device_send) = downstream_serial.receive() {
                     match device_send {
                         Ok(device_send) => {
-                            let forward_upstream = match device_send {
-                                DeviceSendSerial::MagicBytes(_) => {
-                                    // soft reset downstream if it sends unexpected magic bytes so we restablish
-                                    // downstream_active = false;
-                                    DeviceSendMessage::Debug {
-                                        message: "downstream device sent unexpected magic bytes"
-                                            .to_string(),
-                                        device: frost_signer.device_id(),
-                                    }
+                            match device_send {
+                                ReceiveSerial::MagicBytes(_) => {
+                                    sends_upstream.send_debug(
+                                        "downstream device sent unexpected magic bytes",
+                                    );
+                                    // FIXME: decide what to do when downstream sends unexpected magic bytes
                                 }
-                                DeviceSendSerial::Message(message) => match message {
-                                    DeviceSendMessage::Core(core) => DeviceSendMessage::Core(core),
-                                    DeviceSendMessage::Debug { message, device } => {
-                                        DeviceSendMessage::Debug { message, device }
-                                    }
-                                    DeviceSendMessage::Announce(message) => {
-                                        DeviceSendMessage::Announce(message)
-                                    }
-                                },
+                                ReceiveSerial::Message(message) => {
+                                    sends_upstream.messages.push(message)
+                                }
                             };
-                            sends_upstream.push(forward_upstream);
                         }
                         Err(e) => {
-                            sends_upstream.push(DeviceSendMessage::Debug {
-                                message: format!("Failed to decode on downstream port: {e}"),
-                                device: frost_signer.device_id(),
-                            });
-                            downstream_active = false;
-                            ui.set_downstream_connection_state(false);
+                            sends_upstream
+                                .send_debug(format!("Failed to decode on downstream port: {e}"));
+                            downstream_connection_state = ConnectionState::Disconnected;
                         }
                     };
                 }
 
                 // Send messages downstream
                 for send in sends_downstream.drain(..) {
-                    downstream_serial
-                        .forward_downstream(DeviceReceiveSerial::Message(send.clone()))
-                        .expect("sending downstream");
-                }
-            } else {
-                let now = timer.now();
-                if now > next_write_magic_bytes {
-                    next_write_magic_bytes = now + 40_000 * MAGIC_BYTES_PERIOD;
-                    downstream_serial
-                        .write_magic_bytes()
-                        .expect("couldn't write magic bytes downstream");
-                }
-                if downstream_serial.find_and_remove_magic_bytes() {
-                    downstream_active = true;
-                    ui.set_downstream_connection_state(true);
-                    sends_upstream.push(DeviceSendMessage::Debug {
-                        message: "Device read magic bytes from another device!".to_string(),
-                        device: frost_signer.clone().device_id(),
-                    });
+                    downstream_serial.send(send).expect("sending downstream");
                 }
             }
 
@@ -184,11 +190,11 @@ where
                         ))
                     }
 
-                    while let Some(received_message) = upstream_serial.receive_from_coordinator() {
+                    while let Some(received_message) = upstream_serial.receive() {
                         match received_message {
                             Ok(received_message) => {
                                 match received_message {
-                                    DeviceReceiveSerial::MagicBytes(_) => {
+                                    ReceiveSerial::MagicBytes(_) => {
                                         if upstream_received_first_message
                                             || upstream_first_message_timeout_counter > 10
                                         {
@@ -198,11 +204,13 @@ where
                                         }
                                         continue;
                                     }
-                                    DeviceReceiveSerial::Message(message) => {
+                                    ReceiveSerial::Message(message) => {
                                         // We have recieved a first message (if this is not a magic bytes message)
                                         upstream_received_first_message = true;
                                         // Forward messages downstream if there are other target destinations
-                                        if downstream_active {
+                                        if downstream_connection_state
+                                            == ConnectionState::Established
+                                        {
                                             let mut forwarding_message = message.clone();
                                             let _ = forwarding_message
                                                 .target_destinations
@@ -220,19 +228,16 @@ where
                                         }
 
                                         match message.message_body {
-                                            DeviceReceiveBody::AnnounceAck { device_label } => {
+                                            CoordinatorSendBody::AnnounceAck { device_label } => {
                                                 ui.set_device_label(device_label);
                                                 ui.set_workflow(ui::Workflow::WaitingFor(
                                                     ui::WaitingFor::CoordinatorInstruction {
                                                         completed_task: None,
                                                     },
                                                 ));
-                                                sends_upstream.push(DeviceSendMessage::Debug {
-                                                    message: "Received AnnounceACK!".to_string(),
-                                                    device: frost_signer.device_id(),
-                                                });
+                                                sends_upstream.send_debug("Received AnnounceACK!");
                                             }
-                                            DeviceReceiveBody::Core(core_message) => {
+                                            CoordinatorSendBody::Core(core_message) => {
                                                 match &core_message {
                                                     CoordinatorToDeviceMessage::DoKeyGen {
                                                         ..
@@ -252,16 +257,15 @@ where
                                                     } => { /* no workflow to trigger */ }
                                                 }
 
-                                                match frost_signer
-                                                    .recv_coordinator_message(core_message.clone())
-                                                {
-                                                    Ok(new_sends) => {
-                                                        outbox.extend(new_sends);
-                                                    }
-                                                    Err(e) => {
-                                                        ui.display_error(&e.gist());
-                                                    }
-                                                }
+                                                outbox.extend(
+                                                    frost_signer
+                                                        .recv_coordinator_message(
+                                                            core_message.clone(),
+                                                        )
+                                                        .expect(
+                                                            "failed to process coordinator message",
+                                                        ),
+                                                );
                                             }
                                         }
                                     }
@@ -276,9 +280,9 @@ where
                         };
                     }
 
-                    for send in sends_upstream.drain(..) {
+                    for send in sends_upstream.messages.drain(..) {
                         upstream_serial
-                            .send_to_coodinator(DeviceSendSerial::Message(send.clone()))
+                            .send(send)
                             .expect("unable to send to coordinator");
                     }
                 }
@@ -317,13 +321,13 @@ where
                             .unwrap();
                     }
                     DeviceSend::ToCoordinator(message) => {
-                        if matches!(message.body, DeviceToCoordinatorBody::KeyGenResponse(_)) {
+                        if matches!(message, DeviceToCoordinatorMessage::KeyGenResponse(_)) {
                             ui.set_workflow(ui::Workflow::WaitingFor(
                                 ui::WaitingFor::CoordinatorResponse(ui::WaitingResponse::KeyGen),
                             ));
                         }
 
-                        sends_upstream.push(DeviceSendMessage::Core(message));
+                        sends_upstream.send(DeviceSendBody::Core(message));
                     }
                     DeviceSend::ToUser(user_send) => {
                         match user_send {
@@ -343,5 +347,32 @@ where
                 }
             }
         }
+    }
+}
+
+struct UpstreamSends {
+    messages: Vec<DeviceSendMessage>,
+    my_device_id: DeviceId,
+}
+
+impl UpstreamSends {
+    fn new(my_device_id: DeviceId) -> Self {
+        Self {
+            messages: Default::default(),
+            my_device_id,
+        }
+    }
+
+    fn send(&mut self, body: DeviceSendBody) {
+        self.messages.push(DeviceSendMessage {
+            from: self.my_device_id,
+            body,
+        });
+    }
+
+    fn send_debug(&mut self, message: impl ToString) {
+        self.send(DeviceSendBody::Debug {
+            message: message.to_string(),
+        })
     }
 }

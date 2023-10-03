@@ -51,8 +51,8 @@ fn test_end_to_end() {
     let mut completed_signature_responses = vec![];
     while let Some(to_send) = message_stack.pop() {
         match to_send {
-            Send::DeviceToCoordinator(message) => {
-                let messages = coordinator.recv_device_message(message).unwrap();
+            Send::DeviceToCoordinator { from, message } => {
+                let messages = coordinator.recv_device_message(from, message).unwrap();
                 let messages = messages.into_iter().map(Send::from);
                 message_stack.extend(messages);
             }
@@ -68,7 +68,10 @@ fn test_end_to_end() {
                                 device_id: destination,
                             }),
                             DeviceSend::ToCoordinator(message) => {
-                                message_stack.push(message.into())
+                                message_stack.push(Send::DeviceToCoordinator {
+                                    from: destination,
+                                    message,
+                                });
                             }
                             DeviceSend::ToStorage(_) => { /* TODO: test storage */ }
                         }
@@ -117,7 +120,10 @@ fn test_end_to_end() {
                     // Simulate user pressing "sign" --> calls device.sign()
                     let messages = devices.get_mut(&device_id).unwrap().sign_ack(true).unwrap();
                     let messages = messages.into_iter().map(|message| match message {
-                        DeviceSend::ToCoordinator(message) => message.into(),
+                        DeviceSend::ToCoordinator(message) => Send::DeviceToCoordinator {
+                            from: device_id,
+                            message,
+                        },
                         DeviceSend::ToUser(message) => Send::DeviceToUser { message, device_id },
                         DeviceSend::ToStorage(m) => m.into(),
                     });

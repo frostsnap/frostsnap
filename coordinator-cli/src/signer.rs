@@ -1,8 +1,7 @@
-use frostsnap_comms::{DeviceReceiveBody, DeviceReceiveMessage};
+use frostsnap_comms::{CoordinatorSendBody, CoordinatorSendMessage};
 use frostsnap_coordinator::DeviceChange;
 use frostsnap_core::message::{
-    CoordinatorSend, CoordinatorToUserMessage, DeviceToCoordinatorBody,
-    DeviceToCoordindatorMessage, SignTask,
+    CoordinatorSend, CoordinatorToUserMessage, DeviceToCoordinatorMessage, SignTask,
 };
 use frostsnap_core::{schnorr_fun, CoordinatorFrostKey, DeviceId};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -127,15 +126,15 @@ impl<'a, 'b> Signer<'a, 'b> {
             // chained together.
             loop {
                 let port_changes = self.ports.poll_ports();
-                for incoming in port_changes.new_messages {
-                    match self.coordinator.recv_device_message(incoming.clone()) {
+                for (from, incoming_message) in port_changes.new_messages {
+                    let is_signature_share = matches!(
+                        incoming_message,
+                        DeviceToCoordinatorMessage::SignatureShare { .. }
+                    );
+                    match self.coordinator.recv_device_message(from, incoming_message) {
                         Ok(outgoing) => {
-                            if let DeviceToCoordindatorMessage {
-                                from,
-                                body: DeviceToCoordinatorBody::SignatureShare { .. },
-                            } = incoming
-                            {
-                                event!(Level::INFO, "{} signed successfully", incoming.from);
+                            if is_signature_share {
+                                event!(Level::INFO, "{} signed successfully", from);
                                 still_need_to_sign.remove(&from);
                             }
                             outbox.extend(outgoing);
@@ -144,7 +143,7 @@ impl<'a, 'b> Signer<'a, 'b> {
                             event!(
                                 Level::ERROR,
                                 "Failed to process message from {}: {}",
-                                incoming.from,
+                                from,
                                 e
                             );
                             continue;
@@ -173,9 +172,9 @@ impl<'a, 'b> Signer<'a, 'b> {
                 }
             }
 
-            self.ports.queue_in_port_outbox(DeviceReceiveMessage {
+            self.ports.queue_in_port_outbox(CoordinatorSendMessage {
                 target_destinations: std::mem::take(&mut asking_to_sign),
-                message_body: DeviceReceiveBody::Core(signature_request.clone()),
+                message_body: CoordinatorSendBody::Core(signature_request.clone()),
             });
         };
 

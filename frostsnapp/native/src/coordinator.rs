@@ -61,16 +61,16 @@ impl FfiCoordinator {
                     new_messages
                 };
 
-                for message in new_messages {
-                    match core_coordinator.recv_device_message(message.clone()) {
+                for (from, message) in new_messages {
+                    match core_coordinator.recv_device_message(from, message.clone()) {
                         Ok(messages) => {
                             outbox.extend(messages);
                         }
                         Err(e) => {
                             event!(
                                 Level::ERROR,
-                                "Failed to process message from {}: {}",
-                                message.from,
+                                from = from.to_string(),
+                                "Failed to process message: {}",
                                 e
                             );
                             continue;
@@ -153,23 +153,30 @@ pub struct FfiSerialPort {
 
 impl io::Read for FfiSerialPort {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let (tx, rx) = std::sync::mpsc::sync_channel::<Result<Vec<u8>, String>>(0);
-        crate::api::emit_event(PortEvent::Read {
-            request: crate::api::PortRead {
-                id: self.id.clone(),
-                len: buf.len(),
-                ready: RustOpaque::new(PortReadSender(tx)),
-            },
-        })
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::BrokenPipe, e.to_string()))?;
+        loop {
+            let (tx, rx) = std::sync::mpsc::sync_channel::<Result<Vec<u8>, String>>(0);
+            crate::api::emit_event(PortEvent::Read {
+                request: crate::api::PortRead {
+                    id: self.id.clone(),
+                    len: buf.len(),
+                    ready: RustOpaque::new(PortReadSender(tx)),
+                },
+            })
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::BrokenPipe, e.to_string()))?;
 
-        let result = rx.recv().unwrap();
-        match result {
-            Ok(bytes) => {
-                buf[0..bytes.len()].copy_from_slice(&bytes);
-                Ok(bytes.len())
+            let result = rx.recv().unwrap();
+            match result {
+                Ok(bytes) => {
+                    if !bytes.is_empty() {
+                        buf[0..bytes.len()].copy_from_slice(&bytes);
+                        return Ok(bytes.len());
+                    } else {
+                        // we got 0 bytes so wait a little while for more data
+                        std::thread::sleep(std::time::Duration::from_millis(1));
+                    }
+                }
+                Err(e) => return Err(io::Error::new(io::ErrorKind::Other, e)),
             }
-            Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
         }
     }
 }

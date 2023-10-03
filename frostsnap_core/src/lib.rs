@@ -62,16 +62,16 @@ impl FrostCoordinator {
 
     pub fn recv_device_message(
         &mut self,
-        message: DeviceToCoordindatorMessage,
+        from: DeviceId,
+        message: DeviceToCoordinatorMessage,
     ) -> MessageResult<Vec<CoordinatorSend>> {
         match &mut self.state {
             CoordinatorState::Registration => {
                 Err(Error::coordinator_message_kind(&self.state, &message))
             }
-            CoordinatorState::KeyGen { responses } => match message.body {
-                DeviceToCoordinatorBody::KeyGenResponse(new_shares) => {
-                    if let Some(existing) = responses.insert(message.from, Some(new_shares.clone()))
-                    {
+            CoordinatorState::KeyGen { responses } => match message {
+                DeviceToCoordinatorMessage::KeyGenResponse(new_shares) => {
+                    if let Some(existing) = responses.insert(from, Some(new_shares.clone())) {
                         debug_assert!(existing.is_none() || existing == Some(new_shares));
                     }
 
@@ -159,15 +159,15 @@ impl FrostCoordinator {
                 }
                 _ => Err(Error::coordinator_message_kind(&self.state, &message)),
             },
-            CoordinatorState::Signing { key, sessions } => match &message.body {
-                DeviceToCoordinatorBody::SignatureShare {
+            CoordinatorState::Signing { key, sessions } => match &message {
+                DeviceToCoordinatorMessage::SignatureShare {
                     signature_shares,
                     new_nonces,
                 } => {
                     let n_signatures = sessions.len();
                     let frost = frost::new_without_nonce_generation::<Sha256>();
 
-                    let nonce_for_device = key.device_nonces.get_mut(&message.from).ok_or(
+                    let nonce_for_device = key.device_nonces.get_mut(&from).ok_or(
                         Error::coordinator_invalid_message(&message, "Signer is unknown".into()),
                     )?;
 
@@ -192,7 +192,7 @@ impl FrostCoordinator {
                         let xonly_frost_key = &session_progress.key;
                         if !session
                             .participants()
-                            .any(|x_coord| x_coord == message.from.to_poly_index())
+                            .any(|x_coord| x_coord == from.to_poly_index())
                         {
                             return Err(Error::coordinator_invalid_message(
                                 &message,
@@ -203,12 +203,12 @@ impl FrostCoordinator {
                         if frost.verify_signature_share(
                             xonly_frost_key,
                             session,
-                            message.from.to_poly_index(),
+                            from.to_poly_index(),
                             *signature_share,
                         ) {
                             session_progress
                                 .signature_shares
-                                .insert(message.from, *signature_share);
+                                .insert(from, *signature_share);
                         } else {
                             return Err(Error::coordinator_invalid_message(
                                 &message,
@@ -678,14 +678,10 @@ impl FrostSigner {
                     .expect("correct length");
 
                 Ok(vec![DeviceSend::ToCoordinator(
-                    DeviceToCoordindatorMessage {
-                        from: self.device_id(),
-
-                        body: DeviceToCoordinatorBody::KeyGenResponse(KeyGenResponse {
-                            encrypted_shares,
-                            nonces: Box::new(nonces),
-                        }),
-                    },
+                    DeviceToCoordinatorMessage::KeyGenResponse(KeyGenResponse {
+                        encrypted_shares,
+                        nonces: Box::new(nonces),
+                    }),
                 )])
             }
             (
@@ -957,14 +953,9 @@ impl FrostSigner {
 
                 Ok(vec![
                     DeviceSend::ToStorage(message::DeviceToStorageMessage::ExpendNonce),
-                    DeviceSend::ToCoordinator(DeviceToCoordindatorMessage {
-                        from: self.device_id(),
-                        body: {
-                            DeviceToCoordinatorBody::SignatureShare {
-                                signature_shares,
-                                new_nonces: replenish_nonces,
-                            }
-                        },
+                    DeviceSend::ToCoordinator(DeviceToCoordinatorMessage::SignatureShare {
+                        signature_shares,
+                        new_nonces: replenish_nonces,
                     }),
                 ])
             }
@@ -1040,11 +1031,11 @@ pub enum Error {
 impl Error {
     pub fn coordinator_message_kind(
         state: &CoordinatorState,
-        message: &DeviceToCoordindatorMessage,
+        message: &DeviceToCoordinatorMessage,
     ) -> Self {
         Self::MessageKind {
             state: state.name(),
-            kind: message.body.kind(),
+            kind: message.kind(),
         }
     }
 
@@ -1056,11 +1047,11 @@ impl Error {
     }
 
     pub fn coordinator_invalid_message(
-        message: &DeviceToCoordindatorMessage,
+        message: &DeviceToCoordinatorMessage,
         reason: String,
     ) -> Self {
         Self::InvalidMessage {
-            kind: message.body.kind(),
+            kind: message.kind(),
             reason,
         }
     }
@@ -1190,3 +1181,8 @@ impl core::fmt::Display for ActionError {
 
 #[cfg(feature = "std")]
 impl std::error::Error for ActionError {}
+
+/// Output very basic debug info about a type
+pub trait Gist {
+    fn gist(&self) -> String;
+}

@@ -13,11 +13,9 @@ use esp32c3_hal::prelude::*;
 use esp32c3_hal::timer::Timer;
 use esp32c3_hal::uart;
 use esp32c3_hal::UsbSerialJtag;
-use frostsnap_comms::DeviceReceiveSerial;
-use frostsnap_comms::DeviceSendSerial;
 use frostsnap_comms::Direction;
-use frostsnap_comms::Downstream;
 use frostsnap_comms::MagicBytes;
+use frostsnap_comms::ReceiveSerial;
 use frostsnap_comms::Upstream;
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 
@@ -63,6 +61,7 @@ impl<'a, T, U, D> SerialInterface<'a, T, U, D>
 where
     U: uart::Instance,
     T: esp32c3_hal::timer::Instance,
+    D: Direction,
 {
     fn fill_buffer(&mut self) {
         while let Ok(c) = self.io.read_byte() {
@@ -73,10 +72,7 @@ where
         }
     }
 
-    pub fn find_and_remove_magic_bytes(&mut self) -> bool
-    where
-        D: Direction,
-    {
+    pub fn find_and_remove_magic_bytes(&mut self) -> bool {
         self.fill_buffer();
         if self.ring_buffer.is_empty() {
             return false;
@@ -88,35 +84,19 @@ where
         self.magic_bytes_progress = progress;
         found
     }
-}
 
-impl<'a, T, U> SerialInterface<'a, T, U, Downstream>
-where
-    U: uart::Instance,
-    T: esp32c3_hal::timer::Instance,
-{
-    pub fn forward_downstream(
+    pub fn send(
         &mut self,
-        message: DeviceReceiveSerial<Downstream>,
+        message: <D::Opposite as Direction>::RecvType,
     ) -> Result<(), bincode::error::EncodeError> {
-        assert!(
-            !matches!(message, DeviceReceiveSerial::MagicBytes(_)),
-            "we never forward magic bytes"
-        );
-        bincode::encode_into_writer(&message, self, bincode::config::standard())
-    }
-
-    pub fn write_magic_bytes(&mut self) -> Result<(), bincode::error::EncodeError> {
         bincode::encode_into_writer(
-            &DeviceReceiveSerial::<Downstream>::MagicBytes(MagicBytes::default()),
+            &ReceiveSerial::<D::Opposite>::Message(message),
             self,
             bincode::config::standard(),
         )
     }
 
-    pub fn receive_from_downstream(
-        &mut self,
-    ) -> Option<Result<DeviceSendSerial<Downstream>, bincode::error::DecodeError>> {
+    pub fn receive(&mut self) -> Option<Result<ReceiveSerial<D>, bincode::error::DecodeError>> {
         self.fill_buffer();
         if !self.ring_buffer.is_empty() {
             Some(bincode::decode_from_reader(
@@ -127,40 +107,13 @@ where
             None
         }
     }
-}
-
-impl<'a, T, U> SerialInterface<'a, T, U, Upstream>
-where
-    U: uart::Instance,
-    T: esp32c3_hal::timer::Instance,
-{
-    pub fn send_to_coodinator(
-        &mut self,
-        message: DeviceSendSerial<Upstream>,
-    ) -> Result<(), bincode::error::EncodeError> {
-        bincode::encode_into_writer(&message, self, bincode::config::standard())
-    }
 
     pub fn write_magic_bytes(&mut self) -> Result<(), bincode::error::EncodeError> {
         bincode::encode_into_writer(
-            &DeviceSendSerial::<Upstream>::MagicBytes(MagicBytes::default()),
+            &ReceiveSerial::<D::Opposite>::MagicBytes(MagicBytes::default()),
             self,
             bincode::config::standard(),
         )
-    }
-
-    pub fn receive_from_coordinator(
-        &mut self,
-    ) -> Option<Result<DeviceReceiveSerial<Upstream>, bincode::error::DecodeError>> {
-        self.fill_buffer();
-        if !self.ring_buffer.is_empty() {
-            Some(bincode::decode_from_reader(
-                self,
-                bincode::config::standard(),
-            ))
-        } else {
-            None
-        }
     }
 }
 
@@ -168,6 +121,7 @@ impl<'a, T, U, D> Reader for SerialInterface<'a, T, U, D>
 where
     U: uart::Instance,
     T: esp32c3_hal::timer::Instance,
+    D: Direction,
 {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), DecodeError> {
         for (i, target_byte) in bytes.iter_mut().enumerate() {

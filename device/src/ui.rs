@@ -1,7 +1,7 @@
 use alloc::string::String;
 
 pub trait UserInteraction {
-    fn set_downstream_connection_state(&mut self, connected: bool);
+    fn set_downstream_connection_state(&mut self, state: crate::ConnectionState);
 
     fn set_device_label(&mut self, label: String);
 
@@ -11,10 +11,9 @@ pub trait UserInteraction {
 
     fn poll(&mut self) -> Option<UiEvent>;
 
-    /// try not to use this
-    fn misc_print(&mut self, string: &str);
-
-    fn display_error(&mut self, message: &str);
+    fn dispaly_debug(&mut self, string: &str) {
+        self.set_workflow(Workflow::Debug(string.into()));
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -40,6 +39,7 @@ pub enum Workflow {
     WaitingFor(WaitingFor),
     BusyDoing(BusyTask),
     UserPrompt(Prompt),
+    Debug(String),
 }
 
 impl Default for Workflow {

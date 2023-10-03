@@ -1,6 +1,6 @@
 use frostsnap_core::message::{
     CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToUserMessage,
-    DeviceToCoordindatorMessage, DeviceToStorageMessage, DeviceToUserMessage, SignTask,
+    DeviceToCoordinatorMessage, DeviceToStorageMessage, DeviceToUserMessage, SignTask,
 };
 use frostsnap_core::DeviceId;
 use std::collections::BTreeSet;
@@ -12,7 +12,10 @@ pub enum Send {
         device_id: DeviceId,
     },
     CoordinatorToUser(CoordinatorToUserMessage),
-    DeviceToCoordinator(DeviceToCoordindatorMessage),
+    DeviceToCoordinator {
+        from: DeviceId,
+        message: DeviceToCoordinatorMessage,
+    },
     CoordinatorToDevice(CoordinatorToDeviceMessage),
     UserToCoordinator(UserToCoordinator),
     ToStorage, /* ignoring these for now */
@@ -31,12 +34,6 @@ impl From<CoordinatorSend> for Send {
 impl From<CoordinatorToUserMessage> for Send {
     fn from(value: CoordinatorToUserMessage) -> Self {
         Send::CoordinatorToUser(value)
-    }
-}
-
-impl From<DeviceToCoordindatorMessage> for Send {
-    fn from(value: DeviceToCoordindatorMessage) -> Self {
-        Send::DeviceToCoordinator(value)
     }
 }
 

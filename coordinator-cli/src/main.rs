@@ -2,8 +2,8 @@ use anyhow::anyhow;
 use bech32::ToBase32;
 use bech32::Variant;
 use db::Db;
-use frostsnap_comms::DeviceReceiveBody;
-use frostsnap_comms::DeviceReceiveMessage;
+use frostsnap_comms::CoordinatorSendBody;
+use frostsnap_comms::CoordinatorSendMessage;
 use frostsnap_coordinator::DesktopSerial;
 use frostsnap_core::message::CoordinatorSend;
 use frostsnap_core::message::CoordinatorToStorageMessage;
@@ -83,9 +83,9 @@ fn process_outbox(
     while let Some(message) = outbox.pop_front() {
         match message {
             CoordinatorSend::ToDevice(core_message) => {
-                ports.queue_in_port_outbox(DeviceReceiveMessage {
+                ports.queue_in_port_outbox(CoordinatorSendMessage {
                     target_destinations: core_message.default_destinations(),
-                    message_body: DeviceReceiveBody::Core(core_message),
+                    message_body: CoordinatorSendBody::Core(core_message),
                 });
             }
             CoordinatorSend::ToUser(to_user_message) => match to_user_message {
@@ -216,9 +216,9 @@ fn main() -> anyhow::Result<()> {
 
             let mut coordinator = frostsnap_core::FrostCoordinator::new();
 
-            let do_keygen_message = DeviceReceiveMessage {
+            let do_keygen_message = CoordinatorSendMessage {
                 target_destinations: keygen_devices.clone(),
-                message_body: DeviceReceiveBody::Core(
+                message_body: CoordinatorSendBody::Core(
                     coordinator.do_keygen(&keygen_devices, threshold)?,
                 ),
             };
@@ -228,23 +228,23 @@ fn main() -> anyhow::Result<()> {
             loop {
                 let port_changes = ports.poll_ports();
 
-                for message in port_changes.new_messages {
+                for (from, message) in port_changes.new_messages {
                     event!(
                         Level::DEBUG,
-                        from = message.from.to_string(),
-                        kind = message.body.kind(),
+                        from = from.to_string(),
+                        kind = message.kind(),
                         "received message during keygen"
                     );
 
-                    match coordinator.recv_device_message(message.clone()) {
+                    match coordinator.recv_device_message(from, message) {
                         Ok(messages) => {
                             outbox.extend(messages);
                         }
                         Err(e) => {
                             event!(
                                 Level::ERROR,
-                                "Failed to process message from {}: {}",
-                                message.from,
+                                from = from.to_string(),
+                                "Failed to process message {}",
                                 e
                             );
                             continue;

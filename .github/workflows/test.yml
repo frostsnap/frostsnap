@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        board: ['blue', 'purple', 'frostypede']
+        board: ['frostypede']
     defaults:
       run:
         working-directory: ./device

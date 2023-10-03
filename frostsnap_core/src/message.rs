@@ -1,5 +1,6 @@
 use crate::encrypted_share::EncryptedShare;
 use crate::CoordinatorFrostKey;
+use crate::Gist;
 use crate::Vec;
 use crate::NONCE_BATCH_SIZE;
 
@@ -18,7 +19,7 @@ use crate::DeviceId;
 #[derive(Clone, Debug)]
 pub enum DeviceSend {
     ToUser(DeviceToUserMessage),
-    ToCoordinator(DeviceToCoordindatorMessage),
+    ToCoordinator(DeviceToCoordinatorMessage),
     ToStorage(DeviceToStorageMessage),
 }
 
@@ -44,6 +45,12 @@ pub enum CoordinatorToDeviceMessage {
         nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
         sign_task: SignTask,
     },
+}
+
+impl Gist for CoordinatorToDeviceMessage {
+    fn gist(&self) -> String {
+        self.kind().into()
+    }
 }
 
 impl CoordinatorToDeviceMessage {
@@ -76,13 +83,7 @@ pub enum CoordinatorToStorageMessage {
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
-pub struct DeviceToCoordindatorMessage {
-    pub from: DeviceId,
-    pub body: DeviceToCoordinatorBody,
-}
-
-#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
-pub enum DeviceToCoordinatorBody {
+pub enum DeviceToCoordinatorMessage {
     KeyGenResponse(KeyGenResponse),
     SignatureShare {
         signature_shares: Vec<Scalar<Public, Zero>>,
@@ -90,11 +91,17 @@ pub enum DeviceToCoordinatorBody {
     },
 }
 
-impl DeviceToCoordinatorBody {
+impl Gist for DeviceToCoordinatorMessage {
+    fn gist(&self) -> String {
+        self.kind().into()
+    }
+}
+
+impl DeviceToCoordinatorMessage {
     pub fn kind(&self) -> &'static str {
         match self {
-            DeviceToCoordinatorBody::KeyGenResponse(_) => "KeyGenProvideShares",
-            DeviceToCoordinatorBody::SignatureShare { .. } => "SignatureShare",
+            DeviceToCoordinatorMessage::KeyGenResponse(_) => "KeyGenProvideShares",
+            DeviceToCoordinatorMessage::SignatureShare { .. } => "SignatureShare",
         }
     }
 }

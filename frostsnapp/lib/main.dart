@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'dart:async';
-import 'dart:developer' as developer;
 import 'dart:io';
-import 'package:usb_serial/usb_serial.dart';
-import 'package:flutter/services.dart';
 import 'device_list.dart';
 
 Timer? timer;
@@ -75,49 +72,54 @@ class _MyHomePageState extends State<MyHomePage> {
     // fast, so that you can just rebuild anything that needs updating rather
     // than having to individually change instances of widgets.
     return Scaffold(
-      appBar: AppBar(
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
       body: Center(
           // Center is a layout widget. It takes a single child and positions it
           // in the middle of the parent.
           child: FutureBuilder<List<dynamic>>(
-        // To render the results of a Future, a FutureBuilder is used which
-        // turns a Future into an AsyncSnapshot, which can be used to
-        // extract the error state, the loading state and the data if
-        // available.
-        //
-        // Here, the generic type that the FutureBuilder manages is
-        // explicitly named, because if omitted the snapshot will have the
-        // type of AsyncSnapshot<Object?>.
+              // To render the results of a Future, a FutureBuilder is used which
+              // turns a Future into an AsyncSnapshot, which can be used to
+              // extract the error state, the loading state and the data if
+              // available.
+              //
+              // Here, the generic type that the FutureBuilder manages is
+              // explicitly named, because if omitted the snapshot will have the
+              // type of AsyncSnapshot<Object?>.
 
-        // We await two unrelated futures here, so the type has to be
-        // List<dynamic>.
-        future: Future.wait([]),
-        builder: (context, snap) {
-          final style = Theme.of(context).textTheme.headlineMedium;
-          if (snap.error != null) {
-            // An error has been encountered, so give an appropriate response and
-            // pass the error details to an unobstructive tooltip.
-            debugPrint(snap.error.toString());
-            return Tooltip(
-              message: snap.error.toString(),
-              child: Text('ERROR', style: style),
-            );
-          }
+              // We await two unrelated futures here, so the type has to be
+              // List<dynamic>.
+              future: Future.wait([]),
+              builder: (context, snap) {
+                final style = Theme.of(context).textTheme.headlineMedium;
+                if (snap.error != null) {
+                  // An error has been encountered, so give an appropriate response and
+                  // pass the error details to an unobstructive tooltip.
+                  debugPrint(snap.error.toString());
+                  return Tooltip(
+                    message: snap.error.toString(),
+                    child: Text('ERROR', style: style),
+                  );
+                }
 
-          // Guard return here, the data is not ready yet.
-          final data = snap.data;
-          if (data == null) return const CircularProgressIndicator();
+                // Guard return here, the data is not ready yet.
+                final data = snap.data;
+                if (data == null) return const CircularProgressIndicator();
 
-          return Container(
-              width: 400,
-              alignment: Alignment.bottomLeft,
-              child: const DeviceListWidget());
-        },
-      )),
+                return OrientationBuilder(builder: (context, orientation) {
+                  var effectiveOrientation =
+                      Platform.isAndroid ? orientation : Orientation.portrait;
+                  return Container(
+                      alignment: Alignment.centerRight,
+                      constraints: BoxConstraints.expand(
+                          height: effectiveOrientation == Orientation.landscape
+                              ? 120
+                              : null,
+                          width: effectiveOrientation == Orientation.portrait
+                              ? 300
+                              : null),
+                      child:
+                          DeviceListWidget(orientation: effectiveOrientation));
+                });
+              })),
     );
   }
 }
