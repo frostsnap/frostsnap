@@ -3,7 +3,7 @@
 use display_interface_spi::SPIInterfaceNoCS;
 use embedded_graphics::{
     mono_font::{
-        ascii::{FONT_10X20, FONT_5X8, FONT_7X14, FONT_7X14_BOLD},
+        ascii::{FONT_10X20, FONT_5X8, FONT_7X14},
         MonoTextStyle,
     },
     pixelcolor::Rgb565,
@@ -278,33 +278,7 @@ where
         .draw(&mut self.framebuf)
         .unwrap();
 
-        // println!("{}, {}", _overflow, _overflow.len());
-
         self.flush().unwrap();
-
-        // for i in (-1..0).rev() {
-        // Rectangle::new(Point::new(0, 11), Size::new(160, 69))
-        //     .into_styled(
-        //         PrimitiveStyleBuilder::new()
-        //             .fill_color(Rgb565::WHITE)
-        //             .build(),
-        //     )
-        //     .draw(&mut self.framebuf)
-        //     .unwrap();
-
-        // let overflow = TextBox::with_textbox_style(
-        //     str.as_ref(),
-        //     Rectangle::new(Point::new(1, 11), Size::new(160, 69)),
-        //     self.character_style,
-        //     self.textbox_style,
-        // )
-        // .set_vertical_offset(i)
-        // .draw(&mut self.framebuf)
-        // .unwrap();
-
-        // self.flush().unwrap();
-        // self.delay.delay_ms(10u32);
-        // }
 
         Ok(())
     }
@@ -342,115 +316,11 @@ where
         Ok(())
     }
 
-    pub fn confirm_view(&mut self, message: impl AsRef<str>, choice: bool) -> Result<(), Error> {
-        Rectangle::new(Point::new(0, 11), Size::new(160, 80))
-            .into_styled(
-                PrimitiveStyleBuilder::new()
-                    .fill_color(Rgb565::BLACK)
-                    .build(),
-            )
+    pub fn confirm_bar(&mut self, percent: f32) -> Result<(), Error> {
+        Line::new(Point::new(0, 78), Point::new((160.0 * percent) as i32, 78))
+            .into_styled(PrimitiveStyle::with_stroke(Rgb565::GREEN, 2))
             .draw(&mut self.framebuf)
             .unwrap();
-
-        TextBox::with_textbox_style(
-            message.as_ref(),
-            Rectangle::new(Point::new(1, 11), Size::new(160, 49)),
-            self.character_style,
-            self.textbox_style,
-        )
-        .draw(&mut self.framebuf)
-        .unwrap();
-
-        let textbox_style = TextBoxStyleBuilder::new()
-            .alignment(HorizontalAlignment::Center)
-            .vertical_alignment(VerticalAlignment::Middle)
-            .build();
-
-        if choice {
-            // === "Cancel" inactive box ===
-            Rectangle::new(Point::new(0, 60), Size::new(80, 20))
-                .into_styled(
-                    PrimitiveStyleBuilder::new()
-                        .stroke_color(Rgb565::CSS_DARK_GRAY)
-                        .stroke_width(1)
-                        .stroke_alignment(StrokeAlignment::Inside)
-                        .build(),
-                )
-                .draw(&mut self.framebuf)
-                .unwrap();
-
-            TextBox::with_textbox_style(
-                "Cancel",
-                Rectangle::new(Point::new(0, 60), Size::new(80, 20)),
-                MonoTextStyle::new(&FONT_7X14, Rgb565::CSS_DARK_GRAY),
-                textbox_style,
-            )
-            .draw(&mut self.framebuf)
-            .unwrap();
-
-            // === "Ok" active box ===
-            Rectangle::new(Point::new(80, 60), Size::new(80, 20))
-                .into_styled(
-                    PrimitiveStyleBuilder::new()
-                        .stroke_color(Rgb565::WHITE)
-                        .stroke_width(2)
-                        .stroke_alignment(StrokeAlignment::Inside)
-                        .build(),
-                )
-                .draw(&mut self.framebuf)
-                .unwrap();
-
-            TextBox::with_textbox_style(
-                "Ok",
-                Rectangle::new(Point::new(80, 60), Size::new(80, 20)),
-                MonoTextStyle::new(&FONT_7X14_BOLD, Rgb565::GREEN),
-                textbox_style,
-            )
-            .draw(&mut self.framebuf)
-            .unwrap();
-        } else {
-            // === "Cancel" active box ===
-            Rectangle::new(Point::new(0, 60), Size::new(80, 20))
-                .into_styled(
-                    PrimitiveStyleBuilder::new()
-                        .stroke_color(Rgb565::WHITE)
-                        .stroke_width(2)
-                        .stroke_alignment(StrokeAlignment::Inside)
-                        .build(),
-                )
-                .draw(&mut self.framebuf)
-                .unwrap();
-
-            TextBox::with_textbox_style(
-                "Cancel",
-                Rectangle::new(Point::new(0, 60), Size::new(80, 20)),
-                MonoTextStyle::new(&FONT_7X14_BOLD, Rgb565::RED),
-                textbox_style,
-            )
-            .draw(&mut self.framebuf)
-            .unwrap();
-
-            // === "Ok" inactive box ===
-            Rectangle::new(Point::new(80, 60), Size::new(80, 20))
-                .into_styled(
-                    PrimitiveStyleBuilder::new()
-                        .stroke_color(Rgb565::CSS_DARK_GRAY)
-                        .stroke_width(1)
-                        .stroke_alignment(StrokeAlignment::Inside)
-                        .build(),
-                )
-                .draw(&mut self.framebuf)
-                .unwrap();
-
-            TextBox::with_textbox_style(
-                "Ok",
-                Rectangle::new(Point::new(80, 60), Size::new(80, 20)),
-                MonoTextStyle::new(&FONT_7X14, Rgb565::CSS_DARK_GRAY),
-                textbox_style,
-            )
-            .draw(&mut self.framebuf)
-            .unwrap();
-        }
 
         self.flush().unwrap();
 
