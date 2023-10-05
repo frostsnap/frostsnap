@@ -29,6 +29,12 @@ echo "ANDROID_NDK=.." >> ~/.gradle/gradle.properties
 
 ## Generate bindings
 
+On non-debian linux you will need to export your CPATH
+
+```
+export CPATH="$(clang -v 2>&1 | grep "Selected GCC installation" | rev | cut -d' ' -f1 | rev)/include"
+```
+
 ```sh
 just gen
 ```
