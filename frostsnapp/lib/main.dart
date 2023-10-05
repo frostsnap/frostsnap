@@ -124,10 +124,7 @@ class _MyHomePageState extends State<MyHomePage> {
                             child: DeviceListWidget(
                                 orientation: effectiveOrientation),
                           ),
-                          DoKeyGenButton(
-                            onPressed: handleKeygenButtonPressed,
-                            text: 'Generate Key',
-                          )
+                          DoKeyGenButton()
                         ],
                       ));
                 });
