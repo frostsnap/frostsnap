@@ -2,24 +2,30 @@ import 'package:flutter/material.dart';
 import 'package:frostsnapp/coordinator.dart';
 
 class DoKeyGenButton extends StatelessWidget {
+  final bool isvisible;
+  const DoKeyGenButton({required this.isvisible, super.key});
+
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => DoKeyGenScreen(),
-          ),
-        );
-      },
-      child: Container(
-        padding: EdgeInsets.all(16.0),
-        color: Colors.blue,
-        child: Text(
-          'Generate Key',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 16.0,
+    return Visibility(
+      visible: isvisible,
+      child: GestureDetector(
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => DoKeyGenScreen(),
+            ),
+          );
+        },
+        child: Container(
+          padding: EdgeInsets.all(16.0),
+          color: Colors.blue,
+          child: Text(
+            'Generate Key',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 16.0,
+            ),
           ),
         ),
       ),
@@ -46,9 +52,9 @@ class DoKeyGenScreen extends StatelessWidget {
               return Text(
                 'Frost Key: ${snapshot.data}',
                 style: TextStyle(
-                  fontSize: 24.0,
+                  fontSize: 20.0,
                 ),
-                textAlign: TextAlign.center,
+                textAlign: TextAlign.left,
               );
             }
           },

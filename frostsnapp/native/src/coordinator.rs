@@ -2,7 +2,6 @@ use crate::api::PortEvent;
 use flutter_rust_bridge::RustOpaque;
 use frostsnap_coordinator::frostsnap_comms::{CoordinatorSendBody, CoordinatorSendMessage};
 use frostsnap_coordinator::frostsnap_core::message::{CoordinatorSend, CoordinatorToUserMessage};
-use frostsnap_coordinator::frostsnap_core::schnorr_fun::frost::Frost;
 use frostsnap_coordinator::frostsnap_core::CoordinatorFrostKey;
 use frostsnap_coordinator::serialport;
 use frostsnap_coordinator::{
@@ -115,8 +114,8 @@ impl FfiCoordinator {
                             .queue_in_port_outbox(send_message);
                     }
                     CoordinatorSend::ToUser(msg) => match msg {
-                        CoordinatorToUserMessage::Signed { signatures } => {}
-                        CoordinatorToUserMessage::CheckKeyGen { xpub } => {
+                        CoordinatorToUserMessage::Signed { .. } => {}
+                        CoordinatorToUserMessage::CheckKeyGen { .. } => {
                             pending_messages
                                 .extend(coordinator.lock().unwrap().keygen_ack(true).unwrap());
                         }
@@ -179,9 +178,7 @@ impl FfiCoordinator {
                     frostsnap_core::CoordinatorState::KeyGen { .. } => {
                         // waiting
                     }
-                    frostsnap_core::CoordinatorState::FrostKey { key, awaiting_user } => {
-                        return key.clone()
-                    }
+                    frostsnap_core::CoordinatorState::FrostKey { key, .. } => return key.clone(),
                     frostsnap_core::CoordinatorState::Registration => {}
                     frostsnap_core::CoordinatorState::Signing { .. } => {}
                 }
@@ -189,7 +186,7 @@ impl FfiCoordinator {
         });
         let key = handle.join().unwrap();
 
-        return format!("{:?}", key.frost_key());
+        format!("{:?}", key.frost_key())
     }
 }
 
