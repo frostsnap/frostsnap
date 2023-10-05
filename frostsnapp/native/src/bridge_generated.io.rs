@@ -46,6 +46,15 @@ pub extern "C" fn wire_set_device_label(
 }
 
 #[no_mangle]
+pub extern "C" fn wire_generate_new_key(
+    port_: i64,
+    coordinator: wire_FfiCoordinator,
+    threshold: usize,
+) {
+    wire_generate_new_key_impl(port_, coordinator, threshold)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_satisfy__method__PortOpen(
     port_: i64,
     that: *mut wire_PortOpen,

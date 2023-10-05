@@ -179,6 +179,9 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* void */ wire_set_device_label(
       NativePortType port_, Object coordinator, String device_id, String label);
 
+  external dynamic /* void */ wire_generate_new_key(
+      NativePortType port_, Object coordinator, int threshold);
+
   external dynamic /* void */ wire_satisfy__method__PortOpen(
       NativePortType port_, List<dynamic> that, String? err);
 
@@ -241,6 +244,10 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   void wire_set_device_label(NativePortType port_, Object coordinator,
           String device_id, String label) =>
       wasmModule.wire_set_device_label(port_, coordinator, device_id, label);
+
+  void wire_generate_new_key(
+          NativePortType port_, Object coordinator, int threshold) =>
+      wasmModule.wire_generate_new_key(port_, coordinator, threshold);
 
   void wire_satisfy__method__PortOpen(
           NativePortType port_, List<dynamic> that, String? err) =>

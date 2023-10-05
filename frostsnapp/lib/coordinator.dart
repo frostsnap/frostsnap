@@ -78,6 +78,12 @@ class Coordinator {
         coordinator: await ffi, deviceId: deviceId, label: label);
   }
 
+  Future<String> generateNewKey() async {
+    String newKey =
+        await api.generateNewKey(coordinator: await ffi, threshold: 1);
+    return newKey;
+  }
+
   Stream<List<DeviceChange>> subDeviceEvents() {
     return api.subDeviceEvents();
   }
