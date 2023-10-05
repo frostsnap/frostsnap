@@ -5,11 +5,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/coordinator.dart';
 import 'package:frostsnapp/device_setup.dart';
+import 'package:frostsnapp/do_keygen.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'dart:developer' as developer;
 
 class DeviceListWidget extends StatefulWidget {
   final Orientation orientation;
+  // final Function
   const DeviceListWidget({required this.orientation, super.key});
 
   @override
@@ -20,6 +22,7 @@ class DeviceListWidgetState extends State<DeviceListWidget>
     with WidgetsBindingObserver {
   final GlobalKey<AnimatedListState> deviceListKey =
       GlobalKey<AnimatedListState>();
+
   late DeviceList _deviceList;
 
   @override
@@ -82,13 +85,28 @@ class DeviceListWidgetState extends State<DeviceListWidget>
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedList(
-        key: deviceListKey,
-        itemBuilder: _buildItem,
-        initialItemCount: _deviceList.length,
-        scrollDirection: widget.orientation == Orientation.landscape
-            ? Axis.horizontal
-            : Axis.vertical);
+    // Only show the keygen button if there are some devices
+    bool isKeygenButtonVisible = _deviceList.length > 0;
+
+    return Column(children: [
+      Text(
+        'Frostsnap',
+        style: TextStyle(
+          fontSize: 36, // Font size
+          fontWeight: FontWeight.bold, // Font weight
+          color: Colors.blue, // Text color
+        ),
+      ),
+      Expanded(
+          child: AnimatedList(
+              key: deviceListKey,
+              itemBuilder: _buildItem,
+              initialItemCount: _deviceList.length,
+              scrollDirection: widget.orientation == Orientation.landscape
+                  ? Axis.horizontal
+                  : Axis.vertical)),
+      DoKeyGenButton(isvisible: isKeygenButtonVisible)
+    ]);
   }
 
   Widget _buildDevice(BuildContext context, DeviceId id, String? label,

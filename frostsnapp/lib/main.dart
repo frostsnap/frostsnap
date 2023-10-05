@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/do_keygen.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'dart:async';
 import 'dart:io';
@@ -109,24 +108,18 @@ class _MyHomePageState extends State<MyHomePage> {
                   var effectiveOrientation =
                       Platform.isAndroid ? orientation : Orientation.portrait;
                   return Container(
-                      alignment: Alignment.centerRight,
-                      constraints: BoxConstraints.expand(
-                          height: effectiveOrientation == Orientation.landscape
-                              ? 120
-                              : null,
-                          width: effectiveOrientation == Orientation.portrait
-                              ? 300
-                              : null),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Expanded(
-                            child: DeviceListWidget(
-                                orientation: effectiveOrientation),
-                          ),
-                          DoKeyGenButton()
-                        ],
-                      ));
+                    alignment: Alignment.centerRight,
+                    constraints: BoxConstraints.expand(
+                        height: effectiveOrientation == Orientation.landscape
+                            ? 120
+                            : null,
+                        width: effectiveOrientation == Orientation.portrait
+                            ? 300
+                            : null),
+                    // Currently treating DeviceListWidget as our /homepage/ since
+                    // i kept hitting issues with the vertical height of the column being unknown.
+                    child: DeviceListWidget(orientation: effectiveOrientation),
+                  );
                 });
               })),
     );
