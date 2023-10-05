@@ -176,6 +176,26 @@ fn wire_send_cancel_impl(
         },
     )
 }
+fn wire_generate_new_key_impl(
+    port_: MessagePort,
+    coordinator: impl Wire2Api<RustOpaque<FfiCoordinator>> + UnwindSafe,
+    threshold: impl Wire2Api<usize> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, String, _>(
+        WrapInfo {
+            debug_name: "generate_new_key",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_coordinator = coordinator.wire2api();
+            let api_threshold = threshold.wire2api();
+            move |task_callback| {
+                Result::<_, ()>::Ok(generate_new_key(api_coordinator, api_threshold))
+            }
+        },
+    )
+}
 fn wire_satisfy__method__PortOpen_impl(
     port_: MessagePort,
     that: impl Wire2Api<PortOpen> + UnwindSafe,
@@ -491,13 +511,6 @@ impl rust2dart::IntoIntoDart<PortWrite> for PortWrite {
 support::lazy_static! {
     pub static ref FLUTTER_RUST_BRIDGE_HANDLER: support::DefaultHandler = Default::default();
 }
-
-/// cbindgen:ignore
-#[cfg(target_family = "wasm")]
-#[path = "bridge_generated.web.rs"]
-mod web;
-#[cfg(target_family = "wasm")]
-pub use web::*;
 
 #[cfg(not(target_family = "wasm"))]
 #[path = "bridge_generated.io.rs"]

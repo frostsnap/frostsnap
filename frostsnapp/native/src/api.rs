@@ -215,3 +215,7 @@ pub fn finish_naming(coordinator: RustOpaque<FfiCoordinator>, id: DeviceId, name
 pub fn send_cancel(coordinator: RustOpaque<FfiCoordinator>, id: DeviceId) {
     coordinator.send_cancel(id);
 }
+
+pub fn generate_new_key(coordinator: RustOpaque<FfiCoordinator>, threshold: usize) -> String {
+    coordinator.generate_new_key(threshold)
+}

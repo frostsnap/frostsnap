@@ -52,6 +52,11 @@ pub fn wire_send_cancel(port_: MessagePort, coordinator: JsValue, id: JsValue) {
 }
 
 #[wasm_bindgen]
+pub fn wire_generate_new_key(port_: MessagePort, coordinator: JsValue, threshold: usize) {
+    wire_generate_new_key_impl(port_, coordinator, threshold)
+}
+
+#[wasm_bindgen]
 pub fn wire_satisfy__method__PortOpen(port_: MessagePort, that: JsValue, err: Option<String>) {
     wire_satisfy__method__PortOpen_impl(port_, that, err)
 }

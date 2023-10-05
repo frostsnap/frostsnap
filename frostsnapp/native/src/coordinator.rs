@@ -1,5 +1,9 @@
 use crate::api::PortEvent;
 use flutter_rust_bridge::RustOpaque;
+use frostsnap_coordinator::frostsnap_comms::{CoordinatorSendBody, CoordinatorSendMessage};
+use frostsnap_coordinator::frostsnap_core::message::{CoordinatorSend, CoordinatorToUserMessage};
+use frostsnap_coordinator::frostsnap_core::schnorr_fun::frost::Frost;
+use frostsnap_coordinator::frostsnap_core::CoordinatorFrostKey;
 use frostsnap_coordinator::serialport;
 use frostsnap_coordinator::{
     frostsnap_core, DesktopSerial, PortChanges, PortDesc, PortOpenError, Serial, SerialPort,
@@ -13,14 +17,20 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tracing::{event, Level};
 
+pub struct NewKey {
+    pub key: CoordinatorFrostKey,
+}
+
 pub struct FfiCoordinator {
-    ffi_serial: Option<FfiSerial>,
+    coordinator: Arc<Mutex<FrostCoordinator>>,
     manager: Arc<Mutex<UsbSerialManager>>,
+    ffi_serial: Option<FfiSerial>,
+    pending_for_outbox: Arc<Mutex<VecDeque<CoordinatorSend>>>,
 }
 
 impl FfiCoordinator {
     pub fn new(host_handles_serial: bool) -> Self {
-        let mut core_coordinator = FrostCoordinator::new();
+        let core_coordinator = Arc::new(Mutex::new(FrostCoordinator::new()));
         let (manager, ffi_serial) = if host_handles_serial {
             let ffi_serial = FfiSerial::default();
             (
@@ -31,45 +41,77 @@ impl FfiCoordinator {
             (UsbSerialManager::new(Box::new(DesktopSerial)), None)
         };
 
-        let my_manager = Arc::new(Mutex::new(manager));
-        let loop_manager = Arc::clone(&my_manager);
+        let manager = Arc::new(Mutex::new(manager));
+        let manager_thread = manager.clone();
 
-        let _handle = std::thread::spawn(move || {
-            let mut outbox = VecDeque::new();
-            loop {
-                let new_messages = {
-                    let PortChanges {
-                        device_changes,
-                        new_messages,
-                    } = { loop_manager.lock().unwrap().poll_ports() };
+        let pending_for_outbox = Arc::new(Mutex::new(VecDeque::new()));
+        let pending = pending_for_outbox.clone();
+        let coordinator = core_coordinator.clone();
+        let _handle = std::thread::spawn(move || loop {
+            let new_messages = {
+                let PortChanges {
+                    device_changes,
+                    new_messages,
+                } = manager_thread.lock().unwrap().poll_ports();
 
-                    if !device_changes.is_empty() {
-                        crate::api::emit_device_events(
-                            device_changes
-                                .into_iter()
-                                .map(crate::api::DeviceChange::from)
-                                .collect(),
-                        );
+                if !device_changes.is_empty() {
+                    crate::api::emit_device_events(
+                        device_changes
+                            .into_iter()
+                            .map(crate::api::DeviceChange::from)
+                            .collect(),
+                    );
+                }
+
+                new_messages
+            };
+
+            for (from, message) in new_messages {
+                match coordinator
+                    .lock()
+                    .unwrap()
+                    .recv_device_message(from, message.clone())
+                {
+                    Ok(messages) => {
+                        let mut pending_messages = pending.lock().unwrap();
+                        pending_messages.extend(messages);
                     }
-
-                    new_messages
+                    Err(e) => {
+                        event!(
+                            Level::ERROR,
+                            from = from.to_string(),
+                            "Failed to process message: {}",
+                            e
+                        );
+                        continue;
+                    }
                 };
+            }
 
-                for (from, message) in new_messages {
-                    match core_coordinator.recv_device_message(from, message.clone()) {
-                        Ok(messages) => {
-                            outbox.extend(messages);
+            let mut pending_messages = pending.lock().unwrap();
+            while let Some(message) = pending_messages.pop_front() {
+                match message {
+                    CoordinatorSend::ToDevice(msg) => {
+                        let send_message = CoordinatorSendMessage {
+                            target_destinations: msg.default_destinations(),
+                            message_body: CoordinatorSendBody::Core(msg),
+                        };
+
+                        manager_thread
+                            .lock()
+                            .unwrap()
+                            .queue_in_port_outbox(send_message);
+                    }
+                    CoordinatorSend::ToUser(msg) => match msg {
+                        CoordinatorToUserMessage::Signed { signatures } => {}
+                        CoordinatorToUserMessage::CheckKeyGen { xpub } => {
+                            pending_messages
+                                .extend(coordinator.lock().unwrap().keygen_ack(true).unwrap());
                         }
-                        Err(e) => {
-                            event!(
-                                Level::ERROR,
-                                from = from.to_string(),
-                                "Failed to process message: {}",
-                                e
-                            );
-                            continue;
-                        }
-                    };
+                    },
+                    CoordinatorSend::ToStorage(_) => {
+                        // TODO
+                    }
                 }
 
                 // to give time for the other threads to get a lock
@@ -78,8 +120,10 @@ impl FfiCoordinator {
         });
 
         Self {
+            coordinator: core_coordinator,
+            manager,
             ffi_serial,
-            manager: my_manager,
+            pending_for_outbox,
         }
     }
 
@@ -103,6 +147,53 @@ impl FfiCoordinator {
 
     pub fn send_cancel(&self, id: DeviceId) {
         self.manager.lock().unwrap().send_cancel(id)
+    }
+
+    pub fn generate_new_key(&self, threshold: usize) -> String {
+        let devices = self.manager.lock().unwrap().registered_devices().clone();
+
+        // Is there something more generalized we need for `fn process_outbox`?
+        // let do_keygen_message = CoordinatorSendMessage {
+        //     target_destinations: devices.clone(),
+        //     message_body: CoordinatorSendBody::Core(
+        //         core_coordinator.do_keygen(&devices, threshold)?,
+        //     ),
+        // };
+
+        // We need to write the keygen messages into the outbox
+
+        let keygen_message = {
+            self.coordinator
+                .clone()
+                .lock()
+                .unwrap()
+                .do_keygen(&devices, threshold)
+                .unwrap()
+        };
+        let keygen_message = CoordinatorSend::ToDevice(keygen_message);
+
+        {
+            let mut pending_guard = self.pending_for_outbox.lock().unwrap();
+            pending_guard.push_back(keygen_message);
+        }
+
+        let coordinator_ref = self.coordinator.clone();
+        let handle = std::thread::spawn(move || {
+            loop {
+                let coordinator = coordinator_ref.lock().unwrap();
+                match coordinator.state() {
+                    frostsnap_core::CoordinatorState::KeyGen { .. } => {
+                        // waiting
+                    }
+                    frostsnap_core::CoordinatorState::FrostKey { .. } => break,
+                    frostsnap_core::CoordinatorState::Registration => {}
+                    frostsnap_core::CoordinatorState::Signing { .. } => {}
+                }
+            }
+        });
+        let key = handle.join().unwrap();
+        // Ok(NewKey { key })
+        "ziggy".to_string()
     }
 }
 

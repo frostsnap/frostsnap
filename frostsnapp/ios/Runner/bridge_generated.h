@@ -112,6 +112,10 @@ void wire_send_cancel(int64_t port_,
                       struct wire_FfiCoordinator coordinator,
                       struct wire_DeviceId *id);
 
+void wire_generate_new_key(int64_t port_,
+                           struct wire_FfiCoordinator coordinator,
+                           uintptr_t threshold);
+
 void wire_satisfy__method__PortOpen(int64_t port_,
                                     struct wire_PortOpen *that,
                                     struct wire_uint_8_list *err);
@@ -186,6 +190,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_update_name_preview);
     dummy_var ^= ((int64_t) (void*) wire_finish_naming);
     dummy_var ^= ((int64_t) (void*) wire_send_cancel);
+    dummy_var ^= ((int64_t) (void*) wire_generate_new_key);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortOpen);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortRead);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortWrite);

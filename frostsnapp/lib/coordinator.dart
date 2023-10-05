@@ -73,6 +73,12 @@ class Coordinator {
     await api.announceAvailablePorts(coordinator: ctx, ports: portDescriptions);
   }
 
+  Future<String> generateNewKey() async {
+    String newKey =
+        await api.generateNewKey(coordinator: await ffi, threshold: 1);
+    return newKey;
+  }
+
   Stream<List<DeviceChange>> subDeviceEvents() {
     return api.subDeviceEvents();
   }

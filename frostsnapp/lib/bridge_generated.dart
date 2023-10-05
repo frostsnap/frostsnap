@@ -8,8 +8,14 @@ import 'dart:async';
 import 'package:meta/meta.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
 import 'package:uuid/uuid.dart';
-import 'bridge_generated.io.dart'
-    if (dart.library.html) 'bridge_generated.web.dart';
+
+import 'dart:convert';
+import 'dart:async';
+import 'package:meta/meta.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
+import 'package:uuid/uuid.dart';
+
+import 'dart:ffi' as ffi;
 
 class NativeImpl implements Native {
   final NativePlatform _platform;
@@ -204,6 +210,29 @@ class NativeImpl implements Native {
       const FlutterRustBridgeTaskConstMeta(
         debugName: "send_cancel",
         argNames: ["coordinator", "id"],
+      );
+
+  Future<String> generateNewKey(
+      {required FfiCoordinator coordinator,
+      required int threshold,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_FfiCoordinator(coordinator);
+    var arg1 = api2wire_usize(threshold);
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) =>
+          _platform.inner.wire_generate_new_key(port_, arg0, arg1),
+      parseSuccessData: _wire2api_String,
+      parseErrorData: null,
+      constMeta: kGenerateNewKeyConstMeta,
+      argValues: [coordinator, threshold],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kGenerateNewKeyConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "generate_new_key",
+        argNames: ["coordinator", "threshold"],
       );
 
   Future<void> satisfyMethodPortOpen(
@@ -553,3 +582,972 @@ int api2wire_usize(int raw) {
   return raw;
 }
 // Section: finalizer
+
+class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
+  NativePlatform(ffi.DynamicLibrary dylib) : super(NativeWire(dylib));
+
+// Section: api2wire
+
+  @protected
+  wire_FfiCoordinator api2wire_FfiCoordinator(FfiCoordinator raw) {
+    final ptr = inner.new_FfiCoordinator();
+    _api_fill_to_wire_FfiCoordinator(raw, ptr);
+    return ptr;
+  }
+
+  @protected
+  wire_PortBytesToReadSender api2wire_PortBytesToReadSender(
+      PortBytesToReadSender raw) {
+    final ptr = inner.new_PortBytesToReadSender();
+    _api_fill_to_wire_PortBytesToReadSender(raw, ptr);
+    return ptr;
+  }
+
+  @protected
+  wire_PortOpenSender api2wire_PortOpenSender(PortOpenSender raw) {
+    final ptr = inner.new_PortOpenSender();
+    _api_fill_to_wire_PortOpenSender(raw, ptr);
+    return ptr;
+  }
+
+  @protected
+  wire_PortReadSender api2wire_PortReadSender(PortReadSender raw) {
+    final ptr = inner.new_PortReadSender();
+    _api_fill_to_wire_PortReadSender(raw, ptr);
+    return ptr;
+  }
+
+  @protected
+  wire_PortWriteSender api2wire_PortWriteSender(PortWriteSender raw) {
+    final ptr = inner.new_PortWriteSender();
+    _api_fill_to_wire_PortWriteSender(raw, ptr);
+    return ptr;
+  }
+
+  @protected
+  ffi.Pointer<wire_uint_8_list> api2wire_String(String raw) {
+    return api2wire_uint_8_list(utf8.encoder.convert(raw));
+  }
+
+  @protected
+  ffi.Pointer<wire_DeviceId> api2wire_box_autoadd_device_id(DeviceId raw) {
+    final ptr = inner.new_box_autoadd_device_id_0();
+    _api_fill_to_wire_device_id(raw, ptr.ref);
+    return ptr;
+  }
+
+  @protected
+  ffi.Pointer<wire_PortBytesToRead> api2wire_box_autoadd_port_bytes_to_read(
+      PortBytesToRead raw) {
+    final ptr = inner.new_box_autoadd_port_bytes_to_read_0();
+    _api_fill_to_wire_port_bytes_to_read(raw, ptr.ref);
+    return ptr;
+  }
+
+  @protected
+  ffi.Pointer<wire_PortOpen> api2wire_box_autoadd_port_open(PortOpen raw) {
+    final ptr = inner.new_box_autoadd_port_open_0();
+    _api_fill_to_wire_port_open(raw, ptr.ref);
+    return ptr;
+  }
+
+  @protected
+  ffi.Pointer<wire_PortRead> api2wire_box_autoadd_port_read(PortRead raw) {
+    final ptr = inner.new_box_autoadd_port_read_0();
+    _api_fill_to_wire_port_read(raw, ptr.ref);
+    return ptr;
+  }
+
+  @protected
+  ffi.Pointer<wire_PortWrite> api2wire_box_autoadd_port_write(PortWrite raw) {
+    final ptr = inner.new_box_autoadd_port_write_0();
+    _api_fill_to_wire_port_write(raw, ptr.ref);
+    return ptr;
+  }
+
+  @protected
+  ffi.Pointer<wire_list_port_desc> api2wire_list_port_desc(List<PortDesc> raw) {
+    final ans = inner.new_list_port_desc_0(raw.length);
+    for (var i = 0; i < raw.length; ++i) {
+      _api_fill_to_wire_port_desc(raw[i], ans.ref.ptr[i]);
+    }
+    return ans;
+  }
+
+  @protected
+  ffi.Pointer<wire_uint_8_list> api2wire_opt_String(String? raw) {
+    return raw == null ? ffi.nullptr : api2wire_String(raw);
+  }
+
+  @protected
+  ffi.Pointer<wire_uint_8_list> api2wire_u8_array_33(U8Array33 raw) {
+    final ans = inner.new_uint_8_list_0(33);
+    ans.ref.ptr.asTypedList(33).setAll(0, raw);
+    return ans;
+  }
+
+  @protected
+  ffi.Pointer<wire_uint_8_list> api2wire_uint_8_list(Uint8List raw) {
+    final ans = inner.new_uint_8_list_0(raw.length);
+    ans.ref.ptr.asTypedList(raw.length).setAll(0, raw);
+    return ans;
+  }
+
+// Section: finalizer
+
+  late final OpaqueTypeFinalizer _FfiCoordinatorFinalizer =
+      OpaqueTypeFinalizer(inner._drop_opaque_FfiCoordinatorPtr);
+  OpaqueTypeFinalizer get FfiCoordinatorFinalizer => _FfiCoordinatorFinalizer;
+  late final OpaqueTypeFinalizer _PortBytesToReadSenderFinalizer =
+      OpaqueTypeFinalizer(inner._drop_opaque_PortBytesToReadSenderPtr);
+  OpaqueTypeFinalizer get PortBytesToReadSenderFinalizer =>
+      _PortBytesToReadSenderFinalizer;
+  late final OpaqueTypeFinalizer _PortOpenSenderFinalizer =
+      OpaqueTypeFinalizer(inner._drop_opaque_PortOpenSenderPtr);
+  OpaqueTypeFinalizer get PortOpenSenderFinalizer => _PortOpenSenderFinalizer;
+  late final OpaqueTypeFinalizer _PortReadSenderFinalizer =
+      OpaqueTypeFinalizer(inner._drop_opaque_PortReadSenderPtr);
+  OpaqueTypeFinalizer get PortReadSenderFinalizer => _PortReadSenderFinalizer;
+  late final OpaqueTypeFinalizer _PortWriteSenderFinalizer =
+      OpaqueTypeFinalizer(inner._drop_opaque_PortWriteSenderPtr);
+  OpaqueTypeFinalizer get PortWriteSenderFinalizer => _PortWriteSenderFinalizer;
+// Section: api_fill_to_wire
+
+  void _api_fill_to_wire_FfiCoordinator(
+      FfiCoordinator apiObj, wire_FfiCoordinator wireObj) {
+    wireObj.ptr = apiObj.shareOrMove();
+  }
+
+  void _api_fill_to_wire_PortBytesToReadSender(
+      PortBytesToReadSender apiObj, wire_PortBytesToReadSender wireObj) {
+    wireObj.ptr = apiObj.shareOrMove();
+  }
+
+  void _api_fill_to_wire_PortOpenSender(
+      PortOpenSender apiObj, wire_PortOpenSender wireObj) {
+    wireObj.ptr = apiObj.shareOrMove();
+  }
+
+  void _api_fill_to_wire_PortReadSender(
+      PortReadSender apiObj, wire_PortReadSender wireObj) {
+    wireObj.ptr = apiObj.shareOrMove();
+  }
+
+  void _api_fill_to_wire_PortWriteSender(
+      PortWriteSender apiObj, wire_PortWriteSender wireObj) {
+    wireObj.ptr = apiObj.shareOrMove();
+  }
+
+  void _api_fill_to_wire_box_autoadd_device_id(
+      DeviceId apiObj, ffi.Pointer<wire_DeviceId> wireObj) {
+    _api_fill_to_wire_device_id(apiObj, wireObj.ref);
+  }
+
+  void _api_fill_to_wire_box_autoadd_port_bytes_to_read(
+      PortBytesToRead apiObj, ffi.Pointer<wire_PortBytesToRead> wireObj) {
+    _api_fill_to_wire_port_bytes_to_read(apiObj, wireObj.ref);
+  }
+
+  void _api_fill_to_wire_box_autoadd_port_open(
+      PortOpen apiObj, ffi.Pointer<wire_PortOpen> wireObj) {
+    _api_fill_to_wire_port_open(apiObj, wireObj.ref);
+  }
+
+  void _api_fill_to_wire_box_autoadd_port_read(
+      PortRead apiObj, ffi.Pointer<wire_PortRead> wireObj) {
+    _api_fill_to_wire_port_read(apiObj, wireObj.ref);
+  }
+
+  void _api_fill_to_wire_box_autoadd_port_write(
+      PortWrite apiObj, ffi.Pointer<wire_PortWrite> wireObj) {
+    _api_fill_to_wire_port_write(apiObj, wireObj.ref);
+  }
+
+  void _api_fill_to_wire_device_id(DeviceId apiObj, wire_DeviceId wireObj) {
+    wireObj.field0 = api2wire_u8_array_33(apiObj.field0);
+  }
+
+  void _api_fill_to_wire_port_bytes_to_read(
+      PortBytesToRead apiObj, wire_PortBytesToRead wireObj) {
+    wireObj.id = api2wire_String(apiObj.id);
+    wireObj.ready = api2wire_PortBytesToReadSender(apiObj.ready);
+  }
+
+  void _api_fill_to_wire_port_desc(PortDesc apiObj, wire_PortDesc wireObj) {
+    wireObj.id = api2wire_String(apiObj.id);
+    wireObj.vid = api2wire_u16(apiObj.vid);
+    wireObj.pid = api2wire_u16(apiObj.pid);
+  }
+
+  void _api_fill_to_wire_port_open(PortOpen apiObj, wire_PortOpen wireObj) {
+    wireObj.id = api2wire_String(apiObj.id);
+    wireObj.baud_rate = api2wire_u32(apiObj.baudRate);
+    wireObj.ready = api2wire_PortOpenSender(apiObj.ready);
+  }
+
+  void _api_fill_to_wire_port_read(PortRead apiObj, wire_PortRead wireObj) {
+    wireObj.id = api2wire_String(apiObj.id);
+    wireObj.len = api2wire_usize(apiObj.len);
+    wireObj.ready = api2wire_PortReadSender(apiObj.ready);
+  }
+
+  void _api_fill_to_wire_port_write(PortWrite apiObj, wire_PortWrite wireObj) {
+    wireObj.id = api2wire_String(apiObj.id);
+    wireObj.bytes = api2wire_uint_8_list(apiObj.bytes);
+    wireObj.ready = api2wire_PortWriteSender(apiObj.ready);
+  }
+}
+
+// ignore_for_file: camel_case_types, non_constant_identifier_names, avoid_positional_boolean_parameters, annotate_overrides, constant_identifier_names
+
+// AUTO GENERATED FILE, DO NOT EDIT.
+//
+// Generated by `package:ffigen`.
+// ignore_for_file: type=lint
+
+/// generated by flutter_rust_bridge
+class NativeWire implements FlutterRustBridgeWireBase {
+  @internal
+  late final dartApi = DartApiDl(init_frb_dart_api_dl);
+
+  /// Holds the symbol lookup function.
+  final ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName)
+      _lookup;
+
+  /// The symbols are looked up in [dynamicLibrary].
+  NativeWire(ffi.DynamicLibrary dynamicLibrary)
+      : _lookup = dynamicLibrary.lookup;
+
+  /// The symbols are looked up with [lookup].
+  NativeWire.fromLookup(
+      ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName)
+          lookup)
+      : _lookup = lookup;
+
+  void store_dart_post_cobject(
+    DartPostCObjectFnType ptr,
+  ) {
+    return _store_dart_post_cobject(
+      ptr,
+    );
+  }
+
+  late final _store_dart_post_cobjectPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(DartPostCObjectFnType)>>(
+          'store_dart_post_cobject');
+  late final _store_dart_post_cobject = _store_dart_post_cobjectPtr
+      .asFunction<void Function(DartPostCObjectFnType)>();
+
+  Object get_dart_object(
+    int ptr,
+  ) {
+    return _get_dart_object(
+      ptr,
+    );
+  }
+
+  late final _get_dart_objectPtr =
+      _lookup<ffi.NativeFunction<ffi.Handle Function(ffi.UintPtr)>>(
+          'get_dart_object');
+  late final _get_dart_object =
+      _get_dart_objectPtr.asFunction<Object Function(int)>();
+
+  void drop_dart_object(
+    int ptr,
+  ) {
+    return _drop_dart_object(
+      ptr,
+    );
+  }
+
+  late final _drop_dart_objectPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.UintPtr)>>(
+          'drop_dart_object');
+  late final _drop_dart_object =
+      _drop_dart_objectPtr.asFunction<void Function(int)>();
+
+  int new_dart_opaque(
+    Object handle,
+  ) {
+    return _new_dart_opaque(
+      handle,
+    );
+  }
+
+  late final _new_dart_opaquePtr =
+      _lookup<ffi.NativeFunction<ffi.UintPtr Function(ffi.Handle)>>(
+          'new_dart_opaque');
+  late final _new_dart_opaque =
+      _new_dart_opaquePtr.asFunction<int Function(Object)>();
+
+  int init_frb_dart_api_dl(
+    ffi.Pointer<ffi.Void> obj,
+  ) {
+    return _init_frb_dart_api_dl(
+      obj,
+    );
+  }
+
+  late final _init_frb_dart_api_dlPtr =
+      _lookup<ffi.NativeFunction<ffi.IntPtr Function(ffi.Pointer<ffi.Void>)>>(
+          'init_frb_dart_api_dl');
+  late final _init_frb_dart_api_dl = _init_frb_dart_api_dlPtr
+      .asFunction<int Function(ffi.Pointer<ffi.Void>)>();
+
+  void wire_sub_port_events(
+    int port_,
+  ) {
+    return _wire_sub_port_events(
+      port_,
+    );
+  }
+
+  late final _wire_sub_port_eventsPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Int64)>>(
+          'wire_sub_port_events');
+  late final _wire_sub_port_events =
+      _wire_sub_port_eventsPtr.asFunction<void Function(int)>();
+
+  void wire_sub_device_events(
+    int port_,
+  ) {
+    return _wire_sub_device_events(
+      port_,
+    );
+  }
+
+  late final _wire_sub_device_eventsPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Int64)>>(
+          'wire_sub_device_events');
+  late final _wire_sub_device_events =
+      _wire_sub_device_eventsPtr.asFunction<void Function(int)>();
+
+  void wire_new_ffi_coordinator(
+    int port_,
+    bool host_handles_serial,
+  ) {
+    return _wire_new_ffi_coordinator(
+      port_,
+      host_handles_serial,
+    );
+  }
+
+  late final _wire_new_ffi_coordinatorPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Int64, ffi.Bool)>>(
+          'wire_new_ffi_coordinator');
+  late final _wire_new_ffi_coordinator =
+      _wire_new_ffi_coordinatorPtr.asFunction<void Function(int, bool)>();
+
+  void wire_turn_stderr_logging_on(
+    int port_,
+    int level,
+  ) {
+    return _wire_turn_stderr_logging_on(
+      port_,
+      level,
+    );
+  }
+
+  late final _wire_turn_stderr_logging_onPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Int64, ffi.Int32)>>(
+          'wire_turn_stderr_logging_on');
+  late final _wire_turn_stderr_logging_on =
+      _wire_turn_stderr_logging_onPtr.asFunction<void Function(int, int)>();
+
+  void wire_turn_logcat_logging_on(
+    int port_,
+    int _level,
+  ) {
+    return _wire_turn_logcat_logging_on(
+      port_,
+      _level,
+    );
+  }
+
+  late final _wire_turn_logcat_logging_onPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Int64, ffi.Int32)>>(
+          'wire_turn_logcat_logging_on');
+  late final _wire_turn_logcat_logging_on =
+      _wire_turn_logcat_logging_onPtr.asFunction<void Function(int, int)>();
+
+  void wire_announce_available_ports(
+    int port_,
+    wire_FfiCoordinator coordinator,
+    ffi.Pointer<wire_list_port_desc> ports,
+  ) {
+    return _wire_announce_available_ports(
+      port_,
+      coordinator,
+      ports,
+    );
+  }
+
+  late final _wire_announce_available_portsPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Void Function(ffi.Int64, wire_FfiCoordinator,
+                  ffi.Pointer<wire_list_port_desc>)>>(
+      'wire_announce_available_ports');
+  late final _wire_announce_available_ports =
+      _wire_announce_available_portsPtr.asFunction<
+          void Function(
+              int, wire_FfiCoordinator, ffi.Pointer<wire_list_port_desc>)>();
+
+  void wire_update_name_preview(
+    int port_,
+    wire_FfiCoordinator coordinator,
+    ffi.Pointer<wire_DeviceId> id,
+    ffi.Pointer<wire_uint_8_list> name,
+  ) {
+    return _wire_update_name_preview(
+      port_,
+      coordinator,
+      id,
+      name,
+    );
+  }
+
+  late final _wire_update_name_previewPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Void Function(
+              ffi.Int64,
+              wire_FfiCoordinator,
+              ffi.Pointer<wire_DeviceId>,
+              ffi.Pointer<wire_uint_8_list>)>>('wire_update_name_preview');
+  late final _wire_update_name_preview =
+      _wire_update_name_previewPtr.asFunction<
+          void Function(int, wire_FfiCoordinator, ffi.Pointer<wire_DeviceId>,
+              ffi.Pointer<wire_uint_8_list>)>();
+
+  void wire_finish_naming(
+    int port_,
+    wire_FfiCoordinator coordinator,
+    ffi.Pointer<wire_DeviceId> id,
+    ffi.Pointer<wire_uint_8_list> name,
+  ) {
+    return _wire_finish_naming(
+      port_,
+      coordinator,
+      id,
+      name,
+    );
+  }
+
+  late final _wire_finish_namingPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Void Function(
+              ffi.Int64,
+              wire_FfiCoordinator,
+              ffi.Pointer<wire_DeviceId>,
+              ffi.Pointer<wire_uint_8_list>)>>('wire_finish_naming');
+  late final _wire_finish_naming = _wire_finish_namingPtr.asFunction<
+      void Function(int, wire_FfiCoordinator, ffi.Pointer<wire_DeviceId>,
+          ffi.Pointer<wire_uint_8_list>)>();
+
+  void wire_send_cancel(
+    int port_,
+    wire_FfiCoordinator coordinator,
+    ffi.Pointer<wire_DeviceId> id,
+  ) {
+    return _wire_send_cancel(
+      port_,
+      coordinator,
+      id,
+    );
+  }
+
+  late final _wire_send_cancelPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Void Function(ffi.Int64, wire_FfiCoordinator,
+              ffi.Pointer<wire_DeviceId>)>>('wire_send_cancel');
+  late final _wire_send_cancel = _wire_send_cancelPtr.asFunction<
+      void Function(int, wire_FfiCoordinator, ffi.Pointer<wire_DeviceId>)>();
+
+  void wire_generate_new_key(
+    int port_,
+    wire_FfiCoordinator coordinator,
+    int threshold,
+  ) {
+    return _wire_generate_new_key(
+      port_,
+      coordinator,
+      threshold,
+    );
+  }
+
+  late final _wire_generate_new_keyPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Void Function(ffi.Int64, wire_FfiCoordinator,
+              ffi.UintPtr)>>('wire_generate_new_key');
+  late final _wire_generate_new_key = _wire_generate_new_keyPtr
+      .asFunction<void Function(int, wire_FfiCoordinator, int)>();
+
+  void wire_satisfy__method__PortOpen(
+    int port_,
+    ffi.Pointer<wire_PortOpen> that,
+    ffi.Pointer<wire_uint_8_list> err,
+  ) {
+    return _wire_satisfy__method__PortOpen(
+      port_,
+      that,
+      err,
+    );
+  }
+
+  late final _wire_satisfy__method__PortOpenPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_PortOpen>,
+                  ffi.Pointer<wire_uint_8_list>)>>(
+      'wire_satisfy__method__PortOpen');
+  late final _wire_satisfy__method__PortOpen =
+      _wire_satisfy__method__PortOpenPtr.asFunction<
+          void Function(int, ffi.Pointer<wire_PortOpen>,
+              ffi.Pointer<wire_uint_8_list>)>();
+
+  void wire_satisfy__method__PortRead(
+    int port_,
+    ffi.Pointer<wire_PortRead> that,
+    ffi.Pointer<wire_uint_8_list> bytes,
+    ffi.Pointer<wire_uint_8_list> err,
+  ) {
+    return _wire_satisfy__method__PortRead(
+      port_,
+      that,
+      bytes,
+      err,
+    );
+  }
+
+  late final _wire_satisfy__method__PortReadPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Void Function(
+                  ffi.Int64,
+                  ffi.Pointer<wire_PortRead>,
+                  ffi.Pointer<wire_uint_8_list>,
+                  ffi.Pointer<wire_uint_8_list>)>>(
+      'wire_satisfy__method__PortRead');
+  late final _wire_satisfy__method__PortRead =
+      _wire_satisfy__method__PortReadPtr.asFunction<
+          void Function(int, ffi.Pointer<wire_PortRead>,
+              ffi.Pointer<wire_uint_8_list>, ffi.Pointer<wire_uint_8_list>)>();
+
+  void wire_satisfy__method__PortWrite(
+    int port_,
+    ffi.Pointer<wire_PortWrite> that,
+    ffi.Pointer<wire_uint_8_list> err,
+  ) {
+    return _wire_satisfy__method__PortWrite(
+      port_,
+      that,
+      err,
+    );
+  }
+
+  late final _wire_satisfy__method__PortWritePtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_PortWrite>,
+                  ffi.Pointer<wire_uint_8_list>)>>(
+      'wire_satisfy__method__PortWrite');
+  late final _wire_satisfy__method__PortWrite =
+      _wire_satisfy__method__PortWritePtr.asFunction<
+          void Function(int, ffi.Pointer<wire_PortWrite>,
+              ffi.Pointer<wire_uint_8_list>)>();
+
+  void wire_satisfy__method__PortBytesToRead(
+    int port_,
+    ffi.Pointer<wire_PortBytesToRead> that,
+    int bytes_to_read,
+  ) {
+    return _wire_satisfy__method__PortBytesToRead(
+      port_,
+      that,
+      bytes_to_read,
+    );
+  }
+
+  late final _wire_satisfy__method__PortBytesToReadPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Void Function(ffi.Int64, ffi.Pointer<wire_PortBytesToRead>,
+              ffi.Uint32)>>('wire_satisfy__method__PortBytesToRead');
+  late final _wire_satisfy__method__PortBytesToRead =
+      _wire_satisfy__method__PortBytesToReadPtr.asFunction<
+          void Function(int, ffi.Pointer<wire_PortBytesToRead>, int)>();
+
+  wire_FfiCoordinator new_FfiCoordinator() {
+    return _new_FfiCoordinator();
+  }
+
+  late final _new_FfiCoordinatorPtr =
+      _lookup<ffi.NativeFunction<wire_FfiCoordinator Function()>>(
+          'new_FfiCoordinator');
+  late final _new_FfiCoordinator =
+      _new_FfiCoordinatorPtr.asFunction<wire_FfiCoordinator Function()>();
+
+  wire_PortBytesToReadSender new_PortBytesToReadSender() {
+    return _new_PortBytesToReadSender();
+  }
+
+  late final _new_PortBytesToReadSenderPtr =
+      _lookup<ffi.NativeFunction<wire_PortBytesToReadSender Function()>>(
+          'new_PortBytesToReadSender');
+  late final _new_PortBytesToReadSender = _new_PortBytesToReadSenderPtr
+      .asFunction<wire_PortBytesToReadSender Function()>();
+
+  wire_PortOpenSender new_PortOpenSender() {
+    return _new_PortOpenSender();
+  }
+
+  late final _new_PortOpenSenderPtr =
+      _lookup<ffi.NativeFunction<wire_PortOpenSender Function()>>(
+          'new_PortOpenSender');
+  late final _new_PortOpenSender =
+      _new_PortOpenSenderPtr.asFunction<wire_PortOpenSender Function()>();
+
+  wire_PortReadSender new_PortReadSender() {
+    return _new_PortReadSender();
+  }
+
+  late final _new_PortReadSenderPtr =
+      _lookup<ffi.NativeFunction<wire_PortReadSender Function()>>(
+          'new_PortReadSender');
+  late final _new_PortReadSender =
+      _new_PortReadSenderPtr.asFunction<wire_PortReadSender Function()>();
+
+  wire_PortWriteSender new_PortWriteSender() {
+    return _new_PortWriteSender();
+  }
+
+  late final _new_PortWriteSenderPtr =
+      _lookup<ffi.NativeFunction<wire_PortWriteSender Function()>>(
+          'new_PortWriteSender');
+  late final _new_PortWriteSender =
+      _new_PortWriteSenderPtr.asFunction<wire_PortWriteSender Function()>();
+
+  ffi.Pointer<wire_DeviceId> new_box_autoadd_device_id_0() {
+    return _new_box_autoadd_device_id_0();
+  }
+
+  late final _new_box_autoadd_device_id_0Ptr =
+      _lookup<ffi.NativeFunction<ffi.Pointer<wire_DeviceId> Function()>>(
+          'new_box_autoadd_device_id_0');
+  late final _new_box_autoadd_device_id_0 = _new_box_autoadd_device_id_0Ptr
+      .asFunction<ffi.Pointer<wire_DeviceId> Function()>();
+
+  ffi.Pointer<wire_PortBytesToRead> new_box_autoadd_port_bytes_to_read_0() {
+    return _new_box_autoadd_port_bytes_to_read_0();
+  }
+
+  late final _new_box_autoadd_port_bytes_to_read_0Ptr =
+      _lookup<ffi.NativeFunction<ffi.Pointer<wire_PortBytesToRead> Function()>>(
+          'new_box_autoadd_port_bytes_to_read_0');
+  late final _new_box_autoadd_port_bytes_to_read_0 =
+      _new_box_autoadd_port_bytes_to_read_0Ptr
+          .asFunction<ffi.Pointer<wire_PortBytesToRead> Function()>();
+
+  ffi.Pointer<wire_PortOpen> new_box_autoadd_port_open_0() {
+    return _new_box_autoadd_port_open_0();
+  }
+
+  late final _new_box_autoadd_port_open_0Ptr =
+      _lookup<ffi.NativeFunction<ffi.Pointer<wire_PortOpen> Function()>>(
+          'new_box_autoadd_port_open_0');
+  late final _new_box_autoadd_port_open_0 = _new_box_autoadd_port_open_0Ptr
+      .asFunction<ffi.Pointer<wire_PortOpen> Function()>();
+
+  ffi.Pointer<wire_PortRead> new_box_autoadd_port_read_0() {
+    return _new_box_autoadd_port_read_0();
+  }
+
+  late final _new_box_autoadd_port_read_0Ptr =
+      _lookup<ffi.NativeFunction<ffi.Pointer<wire_PortRead> Function()>>(
+          'new_box_autoadd_port_read_0');
+  late final _new_box_autoadd_port_read_0 = _new_box_autoadd_port_read_0Ptr
+      .asFunction<ffi.Pointer<wire_PortRead> Function()>();
+
+  ffi.Pointer<wire_PortWrite> new_box_autoadd_port_write_0() {
+    return _new_box_autoadd_port_write_0();
+  }
+
+  late final _new_box_autoadd_port_write_0Ptr =
+      _lookup<ffi.NativeFunction<ffi.Pointer<wire_PortWrite> Function()>>(
+          'new_box_autoadd_port_write_0');
+  late final _new_box_autoadd_port_write_0 = _new_box_autoadd_port_write_0Ptr
+      .asFunction<ffi.Pointer<wire_PortWrite> Function()>();
+
+  ffi.Pointer<wire_list_port_desc> new_list_port_desc_0(
+    int len,
+  ) {
+    return _new_list_port_desc_0(
+      len,
+    );
+  }
+
+  late final _new_list_port_desc_0Ptr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<wire_list_port_desc> Function(
+              ffi.Int32)>>('new_list_port_desc_0');
+  late final _new_list_port_desc_0 = _new_list_port_desc_0Ptr
+      .asFunction<ffi.Pointer<wire_list_port_desc> Function(int)>();
+
+  ffi.Pointer<wire_uint_8_list> new_uint_8_list_0(
+    int len,
+  ) {
+    return _new_uint_8_list_0(
+      len,
+    );
+  }
+
+  late final _new_uint_8_list_0Ptr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<wire_uint_8_list> Function(
+              ffi.Int32)>>('new_uint_8_list_0');
+  late final _new_uint_8_list_0 = _new_uint_8_list_0Ptr
+      .asFunction<ffi.Pointer<wire_uint_8_list> Function(int)>();
+
+  void drop_opaque_FfiCoordinator(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _drop_opaque_FfiCoordinator(
+      ptr,
+    );
+  }
+
+  late final _drop_opaque_FfiCoordinatorPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+          'drop_opaque_FfiCoordinator');
+  late final _drop_opaque_FfiCoordinator = _drop_opaque_FfiCoordinatorPtr
+      .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  ffi.Pointer<ffi.Void> share_opaque_FfiCoordinator(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _share_opaque_FfiCoordinator(
+      ptr,
+    );
+  }
+
+  late final _share_opaque_FfiCoordinatorPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Void> Function(
+              ffi.Pointer<ffi.Void>)>>('share_opaque_FfiCoordinator');
+  late final _share_opaque_FfiCoordinator = _share_opaque_FfiCoordinatorPtr
+      .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
+
+  void drop_opaque_PortBytesToReadSender(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _drop_opaque_PortBytesToReadSender(
+      ptr,
+    );
+  }
+
+  late final _drop_opaque_PortBytesToReadSenderPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+          'drop_opaque_PortBytesToReadSender');
+  late final _drop_opaque_PortBytesToReadSender =
+      _drop_opaque_PortBytesToReadSenderPtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  ffi.Pointer<ffi.Void> share_opaque_PortBytesToReadSender(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _share_opaque_PortBytesToReadSender(
+      ptr,
+    );
+  }
+
+  late final _share_opaque_PortBytesToReadSenderPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Void> Function(
+              ffi.Pointer<ffi.Void>)>>('share_opaque_PortBytesToReadSender');
+  late final _share_opaque_PortBytesToReadSender =
+      _share_opaque_PortBytesToReadSenderPtr
+          .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
+
+  void drop_opaque_PortOpenSender(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _drop_opaque_PortOpenSender(
+      ptr,
+    );
+  }
+
+  late final _drop_opaque_PortOpenSenderPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+          'drop_opaque_PortOpenSender');
+  late final _drop_opaque_PortOpenSender = _drop_opaque_PortOpenSenderPtr
+      .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  ffi.Pointer<ffi.Void> share_opaque_PortOpenSender(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _share_opaque_PortOpenSender(
+      ptr,
+    );
+  }
+
+  late final _share_opaque_PortOpenSenderPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Void> Function(
+              ffi.Pointer<ffi.Void>)>>('share_opaque_PortOpenSender');
+  late final _share_opaque_PortOpenSender = _share_opaque_PortOpenSenderPtr
+      .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
+
+  void drop_opaque_PortReadSender(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _drop_opaque_PortReadSender(
+      ptr,
+    );
+  }
+
+  late final _drop_opaque_PortReadSenderPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+          'drop_opaque_PortReadSender');
+  late final _drop_opaque_PortReadSender = _drop_opaque_PortReadSenderPtr
+      .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  ffi.Pointer<ffi.Void> share_opaque_PortReadSender(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _share_opaque_PortReadSender(
+      ptr,
+    );
+  }
+
+  late final _share_opaque_PortReadSenderPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Void> Function(
+              ffi.Pointer<ffi.Void>)>>('share_opaque_PortReadSender');
+  late final _share_opaque_PortReadSender = _share_opaque_PortReadSenderPtr
+      .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
+
+  void drop_opaque_PortWriteSender(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _drop_opaque_PortWriteSender(
+      ptr,
+    );
+  }
+
+  late final _drop_opaque_PortWriteSenderPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+          'drop_opaque_PortWriteSender');
+  late final _drop_opaque_PortWriteSender = _drop_opaque_PortWriteSenderPtr
+      .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  ffi.Pointer<ffi.Void> share_opaque_PortWriteSender(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _share_opaque_PortWriteSender(
+      ptr,
+    );
+  }
+
+  late final _share_opaque_PortWriteSenderPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Void> Function(
+              ffi.Pointer<ffi.Void>)>>('share_opaque_PortWriteSender');
+  late final _share_opaque_PortWriteSender = _share_opaque_PortWriteSenderPtr
+      .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
+
+  void free_WireSyncReturn(
+    WireSyncReturn ptr,
+  ) {
+    return _free_WireSyncReturn(
+      ptr,
+    );
+  }
+
+  late final _free_WireSyncReturnPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(WireSyncReturn)>>(
+          'free_WireSyncReturn');
+  late final _free_WireSyncReturn =
+      _free_WireSyncReturnPtr.asFunction<void Function(WireSyncReturn)>();
+}
+
+final class _Dart_Handle extends ffi.Opaque {}
+
+final class wire_FfiCoordinator extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_uint_8_list extends ffi.Struct {
+  external ffi.Pointer<ffi.Uint8> ptr;
+
+  @ffi.Int32()
+  external int len;
+}
+
+final class wire_PortDesc extends ffi.Struct {
+  external ffi.Pointer<wire_uint_8_list> id;
+
+  @ffi.Uint16()
+  external int vid;
+
+  @ffi.Uint16()
+  external int pid;
+}
+
+final class wire_list_port_desc extends ffi.Struct {
+  external ffi.Pointer<wire_PortDesc> ptr;
+
+  @ffi.Int32()
+  external int len;
+}
+
+final class wire_DeviceId extends ffi.Struct {
+  external ffi.Pointer<wire_uint_8_list> field0;
+}
+
+final class wire_PortOpenSender extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_PortOpen extends ffi.Struct {
+  external ffi.Pointer<wire_uint_8_list> id;
+
+  @ffi.Uint32()
+  external int baud_rate;
+
+  external wire_PortOpenSender ready;
+}
+
+final class wire_PortReadSender extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_PortRead extends ffi.Struct {
+  external ffi.Pointer<wire_uint_8_list> id;
+
+  @ffi.UintPtr()
+  external int len;
+
+  external wire_PortReadSender ready;
+}
+
+final class wire_PortWriteSender extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_PortWrite extends ffi.Struct {
+  external ffi.Pointer<wire_uint_8_list> id;
+
+  external ffi.Pointer<wire_uint_8_list> bytes;
+
+  external wire_PortWriteSender ready;
+}
+
+final class wire_PortBytesToReadSender extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_PortBytesToRead extends ffi.Struct {
+  external ffi.Pointer<wire_uint_8_list> id;
+
+  external wire_PortBytesToReadSender ready;
+}
+
+typedef DartPostCObjectFnType = ffi.Pointer<
+    ffi.NativeFunction<
+        ffi.Bool Function(DartPort port_id, ffi.Pointer<ffi.Void> message)>>;
+typedef DartPort = ffi.Int64;
