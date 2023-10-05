@@ -152,16 +152,6 @@ impl FfiCoordinator {
     pub fn generate_new_key(&self, threshold: usize) -> String {
         let devices = self.manager.lock().unwrap().registered_devices().clone();
 
-        // Is there something more generalized we need for `fn process_outbox`?
-        // let do_keygen_message = CoordinatorSendMessage {
-        //     target_destinations: devices.clone(),
-        //     message_body: CoordinatorSendBody::Core(
-        //         core_coordinator.do_keygen(&devices, threshold)?,
-        //     ),
-        // };
-
-        // We need to write the keygen messages into the outbox
-
         let keygen_message = {
             self.coordinator
                 .clone()
@@ -185,15 +175,17 @@ impl FfiCoordinator {
                     frostsnap_core::CoordinatorState::KeyGen { .. } => {
                         // waiting
                     }
-                    frostsnap_core::CoordinatorState::FrostKey { .. } => break,
+                    frostsnap_core::CoordinatorState::FrostKey { key, awaiting_user } => {
+                        return key.clone()
+                    }
                     frostsnap_core::CoordinatorState::Registration => {}
                     frostsnap_core::CoordinatorState::Signing { .. } => {}
                 }
             }
         });
         let key = handle.join().unwrap();
-        // Ok(NewKey { key })
-        "ziggy".to_string()
+
+        return format!("{:?}", key.frost_key());
     }
 }
 
