@@ -103,6 +103,10 @@ void wire_generate_new_key(int64_t port_,
                            struct wire_FfiCoordinator coordinator,
                            uintptr_t threshold);
 
+void wire_sign_message(int64_t port_,
+                       struct wire_FfiCoordinator coordinator,
+                       struct wire_uint_8_list *message);
+
 void wire_satisfy__method__PortOpen(int64_t port_,
                                     struct wire_PortOpen *that,
                                     struct wire_uint_8_list *err);
@@ -174,6 +178,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_announce_available_ports);
     dummy_var ^= ((int64_t) (void*) wire_set_device_label);
     dummy_var ^= ((int64_t) (void*) wire_generate_new_key);
+    dummy_var ^= ((int64_t) (void*) wire_sign_message);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortOpen);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortRead);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortWrite);

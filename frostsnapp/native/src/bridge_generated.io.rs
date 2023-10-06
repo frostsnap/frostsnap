@@ -55,6 +55,15 @@ pub extern "C" fn wire_generate_new_key(
 }
 
 #[no_mangle]
+pub extern "C" fn wire_sign_message(
+    port_: i64,
+    coordinator: wire_FfiCoordinator,
+    message: *mut wire_uint_8_list,
+) {
+    wire_sign_message_impl(port_, coordinator, message)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_satisfy__method__PortOpen(
     port_: i64,
     that: *mut wire_PortOpen,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/coordinator.dart';
+import 'package:frostsnapp/sign_message.dart';
 
 class DoKeyGenButton extends StatelessWidget {
   final bool isvisible;
@@ -49,13 +50,16 @@ class DoKeyGenScreen extends StatelessWidget {
             } else if (snapshot.hasError) {
               return Text('Error: ${snapshot.error}');
             } else {
-              return Text(
-                'Frost Key: ${snapshot.data}',
-                style: TextStyle(
-                  fontSize: 20.0,
+              return Column(children: [
+                Text(
+                  'Frost Key: ${snapshot.data}',
+                  style: TextStyle(
+                    fontSize: 20.0,
+                  ),
+                  textAlign: TextAlign.left,
                 ),
-                textAlign: TextAlign.left,
-              );
+                SignMessageButton()
+              ]);
             }
           },
         ),

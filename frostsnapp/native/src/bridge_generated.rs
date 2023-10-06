@@ -156,6 +156,24 @@ fn wire_generate_new_key_impl(
         },
     )
 }
+fn wire_sign_message_impl(
+    port_: MessagePort,
+    coordinator: impl Wire2Api<RustOpaque<FfiCoordinator>> + UnwindSafe,
+    message: impl Wire2Api<String> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "sign_message",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_coordinator = coordinator.wire2api();
+            let api_message = message.wire2api();
+            move |task_callback| Result::<_, ()>::Ok(sign_message(api_coordinator, api_message))
+        },
+    )
+}
 fn wire_satisfy__method__PortOpen_impl(
     port_: MessagePort,
     that: impl Wire2Api<PortOpen> + UnwindSafe,

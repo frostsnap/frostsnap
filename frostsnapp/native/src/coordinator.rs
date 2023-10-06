@@ -1,7 +1,9 @@
 use crate::api::PortEvent;
 use flutter_rust_bridge::RustOpaque;
 use frostsnap_coordinator::frostsnap_comms::{CoordinatorSendBody, CoordinatorSendMessage};
-use frostsnap_coordinator::frostsnap_core::message::{CoordinatorSend, CoordinatorToUserMessage};
+use frostsnap_coordinator::frostsnap_core::message::{
+    CoordinatorSend, CoordinatorToUserMessage, SignTask,
+};
 use frostsnap_coordinator::frostsnap_core::CoordinatorFrostKey;
 use frostsnap_coordinator::serialport;
 use frostsnap_coordinator::{
@@ -114,7 +116,9 @@ impl FfiCoordinator {
                             .queue_in_port_outbox(send_message);
                     }
                     CoordinatorSend::ToUser(msg) => match msg {
-                        CoordinatorToUserMessage::Signed { .. } => {}
+                        CoordinatorToUserMessage::Signed { signatures } => {
+                            // Probably want to emit some event
+                        }
                         CoordinatorToUserMessage::CheckKeyGen { .. } => {
                             pending_messages
                                 .extend(coordinator.lock().unwrap().keygen_ack(true).unwrap());
@@ -187,6 +191,28 @@ impl FfiCoordinator {
         let key = handle.join().unwrap();
 
         format!("{:?}", key.frost_key())
+    }
+
+    pub fn sign_message(&self, message: String) {
+        let devices = self.manager.lock().unwrap().registered_devices().clone();
+
+        // It still annoys me that sign request returns two things..
+        let (outbox_messages, sign_request) = {
+            self.coordinator
+                .clone()
+                .lock()
+                .unwrap()
+                .start_sign(SignTask::Plain(message.as_bytes().to_vec()), devices)
+                .unwrap()
+        };
+        let sign_send = CoordinatorSend::ToDevice(sign_request);
+
+        // NOTICE how there is a vulnerability of not storing nonces here..
+        // We just handle the sign request
+        {
+            let mut pending_guard = self.pending_for_outbox.lock().unwrap();
+            pending_guard.push_back(sign_send);
+        }
     }
 }
 

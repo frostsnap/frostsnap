@@ -84,6 +84,11 @@ class Coordinator {
     return newKey;
   }
 
+  void signMessage(String message) async {
+    await api.signMessage(coordinator: await ffi, message: message);
+    return;
+  }
+
   Stream<List<DeviceChange>> subDeviceEvents() {
     return api.subDeviceEvents();
   }

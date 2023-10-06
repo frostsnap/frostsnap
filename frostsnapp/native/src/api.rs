@@ -198,3 +198,7 @@ pub fn set_device_label(
 pub fn generate_new_key(coordinator: RustOpaque<FfiCoordinator>, threshold: usize) -> String {
     coordinator.generate_new_key(threshold)
 }
+
+pub fn sign_message(coordinator: RustOpaque<FfiCoordinator>, message: String) {
+    coordinator.sign_message(message)
+}

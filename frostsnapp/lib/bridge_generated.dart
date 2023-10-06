@@ -188,6 +188,28 @@ class NativeImpl implements Native {
         argNames: ["coordinator", "threshold"],
       );
 
+  Future<void> signMessage(
+      {required FfiCoordinator coordinator,
+      required String message,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_FfiCoordinator(coordinator);
+    var arg1 = _platform.api2wire_String(message);
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner.wire_sign_message(port_, arg0, arg1),
+      parseSuccessData: _wire2api_unit,
+      parseErrorData: null,
+      constMeta: kSignMessageConstMeta,
+      argValues: [coordinator, message],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kSignMessageConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "sign_message",
+        argNames: ["coordinator", "message"],
+      );
+
   Future<void> satisfyMethodPortOpen(
       {required PortOpen that, String? err, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_port_open(that);
@@ -938,6 +960,25 @@ class NativeWire implements FlutterRustBridgeWireBase {
               ffi.UintPtr)>>('wire_generate_new_key');
   late final _wire_generate_new_key = _wire_generate_new_keyPtr
       .asFunction<void Function(int, wire_FfiCoordinator, int)>();
+
+  void wire_sign_message(
+    int port_,
+    wire_FfiCoordinator coordinator,
+    ffi.Pointer<wire_uint_8_list> message,
+  ) {
+    return _wire_sign_message(
+      port_,
+      coordinator,
+      message,
+    );
+  }
+
+  late final _wire_sign_messagePtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Void Function(ffi.Int64, wire_FfiCoordinator,
+              ffi.Pointer<wire_uint_8_list>)>>('wire_sign_message');
+  late final _wire_sign_message = _wire_sign_messagePtr.asFunction<
+      void Function(int, wire_FfiCoordinator, ffi.Pointer<wire_uint_8_list>)>();
 
   void wire_satisfy__method__PortOpen(
     int port_,
