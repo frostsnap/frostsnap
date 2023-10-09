@@ -248,13 +248,6 @@ where
         }
     }
 
-    pub fn is_started(&self) -> bool {
-        if let None = self.start {
-            return false;
-        }
-        true
-    }
-
     pub fn is_finished(&self) -> bool {
         self.finished
     }
@@ -482,7 +475,7 @@ where
                 }
             } else {
                 // deal with button released before confirming
-                if self.confirm_state.is_started() {
+                if self.confirm_state.start.is_some() {
                     self.confirm_state.reset();
                     self.changes = true;
                 }
