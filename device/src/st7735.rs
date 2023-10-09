@@ -307,22 +307,30 @@ where
         Ok(())
     }
 
+    pub fn confirm_bar(&mut self, percent: f32) -> Result<(), Error> {
+        let y = 78;
+        if percent == 0.0 {
+            Line::new(Point::new(0, y), Point::new(160, y))
+                .into_styled(PrimitiveStyle::with_stroke(Rgb565::new(7, 14, 7), 2))
+                .draw(&mut self.framebuf)
+                .unwrap();
+        } else {
+            Line::new(Point::new(0, y), Point::new((160.0 * percent) as i32, y))
+                .into_styled(PrimitiveStyle::with_stroke(Rgb565::GREEN, 2))
+                .draw(&mut self.framebuf)
+                .unwrap();
+        }
+
+        self.flush().unwrap();
+
+        Ok(())
+    }
+
     pub fn clear(&mut self, c: Rgb565) -> Result<(), Error> {
         Rectangle::new(Point::new(0, 0), Size::new(160, 80))
             .into_styled(PrimitiveStyleBuilder::new().fill_color(c).build())
             .draw(&mut self.framebuf)
             .unwrap();
-
-        Ok(())
-    }
-
-    pub fn confirm_bar(&mut self, percent: f32) -> Result<(), Error> {
-        Line::new(Point::new(0, 78), Point::new((160.0 * percent) as i32, 78))
-            .into_styled(PrimitiveStyle::with_stroke(Rgb565::GREEN, 2))
-            .draw(&mut self.framebuf)
-            .unwrap();
-
-        self.flush().unwrap();
 
         Ok(())
     }
