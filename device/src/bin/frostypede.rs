@@ -1,5 +1,5 @@
 // Frostsnap custom PCB rev 1.1
-// GPIO8 Downstream detection
+// GPIO13 Downstream detection
 // GPIO5 Left button
 // GPIO9 Right button
 // GPIO0 RGB LED
@@ -34,7 +34,7 @@ use esp_backtrace as _;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use embedded_graphics_framebuf::FrameBuf;
 use esp_hal_smartled::{smartLedAdapter, SmartLedsAdapter};
-use smart_leds::{brightness, colors, SmartLedsWrite};
+use smart_leds::{brightness, colors, SmartLedsWrite, RGB};
 
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
@@ -98,13 +98,14 @@ fn main() -> ! {
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
 
     let mut delay = Delay::new(&clocks);
+    // compute instead of using constant for 80MHz cpu speed
+    let ticks_per_ms = clocks.cpu_clock.raw() / timer1.divider() / 1000;
 
-    // construct the toggle and select buttons on the fsboard
-    let toggle_button = io.pins.gpio5.into_pull_up_input();
+    // construct the select button
     let select_button = io.pins.gpio9.into_pull_up_input();
     let downstream_detect = io.pins.gpio13.into_pull_up_input();
 
-    let mut bl = io.pins.gpio11.into_push_pull_output();
+    let mut bl = io.pins.gpio1.into_push_pull_output();
     // Turn off backlight to hide artifacts as display initializes
     bl.set_low().unwrap();
     let framearray = [Rgb565::WHITE; 160 * 80];
@@ -184,20 +185,20 @@ fn main() -> ! {
     bl.set_high().unwrap();
 
     let ui = BlueUi {
-        toggle_button,
         select_button,
-        toggled: false,
         led,
         display,
         user_confirm: true,
         downstream_connection_state: ConnectionState::Disconnected,
         workflow: Default::default(),
         device_label: Default::default(),
-        splash_state: SplashState::new(&timer1),
+        splash_state: AnimationState::new(&timer1, (600 * ticks_per_ms).into()),
         changes: false,
+        confirm_state: AnimationState::new(&timer1, (700 * ticks_per_ms).into()),
+        timer: &timer1,
     };
 
-    let _now1 = timer1.now();
+    // let _now1 = timer1.now();
     esp32_run::Run {
         upstream_jtag,
         upstream_uart,
@@ -214,35 +215,35 @@ pub struct BlueUi<'t, 'd, C, T, SPI>
 where
     SPI: spi::Instance,
 {
-    toggle_button: GpioPin<Input<PullUp>, 5>,
     select_button: GpioPin<Input<PullUp>, 9>,
-    toggled: bool,
     led: SmartLedsAdapter<C, 25>,
     display: ST7735<'d, SPI>,
     downstream_connection_state: ConnectionState,
     workflow: Workflow,
     user_confirm: bool,
     device_label: Option<String>,
-    splash_state: SplashState<'t, T>,
+    splash_state: AnimationState<'t, T>,
     changes: bool,
+    confirm_state: AnimationState<'t, T>,
+    timer: &'t esp32c3_hal::timer::Timer<T>,
 }
 
-const SPLASH_SCREEN_DURATION: u64 = 40_000 * 600;
-
-struct SplashState<'t, T> {
+struct AnimationState<'t, T> {
     timer: &'t esp32c3_hal::timer::Timer<T>,
-    splash_screen_start: Option<u64>,
+    start: Option<u64>,
+    duration_ticks: u64,
     finished: bool,
 }
 
-impl<'t, T> SplashState<'t, T>
+impl<'t, T> AnimationState<'t, T>
 where
     T: esp32c3_hal::timer::Instance,
 {
-    pub fn new(timer: &'t esp32c3_hal::timer::Timer<T>) -> Self {
+    pub fn new(timer: &'t esp32c3_hal::timer::Timer<T>, duration_ticks: u64) -> Self {
         Self {
             timer,
-            splash_screen_start: None,
+            duration_ticks,
+            start: None,
             finished: false,
         }
     }
@@ -251,23 +252,28 @@ where
         self.finished
     }
 
-    pub fn poll(&mut self) -> SplashProgress {
+    pub fn reset(&mut self) {
+        self.start = None;
+        self.finished = false;
+    }
+
+    pub fn poll(&mut self) -> AnimationProgress {
         if self.finished {
-            return SplashProgress::Done;
+            return AnimationProgress::Done;
         }
         let now = self.timer.now();
-        match self.splash_screen_start {
+        match self.start {
             Some(start) => {
                 let duration = now.saturating_sub(start);
-                if duration < SPLASH_SCREEN_DURATION {
-                    SplashProgress::Progress(duration as f32 / SPLASH_SCREEN_DURATION as f32)
+                if duration < self.duration_ticks {
+                    AnimationProgress::Progress(duration as f32 / self.duration_ticks as f32)
                 } else {
                     self.finished = true;
-                    SplashProgress::FinalTick
+                    AnimationProgress::FinalTick
                 }
             }
             None => {
-                self.splash_screen_start = Some(now);
+                self.start = Some(now);
                 self.poll()
             }
         }
@@ -275,7 +281,7 @@ where
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum SplashProgress {
+pub enum AnimationProgress {
     Progress(f32),
     FinalTick,
     Done,
@@ -290,16 +296,17 @@ where
     fn render(&mut self) {
         let splash_progress = self.splash_state.poll();
         match splash_progress {
-            SplashProgress::Progress(progress) => {
+            AnimationProgress::Progress(progress) => {
                 self.display.splash_screen(progress).unwrap();
                 return;
             }
-            SplashProgress::FinalTick => {
+            AnimationProgress::FinalTick => {
                 self.display.clear(Rgb565::BLACK).unwrap();
                 self.display.header("frostsnap").unwrap();
             }
-            SplashProgress::Done => { /* splash is done no need to anything */ }
+            AnimationProgress::Done => { /* splash is done no need to anything */ }
         }
+
         match &self.workflow {
             Workflow::None => {
                 self.led
@@ -372,16 +379,13 @@ where
 
                 match prompt {
                     Prompt::Signing(task) => {
-                        self.display
-                            .confirm_view(format!("Sign {}", task), self.user_confirm)
-                            .unwrap();
+                        self.display.print(format!("Sign {}", task)).unwrap();
                     }
                     Prompt::KeyGen(xpub) => {
-                        self.display
-                            .confirm_view(format!("Ok {}", xpub), self.user_confirm)
-                            .unwrap();
+                        self.display.print(format!("Ok {}", xpub)).unwrap();
                     }
                 }
+                self.display.confirm_bar(0.0).unwrap();
             }
             Workflow::BusyDoing(task) => {
                 self.led
@@ -437,6 +441,8 @@ where
     }
 
     fn poll(&mut self) -> Option<UiEvent> {
+        // keep the timer register fresh
+        let _now = self.timer.now();
         let mut event = None;
         if !self.splash_state.is_finished() {
             self.render();
@@ -445,17 +451,34 @@ where
 
         if let Workflow::UserPrompt(prompt) = &self.workflow {
             if self.select_button.is_low().unwrap() {
-                let ui_event = match prompt {
-                    Prompt::KeyGen(_) => UiEvent::KeyGenConfirm(self.user_confirm),
-                    Prompt::Signing(_) => UiEvent::SigningConfirm(self.user_confirm),
-                };
-                event = Some(ui_event);
-            } else if self.toggle_button.is_high().unwrap() {
-                self.toggled = false;
-            } else if self.toggle_button.is_low().unwrap() && !self.toggled {
-                self.user_confirm = !self.user_confirm;
-                self.toggled = true;
-                self.changes = true;
+                match self.confirm_state.poll() {
+                    AnimationProgress::Progress(progress) => {
+                        self.led
+                            .write(brightness(
+                                [RGB::new(0, (128.0 * progress) as u8, 0)].iter().cloned(),
+                                30,
+                            ))
+                            .unwrap();
+                        self.display.confirm_bar(progress).unwrap();
+                    }
+                    AnimationProgress::FinalTick => {
+                        self.led
+                            .write(brightness([colors::GREEN].iter().cloned(), 30))
+                            .unwrap();
+                        let ui_event = match prompt {
+                            Prompt::KeyGen(_) => UiEvent::KeyGenConfirm(self.user_confirm),
+                            Prompt::Signing(_) => UiEvent::SigningConfirm(self.user_confirm),
+                        };
+                        event = Some(ui_event);
+                    }
+                    AnimationProgress::Done => {}
+                }
+            } else {
+                // deal with button released before confirming
+                if self.confirm_state.start.is_some() {
+                    self.confirm_state.reset();
+                    self.changes = true;
+                }
             }
         }
 
