@@ -134,29 +134,76 @@ class NativeImpl implements Native {
         argNames: ["coordinator", "ports"],
       );
 
-  Future<void> setDeviceLabel(
+  Future<void> updateNamePreview(
       {required FfiCoordinator coordinator,
-      required String deviceId,
-      required String label,
+      required DeviceId id,
+      required String name,
       dynamic hint}) {
     var arg0 = _platform.api2wire_FfiCoordinator(coordinator);
-    var arg1 = _platform.api2wire_String(deviceId);
-    var arg2 = _platform.api2wire_String(label);
+    var arg1 = _platform.api2wire_box_autoadd_device_id(id);
+    var arg2 = _platform.api2wire_String(name);
     return _platform.executeNormal(FlutterRustBridgeTask(
       callFfi: (port_) =>
-          _platform.inner.wire_set_device_label(port_, arg0, arg1, arg2),
+          _platform.inner.wire_update_name_preview(port_, arg0, arg1, arg2),
       parseSuccessData: _wire2api_unit,
       parseErrorData: null,
-      constMeta: kSetDeviceLabelConstMeta,
-      argValues: [coordinator, deviceId, label],
+      constMeta: kUpdateNamePreviewConstMeta,
+      argValues: [coordinator, id, name],
       hint: hint,
     ));
   }
 
-  FlutterRustBridgeTaskConstMeta get kSetDeviceLabelConstMeta =>
+  FlutterRustBridgeTaskConstMeta get kUpdateNamePreviewConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
-        debugName: "set_device_label",
-        argNames: ["coordinator", "deviceId", "label"],
+        debugName: "update_name_preview",
+        argNames: ["coordinator", "id", "name"],
+      );
+
+  Future<void> finishNaming(
+      {required FfiCoordinator coordinator,
+      required DeviceId id,
+      required String name,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_FfiCoordinator(coordinator);
+    var arg1 = _platform.api2wire_box_autoadd_device_id(id);
+    var arg2 = _platform.api2wire_String(name);
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) =>
+          _platform.inner.wire_finish_naming(port_, arg0, arg1, arg2),
+      parseSuccessData: _wire2api_unit,
+      parseErrorData: null,
+      constMeta: kFinishNamingConstMeta,
+      argValues: [coordinator, id, name],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kFinishNamingConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "finish_naming",
+        argNames: ["coordinator", "id", "name"],
+      );
+
+  Future<void> sendCancel(
+      {required FfiCoordinator coordinator,
+      required DeviceId id,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_FfiCoordinator(coordinator);
+    var arg1 = _platform.api2wire_box_autoadd_device_id(id);
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner.wire_send_cancel(port_, arg0, arg1),
+      parseSuccessData: _wire2api_unit,
+      parseErrorData: null,
+      constMeta: kSendCancelConstMeta,
+      argValues: [coordinator, id],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kSendCancelConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "send_cancel",
+        argNames: ["coordinator", "id"],
       );
 
   Future<void> satisfyMethodPortOpen(
@@ -311,6 +358,10 @@ class NativeImpl implements Native {
     return raw as String;
   }
 
+  DeviceId _wire2api_box_autoadd_device_id(dynamic raw) {
+    return _wire2api_device_id(raw);
+  }
+
   PortBytesToRead _wire2api_box_autoadd_port_bytes_to_read(dynamic raw) {
     return _wire2api_port_bytes_to_read(raw);
   }
@@ -331,20 +382,39 @@ class NativeImpl implements Native {
     switch (raw[0]) {
       case 0:
         return DeviceChange_Added(
-          id: _wire2api_String(raw[1]),
+          id: _wire2api_box_autoadd_device_id(raw[1]),
         );
       case 1:
-        return DeviceChange_Registered(
-          id: _wire2api_String(raw[1]),
-          label: _wire2api_String(raw[2]),
+        return DeviceChange_Renamed(
+          id: _wire2api_box_autoadd_device_id(raw[1]),
+          oldName: _wire2api_String(raw[2]),
+          newName: _wire2api_String(raw[3]),
         );
       case 2:
+        return DeviceChange_NeedsName(
+          id: _wire2api_box_autoadd_device_id(raw[1]),
+        );
+      case 3:
+        return DeviceChange_Registered(
+          id: _wire2api_box_autoadd_device_id(raw[1]),
+          name: _wire2api_String(raw[2]),
+        );
+      case 4:
         return DeviceChange_Disconnected(
-          id: _wire2api_String(raw[1]),
+          id: _wire2api_box_autoadd_device_id(raw[1]),
         );
       default:
         throw Exception("unreachable");
     }
+  }
+
+  DeviceId _wire2api_device_id(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return DeviceId(
+      field0: _wire2api_u8_array_33(arr[0]),
+    );
   }
 
   List<DeviceChange> _wire2api_list_device_change(dynamic raw) {
@@ -427,6 +497,10 @@ class NativeImpl implements Native {
 
   int _wire2api_u8(dynamic raw) {
     return raw as int;
+  }
+
+  U8Array33 _wire2api_u8_array_33(dynamic raw) {
+    return U8Array33(_wire2api_uint_8_list(raw));
   }
 
   Uint8List _wire2api_uint_8_list(dynamic raw) {

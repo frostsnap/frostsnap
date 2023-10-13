@@ -73,11 +73,6 @@ class Coordinator {
     await api.announceAvailablePorts(coordinator: ctx, ports: portDescriptions);
   }
 
-  void setDeviceLabel(String deviceId, String label) async {
-    await api.setDeviceLabel(
-        coordinator: await ffi, deviceId: deviceId, label: label);
-  }
-
   Stream<List<DeviceChange>> subDeviceEvents() {
     return api.subDeviceEvents();
   }
@@ -88,5 +83,20 @@ class Coordinator {
       throw "port $id has been disconnected";
     }
     return port;
+  }
+
+  updateNamePreview(DeviceId id, String name) async {
+    var ctx = await ffi;
+    await api.updateNamePreview(coordinator: ctx, id: id, name: name);
+  }
+
+  finishNaming(DeviceId id, String name) async {
+    var ctx = await ffi;
+    await api.finishNaming(coordinator: ctx, id: id, name: name);
+  }
+
+  cancel(DeviceId id) async {
+    var ctx = await ffi;
+    await api.sendCancel(coordinator: ctx, id: id);
   }
 }

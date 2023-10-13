@@ -224,8 +224,6 @@ where
             )
             .draw(&mut self.framebuf)
             .unwrap();
-
-        self.flush().unwrap();
     }
 
     pub fn header(&mut self, device_label: impl AsRef<str>) -> Result<(), Error> {
@@ -277,32 +275,6 @@ where
         )
         .draw(&mut self.framebuf)
         .unwrap();
-
-        self.flush().unwrap();
-
-        Ok(())
-    }
-
-    pub fn print_header(&mut self, str: impl AsRef<str>) -> Result<(), Error> {
-        Rectangle::new(Point::new(0, 11), Size::new(160, 80))
-            .into_styled(
-                PrimitiveStyleBuilder::new()
-                    .fill_color(Rgb565::BLACK)
-                    .build(),
-            )
-            .draw(&mut self.framebuf)
-            .unwrap();
-
-        TextBox::with_textbox_style(
-            str.as_ref(),
-            Rectangle::new(Point::new(1, 11), Size::new(160, 80)),
-            self.character_style,
-            self.textbox_style,
-        )
-        .draw(&mut self.framebuf)
-        .unwrap();
-
-        self.flush().unwrap();
 
         Ok(())
     }

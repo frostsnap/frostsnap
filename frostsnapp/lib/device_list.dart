@@ -1,27 +1,31 @@
+import 'dart:collection';
+import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/coordinator.dart';
+import 'package:frostsnapp/device_setup.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
+import 'dart:developer' as developer;
 
-typedef DeviceId = String;
+// class UnlabeledDeviceTextField extends StatelessWidget {
+//   final ValueChanged<String> onNameSubmit;
 
-class UnlabeledDeviceTextField extends StatelessWidget {
-  final ValueChanged<String> onNameSubmit;
+//   const UnlabeledDeviceTextField({required this.onNameSubmit, super.key});
 
-  const UnlabeledDeviceTextField({required this.onNameSubmit, super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-        onSubmitted: onNameSubmit,
-        textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 30),
-        decoration: InputDecoration(
-          hintText: "name me",
-          hintStyle: TextStyle(color: Colors.grey.withOpacity(0.6)),
-          border: InputBorder.none,
-        ));
-  }
-}
+//   @override
+//   Widget build(BuildContext context) {
+//     return TextField(
+//         onSubmitted: onNameSubmit,
+//         textAlign: TextAlign.center,
+//         style: TextStyle(fontSize: 30),
+//         decoration: InputDecoration(
+//           hintText: "",
+//           hintStyle: TextStyle(color: Colors.grey.withOpacity(0.6)),
+//           border: InputBorder.none,
+//         ));
+//   }
+// }
 
 class DeviceListWidget extends StatefulWidget {
   final Orientation orientation;
@@ -49,15 +53,31 @@ class DeviceListWidgetState extends State<DeviceListWidget>
         switch (change) {
           case DeviceChange_Added(:final id):
             {
-              setState(() => _deviceList.append(id));
+              developer.log("Device connected");
             }
-          case DeviceChange_Registered(:final id, :final label):
+          case DeviceChange_Registered(:final id, :final name):
             {
-              setState(() => _deviceList.setName(id, label));
+              developer.log("Device registered");
+              if (_deviceList.confirmNameDialogue != null) {
+                for (var ctx in _deviceList.confirmNameDialogue!) {
+                  Navigator.pop(ctx);
+                }
+                _deviceList.confirmNameDialogue = null;
+              }
+              setState(() => _deviceList.addDevice(id, name));
             }
           case DeviceChange_Disconnected(:final id):
             {
+              developer.log("device disconnected");
               setState(() => _deviceList.removeDevice(id));
+            }
+          case DeviceChange_NeedsName(:final id):
+            {
+              setState(() => _deviceList.addUnamedDevice(id));
+            }
+          case DeviceChange_Renamed(:final id, :final newName, :final oldName):
+            {
+              setState(() => _deviceList.setName(id, newName));
             }
         }
       }
@@ -94,9 +114,51 @@ class DeviceListWidgetState extends State<DeviceListWidget>
       Animation<double> animation) {
     Widget child;
     if (label == null) {
-      child = UnlabeledDeviceTextField(onNameSubmit: (name) {
-        global_coordinator.setDeviceLabel(id, name);
-      });
+      child = ElevatedButton(
+          onPressed: () {
+            global_coordinator.updateNamePreview(id, "");
+            Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (pageContext) => DeviceSetup(
+                          deviceId: id,
+                          popInvoked: (success) {
+                            if (success) {
+                              global_coordinator.cancel(id);
+                            }
+                          },
+                          onSubmitted: (value) async {
+                            global_coordinator.finishNaming(id, value);
+                            await showDialog<void>(
+                                barrierDismissible: false,
+                                context: context,
+                                builder: (dialogContext) {
+                                  _deviceList.confirmNameDialogue = [
+                                    pageContext,
+                                    dialogContext
+                                  ];
+                                  return AlertDialog(
+                                      title: const Text("Confirm on Device"),
+                                      content: Text(
+                                          "Please confirm the name '$value' on the device"),
+                                      actions: [
+                                        ElevatedButton(
+                                            onPressed: () {
+                                              global_coordinator.cancel(id);
+                                              Navigator.pop(dialogContext);
+                                              _deviceList.confirmNameDialogue =
+                                                  null;
+                                            },
+                                            child: const Text("cancel"))
+                                      ]);
+                                });
+                          },
+                          onChanged: (value) {
+                            global_coordinator.updateNamePreview(id, value);
+                          },
+                        )));
+          },
+          child: const Text("NEW DEVICE"));
     } else {
       child = LabeledDeviceText(label);
     }
@@ -108,7 +170,7 @@ class DeviceListWidgetState extends State<DeviceListWidget>
   Widget _buildItem(
       BuildContext context, int index, Animation<double> animation) {
     var id = _deviceList[index];
-    var label = _deviceList._labels[id];
+    var label = _deviceList.getName(id);
     return _buildDevice(context, id, label, animation);
   }
 }
@@ -169,37 +231,62 @@ class DeviceList {
 
   final GlobalKey<AnimatedListState> listKey;
   final List<DeviceId> _items = [];
-  final Map<DeviceId, String> _labels = {};
+  final Map<DeviceId, String> _labels = LinkedHashMap<DeviceId, String>(
+    equals: (a, b) => listEquals(a.field0, b.field0),
+    hashCode: (a) => Object.hashAll(a.field0),
+  );
   final RemovedDeviceBuilder removedDeviceBuilder;
+  List<BuildContext>? confirmNameDialogue;
 
   AnimatedListState? get _animatedList => listKey.currentState;
 
-  void append(DeviceId device) {
-    _items.add(device);
-    _animatedList!.insertItem(_items.length - 1,
-        duration: const Duration(milliseconds: 800));
+  _append(DeviceId device) {
+    if (indexOf(device) == -1) {
+      _items.add(device);
+      _animatedList!.insertItem(_items.length - 1,
+          duration: const Duration(milliseconds: 800));
+    }
   }
 
-  void setName(DeviceId device, String label) {
-    _labels[device] = label;
+  String? getName(DeviceId device) {
+    return _labels[device];
+  }
+
+  setName(DeviceId device, String label) {
+    if (getName(device) != label) {
+      _labels[device] = label;
+      // final index = indexOf(device);
+      // if (index != -1) {
+      //   _animatedList!.removeItem(index, (context, animation) {
+      //     return removedDeviceBuilder(context, device, getName(device), animation);
+      //   });
+      //   _animatedList!.insertItem(index, duration: const Duration(microseconds: 0));
+      // }
+    }
+  }
+
+  addDevice(DeviceId device, String label) {
+    setName(device, label);
+    _append(device);
+  }
+
+  addUnamedDevice(DeviceId device) {
+    _append(device);
   }
 
   removeDevice(DeviceId id) {
-    var index = _items.indexOf(id);
+    var index = indexOf(id);
     if (index != -1) {
-      _items.removeAt(index);
+      var id = _items.removeAt(index);
       _animatedList!.removeItem(index,
           (BuildContext context, Animation<double> animation) {
-        return removedDeviceBuilder(context, id, _labels[id], animation);
+        return removedDeviceBuilder(context, id, getName(id), animation);
       });
     }
   }
 
-  get labels => _labels;
-
   int get length => _items.length;
-
-  String operator [](int index) => _items[index];
-
-  int indexOf(String item) => _items.indexOf(item);
+  int indexOf(DeviceId item) => _items.indexWhere(
+      (element) => listEquals(element.field0.toList(), item.field0.toList()));
+  DeviceId operator [](int index) => _items[index];
 }

@@ -46,7 +46,7 @@ fn wire_sub_device_events_impl(port_: MessagePort) {
         move || {
             move |task_callback| {
                 Result::<_, ()>::Ok(sub_device_events(
-                    task_callback.stream_sink::<_, Vec<DeviceChange>>(),
+                    task_callback.stream_sink::<_, Vec<mirror_DeviceChange>>(),
                 ))
             }
         },
@@ -114,25 +114,65 @@ fn wire_announce_available_ports_impl(
         },
     )
 }
-fn wire_set_device_label_impl(
+fn wire_update_name_preview_impl(
     port_: MessagePort,
     coordinator: impl Wire2Api<RustOpaque<FfiCoordinator>> + UnwindSafe,
-    device_id: impl Wire2Api<String> + UnwindSafe,
-    label: impl Wire2Api<String> + UnwindSafe,
+    id: impl Wire2Api<DeviceId> + UnwindSafe,
+    name: impl Wire2Api<String> + UnwindSafe,
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
         WrapInfo {
-            debug_name: "set_device_label",
+            debug_name: "update_name_preview",
             port: Some(port_),
             mode: FfiCallMode::Normal,
         },
         move || {
             let api_coordinator = coordinator.wire2api();
-            let api_device_id = device_id.wire2api();
-            let api_label = label.wire2api();
+            let api_id = id.wire2api();
+            let api_name = name.wire2api();
             move |task_callback| {
-                Result::<_, ()>::Ok(set_device_label(api_coordinator, api_device_id, api_label))
+                Result::<_, ()>::Ok(update_name_preview(api_coordinator, api_id, api_name))
             }
+        },
+    )
+}
+fn wire_finish_naming_impl(
+    port_: MessagePort,
+    coordinator: impl Wire2Api<RustOpaque<FfiCoordinator>> + UnwindSafe,
+    id: impl Wire2Api<DeviceId> + UnwindSafe,
+    name: impl Wire2Api<String> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "finish_naming",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_coordinator = coordinator.wire2api();
+            let api_id = id.wire2api();
+            let api_name = name.wire2api();
+            move |task_callback| {
+                Result::<_, ()>::Ok(finish_naming(api_coordinator, api_id, api_name))
+            }
+        },
+    )
+}
+fn wire_send_cancel_impl(
+    port_: MessagePort,
+    coordinator: impl Wire2Api<RustOpaque<FfiCoordinator>> + UnwindSafe,
+    id: impl Wire2Api<DeviceId> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "send_cancel",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_coordinator = coordinator.wire2api();
+            let api_id = id.wire2api();
+            move |task_callback| Result::<_, ()>::Ok(send_cancel(api_coordinator, api_id))
         },
     )
 }
@@ -216,8 +256,44 @@ fn wire_satisfy__method__PortBytesToRead_impl(
 }
 // Section: wrapper structs
 
+#[derive(Clone)]
+pub struct mirror_DeviceChange(DeviceChange);
+
+#[derive(Clone)]
+pub struct mirror_DeviceId(DeviceId);
+
 // Section: static checks
 
+const _: fn() = || {
+    match None::<DeviceChange>.unwrap() {
+        DeviceChange::Added { id } => {
+            let _: DeviceId = id;
+        }
+        DeviceChange::Renamed {
+            id,
+            old_name,
+            new_name,
+        } => {
+            let _: DeviceId = id;
+            let _: String = old_name;
+            let _: String = new_name;
+        }
+        DeviceChange::NeedsName { id } => {
+            let _: DeviceId = id;
+        }
+        DeviceChange::Registered { id, name } => {
+            let _: DeviceId = id;
+            let _: String = name;
+        }
+        DeviceChange::Disconnected { id } => {
+            let _: DeviceId = id;
+        }
+    }
+    {
+        let DeviceId_ = None::<DeviceId>.unwrap();
+        let _: [u8; 33] = DeviceId_.0;
+    }
+};
 // Section: allocate functions
 
 // Section: related functions
@@ -281,24 +357,49 @@ impl Wire2Api<usize> for usize {
 }
 // Section: impl IntoDart
 
-impl support::IntoDart for DeviceChange {
+impl support::IntoDart for mirror_DeviceChange {
     fn into_dart(self) -> support::DartAbi {
-        match self {
-            Self::Added { id } => vec![0.into_dart(), id.into_into_dart().into_dart()],
-            Self::Registered { id, label } => vec![
+        match self.0 {
+            DeviceChange::Added { id } => vec![0.into_dart(), id.into_into_dart().into_dart()],
+            DeviceChange::Renamed {
+                id,
+                old_name,
+                new_name,
+            } => vec![
                 1.into_dart(),
                 id.into_into_dart().into_dart(),
-                label.into_into_dart().into_dart(),
+                old_name.into_into_dart().into_dart(),
+                new_name.into_into_dart().into_dart(),
             ],
-            Self::Disconnected { id } => vec![2.into_dart(), id.into_into_dart().into_dart()],
+            DeviceChange::NeedsName { id } => vec![2.into_dart(), id.into_into_dart().into_dart()],
+            DeviceChange::Registered { id, name } => vec![
+                3.into_dart(),
+                id.into_into_dart().into_dart(),
+                name.into_into_dart().into_dart(),
+            ],
+            DeviceChange::Disconnected { id } => {
+                vec![4.into_dart(), id.into_into_dart().into_dart()]
+            }
         }
         .into_dart()
     }
 }
-impl support::IntoDartExceptPrimitive for DeviceChange {}
-impl rust2dart::IntoIntoDart<DeviceChange> for DeviceChange {
-    fn into_into_dart(self) -> Self {
-        self
+impl support::IntoDartExceptPrimitive for mirror_DeviceChange {}
+impl rust2dart::IntoIntoDart<mirror_DeviceChange> for DeviceChange {
+    fn into_into_dart(self) -> mirror_DeviceChange {
+        mirror_DeviceChange(self)
+    }
+}
+
+impl support::IntoDart for mirror_DeviceId {
+    fn into_dart(self) -> support::DartAbi {
+        vec![self.0 .0.into_into_dart().into_dart()].into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for mirror_DeviceId {}
+impl rust2dart::IntoIntoDart<mirror_DeviceId> for DeviceId {
+    fn into_into_dart(self) -> mirror_DeviceId {
+        mirror_DeviceId(self)
     }
 }
 

@@ -36,13 +36,32 @@ pub extern "C" fn wire_announce_available_ports(
 }
 
 #[no_mangle]
-pub extern "C" fn wire_set_device_label(
+pub extern "C" fn wire_update_name_preview(
     port_: i64,
     coordinator: wire_FfiCoordinator,
-    device_id: *mut wire_uint_8_list,
-    label: *mut wire_uint_8_list,
+    id: *mut wire_DeviceId,
+    name: *mut wire_uint_8_list,
 ) {
-    wire_set_device_label_impl(port_, coordinator, device_id, label)
+    wire_update_name_preview_impl(port_, coordinator, id, name)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_finish_naming(
+    port_: i64,
+    coordinator: wire_FfiCoordinator,
+    id: *mut wire_DeviceId,
+    name: *mut wire_uint_8_list,
+) {
+    wire_finish_naming_impl(port_, coordinator, id, name)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_send_cancel(
+    port_: i64,
+    coordinator: wire_FfiCoordinator,
+    id: *mut wire_DeviceId,
+) {
+    wire_send_cancel_impl(port_, coordinator, id)
 }
 
 #[no_mangle]
@@ -107,6 +126,11 @@ pub extern "C" fn new_PortReadSender() -> wire_PortReadSender {
 #[no_mangle]
 pub extern "C" fn new_PortWriteSender() -> wire_PortWriteSender {
     wire_PortWriteSender::new_with_null_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn new_box_autoadd_device_id_0() -> *mut wire_DeviceId {
+    support::new_leak_box_ptr(wire_DeviceId::new_with_null_ptr())
 }
 
 #[no_mangle]
@@ -258,6 +282,12 @@ impl Wire2Api<String> for *mut wire_uint_8_list {
     }
 }
 
+impl Wire2Api<DeviceId> for *mut wire_DeviceId {
+    fn wire2api(self) -> DeviceId {
+        let wrap = unsafe { support::box_from_leak_ptr(self) };
+        Wire2Api::<DeviceId>::wire2api(*wrap).into()
+    }
+}
 impl Wire2Api<PortBytesToRead> for *mut wire_PortBytesToRead {
     fn wire2api(self) -> PortBytesToRead {
         let wrap = unsafe { support::box_from_leak_ptr(self) };
@@ -280,6 +310,11 @@ impl Wire2Api<PortWrite> for *mut wire_PortWrite {
     fn wire2api(self) -> PortWrite {
         let wrap = unsafe { support::box_from_leak_ptr(self) };
         Wire2Api::<PortWrite>::wire2api(*wrap).into()
+    }
+}
+impl Wire2Api<DeviceId> for wire_DeviceId {
+    fn wire2api(self) -> DeviceId {
+        DeviceId(self.field0.wire2api())
     }
 }
 
@@ -338,6 +373,12 @@ impl Wire2Api<PortWrite> for wire_PortWrite {
     }
 }
 
+impl Wire2Api<[u8; 33]> for *mut wire_uint_8_list {
+    fn wire2api(self) -> [u8; 33] {
+        let vec: Vec<u8> = self.wire2api();
+        support::from_vec_to_array(vec)
+    }
+}
 impl Wire2Api<Vec<u8>> for *mut wire_uint_8_list {
     fn wire2api(self) -> Vec<u8> {
         unsafe {
@@ -377,6 +418,12 @@ pub struct wire_PortReadSender {
 #[derive(Clone)]
 pub struct wire_PortWriteSender {
     ptr: *const core::ffi::c_void,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_DeviceId {
+    field0: *mut wire_uint_8_list,
 }
 
 #[repr(C)]
@@ -477,6 +524,20 @@ impl NewWithNullPtr for wire_PortWriteSender {
         Self {
             ptr: core::ptr::null(),
         }
+    }
+}
+
+impl NewWithNullPtr for wire_DeviceId {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            field0: core::ptr::null_mut(),
+        }
+    }
+}
+
+impl Default for wire_DeviceId {
+    fn default() -> Self {
+        Self::new_with_null_ptr()
     }
 }
 

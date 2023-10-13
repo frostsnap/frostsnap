@@ -153,15 +153,28 @@ impl<'a, 'b> Signer<'a, 'b> {
 
                 for device_change in &port_changes.device_changes {
                     match device_change {
-                        DeviceChange::Disconnected(device_id) => {
-                            asking_to_sign.remove(device_id);
+                        DeviceChange::NeedsName { .. } => {
+                            /* don't name devices during keygen */
+                            eprintln!("⚠ you've plugged in a device that hasn't been set up yet");
                         }
-                        DeviceChange::Registered(device_id, _) => {
-                            if still_need_to_sign.contains(device_id) {
-                                asking_to_sign.insert(*device_id);
+                        DeviceChange::Renamed {
+                            id,
+                            old_name,
+                            new_name,
+                        } => {
+                            eprintln!(
+                                "⚠ device {id} renamed to {new_name}. It's old name was {old_name}"
+                            );
+                        }
+                        DeviceChange::Disconnected { id } => {
+                            asking_to_sign.remove(id);
+                        }
+                        DeviceChange::Registered { id, .. } => {
+                            if still_need_to_sign.contains(id) {
+                                asking_to_sign.insert(*id);
                             }
                         }
-                        DeviceChange::Added(_) => { /* do nothing until it's registered */ }
+                        DeviceChange::Added { .. } => { /* do nothing until it's registered */ }
                     }
                 }
 

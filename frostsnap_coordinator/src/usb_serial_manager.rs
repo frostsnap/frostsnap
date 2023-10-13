@@ -76,7 +76,7 @@ impl UsbSerialManager {
         if let Some(device_ids) = self.reverse_device_ports.remove(port) {
             for device_id in device_ids {
                 if self.device_ports.remove(&device_id).is_some() {
-                    changes.push(DeviceChange::Disconnected(device_id));
+                    changes.push(DeviceChange::Disconnected { id: device_id });
                 }
                 self.registered_devices.remove(&device_id);
                 event!(
@@ -273,6 +273,9 @@ impl UsbSerialManager {
                     self.disconnect(&serial_number, &mut device_changes);
                 }
                 ReceiveSerial::Message(message) => match message.body {
+                    DeviceSendBody::NeedName => {
+                        device_changes.push(DeviceChange::NeedsName { id: message.from })
+                    }
                     DeviceSendBody::DisconnectDownstream => {
                         if let Some(device_list) = self.reverse_device_ports.get_mut(&serial_number)
                         {
@@ -286,12 +289,29 @@ impl UsbSerialManager {
                                     let device_id = device_list.pop().unwrap();
                                     self.device_ports.remove(&device_id);
                                     self.registered_devices.remove(&device_id);
-                                    device_changes.push(DeviceChange::Disconnected(device_id));
+                                    device_changes
+                                        .push(DeviceChange::Disconnected { id: device_id });
                                 }
                             }
                         }
                     }
-                    DeviceSendBody::Announce(_announce) => {
+                    DeviceSendBody::SetName { name } => {
+                        match self.device_labels.get(&message.from) {
+                            Some(existing_name) => {
+                                if existing_name != &name {
+                                    device_changes.push(DeviceChange::Renamed {
+                                        id: message.from,
+                                        old_name: existing_name.into(),
+                                        new_name: name,
+                                    });
+                                }
+                            }
+                            None => {
+                                self.device_labels.insert(message.from, name);
+                            }
+                        }
+                    }
+                    DeviceSendBody::Announce => {
                         match self
                             .device_ports
                             .insert(message.from, serial_number.clone())
@@ -302,8 +322,13 @@ impl UsbSerialManager {
                                     .or_default()
                                     .retain(|device_id| *device_id != message.from);
                             }
-                            None => device_changes.push(DeviceChange::Added(message.from)),
+                            None => device_changes.push(DeviceChange::Added { id: message.from }),
                         }
+
+                        self.port_outbox.push(CoordinatorSendMessage {
+                            message_body: CoordinatorSendBody::AnnounceAck {},
+                            target_destinations: BTreeSet::from([message.from]),
+                        });
 
                         self.reverse_device_ports
                             .entry(serial_number.clone())
@@ -347,23 +372,16 @@ impl UsbSerialManager {
             }
 
             if let Some(device_label) = self.device_labels.get(device_id) {
-                outbox.push(CoordinatorSendMessage {
-                    message_body: CoordinatorSendBody::AnnounceAck {
-                        device_label: device_label.to_string(),
-                    },
-                    target_destinations: BTreeSet::from([*device_id]),
-                });
-
                 event!(
                     Level::INFO,
                     device_id = device_id.to_string(),
                     "Registered device"
                 );
                 self.registered_devices.insert(*device_id);
-                device_changes.push(DeviceChange::Registered(
-                    *device_id,
-                    device_label.to_string(),
-                ));
+                device_changes.push(DeviceChange::Registered {
+                    id: *device_id,
+                    name: device_label.to_string(),
+                });
             }
         }
 
@@ -434,7 +452,7 @@ impl UsbSerialManager {
         &mut self.device_labels
     }
 
-    pub fn unlabelled_devices(&self) -> impl Iterator<Item = DeviceId> + '_ {
+    pub fn unnamed_devices(&self) -> impl Iterator<Item = DeviceId> + '_ {
         self.announced_devices()
             .filter(|(_, label)| label.is_none())
             .map(|(device, _)| device)
@@ -451,6 +469,47 @@ impl UsbSerialManager {
 
     pub fn registered_devices(&self) -> &BTreeSet<DeviceId> {
         &self.registered_devices
+    }
+
+    pub fn update_name_preview(&mut self, device_id: DeviceId, name: &str) {
+        // repalce name preview messages rather than spamming
+        if matches!(
+            self.port_outbox.last(),
+            Some(CoordinatorSendMessage {
+                message_body: CoordinatorSendBody::Naming(frostsnap_comms::NameCommand::Preview(_)),
+                ..
+            })
+        ) {
+            self.port_outbox.pop();
+        }
+        self.port_outbox.push(CoordinatorSendMessage {
+            target_destinations: [device_id].into(),
+            message_body: CoordinatorSendBody::Naming(frostsnap_comms::NameCommand::Preview(
+                name.into(),
+            )),
+        });
+    }
+
+    pub fn finish_naming(&mut self, device_id: DeviceId, name: &str) {
+        event!(
+            Level::INFO,
+            name = name,
+            device_id = device_id.to_string(),
+            "Named device"
+        );
+        self.port_outbox.push(CoordinatorSendMessage {
+            target_destinations: [device_id].into(),
+            message_body: CoordinatorSendBody::Naming(frostsnap_comms::NameCommand::Finish(
+                name.into(),
+            )),
+        })
+    }
+
+    pub fn send_cancel(&mut self, device_id: DeviceId) {
+        self.port_outbox.push(CoordinatorSendMessage {
+            target_destinations: [device_id].into(),
+            message_body: frostsnap_comms::CoordinatorSendBody::Cancel,
+        });
     }
 
     pub fn connected_device_labels(&self) -> BTreeMap<DeviceId, String> {
@@ -484,9 +543,24 @@ pub struct PortChanges {
     pub new_messages: Vec<(DeviceId, DeviceToCoordinatorMessage)>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum DeviceChange {
-    Added(DeviceId),
-    Registered(DeviceId, String),
-    Disconnected(DeviceId),
+    Added {
+        id: DeviceId,
+    },
+    Renamed {
+        id: DeviceId,
+        old_name: String,
+        new_name: String,
+    },
+    NeedsName {
+        id: DeviceId,
+    },
+    Registered {
+        id: DeviceId,
+        name: String,
+    },
+    Disconnected {
+        id: DeviceId,
+    },
 }

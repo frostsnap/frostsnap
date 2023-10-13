@@ -2,25 +2,26 @@ use crate::api::PortEvent;
 use flutter_rust_bridge::RustOpaque;
 use frostsnap_coordinator::serialport;
 use frostsnap_coordinator::{
-    frostsnap_core, DesktopSerial, DeviceChange, PortChanges, PortDesc, PortOpenError, Serial,
-    SerialPort, UsbSerialManager,
+    frostsnap_core, DesktopSerial, PortChanges, PortDesc, PortOpenError, Serial, SerialPort,
+    UsbSerialManager,
 };
 use frostsnap_core::{DeviceId, FrostCoordinator};
 use std::collections::VecDeque;
 use std::io;
 use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tracing::{event, Level};
 
 pub struct FfiCoordinator {
     ffi_serial: Option<FfiSerial>,
-    new_device_labels: Arc<Mutex<Vec<(DeviceId, String)>>>,
+    manager: Arc<Mutex<UsbSerialManager>>,
 }
 
 impl FfiCoordinator {
     pub fn new(host_handles_serial: bool) -> Self {
         let mut core_coordinator = FrostCoordinator::new();
-        let (mut manager, ffi_serial) = if host_handles_serial {
+        let (manager, ffi_serial) = if host_handles_serial {
             let ffi_serial = FfiSerial::default();
             (
                 UsbSerialManager::new(Box::new(ffi_serial.clone())),
@@ -30,24 +31,17 @@ impl FfiCoordinator {
             (UsbSerialManager::new(Box::new(DesktopSerial)), None)
         };
 
-        let new_device_labels: Arc<Mutex<Vec<(DeviceId, String)>>> = Default::default();
-        let loop_device_labels = Arc::clone(&new_device_labels);
+        let my_manager = Arc::new(Mutex::new(manager));
+        let loop_manager = Arc::clone(&my_manager);
 
         let _handle = std::thread::spawn(move || {
             let mut outbox = VecDeque::new();
             loop {
-                {
-                    let mut loop_device_labels = loop_device_labels.lock().unwrap();
-                    manager
-                        .device_labels_mut()
-                        .extend(loop_device_labels.drain(..))
-                }
-
                 let new_messages = {
                     let PortChanges {
                         device_changes,
                         new_messages,
-                    } = manager.poll_ports();
+                    } = { loop_manager.lock().unwrap().poll_ports() };
 
                     if !device_changes.is_empty() {
                         crate::api::emit_device_events(
@@ -77,19 +71,16 @@ impl FfiCoordinator {
                         }
                     };
                 }
+
+                // to give time for the other threads to get a lock
+                std::thread::sleep(Duration::from_millis(10));
             }
         });
 
         Self {
             ffi_serial,
-            new_device_labels,
+            manager: my_manager,
         }
-    }
-
-    pub fn set_device_label(&self, device: crate::api::DeviceId, label: String) {
-        use core::str::FromStr;
-        let device = DeviceId::from_str(&device).unwrap();
-        self.new_device_labels.lock().unwrap().push((device, label))
     }
 
     pub fn set_available_ports(&self, ports: Vec<PortDesc>) {
@@ -100,6 +91,18 @@ impl FfiCoordinator {
             .available_ports
             .lock()
             .unwrap() = ports;
+    }
+
+    pub fn update_name_preview(&self, id: DeviceId, name: &str) {
+        self.manager.lock().unwrap().update_name_preview(id, name);
+    }
+
+    pub fn finish_naming(&self, id: DeviceId, name: &str) {
+        self.manager.lock().unwrap().finish_naming(id, name);
+    }
+
+    pub fn send_cancel(&self, id: DeviceId) {
+        self.manager.lock().unwrap().send_cancel(id)
     }
 }
 
@@ -317,23 +320,6 @@ mod _impl {
 
         fn clear_break(&self) -> Result<()> {
             unimplemented!()
-        }
-    }
-}
-
-impl From<DeviceChange> for crate::api::DeviceChange {
-    fn from(change: DeviceChange) -> Self {
-        match change {
-            DeviceChange::Added(device_id) => crate::api::DeviceChange::Added {
-                id: device_id.to_string(),
-            },
-            DeviceChange::Registered(device_id, label) => crate::api::DeviceChange::Registered {
-                id: device_id.to_string(),
-                label,
-            },
-            DeviceChange::Disconnected(device_id) => crate::api::DeviceChange::Disconnected {
-                id: device_id.to_string(),
-            },
         }
     }
 }

@@ -52,8 +52,8 @@ where
         let mut flash = storage::DeviceStorage::new(flash, storage::NVS_PARTITION_START);
 
         // Load state from Flash memory if available. If not, generate secret and save.
-        let mut frost_signer = match flash.load() {
-            Ok(state) => state.signer,
+        let mut state = match flash.load() {
+            Ok(state) => state,
             Err(_e) => {
                 let mut rand_bytes = [0u8; 32];
                 rng.read(&mut rand_bytes).unwrap();
@@ -61,22 +61,26 @@ where
                 let keypair: KeyPair = KeyPair::<Normal>::new(secret.clone());
                 let frost_signer = frostsnap_core::FrostSigner::new(keypair);
 
-                flash
-                    .save(&state::FrostState {
-                        signer: frost_signer.clone(),
-                    })
-                    .unwrap();
-                ui.dispaly_debug("New secret generated and saved");
-                frost_signer
+                let state = state::FrostState {
+                    signer: frost_signer.clone(),
+                    name: None,
+                };
+                flash.save(&state).unwrap();
+                state
             }
         };
+
+        let device_id = state.signer.device_id();
+        if let Some(name) = &state.name {
+            ui.set_device_label(name.into());
+        }
 
         let mut downstream_serial =
             io::SerialInterface::<_, _, Downstream>::new_uart(downstream_uart, &timer);
         let mut soft_reset = true;
         let mut downstream_connection_state = ConnectionState::Disconnected;
         let mut sends_downstream: Vec<CoordinatorSendMessage> = vec![];
-        let mut sends_upstream = UpstreamSends::new(frost_signer.device_id());
+        let mut sends_upstream = UpstreamSends::new(device_id);
         let mut sends_user: Vec<DeviceToUserMessage> = vec![];
         let mut outbox = VecDeque::new();
         let mut upstream_detector =
@@ -97,7 +101,7 @@ where
             if soft_reset {
                 soft_reset = false;
                 sends_upstream.messages.clear();
-                frost_signer.cancel_action();
+                state.signer.cancel_action();
                 sends_user.clear();
                 sends_downstream.clear();
                 downstream_connection_state = ConnectionState::Disconnected;
@@ -105,7 +109,11 @@ where
                 next_write_magic_bytes = 0;
                 upstream_received_first_message = false;
                 outbox.clear();
-                sends_upstream.send(DeviceSendBody::Announce(frostsnap_comms::Announce {}));
+                sends_upstream.send(DeviceSendBody::Announce);
+                sends_upstream.send(match &state.name {
+                    Some(name) => DeviceSendBody::SetName { name: name.into() },
+                    None => DeviceSendBody::NeedName,
+                });
             }
 
             let is_usb_connected_downstream = !downstream_detect.is_input_high();
@@ -214,22 +222,22 @@ where
                                             let mut forwarding_message = message.clone();
                                             let _ = forwarding_message
                                                 .target_destinations
-                                                .remove(&frost_signer.device_id());
+                                                .remove(&device_id);
                                             if !forwarding_message.target_destinations.is_empty() {
                                                 sends_downstream.push(forwarding_message);
                                             }
                                         }
                                         // Skip processing of messages which are not destined for us
-                                        if !message
-                                            .target_destinations
-                                            .contains(&frost_signer.device_id())
-                                        {
+                                        if !message.target_destinations.contains(&device_id) {
                                             continue;
                                         }
 
                                         match message.message_body {
-                                            CoordinatorSendBody::AnnounceAck { device_label } => {
-                                                ui.set_device_label(device_label);
+                                            CoordinatorSendBody::Cancel => {
+                                                state.signer.cancel_action();
+                                                ui.cancel();
+                                            }
+                                            CoordinatorSendBody::AnnounceAck => {
                                                 ui.set_workflow(ui::Workflow::WaitingFor(
                                                     ui::WaitingFor::CoordinatorInstruction {
                                                         completed_task: None,
@@ -237,6 +245,22 @@ where
                                                 ));
                                                 sends_upstream.send_debug("Received AnnounceACK!");
                                             }
+                                            CoordinatorSendBody::Naming(naming) => match naming {
+                                                frostsnap_comms::NameCommand::Preview(name) => {
+                                                    ui.set_workflow(ui::Workflow::NamingDevice {
+                                                        old_name: state.name.clone(),
+                                                        new_name: name,
+                                                    });
+                                                }
+                                                frostsnap_comms::NameCommand::Finish(new_name) => {
+                                                    ui.set_workflow(ui::Workflow::UserPrompt(
+                                                        ui::Prompt::NewName {
+                                                            old_name: state.name.clone(),
+                                                            new_name,
+                                                        },
+                                                    ));
+                                                }
+                                            },
                                             CoordinatorSendBody::Core(core_message) => {
                                                 match &core_message {
                                                     CoordinatorToDeviceMessage::DoKeyGen {
@@ -245,7 +269,7 @@ where
                                                         ui.set_workflow(ui::Workflow::BusyDoing(
                                                             ui::BusyTask::KeyGen,
                                                         ));
-                                                        frost_signer.clear_state();
+                                                        state.signer.clear_state();
                                                     }
                                                     CoordinatorToDeviceMessage::FinishKeyGen {
                                                         ..
@@ -258,7 +282,8 @@ where
                                                 }
 
                                                 outbox.extend(
-                                                    frost_signer
+                                                    state
+                                                        .signer
                                                         .recv_coordinator_message(
                                                             core_message.clone(),
                                                         )
@@ -289,24 +314,36 @@ where
             }
 
             if let Some(ui_event) = ui.poll() {
-                let outgoing = match ui_event {
-                    UiEvent::KeyGenConfirm(ack) => frost_signer.keygen_ack(ack),
+                match ui_event {
+                    UiEvent::KeyGenConfirm(ack) => outbox.extend(
+                        state
+                            .signer
+                            .keygen_ack(ack)
+                            .expect("state changed while confirming keygen"),
+                    ),
                     UiEvent::SigningConfirm(ack) => {
                         if ack {
                             ui.set_workflow(ui::Workflow::BusyDoing(ui::BusyTask::Signing));
                         }
-                        frost_signer.sign_ack(ack)
+                        outbox.extend(
+                            state
+                                .signer
+                                .sign_ack(ack)
+                                .expect("state changed while acking sign"),
+                        );
+                    }
+                    UiEvent::NameConfirm(ref name) => {
+                        state.name = Some(name.into());
+                        flash.save(&state).unwrap();
+                        ui.set_device_label(name.into());
+                        sends_upstream.send(DeviceSendBody::SetName { name: name.into() });
                     }
                 }
-                .expect("core state should not change without changing workflow");
-
                 ui.set_workflow(ui::Workflow::WaitingFor(
                     ui::WaitingFor::CoordinatorInstruction {
                         completed_task: Some(ui_event.clone()),
                     },
                 ));
-
-                outbox.extend(outgoing)
             }
 
             // Handle message outbox to send: ToStorage, ToCoordinator, ToUser.
@@ -314,11 +351,7 @@ where
             while let Some(send) = outbox.pop_front() {
                 match send {
                     DeviceSend::ToStorage(_) => {
-                        flash
-                            .save(&state::FrostState {
-                                signer: frost_signer.clone(),
-                            })
-                            .unwrap();
+                        flash.save(&state).unwrap();
                     }
                     DeviceSend::ToCoordinator(message) => {
                         if matches!(message, DeviceToCoordinatorMessage::KeyGenResponse(_)) {

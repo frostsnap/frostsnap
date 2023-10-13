@@ -223,3 +223,62 @@ macro_rules! impl_display_serialize {
         }
     }
 }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! impl_debug {
+    (fn to_bytes$(<$($tpl:ident  $(: $tcl:ident)?),*>)?($self:ident : &$type_name:ident$(<$($tpr:path),+>)?) -> $($tail:tt)*) => {
+        impl$(<$($tpl $(:$tcl)?),*>)? core::fmt::Debug for $type_name$(<$($tpr),+>)? {
+            /// Formats the type as hex and any markers on the type.
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                let $self = &self;
+                write!(f, "{}", stringify!($type_name))?;
+                $(
+                    write!(f, "<")?;
+                    $crate::impl_debug!(@recursive_print f, $(core::any::type_name::<$tpr>().rsplit("::").next().unwrap()),*);
+                    write!(f, ">")?;
+                )?
+                    write!(f, "(")?;
+                $crate::impl_debug!(@output f, $self, $($tail)*);
+                write!(f, ")")?;
+                Ok(())
+            }
+        }
+    };
+    (@output $f:ident, $self:ident, Result<$(&)?[u8;$len:literal], &str> $block:block) => {
+        let res: Result<[u8;$len], &str> = $block;
+        match res {
+            Ok(bytes) => {
+                for byte in bytes.iter() {
+                    write!($f, "{:02x}", byte)?
+                }
+            },
+            Err(string) => {
+                write!($f, "{}", string)?
+            }
+        }
+    };
+    (@output $f:ident, $self:ident, $(&)?[u8;$len:literal] $block:block) => {
+        let bytes = $block;
+        for byte in bytes.iter() {
+            write!($f, "{:02x}", byte)?
+        }
+    };
+    (@recursive_print $f:ident, $next:expr, $($tt:tt)+) => {
+        $f.write_str($next)?;
+        $f.write_str(",")?;
+        $crate::impl_debug!(@recursive_print $f, $($tt)+)
+    };
+    (@recursive_print $f:ident, $next:expr) => {
+        $f.write_str($next)?;
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! impl_display_debug_serialize {
+    ($($tt:tt)+) => {
+        $crate::impl_display_serialize!($($tt)+);
+        $crate::impl_debug!($($tt)+);
+    };
+}

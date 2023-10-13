@@ -16,32 +16,41 @@ final _privateConstructorUsedError = UnsupportedError(
 
 /// @nodoc
 mixin _$DeviceChange {
-  String get id => throw _privateConstructorUsedError;
+  DeviceId get id => throw _privateConstructorUsedError;
   @optionalTypeArgs
   TResult when<TResult extends Object?>({
-    required TResult Function(String id) added,
-    required TResult Function(String id, String label) registered,
-    required TResult Function(String id) disconnected,
+    required TResult Function(DeviceId id) added,
+    required TResult Function(DeviceId id, String oldName, String newName)
+        renamed,
+    required TResult Function(DeviceId id) needsName,
+    required TResult Function(DeviceId id, String name) registered,
+    required TResult Function(DeviceId id) disconnected,
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
   TResult? whenOrNull<TResult extends Object?>({
-    TResult? Function(String id)? added,
-    TResult? Function(String id, String label)? registered,
-    TResult? Function(String id)? disconnected,
+    TResult? Function(DeviceId id)? added,
+    TResult? Function(DeviceId id, String oldName, String newName)? renamed,
+    TResult? Function(DeviceId id)? needsName,
+    TResult? Function(DeviceId id, String name)? registered,
+    TResult? Function(DeviceId id)? disconnected,
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
   TResult maybeWhen<TResult extends Object?>({
-    TResult Function(String id)? added,
-    TResult Function(String id, String label)? registered,
-    TResult Function(String id)? disconnected,
+    TResult Function(DeviceId id)? added,
+    TResult Function(DeviceId id, String oldName, String newName)? renamed,
+    TResult Function(DeviceId id)? needsName,
+    TResult Function(DeviceId id, String name)? registered,
+    TResult Function(DeviceId id)? disconnected,
     required TResult orElse(),
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
   TResult map<TResult extends Object?>({
     required TResult Function(DeviceChange_Added value) added,
+    required TResult Function(DeviceChange_Renamed value) renamed,
+    required TResult Function(DeviceChange_NeedsName value) needsName,
     required TResult Function(DeviceChange_Registered value) registered,
     required TResult Function(DeviceChange_Disconnected value) disconnected,
   }) =>
@@ -49,6 +58,8 @@ mixin _$DeviceChange {
   @optionalTypeArgs
   TResult? mapOrNull<TResult extends Object?>({
     TResult? Function(DeviceChange_Added value)? added,
+    TResult? Function(DeviceChange_Renamed value)? renamed,
+    TResult? Function(DeviceChange_NeedsName value)? needsName,
     TResult? Function(DeviceChange_Registered value)? registered,
     TResult? Function(DeviceChange_Disconnected value)? disconnected,
   }) =>
@@ -56,6 +67,8 @@ mixin _$DeviceChange {
   @optionalTypeArgs
   TResult maybeMap<TResult extends Object?>({
     TResult Function(DeviceChange_Added value)? added,
+    TResult Function(DeviceChange_Renamed value)? renamed,
+    TResult Function(DeviceChange_NeedsName value)? needsName,
     TResult Function(DeviceChange_Registered value)? registered,
     TResult Function(DeviceChange_Disconnected value)? disconnected,
     required TResult orElse(),
@@ -73,7 +86,7 @@ abstract class $DeviceChangeCopyWith<$Res> {
           DeviceChange value, $Res Function(DeviceChange) then) =
       _$DeviceChangeCopyWithImpl<$Res, DeviceChange>;
   @useResult
-  $Res call({String id});
+  $Res call({DeviceId id});
 }
 
 /// @nodoc
@@ -95,28 +108,28 @@ class _$DeviceChangeCopyWithImpl<$Res, $Val extends DeviceChange>
       id: null == id
           ? _value.id
           : id // ignore: cast_nullable_to_non_nullable
-              as String,
+              as DeviceId,
     ) as $Val);
   }
 }
 
 /// @nodoc
-abstract class _$$DeviceChange_AddedCopyWith<$Res>
+abstract class _$$DeviceChange_AddedImplCopyWith<$Res>
     implements $DeviceChangeCopyWith<$Res> {
-  factory _$$DeviceChange_AddedCopyWith(_$DeviceChange_Added value,
-          $Res Function(_$DeviceChange_Added) then) =
-      __$$DeviceChange_AddedCopyWithImpl<$Res>;
+  factory _$$DeviceChange_AddedImplCopyWith(_$DeviceChange_AddedImpl value,
+          $Res Function(_$DeviceChange_AddedImpl) then) =
+      __$$DeviceChange_AddedImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({String id});
+  $Res call({DeviceId id});
 }
 
 /// @nodoc
-class __$$DeviceChange_AddedCopyWithImpl<$Res>
-    extends _$DeviceChangeCopyWithImpl<$Res, _$DeviceChange_Added>
-    implements _$$DeviceChange_AddedCopyWith<$Res> {
-  __$$DeviceChange_AddedCopyWithImpl(
-      _$DeviceChange_Added _value, $Res Function(_$DeviceChange_Added) _then)
+class __$$DeviceChange_AddedImplCopyWithImpl<$Res>
+    extends _$DeviceChangeCopyWithImpl<$Res, _$DeviceChange_AddedImpl>
+    implements _$$DeviceChange_AddedImplCopyWith<$Res> {
+  __$$DeviceChange_AddedImplCopyWithImpl(_$DeviceChange_AddedImpl _value,
+      $Res Function(_$DeviceChange_AddedImpl) _then)
       : super(_value, _then);
 
   @pragma('vm:prefer-inline')
@@ -124,22 +137,22 @@ class __$$DeviceChange_AddedCopyWithImpl<$Res>
   $Res call({
     Object? id = null,
   }) {
-    return _then(_$DeviceChange_Added(
+    return _then(_$DeviceChange_AddedImpl(
       id: null == id
           ? _value.id
           : id // ignore: cast_nullable_to_non_nullable
-              as String,
+              as DeviceId,
     ));
   }
 }
 
 /// @nodoc
 
-class _$DeviceChange_Added implements DeviceChange_Added {
-  const _$DeviceChange_Added({required this.id});
+class _$DeviceChange_AddedImpl implements DeviceChange_Added {
+  const _$DeviceChange_AddedImpl({required this.id});
 
   @override
-  final String id;
+  final DeviceId id;
 
   @override
   String toString() {
@@ -150,7 +163,7 @@ class _$DeviceChange_Added implements DeviceChange_Added {
   bool operator ==(dynamic other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _$DeviceChange_Added &&
+            other is _$DeviceChange_AddedImpl &&
             (identical(other.id, id) || other.id == id));
   }
 
@@ -160,16 +173,19 @@ class _$DeviceChange_Added implements DeviceChange_Added {
   @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
-  _$$DeviceChange_AddedCopyWith<_$DeviceChange_Added> get copyWith =>
-      __$$DeviceChange_AddedCopyWithImpl<_$DeviceChange_Added>(
+  _$$DeviceChange_AddedImplCopyWith<_$DeviceChange_AddedImpl> get copyWith =>
+      __$$DeviceChange_AddedImplCopyWithImpl<_$DeviceChange_AddedImpl>(
           this, _$identity);
 
   @override
   @optionalTypeArgs
   TResult when<TResult extends Object?>({
-    required TResult Function(String id) added,
-    required TResult Function(String id, String label) registered,
-    required TResult Function(String id) disconnected,
+    required TResult Function(DeviceId id) added,
+    required TResult Function(DeviceId id, String oldName, String newName)
+        renamed,
+    required TResult Function(DeviceId id) needsName,
+    required TResult Function(DeviceId id, String name) registered,
+    required TResult Function(DeviceId id) disconnected,
   }) {
     return added(id);
   }
@@ -177,9 +193,11 @@ class _$DeviceChange_Added implements DeviceChange_Added {
   @override
   @optionalTypeArgs
   TResult? whenOrNull<TResult extends Object?>({
-    TResult? Function(String id)? added,
-    TResult? Function(String id, String label)? registered,
-    TResult? Function(String id)? disconnected,
+    TResult? Function(DeviceId id)? added,
+    TResult? Function(DeviceId id, String oldName, String newName)? renamed,
+    TResult? Function(DeviceId id)? needsName,
+    TResult? Function(DeviceId id, String name)? registered,
+    TResult? Function(DeviceId id)? disconnected,
   }) {
     return added?.call(id);
   }
@@ -187,9 +205,11 @@ class _$DeviceChange_Added implements DeviceChange_Added {
   @override
   @optionalTypeArgs
   TResult maybeWhen<TResult extends Object?>({
-    TResult Function(String id)? added,
-    TResult Function(String id, String label)? registered,
-    TResult Function(String id)? disconnected,
+    TResult Function(DeviceId id)? added,
+    TResult Function(DeviceId id, String oldName, String newName)? renamed,
+    TResult Function(DeviceId id)? needsName,
+    TResult Function(DeviceId id, String name)? registered,
+    TResult Function(DeviceId id)? disconnected,
     required TResult orElse(),
   }) {
     if (added != null) {
@@ -202,6 +222,8 @@ class _$DeviceChange_Added implements DeviceChange_Added {
   @optionalTypeArgs
   TResult map<TResult extends Object?>({
     required TResult Function(DeviceChange_Added value) added,
+    required TResult Function(DeviceChange_Renamed value) renamed,
+    required TResult Function(DeviceChange_NeedsName value) needsName,
     required TResult Function(DeviceChange_Registered value) registered,
     required TResult Function(DeviceChange_Disconnected value) disconnected,
   }) {
@@ -212,6 +234,8 @@ class _$DeviceChange_Added implements DeviceChange_Added {
   @optionalTypeArgs
   TResult? mapOrNull<TResult extends Object?>({
     TResult? Function(DeviceChange_Added value)? added,
+    TResult? Function(DeviceChange_Renamed value)? renamed,
+    TResult? Function(DeviceChange_NeedsName value)? needsName,
     TResult? Function(DeviceChange_Registered value)? registered,
     TResult? Function(DeviceChange_Disconnected value)? disconnected,
   }) {
@@ -222,6 +246,8 @@ class _$DeviceChange_Added implements DeviceChange_Added {
   @optionalTypeArgs
   TResult maybeMap<TResult extends Object?>({
     TResult Function(DeviceChange_Added value)? added,
+    TResult Function(DeviceChange_Renamed value)? renamed,
+    TResult Function(DeviceChange_NeedsName value)? needsName,
     TResult Function(DeviceChange_Registered value)? registered,
     TResult Function(DeviceChange_Disconnected value)? disconnected,
     required TResult orElse(),
@@ -234,50 +260,55 @@ class _$DeviceChange_Added implements DeviceChange_Added {
 }
 
 abstract class DeviceChange_Added implements DeviceChange {
-  const factory DeviceChange_Added({required final String id}) =
-      _$DeviceChange_Added;
+  const factory DeviceChange_Added({required final DeviceId id}) =
+      _$DeviceChange_AddedImpl;
 
   @override
-  String get id;
+  DeviceId get id;
   @override
   @JsonKey(ignore: true)
-  _$$DeviceChange_AddedCopyWith<_$DeviceChange_Added> get copyWith =>
+  _$$DeviceChange_AddedImplCopyWith<_$DeviceChange_AddedImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
 
 /// @nodoc
-abstract class _$$DeviceChange_RegisteredCopyWith<$Res>
+abstract class _$$DeviceChange_RenamedImplCopyWith<$Res>
     implements $DeviceChangeCopyWith<$Res> {
-  factory _$$DeviceChange_RegisteredCopyWith(_$DeviceChange_Registered value,
-          $Res Function(_$DeviceChange_Registered) then) =
-      __$$DeviceChange_RegisteredCopyWithImpl<$Res>;
+  factory _$$DeviceChange_RenamedImplCopyWith(_$DeviceChange_RenamedImpl value,
+          $Res Function(_$DeviceChange_RenamedImpl) then) =
+      __$$DeviceChange_RenamedImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({String id, String label});
+  $Res call({DeviceId id, String oldName, String newName});
 }
 
 /// @nodoc
-class __$$DeviceChange_RegisteredCopyWithImpl<$Res>
-    extends _$DeviceChangeCopyWithImpl<$Res, _$DeviceChange_Registered>
-    implements _$$DeviceChange_RegisteredCopyWith<$Res> {
-  __$$DeviceChange_RegisteredCopyWithImpl(_$DeviceChange_Registered _value,
-      $Res Function(_$DeviceChange_Registered) _then)
+class __$$DeviceChange_RenamedImplCopyWithImpl<$Res>
+    extends _$DeviceChangeCopyWithImpl<$Res, _$DeviceChange_RenamedImpl>
+    implements _$$DeviceChange_RenamedImplCopyWith<$Res> {
+  __$$DeviceChange_RenamedImplCopyWithImpl(_$DeviceChange_RenamedImpl _value,
+      $Res Function(_$DeviceChange_RenamedImpl) _then)
       : super(_value, _then);
 
   @pragma('vm:prefer-inline')
   @override
   $Res call({
     Object? id = null,
-    Object? label = null,
+    Object? oldName = null,
+    Object? newName = null,
   }) {
-    return _then(_$DeviceChange_Registered(
+    return _then(_$DeviceChange_RenamedImpl(
       id: null == id
           ? _value.id
           : id // ignore: cast_nullable_to_non_nullable
+              as DeviceId,
+      oldName: null == oldName
+          ? _value.oldName
+          : oldName // ignore: cast_nullable_to_non_nullable
               as String,
-      label: null == label
-          ? _value.label
-          : label // ignore: cast_nullable_to_non_nullable
+      newName: null == newName
+          ? _value.newName
+          : newName // ignore: cast_nullable_to_non_nullable
               as String,
     ));
   }
@@ -285,68 +316,80 @@ class __$$DeviceChange_RegisteredCopyWithImpl<$Res>
 
 /// @nodoc
 
-class _$DeviceChange_Registered implements DeviceChange_Registered {
-  const _$DeviceChange_Registered({required this.id, required this.label});
+class _$DeviceChange_RenamedImpl implements DeviceChange_Renamed {
+  const _$DeviceChange_RenamedImpl(
+      {required this.id, required this.oldName, required this.newName});
 
   @override
-  final String id;
+  final DeviceId id;
   @override
-  final String label;
+  final String oldName;
+  @override
+  final String newName;
 
   @override
   String toString() {
-    return 'DeviceChange.registered(id: $id, label: $label)';
+    return 'DeviceChange.renamed(id: $id, oldName: $oldName, newName: $newName)';
   }
 
   @override
   bool operator ==(dynamic other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _$DeviceChange_Registered &&
+            other is _$DeviceChange_RenamedImpl &&
             (identical(other.id, id) || other.id == id) &&
-            (identical(other.label, label) || other.label == label));
+            (identical(other.oldName, oldName) || other.oldName == oldName) &&
+            (identical(other.newName, newName) || other.newName == newName));
   }
 
   @override
-  int get hashCode => Object.hash(runtimeType, id, label);
+  int get hashCode => Object.hash(runtimeType, id, oldName, newName);
 
   @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
-  _$$DeviceChange_RegisteredCopyWith<_$DeviceChange_Registered> get copyWith =>
-      __$$DeviceChange_RegisteredCopyWithImpl<_$DeviceChange_Registered>(
-          this, _$identity);
+  _$$DeviceChange_RenamedImplCopyWith<_$DeviceChange_RenamedImpl>
+      get copyWith =>
+          __$$DeviceChange_RenamedImplCopyWithImpl<_$DeviceChange_RenamedImpl>(
+              this, _$identity);
 
   @override
   @optionalTypeArgs
   TResult when<TResult extends Object?>({
-    required TResult Function(String id) added,
-    required TResult Function(String id, String label) registered,
-    required TResult Function(String id) disconnected,
+    required TResult Function(DeviceId id) added,
+    required TResult Function(DeviceId id, String oldName, String newName)
+        renamed,
+    required TResult Function(DeviceId id) needsName,
+    required TResult Function(DeviceId id, String name) registered,
+    required TResult Function(DeviceId id) disconnected,
   }) {
-    return registered(id, label);
+    return renamed(id, oldName, newName);
   }
 
   @override
   @optionalTypeArgs
   TResult? whenOrNull<TResult extends Object?>({
-    TResult? Function(String id)? added,
-    TResult? Function(String id, String label)? registered,
-    TResult? Function(String id)? disconnected,
+    TResult? Function(DeviceId id)? added,
+    TResult? Function(DeviceId id, String oldName, String newName)? renamed,
+    TResult? Function(DeviceId id)? needsName,
+    TResult? Function(DeviceId id, String name)? registered,
+    TResult? Function(DeviceId id)? disconnected,
   }) {
-    return registered?.call(id, label);
+    return renamed?.call(id, oldName, newName);
   }
 
   @override
   @optionalTypeArgs
   TResult maybeWhen<TResult extends Object?>({
-    TResult Function(String id)? added,
-    TResult Function(String id, String label)? registered,
-    TResult Function(String id)? disconnected,
+    TResult Function(DeviceId id)? added,
+    TResult Function(DeviceId id, String oldName, String newName)? renamed,
+    TResult Function(DeviceId id)? needsName,
+    TResult Function(DeviceId id, String name)? registered,
+    TResult Function(DeviceId id)? disconnected,
     required TResult orElse(),
   }) {
-    if (registered != null) {
-      return registered(id, label);
+    if (renamed != null) {
+      return renamed(id, oldName, newName);
     }
     return orElse();
   }
@@ -355,6 +398,340 @@ class _$DeviceChange_Registered implements DeviceChange_Registered {
   @optionalTypeArgs
   TResult map<TResult extends Object?>({
     required TResult Function(DeviceChange_Added value) added,
+    required TResult Function(DeviceChange_Renamed value) renamed,
+    required TResult Function(DeviceChange_NeedsName value) needsName,
+    required TResult Function(DeviceChange_Registered value) registered,
+    required TResult Function(DeviceChange_Disconnected value) disconnected,
+  }) {
+    return renamed(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>({
+    TResult? Function(DeviceChange_Added value)? added,
+    TResult? Function(DeviceChange_Renamed value)? renamed,
+    TResult? Function(DeviceChange_NeedsName value)? needsName,
+    TResult? Function(DeviceChange_Registered value)? registered,
+    TResult? Function(DeviceChange_Disconnected value)? disconnected,
+  }) {
+    return renamed?.call(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>({
+    TResult Function(DeviceChange_Added value)? added,
+    TResult Function(DeviceChange_Renamed value)? renamed,
+    TResult Function(DeviceChange_NeedsName value)? needsName,
+    TResult Function(DeviceChange_Registered value)? registered,
+    TResult Function(DeviceChange_Disconnected value)? disconnected,
+    required TResult orElse(),
+  }) {
+    if (renamed != null) {
+      return renamed(this);
+    }
+    return orElse();
+  }
+}
+
+abstract class DeviceChange_Renamed implements DeviceChange {
+  const factory DeviceChange_Renamed(
+      {required final DeviceId id,
+      required final String oldName,
+      required final String newName}) = _$DeviceChange_RenamedImpl;
+
+  @override
+  DeviceId get id;
+  String get oldName;
+  String get newName;
+  @override
+  @JsonKey(ignore: true)
+  _$$DeviceChange_RenamedImplCopyWith<_$DeviceChange_RenamedImpl>
+      get copyWith => throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class _$$DeviceChange_NeedsNameImplCopyWith<$Res>
+    implements $DeviceChangeCopyWith<$Res> {
+  factory _$$DeviceChange_NeedsNameImplCopyWith(
+          _$DeviceChange_NeedsNameImpl value,
+          $Res Function(_$DeviceChange_NeedsNameImpl) then) =
+      __$$DeviceChange_NeedsNameImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call({DeviceId id});
+}
+
+/// @nodoc
+class __$$DeviceChange_NeedsNameImplCopyWithImpl<$Res>
+    extends _$DeviceChangeCopyWithImpl<$Res, _$DeviceChange_NeedsNameImpl>
+    implements _$$DeviceChange_NeedsNameImplCopyWith<$Res> {
+  __$$DeviceChange_NeedsNameImplCopyWithImpl(
+      _$DeviceChange_NeedsNameImpl _value,
+      $Res Function(_$DeviceChange_NeedsNameImpl) _then)
+      : super(_value, _then);
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? id = null,
+  }) {
+    return _then(_$DeviceChange_NeedsNameImpl(
+      id: null == id
+          ? _value.id
+          : id // ignore: cast_nullable_to_non_nullable
+              as DeviceId,
+    ));
+  }
+}
+
+/// @nodoc
+
+class _$DeviceChange_NeedsNameImpl implements DeviceChange_NeedsName {
+  const _$DeviceChange_NeedsNameImpl({required this.id});
+
+  @override
+  final DeviceId id;
+
+  @override
+  String toString() {
+    return 'DeviceChange.needsName(id: $id)';
+  }
+
+  @override
+  bool operator ==(dynamic other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$DeviceChange_NeedsNameImpl &&
+            (identical(other.id, id) || other.id == id));
+  }
+
+  @override
+  int get hashCode => Object.hash(runtimeType, id);
+
+  @JsonKey(ignore: true)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$DeviceChange_NeedsNameImplCopyWith<_$DeviceChange_NeedsNameImpl>
+      get copyWith => __$$DeviceChange_NeedsNameImplCopyWithImpl<
+          _$DeviceChange_NeedsNameImpl>(this, _$identity);
+
+  @override
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>({
+    required TResult Function(DeviceId id) added,
+    required TResult Function(DeviceId id, String oldName, String newName)
+        renamed,
+    required TResult Function(DeviceId id) needsName,
+    required TResult Function(DeviceId id, String name) registered,
+    required TResult Function(DeviceId id) disconnected,
+  }) {
+    return needsName(id);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>({
+    TResult? Function(DeviceId id)? added,
+    TResult? Function(DeviceId id, String oldName, String newName)? renamed,
+    TResult? Function(DeviceId id)? needsName,
+    TResult? Function(DeviceId id, String name)? registered,
+    TResult? Function(DeviceId id)? disconnected,
+  }) {
+    return needsName?.call(id);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>({
+    TResult Function(DeviceId id)? added,
+    TResult Function(DeviceId id, String oldName, String newName)? renamed,
+    TResult Function(DeviceId id)? needsName,
+    TResult Function(DeviceId id, String name)? registered,
+    TResult Function(DeviceId id)? disconnected,
+    required TResult orElse(),
+  }) {
+    if (needsName != null) {
+      return needsName(id);
+    }
+    return orElse();
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>({
+    required TResult Function(DeviceChange_Added value) added,
+    required TResult Function(DeviceChange_Renamed value) renamed,
+    required TResult Function(DeviceChange_NeedsName value) needsName,
+    required TResult Function(DeviceChange_Registered value) registered,
+    required TResult Function(DeviceChange_Disconnected value) disconnected,
+  }) {
+    return needsName(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>({
+    TResult? Function(DeviceChange_Added value)? added,
+    TResult? Function(DeviceChange_Renamed value)? renamed,
+    TResult? Function(DeviceChange_NeedsName value)? needsName,
+    TResult? Function(DeviceChange_Registered value)? registered,
+    TResult? Function(DeviceChange_Disconnected value)? disconnected,
+  }) {
+    return needsName?.call(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>({
+    TResult Function(DeviceChange_Added value)? added,
+    TResult Function(DeviceChange_Renamed value)? renamed,
+    TResult Function(DeviceChange_NeedsName value)? needsName,
+    TResult Function(DeviceChange_Registered value)? registered,
+    TResult Function(DeviceChange_Disconnected value)? disconnected,
+    required TResult orElse(),
+  }) {
+    if (needsName != null) {
+      return needsName(this);
+    }
+    return orElse();
+  }
+}
+
+abstract class DeviceChange_NeedsName implements DeviceChange {
+  const factory DeviceChange_NeedsName({required final DeviceId id}) =
+      _$DeviceChange_NeedsNameImpl;
+
+  @override
+  DeviceId get id;
+  @override
+  @JsonKey(ignore: true)
+  _$$DeviceChange_NeedsNameImplCopyWith<_$DeviceChange_NeedsNameImpl>
+      get copyWith => throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class _$$DeviceChange_RegisteredImplCopyWith<$Res>
+    implements $DeviceChangeCopyWith<$Res> {
+  factory _$$DeviceChange_RegisteredImplCopyWith(
+          _$DeviceChange_RegisteredImpl value,
+          $Res Function(_$DeviceChange_RegisteredImpl) then) =
+      __$$DeviceChange_RegisteredImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call({DeviceId id, String name});
+}
+
+/// @nodoc
+class __$$DeviceChange_RegisteredImplCopyWithImpl<$Res>
+    extends _$DeviceChangeCopyWithImpl<$Res, _$DeviceChange_RegisteredImpl>
+    implements _$$DeviceChange_RegisteredImplCopyWith<$Res> {
+  __$$DeviceChange_RegisteredImplCopyWithImpl(
+      _$DeviceChange_RegisteredImpl _value,
+      $Res Function(_$DeviceChange_RegisteredImpl) _then)
+      : super(_value, _then);
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? id = null,
+    Object? name = null,
+  }) {
+    return _then(_$DeviceChange_RegisteredImpl(
+      id: null == id
+          ? _value.id
+          : id // ignore: cast_nullable_to_non_nullable
+              as DeviceId,
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+    ));
+  }
+}
+
+/// @nodoc
+
+class _$DeviceChange_RegisteredImpl implements DeviceChange_Registered {
+  const _$DeviceChange_RegisteredImpl({required this.id, required this.name});
+
+  @override
+  final DeviceId id;
+  @override
+  final String name;
+
+  @override
+  String toString() {
+    return 'DeviceChange.registered(id: $id, name: $name)';
+  }
+
+  @override
+  bool operator ==(dynamic other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$DeviceChange_RegisteredImpl &&
+            (identical(other.id, id) || other.id == id) &&
+            (identical(other.name, name) || other.name == name));
+  }
+
+  @override
+  int get hashCode => Object.hash(runtimeType, id, name);
+
+  @JsonKey(ignore: true)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$DeviceChange_RegisteredImplCopyWith<_$DeviceChange_RegisteredImpl>
+      get copyWith => __$$DeviceChange_RegisteredImplCopyWithImpl<
+          _$DeviceChange_RegisteredImpl>(this, _$identity);
+
+  @override
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>({
+    required TResult Function(DeviceId id) added,
+    required TResult Function(DeviceId id, String oldName, String newName)
+        renamed,
+    required TResult Function(DeviceId id) needsName,
+    required TResult Function(DeviceId id, String name) registered,
+    required TResult Function(DeviceId id) disconnected,
+  }) {
+    return registered(id, name);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>({
+    TResult? Function(DeviceId id)? added,
+    TResult? Function(DeviceId id, String oldName, String newName)? renamed,
+    TResult? Function(DeviceId id)? needsName,
+    TResult? Function(DeviceId id, String name)? registered,
+    TResult? Function(DeviceId id)? disconnected,
+  }) {
+    return registered?.call(id, name);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>({
+    TResult Function(DeviceId id)? added,
+    TResult Function(DeviceId id, String oldName, String newName)? renamed,
+    TResult Function(DeviceId id)? needsName,
+    TResult Function(DeviceId id, String name)? registered,
+    TResult Function(DeviceId id)? disconnected,
+    required TResult orElse(),
+  }) {
+    if (registered != null) {
+      return registered(id, name);
+    }
+    return orElse();
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>({
+    required TResult Function(DeviceChange_Added value) added,
+    required TResult Function(DeviceChange_Renamed value) renamed,
+    required TResult Function(DeviceChange_NeedsName value) needsName,
     required TResult Function(DeviceChange_Registered value) registered,
     required TResult Function(DeviceChange_Disconnected value) disconnected,
   }) {
@@ -365,6 +742,8 @@ class _$DeviceChange_Registered implements DeviceChange_Registered {
   @optionalTypeArgs
   TResult? mapOrNull<TResult extends Object?>({
     TResult? Function(DeviceChange_Added value)? added,
+    TResult? Function(DeviceChange_Renamed value)? renamed,
+    TResult? Function(DeviceChange_NeedsName value)? needsName,
     TResult? Function(DeviceChange_Registered value)? registered,
     TResult? Function(DeviceChange_Disconnected value)? disconnected,
   }) {
@@ -375,6 +754,8 @@ class _$DeviceChange_Registered implements DeviceChange_Registered {
   @optionalTypeArgs
   TResult maybeMap<TResult extends Object?>({
     TResult Function(DeviceChange_Added value)? added,
+    TResult Function(DeviceChange_Renamed value)? renamed,
+    TResult Function(DeviceChange_NeedsName value)? needsName,
     TResult Function(DeviceChange_Registered value)? registered,
     TResult Function(DeviceChange_Disconnected value)? disconnected,
     required TResult orElse(),
@@ -388,36 +769,37 @@ class _$DeviceChange_Registered implements DeviceChange_Registered {
 
 abstract class DeviceChange_Registered implements DeviceChange {
   const factory DeviceChange_Registered(
-      {required final String id,
-      required final String label}) = _$DeviceChange_Registered;
+      {required final DeviceId id,
+      required final String name}) = _$DeviceChange_RegisteredImpl;
 
   @override
-  String get id;
-  String get label;
+  DeviceId get id;
+  String get name;
   @override
   @JsonKey(ignore: true)
-  _$$DeviceChange_RegisteredCopyWith<_$DeviceChange_Registered> get copyWith =>
-      throw _privateConstructorUsedError;
+  _$$DeviceChange_RegisteredImplCopyWith<_$DeviceChange_RegisteredImpl>
+      get copyWith => throw _privateConstructorUsedError;
 }
 
 /// @nodoc
-abstract class _$$DeviceChange_DisconnectedCopyWith<$Res>
+abstract class _$$DeviceChange_DisconnectedImplCopyWith<$Res>
     implements $DeviceChangeCopyWith<$Res> {
-  factory _$$DeviceChange_DisconnectedCopyWith(
-          _$DeviceChange_Disconnected value,
-          $Res Function(_$DeviceChange_Disconnected) then) =
-      __$$DeviceChange_DisconnectedCopyWithImpl<$Res>;
+  factory _$$DeviceChange_DisconnectedImplCopyWith(
+          _$DeviceChange_DisconnectedImpl value,
+          $Res Function(_$DeviceChange_DisconnectedImpl) then) =
+      __$$DeviceChange_DisconnectedImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({String id});
+  $Res call({DeviceId id});
 }
 
 /// @nodoc
-class __$$DeviceChange_DisconnectedCopyWithImpl<$Res>
-    extends _$DeviceChangeCopyWithImpl<$Res, _$DeviceChange_Disconnected>
-    implements _$$DeviceChange_DisconnectedCopyWith<$Res> {
-  __$$DeviceChange_DisconnectedCopyWithImpl(_$DeviceChange_Disconnected _value,
-      $Res Function(_$DeviceChange_Disconnected) _then)
+class __$$DeviceChange_DisconnectedImplCopyWithImpl<$Res>
+    extends _$DeviceChangeCopyWithImpl<$Res, _$DeviceChange_DisconnectedImpl>
+    implements _$$DeviceChange_DisconnectedImplCopyWith<$Res> {
+  __$$DeviceChange_DisconnectedImplCopyWithImpl(
+      _$DeviceChange_DisconnectedImpl _value,
+      $Res Function(_$DeviceChange_DisconnectedImpl) _then)
       : super(_value, _then);
 
   @pragma('vm:prefer-inline')
@@ -425,22 +807,22 @@ class __$$DeviceChange_DisconnectedCopyWithImpl<$Res>
   $Res call({
     Object? id = null,
   }) {
-    return _then(_$DeviceChange_Disconnected(
+    return _then(_$DeviceChange_DisconnectedImpl(
       id: null == id
           ? _value.id
           : id // ignore: cast_nullable_to_non_nullable
-              as String,
+              as DeviceId,
     ));
   }
 }
 
 /// @nodoc
 
-class _$DeviceChange_Disconnected implements DeviceChange_Disconnected {
-  const _$DeviceChange_Disconnected({required this.id});
+class _$DeviceChange_DisconnectedImpl implements DeviceChange_Disconnected {
+  const _$DeviceChange_DisconnectedImpl({required this.id});
 
   @override
-  final String id;
+  final DeviceId id;
 
   @override
   String toString() {
@@ -451,7 +833,7 @@ class _$DeviceChange_Disconnected implements DeviceChange_Disconnected {
   bool operator ==(dynamic other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _$DeviceChange_Disconnected &&
+            other is _$DeviceChange_DisconnectedImpl &&
             (identical(other.id, id) || other.id == id));
   }
 
@@ -461,16 +843,19 @@ class _$DeviceChange_Disconnected implements DeviceChange_Disconnected {
   @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
-  _$$DeviceChange_DisconnectedCopyWith<_$DeviceChange_Disconnected>
-      get copyWith => __$$DeviceChange_DisconnectedCopyWithImpl<
-          _$DeviceChange_Disconnected>(this, _$identity);
+  _$$DeviceChange_DisconnectedImplCopyWith<_$DeviceChange_DisconnectedImpl>
+      get copyWith => __$$DeviceChange_DisconnectedImplCopyWithImpl<
+          _$DeviceChange_DisconnectedImpl>(this, _$identity);
 
   @override
   @optionalTypeArgs
   TResult when<TResult extends Object?>({
-    required TResult Function(String id) added,
-    required TResult Function(String id, String label) registered,
-    required TResult Function(String id) disconnected,
+    required TResult Function(DeviceId id) added,
+    required TResult Function(DeviceId id, String oldName, String newName)
+        renamed,
+    required TResult Function(DeviceId id) needsName,
+    required TResult Function(DeviceId id, String name) registered,
+    required TResult Function(DeviceId id) disconnected,
   }) {
     return disconnected(id);
   }
@@ -478,9 +863,11 @@ class _$DeviceChange_Disconnected implements DeviceChange_Disconnected {
   @override
   @optionalTypeArgs
   TResult? whenOrNull<TResult extends Object?>({
-    TResult? Function(String id)? added,
-    TResult? Function(String id, String label)? registered,
-    TResult? Function(String id)? disconnected,
+    TResult? Function(DeviceId id)? added,
+    TResult? Function(DeviceId id, String oldName, String newName)? renamed,
+    TResult? Function(DeviceId id)? needsName,
+    TResult? Function(DeviceId id, String name)? registered,
+    TResult? Function(DeviceId id)? disconnected,
   }) {
     return disconnected?.call(id);
   }
@@ -488,9 +875,11 @@ class _$DeviceChange_Disconnected implements DeviceChange_Disconnected {
   @override
   @optionalTypeArgs
   TResult maybeWhen<TResult extends Object?>({
-    TResult Function(String id)? added,
-    TResult Function(String id, String label)? registered,
-    TResult Function(String id)? disconnected,
+    TResult Function(DeviceId id)? added,
+    TResult Function(DeviceId id, String oldName, String newName)? renamed,
+    TResult Function(DeviceId id)? needsName,
+    TResult Function(DeviceId id, String name)? registered,
+    TResult Function(DeviceId id)? disconnected,
     required TResult orElse(),
   }) {
     if (disconnected != null) {
@@ -503,6 +892,8 @@ class _$DeviceChange_Disconnected implements DeviceChange_Disconnected {
   @optionalTypeArgs
   TResult map<TResult extends Object?>({
     required TResult Function(DeviceChange_Added value) added,
+    required TResult Function(DeviceChange_Renamed value) renamed,
+    required TResult Function(DeviceChange_NeedsName value) needsName,
     required TResult Function(DeviceChange_Registered value) registered,
     required TResult Function(DeviceChange_Disconnected value) disconnected,
   }) {
@@ -513,6 +904,8 @@ class _$DeviceChange_Disconnected implements DeviceChange_Disconnected {
   @optionalTypeArgs
   TResult? mapOrNull<TResult extends Object?>({
     TResult? Function(DeviceChange_Added value)? added,
+    TResult? Function(DeviceChange_Renamed value)? renamed,
+    TResult? Function(DeviceChange_NeedsName value)? needsName,
     TResult? Function(DeviceChange_Registered value)? registered,
     TResult? Function(DeviceChange_Disconnected value)? disconnected,
   }) {
@@ -523,6 +916,8 @@ class _$DeviceChange_Disconnected implements DeviceChange_Disconnected {
   @optionalTypeArgs
   TResult maybeMap<TResult extends Object?>({
     TResult Function(DeviceChange_Added value)? added,
+    TResult Function(DeviceChange_Renamed value)? renamed,
+    TResult Function(DeviceChange_NeedsName value)? needsName,
     TResult Function(DeviceChange_Registered value)? registered,
     TResult Function(DeviceChange_Disconnected value)? disconnected,
     required TResult orElse(),
@@ -535,14 +930,14 @@ class _$DeviceChange_Disconnected implements DeviceChange_Disconnected {
 }
 
 abstract class DeviceChange_Disconnected implements DeviceChange {
-  const factory DeviceChange_Disconnected({required final String id}) =
-      _$DeviceChange_Disconnected;
+  const factory DeviceChange_Disconnected({required final DeviceId id}) =
+      _$DeviceChange_DisconnectedImpl;
 
   @override
-  String get id;
+  DeviceId get id;
   @override
   @JsonKey(ignore: true)
-  _$$DeviceChange_DisconnectedCopyWith<_$DeviceChange_Disconnected>
+  _$$DeviceChange_DisconnectedImplCopyWith<_$DeviceChange_DisconnectedImpl>
       get copyWith => throw _privateConstructorUsedError;
 }
 
@@ -619,20 +1014,20 @@ class _$PortEventCopyWithImpl<$Res, $Val extends PortEvent>
 }
 
 /// @nodoc
-abstract class _$$PortEvent_OpenCopyWith<$Res> {
-  factory _$$PortEvent_OpenCopyWith(
-          _$PortEvent_Open value, $Res Function(_$PortEvent_Open) then) =
-      __$$PortEvent_OpenCopyWithImpl<$Res>;
+abstract class _$$PortEvent_OpenImplCopyWith<$Res> {
+  factory _$$PortEvent_OpenImplCopyWith(_$PortEvent_OpenImpl value,
+          $Res Function(_$PortEvent_OpenImpl) then) =
+      __$$PortEvent_OpenImplCopyWithImpl<$Res>;
   @useResult
   $Res call({PortOpen request});
 }
 
 /// @nodoc
-class __$$PortEvent_OpenCopyWithImpl<$Res>
-    extends _$PortEventCopyWithImpl<$Res, _$PortEvent_Open>
-    implements _$$PortEvent_OpenCopyWith<$Res> {
-  __$$PortEvent_OpenCopyWithImpl(
-      _$PortEvent_Open _value, $Res Function(_$PortEvent_Open) _then)
+class __$$PortEvent_OpenImplCopyWithImpl<$Res>
+    extends _$PortEventCopyWithImpl<$Res, _$PortEvent_OpenImpl>
+    implements _$$PortEvent_OpenImplCopyWith<$Res> {
+  __$$PortEvent_OpenImplCopyWithImpl(
+      _$PortEvent_OpenImpl _value, $Res Function(_$PortEvent_OpenImpl) _then)
       : super(_value, _then);
 
   @pragma('vm:prefer-inline')
@@ -640,7 +1035,7 @@ class __$$PortEvent_OpenCopyWithImpl<$Res>
   $Res call({
     Object? request = null,
   }) {
-    return _then(_$PortEvent_Open(
+    return _then(_$PortEvent_OpenImpl(
       request: null == request
           ? _value.request
           : request // ignore: cast_nullable_to_non_nullable
@@ -651,8 +1046,8 @@ class __$$PortEvent_OpenCopyWithImpl<$Res>
 
 /// @nodoc
 
-class _$PortEvent_Open implements PortEvent_Open {
-  const _$PortEvent_Open({required this.request});
+class _$PortEvent_OpenImpl implements PortEvent_Open {
+  const _$PortEvent_OpenImpl({required this.request});
 
   @override
   final PortOpen request;
@@ -666,7 +1061,7 @@ class _$PortEvent_Open implements PortEvent_Open {
   bool operator ==(dynamic other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _$PortEvent_Open &&
+            other is _$PortEvent_OpenImpl &&
             (identical(other.request, request) || other.request == request));
   }
 
@@ -676,8 +1071,9 @@ class _$PortEvent_Open implements PortEvent_Open {
   @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
-  _$$PortEvent_OpenCopyWith<_$PortEvent_Open> get copyWith =>
-      __$$PortEvent_OpenCopyWithImpl<_$PortEvent_Open>(this, _$identity);
+  _$$PortEvent_OpenImplCopyWith<_$PortEvent_OpenImpl> get copyWith =>
+      __$$PortEvent_OpenImplCopyWithImpl<_$PortEvent_OpenImpl>(
+          this, _$identity);
 
   @override
   @optionalTypeArgs
@@ -756,30 +1152,30 @@ class _$PortEvent_Open implements PortEvent_Open {
 
 abstract class PortEvent_Open implements PortEvent {
   const factory PortEvent_Open({required final PortOpen request}) =
-      _$PortEvent_Open;
+      _$PortEvent_OpenImpl;
 
   @override
   PortOpen get request;
   @JsonKey(ignore: true)
-  _$$PortEvent_OpenCopyWith<_$PortEvent_Open> get copyWith =>
+  _$$PortEvent_OpenImplCopyWith<_$PortEvent_OpenImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
 
 /// @nodoc
-abstract class _$$PortEvent_WriteCopyWith<$Res> {
-  factory _$$PortEvent_WriteCopyWith(
-          _$PortEvent_Write value, $Res Function(_$PortEvent_Write) then) =
-      __$$PortEvent_WriteCopyWithImpl<$Res>;
+abstract class _$$PortEvent_WriteImplCopyWith<$Res> {
+  factory _$$PortEvent_WriteImplCopyWith(_$PortEvent_WriteImpl value,
+          $Res Function(_$PortEvent_WriteImpl) then) =
+      __$$PortEvent_WriteImplCopyWithImpl<$Res>;
   @useResult
   $Res call({PortWrite request});
 }
 
 /// @nodoc
-class __$$PortEvent_WriteCopyWithImpl<$Res>
-    extends _$PortEventCopyWithImpl<$Res, _$PortEvent_Write>
-    implements _$$PortEvent_WriteCopyWith<$Res> {
-  __$$PortEvent_WriteCopyWithImpl(
-      _$PortEvent_Write _value, $Res Function(_$PortEvent_Write) _then)
+class __$$PortEvent_WriteImplCopyWithImpl<$Res>
+    extends _$PortEventCopyWithImpl<$Res, _$PortEvent_WriteImpl>
+    implements _$$PortEvent_WriteImplCopyWith<$Res> {
+  __$$PortEvent_WriteImplCopyWithImpl(
+      _$PortEvent_WriteImpl _value, $Res Function(_$PortEvent_WriteImpl) _then)
       : super(_value, _then);
 
   @pragma('vm:prefer-inline')
@@ -787,7 +1183,7 @@ class __$$PortEvent_WriteCopyWithImpl<$Res>
   $Res call({
     Object? request = null,
   }) {
-    return _then(_$PortEvent_Write(
+    return _then(_$PortEvent_WriteImpl(
       request: null == request
           ? _value.request
           : request // ignore: cast_nullable_to_non_nullable
@@ -798,8 +1194,8 @@ class __$$PortEvent_WriteCopyWithImpl<$Res>
 
 /// @nodoc
 
-class _$PortEvent_Write implements PortEvent_Write {
-  const _$PortEvent_Write({required this.request});
+class _$PortEvent_WriteImpl implements PortEvent_Write {
+  const _$PortEvent_WriteImpl({required this.request});
 
   @override
   final PortWrite request;
@@ -813,7 +1209,7 @@ class _$PortEvent_Write implements PortEvent_Write {
   bool operator ==(dynamic other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _$PortEvent_Write &&
+            other is _$PortEvent_WriteImpl &&
             (identical(other.request, request) || other.request == request));
   }
 
@@ -823,8 +1219,9 @@ class _$PortEvent_Write implements PortEvent_Write {
   @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
-  _$$PortEvent_WriteCopyWith<_$PortEvent_Write> get copyWith =>
-      __$$PortEvent_WriteCopyWithImpl<_$PortEvent_Write>(this, _$identity);
+  _$$PortEvent_WriteImplCopyWith<_$PortEvent_WriteImpl> get copyWith =>
+      __$$PortEvent_WriteImplCopyWithImpl<_$PortEvent_WriteImpl>(
+          this, _$identity);
 
   @override
   @optionalTypeArgs
@@ -903,30 +1300,30 @@ class _$PortEvent_Write implements PortEvent_Write {
 
 abstract class PortEvent_Write implements PortEvent {
   const factory PortEvent_Write({required final PortWrite request}) =
-      _$PortEvent_Write;
+      _$PortEvent_WriteImpl;
 
   @override
   PortWrite get request;
   @JsonKey(ignore: true)
-  _$$PortEvent_WriteCopyWith<_$PortEvent_Write> get copyWith =>
+  _$$PortEvent_WriteImplCopyWith<_$PortEvent_WriteImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
 
 /// @nodoc
-abstract class _$$PortEvent_ReadCopyWith<$Res> {
-  factory _$$PortEvent_ReadCopyWith(
-          _$PortEvent_Read value, $Res Function(_$PortEvent_Read) then) =
-      __$$PortEvent_ReadCopyWithImpl<$Res>;
+abstract class _$$PortEvent_ReadImplCopyWith<$Res> {
+  factory _$$PortEvent_ReadImplCopyWith(_$PortEvent_ReadImpl value,
+          $Res Function(_$PortEvent_ReadImpl) then) =
+      __$$PortEvent_ReadImplCopyWithImpl<$Res>;
   @useResult
   $Res call({PortRead request});
 }
 
 /// @nodoc
-class __$$PortEvent_ReadCopyWithImpl<$Res>
-    extends _$PortEventCopyWithImpl<$Res, _$PortEvent_Read>
-    implements _$$PortEvent_ReadCopyWith<$Res> {
-  __$$PortEvent_ReadCopyWithImpl(
-      _$PortEvent_Read _value, $Res Function(_$PortEvent_Read) _then)
+class __$$PortEvent_ReadImplCopyWithImpl<$Res>
+    extends _$PortEventCopyWithImpl<$Res, _$PortEvent_ReadImpl>
+    implements _$$PortEvent_ReadImplCopyWith<$Res> {
+  __$$PortEvent_ReadImplCopyWithImpl(
+      _$PortEvent_ReadImpl _value, $Res Function(_$PortEvent_ReadImpl) _then)
       : super(_value, _then);
 
   @pragma('vm:prefer-inline')
@@ -934,7 +1331,7 @@ class __$$PortEvent_ReadCopyWithImpl<$Res>
   $Res call({
     Object? request = null,
   }) {
-    return _then(_$PortEvent_Read(
+    return _then(_$PortEvent_ReadImpl(
       request: null == request
           ? _value.request
           : request // ignore: cast_nullable_to_non_nullable
@@ -945,8 +1342,8 @@ class __$$PortEvent_ReadCopyWithImpl<$Res>
 
 /// @nodoc
 
-class _$PortEvent_Read implements PortEvent_Read {
-  const _$PortEvent_Read({required this.request});
+class _$PortEvent_ReadImpl implements PortEvent_Read {
+  const _$PortEvent_ReadImpl({required this.request});
 
   @override
   final PortRead request;
@@ -960,7 +1357,7 @@ class _$PortEvent_Read implements PortEvent_Read {
   bool operator ==(dynamic other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _$PortEvent_Read &&
+            other is _$PortEvent_ReadImpl &&
             (identical(other.request, request) || other.request == request));
   }
 
@@ -970,8 +1367,9 @@ class _$PortEvent_Read implements PortEvent_Read {
   @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
-  _$$PortEvent_ReadCopyWith<_$PortEvent_Read> get copyWith =>
-      __$$PortEvent_ReadCopyWithImpl<_$PortEvent_Read>(this, _$identity);
+  _$$PortEvent_ReadImplCopyWith<_$PortEvent_ReadImpl> get copyWith =>
+      __$$PortEvent_ReadImplCopyWithImpl<_$PortEvent_ReadImpl>(
+          this, _$identity);
 
   @override
   @optionalTypeArgs
@@ -1050,30 +1448,31 @@ class _$PortEvent_Read implements PortEvent_Read {
 
 abstract class PortEvent_Read implements PortEvent {
   const factory PortEvent_Read({required final PortRead request}) =
-      _$PortEvent_Read;
+      _$PortEvent_ReadImpl;
 
   @override
   PortRead get request;
   @JsonKey(ignore: true)
-  _$$PortEvent_ReadCopyWith<_$PortEvent_Read> get copyWith =>
+  _$$PortEvent_ReadImplCopyWith<_$PortEvent_ReadImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
 
 /// @nodoc
-abstract class _$$PortEvent_BytesToReadCopyWith<$Res> {
-  factory _$$PortEvent_BytesToReadCopyWith(_$PortEvent_BytesToRead value,
-          $Res Function(_$PortEvent_BytesToRead) then) =
-      __$$PortEvent_BytesToReadCopyWithImpl<$Res>;
+abstract class _$$PortEvent_BytesToReadImplCopyWith<$Res> {
+  factory _$$PortEvent_BytesToReadImplCopyWith(
+          _$PortEvent_BytesToReadImpl value,
+          $Res Function(_$PortEvent_BytesToReadImpl) then) =
+      __$$PortEvent_BytesToReadImplCopyWithImpl<$Res>;
   @useResult
   $Res call({PortBytesToRead request});
 }
 
 /// @nodoc
-class __$$PortEvent_BytesToReadCopyWithImpl<$Res>
-    extends _$PortEventCopyWithImpl<$Res, _$PortEvent_BytesToRead>
-    implements _$$PortEvent_BytesToReadCopyWith<$Res> {
-  __$$PortEvent_BytesToReadCopyWithImpl(_$PortEvent_BytesToRead _value,
-      $Res Function(_$PortEvent_BytesToRead) _then)
+class __$$PortEvent_BytesToReadImplCopyWithImpl<$Res>
+    extends _$PortEventCopyWithImpl<$Res, _$PortEvent_BytesToReadImpl>
+    implements _$$PortEvent_BytesToReadImplCopyWith<$Res> {
+  __$$PortEvent_BytesToReadImplCopyWithImpl(_$PortEvent_BytesToReadImpl _value,
+      $Res Function(_$PortEvent_BytesToReadImpl) _then)
       : super(_value, _then);
 
   @pragma('vm:prefer-inline')
@@ -1081,7 +1480,7 @@ class __$$PortEvent_BytesToReadCopyWithImpl<$Res>
   $Res call({
     Object? request = null,
   }) {
-    return _then(_$PortEvent_BytesToRead(
+    return _then(_$PortEvent_BytesToReadImpl(
       request: null == request
           ? _value.request
           : request // ignore: cast_nullable_to_non_nullable
@@ -1092,8 +1491,8 @@ class __$$PortEvent_BytesToReadCopyWithImpl<$Res>
 
 /// @nodoc
 
-class _$PortEvent_BytesToRead implements PortEvent_BytesToRead {
-  const _$PortEvent_BytesToRead({required this.request});
+class _$PortEvent_BytesToReadImpl implements PortEvent_BytesToRead {
+  const _$PortEvent_BytesToReadImpl({required this.request});
 
   @override
   final PortBytesToRead request;
@@ -1107,7 +1506,7 @@ class _$PortEvent_BytesToRead implements PortEvent_BytesToRead {
   bool operator ==(dynamic other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _$PortEvent_BytesToRead &&
+            other is _$PortEvent_BytesToReadImpl &&
             (identical(other.request, request) || other.request == request));
   }
 
@@ -1117,9 +1516,9 @@ class _$PortEvent_BytesToRead implements PortEvent_BytesToRead {
   @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
-  _$$PortEvent_BytesToReadCopyWith<_$PortEvent_BytesToRead> get copyWith =>
-      __$$PortEvent_BytesToReadCopyWithImpl<_$PortEvent_BytesToRead>(
-          this, _$identity);
+  _$$PortEvent_BytesToReadImplCopyWith<_$PortEvent_BytesToReadImpl>
+      get copyWith => __$$PortEvent_BytesToReadImplCopyWithImpl<
+          _$PortEvent_BytesToReadImpl>(this, _$identity);
 
   @override
   @optionalTypeArgs
@@ -1198,11 +1597,11 @@ class _$PortEvent_BytesToRead implements PortEvent_BytesToRead {
 
 abstract class PortEvent_BytesToRead implements PortEvent {
   const factory PortEvent_BytesToRead(
-      {required final PortBytesToRead request}) = _$PortEvent_BytesToRead;
+      {required final PortBytesToRead request}) = _$PortEvent_BytesToReadImpl;
 
   @override
   PortBytesToRead get request;
   @JsonKey(ignore: true)
-  _$$PortEvent_BytesToReadCopyWith<_$PortEvent_BytesToRead> get copyWith =>
-      throw _privateConstructorUsedError;
+  _$$PortEvent_BytesToReadImplCopyWith<_$PortEvent_BytesToReadImpl>
+      get copyWith => throw _privateConstructorUsedError;
 }

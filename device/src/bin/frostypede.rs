@@ -188,7 +188,6 @@ fn main() -> ! {
         select_button,
         led,
         display,
-        user_confirm: true,
         downstream_connection_state: ConnectionState::Disconnected,
         workflow: Default::default(),
         device_label: Default::default(),
@@ -220,7 +219,6 @@ where
     display: ST7735<'d, SPI>,
     downstream_connection_state: ConnectionState,
     workflow: Workflow,
-    user_confirm: bool,
     device_label: Option<String>,
     splash_state: AnimationState<'t, T>,
     changes: bool,
@@ -302,10 +300,13 @@ where
             }
             AnimationProgress::FinalTick => {
                 self.display.clear(Rgb565::BLACK).unwrap();
-                self.display.header("frostsnap").unwrap();
             }
             AnimationProgress::Done => { /* splash is done no need to anything */ }
         }
+
+        self.display
+            .header(self.device_label.as_deref().unwrap_or("NEW DEVICE"))
+            .unwrap();
 
         match &self.workflow {
             Workflow::None => {
@@ -313,6 +314,19 @@ where
                     .write(brightness([colors::WHITE].iter().cloned(), 10))
                     .unwrap();
             }
+            Workflow::NamingDevice {
+                old_name: existing_name,
+                new_name: current_name,
+            } => match existing_name {
+                Some(existing_name) => self
+                    .display
+                    .print(&format!("Renaming {}:\n> {}", existing_name, current_name))
+                    .unwrap(),
+                None => self
+                    .display
+                    .print(format!("Naming:\n> {}", current_name))
+                    .unwrap(),
+            },
             Workflow::WaitingFor(waiting_for) => match waiting_for {
                 WaitingFor::LookingForUpstream { jtag } => {
                     self.led
@@ -333,36 +347,23 @@ where
                         .unwrap();
                     self.display.print("Waiting for FrostSnap app").unwrap();
                 }
-                WaitingFor::CoordinatorInstruction { completed_task } => {
+                WaitingFor::CoordinatorInstruction { completed_task: _ } => {
                     self.led
                         .write(brightness([colors::GREEN].iter().cloned(), 10))
                         .unwrap();
 
-                    let label = self
-                        .device_label
-                        .as_ref()
-                        .expect("label should have been set by now");
-                    let mut body = String::new();
-                    match completed_task {
-                        Some(task) => match task {
-                            UiEvent::KeyGenConfirm(ack) => {
-                                if *ack {
-                                    body.push_str("Key SAVED!\n");
-                                }
-                            }
-                            UiEvent::SigningConfirm(ack) => {
-                                if *ack {
-                                    body.push_str("SIGNED!\n");
-                                }
-                            }
-                        },
-                        None => body.push('\n'),
-                    };
-                    body.push_str(&format!("NAME: {}\n", label));
+                    match &self.device_label {
+                        Some(label) => {
+                            let mut body = String::new();
+                            body.push_str(&format!("NAME: {}\n", label));
 
-                    body.push_str("Ready..");
-                    self.display.header(label).unwrap();
-                    self.display.print(body).unwrap();
+                            body.push_str("Ready..");
+                            self.display.print(body).unwrap();
+                        }
+                        None => {
+                            self.display.print("Press 'New Device'").unwrap();
+                        }
+                    };
                 }
                 WaitingFor::CoordinatorResponse(response) => match response {
                     WaitingResponse::KeyGen => {
@@ -384,6 +385,19 @@ where
                     Prompt::KeyGen(xpub) => {
                         self.display.print(format!("Ok {}", xpub)).unwrap();
                     }
+                    Prompt::NewName { old_name, new_name } => match old_name {
+                        Some(old_name) => self
+                            .display
+                            .print(format!(
+                                "Rename this device from '{}' to '{}'?",
+                                old_name, new_name
+                            ))
+                            .unwrap(),
+                        None => self
+                            .display
+                            .print(format!("Confirm naming this device {}?", new_name))
+                            .unwrap(),
+                    },
                 }
                 self.display.confirm_bar(0.0).unwrap();
             }
@@ -409,6 +423,8 @@ where
                 ConnectionState::Connected => Rgb565::YELLOW,
                 ConnectionState::Established => Rgb565::GREEN,
             });
+
+        self.display.flush().unwrap();
     }
 }
 
@@ -434,9 +450,15 @@ where
         self.device_label.as_deref()
     }
 
+    fn take_workflow(&mut self) -> Workflow {
+        core::mem::take(&mut self.workflow)
+    }
+
     fn set_workflow(&mut self, workflow: Workflow) {
+        if let Workflow::Debug(_) = self.workflow {
+            return;
+        }
         self.workflow = workflow;
-        self.user_confirm = true;
         self.changes = true;
     }
 
@@ -466,8 +488,11 @@ where
                             .write(brightness([colors::GREEN].iter().cloned(), 30))
                             .unwrap();
                         let ui_event = match prompt {
-                            Prompt::KeyGen(_) => UiEvent::KeyGenConfirm(self.user_confirm),
-                            Prompt::Signing(_) => UiEvent::SigningConfirm(self.user_confirm),
+                            Prompt::KeyGen(_) => UiEvent::KeyGenConfirm(true),
+                            Prompt::Signing(_) => UiEvent::SigningConfirm(true),
+                            Prompt::NewName { new_name, .. } => {
+                                UiEvent::NameConfirm(new_name.clone())
+                            }
                         };
                         event = Some(ui_event);
                     }
