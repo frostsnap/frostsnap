@@ -8,25 +8,6 @@ import 'package:frostsnapp/device_setup.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'dart:developer' as developer;
 
-// class UnlabeledDeviceTextField extends StatelessWidget {
-//   final ValueChanged<String> onNameSubmit;
-
-//   const UnlabeledDeviceTextField({required this.onNameSubmit, super.key});
-
-//   @override
-//   Widget build(BuildContext context) {
-//     return TextField(
-//         onSubmitted: onNameSubmit,
-//         textAlign: TextAlign.center,
-//         style: TextStyle(fontSize: 30),
-//         decoration: InputDecoration(
-//           hintText: "",
-//           hintStyle: TextStyle(color: Colors.grey.withOpacity(0.6)),
-//           border: InputBorder.none,
-//         ));
-//   }
-// }
-
 class DeviceListWidget extends StatefulWidget {
   final Orientation orientation;
   const DeviceListWidget({required this.orientation, super.key});
@@ -122,15 +103,15 @@ class DeviceListWidgetState extends State<DeviceListWidget>
                 MaterialPageRoute(
                     builder: (pageContext) => DeviceSetup(
                           deviceId: id,
-                          popInvoked: (success) {
-                            if (success) {
-                              global_coordinator.cancel(id);
-                            }
+                          popInvoked: () async {
+                            await global_coordinator.cancel(id);
+                            return true;
                           },
                           onSubmitted: (value) async {
                             global_coordinator.finishNaming(id, value);
                             await showDialog<void>(
-                                barrierDismissible: false,
+                                barrierDismissible:
+                                    false, // can't dismiss the dialogue
                                 context: context,
                                 builder: (dialogContext) {
                                   _deviceList.confirmNameDialogue = [
