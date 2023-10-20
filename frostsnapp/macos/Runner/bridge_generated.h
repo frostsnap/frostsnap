@@ -29,6 +29,10 @@ typedef struct wire_list_port_desc {
   int32_t len;
 } wire_list_port_desc;
 
+typedef struct wire_DeviceId {
+  struct wire_uint_8_list *field0;
+} wire_DeviceId;
+
 typedef struct wire_PortOpenSender {
   const void *ptr;
 } wire_PortOpenSender;
@@ -94,10 +98,19 @@ void wire_announce_available_ports(int64_t port_,
                                    struct wire_FfiCoordinator coordinator,
                                    struct wire_list_port_desc *ports);
 
-void wire_set_device_label(int64_t port_,
-                           struct wire_FfiCoordinator coordinator,
-                           struct wire_uint_8_list *device_id,
-                           struct wire_uint_8_list *label);
+void wire_update_name_preview(int64_t port_,
+                              struct wire_FfiCoordinator coordinator,
+                              struct wire_DeviceId *id,
+                              struct wire_uint_8_list *name);
+
+void wire_finish_naming(int64_t port_,
+                        struct wire_FfiCoordinator coordinator,
+                        struct wire_DeviceId *id,
+                        struct wire_uint_8_list *name);
+
+void wire_send_cancel(int64_t port_,
+                      struct wire_FfiCoordinator coordinator,
+                      struct wire_DeviceId *id);
 
 void wire_satisfy__method__PortOpen(int64_t port_,
                                     struct wire_PortOpen *that,
@@ -125,6 +138,8 @@ struct wire_PortOpenSender new_PortOpenSender(void);
 struct wire_PortReadSender new_PortReadSender(void);
 
 struct wire_PortWriteSender new_PortWriteSender(void);
+
+struct wire_DeviceId *new_box_autoadd_device_id_0(void);
 
 struct wire_PortBytesToRead *new_box_autoadd_port_bytes_to_read_0(void);
 
@@ -168,7 +183,9 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_turn_stderr_logging_on);
     dummy_var ^= ((int64_t) (void*) wire_turn_logcat_logging_on);
     dummy_var ^= ((int64_t) (void*) wire_announce_available_ports);
-    dummy_var ^= ((int64_t) (void*) wire_set_device_label);
+    dummy_var ^= ((int64_t) (void*) wire_update_name_preview);
+    dummy_var ^= ((int64_t) (void*) wire_finish_naming);
+    dummy_var ^= ((int64_t) (void*) wire_send_cancel);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortOpen);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortRead);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortWrite);
@@ -178,6 +195,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) new_PortOpenSender);
     dummy_var ^= ((int64_t) (void*) new_PortReadSender);
     dummy_var ^= ((int64_t) (void*) new_PortWriteSender);
+    dummy_var ^= ((int64_t) (void*) new_box_autoadd_device_id_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_port_bytes_to_read_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_port_open_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_port_read_0);

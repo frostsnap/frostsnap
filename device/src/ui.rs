@@ -8,11 +8,29 @@ pub trait UserInteraction {
     fn get_device_label(&self) -> Option<&str>;
 
     fn set_workflow(&mut self, workflow: Workflow);
+    fn take_workflow(&mut self) -> Workflow;
 
     fn poll(&mut self) -> Option<UiEvent>;
 
     fn dispaly_debug(&mut self, string: &str) {
         self.set_workflow(Workflow::Debug(string.into()));
+    }
+
+    fn cancel(&mut self) {
+        let workflow = self.take_workflow();
+        let new_workflow = match workflow {
+            Workflow::UserPrompt(Prompt::NewName { old_name, new_name }) => {
+                Workflow::NamingDevice { old_name, new_name }
+            }
+            Workflow::NamingDevice { .. }
+            | Workflow::UserPrompt(_)
+            | Workflow::BusyDoing(_)
+            | Workflow::WaitingFor(_) => Workflow::WaitingFor(WaitingFor::CoordinatorInstruction {
+                completed_task: None,
+            }),
+            Workflow::None | Workflow::Debug(_) => workflow,
+        };
+        self.set_workflow(new_workflow);
     }
 }
 
@@ -40,6 +58,10 @@ pub enum Workflow {
     BusyDoing(BusyTask),
     UserPrompt(Prompt),
     Debug(String),
+    NamingDevice {
+        old_name: Option<String>,
+        new_name: String,
+    },
 }
 
 impl Default for Workflow {
@@ -52,6 +74,10 @@ impl Default for Workflow {
 pub enum Prompt {
     KeyGen(String),
     Signing(String),
+    NewName {
+        old_name: Option<String>,
+        new_name: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -65,4 +91,5 @@ pub enum BusyTask {
 pub enum UiEvent {
     KeyGenConfirm(bool),
     SigningConfirm(bool),
+    NameConfirm(String),
 }

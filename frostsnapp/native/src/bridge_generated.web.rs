@@ -32,13 +32,23 @@ pub fn wire_announce_available_ports(port_: MessagePort, coordinator: JsValue, p
 }
 
 #[wasm_bindgen]
-pub fn wire_set_device_label(
+pub fn wire_update_name_preview(
     port_: MessagePort,
     coordinator: JsValue,
-    device_id: String,
-    label: String,
+    id: JsValue,
+    name: String,
 ) {
-    wire_set_device_label_impl(port_, coordinator, device_id, label)
+    wire_update_name_preview_impl(port_, coordinator, id, name)
+}
+
+#[wasm_bindgen]
+pub fn wire_finish_naming(port_: MessagePort, coordinator: JsValue, id: JsValue, name: String) {
+    wire_finish_naming_impl(port_, coordinator, id, name)
+}
+
+#[wasm_bindgen]
+pub fn wire_send_cancel(port_: MessagePort, coordinator: JsValue, id: JsValue) {
+    wire_send_cancel_impl(port_, coordinator, id)
 }
 
 #[wasm_bindgen]
@@ -157,6 +167,19 @@ impl Wire2Api<String> for String {
     }
 }
 
+impl Wire2Api<DeviceId> for JsValue {
+    fn wire2api(self) -> DeviceId {
+        let self_ = self.dyn_into::<JsArray>().unwrap();
+        assert_eq!(
+            self_.length(),
+            1,
+            "Expected 1 elements, got {}",
+            self_.length()
+        );
+        DeviceId(self_.get(0).wire2api())
+    }
+}
+
 impl Wire2Api<Vec<PortDesc>> for JsValue {
     fn wire2api(self) -> Vec<PortDesc> {
         self.dyn_into::<JsArray>()
@@ -251,6 +274,12 @@ impl Wire2Api<PortWrite> for JsValue {
     }
 }
 
+impl Wire2Api<[u8; 33]> for Box<[u8]> {
+    fn wire2api(self) -> [u8; 33] {
+        let vec: Vec<u8> = self.wire2api();
+        support::from_vec_to_array(vec)
+    }
+}
 impl Wire2Api<Vec<u8>> for Box<[u8]> {
     fn wire2api(self) -> Vec<u8> {
         self.into_vec()
@@ -347,6 +376,12 @@ impl Wire2Api<u32> for JsValue {
 impl Wire2Api<u8> for JsValue {
     fn wire2api(self) -> u8 {
         self.unchecked_into_f64() as _
+    }
+}
+impl Wire2Api<[u8; 33]> for JsValue {
+    fn wire2api(self) -> [u8; 33] {
+        let vec: Vec<u8> = self.wire2api();
+        support::from_vec_to_array(vec)
     }
 }
 impl Wire2Api<Vec<u8>> for JsValue {

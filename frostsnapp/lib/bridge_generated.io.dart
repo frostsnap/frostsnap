@@ -59,6 +59,13 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   }
 
   @protected
+  ffi.Pointer<wire_DeviceId> api2wire_box_autoadd_device_id(DeviceId raw) {
+    final ptr = inner.new_box_autoadd_device_id_0();
+    _api_fill_to_wire_device_id(raw, ptr.ref);
+    return ptr;
+  }
+
+  @protected
   ffi.Pointer<wire_PortBytesToRead> api2wire_box_autoadd_port_bytes_to_read(
       PortBytesToRead raw) {
     final ptr = inner.new_box_autoadd_port_bytes_to_read_0();
@@ -99,6 +106,13 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   @protected
   ffi.Pointer<wire_uint_8_list> api2wire_opt_String(String? raw) {
     return raw == null ? ffi.nullptr : api2wire_String(raw);
+  }
+
+  @protected
+  ffi.Pointer<wire_uint_8_list> api2wire_u8_array_33(U8Array33 raw) {
+    final ans = inner.new_uint_8_list_0(33);
+    ans.ref.ptr.asTypedList(33).setAll(0, raw);
+    return ans;
   }
 
   @protected
@@ -153,6 +167,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
     wireObj.ptr = apiObj.shareOrMove();
   }
 
+  void _api_fill_to_wire_box_autoadd_device_id(
+      DeviceId apiObj, ffi.Pointer<wire_DeviceId> wireObj) {
+    _api_fill_to_wire_device_id(apiObj, wireObj.ref);
+  }
+
   void _api_fill_to_wire_box_autoadd_port_bytes_to_read(
       PortBytesToRead apiObj, ffi.Pointer<wire_PortBytesToRead> wireObj) {
     _api_fill_to_wire_port_bytes_to_read(apiObj, wireObj.ref);
@@ -171,6 +190,10 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   void _api_fill_to_wire_box_autoadd_port_write(
       PortWrite apiObj, ffi.Pointer<wire_PortWrite> wireObj) {
     _api_fill_to_wire_port_write(apiObj, wireObj.ref);
+  }
+
+  void _api_fill_to_wire_device_id(DeviceId apiObj, wire_DeviceId wireObj) {
+    wireObj.field0 = api2wire_u8_array_33(apiObj.field0);
   }
 
   void _api_fill_to_wire_port_bytes_to_read(
@@ -398,30 +421,75 @@ class NativeWire implements FlutterRustBridgeWireBase {
           void Function(
               int, wire_FfiCoordinator, ffi.Pointer<wire_list_port_desc>)>();
 
-  void wire_set_device_label(
+  void wire_update_name_preview(
     int port_,
     wire_FfiCoordinator coordinator,
-    ffi.Pointer<wire_uint_8_list> device_id,
-    ffi.Pointer<wire_uint_8_list> label,
+    ffi.Pointer<wire_DeviceId> id,
+    ffi.Pointer<wire_uint_8_list> name,
   ) {
-    return _wire_set_device_label(
+    return _wire_update_name_preview(
       port_,
       coordinator,
-      device_id,
-      label,
+      id,
+      name,
     );
   }
 
-  late final _wire_set_device_labelPtr = _lookup<
+  late final _wire_update_name_previewPtr = _lookup<
       ffi.NativeFunction<
           ffi.Void Function(
               ffi.Int64,
               wire_FfiCoordinator,
-              ffi.Pointer<wire_uint_8_list>,
-              ffi.Pointer<wire_uint_8_list>)>>('wire_set_device_label');
-  late final _wire_set_device_label = _wire_set_device_labelPtr.asFunction<
-      void Function(int, wire_FfiCoordinator, ffi.Pointer<wire_uint_8_list>,
+              ffi.Pointer<wire_DeviceId>,
+              ffi.Pointer<wire_uint_8_list>)>>('wire_update_name_preview');
+  late final _wire_update_name_preview =
+      _wire_update_name_previewPtr.asFunction<
+          void Function(int, wire_FfiCoordinator, ffi.Pointer<wire_DeviceId>,
+              ffi.Pointer<wire_uint_8_list>)>();
+
+  void wire_finish_naming(
+    int port_,
+    wire_FfiCoordinator coordinator,
+    ffi.Pointer<wire_DeviceId> id,
+    ffi.Pointer<wire_uint_8_list> name,
+  ) {
+    return _wire_finish_naming(
+      port_,
+      coordinator,
+      id,
+      name,
+    );
+  }
+
+  late final _wire_finish_namingPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Void Function(
+              ffi.Int64,
+              wire_FfiCoordinator,
+              ffi.Pointer<wire_DeviceId>,
+              ffi.Pointer<wire_uint_8_list>)>>('wire_finish_naming');
+  late final _wire_finish_naming = _wire_finish_namingPtr.asFunction<
+      void Function(int, wire_FfiCoordinator, ffi.Pointer<wire_DeviceId>,
           ffi.Pointer<wire_uint_8_list>)>();
+
+  void wire_send_cancel(
+    int port_,
+    wire_FfiCoordinator coordinator,
+    ffi.Pointer<wire_DeviceId> id,
+  ) {
+    return _wire_send_cancel(
+      port_,
+      coordinator,
+      id,
+    );
+  }
+
+  late final _wire_send_cancelPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Void Function(ffi.Int64, wire_FfiCoordinator,
+              ffi.Pointer<wire_DeviceId>)>>('wire_send_cancel');
+  late final _wire_send_cancel = _wire_send_cancelPtr.asFunction<
+      void Function(int, wire_FfiCoordinator, ffi.Pointer<wire_DeviceId>)>();
 
   void wire_satisfy__method__PortOpen(
     int port_,
@@ -563,6 +631,16 @@ class NativeWire implements FlutterRustBridgeWireBase {
           'new_PortWriteSender');
   late final _new_PortWriteSender =
       _new_PortWriteSenderPtr.asFunction<wire_PortWriteSender Function()>();
+
+  ffi.Pointer<wire_DeviceId> new_box_autoadd_device_id_0() {
+    return _new_box_autoadd_device_id_0();
+  }
+
+  late final _new_box_autoadd_device_id_0Ptr =
+      _lookup<ffi.NativeFunction<ffi.Pointer<wire_DeviceId> Function()>>(
+          'new_box_autoadd_device_id_0');
+  late final _new_box_autoadd_device_id_0 = _new_box_autoadd_device_id_0Ptr
+      .asFunction<ffi.Pointer<wire_DeviceId> Function()>();
 
   ffi.Pointer<wire_PortBytesToRead> new_box_autoadd_port_bytes_to_read_0() {
     return _new_box_autoadd_port_bytes_to_read_0();
@@ -825,6 +903,10 @@ final class wire_list_port_desc extends ffi.Struct {
 
   @ffi.Int32()
   external int len;
+}
+
+final class wire_DeviceId extends ffi.Struct {
+  external ffi.Pointer<wire_uint_8_list> field0;
 }
 
 final class wire_PortOpenSender extends ffi.Struct {

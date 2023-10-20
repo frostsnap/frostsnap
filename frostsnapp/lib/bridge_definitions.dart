@@ -10,6 +10,7 @@ import 'package:meta/meta.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
 import 'package:uuid/uuid.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
+import 'package:collection/collection.dart';
 
 part 'bridge_definitions.freezed.dart';
 
@@ -42,13 +43,28 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kAnnounceAvailablePortsConstMeta;
 
-  Future<void> setDeviceLabel(
+  Future<void> updateNamePreview(
       {required FfiCoordinator coordinator,
-      required String deviceId,
-      required String label,
+      required DeviceId id,
+      required String name,
       dynamic hint});
 
-  FlutterRustBridgeTaskConstMeta get kSetDeviceLabelConstMeta;
+  FlutterRustBridgeTaskConstMeta get kUpdateNamePreviewConstMeta;
+
+  Future<void> finishNaming(
+      {required FfiCoordinator coordinator,
+      required DeviceId id,
+      required String name,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kFinishNamingConstMeta;
+
+  Future<void> sendCancel(
+      {required FfiCoordinator coordinator,
+      required DeviceId id,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kSendCancelConstMeta;
 
   Future<void> satisfyMethodPortOpen(
       {required PortOpen that, String? err, dynamic hint});
@@ -173,15 +189,31 @@ class PortWriteSender extends FrbOpaque {
 @freezed
 sealed class DeviceChange with _$DeviceChange {
   const factory DeviceChange.added({
-    required String id,
+    required DeviceId id,
   }) = DeviceChange_Added;
+  const factory DeviceChange.renamed({
+    required DeviceId id,
+    required String oldName,
+    required String newName,
+  }) = DeviceChange_Renamed;
+  const factory DeviceChange.needsName({
+    required DeviceId id,
+  }) = DeviceChange_NeedsName;
   const factory DeviceChange.registered({
-    required String id,
-    required String label,
+    required DeviceId id,
+    required String name,
   }) = DeviceChange_Registered;
   const factory DeviceChange.disconnected({
-    required String id,
+    required DeviceId id,
   }) = DeviceChange_Disconnected;
+}
+
+class DeviceId {
+  final U8Array33 field0;
+
+  const DeviceId({
+    required this.field0,
+  });
 }
 
 enum Level {
@@ -294,4 +326,13 @@ class PortWrite {
         that: this,
         err: err,
       );
+}
+
+class U8Array33 extends NonGrowableListView<int> {
+  static const arraySize = 33;
+  U8Array33(Uint8List inner)
+      : assert(inner.length == arraySize),
+        super(inner);
+  U8Array33.unchecked(Uint8List inner) : super(inner);
+  U8Array33.init() : super(Uint8List(arraySize));
 }

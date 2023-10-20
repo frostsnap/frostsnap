@@ -4,7 +4,7 @@ pub use crate::coordinator::{
 pub use crate::FfiCoordinator;
 use anyhow::anyhow;
 use flutter_rust_bridge::{frb, RustOpaque, StreamSink};
-pub use frostsnap_coordinator::PortDesc;
+pub use frostsnap_coordinator::{frostsnap_core::DeviceId, DeviceChange, PortDesc};
 use lazy_static::lazy_static;
 pub use std::os::fd::RawFd;
 pub use std::sync::{Mutex, RwLock};
@@ -57,7 +57,8 @@ pub struct _PortDesc {
     pub pid: u16,
 }
 
-pub type DeviceId = String;
+#[frb(mirror(DeviceId))]
+pub struct _DeviceId(pub [u8; 33]);
 
 #[derive(Debug)]
 pub enum PortEvent {
@@ -67,11 +68,27 @@ pub enum PortEvent {
     BytesToRead { request: PortBytesToRead },
 }
 
-#[derive(Debug)]
-pub enum DeviceChange {
-    Added { id: DeviceId },
-    Registered { id: DeviceId, label: String },
-    Disconnected { id: DeviceId },
+#[frb(mirror(DeviceChange))]
+#[derive(Debug, Clone)]
+pub enum _DeviceChange {
+    Added {
+        id: DeviceId,
+    },
+    Renamed {
+        id: DeviceId,
+        old_name: String,
+        new_name: String,
+    },
+    NeedsName {
+        id: DeviceId,
+    },
+    Registered {
+        id: DeviceId,
+        name: String,
+    },
+    Disconnected {
+        id: DeviceId,
+    },
 }
 
 #[derive(Debug)]
@@ -187,10 +204,14 @@ pub fn announce_available_ports(coordinator: RustOpaque<FfiCoordinator>, ports: 
     coordinator.set_available_ports(ports);
 }
 
-pub fn set_device_label(
-    coordinator: RustOpaque<FfiCoordinator>,
-    device_id: DeviceId,
-    label: String,
-) {
-    coordinator.set_device_label(device_id, label)
+pub fn update_name_preview(coordinator: RustOpaque<FfiCoordinator>, id: DeviceId, name: String) {
+    coordinator.update_name_preview(id, &name);
+}
+
+pub fn finish_naming(coordinator: RustOpaque<FfiCoordinator>, id: DeviceId, name: String) {
+    coordinator.finish_naming(id, &name);
+}
+
+pub fn send_cancel(coordinator: RustOpaque<FfiCoordinator>, id: DeviceId) {
+    coordinator.send_cancel(id);
 }

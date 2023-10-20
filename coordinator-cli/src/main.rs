@@ -5,6 +5,7 @@ use db::Db;
 use frostsnap_comms::CoordinatorSendBody;
 use frostsnap_comms::CoordinatorSendMessage;
 use frostsnap_coordinator::DesktopSerial;
+use frostsnap_coordinator::DeviceChange;
 use frostsnap_core::message::CoordinatorSend;
 use frostsnap_core::message::CoordinatorToStorageMessage;
 use frostsnap_core::message::CoordinatorToUserMessage;
@@ -19,7 +20,6 @@ use tracing::{event, Level};
 use wallet::Wallet;
 
 pub mod db;
-mod device_namer;
 pub mod nostr;
 pub mod signer;
 pub mod wallet;
@@ -48,6 +48,8 @@ enum Command {
         #[arg(short, long)]
         n_devices: usize,
     },
+    /// Set up devices
+    Setup,
     /// View the existing Frostsnap key
     Key,
     /// Sign a message, Bitcoin transaction, or Nostr post
@@ -172,6 +174,42 @@ fn main() -> anyhow::Result<()> {
             }
             None => eprintln!("You have not generated a key yet!"),
         },
+        Command::Setup => {
+            eprintln!("Plug in devices to set them up.");
+            let mut waiting_for_name_ack = BTreeSet::default();
+
+            loop {
+                let port_changes = ports.poll_ports();
+                for device_change in port_changes.device_changes {
+                    match device_change {
+                        DeviceChange::Added { .. } | DeviceChange::Disconnected { .. } => { /*  */ }
+                        DeviceChange::Renamed {
+                            id,
+                            old_name,
+                            new_name,
+                        } => {
+                            eprintln!(
+                                "⚠ device {id} renamed to {new_name}. It's old name was {old_name}"
+                            );
+                        }
+                        DeviceChange::NeedsName { id } => {
+                            eprintln!("🤖 new device connected. Give it a name:");
+                            let mut line = String::new();
+                            std::io::stdin().read_line(&mut line)?;
+                            line.pop();
+                            ports.finish_naming(id, &line);
+                            eprintln!("Confirm name {line} on device");
+                            waiting_for_name_ack.insert(id);
+                        }
+                        DeviceChange::Registered { id, name } => {
+                            if waiting_for_name_ack.remove(&id) {
+                                eprintln!("Device {name} is ready to use!");
+                            }
+                        }
+                    }
+                }
+            }
+        }
         Command::Keygen {
             threshold,
             n_devices,
@@ -180,12 +218,6 @@ fn main() -> anyhow::Result<()> {
 
             while ports.registered_devices().len() < n_devices {
                 ports.poll_ports();
-
-                for device_id in ports.unlabelled_devices().collect::<Vec<_>>() {
-                    let device_label = device_namer::gen_name39();
-                    eprintln!("Registered new device: {}", device_label);
-                    ports.device_labels_mut().insert(device_id, device_label);
-                }
             }
 
             let keygen_devices = if ports.registered_devices().len() > n_devices {

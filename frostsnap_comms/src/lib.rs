@@ -56,16 +56,22 @@ impl Gist for CoordinatorSendMessage {
 #[derive(Encode, Decode, Debug, Clone)]
 pub enum CoordinatorSendBody {
     Core(frostsnap_core::message::CoordinatorToDeviceMessage),
-    AnnounceAck { device_label: String },
+    Naming(NameCommand),
+    AnnounceAck,
+    Cancel,
+}
+
+#[derive(Encode, Decode, Debug, Clone)]
+pub enum NameCommand {
+    Preview(String),
+    Finish(String),
 }
 
 impl Gist for CoordinatorSendBody {
     fn gist(&self) -> String {
         match self {
             CoordinatorSendBody::Core(core) => core.gist(),
-            CoordinatorSendBody::AnnounceAck { device_label } => {
-                format!("AnnoucneAck({})", device_label)
-            }
+            _ => format!("{:?}", self),
         }
     }
 }
@@ -154,8 +160,10 @@ impl Gist for DeviceSendMessage {
 pub enum DeviceSendBody {
     Core(frostsnap_core::message::DeviceToCoordinatorMessage),
     Debug { message: String },
-    Announce(Announce),
+    Announce,
+    SetName { name: String },
     DisconnectDownstream,
+    NeedName,
 }
 
 impl Gist for DeviceSendBody {
@@ -163,14 +171,13 @@ impl Gist for DeviceSendBody {
         match self {
             DeviceSendBody::Core(msg) => msg.gist(),
             DeviceSendBody::Debug { message } => format!("debug: {message}"),
-            DeviceSendBody::Announce(_) => "Announce".into(),
-            DeviceSendBody::DisconnectDownstream => "DisconnectedDownstream".into(),
+            DeviceSendBody::DisconnectDownstream
+            | DeviceSendBody::NeedName
+            | DeviceSendBody::Announce
+            | DeviceSendBody::SetName { .. } => format!("{:?}", self),
         }
     }
 }
-
-#[derive(Encode, Decode, Debug, Clone)]
-pub struct Announce {}
 
 pub fn make_progress_on_magic_bytes<D: Direction>(
     remaining: impl Iterator<Item = u8>,

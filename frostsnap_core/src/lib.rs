@@ -515,10 +515,10 @@ pub struct DeviceNonces {
     nonces: VecDeque<Nonce>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Hash, Eq, Ord, PartialOrd)]
-pub struct DeviceId([u8; 33]);
+#[derive(Clone, Copy, PartialEq, Hash, Eq, Ord, PartialOrd)]
+pub struct DeviceId(pub [u8; 33]);
 
-impl_display_serialize! {
+impl_display_debug_serialize! {
     fn to_bytes(device_id: &DeviceId) -> [u8;33] {
         device_id.0
     }

@@ -51,6 +51,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
+  List<dynamic> api2wire_box_autoadd_device_id(DeviceId raw) {
+    return api2wire_device_id(raw);
+  }
+
+  @protected
   List<dynamic> api2wire_box_autoadd_port_bytes_to_read(PortBytesToRead raw) {
     return api2wire_port_bytes_to_read(raw);
   }
@@ -68,6 +73,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   @protected
   List<dynamic> api2wire_box_autoadd_port_write(PortWrite raw) {
     return api2wire_port_write(raw);
+  }
+
+  @protected
+  List<dynamic> api2wire_device_id(DeviceId raw) {
+    return [api2wire_u8_array_33(raw.field0)];
   }
 
   @protected
@@ -119,6 +129,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
       api2wire_uint_8_list(raw.bytes),
       api2wire_PortWriteSender(raw.ready)
     ];
+  }
+
+  @protected
+  Uint8List api2wire_u8_array_33(U8Array33 raw) {
+    return Uint8List.fromList(raw);
   }
 
   @protected
@@ -176,8 +191,14 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* void */ wire_announce_available_ports(
       NativePortType port_, Object coordinator, List<dynamic> ports);
 
-  external dynamic /* void */ wire_set_device_label(
-      NativePortType port_, Object coordinator, String device_id, String label);
+  external dynamic /* void */ wire_update_name_preview(
+      NativePortType port_, Object coordinator, List<dynamic> id, String name);
+
+  external dynamic /* void */ wire_finish_naming(
+      NativePortType port_, Object coordinator, List<dynamic> id, String name);
+
+  external dynamic /* void */ wire_send_cancel(
+      NativePortType port_, Object coordinator, List<dynamic> id);
 
   external dynamic /* void */ wire_satisfy__method__PortOpen(
       NativePortType port_, List<dynamic> that, String? err);
@@ -238,9 +259,17 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
           NativePortType port_, Object coordinator, List<dynamic> ports) =>
       wasmModule.wire_announce_available_ports(port_, coordinator, ports);
 
-  void wire_set_device_label(NativePortType port_, Object coordinator,
-          String device_id, String label) =>
-      wasmModule.wire_set_device_label(port_, coordinator, device_id, label);
+  void wire_update_name_preview(NativePortType port_, Object coordinator,
+          List<dynamic> id, String name) =>
+      wasmModule.wire_update_name_preview(port_, coordinator, id, name);
+
+  void wire_finish_naming(NativePortType port_, Object coordinator,
+          List<dynamic> id, String name) =>
+      wasmModule.wire_finish_naming(port_, coordinator, id, name);
+
+  void wire_send_cancel(
+          NativePortType port_, Object coordinator, List<dynamic> id) =>
+      wasmModule.wire_send_cancel(port_, coordinator, id);
 
   void wire_satisfy__method__PortOpen(
           NativePortType port_, List<dynamic> that, String? err) =>
