@@ -3,7 +3,7 @@ use alloc::string::String;
 pub trait UserInteraction {
     fn set_downstream_connection_state(&mut self, state: crate::ConnectionState);
 
-    fn set_device_label(&mut self, label: String);
+    fn set_device_name(&mut self, name: String);
 
     fn get_device_label(&self) -> Option<&str>;
 
@@ -11,10 +11,6 @@ pub trait UserInteraction {
     fn take_workflow(&mut self) -> Workflow;
 
     fn poll(&mut self) -> Option<UiEvent>;
-
-    fn dispaly_debug(&mut self, string: &str) {
-        self.set_workflow(Workflow::Debug(string.into()));
-    }
 
     fn cancel(&mut self) {
         let workflow = self.take_workflow();

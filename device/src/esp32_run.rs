@@ -72,7 +72,7 @@ where
 
         let device_id = state.signer.device_id();
         if let Some(name) = &state.name {
-            ui.set_device_label(name.into());
+            ui.set_device_name(name.into());
         }
 
         let mut downstream_serial =
@@ -335,7 +335,7 @@ where
                     UiEvent::NameConfirm(ref name) => {
                         state.name = Some(name.into());
                         flash.save(&state).unwrap();
-                        ui.set_device_label(name.into());
+                        ui.set_device_name(name.into());
                         sends_upstream.send(DeviceSendBody::SetName { name: name.into() });
                     }
                 }
