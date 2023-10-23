@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/coordinator.dart';
+import 'package:frostsnapp/show_key.dart';
+import 'dart:math';
 
 class DoKeyGenButton extends StatefulWidget {
   final int devicecount;
@@ -16,59 +18,78 @@ class _DoKeyGenButtonState extends State<DoKeyGenButton> {
   @override
   Widget build(BuildContext context) {
     return Visibility(
-      visible: widget.devicecount > 0,
-      child: Column(
-        children: [
-          Text(
-            'Threshold: ${sliderValue.toInt()}',
-            style: TextStyle(fontSize: 18.0),
-          ),
-          Slider(
-              value: sliderValue,
-              onChanged: (newValue) {
-                setState(() {
-                  sliderValue = newValue;
-                });
+        visible: widget.devicecount > 0,
+        child: Column(
+          children: [
+            Visibility(
+                visible: widget.devicecount >= 2,
+                child: Column(children: [
+                  Text(
+                    'Threshold: ${sliderValue.toInt()}',
+                    style: TextStyle(fontSize: 18.0),
+                  ),
+                  Slider(
+                      // Force 1 <= threshold <= devicecount
+                      value: max(
+                          1, min(sliderValue, widget.devicecount.toDouble())),
+                      onChanged: (newValue) {
+                        setState(() {
+                          sliderValue = newValue;
+                        });
+                      },
+                      divisions: 1,
+                      min: 1,
+                      max: max(widget.devicecount.toDouble(), 1)),
+                ])),
+            GestureDetector(
+              onTap: () {
+                _navigateToKeyGenScreen(context, sliderValue.toInt());
               },
-              divisions: 1,
-              min: 1,
-              max: (widget.devicecount.toDouble() > 1)
-                  ? widget.devicecount.toDouble()
-                  : 1),
-          GestureDetector(
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) =>
-                      DoKeyGenScreen(threshold: sliderValue.toInt()),
-                ),
-              );
-            },
-            child: Padding(
-              padding: EdgeInsets.all(25.0),
-              child: Container(
-                padding: EdgeInsets.all(16.0),
-                color: Colors.blue,
-                child: Text(
-                  'Generate Key',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16.0,
+              child: Padding(
+                padding: EdgeInsets.all(25.0),
+                child: Container(
+                  padding: EdgeInsets.all(16.0),
+                  color: Colors.blue,
+                  child: Text(
+                    'Generate Key',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16.0,
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        ],
-      ),
-    );
+          ],
+        ));
   }
+}
+
+void _navigateToKeyGenScreen(BuildContext context, int threshold) {
+  Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (context) => DoKeyGenScreen(threshold: threshold),
+    ),
+  );
 }
 
 class DoKeyGenScreen extends StatelessWidget {
   final int threshold;
 
-  const DoKeyGenScreen({super.key, required this.threshold});
+  const DoKeyGenScreen({Key? key, required this.threshold});
+
+  void keygenConfirmed(BuildContext context, String key) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => KeyDisplayPage(key),
+      ),
+    );
+  }
+
+  void keygenCancelled(BuildContext context) {
+    // do something
+    Navigator.of(context).pop();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -85,48 +106,30 @@ class DoKeyGenScreen extends StatelessWidget {
             } else if (snapshot.hasError) {
               return Text('Error: ${snapshot.error}');
             } else {
-              return Center(
-                  child: Card(
-                margin: EdgeInsets.all(50.0),
-                color: Colors.lightBlueAccent,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ListTile(
-                      title: Text(
-                        'Confirm Frost Key',
-                        style: TextStyle(
-                          fontSize: 25.0,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    Padding(
-                      padding: EdgeInsets.all(16.0),
-                      child: RichText(
-                        text: TextSpan(
-                          style: TextStyle(
-                            fontSize: 18,
-                            color: Colors.black,
-                          ),
-                          children: [
-                            TextSpan(
-                              text:
-                                  'Check this Public Key matches the key shown on each device:\n\n',
-                            ),
-                            TextSpan(
-                              text: '${snapshot.data}',
-                              style: TextStyle(
-                                color: Colors.white,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
+              return AlertDialog(
+                title: Text(
+                  'Does this match on all devices?',
+                  style: TextStyle(color: Colors.black),
                 ),
-              ));
+                content: Text(
+                  '${snapshot.data}',
+                  style: TextStyle(color: Colors.blue),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      keygenConfirmed(context, '${snapshot.data}');
+                    },
+                    child: Text("Yes"),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      keygenCancelled(context);
+                    },
+                    child: Text("No"),
+                  ),
+                ],
+              );
             }
           },
         ),

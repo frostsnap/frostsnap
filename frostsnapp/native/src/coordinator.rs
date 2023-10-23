@@ -175,10 +175,8 @@ impl FfiCoordinator {
                 }
             }
         });
-        let key = handle.join().unwrap();
 
-        // format!("{:?}", key.frost_key())
-        key
+        handle.join().unwrap()
     }
 }
 
