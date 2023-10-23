@@ -71,6 +71,11 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kGenerateNewKeyConstMeta;
 
+  Future<void> keygenAck(
+      {required FfiCoordinator coordinator, required bool ack, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kKeygenAckConstMeta;
+
   Future<void> satisfyMethodPortOpen(
       {required PortOpen that, String? err, dynamic hint});
 

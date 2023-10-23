@@ -223,3 +223,7 @@ pub fn generate_new_key(coordinator: RustOpaque<FfiCoordinator>, threshold: usiz
     let coordinator_frostkey = coordinator.generate_new_key(threshold);
     format!("{}", coordinator_frostkey.frost_key().public_key())
 }
+
+pub fn keygen_ack(coordinator: RustOpaque<FfiCoordinator>, ack: bool) {
+    coordinator.keygen_ack(ack)
+}

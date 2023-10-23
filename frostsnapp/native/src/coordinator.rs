@@ -40,8 +40,9 @@ impl FfiCoordinator {
         let manager_thread = manager.clone();
 
         let pending_for_outbox = Arc::new(Mutex::new(VecDeque::new()));
-        let pending = pending_for_outbox.clone();
-        let coordinator = core_coordinator.clone();
+
+        let pending_loop = pending_for_outbox.clone();
+        let coordinator_loop = core_coordinator.clone();
         let _handle = std::thread::spawn(move || loop {
             let new_messages = {
                 let PortChanges {
@@ -62,13 +63,13 @@ impl FfiCoordinator {
             };
 
             for (from, message) in new_messages {
-                match coordinator
+                match coordinator_loop
                     .lock()
                     .unwrap()
                     .recv_device_message(from, message.clone())
                 {
                     Ok(messages) => {
-                        let mut pending_messages = pending.lock().unwrap();
+                        let mut pending_messages = pending_loop.lock().unwrap();
                         pending_messages.extend(messages);
                     }
                     Err(e) => {
@@ -83,7 +84,7 @@ impl FfiCoordinator {
                 };
             }
 
-            let mut pending_messages = pending.lock().unwrap();
+            let mut pending_messages = pending_loop.lock().unwrap();
             while let Some(message) = pending_messages.pop_front() {
                 match message {
                     CoordinatorSend::ToDevice(msg) => {
@@ -100,8 +101,7 @@ impl FfiCoordinator {
                     CoordinatorSend::ToUser(msg) => match msg {
                         CoordinatorToUserMessage::Signed { .. } => {}
                         CoordinatorToUserMessage::CheckKeyGen { .. } => {
-                            pending_messages
-                                .extend(coordinator.lock().unwrap().keygen_ack(true).unwrap());
+                            // Don't want to ack this until button press!!!
                         }
                     },
                     CoordinatorSend::ToStorage(_) => {
@@ -177,6 +177,14 @@ impl FfiCoordinator {
         });
 
         handle.join().unwrap()
+    }
+
+    pub fn keygen_ack(&self, ack: bool) {
+        let coordinator_sends = self.coordinator.lock().unwrap().keygen_ack(ack).unwrap();
+        {
+            let mut pending_outox = self.pending_for_outbox.lock().unwrap();
+            pending_outox.extend(coordinator_sends);
+        }
     }
 }
 

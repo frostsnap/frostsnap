@@ -105,4 +105,9 @@ class Coordinator {
     var ctx = await ffi;
     await api.sendCancel(coordinator: ctx, id: id);
   }
+
+  ackKeygen(bool ack) async {
+    var ctx = await ffi;
+    api.keygenAck(coordinator: ctx, ack: ack);
+  }
 }

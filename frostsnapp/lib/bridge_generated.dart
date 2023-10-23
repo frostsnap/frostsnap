@@ -235,6 +235,26 @@ class NativeImpl implements Native {
         argNames: ["coordinator", "threshold"],
       );
 
+  Future<void> keygenAck(
+      {required FfiCoordinator coordinator, required bool ack, dynamic hint}) {
+    var arg0 = _platform.api2wire_FfiCoordinator(coordinator);
+    var arg1 = ack;
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner.wire_keygen_ack(port_, arg0, arg1),
+      parseSuccessData: _wire2api_unit,
+      parseErrorData: null,
+      constMeta: kKeygenAckConstMeta,
+      argValues: [coordinator, ack],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kKeygenAckConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "keygen_ack",
+        argNames: ["coordinator", "ack"],
+      );
+
   Future<void> satisfyMethodPortOpen(
       {required PortOpen that, String? err, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_port_open(that);
@@ -1080,6 +1100,25 @@ class NativeWire implements FlutterRustBridgeWireBase {
               ffi.UintPtr)>>('wire_generate_new_key');
   late final _wire_generate_new_key = _wire_generate_new_keyPtr
       .asFunction<void Function(int, wire_FfiCoordinator, int)>();
+
+  void wire_keygen_ack(
+    int port_,
+    wire_FfiCoordinator coordinator,
+    bool ack,
+  ) {
+    return _wire_keygen_ack(
+      port_,
+      coordinator,
+      ack,
+    );
+  }
+
+  late final _wire_keygen_ackPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Void Function(
+              ffi.Int64, wire_FfiCoordinator, ffi.Bool)>>('wire_keygen_ack');
+  late final _wire_keygen_ack = _wire_keygen_ackPtr
+      .asFunction<void Function(int, wire_FfiCoordinator, bool)>();
 
   void wire_satisfy__method__PortOpen(
     int port_,

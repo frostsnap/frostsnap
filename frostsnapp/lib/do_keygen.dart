@@ -13,7 +13,7 @@ class DoKeyGenButton extends StatefulWidget {
 }
 
 class _DoKeyGenButtonState extends State<DoKeyGenButton> {
-  double sliderValue = 1;
+  double thresholdSlider = 1;
 
   @override
   Widget build(BuildContext context) {
@@ -25,16 +25,16 @@ class _DoKeyGenButtonState extends State<DoKeyGenButton> {
                 visible: widget.devicecount >= 2,
                 child: Column(children: [
                   Text(
-                    'Threshold: ${sliderValue.toInt()}',
+                    'Threshold: ${thresholdSlider.toInt()}',
                     style: TextStyle(fontSize: 18.0),
                   ),
                   Slider(
                       // Force 1 <= threshold <= devicecount
-                      value: max(
-                          1, min(sliderValue, widget.devicecount.toDouble())),
+                      value: max(1,
+                          min(thresholdSlider, widget.devicecount.toDouble())),
                       onChanged: (newValue) {
                         setState(() {
-                          sliderValue = newValue;
+                          thresholdSlider = newValue;
                         });
                       },
                       divisions: 1,
@@ -43,7 +43,7 @@ class _DoKeyGenButtonState extends State<DoKeyGenButton> {
                 ])),
             GestureDetector(
               onTap: () {
-                _navigateToKeyGenScreen(context, sliderValue.toInt());
+                _navigateToKeyGenScreen(context, thresholdSlider.toInt());
               },
               child: Padding(
                 padding: EdgeInsets.all(25.0),
@@ -79,6 +79,7 @@ class DoKeyGenScreen extends StatelessWidget {
   const DoKeyGenScreen({Key? key, required this.threshold});
 
   void keygenConfirmed(BuildContext context, String key) {
+    global_coordinator.ackKeygen(true);
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => KeyDisplayPage(key),
@@ -86,8 +87,8 @@ class DoKeyGenScreen extends StatelessWidget {
     );
   }
 
-  void keygenCancelled(BuildContext context) {
-    // do something
+  void keygenRejected(BuildContext context) {
+    global_coordinator.ackKeygen(false);
     Navigator.of(context).pop();
   }
 
@@ -124,7 +125,7 @@ class DoKeyGenScreen extends StatelessWidget {
                   ),
                   TextButton(
                     onPressed: () {
-                      keygenCancelled(context);
+                      keygenRejected(context);
                     },
                     child: Text("No"),
                   ),
