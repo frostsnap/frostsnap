@@ -16,10 +16,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tracing::{event, Level};
 
-pub struct NewKey {
-    pub key: CoordinatorFrostKey,
-}
-
 pub struct FfiCoordinator {
     coordinator: Arc<Mutex<FrostCoordinator>>,
     manager: Arc<Mutex<UsbSerialManager>>,
@@ -112,10 +108,9 @@ impl FfiCoordinator {
                         // TODO
                     }
                 }
-
-                // to give time for the other threads to get a lock
-                std::thread::sleep(Duration::from_millis(10));
             }
+            // to give time for the other threads to get a lock
+            std::thread::sleep(Duration::from_millis(10));
         });
 
         Self {
@@ -148,7 +143,7 @@ impl FfiCoordinator {
         self.manager.lock().unwrap().send_cancel(id)
     }
 
-    pub fn generate_new_key(&self, threshold: usize) -> String {
+    pub fn generate_new_key(&self, threshold: usize) -> CoordinatorFrostKey {
         let devices = self.manager.lock().unwrap().registered_devices().clone();
 
         let keygen_message = {
@@ -182,7 +177,8 @@ impl FfiCoordinator {
         });
         let key = handle.join().unwrap();
 
-        format!("{:?}", key.frost_key())
+        // format!("{:?}", key.frost_key())
+        key
     }
 }
 

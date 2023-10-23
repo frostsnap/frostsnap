@@ -4,7 +4,10 @@ pub use crate::coordinator::{
 pub use crate::FfiCoordinator;
 use anyhow::anyhow;
 use flutter_rust_bridge::{frb, RustOpaque, StreamSink};
-pub use frostsnap_coordinator::{frostsnap_core::DeviceId, DeviceChange, PortDesc};
+pub use frostsnap_coordinator::{
+    frostsnap_core::{CoordinatorFrostKey, DeviceId},
+    DeviceChange, PortDesc,
+};
 use lazy_static::lazy_static;
 pub use std::os::fd::RawFd;
 pub use std::sync::{Mutex, RwLock};
@@ -217,5 +220,6 @@ pub fn send_cancel(coordinator: RustOpaque<FfiCoordinator>, id: DeviceId) {
 }
 
 pub fn generate_new_key(coordinator: RustOpaque<FfiCoordinator>, threshold: usize) -> String {
-    coordinator.generate_new_key(threshold)
+    let coordinator_frostkey = coordinator.generate_new_key(threshold);
+    format!("{}", coordinator_frostkey.frost_key().public_key())
 }

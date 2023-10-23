@@ -73,9 +73,9 @@ class Coordinator {
     await api.announceAvailablePorts(coordinator: ctx, ports: portDescriptions);
   }
 
-  Future<String> generateNewKey() async {
+  Future<String> generateNewKey(int threshold) async {
     String newKey =
-        await api.generateNewKey(coordinator: await ffi, threshold: 1);
+        await api.generateNewKey(coordinator: await ffi, threshold: threshold);
     return newKey;
   }
 

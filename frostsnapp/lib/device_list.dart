@@ -85,9 +85,6 @@ class DeviceListWidgetState extends State<DeviceListWidget>
 
   @override
   Widget build(BuildContext context) {
-    // Only show the keygen button if there are some devices
-    bool isKeygenButtonVisible = _deviceList.length > 0;
-
     return Column(children: [
       Text(
         'Frostsnap',
@@ -105,7 +102,7 @@ class DeviceListWidgetState extends State<DeviceListWidget>
               scrollDirection: widget.orientation == Orientation.landscape
                   ? Axis.horizontal
                   : Axis.vertical)),
-      DoKeyGenButton(isvisible: isKeygenButtonVisible)
+      DoKeyGenButton(devicecount: _deviceList.length)
     ]);
   }
 
