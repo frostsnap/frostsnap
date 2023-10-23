@@ -78,20 +78,6 @@ class DoKeyGenScreen extends StatelessWidget {
 
   const DoKeyGenScreen({Key? key, required this.threshold});
 
-  void keygenConfirmed(BuildContext context, String key) {
-    global_coordinator.ackKeygen(true);
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => KeyDisplayPage(key),
-      ),
-    );
-  }
-
-  void keygenRejected(BuildContext context) {
-    global_coordinator.ackKeygen(false);
-    Navigator.of(context).pop();
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -141,4 +127,18 @@ class DoKeyGenScreen extends StatelessWidget {
 
 Future<String> handleKeygenButtonPressed(int threshold) {
   return global_coordinator.generateNewKey(threshold);
+}
+
+void keygenConfirmed(BuildContext context, String key) {
+  global_coordinator.ackKeygen(true);
+  Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (context) => KeyDisplayPage(key),
+    ),
+  );
+}
+
+void keygenRejected(BuildContext context) {
+  global_coordinator.ackKeygen(false);
+  Navigator.of(context).pop();
 }

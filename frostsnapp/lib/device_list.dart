@@ -102,7 +102,7 @@ class DeviceListWidgetState extends State<DeviceListWidget>
               scrollDirection: widget.orientation == Orientation.landscape
                   ? Axis.horizontal
                   : Axis.vertical)),
-      DoKeyGenButton(devicecount: _deviceList.length)
+      DoKeyGenButton(devicecount: _deviceList.lengthNamed())
     ]);
   }
 
@@ -279,6 +279,12 @@ class DeviceList {
         return removedDeviceBuilder(context, id, getName(id), animation);
       });
     }
+  }
+
+  int lengthNamed() {
+    final filteredList =
+        _items.where((element) => getName(element) != null).toList();
+    return filteredList.length;
   }
 
   int get length => _items.length;
