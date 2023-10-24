@@ -65,6 +65,11 @@ pub extern "C" fn wire_send_cancel(
 }
 
 #[no_mangle]
+pub extern "C" fn wire_registered_devices(port_: i64, coordinator: wire_FfiCoordinator) {
+    wire_registered_devices_impl(port_, coordinator)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_generate_new_key(
     port_: i64,
     coordinator: wire_FfiCoordinator,

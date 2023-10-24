@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:frostsnapp/bridge_definitions.dart';
 import 'package:frostsnapp/coordinator.dart';
 import 'package:frostsnapp/show_key.dart';
 import 'dart:math';
@@ -138,7 +139,13 @@ void keygenConfirmed(BuildContext context, String key) {
   );
 }
 
-void keygenRejected(BuildContext context) {
+Future<void> keygenRejected(BuildContext context) async {
   global_coordinator.ackKeygen(false);
+
+  List<DeviceId> devices = await global_coordinator.registeredDevices();
+  for (DeviceId id in devices) {
+    global_coordinator.cancel(id);
+  }
+
   Navigator.of(context).pop();
 }

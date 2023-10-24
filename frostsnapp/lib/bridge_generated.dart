@@ -212,6 +212,25 @@ class NativeImpl implements Native {
         argNames: ["coordinator", "id"],
       );
 
+  Future<List<DeviceId>> registeredDevices(
+      {required FfiCoordinator coordinator, dynamic hint}) {
+    var arg0 = _platform.api2wire_FfiCoordinator(coordinator);
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner.wire_registered_devices(port_, arg0),
+      parseSuccessData: _wire2api_list_device_id,
+      parseErrorData: null,
+      constMeta: kRegisteredDevicesConstMeta,
+      argValues: [coordinator],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kRegisteredDevicesConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "registered_devices",
+        argNames: ["coordinator"],
+      );
+
   Future<String> generateNewKey(
       {required FfiCoordinator coordinator,
       required int threshold,
@@ -468,6 +487,10 @@ class NativeImpl implements Native {
 
   List<DeviceChange> _wire2api_list_device_change(dynamic raw) {
     return (raw as List<dynamic>).map(_wire2api_device_change).toList();
+  }
+
+  List<DeviceId> _wire2api_list_device_id(dynamic raw) {
+    return (raw as List<dynamic>).map(_wire2api_device_id).toList();
   }
 
   PortBytesToRead _wire2api_port_bytes_to_read(dynamic raw) {
@@ -1081,6 +1104,23 @@ class NativeWire implements FlutterRustBridgeWireBase {
               ffi.Pointer<wire_DeviceId>)>>('wire_send_cancel');
   late final _wire_send_cancel = _wire_send_cancelPtr.asFunction<
       void Function(int, wire_FfiCoordinator, ffi.Pointer<wire_DeviceId>)>();
+
+  void wire_registered_devices(
+    int port_,
+    wire_FfiCoordinator coordinator,
+  ) {
+    return _wire_registered_devices(
+      port_,
+      coordinator,
+    );
+  }
+
+  late final _wire_registered_devicesPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Void Function(
+              ffi.Int64, wire_FfiCoordinator)>>('wire_registered_devices');
+  late final _wire_registered_devices = _wire_registered_devicesPtr
+      .asFunction<void Function(int, wire_FfiCoordinator)>();
 
   void wire_generate_new_key(
     int port_,

@@ -64,6 +64,11 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kSendCancelConstMeta;
 
+  Future<List<DeviceId>> registeredDevices(
+      {required FfiCoordinator coordinator, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kRegisteredDevicesConstMeta;
+
   Future<String> generateNewKey(
       {required FfiCoordinator coordinator,
       required int threshold,

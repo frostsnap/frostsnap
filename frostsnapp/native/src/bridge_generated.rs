@@ -176,6 +176,22 @@ fn wire_send_cancel_impl(
         },
     )
 }
+fn wire_registered_devices_impl(
+    port_: MessagePort,
+    coordinator: impl Wire2Api<RustOpaque<FfiCoordinator>> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, Vec<mirror_DeviceId>, _>(
+        WrapInfo {
+            debug_name: "registered_devices",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_coordinator = coordinator.wire2api();
+            move |task_callback| Result::<_, ()>::Ok(registered_devices(api_coordinator))
+        },
+    )
+}
 fn wire_generate_new_key_impl(
     port_: MessagePort,
     coordinator: impl Wire2Api<RustOpaque<FfiCoordinator>> + UnwindSafe,

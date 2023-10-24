@@ -219,6 +219,10 @@ pub fn send_cancel(coordinator: RustOpaque<FfiCoordinator>, id: DeviceId) {
     coordinator.send_cancel(id);
 }
 
+pub fn registered_devices(coordinator: RustOpaque<FfiCoordinator>) -> Vec<DeviceId> {
+    coordinator.registered_devices()
+}
+
 pub fn generate_new_key(coordinator: RustOpaque<FfiCoordinator>, threshold: usize) -> String {
     let coordinator_frostkey = coordinator.generate_new_key(threshold);
     format!("{}", coordinator_frostkey.frost_key().public_key())

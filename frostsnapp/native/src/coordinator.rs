@@ -143,6 +143,19 @@ impl FfiCoordinator {
         self.manager.lock().unwrap().send_cancel(id)
     }
 
+    pub fn registered_devices(&self) -> Vec<DeviceId> {
+        // for id in self.manager.lock().unwrap().registered_devices().clone() {
+        //     self.send_cancel(id);
+        // }
+        self.manager
+            .lock()
+            .unwrap()
+            .registered_devices()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>()
+    }
+
     pub fn generate_new_key(&self, threshold: usize) -> CoordinatorFrostKey {
         let devices = self.manager.lock().unwrap().registered_devices().clone();
 
