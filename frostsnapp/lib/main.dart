@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:frostsnapp/coordinator_keygen.dart';
+import 'package:frostsnapp/wallet.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'dart:async';
 import 'dart:io';
@@ -9,6 +11,18 @@ Timer? timer;
 void main() {
   runApp(const MyApp());
 }
+
+final Map<String, WidgetBuilder> routes = {
+  '/home': (context) => MyHomePage(title: 'Frostsnapp'),
+  '/keygen': (context) {
+    final threshold = ModalRoute.of(context)?.settings.arguments as int?;
+    return DoKeyGenScreen(threshold: threshold ?? 1); // default threshold
+  },
+  '/wallet': (context) {
+    final publicKey = ModalRoute.of(context)?.settings.arguments as String?;
+    return KeyDisplayPage(publicKey: publicKey ?? "missing");
+  },
+};
 
 class MyApp extends StatelessWidget {
   const MyApp({Key? key}) : super(key: key);
@@ -30,6 +44,15 @@ class MyApp extends StatelessWidget {
         // is not restarted.
         primarySwatch: Colors.blue,
       ),
+      onGenerateRoute: (settings) {
+        if (routes.containsKey(settings.name)) {
+          return MaterialPageRoute(
+            builder: routes[settings.name]!,
+            settings: settings,
+          );
+        }
+        return null;
+      },
       home: const MyHomePage(title: 'Frostsnapp'),
     );
   }
@@ -107,21 +130,34 @@ class _MyHomePageState extends State<MyHomePage> {
                 return OrientationBuilder(builder: (context, orientation) {
                   var effectiveOrientation =
                       Platform.isAndroid ? orientation : Orientation.portrait;
-                  return Container(
-                    alignment: Alignment.centerRight,
-                    constraints: BoxConstraints.expand(
-                        height: effectiveOrientation == Orientation.landscape
-                            ? 120
-                            : null,
-                        width: effectiveOrientation == Orientation.portrait
-                            ? 300
-                            : null),
-                    // Currently treating DeviceListWidget as our /homepage/ since
-                    // i kept hitting issues with the vertical height of the column being unknown.
-                    child: DeviceListWidget(orientation: effectiveOrientation),
-                  );
+                  return CommonLayout(
+                      child:
+                          DeviceListWidget(orientation: effectiveOrientation));
                 });
               })),
     );
+  }
+}
+
+class CommonLayout extends StatelessWidget {
+  final Widget child;
+
+  CommonLayout({
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return OrientationBuilder(builder: (context, orientation) {
+      var effectiveOrientation =
+          Platform.isAndroid ? orientation : Orientation.portrait;
+      return Container(
+        alignment: Alignment.centerRight,
+        constraints: BoxConstraints.expand(
+            height: effectiveOrientation == Orientation.landscape ? 120 : null,
+            width: effectiveOrientation == Orientation.portrait ? 300 : null),
+        child: child,
+      );
+    });
   }
 }

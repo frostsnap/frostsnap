@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/bridge_definitions.dart';
 import 'package:frostsnapp/coordinator.dart';
+import 'package:frostsnapp/main.dart';
 import 'package:frostsnapp/wallet.dart';
 import 'dart:math';
 
@@ -44,7 +45,9 @@ class _DoKeyGenButtonState extends State<DoKeyGenButton> {
                 ])),
             GestureDetector(
               onTap: () {
-                _navigateToKeyGenScreen(context, thresholdSlider.toInt());
+                int threshold = thresholdSlider.toInt();
+                Navigator.of(context)
+                    .pushNamed('/keygen', arguments: threshold);
               },
               child: Padding(
                 padding: EdgeInsets.all(25.0),
@@ -66,85 +69,90 @@ class _DoKeyGenButtonState extends State<DoKeyGenButton> {
   }
 }
 
-void _navigateToKeyGenScreen(BuildContext context, int threshold) {
-  Navigator.of(context).push(
-    MaterialPageRoute(
-      builder: (context) => DoKeyGenScreen(threshold: threshold),
-    ),
-  );
-}
-
-class DoKeyGenScreen extends StatelessWidget {
+class DoKeyGenScreen extends StatefulWidget {
   final int threshold;
 
-  const DoKeyGenScreen({Key? key, required this.threshold});
+  const DoKeyGenScreen({Key? key, required this.threshold}) : super(key: key);
+
+  @override
+  _DoKeyGenScreenState createState() => _DoKeyGenScreenState();
+}
+
+class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
+  late Future<String> keyGenerationFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    keyGenerationFuture = global_coordinator.generateNewKey(widget.threshold);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Key Generation'),
-      ),
-      body: Center(
-        child: FutureBuilder<String>(
-          future: handleKeygenButtonPressed(threshold),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return CircularProgressIndicator();
-            } else if (snapshot.hasError) {
-              return Text('Error: ${snapshot.error}');
-            } else {
-              return AlertDialog(
-                title: Text(
-                  'Does this match on all devices?',
-                  style: TextStyle(color: Colors.black),
-                ),
-                content: Text(
-                  '${snapshot.data}',
-                  style: TextStyle(color: Colors.blue),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      keygenConfirmed(context, '${snapshot.data}');
-                    },
-                    child: Text("Yes"),
+    return WillPopScope(
+      onWillPop: () async {
+        return false; // Prevent back button from doing anything
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text('Key Generation'),
+        ),
+        body: Center(
+          child: FutureBuilder<String>(
+            future: keyGenerationFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return CircularProgressIndicator();
+              } else if (snapshot.hasError) {
+                return Text('Error: ${snapshot.error}');
+              } else {
+                return AlertDialog(
+                  title: Text(
+                    'Does this match on all devices?',
+                    style: TextStyle(color: Colors.black),
                   ),
-                  TextButton(
-                    onPressed: () {
-                      keygenRejected(context);
-                    },
-                    child: Text("No"),
+                  content: Text(
+                    '${snapshot.data}',
+                    style: TextStyle(color: Colors.blue),
                   ),
-                ],
-              );
-            }
-          },
+                  actions: [
+                    TextButton(
+                      onPressed: () {
+                        keygenConfirmed(context, '${snapshot.data}');
+                      },
+                      child: Text("Yes"),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        keygenRejected(context);
+                      },
+                      child: Text("No"),
+                    ),
+                  ],
+                );
+              }
+            },
+          ),
         ),
       ),
     );
   }
 }
 
-Future<String> handleKeygenButtonPressed(int threshold) {
-  return global_coordinator.generateNewKey(threshold);
-}
-
-void keygenConfirmed(BuildContext context, String key) {
+void keygenConfirmed(BuildContext context, String publicKey) {
   global_coordinator.ackKeygen(true);
-  Navigator.of(context).push(
-    MaterialPageRoute(
-      builder: (context) => KeyDisplayPage(key),
-    ),
-  );
+  Navigator.of(context).pop();
+  Navigator.of(context).pushReplacementNamed('/wallet', arguments: publicKey);
 }
 
 Future<void> keygenRejected(BuildContext context) async {
-  global_coordinator.ackKeygen(false);
-
   List<DeviceId> devices = await global_coordinator.registeredDevices();
   for (DeviceId id in devices) {
     global_coordinator.cancel(id);
+  }
+
+  if (await global_coordinator.isAwaitingKeygenAck()) {
+    global_coordinator.ackKeygen(false);
   }
 
   Navigator.of(context).pop();

@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 
-class KeyDisplayPage extends StatelessWidget {
-  final String publicKey;
+class KeyDisplayPage extends StatefulWidget {
+  late String publicKey;
 
-  const KeyDisplayPage(this.publicKey);
+  KeyDisplayPage({required this.publicKey, Key? key}) : super(key: key);
 
+  @override
+  _KeyDisplayPageState createState() => _KeyDisplayPageState();
+}
+
+class _KeyDisplayPageState extends State<KeyDisplayPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -20,7 +25,7 @@ class KeyDisplayPage extends StatelessWidget {
               style: TextStyle(fontSize: 24),
             ),
             Text(
-              publicKey,
+              widget.publicKey,
               style: TextStyle(fontSize: 18, color: Colors.blue),
             ),
           ],
