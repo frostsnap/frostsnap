@@ -130,34 +130,19 @@ class _MyHomePageState extends State<MyHomePage> {
                 return OrientationBuilder(builder: (context, orientation) {
                   var effectiveOrientation =
                       Platform.isAndroid ? orientation : Orientation.portrait;
-                  return CommonLayout(
+                  return Container(
+                      alignment: Alignment.centerRight,
+                      constraints: BoxConstraints.expand(
+                          height: effectiveOrientation == Orientation.landscape
+                              ? 120
+                              : null,
+                          width: effectiveOrientation == Orientation.portrait
+                              ? 300
+                              : null),
                       child:
                           DeviceListWidget(orientation: effectiveOrientation));
                 });
               })),
     );
-  }
-}
-
-class CommonLayout extends StatelessWidget {
-  final Widget child;
-
-  CommonLayout({
-    required this.child,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return OrientationBuilder(builder: (context, orientation) {
-      var effectiveOrientation =
-          Platform.isAndroid ? orientation : Orientation.portrait;
-      return Container(
-        alignment: Alignment.centerRight,
-        constraints: BoxConstraints.expand(
-            height: effectiveOrientation == Orientation.landscape ? 120 : null,
-            width: effectiveOrientation == Orientation.portrait ? 300 : null),
-        child: child,
-      );
-    });
   }
 }
