@@ -39,7 +39,7 @@ class _DoKeyGenButtonState extends State<DoKeyGenButton> {
                           thresholdSlider = newValue;
                         });
                       },
-                      divisions: 1,
+                      divisions: max(widget.devicecount - 1, 1),
                       min: 1,
                       max: max(widget.devicecount.toDouble(), 1)),
                 ])),
