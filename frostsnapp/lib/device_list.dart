@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/coordinator.dart';
 import 'package:frostsnapp/device_setup.dart';
-import 'package:frostsnapp/do_keygen.dart';
+import 'package:frostsnapp/coordinator_keygen.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'dart:developer' as developer;
 

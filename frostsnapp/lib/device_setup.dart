@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/coordinator.dart';
 import 'dart:developer' as developer;
 
 import 'package:frostsnapp/ffi.dart';

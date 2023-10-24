@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/bridge_definitions.dart';
 import 'package:frostsnapp/coordinator.dart';
-import 'package:frostsnapp/show_key.dart';
+import 'package:frostsnapp/wallet.dart';
 import 'dart:math';
 
 class DoKeyGenButton extends StatefulWidget {
