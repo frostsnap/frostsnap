@@ -111,6 +111,11 @@ class Coordinator {
     api.keygenAck(coordinator: ctx, ack: ack);
   }
 
+  Future<bool> isAwaitingKeygenAck() async {
+    var ctx = await ffi;
+    return api.isAwaitingKeygenAck(coordinator: ctx);
+  }
+
   Future<List<DeviceId>> registeredDevices() async {
     var ctx = await ffi;
     return await api.registeredDevices(coordinator: ctx);

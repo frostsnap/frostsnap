@@ -274,6 +274,26 @@ class NativeImpl implements Native {
         argNames: ["coordinator", "ack"],
       );
 
+  Future<bool> isAwaitingKeygenAck(
+      {required FfiCoordinator coordinator, dynamic hint}) {
+    var arg0 = _platform.api2wire_FfiCoordinator(coordinator);
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) =>
+          _platform.inner.wire_is_awaiting_keygen_ack(port_, arg0),
+      parseSuccessData: _wire2api_bool,
+      parseErrorData: null,
+      constMeta: kIsAwaitingKeygenAckConstMeta,
+      argValues: [coordinator],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kIsAwaitingKeygenAckConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "is_awaiting_keygen_ack",
+        argNames: ["coordinator"],
+      );
+
   Future<void> satisfyMethodPortOpen(
       {required PortOpen that, String? err, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_port_open(that);
@@ -424,6 +444,10 @@ class NativeImpl implements Native {
 
   String _wire2api_String(dynamic raw) {
     return raw as String;
+  }
+
+  bool _wire2api_bool(dynamic raw) {
+    return raw as bool;
   }
 
   DeviceId _wire2api_box_autoadd_device_id(dynamic raw) {
@@ -1159,6 +1183,23 @@ class NativeWire implements FlutterRustBridgeWireBase {
               ffi.Int64, wire_FfiCoordinator, ffi.Bool)>>('wire_keygen_ack');
   late final _wire_keygen_ack = _wire_keygen_ackPtr
       .asFunction<void Function(int, wire_FfiCoordinator, bool)>();
+
+  void wire_is_awaiting_keygen_ack(
+    int port_,
+    wire_FfiCoordinator coordinator,
+  ) {
+    return _wire_is_awaiting_keygen_ack(
+      port_,
+      coordinator,
+    );
+  }
+
+  late final _wire_is_awaiting_keygen_ackPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Void Function(
+              ffi.Int64, wire_FfiCoordinator)>>('wire_is_awaiting_keygen_ack');
+  late final _wire_is_awaiting_keygen_ack = _wire_is_awaiting_keygen_ackPtr
+      .asFunction<void Function(int, wire_FfiCoordinator)>();
 
   void wire_satisfy__method__PortOpen(
     int port_,

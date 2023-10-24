@@ -230,6 +230,22 @@ fn wire_keygen_ack_impl(
         },
     )
 }
+fn wire_is_awaiting_keygen_ack_impl(
+    port_: MessagePort,
+    coordinator: impl Wire2Api<RustOpaque<FfiCoordinator>> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, bool, _>(
+        WrapInfo {
+            debug_name: "is_awaiting_keygen_ack",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_coordinator = coordinator.wire2api();
+            move |task_callback| Result::<_, ()>::Ok(is_awaiting_keygen_ack(api_coordinator))
+        },
+    )
+}
 fn wire_satisfy__method__PortOpen_impl(
     port_: MessagePort,
     that: impl Wire2Api<PortOpen> + UnwindSafe,

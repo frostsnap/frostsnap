@@ -21,6 +21,7 @@ pub struct FfiCoordinator {
     manager: Arc<Mutex<UsbSerialManager>>,
     ffi_serial: Option<FfiSerial>,
     pending_for_outbox: Arc<Mutex<VecDeque<CoordinatorSend>>>,
+    awaiting_keygen_ack: Arc<Mutex<bool>>,
 }
 
 impl FfiCoordinator {
@@ -37,18 +38,20 @@ impl FfiCoordinator {
         };
 
         let manager = Arc::new(Mutex::new(manager));
-        let manager_thread = manager.clone();
 
         let pending_for_outbox = Arc::new(Mutex::new(VecDeque::new()));
+        let awaiting_keygen_ack = Arc::new(Mutex::new(false));
 
+        let manager_loop = manager.clone();
         let pending_loop = pending_for_outbox.clone();
+        let awaiting_keygen_ack_loop = awaiting_keygen_ack.clone();
         let coordinator_loop = core_coordinator.clone();
         let _handle = std::thread::spawn(move || loop {
             let new_messages = {
                 let PortChanges {
                     device_changes,
                     new_messages,
-                } = manager_thread.lock().unwrap().poll_ports();
+                } = manager_loop.lock().unwrap().poll_ports();
 
                 if !device_changes.is_empty() {
                     crate::api::emit_device_events(
@@ -62,14 +65,11 @@ impl FfiCoordinator {
                 new_messages
             };
 
+            let mut coordinator = coordinator_loop.lock().unwrap();
+            let mut pending_messages = pending_loop.lock().unwrap();
             for (from, message) in new_messages {
-                match coordinator_loop
-                    .lock()
-                    .unwrap()
-                    .recv_device_message(from, message.clone())
-                {
+                match coordinator.recv_device_message(from, message.clone()) {
                     Ok(messages) => {
-                        let mut pending_messages = pending_loop.lock().unwrap();
                         pending_messages.extend(messages);
                     }
                     Err(e) => {
@@ -84,7 +84,6 @@ impl FfiCoordinator {
                 };
             }
 
-            let mut pending_messages = pending_loop.lock().unwrap();
             while let Some(message) = pending_messages.pop_front() {
                 match message {
                     CoordinatorSend::ToDevice(msg) => {
@@ -93,7 +92,7 @@ impl FfiCoordinator {
                             message_body: CoordinatorSendBody::Core(msg),
                         };
 
-                        manager_thread
+                        manager_loop
                             .lock()
                             .unwrap()
                             .queue_in_port_outbox(send_message);
@@ -102,6 +101,8 @@ impl FfiCoordinator {
                         CoordinatorToUserMessage::Signed { .. } => {}
                         CoordinatorToUserMessage::CheckKeyGen { .. } => {
                             // Don't want to ack this until button press!!!
+                            let mut awaiting_ack = awaiting_keygen_ack_loop.lock().unwrap();
+                            *awaiting_ack = true;
                         }
                     },
                     CoordinatorSend::ToStorage(_) => {
@@ -118,6 +119,7 @@ impl FfiCoordinator {
             manager,
             ffi_serial,
             pending_for_outbox,
+            awaiting_keygen_ack,
         }
     }
 
@@ -198,6 +200,10 @@ impl FfiCoordinator {
             let mut pending_outox = self.pending_for_outbox.lock().unwrap();
             pending_outox.extend(coordinator_sends);
         }
+    }
+
+    pub fn is_awaiting_keygen_ack(&self) -> bool {
+        self.awaiting_keygen_ack.lock().unwrap().clone()
     }
 }
 

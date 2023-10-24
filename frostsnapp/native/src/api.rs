@@ -231,3 +231,7 @@ pub fn generate_new_key(coordinator: RustOpaque<FfiCoordinator>, threshold: usiz
 pub fn keygen_ack(coordinator: RustOpaque<FfiCoordinator>, ack: bool) {
     coordinator.keygen_ack(ack)
 }
+
+pub fn is_awaiting_keygen_ack(coordinator: RustOpaque<FfiCoordinator>) -> bool {
+    coordinator.is_awaiting_keygen_ack()
+}

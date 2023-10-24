@@ -84,6 +84,11 @@ pub extern "C" fn wire_keygen_ack(port_: i64, coordinator: wire_FfiCoordinator, 
 }
 
 #[no_mangle]
+pub extern "C" fn wire_is_awaiting_keygen_ack(port_: i64, coordinator: wire_FfiCoordinator) {
+    wire_is_awaiting_keygen_ack_impl(port_, coordinator)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_satisfy__method__PortOpen(
     port_: i64,
     that: *mut wire_PortOpen,
