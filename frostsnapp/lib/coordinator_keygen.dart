@@ -30,18 +30,23 @@ class _DoKeyGenButtonState extends State<DoKeyGenButton> {
                     'Threshold: ${thresholdSlider.toInt()}',
                     style: TextStyle(fontSize: 18.0),
                   ),
-                  Slider(
-                      // Force 1 <= threshold <= devicecount
-                      value: max(1,
-                          min(thresholdSlider, widget.devicecount.toDouble())),
-                      onChanged: (newValue) {
-                        setState(() {
-                          thresholdSlider = newValue;
-                        });
-                      },
-                      divisions: max(widget.devicecount - 1, 1),
-                      min: 1,
-                      max: max(widget.devicecount.toDouble(), 1)),
+                  Container(
+                    width: MediaQuery.of(context).size.width * 0.5,
+                    child: Slider(
+                        // Force 1 <= threshold <= devicecount
+                        value: max(
+                            1,
+                            min(thresholdSlider,
+                                widget.devicecount.toDouble())),
+                        onChanged: (newValue) {
+                          setState(() {
+                            thresholdSlider = newValue;
+                          });
+                        },
+                        divisions: max(widget.devicecount - 1, 1),
+                        min: 1,
+                        max: max(widget.devicecount.toDouble(), 1)),
+                  )
                 ])),
             GestureDetector(
               onTap: () {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:frostsnapp/main.dart';
 
 class KeyDisplayPage extends StatefulWidget {
   late String publicKey;

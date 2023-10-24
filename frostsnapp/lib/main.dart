@@ -130,19 +130,31 @@ class _MyHomePageState extends State<MyHomePage> {
                 return OrientationBuilder(builder: (context, orientation) {
                   var effectiveOrientation =
                       Platform.isAndroid ? orientation : Orientation.portrait;
-                  return Container(
-                      alignment: Alignment.centerRight,
-                      constraints: BoxConstraints.expand(
-                          height: effectiveOrientation == Orientation.landscape
-                              ? 120
-                              : null,
-                          width: effectiveOrientation == Orientation.portrait
-                              ? 300
-                              : null),
-                      child:
-                          DeviceListWidget(orientation: effectiveOrientation));
+                  return DeviceListWidget(orientation: effectiveOrientation);
                 });
               })),
     );
+  }
+}
+
+class FrostsnapPage extends StatelessWidget {
+  final List<Widget> children;
+
+  FrostsnapPage({required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final screenWidth = MediaQuery.of(context).size.width;
+    // var useLandscape = Platform.isAndroid ? isLandscape : false;
+
+    return Padding(
+        padding: EdgeInsets.only(top: screenHeight * 0.1),
+        child: Container(
+          width: screenWidth * 0.8,
+          child: Column(
+            children: children,
+          ),
+        ));
   }
 }
