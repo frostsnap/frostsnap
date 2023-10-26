@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/bridge_definitions.dart';
 import 'package:frostsnapp/coordinator.dart';
-import 'package:frostsnapp/main.dart';
-import 'package:frostsnapp/wallet.dart';
 import 'dart:math';
 
 class DoKeyGenButton extends StatefulWidget {
-  final int devicecount;
+  final int namedDevicesCount;
 
-  DoKeyGenButton({required this.devicecount});
+  DoKeyGenButton({required this.namedDevicesCount});
 
   @override
   _DoKeyGenButtonState createState() => _DoKeyGenButtonState();
@@ -19,58 +17,46 @@ class _DoKeyGenButtonState extends State<DoKeyGenButton> {
 
   @override
   Widget build(BuildContext context) {
-    return Visibility(
-        visible: widget.devicecount > 0,
-        child: Column(
-          children: [
-            Visibility(
-                visible: widget.devicecount >= 2,
-                child: Column(children: [
-                  Text(
-                    'Threshold: ${thresholdSlider.toInt()}',
-                    style: TextStyle(fontSize: 18.0),
-                  ),
-                  Container(
-                    width: MediaQuery.of(context).size.width * 0.5,
-                    child: Slider(
-                        // Force 1 <= threshold <= devicecount
-                        value: max(
-                            1,
-                            min(thresholdSlider,
-                                widget.devicecount.toDouble())),
-                        onChanged: (newValue) {
-                          setState(() {
-                            thresholdSlider = newValue;
-                          });
-                        },
-                        divisions: max(widget.devicecount - 1, 1),
-                        min: 1,
-                        max: max(widget.devicecount.toDouble(), 1)),
-                  )
-                ])),
-            GestureDetector(
-              onTap: () {
-                int threshold = thresholdSlider.toInt();
-                Navigator.of(context)
-                    .pushNamed('/keygen', arguments: threshold);
-              },
-              child: Padding(
-                padding: EdgeInsets.all(25.0),
-                child: Container(
-                  padding: EdgeInsets.all(16.0),
-                  color: Colors.blue,
-                  child: Text(
-                    'Generate Key',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16.0,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ));
+    return Column(
+      children: [
+        Column(children: [
+          Text(
+            'Threshold: ${thresholdSlider.toInt()}',
+            style: TextStyle(fontSize: 18.0),
+          ),
+          Container(
+            width: MediaQuery.of(context).size.width * 0.5,
+            child: Slider(
+                // Force 1 <= threshold <= devicecount
+                value: max(1,
+                    min(thresholdSlider, widget.namedDevicesCount.toDouble())),
+                onChanged: widget.namedDevicesCount <= 1
+                    ? null
+                    : (newValue) {
+                        setState(() {
+                          thresholdSlider = newValue;
+                        });
+                      },
+                divisions: max(widget.namedDevicesCount - 1, 1),
+                min: 1,
+                max: max(widget.namedDevicesCount.toDouble(), 1)),
+          )
+        ]),
+        ElevatedButton(
+            onPressed: widget.namedDevicesCount == 0
+                ? null
+                : () {
+                    int threshold = thresholdSlider.toInt();
+                    Navigator.of(context)
+                        .pushNamed('/keygen', arguments: threshold);
+                  },
+            child: Text('Generate Key',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16.0,
+                ))),
+      ],
+    );
   }
 }
 

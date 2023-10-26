@@ -4,7 +4,7 @@ import 'package:frostsnapp/wallet.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'dart:async';
 import 'dart:io';
-import 'device_list.dart';
+import 'device_list_widget.dart';
 
 Timer? timer;
 

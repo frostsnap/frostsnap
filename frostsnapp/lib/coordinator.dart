@@ -64,13 +64,16 @@ class Coordinator {
 
   void scanDevices() async {
     var ctx = await ffi;
-    List<UsbDevice> devices = await UsbSerial.listDevices();
-    final List<PortDesc> portDescriptions = devices
-        .where((device) => device.vid != null && device.pid != null)
-        .map((device) =>
-            PortDesc(id: device.deviceName, pid: device.pid!, vid: device.vid!))
-        .toList();
-    await api.announceAvailablePorts(coordinator: ctx, ports: portDescriptions);
+    if (Platform.isAndroid) {
+      List<UsbDevice> devices = await UsbSerial.listDevices();
+      final List<PortDesc> portDescriptions = devices
+          .where((device) => device.vid != null && device.pid != null)
+          .map((device) => PortDesc(
+              id: device.deviceName, pid: device.pid!, vid: device.vid!))
+          .toList();
+      await api.announceAvailablePorts(
+          coordinator: ctx, ports: portDescriptions);
+    }
   }
 
   Future<String> generateNewKey(int threshold) async {

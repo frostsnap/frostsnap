@@ -68,6 +68,7 @@ impl FfiCoordinator {
             let mut coordinator = coordinator_loop.lock().unwrap();
             let mut pending_messages = pending_loop.lock().unwrap();
             for (from, message) in new_messages {
+                // Add keygen progression response to recv_device_message
                 match coordinator.recv_device_message(from, message.clone()) {
                     Ok(messages) => {
                         pending_messages.extend(messages);
