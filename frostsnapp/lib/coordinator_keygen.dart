@@ -70,12 +70,15 @@ class DoKeyGenScreen extends StatefulWidget {
 }
 
 class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
-  late Future<String> keyGenerationFuture;
+  late Future<String> keygenCheck;
+  late Future<List<KeygenProgress>> keygenProgress;
 
   @override
   void initState() {
     super.initState();
-    keyGenerationFuture = global_coordinator.generateNewKey(widget.threshold);
+    keygenCheck = global_coordinator.generateNewKey(widget.threshold);
+    // keygenCheck = global_coordinator.keygenCheck();
+    keygenProgress = global_coordinator.keygenProgress();
   }
 
   @override
@@ -89,8 +92,8 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
           title: Text('Key Generation'),
         ),
         body: Center(
-          child: FutureBuilder<String>(
-            future: keyGenerationFuture,
+          child: FutureBuilder<String?>(
+            future: keygenCheck,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return CircularProgressIndicator();
@@ -107,18 +110,18 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                     style: TextStyle(color: Colors.blue),
                   ),
                   actions: [
-                    TextButton(
-                      onPressed: () {
-                        keygenConfirmed(context, '${snapshot.data}');
-                      },
-                      child: Text("Yes"),
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        keygenRejected(context);
-                      },
-                      child: Text("No"),
-                    ),
+                    // TextButton(
+                    //   onPressed: () {
+                    //     keygenConfirmed(context, '${snapshot.data}');
+                    //   },
+                    //   child: Text("Yes"),
+                    // ),
+                    // TextButton(
+                    //   onPressed: () {
+                    //     keygenRejected(context);
+                    //   },
+                    //   child: Text("No"),
+                    // ),
                   ],
                 );
               }
@@ -130,11 +133,11 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
   }
 }
 
-void keygenConfirmed(BuildContext context, String publicKey) {
-  global_coordinator.ackKeygen(true);
-  Navigator.of(context).pop();
-  Navigator.of(context).pushReplacementNamed('/wallet', arguments: publicKey);
-}
+// void keygenConfirmed(BuildContext context, String publicKey) {
+//   global_coordinator.ackKeygen(true);
+//   Navigator.of(context).pop();
+//   Navigator.of(context).pushReplacementNamed('/wallet', arguments: publicKey);
+// }
 
 Future<void> keygenRejected(BuildContext context) async {
   List<DeviceId> devices = await global_coordinator.registeredDevices();
@@ -142,9 +145,9 @@ Future<void> keygenRejected(BuildContext context) async {
     global_coordinator.cancel(id);
   }
 
-  if (await global_coordinator.isAwaitingKeygenAck()) {
-    global_coordinator.ackKeygen(false);
-  }
+  // if (await global_coordinator.isAwaitingKeygenAck()) {
+  //   global_coordinator.ackKeygen(false);
+  // }
 
   Navigator.of(context).pop();
 }

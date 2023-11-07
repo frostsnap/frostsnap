@@ -254,43 +254,60 @@ class NativeImpl implements Native {
         argNames: ["coordinator", "threshold"],
       );
 
-  Future<void> keygenAck(
-      {required FfiCoordinator coordinator, required bool ack, dynamic hint}) {
-    var arg0 = _platform.api2wire_FfiCoordinator(coordinator);
-    var arg1 = ack;
-    return _platform.executeNormal(FlutterRustBridgeTask(
-      callFfi: (port_) => _platform.inner.wire_keygen_ack(port_, arg0, arg1),
-      parseSuccessData: _wire2api_unit,
-      parseErrorData: null,
-      constMeta: kKeygenAckConstMeta,
-      argValues: [coordinator, ack],
-      hint: hint,
-    ));
-  }
-
-  FlutterRustBridgeTaskConstMeta get kKeygenAckConstMeta =>
-      const FlutterRustBridgeTaskConstMeta(
-        debugName: "keygen_ack",
-        argNames: ["coordinator", "ack"],
-      );
-
-  Future<bool> isAwaitingKeygenAck(
+  Future<bool> isKeyCreated(
       {required FfiCoordinator coordinator, dynamic hint}) {
     var arg0 = _platform.api2wire_FfiCoordinator(coordinator);
     return _platform.executeNormal(FlutterRustBridgeTask(
-      callFfi: (port_) =>
-          _platform.inner.wire_is_awaiting_keygen_ack(port_, arg0),
+      callFfi: (port_) => _platform.inner.wire_is_key_created(port_, arg0),
       parseSuccessData: _wire2api_bool,
       parseErrorData: null,
-      constMeta: kIsAwaitingKeygenAckConstMeta,
+      constMeta: kIsKeyCreatedConstMeta,
       argValues: [coordinator],
       hint: hint,
     ));
   }
 
-  FlutterRustBridgeTaskConstMeta get kIsAwaitingKeygenAckConstMeta =>
+  FlutterRustBridgeTaskConstMeta get kIsKeyCreatedConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
-        debugName: "is_awaiting_keygen_ack",
+        debugName: "is_key_created",
+        argNames: ["coordinator"],
+      );
+
+  Future<String> createdKey(
+      {required FfiCoordinator coordinator, dynamic hint}) {
+    var arg0 = _platform.api2wire_FfiCoordinator(coordinator);
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner.wire_created_key(port_, arg0),
+      parseSuccessData: _wire2api_String,
+      parseErrorData: null,
+      constMeta: kCreatedKeyConstMeta,
+      argValues: [coordinator],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kCreatedKeyConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "created_key",
+        argNames: ["coordinator"],
+      );
+
+  Future<List<(DeviceId, bool?)>> keygenProgress(
+      {required FfiCoordinator coordinator, dynamic hint}) {
+    var arg0 = _platform.api2wire_FfiCoordinator(coordinator);
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner.wire_keygen_progress(port_, arg0),
+      parseSuccessData: _wire2api_list___record__device_id_opt_box_autoadd_bool,
+      parseErrorData: null,
+      constMeta: kKeygenProgressConstMeta,
+      argValues: [coordinator],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kKeygenProgressConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "keygen_progress",
         argNames: ["coordinator"],
       );
 
@@ -446,7 +463,23 @@ class NativeImpl implements Native {
     return raw as String;
   }
 
+  (DeviceId, bool?) _wire2api___record__device_id_opt_box_autoadd_bool(
+      dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2) {
+      throw Exception('Expected 2 elements, got ${arr.length}');
+    }
+    return (
+      _wire2api_device_id(arr[0]),
+      _wire2api_opt_box_autoadd_bool(arr[1]),
+    );
+  }
+
   bool _wire2api_bool(dynamic raw) {
+    return raw as bool;
+  }
+
+  bool _wire2api_box_autoadd_bool(dynamic raw) {
     return raw as bool;
   }
 
@@ -509,12 +542,23 @@ class NativeImpl implements Native {
     );
   }
 
+  List<(DeviceId, bool?)>
+      _wire2api_list___record__device_id_opt_box_autoadd_bool(dynamic raw) {
+    return (raw as List<dynamic>)
+        .map(_wire2api___record__device_id_opt_box_autoadd_bool)
+        .toList();
+  }
+
   List<DeviceChange> _wire2api_list_device_change(dynamic raw) {
     return (raw as List<dynamic>).map(_wire2api_device_change).toList();
   }
 
   List<DeviceId> _wire2api_list_device_id(dynamic raw) {
     return (raw as List<dynamic>).map(_wire2api_device_id).toList();
+  }
+
+  bool? _wire2api_opt_box_autoadd_bool(dynamic raw) {
+    return raw == null ? null : _wire2api_box_autoadd_bool(raw);
   }
 
   PortBytesToRead _wire2api_port_bytes_to_read(dynamic raw) {
@@ -1165,40 +1209,55 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _wire_generate_new_key = _wire_generate_new_keyPtr
       .asFunction<void Function(int, wire_FfiCoordinator, int)>();
 
-  void wire_keygen_ack(
-    int port_,
-    wire_FfiCoordinator coordinator,
-    bool ack,
-  ) {
-    return _wire_keygen_ack(
-      port_,
-      coordinator,
-      ack,
-    );
-  }
-
-  late final _wire_keygen_ackPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Void Function(
-              ffi.Int64, wire_FfiCoordinator, ffi.Bool)>>('wire_keygen_ack');
-  late final _wire_keygen_ack = _wire_keygen_ackPtr
-      .asFunction<void Function(int, wire_FfiCoordinator, bool)>();
-
-  void wire_is_awaiting_keygen_ack(
+  void wire_is_key_created(
     int port_,
     wire_FfiCoordinator coordinator,
   ) {
-    return _wire_is_awaiting_keygen_ack(
+    return _wire_is_key_created(
       port_,
       coordinator,
     );
   }
 
-  late final _wire_is_awaiting_keygen_ackPtr = _lookup<
+  late final _wire_is_key_createdPtr = _lookup<
       ffi.NativeFunction<
           ffi.Void Function(
-              ffi.Int64, wire_FfiCoordinator)>>('wire_is_awaiting_keygen_ack');
-  late final _wire_is_awaiting_keygen_ack = _wire_is_awaiting_keygen_ackPtr
+              ffi.Int64, wire_FfiCoordinator)>>('wire_is_key_created');
+  late final _wire_is_key_created = _wire_is_key_createdPtr
+      .asFunction<void Function(int, wire_FfiCoordinator)>();
+
+  void wire_created_key(
+    int port_,
+    wire_FfiCoordinator coordinator,
+  ) {
+    return _wire_created_key(
+      port_,
+      coordinator,
+    );
+  }
+
+  late final _wire_created_keyPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Void Function(
+              ffi.Int64, wire_FfiCoordinator)>>('wire_created_key');
+  late final _wire_created_key = _wire_created_keyPtr
+      .asFunction<void Function(int, wire_FfiCoordinator)>();
+
+  void wire_keygen_progress(
+    int port_,
+    wire_FfiCoordinator coordinator,
+  ) {
+    return _wire_keygen_progress(
+      port_,
+      coordinator,
+    );
+  }
+
+  late final _wire_keygen_progressPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Void Function(
+              ffi.Int64, wire_FfiCoordinator)>>('wire_keygen_progress');
+  late final _wire_keygen_progress = _wire_keygen_progressPtr
       .asFunction<void Function(int, wire_FfiCoordinator)>();
 
   void wire_satisfy__method__PortOpen(

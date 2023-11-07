@@ -109,18 +109,30 @@ class Coordinator {
     await api.sendCancel(coordinator: ctx, id: id);
   }
 
-  ackKeygen(bool ack) async {
+  Future<List<KeygenProgress>> keygenProgress() async {
     var ctx = await ffi;
-    api.keygenAck(coordinator: ctx, ack: ack);
+    return api.keygenProgress(coordinator: ctx).then((deviceList) {
+      return deviceList
+          .map((device) =>
+              KeygenProgress(deviceId: device.$1, progress: device.$2))
+          .toList();
+    });
   }
 
-  Future<bool> isAwaitingKeygenAck() async {
-    var ctx = await ffi;
-    return api.isAwaitingKeygenAck(coordinator: ctx);
-  }
+  // Future<String> keygenCheck() async {
+  //   var ctx = await ffi;
+  //   return api.keygenCheck(coordinator: ctx);
+  // }
 
   Future<List<DeviceId>> registeredDevices() async {
     var ctx = await ffi;
     return await api.registeredDevices(coordinator: ctx);
   }
+}
+
+class KeygenProgress {
+  final DeviceId deviceId;
+  final bool? progress;
+
+  KeygenProgress({required this.deviceId, this.progress});
 }
