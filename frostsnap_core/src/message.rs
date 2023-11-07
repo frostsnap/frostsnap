@@ -85,6 +85,7 @@ pub enum CoordinatorToStorageMessage {
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub enum DeviceToCoordinatorMessage {
     KeyGenResponse(KeyGenResponse),
+    KeyGenAck,
     SignatureShare {
         signature_shares: Vec<Scalar<Public, Zero>>,
         new_nonces: Vec<Nonce>,
@@ -101,6 +102,7 @@ impl DeviceToCoordinatorMessage {
     pub fn kind(&self) -> &'static str {
         match self {
             DeviceToCoordinatorMessage::KeyGenResponse(_) => "KeyGenProvideShares",
+            DeviceToCoordinatorMessage::KeyGenAck => "KeyGenAck",
             DeviceToCoordinatorMessage::SignatureShare { .. } => "SignatureShare",
         }
     }
@@ -123,6 +125,7 @@ pub struct KeyGenResponse {
 pub enum CoordinatorToUserMessage {
     Signed { signatures: Vec<Signature> },
     CheckKeyGen { xpub: String },
+    FinishedKey { xpub: String },
 }
 
 #[derive(Clone, Debug)]

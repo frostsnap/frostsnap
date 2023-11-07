@@ -86,6 +86,9 @@ fn test_end_to_end() {
                     coordinator_check_keygen = Some(xpub);
                     coordinator.keygen_ack(true).unwrap();
                 }
+                CoordinatorToUserMessage::FinishedKey { xpub } => {
+                    // TODO: check finished key
+                }
             },
             Send::UserToCoordinator(message) => {
                 let new_messages = match message {

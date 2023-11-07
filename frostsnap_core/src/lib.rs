@@ -69,8 +69,11 @@ impl FrostCoordinator {
             CoordinatorState::Registration => {
                 Err(Error::coordinator_message_kind(&self.state, &message))
             }
-            CoordinatorState::KeyGen { responses } => match message {
+            CoordinatorState::KeyGen { responses, acks } => match message {
                 DeviceToCoordinatorMessage::KeyGenResponse(new_shares) => {
+                    if let Some(existing) = acks.insert(from, Some(false)) {
+                        debug_assert!(existing.is_none() || existing == Some(false));
+                    }
                     if let Some(existing) = responses.insert(from, Some(new_shares.clone())) {
                         debug_assert!(existing.is_none() || existing == Some(new_shares));
                     }
@@ -113,30 +116,30 @@ impl FrostCoordinator {
 
                             let xpub = frost_key.public_key().to_string();
 
-                            let device_nonces = responses
-                                .iter()
-                                .map(|(device_id, response)| {
-                                    let device_nonces = DeviceNonces {
-                                        counter: 0,
-                                        nonces: response.nonces.iter().cloned().collect(),
-                                    };
-                                    (*device_id, device_nonces)
-                                })
-                                .collect();
+                            // let device_nonces = responses
+                            //     .iter()
+                            //     .map(|(device_id, response)| {
+                            //         let device_nonces = DeviceNonces {
+                            //             counter: 0,
+                            //             nonces: response.nonces.iter().cloned().collect(),
+                            //         };
+                            //         (*device_id, device_nonces)
+                            //     })
+                            //     .collect();
 
-                            let key = CoordinatorFrostKey {
-                                frost_key,
-                                device_nonces,
-                            };
-                            self.state = CoordinatorState::FrostKey {
-                                key: key.clone(),
-                                awaiting_user: true,
-                            };
+                            // let key = CoordinatorFrostKey {
+                            //     frost_key,
+                            //     device_nonces,
+                            // };
+                            // self.state = CoordinatorState::FrostKey {
+                            //     key: key.clone(),
+                            //     awaiting_user: true,
+                            // };
                             // TODO: check order
                             Ok(vec![
-                                CoordinatorSend::ToStorage(
-                                    CoordinatorToStorageMessage::UpdateState(key),
-                                ),
+                                // CoordinatorSend::ToStorage(
+                                //     CoordinatorToStorageMessage::UpdateState(key),
+                                // ),
                                 CoordinatorSend::ToDevice(
                                     CoordinatorToDeviceMessage::FinishKeyGen {
                                         shares_provided: responses
@@ -157,6 +160,90 @@ impl FrostCoordinator {
                         }
                     }
                 }
+                DeviceToCoordinatorMessage::KeyGenAck => {
+                    acks.insert(from, Some(true));
+
+                    let all_acks = acks.clone().values().all(|ack| ack.unwrap_or(false));
+
+                    if all_acks {
+                        let responses = responses
+                            .clone()
+                            .into_iter()
+                            .map(|(device_id, shares)| Some((device_id, shares?)))
+                            .collect::<Option<BTreeMap<_, _>>>();
+
+                        match responses {
+                            Some(responses) => {
+                                let point_polys = responses
+                                    .iter()
+                                    .map(|(device_id, response)| {
+                                        (
+                                            device_id.to_poly_index(),
+                                            response.encrypted_shares.my_poly.clone(),
+                                        )
+                                    })
+                                    .collect();
+                                let proofs_of_possession = responses
+                                    .iter()
+                                    .map(|(device_id, response)| {
+                                        (
+                                            device_id.to_poly_index(),
+                                            response.encrypted_shares.proof_of_possession.clone(),
+                                        )
+                                    })
+                                    .collect();
+                                let frost = frost::new_without_nonce_generation::<Sha256>();
+                                let keygen = frost.new_keygen(point_polys).unwrap();
+                                // let keygen_id = frost.keygen_id(&keygen);
+                                let pop_message = gen_pop_message(responses.keys().cloned());
+
+                                let frost_key = match frost.finish_keygen_coordinator(keygen, proofs_of_possession, Message::raw(&pop_message)) {
+                                Ok(frost_key) => frost_key,
+                                Err(_) => todo!("should notify user somehow that everything was fucked and we're canceling it"),
+                            };
+
+                                let xpub = frost_key.public_key().to_string();
+
+                                let device_nonces = responses
+                                    .iter()
+                                    .map(|(device_id, response)| {
+                                        let device_nonces = DeviceNonces {
+                                            counter: 0,
+                                            nonces: response.nonces.iter().cloned().collect(),
+                                        };
+                                        (*device_id, device_nonces)
+                                    })
+                                    .collect();
+
+                                let key = CoordinatorFrostKey {
+                                    frost_key,
+                                    device_nonces,
+                                };
+                                self.state = CoordinatorState::FrostKey {
+                                    key: key.clone(),
+                                    awaiting_user: true,
+                                };
+                                // TODO: check order
+                                Ok(vec![
+                                    CoordinatorSend::ToStorage(
+                                        CoordinatorToStorageMessage::UpdateState(key),
+                                    ),
+                                    CoordinatorSend::ToUser(
+                                        CoordinatorToUserMessage::FinishedKey { xpub },
+                                    ),
+                                ])
+                            }
+                            None =>
+                            /* not finished yet  */
+                            {
+                                Ok(vec![])
+                            }
+                        }
+                    } else {
+                        Ok(vec![])
+                    }
+                }
+
                 _ => Err(Error::coordinator_message_kind(&self.state, &message)),
             },
             CoordinatorState::Signing { key, sessions } => match &message {
@@ -280,6 +367,7 @@ impl FrostCoordinator {
             CoordinatorState::Registration => {
                 self.state = CoordinatorState::KeyGen {
                     responses: devices.iter().map(|&device_id| (device_id, None)).collect(),
+                    acks: devices.iter().map(|&device_id| (device_id, None)).collect(),
                 };
                 Ok(CoordinatorToDeviceMessage::DoKeyGen {
                     devices: devices.clone(),
@@ -474,6 +562,7 @@ pub enum CoordinatorState {
     Registration,
     KeyGen {
         responses: BTreeMap<DeviceId, Option<KeyGenResponse>>,
+        acks: BTreeMap<DeviceId, Option<bool>>,
     },
     FrostKey {
         key: CoordinatorFrostKey,
@@ -851,9 +940,10 @@ impl FrostSigner {
             SignerState::FrostKey { awaiting_ack, .. } if *awaiting_ack => {
                 if ack {
                     *awaiting_ack = false;
-                    Ok(vec![DeviceSend::ToStorage(
-                        message::DeviceToStorageMessage::SaveKey,
-                    )])
+                    Ok(vec![
+                        DeviceSend::ToCoordinator(message::DeviceToCoordinatorMessage::KeyGenAck),
+                        DeviceSend::ToStorage(message::DeviceToStorageMessage::SaveKey),
+                    ])
                 } else {
                     self.state = SignerState::Registered;
                     Ok(vec![])
