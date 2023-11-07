@@ -225,13 +225,21 @@ pub fn registered_devices(coordinator: RustOpaque<FfiCoordinator>) -> Vec<Device
 
 pub fn generate_new_key(coordinator: RustOpaque<FfiCoordinator>, threshold: usize) -> String {
     let coordinator_frostkey = coordinator.generate_new_key(threshold);
-    format!("{}", coordinator_frostkey.frost_key().public_key())
+    format!("{}", coordinator_frostkey)
 }
 
-pub fn keygen_ack(coordinator: RustOpaque<FfiCoordinator>, ack: bool) {
-    coordinator.keygen_ack(ack)
+pub fn is_key_created(coordinator: RustOpaque<FfiCoordinator>) -> bool {
+    coordinator.created_key().is_some()
 }
 
-pub fn is_awaiting_keygen_ack(coordinator: RustOpaque<FfiCoordinator>) -> bool {
-    coordinator.is_awaiting_keygen_ack()
+pub fn created_key(coordinator: RustOpaque<FfiCoordinator>) -> String {
+    coordinator.created_key().unwrap_or_default()
 }
+
+pub fn keygen_progress(coordinator: RustOpaque<FfiCoordinator>) -> Vec<(DeviceId, Option<bool>)> {
+    coordinator.keygen_progress()
+}
+
+// pub fn keygen_check(coordinator: RustOpaque<FfiCoordinator>) -> String {
+//     coordinator.keygen_check()
+// }

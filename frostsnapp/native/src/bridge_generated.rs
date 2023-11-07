@@ -212,37 +212,51 @@ fn wire_generate_new_key_impl(
         },
     )
 }
-fn wire_keygen_ack_impl(
-    port_: MessagePort,
-    coordinator: impl Wire2Api<RustOpaque<FfiCoordinator>> + UnwindSafe,
-    ack: impl Wire2Api<bool> + UnwindSafe,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
-        WrapInfo {
-            debug_name: "keygen_ack",
-            port: Some(port_),
-            mode: FfiCallMode::Normal,
-        },
-        move || {
-            let api_coordinator = coordinator.wire2api();
-            let api_ack = ack.wire2api();
-            move |task_callback| Result::<_, ()>::Ok(keygen_ack(api_coordinator, api_ack))
-        },
-    )
-}
-fn wire_is_awaiting_keygen_ack_impl(
+fn wire_is_key_created_impl(
     port_: MessagePort,
     coordinator: impl Wire2Api<RustOpaque<FfiCoordinator>> + UnwindSafe,
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, bool, _>(
         WrapInfo {
-            debug_name: "is_awaiting_keygen_ack",
+            debug_name: "is_key_created",
             port: Some(port_),
             mode: FfiCallMode::Normal,
         },
         move || {
             let api_coordinator = coordinator.wire2api();
-            move |task_callback| Result::<_, ()>::Ok(is_awaiting_keygen_ack(api_coordinator))
+            move |task_callback| Result::<_, ()>::Ok(is_key_created(api_coordinator))
+        },
+    )
+}
+fn wire_created_key_impl(
+    port_: MessagePort,
+    coordinator: impl Wire2Api<RustOpaque<FfiCoordinator>> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, String, _>(
+        WrapInfo {
+            debug_name: "created_key",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_coordinator = coordinator.wire2api();
+            move |task_callback| Result::<_, ()>::Ok(created_key(api_coordinator))
+        },
+    )
+}
+fn wire_keygen_progress_impl(
+    port_: MessagePort,
+    coordinator: impl Wire2Api<RustOpaque<FfiCoordinator>> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, Vec<(mirror_DeviceId, Option<bool>)>, _>(
+        WrapInfo {
+            debug_name: "keygen_progress",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_coordinator = coordinator.wire2api();
+            move |task_callback| Result::<_, ()>::Ok(keygen_progress(api_coordinator))
         },
     )
 }

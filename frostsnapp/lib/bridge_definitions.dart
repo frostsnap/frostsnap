@@ -76,15 +76,20 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kGenerateNewKeyConstMeta;
 
-  Future<void> keygenAck(
-      {required FfiCoordinator coordinator, required bool ack, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kKeygenAckConstMeta;
-
-  Future<bool> isAwaitingKeygenAck(
+  Future<bool> isKeyCreated(
       {required FfiCoordinator coordinator, dynamic hint});
 
-  FlutterRustBridgeTaskConstMeta get kIsAwaitingKeygenAckConstMeta;
+  FlutterRustBridgeTaskConstMeta get kIsKeyCreatedConstMeta;
+
+  Future<String> createdKey(
+      {required FfiCoordinator coordinator, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kCreatedKeyConstMeta;
+
+  Future<List<(DeviceId, bool?)>> keygenProgress(
+      {required FfiCoordinator coordinator, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kKeygenProgressConstMeta;
 
   Future<void> satisfyMethodPortOpen(
       {required PortOpen that, String? err, dynamic hint});
