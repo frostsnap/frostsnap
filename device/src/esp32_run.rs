@@ -364,7 +364,7 @@ where
                     }
                     DeviceSend::ToUser(user_send) => {
                         match user_send {
-                            DeviceToUserMessage::CheckKeyGen { xpub } => {
+                            DeviceToUserMessage::CheckKeyGen { session_hash: xpub } => {
                                 ui.set_workflow(ui::Workflow::UserPrompt(ui::Prompt::KeyGen(xpub)));
                             }
                             frostsnap_core::message::DeviceToUserMessage::SignatureRequest {
