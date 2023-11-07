@@ -491,6 +491,42 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _wire_send_cancel = _wire_send_cancelPtr.asFunction<
       void Function(int, wire_FfiCoordinator, ffi.Pointer<wire_DeviceId>)>();
 
+  void wire_registered_devices(
+    int port_,
+    wire_FfiCoordinator coordinator,
+  ) {
+    return _wire_registered_devices(
+      port_,
+      coordinator,
+    );
+  }
+
+  late final _wire_registered_devicesPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Void Function(
+              ffi.Int64, wire_FfiCoordinator)>>('wire_registered_devices');
+  late final _wire_registered_devices = _wire_registered_devicesPtr
+      .asFunction<void Function(int, wire_FfiCoordinator)>();
+
+  void wire_generate_new_key(
+    int port_,
+    wire_FfiCoordinator coordinator,
+    int threshold,
+  ) {
+    return _wire_generate_new_key(
+      port_,
+      coordinator,
+      threshold,
+    );
+  }
+
+  late final _wire_generate_new_keyPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Void Function(ffi.Int64, wire_FfiCoordinator,
+              ffi.UintPtr)>>('wire_generate_new_key');
+  late final _wire_generate_new_key = _wire_generate_new_keyPtr
+      .asFunction<void Function(int, wire_FfiCoordinator, int)>();
+
   void wire_satisfy__method__PortOpen(
     int port_,
     ffi.Pointer<wire_PortOpen> that,
@@ -707,9 +743,9 @@ class NativeWire implements FlutterRustBridgeWireBase {
   }
 
   late final _new_uint_8_list_0Ptr = _lookup<
-          ffi
-          .NativeFunction<ffi.Pointer<wire_uint_8_list> Function(ffi.Int32)>>(
-      'new_uint_8_list_0');
+      ffi.NativeFunction<
+          ffi.Pointer<wire_uint_8_list> Function(
+              ffi.Int32)>>('new_uint_8_list_0');
   late final _new_uint_8_list_0 = _new_uint_8_list_0Ptr
       .asFunction<ffi.Pointer<wire_uint_8_list> Function(int)>();
 

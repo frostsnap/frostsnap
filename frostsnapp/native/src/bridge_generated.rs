@@ -197,66 +197,22 @@ fn wire_generate_new_key_impl(
     coordinator: impl Wire2Api<RustOpaque<FfiCoordinator>> + UnwindSafe,
     threshold: impl Wire2Api<usize> + UnwindSafe,
 ) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, String, _>(
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
         WrapInfo {
             debug_name: "generate_new_key",
             port: Some(port_),
-            mode: FfiCallMode::Normal,
+            mode: FfiCallMode::Stream,
         },
         move || {
             let api_coordinator = coordinator.wire2api();
             let api_threshold = threshold.wire2api();
             move |task_callback| {
-                Result::<_, ()>::Ok(generate_new_key(api_coordinator, api_threshold))
+                Result::<_, ()>::Ok(generate_new_key(
+                    api_coordinator,
+                    api_threshold,
+                    task_callback.stream_sink::<_, mirror_CoordinatorToUserKeyGenMessage>(),
+                ))
             }
-        },
-    )
-}
-fn wire_is_key_created_impl(
-    port_: MessagePort,
-    coordinator: impl Wire2Api<RustOpaque<FfiCoordinator>> + UnwindSafe,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, bool, _>(
-        WrapInfo {
-            debug_name: "is_key_created",
-            port: Some(port_),
-            mode: FfiCallMode::Normal,
-        },
-        move || {
-            let api_coordinator = coordinator.wire2api();
-            move |task_callback| Result::<_, ()>::Ok(is_key_created(api_coordinator))
-        },
-    )
-}
-fn wire_created_key_impl(
-    port_: MessagePort,
-    coordinator: impl Wire2Api<RustOpaque<FfiCoordinator>> + UnwindSafe,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, String, _>(
-        WrapInfo {
-            debug_name: "created_key",
-            port: Some(port_),
-            mode: FfiCallMode::Normal,
-        },
-        move || {
-            let api_coordinator = coordinator.wire2api();
-            move |task_callback| Result::<_, ()>::Ok(created_key(api_coordinator))
-        },
-    )
-}
-fn wire_keygen_progress_impl(
-    port_: MessagePort,
-    coordinator: impl Wire2Api<RustOpaque<FfiCoordinator>> + UnwindSafe,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, Vec<(mirror_DeviceId, Option<bool>)>, _>(
-        WrapInfo {
-            debug_name: "keygen_progress",
-            port: Some(port_),
-            mode: FfiCallMode::Normal,
-        },
-        move || {
-            let api_coordinator = coordinator.wire2api();
-            move |task_callback| Result::<_, ()>::Ok(keygen_progress(api_coordinator))
         },
     )
 }
@@ -341,6 +297,9 @@ fn wire_satisfy__method__PortBytesToRead_impl(
 // Section: wrapper structs
 
 #[derive(Clone)]
+pub struct mirror_CoordinatorToUserKeyGenMessage(CoordinatorToUserKeyGenMessage);
+
+#[derive(Clone)]
 pub struct mirror_DeviceChange(DeviceChange);
 
 #[derive(Clone)]
@@ -349,6 +308,18 @@ pub struct mirror_DeviceId(DeviceId);
 // Section: static checks
 
 const _: fn() = || {
+    match None::<CoordinatorToUserKeyGenMessage>.unwrap() {
+        CoordinatorToUserKeyGenMessage::ReceivedShares(field0) => {
+            let _: DeviceId = field0;
+        }
+        CoordinatorToUserKeyGenMessage::CheckKeyGen { session_hash } => {
+            let _: [u8; 32] = session_hash;
+        }
+        CoordinatorToUserKeyGenMessage::KeyGenAck(field0) => {
+            let _: DeviceId = field0;
+        }
+        CoordinatorToUserKeyGenMessage::FinishedKey => {}
+    }
     match None::<DeviceChange>.unwrap() {
         DeviceChange::Added { id } => {
             let _: DeviceId = id;
@@ -440,6 +411,32 @@ impl Wire2Api<usize> for usize {
     }
 }
 // Section: impl IntoDart
+
+impl support::IntoDart for mirror_CoordinatorToUserKeyGenMessage {
+    fn into_dart(self) -> support::DartAbi {
+        match self.0 {
+            CoordinatorToUserKeyGenMessage::ReceivedShares(field0) => {
+                vec![0.into_dart(), field0.into_into_dart().into_dart()]
+            }
+            CoordinatorToUserKeyGenMessage::CheckKeyGen { session_hash } => {
+                vec![1.into_dart(), session_hash.into_into_dart().into_dart()]
+            }
+            CoordinatorToUserKeyGenMessage::KeyGenAck(field0) => {
+                vec![2.into_dart(), field0.into_into_dart().into_dart()]
+            }
+            CoordinatorToUserKeyGenMessage::FinishedKey => vec![3.into_dart()],
+        }
+        .into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for mirror_CoordinatorToUserKeyGenMessage {}
+impl rust2dart::IntoIntoDart<mirror_CoordinatorToUserKeyGenMessage>
+    for CoordinatorToUserKeyGenMessage
+{
+    fn into_into_dart(self) -> mirror_CoordinatorToUserKeyGenMessage {
+        mirror_CoordinatorToUserKeyGenMessage(self)
+    }
+}
 
 impl support::IntoDart for mirror_DeviceChange {
     fn into_dart(self) -> support::DartAbi {

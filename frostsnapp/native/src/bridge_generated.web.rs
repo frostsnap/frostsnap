@@ -52,6 +52,11 @@ pub fn wire_send_cancel(port_: MessagePort, coordinator: JsValue, id: JsValue) {
 }
 
 #[wasm_bindgen]
+pub fn wire_registered_devices(port_: MessagePort, coordinator: JsValue) {
+    wire_registered_devices_impl(port_, coordinator)
+}
+
+#[wasm_bindgen]
 pub fn wire_generate_new_key(port_: MessagePort, coordinator: JsValue, threshold: usize) {
     wire_generate_new_key_impl(port_, coordinator, threshold)
 }
