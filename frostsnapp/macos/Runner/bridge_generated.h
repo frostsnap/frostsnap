@@ -118,12 +118,6 @@ void wire_generate_new_key(int64_t port_,
                            struct wire_FfiCoordinator coordinator,
                            uintptr_t threshold);
 
-void wire_is_key_created(int64_t port_, struct wire_FfiCoordinator coordinator);
-
-void wire_created_key(int64_t port_, struct wire_FfiCoordinator coordinator);
-
-void wire_keygen_progress(int64_t port_, struct wire_FfiCoordinator coordinator);
-
 void wire_satisfy__method__PortOpen(int64_t port_,
                                     struct wire_PortOpen *that,
                                     struct wire_uint_8_list *err);
@@ -200,9 +194,6 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_send_cancel);
     dummy_var ^= ((int64_t) (void*) wire_registered_devices);
     dummy_var ^= ((int64_t) (void*) wire_generate_new_key);
-    dummy_var ^= ((int64_t) (void*) wire_is_key_created);
-    dummy_var ^= ((int64_t) (void*) wire_created_key);
-    dummy_var ^= ((int64_t) (void*) wire_keygen_progress);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortOpen);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortRead);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortWrite);

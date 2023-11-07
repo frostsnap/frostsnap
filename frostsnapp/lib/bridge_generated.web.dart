@@ -200,6 +200,9 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* void */ wire_send_cancel(
       NativePortType port_, Object coordinator, List<dynamic> id);
 
+  external dynamic /* void */ wire_registered_devices(
+      NativePortType port_, Object coordinator);
+
   external dynamic /* void */ wire_generate_new_key(
       NativePortType port_, Object coordinator, int threshold);
 
@@ -273,6 +276,9 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   void wire_send_cancel(
           NativePortType port_, Object coordinator, List<dynamic> id) =>
       wasmModule.wire_send_cancel(port_, coordinator, id);
+
+  void wire_registered_devices(NativePortType port_, Object coordinator) =>
+      wasmModule.wire_registered_devices(port_, coordinator);
 
   void wire_generate_new_key(
           NativePortType port_, Object coordinator, int threshold) =>

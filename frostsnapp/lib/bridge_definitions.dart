@@ -69,27 +69,12 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kRegisteredDevicesConstMeta;
 
-  Future<String> generateNewKey(
+  Stream<CoordinatorToUserKeyGenMessage> generateNewKey(
       {required FfiCoordinator coordinator,
       required int threshold,
       dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kGenerateNewKeyConstMeta;
-
-  Future<bool> isKeyCreated(
-      {required FfiCoordinator coordinator, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kIsKeyCreatedConstMeta;
-
-  Future<String> createdKey(
-      {required FfiCoordinator coordinator, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kCreatedKeyConstMeta;
-
-  Future<List<(DeviceId, bool?)>> keygenProgress(
-      {required FfiCoordinator coordinator, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kKeygenProgressConstMeta;
 
   Future<void> satisfyMethodPortOpen(
       {required PortOpen that, String? err, dynamic hint});
@@ -209,6 +194,22 @@ class PortWriteSender extends FrbOpaque {
 
   @override
   OpaqueTypeFinalizer get staticFinalizer => bridge.PortWriteSenderFinalizer;
+}
+
+@freezed
+sealed class CoordinatorToUserKeyGenMessage
+    with _$CoordinatorToUserKeyGenMessage {
+  const factory CoordinatorToUserKeyGenMessage.receivedShares(
+    DeviceId field0,
+  ) = CoordinatorToUserKeyGenMessage_ReceivedShares;
+  const factory CoordinatorToUserKeyGenMessage.checkKeyGen({
+    required U8Array32 sessionHash,
+  }) = CoordinatorToUserKeyGenMessage_CheckKeyGen;
+  const factory CoordinatorToUserKeyGenMessage.keyGenAck(
+    DeviceId field0,
+  ) = CoordinatorToUserKeyGenMessage_KeyGenAck;
+  const factory CoordinatorToUserKeyGenMessage.finishedKey() =
+      CoordinatorToUserKeyGenMessage_FinishedKey;
 }
 
 @freezed
@@ -351,6 +352,15 @@ class PortWrite {
         that: this,
         err: err,
       );
+}
+
+class U8Array32 extends NonGrowableListView<int> {
+  static const arraySize = 32;
+  U8Array32(Uint8List inner)
+      : assert(inner.length == arraySize),
+        super(inner);
+  U8Array32.unchecked(Uint8List inner) : super(inner);
+  U8Array32.init() : super(Uint8List(arraySize));
 }
 
 class U8Array33 extends NonGrowableListView<int> {

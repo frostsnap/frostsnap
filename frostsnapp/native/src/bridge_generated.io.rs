@@ -79,21 +79,6 @@ pub extern "C" fn wire_generate_new_key(
 }
 
 #[no_mangle]
-pub extern "C" fn wire_is_key_created(port_: i64, coordinator: wire_FfiCoordinator) {
-    wire_is_key_created_impl(port_, coordinator)
-}
-
-#[no_mangle]
-pub extern "C" fn wire_created_key(port_: i64, coordinator: wire_FfiCoordinator) {
-    wire_created_key_impl(port_, coordinator)
-}
-
-#[no_mangle]
-pub extern "C" fn wire_keygen_progress(port_: i64, coordinator: wire_FfiCoordinator) {
-    wire_keygen_progress_impl(port_, coordinator)
-}
-
-#[no_mangle]
 pub extern "C" fn wire_satisfy__method__PortOpen(
     port_: i64,
     that: *mut wire_PortOpen,

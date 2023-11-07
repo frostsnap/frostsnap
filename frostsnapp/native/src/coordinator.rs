@@ -1,5 +1,5 @@
 use crate::api::PortEvent;
-use flutter_rust_bridge::RustOpaque;
+use flutter_rust_bridge::{RustOpaque, StreamSink};
 use frostsnap_coordinator::frostsnap_comms::{CoordinatorSendBody, CoordinatorSendMessage};
 use frostsnap_coordinator::frostsnap_core::message::{CoordinatorSend, CoordinatorToUserMessage};
 use frostsnap_coordinator::serialport;
@@ -20,8 +20,6 @@ pub struct FfiCoordinator {
     manager: Arc<Mutex<UsbSerialManager>>,
     ffi_serial: Option<FfiSerial>,
     pending_for_outbox: Arc<Mutex<VecDeque<CoordinatorSend>>>,
-    keygen_check: Arc<Mutex<Option<String>>>,
-    created_key: Arc<Mutex<Option<String>>>,
 }
 
 impl FfiCoordinator {
@@ -40,13 +38,9 @@ impl FfiCoordinator {
         let manager = Arc::new(Mutex::new(manager));
 
         let pending_for_outbox = Arc::new(Mutex::new(VecDeque::new()));
-        let keygen_check = Arc::new(Mutex::new(None));
-        let created_key = Arc::new(Mutex::new(None));
 
         let manager_loop = manager.clone();
         let pending_loop = pending_for_outbox.clone();
-        let keygen_check_loop = keygen_check.clone();
-        let created_key_loop = created_key.clone();
         let coordinator_loop = core_coordinator.clone();
         let _handle = std::thread::spawn(move || loop {
             let new_messages = {
@@ -101,14 +95,11 @@ impl FfiCoordinator {
                             .queue_in_port_outbox(send_message);
                     }
                     CoordinatorSend::ToUser(msg) => match msg {
-                        CoordinatorToUserMessage::Signed { .. } => {}
-                        CoordinatorToUserMessage::CheckKeyGen { xpub } => {
-                            let mut check = keygen_check_loop.lock().unwrap();
-                            *check = Some(xpub);
+                        CoordinatorToUserMessage::KeyGen(keygen_message) => {
+                            crate::api::emit_keygen_event(keygen_message)
                         }
-                        CoordinatorToUserMessage::FinishedKey { xpub } => {
-                            let mut created = created_key_loop.lock().unwrap();
-                            *created = Some(xpub);
+                        CoordinatorToUserMessage::Signed { .. } => {
+                            // TODO: Emit signed message to user
                         }
                     },
                     CoordinatorSend::ToStorage(_) => {
@@ -125,8 +116,6 @@ impl FfiCoordinator {
             manager,
             ffi_serial,
             pending_for_outbox,
-            keygen_check,
-            created_key,
         }
     }
 
@@ -165,7 +154,7 @@ impl FfiCoordinator {
             .collect::<Vec<_>>()
     }
 
-    pub fn generate_new_key(&self, threshold: usize) -> String {
+    pub fn generate_new_key(&self, threshold: usize) {
         let devices = self.manager.lock().unwrap().registered_devices().clone();
 
         let keygen_message = {
@@ -182,17 +171,6 @@ impl FfiCoordinator {
             let mut pending_guard = self.pending_for_outbox.lock().unwrap();
             pending_guard.push_back(keygen_message);
         }
-
-        let keygen_check = self.keygen_check.clone();
-        let handle = std::thread::spawn(move || loop {
-            // let check = keygen_check.lock().unwrap();
-            match keygen_check.lock().unwrap().clone() {
-                Some(check) => return check,
-                None => {}
-            }
-        });
-
-        handle.join().unwrap()
     }
 
     // pub fn keygen_ack(&self, ack: bool) {
@@ -202,31 +180,6 @@ impl FfiCoordinator {
     //         pending_outox.extend(coordinator_sends);
     //     }
     // }
-
-    pub fn keygen_progress(&self) -> Vec<(DeviceId, Option<bool>)> {
-        match self.coordinator.lock().unwrap().state() {
-            frostsnap_core::CoordinatorState::KeyGen { responses, acks } => acks
-                .into_iter()
-                .map(|(id, ack)| (id.clone(), ack.clone()))
-                .collect(),
-            _ => vec![],
-        }
-    }
-
-    // pub fn keygen_check(&self) -> String {
-    //     let check_loop = self.keygen_check.clone();
-    //     let handle = std::thread::spawn(move || loop {
-    //         match check_loop.lock().unwrap().clone() {
-    //             Some(check) => return check.clone(),
-    //             None => {}
-    //         }
-    //     });
-    //     handle.join().unwrap()
-    // }
-
-    pub fn created_key(&self) -> Option<String> {
-        self.created_key.lock().unwrap().clone()
-    }
 }
 
 // Newtypes needed here because type aliases lead to weird types in the bindings
