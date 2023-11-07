@@ -1,5 +1,6 @@
 use frostsnap_core::message::{
-    CoordinatorSend, CoordinatorToUserMessage, DeviceSend, DeviceToUserMessage, SignTask,
+    CoordinatorSend, CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, DeviceSend,
+    DeviceToUserMessage, SignTask,
 };
 use frostsnap_core::{DeviceId, FrostCoordinator, FrostSigner};
 use rand_chacha::rand_core::SeedableRng;
@@ -82,13 +83,12 @@ fn test_end_to_end() {
                 CoordinatorToUserMessage::Signed { signatures } => {
                     completed_signature_responses.push(signatures);
                 }
-                CoordinatorToUserMessage::CheckKeyGen { xpub } => {
-                    coordinator_check_keygen = Some(xpub);
-                    coordinator.keygen_ack(true).unwrap();
+                CoordinatorToUserMessage::KeyGen(CoordinatorToUserKeyGenMessage::CheckKeyGen {
+                    session_hash,
+                }) => {
+                    coordinator_check_keygen = Some(session_hash);
                 }
-                CoordinatorToUserMessage::FinishedKey { xpub } => {
-                    // TODO: check finished key
-                }
+                _ => {}
             },
             Send::UserToCoordinator(message) => {
                 let new_messages = match message {
@@ -108,10 +108,16 @@ fn test_end_to_end() {
                 message_stack.extend(new_messages.into_iter().map(Send::from));
             }
             Send::DeviceToUser { message, device_id } => match message {
-                DeviceToUserMessage::CheckKeyGen { xpub } => {
+                DeviceToUserMessage::CheckKeyGen { session_hash } => {
                     let device = devices.get_mut(&device_id).unwrap();
-                    device.keygen_ack(true).unwrap();
-                    check_keygens.insert(device_id, xpub);
+                    message_stack.extend(
+                        device
+                            .keygen_ack()
+                            .unwrap()
+                            .into_iter()
+                            .map(|message| Send::device_send(device_id, message)),
+                    );
+                    check_keygens.insert(device_id, session_hash);
                 }
                 DeviceToUserMessage::SignatureRequest {
                     sign_task: message_to_sign,
@@ -122,15 +128,11 @@ fn test_end_to_end() {
                         .or_insert_with(|| vec![device_id]);
                     // Simulate user pressing "sign" --> calls device.sign()
                     let messages = devices.get_mut(&device_id).unwrap().sign_ack(true).unwrap();
-                    let messages = messages.into_iter().map(|message| match message {
-                        DeviceSend::ToCoordinator(message) => Send::DeviceToCoordinator {
-                            from: device_id,
-                            message,
-                        },
-                        DeviceSend::ToUser(message) => Send::DeviceToUser { message, device_id },
-                        DeviceSend::ToStorage(m) => m.into(),
-                    });
-                    message_stack.extend(messages);
+                    message_stack.extend(
+                        messages
+                            .into_iter()
+                            .map(|message| Send::device_send(device_id, message)),
+                    );
                 }
             },
             Send::ToStorage => { /* TODO: test storage */ }

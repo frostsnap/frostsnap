@@ -92,7 +92,7 @@ fn process_outbox(
             }
             CoordinatorSend::ToUser(to_user_message) => match to_user_message {
                 CoordinatorToUserMessage::Signed { .. } => {}
-                CoordinatorToUserMessage::CheckKeyGen { xpub } => {
+                CoordinatorToUserMessage::CheckKeyGen { session_hash: xpub } => {
                     let ack = fetch_input(&format!(
                         "Coordinator received keygen shares from all devices.\nSchnorr Public Key: {}\nOk? [y/n]",
                         xpub

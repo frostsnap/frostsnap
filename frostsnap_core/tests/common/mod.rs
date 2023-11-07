@@ -1,5 +1,5 @@
 use frostsnap_core::message::{
-    CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToUserMessage,
+    CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToUserMessage, DeviceSend,
     DeviceToCoordinatorMessage, DeviceToStorageMessage, DeviceToUserMessage, SignTask,
 };
 use frostsnap_core::DeviceId;
@@ -46,6 +46,19 @@ impl From<CoordinatorToDeviceMessage> for Send {
 impl From<DeviceToStorageMessage> for Send {
     fn from(_: DeviceToStorageMessage) -> Self {
         Send::ToStorage
+    }
+}
+
+impl Send {
+    pub fn device_send(device_id: DeviceId, device_send: DeviceSend) -> Self {
+        match device_send {
+            DeviceSend::ToCoordinator(message) => Send::DeviceToCoordinator {
+                from: device_id,
+                message,
+            },
+            DeviceSend::ToUser(message) => Send::DeviceToUser { message, device_id },
+            DeviceSend::ToStorage(m) => m.into(),
+        }
     }
 }
 

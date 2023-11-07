@@ -1,6 +1,7 @@
 use crate::encrypted_share::EncryptedShare;
 use crate::CoordinatorFrostKey;
 use crate::Gist;
+use crate::SessionHash;
 use crate::Vec;
 use crate::NONCE_BATCH_SIZE;
 
@@ -85,7 +86,7 @@ pub enum CoordinatorToStorageMessage {
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub enum DeviceToCoordinatorMessage {
     KeyGenResponse(KeyGenResponse),
-    KeyGenAck,
+    KeyGenAck(SessionHash),
     SignatureShare {
         signature_shares: Vec<Scalar<Public, Zero>>,
         new_nonces: Vec<Nonce>,
@@ -102,7 +103,7 @@ impl DeviceToCoordinatorMessage {
     pub fn kind(&self) -> &'static str {
         match self {
             DeviceToCoordinatorMessage::KeyGenResponse(_) => "KeyGenProvideShares",
-            DeviceToCoordinatorMessage::KeyGenAck => "KeyGenAck",
+            DeviceToCoordinatorMessage::KeyGenAck(_) => "KeyGenAck",
             DeviceToCoordinatorMessage::SignatureShare { .. } => "SignatureShare",
         }
     }
@@ -123,14 +124,21 @@ pub struct KeyGenResponse {
 
 #[derive(Clone, Debug)]
 pub enum CoordinatorToUserMessage {
+    KeyGen(CoordinatorToUserKeyGenMessage),
     Signed { signatures: Vec<Signature> },
-    CheckKeyGen { xpub: String },
-    FinishedKey { xpub: String },
+}
+
+#[derive(Clone, Debug)]
+pub enum CoordinatorToUserKeyGenMessage {
+    ReceivedShares(DeviceId),
+    CheckKeyGen { session_hash: SessionHash },
+    KeyGenAck(DeviceId),
+    FinishedKey,
 }
 
 #[derive(Clone, Debug)]
 pub enum DeviceToUserMessage {
-    CheckKeyGen { xpub: String },
+    CheckKeyGen { session_hash: SessionHash },
     SignatureRequest { sign_task: SignTask },
 }
 
