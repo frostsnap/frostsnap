@@ -1,5 +1,5 @@
 use bdk_file_store::Store;
-use frostsnap_core::{CoordinatorFrostKey, DeviceId};
+use frostsnap_core::{CoordinatorFrostKeyState, DeviceId};
 use std::{collections::HashMap, path::PathBuf};
 
 #[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -47,7 +47,7 @@ pub struct Db {
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, serde::Serialize, serde::Deserialize)]
 pub struct State {
-    pub key: CoordinatorFrostKey,
+    pub key: CoordinatorFrostKeyState,
     pub device_labels: HashMap<DeviceId, String>,
 }
 

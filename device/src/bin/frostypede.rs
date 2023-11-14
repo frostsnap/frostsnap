@@ -10,6 +10,7 @@
 #[macro_use]
 extern crate alloc;
 
+use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_device::{
     esp32_run,
     io::{set_upstream_port_mode_jtag, set_upstream_port_mode_uart},
@@ -382,8 +383,10 @@ where
                     Prompt::Signing(task) => {
                         self.display.print(format!("Sign {}", task)).unwrap();
                     }
-                    Prompt::KeyGen(xpub) => {
-                        self.display.print(format!("Ok {}", xpub)).unwrap();
+                    Prompt::KeyGen(session_hash) => {
+                        self.display
+                            .print(format!("Ok {}", hex::encode(session_hash)))
+                            .unwrap();
                     }
                     Prompt::NewName { old_name, new_name } => match old_name {
                         Some(old_name) => self
@@ -488,8 +491,8 @@ where
                             .write(brightness([colors::GREEN].iter().cloned(), 30))
                             .unwrap();
                         let ui_event = match prompt {
-                            Prompt::KeyGen(_) => UiEvent::KeyGenConfirm(true),
-                            Prompt::Signing(_) => UiEvent::SigningConfirm(true),
+                            Prompt::KeyGen(_) => UiEvent::KeyGenConfirm,
+                            Prompt::Signing(_) => UiEvent::SigningConfirm,
                             Prompt::NewName { new_name, .. } => {
                                 UiEvent::NameConfirm(new_name.clone())
                             }

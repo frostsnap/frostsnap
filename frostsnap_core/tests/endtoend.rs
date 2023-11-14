@@ -127,12 +127,15 @@ fn test_end_to_end() {
                         .and_modify(|signers| signers.push(device_id))
                         .or_insert_with(|| vec![device_id]);
                     // Simulate user pressing "sign" --> calls device.sign()
-                    let messages = devices.get_mut(&device_id).unwrap().sign_ack(true).unwrap();
+                    let messages = devices.get_mut(&device_id).unwrap().sign_ack().unwrap();
                     message_stack.extend(
                         messages
                             .into_iter()
                             .map(|message| Send::device_send(device_id, message)),
                     );
+                }
+                DeviceToUserMessage::Canceled { .. } => {
+                    panic!("no cancelations in this test");
                 }
             },
             Send::ToStorage => { /* TODO: test storage */ }

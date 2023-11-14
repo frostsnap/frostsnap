@@ -4,10 +4,12 @@ use bech32::Variant;
 use db::Db;
 use frostsnap_comms::CoordinatorSendBody;
 use frostsnap_comms::CoordinatorSendMessage;
+use frostsnap_comms::Destination;
 use frostsnap_coordinator::DesktopSerial;
 use frostsnap_coordinator::DeviceChange;
 use frostsnap_core::message::CoordinatorSend;
 use frostsnap_core::message::CoordinatorToStorageMessage;
+use frostsnap_core::message::CoordinatorToUserKeyGenMessage;
 use frostsnap_core::message::CoordinatorToUserMessage;
 use frostsnap_core::CoordinatorState;
 use frostsnap_core::DeviceId;
@@ -78,7 +80,7 @@ enum SignArgs {
 
 fn process_outbox(
     db: &mut Db,
-    coordinator: &mut FrostCoordinator,
+    _coordinator: &mut FrostCoordinator,
     outbox: &mut VecDeque<CoordinatorSend>,
     ports: &mut frostsnap_coordinator::UsbSerialManager,
 ) -> anyhow::Result<()> {
@@ -86,21 +88,27 @@ fn process_outbox(
         match message {
             CoordinatorSend::ToDevice(core_message) => {
                 ports.queue_in_port_outbox(CoordinatorSendMessage {
-                    target_destinations: core_message.default_destinations(),
+                    target_destinations: Destination::Particular(core_message.default_destinations()),
                     message_body: CoordinatorSendBody::Core(core_message),
                 });
             }
             CoordinatorSend::ToUser(to_user_message) => match to_user_message {
                 CoordinatorToUserMessage::Signed { .. } => {}
-                CoordinatorToUserMessage::CheckKeyGen { session_hash: xpub } => {
-                    let ack = fetch_input(&format!(
-                        "Coordinator received keygen shares from all devices.\nSchnorr Public Key: {}\nOk? [y/n]",
-                        xpub
-                    )) == "y";
-                    if ack {
-                        eprintln!("\nSharing keygen shares amongst devices... 🧙🪄");
+                CoordinatorToUserMessage::KeyGen(message) => {
+                    match message {
+                        CoordinatorToUserKeyGenMessage::ReceivedShares { id } => {
+                            eprintln!("✓ received share from {}", ports.connected_device_labels().get(&id).expect("device must be named"));
+                        },
+                        CoordinatorToUserKeyGenMessage::CheckKeyGen { session_hash } => {
+                            eprintln!("Check all devices show {}", hex::encode(&session_hash));
+                        },
+                        CoordinatorToUserKeyGenMessage::KeyGenAck { id } => {
+                            eprintln!("✓ Got confirmation from {}", ports.connected_device_labels().get(&id).expect("device must be named"));
+                        },
+                        CoordinatorToUserKeyGenMessage::FinishedKey { key_id } => {
+                            eprintln!("🎉 key was successfully generated {}", key_id);
+                        },
                     }
-                    outbox.extend(coordinator.keygen_ack(ack)?);
                 }
             },
             CoordinatorSend::ToStorage(to_storage_message) => match to_storage_message {
@@ -249,7 +257,7 @@ fn main() -> anyhow::Result<()> {
             let mut coordinator = frostsnap_core::FrostCoordinator::new();
 
             let do_keygen_message = CoordinatorSendMessage {
-                target_destinations: keygen_devices.clone(),
+                target_destinations: Destination::Particular(keygen_devices.clone()),
                 message_body: CoordinatorSendBody::Core(
                     coordinator.do_keygen(&keygen_devices, threshold)?,
                 ),
@@ -315,8 +323,7 @@ fn main() -> anyhow::Result<()> {
                 }
                 SignArgs::Nostr { message } => {
                     let public_key = signer
-                        .coordinator_frost_key()?
-                        .frost_key()
+                        .frost_key()?
                         .clone()
                         .into_xonly_key()
                         .public_key();
