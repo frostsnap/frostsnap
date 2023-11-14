@@ -1,17 +1,23 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/coordinator.dart';
-import 'package:frostsnapp/coordinator_keygen.dart';
 import 'package:frostsnapp/device_list.dart';
-import 'package:frostsnapp/device_setup.dart';
-import 'package:frostsnapp/main.dart';
+import 'package:frostsnapp/serialport.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 typedef RemovedDeviceBuilder = Widget Function(BuildContext context,
     DeviceId id, String? label, Animation<double> animation);
 
+typedef DeviceBuilder = Widget Function(BuildContext context, DeviceId id,
+    String? label, Orientation orientation, Animation<double> animation);
+typedef OnDeviceChange = Function(DeviceChange change);
+
 class DeviceListWidget extends StatefulWidget {
-  final Orientation orientation;
-  const DeviceListWidget({required this.orientation, super.key});
+  final DeviceBuilder deviceBuilder;
+
+  const DeviceListWidget({Key? key, required this.deviceBuilder})
+      : super(key: key);
 
   @override
   State<StatefulWidget> createState() => DeviceListWidgetState();
@@ -21,8 +27,7 @@ class DeviceListWidgetState extends State<DeviceListWidget>
     with WidgetsBindingObserver {
   final GlobalKey<AnimatedListState> deviceListKey =
       GlobalKey<AnimatedListState>();
-
-  List<BuildContext>? contextToPopOnSuccess;
+  StreamSubscription? _subscription;
 
   @override
   void initState() {
@@ -30,38 +35,40 @@ class DeviceListWidgetState extends State<DeviceListWidget>
 
     WidgetsBinding.instance.addObserver(this);
 
-    globalDeviceList.subscribe().forEach((event) async {
+    _subscription = globalDeviceList.subscribe().listen((event) async {
       switch (event.kind) {
         case DeviceListChangeKind.added:
           {
             deviceListKey.currentState!.insertItem(event.index,
                 duration: const Duration(milliseconds: 800));
-            setState(() => {});
           }
         case DeviceListChangeKind.removed:
           {
             deviceListKey.currentState!.removeItem(event.index,
                 (BuildContext context, Animation<double> animation) {
-              return _buildDevice(context, event.id, event.name, animation);
+              return widget.deviceBuilder(context, event.id, event.name,
+                  effectiveOrientation(context), animation);
             });
-            setState(() => {});
           }
         case DeviceListChangeKind.named:
           {
-            if (contextToPopOnSuccess != null) {
-              for (var ctx in contextToPopOnSuccess!) {
-                Navigator.pop(ctx);
-              }
-            }
-            setState(() => contextToPopOnSuccess = null);
+            /* do nothing*/
           }
       }
+      setState(() => {});
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // So we can react to orientation changes
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _subscription?.cancel();
     super.dispose();
   }
 
@@ -70,105 +77,28 @@ class DeviceListWidgetState extends State<DeviceListWidget>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      global_coordinator.scanDevices();
+      globalHostPortHandler.scanDevices();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    print(globalDeviceList.length);
+    final orientation = effectiveOrientation(context);
+    final list = AnimatedList(
+        shrinkWrap: true,
+        key: deviceListKey,
+        itemBuilder: (context, index, animation) {
+          var id = globalDeviceList[index];
+          var label = globalDeviceList.state.names[id];
+          return widget.deviceBuilder(
+              context, id, label, orientation, animation);
+        },
+        initialItemCount: globalDeviceList.state.devices.length,
+        scrollDirection: orientation == Orientation.landscape
+            ? Axis.horizontal
+            : Axis.vertical);
 
-    return FrostsnapPage(
-      children: [
-        Text(
-          'Frostsnap',
-          style: TextStyle(
-            fontSize: 36,
-            fontWeight: FontWeight.bold,
-            color: Colors.blue,
-          ),
-        ),
-        Expanded(
-          child: Container(
-            color: Colors.white54,
-            child: Center(
-              child: AnimatedList(
-                key: deviceListKey,
-                itemBuilder: _buildItem,
-                initialItemCount: globalDeviceList.length,
-                scrollDirection: widget.orientation == Orientation.landscape
-                    ? Axis.horizontal
-                    : Axis.vertical,
-              ),
-            ),
-          ),
-        ),
-        DoKeyGenButton(namedDevicesCount: globalDeviceList.lengthNamed()),
-      ],
-    );
-  }
-
-  Widget _buildDevice(BuildContext context, DeviceId id, String? label,
-      Animation<double> animation) {
-    Widget child;
-    if (label == null) {
-      child = ElevatedButton(
-          onPressed: () {
-            global_coordinator.updateNamePreview(id, "");
-            Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (deviceSetupContex) => DeviceSetup(
-                          deviceId: id,
-                          popInvoked: () async {
-                            await global_coordinator.cancel(id);
-                            return true;
-                          },
-                          onSubmitted: (value) async {
-                            global_coordinator.finishNaming(id, value);
-                            await showDialog<void>(
-                                barrierDismissible:
-                                    false, // can't dismiss the dialogue
-                                context: context,
-                                builder: (dialogContext) {
-                                  contextToPopOnSuccess = [
-                                    deviceSetupContex,
-                                    dialogContext
-                                  ];
-                                  return AlertDialog(
-                                      title: const Text("Confirm on Device"),
-                                      content: Text(
-                                          "Please confirm the name '$value' on the device"),
-                                      actions: [
-                                        ElevatedButton(
-                                            onPressed: () {
-                                              global_coordinator.cancel(id);
-                                              Navigator.pop(dialogContext);
-                                              contextToPopOnSuccess = null;
-                                            },
-                                            child: const Text("cancel"))
-                                      ]);
-                                });
-                          },
-                          onChanged: (value) {
-                            global_coordinator.updateNamePreview(id, value);
-                          },
-                        )));
-          },
-          child: const Text("NEW DEVICE"));
-    } else {
-      child = LabeledDeviceText(label);
-    }
-
-    return DeviceBoxContainer(
-        orientation: widget.orientation, animation: animation, child: child);
-  }
-
-  Widget _buildItem(
-      BuildContext context, int index, Animation<double> animation) {
-    var id = globalDeviceList[index];
-    var label = globalDeviceList.getName(id);
-    return _buildDevice(context, id, label, animation);
+    return list;
   }
 }
 
@@ -188,16 +118,15 @@ class DeviceBoxContainer extends StatelessWidget {
     var animationBegin = orientation == Orientation.landscape
         ? const Offset(8.0, 0.0)
         : const Offset(0.0, 8.0);
-    return Padding(
-        padding: const EdgeInsets.all(2.0),
-        child: SlideTransition(
-            position: animation.drive(
-                Tween(begin: animationBegin, end: const Offset(0.0, 0.0))),
-            child: SizedBox(
-              height: 80.0,
-              width: 200.0,
+    return SlideTransition(
+        position: animation
+            .drive(Tween(begin: animationBegin, end: const Offset(0.0, 0.0))),
+        child: Padding(
+            padding: const EdgeInsets.all(2.0),
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 90),
               child: Card(
-                color: Colors.white70,
+                color: Colors.blueGrey,
                 child: Center(
                   child: child,
                 ),
@@ -214,5 +143,63 @@ class LabeledDeviceText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Text(name, style: const TextStyle(fontSize: 30));
+  }
+}
+
+class DeviceListContainer extends StatelessWidget {
+  final Widget child;
+  final double? height;
+  final double? width;
+
+  const DeviceListContainer(
+      {super.key, required this.child, this.height, this.width});
+
+  @override
+  Widget build(BuildContext context) {
+    final orientation = effectiveOrientation(context);
+    final height_ = height;
+    final width_ = width ?? 300;
+    return LayoutBuilder(builder: (context, constraints) {
+      return SizedBox(
+          height: constraints.maxHeight, width: width_, child: child);
+    });
+  }
+}
+
+Orientation effectiveOrientation(BuildContext context) {
+  return Platform.isAndroid
+      ? MediaQuery.of(context).orientation
+      : Orientation.portrait;
+}
+
+typedef IconAssigner = Widget? Function(BuildContext, DeviceId);
+
+class DeviceListWithIcons extends StatelessWidget {
+  const DeviceListWithIcons({super.key, required this.iconAssigner});
+  final IconAssigner iconAssigner;
+
+  @override
+  Widget build(BuildContext context) {
+    return DeviceListWidget(
+      deviceBuilder: _builder,
+    );
+  }
+
+  Widget _builder(BuildContext context, DeviceId id, String? label,
+      Orientation orientation, Animation<double> animation) {
+    final icon = iconAssigner.call(context, id);
+    return DeviceBoxContainer(
+        animation: animation,
+        orientation: orientation,
+        child: Column(
+          children: icon != null
+              ? [
+                  LabeledDeviceText(label ?? '-'),
+                  SizedBox(height: 4),
+                  icon,
+                  SizedBox(height: 4)
+                ]
+              : [LabeledDeviceText(label ?? '-')],
+        ));
   }
 }

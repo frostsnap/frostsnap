@@ -3,14 +3,14 @@ pub use crate::coordinator::{
 };
 pub use crate::FfiCoordinator;
 use anyhow::anyhow;
-use flutter_rust_bridge::{frb, RustOpaque, StreamSink};
-pub use frostsnap_coordinator::frostsnap_core::message::CoordinatorToUserKeyGenMessage;
-pub use frostsnap_coordinator::{
-    frostsnap_core::{CoordinatorFrostKey, DeviceId},
-    DeviceChange, PortDesc,
-};
+use flutter_rust_bridge::{frb, RustOpaque, StreamSink, SyncReturn};
+pub use frostsnap_coordinator::frostsnap_core;
+pub use frostsnap_coordinator::{DeviceChange, PortDesc};
+pub use frostsnap_core::message::CoordinatorToUserKeyGenMessage;
+pub use frostsnap_core::schnorr_fun;
+pub use frostsnap_core::{CoordinatorFrostKeyState, DeviceId, FrostKeyExt, KeyId};
 use lazy_static::lazy_static;
-pub use std::os::fd::RawFd;
+pub use schnorr_fun::fun::marker::Normal;
 pub use std::sync::{Mutex, RwLock};
 #[allow(unused)]
 use tracing::{event, Level as TLevel};
@@ -20,8 +20,10 @@ lazy_static! {
     static ref DEVICE_EVENT_STREAM: RwLock<Option<StreamSink<Vec<DeviceChange>>>> =
         RwLock::default();
     static ref PENDING_DEVICE_EVENTS: Mutex<Vec<DeviceChange>> = Default::default();
-    static ref KEYGEN_STEAM: Mutex<Option<StreamSink<CoordinatorToUserKeyGenMessage>>> =
+    static ref KEYGEN_STREAM: Mutex<Option<StreamSink<CoordinatorToUserKeyGenMessage>>> =
         Default::default();
+    static ref COORDINATOR: FfiCoordinator = FfiCoordinator::new();
+    static ref KEY_EVENT_STREAM: Mutex<Option<StreamSink<KeyState>>> = Default::default();
 }
 
 pub fn sub_port_events(event_stream: StreamSink<PortEvent>) {
@@ -32,8 +34,20 @@ pub fn sub_port_events(event_stream: StreamSink<PortEvent>) {
 }
 
 pub fn sub_device_events(stream: StreamSink<Vec<DeviceChange>>) {
-    *DEVICE_EVENT_STREAM.write().unwrap() = Some(stream);
+    {
+        let mut device_event_stream = DEVICE_EVENT_STREAM.write().unwrap();
+        if let Some(existing) = device_event_stream.replace(stream) {
+            existing.close();
+        }
+    }
     emit_device_events(vec![]);
+}
+
+pub fn sub_key_events(stream: StreamSink<KeyState>) {
+    let mut key_event_stream = KEY_EVENT_STREAM.lock().unwrap();
+    if let Some(existing) = key_event_stream.replace(stream) {
+        existing.close();
+    }
 }
 
 pub(crate) fn emit_event(event: PortEvent) -> anyhow::Result<()> {
@@ -58,6 +72,28 @@ pub(crate) fn emit_device_events(mut new_events: Vec<DeviceChange>) {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct KeyState {
+    pub keys: Vec<FrostKey>,
+}
+
+#[derive(Clone, Debug)]
+pub struct FrostKey(pub RustOpaque<frostsnap_core::schnorr_fun::frost::FrostKey<Normal>>);
+
+impl FrostKey {
+    pub fn threshold(&self) -> SyncReturn<usize> {
+        SyncReturn(self.0.threshold())
+    }
+
+    pub fn id(&self) -> SyncReturn<KeyId> {
+        SyncReturn(self.0.key_id())
+    }
+
+    pub fn name(&self) -> SyncReturn<String> {
+        SyncReturn("KEY NAMES NOT IMPLEMENTED".into())
+    }
+}
+
 #[frb(mirror(PortDesc))]
 pub struct _PortDesc {
     pub id: String,
@@ -67,6 +103,9 @@ pub struct _PortDesc {
 
 #[frb(mirror(DeviceId))]
 pub struct _DeviceId(pub [u8; 33]);
+
+#[frb(mirror(KeyId))]
+pub struct _KeyId(pub [u8; 32]);
 
 #[derive(Debug)]
 pub enum PortEvent {
@@ -165,10 +204,6 @@ impl PortBytesToRead {
     }
 }
 
-pub fn new_ffi_coordinator(host_handles_serial: bool) -> RustOpaque<FfiCoordinator> {
-    RustOpaque::new(FfiCoordinator::new(host_handles_serial))
-}
-
 pub enum Level {
     Debug,
     Info,
@@ -208,24 +243,42 @@ pub fn turn_logcat_logging_on(_level: Level) {
     panic!("Do not call turn_logcat_logging_on outside of android");
 }
 
-pub fn announce_available_ports(coordinator: RustOpaque<FfiCoordinator>, ports: Vec<PortDesc>) {
-    coordinator.set_available_ports(ports);
+pub fn announce_available_ports(ports: Vec<PortDesc>) {
+    COORDINATOR.set_available_ports(ports);
 }
 
-pub fn update_name_preview(coordinator: RustOpaque<FfiCoordinator>, id: DeviceId, name: String) {
-    coordinator.update_name_preview(id, &name);
+pub fn switch_to_host_handles_serial() {
+    COORDINATOR.switch_to_host_handles_serial();
 }
 
-pub fn finish_naming(coordinator: RustOpaque<FfiCoordinator>, id: DeviceId, name: String) {
-    coordinator.finish_naming(id, &name);
+pub fn update_name_preview(id: DeviceId, name: String) {
+    COORDINATOR.update_name_preview(id, &name);
 }
 
-pub fn send_cancel(coordinator: RustOpaque<FfiCoordinator>, id: DeviceId) {
-    coordinator.send_cancel(id);
+pub fn finish_naming(id: DeviceId, name: String) {
+    COORDINATOR.finish_naming(id, &name);
 }
 
-pub fn registered_devices(coordinator: RustOpaque<FfiCoordinator>) -> Vec<DeviceId> {
-    coordinator.registered_devices()
+pub fn send_cancel(id: DeviceId) {
+    COORDINATOR.send_cancel(id);
+}
+
+pub fn cancel_all() {
+    COORDINATOR.cancel_all()
+}
+
+pub fn registered_devices() -> Vec<DeviceId> {
+    COORDINATOR.registered_devices()
+}
+
+pub fn start_coordinator_thread() {
+    COORDINATOR.start()
+}
+
+pub fn key_state() -> SyncReturn<KeyState> {
+    SyncReturn(KeyState {
+        keys: COORDINATOR.frost_keys(),
+    })
 }
 
 pub type SessionHash = [u8; 32];
@@ -233,28 +286,39 @@ pub type SessionHash = [u8; 32];
 #[derive(Clone, Debug)]
 #[frb(mirror(CoordinatorToUserKeyGenMessage))]
 pub enum _CoordinatorToUserKeyGenMessage {
-    ReceivedShares(DeviceId),
+    ReceivedShares { id: DeviceId },
     CheckKeyGen { session_hash: SessionHash },
-    KeyGenAck(DeviceId),
-    FinishedKey,
+    KeyGenAck { id: DeviceId },
+    FinishedKey { key_id: KeyId },
 }
 
 pub(crate) fn emit_keygen_event(event: CoordinatorToUserKeyGenMessage) {
-    let stream = KEYGEN_STEAM.lock().expect("lock must not be poisoned");
+    let stream = KEYGEN_STREAM.lock().expect("lock must not be poisoned");
     let stream = stream.as_ref().expect("generate new key must be called");
+
+    let is_finished = matches!(event, CoordinatorToUserKeyGenMessage::FinishedKey { .. });
 
     if !stream.add(event) {
         event!(TLevel::ERROR, "failed to emit keygen event");
     }
+
+    if is_finished {
+        let mut key_events = KEY_EVENT_STREAM.lock().unwrap();
+        if let Some(key_events) = &mut *key_events {
+            key_events.add(KeyState {
+                keys: COORDINATOR.frost_keys(),
+            });
+        }
+        stream.close();
+    }
 }
 
-// TODO choose devices
 pub fn generate_new_key(
-    coordinator: RustOpaque<FfiCoordinator>,
     threshold: usize,
+    devices: Vec<DeviceId>,
     event_stream: StreamSink<CoordinatorToUserKeyGenMessage>,
 ) {
-    let mut global_keygen_stream = KEYGEN_STEAM.lock().unwrap();
+    let mut global_keygen_stream = KEYGEN_STREAM.lock().unwrap();
     *global_keygen_stream = Some(event_stream);
-    let coordinator_frostkey = coordinator.generate_new_key(threshold);
+    COORDINATOR.generate_new_key(devices.into_iter().collect(), threshold);
 }

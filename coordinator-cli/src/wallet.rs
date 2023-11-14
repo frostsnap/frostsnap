@@ -13,7 +13,7 @@ use bdk_chain::miniscript::{
 use bdk_electrum::electrum_client::ElectrumApi;
 use bdk_electrum::{electrum_client, ElectrumExt};
 use bitcoin::Network;
-use frostsnap_core::CoordinatorFrostKey;
+use frostsnap_core::CoordinatorFrostKeyState;
 use tracing::{event, Level};
 
 use bdk_chain::{
@@ -29,7 +29,7 @@ use crate::signer::Signer;
 
 #[derive(Debug)]
 pub struct Wallet {
-    coordinator_frost_key: frostsnap_core::CoordinatorFrostKey,
+    coordinator_frost_key: frostsnap_core::CoordinatorFrostKeyState,
     chain: LocalChain,
     graph: IndexedTxGraph<ConfirmationTimeAnchor, KeychainTxOutIndex<()>>,
 }
@@ -66,7 +66,7 @@ fn get_descriptor(frost_key: &FrostKey<Normal>) -> Descriptor<DescriptorPublicKe
 }
 
 impl Wallet {
-    pub fn new(coordinator_frost_key: CoordinatorFrostKey, changeset: ChangeSet) -> Self {
+    pub fn new(coordinator_frost_key: CoordinatorFrostKeyState, changeset: ChangeSet) -> Self {
         let descriptor = get_descriptor(coordinator_frost_key.frost_key());
         let mut chain: LocalChain = Default::default();
         chain.apply_changeset(changeset.chain_changeset);

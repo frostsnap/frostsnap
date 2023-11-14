@@ -3,7 +3,9 @@ use frostsnap_coordinator::DeviceChange;
 use frostsnap_core::message::{
     CoordinatorSend, CoordinatorToUserMessage, DeviceToCoordinatorMessage, SignTask,
 };
-use frostsnap_core::{schnorr_fun, CoordinatorFrostKey, DeviceId};
+use frostsnap_core::schnorr_fun::frost::FrostKey;
+use frostsnap_core::schnorr_fun::fun::marker::Normal;
+use frostsnap_core::{schnorr_fun, DeviceId};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use tracing::{event, Level};
 
@@ -40,22 +42,23 @@ impl<'a, 'b> Signer<'a, 'b> {
         Ok(finished_signatures)
     }
 
-    pub fn coordinator_frost_key(&self) -> anyhow::Result<&CoordinatorFrostKey> {
-        self.coordinator
-            .key()
-            .ok_or(anyhow!("Incorrect state to start signing"))
+    pub fn frost_key(&self) -> anyhow::Result<&FrostKey<Normal>> {
+        Ok(self.coordinator
+            .frost_key_state()
+            .ok_or(anyhow!("Incorrect state to start signing"))?
+            .frost_key())
     }
 
     fn run_signing_process(
         &mut self,
         message: SignTask,
     ) -> anyhow::Result<Vec<frostsnap_core::schnorr_fun::Signature>> {
-        let key = self
+        let key_state = self
             .coordinator
-            .key()
+            .frost_key_state()
             .ok_or(anyhow!("Incorrect state to start signing"))?;
 
-        let key_signers: BTreeMap<_, _> = key
+        let key_signers: BTreeMap<_, _> = key_state
             .devices()
             .map(|device_id| {
                 (
@@ -69,9 +72,9 @@ impl<'a, 'b> Signer<'a, 'b> {
             })
             .collect();
 
-        let chosen_signers = if key_signers.len() != key.frost_key().threshold() {
-            eprintln!("Choose {} devices to sign:", key.frost_key().threshold());
-            crate::choose_devices(&key_signers, key.frost_key().threshold())
+        let chosen_signers = if key_signers.len() != key_state.frost_key().threshold() {
+            eprintln!("Choose {} devices to sign:", key_state.frost_key().threshold());
+            crate::choose_devices(&key_signers, key_state.frost_key().threshold())
         } else {
             key_signers.keys().cloned().collect()
         };
@@ -186,7 +189,7 @@ impl<'a, 'b> Signer<'a, 'b> {
             }
 
             self.ports.queue_in_port_outbox(CoordinatorSendMessage {
-                target_destinations: std::mem::take(&mut asking_to_sign),
+                target_destinations: frostsnap_comms::Destination::Particular(std::mem::take(&mut asking_to_sign)),
                 message_body: CoordinatorSendBody::Core(signature_request.clone()),
             });
         };

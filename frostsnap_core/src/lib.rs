@@ -4,11 +4,13 @@
 #[macro_use]
 extern crate std;
 pub mod encrypted_share;
+mod key_id;
 mod macros;
 pub mod message;
 pub mod nostr;
 pub mod xpub;
 pub use bincode;
+pub use key_id::*;
 pub use serde;
 
 use bitcoin::XOnlyPublicKey;
@@ -53,7 +55,7 @@ impl FrostCoordinator {
         }
     }
 
-    pub fn from_stored_key(key: CoordinatorFrostKey) -> Self {
+    pub fn from_stored_key(key: CoordinatorFrostKeyState) -> Self {
         Self {
             state: CoordinatorState::FrostKey { key },
         }
@@ -89,6 +91,11 @@ impl FrostCoordinator {
                                     "Device sent polynomial with incorrect threshold",
                                 ));
                             }
+
+                            let mut outgoing =
+                                vec![CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen(
+                                    CoordinatorToUserKeyGenMessage::ReceivedShares { id: from },
+                                ))];
 
                             let all_responded = responses
                                 .clone()
@@ -160,30 +167,27 @@ impl FrostCoordinator {
                                         });
 
                                     // TODO: check order
-                                    Ok(vec![
-                                        CoordinatorSend::ToDevice(
-                                            CoordinatorToDeviceMessage::FinishKeyGen {
-                                                shares_provided: responses
-                                                    .into_iter()
-                                                    .map(|(id, response)| {
-                                                        (id, response.encrypted_shares)
-                                                    })
-                                                    .collect(),
-                                            },
-                                        ),
-                                        CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen(
+                                    outgoing.push(CoordinatorSend::ToDevice(
+                                        CoordinatorToDeviceMessage::FinishKeyGen {
+                                            shares_provided: responses
+                                                .into_iter()
+                                                .map(|(id, response)| {
+                                                    (id, response.encrypted_shares)
+                                                })
+                                                .collect(),
+                                        },
+                                    ));
+                                    outgoing.push(CoordinatorSend::ToUser(
+                                        CoordinatorToUserMessage::KeyGen(
                                             CoordinatorToUserKeyGenMessage::CheckKeyGen {
                                                 session_hash,
                                             },
-                                        )),
-                                    ])
+                                        ),
+                                    ));
                                 }
-                                None =>
-                                /* not finished yet  */
-                                {
-                                    Ok(vec![])
-                                }
-                            }
+                                None => { /* not finished yet  */ }
+                            };
+                            Ok(outgoing)
                         }
 
                         _ => Err(Error::coordinator_message_kind(&self.state, &message)),
@@ -194,52 +198,54 @@ impl FrostCoordinator {
                     device_nonces,
                     acks,
                     session_hash,
-                } => {
-                    match message {
-                        DeviceToCoordinatorMessage::KeyGenAck(acked_session_hash) => {
-                            if acked_session_hash != *session_hash {
+                } => match message {
+                    DeviceToCoordinatorMessage::KeyGenAck(acked_session_hash) => {
+                        let mut outgoing = vec![];
+                        if acked_session_hash != *session_hash {
+                            return Err(Error::coordinator_invalid_message(
+                                &message,
+                                "Device acked wrong keygen session hash",
+                            ));
+                        }
+
+                        match acks.get_mut(&from) {
+                            None => {
                                 return Err(Error::coordinator_invalid_message(
                                     &message,
-                                    "Device acked wrong keygen session hash",
+                                    "Received ack from device not a member of keygen",
                                 ));
                             }
-
-                            match acks.get_mut(&from) {
-                                None => {
-                                    return Err(Error::coordinator_invalid_message(
-                                        &message,
-                                        "Received ack from device not a member of keygen",
-                                    ));
-                                }
-                                Some(ack) => {
-                                    *ack = true;
-                                }
-                            }
-
-                            let all_acks = acks.values().all(|ack| *ack);
-                            if all_acks {
-                                let key = CoordinatorFrostKey {
-                                    frost_key: frost_key.clone(),
-                                    device_nonces: device_nonces.clone(),
-                                };
-                                self.state = CoordinatorState::FrostKey { key: key.clone() };
-                                // TODO: check order
-                                Ok(vec![
-                                    CoordinatorSend::ToStorage(
-                                        CoordinatorToStorageMessage::UpdateState(key),
+                            Some(ack) => {
+                                outgoing.push(CoordinatorSend::ToUser(
+                                    CoordinatorToUserMessage::KeyGen(
+                                        CoordinatorToUserKeyGenMessage::KeyGenAck { id: from },
                                     ),
-                                    CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen(
-                                        CoordinatorToUserKeyGenMessage::FinishedKey,
-                                    )),
-                                ])
-                            } else {
-                                /* not finished yet  */
-                                Ok(vec![])
+                                ));
+                                *ack = true;
                             }
                         }
-                        _ => Err(Error::coordinator_message_kind(&self.state, &message)),
+
+                        let all_acks = acks.values().all(|ack| *ack);
+                        if all_acks {
+                            let key = CoordinatorFrostKeyState {
+                                frost_key: frost_key.clone(),
+                                device_nonces: device_nonces.clone(),
+                            };
+                            let key_id = key.frost_key.key_id();
+                            self.state = CoordinatorState::FrostKey { key: key.clone() };
+                            outgoing.extend([
+                                CoordinatorSend::ToStorage(
+                                    CoordinatorToStorageMessage::UpdateState(key),
+                                ),
+                                CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen(
+                                    CoordinatorToUserKeyGenMessage::FinishedKey { key_id },
+                                )),
+                            ]);
+                        }
+                        Ok(outgoing)
                     }
-                }
+                    _ => Err(Error::coordinator_message_kind(&self.state, &message)),
+                },
             },
             CoordinatorState::Signing { key, sessions } => match &message {
                 DeviceToCoordinatorMessage::SignatureShare {
@@ -512,21 +518,30 @@ impl FrostCoordinator {
         &self.state
     }
 
-    pub fn key(&self) -> Option<&CoordinatorFrostKey> {
+    pub fn frost_key_state(&self) -> Option<&CoordinatorFrostKeyState> {
         match self.state() {
             CoordinatorState::FrostKey { key } => Some(key),
             _ => None,
         }
     }
+
+    pub fn cancel(&mut self) {
+        let state = core::mem::replace(&mut self.state, CoordinatorState::Registration);
+        self.state = match state {
+            CoordinatorState::KeyGen(_) => CoordinatorState::Registration,
+            CoordinatorState::Signing { key, .. } => CoordinatorState::FrostKey { key },
+            _ => state,
+        }
+    }
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, serde::Serialize, serde::Deserialize)]
-pub struct CoordinatorFrostKey {
+pub struct CoordinatorFrostKeyState {
     frost_key: FrostKey<Normal>,
     device_nonces: BTreeMap<DeviceId, DeviceNonces>,
 }
 
-impl CoordinatorFrostKey {
+impl CoordinatorFrostKeyState {
     pub fn devices(&self) -> impl Iterator<Item = DeviceId> + '_ {
         self.device_nonces.keys().cloned()
     }
@@ -545,10 +560,10 @@ pub enum CoordinatorState {
     Registration,
     KeyGen(KeyGenState),
     FrostKey {
-        key: CoordinatorFrostKey,
+        key: CoordinatorFrostKeyState,
     },
     Signing {
-        key: CoordinatorFrostKey,
+        key: CoordinatorFrostKeyState,
         sessions: Vec<SignSessionProgress>,
     },
 }
@@ -667,19 +682,30 @@ impl FrostSigner {
         *self = Self::new(self.keypair.clone())
     }
 
-    pub fn cancel_action(&mut self) {
-        match &self.state {
-            SignerState::KeyGen { .. } => {
+    #[must_use]
+    pub fn cancel_action(&mut self) -> Vec<DeviceSend> {
+        let message = match &self.state {
+            SignerState::KeyGen { .. }
+            | SignerState::FrostKey {
+                awaiting_ack: true, ..
+            } => {
                 self.state = SignerState::Registered;
+                Some(DeviceToUserMessage::Canceled {
+                    task: TaskKind::KeyGen,
+                })
             }
             SignerState::AwaitingSignAck { key, .. } => {
                 self.state = SignerState::FrostKey {
                     key: key.clone(),
                     awaiting_ack: false,
                 };
+                Some(DeviceToUserMessage::Canceled {
+                    task: TaskKind::Sign,
+                })
             }
-            SignerState::FrostKey { .. } | SignerState::Registered => { /* do nothing */ }
-        }
+            SignerState::FrostKey { .. } | SignerState::Registered => None,
+        };
+        message.into_iter().map(DeviceSend::ToUser).collect()
     }
 
     pub fn keypair(&self) -> &KeyPair {
@@ -960,20 +986,13 @@ impl FrostSigner {
         }
     }
 
-    pub fn sign_ack(&mut self, ack: bool) -> Result<Vec<DeviceSend>, ActionError> {
+    pub fn sign_ack(&mut self) -> Result<Vec<DeviceSend>, ActionError> {
         match &self.state {
             SignerState::AwaitingSignAck {
                 key,
                 sign_task: message,
                 nonces,
             } => {
-                if !ack {
-                    self.state = SignerState::FrostKey {
-                        key: key.clone(),
-                        awaiting_ack: false,
-                    };
-                    return Ok(vec![]);
-                }
                 let sign_items = message.sign_items();
 
                 let frost = frost::new_with_deterministic_nonces::<Sha256>();

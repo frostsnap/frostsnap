@@ -7,6 +7,9 @@ flash BOARD=default_board +ARGS="":
 erase-device BOARD=default_board +ARGS="":
     cd device && cargo run --release --features {{BOARD}} --bin {{BOARD}} -- --erase-data-parts nvs --partition-table partitions.csv
 
+erase:
+    just erase-device
+
 build-device BOARD=default_board +ARGS="":
     cd device && cargo build {{ARGS}} --features {{BOARD}} --bin {{BOARD}}
 

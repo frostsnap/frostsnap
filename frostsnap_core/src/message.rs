@@ -1,6 +1,7 @@
 use crate::encrypted_share::EncryptedShare;
-use crate::CoordinatorFrostKey;
+use crate::CoordinatorFrostKeyState;
 use crate::Gist;
+use crate::KeyId;
 use crate::SessionHash;
 use crate::Vec;
 use crate::NONCE_BATCH_SIZE;
@@ -80,7 +81,7 @@ impl CoordinatorToDeviceMessage {
 
 #[derive(Clone, Debug)]
 pub enum CoordinatorToStorageMessage {
-    UpdateState(CoordinatorFrostKey),
+    UpdateState(CoordinatorFrostKeyState),
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
@@ -130,16 +131,23 @@ pub enum CoordinatorToUserMessage {
 
 #[derive(Clone, Debug)]
 pub enum CoordinatorToUserKeyGenMessage {
-    ReceivedShares(DeviceId),
+    ReceivedShares { id: DeviceId },
     CheckKeyGen { session_hash: SessionHash },
-    KeyGenAck(DeviceId),
-    FinishedKey,
+    KeyGenAck { id: DeviceId },
+    FinishedKey { key_id: KeyId },
 }
 
 #[derive(Clone, Debug)]
 pub enum DeviceToUserMessage {
     CheckKeyGen { session_hash: SessionHash },
     SignatureRequest { sign_task: SignTask },
+    Canceled { task: TaskKind },
+}
+
+#[derive(Clone, Debug)]
+pub enum TaskKind {
+    KeyGen,
+    Sign,
 }
 
 #[derive(Clone, Debug)]

@@ -18,9 +18,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
 // Section: api2wire
 
   @protected
-  wire_FfiCoordinator api2wire_FfiCoordinator(FfiCoordinator raw) {
-    final ptr = inner.new_FfiCoordinator();
-    _api_fill_to_wire_FfiCoordinator(raw, ptr);
+  wire_FrostsnapCoreSchnorrFunFrostFrostKeyNormal
+      api2wire_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(
+          FrostsnapCoreSchnorrFunFrostFrostKeyNormal raw) {
+    final ptr = inner.new_FrostsnapCoreSchnorrFunFrostFrostKeyNormal();
+    _api_fill_to_wire_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(raw, ptr);
     return ptr;
   }
 
@@ -66,6 +68,13 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   }
 
   @protected
+  ffi.Pointer<wire_FrostKey> api2wire_box_autoadd_frost_key(FrostKey raw) {
+    final ptr = inner.new_box_autoadd_frost_key_0();
+    _api_fill_to_wire_frost_key(raw, ptr.ref);
+    return ptr;
+  }
+
+  @protected
   ffi.Pointer<wire_PortBytesToRead> api2wire_box_autoadd_port_bytes_to_read(
       PortBytesToRead raw) {
     final ptr = inner.new_box_autoadd_port_bytes_to_read_0();
@@ -92,6 +101,15 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
     final ptr = inner.new_box_autoadd_port_write_0();
     _api_fill_to_wire_port_write(raw, ptr.ref);
     return ptr;
+  }
+
+  @protected
+  ffi.Pointer<wire_list_device_id> api2wire_list_device_id(List<DeviceId> raw) {
+    final ans = inner.new_list_device_id_0(raw.length);
+    for (var i = 0; i < raw.length; ++i) {
+      _api_fill_to_wire_device_id(raw[i], ans.ref.ptr[i]);
+    }
+    return ans;
   }
 
   @protected
@@ -124,9 +142,12 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
 
 // Section: finalizer
 
-  late final OpaqueTypeFinalizer _FfiCoordinatorFinalizer =
-      OpaqueTypeFinalizer(inner._drop_opaque_FfiCoordinatorPtr);
-  OpaqueTypeFinalizer get FfiCoordinatorFinalizer => _FfiCoordinatorFinalizer;
+  late final OpaqueTypeFinalizer
+      _FrostsnapCoreSchnorrFunFrostFrostKeyNormalFinalizer =
+      OpaqueTypeFinalizer(
+          inner._drop_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormalPtr);
+  OpaqueTypeFinalizer get FrostsnapCoreSchnorrFunFrostFrostKeyNormalFinalizer =>
+      _FrostsnapCoreSchnorrFunFrostFrostKeyNormalFinalizer;
   late final OpaqueTypeFinalizer _PortBytesToReadSenderFinalizer =
       OpaqueTypeFinalizer(inner._drop_opaque_PortBytesToReadSenderPtr);
   OpaqueTypeFinalizer get PortBytesToReadSenderFinalizer =>
@@ -142,8 +163,9 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   OpaqueTypeFinalizer get PortWriteSenderFinalizer => _PortWriteSenderFinalizer;
 // Section: api_fill_to_wire
 
-  void _api_fill_to_wire_FfiCoordinator(
-      FfiCoordinator apiObj, wire_FfiCoordinator wireObj) {
+  void _api_fill_to_wire_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(
+      FrostsnapCoreSchnorrFunFrostFrostKeyNormal apiObj,
+      wire_FrostsnapCoreSchnorrFunFrostFrostKeyNormal wireObj) {
     wireObj.ptr = apiObj.shareOrMove();
   }
 
@@ -172,6 +194,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
     _api_fill_to_wire_device_id(apiObj, wireObj.ref);
   }
 
+  void _api_fill_to_wire_box_autoadd_frost_key(
+      FrostKey apiObj, ffi.Pointer<wire_FrostKey> wireObj) {
+    _api_fill_to_wire_frost_key(apiObj, wireObj.ref);
+  }
+
   void _api_fill_to_wire_box_autoadd_port_bytes_to_read(
       PortBytesToRead apiObj, ffi.Pointer<wire_PortBytesToRead> wireObj) {
     _api_fill_to_wire_port_bytes_to_read(apiObj, wireObj.ref);
@@ -194,6 +221,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
 
   void _api_fill_to_wire_device_id(DeviceId apiObj, wire_DeviceId wireObj) {
     wireObj.field0 = api2wire_u8_array_33(apiObj.field0);
+  }
+
+  void _api_fill_to_wire_frost_key(FrostKey apiObj, wire_FrostKey wireObj) {
+    wireObj.field0 =
+        api2wire_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(apiObj.field0);
   }
 
   void _api_fill_to_wire_port_bytes_to_read(
@@ -351,21 +383,19 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _wire_sub_device_events =
       _wire_sub_device_eventsPtr.asFunction<void Function(int)>();
 
-  void wire_new_ffi_coordinator(
+  void wire_sub_key_events(
     int port_,
-    bool host_handles_serial,
   ) {
-    return _wire_new_ffi_coordinator(
+    return _wire_sub_key_events(
       port_,
-      host_handles_serial,
     );
   }
 
-  late final _wire_new_ffi_coordinatorPtr =
-      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Int64, ffi.Bool)>>(
-          'wire_new_ffi_coordinator');
-  late final _wire_new_ffi_coordinator =
-      _wire_new_ffi_coordinatorPtr.asFunction<void Function(int, bool)>();
+  late final _wire_sub_key_eventsPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Int64)>>(
+          'wire_sub_key_events');
+  late final _wire_sub_key_events =
+      _wire_sub_key_eventsPtr.asFunction<void Function(int)>();
 
   void wire_turn_stderr_logging_on(
     int port_,
@@ -401,35 +431,42 @@ class NativeWire implements FlutterRustBridgeWireBase {
 
   void wire_announce_available_ports(
     int port_,
-    wire_FfiCoordinator coordinator,
     ffi.Pointer<wire_list_port_desc> ports,
   ) {
     return _wire_announce_available_ports(
       port_,
-      coordinator,
       ports,
     );
   }
 
   late final _wire_announce_available_portsPtr = _lookup<
           ffi.NativeFunction<
-              ffi.Void Function(ffi.Int64, wire_FfiCoordinator,
-                  ffi.Pointer<wire_list_port_desc>)>>(
+              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_list_port_desc>)>>(
       'wire_announce_available_ports');
-  late final _wire_announce_available_ports =
-      _wire_announce_available_portsPtr.asFunction<
-          void Function(
-              int, wire_FfiCoordinator, ffi.Pointer<wire_list_port_desc>)>();
+  late final _wire_announce_available_ports = _wire_announce_available_portsPtr
+      .asFunction<void Function(int, ffi.Pointer<wire_list_port_desc>)>();
+
+  void wire_switch_to_host_handles_serial(
+    int port_,
+  ) {
+    return _wire_switch_to_host_handles_serial(
+      port_,
+    );
+  }
+
+  late final _wire_switch_to_host_handles_serialPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Int64)>>(
+          'wire_switch_to_host_handles_serial');
+  late final _wire_switch_to_host_handles_serial =
+      _wire_switch_to_host_handles_serialPtr.asFunction<void Function(int)>();
 
   void wire_update_name_preview(
     int port_,
-    wire_FfiCoordinator coordinator,
     ffi.Pointer<wire_DeviceId> id,
     ffi.Pointer<wire_uint_8_list> name,
   ) {
     return _wire_update_name_preview(
       port_,
-      coordinator,
       id,
       name,
     );
@@ -437,25 +474,20 @@ class NativeWire implements FlutterRustBridgeWireBase {
 
   late final _wire_update_name_previewPtr = _lookup<
       ffi.NativeFunction<
-          ffi.Void Function(
-              ffi.Int64,
-              wire_FfiCoordinator,
-              ffi.Pointer<wire_DeviceId>,
+          ffi.Void Function(ffi.Int64, ffi.Pointer<wire_DeviceId>,
               ffi.Pointer<wire_uint_8_list>)>>('wire_update_name_preview');
   late final _wire_update_name_preview =
       _wire_update_name_previewPtr.asFunction<
-          void Function(int, wire_FfiCoordinator, ffi.Pointer<wire_DeviceId>,
+          void Function(int, ffi.Pointer<wire_DeviceId>,
               ffi.Pointer<wire_uint_8_list>)>();
 
   void wire_finish_naming(
     int port_,
-    wire_FfiCoordinator coordinator,
     ffi.Pointer<wire_DeviceId> id,
     ffi.Pointer<wire_uint_8_list> name,
   ) {
     return _wire_finish_naming(
       port_,
-      coordinator,
       id,
       name,
     );
@@ -463,69 +495,144 @@ class NativeWire implements FlutterRustBridgeWireBase {
 
   late final _wire_finish_namingPtr = _lookup<
       ffi.NativeFunction<
-          ffi.Void Function(
-              ffi.Int64,
-              wire_FfiCoordinator,
-              ffi.Pointer<wire_DeviceId>,
+          ffi.Void Function(ffi.Int64, ffi.Pointer<wire_DeviceId>,
               ffi.Pointer<wire_uint_8_list>)>>('wire_finish_naming');
   late final _wire_finish_naming = _wire_finish_namingPtr.asFunction<
-      void Function(int, wire_FfiCoordinator, ffi.Pointer<wire_DeviceId>,
-          ffi.Pointer<wire_uint_8_list>)>();
+      void Function(
+          int, ffi.Pointer<wire_DeviceId>, ffi.Pointer<wire_uint_8_list>)>();
 
   void wire_send_cancel(
     int port_,
-    wire_FfiCoordinator coordinator,
     ffi.Pointer<wire_DeviceId> id,
   ) {
     return _wire_send_cancel(
       port_,
-      coordinator,
       id,
     );
   }
 
   late final _wire_send_cancelPtr = _lookup<
       ffi.NativeFunction<
-          ffi.Void Function(ffi.Int64, wire_FfiCoordinator,
-              ffi.Pointer<wire_DeviceId>)>>('wire_send_cancel');
-  late final _wire_send_cancel = _wire_send_cancelPtr.asFunction<
-      void Function(int, wire_FfiCoordinator, ffi.Pointer<wire_DeviceId>)>();
+          ffi.Void Function(
+              ffi.Int64, ffi.Pointer<wire_DeviceId>)>>('wire_send_cancel');
+  late final _wire_send_cancel = _wire_send_cancelPtr
+      .asFunction<void Function(int, ffi.Pointer<wire_DeviceId>)>();
 
-  void wire_registered_devices(
+  void wire_cancel_all(
     int port_,
-    wire_FfiCoordinator coordinator,
   ) {
-    return _wire_registered_devices(
+    return _wire_cancel_all(
       port_,
-      coordinator,
     );
   }
 
-  late final _wire_registered_devicesPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Void Function(
-              ffi.Int64, wire_FfiCoordinator)>>('wire_registered_devices');
-  late final _wire_registered_devices = _wire_registered_devicesPtr
-      .asFunction<void Function(int, wire_FfiCoordinator)>();
+  late final _wire_cancel_allPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Int64)>>(
+          'wire_cancel_all');
+  late final _wire_cancel_all =
+      _wire_cancel_allPtr.asFunction<void Function(int)>();
+
+  void wire_registered_devices(
+    int port_,
+  ) {
+    return _wire_registered_devices(
+      port_,
+    );
+  }
+
+  late final _wire_registered_devicesPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Int64)>>(
+          'wire_registered_devices');
+  late final _wire_registered_devices =
+      _wire_registered_devicesPtr.asFunction<void Function(int)>();
+
+  void wire_start_coordinator_thread(
+    int port_,
+  ) {
+    return _wire_start_coordinator_thread(
+      port_,
+    );
+  }
+
+  late final _wire_start_coordinator_threadPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Int64)>>(
+          'wire_start_coordinator_thread');
+  late final _wire_start_coordinator_thread =
+      _wire_start_coordinator_threadPtr.asFunction<void Function(int)>();
+
+  WireSyncReturn wire_key_state() {
+    return _wire_key_state();
+  }
+
+  late final _wire_key_statePtr =
+      _lookup<ffi.NativeFunction<WireSyncReturn Function()>>('wire_key_state');
+  late final _wire_key_state =
+      _wire_key_statePtr.asFunction<WireSyncReturn Function()>();
 
   void wire_generate_new_key(
     int port_,
-    wire_FfiCoordinator coordinator,
     int threshold,
+    ffi.Pointer<wire_list_device_id> devices,
   ) {
     return _wire_generate_new_key(
       port_,
-      coordinator,
       threshold,
+      devices,
     );
   }
 
   late final _wire_generate_new_keyPtr = _lookup<
       ffi.NativeFunction<
-          ffi.Void Function(ffi.Int64, wire_FfiCoordinator,
-              ffi.UintPtr)>>('wire_generate_new_key');
+          ffi.Void Function(ffi.Int64, ffi.UintPtr,
+              ffi.Pointer<wire_list_device_id>)>>('wire_generate_new_key');
   late final _wire_generate_new_key = _wire_generate_new_keyPtr
-      .asFunction<void Function(int, wire_FfiCoordinator, int)>();
+      .asFunction<void Function(int, int, ffi.Pointer<wire_list_device_id>)>();
+
+  WireSyncReturn wire_threshold__method__FrostKey(
+    ffi.Pointer<wire_FrostKey> that,
+  ) {
+    return _wire_threshold__method__FrostKey(
+      that,
+    );
+  }
+
+  late final _wire_threshold__method__FrostKeyPtr = _lookup<
+          ffi
+          .NativeFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>>(
+      'wire_threshold__method__FrostKey');
+  late final _wire_threshold__method__FrostKey =
+      _wire_threshold__method__FrostKeyPtr
+          .asFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>();
+
+  WireSyncReturn wire_id__method__FrostKey(
+    ffi.Pointer<wire_FrostKey> that,
+  ) {
+    return _wire_id__method__FrostKey(
+      that,
+    );
+  }
+
+  late final _wire_id__method__FrostKeyPtr = _lookup<
+          ffi
+          .NativeFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>>(
+      'wire_id__method__FrostKey');
+  late final _wire_id__method__FrostKey = _wire_id__method__FrostKeyPtr
+      .asFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>();
+
+  WireSyncReturn wire_name__method__FrostKey(
+    ffi.Pointer<wire_FrostKey> that,
+  ) {
+    return _wire_name__method__FrostKey(
+      that,
+    );
+  }
+
+  late final _wire_name__method__FrostKeyPtr = _lookup<
+          ffi
+          .NativeFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>>(
+      'wire_name__method__FrostKey');
+  late final _wire_name__method__FrostKey = _wire_name__method__FrostKeyPtr
+      .asFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>();
 
   void wire_satisfy__method__PortOpen(
     int port_,
@@ -618,15 +725,18 @@ class NativeWire implements FlutterRustBridgeWireBase {
       _wire_satisfy__method__PortBytesToReadPtr.asFunction<
           void Function(int, ffi.Pointer<wire_PortBytesToRead>, int)>();
 
-  wire_FfiCoordinator new_FfiCoordinator() {
-    return _new_FfiCoordinator();
+  wire_FrostsnapCoreSchnorrFunFrostFrostKeyNormal
+      new_FrostsnapCoreSchnorrFunFrostFrostKeyNormal() {
+    return _new_FrostsnapCoreSchnorrFunFrostFrostKeyNormal();
   }
 
-  late final _new_FfiCoordinatorPtr =
-      _lookup<ffi.NativeFunction<wire_FfiCoordinator Function()>>(
-          'new_FfiCoordinator');
-  late final _new_FfiCoordinator =
-      _new_FfiCoordinatorPtr.asFunction<wire_FfiCoordinator Function()>();
+  late final _new_FrostsnapCoreSchnorrFunFrostFrostKeyNormalPtr = _lookup<
+      ffi.NativeFunction<
+          wire_FrostsnapCoreSchnorrFunFrostFrostKeyNormal
+              Function()>>('new_FrostsnapCoreSchnorrFunFrostFrostKeyNormal');
+  late final _new_FrostsnapCoreSchnorrFunFrostFrostKeyNormal =
+      _new_FrostsnapCoreSchnorrFunFrostFrostKeyNormalPtr.asFunction<
+          wire_FrostsnapCoreSchnorrFunFrostFrostKeyNormal Function()>();
 
   wire_PortBytesToReadSender new_PortBytesToReadSender() {
     return _new_PortBytesToReadSender();
@@ -678,6 +788,16 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _new_box_autoadd_device_id_0 = _new_box_autoadd_device_id_0Ptr
       .asFunction<ffi.Pointer<wire_DeviceId> Function()>();
 
+  ffi.Pointer<wire_FrostKey> new_box_autoadd_frost_key_0() {
+    return _new_box_autoadd_frost_key_0();
+  }
+
+  late final _new_box_autoadd_frost_key_0Ptr =
+      _lookup<ffi.NativeFunction<ffi.Pointer<wire_FrostKey> Function()>>(
+          'new_box_autoadd_frost_key_0');
+  late final _new_box_autoadd_frost_key_0 = _new_box_autoadd_frost_key_0Ptr
+      .asFunction<ffi.Pointer<wire_FrostKey> Function()>();
+
   ffi.Pointer<wire_PortBytesToRead> new_box_autoadd_port_bytes_to_read_0() {
     return _new_box_autoadd_port_bytes_to_read_0();
   }
@@ -719,6 +839,21 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _new_box_autoadd_port_write_0 = _new_box_autoadd_port_write_0Ptr
       .asFunction<ffi.Pointer<wire_PortWrite> Function()>();
 
+  ffi.Pointer<wire_list_device_id> new_list_device_id_0(
+    int len,
+  ) {
+    return _new_list_device_id_0(
+      len,
+    );
+  }
+
+  late final _new_list_device_id_0Ptr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<wire_list_device_id> Function(
+              ffi.Int32)>>('new_list_device_id_0');
+  late final _new_list_device_id_0 = _new_list_device_id_0Ptr
+      .asFunction<ffi.Pointer<wire_list_device_id> Function(int)>();
+
   ffi.Pointer<wire_list_port_desc> new_list_port_desc_0(
     int len,
   ) {
@@ -743,40 +878,43 @@ class NativeWire implements FlutterRustBridgeWireBase {
   }
 
   late final _new_uint_8_list_0Ptr = _lookup<
-      ffi.NativeFunction<
-          ffi.Pointer<wire_uint_8_list> Function(
-              ffi.Int32)>>('new_uint_8_list_0');
+          ffi
+          .NativeFunction<ffi.Pointer<wire_uint_8_list> Function(ffi.Int32)>>(
+      'new_uint_8_list_0');
   late final _new_uint_8_list_0 = _new_uint_8_list_0Ptr
       .asFunction<ffi.Pointer<wire_uint_8_list> Function(int)>();
 
-  void drop_opaque_FfiCoordinator(
+  void drop_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(
     ffi.Pointer<ffi.Void> ptr,
   ) {
-    return _drop_opaque_FfiCoordinator(
+    return _drop_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(
       ptr,
     );
   }
 
-  late final _drop_opaque_FfiCoordinatorPtr =
+  late final _drop_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormalPtr =
       _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
-          'drop_opaque_FfiCoordinator');
-  late final _drop_opaque_FfiCoordinator = _drop_opaque_FfiCoordinatorPtr
-      .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+          'drop_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal');
+  late final _drop_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal =
+      _drop_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormalPtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
 
-  ffi.Pointer<ffi.Void> share_opaque_FfiCoordinator(
+  ffi.Pointer<ffi.Void> share_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(
     ffi.Pointer<ffi.Void> ptr,
   ) {
-    return _share_opaque_FfiCoordinator(
+    return _share_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(
       ptr,
     );
   }
 
-  late final _share_opaque_FfiCoordinatorPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Pointer<ffi.Void> Function(
-              ffi.Pointer<ffi.Void>)>>('share_opaque_FfiCoordinator');
-  late final _share_opaque_FfiCoordinator = _share_opaque_FfiCoordinatorPtr
-      .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
+  late final _share_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormalPtr =
+      _lookup<
+              ffi.NativeFunction<
+                  ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>>(
+          'share_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal');
+  late final _share_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal =
+      _share_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormalPtr
+          .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
 
   void drop_opaque_PortBytesToReadSender(
     ffi.Pointer<ffi.Void> ptr,
@@ -913,10 +1051,6 @@ class NativeWire implements FlutterRustBridgeWireBase {
 
 final class _Dart_Handle extends ffi.Opaque {}
 
-final class wire_FfiCoordinator extends ffi.Struct {
-  external ffi.Pointer<ffi.Void> ptr;
-}
-
 final class wire_uint_8_list extends ffi.Struct {
   external ffi.Pointer<ffi.Uint8> ptr;
 
@@ -943,6 +1077,21 @@ final class wire_list_port_desc extends ffi.Struct {
 
 final class wire_DeviceId extends ffi.Struct {
   external ffi.Pointer<wire_uint_8_list> field0;
+}
+
+final class wire_list_device_id extends ffi.Struct {
+  external ffi.Pointer<wire_DeviceId> ptr;
+
+  @ffi.Int32()
+  external int len;
+}
+
+final class wire_FrostsnapCoreSchnorrFunFrostFrostKeyNormal extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_FrostKey extends ffi.Struct {
+  external wire_FrostsnapCoreSchnorrFunFrostFrostKeyNormal field0;
 }
 
 final class wire_PortOpenSender extends ffi.Struct {

@@ -1,4 +1,5 @@
 use alloc::string::String;
+use frostsnap_core::SessionHash;
 
 pub trait UserInteraction {
     fn set_downstream_connection_state(&mut self, state: crate::ConnectionState);
@@ -68,7 +69,7 @@ impl Default for Workflow {
 
 #[derive(Clone, Debug)]
 pub enum Prompt {
-    KeyGen(String),
+    KeyGen(SessionHash),
     Signing(String),
     NewName {
         old_name: Option<String>,
@@ -85,7 +86,7 @@ pub enum BusyTask {
 
 #[derive(Clone, Debug)]
 pub enum UiEvent {
-    KeyGenConfirm(bool),
-    SigningConfirm(bool),
+    KeyGenConfirm,
+    SigningConfirm,
     NameConfirm(String),
 }

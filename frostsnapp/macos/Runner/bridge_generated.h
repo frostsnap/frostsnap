@@ -9,10 +9,6 @@ typedef int64_t DartPort;
 
 typedef bool (*DartPostCObjectFnType)(DartPort port_id, void *message);
 
-typedef struct wire_FfiCoordinator {
-  const void *ptr;
-} wire_FfiCoordinator;
-
 typedef struct wire_uint_8_list {
   uint8_t *ptr;
   int32_t len;
@@ -32,6 +28,21 @@ typedef struct wire_list_port_desc {
 typedef struct wire_DeviceId {
   struct wire_uint_8_list *field0;
 } wire_DeviceId;
+
+typedef struct DartCObject *WireSyncReturn;
+
+typedef struct wire_list_device_id {
+  struct wire_DeviceId *ptr;
+  int32_t len;
+} wire_list_device_id;
+
+typedef struct wire_FrostsnapCoreSchnorrFunFrostFrostKeyNormal {
+  const void *ptr;
+} wire_FrostsnapCoreSchnorrFunFrostFrostKeyNormal;
+
+typedef struct wire_FrostKey {
+  struct wire_FrostsnapCoreSchnorrFunFrostFrostKeyNormal field0;
+} wire_FrostKey;
 
 typedef struct wire_PortOpenSender {
   const void *ptr;
@@ -72,8 +83,6 @@ typedef struct wire_PortBytesToRead {
   struct wire_PortBytesToReadSender ready;
 } wire_PortBytesToRead;
 
-typedef struct DartCObject *WireSyncReturn;
-
 void store_dart_post_cobject(DartPostCObjectFnType ptr);
 
 Dart_Handle get_dart_object(uintptr_t ptr);
@@ -88,35 +97,39 @@ void wire_sub_port_events(int64_t port_);
 
 void wire_sub_device_events(int64_t port_);
 
-void wire_new_ffi_coordinator(int64_t port_, bool host_handles_serial);
+void wire_sub_key_events(int64_t port_);
 
 void wire_turn_stderr_logging_on(int64_t port_, int32_t level);
 
 void wire_turn_logcat_logging_on(int64_t port_, int32_t _level);
 
-void wire_announce_available_ports(int64_t port_,
-                                   struct wire_FfiCoordinator coordinator,
-                                   struct wire_list_port_desc *ports);
+void wire_announce_available_ports(int64_t port_, struct wire_list_port_desc *ports);
+
+void wire_switch_to_host_handles_serial(int64_t port_);
 
 void wire_update_name_preview(int64_t port_,
-                              struct wire_FfiCoordinator coordinator,
                               struct wire_DeviceId *id,
                               struct wire_uint_8_list *name);
 
-void wire_finish_naming(int64_t port_,
-                        struct wire_FfiCoordinator coordinator,
-                        struct wire_DeviceId *id,
-                        struct wire_uint_8_list *name);
+void wire_finish_naming(int64_t port_, struct wire_DeviceId *id, struct wire_uint_8_list *name);
 
-void wire_send_cancel(int64_t port_,
-                      struct wire_FfiCoordinator coordinator,
-                      struct wire_DeviceId *id);
+void wire_send_cancel(int64_t port_, struct wire_DeviceId *id);
 
-void wire_registered_devices(int64_t port_, struct wire_FfiCoordinator coordinator);
+void wire_cancel_all(int64_t port_);
 
-void wire_generate_new_key(int64_t port_,
-                           struct wire_FfiCoordinator coordinator,
-                           uintptr_t threshold);
+void wire_registered_devices(int64_t port_);
+
+void wire_start_coordinator_thread(int64_t port_);
+
+WireSyncReturn wire_key_state(void);
+
+void wire_generate_new_key(int64_t port_, uintptr_t threshold, struct wire_list_device_id *devices);
+
+WireSyncReturn wire_threshold__method__FrostKey(struct wire_FrostKey *that);
+
+WireSyncReturn wire_id__method__FrostKey(struct wire_FrostKey *that);
+
+WireSyncReturn wire_name__method__FrostKey(struct wire_FrostKey *that);
 
 void wire_satisfy__method__PortOpen(int64_t port_,
                                     struct wire_PortOpen *that,
@@ -135,7 +148,7 @@ void wire_satisfy__method__PortBytesToRead(int64_t port_,
                                            struct wire_PortBytesToRead *that,
                                            uint32_t bytes_to_read);
 
-struct wire_FfiCoordinator new_FfiCoordinator(void);
+struct wire_FrostsnapCoreSchnorrFunFrostFrostKeyNormal new_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(void);
 
 struct wire_PortBytesToReadSender new_PortBytesToReadSender(void);
 
@@ -147,6 +160,8 @@ struct wire_PortWriteSender new_PortWriteSender(void);
 
 struct wire_DeviceId *new_box_autoadd_device_id_0(void);
 
+struct wire_FrostKey *new_box_autoadd_frost_key_0(void);
+
 struct wire_PortBytesToRead *new_box_autoadd_port_bytes_to_read_0(void);
 
 struct wire_PortOpen *new_box_autoadd_port_open_0(void);
@@ -155,13 +170,15 @@ struct wire_PortRead *new_box_autoadd_port_read_0(void);
 
 struct wire_PortWrite *new_box_autoadd_port_write_0(void);
 
+struct wire_list_device_id *new_list_device_id_0(int32_t len);
+
 struct wire_list_port_desc *new_list_port_desc_0(int32_t len);
 
 struct wire_uint_8_list *new_uint_8_list_0(int32_t len);
 
-void drop_opaque_FfiCoordinator(const void *ptr);
+void drop_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(const void *ptr);
 
-const void *share_opaque_FfiCoordinator(const void *ptr);
+const void *share_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(const void *ptr);
 
 void drop_opaque_PortBytesToReadSender(const void *ptr);
 
@@ -185,33 +202,42 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     int64_t dummy_var = 0;
     dummy_var ^= ((int64_t) (void*) wire_sub_port_events);
     dummy_var ^= ((int64_t) (void*) wire_sub_device_events);
-    dummy_var ^= ((int64_t) (void*) wire_new_ffi_coordinator);
+    dummy_var ^= ((int64_t) (void*) wire_sub_key_events);
     dummy_var ^= ((int64_t) (void*) wire_turn_stderr_logging_on);
     dummy_var ^= ((int64_t) (void*) wire_turn_logcat_logging_on);
     dummy_var ^= ((int64_t) (void*) wire_announce_available_ports);
+    dummy_var ^= ((int64_t) (void*) wire_switch_to_host_handles_serial);
     dummy_var ^= ((int64_t) (void*) wire_update_name_preview);
     dummy_var ^= ((int64_t) (void*) wire_finish_naming);
     dummy_var ^= ((int64_t) (void*) wire_send_cancel);
+    dummy_var ^= ((int64_t) (void*) wire_cancel_all);
     dummy_var ^= ((int64_t) (void*) wire_registered_devices);
+    dummy_var ^= ((int64_t) (void*) wire_start_coordinator_thread);
+    dummy_var ^= ((int64_t) (void*) wire_key_state);
     dummy_var ^= ((int64_t) (void*) wire_generate_new_key);
+    dummy_var ^= ((int64_t) (void*) wire_threshold__method__FrostKey);
+    dummy_var ^= ((int64_t) (void*) wire_id__method__FrostKey);
+    dummy_var ^= ((int64_t) (void*) wire_name__method__FrostKey);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortOpen);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortRead);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortWrite);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortBytesToRead);
-    dummy_var ^= ((int64_t) (void*) new_FfiCoordinator);
+    dummy_var ^= ((int64_t) (void*) new_FrostsnapCoreSchnorrFunFrostFrostKeyNormal);
     dummy_var ^= ((int64_t) (void*) new_PortBytesToReadSender);
     dummy_var ^= ((int64_t) (void*) new_PortOpenSender);
     dummy_var ^= ((int64_t) (void*) new_PortReadSender);
     dummy_var ^= ((int64_t) (void*) new_PortWriteSender);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_device_id_0);
+    dummy_var ^= ((int64_t) (void*) new_box_autoadd_frost_key_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_port_bytes_to_read_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_port_open_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_port_read_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_port_write_0);
+    dummy_var ^= ((int64_t) (void*) new_list_device_id_0);
     dummy_var ^= ((int64_t) (void*) new_list_port_desc_0);
     dummy_var ^= ((int64_t) (void*) new_uint_8_list_0);
-    dummy_var ^= ((int64_t) (void*) drop_opaque_FfiCoordinator);
-    dummy_var ^= ((int64_t) (void*) share_opaque_FfiCoordinator);
+    dummy_var ^= ((int64_t) (void*) drop_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal);
+    dummy_var ^= ((int64_t) (void*) share_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal);
     dummy_var ^= ((int64_t) (void*) drop_opaque_PortBytesToReadSender);
     dummy_var ^= ((int64_t) (void*) share_opaque_PortBytesToReadSender);
     dummy_var ^= ((int64_t) (void*) drop_opaque_PortOpenSender);

@@ -4,7 +4,7 @@ const USB_PID: u16 = 4097;
 
 use crate::PortOpenError;
 use crate::{FramedSerialPort, Serial};
-use frostsnap_comms::{CoordinatorSendBody, DeviceSendBody};
+use frostsnap_comms::{CoordinatorSendBody, Destination, DeviceSendBody};
 use frostsnap_comms::{CoordinatorSendMessage, MAGIC_BYTES_PERIOD};
 use frostsnap_comms::{ReceiveSerial, Upstream};
 use frostsnap_core::message::DeviceToCoordinatorMessage;
@@ -327,7 +327,7 @@ impl UsbSerialManager {
 
                         self.port_outbox.push(CoordinatorSendMessage {
                             message_body: CoordinatorSendBody::AnnounceAck {},
-                            target_destinations: BTreeSet::from([message.from]),
+                            target_destinations: Destination::from([message.from]),
                         });
 
                         self.reverse_device_ports
@@ -387,26 +387,38 @@ impl UsbSerialManager {
 
         outbox.retain_mut(|send| {
             let mut ports_to_send_on = HashSet::new();
-            let mut wire_message = send.clone();
-            wire_message.target_destinations.clear();
-
-            send.target_destinations.retain(|destination| {
-                match self.device_ports.get(destination) {
-                    Some(port) => {
-                        ports_to_send_on.insert(port.clone());
-                        wire_message.target_destinations.insert(*destination);
-                        false
-                    }
-                    None => true,
+            let (should_retain_in_outbox, wire_destinations) = match &mut send.target_destinations {
+                Destination::All => {
+                    ports_to_send_on.extend(self.device_ports.values().cloned());
+                    (false, Destination::All)
                 }
-            });
+                Destination::Particular(devices) => {
+                    let mut destinations_available_now = BTreeSet::default();
+                    devices.retain(|destination| match self.device_ports.get(destination) {
+                        Some(port) => {
+                            ports_to_send_on.insert(port.clone());
+                            destinations_available_now.insert(*destination);
+                            false
+                        }
+                        None => true,
+                    });
+
+                    (
+                        !devices.is_empty(),
+                        Destination::Particular(destinations_available_now),
+                    )
+                }
+            };
+
+            let mut wire_message = send.clone();
+            wire_message.target_destinations = wire_destinations;
 
             let wire_message = ReceiveSerial::<Upstream>::Message(wire_message);
             let gist = wire_message.gist();
 
             for serial_number in ports_to_send_on {
                 let span = tracing::span!(
-                    Level::ERROR,
+                    Level::INFO,
                     "send on port",
                     port = serial_number,
                     gist = gist
@@ -437,7 +449,7 @@ impl UsbSerialManager {
                 }
             }
 
-            !send.target_destinations.is_empty()
+            should_retain_in_outbox
         });
 
         self.port_outbox = outbox;
@@ -505,9 +517,16 @@ impl UsbSerialManager {
         })
     }
 
+    pub fn send_cancel_all(&mut self) {
+        self.port_outbox.push(CoordinatorSendMessage {
+            target_destinations: frostsnap_comms::Destination::All,
+            message_body: frostsnap_comms::CoordinatorSendBody::Cancel,
+        });
+    }
+
     pub fn send_cancel(&mut self, device_id: DeviceId) {
         self.port_outbox.push(CoordinatorSendMessage {
-            target_destinations: [device_id].into(),
+            target_destinations: frostsnap_comms::Destination::Particular([device_id].into()),
             message_body: frostsnap_comms::CoordinatorSendBody::Cancel,
         });
     }
