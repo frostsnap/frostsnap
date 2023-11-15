@@ -20,7 +20,7 @@ Future<T?> showDeviceActionDialog<T>({
         });
         return AlertDialog(
             title: title,
-            content: Container(width: 400.0, child: content),
+            content: Container(width: double.maxFinite, child: content),
             actions: [
               ElevatedButton(
                   onPressed: () {

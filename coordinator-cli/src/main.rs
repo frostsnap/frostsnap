@@ -88,28 +88,40 @@ fn process_outbox(
         match message {
             CoordinatorSend::ToDevice(core_message) => {
                 ports.queue_in_port_outbox(CoordinatorSendMessage {
-                    target_destinations: Destination::Particular(core_message.default_destinations()),
+                    target_destinations: Destination::Particular(
+                        core_message.default_destinations(),
+                    ),
                     message_body: CoordinatorSendBody::Core(core_message),
                 });
             }
             CoordinatorSend::ToUser(to_user_message) => match to_user_message {
                 CoordinatorToUserMessage::Signed { .. } => {}
-                CoordinatorToUserMessage::KeyGen(message) => {
-                    match message {
-                        CoordinatorToUserKeyGenMessage::ReceivedShares { id } => {
-                            eprintln!("✓ received share from {}", ports.connected_device_labels().get(&id).expect("device must be named"));
-                        },
-                        CoordinatorToUserKeyGenMessage::CheckKeyGen { session_hash } => {
-                            eprintln!("Check all devices show {}", hex::encode(&session_hash));
-                        },
-                        CoordinatorToUserKeyGenMessage::KeyGenAck { id } => {
-                            eprintln!("✓ Got confirmation from {}", ports.connected_device_labels().get(&id).expect("device must be named"));
-                        },
-                        CoordinatorToUserKeyGenMessage::FinishedKey { key_id } => {
-                            eprintln!("🎉 key was successfully generated {}", key_id);
-                        },
+                CoordinatorToUserMessage::KeyGen(message) => match message {
+                    CoordinatorToUserKeyGenMessage::ReceivedShares { id } => {
+                        eprintln!(
+                            "✓ received share from {}",
+                            ports
+                                .connected_device_labels()
+                                .get(&id)
+                                .expect("device must be named")
+                        );
                     }
-                }
+                    CoordinatorToUserKeyGenMessage::CheckKeyGen { session_hash } => {
+                        eprintln!("Check all devices show {}", hex::encode(session_hash));
+                    }
+                    CoordinatorToUserKeyGenMessage::KeyGenAck { id } => {
+                        eprintln!(
+                            "✓ Got confirmation from {}",
+                            ports
+                                .connected_device_labels()
+                                .get(&id)
+                                .expect("device must be named")
+                        );
+                    }
+                    CoordinatorToUserKeyGenMessage::FinishedKey { key_id } => {
+                        eprintln!("🎉 key was successfully generated {}", key_id);
+                    }
+                },
             },
             CoordinatorSend::ToStorage(to_storage_message) => match to_storage_message {
                 CoordinatorToStorageMessage::UpdateState(key) => {
@@ -322,11 +334,7 @@ fn main() -> anyhow::Result<()> {
                     );
                 }
                 SignArgs::Nostr { message } => {
-                    let public_key = signer
-                        .frost_key()?
-                        .clone()
-                        .into_xonly_key()
-                        .public_key();
+                    let public_key = signer.frost_key()?.clone().into_xonly_key().public_key();
                     let time_now = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .expect("Failed to retrieve system time")

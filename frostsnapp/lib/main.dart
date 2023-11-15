@@ -5,10 +5,12 @@ import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'dart:async';
 import 'dart:io';
 import 'device_list_widget.dart';
-
-Timer? timer;
+import 'package:flutter/rendering.dart';
 
 void main() {
+  // enable this if you're trying to figure out why things are displaying in
+  // certain positions/sizes
+  debugPaintSizeEnabled = false;
   if (Platform.isAndroid) {
     api.turnLogcatLoggingOn(level: Level.Debug);
     api.switchToHostHandlesSerial();
@@ -19,18 +21,6 @@ void main() {
 
   runApp(const MyApp());
 }
-
-// final Map<String, WidgetBuilder> routes = {
-//   '/home': (context) => MyHomePage(title: 'Frostsnapp'),
-//   '/keygen': (context) {
-//     final threshold = ModalRoute.of(context)?.settings.arguments as int?;
-//     return DoKeyGenScreen(threshold: threshold ?? 1); // default threshold
-//   },
-//   '/wallet': (context) {
-//     final publicKey = ModalRoute.of(context)?.settings.arguments as String?;
-//     return KeyDisplayPage(publicKey: publicKey ?? "missing");
-//   },
-// };
 
 class MyApp extends StatelessWidget {
   const MyApp({Key? key}) : super(key: key);
@@ -63,7 +53,6 @@ class MyHomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final deviceList = DeviceListContainer(child: KeyGenDeviceList());
     return Scaffold(
         appBar: AppBar(title: Text("Key List")),
         body: Center(child: KeyListWithConfetti()));

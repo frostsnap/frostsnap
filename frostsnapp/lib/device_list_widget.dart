@@ -115,16 +115,17 @@ class DeviceBoxContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    var animationBegin = orientation == Orientation.landscape
+    final isPortrait = orientation == Orientation.portrait;
+    final animationBegin = orientation == Orientation.landscape
         ? const Offset(8.0, 0.0)
         : const Offset(0.0, 8.0);
     return SlideTransition(
         position: animation
             .drive(Tween(begin: animationBegin, end: const Offset(0.0, 0.0))),
         child: Padding(
-            padding: const EdgeInsets.all(2.0),
+            padding: const EdgeInsets.all(3.0),
             child: Container(
-              constraints: const BoxConstraints(minHeight: 90),
+              constraints: BoxConstraints(minHeight: 90.0, minWidth: 150.0),
               child: Card(
                 color: Colors.blueGrey,
                 child: Center(
@@ -148,21 +149,24 @@ class LabeledDeviceText extends StatelessWidget {
 
 class DeviceListContainer extends StatelessWidget {
   final Widget child;
-  final double? height;
-  final double? width;
 
-  const DeviceListContainer(
-      {super.key, required this.child, this.height, this.width});
+  const DeviceListContainer({super.key, required this.child});
 
   @override
   Widget build(BuildContext context) {
-    final orientation = effectiveOrientation(context);
-    final height_ = height;
-    final width_ = width ?? 300;
-    return LayoutBuilder(builder: (context, constraints) {
-      return SizedBox(
-          height: constraints.maxHeight, width: width_, child: child);
-    });
+    final isPortrait = effectiveOrientation(context) == Orientation.portrait;
+    return Container(
+        constraints: BoxConstraints(
+            maxHeight: isPortrait ? double.maxFinite : 150.0,
+            maxWidth: isPortrait ? 300.0 : double.maxFinite),
+        // decoration: BoxDecoration(border: Border.all(color: Colors.black, width: 2.0)),
+        child: child);
+    // return LayoutBuilder(builder: (context, constraints) {
+    //     final height = isPortrait ? constraints.maxHeight : 100.0;
+    //     final width = isPortrait ? 300.0 : constraints.maxWidth;
+    //   return SizedBox(
+    //       height: height, width: width, child: child);
+    // });
   }
 }
 
@@ -192,6 +196,7 @@ class DeviceListWithIcons extends StatelessWidget {
         animation: animation,
         orientation: orientation,
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: icon != null
               ? [
                   LabeledDeviceText(label ?? '-'),
