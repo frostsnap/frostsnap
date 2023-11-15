@@ -43,7 +43,8 @@ impl<'a, 'b> Signer<'a, 'b> {
     }
 
     pub fn frost_key(&self) -> anyhow::Result<&FrostKey<Normal>> {
-        Ok(self.coordinator
+        Ok(self
+            .coordinator
             .frost_key_state()
             .ok_or(anyhow!("Incorrect state to start signing"))?
             .frost_key())
@@ -73,7 +74,10 @@ impl<'a, 'b> Signer<'a, 'b> {
             .collect();
 
         let chosen_signers = if key_signers.len() != key_state.frost_key().threshold() {
-            eprintln!("Choose {} devices to sign:", key_state.frost_key().threshold());
+            eprintln!(
+                "Choose {} devices to sign:",
+                key_state.frost_key().threshold()
+            );
             crate::choose_devices(&key_signers, key_state.frost_key().threshold())
         } else {
             key_signers.keys().cloned().collect()
@@ -189,7 +193,9 @@ impl<'a, 'b> Signer<'a, 'b> {
             }
 
             self.ports.queue_in_port_outbox(CoordinatorSendMessage {
-                target_destinations: frostsnap_comms::Destination::Particular(std::mem::take(&mut asking_to_sign)),
+                target_destinations: frostsnap_comms::Destination::Particular(std::mem::take(
+                    &mut asking_to_sign,
+                )),
                 message_body: CoordinatorSendBody::Core(signature_request.clone()),
             });
         };

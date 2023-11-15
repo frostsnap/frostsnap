@@ -13,7 +13,6 @@ use crate::{impl_display_debug_serialize, impl_fromstr_deserialize};
 #[derive(Clone, Copy)]
 pub struct KeyId(pub [u8; 32]);
 
-
 impl_display_debug_serialize! {
     fn to_bytes(key_id: &KeyId) -> [u8;32] {
         key_id.0

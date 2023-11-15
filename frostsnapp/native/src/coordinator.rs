@@ -27,6 +27,12 @@ pub struct FfiCoordinator {
     thread_handle: Mutex<Option<JoinHandle<()>>>,
 }
 
+impl Default for FfiCoordinator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FfiCoordinator {
     pub fn new() -> Self {
         let coordinator = Arc::new(Mutex::new(FrostCoordinator::new()));
@@ -60,6 +66,8 @@ impl FfiCoordinator {
         let pending_loop = self.pending_for_outbox.clone();
         let coordinator_loop = self.coordinator.clone();
         let handle = std::thread::spawn(move || loop {
+            // to give time for the other threads to get a lock
+            std::thread::sleep(Duration::from_millis(100));
             let new_messages = {
                 let PortChanges {
                     device_changes,

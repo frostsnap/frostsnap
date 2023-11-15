@@ -18,10 +18,9 @@ class KeyGenPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final deviceList =
-        DeviceListContainer(child: KeyGenDeviceList(onSuccess: (keyId) {
+    final deviceList = KeyGenDeviceList(onSuccess: (keyId) {
       Navigator.pop(context, keyId);
-    }));
+    });
     return Scaffold(
         appBar: AppBar(title: const Text("Choose threshold")),
         body: Center(child: deviceList));
@@ -133,10 +132,10 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
       return null;
     });
     final keygenStream = api
-    .generateNewKey(
-      devices: widget.devices.toList(), threshold: widget.threshold)
-    .asBroadcastStream();
-        final Future<U8Array32> gotAllShares = keygenStream.transform(
+        .generateNewKey(
+            devices: widget.devices.toList(), threshold: widget.threshold)
+        .asBroadcastStream();
+    final Future<U8Array32> gotAllShares = keygenStream.transform(
         StreamTransformer<CoordinatorToUserKeyGenMessage,
             U8Array32>.fromHandlers(handleData: (event, sink) {
       final sessionHash =
@@ -163,8 +162,8 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
         .firstWhere((element) => element != null);
 
     final successWhen = devicesFinishedKey.then((keyId) async {
-        await confirmSessionHashPressed.future;
-        return keyId;
+      await confirmSessionHashPressed.future;
+      return keyId;
     });
 
     final Future<KeyId?> closeDialogWhen =
@@ -176,9 +175,9 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
             sessionHash: sessionHash,
             ackUpdates: ackUpdates,
             closeOn: closeDialogWhen);
-          if (mounted) {
-            Navigator.pop(context, keyId);
-          }
+        if (mounted) {
+          Navigator.pop(context, keyId);
+        }
       }
     });
   }
@@ -207,7 +206,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                 const Text("Waiting for devices to generate key",
                     style: TextStyle(fontSize: 20)),
                 const SizedBox(height: 20),
-                Expanded(child: DeviceListContainer(
+                DeviceListContainer(
                     child: DeviceListWithIcons(iconAssigner: (context, id) {
                   if (widget.devices.contains(id)) {
                     if (gotShares.contains(id)) {
@@ -218,7 +217,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                     }
                   }
                   return null;
-                }))),
+                })),
               ]))),
     );
   }
@@ -227,7 +226,6 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
       {required U8Array32 sessionHash,
       required Stream<DeviceId> ackUpdates,
       required Future<KeyId?> closeOn}) {
-    final hexBox = toHexBox(Uint8List.fromList(sessionHash));
     final acks = deviceIdSet();
     final content = StreamBuilder<DeviceId>(
         stream: ackUpdates,
@@ -250,7 +248,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                             children: [
                               Icon(Icons.visibility, color: Colors.orange),
                               SizedBox(width: 4),
-                              Text("Confirm on device"),
+                              Text("Confirm"),
                             ]);
                       }
                     } else {
@@ -260,18 +258,25 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
 
           final gotAllAcks = acks.length == widget.devices.length;
 
+          final hexBox = toHexBox(
+              Uint8List.fromList(sessionHash), effectiveOrientation(context));
+
           return Column(mainAxisSize: MainAxisSize.min, children: [
-              ElevatedButton(
+            ElevatedButton(
                 onPressed: gotAllAcks
                     ? () => confirmSessionHashPressed.complete()
                     : null,
                 child: Column(children: [
                   Text(
-                    gotAllAcks ? "Press if all devices show:" : "Confirm all devices show:", style: const TextStyle(fontSize: 22), textAlign: TextAlign.center),
+                      gotAllAcks
+                          ? "Press if all devices show:"
+                          : "Confirm all devices show:",
+                      style: const TextStyle(fontSize: 22),
+                      textAlign: TextAlign.center),
                   const Divider(height: 10),
-                  Text(
-                    hexBox,
-                    style: const TextStyle(fontFamily: 'Courier', fontSize: 20))
+                  Text(hexBox,
+                      style:
+                          const TextStyle(fontFamily: 'Courier', fontSize: 20))
                 ])),
             Expanded(child: deviceList),
           ]);
@@ -319,9 +324,9 @@ class KeyGenDeviceList extends StatelessWidget {
         });
 
     return Column(mainAxisSize: MainAxisSize.min, children: [
-      Expanded(child: DeviceListWidget(deviceBuilder: _buildDevice)),
+      DeviceListContainer(child: DeviceListWidget(deviceBuilder: _buildDevice)),
       button,
-      const SizedBox(height: 20),
+      const SizedBox(height: 15),
     ]);
   }
 

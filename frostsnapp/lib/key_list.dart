@@ -28,8 +28,8 @@ class KeyList extends StatelessWidget {
             list = ListView.builder(
                 shrinkWrap: true,
                 itemCount: keys.length,
-                itemBuilder: (context, index) => itemBuilder(context, keys[index])
-              );
+                itemBuilder: (context, index) =>
+                    itemBuilder(context, keys[index]));
           }
           return Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -93,20 +93,28 @@ class _KeyListWithConfetti extends State<KeyListWithConfetti> {
   @override
   void initState() {
     super.initState();
-    _confettiController = ConfettiController(duration: Duration(seconds: 3));
+    _confettiController = ConfettiController(duration: Duration(seconds: 2));
   }
 
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        Positioned.fill(child: KeyList(
-            itemBuilder: (context, key) {
-                return KeyCard(frostKey: key);
-              },
-            onNewKey: (keyId) { _confettiController.play(); },
+        Positioned.fill(
+            child: KeyList(
+          itemBuilder: (context, key) {
+            return KeyCard(frostKey: key);
+          },
+          onNewKey: (keyId) {
+            _confettiController.play();
+          },
         )),
-        Center(child: ConfettiWidget(confettiController: _confettiController, blastDirectionality: BlastDirectionality.explosive, numberOfParticles: 50),),
+        Center(
+          child: ConfettiWidget(
+              confettiController: _confettiController,
+              blastDirectionality: BlastDirectionality.explosive,
+              numberOfParticles: 50),
+        ),
       ],
     );
   }
@@ -116,5 +124,4 @@ class _KeyListWithConfetti extends State<KeyListWithConfetti> {
     _confettiController.dispose();
     super.dispose();
   }
-
 }
