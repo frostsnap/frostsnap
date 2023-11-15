@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:typed_data';
 
+import 'package:ffi/ffi.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_list_widget.dart';
@@ -115,10 +116,12 @@ class DoKeyGenScreen extends StatefulWidget {
 
 class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
   HashSet<DeviceId> gotShares = deviceIdSet();
+  late Completer<void> confirmSessionHashPressed;
 
   @override
   void initState() {
     super.initState();
+    confirmSessionHashPressed = Completer();
     final deviceRemoved = globalDeviceList.subscribe().firstWhere((event) {
       return event.kind == DeviceListChangeKind.removed &&
           widget.devices.contains(event.id);
@@ -155,9 +158,14 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
             receivedShares: (id) => setState(() => gotShares.add(id)));
       }
     });
-    final successWhen = keygenStream
+    final devicesFinishedKey = keygenStream
         .asyncMap((event) => event.whenOrNull(finishedKey: (keyId) => keyId))
         .firstWhere((element) => element != null);
+
+    final successWhen = devicesFinishedKey.then((keyId) async {
+        await confirmSessionHashPressed.future;
+        return keyId;
+    });
 
     final Future<KeyId?> closeDialogWhen =
         Future.any([successWhen, deviceRemoved]);
@@ -221,13 +229,14 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
       required Future<KeyId?> closeOn}) {
     final hexBox = toHexBox(Uint8List.fromList(sessionHash));
     final acks = deviceIdSet();
-    final deviceList = StreamBuilder<DeviceId>(
+    final content = StreamBuilder<DeviceId>(
         stream: ackUpdates,
         builder: (context, snap) {
           if (snap.hasData) {
             acks.add(snap.data!);
           }
-          return DeviceListContainer(
+
+          final deviceList = DeviceListContainer(
               child: DeviceListWithIcons(
                   key: const Key("dialog-device-list"),
                   iconAssigner: (context, id) {
@@ -248,18 +257,29 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                       return null;
                     }
                   }));
+
+          final gotAllAcks = acks.length == widget.devices.length;
+
+          return Column(mainAxisSize: MainAxisSize.min, children: [
+              ElevatedButton(
+                onPressed: gotAllAcks
+                    ? () => confirmSessionHashPressed.complete()
+                    : null,
+                child: Column(children: [
+                  Text(
+                    gotAllAcks ? "Press if all devices show:" : "Confirm all devices show:", style: const TextStyle(fontSize: 22), textAlign: TextAlign.center),
+                  const Divider(height: 10),
+                  Text(
+                    hexBox,
+                    style: const TextStyle(fontFamily: 'Courier', fontSize: 20))
+                ])),
+            Expanded(child: deviceList),
+          ]);
         });
 
     return showDeviceActionDialog<KeyId>(
       context: context,
-      content: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Text("Confirm each devices shows:"),
-        const Divider(height: 10),
-        Text(hexBox,
-            style: const TextStyle(fontFamily: 'Courier', fontSize: 20)),
-        const Divider(height: 10),
-        Expanded(child: deviceList)
-      ]),
+      content: content,
       title: const Text("Confirm on each device"),
       onCancel: () {
         api.cancelAll();
