@@ -8,15 +8,11 @@ use bincode::de::read::Reader;
 use bincode::enc::write::Writer;
 use bincode::error::DecodeError;
 use bincode::error::EncodeError;
-use esp32c3_hal::peripherals::USB_DEVICE;
-use esp32c3_hal::prelude::*;
-use esp32c3_hal::timer::Timer;
-use esp32c3_hal::uart;
-use esp32c3_hal::UsbSerialJtag;
 use frostsnap_comms::Direction;
 use frostsnap_comms::MagicBytes;
 use frostsnap_comms::ReceiveSerial;
 use frostsnap_comms::Upstream;
+use hal::{peripherals::USB_DEVICE, prelude::*, timer::Timer, uart, UsbSerialJtag};
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 
 const RING_BUFFER_SIZE_LOG_2: usize = 8; // i.e. 256 bytes
@@ -60,7 +56,7 @@ impl<'a, T, U> SerialInterface<'a, T, U, Upstream> {
 impl<'a, T, U, D> SerialInterface<'a, T, U, D>
 where
     U: uart::Instance,
-    T: esp32c3_hal::timer::Instance,
+    T: hal::timer::Instance,
     D: Direction,
 {
     fn fill_buffer(&mut self) {
@@ -120,7 +116,7 @@ where
 impl<'a, T, U, D> Reader for SerialInterface<'a, T, U, D>
 where
     U: uart::Instance,
-    T: esp32c3_hal::timer::Instance,
+    T: hal::timer::Instance,
     D: Direction,
 {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), DecodeError> {
@@ -185,9 +181,14 @@ impl<'a, U> SerialIo<'a, U> {
             SerialIo::Jtag(jtag) => jtag
                 .write_bytes(words)
                 .map_err(|_| SerialInterfaceError::JtagError),
-            SerialIo::Uart(uart) => uart
-                .write_bytes(words)
-                .map_err(SerialInterfaceError::UartWriteError),
+            SerialIo::Uart(uart) => {
+                let res = match uart.write_bytes(words) {
+                    Ok(_) => Ok(()),
+                    Err(e) => Err(SerialInterfaceError::UartWriteError(e)),
+                };
+                res
+                // uart.write_bytes(words).map_err(SerialInterfaceError::UartWriteError);
+            }
         }
     }
 
@@ -257,7 +258,7 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
 
     pub fn serial_interface(&mut self) -> Option<&mut SerialInterface<'a, T, U, Upstream>>
     where
-        T: esp32c3_hal::timer::Instance,
+        T: hal::timer::Instance,
         U: uart::Instance,
     {
         self.poll();
@@ -269,7 +270,7 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
 
     pub fn poll(&mut self)
     where
-        T: esp32c3_hal::timer::Instance,
+        T: hal::timer::Instance,
         U: uart::Instance,
     {
         let state = core::mem::replace(&mut self.state, DetectorState::Unreachable);

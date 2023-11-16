@@ -1,5 +1,5 @@
 use alloc::{collections::VecDeque, string::ToString, vec::Vec};
-use esp32c3_hal::{gpio, prelude::*, uart, UsbSerialJtag};
+use hal::{gpio, prelude::*, uart, UsbSerialJtag};
 
 use crate::{
     io::{self, UpstreamDetector},
@@ -22,9 +22,9 @@ pub struct Run<'a, UpstreamUart, DownstreamUart, DownstreamDetect, Ui, T> {
     pub upstream_jtag: UsbSerialJtag<'a>,
     pub upstream_uart: uart::Uart<'a, UpstreamUart>,
     pub downstream_uart: uart::Uart<'a, DownstreamUart>,
-    pub rng: esp32c3_hal::Rng<'a>,
+    pub rng: hal::Rng,
     pub ui: Ui,
-    pub timer: esp32c3_hal::timer::Timer<T>,
+    pub timer: hal::timer::Timer<T>,
     pub downstream_detect: DownstreamDetect,
 }
 
@@ -35,7 +35,7 @@ where
     DownstreamUart: uart::Instance,
     DownstreamDetect: gpio::InputPin,
     Ui: UserInteraction,
-    T: esp32c3_hal::timer::Instance,
+    T: hal::timer::Instance,
 {
     pub fn run(self) -> ! {
         let Run {
