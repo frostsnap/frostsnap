@@ -1,6 +1,5 @@
-import 'dart:collection';
 import 'package:flutter/material.dart';
-import 'ffi.dart';
+import 'dart:io';
 
 Future<T?> showDeviceActionDialog<T>({
   required BuildContext context,
@@ -20,7 +19,10 @@ Future<T?> showDeviceActionDialog<T>({
         });
         return AlertDialog(
             title: title,
-            content: Container(width: double.maxFinite, child: content),
+            content: Container(
+                width: Platform.isAndroid ? double.maxFinite : 400.0,
+                // this align thing is necessary to stop the child from expanding beyond its BoxConstraints
+                child: Align(alignment: Alignment.center, child: content)),
             actions: [
               ElevatedButton(
                   onPressed: () {
