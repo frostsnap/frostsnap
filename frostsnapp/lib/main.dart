@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/key_list.dart';
-import 'package:frostsnapp/keygen.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
-import 'dart:async';
 import 'dart:io';
-import 'device_list_widget.dart';
 import 'package:flutter/rendering.dart';
 
 void main() {

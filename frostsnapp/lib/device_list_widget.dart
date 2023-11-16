@@ -161,12 +161,6 @@ class DeviceListContainer extends StatelessWidget {
             maxWidth: isPortrait ? 300.0 : double.maxFinite),
         // decoration: BoxDecoration(border: Border.all(color: Colors.black, width: 2.0)),
         child: child);
-    // return LayoutBuilder(builder: (context, constraints) {
-    //     final height = isPortrait ? constraints.maxHeight : 100.0;
-    //     final width = isPortrait ? 300.0 : constraints.maxWidth;
-    //   return SizedBox(
-    //       height: height, width: width, child: child);
-    // });
   }
 }
 

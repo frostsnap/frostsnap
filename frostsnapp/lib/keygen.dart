@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:typed_data';
 
-import 'package:ffi/ffi.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_list_widget.dart';
@@ -206,7 +205,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                 const Text("Waiting for devices to generate key",
                     style: TextStyle(fontSize: 20)),
                 const SizedBox(height: 20),
-                DeviceListContainer(
+                Expanded(child: DeviceListContainer(
                     child: DeviceListWithIcons(iconAssigner: (context, id) {
                   if (widget.devices.contains(id)) {
                     if (gotShares.contains(id)) {
@@ -217,7 +216,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                     }
                   }
                   return null;
-                })),
+                }))),
               ]))),
     );
   }
@@ -234,34 +233,32 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
             acks.add(snap.data!);
           }
 
-          final deviceList = DeviceListContainer(
-              child: DeviceListWithIcons(
-                  key: const Key("dialog-device-list"),
-                  iconAssigner: (context, id) {
-                    if (widget.devices.contains(id)) {
-                      if (acks.contains(id)) {
-                        return const Icon(Icons.check,
-                            key: ValueKey('finished'), color: Colors.green);
-                      } else {
-                        return const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.visibility, color: Colors.orange),
-                              SizedBox(width: 4),
-                              Text("Confirm"),
-                            ]);
-                      }
-                    } else {
-                      return null;
-                    }
-                  }));
+          final deviceList = DeviceListWithIcons(
+              key: const Key("dialog-device-list"),
+              iconAssigner: (context, id) {
+                if (widget.devices.contains(id)) {
+                  if (acks.contains(id)) {
+                    return const Icon(Icons.check,
+                        key: ValueKey('finished'), color: Colors.green);
+                  } else {
+                    return const Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.visibility, color: Colors.orange),
+                      SizedBox(width: 4),
+                      Text("Confirm"),
+                    ]);
+                  }
+                } else {
+                  return null;
+                }
+              });
 
           final gotAllAcks = acks.length == widget.devices.length;
 
           final hexBox = toHexBox(
               Uint8List.fromList(sessionHash), effectiveOrientation(context));
 
-          return Column(mainAxisSize: MainAxisSize.min, children: [
+          return DeviceListContainer(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
             ElevatedButton(
                 onPressed: gotAllAcks
                     ? () => confirmSessionHashPressed.complete()
@@ -279,7 +276,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                           const TextStyle(fontFamily: 'Courier', fontSize: 20))
                 ])),
             Expanded(child: deviceList),
-          ]);
+          ]));
         });
 
     return showDeviceActionDialog<KeyId>(
@@ -324,7 +321,9 @@ class KeyGenDeviceList extends StatelessWidget {
         });
 
     return Column(mainAxisSize: MainAxisSize.min, children: [
-      DeviceListContainer(child: DeviceListWidget(deviceBuilder: _buildDevice)),
+      Expanded(
+          child: DeviceListContainer(
+              child: DeviceListWidget(deviceBuilder: _buildDevice))),
       button,
       const SizedBox(height: 15),
     ]);
