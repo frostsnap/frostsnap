@@ -182,12 +182,10 @@ impl<'a, U> SerialIo<'a, U> {
                 .write_bytes(words)
                 .map_err(|_| SerialInterfaceError::JtagError),
             SerialIo::Uart(uart) => {
-                let res = match uart.write_bytes(words) {
+                match uart.write_bytes(words) {
                     Ok(_) => Ok(()),
                     Err(e) => Err(SerialInterfaceError::UartWriteError(e)),
-                };
-                res
-                // uart.write_bytes(words).map_err(SerialInterfaceError::UartWriteError);
+                }
             }
         }
     }
