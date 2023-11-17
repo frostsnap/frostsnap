@@ -170,7 +170,8 @@ Orientation effectiveOrientation(BuildContext context) {
       : Orientation.portrait;
 }
 
-typedef IconAssigner = Widget? Function(BuildContext, DeviceId);
+// LHS: Override the label, RHS: Set the icon
+typedef IconAssigner = (Widget?, Widget?) Function(BuildContext, DeviceId);
 
 class DeviceListWithIcons extends StatelessWidget {
   const DeviceListWithIcons({super.key, required this.iconAssigner});
@@ -185,7 +186,8 @@ class DeviceListWithIcons extends StatelessWidget {
 
   Widget _builder(BuildContext context, DeviceId id, String? label,
       Orientation orientation, Animation<double> animation) {
-    final icon = iconAssigner.call(context, id);
+    final (overrideLabel, icon) = iconAssigner.call(context, id);
+    final _label = overrideLabel ?? LabeledDeviceText(label ?? '-');
     return DeviceBoxContainer(
         animation: animation,
         orientation: orientation,
@@ -193,12 +195,12 @@ class DeviceListWithIcons extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: icon != null
               ? [
-                  LabeledDeviceText(label ?? '-'),
+                  _label,
                   SizedBox(height: 4),
                   icon,
                   SizedBox(height: 4)
                 ]
-              : [LabeledDeviceText(label ?? '-')],
+              : [_label],
         ));
   }
 }

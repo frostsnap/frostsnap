@@ -208,14 +208,16 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                 Expanded(child: DeviceListContainer(
                     child: DeviceListWithIcons(iconAssigner: (context, id) {
                   if (widget.devices.contains(id)) {
+                    final icon;
                     if (gotShares.contains(id)) {
-                      return const Icon(Icons.check,
+                      icon = const Icon(Icons.check,
                           key: ValueKey('finished'), color: Colors.green);
                     } else {
-                      return const CircularProgressIndicator();
+                      icon = const CircularProgressIndicator();
                     }
+                    return (null, icon);
                   }
-                  return null;
+                  return (null, null);
                 }))),
               ]))),
     );
@@ -237,18 +239,20 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
               key: const Key("dialog-device-list"),
               iconAssigner: (context, id) {
                 if (widget.devices.contains(id)) {
+                  final icon;
                   if (acks.contains(id)) {
-                    return const Icon(Icons.check,
+                    icon = const Icon(Icons.check,
                         key: ValueKey('finished'), color: Colors.green);
                   } else {
-                    return const Row(mainAxisSize: MainAxisSize.min, children: [
+                    icon = const Row(mainAxisSize: MainAxisSize.min, children: [
                       Icon(Icons.visibility, color: Colors.orange),
                       SizedBox(width: 4),
                       Text("Confirm"),
                     ]);
                   }
+                  return (null, icon);
                 } else {
-                  return null;
+                  return (null, null);
                 }
               });
 
@@ -355,7 +359,25 @@ class KeyGenDeviceList extends StatelessWidget {
                   await showDeviceActionDialog(
                       context: deviceSetupContex,
                       title: const Text("Confirm name"),
-                      content: Text("Confirm name '$value' on device"),
+                      content: Column(children: [
+                          Text("Confirm name '$value' on device"),
+                          Divider(),
+                          DeviceListWithIcons(iconAssigner: (context, deviceId) {
+                              if (deviceId == id) {
+                                final label = LabeledDeviceText("'$value'?");
+                                final icon = const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.visibility, color: Colors.orange),
+                                  SizedBox(width: 4),
+                                  Text("Confirm"),
+                                ]);
+                            return (label, icon);
+                              } else {
+                                return (null, null);
+                              }
+                          })
+                      ]),
                       complete: completeWhen,
                       onCancel: () async {
                         await api.sendCancel(id: id);
