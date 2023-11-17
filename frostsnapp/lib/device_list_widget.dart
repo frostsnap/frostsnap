@@ -127,7 +127,7 @@ class DeviceBoxContainer extends StatelessWidget {
             child: Container(
               constraints: BoxConstraints(minHeight: 90.0, minWidth: 150.0),
               child: Card(
-                color: Colors.blueGrey,
+                color: Colors.white70,
                 child: Center(
                   child: child,
                 ),
