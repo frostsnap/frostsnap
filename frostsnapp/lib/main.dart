@@ -1,12 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:frostsnapp/key_list.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
-import 'dart:async';
 import 'dart:io';
-import 'device_list.dart';
-
-Timer? timer;
+import 'package:flutter/rendering.dart';
 
 void main() {
+  // enable this if you're trying to figure out why things are displaying in
+  // certain positions/sizes
+  debugPaintSizeEnabled = false;
+  if (Platform.isAndroid) {
+    api.turnLogcatLoggingOn(level: Level.Debug);
+    api.switchToHostHandlesSerial();
+  } else {
+    api.turnStderrLoggingOn(level: Level.Debug);
+  }
+  api.startCoordinatorThread();
+
   runApp(const MyApp());
 }
 
@@ -35,91 +44,14 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({Key? key, required this.title}) : super(key: key);
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
+class MyHomePage extends StatelessWidget {
+  const MyHomePage({super.key, required this.title});
   final String title;
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  @override
-  void initState() {
-    super.initState();
-    if (Platform.isAndroid) {
-      api.turnLogcatLoggingOn(level: Level.Debug);
-    } else {
-      api.turnStderrLoggingOn(level: Level.Debug);
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
-      body: Center(
-          // Center is a layout widget. It takes a single child and positions it
-          // in the middle of the parent.
-          child: FutureBuilder<List<dynamic>>(
-              // To render the results of a Future, a FutureBuilder is used which
-              // turns a Future into an AsyncSnapshot, which can be used to
-              // extract the error state, the loading state and the data if
-              // available.
-              //
-              // Here, the generic type that the FutureBuilder manages is
-              // explicitly named, because if omitted the snapshot will have the
-              // type of AsyncSnapshot<Object?>.
-
-              // We await two unrelated futures here, so the type has to be
-              // List<dynamic>.
-              future: Future.wait([]),
-              builder: (context, snap) {
-                final style = Theme.of(context).textTheme.headlineMedium;
-                if (snap.error != null) {
-                  // An error has been encountered, so give an appropriate response and
-                  // pass the error details to an unobstructive tooltip.
-                  debugPrint(snap.error.toString());
-                  return Tooltip(
-                    message: snap.error.toString(),
-                    child: Text('ERROR', style: style),
-                  );
-                }
-
-                // Guard return here, the data is not ready yet.
-                final data = snap.data;
-                if (data == null) return const CircularProgressIndicator();
-
-                return OrientationBuilder(builder: (context, orientation) {
-                  var effectiveOrientation =
-                      Platform.isAndroid ? orientation : Orientation.portrait;
-                  return Container(
-                      alignment: Alignment.centerRight,
-                      constraints: BoxConstraints.expand(
-                          height: effectiveOrientation == Orientation.landscape
-                              ? 120
-                              : null,
-                          width: effectiveOrientation == Orientation.portrait
-                              ? 300
-                              : null),
-                      child:
-                          DeviceListWidget(orientation: effectiveOrientation));
-                });
-              })),
-    );
+        appBar: AppBar(title: Text("Key List")),
+        body: Center(child: KeyListWithConfetti()));
   }
 }

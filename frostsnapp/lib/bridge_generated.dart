@@ -54,23 +54,21 @@ class NativeImpl implements Native {
         argNames: [],
       );
 
-  Future<FfiCoordinator> newFfiCoordinator(
-      {required bool hostHandlesSerial, dynamic hint}) {
-    var arg0 = hostHandlesSerial;
-    return _platform.executeNormal(FlutterRustBridgeTask(
-      callFfi: (port_) => _platform.inner.wire_new_ffi_coordinator(port_, arg0),
-      parseSuccessData: _wire2api_FfiCoordinator,
+  Stream<KeyState> subKeyEvents({dynamic hint}) {
+    return _platform.executeStream(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner.wire_sub_key_events(port_),
+      parseSuccessData: _wire2api_key_state,
       parseErrorData: null,
-      constMeta: kNewFfiCoordinatorConstMeta,
-      argValues: [hostHandlesSerial],
+      constMeta: kSubKeyEventsConstMeta,
+      argValues: [],
       hint: hint,
     ));
   }
 
-  FlutterRustBridgeTaskConstMeta get kNewFfiCoordinatorConstMeta =>
+  FlutterRustBridgeTaskConstMeta get kSubKeyEventsConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
-        debugName: "new_ffi_coordinator",
-        argNames: ["hostHandlesSerial"],
+        debugName: "sub_key_events",
+        argNames: [],
       );
 
   Future<void> turnStderrLoggingOn({required Level level, dynamic hint}) {
@@ -112,18 +110,15 @@ class NativeImpl implements Native {
       );
 
   Future<void> announceAvailablePorts(
-      {required FfiCoordinator coordinator,
-      required List<PortDesc> ports,
-      dynamic hint}) {
-    var arg0 = _platform.api2wire_FfiCoordinator(coordinator);
-    var arg1 = _platform.api2wire_list_port_desc(ports);
+      {required List<PortDesc> ports, dynamic hint}) {
+    var arg0 = _platform.api2wire_list_port_desc(ports);
     return _platform.executeNormal(FlutterRustBridgeTask(
       callFfi: (port_) =>
-          _platform.inner.wire_announce_available_ports(port_, arg0, arg1),
+          _platform.inner.wire_announce_available_ports(port_, arg0),
       parseSuccessData: _wire2api_unit,
       parseErrorData: null,
       constMeta: kAnnounceAvailablePortsConstMeta,
-      argValues: [coordinator, ports],
+      argValues: [ports],
       hint: hint,
     ));
   }
@@ -131,24 +126,38 @@ class NativeImpl implements Native {
   FlutterRustBridgeTaskConstMeta get kAnnounceAvailablePortsConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
         debugName: "announce_available_ports",
-        argNames: ["coordinator", "ports"],
+        argNames: ["ports"],
+      );
+
+  Future<void> switchToHostHandlesSerial({dynamic hint}) {
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) =>
+          _platform.inner.wire_switch_to_host_handles_serial(port_),
+      parseSuccessData: _wire2api_unit,
+      parseErrorData: null,
+      constMeta: kSwitchToHostHandlesSerialConstMeta,
+      argValues: [],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kSwitchToHostHandlesSerialConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "switch_to_host_handles_serial",
+        argNames: [],
       );
 
   Future<void> updateNamePreview(
-      {required FfiCoordinator coordinator,
-      required DeviceId id,
-      required String name,
-      dynamic hint}) {
-    var arg0 = _platform.api2wire_FfiCoordinator(coordinator);
-    var arg1 = _platform.api2wire_box_autoadd_device_id(id);
-    var arg2 = _platform.api2wire_String(name);
+      {required DeviceId id, required String name, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_device_id(id);
+    var arg1 = _platform.api2wire_String(name);
     return _platform.executeNormal(FlutterRustBridgeTask(
       callFfi: (port_) =>
-          _platform.inner.wire_update_name_preview(port_, arg0, arg1, arg2),
+          _platform.inner.wire_update_name_preview(port_, arg0, arg1),
       parseSuccessData: _wire2api_unit,
       parseErrorData: null,
       constMeta: kUpdateNamePreviewConstMeta,
-      argValues: [coordinator, id, name],
+      argValues: [id, name],
       hint: hint,
     ));
   }
@@ -156,24 +165,19 @@ class NativeImpl implements Native {
   FlutterRustBridgeTaskConstMeta get kUpdateNamePreviewConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
         debugName: "update_name_preview",
-        argNames: ["coordinator", "id", "name"],
+        argNames: ["id", "name"],
       );
 
   Future<void> finishNaming(
-      {required FfiCoordinator coordinator,
-      required DeviceId id,
-      required String name,
-      dynamic hint}) {
-    var arg0 = _platform.api2wire_FfiCoordinator(coordinator);
-    var arg1 = _platform.api2wire_box_autoadd_device_id(id);
-    var arg2 = _platform.api2wire_String(name);
+      {required DeviceId id, required String name, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_device_id(id);
+    var arg1 = _platform.api2wire_String(name);
     return _platform.executeNormal(FlutterRustBridgeTask(
-      callFfi: (port_) =>
-          _platform.inner.wire_finish_naming(port_, arg0, arg1, arg2),
+      callFfi: (port_) => _platform.inner.wire_finish_naming(port_, arg0, arg1),
       parseSuccessData: _wire2api_unit,
       parseErrorData: null,
       constMeta: kFinishNamingConstMeta,
-      argValues: [coordinator, id, name],
+      argValues: [id, name],
       hint: hint,
     ));
   }
@@ -181,21 +185,17 @@ class NativeImpl implements Native {
   FlutterRustBridgeTaskConstMeta get kFinishNamingConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
         debugName: "finish_naming",
-        argNames: ["coordinator", "id", "name"],
+        argNames: ["id", "name"],
       );
 
-  Future<void> sendCancel(
-      {required FfiCoordinator coordinator,
-      required DeviceId id,
-      dynamic hint}) {
-    var arg0 = _platform.api2wire_FfiCoordinator(coordinator);
-    var arg1 = _platform.api2wire_box_autoadd_device_id(id);
+  Future<void> sendCancel({required DeviceId id, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_device_id(id);
     return _platform.executeNormal(FlutterRustBridgeTask(
-      callFfi: (port_) => _platform.inner.wire_send_cancel(port_, arg0, arg1),
+      callFfi: (port_) => _platform.inner.wire_send_cancel(port_, arg0),
       parseSuccessData: _wire2api_unit,
       parseErrorData: null,
       constMeta: kSendCancelConstMeta,
-      argValues: [coordinator, id],
+      argValues: [id],
       hint: hint,
     ));
   }
@@ -203,7 +203,150 @@ class NativeImpl implements Native {
   FlutterRustBridgeTaskConstMeta get kSendCancelConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
         debugName: "send_cancel",
-        argNames: ["coordinator", "id"],
+        argNames: ["id"],
+      );
+
+  Future<void> cancelAll({dynamic hint}) {
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner.wire_cancel_all(port_),
+      parseSuccessData: _wire2api_unit,
+      parseErrorData: null,
+      constMeta: kCancelAllConstMeta,
+      argValues: [],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kCancelAllConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "cancel_all",
+        argNames: [],
+      );
+
+  Future<List<DeviceId>> registeredDevices({dynamic hint}) {
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner.wire_registered_devices(port_),
+      parseSuccessData: _wire2api_list_device_id,
+      parseErrorData: null,
+      constMeta: kRegisteredDevicesConstMeta,
+      argValues: [],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kRegisteredDevicesConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "registered_devices",
+        argNames: [],
+      );
+
+  Future<void> startCoordinatorThread({dynamic hint}) {
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner.wire_start_coordinator_thread(port_),
+      parseSuccessData: _wire2api_unit,
+      parseErrorData: null,
+      constMeta: kStartCoordinatorThreadConstMeta,
+      argValues: [],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kStartCoordinatorThreadConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "start_coordinator_thread",
+        argNames: [],
+      );
+
+  KeyState keyState({dynamic hint}) {
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner.wire_key_state(),
+      parseSuccessData: _wire2api_key_state,
+      parseErrorData: null,
+      constMeta: kKeyStateConstMeta,
+      argValues: [],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kKeyStateConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "key_state",
+        argNames: [],
+      );
+
+  Stream<CoordinatorToUserKeyGenMessage> generateNewKey(
+      {required int threshold, required List<DeviceId> devices, dynamic hint}) {
+    var arg0 = api2wire_usize(threshold);
+    var arg1 = _platform.api2wire_list_device_id(devices);
+    return _platform.executeStream(FlutterRustBridgeTask(
+      callFfi: (port_) =>
+          _platform.inner.wire_generate_new_key(port_, arg0, arg1),
+      parseSuccessData: _wire2api_coordinator_to_user_key_gen_message,
+      parseErrorData: null,
+      constMeta: kGenerateNewKeyConstMeta,
+      argValues: [threshold, devices],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kGenerateNewKeyConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "generate_new_key",
+        argNames: ["threshold", "devices"],
+      );
+
+  int thresholdMethodFrostKey({required FrostKey that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_frost_key(that);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner.wire_threshold__method__FrostKey(arg0),
+      parseSuccessData: _wire2api_usize,
+      parseErrorData: null,
+      constMeta: kThresholdMethodFrostKeyConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kThresholdMethodFrostKeyConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "threshold__method__FrostKey",
+        argNames: ["that"],
+      );
+
+  KeyId idMethodFrostKey({required FrostKey that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_frost_key(that);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner.wire_id__method__FrostKey(arg0),
+      parseSuccessData: _wire2api_key_id,
+      parseErrorData: null,
+      constMeta: kIdMethodFrostKeyConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kIdMethodFrostKeyConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "id__method__FrostKey",
+        argNames: ["that"],
+      );
+
+  String nameMethodFrostKey({required FrostKey that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_frost_key(that);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner.wire_name__method__FrostKey(arg0),
+      parseSuccessData: _wire2api_String,
+      parseErrorData: null,
+      constMeta: kNameMethodFrostKeyConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kNameMethodFrostKeyConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "name__method__FrostKey",
+        argNames: ["that"],
       );
 
   Future<void> satisfyMethodPortOpen(
@@ -294,12 +437,12 @@ class NativeImpl implements Native {
         argNames: ["that", "bytesToRead"],
       );
 
-  DropFnType get dropOpaqueFfiCoordinator =>
-      _platform.inner.drop_opaque_FfiCoordinator;
-  ShareFnType get shareOpaqueFfiCoordinator =>
-      _platform.inner.share_opaque_FfiCoordinator;
-  OpaqueTypeFinalizer get FfiCoordinatorFinalizer =>
-      _platform.FfiCoordinatorFinalizer;
+  DropFnType get dropOpaqueFrostsnapCoreSchnorrFunFrostFrostKeyNormal =>
+      _platform.inner.drop_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal;
+  ShareFnType get shareOpaqueFrostsnapCoreSchnorrFunFrostFrostKeyNormal =>
+      _platform.inner.share_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal;
+  OpaqueTypeFinalizer get FrostsnapCoreSchnorrFunFrostFrostKeyNormalFinalizer =>
+      _platform.FrostsnapCoreSchnorrFunFrostFrostKeyNormalFinalizer;
 
   DropFnType get dropOpaquePortBytesToReadSender =>
       _platform.inner.drop_opaque_PortBytesToReadSender;
@@ -334,8 +477,10 @@ class NativeImpl implements Native {
   }
 // Section: wire2api
 
-  FfiCoordinator _wire2api_FfiCoordinator(dynamic raw) {
-    return FfiCoordinator.fromRaw(raw[0], raw[1], this);
+  FrostsnapCoreSchnorrFunFrostFrostKeyNormal
+      _wire2api_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(dynamic raw) {
+    return FrostsnapCoreSchnorrFunFrostFrostKeyNormal.fromRaw(
+        raw[0], raw[1], this);
   }
 
   PortBytesToReadSender _wire2api_PortBytesToReadSender(dynamic raw) {
@@ -362,6 +507,10 @@ class NativeImpl implements Native {
     return _wire2api_device_id(raw);
   }
 
+  KeyId _wire2api_box_autoadd_key_id(dynamic raw) {
+    return _wire2api_key_id(raw);
+  }
+
   PortBytesToRead _wire2api_box_autoadd_port_bytes_to_read(dynamic raw) {
     return _wire2api_port_bytes_to_read(raw);
   }
@@ -376,6 +525,30 @@ class NativeImpl implements Native {
 
   PortWrite _wire2api_box_autoadd_port_write(dynamic raw) {
     return _wire2api_port_write(raw);
+  }
+
+  CoordinatorToUserKeyGenMessage _wire2api_coordinator_to_user_key_gen_message(
+      dynamic raw) {
+    switch (raw[0]) {
+      case 0:
+        return CoordinatorToUserKeyGenMessage_ReceivedShares(
+          id: _wire2api_box_autoadd_device_id(raw[1]),
+        );
+      case 1:
+        return CoordinatorToUserKeyGenMessage_CheckKeyGen(
+          sessionHash: _wire2api_u8_array_32(raw[1]),
+        );
+      case 2:
+        return CoordinatorToUserKeyGenMessage_KeyGenAck(
+          id: _wire2api_box_autoadd_device_id(raw[1]),
+        );
+      case 3:
+        return CoordinatorToUserKeyGenMessage_FinishedKey(
+          keyId: _wire2api_box_autoadd_key_id(raw[1]),
+        );
+      default:
+        throw Exception("unreachable");
+    }
   }
 
   DeviceChange _wire2api_device_change(dynamic raw) {
@@ -417,8 +590,44 @@ class NativeImpl implements Native {
     );
   }
 
+  FrostKey _wire2api_frost_key(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return FrostKey(
+      bridge: this,
+      field0: _wire2api_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(arr[0]),
+    );
+  }
+
+  KeyId _wire2api_key_id(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return KeyId(
+      field0: _wire2api_u8_array_32(arr[0]),
+    );
+  }
+
+  KeyState _wire2api_key_state(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return KeyState(
+      keys: _wire2api_list_frost_key(arr[0]),
+    );
+  }
+
   List<DeviceChange> _wire2api_list_device_change(dynamic raw) {
     return (raw as List<dynamic>).map(_wire2api_device_change).toList();
+  }
+
+  List<DeviceId> _wire2api_list_device_id(dynamic raw) {
+    return (raw as List<dynamic>).map(_wire2api_device_id).toList();
+  }
+
+  List<FrostKey> _wire2api_list_frost_key(dynamic raw) {
+    return (raw as List<dynamic>).map(_wire2api_frost_key).toList();
   }
 
   PortBytesToRead _wire2api_port_bytes_to_read(dynamic raw) {
@@ -499,6 +708,10 @@ class NativeImpl implements Native {
     return raw as int;
   }
 
+  U8Array32 _wire2api_u8_array_32(dynamic raw) {
+    return U8Array32(_wire2api_uint_8_list(raw));
+  }
+
   U8Array33 _wire2api_u8_array_33(dynamic raw) {
     return U8Array33(_wire2api_uint_8_list(raw));
   }
@@ -517,11 +730,6 @@ class NativeImpl implements Native {
 }
 
 // Section: api2wire
-
-@protected
-bool api2wire_bool(bool raw) {
-  return raw;
-}
 
 @protected
 int api2wire_i32(int raw) {

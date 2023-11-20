@@ -52,19 +52,17 @@ fn wire_sub_device_events_impl(port_: MessagePort) {
         },
     )
 }
-fn wire_new_ffi_coordinator_impl(
-    port_: MessagePort,
-    host_handles_serial: impl Wire2Api<bool> + UnwindSafe,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, RustOpaque<FfiCoordinator>, _>(
+fn wire_sub_key_events_impl(port_: MessagePort) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
         WrapInfo {
-            debug_name: "new_ffi_coordinator",
+            debug_name: "sub_key_events",
             port: Some(port_),
-            mode: FfiCallMode::Normal,
+            mode: FfiCallMode::Stream,
         },
         move || {
-            let api_host_handles_serial = host_handles_serial.wire2api();
-            move |task_callback| Result::<_, ()>::Ok(new_ffi_coordinator(api_host_handles_serial))
+            move |task_callback| {
+                Result::<_, ()>::Ok(sub_key_events(task_callback.stream_sink::<_, KeyState>()))
+            }
         },
     )
 }
@@ -96,7 +94,6 @@ fn wire_turn_logcat_logging_on_impl(port_: MessagePort, _level: impl Wire2Api<Le
 }
 fn wire_announce_available_ports_impl(
     port_: MessagePort,
-    coordinator: impl Wire2Api<RustOpaque<FfiCoordinator>> + UnwindSafe,
     ports: impl Wire2Api<Vec<PortDesc>> + UnwindSafe,
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
@@ -106,17 +103,23 @@ fn wire_announce_available_ports_impl(
             mode: FfiCallMode::Normal,
         },
         move || {
-            let api_coordinator = coordinator.wire2api();
             let api_ports = ports.wire2api();
-            move |task_callback| {
-                Result::<_, ()>::Ok(announce_available_ports(api_coordinator, api_ports))
-            }
+            move |task_callback| Result::<_, ()>::Ok(announce_available_ports(api_ports))
         },
+    )
+}
+fn wire_switch_to_host_handles_serial_impl(port_: MessagePort) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "switch_to_host_handles_serial",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || move |task_callback| Result::<_, ()>::Ok(switch_to_host_handles_serial()),
     )
 }
 fn wire_update_name_preview_impl(
     port_: MessagePort,
-    coordinator: impl Wire2Api<RustOpaque<FfiCoordinator>> + UnwindSafe,
     id: impl Wire2Api<DeviceId> + UnwindSafe,
     name: impl Wire2Api<String> + UnwindSafe,
 ) {
@@ -127,18 +130,14 @@ fn wire_update_name_preview_impl(
             mode: FfiCallMode::Normal,
         },
         move || {
-            let api_coordinator = coordinator.wire2api();
             let api_id = id.wire2api();
             let api_name = name.wire2api();
-            move |task_callback| {
-                Result::<_, ()>::Ok(update_name_preview(api_coordinator, api_id, api_name))
-            }
+            move |task_callback| Result::<_, ()>::Ok(update_name_preview(api_id, api_name))
         },
     )
 }
 fn wire_finish_naming_impl(
     port_: MessagePort,
-    coordinator: impl Wire2Api<RustOpaque<FfiCoordinator>> + UnwindSafe,
     id: impl Wire2Api<DeviceId> + UnwindSafe,
     name: impl Wire2Api<String> + UnwindSafe,
 ) {
@@ -149,20 +148,13 @@ fn wire_finish_naming_impl(
             mode: FfiCallMode::Normal,
         },
         move || {
-            let api_coordinator = coordinator.wire2api();
             let api_id = id.wire2api();
             let api_name = name.wire2api();
-            move |task_callback| {
-                Result::<_, ()>::Ok(finish_naming(api_coordinator, api_id, api_name))
-            }
+            move |task_callback| Result::<_, ()>::Ok(finish_naming(api_id, api_name))
         },
     )
 }
-fn wire_send_cancel_impl(
-    port_: MessagePort,
-    coordinator: impl Wire2Api<RustOpaque<FfiCoordinator>> + UnwindSafe,
-    id: impl Wire2Api<DeviceId> + UnwindSafe,
-) {
+fn wire_send_cancel_impl(port_: MessagePort, id: impl Wire2Api<DeviceId> + UnwindSafe) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
         WrapInfo {
             debug_name: "send_cancel",
@@ -170,9 +162,117 @@ fn wire_send_cancel_impl(
             mode: FfiCallMode::Normal,
         },
         move || {
-            let api_coordinator = coordinator.wire2api();
             let api_id = id.wire2api();
-            move |task_callback| Result::<_, ()>::Ok(send_cancel(api_coordinator, api_id))
+            move |task_callback| Result::<_, ()>::Ok(send_cancel(api_id))
+        },
+    )
+}
+fn wire_cancel_all_impl(port_: MessagePort) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "cancel_all",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || move |task_callback| Result::<_, ()>::Ok(cancel_all()),
+    )
+}
+fn wire_registered_devices_impl(port_: MessagePort) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, Vec<mirror_DeviceId>, _>(
+        WrapInfo {
+            debug_name: "registered_devices",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || move |task_callback| Result::<_, ()>::Ok(registered_devices()),
+    )
+}
+fn wire_start_coordinator_thread_impl(port_: MessagePort) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "start_coordinator_thread",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || move |task_callback| Result::<_, ()>::Ok(start_coordinator_thread()),
+    )
+}
+fn wire_key_state_impl() -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "key_state",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || Result::<_, ()>::Ok(key_state()),
+    )
+}
+fn wire_generate_new_key_impl(
+    port_: MessagePort,
+    threshold: impl Wire2Api<usize> + UnwindSafe,
+    devices: impl Wire2Api<Vec<DeviceId>> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "generate_new_key",
+            port: Some(port_),
+            mode: FfiCallMode::Stream,
+        },
+        move || {
+            let api_threshold = threshold.wire2api();
+            let api_devices = devices.wire2api();
+            move |task_callback| {
+                Result::<_, ()>::Ok(generate_new_key(
+                    api_threshold,
+                    api_devices,
+                    task_callback.stream_sink::<_, mirror_CoordinatorToUserKeyGenMessage>(),
+                ))
+            }
+        },
+    )
+}
+fn wire_threshold__method__FrostKey_impl(
+    that: impl Wire2Api<FrostKey> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "threshold__method__FrostKey",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            Result::<_, ()>::Ok(FrostKey::threshold(&api_that))
+        },
+    )
+}
+fn wire_id__method__FrostKey_impl(
+    that: impl Wire2Api<FrostKey> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "id__method__FrostKey",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            Result::<_, ()>::Ok(FrostKey::id(&api_that))
+        },
+    )
+}
+fn wire_name__method__FrostKey_impl(
+    that: impl Wire2Api<FrostKey> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "name__method__FrostKey",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            Result::<_, ()>::Ok(FrostKey::name(&api_that))
         },
     )
 }
@@ -257,14 +357,34 @@ fn wire_satisfy__method__PortBytesToRead_impl(
 // Section: wrapper structs
 
 #[derive(Clone)]
+pub struct mirror_CoordinatorToUserKeyGenMessage(CoordinatorToUserKeyGenMessage);
+
+#[derive(Clone)]
 pub struct mirror_DeviceChange(DeviceChange);
 
 #[derive(Clone)]
 pub struct mirror_DeviceId(DeviceId);
 
+#[derive(Clone)]
+pub struct mirror_KeyId(KeyId);
+
 // Section: static checks
 
 const _: fn() = || {
+    match None::<CoordinatorToUserKeyGenMessage>.unwrap() {
+        CoordinatorToUserKeyGenMessage::ReceivedShares { id } => {
+            let _: DeviceId = id;
+        }
+        CoordinatorToUserKeyGenMessage::CheckKeyGen { session_hash } => {
+            let _: [u8; 32] = session_hash;
+        }
+        CoordinatorToUserKeyGenMessage::KeyGenAck { id } => {
+            let _: DeviceId = id;
+        }
+        CoordinatorToUserKeyGenMessage::FinishedKey { key_id } => {
+            let _: KeyId = key_id;
+        }
+    }
     match None::<DeviceChange>.unwrap() {
         DeviceChange::Added { id } => {
             let _: DeviceId = id;
@@ -293,6 +413,10 @@ const _: fn() = || {
         let DeviceId_ = None::<DeviceId>.unwrap();
         let _: [u8; 33] = DeviceId_.0;
     }
+    {
+        let KeyId_ = None::<KeyId>.unwrap();
+        let _: [u8; 32] = KeyId_.0;
+    }
 };
 // Section: allocate functions
 
@@ -310,12 +434,6 @@ where
 {
     fn wire2api(self) -> Option<T> {
         (!self.is_null()).then(|| self.wire2api())
-    }
-}
-
-impl Wire2Api<bool> for bool {
-    fn wire2api(self) -> bool {
-        self
     }
 }
 
@@ -356,6 +474,34 @@ impl Wire2Api<usize> for usize {
     }
 }
 // Section: impl IntoDart
+
+impl support::IntoDart for mirror_CoordinatorToUserKeyGenMessage {
+    fn into_dart(self) -> support::DartAbi {
+        match self.0 {
+            CoordinatorToUserKeyGenMessage::ReceivedShares { id } => {
+                vec![0.into_dart(), id.into_into_dart().into_dart()]
+            }
+            CoordinatorToUserKeyGenMessage::CheckKeyGen { session_hash } => {
+                vec![1.into_dart(), session_hash.into_into_dart().into_dart()]
+            }
+            CoordinatorToUserKeyGenMessage::KeyGenAck { id } => {
+                vec![2.into_dart(), id.into_into_dart().into_dart()]
+            }
+            CoordinatorToUserKeyGenMessage::FinishedKey { key_id } => {
+                vec![3.into_dart(), key_id.into_into_dart().into_dart()]
+            }
+        }
+        .into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for mirror_CoordinatorToUserKeyGenMessage {}
+impl rust2dart::IntoIntoDart<mirror_CoordinatorToUserKeyGenMessage>
+    for CoordinatorToUserKeyGenMessage
+{
+    fn into_into_dart(self) -> mirror_CoordinatorToUserKeyGenMessage {
+        mirror_CoordinatorToUserKeyGenMessage(self)
+    }
+}
 
 impl support::IntoDart for mirror_DeviceChange {
     fn into_dart(self) -> support::DartAbi {
@@ -400,6 +546,42 @@ impl support::IntoDartExceptPrimitive for mirror_DeviceId {}
 impl rust2dart::IntoIntoDart<mirror_DeviceId> for DeviceId {
     fn into_into_dart(self) -> mirror_DeviceId {
         mirror_DeviceId(self)
+    }
+}
+
+impl support::IntoDart for FrostKey {
+    fn into_dart(self) -> support::DartAbi {
+        vec![self.0.into_dart()].into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for FrostKey {}
+impl rust2dart::IntoIntoDart<FrostKey> for FrostKey {
+    fn into_into_dart(self) -> Self {
+        self
+    }
+}
+
+impl support::IntoDart for mirror_KeyId {
+    fn into_dart(self) -> support::DartAbi {
+        vec![self.0 .0.into_into_dart().into_dart()].into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for mirror_KeyId {}
+impl rust2dart::IntoIntoDart<mirror_KeyId> for KeyId {
+    fn into_into_dart(self) -> mirror_KeyId {
+        mirror_KeyId(self)
+    }
+}
+
+impl support::IntoDart for KeyState {
+    fn into_dart(self) -> support::DartAbi {
+        vec![self.keys.into_into_dart().into_dart()].into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for KeyState {}
+impl rust2dart::IntoIntoDart<KeyState> for KeyState {
+    fn into_into_dart(self) -> Self {
+        self
     }
 }
 

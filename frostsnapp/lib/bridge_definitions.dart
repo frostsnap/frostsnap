@@ -23,10 +23,9 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kSubDeviceEventsConstMeta;
 
-  Future<FfiCoordinator> newFfiCoordinator(
-      {required bool hostHandlesSerial, dynamic hint});
+  Stream<KeyState> subKeyEvents({dynamic hint});
 
-  FlutterRustBridgeTaskConstMeta get kNewFfiCoordinatorConstMeta;
+  FlutterRustBridgeTaskConstMeta get kSubKeyEventsConstMeta;
 
   Future<void> turnStderrLoggingOn({required Level level, dynamic hint});
 
@@ -37,34 +36,60 @@ abstract class Native {
   FlutterRustBridgeTaskConstMeta get kTurnLogcatLoggingOnConstMeta;
 
   Future<void> announceAvailablePorts(
-      {required FfiCoordinator coordinator,
-      required List<PortDesc> ports,
-      dynamic hint});
+      {required List<PortDesc> ports, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kAnnounceAvailablePortsConstMeta;
 
+  Future<void> switchToHostHandlesSerial({dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kSwitchToHostHandlesSerialConstMeta;
+
   Future<void> updateNamePreview(
-      {required FfiCoordinator coordinator,
-      required DeviceId id,
-      required String name,
-      dynamic hint});
+      {required DeviceId id, required String name, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kUpdateNamePreviewConstMeta;
 
   Future<void> finishNaming(
-      {required FfiCoordinator coordinator,
-      required DeviceId id,
-      required String name,
-      dynamic hint});
+      {required DeviceId id, required String name, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kFinishNamingConstMeta;
 
-  Future<void> sendCancel(
-      {required FfiCoordinator coordinator,
-      required DeviceId id,
-      dynamic hint});
+  Future<void> sendCancel({required DeviceId id, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kSendCancelConstMeta;
+
+  Future<void> cancelAll({dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kCancelAllConstMeta;
+
+  Future<List<DeviceId>> registeredDevices({dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kRegisteredDevicesConstMeta;
+
+  Future<void> startCoordinatorThread({dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kStartCoordinatorThreadConstMeta;
+
+  KeyState keyState({dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kKeyStateConstMeta;
+
+  Stream<CoordinatorToUserKeyGenMessage> generateNewKey(
+      {required int threshold, required List<DeviceId> devices, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kGenerateNewKeyConstMeta;
+
+  int thresholdMethodFrostKey({required FrostKey that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kThresholdMethodFrostKeyConstMeta;
+
+  KeyId idMethodFrostKey({required FrostKey that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kIdMethodFrostKeyConstMeta;
+
+  String nameMethodFrostKey({required FrostKey that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kNameMethodFrostKeyConstMeta;
 
   Future<void> satisfyMethodPortOpen(
       {required PortOpen that, String? err, dynamic hint});
@@ -89,9 +114,9 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kSatisfyMethodPortBytesToReadConstMeta;
 
-  DropFnType get dropOpaqueFfiCoordinator;
-  ShareFnType get shareOpaqueFfiCoordinator;
-  OpaqueTypeFinalizer get FfiCoordinatorFinalizer;
+  DropFnType get dropOpaqueFrostsnapCoreSchnorrFunFrostFrostKeyNormal;
+  ShareFnType get shareOpaqueFrostsnapCoreSchnorrFunFrostFrostKeyNormal;
+  OpaqueTypeFinalizer get FrostsnapCoreSchnorrFunFrostFrostKeyNormalFinalizer;
 
   DropFnType get dropOpaquePortBytesToReadSender;
   ShareFnType get shareOpaquePortBytesToReadSender;
@@ -111,18 +136,22 @@ abstract class Native {
 }
 
 @sealed
-class FfiCoordinator extends FrbOpaque {
+class FrostsnapCoreSchnorrFunFrostFrostKeyNormal extends FrbOpaque {
   final Native bridge;
-  FfiCoordinator.fromRaw(int ptr, int size, this.bridge)
+  FrostsnapCoreSchnorrFunFrostFrostKeyNormal.fromRaw(
+      int ptr, int size, this.bridge)
       : super.unsafe(ptr, size);
   @override
-  DropFnType get dropFn => bridge.dropOpaqueFfiCoordinator;
+  DropFnType get dropFn =>
+      bridge.dropOpaqueFrostsnapCoreSchnorrFunFrostFrostKeyNormal;
 
   @override
-  ShareFnType get shareFn => bridge.shareOpaqueFfiCoordinator;
+  ShareFnType get shareFn =>
+      bridge.shareOpaqueFrostsnapCoreSchnorrFunFrostFrostKeyNormal;
 
   @override
-  OpaqueTypeFinalizer get staticFinalizer => bridge.FfiCoordinatorFinalizer;
+  OpaqueTypeFinalizer get staticFinalizer =>
+      bridge.FrostsnapCoreSchnorrFunFrostFrostKeyNormalFinalizer;
 }
 
 @sealed
@@ -187,6 +216,23 @@ class PortWriteSender extends FrbOpaque {
 }
 
 @freezed
+sealed class CoordinatorToUserKeyGenMessage
+    with _$CoordinatorToUserKeyGenMessage {
+  const factory CoordinatorToUserKeyGenMessage.receivedShares({
+    required DeviceId id,
+  }) = CoordinatorToUserKeyGenMessage_ReceivedShares;
+  const factory CoordinatorToUserKeyGenMessage.checkKeyGen({
+    required U8Array32 sessionHash,
+  }) = CoordinatorToUserKeyGenMessage_CheckKeyGen;
+  const factory CoordinatorToUserKeyGenMessage.keyGenAck({
+    required DeviceId id,
+  }) = CoordinatorToUserKeyGenMessage_KeyGenAck;
+  const factory CoordinatorToUserKeyGenMessage.finishedKey({
+    required KeyId keyId,
+  }) = CoordinatorToUserKeyGenMessage_FinishedKey;
+}
+
+@freezed
 sealed class DeviceChange with _$DeviceChange {
   const factory DeviceChange.added({
     required DeviceId id,
@@ -213,6 +259,44 @@ class DeviceId {
 
   const DeviceId({
     required this.field0,
+  });
+}
+
+class FrostKey {
+  final Native bridge;
+  final FrostsnapCoreSchnorrFunFrostFrostKeyNormal field0;
+
+  const FrostKey({
+    required this.bridge,
+    required this.field0,
+  });
+
+  int threshold({dynamic hint}) => bridge.thresholdMethodFrostKey(
+        that: this,
+      );
+
+  KeyId id({dynamic hint}) => bridge.idMethodFrostKey(
+        that: this,
+      );
+
+  String name({dynamic hint}) => bridge.nameMethodFrostKey(
+        that: this,
+      );
+}
+
+class KeyId {
+  final U8Array32 field0;
+
+  const KeyId({
+    required this.field0,
+  });
+}
+
+class KeyState {
+  final List<FrostKey> keys;
+
+  const KeyState({
+    required this.keys,
   });
 }
 
@@ -326,6 +410,15 @@ class PortWrite {
         that: this,
         err: err,
       );
+}
+
+class U8Array32 extends NonGrowableListView<int> {
+  static const arraySize = 32;
+  U8Array32(Uint8List inner)
+      : assert(inner.length == arraySize),
+        super(inner);
+  U8Array32.unchecked(Uint8List inner) : super(inner);
+  U8Array32.init() : super(Uint8List(arraySize));
 }
 
 class U8Array33 extends NonGrowableListView<int> {

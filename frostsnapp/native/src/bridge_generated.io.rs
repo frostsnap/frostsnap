@@ -12,8 +12,8 @@ pub extern "C" fn wire_sub_device_events(port_: i64) {
 }
 
 #[no_mangle]
-pub extern "C" fn wire_new_ffi_coordinator(port_: i64, host_handles_serial: bool) {
-    wire_new_ffi_coordinator_impl(port_, host_handles_serial)
+pub extern "C" fn wire_sub_key_events(port_: i64) {
+    wire_sub_key_events_impl(port_)
 }
 
 #[no_mangle]
@@ -27,41 +27,82 @@ pub extern "C" fn wire_turn_logcat_logging_on(port_: i64, _level: i32) {
 }
 
 #[no_mangle]
-pub extern "C" fn wire_announce_available_ports(
-    port_: i64,
-    coordinator: wire_FfiCoordinator,
-    ports: *mut wire_list_port_desc,
-) {
-    wire_announce_available_ports_impl(port_, coordinator, ports)
+pub extern "C" fn wire_announce_available_ports(port_: i64, ports: *mut wire_list_port_desc) {
+    wire_announce_available_ports_impl(port_, ports)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_switch_to_host_handles_serial(port_: i64) {
+    wire_switch_to_host_handles_serial_impl(port_)
 }
 
 #[no_mangle]
 pub extern "C" fn wire_update_name_preview(
     port_: i64,
-    coordinator: wire_FfiCoordinator,
     id: *mut wire_DeviceId,
     name: *mut wire_uint_8_list,
 ) {
-    wire_update_name_preview_impl(port_, coordinator, id, name)
+    wire_update_name_preview_impl(port_, id, name)
 }
 
 #[no_mangle]
 pub extern "C" fn wire_finish_naming(
     port_: i64,
-    coordinator: wire_FfiCoordinator,
     id: *mut wire_DeviceId,
     name: *mut wire_uint_8_list,
 ) {
-    wire_finish_naming_impl(port_, coordinator, id, name)
+    wire_finish_naming_impl(port_, id, name)
 }
 
 #[no_mangle]
-pub extern "C" fn wire_send_cancel(
+pub extern "C" fn wire_send_cancel(port_: i64, id: *mut wire_DeviceId) {
+    wire_send_cancel_impl(port_, id)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_cancel_all(port_: i64) {
+    wire_cancel_all_impl(port_)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_registered_devices(port_: i64) {
+    wire_registered_devices_impl(port_)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_start_coordinator_thread(port_: i64) {
+    wire_start_coordinator_thread_impl(port_)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_key_state() -> support::WireSyncReturn {
+    wire_key_state_impl()
+}
+
+#[no_mangle]
+pub extern "C" fn wire_generate_new_key(
     port_: i64,
-    coordinator: wire_FfiCoordinator,
-    id: *mut wire_DeviceId,
+    threshold: usize,
+    devices: *mut wire_list_device_id,
 ) {
-    wire_send_cancel_impl(port_, coordinator, id)
+    wire_generate_new_key_impl(port_, threshold, devices)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_threshold__method__FrostKey(
+    that: *mut wire_FrostKey,
+) -> support::WireSyncReturn {
+    wire_threshold__method__FrostKey_impl(that)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_id__method__FrostKey(that: *mut wire_FrostKey) -> support::WireSyncReturn {
+    wire_id__method__FrostKey_impl(that)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_name__method__FrostKey(that: *mut wire_FrostKey) -> support::WireSyncReturn {
+    wire_name__method__FrostKey_impl(that)
 }
 
 #[no_mangle]
@@ -104,8 +145,9 @@ pub extern "C" fn wire_satisfy__method__PortBytesToRead(
 // Section: allocate functions
 
 #[no_mangle]
-pub extern "C" fn new_FfiCoordinator() -> wire_FfiCoordinator {
-    wire_FfiCoordinator::new_with_null_ptr()
+pub extern "C" fn new_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(
+) -> wire_FrostsnapCoreSchnorrFunFrostFrostKeyNormal {
+    wire_FrostsnapCoreSchnorrFunFrostFrostKeyNormal::new_with_null_ptr()
 }
 
 #[no_mangle]
@@ -134,6 +176,11 @@ pub extern "C" fn new_box_autoadd_device_id_0() -> *mut wire_DeviceId {
 }
 
 #[no_mangle]
+pub extern "C" fn new_box_autoadd_frost_key_0() -> *mut wire_FrostKey {
+    support::new_leak_box_ptr(wire_FrostKey::new_with_null_ptr())
+}
+
+#[no_mangle]
 pub extern "C" fn new_box_autoadd_port_bytes_to_read_0() -> *mut wire_PortBytesToRead {
     support::new_leak_box_ptr(wire_PortBytesToRead::new_with_null_ptr())
 }
@@ -151,6 +198,15 @@ pub extern "C" fn new_box_autoadd_port_read_0() -> *mut wire_PortRead {
 #[no_mangle]
 pub extern "C" fn new_box_autoadd_port_write_0() -> *mut wire_PortWrite {
     support::new_leak_box_ptr(wire_PortWrite::new_with_null_ptr())
+}
+
+#[no_mangle]
+pub extern "C" fn new_list_device_id_0(len: i32) -> *mut wire_list_device_id {
+    let wrap = wire_list_device_id {
+        ptr: support::new_leak_vec_ptr(<wire_DeviceId>::new_with_null_ptr(), len),
+        len,
+    };
+    support::new_leak_box_ptr(wrap)
 }
 
 #[no_mangle]
@@ -174,16 +230,22 @@ pub extern "C" fn new_uint_8_list_0(len: i32) -> *mut wire_uint_8_list {
 // Section: related functions
 
 #[no_mangle]
-pub extern "C" fn drop_opaque_FfiCoordinator(ptr: *const c_void) {
+pub extern "C" fn drop_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(ptr: *const c_void) {
     unsafe {
-        Arc::<FfiCoordinator>::decrement_strong_count(ptr as _);
+        Arc::<frostsnap_core::schnorr_fun::frost::FrostKey<Normal>>::decrement_strong_count(
+            ptr as _,
+        );
     }
 }
 
 #[no_mangle]
-pub extern "C" fn share_opaque_FfiCoordinator(ptr: *const c_void) -> *const c_void {
+pub extern "C" fn share_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(
+    ptr: *const c_void,
+) -> *const c_void {
     unsafe {
-        Arc::<FfiCoordinator>::increment_strong_count(ptr as _);
+        Arc::<frostsnap_core::schnorr_fun::frost::FrostKey<Normal>>::increment_strong_count(
+            ptr as _,
+        );
         ptr
     }
 }
@@ -250,8 +312,10 @@ pub extern "C" fn share_opaque_PortWriteSender(ptr: *const c_void) -> *const c_v
 
 // Section: impl Wire2Api
 
-impl Wire2Api<RustOpaque<FfiCoordinator>> for wire_FfiCoordinator {
-    fn wire2api(self) -> RustOpaque<FfiCoordinator> {
+impl Wire2Api<RustOpaque<frostsnap_core::schnorr_fun::frost::FrostKey<Normal>>>
+    for wire_FrostsnapCoreSchnorrFunFrostFrostKeyNormal
+{
+    fn wire2api(self) -> RustOpaque<frostsnap_core::schnorr_fun::frost::FrostKey<Normal>> {
         unsafe { support::opaque_from_dart(self.ptr as _) }
     }
 }
@@ -281,11 +345,16 @@ impl Wire2Api<String> for *mut wire_uint_8_list {
         String::from_utf8_lossy(&vec).into_owned()
     }
 }
-
 impl Wire2Api<DeviceId> for *mut wire_DeviceId {
     fn wire2api(self) -> DeviceId {
         let wrap = unsafe { support::box_from_leak_ptr(self) };
         Wire2Api::<DeviceId>::wire2api(*wrap).into()
+    }
+}
+impl Wire2Api<FrostKey> for *mut wire_FrostKey {
+    fn wire2api(self) -> FrostKey {
+        let wrap = unsafe { support::box_from_leak_ptr(self) };
+        Wire2Api::<FrostKey>::wire2api(*wrap).into()
     }
 }
 impl Wire2Api<PortBytesToRead> for *mut wire_PortBytesToRead {
@@ -317,7 +386,21 @@ impl Wire2Api<DeviceId> for wire_DeviceId {
         DeviceId(self.field0.wire2api())
     }
 }
+impl Wire2Api<FrostKey> for wire_FrostKey {
+    fn wire2api(self) -> FrostKey {
+        FrostKey(self.field0.wire2api())
+    }
+}
 
+impl Wire2Api<Vec<DeviceId>> for *mut wire_list_device_id {
+    fn wire2api(self) -> Vec<DeviceId> {
+        let vec = unsafe {
+            let wrap = support::box_from_leak_ptr(self);
+            support::vec_from_leak_ptr(wrap.ptr, wrap.len)
+        };
+        vec.into_iter().map(Wire2Api::wire2api).collect()
+    }
+}
 impl Wire2Api<Vec<PortDesc>> for *mut wire_list_port_desc {
     fn wire2api(self) -> Vec<PortDesc> {
         let vec = unsafe {
@@ -392,7 +475,7 @@ impl Wire2Api<Vec<u8>> for *mut wire_uint_8_list {
 
 #[repr(C)]
 #[derive(Clone)]
-pub struct wire_FfiCoordinator {
+pub struct wire_FrostsnapCoreSchnorrFunFrostFrostKeyNormal {
     ptr: *const core::ffi::c_void,
 }
 
@@ -424,6 +507,19 @@ pub struct wire_PortWriteSender {
 #[derive(Clone)]
 pub struct wire_DeviceId {
     field0: *mut wire_uint_8_list,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_FrostKey {
+    field0: wire_FrostsnapCoreSchnorrFunFrostFrostKeyNormal,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_list_device_id {
+    ptr: *mut wire_DeviceId,
+    len: i32,
 }
 
 #[repr(C)]
@@ -491,7 +587,7 @@ impl<T> NewWithNullPtr for *mut T {
     }
 }
 
-impl NewWithNullPtr for wire_FfiCoordinator {
+impl NewWithNullPtr for wire_FrostsnapCoreSchnorrFunFrostFrostKeyNormal {
     fn new_with_null_ptr() -> Self {
         Self {
             ptr: core::ptr::null(),
@@ -536,6 +632,20 @@ impl NewWithNullPtr for wire_DeviceId {
 }
 
 impl Default for wire_DeviceId {
+    fn default() -> Self {
+        Self::new_with_null_ptr()
+    }
+}
+
+impl NewWithNullPtr for wire_FrostKey {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            field0: wire_FrostsnapCoreSchnorrFunFrostFrostKeyNormal::new_with_null_ptr(),
+        }
+    }
+}
+
+impl Default for wire_FrostKey {
     fn default() -> Self {
         Self::new_with_null_ptr()
     }

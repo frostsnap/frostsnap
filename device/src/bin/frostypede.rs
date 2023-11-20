@@ -10,6 +10,7 @@
 #[macro_use]
 extern crate alloc;
 
+use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_device::{
     esp32_run,
     io::{set_upstream_port_mode_jtag, set_upstream_port_mode_uart},
@@ -184,13 +185,13 @@ fn main() -> ! {
     delay.delay_ms(600u32); // To wait for ESP32c3 timers to stop being bonkers
     bl.set_high().unwrap();
 
-    let ui = BlueUi {
+    let ui = FrostyUi {
         select_button,
         led,
         display,
         downstream_connection_state: ConnectionState::Disconnected,
         workflow: Default::default(),
-        device_label: Default::default(),
+        device_name: Default::default(),
         splash_state: AnimationState::new(&timer1, (600 * ticks_per_ms).into()),
         changes: false,
         confirm_state: AnimationState::new(&timer1, (700 * ticks_per_ms).into()),
@@ -210,7 +211,7 @@ fn main() -> ! {
     .run()
 }
 
-pub struct BlueUi<'t, 'd, C, T, SPI>
+pub struct FrostyUi<'t, 'd, C, T, SPI>
 where
     SPI: spi::Instance,
 {
@@ -219,7 +220,7 @@ where
     display: ST7735<'d, SPI>,
     downstream_connection_state: ConnectionState,
     workflow: Workflow,
-    device_label: Option<String>,
+    device_name: Option<String>,
     splash_state: AnimationState<'t, T>,
     changes: bool,
     confirm_state: AnimationState<'t, T>,
@@ -285,7 +286,7 @@ pub enum AnimationProgress {
     Done,
 }
 
-impl<'t, 'd, C, T, SPI> BlueUi<'t, 'd, C, T, SPI>
+impl<'t, 'd, C, T, SPI> FrostyUi<'t, 'd, C, T, SPI>
 where
     SPI: spi::Instance,
     C: ConfiguredChannel,
@@ -305,7 +306,7 @@ where
         }
 
         self.display
-            .header(self.device_label.as_deref().unwrap_or("NEW DEVICE"))
+            .header(self.device_name.as_deref().unwrap_or("New Device"))
             .unwrap();
 
         match &self.workflow {
@@ -352,7 +353,7 @@ where
                         .write(brightness([colors::GREEN].iter().cloned(), 10))
                         .unwrap();
 
-                    match &self.device_label {
+                    match &self.device_name {
                         Some(label) => {
                             let mut body = String::new();
                             body.push_str(&format!("NAME: {}\n", label));
@@ -382,8 +383,10 @@ where
                     Prompt::Signing(task) => {
                         self.display.print(format!("Sign {}", task)).unwrap();
                     }
-                    Prompt::KeyGen(xpub) => {
-                        self.display.print(format!("Ok {}", xpub)).unwrap();
+                    Prompt::KeyGen(session_hash) => {
+                        self.display
+                            .print(format!("Ok {}", hex::encode(session_hash)))
+                            .unwrap();
                     }
                     Prompt::NewName { old_name, new_name } => match old_name {
                         Some(old_name) => self
@@ -395,7 +398,7 @@ where
                             .unwrap(),
                         None => self
                             .display
-                            .print(format!("Confirm naming this device {}?", new_name))
+                            .print(format!("Confirm name '{}'?", new_name))
                             .unwrap(),
                     },
                 }
@@ -428,7 +431,7 @@ where
     }
 }
 
-impl<'d, 't, C, T, SPI> UserInteraction for BlueUi<'d, 't, C, T, SPI>
+impl<'d, 't, C, T, SPI> UserInteraction for FrostyUi<'d, 't, C, T, SPI>
 where
     SPI: spi::Instance,
     C: ConfiguredChannel,
@@ -441,13 +444,13 @@ where
         }
     }
 
-    fn set_device_label(&mut self, label: String) {
-        self.device_label = Some(label);
+    fn set_device_name(&mut self, name: String) {
+        self.device_name = Some(name);
         self.changes = true;
     }
 
     fn get_device_label(&self) -> Option<&str> {
-        self.device_label.as_deref()
+        self.device_name.as_deref()
     }
 
     fn take_workflow(&mut self) -> Workflow {
@@ -488,8 +491,8 @@ where
                             .write(brightness([colors::GREEN].iter().cloned(), 30))
                             .unwrap();
                         let ui_event = match prompt {
-                            Prompt::KeyGen(_) => UiEvent::KeyGenConfirm(true),
-                            Prompt::Signing(_) => UiEvent::SigningConfirm(true),
+                            Prompt::KeyGen(_) => UiEvent::KeyGenConfirm,
+                            Prompt::Signing(_) => UiEvent::SigningConfirm,
                             Prompt::NewName { new_name, .. } => {
                                 UiEvent::NameConfirm(new_name.clone())
                             }

@@ -1,35 +1,49 @@
-import 'dart:collection';
-import 'dart:typed_data';
-
-import 'package:flutter/foundation.dart';
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/coordinator.dart';
-import 'package:frostsnapp/device_setup.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
+
+import 'dart:collection';
+import 'package:flutter/foundation.dart';
+import 'package:frostsnapp/bridge_definitions.dart';
 import 'dart:developer' as developer;
 
-class DeviceListWidget extends StatefulWidget {
-  final Orientation orientation;
-  const DeviceListWidget({required this.orientation, super.key});
+DeviceList globalDeviceList = DeviceList();
 
-  @override
-  State<StatefulWidget> createState() => DeviceListWidgetState();
+enum DeviceListChangeKind {
+  added,
+  removed,
+  named,
 }
 
-class DeviceListWidgetState extends State<DeviceListWidget>
-    with WidgetsBindingObserver {
-  final GlobalKey<AnimatedListState> deviceListKey =
-      GlobalKey<AnimatedListState>();
-  late DeviceList _deviceList;
+class DeviceListChange {
+  DeviceListChange({
+    required this.kind,
+    required this.index,
+    required this.id,
+    required this.state,
+    this.name,
+  });
+  final DeviceListChangeKind kind;
+  final int index;
+  final DeviceId id;
+  final String? name;
+  final DeviceListState state;
+}
 
-  @override
-  void initState() {
-    super.initState();
+class DeviceListState {
+  final List<DeviceId> devices;
+  final Map<DeviceId, String> names;
 
-    WidgetsBinding.instance.addObserver(this);
-    _deviceList =
-        DeviceList(listKey: deviceListKey, removedDeviceBuilder: _buildDevice);
-    global_coordinator.subDeviceEvents().forEach((deviceChanges) {
+  DeviceListState({required this.devices, required this.names});
+
+  Iterable<DeviceId> namedDevices() {
+    return devices.where((id) => names[id] != null);
+  }
+}
+
+class DeviceList {
+  DeviceList() {
+    api.subDeviceEvents().forEach((deviceChanges) {
       for (final change in deviceChanges) {
         switch (change) {
           case DeviceChange_Added(:final id):
@@ -38,236 +52,73 @@ class DeviceListWidgetState extends State<DeviceListWidget>
             }
           case DeviceChange_Registered(:final id, :final name):
             {
-              developer.log("Device registered");
-              if (_deviceList.confirmNameDialogue != null) {
-                for (var ctx in _deviceList.confirmNameDialogue!) {
-                  Navigator.pop(ctx);
-                }
-                _deviceList.confirmNameDialogue = null;
+              int index = indexOf(id);
+              if (index != -1 && state.names[id] != name) {
+                state.names[id] = name;
+                _emitEvent(DeviceListChangeKind.named, id, index);
+              } else {
+                state.names[id] = name;
+                _append(id);
               }
-              setState(() => _deviceList.addDevice(id, name));
             }
           case DeviceChange_Disconnected(:final id):
             {
               developer.log("device disconnected");
-              setState(() => _deviceList.removeDevice(id));
+              var index = indexOf(id);
+              if (index != -1) {
+                var id = state.devices.removeAt(index);
+                _emitEvent(DeviceListChangeKind.removed, id, index);
+              }
             }
           case DeviceChange_NeedsName(:final id):
             {
-              setState(() => _deviceList.addUnamedDevice(id));
+              _append(id);
             }
           case DeviceChange_Renamed(:final id, :final newName, :final oldName):
             {
-              setState(() => _deviceList.setName(id, newName));
+              state.names[id] = newName;
             }
         }
       }
     });
-
-    @override
-    void dispose() {
-      WidgetsBinding.instance.removeObserver(this);
-      super.dispose();
-    }
-
-    // This is meant to make sure we catch any devices plugged in while the app
-    // wasn't in foreground but for some reason it doesn't work.
-    @override
-    void didChangeAppLifecycleState(AppLifecycleState state) {
-      if (state == AppLifecycleState.resumed) {
-        global_coordinator.scanDevices();
-      }
-    }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedList(
-        key: deviceListKey,
-        itemBuilder: _buildItem,
-        initialItemCount: _deviceList.length,
-        scrollDirection: widget.orientation == Orientation.landscape
-            ? Axis.horizontal
-            : Axis.vertical);
+  final DeviceListState state = DeviceListState(
+      devices: [],
+      names: LinkedHashMap<DeviceId, String>(
+        equals: (a, b) => listEquals(a.field0, b.field0),
+        hashCode: (a) => Object.hashAll(a.field0),
+      ));
+
+  final StreamController<DeviceListChange> changeStream =
+      StreamController.broadcast();
+
+  Stream<DeviceListChange> subscribe() {
+    return changeStream.stream;
   }
 
-  Widget _buildDevice(BuildContext context, DeviceId id, String? label,
-      Animation<double> animation) {
-    Widget child;
-    if (label == null) {
-      child = ElevatedButton(
-          onPressed: () {
-            global_coordinator.updateNamePreview(id, "");
-            Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (pageContext) => DeviceSetup(
-                          deviceId: id,
-                          popInvoked: () async {
-                            await global_coordinator.cancel(id);
-                            return true;
-                          },
-                          onSubmitted: (value) async {
-                            global_coordinator.finishNaming(id, value);
-                            await showDialog<void>(
-                                barrierDismissible:
-                                    false, // can't dismiss the dialogue
-                                context: context,
-                                builder: (dialogContext) {
-                                  _deviceList.confirmNameDialogue = [
-                                    pageContext,
-                                    dialogContext
-                                  ];
-                                  return AlertDialog(
-                                      title: const Text("Confirm on Device"),
-                                      content: Text(
-                                          "Please confirm the name '$value' on the device"),
-                                      actions: [
-                                        ElevatedButton(
-                                            onPressed: () {
-                                              global_coordinator.cancel(id);
-                                              Navigator.pop(dialogContext);
-                                              _deviceList.confirmNameDialogue =
-                                                  null;
-                                            },
-                                            child: const Text("cancel"))
-                                      ]);
-                                });
-                          },
-                          onChanged: (value) {
-                            global_coordinator.updateNamePreview(id, value);
-                          },
-                        )));
-          },
-          child: const Text("NEW DEVICE"));
-    } else {
-      child = LabeledDeviceText(label);
-    }
-
-    return DeviceBoxContainer(
-        orientation: widget.orientation, animation: animation, child: child);
+  _emitEvent(DeviceListChangeKind kind, DeviceId id, int index) {
+    changeStream.sink.add(DeviceListChange(
+        kind: kind, index: index, id: id, name: state.names[id], state: state));
   }
-
-  Widget _buildItem(
-      BuildContext context, int index, Animation<double> animation) {
-    var id = _deviceList[index];
-    var label = _deviceList.getName(id);
-    return _buildDevice(context, id, label, animation);
-  }
-}
-
-class DeviceBoxContainer extends StatelessWidget {
-  final Animation<double> animation;
-  final Widget child;
-  final Orientation orientation;
-
-  const DeviceBoxContainer(
-      {required this.child,
-      required this.orientation,
-      required this.animation,
-      super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    var animationBegin = orientation == Orientation.landscape
-        ? const Offset(8.0, 0.0)
-        : const Offset(0.0, 8.0);
-    return Padding(
-        padding: const EdgeInsets.all(2.0),
-        child: SlideTransition(
-            position: animation.drive(
-                Tween(begin: animationBegin, end: const Offset(0.0, 0.0))),
-            child: SizedBox(
-              height: 80.0,
-              width: 200.0,
-              child: Card(
-                color: Colors.white70,
-                child: Center(
-                  child: child,
-                ),
-              ),
-            )));
-  }
-}
-
-class LabeledDeviceText extends StatelessWidget {
-  final String name;
-
-  const LabeledDeviceText(this.name, {super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(name, style: const TextStyle(fontSize: 30));
-  }
-}
-
-typedef RemovedDeviceBuilder = Widget Function(BuildContext context,
-    DeviceId id, String? label, Animation<double> animation);
-
-class DeviceList {
-  DeviceList({
-    required this.listKey,
-    required this.removedDeviceBuilder,
-  });
-
-  final GlobalKey<AnimatedListState> listKey;
-  final List<DeviceId> _items = [];
-  final Map<DeviceId, String> _labels = LinkedHashMap<DeviceId, String>(
-    equals: (a, b) => listEquals(a.field0, b.field0),
-    hashCode: (a) => Object.hashAll(a.field0),
-  );
-  final RemovedDeviceBuilder removedDeviceBuilder;
-  List<BuildContext>? confirmNameDialogue;
-
-  AnimatedListState? get _animatedList => listKey.currentState;
 
   _append(DeviceId device) {
     if (indexOf(device) == -1) {
-      _items.add(device);
-      _animatedList!.insertItem(_items.length - 1,
-          duration: const Duration(milliseconds: 800));
+      state.devices.add(device);
+      _emitEvent(DeviceListChangeKind.added, device, state.devices.length - 1);
     }
   }
 
-  String? getName(DeviceId device) {
-    return _labels[device];
-  }
-
-  setName(DeviceId device, String label) {
-    if (getName(device) != label) {
-      _labels[device] = label;
-      // final index = indexOf(device);
-      // if (index != -1) {
-      //   _animatedList!.removeItem(index, (context, animation) {
-      //     return removedDeviceBuilder(context, device, getName(device), animation);
-      //   });
-      //   _animatedList!.insertItem(index, duration: const Duration(microseconds: 0));
-      // }
-    }
-  }
-
-  addDevice(DeviceId device, String label) {
-    setName(device, label);
-    _append(device);
-  }
-
-  addUnamedDevice(DeviceId device) {
-    _append(device);
-  }
-
-  removeDevice(DeviceId id) {
-    var index = indexOf(id);
-    if (index != -1) {
-      var id = _items.removeAt(index);
-      _animatedList!.removeItem(index,
-          (BuildContext context, Animation<double> animation) {
-        return removedDeviceBuilder(context, id, getName(id), animation);
-      });
-    }
-  }
-
-  int get length => _items.length;
-  int indexOf(DeviceId item) => _items.indexWhere(
-      (element) => listEquals(element.field0.toList(), item.field0.toList()));
-  DeviceId operator [](int index) => _items[index];
+  int indexOf(DeviceId item) =>
+      state.devices.indexWhere((element) => deviceIdEquals(element, item));
+  DeviceId operator [](int index) => state.devices[index];
 }
+
+HashSet<DeviceId> deviceIdSet() {
+  return HashSet<DeviceId>(
+      equals: (a, b) => listEquals(a.field0, b.field0),
+      hashCode: (a) => Object.hashAll(a.field0));
+}
+
+bool deviceIdEquals(DeviceId lhs, DeviceId rhs) =>
+    listEquals(lhs.field0.toList(), rhs.field0.toList());

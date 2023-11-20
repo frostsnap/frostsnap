@@ -72,7 +72,7 @@ where
 
         let device_id = state.signer.device_id();
         if let Some(name) = &state.name {
-            ui.set_device_label(name.into());
+            ui.set_device_name(name.into());
         }
 
         let mut downstream_serial =
@@ -101,7 +101,7 @@ where
             if soft_reset {
                 soft_reset = false;
                 sends_upstream.messages.clear();
-                state.signer.cancel_action();
+                let _ = state.signer.cancel_action();
                 sends_user.clear();
                 sends_downstream.clear();
                 downstream_connection_state = ConnectionState::Disconnected;
@@ -212,86 +212,89 @@ where
                                         }
                                         continue;
                                     }
-                                    ReceiveSerial::Message(message) => {
+                                    ReceiveSerial::Message(mut message) => {
                                         // We have recieved a first message (if this is not a magic bytes message)
                                         upstream_received_first_message = true;
+                                        let for_me = message
+                                            .target_destinations
+                                            .remove_from_recipients(device_id);
+
+                                        if for_me {
+                                            match &message.message_body {
+                                                CoordinatorSendBody::Cancel => {
+                                                    outbox.extend(state.signer.cancel_action());
+                                                }
+                                                CoordinatorSendBody::AnnounceAck => {
+                                                    ui.set_workflow(ui::Workflow::WaitingFor(
+                                                        ui::WaitingFor::CoordinatorInstruction {
+                                                            completed_task: None,
+                                                        },
+                                                    ));
+                                                    sends_upstream
+                                                        .send_debug("Received AnnounceACK!");
+                                                }
+                                                CoordinatorSendBody::Naming(naming) => match naming
+                                                {
+                                                    frostsnap_comms::NameCommand::Preview(name) => {
+                                                        ui.set_workflow(
+                                                            ui::Workflow::NamingDevice {
+                                                                old_name: state.name.clone(),
+                                                                new_name: name.clone(),
+                                                            },
+                                                        );
+                                                    }
+                                                    frostsnap_comms::NameCommand::Finish(
+                                                        new_name,
+                                                    ) => {
+                                                        ui.set_workflow(ui::Workflow::UserPrompt(
+                                                            ui::Prompt::NewName {
+                                                                old_name: state.name.clone(),
+                                                                new_name: new_name.clone(),
+                                                            },
+                                                        ));
+                                                    }
+                                                },
+                                                CoordinatorSendBody::Core(core_message) => {
+                                                    // FIXME: It is very inelegant to be inspecting
+                                                    // core messages to figure out when we're going
+                                                    // to be busy.
+                                                    match &core_message {
+                                                        CoordinatorToDeviceMessage::DoKeyGen {
+                                                            ..
+                                                        } => {
+                                                            ui.set_workflow(ui::Workflow::BusyDoing(
+                                                                ui::BusyTask::KeyGen,
+                                                            ));
+                                                            state.signer.clear_state();
+                                                        }
+                                                        CoordinatorToDeviceMessage::FinishKeyGen {
+                                                            ..
+                                                        } => ui.set_workflow(ui::Workflow::BusyDoing(
+                                                            ui::BusyTask::VerifyingShare,
+                                                        )),
+                                                        _ => { /* no workflow to trigger */ }
+                                                    }
+
+                                                    outbox.extend(
+                                                        state
+                                                            .signer
+                                                            .recv_coordinator_message(
+                                                                core_message.clone(),
+                                                            )
+                                                            .expect(
+                                                                "failed to process coordinator message",
+                                                            ),
+                                                    );
+                                                }
+                                            }
+                                        }
+
                                         // Forward messages downstream if there are other target destinations
                                         if downstream_connection_state
                                             == ConnectionState::Established
+                                            && message.target_destinations.should_forward()
                                         {
-                                            let mut forwarding_message = message.clone();
-                                            let _ = forwarding_message
-                                                .target_destinations
-                                                .remove(&device_id);
-                                            if !forwarding_message.target_destinations.is_empty() {
-                                                sends_downstream.push(forwarding_message);
-                                            }
-                                        }
-                                        // Skip processing of messages which are not destined for us
-                                        if !message.target_destinations.contains(&device_id) {
-                                            continue;
-                                        }
-
-                                        match message.message_body {
-                                            CoordinatorSendBody::Cancel => {
-                                                state.signer.cancel_action();
-                                                ui.cancel();
-                                            }
-                                            CoordinatorSendBody::AnnounceAck => {
-                                                ui.set_workflow(ui::Workflow::WaitingFor(
-                                                    ui::WaitingFor::CoordinatorInstruction {
-                                                        completed_task: None,
-                                                    },
-                                                ));
-                                                sends_upstream.send_debug("Received AnnounceACK!");
-                                            }
-                                            CoordinatorSendBody::Naming(naming) => match naming {
-                                                frostsnap_comms::NameCommand::Preview(name) => {
-                                                    ui.set_workflow(ui::Workflow::NamingDevice {
-                                                        old_name: state.name.clone(),
-                                                        new_name: name,
-                                                    });
-                                                }
-                                                frostsnap_comms::NameCommand::Finish(new_name) => {
-                                                    ui.set_workflow(ui::Workflow::UserPrompt(
-                                                        ui::Prompt::NewName {
-                                                            old_name: state.name.clone(),
-                                                            new_name,
-                                                        },
-                                                    ));
-                                                }
-                                            },
-                                            CoordinatorSendBody::Core(core_message) => {
-                                                match &core_message {
-                                                    CoordinatorToDeviceMessage::DoKeyGen {
-                                                        ..
-                                                    } => {
-                                                        ui.set_workflow(ui::Workflow::BusyDoing(
-                                                            ui::BusyTask::KeyGen,
-                                                        ));
-                                                        state.signer.clear_state();
-                                                    }
-                                                    CoordinatorToDeviceMessage::FinishKeyGen {
-                                                        ..
-                                                    } => ui.set_workflow(ui::Workflow::BusyDoing(
-                                                        ui::BusyTask::VerifyingShare,
-                                                    )),
-                                                    CoordinatorToDeviceMessage::RequestSign {
-                                                        ..
-                                                    } => { /* no workflow to trigger */ }
-                                                }
-
-                                                outbox.extend(
-                                                    state
-                                                        .signer
-                                                        .recv_coordinator_message(
-                                                            core_message.clone(),
-                                                        )
-                                                        .expect(
-                                                            "failed to process coordinator message",
-                                                        ),
-                                                );
-                                            }
+                                            sends_downstream.push(message);
                                         }
                                     }
                                 }
@@ -315,27 +318,25 @@ where
 
             if let Some(ui_event) = ui.poll() {
                 match ui_event {
-                    UiEvent::KeyGenConfirm(ack) => outbox.extend(
+                    UiEvent::KeyGenConfirm => outbox.extend(
                         state
                             .signer
-                            .keygen_ack(ack)
+                            .keygen_ack()
                             .expect("state changed while confirming keygen"),
                     ),
-                    UiEvent::SigningConfirm(ack) => {
-                        if ack {
-                            ui.set_workflow(ui::Workflow::BusyDoing(ui::BusyTask::Signing));
-                        }
+                    UiEvent::SigningConfirm => {
+                        ui.set_workflow(ui::Workflow::BusyDoing(ui::BusyTask::Signing));
                         outbox.extend(
                             state
                                 .signer
-                                .sign_ack(ack)
+                                .sign_ack()
                                 .expect("state changed while acking sign"),
                         );
                     }
                     UiEvent::NameConfirm(ref name) => {
                         state.name = Some(name.into());
                         flash.save(&state).unwrap();
-                        ui.set_device_label(name.into());
+                        ui.set_device_name(name.into());
                         sends_upstream.send(DeviceSendBody::SetName { name: name.into() });
                     }
                 }
@@ -364,16 +365,16 @@ where
                     }
                     DeviceSend::ToUser(user_send) => {
                         match user_send {
-                            DeviceToUserMessage::CheckKeyGen { xpub } => {
+                            DeviceToUserMessage::CheckKeyGen { session_hash: xpub } => {
                                 ui.set_workflow(ui::Workflow::UserPrompt(ui::Prompt::KeyGen(xpub)));
                             }
-                            frostsnap_core::message::DeviceToUserMessage::SignatureRequest {
-                                sign_task,
-                                ..
-                            } => {
+                            DeviceToUserMessage::SignatureRequest { sign_task, .. } => {
                                 ui.set_workflow(ui::Workflow::UserPrompt(ui::Prompt::Signing(
                                     sign_task.to_string(),
                                 )));
+                            }
+                            DeviceToUserMessage::Canceled { .. } => {
+                                ui.cancel();
                             }
                         };
                     }

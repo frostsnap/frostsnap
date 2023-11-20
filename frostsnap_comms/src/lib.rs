@@ -43,8 +43,45 @@ impl<D: Direction> Gist for ReceiveSerial<D> {
 /// A message sent from a coordinator
 #[derive(Encode, Decode, Debug, Clone)]
 pub struct CoordinatorSendMessage {
-    pub target_destinations: BTreeSet<DeviceId>,
+    pub target_destinations: Destination,
     pub message_body: CoordinatorSendBody,
+}
+
+#[derive(Encode, Decode, Debug, Clone)]
+pub enum Destination {
+    /// Send to all devices -- this reduces message size for this common task
+    All,
+    Particular(BTreeSet<DeviceId>),
+}
+
+impl Destination {
+    pub fn should_forward(&self) -> bool {
+        match self {
+            Self::All => true,
+            Self::Particular(devices) => !devices.is_empty(),
+        }
+    }
+
+    /// Returns whether the arugment `device_id` was a destination
+    pub fn remove_from_recipients(&mut self, device_id: DeviceId) -> bool {
+        match self {
+            Destination::All => true,
+            Destination::Particular(devices) => devices.remove(&device_id),
+        }
+    }
+
+    pub fn is_destined_to(&mut self, device_id: DeviceId) -> bool {
+        match self {
+            Destination::All => true,
+            Destination::Particular(devices) => devices.contains(&device_id),
+        }
+    }
+}
+
+impl<I: IntoIterator<Item = DeviceId>> From<I> for Destination {
+    fn from(iter: I) -> Self {
+        Destination::Particular(BTreeSet::from_iter(iter))
+    }
 }
 
 impl Gist for CoordinatorSendMessage {

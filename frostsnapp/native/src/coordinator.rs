@@ -1,96 +1,146 @@
 use crate::api::PortEvent;
 use flutter_rust_bridge::RustOpaque;
+use frostsnap_coordinator::frostsnap_comms::{
+    CoordinatorSendBody, CoordinatorSendMessage, Destination,
+};
+use frostsnap_coordinator::frostsnap_core::message::{CoordinatorSend, CoordinatorToUserMessage};
 use frostsnap_coordinator::serialport;
 use frostsnap_coordinator::{
     frostsnap_core, DesktopSerial, PortChanges, PortDesc, PortOpenError, Serial, SerialPort,
     UsbSerialManager,
 };
 use frostsnap_core::{DeviceId, FrostCoordinator};
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
 use std::io;
 use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 use std::time::Duration;
 use tracing::{event, Level};
 
 pub struct FfiCoordinator {
-    ffi_serial: Option<FfiSerial>,
+    coordinator: Arc<Mutex<FrostCoordinator>>,
     manager: Arc<Mutex<UsbSerialManager>>,
+    /// only used if host is handling serial (e.g. android)
+    ffi_serial: FfiSerial,
+    pending_for_outbox: Arc<Mutex<VecDeque<CoordinatorSend>>>,
+    thread_handle: Mutex<Option<JoinHandle<()>>>,
+}
+
+impl Default for FfiCoordinator {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl FfiCoordinator {
-    pub fn new(host_handles_serial: bool) -> Self {
-        let mut core_coordinator = FrostCoordinator::new();
-        let (manager, ffi_serial) = if host_handles_serial {
-            let ffi_serial = FfiSerial::default();
-            (
-                UsbSerialManager::new(Box::new(ffi_serial.clone())),
-                Some(ffi_serial),
-            )
-        } else {
-            (UsbSerialManager::new(Box::new(DesktopSerial)), None)
-        };
-
-        let my_manager = Arc::new(Mutex::new(manager));
-        let loop_manager = Arc::clone(&my_manager);
-
-        let _handle = std::thread::spawn(move || {
-            let mut outbox = VecDeque::new();
-            loop {
-                let new_messages = {
-                    let PortChanges {
-                        device_changes,
-                        new_messages,
-                    } = { loop_manager.lock().unwrap().poll_ports() };
-
-                    if !device_changes.is_empty() {
-                        crate::api::emit_device_events(
-                            device_changes
-                                .into_iter()
-                                .map(crate::api::DeviceChange::from)
-                                .collect(),
-                        );
-                    }
-
-                    new_messages
-                };
-
-                for (from, message) in new_messages {
-                    match core_coordinator.recv_device_message(from, message.clone()) {
-                        Ok(messages) => {
-                            outbox.extend(messages);
-                        }
-                        Err(e) => {
-                            event!(
-                                Level::ERROR,
-                                from = from.to_string(),
-                                "Failed to process message: {}",
-                                e
-                            );
-                            continue;
-                        }
-                    };
-                }
-
-                // to give time for the other threads to get a lock
-                std::thread::sleep(Duration::from_millis(10));
-            }
-        });
+    pub fn new() -> Self {
+        let coordinator = Arc::new(Mutex::new(FrostCoordinator::new()));
+        let manager = Arc::new(Mutex::new(UsbSerialManager::new(Box::new(DesktopSerial))));
+        let pending_for_outbox = Arc::new(Mutex::new(VecDeque::new()));
 
         Self {
-            ffi_serial,
-            manager: my_manager,
+            coordinator,
+            manager,
+            ffi_serial: FfiSerial::default(),
+            pending_for_outbox,
+            thread_handle: Default::default(),
         }
     }
 
+    pub fn switch_to_host_handles_serial(&self) {
+        assert!(
+            self.thread_handle.lock().unwrap().is_none(),
+            "can't switch host to handle serial after you've started thread"
+        );
+        let manager = UsbSerialManager::new(Box::new(self.ffi_serial.clone()));
+        *self.manager.lock().unwrap() = manager;
+    }
+
+    pub fn start(&self) {
+        assert!(
+            self.thread_handle.lock().unwrap().is_none(),
+            "can't start coordinator thread again"
+        );
+        let manager_loop = self.manager.clone();
+        let pending_loop = self.pending_for_outbox.clone();
+        let coordinator_loop = self.coordinator.clone();
+        let handle = std::thread::spawn(move || loop {
+            // to give time for the other threads to get a lock
+            std::thread::sleep(Duration::from_millis(100));
+            let new_messages = {
+                let PortChanges {
+                    device_changes,
+                    new_messages,
+                } = manager_loop.lock().unwrap().poll_ports();
+
+                if !device_changes.is_empty() {
+                    crate::api::emit_device_events(
+                        device_changes
+                            .into_iter()
+                            .map(crate::api::DeviceChange::from)
+                            .collect(),
+                    );
+                }
+
+                new_messages
+            };
+
+            let mut coordinator = coordinator_loop.lock().unwrap();
+            let mut pending_messages = pending_loop.lock().unwrap();
+            for (from, message) in new_messages {
+                // Add keygen progression response to recv_device_message
+                match coordinator.recv_device_message(from, message.clone()) {
+                    Ok(messages) => {
+                        pending_messages.extend(messages);
+                    }
+                    Err(e) => {
+                        event!(
+                            Level::ERROR,
+                            from = from.to_string(),
+                            "Failed to process message: {}",
+                            e
+                        );
+                        continue;
+                    }
+                };
+            }
+            drop(coordinator);
+            while let Some(message) = pending_messages.pop_front() {
+                match message {
+                    CoordinatorSend::ToDevice(msg) => {
+                        let send_message = CoordinatorSendMessage {
+                            target_destinations: Destination::from(msg.default_destinations()),
+                            message_body: CoordinatorSendBody::Core(msg),
+                        };
+
+                        manager_loop
+                            .lock()
+                            .unwrap()
+                            .queue_in_port_outbox(send_message);
+                    }
+                    CoordinatorSend::ToUser(msg) => match msg {
+                        CoordinatorToUserMessage::KeyGen(keygen_message) => {
+                            crate::api::emit_keygen_event(keygen_message)
+                        }
+                        CoordinatorToUserMessage::Signed { .. } => {
+                            // TODO: Emit signed message to user
+                        }
+                    },
+                    CoordinatorSend::ToStorage(_) => {
+                        // TODO
+                    }
+                }
+            }
+            // to give time for the other threads to get a lock
+            std::thread::sleep(Duration::from_millis(100));
+        });
+
+        *self.thread_handle.lock().unwrap() = Some(handle);
+    }
+
     pub fn set_available_ports(&self, ports: Vec<PortDesc>) {
-        *self
-            .ffi_serial
-            .as_ref()
-            .unwrap()
-            .available_ports
-            .lock()
-            .unwrap() = ports;
+        *self.ffi_serial.available_ports.lock().unwrap() = ports;
     }
 
     pub fn update_name_preview(&self, id: DeviceId, name: &str) {
@@ -103,6 +153,44 @@ impl FfiCoordinator {
 
     pub fn send_cancel(&self, id: DeviceId) {
         self.manager.lock().unwrap().send_cancel(id)
+    }
+
+    pub fn cancel_all(&self) {
+        self.coordinator.lock().unwrap().cancel();
+        self.manager.lock().unwrap().send_cancel_all()
+    }
+
+    pub fn registered_devices(&self) -> Vec<DeviceId> {
+        self.manager
+            .lock()
+            .unwrap()
+            .registered_devices()
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+    }
+
+    pub fn generate_new_key(&self, devices: BTreeSet<DeviceId>, threshold: usize) {
+        let keygen_message = {
+            let mut coordinator = self.coordinator.lock().unwrap();
+            *coordinator = FrostCoordinator::default();
+            coordinator.do_keygen(&devices, threshold).unwrap()
+        };
+        let keygen_message = CoordinatorSend::ToDevice(keygen_message);
+        self.pending_for_outbox
+            .lock()
+            .unwrap()
+            .push_back(keygen_message);
+    }
+
+    pub fn frost_keys(&self) -> Vec<crate::api::FrostKey> {
+        self.coordinator
+            .lock()
+            .unwrap()
+            .frost_key_state()
+            .into_iter()
+            .map(|key_state| crate::api::FrostKey(RustOpaque::new(key_state.frost_key().clone())))
+            .collect()
     }
 }
 
