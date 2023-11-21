@@ -173,21 +173,28 @@ impl<'a, U> SerialIo<'a, U> {
         }
     }
 
-    pub fn write_bytes(&mut self, words: &[u8]) -> Result<(), SerialInterfaceError>
+    pub fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), SerialInterfaceError>
     where
         U: uart::Instance,
     {
         match self {
             SerialIo::Jtag(jtag) => jtag
-                .write_bytes(words)
-                .map_err(|_| SerialInterfaceError::JtagError),
+                .write_bytes(bytes)
+                .map_err(|_| SerialInterfaceError::JtagError)?,
             SerialIo::Uart(uart) => {
-                match uart.write_bytes(words) {
-                    Ok(_) => Ok(()),
-                    Err(e) => Err(SerialInterfaceError::UartWriteError(e)),
+                for byte in bytes {
+                    while let Err(e) = uart.write(*byte) {
+                        match e {
+                            nb::Error::Other(e) => {
+                                return Err(SerialInterfaceError::UartWriteError(e))
+                            }
+                            nb::Error::WouldBlock => { /* keep going! */ }
+                        }
+                    }
                 }
             }
         }
+        Ok(())
     }
 
     // NOTE: flush is useless on these devices except for blocking until writing is finished.
