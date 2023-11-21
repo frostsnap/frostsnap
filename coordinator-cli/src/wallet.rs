@@ -53,7 +53,7 @@ impl bdk_chain::Append for ChangeSet {
 
 fn get_descriptor(frost_key: &FrostKey<Normal>) -> Descriptor<DescriptorPublicKey> {
     use bitcoin::util::bip32::DerivationPath;
-    let frost_xpub = frostsnap_core::xpub::FrostXpub::new(frost_key.clone());
+    let frost_xpub = frostsnap_core::xpub::Xpub::new(frost_key.clone());
     let key = DescriptorPublicKey::XPub(DescriptorXKey {
         origin: None,
         xkey: *frost_xpub.xpub(),

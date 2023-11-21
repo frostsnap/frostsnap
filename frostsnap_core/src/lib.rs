@@ -401,7 +401,7 @@ impl FrostCoordinator {
         &mut self,
         sign_task: SignTask,
         signing_parties: BTreeSet<DeviceId>,
-    ) -> Result<(Vec<CoordinatorSend>, CoordinatorToDeviceMessage), StartSignError> {
+    ) -> Result<Vec<CoordinatorSend>, StartSignError> {
         match &mut self.state {
             CoordinatorState::FrostKey { key } => {
                 let selected = signing_parties.len();
@@ -461,28 +461,8 @@ impl FrostCoordinator {
                             .map(|(id, (nonce, _, _))| (id.to_poly_index(), nonce[i]))
                             .collect();
 
-                        let mut frost_xpub = crate::xpub::FrostXpub::new(key.frost_key.clone());
+                        let xonly_frost_key = sign_item.derive_key(key.frost_key());
 
-                        frost_xpub.derive_bip32(&sign_item.bip32_path);
-
-                        let mut xonly_frost_key = frost_xpub.frost_key().clone().into_xonly_key();
-
-                        if sign_item.tap_tweak {
-                            let tweak = bitcoin::util::taproot::TapTweakHash::from_key_and_tweak(
-                                XOnlyPublicKey::from_slice(
-                                    &xonly_frost_key.public_key().to_xonly_bytes(),
-                                )
-                                .unwrap(),
-                                None,
-                            )
-                            .to_scalar();
-                            xonly_frost_key = xonly_frost_key
-                                .tweak(
-                                    Scalar::<Public, Zero>::from_slice(&tweak.to_be_bytes())
-                                        .unwrap(),
-                                )
-                                .unwrap();
-                        }
                         let sign_session =
                             frost.start_sign_session(&xonly_frost_key, indexed_nonces, b_message);
                         SignSessionProgress {
@@ -498,15 +478,13 @@ impl FrostCoordinator {
                     key: key.clone(),
                     sessions,
                 };
-                Ok((
-                    vec![CoordinatorSend::ToStorage(
-                        CoordinatorToStorageMessage::UpdateState(key),
-                    )],
-                    CoordinatorToDeviceMessage::RequestSign {
+                Ok(vec![
+                    CoordinatorSend::ToStorage(CoordinatorToStorageMessage::UpdateState(key)),
+                    CoordinatorSend::ToDevice(CoordinatorToDeviceMessage::RequestSign {
                         sign_task,
                         nonces: signing_nonces.clone(),
-                    },
-                ))
+                    }),
+                ])
             }
             _ => Err(StartSignError::CantSignInState {
                 in_state: self.state().name(),
@@ -1012,9 +990,9 @@ impl FrostSigner {
                         .map(|(id, (nonces, _, _))| (id.to_poly_index(), nonces[nonce_index]))
                         .collect();
 
-                    let mut frost_xpub = crate::xpub::FrostXpub::new(key.frost_key.clone());
-                    frost_xpub.derive_bip32(&sign_item.bip32_path);
-                    let mut xonly_frost_key = frost_xpub.frost_key().clone().into_xonly_key();
+                    let mut xpub = crate::xpub::Xpub::new(key.frost_key.clone());
+                    xpub.derive_bip32(&sign_item.bip32_path);
+                    let mut xonly_frost_key = xpub.key().clone().into_xonly_key();
 
                     if sign_item.tap_tweak {
                         let tweak = bitcoin::util::taproot::TapTweakHash::from_key_and_tweak(
