@@ -360,12 +360,12 @@ class KeyGenDeviceList extends StatelessWidget {
                       context: deviceSetupContex,
                       title: const Text("Confirm name"),
                       content: Column(children: [
-                          Text("Confirm name '$value' on device"),
-                          Divider(),
-                          DeviceListWithIcons(iconAssigner: (context, deviceId) {
-                              if (deviceId == id) {
-                                final label = LabeledDeviceText("'$value'?");
-                                final icon = const Row(
+                        Text("Confirm name '$value' on device"),
+                        Divider(),
+                        DeviceListWithIcons(iconAssigner: (context, deviceId) {
+                          if (deviceId == id) {
+                            final label = LabeledDeviceText("'$value'?");
+                            final icon = const Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(Icons.visibility, color: Colors.orange),
@@ -373,10 +373,10 @@ class KeyGenDeviceList extends StatelessWidget {
                                   Text("Confirm"),
                                 ]);
                             return (label, icon);
-                              } else {
-                                return (null, null);
-                              }
-                          })
+                          } else {
+                            return (null, null);
+                          }
+                        })
                       ]),
                       complete: completeWhen,
                       onCancel: () async {
