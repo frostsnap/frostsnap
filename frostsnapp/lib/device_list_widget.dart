@@ -194,12 +194,7 @@ class DeviceListWithIcons extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: icon != null
-              ? [
-                  _label,
-                  SizedBox(height: 4),
-                  icon,
-                  SizedBox(height: 4)
-                ]
+              ? [_label, SizedBox(height: 4), icon, SizedBox(height: 4)]
               : [_label],
         ));
   }

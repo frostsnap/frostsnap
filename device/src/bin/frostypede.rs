@@ -9,7 +9,12 @@
 
 #[macro_use]
 extern crate alloc;
-
+use crate::alloc::string::{String, ToString};
+use core::mem::MaybeUninit;
+use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
+use embedded_graphics_framebuf::FrameBuf;
+use esp_backtrace as _;
+use esp_hal_smartled::{smartLedAdapter, SmartLedsAdapter};
 use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_device::{
     esp32_run,
@@ -18,38 +23,28 @@ use frostsnap_device::{
     ui::{BusyTask, Prompt, UiEvent, UserInteraction, WaitingFor, WaitingResponse, Workflow},
     ConnectionState,
 };
-
-use crate::alloc::string::{String, ToString};
-use esp32c3_hal::{
+use hal::{
     clock::ClockControl,
     gpio::{GpioPin, Input, PullUp},
     peripherals::Peripherals,
-    prelude::{_embedded_hal_digital_v2_InputPin, *},
-    pulse_control::{ClockSource, ConfiguredChannel},
-    spi, timer,
-    uart::{config, TxRxPins},
-    Delay, PulseControl, IO,
+    prelude::*,
+    rmt::{Rmt, TxChannel},
+    spi,
+    timer::{Timer, TimerGroup},
+    uart::{self, Uart},
+    Delay, Rtc, UsbSerialJtag, IO,
 };
-use esp_backtrace as _;
-
-use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
-use embedded_graphics_framebuf::FrameBuf;
-use esp_hal_smartled::{smartLedAdapter, SmartLedsAdapter};
 use smart_leds::{brightness, colors, SmartLedsWrite, RGB};
 
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
 
 fn init_heap() {
-    const HEAP_SIZE: usize = 320 * 1024;
-
-    extern "C" {
-        static mut _heap_start: u32;
-    }
+    const HEAP_SIZE: usize = 300 * 1024;
+    static mut HEAP: MaybeUninit<[u8; HEAP_SIZE]> = MaybeUninit::uninit();
 
     unsafe {
-        let heap_start = &_heap_start as *const _ as usize;
-        ALLOCATOR.init(heap_start as *mut u8, HEAP_SIZE);
+        ALLOCATOR.init(HEAP.as_mut_ptr() as *mut u8, HEAP_SIZE);
     }
 }
 
@@ -69,22 +64,14 @@ fn main() -> ! {
 
     init_heap();
     let peripherals = Peripherals::take();
-    let mut system = peripherals.SYSTEM.split();
+    let system = peripherals.SYSTEM.split();
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
     // Disable the RTC and TIMG watchdog timers
-    let mut rtc = esp32c3_hal::Rtc::new(peripherals.RTC_CNTL);
-    let timer_group0 = timer::TimerGroup::new(
-        peripherals.TIMG0,
-        &clocks,
-        &mut system.peripheral_clock_control,
-    );
+    let mut rtc = Rtc::new(peripherals.RTC_CNTL);
+    let timer_group0 = TimerGroup::new(peripherals.TIMG0, &clocks);
     let mut wdt0 = timer_group0.wdt;
-    let timer_group1 = timer::TimerGroup::new(
-        peripherals.TIMG1,
-        &clocks,
-        &mut system.peripheral_clock_control,
-    );
+    let timer_group1 = TimerGroup::new(peripherals.TIMG1, &clocks);
     let mut wdt1 = timer_group1.wdt;
     let mut timer0 = timer_group0.timer0;
     timer0.start(1u64.secs());
@@ -120,68 +107,44 @@ fn main() -> ! {
         io.pins.gpio7,
         io.pins.gpio3,
         io.pins.gpio12,
-        &mut system.peripheral_clock_control,
         &clocks,
         framebuf,
     )
     .unwrap();
 
     // RGB LED
-    // White: found coordinator
-    // Blue: found another device upstream
-    let pulse = PulseControl::new(
-        peripherals.RMT,
-        &mut system.peripheral_clock_control,
-        ClockSource::APB,
-        0,
-        0,
-        0,
-    )
-    .unwrap();
-    let led = <smartLedAdapter!(1)>::new(pulse.channel0, io.pins.gpio0);
+    let rmt = Rmt::new(peripherals.RMT, 80u32.MHz(), &clocks).unwrap();
+    let mut led = <smartLedAdapter!(0, 1)>::new(rmt.channel0, io.pins.gpio0);
+    led.write(brightness([colors::BLACK].iter().cloned(), 0))
+        .unwrap();
 
-    let upstream_jtag = esp32c3_hal::UsbSerialJtag::new(
-        peripherals.USB_DEVICE,
-        &mut system.peripheral_clock_control,
-    );
+    let upstream_jtag = UsbSerialJtag::new(peripherals.USB_DEVICE);
 
     let upstream_uart = {
-        let serial_conf = config::Config {
+        let serial_conf = uart::config::Config {
             baudrate: frostsnap_comms::BAUDRATE,
             ..Default::default()
         };
-        let txrx1 = TxRxPins::new_tx_rx(
+        let txrx1 = uart::TxRxPins::new_tx_rx(
             io.pins.gpio18.into_push_pull_output(),
             io.pins.gpio19.into_floating_input(),
         );
-        esp32c3_hal::Uart::new_with_config(
-            peripherals.UART1,
-            Some(serial_conf),
-            Some(txrx1),
-            &clocks,
-            &mut system.peripheral_clock_control,
-        )
+        hal::Uart::new_with_config(peripherals.UART1, serial_conf, Some(txrx1), &clocks)
     };
 
     let downstream_uart = {
-        let serial_conf = config::Config {
+        let serial_conf = uart::config::Config {
             baudrate: frostsnap_comms::BAUDRATE,
             ..Default::default()
         };
-        let txrx0 = TxRxPins::new_tx_rx(
+        let txrx0 = uart::TxRxPins::new_tx_rx(
             io.pins.gpio21.into_push_pull_output(),
             io.pins.gpio20.into_floating_input(),
         );
-        esp32c3_hal::Uart::new_with_config(
-            peripherals.UART0,
-            Some(serial_conf),
-            Some(txrx0),
-            &clocks,
-            &mut system.peripheral_clock_control,
-        )
+        Uart::new_with_config(peripherals.UART0, serial_conf, Some(txrx0), &clocks)
     };
 
-    let rng = esp32c3_hal::Rng::new(peripherals.RNG);
+    let rng = hal::Rng::new(peripherals.RNG);
     delay.delay_ms(600u32); // To wait for ESP32c3 timers to stop being bonkers
     bl.set_high().unwrap();
 
@@ -213,10 +176,11 @@ fn main() -> ! {
 
 pub struct FrostyUi<'t, 'd, C, T, SPI>
 where
-    SPI: spi::Instance,
+    SPI: spi::master::Instance,
+    C: TxChannel<0>,
 {
     select_button: GpioPin<Input<PullUp>, 9>,
-    led: SmartLedsAdapter<C, 25>,
+    led: SmartLedsAdapter<C, 0, 25>,
     display: ST7735<'d, SPI>,
     downstream_connection_state: ConnectionState,
     workflow: Workflow,
@@ -224,11 +188,11 @@ where
     splash_state: AnimationState<'t, T>,
     changes: bool,
     confirm_state: AnimationState<'t, T>,
-    timer: &'t esp32c3_hal::timer::Timer<T>,
+    timer: &'t Timer<T>,
 }
 
 struct AnimationState<'t, T> {
-    timer: &'t esp32c3_hal::timer::Timer<T>,
+    timer: &'t Timer<T>,
     start: Option<u64>,
     duration_ticks: u64,
     finished: bool,
@@ -236,9 +200,9 @@ struct AnimationState<'t, T> {
 
 impl<'t, T> AnimationState<'t, T>
 where
-    T: esp32c3_hal::timer::Instance,
+    T: hal::timer::Instance,
 {
-    pub fn new(timer: &'t esp32c3_hal::timer::Timer<T>, duration_ticks: u64) -> Self {
+    pub fn new(timer: &'t Timer<T>, duration_ticks: u64) -> Self {
         Self {
             timer,
             duration_ticks,
@@ -288,9 +252,9 @@ pub enum AnimationProgress {
 
 impl<'t, 'd, C, T, SPI> FrostyUi<'t, 'd, C, T, SPI>
 where
-    SPI: spi::Instance,
-    C: ConfiguredChannel,
-    T: esp32c3_hal::timer::Instance,
+    SPI: spi::master::Instance,
+    C: TxChannel<0>,
+    T: hal::timer::Instance,
 {
     fn render(&mut self) {
         let splash_progress = self.splash_state.poll();
@@ -433,9 +397,9 @@ where
 
 impl<'d, 't, C, T, SPI> UserInteraction for FrostyUi<'d, 't, C, T, SPI>
 where
-    SPI: spi::Instance,
-    C: ConfiguredChannel,
-    T: timer::Instance,
+    SPI: spi::master::Instance,
+    C: TxChannel<0>,
+    T: hal::timer::Instance,
 {
     fn set_downstream_connection_state(&mut self, state: ConnectionState) {
         if state != self.downstream_connection_state {
@@ -523,29 +487,18 @@ where
 fn panic(info: &core::panic::PanicInfo) -> ! {
     set_upstream_port_mode_jtag();
     let peripherals = unsafe { Peripherals::steal() };
-    let mut system = peripherals.SYSTEM.split();
+    let system = peripherals.SYSTEM.split();
+    let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
     // Disable the RTC and TIMG watchdog timers
+    let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
 
     // RGB LED
     // White: found coordinator
     // Blue: found another device upstream
-    let pulse = PulseControl::new(
-        peripherals.RMT,
-        &mut system.peripheral_clock_control,
-        ClockSource::APB,
-        0,
-        0,
-        0,
-    )
-    .unwrap();
-
-    let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
-
-    let mut led = <smartLedAdapter!(1)>::new(pulse.channel0, io.pins.gpio0);
+    let rmt = Rmt::new(peripherals.RMT, 80u32.MHz(), &clocks).unwrap();
+    let mut led = <smartLedAdapter!(0, 1)>::new(rmt.channel0, io.pins.gpio0);
     led.write(brightness([colors::RED].iter().cloned(), 10))
         .unwrap();
-
-    let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
     let message = match info.location() {
         Some(location) => format!(
@@ -569,7 +522,6 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         io.pins.gpio7,
         io.pins.gpio3,
         io.pins.gpio12,
-        &mut system.peripheral_clock_control,
         &clocks,
         framebuf,
     ) {

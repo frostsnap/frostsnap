@@ -16,13 +16,15 @@ use embedded_text::{
     style::{TextBoxStyle, TextBoxStyleBuilder},
     TextBox,
 };
-use esp32c3_hal::{
+use hal::{
     clock::Clocks,
     gpio::{AnyPin, InputPin, Output, OutputPin, PushPull},
     peripheral::Peripheral,
     prelude::*,
-    spi::{FullDuplexMode, Instance, Spi, SpiMode},
-    system::PeripheralClockControl,
+    spi::{
+        master::{Instance, Spi},
+        FullDuplexMode, SpiMode,
+    },
     Delay,
 };
 use mipidsi::ColorInversion;
@@ -56,7 +58,6 @@ where
         cs: impl Peripheral<P = CS> + 'd,
         mosi: impl Peripheral<P = MOSI> + 'd,
         miso: impl Peripheral<P = MISO> + 'd,
-        peripheral_clock_control: &mut PeripheralClockControl,
         clocks: &Clocks,
         framebuf: FrameBuf<Rgb565, [Rgb565; 12800]>,
     ) -> Result<Self, Error> {
@@ -68,7 +69,6 @@ where
             cs,
             16u32.MHz(),
             SpiMode::Mode0,
-            peripheral_clock_control,
             clocks,
         );
 
@@ -286,14 +286,18 @@ where
                 .into_styled(PrimitiveStyle::with_stroke(Rgb565::new(7, 14, 7), 2))
                 .draw(&mut self.framebuf)
                 .unwrap();
-        } else {
-            Line::new(Point::new(0, y), Point::new((160.0 * percent) as i32, y))
+        } else if percent == 100.0 {
+            Line::new(Point::new(0, y), Point::new(160, y))
                 .into_styled(PrimitiveStyle::with_stroke(Rgb565::GREEN, 2))
                 .draw(&mut self.framebuf)
                 .unwrap();
+        } else {
+            // skips framebuffer to directly draw line onto display
+            Line::new(Point::new(0, y), Point::new((160.0 * percent) as i32, y))
+                .into_styled(PrimitiveStyle::with_stroke(Rgb565::GREEN, 2))
+                .draw(&mut self.display)
+                .unwrap();
         }
-
-        self.flush().unwrap();
 
         Ok(())
     }

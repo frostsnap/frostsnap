@@ -8,15 +8,11 @@ use bincode::de::read::Reader;
 use bincode::enc::write::Writer;
 use bincode::error::DecodeError;
 use bincode::error::EncodeError;
-use esp32c3_hal::peripherals::USB_DEVICE;
-use esp32c3_hal::prelude::*;
-use esp32c3_hal::timer::Timer;
-use esp32c3_hal::uart;
-use esp32c3_hal::UsbSerialJtag;
 use frostsnap_comms::Direction;
 use frostsnap_comms::MagicBytes;
 use frostsnap_comms::ReceiveSerial;
 use frostsnap_comms::Upstream;
+use hal::{peripherals::USB_DEVICE, prelude::*, timer::Timer, uart, UsbSerialJtag};
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 
 const RING_BUFFER_SIZE_LOG_2: usize = 8; // i.e. 256 bytes
@@ -60,7 +56,7 @@ impl<'a, T, U> SerialInterface<'a, T, U, Upstream> {
 impl<'a, T, U, D> SerialInterface<'a, T, U, D>
 where
     U: uart::Instance,
-    T: esp32c3_hal::timer::Instance,
+    T: hal::timer::Instance,
     D: Direction,
 {
     fn fill_buffer(&mut self) {
@@ -120,7 +116,7 @@ where
 impl<'a, T, U, D> Reader for SerialInterface<'a, T, U, D>
 where
     U: uart::Instance,
-    T: esp32c3_hal::timer::Instance,
+    T: hal::timer::Instance,
     D: Direction,
 {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), DecodeError> {
@@ -177,18 +173,28 @@ impl<'a, U> SerialIo<'a, U> {
         }
     }
 
-    pub fn write_bytes(&mut self, words: &[u8]) -> Result<(), SerialInterfaceError>
+    pub fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), SerialInterfaceError>
     where
         U: uart::Instance,
     {
         match self {
             SerialIo::Jtag(jtag) => jtag
-                .write_bytes(words)
-                .map_err(|_| SerialInterfaceError::JtagError),
-            SerialIo::Uart(uart) => uart
-                .write_bytes(words)
-                .map_err(SerialInterfaceError::UartWriteError),
+                .write_bytes(bytes)
+                .map_err(|_| SerialInterfaceError::JtagError)?,
+            SerialIo::Uart(uart) => {
+                for byte in bytes {
+                    while let Err(e) = uart.write(*byte) {
+                        match e {
+                            nb::Error::Other(e) => {
+                                return Err(SerialInterfaceError::UartWriteError(e))
+                            }
+                            nb::Error::WouldBlock => { /* keep going! */ }
+                        }
+                    }
+                }
+            }
         }
+        Ok(())
     }
 
     // NOTE: flush is useless on these devices except for blocking until writing is finished.
@@ -257,7 +263,7 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
 
     pub fn serial_interface(&mut self) -> Option<&mut SerialInterface<'a, T, U, Upstream>>
     where
-        T: esp32c3_hal::timer::Instance,
+        T: hal::timer::Instance,
         U: uart::Instance,
     {
         self.poll();
@@ -269,7 +275,7 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
 
     pub fn poll(&mut self)
     where
-        T: esp32c3_hal::timer::Instance,
+        T: hal::timer::Instance,
         U: uart::Instance,
     {
         let state = core::mem::replace(&mut self.state, DetectorState::Unreachable);

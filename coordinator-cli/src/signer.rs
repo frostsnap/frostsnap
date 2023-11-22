@@ -1,7 +1,8 @@
 use frostsnap_comms::{CoordinatorSendBody, CoordinatorSendMessage};
 use frostsnap_coordinator::DeviceChange;
 use frostsnap_core::message::{
-    CoordinatorSend, CoordinatorToUserMessage, DeviceToCoordinatorMessage, SignTask,
+    CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToUserMessage,
+    DeviceToCoordinatorMessage, SignTask,
 };
 use frostsnap_core::schnorr_fun::frost::FrostKey;
 use frostsnap_core::schnorr_fun::fun::marker::Normal;
@@ -103,11 +104,25 @@ impl<'a, 'b> Signer<'a, 'b> {
                 .join("\n")
         );
 
-        let (init_sends, signature_request) = self
+        let mut sign_request_sends = self
             .coordinator
             .start_sign(message, still_need_to_sign.clone())?;
 
-        let mut outbox = VecDeque::from_iter(init_sends);
+        // need to handle sign request separately since it needs to be sent out only when certain devices are plugged in
+        let (i, sign_request) = sign_request_sends
+            .iter()
+            .enumerate()
+            .find_map(|(i, m)| match m {
+                CoordinatorSend::ToDevice(
+                    sign_req @ CoordinatorToDeviceMessage::RequestSign { .. },
+                ) => Some((i, sign_req.clone())),
+                _ => None,
+            })
+            .expect("must have a sign request");
+
+        sign_request_sends.remove(i);
+
+        let mut outbox = VecDeque::from_iter(sign_request_sends);
         let mut signatures = None;
         let finished_signatures = loop {
             signatures = signatures.or_else(|| {
@@ -196,7 +211,7 @@ impl<'a, 'b> Signer<'a, 'b> {
                 target_destinations: frostsnap_comms::Destination::Particular(std::mem::take(
                     &mut asking_to_sign,
                 )),
-                message_body: CoordinatorSendBody::Core(signature_request.clone()),
+                message_body: CoordinatorSendBody::Core(sign_request.clone()),
             });
         };
 

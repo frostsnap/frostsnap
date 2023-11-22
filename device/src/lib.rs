@@ -3,7 +3,6 @@
 #[macro_use]
 extern crate alloc;
 
-pub mod buttons;
 pub mod device_config;
 pub mod esp32_run;
 pub mod io;

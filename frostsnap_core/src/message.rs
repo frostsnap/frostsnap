@@ -1,4 +1,5 @@
 use crate::encrypted_share::EncryptedShare;
+use crate::xpub::TweakableKey;
 use crate::CoordinatorFrostKeyState;
 use crate::Gist;
 use crate::KeyId;
@@ -14,6 +15,8 @@ use schnorr_fun::fun::marker::Zero;
 use schnorr_fun::fun::Point;
 use schnorr_fun::fun::Scalar;
 use schnorr_fun::musig::Nonce;
+use schnorr_fun::Message;
+use schnorr_fun::Schnorr;
 use schnorr_fun::Signature;
 
 use crate::DeviceId;
@@ -208,6 +211,18 @@ impl core::fmt::Display for SignTask {
 
 // The bytes which need to be signed
 impl SignTask {
+    pub fn verify<NG>(
+        &self,
+        schnorr: &Schnorr<sha2::Sha256, NG>,
+        root_public_key: Point,
+        signatures: &[Signature],
+    ) -> bool {
+        self.sign_items()
+            .iter()
+            .enumerate()
+            .all(|(i, item)| item.verify(schnorr, root_public_key, &signatures[i]))
+    }
+
     pub fn sign_items(&self) -> Vec<SignItem> {
         match self {
             SignTask::Plain(message) => vec![SignItem {
@@ -262,4 +277,43 @@ pub struct SignItem {
     pub message: Vec<u8>,
     pub tap_tweak: bool,
     pub bip32_path: Vec<u32>,
+}
+
+impl SignItem {
+    pub fn derive_key<K: TweakableKey>(&self, root_key: &K) -> K::XOnly {
+        let derived_key = {
+            let mut xpub = crate::xpub::Xpub::new(root_key.clone());
+            xpub.derive_bip32(&self.bip32_path);
+            xpub.into_key()
+        };
+
+        if self.tap_tweak {
+            let tweak = bitcoin::util::taproot::TapTweakHash::from_key_and_tweak(
+                derived_key.to_libsecp_xonly(),
+                None,
+            )
+            .to_scalar();
+            derived_key.into_xonly_with_tweak(
+                Scalar::<Public, _>::from_bytes_mod_order(tweak.to_be_bytes())
+                    .non_zero()
+                    .expect("computationally unreachable"),
+            )
+        } else {
+            derived_key.into_xonly()
+        }
+    }
+
+    pub fn verify<NG>(
+        &self,
+        schnorr: &Schnorr<sha2::Sha256, NG>,
+        root_public_key: Point,
+        signature: &Signature,
+    ) -> bool {
+        // FIXME: This shouldn't be raw -- plain messages should do domain separation
+        let b_message = Message::<Public>::raw(&self.message[..]);
+
+        let derived_key = self.derive_key(&root_public_key);
+
+        schnorr.verify(&derived_key, b_message, signature)
+    }
 }

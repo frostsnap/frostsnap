@@ -1,12 +1,15 @@
 //! Tests for a malicious actions. A malicious coordinator, a malicious device or both.
 use frostsnap_core::message::{
-    CoordinatorSend, CoordinatorToDeviceMessage, DeviceSend, KeyGenProvideShares, SignTask,
+    CoordinatorToDeviceMessage, DeviceToUserMessage, KeyGenProvideShares, SignTask,
 };
-use frostsnap_core::{FrostCoordinator, FrostSigner};
+use frostsnap_core::{DeviceId, FrostCoordinator, FrostSigner};
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::frost;
 use std::collections::BTreeSet;
+
+use crate::common::{Env, Run, Send};
+mod common;
 
 /// Models a coordinator maliciously replacing a public polynomial contribution and providing a
 /// correct share under that malicious polynomial. The device that has had their share replaced
@@ -37,61 +40,75 @@ fn keygen_maliciously_replace_public_poly() {
     ))
 }
 
-/// Send the same signing request to a device twice, asking for nonce reuse.
+/// Send different signing requests with the same nonces twice.
 /// The device should reject signing the second request.
 #[test]
 fn nonce_reuse() {
     let threshold = 1;
-    let mut coordinator = FrostCoordinator::new();
+    let coordinator = FrostCoordinator::new();
     let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
 
-    let mut device = FrostSigner::new_random(&mut test_rng);
-    let device_ids = BTreeSet::from_iter([device.device_id()]);
+    let device = FrostSigner::new_random(&mut test_rng);
+    let device_id = device.device_id();
+    let devices = FromIterator::from_iter([(device.device_id(), device.clone())]);
+    let device_set = BTreeSet::from_iter([device.device_id()]);
+    let mut run = Run::new(coordinator, devices);
 
-    let do_keygen_message = coordinator.do_keygen(&device_ids, threshold).unwrap();
-    let do_keygen_response = device.recv_coordinator_message(do_keygen_message).unwrap();
+    let keygen_init = vec![run.coordinator.do_keygen(&device_set, threshold).unwrap()];
+    run.extend(keygen_init);
 
-    for message in do_keygen_response {
-        if let DeviceSend::ToCoordinator(message) = message {
-            let coordinator_responses = coordinator.recv_device_message(message).unwrap();
-
-            for response in coordinator_responses {
-                if let CoordinatorSend::ToDevice(message) = response {
-                    device.recv_coordinator_message(message).unwrap();
+    // just does enough to make progress
+    struct TestEnv;
+    impl Env for TestEnv {
+        fn user_react_to_device(
+            &mut self,
+            run: &mut Run,
+            from: DeviceId,
+            message: DeviceToUserMessage,
+        ) {
+            match message {
+                DeviceToUserMessage::CheckKeyGen { .. } => {
+                    let ack = run.device(from).keygen_ack().unwrap();
+                    run.extend_from_device(from, ack);
+                }
+                DeviceToUserMessage::SignatureRequest { .. } => {
+                    let sign_ack = run.device(from).sign_ack().unwrap();
+                    run.extend_from_device(from, sign_ack);
+                }
+                DeviceToUserMessage::Canceled { .. } => {
+                    panic!("no cancelling done");
                 }
             }
         }
     }
 
-    coordinator.keygen_ack(true).unwrap();
-    device.keygen_ack(true).unwrap();
+    run.run_until_finished(&mut TestEnv);
+    let task1 = SignTask::Plain(b"utxo.club!".to_vec());
+    let sign_init = run.coordinator.start_sign(task1, device_set).unwrap();
+    run.extend(sign_init);
+    run.run_until_finished(&mut TestEnv);
 
-    let (_coordinator_sends, sign_request) = coordinator
-        .start_sign(SignTask::Plain(b"utxo.club!".to_vec()), device_ids.clone())
+    let nonces = run
+        .transcript
+        .iter()
+        .find_map(|m| match m {
+            Send::CoordinatorToDevice(CoordinatorToDeviceMessage::RequestSign {
+                nonces, ..
+            }) => Some(nonces),
+            _ => None,
+        })
         .unwrap();
-
-    let _device_responses = device
-        .recv_coordinator_message(sign_request.clone())
-        .unwrap();
-
-    let _device_sends = device.sign_ack(true).unwrap();
 
     // Receive a new sign request with the same nonces as the previous session
-    let new_sign_request = match sign_request {
-        CoordinatorToDeviceMessage::RequestSign { nonces, .. } => {
-            CoordinatorToDeviceMessage::RequestSign {
-                nonces,
-                sign_task: SignTask::Plain(
-                    b"we lost track of first FROST txn on bitcoin mainnet @ bushbash 2022".to_vec(),
-                ),
-            }
-        }
-        _ => {
-            panic!("unreachable");
-        }
+    let new_sign_request = CoordinatorToDeviceMessage::RequestSign {
+        nonces: nonces.clone(),
+        sign_task: SignTask::Plain(
+            b"we lost track of first FROST txn on bitcoin mainnet @ bushbash 2022".to_vec(),
+        ),
     };
-
-    let sign_request_result = device.recv_coordinator_message(new_sign_request);
+    let sign_request_result = run
+        .device(device_id)
+        .recv_coordinator_message(new_sign_request);
 
     assert!(matches!(
         sign_request_result,
