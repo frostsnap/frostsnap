@@ -120,9 +120,9 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
   void initState() {
     super.initState();
     confirmSessionHashPressed = Completer();
-    final deviceRemoved = globalDeviceList.subscribe().firstWhere((event) {
-      return event.kind == DeviceListChangeKind.removed &&
-          widget.devices.contains(event.id);
+    final deviceRemoved = deviceListChangeStream.firstWhere((change) {
+      return change.kind == DeviceListChangeKind.Removed &&
+          widget.devices.contains(change.device.id);
     }).then((_) {
       if (mounted) {
         Navigator.pop(context);
@@ -208,7 +208,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                 Expanded(child: DeviceListContainer(
                     child: DeviceListWithIcons(iconAssigner: (context, id) {
                   if (widget.devices.contains(id)) {
-                    final icon;
+                    final Widget icon;
                     if (gotShares.contains(id)) {
                       icon = const Icon(Icons.check,
                           key: ValueKey('finished'), color: Colors.green);
@@ -239,7 +239,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
               key: const Key("dialog-device-list"),
               iconAssigner: (context, id) {
                 if (widget.devices.contains(id)) {
-                  final icon;
+                  final Widget icon;
                   if (acks.contains(id)) {
                     icon = const Icon(Icons.check,
                         key: ValueKey('finished'), color: Colors.green);
@@ -304,8 +304,8 @@ class KeyGenDeviceList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final button = StreamBuilder(
-        initialData: globalDeviceList.state,
-        stream: globalDeviceList.subscribe().map((event) => event.state),
+        initialData: api.deviceListState(),
+        stream: deviceListStateStream,
         builder: (context, snapshot) {
           if (snapshot.hasData) {
             final deviceListState = snapshot.data!;
@@ -333,29 +333,29 @@ class KeyGenDeviceList extends StatelessWidget {
     ]);
   }
 
-  Widget _buildDevice(BuildContext context, DeviceId id, String? label,
+  Widget _buildDevice(BuildContext context, Device device,
       Orientation orientation, Animation<double> animation) {
     Widget child;
-    if (label == null) {
+    if (device.name == null) {
       child = ElevatedButton(
           onPressed: () {
-            api.updateNamePreview(id: id, name: "");
+            api.updateNamePreview(id: device.id, name: "");
             Navigator.push(context,
                 MaterialPageRoute(builder: (deviceSetupContex) {
-              final completeWhen =
-                  globalDeviceList.subscribe().firstWhere((event) {
-                return event.kind == DeviceListChangeKind.named &&
-                    deviceIdEquals(id, event.id);
-              }).whenComplete(() => Navigator.pop(deviceSetupContex));
+              final completeWhen = deviceListChangeStream
+                  .firstWhere((change) =>
+                      change.kind == DeviceListChangeKind.Named &&
+                      deviceIdEquals(device.id, change.device.id))
+                  .whenComplete(() => Navigator.pop(deviceSetupContex));
               return DeviceSetup(
-                deviceId: id,
+                deviceId: device.id,
                 popInvoked: () async {
                   // This happens when we click back button
-                  await api.sendCancel(id: id);
+                  await api.sendCancel(id: device.id);
                   return true;
                 },
                 onSubmitted: (value) async {
-                  api.finishNaming(id: id, name: value);
+                  api.finishNaming(id: device.id, name: value);
                   await showDeviceActionDialog(
                       context: deviceSetupContex,
                       title: const Text("Confirm name"),
@@ -363,7 +363,7 @@ class KeyGenDeviceList extends StatelessWidget {
                         Text("Confirm name '$value' on device"),
                         Divider(),
                         DeviceListWithIcons(iconAssigner: (context, deviceId) {
-                          if (deviceId == id) {
+                          if (deviceId == device.id) {
                             final label = LabeledDeviceText("'$value'?");
                             final icon = const Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -380,18 +380,18 @@ class KeyGenDeviceList extends StatelessWidget {
                       ]),
                       complete: completeWhen,
                       onCancel: () async {
-                        await api.sendCancel(id: id);
+                        await api.sendCancel(id: device.id);
                       });
                 },
                 onChanged: (value) async {
-                  await api.updateNamePreview(id: id, name: value);
+                  await api.updateNamePreview(id: device.id, name: value);
                 },
               );
             }));
           },
           child: const Text("NEW DEVICE"));
     } else {
-      child = LabeledDeviceText(label);
+      child = LabeledDeviceText(device.name!);
     }
 
     return DeviceBoxContainer(

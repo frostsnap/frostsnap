@@ -6,12 +6,11 @@ import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/serialport.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
-typedef RemovedDeviceBuilder = Widget Function(BuildContext context,
-    DeviceId id, String? label, Animation<double> animation);
+typedef RemovedDeviceBuilder = Widget Function(
+    BuildContext context, Device device, Animation<double> animation);
 
-typedef DeviceBuilder = Widget Function(BuildContext context, DeviceId id,
-    String? label, Orientation orientation, Animation<double> animation);
-typedef OnDeviceChange = Function(DeviceChange change);
+typedef DeviceBuilder = Widget Function(BuildContext context, Device device,
+    Orientation orientation, Animation<double> animation);
 
 class DeviceListWidget extends StatefulWidget {
   final DeviceBuilder deviceBuilder;
@@ -32,37 +31,29 @@ class DeviceListWidgetState extends State<DeviceListWidget>
   @override
   void initState() {
     super.initState();
-
     WidgetsBinding.instance.addObserver(this);
-
-    _subscription = globalDeviceList.subscribe().listen((event) async {
-      switch (event.kind) {
-        case DeviceListChangeKind.added:
+    _subscription = deviceListChangeStream.listen((change) async {
+      switch (change.kind) {
+        case DeviceListChangeKind.Added:
           {
-            deviceListKey.currentState!.insertItem(event.index,
+            deviceListKey.currentState!.insertItem(change.index,
                 duration: const Duration(milliseconds: 800));
           }
-        case DeviceListChangeKind.removed:
+        case DeviceListChangeKind.Removed:
           {
-            deviceListKey.currentState!.removeItem(event.index,
+            deviceListKey.currentState!.removeItem(change.index,
                 (BuildContext context, Animation<double> animation) {
-              return widget.deviceBuilder(context, event.id, event.name,
+              return widget.deviceBuilder(context, change.device,
                   effectiveOrientation(context), animation);
             });
           }
-        case DeviceListChangeKind.named:
+        case DeviceListChangeKind.Named:
           {
             /* do nothing*/
           }
       }
       setState(() => {});
     });
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // So we can react to orientation changes
   }
 
   @override
@@ -88,12 +79,10 @@ class DeviceListWidgetState extends State<DeviceListWidget>
         shrinkWrap: true,
         key: deviceListKey,
         itemBuilder: (context, index, animation) {
-          var id = globalDeviceList[index];
-          var label = globalDeviceList.state.names[id];
-          return widget.deviceBuilder(
-              context, id, label, orientation, animation);
+          final device = api.deviceAtIndex(index: index)!;
+          return widget.deviceBuilder(context, device, orientation, animation);
         },
-        initialItemCount: globalDeviceList.state.devices.length,
+        initialItemCount: api.deviceListState().devices.length,
         scrollDirection: orientation == Orientation.landscape
             ? Axis.horizontal
             : Axis.vertical);
@@ -115,7 +104,6 @@ class DeviceBoxContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isPortrait = orientation == Orientation.portrait;
     final animationBegin = orientation == Orientation.landscape
         ? const Offset(8.0, 0.0)
         : const Offset(0.0, 8.0);
@@ -184,10 +172,10 @@ class DeviceListWithIcons extends StatelessWidget {
     );
   }
 
-  Widget _builder(BuildContext context, DeviceId id, String? label,
-      Orientation orientation, Animation<double> animation) {
-    final (overrideLabel, icon) = iconAssigner.call(context, id);
-    final _label = overrideLabel ?? LabeledDeviceText(label ?? '-');
+  Widget _builder(BuildContext context, Device device, Orientation orientation,
+      Animation<double> animation) {
+    final (overrideLabel, icon) = iconAssigner.call(context, device.id);
+    final _label = overrideLabel ?? LabeledDeviceText(device.name ?? '-');
     return DeviceBoxContainer(
         animation: animation,
         orientation: orientation,

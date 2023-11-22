@@ -21,8 +21,8 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
 // Section: api2wire
 
   @protected
-  Object api2wire_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(
-      FrostsnapCoreSchnorrFunFrostFrostKeyNormal raw) {
+  Object api2wire_FrostsnapCoreCoordinatorFrostKeyState(
+      FrostsnapCoreCoordinatorFrostKeyState raw) {
     return raw.shareOrMove();
   }
 
@@ -57,8 +57,18 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
+  List<dynamic> api2wire_box_autoadd_device_list_state(DeviceListState raw) {
+    return api2wire_device_list_state(raw);
+  }
+
+  @protected
   List<dynamic> api2wire_box_autoadd_frost_key(FrostKey raw) {
     return api2wire_frost_key(raw);
+  }
+
+  @protected
+  List<dynamic> api2wire_box_autoadd_key_id(KeyId raw) {
+    return api2wire_key_id(raw);
   }
 
   @protected
@@ -82,13 +92,33 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
+  List<dynamic> api2wire_device(Device raw) {
+    return [api2wire_opt_String(raw.name), api2wire_device_id(raw.id)];
+  }
+
+  @protected
   List<dynamic> api2wire_device_id(DeviceId raw) {
     return [api2wire_u8_array_33(raw.field0)];
   }
 
   @protected
+  List<dynamic> api2wire_device_list_state(DeviceListState raw) {
+    return [api2wire_list_device(raw.devices)];
+  }
+
+  @protected
   List<dynamic> api2wire_frost_key(FrostKey raw) {
-    return [api2wire_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(raw.field0)];
+    return [api2wire_FrostsnapCoreCoordinatorFrostKeyState(raw.field0)];
+  }
+
+  @protected
+  List<dynamic> api2wire_key_id(KeyId raw) {
+    return [api2wire_u8_array_32(raw.field0)];
+  }
+
+  @protected
+  List<dynamic> api2wire_list_device(List<Device> raw) {
+    return raw.map(api2wire_device).toList();
   }
 
   @protected
@@ -148,6 +178,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
+  Uint8List api2wire_u8_array_32(U8Array32 raw) {
+    return Uint8List.fromList(raw);
+  }
+
+  @protected
   Uint8List api2wire_u8_array_33(U8Array33 raw) {
     return Uint8List.fromList(raw);
   }
@@ -160,12 +195,12 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
 // Section: finalizer
 
   late final Finalizer<PlatformPointer>
-      _FrostsnapCoreSchnorrFunFrostFrostKeyNormalFinalizer =
+      _FrostsnapCoreCoordinatorFrostKeyStateFinalizer =
       Finalizer<PlatformPointer>(
-          inner.drop_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal);
+          inner.drop_opaque_FrostsnapCoreCoordinatorFrostKeyState);
   Finalizer<PlatformPointer>
-      get FrostsnapCoreSchnorrFunFrostFrostKeyNormalFinalizer =>
-          _FrostsnapCoreSchnorrFunFrostFrostKeyNormalFinalizer;
+      get FrostsnapCoreCoordinatorFrostKeyStateFinalizer =>
+          _FrostsnapCoreCoordinatorFrostKeyStateFinalizer;
   late final Finalizer<PlatformPointer> _PortBytesToReadSenderFinalizer =
       Finalizer<PlatformPointer>(inner.drop_opaque_PortBytesToReadSender);
   Finalizer<PlatformPointer> get PortBytesToReadSenderFinalizer =>
@@ -230,6 +265,12 @@ class NativeWasmModule implements WasmModule {
 
   external dynamic /* List<dynamic> */ wire_key_state();
 
+  external dynamic /* List<dynamic>? */ wire_get_key(List<dynamic> key_id);
+
+  external dynamic /* List<dynamic>? */ wire_device_at_index(int index);
+
+  external dynamic /* List<dynamic> */ wire_device_list_state();
+
   external dynamic /* void */ wire_generate_new_key(
       NativePortType port_, int threshold, List<dynamic> devices);
 
@@ -240,6 +281,9 @@ class NativeWasmModule implements WasmModule {
       List<dynamic> that);
 
   external dynamic /* String */ wire_name__method__FrostKey(List<dynamic> that);
+
+  external dynamic /* List<dynamic> */ wire_devices__method__FrostKey(
+      List<dynamic> that);
 
   external dynamic /* void */ wire_satisfy__method__PortOpen(
       NativePortType port_, List<dynamic> that, String? err);
@@ -253,11 +297,14 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* void */ wire_satisfy__method__PortBytesToRead(
       NativePortType port_, List<dynamic> that, int bytes_to_read);
 
-  external dynamic /*  */
-      drop_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(ptr);
+  external dynamic /* List<dynamic> */
+      wire_named_devices__method__DeviceListState(List<dynamic> that);
+
+  external dynamic /*  */ drop_opaque_FrostsnapCoreCoordinatorFrostKeyState(
+      ptr);
 
   external int /* *const c_void */
-      share_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(ptr);
+      share_opaque_FrostsnapCoreCoordinatorFrostKeyState(ptr);
 
   external dynamic /*  */ drop_opaque_PortBytesToReadSender(ptr);
 
@@ -326,6 +373,15 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
 
   dynamic /* List<dynamic> */ wire_key_state() => wasmModule.wire_key_state();
 
+  dynamic /* List<dynamic>? */ wire_get_key(List<dynamic> key_id) =>
+      wasmModule.wire_get_key(key_id);
+
+  dynamic /* List<dynamic>? */ wire_device_at_index(int index) =>
+      wasmModule.wire_device_at_index(index);
+
+  dynamic /* List<dynamic> */ wire_device_list_state() =>
+      wasmModule.wire_device_list_state();
+
   void wire_generate_new_key(
           NativePortType port_, int threshold, List<dynamic> devices) =>
       wasmModule.wire_generate_new_key(port_, threshold, devices);
@@ -338,6 +394,10 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
 
   dynamic /* String */ wire_name__method__FrostKey(List<dynamic> that) =>
       wasmModule.wire_name__method__FrostKey(that);
+
+  dynamic /* List<dynamic> */ wire_devices__method__FrostKey(
+          List<dynamic> that) =>
+      wasmModule.wire_devices__method__FrostKey(that);
 
   void wire_satisfy__method__PortOpen(
           NativePortType port_, List<dynamic> that, String? err) =>
@@ -356,12 +416,16 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
       wasmModule.wire_satisfy__method__PortBytesToRead(
           port_, that, bytes_to_read);
 
-  dynamic /*  */ drop_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(ptr) =>
-      wasmModule.drop_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(ptr);
+  dynamic /* List<dynamic> */ wire_named_devices__method__DeviceListState(
+          List<dynamic> that) =>
+      wasmModule.wire_named_devices__method__DeviceListState(that);
 
-  int /* *const c_void */
-      share_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(ptr) => wasmModule
-          .share_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(ptr);
+  dynamic /*  */ drop_opaque_FrostsnapCoreCoordinatorFrostKeyState(ptr) =>
+      wasmModule.drop_opaque_FrostsnapCoreCoordinatorFrostKeyState(ptr);
+
+  int /* *const c_void */ share_opaque_FrostsnapCoreCoordinatorFrostKeyState(
+          ptr) =>
+      wasmModule.share_opaque_FrostsnapCoreCoordinatorFrostKeyState(ptr);
 
   dynamic /*  */ drop_opaque_PortBytesToReadSender(ptr) =>
       wasmModule.drop_opaque_PortBytesToReadSender(ptr);

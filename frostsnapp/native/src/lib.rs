@@ -4,3 +4,4 @@ mod api;
 mod bridge_generated;
 mod coordinator;
 pub use coordinator::*;
+mod device_list;

@@ -10,7 +10,7 @@ use sha2::Digest;
 
 use crate::{impl_display_debug_serialize, impl_fromstr_deserialize};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub struct KeyId(pub [u8; 32]);
 
 impl_display_debug_serialize! {

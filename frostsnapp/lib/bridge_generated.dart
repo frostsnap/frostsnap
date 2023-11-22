@@ -37,10 +37,10 @@ class NativeImpl implements Native {
         argNames: [],
       );
 
-  Stream<List<DeviceChange>> subDeviceEvents({dynamic hint}) {
+  Stream<DeviceListUpdate> subDeviceEvents({dynamic hint}) {
     return _platform.executeStream(FlutterRustBridgeTask(
       callFfi: (port_) => _platform.inner.wire_sub_device_events(port_),
-      parseSuccessData: _wire2api_list_device_change,
+      parseSuccessData: _wire2api_device_list_update,
       parseErrorData: null,
       constMeta: kSubDeviceEventsConstMeta,
       argValues: [],
@@ -274,6 +274,59 @@ class NativeImpl implements Native {
         argNames: [],
       );
 
+  FrostKey? getKey({required KeyId keyId, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_key_id(keyId);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner.wire_get_key(arg0),
+      parseSuccessData: _wire2api_opt_box_autoadd_frost_key,
+      parseErrorData: null,
+      constMeta: kGetKeyConstMeta,
+      argValues: [keyId],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kGetKeyConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "get_key",
+        argNames: ["keyId"],
+      );
+
+  Device? deviceAtIndex({required int index, dynamic hint}) {
+    var arg0 = api2wire_usize(index);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner.wire_device_at_index(arg0),
+      parseSuccessData: _wire2api_opt_box_autoadd_device,
+      parseErrorData: null,
+      constMeta: kDeviceAtIndexConstMeta,
+      argValues: [index],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kDeviceAtIndexConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "device_at_index",
+        argNames: ["index"],
+      );
+
+  DeviceListState deviceListState({dynamic hint}) {
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner.wire_device_list_state(),
+      parseSuccessData: _wire2api_device_list_state,
+      parseErrorData: null,
+      constMeta: kDeviceListStateConstMeta,
+      argValues: [],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kDeviceListStateConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "device_list_state",
+        argNames: [],
+      );
+
   Stream<CoordinatorToUserKeyGenMessage> generateNewKey(
       {required int threshold, required List<DeviceId> devices, dynamic hint}) {
     var arg0 = api2wire_usize(threshold);
@@ -346,6 +399,24 @@ class NativeImpl implements Native {
   FlutterRustBridgeTaskConstMeta get kNameMethodFrostKeyConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
         debugName: "name__method__FrostKey",
+        argNames: ["that"],
+      );
+
+  List<DeviceId> devicesMethodFrostKey({required FrostKey that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_frost_key(that);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner.wire_devices__method__FrostKey(arg0),
+      parseSuccessData: _wire2api_list_device_id,
+      parseErrorData: null,
+      constMeta: kDevicesMethodFrostKeyConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kDevicesMethodFrostKeyConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "devices__method__FrostKey",
         argNames: ["that"],
       );
 
@@ -437,12 +508,33 @@ class NativeImpl implements Native {
         argNames: ["that", "bytesToRead"],
       );
 
-  DropFnType get dropOpaqueFrostsnapCoreSchnorrFunFrostFrostKeyNormal =>
-      _platform.inner.drop_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal;
-  ShareFnType get shareOpaqueFrostsnapCoreSchnorrFunFrostFrostKeyNormal =>
-      _platform.inner.share_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal;
-  OpaqueTypeFinalizer get FrostsnapCoreSchnorrFunFrostFrostKeyNormalFinalizer =>
-      _platform.FrostsnapCoreSchnorrFunFrostFrostKeyNormalFinalizer;
+  List<DeviceId> namedDevicesMethodDeviceListState(
+      {required DeviceListState that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_device_list_state(that);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () =>
+          _platform.inner.wire_named_devices__method__DeviceListState(arg0),
+      parseSuccessData: _wire2api_list_device_id,
+      parseErrorData: null,
+      constMeta: kNamedDevicesMethodDeviceListStateConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kNamedDevicesMethodDeviceListStateConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "named_devices__method__DeviceListState",
+            argNames: ["that"],
+          );
+
+  DropFnType get dropOpaqueFrostsnapCoreCoordinatorFrostKeyState =>
+      _platform.inner.drop_opaque_FrostsnapCoreCoordinatorFrostKeyState;
+  ShareFnType get shareOpaqueFrostsnapCoreCoordinatorFrostKeyState =>
+      _platform.inner.share_opaque_FrostsnapCoreCoordinatorFrostKeyState;
+  OpaqueTypeFinalizer get FrostsnapCoreCoordinatorFrostKeyStateFinalizer =>
+      _platform.FrostsnapCoreCoordinatorFrostKeyStateFinalizer;
 
   DropFnType get dropOpaquePortBytesToReadSender =>
       _platform.inner.drop_opaque_PortBytesToReadSender;
@@ -477,10 +569,9 @@ class NativeImpl implements Native {
   }
 // Section: wire2api
 
-  FrostsnapCoreSchnorrFunFrostFrostKeyNormal
-      _wire2api_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(dynamic raw) {
-    return FrostsnapCoreSchnorrFunFrostFrostKeyNormal.fromRaw(
-        raw[0], raw[1], this);
+  FrostsnapCoreCoordinatorFrostKeyState
+      _wire2api_FrostsnapCoreCoordinatorFrostKeyState(dynamic raw) {
+    return FrostsnapCoreCoordinatorFrostKeyState.fromRaw(raw[0], raw[1], this);
   }
 
   PortBytesToReadSender _wire2api_PortBytesToReadSender(dynamic raw) {
@@ -503,8 +594,16 @@ class NativeImpl implements Native {
     return raw as String;
   }
 
+  Device _wire2api_box_autoadd_device(dynamic raw) {
+    return _wire2api_device(raw);
+  }
+
   DeviceId _wire2api_box_autoadd_device_id(dynamic raw) {
     return _wire2api_device_id(raw);
+  }
+
+  FrostKey _wire2api_box_autoadd_frost_key(dynamic raw) {
+    return _wire2api_frost_key(raw);
   }
 
   KeyId _wire2api_box_autoadd_key_id(dynamic raw) {
@@ -551,34 +650,14 @@ class NativeImpl implements Native {
     }
   }
 
-  DeviceChange _wire2api_device_change(dynamic raw) {
-    switch (raw[0]) {
-      case 0:
-        return DeviceChange_Added(
-          id: _wire2api_box_autoadd_device_id(raw[1]),
-        );
-      case 1:
-        return DeviceChange_Renamed(
-          id: _wire2api_box_autoadd_device_id(raw[1]),
-          oldName: _wire2api_String(raw[2]),
-          newName: _wire2api_String(raw[3]),
-        );
-      case 2:
-        return DeviceChange_NeedsName(
-          id: _wire2api_box_autoadd_device_id(raw[1]),
-        );
-      case 3:
-        return DeviceChange_Registered(
-          id: _wire2api_box_autoadd_device_id(raw[1]),
-          name: _wire2api_String(raw[2]),
-        );
-      case 4:
-        return DeviceChange_Disconnected(
-          id: _wire2api_box_autoadd_device_id(raw[1]),
-        );
-      default:
-        throw Exception("unreachable");
-    }
+  Device _wire2api_device(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return Device(
+      name: _wire2api_opt_String(arr[0]),
+      id: _wire2api_device_id(arr[1]),
+    );
   }
 
   DeviceId _wire2api_device_id(dynamic raw) {
@@ -590,14 +669,53 @@ class NativeImpl implements Native {
     );
   }
 
+  DeviceListChange _wire2api_device_list_change(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return DeviceListChange(
+      kind: _wire2api_device_list_change_kind(arr[0]),
+      index: _wire2api_usize(arr[1]),
+      device: _wire2api_device(arr[2]),
+    );
+  }
+
+  DeviceListChangeKind _wire2api_device_list_change_kind(dynamic raw) {
+    return DeviceListChangeKind.values[raw as int];
+  }
+
+  DeviceListState _wire2api_device_list_state(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return DeviceListState(
+      bridge: this,
+      devices: _wire2api_list_device(arr[0]),
+    );
+  }
+
+  DeviceListUpdate _wire2api_device_list_update(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return DeviceListUpdate(
+      changes: _wire2api_list_device_list_change(arr[0]),
+      state: _wire2api_device_list_state(arr[1]),
+    );
+  }
+
   FrostKey _wire2api_frost_key(dynamic raw) {
     final arr = raw as List<dynamic>;
     if (arr.length != 1)
       throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
     return FrostKey(
       bridge: this,
-      field0: _wire2api_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(arr[0]),
+      field0: _wire2api_FrostsnapCoreCoordinatorFrostKeyState(arr[0]),
     );
+  }
+
+  int _wire2api_i32(dynamic raw) {
+    return raw as int;
   }
 
   KeyId _wire2api_key_id(dynamic raw) {
@@ -618,16 +736,32 @@ class NativeImpl implements Native {
     );
   }
 
-  List<DeviceChange> _wire2api_list_device_change(dynamic raw) {
-    return (raw as List<dynamic>).map(_wire2api_device_change).toList();
+  List<Device> _wire2api_list_device(dynamic raw) {
+    return (raw as List<dynamic>).map(_wire2api_device).toList();
   }
 
   List<DeviceId> _wire2api_list_device_id(dynamic raw) {
     return (raw as List<dynamic>).map(_wire2api_device_id).toList();
   }
 
+  List<DeviceListChange> _wire2api_list_device_list_change(dynamic raw) {
+    return (raw as List<dynamic>).map(_wire2api_device_list_change).toList();
+  }
+
   List<FrostKey> _wire2api_list_frost_key(dynamic raw) {
     return (raw as List<dynamic>).map(_wire2api_frost_key).toList();
+  }
+
+  String? _wire2api_opt_String(dynamic raw) {
+    return raw == null ? null : _wire2api_String(raw);
+  }
+
+  Device? _wire2api_opt_box_autoadd_device(dynamic raw) {
+    return raw == null ? null : _wire2api_box_autoadd_device(raw);
+  }
+
+  FrostKey? _wire2api_opt_box_autoadd_frost_key(dynamic raw) {
+    return raw == null ? null : _wire2api_box_autoadd_frost_key(raw);
   }
 
   PortBytesToRead _wire2api_port_bytes_to_read(dynamic raw) {

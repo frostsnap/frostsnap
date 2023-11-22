@@ -554,6 +554,10 @@ impl UsbSerialManager {
     pub fn serial_impl_mut(&mut self) -> &mut dyn Serial {
         &mut *self.serial_impl
     }
+
+    pub fn devices_by_ports(&self) -> &HashMap<String, Vec<DeviceId>> {
+        &self.reverse_device_ports
+    }
 }
 
 #[derive(Debug)]

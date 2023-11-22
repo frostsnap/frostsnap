@@ -1,6 +1,7 @@
 pub use crate::coordinator::{
     PortBytesToReadSender, PortOpenSender, PortReadSender, PortWriteSender,
 };
+use crate::device_list::DeviceList;
 pub use crate::FfiCoordinator;
 use anyhow::anyhow;
 use flutter_rust_bridge::{frb, RustOpaque, StreamSink, SyncReturn};
@@ -17,9 +18,8 @@ use tracing::{event, Level as TLevel};
 
 lazy_static! {
     static ref PORT_EVENT_STREAM: RwLock<Option<StreamSink<PortEvent>>> = RwLock::default();
-    static ref DEVICE_EVENT_STREAM: RwLock<Option<StreamSink<Vec<DeviceChange>>>> =
-        RwLock::default();
-    static ref PENDING_DEVICE_EVENTS: Mutex<Vec<DeviceChange>> = Default::default();
+    static ref DEVICE_LIST: Mutex<(DeviceList, Option<StreamSink<DeviceListUpdate>>)> =
+        Default::default();
     static ref KEYGEN_STREAM: Mutex<Option<StreamSink<CoordinatorToUserKeyGenMessage>>> =
         Default::default();
     static ref COORDINATOR: FfiCoordinator = FfiCoordinator::new();
@@ -33,14 +33,14 @@ pub fn sub_port_events(event_stream: StreamSink<PortEvent>) {
     *v = Some(event_stream);
 }
 
-pub fn sub_device_events(stream: StreamSink<Vec<DeviceChange>>) {
-    {
-        let mut device_event_stream = DEVICE_EVENT_STREAM.write().unwrap();
-        if let Some(existing) = device_event_stream.replace(stream) {
-            existing.close();
-        }
+pub fn sub_device_events(new_stream: StreamSink<DeviceListUpdate>) {
+    let mut device_list_and_stream = DEVICE_LIST.lock().unwrap();
+    let (list, stream) = &mut *device_list_and_stream;
+    list.populate_from_port_devices(COORDINATOR.devices_by_ports(), COORDINATOR.device_names());
+
+    if let Some(old_stream) = stream.replace(new_stream) {
+        old_stream.close();
     }
-    emit_device_events(vec![]);
 }
 
 pub fn sub_key_events(stream: StreamSink<KeyState>) {
@@ -62,14 +62,24 @@ pub(crate) fn emit_event(event: PortEvent) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub(crate) fn emit_device_events(mut new_events: Vec<DeviceChange>) {
-    let mut events = PENDING_DEVICE_EVENTS.lock().unwrap();
-    events.append(&mut new_events);
-
-    if let Some(stream) = DEVICE_EVENT_STREAM.read().unwrap().as_ref() {
-        let events = std::mem::take(&mut *events);
-        stream.add(events);
+pub(crate) fn emit_device_events(new_events: Vec<DeviceChange>) {
+    let mut device_list_and_stream = DEVICE_LIST.lock().unwrap();
+    let (list, stream) = &mut *device_list_and_stream;
+    let list_events = list.consume_manager_event(new_events);
+    if let Some(stream) = stream {
+        if !list_events.is_empty() {
+            stream.add(DeviceListUpdate {
+                state: list.state(),
+                changes: list_events,
+            });
+        }
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct Device {
+    pub name: Option<String>,
+    pub id: DeviceId,
 }
 
 #[derive(Clone, Debug)]
@@ -78,19 +88,23 @@ pub struct KeyState {
 }
 
 #[derive(Clone, Debug)]
-pub struct FrostKey(pub RustOpaque<frostsnap_core::schnorr_fun::frost::FrostKey<Normal>>);
+pub struct FrostKey(pub(crate) RustOpaque<frostsnap_core::CoordinatorFrostKeyState>);
 
 impl FrostKey {
     pub fn threshold(&self) -> SyncReturn<usize> {
-        SyncReturn(self.0.threshold())
+        SyncReturn(self.0.frost_key().threshold())
     }
 
     pub fn id(&self) -> SyncReturn<KeyId> {
-        SyncReturn(self.0.key_id())
+        SyncReturn(self.0.frost_key().key_id())
     }
 
     pub fn name(&self) -> SyncReturn<String> {
         SyncReturn("KEY NAMES NOT IMPLEMENTED".into())
+    }
+
+    pub fn devices(&self) -> SyncReturn<Vec<DeviceId>> {
+        SyncReturn(self.0.devices().collect())
     }
 }
 
@@ -113,29 +127,6 @@ pub enum PortEvent {
     Write { request: PortWrite },
     Read { request: PortRead },
     BytesToRead { request: PortBytesToRead },
-}
-
-#[frb(mirror(DeviceChange))]
-#[derive(Debug, Clone)]
-pub enum _DeviceChange {
-    Added {
-        id: DeviceId,
-    },
-    Renamed {
-        id: DeviceId,
-        old_name: String,
-        new_name: String,
-    },
-    NeedsName {
-        id: DeviceId,
-    },
-    Registered {
-        id: DeviceId,
-        name: String,
-    },
-    Disconnected {
-        id: DeviceId,
-    },
 }
 
 #[derive(Debug)]
@@ -281,6 +272,23 @@ pub fn key_state() -> SyncReturn<KeyState> {
     })
 }
 
+pub fn get_key(key_id: KeyId) -> SyncReturn<Option<FrostKey>> {
+    SyncReturn(
+        COORDINATOR
+            .frost_keys()
+            .into_iter()
+            .find(|frost_key| frost_key.id().0 == key_id),
+    )
+}
+
+pub fn device_at_index(index: usize) -> SyncReturn<Option<Device>> {
+    SyncReturn(DEVICE_LIST.lock().unwrap().0.device_at_index(index))
+}
+
+pub fn device_list_state() -> SyncReturn<DeviceListState> {
+    SyncReturn(DEVICE_LIST.lock().unwrap().0.state())
+}
+
 pub type SessionHash = [u8; 32];
 
 #[derive(Clone, Debug)]
@@ -321,4 +329,43 @@ pub fn generate_new_key(
     let mut global_keygen_stream = KEYGEN_STREAM.lock().unwrap();
     *global_keygen_stream = Some(event_stream);
     COORDINATOR.generate_new_key(devices.into_iter().collect(), threshold);
+}
+
+#[derive(Clone, Debug)]
+pub enum DeviceListChangeKind {
+    Added,
+    Removed,
+    Named,
+}
+
+#[derive(Clone, Debug)]
+pub struct DeviceListChange {
+    pub kind: DeviceListChangeKind,
+    pub index: usize,
+    pub device: Device,
+}
+
+#[derive(Clone, Debug)]
+pub struct DeviceListUpdate {
+    pub changes: Vec<DeviceListChange>,
+    pub state: DeviceListState,
+}
+
+#[derive(Clone, Debug)]
+pub struct DeviceListState {
+    pub devices: Vec<Device>,
+}
+
+impl DeviceListState {
+    pub fn named_devices(&self) -> SyncReturn<Vec<DeviceId>> {
+        SyncReturn(
+            self.devices
+                .iter()
+                .filter_map(|device| {
+                    let _name = device.name.as_ref()?;
+                    Some(device.id)
+                })
+                .collect(),
+        )
+    }
 }

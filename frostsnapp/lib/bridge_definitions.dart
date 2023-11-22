@@ -19,7 +19,7 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kSubPortEventsConstMeta;
 
-  Stream<List<DeviceChange>> subDeviceEvents({dynamic hint});
+  Stream<DeviceListUpdate> subDeviceEvents({dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kSubDeviceEventsConstMeta;
 
@@ -74,6 +74,18 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kKeyStateConstMeta;
 
+  FrostKey? getKey({required KeyId keyId, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kGetKeyConstMeta;
+
+  Device? deviceAtIndex({required int index, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kDeviceAtIndexConstMeta;
+
+  DeviceListState deviceListState({dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kDeviceListStateConstMeta;
+
   Stream<CoordinatorToUserKeyGenMessage> generateNewKey(
       {required int threshold, required List<DeviceId> devices, dynamic hint});
 
@@ -90,6 +102,10 @@ abstract class Native {
   String nameMethodFrostKey({required FrostKey that, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kNameMethodFrostKeyConstMeta;
+
+  List<DeviceId> devicesMethodFrostKey({required FrostKey that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kDevicesMethodFrostKeyConstMeta;
 
   Future<void> satisfyMethodPortOpen(
       {required PortOpen that, String? err, dynamic hint});
@@ -114,9 +130,15 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kSatisfyMethodPortBytesToReadConstMeta;
 
-  DropFnType get dropOpaqueFrostsnapCoreSchnorrFunFrostFrostKeyNormal;
-  ShareFnType get shareOpaqueFrostsnapCoreSchnorrFunFrostFrostKeyNormal;
-  OpaqueTypeFinalizer get FrostsnapCoreSchnorrFunFrostFrostKeyNormalFinalizer;
+  List<DeviceId> namedDevicesMethodDeviceListState(
+      {required DeviceListState that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta
+      get kNamedDevicesMethodDeviceListStateConstMeta;
+
+  DropFnType get dropOpaqueFrostsnapCoreCoordinatorFrostKeyState;
+  ShareFnType get shareOpaqueFrostsnapCoreCoordinatorFrostKeyState;
+  OpaqueTypeFinalizer get FrostsnapCoreCoordinatorFrostKeyStateFinalizer;
 
   DropFnType get dropOpaquePortBytesToReadSender;
   ShareFnType get shareOpaquePortBytesToReadSender;
@@ -136,22 +158,21 @@ abstract class Native {
 }
 
 @sealed
-class FrostsnapCoreSchnorrFunFrostFrostKeyNormal extends FrbOpaque {
+class FrostsnapCoreCoordinatorFrostKeyState extends FrbOpaque {
   final Native bridge;
-  FrostsnapCoreSchnorrFunFrostFrostKeyNormal.fromRaw(
-      int ptr, int size, this.bridge)
+  FrostsnapCoreCoordinatorFrostKeyState.fromRaw(int ptr, int size, this.bridge)
       : super.unsafe(ptr, size);
   @override
   DropFnType get dropFn =>
-      bridge.dropOpaqueFrostsnapCoreSchnorrFunFrostFrostKeyNormal;
+      bridge.dropOpaqueFrostsnapCoreCoordinatorFrostKeyState;
 
   @override
   ShareFnType get shareFn =>
-      bridge.shareOpaqueFrostsnapCoreSchnorrFunFrostFrostKeyNormal;
+      bridge.shareOpaqueFrostsnapCoreCoordinatorFrostKeyState;
 
   @override
   OpaqueTypeFinalizer get staticFinalizer =>
-      bridge.FrostsnapCoreSchnorrFunFrostFrostKeyNormalFinalizer;
+      bridge.FrostsnapCoreCoordinatorFrostKeyStateFinalizer;
 }
 
 @sealed
@@ -232,26 +253,14 @@ sealed class CoordinatorToUserKeyGenMessage
   }) = CoordinatorToUserKeyGenMessage_FinishedKey;
 }
 
-@freezed
-sealed class DeviceChange with _$DeviceChange {
-  const factory DeviceChange.added({
-    required DeviceId id,
-  }) = DeviceChange_Added;
-  const factory DeviceChange.renamed({
-    required DeviceId id,
-    required String oldName,
-    required String newName,
-  }) = DeviceChange_Renamed;
-  const factory DeviceChange.needsName({
-    required DeviceId id,
-  }) = DeviceChange_NeedsName;
-  const factory DeviceChange.registered({
-    required DeviceId id,
-    required String name,
-  }) = DeviceChange_Registered;
-  const factory DeviceChange.disconnected({
-    required DeviceId id,
-  }) = DeviceChange_Disconnected;
+class Device {
+  final String? name;
+  final DeviceId id;
+
+  const Device({
+    this.name,
+    required this.id,
+  });
 }
 
 class DeviceId {
@@ -262,9 +271,52 @@ class DeviceId {
   });
 }
 
+class DeviceListChange {
+  final DeviceListChangeKind kind;
+  final int index;
+  final Device device;
+
+  const DeviceListChange({
+    required this.kind,
+    required this.index,
+    required this.device,
+  });
+}
+
+enum DeviceListChangeKind {
+  Added,
+  Removed,
+  Named,
+}
+
+class DeviceListState {
+  final Native bridge;
+  final List<Device> devices;
+
+  const DeviceListState({
+    required this.bridge,
+    required this.devices,
+  });
+
+  List<DeviceId> namedDevices({dynamic hint}) =>
+      bridge.namedDevicesMethodDeviceListState(
+        that: this,
+      );
+}
+
+class DeviceListUpdate {
+  final List<DeviceListChange> changes;
+  final DeviceListState state;
+
+  const DeviceListUpdate({
+    required this.changes,
+    required this.state,
+  });
+}
+
 class FrostKey {
   final Native bridge;
-  final FrostsnapCoreSchnorrFunFrostFrostKeyNormal field0;
+  final FrostsnapCoreCoordinatorFrostKeyState field0;
 
   const FrostKey({
     required this.bridge,
@@ -280,6 +332,10 @@ class FrostKey {
       );
 
   String name({dynamic hint}) => bridge.nameMethodFrostKey(
+        that: this,
+      );
+
+  List<DeviceId> devices({dynamic hint}) => bridge.devicesMethodFrostKey(
         that: this,
       );
 }

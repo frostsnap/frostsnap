@@ -46,7 +46,7 @@ fn wire_sub_device_events_impl(port_: MessagePort) {
         move || {
             move |task_callback| {
                 Result::<_, ()>::Ok(sub_device_events(
-                    task_callback.stream_sink::<_, Vec<mirror_DeviceChange>>(),
+                    task_callback.stream_sink::<_, DeviceListUpdate>(),
                 ))
             }
         },
@@ -207,6 +207,42 @@ fn wire_key_state_impl() -> support::WireSyncReturn {
         move || Result::<_, ()>::Ok(key_state()),
     )
 }
+fn wire_get_key_impl(key_id: impl Wire2Api<KeyId> + UnwindSafe) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "get_key",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_key_id = key_id.wire2api();
+            Result::<_, ()>::Ok(get_key(api_key_id))
+        },
+    )
+}
+fn wire_device_at_index_impl(index: impl Wire2Api<usize> + UnwindSafe) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "device_at_index",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_index = index.wire2api();
+            Result::<_, ()>::Ok(device_at_index(api_index))
+        },
+    )
+}
+fn wire_device_list_state_impl() -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "device_list_state",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || Result::<_, ()>::Ok(device_list_state()),
+    )
+}
 fn wire_generate_new_key_impl(
     port_: MessagePort,
     threshold: impl Wire2Api<usize> + UnwindSafe,
@@ -273,6 +309,21 @@ fn wire_name__method__FrostKey_impl(
         move || {
             let api_that = that.wire2api();
             Result::<_, ()>::Ok(FrostKey::name(&api_that))
+        },
+    )
+}
+fn wire_devices__method__FrostKey_impl(
+    that: impl Wire2Api<FrostKey> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "devices__method__FrostKey",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            Result::<_, ()>::Ok(FrostKey::devices(&api_that))
         },
     )
 }
@@ -354,13 +405,25 @@ fn wire_satisfy__method__PortBytesToRead_impl(
         },
     )
 }
+fn wire_named_devices__method__DeviceListState_impl(
+    that: impl Wire2Api<DeviceListState> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "named_devices__method__DeviceListState",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            Result::<_, ()>::Ok(DeviceListState::named_devices(&api_that))
+        },
+    )
+}
 // Section: wrapper structs
 
 #[derive(Clone)]
 pub struct mirror_CoordinatorToUserKeyGenMessage(CoordinatorToUserKeyGenMessage);
-
-#[derive(Clone)]
-pub struct mirror_DeviceChange(DeviceChange);
 
 #[derive(Clone)]
 pub struct mirror_DeviceId(DeviceId);
@@ -383,30 +446,6 @@ const _: fn() = || {
         }
         CoordinatorToUserKeyGenMessage::FinishedKey { key_id } => {
             let _: KeyId = key_id;
-        }
-    }
-    match None::<DeviceChange>.unwrap() {
-        DeviceChange::Added { id } => {
-            let _: DeviceId = id;
-        }
-        DeviceChange::Renamed {
-            id,
-            old_name,
-            new_name,
-        } => {
-            let _: DeviceId = id;
-            let _: String = old_name;
-            let _: String = new_name;
-        }
-        DeviceChange::NeedsName { id } => {
-            let _: DeviceId = id;
-        }
-        DeviceChange::Registered { id, name } => {
-            let _: DeviceId = id;
-            let _: String = name;
-        }
-        DeviceChange::Disconnected { id } => {
-            let _: DeviceId = id;
         }
     }
     {
@@ -442,6 +481,7 @@ impl Wire2Api<i32> for i32 {
         self
     }
 }
+
 impl Wire2Api<Level> for i32 {
     fn wire2api(self) -> Level {
         match self {
@@ -503,37 +543,15 @@ impl rust2dart::IntoIntoDart<mirror_CoordinatorToUserKeyGenMessage>
     }
 }
 
-impl support::IntoDart for mirror_DeviceChange {
+impl support::IntoDart for Device {
     fn into_dart(self) -> support::DartAbi {
-        match self.0 {
-            DeviceChange::Added { id } => vec![0.into_dart(), id.into_into_dart().into_dart()],
-            DeviceChange::Renamed {
-                id,
-                old_name,
-                new_name,
-            } => vec![
-                1.into_dart(),
-                id.into_into_dart().into_dart(),
-                old_name.into_into_dart().into_dart(),
-                new_name.into_into_dart().into_dart(),
-            ],
-            DeviceChange::NeedsName { id } => vec![2.into_dart(), id.into_into_dart().into_dart()],
-            DeviceChange::Registered { id, name } => vec![
-                3.into_dart(),
-                id.into_into_dart().into_dart(),
-                name.into_into_dart().into_dart(),
-            ],
-            DeviceChange::Disconnected { id } => {
-                vec![4.into_dart(), id.into_into_dart().into_dart()]
-            }
-        }
-        .into_dart()
+        vec![self.name.into_dart(), self.id.into_into_dart().into_dart()].into_dart()
     }
 }
-impl support::IntoDartExceptPrimitive for mirror_DeviceChange {}
-impl rust2dart::IntoIntoDart<mirror_DeviceChange> for DeviceChange {
-    fn into_into_dart(self) -> mirror_DeviceChange {
-        mirror_DeviceChange(self)
+impl support::IntoDartExceptPrimitive for Device {}
+impl rust2dart::IntoIntoDart<Device> for Device {
+    fn into_into_dart(self) -> Self {
+        self
     }
 }
 
@@ -546,6 +564,68 @@ impl support::IntoDartExceptPrimitive for mirror_DeviceId {}
 impl rust2dart::IntoIntoDart<mirror_DeviceId> for DeviceId {
     fn into_into_dart(self) -> mirror_DeviceId {
         mirror_DeviceId(self)
+    }
+}
+
+impl support::IntoDart for DeviceListChange {
+    fn into_dart(self) -> support::DartAbi {
+        vec![
+            self.kind.into_into_dart().into_dart(),
+            self.index.into_into_dart().into_dart(),
+            self.device.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for DeviceListChange {}
+impl rust2dart::IntoIntoDart<DeviceListChange> for DeviceListChange {
+    fn into_into_dart(self) -> Self {
+        self
+    }
+}
+
+impl support::IntoDart for DeviceListChangeKind {
+    fn into_dart(self) -> support::DartAbi {
+        match self {
+            Self::Added => 0,
+            Self::Removed => 1,
+            Self::Named => 2,
+        }
+        .into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for DeviceListChangeKind {}
+impl rust2dart::IntoIntoDart<DeviceListChangeKind> for DeviceListChangeKind {
+    fn into_into_dart(self) -> Self {
+        self
+    }
+}
+
+impl support::IntoDart for DeviceListState {
+    fn into_dart(self) -> support::DartAbi {
+        vec![self.devices.into_into_dart().into_dart()].into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for DeviceListState {}
+impl rust2dart::IntoIntoDart<DeviceListState> for DeviceListState {
+    fn into_into_dart(self) -> Self {
+        self
+    }
+}
+
+impl support::IntoDart for DeviceListUpdate {
+    fn into_dart(self) -> support::DartAbi {
+        vec![
+            self.changes.into_into_dart().into_dart(),
+            self.state.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for DeviceListUpdate {}
+impl rust2dart::IntoIntoDart<DeviceListUpdate> for DeviceListUpdate {
+    fn into_into_dart(self) -> Self {
+        self
     }
 }
 

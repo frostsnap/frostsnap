@@ -10,7 +10,7 @@ use frostsnap_coordinator::{
     UsbSerialManager,
 };
 use frostsnap_core::{DeviceId, FrostCoordinator};
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::io;
 use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Mutex};
@@ -189,8 +189,16 @@ impl FfiCoordinator {
             .unwrap()
             .frost_key_state()
             .into_iter()
-            .map(|key_state| crate::api::FrostKey(RustOpaque::new(key_state.frost_key().clone())))
+            .map(|key_state| crate::api::FrostKey(RustOpaque::new(key_state.clone())))
             .collect()
+    }
+
+    pub fn devices_by_ports(&self) -> HashMap<String, Vec<DeviceId>> {
+        self.manager.lock().unwrap().devices_by_ports().clone()
+    }
+
+    pub fn device_names(&self) -> HashMap<DeviceId, String> {
+        self.manager.lock().unwrap().device_labels().clone()
     }
 }
 

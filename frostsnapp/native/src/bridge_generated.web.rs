@@ -72,6 +72,21 @@ pub fn wire_key_state() -> support::WireSyncReturn {
 }
 
 #[wasm_bindgen]
+pub fn wire_get_key(key_id: JsValue) -> support::WireSyncReturn {
+    wire_get_key_impl(key_id)
+}
+
+#[wasm_bindgen]
+pub fn wire_device_at_index(index: usize) -> support::WireSyncReturn {
+    wire_device_at_index_impl(index)
+}
+
+#[wasm_bindgen]
+pub fn wire_device_list_state() -> support::WireSyncReturn {
+    wire_device_list_state_impl()
+}
+
+#[wasm_bindgen]
 pub fn wire_generate_new_key(port_: MessagePort, threshold: usize, devices: JsValue) {
     wire_generate_new_key_impl(port_, threshold, devices)
 }
@@ -89,6 +104,11 @@ pub fn wire_id__method__FrostKey(that: JsValue) -> support::WireSyncReturn {
 #[wasm_bindgen]
 pub fn wire_name__method__FrostKey(that: JsValue) -> support::WireSyncReturn {
     wire_name__method__FrostKey_impl(that)
+}
+
+#[wasm_bindgen]
+pub fn wire_devices__method__FrostKey(that: JsValue) -> support::WireSyncReturn {
+    wire_devices__method__FrostKey_impl(that)
 }
 
 #[wasm_bindgen]
@@ -120,27 +140,26 @@ pub fn wire_satisfy__method__PortBytesToRead(
     wire_satisfy__method__PortBytesToRead_impl(port_, that, bytes_to_read)
 }
 
+#[wasm_bindgen]
+pub fn wire_named_devices__method__DeviceListState(that: JsValue) -> support::WireSyncReturn {
+    wire_named_devices__method__DeviceListState_impl(that)
+}
+
 // Section: allocate functions
 
 // Section: related functions
 
 #[wasm_bindgen]
-pub fn drop_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(ptr: *const c_void) {
+pub fn drop_opaque_FrostsnapCoreCoordinatorFrostKeyState(ptr: *const c_void) {
     unsafe {
-        Arc::<frostsnap_core::schnorr_fun::frost::FrostKey<Normal>>::decrement_strong_count(
-            ptr as _,
-        );
+        Arc::<frostsnap_core::CoordinatorFrostKeyState>::decrement_strong_count(ptr as _);
     }
 }
 
 #[wasm_bindgen]
-pub fn share_opaque_FrostsnapCoreSchnorrFunFrostFrostKeyNormal(
-    ptr: *const c_void,
-) -> *const c_void {
+pub fn share_opaque_FrostsnapCoreCoordinatorFrostKeyState(ptr: *const c_void) -> *const c_void {
     unsafe {
-        Arc::<frostsnap_core::schnorr_fun::frost::FrostKey<Normal>>::increment_strong_count(
-            ptr as _,
-        );
+        Arc::<frostsnap_core::CoordinatorFrostKeyState>::increment_strong_count(ptr as _);
         ptr
     }
 }
@@ -213,6 +232,21 @@ impl Wire2Api<String> for String {
     }
 }
 
+impl Wire2Api<Device> for JsValue {
+    fn wire2api(self) -> Device {
+        let self_ = self.dyn_into::<JsArray>().unwrap();
+        assert_eq!(
+            self_.length(),
+            2,
+            "Expected 2 elements, got {}",
+            self_.length()
+        );
+        Device {
+            name: self_.get(0).wire2api(),
+            id: self_.get(1).wire2api(),
+        }
+    }
+}
 impl Wire2Api<DeviceId> for JsValue {
     fn wire2api(self) -> DeviceId {
         let self_ = self.dyn_into::<JsArray>().unwrap();
@@ -223,6 +257,20 @@ impl Wire2Api<DeviceId> for JsValue {
             self_.length()
         );
         DeviceId(self_.get(0).wire2api())
+    }
+}
+impl Wire2Api<DeviceListState> for JsValue {
+    fn wire2api(self) -> DeviceListState {
+        let self_ = self.dyn_into::<JsArray>().unwrap();
+        assert_eq!(
+            self_.length(),
+            1,
+            "Expected 1 elements, got {}",
+            self_.length()
+        );
+        DeviceListState {
+            devices: self_.get(0).wire2api(),
+        }
     }
 }
 impl Wire2Api<FrostKey> for JsValue {
@@ -238,6 +286,28 @@ impl Wire2Api<FrostKey> for JsValue {
     }
 }
 
+impl Wire2Api<KeyId> for JsValue {
+    fn wire2api(self) -> KeyId {
+        let self_ = self.dyn_into::<JsArray>().unwrap();
+        assert_eq!(
+            self_.length(),
+            1,
+            "Expected 1 elements, got {}",
+            self_.length()
+        );
+        KeyId(self_.get(0).wire2api())
+    }
+}
+
+impl Wire2Api<Vec<Device>> for JsValue {
+    fn wire2api(self) -> Vec<Device> {
+        self.dyn_into::<JsArray>()
+            .unwrap()
+            .iter()
+            .map(Wire2Api::wire2api)
+            .collect()
+    }
+}
 impl Wire2Api<Vec<DeviceId>> for JsValue {
     fn wire2api(self) -> Vec<DeviceId> {
         self.dyn_into::<JsArray>()
@@ -341,6 +411,12 @@ impl Wire2Api<PortWrite> for JsValue {
     }
 }
 
+impl Wire2Api<[u8; 32]> for Box<[u8]> {
+    fn wire2api(self) -> [u8; 32] {
+        let vec: Vec<u8> = self.wire2api();
+        support::from_vec_to_array(vec)
+    }
+}
 impl Wire2Api<[u8; 33]> for Box<[u8]> {
     fn wire2api(self) -> [u8; 33] {
         let vec: Vec<u8> = self.wire2api();
@@ -355,8 +431,8 @@ impl Wire2Api<Vec<u8>> for Box<[u8]> {
 
 // Section: impl Wire2Api for JsValue
 
-impl Wire2Api<RustOpaque<frostsnap_core::schnorr_fun::frost::FrostKey<Normal>>> for JsValue {
-    fn wire2api(self) -> RustOpaque<frostsnap_core::schnorr_fun::frost::FrostKey<Normal>> {
+impl Wire2Api<RustOpaque<frostsnap_core::CoordinatorFrostKeyState>> for JsValue {
+    fn wire2api(self) -> RustOpaque<frostsnap_core::CoordinatorFrostKeyState> {
         #[cfg(target_pointer_width = "64")]
         {
             compile_error!("64-bit pointers are not supported.");
@@ -438,6 +514,12 @@ impl Wire2Api<u32> for JsValue {
 impl Wire2Api<u8> for JsValue {
     fn wire2api(self) -> u8 {
         self.unchecked_into_f64() as _
+    }
+}
+impl Wire2Api<[u8; 32]> for JsValue {
+    fn wire2api(self) -> [u8; 32] {
+        let vec: Vec<u8> = self.wire2api();
+        support::from_vec_to_array(vec)
     }
 }
 impl Wire2Api<[u8; 33]> for JsValue {
