@@ -391,6 +391,10 @@ where
                 ConnectionState::Established => Rgb565::GREEN,
             });
 
+        #[cfg(feature = "mem_debug")]
+        self.display
+            .set_mem_debug(ALLOCATOR.used(), ALLOCATOR.free());
+
         self.display.flush().unwrap();
     }
 }

@@ -310,4 +310,26 @@ where
 
         Ok(())
     }
+
+    pub fn set_mem_debug(&mut self, used: usize, free: usize) {
+        Rectangle::new(Point::new(80, 60), Size::new(80, 20))
+            .into_styled(
+                PrimitiveStyleBuilder::new()
+                    .fill_color(Rgb565::BLACK)
+                    .build(),
+            )
+            .draw(&mut self.framebuf)
+            .unwrap();
+
+        TextBox::with_textbox_style(
+            &format!("{}/{}", used, free),
+            Rectangle::new(Point::new(80, 60), Size::new(80, 20)),
+            MonoTextStyle::new(&FONT_7X14, Rgb565::GREEN),
+            TextBoxStyleBuilder::new()
+                .alignment(HorizontalAlignment::Right)
+                .build(),
+        )
+        .draw(&mut self.framebuf)
+        .unwrap();
+    }
 }
