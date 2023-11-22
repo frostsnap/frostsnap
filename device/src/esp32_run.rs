@@ -222,7 +222,21 @@ where
                                         if for_me {
                                             match &message.message_body {
                                                 CoordinatorSendBody::Cancel => {
-                                                    outbox.extend(state.signer.cancel_action());
+                                                    // FIXME: This is a mess -- can we redisign
+                                                    // things so the "core" component doesn't need
+                                                    // to know when it is canceled.
+                                                    //
+                                                    // We first ask the
+                                                    // core logic to cancel what it's doing
+                                                    let core_cancel = state.signer.cancel_action();
+                                                    if core_cancel.is_empty() {
+                                                        // .. but if it's not doing anything then we
+                                                        // are probably cancelling something in the
+                                                        // ui
+                                                        ui.cancel();
+                                                    } else {
+                                                        outbox.extend(core_cancel);
+                                                    }
                                                 }
                                                 CoordinatorSendBody::AnnounceAck => {
                                                     ui.set_workflow(ui::Workflow::WaitingFor(
