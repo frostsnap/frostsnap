@@ -123,6 +123,10 @@ impl<T: TweakableKey> Xpub<T> {
         &self.key
     }
 
+    pub fn into_key(self) -> T {
+        self.key
+    }
+
     pub fn xpub(&self) -> &ExtendedPubKey {
         &self.xpub
     }

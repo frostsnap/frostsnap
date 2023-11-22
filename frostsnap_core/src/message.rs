@@ -281,22 +281,25 @@ pub struct SignItem {
 
 impl SignItem {
     pub fn derive_key<K: TweakableKey>(&self, root_key: &K) -> K::XOnly {
-        let mut xpub = crate::xpub::Xpub::new(root_key.clone());
-        xpub.derive_bip32(&self.bip32_path);
+        let derived_key = {
+            let mut xpub = crate::xpub::Xpub::new(root_key.clone());
+            xpub.derive_bip32(&self.bip32_path);
+            xpub.into_key()
+        };
 
         if self.tap_tweak {
             let tweak = bitcoin::util::taproot::TapTweakHash::from_key_and_tweak(
-                xpub.key().to_libsecp_xonly(),
+                derived_key.to_libsecp_xonly(),
                 None,
             )
             .to_scalar();
-            xpub.key().clone().into_xonly_with_tweak(
+            derived_key.into_xonly_with_tweak(
                 Scalar::<Public, _>::from_bytes_mod_order(tweak.to_be_bytes())
                     .non_zero()
                     .expect("computationally unreachable"),
             )
         } else {
-            xpub.key().clone().into_xonly()
+            derived_key.into_xonly()
         }
     }
 
