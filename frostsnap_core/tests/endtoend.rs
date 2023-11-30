@@ -1,5 +1,6 @@
 use frostsnap_core::message::{
-    CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, DeviceToUserMessage, SignTask,
+    CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, CoordinatorToUserSigningMessage,
+    DeviceToUserMessage, EncodedSignature, SignTask,
 };
 use frostsnap_core::{
     CoordinatorState, DeviceId, FrostCoordinator, FrostSigner, KeyId, SessionHash,
@@ -16,12 +17,13 @@ use crate::common::Run;
 struct TestEnv {
     // keygen
     pub keygen_checks: BTreeMap<DeviceId, SessionHash>,
-    pub received_shares: BTreeSet<DeviceId>,
+    pub received_keygen_shares: BTreeSet<DeviceId>,
     pub coordinator_check: Option<SessionHash>,
     pub coordinator_got_keygen_acks: BTreeSet<DeviceId>,
     pub key_id_on_coordinator: Option<KeyId>,
 
     // signing
+    pub received_signing_shares: BTreeSet<DeviceId>,
     pub sign_tasks: BTreeMap<DeviceId, SignTask>,
     pub signatures: Vec<Signature>,
 }
@@ -31,9 +33,9 @@ impl common::Env for TestEnv {
         /* nothing to do here -- need keygen ack*/
         match message {
             CoordinatorToUserMessage::KeyGen(keygen_message) => match keygen_message {
-                CoordinatorToUserKeyGenMessage::ReceivedShares { id } => {
+                CoordinatorToUserKeyGenMessage::ReceivedShares { from } => {
                     assert!(
-                        self.received_shares.insert(id),
+                        self.received_keygen_shares.insert(from),
                         "should not have already received"
                     )
                 }
@@ -43,9 +45,9 @@ impl common::Env for TestEnv {
                         "should not have already set this"
                     );
                 }
-                CoordinatorToUserKeyGenMessage::KeyGenAck { id } => {
+                CoordinatorToUserKeyGenMessage::KeyGenAck { from } => {
                     assert!(
-                        self.coordinator_got_keygen_acks.insert(id),
+                        self.coordinator_got_keygen_acks.insert(from),
                         "should only receive this once"
                     );
                 }
@@ -56,9 +58,21 @@ impl common::Env for TestEnv {
                     );
                 }
             },
-            CoordinatorToUserMessage::Signed { signatures } => {
-                self.signatures = signatures;
-            }
+            CoordinatorToUserMessage::Signing(signing_message) => match signing_message {
+                CoordinatorToUserSigningMessage::GotShare { from } => {
+                    assert!(
+                        self.received_signing_shares.insert(from),
+                        "should only send share once"
+                    );
+                }
+                CoordinatorToUserSigningMessage::Signed { signatures } => {
+                    self.signatures = signatures
+                        .into_iter()
+                        .map(EncodedSignature::into_decoded)
+                        .collect::<Option<Vec<_>>>()
+                        .unwrap();
+                }
+            },
         }
     }
 
@@ -125,7 +139,7 @@ fn test_end_to_end() {
         "devices should have seen the same hash"
     );
     assert_eq!(env.coordinator_got_keygen_acks, device_set);
-    assert_eq!(env.received_shares, device_set);
+    assert_eq!(env.received_keygen_shares, device_set);
     let public_key = run
         .coordinator
         .frost_key_state()
@@ -139,6 +153,7 @@ fn test_end_to_end() {
     ] {
         env.signatures.clear();
         env.sign_tasks.clear();
+        env.received_signing_shares.clear();
         let task = SignTask::Plain(message.to_vec());
         let set = BTreeSet::from_iter(signers.iter().map(|i| device_list[*i]));
 
@@ -154,6 +169,7 @@ fn test_end_to_end() {
         ));
         assert_eq!(env.sign_tasks.keys().cloned().collect::<BTreeSet<_>>(), set);
         assert!(env.sign_tasks.values().all(|v| *v == task));
+        assert_eq!(env.received_signing_shares, set);
 
         assert!(task.verify(&schnorr, public_key, &env.signatures));
     }

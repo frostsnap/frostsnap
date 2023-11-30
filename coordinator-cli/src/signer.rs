@@ -1,13 +1,12 @@
-use frostsnap_comms::{CoordinatorSendBody, CoordinatorSendMessage};
-use frostsnap_coordinator::DeviceChange;
+use frostsnap_coordinator::{DeviceChange, SigningDispatcher};
 use frostsnap_core::message::{
-    CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToUserMessage,
-    DeviceToCoordinatorMessage, SignTask,
+    CoordinatorSend, CoordinatorToUserMessage, CoordinatorToUserSigningMessage, SignTask,
 };
+use frostsnap_core::schnorr_fun;
 use frostsnap_core::schnorr_fun::frost::FrostKey;
 use frostsnap_core::schnorr_fun::fun::marker::Normal;
-use frostsnap_core::{schnorr_fun, DeviceId};
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
+use std::time::Duration;
 use tracing::{event, Level};
 
 use crate::db::Db;
@@ -84,15 +83,19 @@ impl<'a, 'b> Signer<'a, 'b> {
             key_signers.keys().cloned().collect()
         };
 
-        let mut still_need_to_sign = chosen_signers.clone();
-        let mut asking_to_sign: BTreeSet<DeviceId> = still_need_to_sign
-            .intersection(self.ports.registered_devices())
-            .cloned()
-            .collect();
+        let mut sign_request_sends = self
+            .coordinator
+            .start_sign(message, chosen_signers.clone())?;
+
+        let mut dispatcher = SigningDispatcher::new(&mut sign_request_sends);
+
+        for device in self.ports.registered_devices() {
+            dispatcher.connected(*device);
+        }
 
         eprintln!(
             "Plug signers:\n{}",
-            still_need_to_sign
+            chosen_signers
                 .iter()
                 .map(|device_id| self
                     .ports
@@ -104,38 +107,20 @@ impl<'a, 'b> Signer<'a, 'b> {
                 .join("\n")
         );
 
-        let mut sign_request_sends = self
-            .coordinator
-            .start_sign(message, still_need_to_sign.clone())?;
-
-        // need to handle sign request separately since it needs to be sent out only when certain devices are plugged in
-        let (i, sign_request) = sign_request_sends
-            .iter()
-            .enumerate()
-            .find_map(|(i, m)| match m {
-                CoordinatorSend::ToDevice(
-                    sign_req @ CoordinatorToDeviceMessage::RequestSign { .. },
-                ) => Some((i, sign_req.clone())),
-                _ => None,
-            })
-            .expect("must have a sign request");
-
-        sign_request_sends.remove(i);
-
         let mut outbox = VecDeque::from_iter(sign_request_sends);
-        let mut signatures = None;
+        let mut final_signatures = None;
         let finished_signatures = loop {
-            signatures = signatures.or_else(|| {
-                outbox.iter().find_map(|message| match message {
-                    CoordinatorSend::ToUser(CoordinatorToUserMessage::Signed { signatures }) => {
-                        Some(signatures.clone())
-                    }
-                    _ => None,
-                })
-            });
+            for message in &outbox {
+                if let CoordinatorSend::ToUser(CoordinatorToUserMessage::Signing(
+                    CoordinatorToUserSigningMessage::Signed { signatures },
+                )) = message
+                {
+                    final_signatures = Some(signatures.clone());
+                }
+            }
             crate::process_outbox(self.db, &mut self.coordinator, &mut outbox, self.ports)?;
 
-            if let Some(finished_signatures) = &signatures {
+            if let Some(finished_signatures) = &final_signatures {
                 if outbox.is_empty() {
                     break finished_signatures;
                 }
@@ -147,18 +132,13 @@ impl<'a, 'b> Signer<'a, 'b> {
             // because often a big bunch of devices will register at similar times if they are daisy
             // chained together.
             loop {
+                std::thread::sleep(Duration::from_millis(100));
                 let port_changes = self.ports.poll_ports();
+
                 for (from, incoming_message) in port_changes.new_messages {
-                    let is_signature_share = matches!(
-                        incoming_message,
-                        DeviceToCoordinatorMessage::SignatureShare { .. }
-                    );
+                    dispatcher.process(from, &incoming_message);
                     match self.coordinator.recv_device_message(from, incoming_message) {
                         Ok(outgoing) => {
-                            if is_signature_share {
-                                event!(Level::INFO, "{} signed successfully", from);
-                                still_need_to_sign.remove(&from);
-                            }
                             outbox.extend(outgoing);
                         }
                         Err(e) => {
@@ -168,7 +148,6 @@ impl<'a, 'b> Signer<'a, 'b> {
                                 from,
                                 e
                             );
-                            continue;
                         }
                     };
                 }
@@ -189,12 +168,10 @@ impl<'a, 'b> Signer<'a, 'b> {
                             );
                         }
                         DeviceChange::Disconnected { id } => {
-                            asking_to_sign.remove(id);
+                            dispatcher.disconnected(*id);
                         }
                         DeviceChange::Registered { id, .. } => {
-                            if still_need_to_sign.contains(id) {
-                                asking_to_sign.insert(*id);
-                            }
+                            dispatcher.connected(*id);
                         }
                         DeviceChange::Added { .. } => { /* do nothing until it's registered */ }
                     }
@@ -207,14 +184,14 @@ impl<'a, 'b> Signer<'a, 'b> {
                 }
             }
 
-            self.ports.queue_in_port_outbox(CoordinatorSendMessage {
-                target_destinations: frostsnap_comms::Destination::Particular(std::mem::take(
-                    &mut asking_to_sign,
-                )),
-                message_body: CoordinatorSendBody::Core(sign_request.clone()),
-            });
+            if let Some(send_message) = dispatcher.emit_messages() {
+                self.ports.queue_in_port_outbox(send_message);
+            }
         };
 
-        Ok(finished_signatures.clone())
+        Ok(finished_signatures
+            .iter()
+            .map(|sig| sig.into_decoded().unwrap())
+            .collect())
     }
 }

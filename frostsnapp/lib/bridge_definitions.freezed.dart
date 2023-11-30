@@ -18,25 +18,25 @@ final _privateConstructorUsedError = UnsupportedError(
 mixin _$CoordinatorToUserKeyGenMessage {
   @optionalTypeArgs
   TResult when<TResult extends Object?>({
-    required TResult Function(DeviceId id) receivedShares,
+    required TResult Function(DeviceId from) receivedShares,
     required TResult Function(U8Array32 sessionHash) checkKeyGen,
-    required TResult Function(DeviceId id) keyGenAck,
+    required TResult Function(DeviceId from) keyGenAck,
     required TResult Function(KeyId keyId) finishedKey,
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
   TResult? whenOrNull<TResult extends Object?>({
-    TResult? Function(DeviceId id)? receivedShares,
+    TResult? Function(DeviceId from)? receivedShares,
     TResult? Function(U8Array32 sessionHash)? checkKeyGen,
-    TResult? Function(DeviceId id)? keyGenAck,
+    TResult? Function(DeviceId from)? keyGenAck,
     TResult? Function(KeyId keyId)? finishedKey,
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
   TResult maybeWhen<TResult extends Object?>({
-    TResult Function(DeviceId id)? receivedShares,
+    TResult Function(DeviceId from)? receivedShares,
     TResult Function(U8Array32 sessionHash)? checkKeyGen,
-    TResult Function(DeviceId id)? keyGenAck,
+    TResult Function(DeviceId from)? keyGenAck,
     TResult Function(KeyId keyId)? finishedKey,
     required TResult orElse(),
   }) =>
@@ -110,7 +110,7 @@ abstract class _$$CoordinatorToUserKeyGenMessage_ReceivedSharesImplCopyWith<
               then) =
       __$$CoordinatorToUserKeyGenMessage_ReceivedSharesImplCopyWithImpl<$Res>;
   @useResult
-  $Res call({DeviceId id});
+  $Res call({DeviceId from});
 }
 
 /// @nodoc
@@ -127,12 +127,12 @@ class __$$CoordinatorToUserKeyGenMessage_ReceivedSharesImplCopyWithImpl<$Res>
   @pragma('vm:prefer-inline')
   @override
   $Res call({
-    Object? id = null,
+    Object? from = null,
   }) {
     return _then(_$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl(
-      id: null == id
-          ? _value.id
-          : id // ignore: cast_nullable_to_non_nullable
+      from: null == from
+          ? _value.from
+          : from // ignore: cast_nullable_to_non_nullable
               as DeviceId,
     ));
   }
@@ -142,14 +142,15 @@ class __$$CoordinatorToUserKeyGenMessage_ReceivedSharesImplCopyWithImpl<$Res>
 
 class _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl
     implements CoordinatorToUserKeyGenMessage_ReceivedShares {
-  const _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl({required this.id});
+  const _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl(
+      {required this.from});
 
   @override
-  final DeviceId id;
+  final DeviceId from;
 
   @override
   String toString() {
-    return 'CoordinatorToUserKeyGenMessage.receivedShares(id: $id)';
+    return 'CoordinatorToUserKeyGenMessage.receivedShares(from: $from)';
   }
 
   @override
@@ -157,11 +158,11 @@ class _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl &&
-            (identical(other.id, id) || other.id == id));
+            (identical(other.from, from) || other.from == from));
   }
 
   @override
-  int get hashCode => Object.hash(runtimeType, id);
+  int get hashCode => Object.hash(runtimeType, from);
 
   @JsonKey(ignore: true)
   @override
@@ -176,36 +177,36 @@ class _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl
   @override
   @optionalTypeArgs
   TResult when<TResult extends Object?>({
-    required TResult Function(DeviceId id) receivedShares,
+    required TResult Function(DeviceId from) receivedShares,
     required TResult Function(U8Array32 sessionHash) checkKeyGen,
-    required TResult Function(DeviceId id) keyGenAck,
+    required TResult Function(DeviceId from) keyGenAck,
     required TResult Function(KeyId keyId) finishedKey,
   }) {
-    return receivedShares(id);
+    return receivedShares(from);
   }
 
   @override
   @optionalTypeArgs
   TResult? whenOrNull<TResult extends Object?>({
-    TResult? Function(DeviceId id)? receivedShares,
+    TResult? Function(DeviceId from)? receivedShares,
     TResult? Function(U8Array32 sessionHash)? checkKeyGen,
-    TResult? Function(DeviceId id)? keyGenAck,
+    TResult? Function(DeviceId from)? keyGenAck,
     TResult? Function(KeyId keyId)? finishedKey,
   }) {
-    return receivedShares?.call(id);
+    return receivedShares?.call(from);
   }
 
   @override
   @optionalTypeArgs
   TResult maybeWhen<TResult extends Object?>({
-    TResult Function(DeviceId id)? receivedShares,
+    TResult Function(DeviceId from)? receivedShares,
     TResult Function(U8Array32 sessionHash)? checkKeyGen,
-    TResult Function(DeviceId id)? keyGenAck,
+    TResult Function(DeviceId from)? keyGenAck,
     TResult Function(KeyId keyId)? finishedKey,
     required TResult orElse(),
   }) {
     if (receivedShares != null) {
-      return receivedShares(id);
+      return receivedShares(from);
     }
     return orElse();
   }
@@ -263,10 +264,10 @@ class _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl
 abstract class CoordinatorToUserKeyGenMessage_ReceivedShares
     implements CoordinatorToUserKeyGenMessage {
   const factory CoordinatorToUserKeyGenMessage_ReceivedShares(
-          {required final DeviceId id}) =
+          {required final DeviceId from}) =
       _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl;
 
-  DeviceId get id;
+  DeviceId get from;
   @JsonKey(ignore: true)
   _$$CoordinatorToUserKeyGenMessage_ReceivedSharesImplCopyWith<
           _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl>
@@ -349,9 +350,9 @@ class _$CoordinatorToUserKeyGenMessage_CheckKeyGenImpl
   @override
   @optionalTypeArgs
   TResult when<TResult extends Object?>({
-    required TResult Function(DeviceId id) receivedShares,
+    required TResult Function(DeviceId from) receivedShares,
     required TResult Function(U8Array32 sessionHash) checkKeyGen,
-    required TResult Function(DeviceId id) keyGenAck,
+    required TResult Function(DeviceId from) keyGenAck,
     required TResult Function(KeyId keyId) finishedKey,
   }) {
     return checkKeyGen(sessionHash);
@@ -360,9 +361,9 @@ class _$CoordinatorToUserKeyGenMessage_CheckKeyGenImpl
   @override
   @optionalTypeArgs
   TResult? whenOrNull<TResult extends Object?>({
-    TResult? Function(DeviceId id)? receivedShares,
+    TResult? Function(DeviceId from)? receivedShares,
     TResult? Function(U8Array32 sessionHash)? checkKeyGen,
-    TResult? Function(DeviceId id)? keyGenAck,
+    TResult? Function(DeviceId from)? keyGenAck,
     TResult? Function(KeyId keyId)? finishedKey,
   }) {
     return checkKeyGen?.call(sessionHash);
@@ -371,9 +372,9 @@ class _$CoordinatorToUserKeyGenMessage_CheckKeyGenImpl
   @override
   @optionalTypeArgs
   TResult maybeWhen<TResult extends Object?>({
-    TResult Function(DeviceId id)? receivedShares,
+    TResult Function(DeviceId from)? receivedShares,
     TResult Function(U8Array32 sessionHash)? checkKeyGen,
-    TResult Function(DeviceId id)? keyGenAck,
+    TResult Function(DeviceId from)? keyGenAck,
     TResult Function(KeyId keyId)? finishedKey,
     required TResult orElse(),
   }) {
@@ -453,7 +454,7 @@ abstract class _$$CoordinatorToUserKeyGenMessage_KeyGenAckImplCopyWith<$Res> {
           $Res Function(_$CoordinatorToUserKeyGenMessage_KeyGenAckImpl) then) =
       __$$CoordinatorToUserKeyGenMessage_KeyGenAckImplCopyWithImpl<$Res>;
   @useResult
-  $Res call({DeviceId id});
+  $Res call({DeviceId from});
 }
 
 /// @nodoc
@@ -469,12 +470,12 @@ class __$$CoordinatorToUserKeyGenMessage_KeyGenAckImplCopyWithImpl<$Res>
   @pragma('vm:prefer-inline')
   @override
   $Res call({
-    Object? id = null,
+    Object? from = null,
   }) {
     return _then(_$CoordinatorToUserKeyGenMessage_KeyGenAckImpl(
-      id: null == id
-          ? _value.id
-          : id // ignore: cast_nullable_to_non_nullable
+      from: null == from
+          ? _value.from
+          : from // ignore: cast_nullable_to_non_nullable
               as DeviceId,
     ));
   }
@@ -484,14 +485,14 @@ class __$$CoordinatorToUserKeyGenMessage_KeyGenAckImplCopyWithImpl<$Res>
 
 class _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl
     implements CoordinatorToUserKeyGenMessage_KeyGenAck {
-  const _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl({required this.id});
+  const _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl({required this.from});
 
   @override
-  final DeviceId id;
+  final DeviceId from;
 
   @override
   String toString() {
-    return 'CoordinatorToUserKeyGenMessage.keyGenAck(id: $id)';
+    return 'CoordinatorToUserKeyGenMessage.keyGenAck(from: $from)';
   }
 
   @override
@@ -499,11 +500,11 @@ class _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl &&
-            (identical(other.id, id) || other.id == id));
+            (identical(other.from, from) || other.from == from));
   }
 
   @override
-  int get hashCode => Object.hash(runtimeType, id);
+  int get hashCode => Object.hash(runtimeType, from);
 
   @JsonKey(ignore: true)
   @override
@@ -517,36 +518,36 @@ class _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl
   @override
   @optionalTypeArgs
   TResult when<TResult extends Object?>({
-    required TResult Function(DeviceId id) receivedShares,
+    required TResult Function(DeviceId from) receivedShares,
     required TResult Function(U8Array32 sessionHash) checkKeyGen,
-    required TResult Function(DeviceId id) keyGenAck,
+    required TResult Function(DeviceId from) keyGenAck,
     required TResult Function(KeyId keyId) finishedKey,
   }) {
-    return keyGenAck(id);
+    return keyGenAck(from);
   }
 
   @override
   @optionalTypeArgs
   TResult? whenOrNull<TResult extends Object?>({
-    TResult? Function(DeviceId id)? receivedShares,
+    TResult? Function(DeviceId from)? receivedShares,
     TResult? Function(U8Array32 sessionHash)? checkKeyGen,
-    TResult? Function(DeviceId id)? keyGenAck,
+    TResult? Function(DeviceId from)? keyGenAck,
     TResult? Function(KeyId keyId)? finishedKey,
   }) {
-    return keyGenAck?.call(id);
+    return keyGenAck?.call(from);
   }
 
   @override
   @optionalTypeArgs
   TResult maybeWhen<TResult extends Object?>({
-    TResult Function(DeviceId id)? receivedShares,
+    TResult Function(DeviceId from)? receivedShares,
     TResult Function(U8Array32 sessionHash)? checkKeyGen,
-    TResult Function(DeviceId id)? keyGenAck,
+    TResult Function(DeviceId from)? keyGenAck,
     TResult Function(KeyId keyId)? finishedKey,
     required TResult orElse(),
   }) {
     if (keyGenAck != null) {
-      return keyGenAck(id);
+      return keyGenAck(from);
     }
     return orElse();
   }
@@ -604,10 +605,10 @@ class _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl
 abstract class CoordinatorToUserKeyGenMessage_KeyGenAck
     implements CoordinatorToUserKeyGenMessage {
   const factory CoordinatorToUserKeyGenMessage_KeyGenAck(
-          {required final DeviceId id}) =
+          {required final DeviceId from}) =
       _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl;
 
-  DeviceId get id;
+  DeviceId get from;
   @JsonKey(ignore: true)
   _$$CoordinatorToUserKeyGenMessage_KeyGenAckImplCopyWith<
           _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl>
@@ -687,9 +688,9 @@ class _$CoordinatorToUserKeyGenMessage_FinishedKeyImpl
   @override
   @optionalTypeArgs
   TResult when<TResult extends Object?>({
-    required TResult Function(DeviceId id) receivedShares,
+    required TResult Function(DeviceId from) receivedShares,
     required TResult Function(U8Array32 sessionHash) checkKeyGen,
-    required TResult Function(DeviceId id) keyGenAck,
+    required TResult Function(DeviceId from) keyGenAck,
     required TResult Function(KeyId keyId) finishedKey,
   }) {
     return finishedKey(keyId);
@@ -698,9 +699,9 @@ class _$CoordinatorToUserKeyGenMessage_FinishedKeyImpl
   @override
   @optionalTypeArgs
   TResult? whenOrNull<TResult extends Object?>({
-    TResult? Function(DeviceId id)? receivedShares,
+    TResult? Function(DeviceId from)? receivedShares,
     TResult? Function(U8Array32 sessionHash)? checkKeyGen,
-    TResult? Function(DeviceId id)? keyGenAck,
+    TResult? Function(DeviceId from)? keyGenAck,
     TResult? Function(KeyId keyId)? finishedKey,
   }) {
     return finishedKey?.call(keyId);
@@ -709,9 +710,9 @@ class _$CoordinatorToUserKeyGenMessage_FinishedKeyImpl
   @override
   @optionalTypeArgs
   TResult maybeWhen<TResult extends Object?>({
-    TResult Function(DeviceId id)? receivedShares,
+    TResult Function(DeviceId from)? receivedShares,
     TResult Function(U8Array32 sessionHash)? checkKeyGen,
-    TResult Function(DeviceId id)? keyGenAck,
+    TResult Function(DeviceId from)? keyGenAck,
     TResult Function(KeyId keyId)? finishedKey,
     required TResult orElse(),
   }) {
@@ -781,6 +782,372 @@ abstract class CoordinatorToUserKeyGenMessage_FinishedKey
   @JsonKey(ignore: true)
   _$$CoordinatorToUserKeyGenMessage_FinishedKeyImplCopyWith<
           _$CoordinatorToUserKeyGenMessage_FinishedKeyImpl>
+      get copyWith => throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+mixin _$CoordinatorToUserSigningMessage {
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>({
+    required TResult Function(DeviceId from) gotShare,
+    required TResult Function(List<EncodedSignature> signatures) signed,
+  }) =>
+      throw _privateConstructorUsedError;
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>({
+    TResult? Function(DeviceId from)? gotShare,
+    TResult? Function(List<EncodedSignature> signatures)? signed,
+  }) =>
+      throw _privateConstructorUsedError;
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>({
+    TResult Function(DeviceId from)? gotShare,
+    TResult Function(List<EncodedSignature> signatures)? signed,
+    required TResult orElse(),
+  }) =>
+      throw _privateConstructorUsedError;
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>({
+    required TResult Function(CoordinatorToUserSigningMessage_GotShare value)
+        gotShare,
+    required TResult Function(CoordinatorToUserSigningMessage_Signed value)
+        signed,
+  }) =>
+      throw _privateConstructorUsedError;
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>({
+    TResult? Function(CoordinatorToUserSigningMessage_GotShare value)? gotShare,
+    TResult? Function(CoordinatorToUserSigningMessage_Signed value)? signed,
+  }) =>
+      throw _privateConstructorUsedError;
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>({
+    TResult Function(CoordinatorToUserSigningMessage_GotShare value)? gotShare,
+    TResult Function(CoordinatorToUserSigningMessage_Signed value)? signed,
+    required TResult orElse(),
+  }) =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $CoordinatorToUserSigningMessageCopyWith<$Res> {
+  factory $CoordinatorToUserSigningMessageCopyWith(
+          CoordinatorToUserSigningMessage value,
+          $Res Function(CoordinatorToUserSigningMessage) then) =
+      _$CoordinatorToUserSigningMessageCopyWithImpl<$Res,
+          CoordinatorToUserSigningMessage>;
+}
+
+/// @nodoc
+class _$CoordinatorToUserSigningMessageCopyWithImpl<$Res,
+        $Val extends CoordinatorToUserSigningMessage>
+    implements $CoordinatorToUserSigningMessageCopyWith<$Res> {
+  _$CoordinatorToUserSigningMessageCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+}
+
+/// @nodoc
+abstract class _$$CoordinatorToUserSigningMessage_GotShareImplCopyWith<$Res> {
+  factory _$$CoordinatorToUserSigningMessage_GotShareImplCopyWith(
+          _$CoordinatorToUserSigningMessage_GotShareImpl value,
+          $Res Function(_$CoordinatorToUserSigningMessage_GotShareImpl) then) =
+      __$$CoordinatorToUserSigningMessage_GotShareImplCopyWithImpl<$Res>;
+  @useResult
+  $Res call({DeviceId from});
+}
+
+/// @nodoc
+class __$$CoordinatorToUserSigningMessage_GotShareImplCopyWithImpl<$Res>
+    extends _$CoordinatorToUserSigningMessageCopyWithImpl<$Res,
+        _$CoordinatorToUserSigningMessage_GotShareImpl>
+    implements _$$CoordinatorToUserSigningMessage_GotShareImplCopyWith<$Res> {
+  __$$CoordinatorToUserSigningMessage_GotShareImplCopyWithImpl(
+      _$CoordinatorToUserSigningMessage_GotShareImpl _value,
+      $Res Function(_$CoordinatorToUserSigningMessage_GotShareImpl) _then)
+      : super(_value, _then);
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? from = null,
+  }) {
+    return _then(_$CoordinatorToUserSigningMessage_GotShareImpl(
+      from: null == from
+          ? _value.from
+          : from // ignore: cast_nullable_to_non_nullable
+              as DeviceId,
+    ));
+  }
+}
+
+/// @nodoc
+
+class _$CoordinatorToUserSigningMessage_GotShareImpl
+    implements CoordinatorToUserSigningMessage_GotShare {
+  const _$CoordinatorToUserSigningMessage_GotShareImpl({required this.from});
+
+  @override
+  final DeviceId from;
+
+  @override
+  String toString() {
+    return 'CoordinatorToUserSigningMessage.gotShare(from: $from)';
+  }
+
+  @override
+  bool operator ==(dynamic other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$CoordinatorToUserSigningMessage_GotShareImpl &&
+            (identical(other.from, from) || other.from == from));
+  }
+
+  @override
+  int get hashCode => Object.hash(runtimeType, from);
+
+  @JsonKey(ignore: true)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$CoordinatorToUserSigningMessage_GotShareImplCopyWith<
+          _$CoordinatorToUserSigningMessage_GotShareImpl>
+      get copyWith =>
+          __$$CoordinatorToUserSigningMessage_GotShareImplCopyWithImpl<
+              _$CoordinatorToUserSigningMessage_GotShareImpl>(this, _$identity);
+
+  @override
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>({
+    required TResult Function(DeviceId from) gotShare,
+    required TResult Function(List<EncodedSignature> signatures) signed,
+  }) {
+    return gotShare(from);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>({
+    TResult? Function(DeviceId from)? gotShare,
+    TResult? Function(List<EncodedSignature> signatures)? signed,
+  }) {
+    return gotShare?.call(from);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>({
+    TResult Function(DeviceId from)? gotShare,
+    TResult Function(List<EncodedSignature> signatures)? signed,
+    required TResult orElse(),
+  }) {
+    if (gotShare != null) {
+      return gotShare(from);
+    }
+    return orElse();
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>({
+    required TResult Function(CoordinatorToUserSigningMessage_GotShare value)
+        gotShare,
+    required TResult Function(CoordinatorToUserSigningMessage_Signed value)
+        signed,
+  }) {
+    return gotShare(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>({
+    TResult? Function(CoordinatorToUserSigningMessage_GotShare value)? gotShare,
+    TResult? Function(CoordinatorToUserSigningMessage_Signed value)? signed,
+  }) {
+    return gotShare?.call(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>({
+    TResult Function(CoordinatorToUserSigningMessage_GotShare value)? gotShare,
+    TResult Function(CoordinatorToUserSigningMessage_Signed value)? signed,
+    required TResult orElse(),
+  }) {
+    if (gotShare != null) {
+      return gotShare(this);
+    }
+    return orElse();
+  }
+}
+
+abstract class CoordinatorToUserSigningMessage_GotShare
+    implements CoordinatorToUserSigningMessage {
+  const factory CoordinatorToUserSigningMessage_GotShare(
+          {required final DeviceId from}) =
+      _$CoordinatorToUserSigningMessage_GotShareImpl;
+
+  DeviceId get from;
+  @JsonKey(ignore: true)
+  _$$CoordinatorToUserSigningMessage_GotShareImplCopyWith<
+          _$CoordinatorToUserSigningMessage_GotShareImpl>
+      get copyWith => throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class _$$CoordinatorToUserSigningMessage_SignedImplCopyWith<$Res> {
+  factory _$$CoordinatorToUserSigningMessage_SignedImplCopyWith(
+          _$CoordinatorToUserSigningMessage_SignedImpl value,
+          $Res Function(_$CoordinatorToUserSigningMessage_SignedImpl) then) =
+      __$$CoordinatorToUserSigningMessage_SignedImplCopyWithImpl<$Res>;
+  @useResult
+  $Res call({List<EncodedSignature> signatures});
+}
+
+/// @nodoc
+class __$$CoordinatorToUserSigningMessage_SignedImplCopyWithImpl<$Res>
+    extends _$CoordinatorToUserSigningMessageCopyWithImpl<$Res,
+        _$CoordinatorToUserSigningMessage_SignedImpl>
+    implements _$$CoordinatorToUserSigningMessage_SignedImplCopyWith<$Res> {
+  __$$CoordinatorToUserSigningMessage_SignedImplCopyWithImpl(
+      _$CoordinatorToUserSigningMessage_SignedImpl _value,
+      $Res Function(_$CoordinatorToUserSigningMessage_SignedImpl) _then)
+      : super(_value, _then);
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? signatures = null,
+  }) {
+    return _then(_$CoordinatorToUserSigningMessage_SignedImpl(
+      signatures: null == signatures
+          ? _value._signatures
+          : signatures // ignore: cast_nullable_to_non_nullable
+              as List<EncodedSignature>,
+    ));
+  }
+}
+
+/// @nodoc
+
+class _$CoordinatorToUserSigningMessage_SignedImpl
+    implements CoordinatorToUserSigningMessage_Signed {
+  const _$CoordinatorToUserSigningMessage_SignedImpl(
+      {required final List<EncodedSignature> signatures})
+      : _signatures = signatures;
+
+  final List<EncodedSignature> _signatures;
+  @override
+  List<EncodedSignature> get signatures {
+    if (_signatures is EqualUnmodifiableListView) return _signatures;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_signatures);
+  }
+
+  @override
+  String toString() {
+    return 'CoordinatorToUserSigningMessage.signed(signatures: $signatures)';
+  }
+
+  @override
+  bool operator ==(dynamic other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$CoordinatorToUserSigningMessage_SignedImpl &&
+            const DeepCollectionEquality()
+                .equals(other._signatures, _signatures));
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      runtimeType, const DeepCollectionEquality().hash(_signatures));
+
+  @JsonKey(ignore: true)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$CoordinatorToUserSigningMessage_SignedImplCopyWith<
+          _$CoordinatorToUserSigningMessage_SignedImpl>
+      get copyWith =>
+          __$$CoordinatorToUserSigningMessage_SignedImplCopyWithImpl<
+              _$CoordinatorToUserSigningMessage_SignedImpl>(this, _$identity);
+
+  @override
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>({
+    required TResult Function(DeviceId from) gotShare,
+    required TResult Function(List<EncodedSignature> signatures) signed,
+  }) {
+    return signed(signatures);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>({
+    TResult? Function(DeviceId from)? gotShare,
+    TResult? Function(List<EncodedSignature> signatures)? signed,
+  }) {
+    return signed?.call(signatures);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>({
+    TResult Function(DeviceId from)? gotShare,
+    TResult Function(List<EncodedSignature> signatures)? signed,
+    required TResult orElse(),
+  }) {
+    if (signed != null) {
+      return signed(signatures);
+    }
+    return orElse();
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>({
+    required TResult Function(CoordinatorToUserSigningMessage_GotShare value)
+        gotShare,
+    required TResult Function(CoordinatorToUserSigningMessage_Signed value)
+        signed,
+  }) {
+    return signed(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>({
+    TResult? Function(CoordinatorToUserSigningMessage_GotShare value)? gotShare,
+    TResult? Function(CoordinatorToUserSigningMessage_Signed value)? signed,
+  }) {
+    return signed?.call(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>({
+    TResult Function(CoordinatorToUserSigningMessage_GotShare value)? gotShare,
+    TResult Function(CoordinatorToUserSigningMessage_Signed value)? signed,
+    required TResult orElse(),
+  }) {
+    if (signed != null) {
+      return signed(this);
+    }
+    return orElse();
+  }
+}
+
+abstract class CoordinatorToUserSigningMessage_Signed
+    implements CoordinatorToUserSigningMessage {
+  const factory CoordinatorToUserSigningMessage_Signed(
+          {required final List<EncodedSignature> signatures}) =
+      _$CoordinatorToUserSigningMessage_SignedImpl;
+
+  List<EncodedSignature> get signatures;
+  @JsonKey(ignore: true)
+  _$$CoordinatorToUserSigningMessage_SignedImplCopyWith<
+          _$CoordinatorToUserSigningMessage_SignedImpl>
       get copyWith => throw _privateConstructorUsedError;
 }
 

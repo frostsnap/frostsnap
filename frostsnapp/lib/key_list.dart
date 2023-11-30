@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:frostsnapp/hex.dart';
 import 'package:confetti/confetti.dart';
 
+import 'sign_message.dart';
+
 class KeyList extends StatelessWidget {
   final Function(KeyId)? onNewKey;
   final Function(BuildContext, FrostKey) itemBuilder;
@@ -73,6 +75,13 @@ class KeyCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text("Threshold: ${frostKey.threshold()}"),
+            ElevatedButton(
+                onPressed: () {
+                  Navigator.push(context, MaterialPageRoute(builder: (context) {
+                    return SignMessagePage(frostKey: frostKey);
+                  }));
+                },
+                child: Text("Sign"))
           ],
         ),
       ),

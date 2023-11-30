@@ -17,6 +17,11 @@ pub fn wire_sub_key_events(port_: MessagePort) {
 }
 
 #[wasm_bindgen]
+pub fn wire_emit_key_event(port_: MessagePort, event: JsValue) {
+    wire_emit_key_event_impl(port_, event)
+}
+
+#[wasm_bindgen]
 pub fn wire_turn_stderr_logging_on(port_: MessagePort, level: i32) {
     wire_turn_stderr_logging_on_impl(port_, level)
 }
@@ -84,6 +89,11 @@ pub fn wire_device_at_index(index: usize) -> support::WireSyncReturn {
 #[wasm_bindgen]
 pub fn wire_device_list_state() -> support::WireSyncReturn {
     wire_device_list_state_impl()
+}
+
+#[wasm_bindgen]
+pub fn wire_start_signing(port_: MessagePort, key_id: JsValue, devices: JsValue, message: String) {
+    wire_start_signing_impl(port_, key_id, devices, message)
 }
 
 #[wasm_bindgen]
@@ -298,6 +308,20 @@ impl Wire2Api<KeyId> for JsValue {
         KeyId(self_.get(0).wire2api())
     }
 }
+impl Wire2Api<KeyState> for JsValue {
+    fn wire2api(self) -> KeyState {
+        let self_ = self.dyn_into::<JsArray>().unwrap();
+        assert_eq!(
+            self_.length(),
+            1,
+            "Expected 1 elements, got {}",
+            self_.length()
+        );
+        KeyState {
+            keys: self_.get(0).wire2api(),
+        }
+    }
+}
 
 impl Wire2Api<Vec<Device>> for JsValue {
     fn wire2api(self) -> Vec<Device> {
@@ -310,6 +334,15 @@ impl Wire2Api<Vec<Device>> for JsValue {
 }
 impl Wire2Api<Vec<DeviceId>> for JsValue {
     fn wire2api(self) -> Vec<DeviceId> {
+        self.dyn_into::<JsArray>()
+            .unwrap()
+            .iter()
+            .map(Wire2Api::wire2api)
+            .collect()
+    }
+}
+impl Wire2Api<Vec<FrostKey>> for JsValue {
+    fn wire2api(self) -> Vec<FrostKey> {
         self.dyn_into::<JsArray>()
             .unwrap()
             .iter()
@@ -431,6 +464,14 @@ impl Wire2Api<Vec<u8>> for Box<[u8]> {
 
 // Section: impl Wire2Api for JsValue
 
+impl<T> Wire2Api<Option<T>> for JsValue
+where
+    JsValue: Wire2Api<T>,
+{
+    fn wire2api(self) -> Option<T> {
+        (!self.is_null() && !self.is_undefined()).then(|| self.wire2api())
+    }
+}
 impl Wire2Api<RustOpaque<frostsnap_core::CoordinatorFrostKeyState>> for JsValue {
     fn wire2api(self) -> RustOpaque<frostsnap_core::CoordinatorFrostKeyState> {
         #[cfg(target_pointer_width = "64")]
@@ -494,11 +535,6 @@ impl Wire2Api<i32> for JsValue {
 impl Wire2Api<Level> for JsValue {
     fn wire2api(self) -> Level {
         (self.unchecked_into_f64() as i32).wire2api()
-    }
-}
-impl Wire2Api<Option<String>> for JsValue {
-    fn wire2api(self) -> Option<String> {
-        (!self.is_undefined() && !self.is_null()).then(|| self.wire2api())
     }
 }
 impl Wire2Api<u16> for JsValue {

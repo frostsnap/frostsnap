@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/serialport.dart';
@@ -12,18 +11,18 @@ typedef RemovedDeviceBuilder = Widget Function(
 typedef DeviceBuilder = Widget Function(BuildContext context, Device device,
     Orientation orientation, Animation<double> animation);
 
-class DeviceListWidget extends StatefulWidget {
+const double iconSize = 20.0;
+
+class DeviceList extends StatefulWidget {
   final DeviceBuilder deviceBuilder;
 
-  const DeviceListWidget({Key? key, required this.deviceBuilder})
-      : super(key: key);
+  const DeviceList({Key? key, required this.deviceBuilder}) : super(key: key);
 
   @override
-  State<StatefulWidget> createState() => DeviceListWidgetState();
+  State<StatefulWidget> createState() => _DeviceListState();
 }
 
-class DeviceListWidgetState extends State<DeviceListWidget>
-    with WidgetsBindingObserver {
+class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
   final GlobalKey<AnimatedListState> deviceListKey =
       GlobalKey<AnimatedListState>();
   StreamSubscription? _subscription;
@@ -76,7 +75,6 @@ class DeviceListWidgetState extends State<DeviceListWidget>
   Widget build(BuildContext context) {
     final orientation = effectiveOrientation(context);
     final list = AnimatedList(
-        shrinkWrap: true,
         key: deviceListKey,
         itemBuilder: (context, index, animation) {
           final device = api.deviceAtIndex(index: index)!;
@@ -145,14 +143,15 @@ class DeviceListContainer extends StatelessWidget {
     final isPortrait = effectiveOrientation(context) == Orientation.portrait;
     return Container(
         constraints: BoxConstraints(
-            maxHeight: isPortrait ? double.maxFinite : 150.0,
+            maxHeight: isPortrait ? double.maxFinite : 90.0,
             maxWidth: isPortrait ? 300.0 : double.maxFinite),
         // decoration: BoxDecoration(border: Border.all(color: Colors.black, width: 2.0)),
-        child: child);
+        child: Align(alignment: Alignment.center, child: child));
   }
 }
 
 Orientation effectiveOrientation(BuildContext context) {
+  // return Orientation.landscape;
   return Platform.isAndroid
       ? MediaQuery.of(context).orientation
       : Orientation.portrait;
@@ -167,7 +166,7 @@ class DeviceListWithIcons extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DeviceListWidget(
+    return DeviceList(
       deviceBuilder: _builder,
     );
   }
@@ -175,15 +174,33 @@ class DeviceListWithIcons extends StatelessWidget {
   Widget _builder(BuildContext context, Device device, Orientation orientation,
       Animation<double> animation) {
     final (overrideLabel, icon) = iconAssigner.call(context, device.id);
-    final _label = overrideLabel ?? LabeledDeviceText(device.name ?? '-');
+    final label = overrideLabel ?? LabeledDeviceText(device.name ?? '-');
     return DeviceBoxContainer(
         animation: animation,
         orientation: orientation,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: icon != null
-              ? [_label, SizedBox(height: 4), icon, SizedBox(height: 4)]
-              : [_label],
+              ? [
+                  label,
+                  SizedBox(height: 4),
+                  Container(height: iconSize, child: icon),
+                  SizedBox(height: 4)
+                ]
+              : [label],
         ));
+  }
+}
+
+class MaybeExpandedVertical extends StatelessWidget {
+  final Widget child;
+  MaybeExpandedVertical({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext ctx) {
+    return effectiveOrientation(ctx) == Orientation.portrait
+        ? Expanded(child: child)
+        : child;
   }
 }

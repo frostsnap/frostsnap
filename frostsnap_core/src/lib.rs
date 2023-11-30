@@ -94,7 +94,7 @@ impl FrostCoordinator {
 
                             let mut outgoing =
                                 vec![CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen(
-                                    CoordinatorToUserKeyGenMessage::ReceivedShares { id: from },
+                                    CoordinatorToUserKeyGenMessage::ReceivedShares { from },
                                 ))];
 
                             let all_responded = responses
@@ -218,7 +218,7 @@ impl FrostCoordinator {
                             Some(ack) => {
                                 outgoing.push(CoordinatorSend::ToUser(
                                     CoordinatorToUserMessage::KeyGen(
-                                        CoordinatorToUserKeyGenMessage::KeyGenAck { id: from },
+                                        CoordinatorToUserKeyGenMessage::KeyGenAck { from },
                                     ),
                                 ));
                                 *ack = true;
@@ -254,6 +254,7 @@ impl FrostCoordinator {
                 } => {
                     let n_signatures = sessions.len();
                     let frost = frost::new_without_nonce_generation::<Sha256>();
+                    let mut outgoing = vec![];
 
                     let nonce_for_device = key.device_nonces.get_mut(&from).ok_or(
                         Error::coordinator_invalid_message(&message, "Signer is unknown"),
@@ -297,6 +298,11 @@ impl FrostCoordinator {
                             session_progress
                                 .signature_shares
                                 .insert(from, *signature_share);
+                            outgoing.push(CoordinatorSend::ToUser(
+                                CoordinatorToUserMessage::Signing(
+                                    CoordinatorToUserSigningMessage::GotShare { from },
+                                ),
+                            ));
                         } else {
                             return Err(Error::coordinator_invalid_message(
                                 &message,
@@ -309,10 +315,10 @@ impl FrostCoordinator {
                     }
 
                     nonce_for_device.nonces.extend(new_nonces.iter());
-
-                    let mut outgoing = vec![CoordinatorSend::ToStorage(
+                    // update state to save new nonces
+                    outgoing.push(CoordinatorSend::ToStorage(
                         CoordinatorToStorageMessage::UpdateState(key.clone()),
-                    )];
+                    ));
 
                     let all_finished = sessions
                         .iter()
@@ -332,13 +338,14 @@ impl FrostCoordinator {
                                         .collect(),
                                 )
                             })
+                            .map(EncodedSignature::new)
                             .collect();
 
                         self.state = CoordinatorState::FrostKey { key: key.clone() };
 
-                        outgoing.push(CoordinatorSend::ToUser(CoordinatorToUserMessage::Signed {
-                            signatures,
-                        }));
+                        outgoing.push(CoordinatorSend::ToUser(CoordinatorToUserMessage::Signing(
+                            CoordinatorToUserSigningMessage::Signed { signatures },
+                        )));
                     }
 
                     Ok(outgoing)
@@ -480,10 +487,12 @@ impl FrostCoordinator {
                 };
                 Ok(vec![
                     CoordinatorSend::ToStorage(CoordinatorToStorageMessage::UpdateState(key)),
-                    CoordinatorSend::ToDevice(CoordinatorToDeviceMessage::RequestSign {
-                        sign_task,
-                        nonces: signing_nonces.clone(),
-                    }),
+                    CoordinatorSend::ToDevice(CoordinatorToDeviceMessage::RequestSign(
+                        SignRequest {
+                            sign_task,
+                            nonces: signing_nonces.clone(),
+                        },
+                    )),
                 ])
             }
             _ => Err(StartSignError::CantSignInState {
@@ -895,7 +904,7 @@ impl FrostSigner {
                     key,
                     awaiting_ack: false,
                 },
-                CoordinatorToDeviceMessage::RequestSign { nonces, sign_task },
+                CoordinatorToDeviceMessage::RequestSign(SignRequest { nonces, sign_task }),
             ) => {
                 let (my_nonces, my_nonce_index, _) = match nonces.get(&self.device_id()) {
                     Some(nonce) => nonce,

@@ -11,6 +11,7 @@ use frostsnap_core::message::CoordinatorSend;
 use frostsnap_core::message::CoordinatorToStorageMessage;
 use frostsnap_core::message::CoordinatorToUserKeyGenMessage;
 use frostsnap_core::message::CoordinatorToUserMessage;
+use frostsnap_core::message::CoordinatorToUserSigningMessage;
 use frostsnap_core::CoordinatorState;
 use frostsnap_core::DeviceId;
 use frostsnap_core::FrostCoordinator;
@@ -95,9 +96,23 @@ fn process_outbox(
                 });
             }
             CoordinatorSend::ToUser(to_user_message) => match to_user_message {
-                CoordinatorToUserMessage::Signed { .. } => {}
+                CoordinatorToUserMessage::Signing(message) => match message {
+                    CoordinatorToUserSigningMessage::GotShare { from } => {
+                        eprintln!(
+                            "Got a share from {}",
+                            ports
+                                .device_labels()
+                                .get(&from)
+                                .map(String::as_str)
+                                .unwrap_or("<unknown>")
+                        );
+                    }
+                    CoordinatorToUserSigningMessage::Signed { .. } => {
+                        eprintln!("Signing completed 🎉");
+                    }
+                },
                 CoordinatorToUserMessage::KeyGen(message) => match message {
-                    CoordinatorToUserKeyGenMessage::ReceivedShares { id } => {
+                    CoordinatorToUserKeyGenMessage::ReceivedShares { from: id } => {
                         eprintln!(
                             "✓ received share from {}",
                             ports
@@ -109,7 +124,7 @@ fn process_outbox(
                     CoordinatorToUserKeyGenMessage::CheckKeyGen { session_hash } => {
                         eprintln!("Check all devices show {}", hex::encode(session_hash));
                     }
-                    CoordinatorToUserKeyGenMessage::KeyGenAck { id } => {
+                    CoordinatorToUserKeyGenMessage::KeyGenAck { from: id } => {
                         eprintln!(
                             "✓ Got confirmation from {}",
                             ports

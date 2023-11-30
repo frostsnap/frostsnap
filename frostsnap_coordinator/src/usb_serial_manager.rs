@@ -404,7 +404,7 @@ impl UsbSerialManager {
                     });
 
                     (
-                        !devices.is_empty(),
+                        send.should_keep_in_outbox_until_all_sent(),
                         Destination::Particular(destinations_available_now),
                     )
                 }
@@ -412,6 +412,12 @@ impl UsbSerialManager {
 
             let mut wire_message = send.clone();
             wire_message.target_destinations = wire_destinations;
+            let dest_span = tracing::span!(
+                Level::DEBUG,
+                "",
+                destinations = wire_message.target_destinations.gist()
+            );
+            let _dest_enter = dest_span.enter();
 
             let wire_message = ReceiveSerial::<Upstream>::Message(wire_message);
             let gist = wire_message.gist();

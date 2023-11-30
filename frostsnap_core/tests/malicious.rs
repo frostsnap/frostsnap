@@ -1,6 +1,6 @@
 //! Tests for a malicious actions. A malicious coordinator, a malicious device or both.
 use frostsnap_core::message::{
-    CoordinatorToDeviceMessage, DeviceToUserMessage, KeyGenProvideShares, SignTask,
+    CoordinatorToDeviceMessage, DeviceToUserMessage, KeyGenProvideShares, SignRequest, SignTask,
 };
 use frostsnap_core::{DeviceId, FrostCoordinator, FrostSigner};
 use rand_chacha::rand_core::SeedableRng;
@@ -88,24 +88,24 @@ fn nonce_reuse() {
     run.extend(sign_init);
     run.run_until_finished(&mut TestEnv);
 
-    let nonces = run
-        .transcript
-        .iter()
-        .find_map(|m| match m {
-            Send::CoordinatorToDevice(CoordinatorToDeviceMessage::RequestSign {
-                nonces, ..
-            }) => Some(nonces),
-            _ => None,
-        })
-        .unwrap();
+    let nonces =
+        run.transcript
+            .iter()
+            .find_map(|m| match m {
+                Send::CoordinatorToDevice(CoordinatorToDeviceMessage::RequestSign(
+                    SignRequest { nonces, .. },
+                )) => Some(nonces),
+                _ => None,
+            })
+            .unwrap();
 
     // Receive a new sign request with the same nonces as the previous session
-    let new_sign_request = CoordinatorToDeviceMessage::RequestSign {
+    let new_sign_request = CoordinatorToDeviceMessage::RequestSign(SignRequest {
         nonces: nonces.clone(),
         sign_task: SignTask::Plain(
             b"we lost track of first FROST txn on bitcoin mainnet @ bushbash 2022".to_vec(),
         ),
-    };
+    });
     let sign_request_result = run
         .device(device_id)
         .recv_coordinator_message(new_sign_request);

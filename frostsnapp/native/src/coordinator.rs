@@ -1,14 +1,19 @@
-use crate::api::PortEvent;
-use flutter_rust_bridge::RustOpaque;
+use crate::api::{self, KeyState, PortEvent};
+use flutter_rust_bridge::{RustOpaque, StreamSink};
 use frostsnap_coordinator::frostsnap_comms::{
     CoordinatorSendBody, CoordinatorSendMessage, Destination,
 };
-use frostsnap_coordinator::frostsnap_core::message::{CoordinatorSend, CoordinatorToUserMessage};
-use frostsnap_coordinator::serialport;
+use frostsnap_coordinator::frostsnap_core::message::{
+    CoordinatorSend, CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage,
+    CoordinatorToUserSigningMessage, SignTask,
+};
+use frostsnap_coordinator::frostsnap_core::KeyId;
+use frostsnap_coordinator::SigningDispatcher;
 use frostsnap_coordinator::{
     frostsnap_core, DesktopSerial, PortChanges, PortDesc, PortOpenError, Serial, SerialPort,
     UsbSerialManager,
 };
+use frostsnap_coordinator::{serialport, DeviceChange};
 use frostsnap_core::{DeviceId, FrostCoordinator};
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::io;
@@ -25,6 +30,13 @@ pub struct FfiCoordinator {
     ffi_serial: FfiSerial,
     pending_for_outbox: Arc<Mutex<VecDeque<CoordinatorSend>>>,
     thread_handle: Mutex<Option<JoinHandle<()>>>,
+    keygen_stream: Arc<Mutex<Option<StreamSink<CoordinatorToUserKeyGenMessage>>>>,
+    signing_state: Arc<Mutex<Option<SigningState>>>,
+}
+
+struct SigningState {
+    stream: StreamSink<CoordinatorToUserSigningMessage>,
+    session: SigningDispatcher,
 }
 
 impl Default for FfiCoordinator {
@@ -45,6 +57,8 @@ impl FfiCoordinator {
             ffi_serial: FfiSerial::default(),
             pending_for_outbox,
             thread_handle: Default::default(),
+            keygen_stream: Default::default(),
+            signing_state: Default::default(),
         }
     }
 
@@ -65,75 +79,143 @@ impl FfiCoordinator {
         let manager_loop = self.manager.clone();
         let pending_loop = self.pending_for_outbox.clone();
         let coordinator_loop = self.coordinator.clone();
-        let handle = std::thread::spawn(move || loop {
-            // to give time for the other threads to get a lock
-            std::thread::sleep(Duration::from_millis(100));
-            let new_messages = {
-                let PortChanges {
-                    device_changes,
-                    new_messages,
-                } = manager_loop.lock().unwrap().poll_ports();
+        let keygen_stream_loop = self.keygen_stream.clone();
+        let signing_stream_loop = self.signing_state.clone();
+        let handle = std::thread::spawn(move || {
+            loop {
+                // to give time for the other threads to get a lock
+                std::thread::sleep(Duration::from_millis(100));
+                let mut signing_state = signing_stream_loop.lock().unwrap();
 
-                if !device_changes.is_empty() {
-                    crate::api::emit_device_events(
-                        device_changes
-                            .into_iter()
-                            .map(crate::api::DeviceChange::from)
-                            .collect(),
-                    );
-                }
+                let new_messages = {
+                    let PortChanges {
+                        device_changes,
+                        new_messages,
+                    } = manager_loop.lock().unwrap().poll_ports();
 
-                new_messages
-            };
+                    if !device_changes.is_empty() {
+                        if let Some(signing_state) = &mut *signing_state {
+                            for change in &device_changes {
+                                match change {
+                                    DeviceChange::Added { id } => {
+                                        signing_state.session.connected(*id);
+                                    }
+                                    DeviceChange::Disconnected { id } => {
+                                        signing_state.session.disconnected(*id);
+                                    }
+                                    _ => { /* ignore rest */ }
+                                }
+                            }
+                        }
 
-            let mut coordinator = coordinator_loop.lock().unwrap();
-            let mut pending_messages = pending_loop.lock().unwrap();
-            for (from, message) in new_messages {
-                // Add keygen progression response to recv_device_message
-                match coordinator.recv_device_message(from, message.clone()) {
-                    Ok(messages) => {
-                        pending_messages.extend(messages);
-                    }
-                    Err(e) => {
-                        event!(
-                            Level::ERROR,
-                            from = from.to_string(),
-                            "Failed to process message: {}",
-                            e
+                        crate::api::emit_device_events(
+                            device_changes
+                                .into_iter()
+                                .map(crate::api::DeviceChange::from)
+                                .collect(),
                         );
-                        continue;
                     }
-                };
-            }
-            drop(coordinator);
-            while let Some(message) = pending_messages.pop_front() {
-                match message {
-                    CoordinatorSend::ToDevice(msg) => {
-                        let send_message = CoordinatorSendMessage {
-                            target_destinations: Destination::from(msg.default_destinations()),
-                            message_body: CoordinatorSendBody::Core(msg),
-                        };
 
-                        manager_loop
-                            .lock()
-                            .unwrap()
-                            .queue_in_port_outbox(send_message);
+                    new_messages
+                };
+
+                let mut coordinator = coordinator_loop.lock().unwrap();
+                let mut pending_messages = pending_loop.lock().unwrap();
+                for (from, message) in new_messages {
+                    if let Some(signing_state) = &mut *signing_state {
+                        signing_state.session.process(from, &message);
                     }
-                    CoordinatorSend::ToUser(msg) => match msg {
-                        CoordinatorToUserMessage::KeyGen(keygen_message) => {
-                            crate::api::emit_keygen_event(keygen_message)
+                    match coordinator.recv_device_message(from, message.clone()) {
+                        Ok(messages) => {
+                            pending_messages.extend(messages);
                         }
-                        CoordinatorToUserMessage::Signed { .. } => {
-                            // TODO: Emit signed message to user
+                        Err(e) => {
+                            event!(
+                                Level::ERROR,
+                                from = from.to_string(),
+                                "Failed to process message: {}",
+                                e
+                            );
                         }
-                    },
-                    CoordinatorSend::ToStorage(_) => {
-                        // TODO
+                    };
+                }
+
+                drop(coordinator);
+
+                if let Some(state) = &mut *signing_state {
+                    if let Some(message) = state.session.emit_messages() {
+                        manager_loop.lock().unwrap().queue_in_port_outbox(message);
+                    }
+
+                    if state.session.is_complete() {
+                        event!(Level::INFO, "received signatures from all devices");
+                    }
+                }
+
+                drop(signing_state);
+
+                while let Some(message) = pending_messages.pop_front() {
+                    match message {
+                        CoordinatorSend::ToDevice(msg) => {
+                            let send_message = CoordinatorSendMessage {
+                                target_destinations: Destination::from(msg.default_destinations()),
+                                message_body: CoordinatorSendBody::Core(msg),
+                            };
+
+                            manager_loop
+                                .lock()
+                                .unwrap()
+                                .queue_in_port_outbox(send_message);
+                        }
+                        CoordinatorSend::ToUser(msg) => match msg {
+                            CoordinatorToUserMessage::KeyGen(event) => {
+                                let mut stream_opt = keygen_stream_loop.lock().unwrap();
+                                if let Some(stream) = stream_opt.as_ref() {
+                                    let is_finished = matches!(
+                                        event,
+                                        CoordinatorToUserKeyGenMessage::FinishedKey { .. }
+                                    );
+
+                                    if !stream.add(event) {
+                                        event!(Level::ERROR, "failed to emit keygen event");
+                                    }
+
+                                    if is_finished {
+                                        // keygen is finished so we need to tell the global key list
+                                        // that there's a new key
+                                        api::emit_key_event(KeyState {
+                                            keys: frost_keys(&coordinator_loop.lock().unwrap()),
+                                        });
+                                        stream.close();
+                                        *stream_opt = None;
+                                    }
+                                }
+                            }
+                            CoordinatorToUserMessage::Signing(event) => {
+                                let mut stream_opt = signing_stream_loop.lock().unwrap();
+                                if let Some(signing_state) = stream_opt.as_ref() {
+                                    let is_finished = matches!(
+                                        event,
+                                        CoordinatorToUserSigningMessage::Signed { .. }
+                                    );
+
+                                    if !signing_state.stream.add(event) {
+                                        event!(Level::ERROR, "failed to emit signing event");
+                                    }
+
+                                    if is_finished {
+                                        signing_state.stream.close();
+                                        *stream_opt = None;
+                                    }
+                                }
+                            }
+                        },
+                        CoordinatorSend::ToStorage(_) => {
+                            // TODO
+                        }
                     }
                 }
             }
-            // to give time for the other threads to get a lock
-            std::thread::sleep(Duration::from_millis(100));
         });
 
         *self.thread_handle.lock().unwrap() = Some(handle);
@@ -170,7 +252,15 @@ impl FfiCoordinator {
             .collect::<Vec<_>>()
     }
 
-    pub fn generate_new_key(&self, devices: BTreeSet<DeviceId>, threshold: usize) {
+    pub fn generate_new_key(
+        &self,
+        devices: BTreeSet<DeviceId>,
+        threshold: usize,
+        stream: StreamSink<CoordinatorToUserKeyGenMessage>,
+    ) {
+        if let Some(existing) = self.keygen_stream.lock().unwrap().replace(stream) {
+            existing.close();
+        }
         let keygen_message = {
             let mut coordinator = self.coordinator.lock().unwrap();
             *coordinator = FrostCoordinator::default();
@@ -184,13 +274,7 @@ impl FfiCoordinator {
     }
 
     pub fn frost_keys(&self) -> Vec<crate::api::FrostKey> {
-        self.coordinator
-            .lock()
-            .unwrap()
-            .frost_key_state()
-            .into_iter()
-            .map(|key_state| crate::api::FrostKey(RustOpaque::new(key_state.clone())))
-            .collect()
+        frost_keys(&self.coordinator.lock().unwrap())
     }
 
     pub fn devices_by_ports(&self) -> HashMap<String, Vec<DeviceId>> {
@@ -200,6 +284,45 @@ impl FfiCoordinator {
     pub fn device_names(&self) -> HashMap<DeviceId, String> {
         self.manager.lock().unwrap().device_labels().clone()
     }
+
+    pub fn start_signing(
+        &self,
+        _key_id: KeyId,
+        devices: BTreeSet<DeviceId>,
+        task: SignTask,
+        stream: StreamSink<api::CoordinatorToUserSigningMessage>,
+    ) -> anyhow::Result<()> {
+        let mut coordinator = self.coordinator.lock().unwrap();
+        let mut messages = coordinator.start_sign(task, devices)?;
+
+        let mut session = SigningDispatcher::new(&mut messages);
+
+        let manager = self.manager.lock().unwrap();
+
+        for id in manager.registered_devices() {
+            session.connected(*id);
+        }
+
+        self.pending_for_outbox.lock().unwrap().extend(messages);
+        if let Some(old_signing_state) = self
+            .signing_state
+            .lock()
+            .unwrap()
+            .replace(SigningState { stream, session })
+        {
+            old_signing_state.stream.close();
+        }
+
+        Ok(())
+    }
+}
+
+fn frost_keys(coordinator: &FrostCoordinator) -> Vec<crate::api::FrostKey> {
+    coordinator
+        .frost_key_state()
+        .into_iter()
+        .map(|key_state| crate::api::FrostKey(RustOpaque::new(key_state.clone())))
+        .collect()
 }
 
 // Newtypes needed here because type aliases lead to weird types in the bindings
