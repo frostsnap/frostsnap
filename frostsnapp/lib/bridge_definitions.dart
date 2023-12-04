@@ -315,10 +315,12 @@ enum DeviceListChangeKind {
 class DeviceListState {
   final Native bridge;
   final List<Device> devices;
+  final int stateId;
 
   const DeviceListState({
     required this.bridge,
     required this.devices,
+    required this.stateId,
   });
 
   List<DeviceId> namedDevices({dynamic hint}) =>

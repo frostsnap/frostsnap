@@ -683,7 +683,11 @@ impl rust2dart::IntoIntoDart<DeviceListChangeKind> for DeviceListChangeKind {
 
 impl support::IntoDart for DeviceListState {
     fn into_dart(self) -> support::DartAbi {
-        vec![self.devices.into_into_dart().into_dart()].into_dart()
+        vec![
+            self.devices.into_into_dart().into_dart(),
+            self.state_id.into_into_dart().into_dart(),
+        ]
+        .into_dart()
     }
 }
 impl support::IntoDartExceptPrimitive for DeviceListState {}

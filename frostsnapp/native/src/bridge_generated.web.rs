@@ -274,12 +274,13 @@ impl Wire2Api<DeviceListState> for JsValue {
         let self_ = self.dyn_into::<JsArray>().unwrap();
         assert_eq!(
             self_.length(),
-            1,
-            "Expected 1 elements, got {}",
+            2,
+            "Expected 2 elements, got {}",
             self_.length()
         );
         DeviceListState {
             devices: self_.get(0).wire2api(),
+            state_id: self_.get(1).wire2api(),
         }
     }
 }

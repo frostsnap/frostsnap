@@ -108,7 +108,7 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
 
   @protected
   List<dynamic> api2wire_device_list_state(DeviceListState raw) {
-    return [api2wire_list_device(raw.devices)];
+    return [api2wire_list_device(raw.devices), api2wire_usize(raw.stateId)];
   }
 
   @protected

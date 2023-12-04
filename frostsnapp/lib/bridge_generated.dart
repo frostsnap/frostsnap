@@ -749,11 +749,12 @@ class NativeImpl implements Native {
 
   DeviceListState _wire2api_device_list_state(dynamic raw) {
     final arr = raw as List<dynamic>;
-    if (arr.length != 1)
-      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
     return DeviceListState(
       bridge: this,
       devices: _wire2api_list_device(arr[0]),
+      stateId: _wire2api_usize(arr[1]),
     );
   }
 

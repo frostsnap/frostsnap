@@ -23,35 +23,50 @@ class DeviceList extends StatefulWidget {
 }
 
 class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
-  final GlobalKey<AnimatedListState> deviceListKey =
-      GlobalKey<AnimatedListState>();
+  GlobalKey<AnimatedListState> deviceListKey = GlobalKey<AnimatedListState>();
   StreamSubscription? _subscription;
+  late DeviceListState currentListState;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _subscription = deviceListChangeStream.listen((change) async {
-      switch (change.kind) {
-        case DeviceListChangeKind.Added:
-          {
-            deviceListKey.currentState!.insertItem(change.index,
-                duration: const Duration(milliseconds: 800));
+    currentListState = api.deviceListState();
+    _subscription = deviceListUpdateStream.listen((update) async {
+      if (update.state.stateId != currentListState.stateId + 1) {
+        // our states are out of sync somehow -- reset the list.
+        //
+        // NOTE: This should never happen in practice but I set up these state
+        // ids while debugging to exclude states missing as a possible problem.
+        setState(() {
+          deviceListKey = GlobalKey();
+        });
+      } else {
+        for (final change in update.changes) {
+          switch (change.kind) {
+            case DeviceListChangeKind.Added:
+              {
+                deviceListKey.currentState!.insertItem(change.index,
+                    duration: const Duration(milliseconds: 800));
+              }
+            case DeviceListChangeKind.Removed:
+              {
+                deviceListKey.currentState!.removeItem(change.index,
+                    (BuildContext context, Animation<double> animation) {
+                  return widget.deviceBuilder(context, change.device,
+                      effectiveOrientation(context), animation);
+                });
+              }
+            case DeviceListChangeKind.Named:
+              {
+                /* do nothing*/
+              }
           }
-        case DeviceListChangeKind.Removed:
-          {
-            deviceListKey.currentState!.removeItem(change.index,
-                (BuildContext context, Animation<double> animation) {
-              return widget.deviceBuilder(context, change.device,
-                  effectiveOrientation(context), animation);
-            });
-          }
-        case DeviceListChangeKind.Named:
-          {
-            /* do nothing*/
-          }
+        }
       }
-      setState(() => {});
+      setState(() {
+        currentListState = update.state;
+      });
     });
   }
 
@@ -77,10 +92,10 @@ class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
     final list = AnimatedList(
         key: deviceListKey,
         itemBuilder: (context, index, animation) {
-          final device = api.deviceAtIndex(index: index)!;
+          final device = currentListState.devices[index];
           return widget.deviceBuilder(context, device, orientation, animation);
         },
-        initialItemCount: api.deviceListState().devices.length,
+        initialItemCount: currentListState.devices.length,
         scrollDirection: orientation == Orientation.landscape
             ? Axis.horizontal
             : Axis.vertical);

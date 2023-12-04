@@ -55,7 +55,7 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^2.0.0
   freezed: ^2.4.1
-  ffigen: ^10.0.0
+  ffigen: ^9.0.1
   build_runner: ^2.4.6
 
 

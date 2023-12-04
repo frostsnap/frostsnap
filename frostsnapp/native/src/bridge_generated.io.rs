@@ -489,6 +489,7 @@ impl Wire2Api<DeviceListState> for wire_DeviceListState {
     fn wire2api(self) -> DeviceListState {
         DeviceListState {
             devices: self.devices.wire2api(),
+            state_id: self.state_id.wire2api(),
         }
     }
 }
@@ -663,6 +664,7 @@ pub struct wire_DeviceId {
 #[derive(Clone)]
 pub struct wire_DeviceListState {
     devices: *mut wire_list_device,
+    state_id: usize,
 }
 
 #[repr(C)]
@@ -838,6 +840,7 @@ impl NewWithNullPtr for wire_DeviceListState {
     fn new_with_null_ptr() -> Self {
         Self {
             devices: core::ptr::null_mut(),
+            state_id: Default::default(),
         }
     }
 }

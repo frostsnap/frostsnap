@@ -292,6 +292,7 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   void _api_fill_to_wire_device_list_state(
       DeviceListState apiObj, wire_DeviceListState wireObj) {
     wireObj.devices = api2wire_list_device(apiObj.devices);
+    wireObj.state_id = api2wire_usize(apiObj.stateId);
   }
 
   void _api_fill_to_wire_frost_key(FrostKey apiObj, wire_FrostKey wireObj) {
@@ -1423,6 +1424,9 @@ final class wire_list_device extends ffi.Struct {
 
 final class wire_DeviceListState extends ffi.Struct {
   external ffi.Pointer<wire_list_device> devices;
+
+  @ffi.UintPtr()
+  external int state_id;
 }
 
 typedef DartPostCObjectFnType = ffi.Pointer<

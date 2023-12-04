@@ -36,8 +36,7 @@ pub fn sub_port_events(event_stream: StreamSink<PortEvent>) {
 
 pub fn sub_device_events(new_stream: StreamSink<DeviceListUpdate>) {
     let mut device_list_and_stream = DEVICE_LIST.lock().unwrap();
-    let (list, stream) = &mut *device_list_and_stream;
-    list.populate_from_port_devices(COORDINATOR.devices_by_ports(), COORDINATOR.device_names());
+    let (_, stream) = &mut *device_list_and_stream;
 
     if let Some(old_stream) = stream.replace(new_stream) {
         old_stream.close();
@@ -376,6 +375,7 @@ pub struct DeviceListUpdate {
 #[derive(Clone, Debug)]
 pub struct DeviceListState {
     pub devices: Vec<Device>,
+    pub state_id: usize,
 }
 
 impl DeviceListState {

@@ -108,6 +108,7 @@ typedef struct wire_list_device {
 
 typedef struct wire_DeviceListState {
   struct wire_list_device *devices;
+  uintptr_t state_id;
 } wire_DeviceListState;
 
 void store_dart_post_cobject(DartPostCObjectFnType ptr);

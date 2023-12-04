@@ -6,20 +6,10 @@ use std::collections::HashMap;
 pub struct DeviceList {
     devices: Vec<DeviceId>,
     names: HashMap<DeviceId, String>,
+    state_counter: usize,
 }
 
 impl DeviceList {
-    /// Set the internal state from the usb serial manager. This doesn't emit events.
-    pub fn populate_from_port_devices(
-        &mut self,
-        devices_by_port: HashMap<String, Vec<DeviceId>>,
-        names: HashMap<DeviceId, String>,
-    ) {
-        let devices = devices_by_port.into_values().flatten().collect();
-        self.devices = devices;
-        self.names = names;
-    }
-
     pub fn state(&self) -> api::DeviceListState {
         let devices = self
             .devices
@@ -31,7 +21,10 @@ impl DeviceList {
             })
             .collect();
 
-        DeviceListState { devices }
+        DeviceListState {
+            devices,
+            state_id: self.state_counter,
+        }
     }
 
     pub fn device_at_index(&self, index: usize) -> Option<api::Device> {
@@ -95,6 +88,10 @@ impl DeviceList {
                     }
                 }
             }
+        }
+
+        if !output.is_empty() {
+            self.state_counter += 1;
         }
         output
     }
