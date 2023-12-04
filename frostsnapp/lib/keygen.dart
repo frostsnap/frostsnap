@@ -376,7 +376,9 @@ class KeyGenDeviceList extends StatelessWidget {
                       content: Column(children: [
                         Text("Confirm name '$value' on device"),
                         Divider(),
-                        DeviceListWithIcons(iconAssigner: (context, deviceId) {
+                        MaybeExpandedVertical(child: DeviceListContainer(child:
+                            DeviceListWithIcons(
+                                iconAssigner: (context, deviceId) {
                           if (deviceIdEquals(deviceId, device.id)) {
                             final label = LabeledDeviceText("'$value'?");
                             final icon = const Row(
@@ -390,7 +392,7 @@ class KeyGenDeviceList extends StatelessWidget {
                           } else {
                             return (null, null);
                           }
-                        })
+                        })))
                       ]),
                       complete: completeWhen,
                       onCancel: () async {
