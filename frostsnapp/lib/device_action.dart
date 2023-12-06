@@ -4,7 +4,6 @@ import 'dart:io';
 Future<T?> showDeviceActionDialog<T>({
   required BuildContext context,
   required Widget content,
-  required Widget title,
   required Future<T?> complete,
   Function()? onCancel,
 }) async {
@@ -18,7 +17,6 @@ Future<T?> showDeviceActionDialog<T>({
           }
         });
         return AlertDialog(
-            title: title,
             content: Container(
                 width: Platform.isAndroid ? double.maxFinite : 400.0,
                 // this align thing is necessary to stop the child from expanding beyond its BoxConstraints

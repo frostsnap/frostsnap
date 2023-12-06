@@ -14,12 +14,12 @@ class DeviceSetup extends StatelessWidget {
   final DeviceId deviceId;
   final ValueChanged<String>? onSubmitted;
   final ValueChanged<String>? onChanged;
-  final WillPopCallback? popInvoked;
+  final PopInvokedCallback? popInvoked;
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-        onWillPop: popInvoked,
+    return PopScope(
+        onPopInvoked: popInvoked,
         child: Scaffold(
           appBar: AppBar(
             title: const Text('Device Setup'),

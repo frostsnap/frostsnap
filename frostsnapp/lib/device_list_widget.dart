@@ -1,68 +1,73 @@
 import 'dart:async';
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/serialport.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
-typedef RemovedDeviceBuilder = Widget Function(BuildContext context,
-    DeviceId id, String? label, Animation<double> animation);
+typedef RemovedDeviceBuilder = Widget Function(
+    BuildContext context, Device device, Animation<double> animation);
 
-typedef DeviceBuilder = Widget Function(BuildContext context, DeviceId id,
-    String? label, Orientation orientation, Animation<double> animation);
-typedef OnDeviceChange = Function(DeviceChange change);
+typedef DeviceBuilder = Widget Function(BuildContext context, Device device,
+    Orientation orientation, Animation<double> animation);
 
-class DeviceListWidget extends StatefulWidget {
+const double iconSize = 20.0;
+
+class DeviceList extends StatefulWidget {
   final DeviceBuilder deviceBuilder;
 
-  const DeviceListWidget({Key? key, required this.deviceBuilder})
-      : super(key: key);
+  const DeviceList({Key? key, required this.deviceBuilder}) : super(key: key);
 
   @override
-  State<StatefulWidget> createState() => DeviceListWidgetState();
+  State<StatefulWidget> createState() => _DeviceListState();
 }
 
-class DeviceListWidgetState extends State<DeviceListWidget>
-    with WidgetsBindingObserver {
-  final GlobalKey<AnimatedListState> deviceListKey =
-      GlobalKey<AnimatedListState>();
+class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
+  GlobalKey<AnimatedListState> deviceListKey = GlobalKey<AnimatedListState>();
   StreamSubscription? _subscription;
+  late DeviceListState currentListState;
 
   @override
   void initState() {
     super.initState();
-
     WidgetsBinding.instance.addObserver(this);
-
-    _subscription = globalDeviceList.subscribe().listen((event) async {
-      switch (event.kind) {
-        case DeviceListChangeKind.added:
-          {
-            deviceListKey.currentState!.insertItem(event.index,
-                duration: const Duration(milliseconds: 800));
+    currentListState = api.deviceListState();
+    _subscription = deviceListUpdateStream.listen((update) async {
+      if (update.state.stateId != currentListState.stateId + 1) {
+        // our states are out of sync somehow -- reset the list.
+        //
+        // NOTE: This should never happen in practice but I set up these state
+        // ids while debugging to exclude states missing as a possible problem.
+        setState(() {
+          deviceListKey = GlobalKey();
+        });
+      } else {
+        for (final change in update.changes) {
+          switch (change.kind) {
+            case DeviceListChangeKind.Added:
+              {
+                deviceListKey.currentState!.insertItem(change.index,
+                    duration: const Duration(milliseconds: 800));
+              }
+            case DeviceListChangeKind.Removed:
+              {
+                deviceListKey.currentState!.removeItem(change.index,
+                    (BuildContext context, Animation<double> animation) {
+                  return widget.deviceBuilder(context, change.device,
+                      effectiveOrientation(context), animation);
+                });
+              }
+            case DeviceListChangeKind.Named:
+              {
+                /* do nothing*/
+              }
           }
-        case DeviceListChangeKind.removed:
-          {
-            deviceListKey.currentState!.removeItem(event.index,
-                (BuildContext context, Animation<double> animation) {
-              return widget.deviceBuilder(context, event.id, event.name,
-                  effectiveOrientation(context), animation);
-            });
-          }
-        case DeviceListChangeKind.named:
-          {
-            /* do nothing*/
-          }
+        }
       }
-      setState(() => {});
+      setState(() {
+        currentListState = update.state;
+      });
     });
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // So we can react to orientation changes
   }
 
   @override
@@ -85,15 +90,12 @@ class DeviceListWidgetState extends State<DeviceListWidget>
   Widget build(BuildContext context) {
     final orientation = effectiveOrientation(context);
     final list = AnimatedList(
-        shrinkWrap: true,
         key: deviceListKey,
         itemBuilder: (context, index, animation) {
-          var id = globalDeviceList[index];
-          var label = globalDeviceList.state.names[id];
-          return widget.deviceBuilder(
-              context, id, label, orientation, animation);
+          final device = currentListState.devices[index];
+          return widget.deviceBuilder(context, device, orientation, animation);
         },
-        initialItemCount: globalDeviceList.state.devices.length,
+        initialItemCount: currentListState.devices.length,
         scrollDirection: orientation == Orientation.landscape
             ? Axis.horizontal
             : Axis.vertical);
@@ -115,7 +117,6 @@ class DeviceBoxContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isPortrait = orientation == Orientation.portrait;
     final animationBegin = orientation == Orientation.landscape
         ? const Offset(8.0, 0.0)
         : const Offset(0.0, 8.0);
@@ -157,14 +158,15 @@ class DeviceListContainer extends StatelessWidget {
     final isPortrait = effectiveOrientation(context) == Orientation.portrait;
     return Container(
         constraints: BoxConstraints(
-            maxHeight: isPortrait ? double.maxFinite : 150.0,
+            maxHeight: isPortrait ? double.maxFinite : 90.0,
             maxWidth: isPortrait ? 300.0 : double.maxFinite),
         // decoration: BoxDecoration(border: Border.all(color: Colors.black, width: 2.0)),
-        child: child);
+        child: Align(alignment: Alignment.center, child: child));
   }
 }
 
 Orientation effectiveOrientation(BuildContext context) {
+  // return Orientation.landscape;
   return Platform.isAndroid
       ? MediaQuery.of(context).orientation
       : Orientation.portrait;
@@ -179,23 +181,41 @@ class DeviceListWithIcons extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DeviceListWidget(
+    return DeviceList(
       deviceBuilder: _builder,
     );
   }
 
-  Widget _builder(BuildContext context, DeviceId id, String? label,
-      Orientation orientation, Animation<double> animation) {
-    final (overrideLabel, icon) = iconAssigner.call(context, id);
-    final _label = overrideLabel ?? LabeledDeviceText(label ?? '-');
+  Widget _builder(BuildContext context, Device device, Orientation orientation,
+      Animation<double> animation) {
+    final (overrideLabel, icon) = iconAssigner.call(context, device.id);
+    final label = overrideLabel ?? LabeledDeviceText(device.name ?? '-');
     return DeviceBoxContainer(
         animation: animation,
         orientation: orientation,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: icon != null
-              ? [_label, SizedBox(height: 4), icon, SizedBox(height: 4)]
-              : [_label],
+              ? [
+                  label,
+                  SizedBox(height: 4),
+                  Container(height: iconSize, child: icon),
+                  SizedBox(height: 4)
+                ]
+              : [label],
         ));
+  }
+}
+
+class MaybeExpandedVertical extends StatelessWidget {
+  final Widget child;
+  MaybeExpandedVertical({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext ctx) {
+    return effectiveOrientation(ctx) == Orientation.portrait
+        ? Expanded(child: child)
+        : child;
   }
 }

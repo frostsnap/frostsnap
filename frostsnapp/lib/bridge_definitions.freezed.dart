@@ -18,25 +18,25 @@ final _privateConstructorUsedError = UnsupportedError(
 mixin _$CoordinatorToUserKeyGenMessage {
   @optionalTypeArgs
   TResult when<TResult extends Object?>({
-    required TResult Function(DeviceId id) receivedShares,
+    required TResult Function(DeviceId from) receivedShares,
     required TResult Function(U8Array32 sessionHash) checkKeyGen,
-    required TResult Function(DeviceId id) keyGenAck,
+    required TResult Function(DeviceId from) keyGenAck,
     required TResult Function(KeyId keyId) finishedKey,
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
   TResult? whenOrNull<TResult extends Object?>({
-    TResult? Function(DeviceId id)? receivedShares,
+    TResult? Function(DeviceId from)? receivedShares,
     TResult? Function(U8Array32 sessionHash)? checkKeyGen,
-    TResult? Function(DeviceId id)? keyGenAck,
+    TResult? Function(DeviceId from)? keyGenAck,
     TResult? Function(KeyId keyId)? finishedKey,
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
   TResult maybeWhen<TResult extends Object?>({
-    TResult Function(DeviceId id)? receivedShares,
+    TResult Function(DeviceId from)? receivedShares,
     TResult Function(U8Array32 sessionHash)? checkKeyGen,
-    TResult Function(DeviceId id)? keyGenAck,
+    TResult Function(DeviceId from)? keyGenAck,
     TResult Function(KeyId keyId)? finishedKey,
     required TResult orElse(),
   }) =>
@@ -110,7 +110,7 @@ abstract class _$$CoordinatorToUserKeyGenMessage_ReceivedSharesImplCopyWith<
               then) =
       __$$CoordinatorToUserKeyGenMessage_ReceivedSharesImplCopyWithImpl<$Res>;
   @useResult
-  $Res call({DeviceId id});
+  $Res call({DeviceId from});
 }
 
 /// @nodoc
@@ -127,12 +127,12 @@ class __$$CoordinatorToUserKeyGenMessage_ReceivedSharesImplCopyWithImpl<$Res>
   @pragma('vm:prefer-inline')
   @override
   $Res call({
-    Object? id = null,
+    Object? from = null,
   }) {
     return _then(_$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl(
-      id: null == id
-          ? _value.id
-          : id // ignore: cast_nullable_to_non_nullable
+      from: null == from
+          ? _value.from
+          : from // ignore: cast_nullable_to_non_nullable
               as DeviceId,
     ));
   }
@@ -142,14 +142,15 @@ class __$$CoordinatorToUserKeyGenMessage_ReceivedSharesImplCopyWithImpl<$Res>
 
 class _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl
     implements CoordinatorToUserKeyGenMessage_ReceivedShares {
-  const _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl({required this.id});
+  const _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl(
+      {required this.from});
 
   @override
-  final DeviceId id;
+  final DeviceId from;
 
   @override
   String toString() {
-    return 'CoordinatorToUserKeyGenMessage.receivedShares(id: $id)';
+    return 'CoordinatorToUserKeyGenMessage.receivedShares(from: $from)';
   }
 
   @override
@@ -157,11 +158,11 @@ class _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl &&
-            (identical(other.id, id) || other.id == id));
+            (identical(other.from, from) || other.from == from));
   }
 
   @override
-  int get hashCode => Object.hash(runtimeType, id);
+  int get hashCode => Object.hash(runtimeType, from);
 
   @JsonKey(ignore: true)
   @override
@@ -176,36 +177,36 @@ class _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl
   @override
   @optionalTypeArgs
   TResult when<TResult extends Object?>({
-    required TResult Function(DeviceId id) receivedShares,
+    required TResult Function(DeviceId from) receivedShares,
     required TResult Function(U8Array32 sessionHash) checkKeyGen,
-    required TResult Function(DeviceId id) keyGenAck,
+    required TResult Function(DeviceId from) keyGenAck,
     required TResult Function(KeyId keyId) finishedKey,
   }) {
-    return receivedShares(id);
+    return receivedShares(from);
   }
 
   @override
   @optionalTypeArgs
   TResult? whenOrNull<TResult extends Object?>({
-    TResult? Function(DeviceId id)? receivedShares,
+    TResult? Function(DeviceId from)? receivedShares,
     TResult? Function(U8Array32 sessionHash)? checkKeyGen,
-    TResult? Function(DeviceId id)? keyGenAck,
+    TResult? Function(DeviceId from)? keyGenAck,
     TResult? Function(KeyId keyId)? finishedKey,
   }) {
-    return receivedShares?.call(id);
+    return receivedShares?.call(from);
   }
 
   @override
   @optionalTypeArgs
   TResult maybeWhen<TResult extends Object?>({
-    TResult Function(DeviceId id)? receivedShares,
+    TResult Function(DeviceId from)? receivedShares,
     TResult Function(U8Array32 sessionHash)? checkKeyGen,
-    TResult Function(DeviceId id)? keyGenAck,
+    TResult Function(DeviceId from)? keyGenAck,
     TResult Function(KeyId keyId)? finishedKey,
     required TResult orElse(),
   }) {
     if (receivedShares != null) {
-      return receivedShares(id);
+      return receivedShares(from);
     }
     return orElse();
   }
@@ -263,10 +264,10 @@ class _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl
 abstract class CoordinatorToUserKeyGenMessage_ReceivedShares
     implements CoordinatorToUserKeyGenMessage {
   const factory CoordinatorToUserKeyGenMessage_ReceivedShares(
-          {required final DeviceId id}) =
+          {required final DeviceId from}) =
       _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl;
 
-  DeviceId get id;
+  DeviceId get from;
   @JsonKey(ignore: true)
   _$$CoordinatorToUserKeyGenMessage_ReceivedSharesImplCopyWith<
           _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl>
@@ -349,9 +350,9 @@ class _$CoordinatorToUserKeyGenMessage_CheckKeyGenImpl
   @override
   @optionalTypeArgs
   TResult when<TResult extends Object?>({
-    required TResult Function(DeviceId id) receivedShares,
+    required TResult Function(DeviceId from) receivedShares,
     required TResult Function(U8Array32 sessionHash) checkKeyGen,
-    required TResult Function(DeviceId id) keyGenAck,
+    required TResult Function(DeviceId from) keyGenAck,
     required TResult Function(KeyId keyId) finishedKey,
   }) {
     return checkKeyGen(sessionHash);
@@ -360,9 +361,9 @@ class _$CoordinatorToUserKeyGenMessage_CheckKeyGenImpl
   @override
   @optionalTypeArgs
   TResult? whenOrNull<TResult extends Object?>({
-    TResult? Function(DeviceId id)? receivedShares,
+    TResult? Function(DeviceId from)? receivedShares,
     TResult? Function(U8Array32 sessionHash)? checkKeyGen,
-    TResult? Function(DeviceId id)? keyGenAck,
+    TResult? Function(DeviceId from)? keyGenAck,
     TResult? Function(KeyId keyId)? finishedKey,
   }) {
     return checkKeyGen?.call(sessionHash);
@@ -371,9 +372,9 @@ class _$CoordinatorToUserKeyGenMessage_CheckKeyGenImpl
   @override
   @optionalTypeArgs
   TResult maybeWhen<TResult extends Object?>({
-    TResult Function(DeviceId id)? receivedShares,
+    TResult Function(DeviceId from)? receivedShares,
     TResult Function(U8Array32 sessionHash)? checkKeyGen,
-    TResult Function(DeviceId id)? keyGenAck,
+    TResult Function(DeviceId from)? keyGenAck,
     TResult Function(KeyId keyId)? finishedKey,
     required TResult orElse(),
   }) {
@@ -453,7 +454,7 @@ abstract class _$$CoordinatorToUserKeyGenMessage_KeyGenAckImplCopyWith<$Res> {
           $Res Function(_$CoordinatorToUserKeyGenMessage_KeyGenAckImpl) then) =
       __$$CoordinatorToUserKeyGenMessage_KeyGenAckImplCopyWithImpl<$Res>;
   @useResult
-  $Res call({DeviceId id});
+  $Res call({DeviceId from});
 }
 
 /// @nodoc
@@ -469,12 +470,12 @@ class __$$CoordinatorToUserKeyGenMessage_KeyGenAckImplCopyWithImpl<$Res>
   @pragma('vm:prefer-inline')
   @override
   $Res call({
-    Object? id = null,
+    Object? from = null,
   }) {
     return _then(_$CoordinatorToUserKeyGenMessage_KeyGenAckImpl(
-      id: null == id
-          ? _value.id
-          : id // ignore: cast_nullable_to_non_nullable
+      from: null == from
+          ? _value.from
+          : from // ignore: cast_nullable_to_non_nullable
               as DeviceId,
     ));
   }
@@ -484,14 +485,14 @@ class __$$CoordinatorToUserKeyGenMessage_KeyGenAckImplCopyWithImpl<$Res>
 
 class _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl
     implements CoordinatorToUserKeyGenMessage_KeyGenAck {
-  const _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl({required this.id});
+  const _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl({required this.from});
 
   @override
-  final DeviceId id;
+  final DeviceId from;
 
   @override
   String toString() {
-    return 'CoordinatorToUserKeyGenMessage.keyGenAck(id: $id)';
+    return 'CoordinatorToUserKeyGenMessage.keyGenAck(from: $from)';
   }
 
   @override
@@ -499,11 +500,11 @@ class _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl &&
-            (identical(other.id, id) || other.id == id));
+            (identical(other.from, from) || other.from == from));
   }
 
   @override
-  int get hashCode => Object.hash(runtimeType, id);
+  int get hashCode => Object.hash(runtimeType, from);
 
   @JsonKey(ignore: true)
   @override
@@ -517,36 +518,36 @@ class _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl
   @override
   @optionalTypeArgs
   TResult when<TResult extends Object?>({
-    required TResult Function(DeviceId id) receivedShares,
+    required TResult Function(DeviceId from) receivedShares,
     required TResult Function(U8Array32 sessionHash) checkKeyGen,
-    required TResult Function(DeviceId id) keyGenAck,
+    required TResult Function(DeviceId from) keyGenAck,
     required TResult Function(KeyId keyId) finishedKey,
   }) {
-    return keyGenAck(id);
+    return keyGenAck(from);
   }
 
   @override
   @optionalTypeArgs
   TResult? whenOrNull<TResult extends Object?>({
-    TResult? Function(DeviceId id)? receivedShares,
+    TResult? Function(DeviceId from)? receivedShares,
     TResult? Function(U8Array32 sessionHash)? checkKeyGen,
-    TResult? Function(DeviceId id)? keyGenAck,
+    TResult? Function(DeviceId from)? keyGenAck,
     TResult? Function(KeyId keyId)? finishedKey,
   }) {
-    return keyGenAck?.call(id);
+    return keyGenAck?.call(from);
   }
 
   @override
   @optionalTypeArgs
   TResult maybeWhen<TResult extends Object?>({
-    TResult Function(DeviceId id)? receivedShares,
+    TResult Function(DeviceId from)? receivedShares,
     TResult Function(U8Array32 sessionHash)? checkKeyGen,
-    TResult Function(DeviceId id)? keyGenAck,
+    TResult Function(DeviceId from)? keyGenAck,
     TResult Function(KeyId keyId)? finishedKey,
     required TResult orElse(),
   }) {
     if (keyGenAck != null) {
-      return keyGenAck(id);
+      return keyGenAck(from);
     }
     return orElse();
   }
@@ -604,10 +605,10 @@ class _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl
 abstract class CoordinatorToUserKeyGenMessage_KeyGenAck
     implements CoordinatorToUserKeyGenMessage {
   const factory CoordinatorToUserKeyGenMessage_KeyGenAck(
-          {required final DeviceId id}) =
+          {required final DeviceId from}) =
       _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl;
 
-  DeviceId get id;
+  DeviceId get from;
   @JsonKey(ignore: true)
   _$$CoordinatorToUserKeyGenMessage_KeyGenAckImplCopyWith<
           _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl>
@@ -687,9 +688,9 @@ class _$CoordinatorToUserKeyGenMessage_FinishedKeyImpl
   @override
   @optionalTypeArgs
   TResult when<TResult extends Object?>({
-    required TResult Function(DeviceId id) receivedShares,
+    required TResult Function(DeviceId from) receivedShares,
     required TResult Function(U8Array32 sessionHash) checkKeyGen,
-    required TResult Function(DeviceId id) keyGenAck,
+    required TResult Function(DeviceId from) keyGenAck,
     required TResult Function(KeyId keyId) finishedKey,
   }) {
     return finishedKey(keyId);
@@ -698,9 +699,9 @@ class _$CoordinatorToUserKeyGenMessage_FinishedKeyImpl
   @override
   @optionalTypeArgs
   TResult? whenOrNull<TResult extends Object?>({
-    TResult? Function(DeviceId id)? receivedShares,
+    TResult? Function(DeviceId from)? receivedShares,
     TResult? Function(U8Array32 sessionHash)? checkKeyGen,
-    TResult? Function(DeviceId id)? keyGenAck,
+    TResult? Function(DeviceId from)? keyGenAck,
     TResult? Function(KeyId keyId)? finishedKey,
   }) {
     return finishedKey?.call(keyId);
@@ -709,9 +710,9 @@ class _$CoordinatorToUserKeyGenMessage_FinishedKeyImpl
   @override
   @optionalTypeArgs
   TResult maybeWhen<TResult extends Object?>({
-    TResult Function(DeviceId id)? receivedShares,
+    TResult Function(DeviceId from)? receivedShares,
     TResult Function(U8Array32 sessionHash)? checkKeyGen,
-    TResult Function(DeviceId id)? keyGenAck,
+    TResult Function(DeviceId from)? keyGenAck,
     TResult Function(KeyId keyId)? finishedKey,
     required TResult orElse(),
   }) {
@@ -785,132 +786,99 @@ abstract class CoordinatorToUserKeyGenMessage_FinishedKey
 }
 
 /// @nodoc
-mixin _$DeviceChange {
-  DeviceId get id => throw _privateConstructorUsedError;
+mixin _$CoordinatorToUserSigningMessage {
   @optionalTypeArgs
   TResult when<TResult extends Object?>({
-    required TResult Function(DeviceId id) added,
-    required TResult Function(DeviceId id, String oldName, String newName)
-        renamed,
-    required TResult Function(DeviceId id) needsName,
-    required TResult Function(DeviceId id, String name) registered,
-    required TResult Function(DeviceId id) disconnected,
+    required TResult Function(DeviceId from) gotShare,
+    required TResult Function(List<EncodedSignature> signatures) signed,
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
   TResult? whenOrNull<TResult extends Object?>({
-    TResult? Function(DeviceId id)? added,
-    TResult? Function(DeviceId id, String oldName, String newName)? renamed,
-    TResult? Function(DeviceId id)? needsName,
-    TResult? Function(DeviceId id, String name)? registered,
-    TResult? Function(DeviceId id)? disconnected,
+    TResult? Function(DeviceId from)? gotShare,
+    TResult? Function(List<EncodedSignature> signatures)? signed,
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
   TResult maybeWhen<TResult extends Object?>({
-    TResult Function(DeviceId id)? added,
-    TResult Function(DeviceId id, String oldName, String newName)? renamed,
-    TResult Function(DeviceId id)? needsName,
-    TResult Function(DeviceId id, String name)? registered,
-    TResult Function(DeviceId id)? disconnected,
+    TResult Function(DeviceId from)? gotShare,
+    TResult Function(List<EncodedSignature> signatures)? signed,
     required TResult orElse(),
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
   TResult map<TResult extends Object?>({
-    required TResult Function(DeviceChange_Added value) added,
-    required TResult Function(DeviceChange_Renamed value) renamed,
-    required TResult Function(DeviceChange_NeedsName value) needsName,
-    required TResult Function(DeviceChange_Registered value) registered,
-    required TResult Function(DeviceChange_Disconnected value) disconnected,
+    required TResult Function(CoordinatorToUserSigningMessage_GotShare value)
+        gotShare,
+    required TResult Function(CoordinatorToUserSigningMessage_Signed value)
+        signed,
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
   TResult? mapOrNull<TResult extends Object?>({
-    TResult? Function(DeviceChange_Added value)? added,
-    TResult? Function(DeviceChange_Renamed value)? renamed,
-    TResult? Function(DeviceChange_NeedsName value)? needsName,
-    TResult? Function(DeviceChange_Registered value)? registered,
-    TResult? Function(DeviceChange_Disconnected value)? disconnected,
+    TResult? Function(CoordinatorToUserSigningMessage_GotShare value)? gotShare,
+    TResult? Function(CoordinatorToUserSigningMessage_Signed value)? signed,
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
   TResult maybeMap<TResult extends Object?>({
-    TResult Function(DeviceChange_Added value)? added,
-    TResult Function(DeviceChange_Renamed value)? renamed,
-    TResult Function(DeviceChange_NeedsName value)? needsName,
-    TResult Function(DeviceChange_Registered value)? registered,
-    TResult Function(DeviceChange_Disconnected value)? disconnected,
+    TResult Function(CoordinatorToUserSigningMessage_GotShare value)? gotShare,
+    TResult Function(CoordinatorToUserSigningMessage_Signed value)? signed,
     required TResult orElse(),
   }) =>
       throw _privateConstructorUsedError;
-
-  @JsonKey(ignore: true)
-  $DeviceChangeCopyWith<DeviceChange> get copyWith =>
-      throw _privateConstructorUsedError;
 }
 
 /// @nodoc
-abstract class $DeviceChangeCopyWith<$Res> {
-  factory $DeviceChangeCopyWith(
-          DeviceChange value, $Res Function(DeviceChange) then) =
-      _$DeviceChangeCopyWithImpl<$Res, DeviceChange>;
-  @useResult
-  $Res call({DeviceId id});
+abstract class $CoordinatorToUserSigningMessageCopyWith<$Res> {
+  factory $CoordinatorToUserSigningMessageCopyWith(
+          CoordinatorToUserSigningMessage value,
+          $Res Function(CoordinatorToUserSigningMessage) then) =
+      _$CoordinatorToUserSigningMessageCopyWithImpl<$Res,
+          CoordinatorToUserSigningMessage>;
 }
 
 /// @nodoc
-class _$DeviceChangeCopyWithImpl<$Res, $Val extends DeviceChange>
-    implements $DeviceChangeCopyWith<$Res> {
-  _$DeviceChangeCopyWithImpl(this._value, this._then);
+class _$CoordinatorToUserSigningMessageCopyWithImpl<$Res,
+        $Val extends CoordinatorToUserSigningMessage>
+    implements $CoordinatorToUserSigningMessageCopyWith<$Res> {
+  _$CoordinatorToUserSigningMessageCopyWithImpl(this._value, this._then);
 
   // ignore: unused_field
   final $Val _value;
   // ignore: unused_field
   final $Res Function($Val) _then;
-
-  @pragma('vm:prefer-inline')
-  @override
-  $Res call({
-    Object? id = null,
-  }) {
-    return _then(_value.copyWith(
-      id: null == id
-          ? _value.id
-          : id // ignore: cast_nullable_to_non_nullable
-              as DeviceId,
-    ) as $Val);
-  }
 }
 
 /// @nodoc
-abstract class _$$DeviceChange_AddedImplCopyWith<$Res>
-    implements $DeviceChangeCopyWith<$Res> {
-  factory _$$DeviceChange_AddedImplCopyWith(_$DeviceChange_AddedImpl value,
-          $Res Function(_$DeviceChange_AddedImpl) then) =
-      __$$DeviceChange_AddedImplCopyWithImpl<$Res>;
-  @override
+abstract class _$$CoordinatorToUserSigningMessage_GotShareImplCopyWith<$Res> {
+  factory _$$CoordinatorToUserSigningMessage_GotShareImplCopyWith(
+          _$CoordinatorToUserSigningMessage_GotShareImpl value,
+          $Res Function(_$CoordinatorToUserSigningMessage_GotShareImpl) then) =
+      __$$CoordinatorToUserSigningMessage_GotShareImplCopyWithImpl<$Res>;
   @useResult
-  $Res call({DeviceId id});
+  $Res call({DeviceId from});
 }
 
 /// @nodoc
-class __$$DeviceChange_AddedImplCopyWithImpl<$Res>
-    extends _$DeviceChangeCopyWithImpl<$Res, _$DeviceChange_AddedImpl>
-    implements _$$DeviceChange_AddedImplCopyWith<$Res> {
-  __$$DeviceChange_AddedImplCopyWithImpl(_$DeviceChange_AddedImpl _value,
-      $Res Function(_$DeviceChange_AddedImpl) _then)
+class __$$CoordinatorToUserSigningMessage_GotShareImplCopyWithImpl<$Res>
+    extends _$CoordinatorToUserSigningMessageCopyWithImpl<$Res,
+        _$CoordinatorToUserSigningMessage_GotShareImpl>
+    implements _$$CoordinatorToUserSigningMessage_GotShareImplCopyWith<$Res> {
+  __$$CoordinatorToUserSigningMessage_GotShareImplCopyWithImpl(
+      _$CoordinatorToUserSigningMessage_GotShareImpl _value,
+      $Res Function(_$CoordinatorToUserSigningMessage_GotShareImpl) _then)
       : super(_value, _then);
 
   @pragma('vm:prefer-inline')
   @override
   $Res call({
-    Object? id = null,
+    Object? from = null,
   }) {
-    return _then(_$DeviceChange_AddedImpl(
-      id: null == id
-          ? _value.id
-          : id // ignore: cast_nullable_to_non_nullable
+    return _then(_$CoordinatorToUserSigningMessage_GotShareImpl(
+      from: null == from
+          ? _value.from
+          : from // ignore: cast_nullable_to_non_nullable
               as DeviceId,
     ));
   }
@@ -918,248 +886,65 @@ class __$$DeviceChange_AddedImplCopyWithImpl<$Res>
 
 /// @nodoc
 
-class _$DeviceChange_AddedImpl implements DeviceChange_Added {
-  const _$DeviceChange_AddedImpl({required this.id});
+class _$CoordinatorToUserSigningMessage_GotShareImpl
+    implements CoordinatorToUserSigningMessage_GotShare {
+  const _$CoordinatorToUserSigningMessage_GotShareImpl({required this.from});
 
   @override
-  final DeviceId id;
+  final DeviceId from;
 
   @override
   String toString() {
-    return 'DeviceChange.added(id: $id)';
+    return 'CoordinatorToUserSigningMessage.gotShare(from: $from)';
   }
 
   @override
   bool operator ==(dynamic other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _$DeviceChange_AddedImpl &&
-            (identical(other.id, id) || other.id == id));
+            other is _$CoordinatorToUserSigningMessage_GotShareImpl &&
+            (identical(other.from, from) || other.from == from));
   }
 
   @override
-  int get hashCode => Object.hash(runtimeType, id);
+  int get hashCode => Object.hash(runtimeType, from);
 
   @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
-  _$$DeviceChange_AddedImplCopyWith<_$DeviceChange_AddedImpl> get copyWith =>
-      __$$DeviceChange_AddedImplCopyWithImpl<_$DeviceChange_AddedImpl>(
-          this, _$identity);
-
-  @override
-  @optionalTypeArgs
-  TResult when<TResult extends Object?>({
-    required TResult Function(DeviceId id) added,
-    required TResult Function(DeviceId id, String oldName, String newName)
-        renamed,
-    required TResult Function(DeviceId id) needsName,
-    required TResult Function(DeviceId id, String name) registered,
-    required TResult Function(DeviceId id) disconnected,
-  }) {
-    return added(id);
-  }
-
-  @override
-  @optionalTypeArgs
-  TResult? whenOrNull<TResult extends Object?>({
-    TResult? Function(DeviceId id)? added,
-    TResult? Function(DeviceId id, String oldName, String newName)? renamed,
-    TResult? Function(DeviceId id)? needsName,
-    TResult? Function(DeviceId id, String name)? registered,
-    TResult? Function(DeviceId id)? disconnected,
-  }) {
-    return added?.call(id);
-  }
-
-  @override
-  @optionalTypeArgs
-  TResult maybeWhen<TResult extends Object?>({
-    TResult Function(DeviceId id)? added,
-    TResult Function(DeviceId id, String oldName, String newName)? renamed,
-    TResult Function(DeviceId id)? needsName,
-    TResult Function(DeviceId id, String name)? registered,
-    TResult Function(DeviceId id)? disconnected,
-    required TResult orElse(),
-  }) {
-    if (added != null) {
-      return added(id);
-    }
-    return orElse();
-  }
-
-  @override
-  @optionalTypeArgs
-  TResult map<TResult extends Object?>({
-    required TResult Function(DeviceChange_Added value) added,
-    required TResult Function(DeviceChange_Renamed value) renamed,
-    required TResult Function(DeviceChange_NeedsName value) needsName,
-    required TResult Function(DeviceChange_Registered value) registered,
-    required TResult Function(DeviceChange_Disconnected value) disconnected,
-  }) {
-    return added(this);
-  }
-
-  @override
-  @optionalTypeArgs
-  TResult? mapOrNull<TResult extends Object?>({
-    TResult? Function(DeviceChange_Added value)? added,
-    TResult? Function(DeviceChange_Renamed value)? renamed,
-    TResult? Function(DeviceChange_NeedsName value)? needsName,
-    TResult? Function(DeviceChange_Registered value)? registered,
-    TResult? Function(DeviceChange_Disconnected value)? disconnected,
-  }) {
-    return added?.call(this);
-  }
-
-  @override
-  @optionalTypeArgs
-  TResult maybeMap<TResult extends Object?>({
-    TResult Function(DeviceChange_Added value)? added,
-    TResult Function(DeviceChange_Renamed value)? renamed,
-    TResult Function(DeviceChange_NeedsName value)? needsName,
-    TResult Function(DeviceChange_Registered value)? registered,
-    TResult Function(DeviceChange_Disconnected value)? disconnected,
-    required TResult orElse(),
-  }) {
-    if (added != null) {
-      return added(this);
-    }
-    return orElse();
-  }
-}
-
-abstract class DeviceChange_Added implements DeviceChange {
-  const factory DeviceChange_Added({required final DeviceId id}) =
-      _$DeviceChange_AddedImpl;
-
-  @override
-  DeviceId get id;
-  @override
-  @JsonKey(ignore: true)
-  _$$DeviceChange_AddedImplCopyWith<_$DeviceChange_AddedImpl> get copyWith =>
-      throw _privateConstructorUsedError;
-}
-
-/// @nodoc
-abstract class _$$DeviceChange_RenamedImplCopyWith<$Res>
-    implements $DeviceChangeCopyWith<$Res> {
-  factory _$$DeviceChange_RenamedImplCopyWith(_$DeviceChange_RenamedImpl value,
-          $Res Function(_$DeviceChange_RenamedImpl) then) =
-      __$$DeviceChange_RenamedImplCopyWithImpl<$Res>;
-  @override
-  @useResult
-  $Res call({DeviceId id, String oldName, String newName});
-}
-
-/// @nodoc
-class __$$DeviceChange_RenamedImplCopyWithImpl<$Res>
-    extends _$DeviceChangeCopyWithImpl<$Res, _$DeviceChange_RenamedImpl>
-    implements _$$DeviceChange_RenamedImplCopyWith<$Res> {
-  __$$DeviceChange_RenamedImplCopyWithImpl(_$DeviceChange_RenamedImpl _value,
-      $Res Function(_$DeviceChange_RenamedImpl) _then)
-      : super(_value, _then);
-
-  @pragma('vm:prefer-inline')
-  @override
-  $Res call({
-    Object? id = null,
-    Object? oldName = null,
-    Object? newName = null,
-  }) {
-    return _then(_$DeviceChange_RenamedImpl(
-      id: null == id
-          ? _value.id
-          : id // ignore: cast_nullable_to_non_nullable
-              as DeviceId,
-      oldName: null == oldName
-          ? _value.oldName
-          : oldName // ignore: cast_nullable_to_non_nullable
-              as String,
-      newName: null == newName
-          ? _value.newName
-          : newName // ignore: cast_nullable_to_non_nullable
-              as String,
-    ));
-  }
-}
-
-/// @nodoc
-
-class _$DeviceChange_RenamedImpl implements DeviceChange_Renamed {
-  const _$DeviceChange_RenamedImpl(
-      {required this.id, required this.oldName, required this.newName});
-
-  @override
-  final DeviceId id;
-  @override
-  final String oldName;
-  @override
-  final String newName;
-
-  @override
-  String toString() {
-    return 'DeviceChange.renamed(id: $id, oldName: $oldName, newName: $newName)';
-  }
-
-  @override
-  bool operator ==(dynamic other) {
-    return identical(this, other) ||
-        (other.runtimeType == runtimeType &&
-            other is _$DeviceChange_RenamedImpl &&
-            (identical(other.id, id) || other.id == id) &&
-            (identical(other.oldName, oldName) || other.oldName == oldName) &&
-            (identical(other.newName, newName) || other.newName == newName));
-  }
-
-  @override
-  int get hashCode => Object.hash(runtimeType, id, oldName, newName);
-
-  @JsonKey(ignore: true)
-  @override
-  @pragma('vm:prefer-inline')
-  _$$DeviceChange_RenamedImplCopyWith<_$DeviceChange_RenamedImpl>
+  _$$CoordinatorToUserSigningMessage_GotShareImplCopyWith<
+          _$CoordinatorToUserSigningMessage_GotShareImpl>
       get copyWith =>
-          __$$DeviceChange_RenamedImplCopyWithImpl<_$DeviceChange_RenamedImpl>(
-              this, _$identity);
+          __$$CoordinatorToUserSigningMessage_GotShareImplCopyWithImpl<
+              _$CoordinatorToUserSigningMessage_GotShareImpl>(this, _$identity);
 
   @override
   @optionalTypeArgs
   TResult when<TResult extends Object?>({
-    required TResult Function(DeviceId id) added,
-    required TResult Function(DeviceId id, String oldName, String newName)
-        renamed,
-    required TResult Function(DeviceId id) needsName,
-    required TResult Function(DeviceId id, String name) registered,
-    required TResult Function(DeviceId id) disconnected,
+    required TResult Function(DeviceId from) gotShare,
+    required TResult Function(List<EncodedSignature> signatures) signed,
   }) {
-    return renamed(id, oldName, newName);
+    return gotShare(from);
   }
 
   @override
   @optionalTypeArgs
   TResult? whenOrNull<TResult extends Object?>({
-    TResult? Function(DeviceId id)? added,
-    TResult? Function(DeviceId id, String oldName, String newName)? renamed,
-    TResult? Function(DeviceId id)? needsName,
-    TResult? Function(DeviceId id, String name)? registered,
-    TResult? Function(DeviceId id)? disconnected,
+    TResult? Function(DeviceId from)? gotShare,
+    TResult? Function(List<EncodedSignature> signatures)? signed,
   }) {
-    return renamed?.call(id, oldName, newName);
+    return gotShare?.call(from);
   }
 
   @override
   @optionalTypeArgs
   TResult maybeWhen<TResult extends Object?>({
-    TResult Function(DeviceId id)? added,
-    TResult Function(DeviceId id, String oldName, String newName)? renamed,
-    TResult Function(DeviceId id)? needsName,
-    TResult Function(DeviceId id, String name)? registered,
-    TResult Function(DeviceId id)? disconnected,
+    TResult Function(DeviceId from)? gotShare,
+    TResult Function(List<EncodedSignature> signatures)? signed,
     required TResult orElse(),
   }) {
-    if (renamed != null) {
-      return renamed(id, oldName, newName);
+    if (gotShare != null) {
+      return gotShare(from);
     }
     return orElse();
   }
@@ -1167,163 +952,154 @@ class _$DeviceChange_RenamedImpl implements DeviceChange_Renamed {
   @override
   @optionalTypeArgs
   TResult map<TResult extends Object?>({
-    required TResult Function(DeviceChange_Added value) added,
-    required TResult Function(DeviceChange_Renamed value) renamed,
-    required TResult Function(DeviceChange_NeedsName value) needsName,
-    required TResult Function(DeviceChange_Registered value) registered,
-    required TResult Function(DeviceChange_Disconnected value) disconnected,
+    required TResult Function(CoordinatorToUserSigningMessage_GotShare value)
+        gotShare,
+    required TResult Function(CoordinatorToUserSigningMessage_Signed value)
+        signed,
   }) {
-    return renamed(this);
+    return gotShare(this);
   }
 
   @override
   @optionalTypeArgs
   TResult? mapOrNull<TResult extends Object?>({
-    TResult? Function(DeviceChange_Added value)? added,
-    TResult? Function(DeviceChange_Renamed value)? renamed,
-    TResult? Function(DeviceChange_NeedsName value)? needsName,
-    TResult? Function(DeviceChange_Registered value)? registered,
-    TResult? Function(DeviceChange_Disconnected value)? disconnected,
+    TResult? Function(CoordinatorToUserSigningMessage_GotShare value)? gotShare,
+    TResult? Function(CoordinatorToUserSigningMessage_Signed value)? signed,
   }) {
-    return renamed?.call(this);
+    return gotShare?.call(this);
   }
 
   @override
   @optionalTypeArgs
   TResult maybeMap<TResult extends Object?>({
-    TResult Function(DeviceChange_Added value)? added,
-    TResult Function(DeviceChange_Renamed value)? renamed,
-    TResult Function(DeviceChange_NeedsName value)? needsName,
-    TResult Function(DeviceChange_Registered value)? registered,
-    TResult Function(DeviceChange_Disconnected value)? disconnected,
+    TResult Function(CoordinatorToUserSigningMessage_GotShare value)? gotShare,
+    TResult Function(CoordinatorToUserSigningMessage_Signed value)? signed,
     required TResult orElse(),
   }) {
-    if (renamed != null) {
-      return renamed(this);
+    if (gotShare != null) {
+      return gotShare(this);
     }
     return orElse();
   }
 }
 
-abstract class DeviceChange_Renamed implements DeviceChange {
-  const factory DeviceChange_Renamed(
-      {required final DeviceId id,
-      required final String oldName,
-      required final String newName}) = _$DeviceChange_RenamedImpl;
+abstract class CoordinatorToUserSigningMessage_GotShare
+    implements CoordinatorToUserSigningMessage {
+  const factory CoordinatorToUserSigningMessage_GotShare(
+          {required final DeviceId from}) =
+      _$CoordinatorToUserSigningMessage_GotShareImpl;
 
-  @override
-  DeviceId get id;
-  String get oldName;
-  String get newName;
-  @override
+  DeviceId get from;
   @JsonKey(ignore: true)
-  _$$DeviceChange_RenamedImplCopyWith<_$DeviceChange_RenamedImpl>
+  _$$CoordinatorToUserSigningMessage_GotShareImplCopyWith<
+          _$CoordinatorToUserSigningMessage_GotShareImpl>
       get copyWith => throw _privateConstructorUsedError;
 }
 
 /// @nodoc
-abstract class _$$DeviceChange_NeedsNameImplCopyWith<$Res>
-    implements $DeviceChangeCopyWith<$Res> {
-  factory _$$DeviceChange_NeedsNameImplCopyWith(
-          _$DeviceChange_NeedsNameImpl value,
-          $Res Function(_$DeviceChange_NeedsNameImpl) then) =
-      __$$DeviceChange_NeedsNameImplCopyWithImpl<$Res>;
-  @override
+abstract class _$$CoordinatorToUserSigningMessage_SignedImplCopyWith<$Res> {
+  factory _$$CoordinatorToUserSigningMessage_SignedImplCopyWith(
+          _$CoordinatorToUserSigningMessage_SignedImpl value,
+          $Res Function(_$CoordinatorToUserSigningMessage_SignedImpl) then) =
+      __$$CoordinatorToUserSigningMessage_SignedImplCopyWithImpl<$Res>;
   @useResult
-  $Res call({DeviceId id});
+  $Res call({List<EncodedSignature> signatures});
 }
 
 /// @nodoc
-class __$$DeviceChange_NeedsNameImplCopyWithImpl<$Res>
-    extends _$DeviceChangeCopyWithImpl<$Res, _$DeviceChange_NeedsNameImpl>
-    implements _$$DeviceChange_NeedsNameImplCopyWith<$Res> {
-  __$$DeviceChange_NeedsNameImplCopyWithImpl(
-      _$DeviceChange_NeedsNameImpl _value,
-      $Res Function(_$DeviceChange_NeedsNameImpl) _then)
+class __$$CoordinatorToUserSigningMessage_SignedImplCopyWithImpl<$Res>
+    extends _$CoordinatorToUserSigningMessageCopyWithImpl<$Res,
+        _$CoordinatorToUserSigningMessage_SignedImpl>
+    implements _$$CoordinatorToUserSigningMessage_SignedImplCopyWith<$Res> {
+  __$$CoordinatorToUserSigningMessage_SignedImplCopyWithImpl(
+      _$CoordinatorToUserSigningMessage_SignedImpl _value,
+      $Res Function(_$CoordinatorToUserSigningMessage_SignedImpl) _then)
       : super(_value, _then);
 
   @pragma('vm:prefer-inline')
   @override
   $Res call({
-    Object? id = null,
+    Object? signatures = null,
   }) {
-    return _then(_$DeviceChange_NeedsNameImpl(
-      id: null == id
-          ? _value.id
-          : id // ignore: cast_nullable_to_non_nullable
-              as DeviceId,
+    return _then(_$CoordinatorToUserSigningMessage_SignedImpl(
+      signatures: null == signatures
+          ? _value._signatures
+          : signatures // ignore: cast_nullable_to_non_nullable
+              as List<EncodedSignature>,
     ));
   }
 }
 
 /// @nodoc
 
-class _$DeviceChange_NeedsNameImpl implements DeviceChange_NeedsName {
-  const _$DeviceChange_NeedsNameImpl({required this.id});
+class _$CoordinatorToUserSigningMessage_SignedImpl
+    implements CoordinatorToUserSigningMessage_Signed {
+  const _$CoordinatorToUserSigningMessage_SignedImpl(
+      {required final List<EncodedSignature> signatures})
+      : _signatures = signatures;
 
+  final List<EncodedSignature> _signatures;
   @override
-  final DeviceId id;
+  List<EncodedSignature> get signatures {
+    if (_signatures is EqualUnmodifiableListView) return _signatures;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_signatures);
+  }
 
   @override
   String toString() {
-    return 'DeviceChange.needsName(id: $id)';
+    return 'CoordinatorToUserSigningMessage.signed(signatures: $signatures)';
   }
 
   @override
   bool operator ==(dynamic other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _$DeviceChange_NeedsNameImpl &&
-            (identical(other.id, id) || other.id == id));
+            other is _$CoordinatorToUserSigningMessage_SignedImpl &&
+            const DeepCollectionEquality()
+                .equals(other._signatures, _signatures));
   }
 
   @override
-  int get hashCode => Object.hash(runtimeType, id);
+  int get hashCode => Object.hash(
+      runtimeType, const DeepCollectionEquality().hash(_signatures));
 
   @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
-  _$$DeviceChange_NeedsNameImplCopyWith<_$DeviceChange_NeedsNameImpl>
-      get copyWith => __$$DeviceChange_NeedsNameImplCopyWithImpl<
-          _$DeviceChange_NeedsNameImpl>(this, _$identity);
+  _$$CoordinatorToUserSigningMessage_SignedImplCopyWith<
+          _$CoordinatorToUserSigningMessage_SignedImpl>
+      get copyWith =>
+          __$$CoordinatorToUserSigningMessage_SignedImplCopyWithImpl<
+              _$CoordinatorToUserSigningMessage_SignedImpl>(this, _$identity);
 
   @override
   @optionalTypeArgs
   TResult when<TResult extends Object?>({
-    required TResult Function(DeviceId id) added,
-    required TResult Function(DeviceId id, String oldName, String newName)
-        renamed,
-    required TResult Function(DeviceId id) needsName,
-    required TResult Function(DeviceId id, String name) registered,
-    required TResult Function(DeviceId id) disconnected,
+    required TResult Function(DeviceId from) gotShare,
+    required TResult Function(List<EncodedSignature> signatures) signed,
   }) {
-    return needsName(id);
+    return signed(signatures);
   }
 
   @override
   @optionalTypeArgs
   TResult? whenOrNull<TResult extends Object?>({
-    TResult? Function(DeviceId id)? added,
-    TResult? Function(DeviceId id, String oldName, String newName)? renamed,
-    TResult? Function(DeviceId id)? needsName,
-    TResult? Function(DeviceId id, String name)? registered,
-    TResult? Function(DeviceId id)? disconnected,
+    TResult? Function(DeviceId from)? gotShare,
+    TResult? Function(List<EncodedSignature> signatures)? signed,
   }) {
-    return needsName?.call(id);
+    return signed?.call(signatures);
   }
 
   @override
   @optionalTypeArgs
   TResult maybeWhen<TResult extends Object?>({
-    TResult Function(DeviceId id)? added,
-    TResult Function(DeviceId id, String oldName, String newName)? renamed,
-    TResult Function(DeviceId id)? needsName,
-    TResult Function(DeviceId id, String name)? registered,
-    TResult Function(DeviceId id)? disconnected,
+    TResult Function(DeviceId from)? gotShare,
+    TResult Function(List<EncodedSignature> signatures)? signed,
     required TResult orElse(),
   }) {
-    if (needsName != null) {
-      return needsName(id);
+    if (signed != null) {
+      return signed(signatures);
     }
     return orElse();
   }
@@ -1331,383 +1107,47 @@ class _$DeviceChange_NeedsNameImpl implements DeviceChange_NeedsName {
   @override
   @optionalTypeArgs
   TResult map<TResult extends Object?>({
-    required TResult Function(DeviceChange_Added value) added,
-    required TResult Function(DeviceChange_Renamed value) renamed,
-    required TResult Function(DeviceChange_NeedsName value) needsName,
-    required TResult Function(DeviceChange_Registered value) registered,
-    required TResult Function(DeviceChange_Disconnected value) disconnected,
+    required TResult Function(CoordinatorToUserSigningMessage_GotShare value)
+        gotShare,
+    required TResult Function(CoordinatorToUserSigningMessage_Signed value)
+        signed,
   }) {
-    return needsName(this);
+    return signed(this);
   }
 
   @override
   @optionalTypeArgs
   TResult? mapOrNull<TResult extends Object?>({
-    TResult? Function(DeviceChange_Added value)? added,
-    TResult? Function(DeviceChange_Renamed value)? renamed,
-    TResult? Function(DeviceChange_NeedsName value)? needsName,
-    TResult? Function(DeviceChange_Registered value)? registered,
-    TResult? Function(DeviceChange_Disconnected value)? disconnected,
+    TResult? Function(CoordinatorToUserSigningMessage_GotShare value)? gotShare,
+    TResult? Function(CoordinatorToUserSigningMessage_Signed value)? signed,
   }) {
-    return needsName?.call(this);
+    return signed?.call(this);
   }
 
   @override
   @optionalTypeArgs
   TResult maybeMap<TResult extends Object?>({
-    TResult Function(DeviceChange_Added value)? added,
-    TResult Function(DeviceChange_Renamed value)? renamed,
-    TResult Function(DeviceChange_NeedsName value)? needsName,
-    TResult Function(DeviceChange_Registered value)? registered,
-    TResult Function(DeviceChange_Disconnected value)? disconnected,
+    TResult Function(CoordinatorToUserSigningMessage_GotShare value)? gotShare,
+    TResult Function(CoordinatorToUserSigningMessage_Signed value)? signed,
     required TResult orElse(),
   }) {
-    if (needsName != null) {
-      return needsName(this);
+    if (signed != null) {
+      return signed(this);
     }
     return orElse();
   }
 }
 
-abstract class DeviceChange_NeedsName implements DeviceChange {
-  const factory DeviceChange_NeedsName({required final DeviceId id}) =
-      _$DeviceChange_NeedsNameImpl;
+abstract class CoordinatorToUserSigningMessage_Signed
+    implements CoordinatorToUserSigningMessage {
+  const factory CoordinatorToUserSigningMessage_Signed(
+          {required final List<EncodedSignature> signatures}) =
+      _$CoordinatorToUserSigningMessage_SignedImpl;
 
-  @override
-  DeviceId get id;
-  @override
+  List<EncodedSignature> get signatures;
   @JsonKey(ignore: true)
-  _$$DeviceChange_NeedsNameImplCopyWith<_$DeviceChange_NeedsNameImpl>
-      get copyWith => throw _privateConstructorUsedError;
-}
-
-/// @nodoc
-abstract class _$$DeviceChange_RegisteredImplCopyWith<$Res>
-    implements $DeviceChangeCopyWith<$Res> {
-  factory _$$DeviceChange_RegisteredImplCopyWith(
-          _$DeviceChange_RegisteredImpl value,
-          $Res Function(_$DeviceChange_RegisteredImpl) then) =
-      __$$DeviceChange_RegisteredImplCopyWithImpl<$Res>;
-  @override
-  @useResult
-  $Res call({DeviceId id, String name});
-}
-
-/// @nodoc
-class __$$DeviceChange_RegisteredImplCopyWithImpl<$Res>
-    extends _$DeviceChangeCopyWithImpl<$Res, _$DeviceChange_RegisteredImpl>
-    implements _$$DeviceChange_RegisteredImplCopyWith<$Res> {
-  __$$DeviceChange_RegisteredImplCopyWithImpl(
-      _$DeviceChange_RegisteredImpl _value,
-      $Res Function(_$DeviceChange_RegisteredImpl) _then)
-      : super(_value, _then);
-
-  @pragma('vm:prefer-inline')
-  @override
-  $Res call({
-    Object? id = null,
-    Object? name = null,
-  }) {
-    return _then(_$DeviceChange_RegisteredImpl(
-      id: null == id
-          ? _value.id
-          : id // ignore: cast_nullable_to_non_nullable
-              as DeviceId,
-      name: null == name
-          ? _value.name
-          : name // ignore: cast_nullable_to_non_nullable
-              as String,
-    ));
-  }
-}
-
-/// @nodoc
-
-class _$DeviceChange_RegisteredImpl implements DeviceChange_Registered {
-  const _$DeviceChange_RegisteredImpl({required this.id, required this.name});
-
-  @override
-  final DeviceId id;
-  @override
-  final String name;
-
-  @override
-  String toString() {
-    return 'DeviceChange.registered(id: $id, name: $name)';
-  }
-
-  @override
-  bool operator ==(dynamic other) {
-    return identical(this, other) ||
-        (other.runtimeType == runtimeType &&
-            other is _$DeviceChange_RegisteredImpl &&
-            (identical(other.id, id) || other.id == id) &&
-            (identical(other.name, name) || other.name == name));
-  }
-
-  @override
-  int get hashCode => Object.hash(runtimeType, id, name);
-
-  @JsonKey(ignore: true)
-  @override
-  @pragma('vm:prefer-inline')
-  _$$DeviceChange_RegisteredImplCopyWith<_$DeviceChange_RegisteredImpl>
-      get copyWith => __$$DeviceChange_RegisteredImplCopyWithImpl<
-          _$DeviceChange_RegisteredImpl>(this, _$identity);
-
-  @override
-  @optionalTypeArgs
-  TResult when<TResult extends Object?>({
-    required TResult Function(DeviceId id) added,
-    required TResult Function(DeviceId id, String oldName, String newName)
-        renamed,
-    required TResult Function(DeviceId id) needsName,
-    required TResult Function(DeviceId id, String name) registered,
-    required TResult Function(DeviceId id) disconnected,
-  }) {
-    return registered(id, name);
-  }
-
-  @override
-  @optionalTypeArgs
-  TResult? whenOrNull<TResult extends Object?>({
-    TResult? Function(DeviceId id)? added,
-    TResult? Function(DeviceId id, String oldName, String newName)? renamed,
-    TResult? Function(DeviceId id)? needsName,
-    TResult? Function(DeviceId id, String name)? registered,
-    TResult? Function(DeviceId id)? disconnected,
-  }) {
-    return registered?.call(id, name);
-  }
-
-  @override
-  @optionalTypeArgs
-  TResult maybeWhen<TResult extends Object?>({
-    TResult Function(DeviceId id)? added,
-    TResult Function(DeviceId id, String oldName, String newName)? renamed,
-    TResult Function(DeviceId id)? needsName,
-    TResult Function(DeviceId id, String name)? registered,
-    TResult Function(DeviceId id)? disconnected,
-    required TResult orElse(),
-  }) {
-    if (registered != null) {
-      return registered(id, name);
-    }
-    return orElse();
-  }
-
-  @override
-  @optionalTypeArgs
-  TResult map<TResult extends Object?>({
-    required TResult Function(DeviceChange_Added value) added,
-    required TResult Function(DeviceChange_Renamed value) renamed,
-    required TResult Function(DeviceChange_NeedsName value) needsName,
-    required TResult Function(DeviceChange_Registered value) registered,
-    required TResult Function(DeviceChange_Disconnected value) disconnected,
-  }) {
-    return registered(this);
-  }
-
-  @override
-  @optionalTypeArgs
-  TResult? mapOrNull<TResult extends Object?>({
-    TResult? Function(DeviceChange_Added value)? added,
-    TResult? Function(DeviceChange_Renamed value)? renamed,
-    TResult? Function(DeviceChange_NeedsName value)? needsName,
-    TResult? Function(DeviceChange_Registered value)? registered,
-    TResult? Function(DeviceChange_Disconnected value)? disconnected,
-  }) {
-    return registered?.call(this);
-  }
-
-  @override
-  @optionalTypeArgs
-  TResult maybeMap<TResult extends Object?>({
-    TResult Function(DeviceChange_Added value)? added,
-    TResult Function(DeviceChange_Renamed value)? renamed,
-    TResult Function(DeviceChange_NeedsName value)? needsName,
-    TResult Function(DeviceChange_Registered value)? registered,
-    TResult Function(DeviceChange_Disconnected value)? disconnected,
-    required TResult orElse(),
-  }) {
-    if (registered != null) {
-      return registered(this);
-    }
-    return orElse();
-  }
-}
-
-abstract class DeviceChange_Registered implements DeviceChange {
-  const factory DeviceChange_Registered(
-      {required final DeviceId id,
-      required final String name}) = _$DeviceChange_RegisteredImpl;
-
-  @override
-  DeviceId get id;
-  String get name;
-  @override
-  @JsonKey(ignore: true)
-  _$$DeviceChange_RegisteredImplCopyWith<_$DeviceChange_RegisteredImpl>
-      get copyWith => throw _privateConstructorUsedError;
-}
-
-/// @nodoc
-abstract class _$$DeviceChange_DisconnectedImplCopyWith<$Res>
-    implements $DeviceChangeCopyWith<$Res> {
-  factory _$$DeviceChange_DisconnectedImplCopyWith(
-          _$DeviceChange_DisconnectedImpl value,
-          $Res Function(_$DeviceChange_DisconnectedImpl) then) =
-      __$$DeviceChange_DisconnectedImplCopyWithImpl<$Res>;
-  @override
-  @useResult
-  $Res call({DeviceId id});
-}
-
-/// @nodoc
-class __$$DeviceChange_DisconnectedImplCopyWithImpl<$Res>
-    extends _$DeviceChangeCopyWithImpl<$Res, _$DeviceChange_DisconnectedImpl>
-    implements _$$DeviceChange_DisconnectedImplCopyWith<$Res> {
-  __$$DeviceChange_DisconnectedImplCopyWithImpl(
-      _$DeviceChange_DisconnectedImpl _value,
-      $Res Function(_$DeviceChange_DisconnectedImpl) _then)
-      : super(_value, _then);
-
-  @pragma('vm:prefer-inline')
-  @override
-  $Res call({
-    Object? id = null,
-  }) {
-    return _then(_$DeviceChange_DisconnectedImpl(
-      id: null == id
-          ? _value.id
-          : id // ignore: cast_nullable_to_non_nullable
-              as DeviceId,
-    ));
-  }
-}
-
-/// @nodoc
-
-class _$DeviceChange_DisconnectedImpl implements DeviceChange_Disconnected {
-  const _$DeviceChange_DisconnectedImpl({required this.id});
-
-  @override
-  final DeviceId id;
-
-  @override
-  String toString() {
-    return 'DeviceChange.disconnected(id: $id)';
-  }
-
-  @override
-  bool operator ==(dynamic other) {
-    return identical(this, other) ||
-        (other.runtimeType == runtimeType &&
-            other is _$DeviceChange_DisconnectedImpl &&
-            (identical(other.id, id) || other.id == id));
-  }
-
-  @override
-  int get hashCode => Object.hash(runtimeType, id);
-
-  @JsonKey(ignore: true)
-  @override
-  @pragma('vm:prefer-inline')
-  _$$DeviceChange_DisconnectedImplCopyWith<_$DeviceChange_DisconnectedImpl>
-      get copyWith => __$$DeviceChange_DisconnectedImplCopyWithImpl<
-          _$DeviceChange_DisconnectedImpl>(this, _$identity);
-
-  @override
-  @optionalTypeArgs
-  TResult when<TResult extends Object?>({
-    required TResult Function(DeviceId id) added,
-    required TResult Function(DeviceId id, String oldName, String newName)
-        renamed,
-    required TResult Function(DeviceId id) needsName,
-    required TResult Function(DeviceId id, String name) registered,
-    required TResult Function(DeviceId id) disconnected,
-  }) {
-    return disconnected(id);
-  }
-
-  @override
-  @optionalTypeArgs
-  TResult? whenOrNull<TResult extends Object?>({
-    TResult? Function(DeviceId id)? added,
-    TResult? Function(DeviceId id, String oldName, String newName)? renamed,
-    TResult? Function(DeviceId id)? needsName,
-    TResult? Function(DeviceId id, String name)? registered,
-    TResult? Function(DeviceId id)? disconnected,
-  }) {
-    return disconnected?.call(id);
-  }
-
-  @override
-  @optionalTypeArgs
-  TResult maybeWhen<TResult extends Object?>({
-    TResult Function(DeviceId id)? added,
-    TResult Function(DeviceId id, String oldName, String newName)? renamed,
-    TResult Function(DeviceId id)? needsName,
-    TResult Function(DeviceId id, String name)? registered,
-    TResult Function(DeviceId id)? disconnected,
-    required TResult orElse(),
-  }) {
-    if (disconnected != null) {
-      return disconnected(id);
-    }
-    return orElse();
-  }
-
-  @override
-  @optionalTypeArgs
-  TResult map<TResult extends Object?>({
-    required TResult Function(DeviceChange_Added value) added,
-    required TResult Function(DeviceChange_Renamed value) renamed,
-    required TResult Function(DeviceChange_NeedsName value) needsName,
-    required TResult Function(DeviceChange_Registered value) registered,
-    required TResult Function(DeviceChange_Disconnected value) disconnected,
-  }) {
-    return disconnected(this);
-  }
-
-  @override
-  @optionalTypeArgs
-  TResult? mapOrNull<TResult extends Object?>({
-    TResult? Function(DeviceChange_Added value)? added,
-    TResult? Function(DeviceChange_Renamed value)? renamed,
-    TResult? Function(DeviceChange_NeedsName value)? needsName,
-    TResult? Function(DeviceChange_Registered value)? registered,
-    TResult? Function(DeviceChange_Disconnected value)? disconnected,
-  }) {
-    return disconnected?.call(this);
-  }
-
-  @override
-  @optionalTypeArgs
-  TResult maybeMap<TResult extends Object?>({
-    TResult Function(DeviceChange_Added value)? added,
-    TResult Function(DeviceChange_Renamed value)? renamed,
-    TResult Function(DeviceChange_NeedsName value)? needsName,
-    TResult Function(DeviceChange_Registered value)? registered,
-    TResult Function(DeviceChange_Disconnected value)? disconnected,
-    required TResult orElse(),
-  }) {
-    if (disconnected != null) {
-      return disconnected(this);
-    }
-    return orElse();
-  }
-}
-
-abstract class DeviceChange_Disconnected implements DeviceChange {
-  const factory DeviceChange_Disconnected({required final DeviceId id}) =
-      _$DeviceChange_DisconnectedImpl;
-
-  @override
-  DeviceId get id;
-  @override
-  @JsonKey(ignore: true)
-  _$$DeviceChange_DisconnectedImplCopyWith<_$DeviceChange_DisconnectedImpl>
+  _$$CoordinatorToUserSigningMessage_SignedImplCopyWith<
+          _$CoordinatorToUserSigningMessage_SignedImpl>
       get copyWith => throw _privateConstructorUsedError;
 }
 

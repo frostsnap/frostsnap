@@ -28,16 +28,28 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Frostsnapp',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // Try running your application with "flutter run". You'll see the
-        // application has a blue toolbar. Then, without quitting the app, try
-        // changing the primarySwatch below to Colors.green and then invoke
-        // "hot reload" (press "r" in the console where you ran "flutter run",
-        // or simply save your changes to "hot reload" in a Flutter IDE).
-        // Notice that the counter didn't reset back to zero; the application
-        // is not restarted.
-        primarySwatch: Colors.blue,
+        colorScheme: ColorScheme.fromSwatch(
+          primarySwatch: Colors.blue,
+          backgroundColor: Colors.white,
+          errorColor: Colors.red,
+        ).copyWith(
+          secondary: Colors.blueAccent,
+        ),
+        textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(backgroundColor: Colors.blueAccent),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.blue,
+            foregroundColor: Colors.white,
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            backgroundColor: Colors.blue,
+            side: BorderSide(color: Colors.blue),
+          ),
+        ),
       ),
       home: const MyHomePage(title: 'Frostsnapp'),
     );

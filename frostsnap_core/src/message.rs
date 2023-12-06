@@ -44,12 +44,25 @@ pub enum CoordinatorToDeviceMessage {
     FinishKeyGen {
         shares_provided: BTreeMap<DeviceId, KeyGenProvideShares>,
     },
-    RequestSign {
-        // TODO: explain these `usize` and create a nicely documented struct which explains the
-        // mechanism
-        nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
-        sign_task: SignTask,
-    },
+    RequestSign(SignRequest),
+}
+
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+pub struct SignRequest {
+    // TODO: explain these `usize` and create a nicely documented struct which explains the
+    // mechanism
+    pub nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
+    pub sign_task: SignTask,
+}
+
+impl SignRequest {
+    pub fn devices(&self) -> impl Iterator<Item = DeviceId> + '_ {
+        self.nonces.keys().cloned()
+    }
+
+    pub fn contains_device(&self, id: DeviceId) -> bool {
+        self.nonces.contains_key(&id)
+    }
 }
 
 impl Gist for CoordinatorToDeviceMessage {
@@ -65,7 +78,7 @@ impl CoordinatorToDeviceMessage {
             CoordinatorToDeviceMessage::FinishKeyGen { shares_provided } => {
                 shares_provided.keys().cloned().collect()
             }
-            CoordinatorToDeviceMessage::RequestSign { nonces, .. } => {
+            CoordinatorToDeviceMessage::RequestSign(SignRequest { nonces, .. }) => {
                 nonces.keys().cloned().collect()
             }
         }
@@ -129,14 +142,34 @@ pub struct KeyGenResponse {
 #[derive(Clone, Debug)]
 pub enum CoordinatorToUserMessage {
     KeyGen(CoordinatorToUserKeyGenMessage),
-    Signed { signatures: Vec<Signature> },
+    Signing(CoordinatorToUserSigningMessage),
+}
+
+#[derive(Clone, Debug, Copy)]
+/// An encoded signature that can pass ffi boundries easily
+pub struct EncodedSignature(pub [u8; 64]);
+
+impl EncodedSignature {
+    pub fn new(signature: Signature) -> Self {
+        Self(signature.to_bytes())
+    }
+
+    pub fn into_decoded(self) -> Option<Signature> {
+        Signature::from_bytes(self.0)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum CoordinatorToUserSigningMessage {
+    GotShare { from: DeviceId },
+    Signed { signatures: Vec<EncodedSignature> },
 }
 
 #[derive(Clone, Debug)]
 pub enum CoordinatorToUserKeyGenMessage {
-    ReceivedShares { id: DeviceId },
+    ReceivedShares { from: DeviceId },
     CheckKeyGen { session_hash: SessionHash },
-    KeyGenAck { id: DeviceId },
+    KeyGenAck { from: DeviceId },
     FinishedKey { key_id: KeyId },
 }
 

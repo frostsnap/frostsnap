@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:typed_data';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:frostsnapp/animated_check.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_list_widget.dart';
 import 'package:frostsnapp/device_setup.dart';
@@ -114,15 +116,13 @@ class DoKeyGenScreen extends StatefulWidget {
 
 class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
   HashSet<DeviceId> gotShares = deviceIdSet();
-  late Completer<void> confirmSessionHashPressed;
 
   @override
   void initState() {
     super.initState();
-    confirmSessionHashPressed = Completer();
-    final deviceRemoved = globalDeviceList.subscribe().firstWhere((event) {
-      return event.kind == DeviceListChangeKind.removed &&
-          widget.devices.contains(event.id);
+    final deviceRemoved = deviceListChangeStream.firstWhere((change) {
+      return change.kind == DeviceListChangeKind.Removed &&
+          widget.devices.contains(change.device.id);
     }).then((_) {
       if (mounted) {
         Navigator.pop(context);
@@ -160,13 +160,8 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
         .asyncMap((event) => event.whenOrNull(finishedKey: (keyId) => keyId))
         .firstWhere((element) => element != null);
 
-    final successWhen = devicesFinishedKey.then((keyId) async {
-      await confirmSessionHashPressed.future;
-      return keyId;
-    });
-
     final Future<KeyId?> closeDialogWhen =
-        Future.any([successWhen, deviceRemoved]);
+        Future.any([devicesFinishedKey, deviceRemoved]);
 
     gotAllShares.then((sessionHash) async {
       if (mounted) {
@@ -188,42 +183,85 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
+    return PopScope(
+      onPopInvoked: (didPop) async {
         api.cancelAll();
-        return true;
       },
       child: Scaffold(
           appBar: AppBar(
             title: const Text('Key Generation'),
           ),
           body: Center(
-              child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                const SizedBox(height: 20),
-                const Text("Waiting for devices to generate key",
-                    style: TextStyle(fontSize: 20)),
-                const SizedBox(height: 20),
-                Expanded(child: DeviceListContainer(
-                    child: DeviceListWithIcons(iconAssigner: (context, id) {
-                  if (widget.devices.contains(id)) {
-                    final icon;
-                    if (gotShares.contains(id)) {
-                      icon = const Icon(Icons.check,
-                          key: ValueKey('finished'), color: Colors.green);
-                    } else {
-                      icon = const CircularProgressIndicator();
-                    }
-                    return (null, icon);
-                  }
-                  return (null, null);
-                }))),
-              ]))),
+              child:
+                  Column(mainAxisAlignment: MainAxisAlignment.start, children: [
+            MaybeExpandedVertical(child: DeviceListContainer(
+                child: DeviceListWithIcons(iconAssigner: (context, id) {
+              if (widget.devices.contains(id)) {
+                final Widget icon;
+                if (gotShares.contains(id)) {
+                  icon = AnimatedCheckCircle();
+                } else {
+                  // the aspect ratio stops the circular progress indicator from stretching itself
+                  icon = const AspectRatio(
+                      aspectRatio: 1, child: CircularProgressIndicator());
+                }
+                return (null, icon);
+              }
+              return (null, null);
+            }))),
+            const SizedBox(height: 20),
+            const Text("Waiting for devices to generate key",
+                style: TextStyle(fontSize: 20))
+          ]))),
     );
   }
 
   Future<KeyId?> showCheckKeyGenDialog(
+      {required U8Array32 sessionHash,
+      required Stream<DeviceId> ackUpdates,
+      required Future<KeyId?> closeOn}) {
+    final hexBox = toHexBox(Uint8List.fromList(sessionHash));
+
+    return showDialog(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+              actions: [
+                ElevatedButton(
+                  child: Text("Yes"),
+                  onPressed: () async {
+                    final keyId = await showDeviceConfirmDialog(
+                        sessionHash: sessionHash,
+                        ackUpdates: ackUpdates,
+                        closeOn: closeOn);
+                    if (context.mounted) {
+                      Navigator.pop(context, keyId);
+                    }
+                  },
+                ),
+                SizedBox(width: 20),
+                ElevatedButton(
+                    child: Text("No/Cancel"),
+                    onPressed: () {
+                      Navigator.pop(context, null);
+                      api.cancelAll();
+                    }),
+              ],
+              content: Container(
+                  width: Platform.isAndroid ? double.maxFinite : 400.0,
+                  height: double.maxFinite,
+                  child: Align(
+                    alignment: Alignment.center,
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      Text("Do all the devices show:"),
+                      Divider(),
+                      hexBox,
+                    ]),
+                  )));
+        });
+  }
+
+  Future<KeyId?> showDeviceConfirmDialog(
       {required U8Array32 sessionHash,
       required Stream<DeviceId> ackUpdates,
       required Future<KeyId?> closeOn}) {
@@ -235,58 +273,39 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
             acks.add(snap.data!);
           }
 
-          final deviceList = DeviceListWithIcons(
-              key: const Key("dialog-device-list"),
-              iconAssigner: (context, id) {
-                if (widget.devices.contains(id)) {
-                  final icon;
-                  if (acks.contains(id)) {
-                    icon = const Icon(Icons.check,
-                        key: ValueKey('finished'), color: Colors.green);
-                  } else {
-                    icon = const Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.visibility, color: Colors.orange),
-                      SizedBox(width: 4),
-                      Text("Confirm"),
-                    ]);
-                  }
-                  return (null, icon);
-                } else {
-                  return (null, null);
-                }
-              });
+          final deviceList = DeviceListContainer(
+              child: DeviceListWithIcons(
+                  key: const Key("dialog-device-list"),
+                  iconAssigner: (context, id) {
+                    if (widget.devices.contains(id)) {
+                      final Widget icon;
+                      if (acks.contains(id)) {
+                        icon = AnimatedCheckCircle();
+                      } else {
+                        icon = const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.touch_app, color: Colors.orange),
+                              SizedBox(width: 4),
+                              Text("Confirm"),
+                            ]);
+                      }
+                      return (null, icon);
+                    } else {
+                      return (null, null);
+                    }
+                  }));
 
-          final gotAllAcks = acks.length == widget.devices.length;
-
-          final hexBox = toHexBox(
-              Uint8List.fromList(sessionHash), effectiveOrientation(context));
-
-          return DeviceListContainer(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-            ElevatedButton(
-                onPressed: gotAllAcks
-                    ? () => confirmSessionHashPressed.complete()
-                    : null,
-                child: Column(children: [
-                  Text(
-                      gotAllAcks
-                          ? "Press if all devices show:"
-                          : "Confirm all devices show:",
-                      style: const TextStyle(fontSize: 22),
-                      textAlign: TextAlign.center),
-                  const Divider(height: 10),
-                  Text(hexBox,
-                      style:
-                          const TextStyle(fontFamily: 'Courier', fontSize: 20))
-                ])),
-            Expanded(child: deviceList),
-          ]));
+          return Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Text("Confirm on each device"),
+            Divider(),
+            MaybeExpandedVertical(child: deviceList),
+          ]);
         });
 
     return showDeviceActionDialog<KeyId>(
       context: context,
       content: content,
-      title: const Text("Confirm on each device"),
       onCancel: () {
         api.cancelAll();
         Navigator.pop(context);
@@ -304,8 +323,8 @@ class KeyGenDeviceList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final button = StreamBuilder(
-        initialData: globalDeviceList.state,
-        stream: globalDeviceList.subscribe().map((event) => event.state),
+        initialData: api.deviceListState(),
+        stream: deviceListStateStream,
         builder: (context, snapshot) {
           if (snapshot.hasData) {
             final deviceListState = snapshot.data!;
@@ -314,56 +333,53 @@ class KeyGenDeviceList extends StatelessWidget {
           } else if (snapshot.hasError) {
             return Text('Error: ${snapshot.error}');
           } else {
-            return const Column(
-              children: [
-                Text("Please plug in Frostsnap Devices"),
-                SizedBox(height: 20),
-                CircularProgressIndicator()
-              ],
-            );
+            return Text('Unreachable: we set initialData');
           }
         });
 
-    return Column(mainAxisSize: MainAxisSize.min, children: [
-      Expanded(
+    return Column(children: [
+      MaybeExpandedVertical(
           child: DeviceListContainer(
-              child: DeviceListWidget(deviceBuilder: _buildDevice))),
+              child: DeviceList(deviceBuilder: _buildDevice))),
       button,
-      const SizedBox(height: 15),
     ]);
   }
 
-  Widget _buildDevice(BuildContext context, DeviceId id, String? label,
+  Widget _buildDevice(BuildContext context, Device device,
       Orientation orientation, Animation<double> animation) {
     Widget child;
-    if (label == null) {
+    if (device.name == null) {
       child = ElevatedButton(
           onPressed: () {
-            api.updateNamePreview(id: id, name: "");
+            api.updateNamePreview(id: device.id, name: "");
             Navigator.push(context,
                 MaterialPageRoute(builder: (deviceSetupContex) {
-              final completeWhen =
-                  globalDeviceList.subscribe().firstWhere((event) {
-                return event.kind == DeviceListChangeKind.named &&
-                    deviceIdEquals(id, event.id);
-              }).whenComplete(() => Navigator.pop(deviceSetupContex));
+              final completeWhen = deviceListChangeStream
+                  .firstWhere((change) =>
+                      change.kind == DeviceListChangeKind.Named &&
+                      deviceIdEquals(device.id, change.device.id))
+                  .whenComplete(() {
+                if (deviceSetupContex.mounted) {
+                  Navigator.pop(deviceSetupContex);
+                }
+              });
               return DeviceSetup(
-                deviceId: id,
-                popInvoked: () async {
+                deviceId: device.id,
+                popInvoked: (_) {
                   // This happens when we click back button
-                  await api.sendCancel(id: id);
-                  return true;
+                  api.sendCancel(id: device.id);
                 },
                 onSubmitted: (value) async {
-                  api.finishNaming(id: id, name: value);
+                  api.finishNaming(id: device.id, name: value);
                   await showDeviceActionDialog(
                       context: deviceSetupContex,
-                      title: const Text("Confirm name"),
                       content: Column(children: [
                         Text("Confirm name '$value' on device"),
                         Divider(),
-                        DeviceListWithIcons(iconAssigner: (context, deviceId) {
-                          if (deviceId == id) {
+                        MaybeExpandedVertical(child: DeviceListContainer(child:
+                            DeviceListWithIcons(
+                                iconAssigner: (context, deviceId) {
+                          if (deviceIdEquals(deviceId, device.id)) {
                             final label = LabeledDeviceText("'$value'?");
                             final icon = const Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -376,22 +392,22 @@ class KeyGenDeviceList extends StatelessWidget {
                           } else {
                             return (null, null);
                           }
-                        })
+                        })))
                       ]),
                       complete: completeWhen,
                       onCancel: () async {
-                        await api.sendCancel(id: id);
+                        await api.sendCancel(id: device.id);
                       });
                 },
                 onChanged: (value) async {
-                  await api.updateNamePreview(id: id, name: value);
+                  await api.updateNamePreview(id: device.id, name: value);
                 },
               );
             }));
           },
           child: const Text("NEW DEVICE"));
     } else {
-      child = LabeledDeviceText(label);
+      child = LabeledDeviceText(device.name!);
     }
 
     return DeviceBoxContainer(
