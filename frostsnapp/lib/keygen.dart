@@ -23,7 +23,7 @@ class KeyGenPage extends StatelessWidget {
       Navigator.pop(context, keyId);
     });
     return Scaffold(
-        appBar: AppBar(title: const Text("Choose threshold")),
+        appBar: AppBar(title: const Text("New Key")),
         body: Center(child: deviceList));
   }
 }
@@ -95,7 +95,8 @@ class _DoKeyGenButtonState extends State<DoKeyGenButton> {
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 16.0,
-              )))
+              ))),
+      const SizedBox(height: 20),
     ]);
   }
 }
@@ -210,8 +211,9 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
               return (null, null);
             }))),
             const SizedBox(height: 20),
-            const Text("Waiting for devices to generate key",
-                style: TextStyle(fontSize: 20))
+            const Text("Waiting on devices to generate the key...",
+                style: TextStyle(fontSize: 20)),
+            const SizedBox(height: 20),
           ]))),
     );
   }
@@ -241,7 +243,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                 ),
                 SizedBox(width: 20),
                 ElevatedButton(
-                    child: Text("No/Cancel"),
+                    child: Text("No"),
                     onPressed: () {
                       Navigator.pop(context, null);
                       api.cancelAll();
@@ -253,7 +255,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                   child: Align(
                     alignment: Alignment.center,
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      Text("Do all the devices show:"),
+                      Text("Do all the devices show this same code?"),
                       Divider(),
                       hexBox,
                     ]),
@@ -297,7 +299,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                   }));
 
           return Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Text("Confirm on each device"),
+            Text("Confirm this key on each device"),
             Divider(),
             MaybeExpandedVertical(child: deviceList),
           ]);

@@ -71,50 +71,53 @@ class _SignMessageFormState extends State<SignMessageForm> {
 
     return Center(
         child: Container(
+            padding: EdgeInsets.all(16.0),
             child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        TextField(
-          controller: _messageController,
-          onChanged: (_) {
-            setState(() {});
-          },
-          decoration: InputDecoration(labelText: 'Message to sign'),
-        ),
-        SizedBox(height: 20.0),
-        Text(
-          'Select ${widget.frostKey.threshold()} device${widget.frostKey.threshold() > 1 ? "s" : ""} to sign with:',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 20.0),
-        ),
-        Expanded(
-          child: ListView.builder(
-            itemCount: devices.length,
-            itemBuilder: (context, index) {
-              final device = devices[index];
-              return CheckboxListTile(
-                title: Text(device.name ?? "<unknown>"),
-                value: selected.contains(device.id),
-                onChanged: (bool? value) {
-                  setState(() {
-                    if (value == true) {
-                      selected.add(device.id);
-                    } else {
-                      selected.remove(device.id);
-                    }
-                  });
-                },
-              );
-            },
-          ),
-        ),
-        ElevatedButton(
-          onPressed: submitButtonOnPressed,
-          child: Text('Submit'),
-        ),
-      ],
-    )));
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                TextField(
+                  controller: _messageController,
+                  onChanged: (_) {
+                    setState(() {});
+                  },
+                  decoration: InputDecoration(
+                    hintText: 'Enter a message to sign', // Placeholder text
+                  ),
+                ),
+                SizedBox(height: 20.0),
+                Text(
+                  'Select ${widget.frostKey.threshold()} device${widget.frostKey.threshold() > 1 ? "s" : ""} to sign with:',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 20.0),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: devices.length,
+                    itemBuilder: (context, index) {
+                      final device = devices[index];
+                      return CheckboxListTile(
+                        title: Text(device.name ?? "<unknown>"),
+                        value: selected.contains(device.id),
+                        onChanged: (bool? value) {
+                          setState(() {
+                            if (value == true) {
+                              selected.add(device.id);
+                            } else {
+                              selected.remove(device.id);
+                            }
+                          });
+                        },
+                      );
+                    },
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: submitButtonOnPressed,
+                  child: Text('Submit'),
+                ),
+              ],
+            )));
   }
 
   Future<void> _showSignatureDialog(
@@ -123,19 +126,21 @@ class _SignMessageFormState extends State<SignMessageForm> {
         context: context,
         builder: (context) {
           return AlertDialog(
-              title: Text("Signing success"),
+              title: Text("Signing successful"),
               content: Container(
                   width: Platform.isAndroid ? double.maxFinite : 400.0,
-                  child: Align(
-                      alignment: Alignment.center,
-                      child: Column(
-                        children: [
-                          Text("Here's your signature"),
-                          SizedBox(height: 20),
-                          Text(toHex(
-                              Uint8List.fromList(signature.field0.toList())))
-                        ],
-                      ))));
+                  child: Column(
+                    children: [
+                      Text("Signature:"),
+                      SizedBox(height: 20),
+                      Align(
+                        alignment: Alignment.center,
+                        child: SelectableText(
+                          toHex(Uint8List.fromList(signature.field0.toList())),
+                        ),
+                      )
+                    ],
+                  )));
         });
   }
 
@@ -166,7 +171,7 @@ class _SignMessageFormState extends State<SignMessageForm> {
         },
         complete: finishedSigning,
         content: Column(children: [
-          Text("Plug in each device"),
+          Text("Sign on each device"),
           Expanded(
               child: DeviceSigningProgress(
                   stream: signingStream, signers: selectedDevices)),

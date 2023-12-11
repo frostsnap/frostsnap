@@ -27,6 +27,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Frostsnapp',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSwatch(
           primarySwatch: Colors.blue,
@@ -63,7 +64,31 @@ class MyHomePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(title: Text("Key List")),
-        body: Center(child: KeyListWithConfetti()));
+      body: Column(
+        mainAxisAlignment: MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Logo
+          Padding(
+              padding: const EdgeInsets.all(50.0),
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  double maxWidth = 300;
+                  double width =
+                      constraints.maxWidth > 600 ? maxWidth * 1.5 : maxWidth;
+
+                  return Image.asset(
+                    'assets/frostsnap-logo-boxed.png',
+                    width: width,
+                  );
+                },
+              )),
+          // Key List with Confetti
+          Expanded(
+            child: KeyListWithConfetti(),
+          ),
+        ],
+      ),
+    );
   }
 }
