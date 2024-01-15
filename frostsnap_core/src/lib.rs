@@ -9,6 +9,7 @@ mod macros;
 pub mod message;
 pub mod nostr;
 pub mod xpub;
+
 pub use bincode;
 pub use key_id::*;
 pub use serde;
@@ -23,7 +24,7 @@ extern crate alloc;
 
 use crate::message::*;
 use alloc::{string::String, string::ToString, vec::Vec};
-use schnorr_fun::fun::{hex, marker::*, Point, Scalar, Tag};
+use schnorr_fun::fun::{hex, Point, Tag};
 use sha2::digest::Digest;
 use sha2::Sha256;
 
@@ -48,10 +49,6 @@ impl_fromstr_deserialize! {
 }
 
 impl DeviceId {
-    pub fn to_poly_index(&self) -> Scalar<Public> {
-        Scalar::from_hash(Sha256::default().chain_update(self.0)).public()
-    }
-
     pub fn new(point: Point) -> Self {
         Self(point.to_bytes())
     }

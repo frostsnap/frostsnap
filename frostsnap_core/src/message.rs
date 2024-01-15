@@ -11,6 +11,7 @@ use crate::NONCE_BATCH_SIZE;
 use alloc::boxed::Box;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
+use schnorr_fun::fun::marker::NonZero;
 use schnorr_fun::fun::marker::Public;
 use schnorr_fun::fun::marker::Zero;
 use schnorr_fun::fun::Point;
@@ -39,7 +40,7 @@ pub enum CoordinatorSend {
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub enum CoordinatorToDeviceMessage {
     DoKeyGen {
-        devices: BTreeSet<DeviceId>,
+        devices: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
         threshold: usize,
     },
     FinishKeyGen {
@@ -57,12 +58,12 @@ pub struct SignRequest {
 }
 
 impl SignRequest {
-    pub fn devices(&self) -> impl Iterator<Item = DeviceId> + '_ {
+    pub fn signers(&self) -> impl Iterator<Item = DeviceId> + '_ {
         self.nonces.keys().cloned()
     }
 
-    pub fn contains_device(&self, id: DeviceId) -> bool {
-        self.nonces.contains_key(&id)
+    pub fn contains_signer(&self, index: DeviceId) -> bool {
+        self.nonces.contains_key(&index)
     }
 }
 
@@ -75,7 +76,9 @@ impl Gist for CoordinatorToDeviceMessage {
 impl CoordinatorToDeviceMessage {
     pub fn default_destinations(&self) -> BTreeSet<DeviceId> {
         match self {
-            CoordinatorToDeviceMessage::DoKeyGen { devices, .. } => devices.clone(),
+            CoordinatorToDeviceMessage::DoKeyGen { devices, .. } => {
+                devices.keys().cloned().collect()
+            }
             CoordinatorToDeviceMessage::FinishKeyGen { shares_provided } => {
                 shares_provided.keys().cloned().collect()
             }

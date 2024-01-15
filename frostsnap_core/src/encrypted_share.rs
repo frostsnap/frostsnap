@@ -1,5 +1,5 @@
 #![allow(non_snake_case)]
-use alloc::collections::BTreeSet;
+use alloc::collections::BTreeMap;
 use chacha20::cipher::{KeyIvInit, StreamCipher};
 use chacha20::ChaCha20;
 use rand_core::RngCore;
@@ -12,6 +12,7 @@ use sha2::{
 };
 
 use crate::DeviceId;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, bincode::Encode, bincode::Decode)]
 pub struct EncryptedShare {
     R: Point,
@@ -54,20 +55,20 @@ impl crate::KeyGenProvideShares {
     pub fn generate(
         frost: &Frost<sha2::Sha256, impl NonceGen>,
         my_poly: &[Scalar],
-        devices: &BTreeSet<DeviceId>,
+        devices: &BTreeMap<DeviceId, Scalar<Public, NonZero>>,
         secure_rng: &mut impl rand_core::RngCore,
     ) -> Self {
-        let pop_message = crate::gen_pop_message(devices.clone());
+        let pop_message = crate::gen_pop_message(devices.keys().cloned());
         let proof_of_possession =
             frost.create_proof_of_possession(my_poly, schnorr_fun::Message::raw(&pop_message));
 
         let encrypted_shares = devices
             .iter()
-            .map(|&device| {
-                let share = frost.create_share(my_poly, device.to_poly_index());
+            .map(|(&device_id, party_index)| {
+                let share = frost.create_share(my_poly, *party_index);
                 (
-                    device,
-                    match device.pubkey() {
+                    device_id,
+                    match device_id.pubkey() {
                         Some(pubkey) => EncryptedShare::new(pubkey, secure_rng, &share),
                         // Encrypt garbage if device id is not a valid public key
                         None => EncryptedShare::random(secure_rng),

@@ -1,11 +1,6 @@
 use crate::DeviceId;
 use crate::{gen_pop_message, message::*, ActionError, Error, MessageResult, NONCE_BATCH_SIZE};
-use alloc::{
-    boxed::Box,
-    collections::{BTreeMap, BTreeSet},
-    string::ToString,
-    vec::Vec,
-};
+use alloc::{boxed::Box, collections::BTreeMap, string::ToString, vec::Vec};
 use rand_chacha::ChaCha20Rng;
 use rand_core::RngCore;
 use schnorr_fun::{
@@ -53,9 +48,10 @@ impl FrostSigner {
                     task: TaskKind::KeyGen,
                 })
             }
-            SignerState::AwaitingSignAck { key, .. } => {
+            SignerState::AwaitingSignAck { key, devices, .. } => {
                 self.state = SignerState::FrostKey {
                     key: key.clone(),
+                    devices: devices.clone(),
                     awaiting_ack: false,
                 };
                 Some(DeviceToUserMessage::Canceled {
@@ -108,14 +104,14 @@ impl FrostSigner {
                 SignerState::Registered,
                 CoordinatorToDeviceMessage::DoKeyGen { devices, threshold },
             ) => {
-                if !devices.contains(&self.device_id()) {
+                if !devices.contains_key(&self.device_id()) {
                     return Ok(vec![]);
                 }
                 let frost = frost::new_with_deterministic_nonces::<Sha256>();
                 // XXX: Right now now duplicate pubkeys are possible because we only have it in the
                 // device id and it's given to us as a BTreeSet.
                 let device_ids = devices
-                    .iter()
+                    .keys()
                     .map(|device| device.as_bytes())
                     .collect::<Vec<_>>();
                 let mut poly_rng = derive_nonce_rng! {
@@ -163,24 +159,30 @@ impl FrostSigner {
                 },
                 CoordinatorToDeviceMessage::FinishKeyGen { shares_provided },
             ) => {
-                if let Some(device) = devices
+                if let Some((device_id, _)) = devices
                     .iter()
-                    .find(|device_id| !shares_provided.contains_key(device_id))
+                    .find(|(device_id, _)| !shares_provided.contains_key(device_id))
                 {
                     return Err(Error::signer_invalid_message(
                         &message,
-                        format!("Missing shares from {}", device),
+                        format!("Missing shares from {}", device_id),
                     ));
                 }
                 let frost = frost::new_with_deterministic_nonces::<Sha256>();
 
                 let point_polys: BTreeMap<_, _> = shares_provided
                     .iter()
-                    .map(|(device_id, share)| (device_id.to_poly_index(), share.my_poly.clone()))
+                    .map(|(device_id, share)| {
+                        (
+                            *devices.get(device_id).expect("we checked we have shares"),
+                            share.my_poly.clone(),
+                        )
+                    })
                     .collect();
                 // Confirm our point poly matches what we expect
+                let my_index = devices.get(&self.device_id()).expect("we must exist");
                 if point_polys
-                    .get(&self.device_id().to_poly_index())
+                    .get(my_index)
                     .expect("we have a point poly in this finish keygen")
                     != &frost::to_point_poly(scalar_poly)
                 {
@@ -222,14 +224,13 @@ impl FrostSigner {
                     })
                     .collect::<Result<BTreeMap<_, _>, _>>()?;
 
-                let my_index = self.device_id().to_poly_index();
                 let my_shares = transpose_shares
                     .get(&self.device_id())
                     .expect("this device is part of the keygen")
                     .iter()
                     .map(|(provider_id, (encrypted_secret_share, pop))| {
                         (
-                            provider_id.to_poly_index(),
+                            *devices.get(provider_id).expect("just checked shares exist"),
                             (
                                 encrypted_secret_share.decrypt(self.keypair().secret_key()),
                                 pop.clone(),
@@ -238,7 +239,7 @@ impl FrostSigner {
                     })
                     .collect::<BTreeMap<_, _>>();
 
-                let pop_message = gen_pop_message(devices.iter().cloned());
+                let pop_message = gen_pop_message(devices.keys().cloned());
                 let keygen = frost
                     .new_keygen(point_polys)
                     .map_err(|e| Error::signer_message_error(&message, e))?;
@@ -246,7 +247,7 @@ impl FrostSigner {
                 let (secret_share, frost_key) = frost
                     .finish_keygen(
                         keygen.clone(),
-                        my_index,
+                        *my_index,
                         my_shares,
                         Message::raw(&pop_message),
                     )
@@ -264,6 +265,7 @@ impl FrostSigner {
                         secret_share,
                         aux_rand: *aux_rand,
                     },
+                    devices: devices.clone(),
                     awaiting_ack: true,
                 };
 
@@ -274,6 +276,7 @@ impl FrostSigner {
             (
                 SignerState::FrostKey {
                     key,
+                    devices,
                     awaiting_ack: false,
                 },
                 CoordinatorToDeviceMessage::RequestSign(SignRequest { nonces, sign_task }),
@@ -311,6 +314,7 @@ impl FrostSigner {
 
                 self.state = SignerState::AwaitingSignAck {
                     key: key.clone(),
+                    devices: devices.clone(),
                     sign_task: sign_task.clone(),
                     nonces,
                 };
@@ -324,7 +328,9 @@ impl FrostSigner {
 
     pub fn keygen_ack(&mut self) -> Result<Vec<DeviceSend>, ActionError> {
         match &mut self.state {
-            SignerState::FrostKey { key, awaiting_ack } if *awaiting_ack => {
+            SignerState::FrostKey {
+                key, awaiting_ack, ..
+            } if *awaiting_ack => {
                 let session_hash = key
                     .frost_key
                     .clone()
@@ -349,6 +355,7 @@ impl FrostSigner {
         match &self.state {
             SignerState::AwaitingSignAck {
                 key,
+                devices,
                 sign_task,
                 nonces,
             } => {
@@ -356,6 +363,10 @@ impl FrostSigner {
                 let frost = frost::new_with_deterministic_nonces::<Sha256>();
                 let (_, my_nonce_index, my_replenish_index) =
                     nonces.get(&self.device_id()).expect("already checked");
+
+                let my_index = devices
+                    .get(&self.device_id())
+                    .expect("we must belong to this key to sign");
 
                 // ⚠ Update nonce counter. Overflow would allow nonce reuse.
                 self.nonce_counter = my_nonce_index.saturating_add(sign_items.len());
@@ -370,7 +381,12 @@ impl FrostSigner {
                 {
                     let nonces_at_index = nonces
                         .iter()
-                        .map(|(id, (nonces, _, _))| (id.to_poly_index(), nonces[nonce_index]))
+                        .map(|(id, (nonces, _, _))| {
+                            (
+                                *devices.get(id).expect("we must know about this signer"),
+                                nonces[nonce_index],
+                            )
+                        })
                         .collect();
 
                     let mut xpub = crate::xpub::Xpub::new(key.frost_key.clone());
@@ -400,7 +416,7 @@ impl FrostSigner {
                     let sig_share = frost.sign(
                         &xonly_frost_key,
                         &sign_session,
-                        self.device_id().to_poly_index(),
+                        *my_index,
                         &key.secret_share,
                         secret_nonce,
                     );
@@ -408,7 +424,7 @@ impl FrostSigner {
                     assert!(frost.verify_signature_share(
                         &xonly_frost_key,
                         &sign_session,
-                        self.device_id().to_poly_index(),
+                        *my_index,
                         sig_share,
                     ));
 
@@ -422,6 +438,7 @@ impl FrostSigner {
 
                 self.state = SignerState::FrostKey {
                     key: key.clone(),
+                    devices: devices.clone(),
                     awaiting_ack: false,
                 };
 
@@ -455,17 +472,19 @@ pub enum SignerState {
     Registered,
     KeyGen {
         scalar_poly: Vec<Scalar>,
-        devices: BTreeSet<DeviceId>,
+        devices: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
         threshold: usize,
         aux_rand: [u8; 32],
     },
     AwaitingSignAck {
         key: FrostsnapKey,
+        devices: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
         sign_task: SignTask,
         nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
     },
     FrostKey {
         key: FrostsnapKey,
+        devices: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
         awaiting_ack: bool,
     },
 }

@@ -6,7 +6,8 @@ use frostsnap_core::{DeviceId, FrostCoordinator, FrostSigner};
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::frost;
-use std::collections::BTreeSet;
+use schnorr_fun::fun::Scalar;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::common::{Env, Run, Send};
 mod common;
@@ -19,6 +20,11 @@ fn keygen_maliciously_replace_public_poly() {
     let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
     let mut device = FrostSigner::new_random(&mut test_rng);
     let devices = BTreeSet::from_iter([device.device_id()]);
+    let devices: BTreeMap<_, _> = devices
+        .into_iter()
+        .enumerate()
+        .map(|(index, id)| (id, Scalar::from((index + 1) as u32).non_zero().unwrap()))
+        .collect();
     let _ = device
         .recv_coordinator_message(CoordinatorToDeviceMessage::DoKeyGen {
             devices: devices.clone(),

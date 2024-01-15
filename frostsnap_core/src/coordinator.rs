@@ -78,11 +78,13 @@ impl SigningSessionState {
 #[derive(Clone, Debug)]
 pub enum KeyGenState {
     WaitingForResponses {
+        devices: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
         responses: BTreeMap<DeviceId, Option<KeyGenResponse>>,
         threshold: usize,
     },
     WaitingForAcks {
         frost_key: FrostKey<Normal>,
+        devices: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
         device_nonces: BTreeMap<DeviceId, DeviceNonces>,
         acks: BTreeMap<DeviceId, bool>,
         session_hash: SessionHash,
@@ -98,6 +100,7 @@ pub struct DeviceNonces {
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, serde::Serialize, serde::Deserialize)]
 pub struct CoordinatorFrostKeyState {
     frost_key: FrostKey<Normal>,
+    devices: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
     device_nonces: BTreeMap<DeviceId, DeviceNonces>,
 }
 
@@ -152,6 +155,7 @@ impl FrostCoordinator {
             }
             CoordinatorState::KeyGen(keygen_state) => match keygen_state {
                 KeyGenState::WaitingForResponses {
+                    devices,
                     responses,
                     threshold,
                 } => {
@@ -189,7 +193,9 @@ impl FrostCoordinator {
                                         .iter()
                                         .map(|(device_id, response)| {
                                             (
-                                                device_id.to_poly_index(),
+                                                *devices
+                                                    .get(device_id)
+                                                    .expect("this device is a part of keygen"),
                                                 response.encrypted_shares.my_poly.clone(),
                                             )
                                         })
@@ -198,7 +204,9 @@ impl FrostCoordinator {
                                         .iter()
                                         .map(|(device_id, response)| {
                                             (
-                                                device_id.to_poly_index(),
+                                                *devices
+                                                    .get(device_id)
+                                                    .expect("this device is a part of keygen"),
                                                 response
                                                     .encrypted_shares
                                                     .proof_of_possession
@@ -236,6 +244,7 @@ impl FrostCoordinator {
 
                                     self.state =
                                         CoordinatorState::KeyGen(KeyGenState::WaitingForAcks {
+                                            devices: devices.clone(),
                                             frost_key,
                                             device_nonces,
                                             acks: responses
@@ -274,6 +283,7 @@ impl FrostCoordinator {
                     }
                 }
                 KeyGenState::WaitingForAcks {
+                    devices,
                     frost_key,
                     device_nonces,
                     acks,
@@ -309,6 +319,7 @@ impl FrostCoordinator {
                         if all_acks {
                             let key = CoordinatorFrostKeyState {
                                 frost_key: frost_key.clone(),
+                                devices: devices.clone(),
                                 device_nonces: device_nonces.clone(),
                             };
                             let key_id = key.frost_key.key_id();
@@ -337,6 +348,9 @@ impl FrostCoordinator {
                     let frost = frost::new_without_nonce_generation::<Sha256>();
                     let mut outgoing = vec![];
 
+                    let from_share_index =
+                        key.devices.get(&from).expect("we don't know this device");
+
                     let nonce_for_device = key.device_nonces.get_mut(&from).ok_or(
                         Error::coordinator_invalid_message(&message, "Signer is unknown"),
                     )?;
@@ -364,7 +378,7 @@ impl FrostCoordinator {
                         let xonly_frost_key = &session_progress.key;
                         if !session
                             .participants()
-                            .any(|x_coord| x_coord == from.to_poly_index())
+                            .any(|x_coord| x_coord == *from_share_index)
                         {
                             return Err(Error::coordinator_invalid_message(
                                 &message,
@@ -375,7 +389,7 @@ impl FrostCoordinator {
                         if !frost.verify_signature_share(
                             xonly_frost_key,
                             session,
-                            from.to_poly_index(),
+                            *from_share_index,
                             *signature_share,
                         ) {
                             return Err(Error::coordinator_invalid_message(
@@ -464,13 +478,25 @@ impl FrostCoordinator {
         }
         match self.state {
             CoordinatorState::Registration => {
+                let device_indexes: BTreeMap<_, _> = devices
+                    .iter()
+                    .enumerate()
+                    .map(|(index, device_id)| {
+                        (
+                            *device_id,
+                            Scalar::from((index + 1) as u32).non_zero().unwrap(),
+                        )
+                    })
+                    .collect();
+
                 self.state = CoordinatorState::KeyGen(KeyGenState::WaitingForResponses {
+                    devices: device_indexes.clone(),
                     responses: devices.iter().map(|&device_id| (device_id, None)).collect(),
                     threshold,
                 });
 
                 Ok(CoordinatorToDeviceMessage::DoKeyGen {
-                    devices: devices.clone(),
+                    devices: device_indexes,
                     threshold,
                 })
             }
@@ -542,7 +568,12 @@ impl FrostCoordinator {
                         let b_message = Message::raw(&sign_item.message[..]);
                         let indexed_nonces = signing_nonces
                             .iter()
-                            .map(|(id, (nonce, _, _))| (id.to_poly_index(), nonce[i]))
+                            .map(|(id, (nonce, _, _))| {
+                                (
+                                    *key.devices.get(id).expect("we must know about this device"),
+                                    nonce[i],
+                                )
+                            })
                             .collect();
 
                         let xonly_frost_key = sign_item.derive_key(key.frost_key());
