@@ -1,7 +1,5 @@
 use frostsnap_coordinator::{DeviceChange, SigningDispatcher};
-use frostsnap_core::message::{
-    CoordinatorSend, CoordinatorToUserMessage, CoordinatorToUserSigningMessage, SignTask,
-};
+use frostsnap_core::message::{CoordinatorSend, CoordinatorToUserMessage, SignTask};
 use frostsnap_core::schnorr_fun;
 use frostsnap_core::schnorr_fun::frost::FrostKey;
 use frostsnap_core::schnorr_fun::fun::marker::Normal;
@@ -87,7 +85,7 @@ impl<'a, 'b> Signer<'a, 'b> {
             .coordinator
             .start_sign(message, chosen_signers.clone())?;
 
-        let mut dispatcher = SigningDispatcher::new(&mut sign_request_sends);
+        let mut dispatcher = SigningDispatcher::from_filter_out_start_sign(&mut sign_request_sends);
 
         for device in self.ports.registered_devices() {
             dispatcher.connected(*device);
@@ -108,19 +106,17 @@ impl<'a, 'b> Signer<'a, 'b> {
         );
 
         let mut outbox = VecDeque::from_iter(sign_request_sends);
-        let mut final_signatures = None;
         let finished_signatures = loop {
             for message in &outbox {
-                if let CoordinatorSend::ToUser(CoordinatorToUserMessage::Signing(
-                    CoordinatorToUserSigningMessage::Signed { signatures },
-                )) = message
+                if let CoordinatorSend::ToUser(CoordinatorToUserMessage::Signing(signing_message)) =
+                    message
                 {
-                    final_signatures = Some(signatures.clone());
+                    dispatcher.process_to_user_message(signing_message.clone());
                 }
             }
             crate::process_outbox(self.db, &mut self.coordinator, &mut outbox, self.ports)?;
 
-            if let Some(finished_signatures) = &final_signatures {
+            if let Some(finished_signatures) = dispatcher.finished_signatures.take() {
                 if outbox.is_empty() {
                     break finished_signatures;
                 }
@@ -136,7 +132,6 @@ impl<'a, 'b> Signer<'a, 'b> {
                 let port_changes = self.ports.poll_ports();
 
                 for (from, incoming_message) in port_changes.new_messages {
-                    dispatcher.process(from, &incoming_message);
                     match self.coordinator.recv_device_message(from, incoming_message) {
                         Ok(outgoing) => {
                             outbox.extend(outgoing);
@@ -167,13 +162,15 @@ impl<'a, 'b> Signer<'a, 'b> {
                                 "⚠ device {id} renamed to {new_name}. It's old name was {old_name}"
                             );
                         }
+
                         DeviceChange::Disconnected { id } => {
                             dispatcher.disconnected(*id);
                         }
                         DeviceChange::Registered { id, .. } => {
                             dispatcher.connected(*id);
                         }
-                        DeviceChange::Added { .. } => { /* do nothing until it's registered */ }
+                        DeviceChange::Connected { .. } | DeviceChange::NewUnknownDevice { .. } => { /* do nothing until it's registered */
+                        }
                     }
                 }
 
@@ -184,7 +181,7 @@ impl<'a, 'b> Signer<'a, 'b> {
                 }
             }
 
-            if let Some(send_message) = dispatcher.emit_messages() {
+            if let Some(send_message) = dispatcher.resend_sign_request() {
                 self.ports.queue_in_port_outbox(send_message);
             }
         };

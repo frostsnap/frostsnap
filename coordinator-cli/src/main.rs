@@ -139,7 +139,10 @@ fn process_outbox(
                 },
             },
             CoordinatorSend::ToStorage(to_storage_message) => match to_storage_message {
-                CoordinatorToStorageMessage::UpdateState(key) => {
+                CoordinatorToStorageMessage::StoreSigningState(_) => {
+                    /* we don't persist this on the cli */
+                }
+                CoordinatorToStorageMessage::UpdateFrostKey(key) => {
                     db.save(db::State {
                         key,
                         device_labels: ports.device_labels().clone(),
@@ -217,7 +220,11 @@ fn main() -> anyhow::Result<()> {
                 let port_changes = ports.poll_ports();
                 for device_change in port_changes.device_changes {
                     match device_change {
-                        DeviceChange::Added { .. } | DeviceChange::Disconnected { .. } => { /*  */ }
+                        DeviceChange::Connected { .. } | DeviceChange::Disconnected { .. } => { /* ignore */
+                        }
+                        DeviceChange::NewUnknownDevice { id, name } => {
+                            eprintln!("New device added '{name}' with id {id}")
+                        }
                         DeviceChange::Renamed {
                             id,
                             old_name,

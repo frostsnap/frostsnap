@@ -32,64 +32,6 @@ pub extern "C" fn wire_turn_logcat_logging_on(port_: i64, _level: i32) {
 }
 
 #[no_mangle]
-pub extern "C" fn wire_announce_available_ports(port_: i64, ports: *mut wire_list_port_desc) {
-    wire_announce_available_ports_impl(port_, ports)
-}
-
-#[no_mangle]
-pub extern "C" fn wire_switch_to_host_handles_serial(port_: i64) {
-    wire_switch_to_host_handles_serial_impl(port_)
-}
-
-#[no_mangle]
-pub extern "C" fn wire_update_name_preview(
-    port_: i64,
-    id: *mut wire_DeviceId,
-    name: *mut wire_uint_8_list,
-) {
-    wire_update_name_preview_impl(port_, id, name)
-}
-
-#[no_mangle]
-pub extern "C" fn wire_finish_naming(
-    port_: i64,
-    id: *mut wire_DeviceId,
-    name: *mut wire_uint_8_list,
-) {
-    wire_finish_naming_impl(port_, id, name)
-}
-
-#[no_mangle]
-pub extern "C" fn wire_send_cancel(port_: i64, id: *mut wire_DeviceId) {
-    wire_send_cancel_impl(port_, id)
-}
-
-#[no_mangle]
-pub extern "C" fn wire_cancel_all(port_: i64) {
-    wire_cancel_all_impl(port_)
-}
-
-#[no_mangle]
-pub extern "C" fn wire_registered_devices(port_: i64) {
-    wire_registered_devices_impl(port_)
-}
-
-#[no_mangle]
-pub extern "C" fn wire_start_coordinator_thread(port_: i64) {
-    wire_start_coordinator_thread_impl(port_)
-}
-
-#[no_mangle]
-pub extern "C" fn wire_key_state() -> support::WireSyncReturn {
-    wire_key_state_impl()
-}
-
-#[no_mangle]
-pub extern "C" fn wire_get_key(key_id: *mut wire_KeyId) -> support::WireSyncReturn {
-    wire_get_key_impl(key_id)
-}
-
-#[no_mangle]
 pub extern "C" fn wire_device_at_index(index: usize) -> support::WireSyncReturn {
     wire_device_at_index_impl(index)
 }
@@ -100,22 +42,13 @@ pub extern "C" fn wire_device_list_state() -> support::WireSyncReturn {
 }
 
 #[no_mangle]
-pub extern "C" fn wire_start_signing(
-    port_: i64,
-    key_id: *mut wire_KeyId,
-    devices: *mut wire_list_device_id,
-    message: *mut wire_uint_8_list,
-) {
-    wire_start_signing_impl(port_, key_id, devices, message)
+pub extern "C" fn wire_new_coordinator(port_: i64, db_file: *mut wire_uint_8_list) {
+    wire_new_coordinator_impl(port_, db_file)
 }
 
 #[no_mangle]
-pub extern "C" fn wire_generate_new_key(
-    port_: i64,
-    threshold: usize,
-    devices: *mut wire_list_device_id,
-) {
-    wire_generate_new_key_impl(port_, threshold, devices)
+pub extern "C" fn wire_echo_key_id(port_: i64, key_id: *mut wire_KeyId) {
+    wire_echo_key_id_impl(port_, key_id)
 }
 
 #[no_mangle]
@@ -133,13 +66,6 @@ pub extern "C" fn wire_id__method__FrostKey(that: *mut wire_FrostKey) -> support
 #[no_mangle]
 pub extern "C" fn wire_name__method__FrostKey(that: *mut wire_FrostKey) -> support::WireSyncReturn {
     wire_name__method__FrostKey_impl(that)
-}
-
-#[no_mangle]
-pub extern "C" fn wire_devices__method__FrostKey(
-    that: *mut wire_FrostKey,
-) -> support::WireSyncReturn {
-    wire_devices__method__FrostKey_impl(that)
 }
 
 #[no_mangle]
@@ -180,13 +106,171 @@ pub extern "C" fn wire_satisfy__method__PortBytesToRead(
 }
 
 #[no_mangle]
+pub extern "C" fn wire_is_finished__method__SigningState(
+    that: *mut wire_SigningState,
+) -> support::WireSyncReturn {
+    wire_is_finished__method__SigningState_impl(that)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_named_devices__method__DeviceListState(
     that: *mut wire_DeviceListState,
 ) -> support::WireSyncReturn {
     wire_named_devices__method__DeviceListState_impl(that)
 }
 
+#[no_mangle]
+pub extern "C" fn wire_start_thread__method__Coordinator(port_: i64, that: *mut wire_Coordinator) {
+    wire_start_thread__method__Coordinator_impl(port_, that)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_announce_available_ports__method__Coordinator(
+    port_: i64,
+    that: *mut wire_Coordinator,
+    ports: *mut wire_list_port_desc,
+) {
+    wire_announce_available_ports__method__Coordinator_impl(port_, that, ports)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_switch_to_host_handles_serial__method__Coordinator(
+    port_: i64,
+    that: *mut wire_Coordinator,
+) {
+    wire_switch_to_host_handles_serial__method__Coordinator_impl(port_, that)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_update_name_preview__method__Coordinator(
+    port_: i64,
+    that: *mut wire_Coordinator,
+    id: *mut wire_DeviceId,
+    name: *mut wire_uint_8_list,
+) {
+    wire_update_name_preview__method__Coordinator_impl(port_, that, id, name)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_finish_naming__method__Coordinator(
+    port_: i64,
+    that: *mut wire_Coordinator,
+    id: *mut wire_DeviceId,
+    name: *mut wire_uint_8_list,
+) {
+    wire_finish_naming__method__Coordinator_impl(port_, that, id, name)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_send_cancel__method__Coordinator(
+    port_: i64,
+    that: *mut wire_Coordinator,
+    id: *mut wire_DeviceId,
+) {
+    wire_send_cancel__method__Coordinator_impl(port_, that, id)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_cancel_all__method__Coordinator(port_: i64, that: *mut wire_Coordinator) {
+    wire_cancel_all__method__Coordinator_impl(port_, that)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_registered_devices__method__Coordinator(
+    port_: i64,
+    that: *mut wire_Coordinator,
+) {
+    wire_registered_devices__method__Coordinator_impl(port_, that)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_key_state__method__Coordinator(
+    that: *mut wire_Coordinator,
+) -> support::WireSyncReturn {
+    wire_key_state__method__Coordinator_impl(that)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_get_key__method__Coordinator(
+    that: *mut wire_Coordinator,
+    key_id: *mut wire_KeyId,
+) -> support::WireSyncReturn {
+    wire_get_key__method__Coordinator_impl(that, key_id)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_start_signing__method__Coordinator(
+    port_: i64,
+    that: *mut wire_Coordinator,
+    key_id: *mut wire_KeyId,
+    devices: *mut wire_list_device_id,
+    message: *mut wire_uint_8_list,
+) {
+    wire_start_signing__method__Coordinator_impl(port_, that, key_id, devices, message)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_get_signing_state__method__Coordinator(
+    that: *mut wire_Coordinator,
+) -> support::WireSyncReturn {
+    wire_get_signing_state__method__Coordinator_impl(that)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_devices_for_frost_key__method__Coordinator(
+    that: *mut wire_Coordinator,
+    frost_key: *mut wire_FrostKey,
+) -> support::WireSyncReturn {
+    wire_devices_for_frost_key__method__Coordinator_impl(that, frost_key)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_get_device__method__Coordinator(
+    that: *mut wire_Coordinator,
+    id: *mut wire_DeviceId,
+) -> support::WireSyncReturn {
+    wire_get_device__method__Coordinator_impl(that, id)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_nonces_available__method__Coordinator(
+    that: *mut wire_Coordinator,
+    id: *mut wire_DeviceId,
+) -> support::WireSyncReturn {
+    wire_nonces_available__method__Coordinator_impl(that, id)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_generate_new_key__method__Coordinator(
+    port_: i64,
+    that: *mut wire_Coordinator,
+    threshold: usize,
+    devices: *mut wire_list_device_id,
+) {
+    wire_generate_new_key__method__Coordinator_impl(port_, that, threshold, devices)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_can_restore_signing_session__method__Coordinator(
+    that: *mut wire_Coordinator,
+) -> support::WireSyncReturn {
+    wire_can_restore_signing_session__method__Coordinator_impl(that)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_try_restore_signing_session__method__Coordinator(
+    port_: i64,
+    that: *mut wire_Coordinator,
+) {
+    wire_try_restore_signing_session__method__Coordinator_impl(port_, that)
+}
+
 // Section: allocate functions
+
+#[no_mangle]
+pub extern "C" fn new_FfiCoordinator() -> wire_FfiCoordinator {
+    wire_FfiCoordinator::new_with_null_ptr()
+}
 
 #[no_mangle]
 pub extern "C" fn new_FrostsnapCoreCoordinatorFrostKeyState(
@@ -212,6 +296,11 @@ pub extern "C" fn new_PortReadSender() -> wire_PortReadSender {
 #[no_mangle]
 pub extern "C" fn new_PortWriteSender() -> wire_PortWriteSender {
     wire_PortWriteSender::new_with_null_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn new_box_autoadd_coordinator_0() -> *mut wire_Coordinator {
+    support::new_leak_box_ptr(wire_Coordinator::new_with_null_ptr())
 }
 
 #[no_mangle]
@@ -260,6 +349,11 @@ pub extern "C" fn new_box_autoadd_port_write_0() -> *mut wire_PortWrite {
 }
 
 #[no_mangle]
+pub extern "C" fn new_box_autoadd_signing_state_0() -> *mut wire_SigningState {
+    support::new_leak_box_ptr(wire_SigningState::new_with_null_ptr())
+}
+
+#[no_mangle]
 pub extern "C" fn new_list_device_0(len: i32) -> *mut wire_list_device {
     let wrap = wire_list_device {
         ptr: support::new_leak_vec_ptr(<wire_Device>::new_with_null_ptr(), len),
@@ -272,6 +366,15 @@ pub extern "C" fn new_list_device_0(len: i32) -> *mut wire_list_device {
 pub extern "C" fn new_list_device_id_0(len: i32) -> *mut wire_list_device_id {
     let wrap = wire_list_device_id {
         ptr: support::new_leak_vec_ptr(<wire_DeviceId>::new_with_null_ptr(), len),
+        len,
+    };
+    support::new_leak_box_ptr(wrap)
+}
+
+#[no_mangle]
+pub extern "C" fn new_list_encoded_signature_0(len: i32) -> *mut wire_list_encoded_signature {
+    let wrap = wire_list_encoded_signature {
+        ptr: support::new_leak_vec_ptr(<wire_EncodedSignature>::new_with_null_ptr(), len),
         len,
     };
     support::new_leak_box_ptr(wrap)
@@ -305,6 +408,21 @@ pub extern "C" fn new_uint_8_list_0(len: i32) -> *mut wire_uint_8_list {
 }
 
 // Section: related functions
+
+#[no_mangle]
+pub extern "C" fn drop_opaque_FfiCoordinator(ptr: *const c_void) {
+    unsafe {
+        Arc::<FfiCoordinator>::decrement_strong_count(ptr as _);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn share_opaque_FfiCoordinator(ptr: *const c_void) -> *const c_void {
+    unsafe {
+        Arc::<FfiCoordinator>::increment_strong_count(ptr as _);
+        ptr
+    }
+}
 
 #[no_mangle]
 pub extern "C" fn drop_opaque_FrostsnapCoreCoordinatorFrostKeyState(ptr: *const c_void) {
@@ -385,6 +503,11 @@ pub extern "C" fn share_opaque_PortWriteSender(ptr: *const c_void) -> *const c_v
 
 // Section: impl Wire2Api
 
+impl Wire2Api<RustOpaque<FfiCoordinator>> for wire_FfiCoordinator {
+    fn wire2api(self) -> RustOpaque<FfiCoordinator> {
+        unsafe { support::opaque_from_dart(self.ptr as _) }
+    }
+}
 impl Wire2Api<RustOpaque<frostsnap_core::CoordinatorFrostKeyState>>
     for wire_FrostsnapCoreCoordinatorFrostKeyState
 {
@@ -416,6 +539,12 @@ impl Wire2Api<String> for *mut wire_uint_8_list {
     fn wire2api(self) -> String {
         let vec: Vec<u8> = self.wire2api();
         String::from_utf8_lossy(&vec).into_owned()
+    }
+}
+impl Wire2Api<Coordinator> for *mut wire_Coordinator {
+    fn wire2api(self) -> Coordinator {
+        let wrap = unsafe { support::box_from_leak_ptr(self) };
+        Wire2Api::<Coordinator>::wire2api(*wrap).into()
     }
 }
 impl Wire2Api<DeviceId> for *mut wire_DeviceId {
@@ -472,6 +601,17 @@ impl Wire2Api<PortWrite> for *mut wire_PortWrite {
         Wire2Api::<PortWrite>::wire2api(*wrap).into()
     }
 }
+impl Wire2Api<SigningState> for *mut wire_SigningState {
+    fn wire2api(self) -> SigningState {
+        let wrap = unsafe { support::box_from_leak_ptr(self) };
+        Wire2Api::<SigningState>::wire2api(*wrap).into()
+    }
+}
+impl Wire2Api<Coordinator> for wire_Coordinator {
+    fn wire2api(self) -> Coordinator {
+        Coordinator(self.field0.wire2api())
+    }
+}
 impl Wire2Api<Device> for wire_Device {
     fn wire2api(self) -> Device {
         Device {
@@ -491,6 +631,11 @@ impl Wire2Api<DeviceListState> for wire_DeviceListState {
             devices: self.devices.wire2api(),
             state_id: self.state_id.wire2api(),
         }
+    }
+}
+impl Wire2Api<EncodedSignature> for wire_EncodedSignature {
+    fn wire2api(self) -> EncodedSignature {
+        EncodedSignature(self.field0.wire2api())
     }
 }
 impl Wire2Api<FrostKey> for wire_FrostKey {
@@ -523,6 +668,15 @@ impl Wire2Api<Vec<Device>> for *mut wire_list_device {
 }
 impl Wire2Api<Vec<DeviceId>> for *mut wire_list_device_id {
     fn wire2api(self) -> Vec<DeviceId> {
+        let vec = unsafe {
+            let wrap = support::box_from_leak_ptr(self);
+            support::vec_from_leak_ptr(wrap.ptr, wrap.len)
+        };
+        vec.into_iter().map(Wire2Api::wire2api).collect()
+    }
+}
+impl Wire2Api<Vec<EncodedSignature>> for *mut wire_list_encoded_signature {
+    fn wire2api(self) -> Vec<EncodedSignature> {
         let vec = unsafe {
             let wrap = support::box_from_leak_ptr(self);
             support::vec_from_leak_ptr(wrap.ptr, wrap.len)
@@ -593,6 +747,15 @@ impl Wire2Api<PortWrite> for wire_PortWrite {
         }
     }
 }
+impl Wire2Api<SigningState> for wire_SigningState {
+    fn wire2api(self) -> SigningState {
+        SigningState {
+            got_shares: self.got_shares.wire2api(),
+            needed_from: self.needed_from.wire2api(),
+            finished_signatures: self.finished_signatures.wire2api(),
+        }
+    }
+}
 
 impl Wire2Api<[u8; 32]> for *mut wire_uint_8_list {
     fn wire2api(self) -> [u8; 32] {
@@ -602,6 +765,12 @@ impl Wire2Api<[u8; 32]> for *mut wire_uint_8_list {
 }
 impl Wire2Api<[u8; 33]> for *mut wire_uint_8_list {
     fn wire2api(self) -> [u8; 33] {
+        let vec: Vec<u8> = self.wire2api();
+        support::from_vec_to_array(vec)
+    }
+}
+impl Wire2Api<[u8; 64]> for *mut wire_uint_8_list {
+    fn wire2api(self) -> [u8; 64] {
         let vec: Vec<u8> = self.wire2api();
         support::from_vec_to_array(vec)
     }
@@ -616,6 +785,12 @@ impl Wire2Api<Vec<u8>> for *mut wire_uint_8_list {
 }
 
 // Section: wire structs
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_FfiCoordinator {
+    ptr: *const core::ffi::c_void,
+}
 
 #[repr(C)]
 #[derive(Clone)]
@@ -649,6 +824,12 @@ pub struct wire_PortWriteSender {
 
 #[repr(C)]
 #[derive(Clone)]
+pub struct wire_Coordinator {
+    field0: wire_FfiCoordinator,
+}
+
+#[repr(C)]
+#[derive(Clone)]
 pub struct wire_Device {
     name: *mut wire_uint_8_list,
     id: wire_DeviceId,
@@ -665,6 +846,12 @@ pub struct wire_DeviceId {
 pub struct wire_DeviceListState {
     devices: *mut wire_list_device,
     state_id: usize,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_EncodedSignature {
+    field0: *mut wire_uint_8_list,
 }
 
 #[repr(C)]
@@ -696,6 +883,13 @@ pub struct wire_list_device {
 #[derive(Clone)]
 pub struct wire_list_device_id {
     ptr: *mut wire_DeviceId,
+    len: i32,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_list_encoded_signature {
+    ptr: *mut wire_EncodedSignature,
     len: i32,
 }
 
@@ -754,6 +948,14 @@ pub struct wire_PortWrite {
 
 #[repr(C)]
 #[derive(Clone)]
+pub struct wire_SigningState {
+    got_shares: *mut wire_list_device_id,
+    needed_from: *mut wire_list_device_id,
+    finished_signatures: *mut wire_list_encoded_signature,
+}
+
+#[repr(C)]
+#[derive(Clone)]
 pub struct wire_uint_8_list {
     ptr: *mut u8,
     len: i32,
@@ -771,6 +973,13 @@ impl<T> NewWithNullPtr for *mut T {
     }
 }
 
+impl NewWithNullPtr for wire_FfiCoordinator {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            ptr: core::ptr::null(),
+        }
+    }
+}
 impl NewWithNullPtr for wire_FrostsnapCoreCoordinatorFrostKeyState {
     fn new_with_null_ptr() -> Self {
         Self {
@@ -804,6 +1013,20 @@ impl NewWithNullPtr for wire_PortWriteSender {
         Self {
             ptr: core::ptr::null(),
         }
+    }
+}
+
+impl NewWithNullPtr for wire_Coordinator {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            field0: wire_FfiCoordinator::new_with_null_ptr(),
+        }
+    }
+}
+
+impl Default for wire_Coordinator {
+    fn default() -> Self {
+        Self::new_with_null_ptr()
     }
 }
 
@@ -846,6 +1069,20 @@ impl NewWithNullPtr for wire_DeviceListState {
 }
 
 impl Default for wire_DeviceListState {
+    fn default() -> Self {
+        Self::new_with_null_ptr()
+    }
+}
+
+impl NewWithNullPtr for wire_EncodedSignature {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            field0: core::ptr::null_mut(),
+        }
+    }
+}
+
+impl Default for wire_EncodedSignature {
     fn default() -> Self {
         Self::new_with_null_ptr()
     }
@@ -967,6 +1204,22 @@ impl NewWithNullPtr for wire_PortWrite {
 }
 
 impl Default for wire_PortWrite {
+    fn default() -> Self {
+        Self::new_with_null_ptr()
+    }
+}
+
+impl NewWithNullPtr for wire_SigningState {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            got_shares: core::ptr::null_mut(),
+            needed_from: core::ptr::null_mut(),
+            finished_signatures: core::ptr::null_mut(),
+        }
+    }
+}
+
+impl Default for wire_SigningState {
     fn default() -> Self {
         Self::new_with_null_ptr()
     }

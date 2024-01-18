@@ -296,20 +296,25 @@ impl UsbSerialManager {
                         }
                     }
                     DeviceSendBody::SetName { name } => {
-                        match self.device_labels.get(&message.from) {
-                            Some(existing_name) => {
-                                if existing_name != &name {
-                                    device_changes.push(DeviceChange::Renamed {
-                                        id: message.from,
-                                        old_name: existing_name.into(),
-                                        new_name: name,
-                                    });
-                                }
+                        // FIXME: we are currently trusting the devices to tell us their name even
+                        // when we've just named them oursleves.
+                        if let Some(existing_name) = self.device_labels.get(&message.from) {
+                            if existing_name != &name {
+                                device_changes.push(DeviceChange::Renamed {
+                                    id: message.from,
+                                    old_name: existing_name.into(),
+                                    new_name: name.clone(),
+                                });
                             }
-                            None => {
-                                self.device_labels.insert(message.from, name);
-                            }
+                        } else {
+                            device_changes.push(DeviceChange::NewUnknownDevice {
+                                id: message.from,
+                                name: name.clone(),
+                            });
                         }
+                        // TODO: we shouldn't blindly accept names but rather ask the user to "set up" the
+                        // relationship between this device and the coordinator if this is a new name
+                        self.device_labels.insert(message.from, name);
                     }
                     DeviceSendBody::Announce => {
                         match self
@@ -322,7 +327,9 @@ impl UsbSerialManager {
                                     .or_default()
                                     .retain(|device_id| *device_id != message.from);
                             }
-                            None => device_changes.push(DeviceChange::Added { id: message.from }),
+                            None => {
+                                device_changes.push(DeviceChange::Connected { id: message.from })
+                            }
                         }
 
                         self.port_outbox.push(CoordinatorSendMessage {
@@ -574,7 +581,7 @@ pub struct PortChanges {
 
 #[derive(Debug, Clone)]
 pub enum DeviceChange {
-    Added {
+    Connected {
         id: DeviceId,
     },
     Renamed {
@@ -584,6 +591,10 @@ pub enum DeviceChange {
     },
     NeedsName {
         id: DeviceId,
+    },
+    NewUnknownDevice {
+        id: DeviceId,
+        name: String,
     },
     Registered {
         id: DeviceId,

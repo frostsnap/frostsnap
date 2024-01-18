@@ -41,8 +41,8 @@ impl DeviceList {
         let mut output = vec![];
         for change in changes {
             match change {
-                DeviceChange::Added { id: _id } => {
-                    /* added events are not worth telling the user about -- we don't know if it has a name yet*/
+                DeviceChange::Connected { id: _id } => {
+                    /* connected events are not worth telling the user about -- we don't know if it has a name yet*/
                 }
                 DeviceChange::Renamed {
                     id,
@@ -86,6 +86,9 @@ impl DeviceList {
                             },
                         })
                     }
+                }
+                DeviceChange::NewUnknownDevice { .. } => {
+                    /* TODO: a new device should prompt the user to sync or something */
                 }
             }
         }

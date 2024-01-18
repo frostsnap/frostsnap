@@ -1,11 +1,14 @@
 use crate::api::{self, KeyState, PortEvent};
+use crate::persist_core::PersistCore;
+use crate::SigningSession;
+use anyhow::{anyhow, Context};
 use flutter_rust_bridge::{RustOpaque, StreamSink};
 use frostsnap_coordinator::frostsnap_comms::{
     CoordinatorSendBody, CoordinatorSendMessage, Destination,
 };
 use frostsnap_coordinator::frostsnap_core::message::{
-    CoordinatorSend, CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage,
-    CoordinatorToUserSigningMessage, SignTask,
+    CoordinatorSend, CoordinatorToStorageMessage, CoordinatorToUserKeyGenMessage,
+    CoordinatorToUserMessage, SignTask,
 };
 use frostsnap_coordinator::frostsnap_core::KeyId;
 use frostsnap_coordinator::SigningDispatcher;
@@ -14,8 +17,10 @@ use frostsnap_coordinator::{
     UsbSerialManager,
 };
 use frostsnap_coordinator::{serialport, DeviceChange};
-use frostsnap_core::{DeviceId, FrostCoordinator};
+use frostsnap_core::{DeviceId, FrostCoordinator, Gist};
+use llsdb::{IndexHandle, LlsDb};
 use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::fs::File;
 use std::io;
 use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Mutex};
@@ -31,35 +36,41 @@ pub struct FfiCoordinator {
     pending_for_outbox: Arc<Mutex<VecDeque<CoordinatorSend>>>,
     thread_handle: Mutex<Option<JoinHandle<()>>>,
     keygen_stream: Arc<Mutex<Option<StreamSink<CoordinatorToUserKeyGenMessage>>>>,
-    signing_state: Arc<Mutex<Option<SigningState>>>,
-}
-
-struct SigningState {
-    stream: StreamSink<CoordinatorToUserSigningMessage>,
-    session: SigningDispatcher,
-}
-
-impl Default for FfiCoordinator {
-    fn default() -> Self {
-        Self::new()
-    }
+    signing_session: Arc<Mutex<Option<SigningSession>>>,
+    db: Arc<Mutex<LlsDb<File>>>,
+    core_persist: IndexHandle<PersistCore>,
+    device_names: IndexHandle<llsdb::index::BTreeMap<DeviceId, String>>,
 }
 
 impl FfiCoordinator {
-    pub fn new() -> Self {
-        let coordinator = Arc::new(Mutex::new(FrostCoordinator::new()));
+    pub fn new(mut db: LlsDb<File>) -> anyhow::Result<Self> {
         let manager = Arc::new(Mutex::new(UsbSerialManager::new(Box::new(DesktopSerial))));
         let pending_for_outbox = Arc::new(Mutex::new(VecDeque::new()));
 
-        Self {
-            coordinator,
+        let (core_persist, device_names, coordinator) = db
+            .execute(|tx| {
+                let persist = PersistCore::new(tx)?;
+                let (handle, api) = tx.store_and_take_index(persist);
+                let coordinator = api.core_coordinator()?;
+                let device_names_list = tx.take_list("device_names")?;
+                let device_names_btree = llsdb::index::BTreeMap::new(device_names_list, &tx)?;
+                let device_names_btree_handle = tx.store_index(device_names_btree);
+                Ok((handle, device_names_btree_handle, coordinator))
+            })
+            .context("initializing db")?;
+
+        Ok(Self {
+            coordinator: Arc::new(Mutex::new(coordinator)),
             manager,
             ffi_serial: FfiSerial::default(),
             pending_for_outbox,
             thread_handle: Default::default(),
             keygen_stream: Default::default(),
-            signing_state: Default::default(),
-        }
+            signing_session: Default::default(),
+            db: Arc::new(Mutex::new(db)),
+            core_persist,
+            device_names,
+        })
     }
 
     pub fn switch_to_host_handles_serial(&self) {
@@ -71,21 +82,34 @@ impl FfiCoordinator {
         *self.manager.lock().unwrap() = manager;
     }
 
-    pub fn start(&self) {
+    pub fn start(&self) -> anyhow::Result<()> {
         assert!(
             self.thread_handle.lock().unwrap().is_none(),
             "can't start coordinator thread again"
         );
+
         let manager_loop = self.manager.clone();
         let pending_loop = self.pending_for_outbox.clone();
         let coordinator_loop = self.coordinator.clone();
         let keygen_stream_loop = self.keygen_stream.clone();
-        let signing_stream_loop = self.signing_state.clone();
+        let signing_stream_loop = self.signing_session.clone();
+        let db_loop = self.db.clone();
+        let core_persist = self.core_persist;
+        let device_names = self.device_names;
+        {
+            let mut manager = manager_loop.lock().unwrap();
+            *manager.device_labels_mut() = db_loop
+                .lock()
+                .unwrap()
+                .execute(|tx| tx.take_index(device_names).iter().collect())
+                .context("reading in device names from disk")?;
+        }
+
         let handle = std::thread::spawn(move || {
             loop {
                 // to give time for the other threads to get a lock
                 std::thread::sleep(Duration::from_millis(100));
-                let mut signing_state = signing_stream_loop.lock().unwrap();
+                let mut signing_session = signing_stream_loop.lock().unwrap();
 
                 let new_messages = {
                     let PortChanges {
@@ -94,17 +118,32 @@ impl FfiCoordinator {
                     } = manager_loop.lock().unwrap().poll_ports();
 
                     if !device_changes.is_empty() {
-                        if let Some(signing_state) = &mut *signing_state {
-                            for change in &device_changes {
-                                match change {
-                                    DeviceChange::Added { id } => {
-                                        signing_state.session.connected(*id);
+                        for change in &device_changes {
+                            match change {
+                                DeviceChange::Registered { id, .. } => {
+                                    if let Some(signing_session) = &mut *signing_session {
+                                        signing_session.connected(*id);
                                     }
-                                    DeviceChange::Disconnected { id } => {
-                                        signing_state.session.disconnected(*id);
-                                    }
-                                    _ => { /* ignore rest */ }
                                 }
+                                DeviceChange::Disconnected { id } => {
+                                    if let Some(signing_session) = &mut *signing_session {
+                                        signing_session.disconnected(*id);
+                                    }
+                                }
+                                DeviceChange::NewUnknownDevice { id, name } => {
+                                    // TODO: We should be asking the user to accept the new device before writing anything to disk.
+                                    let res = db_loop.lock().unwrap().execute(|tx| {
+                                        tx.take_index(device_names).insert(*id, name)
+                                    });
+                                    if let Err(e) = res {
+                                        event!(
+                                            Level::ERROR,
+                                            error = e.to_string(),
+                                            "unable to save device name"
+                                        );
+                                    }
+                                }
+                                _ => { /* ignore rest */ }
                             }
                         }
 
@@ -119,12 +158,15 @@ impl FfiCoordinator {
                     new_messages
                 };
 
+                if let Some(signing_session) = &mut *signing_session {
+                    if let Some(message) = signing_session.resend_sign_request() {
+                        manager_loop.lock().unwrap().queue_in_port_outbox(message);
+                    }
+                }
+
                 let mut coordinator = coordinator_loop.lock().unwrap();
                 let mut pending_messages = pending_loop.lock().unwrap();
                 for (from, message) in new_messages {
-                    if let Some(signing_state) = &mut *signing_state {
-                        signing_state.session.process(from, &message);
-                    }
                     match coordinator.recv_device_message(from, message.clone()) {
                         Ok(messages) => {
                             pending_messages.extend(messages);
@@ -141,18 +183,6 @@ impl FfiCoordinator {
                 }
 
                 drop(coordinator);
-
-                if let Some(state) = &mut *signing_state {
-                    if let Some(message) = state.session.emit_messages() {
-                        manager_loop.lock().unwrap().queue_in_port_outbox(message);
-                    }
-
-                    if state.session.is_complete() {
-                        event!(Level::INFO, "received signatures from all devices");
-                    }
-                }
-
-                drop(signing_state);
 
                 while let Some(message) = pending_messages.pop_front() {
                     match message {
@@ -191,27 +221,45 @@ impl FfiCoordinator {
                                     }
                                 }
                             }
-                            CoordinatorToUserMessage::Signing(event) => {
-                                let mut stream_opt = signing_stream_loop.lock().unwrap();
-                                if let Some(signing_state) = stream_opt.as_ref() {
-                                    let is_finished = matches!(
-                                        event,
-                                        CoordinatorToUserSigningMessage::Signed { .. }
-                                    );
+                            CoordinatorToUserMessage::Signing(signing_message) => {
+                                if let Some(signing_session) = &mut *signing_session {
+                                    signing_session.process_to_user_message(signing_message);
 
-                                    if !signing_state.stream.add(event) {
-                                        event!(Level::ERROR, "failed to emit signing event");
-                                    }
-
-                                    if is_finished {
-                                        signing_state.stream.close();
-                                        *stream_opt = None;
+                                    if signing_session.is_complete() {
+                                        let _ = db_loop.lock().unwrap().execute(|tx| {
+                                            tx.take_index(core_persist).clear_signing_session()
+                                        });
+                                        event!(Level::INFO, "received signatures from all devices");
                                     }
                                 }
                             }
                         },
-                        CoordinatorSend::ToStorage(_) => {
-                            // TODO
+                        CoordinatorSend::ToStorage(to_storage) => {
+                            let update_kind = to_storage.gist();
+                            let mut db = db_loop.lock().unwrap();
+                            let res = db.execute(|tx| {
+                                let mut persist = tx.take_index(core_persist);
+                                match to_storage {
+                                    CoordinatorToStorageMessage::StoreSigningState(sign_state) => {
+                                        persist.store_sign_session(sign_state)
+                                    }
+                                    CoordinatorToStorageMessage::UpdateFrostKey(state) => {
+                                        persist.set_key_state(state)
+                                    }
+                                }
+                            });
+
+                            match res {
+                                Ok(_) => {
+                                    event!(Level::INFO, kind = update_kind, "Updated persistence")
+                                }
+                                Err(e) => event!(
+                                    Level::ERROR,
+                                    error = e.to_string(),
+                                    kind = update_kind,
+                                    "Failed to repsond to storage update"
+                                ),
+                            }
                         }
                     }
                 }
@@ -219,6 +267,7 @@ impl FfiCoordinator {
         });
 
         *self.thread_handle.lock().unwrap() = Some(handle);
+        Ok(())
     }
 
     pub fn set_available_ports(&self, ports: Vec<PortDesc>) {
@@ -238,6 +287,14 @@ impl FfiCoordinator {
     }
 
     pub fn cancel_all(&self) {
+        if let Some(mut signing_session) = self.signing_session.lock().unwrap().take() {
+            signing_session.cancel();
+            let _ = self
+                .db
+                .lock()
+                .unwrap()
+                .execute(|tx| tx.take_index(self.core_persist).clear_signing_session());
+        }
         self.coordinator.lock().unwrap().cancel();
         self.manager.lock().unwrap().send_cancel_all()
     }
@@ -285,35 +342,98 @@ impl FfiCoordinator {
         self.manager.lock().unwrap().device_labels().clone()
     }
 
+    pub fn get_device_name(&self, id: DeviceId) -> Option<String> {
+        self.manager
+            .lock()
+            .unwrap()
+            .device_labels()
+            .get(&id)
+            .cloned()
+    }
+
+    pub fn nonces_left(&self, id: DeviceId) -> Option<usize> {
+        self.coordinator
+            .lock()
+            .unwrap()
+            .frost_key_state()?
+            .nonces_left(id)
+    }
+
     pub fn start_signing(
         &self,
         _key_id: KeyId,
         devices: BTreeSet<DeviceId>,
         task: SignTask,
-        stream: StreamSink<api::CoordinatorToUserSigningMessage>,
+        stream: StreamSink<api::SigningState>,
     ) -> anyhow::Result<()> {
+        // we need to lock this first to avoid race conditions where somehow get_signing_state is called before this completes.
+        let mut signing_session = self.signing_session.lock().unwrap();
+        event!(Level::INFO, "starting signing");
         let mut coordinator = self.coordinator.lock().unwrap();
         let mut messages = coordinator.start_sign(task, devices)?;
+        let dispatcher = SigningDispatcher::from_filter_out_start_sign(&mut messages);
+        let mut new_session = SigningSession::new(stream, dispatcher);
 
-        let mut session = SigningDispatcher::new(&mut messages);
+        let manager = self.manager.lock().unwrap();
+        for id in manager.registered_devices() {
+            new_session.connected(*id);
+        }
 
+        self.pending_for_outbox.lock().unwrap().extend(messages);
+        signing_session.replace(new_session);
+
+        Ok(())
+    }
+
+    pub fn get_signing_state(&self) -> Option<api::SigningState> {
+        Some(
+            self.signing_session
+                .lock()
+                .unwrap()
+                .as_ref()?
+                .signing_state(),
+        )
+    }
+
+    pub fn try_restore_signing_session(
+        &self,
+        stream: StreamSink<api::SigningState>,
+    ) -> anyhow::Result<()> {
+        let signing_session = self
+            .db
+            .lock()
+            .unwrap()
+            .execute(|tx| tx.take_index(self.core_persist).persisted_signing())?;
+
+        let signing_session_state =
+            signing_session.ok_or(anyhow!("no signing session to restore"))?;
+        let mut coordinator = self.coordinator.lock().unwrap();
+        coordinator.restore_sign_session(signing_session_state.clone());
+
+        let mut dispatcher =
+            SigningDispatcher::new_from_request(signing_session_state.request.clone());
+
+        for already_provided in signing_session_state.received_from() {
+            dispatcher.set_signature_received(already_provided);
+        }
+        let mut session = SigningSession::new(stream, dispatcher);
         let manager = self.manager.lock().unwrap();
 
         for id in manager.registered_devices() {
             session.connected(*id);
         }
 
-        self.pending_for_outbox.lock().unwrap().extend(messages);
-        if let Some(old_signing_state) = self
-            .signing_state
-            .lock()
-            .unwrap()
-            .replace(SigningState { stream, session })
-        {
-            old_signing_state.stream.close();
-        }
+        self.signing_session.lock().unwrap().replace(session);
 
         Ok(())
+    }
+
+    pub fn can_restore_signing_session(&self) -> bool {
+        self.db
+            .lock()
+            .unwrap()
+            .execute(|tx| Ok(tx.take_index(self.core_persist).is_sign_session_persisted()))
+            .unwrap()
     }
 }
 

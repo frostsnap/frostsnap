@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/serialport.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
+import 'global.dart';
 
 typedef RemovedDeviceBuilder = Widget Function(
     BuildContext context, Device device, Animation<double> animation);

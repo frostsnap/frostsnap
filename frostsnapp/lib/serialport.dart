@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
+import 'package:frostsnapp/global.dart';
 import 'package:usb_serial/usb_serial.dart';
 import 'package:collection/collection.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
@@ -69,7 +70,7 @@ class HostPortHandler {
           .map((device) => PortDesc(
               id: device.deviceName, pid: device.pid!, vid: device.vid!))
           .toList();
-      await api.announceAvailablePorts(ports: portDescriptions);
+      await coord.announceAvailablePorts(ports: portDescriptions);
     }
   }
 

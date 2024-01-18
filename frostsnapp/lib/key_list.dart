@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/keygen.dart';
 
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
@@ -16,7 +17,7 @@ class KeyList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<KeyState>(
-        initialData: api.keyState(),
+        initialData: coord.keyState(),
         stream: api.subKeyEvents(),
         builder: (context, snap) {
           var keys = [];
@@ -62,6 +63,36 @@ class KeyCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final Widget signButton = ElevatedButton(
+        onPressed: () {
+          Navigator.push(context, MaterialPageRoute(builder: (context) {
+            return SignMessagePage(frostKey: frostKey);
+          }));
+        },
+        child: Text("Sign"));
+
+    final Widget button;
+
+    if (coord.canRestoreSigningSession()) {
+      final stream = coord.tryRestoreSigningSession().asBroadcastStream();
+      button = StreamBuilder(
+          stream: stream,
+          builder: (context, snapshot) {
+            // When we stream is closed we show the normal signing button
+            if (snapshot.connectionState == ConnectionState.done) {
+              return signButton;
+            }
+
+            return ElevatedButton(
+                onPressed: () {
+                  signMessageDialog(context, stream);
+                },
+                child: Text("Continue signing"));
+          });
+    } else {
+      button = signButton;
+    }
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(8.0),
@@ -75,13 +106,7 @@ class KeyCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text("Threshold: ${frostKey.threshold()}"),
-            ElevatedButton(
-                onPressed: () {
-                  Navigator.push(context, MaterialPageRoute(builder: (context) {
-                    return SignMessagePage(frostKey: frostKey);
-                  }));
-                },
-                child: Text("Sign"))
+            button
           ],
         ),
       ),
