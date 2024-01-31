@@ -1,6 +1,8 @@
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
+import 'serialport.dart';
 
 late Coordinator coord;
+late HostPortHandler globalHostPortHandler;
 
 Stream<DeviceListUpdate> deviceListUpdateStream =
     api.subDeviceEvents().asBroadcastStream();

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/key_list.dart';
 import 'package:flutter/services.dart';
+import 'package:frostsnapp/serialport.dart';
 import 'package:path_provider/path_provider.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'dart:io';
@@ -11,10 +12,17 @@ void main() async {
   // enable this if you're trying to figure out why things are displaying in
   // certain positions/sizes
   debugPaintSizeEnabled = false;
+  // dunno what this is but for some reason it's needed 🤦
+  // https://stackoverflow.com/questions/57689492/flutter-unhandled-exception-servicesbinding-defaultbinarymessenger-was-accesse
+  WidgetsFlutterBinding.ensureInitialized();
+
+  String? startupError;
 
   try {
     final appDir = await getApplicationSupportDirectory();
     final dbFile = '${appDir.path}/frostsnap.db';
+    coord = await api.newCoordinator(dbFile: dbFile);
+    globalHostPortHandler = HostPortHandler();
 
     if (Platform.isAndroid) {
       api.turnLogcatLoggingOn(level: Level.Debug);
@@ -23,14 +31,13 @@ void main() async {
       api.turnStderrLoggingOn(level: Level.Debug);
     }
 
-    coord = await api.newCoordinator(dbFile: dbFile);
     coord.startThread();
-
-    runApp(MyApp());
-  } catch (error) {
+  } catch (error, stacktrace) {
     print("$error");
-    runApp(MyApp(startupError: "$error"));
+    print("$stacktrace");
+    startupError = "$error\n$stacktrace";
   }
+  runApp(MyApp(startupError: startupError));
 }
 
 class MyApp extends StatelessWidget {

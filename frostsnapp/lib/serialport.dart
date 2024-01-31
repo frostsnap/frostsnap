@@ -1,15 +1,16 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
+import 'package:flutter/material.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:usb_serial/usb_serial.dart';
 import 'package:collection/collection.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
-HostPortHandler globalHostPortHandler = HostPortHandler();
-
 class HostPortHandler {
   Map<String, SerialPort> openPorts = {};
+  StreamSubscription<PortEvent>? subscription;
 
   HostPortHandler() {
     if (Platform.isAndroid) {
@@ -17,9 +18,10 @@ class HostPortHandler {
         if (msg.event == UsbEvent.ACTION_USB_DETACHED) {
           openPorts.remove(msg.device?.deviceName);
         }
+        debugPrint("Scanning devices because of new USB event");
         scanDevices();
       });
-      api.subPortEvents().forEach((event) async {
+      subscription = api.subPortEvents().listen((event) async {
         switch (event) {
           case PortEvent_Open(:final request):
             {
@@ -59,6 +61,16 @@ class HostPortHandler {
             }
         }
       });
+
+      subscription!.onError((error) {
+        debugPrint("port event stream error: $error");
+      });
+
+      subscription!.onDone(() {
+        debugPrint(
+            "port event stream finished (but this should never happen!)");
+      });
+      debugPrint("Android serial port handler started");
     }
   }
 
