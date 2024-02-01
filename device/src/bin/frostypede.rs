@@ -9,7 +9,7 @@
 
 #[macro_use]
 extern crate alloc;
-use crate::alloc::string::{String, ToString};
+use crate::alloc::string::String;
 use core::mem::MaybeUninit;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use embedded_graphics_framebuf::FrameBuf;
@@ -489,6 +489,7 @@ where
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
+    use core::fmt::Write;
     set_upstream_port_mode_jtag();
     let peripherals = unsafe { Peripherals::steal() };
     let system = peripherals.SYSTEM.split();
@@ -504,14 +505,17 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     led.write(brightness([colors::RED].iter().cloned(), 10))
         .unwrap();
 
-    let message = match info.location() {
-        Some(location) => format!(
+    let mut panic_buf = frostsnap_device::panic::PanicBuffer::<512>::default();
+
+    let _ = match info.location() {
+        Some(location) => write!(
+            &mut panic_buf,
             "{}:{} {}",
             location.file().split('/').last().unwrap_or(""),
             location.line(),
             info
         ),
-        None => info.to_string(),
+        None => write!(&mut panic_buf, "{}", info),
     };
 
     let framearray = [Rgb565::WHITE; 160 * 80];
@@ -529,7 +533,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         &clocks,
         framebuf,
     ) {
-        let _ = display.error_print(message);
+        let _ = display.error_print(panic_buf.as_str());
     }
 
     loop {}
