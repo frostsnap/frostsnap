@@ -211,11 +211,6 @@ impl FfiCoordinator {
                                     }
 
                                     if is_finished {
-                                        // keygen is finished so we need to tell the global key list
-                                        // that there's a new key
-                                        api::emit_key_event(KeyState {
-                                            keys: frost_keys(&coordinator_loop.lock().unwrap()),
-                                        });
                                         stream.close();
                                         *stream_opt = None;
                                     }
@@ -240,13 +235,30 @@ impl FfiCoordinator {
                             let res = db.execute(|tx| {
                                 let mut persist = tx.take_index(core_persist);
                                 match to_storage {
-                                    CoordinatorToStorageMessage::StoreSigningState(sign_state) => {
-                                        persist.store_sign_session(sign_state)
+                                    CoordinatorToStorageMessage::NewKey(new_key) => {
+                                        // we only have one key so we just overwrite it
+                                        persist.set_key_state(new_key)?;
+                                        // signing sessions are not longer relevant.
+                                        persist.clear_signing_session()?;
+                                        // keygen is finished so we need to tell the global key list
+                                        // that there's a new key.
+                                        //
+                                        // Note we do this here rather than in the ToUserMessage
+                                        // because the key list is persisted and so its better to
+                                        // nofify the app after the on disk state is written.
+                                        api::emit_key_event(KeyState {
+                                            keys: frost_keys(&coordinator_loop.lock().unwrap()),
+                                        });
                                     }
+                                    CoordinatorToStorageMessage::StoreSigningState(sign_state) => {
+                                        persist.store_sign_session(sign_state)?
+                                    }
+
                                     CoordinatorToStorageMessage::UpdateFrostKey(state) => {
-                                        persist.set_key_state(state)
+                                        persist.set_key_state(state)?
                                     }
                                 }
+                                Ok(())
                             });
 
                             match res {
@@ -397,8 +409,7 @@ impl FfiCoordinator {
 
     pub fn try_restore_signing_session(
         &self,
-        #[allow(unused)] /* we only have one key for now */
-        key_id: KeyId,
+        #[allow(unused)] /* we only have one key for now */ key_id: KeyId,
         stream: StreamSink<api::SigningState>,
     ) -> anyhow::Result<()> {
         let signing_session = self
@@ -430,9 +441,10 @@ impl FfiCoordinator {
         Ok(())
     }
 
-    pub fn can_restore_signing_session(&self,
-                                       #[allow(unused)] /* we only have one key for now */
-                                       key_id: KeyId) -> bool {
+    pub fn can_restore_signing_session(
+        &self,
+        #[allow(unused)] /* we only have one key for now */ key_id: KeyId,
+    ) -> bool {
         self.db
             .lock()
             .unwrap()

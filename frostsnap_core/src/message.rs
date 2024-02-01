@@ -98,6 +98,7 @@ impl CoordinatorToDeviceMessage {
 
 #[derive(Clone, Debug)]
 pub enum CoordinatorToStorageMessage {
+    NewKey(CoordinatorFrostKeyState),
     UpdateFrostKey(CoordinatorFrostKeyState),
     StoreSigningState(SigningSessionState),
 }
@@ -107,6 +108,8 @@ impl Gist for CoordinatorToStorageMessage {
         match self {
             CoordinatorToStorageMessage::UpdateFrostKey(_) => "UpdateFrostKey",
             CoordinatorToStorageMessage::StoreSigningState(_) => "StoreSigningState",
+            CoordinatorToStorageMessage::NewKey(_) => "NewKey",
+
         }
         .into()
     }

@@ -315,7 +315,7 @@ impl FrostCoordinator {
                             self.state = CoordinatorState::FrostKey { key: key.clone() };
                             outgoing.extend([
                                 CoordinatorSend::ToStorage(
-                                    CoordinatorToStorageMessage::UpdateFrostKey(key),
+                                    CoordinatorToStorageMessage::NewKey(key),
                                 ),
                                 CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen(
                                     CoordinatorToUserKeyGenMessage::FinishedKey { key_id },
