@@ -245,10 +245,12 @@ void wire_generate_new_key__method__Coordinator(int64_t port_,
                                                 uintptr_t threshold,
                                                 struct wire_list_device_id *devices);
 
-WireSyncReturn wire_can_restore_signing_session__method__Coordinator(struct wire_Coordinator *that);
+WireSyncReturn wire_can_restore_signing_session__method__Coordinator(struct wire_Coordinator *that,
+                                                                     struct wire_KeyId *key_id);
 
 void wire_try_restore_signing_session__method__Coordinator(int64_t port_,
-                                                           struct wire_Coordinator *that);
+                                                           struct wire_Coordinator *that,
+                                                           struct wire_KeyId *key_id);
 
 struct wire_FfiCoordinator new_FfiCoordinator(void);
 

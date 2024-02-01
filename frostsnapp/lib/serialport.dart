@@ -57,6 +57,9 @@ class HostPortHandler {
           case PortEvent_BytesToRead(:final request):
             {
               var port = openPorts[request.id];
+              if (port == null) {
+                debugPrint("port for ${request.id} no longer connected");
+              }
               request.satisfy(bytesToRead: port?.buffer.length ?? 0);
             }
         }

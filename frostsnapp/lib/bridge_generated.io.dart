@@ -1165,39 +1165,47 @@ class NativeWire implements FlutterRustBridgeWireBase {
 
   WireSyncReturn wire_can_restore_signing_session__method__Coordinator(
     ffi.Pointer<wire_Coordinator> that,
+    ffi.Pointer<wire_KeyId> key_id,
   ) {
     return _wire_can_restore_signing_session__method__Coordinator(
       that,
+      key_id,
     );
   }
 
   late final _wire_can_restore_signing_session__method__CoordinatorPtr =
       _lookup<
               ffi.NativeFunction<
-                  WireSyncReturn Function(ffi.Pointer<wire_Coordinator>)>>(
+                  WireSyncReturn Function(
+                      ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_KeyId>)>>(
           'wire_can_restore_signing_session__method__Coordinator');
   late final _wire_can_restore_signing_session__method__Coordinator =
-      _wire_can_restore_signing_session__method__CoordinatorPtr
-          .asFunction<WireSyncReturn Function(ffi.Pointer<wire_Coordinator>)>();
+      _wire_can_restore_signing_session__method__CoordinatorPtr.asFunction<
+          WireSyncReturn Function(
+              ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_KeyId>)>();
 
   void wire_try_restore_signing_session__method__Coordinator(
     int port_,
     ffi.Pointer<wire_Coordinator> that,
+    ffi.Pointer<wire_KeyId> key_id,
   ) {
     return _wire_try_restore_signing_session__method__Coordinator(
       port_,
       that,
+      key_id,
     );
   }
 
   late final _wire_try_restore_signing_session__method__CoordinatorPtr =
       _lookup<
               ffi.NativeFunction<
-                  ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Coordinator>)>>(
+                  ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Coordinator>,
+                      ffi.Pointer<wire_KeyId>)>>(
           'wire_try_restore_signing_session__method__Coordinator');
   late final _wire_try_restore_signing_session__method__Coordinator =
-      _wire_try_restore_signing_session__method__CoordinatorPtr
-          .asFunction<void Function(int, ffi.Pointer<wire_Coordinator>)>();
+      _wire_try_restore_signing_session__method__CoordinatorPtr.asFunction<
+          void Function(
+              int, ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_KeyId>)>();
 
   wire_FfiCoordinator new_FfiCoordinator() {
     return _new_FfiCoordinator();

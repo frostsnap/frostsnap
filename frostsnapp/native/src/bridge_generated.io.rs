@@ -253,16 +253,18 @@ pub extern "C" fn wire_generate_new_key__method__Coordinator(
 #[no_mangle]
 pub extern "C" fn wire_can_restore_signing_session__method__Coordinator(
     that: *mut wire_Coordinator,
+    key_id: *mut wire_KeyId,
 ) -> support::WireSyncReturn {
-    wire_can_restore_signing_session__method__Coordinator_impl(that)
+    wire_can_restore_signing_session__method__Coordinator_impl(that, key_id)
 }
 
 #[no_mangle]
 pub extern "C" fn wire_try_restore_signing_session__method__Coordinator(
     port_: i64,
     that: *mut wire_Coordinator,
+    key_id: *mut wire_KeyId,
 ) {
-    wire_try_restore_signing_session__method__Coordinator_impl(port_, that)
+    wire_try_restore_signing_session__method__Coordinator_impl(port_, that, key_id)
 }
 
 // Section: allocate functions

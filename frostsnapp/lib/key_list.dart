@@ -57,40 +57,50 @@ class KeyList extends StatelessWidget {
   }
 }
 
-class KeyCard extends StatelessWidget {
+class KeyCard extends StatefulWidget {
   final FrostKey frostKey;
+
   const KeyCard({super.key, required this.frostKey});
 
   @override
-  Widget build(BuildContext context) {
-    final Widget signButton = ElevatedButton(
-        onPressed: () {
-          Navigator.push(context, MaterialPageRoute(builder: (context) {
-            return SignMessagePage(frostKey: frostKey);
-          }));
-        },
-        child: Text("Sign"));
+  State<KeyCard> createState() => _KeyCard();
+}
 
+class _KeyCard extends State<KeyCard> {
+  bool canContinueSigning = false;
+
+  @override
+  void initState() {
+    super.initState();
+    canContinueSigning =
+        coord.canRestoreSigningSession(keyId: widget.frostKey.id());
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final Widget button;
 
-    if (coord.canRestoreSigningSession()) {
-      final stream = coord.tryRestoreSigningSession().asBroadcastStream();
-      button = StreamBuilder(
-          stream: stream,
-          builder: (context, snapshot) {
-            // When we stream is closed we show the normal signing button
-            if (snapshot.connectionState == ConnectionState.done) {
-              return signButton;
-            }
-
-            return ElevatedButton(
-                onPressed: () {
-                  signMessageDialog(context, stream);
-                },
-                child: Text("Continue signing"));
-          });
+    if (canContinueSigning) {
+      button = ElevatedButton(
+          onPressed: () async {
+            final stream = coord
+                .tryRestoreSigningSession(keyId: widget.frostKey.id())
+                .asBroadcastStream();
+            await signMessageDialog(context, stream);
+            setState(() {
+              canContinueSigning =
+                  coord.canRestoreSigningSession(keyId: widget.frostKey.id());
+            });
+          },
+          child: Text("Continue signing"));
     } else {
-      button = signButton;
+      button = ElevatedButton(
+          onPressed: () {
+            Navigator.push(context, MaterialPageRoute(builder: (context) {
+              return SignMessagePage(frostKey: widget.frostKey);
+            }));
+          },
+          child: Text("Sign"));
     }
 
     return Card(
@@ -100,12 +110,12 @@ class KeyCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text(
-              toHex(Uint8List.fromList(frostKey.id().field0)),
+              toHex(Uint8List.fromList(widget.frostKey.id().field0)),
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            Text("Threshold: ${frostKey.threshold()}"),
+            Text("Threshold: ${widget.frostKey.threshold()}"),
             button
           ],
         ),

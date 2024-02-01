@@ -402,11 +402,12 @@ class NativeWasmModule implements WasmModule {
       List<dynamic> devices);
 
   external dynamic /* bool */
-      wire_can_restore_signing_session__method__Coordinator(List<dynamic> that);
+      wire_can_restore_signing_session__method__Coordinator(
+          List<dynamic> that, List<dynamic> key_id);
 
   external dynamic /* void */
       wire_try_restore_signing_session__method__Coordinator(
-          NativePortType port_, List<dynamic> that);
+          NativePortType port_, List<dynamic> that, List<dynamic> key_id);
 
   external dynamic /*  */ drop_opaque_FfiCoordinator(ptr);
 
@@ -580,13 +581,14 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
           port_, that, threshold, devices);
 
   dynamic /* bool */ wire_can_restore_signing_session__method__Coordinator(
-          List<dynamic> that) =>
-      wasmModule.wire_can_restore_signing_session__method__Coordinator(that);
+          List<dynamic> that, List<dynamic> key_id) =>
+      wasmModule.wire_can_restore_signing_session__method__Coordinator(
+          that, key_id);
 
   void wire_try_restore_signing_session__method__Coordinator(
-          NativePortType port_, List<dynamic> that) =>
+          NativePortType port_, List<dynamic> that, List<dynamic> key_id) =>
       wasmModule.wire_try_restore_signing_session__method__Coordinator(
-          port_, that);
+          port_, that, key_id);
 
   dynamic /*  */ drop_opaque_FfiCoordinator(ptr) =>
       wasmModule.drop_opaque_FfiCoordinator(ptr);

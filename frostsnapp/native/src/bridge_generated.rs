@@ -614,6 +614,7 @@ fn wire_generate_new_key__method__Coordinator_impl(
 }
 fn wire_can_restore_signing_session__method__Coordinator_impl(
     that: impl Wire2Api<Coordinator> + UnwindSafe,
+    key_id: impl Wire2Api<KeyId> + UnwindSafe,
 ) -> support::WireSyncReturn {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
         WrapInfo {
@@ -623,13 +624,17 @@ fn wire_can_restore_signing_session__method__Coordinator_impl(
         },
         move || {
             let api_that = that.wire2api();
-            Result::<_, ()>::Ok(Coordinator::can_restore_signing_session(&api_that))
+            let api_key_id = key_id.wire2api();
+            Result::<_, ()>::Ok(Coordinator::can_restore_signing_session(
+                &api_that, api_key_id,
+            ))
         },
     )
 }
 fn wire_try_restore_signing_session__method__Coordinator_impl(
     port_: MessagePort,
     that: impl Wire2Api<Coordinator> + UnwindSafe,
+    key_id: impl Wire2Api<KeyId> + UnwindSafe,
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
         WrapInfo {
@@ -639,9 +644,11 @@ fn wire_try_restore_signing_session__method__Coordinator_impl(
         },
         move || {
             let api_that = that.wire2api();
+            let api_key_id = key_id.wire2api();
             move |task_callback| {
                 Coordinator::try_restore_signing_session(
                     &api_that,
+                    api_key_id,
                     task_callback.stream_sink::<_, SigningState>(),
                 )
             }

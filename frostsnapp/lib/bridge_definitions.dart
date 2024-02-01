@@ -198,13 +198,13 @@ abstract class Native {
   FlutterRustBridgeTaskConstMeta get kGenerateNewKeyMethodCoordinatorConstMeta;
 
   bool canRestoreSigningSessionMethodCoordinator(
-      {required Coordinator that, dynamic hint});
+      {required Coordinator that, required KeyId keyId, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta
       get kCanRestoreSigningSessionMethodCoordinatorConstMeta;
 
   Stream<SigningState> tryRestoreSigningSessionMethodCoordinator(
-      {required Coordinator that, dynamic hint});
+      {required Coordinator that, required KeyId keyId, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta
       get kTryRestoreSigningSessionMethodCoordinatorConstMeta;
@@ -440,14 +440,17 @@ class Coordinator {
         devices: devices,
       );
 
-  bool canRestoreSigningSession({dynamic hint}) =>
+  bool canRestoreSigningSession({required KeyId keyId, dynamic hint}) =>
       bridge.canRestoreSigningSessionMethodCoordinator(
         that: this,
+        keyId: keyId,
       );
 
-  Stream<SigningState> tryRestoreSigningSession({dynamic hint}) =>
+  Stream<SigningState> tryRestoreSigningSession(
+          {required KeyId keyId, dynamic hint}) =>
       bridge.tryRestoreSigningSessionMethodCoordinator(
         that: this,
+        keyId: keyId,
       );
 }
 

@@ -431,15 +431,16 @@ impl Coordinator {
             .generate_new_key(devices.into_iter().collect(), threshold, event_stream);
     }
 
-    pub fn can_restore_signing_session(&self) -> SyncReturn<bool> {
-        SyncReturn(self.0.can_restore_signing_session())
+    pub fn can_restore_signing_session(&self, key_id: KeyId) -> SyncReturn<bool> {
+        SyncReturn(self.0.can_restore_signing_session(key_id))
     }
 
     pub fn try_restore_signing_session(
         &self,
+        key_id: KeyId,
         stream: StreamSink<SigningState>,
     ) -> anyhow::Result<()> {
-        self.0.try_restore_signing_session(stream)
+        self.0.try_restore_signing_session(key_id, stream)
     }
 }
 

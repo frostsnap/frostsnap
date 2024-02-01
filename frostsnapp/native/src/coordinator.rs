@@ -397,6 +397,8 @@ impl FfiCoordinator {
 
     pub fn try_restore_signing_session(
         &self,
+        #[allow(unused)] /* we only have one key for now */
+        key_id: KeyId,
         stream: StreamSink<api::SigningState>,
     ) -> anyhow::Result<()> {
         let signing_session = self
@@ -428,7 +430,9 @@ impl FfiCoordinator {
         Ok(())
     }
 
-    pub fn can_restore_signing_session(&self) -> bool {
+    pub fn can_restore_signing_session(&self,
+                                       #[allow(unused)] /* we only have one key for now */
+                                       key_id: KeyId) -> bool {
         self.db
             .lock()
             .unwrap()

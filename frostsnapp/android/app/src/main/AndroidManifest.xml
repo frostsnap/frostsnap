@@ -6,7 +6,9 @@
     <application
         android:label="Frostsnapp"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+> <!--llfourn remvoed allowBackup. Seems like we wouldn't want it.-->
         <activity
             android:name=".MainActivity"
             android:exported="true"

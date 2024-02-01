@@ -222,13 +222,18 @@ pub fn wire_generate_new_key__method__Coordinator(
 #[wasm_bindgen]
 pub fn wire_can_restore_signing_session__method__Coordinator(
     that: JsValue,
+    key_id: JsValue,
 ) -> support::WireSyncReturn {
-    wire_can_restore_signing_session__method__Coordinator_impl(that)
+    wire_can_restore_signing_session__method__Coordinator_impl(that, key_id)
 }
 
 #[wasm_bindgen]
-pub fn wire_try_restore_signing_session__method__Coordinator(port_: MessagePort, that: JsValue) {
-    wire_try_restore_signing_session__method__Coordinator_impl(port_, that)
+pub fn wire_try_restore_signing_session__method__Coordinator(
+    port_: MessagePort,
+    that: JsValue,
+    key_id: JsValue,
+) {
+    wire_try_restore_signing_session__method__Coordinator_impl(port_, that, key_id)
 }
 
 // Section: allocate functions

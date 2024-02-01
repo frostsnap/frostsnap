@@ -742,15 +742,16 @@ class NativeImpl implements Native {
           );
 
   bool canRestoreSigningSessionMethodCoordinator(
-      {required Coordinator that, dynamic hint}) {
+      {required Coordinator that, required KeyId keyId, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
+    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
       callFfi: () => _platform.inner
-          .wire_can_restore_signing_session__method__Coordinator(arg0),
+          .wire_can_restore_signing_session__method__Coordinator(arg0, arg1),
       parseSuccessData: _wire2api_bool,
       parseErrorData: null,
       constMeta: kCanRestoreSigningSessionMethodCoordinatorConstMeta,
-      argValues: [that],
+      argValues: [that, keyId],
       hint: hint,
     ));
   }
@@ -759,19 +760,21 @@ class NativeImpl implements Native {
       get kCanRestoreSigningSessionMethodCoordinatorConstMeta =>
           const FlutterRustBridgeTaskConstMeta(
             debugName: "can_restore_signing_session__method__Coordinator",
-            argNames: ["that"],
+            argNames: ["that", "keyId"],
           );
 
   Stream<SigningState> tryRestoreSigningSessionMethodCoordinator(
-      {required Coordinator that, dynamic hint}) {
+      {required Coordinator that, required KeyId keyId, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
+    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
     return _platform.executeStream(FlutterRustBridgeTask(
       callFfi: (port_) => _platform.inner
-          .wire_try_restore_signing_session__method__Coordinator(port_, arg0),
+          .wire_try_restore_signing_session__method__Coordinator(
+              port_, arg0, arg1),
       parseSuccessData: (d) => _wire2api_signing_state(d),
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kTryRestoreSigningSessionMethodCoordinatorConstMeta,
-      argValues: [that],
+      argValues: [that, keyId],
       hint: hint,
     ));
   }
@@ -780,7 +783,7 @@ class NativeImpl implements Native {
       get kTryRestoreSigningSessionMethodCoordinatorConstMeta =>
           const FlutterRustBridgeTaskConstMeta(
             debugName: "try_restore_signing_session__method__Coordinator",
-            argNames: ["that"],
+            argNames: ["that", "keyId"],
           );
 
   DropFnType get dropOpaqueFfiCoordinator =>

@@ -27,6 +27,8 @@ void main() async {
     if (Platform.isAndroid) {
       api.turnLogcatLoggingOn(level: Level.Debug);
       coord.switchToHostHandlesSerial();
+      // check for devices that were plugged in before the app even started
+      globalHostPortHandler.scanDevices();
     } else {
       api.turnStderrLoggingOn(level: Level.Debug);
     }
