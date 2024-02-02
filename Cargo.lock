@@ -965,6 +965,7 @@ dependencies = [
  "fugit",
  "mipidsi",
  "nb 1.1.0",
+ "rand_chacha",
  "smart-leds",
  "ssd1306",
 ]

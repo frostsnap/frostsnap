@@ -19,3 +19,4 @@ frostsnap_comms = { path = "frostsnap_comms", default-features = false }
 frostsnap_coordinator = { path = "frostsnap_coordinator" }
 tracing = { version = "0.1" }
 llsdb = { git = "https://github.com/LLFourn/llsdb.git" }
+rand_chacha = { version = "0.3", default-features = false }

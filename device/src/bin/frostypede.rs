@@ -166,7 +166,7 @@ fn main() -> ! {
         upstream_jtag,
         upstream_uart,
         downstream_uart,
-        rng,
+        seed_rng: rng,
         ui,
         timer: timer0,
         downstream_detect,

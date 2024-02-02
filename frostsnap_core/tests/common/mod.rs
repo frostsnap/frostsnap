@@ -111,8 +111,8 @@ impl Run {
         }
     }
 
-    pub fn run_until_finished<E: Env>(&mut self, env: &mut E) {
-        self.run_until(env, |_| false)
+    pub fn run_until_finished<E: Env>(&mut self, env: &mut E, rng: &mut impl rand_core::RngCore) {
+        self.run_until(env, rng, |_| false)
     }
 
     pub fn extend(&mut self, iter: impl IntoIterator<Item = impl Into<Send>>) {
@@ -133,7 +133,12 @@ impl Run {
         self.devices.get_mut(&id).unwrap()
     }
 
-    pub fn run_until<E: Env>(&mut self, env: &mut E, mut until: impl FnMut(&mut Run) -> bool) {
+    pub fn run_until<E: Env>(
+        &mut self,
+        env: &mut E,
+        rng: &mut impl rand_core::RngCore,
+        mut until: impl FnMut(&mut Run) -> bool,
+    ) {
         while !until(self) {
             let to_send = match self.message_stack.pop() {
                 Some(message) => message,
@@ -167,7 +172,7 @@ impl Run {
                             self.devices
                                 .get_mut(&destination)
                                 .unwrap()
-                                .recv_coordinator_message(message.clone())
+                                .recv_coordinator_message(message.clone(), rng)
                                 .unwrap()
                                 .into_iter()
                                 .map(|v| Send::device_send(destination, v)),

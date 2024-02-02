@@ -27,10 +27,13 @@ fn keygen_maliciously_replace_public_poly() {
         .map(|(index, id)| (id, Scalar::from((index + 1) as u32).non_zero().unwrap()))
         .collect();
     let _ = device
-        .recv_coordinator_message(CoordinatorToDeviceMessage::DoKeyGen {
-            device_to_share_index: device_to_share_index.clone(),
-            threshold: 1,
-        })
+        .recv_coordinator_message(
+            CoordinatorToDeviceMessage::DoKeyGen {
+                device_to_share_index: device_to_share_index.clone(),
+                threshold: 1,
+            },
+            &mut test_rng,
+        )
         .unwrap();
 
     let frost = frost::new_with_deterministic_nonces::<sha2::Sha256>();
@@ -42,9 +45,12 @@ fn keygen_maliciously_replace_public_poly() {
         &mut rand::thread_rng(),
     );
 
-    let result = device.recv_coordinator_message(CoordinatorToDeviceMessage::FinishKeyGen {
-        shares_provided: FromIterator::from_iter([(device.device_id(), provide_shares)]),
-    });
+    let result = device.recv_coordinator_message(
+        CoordinatorToDeviceMessage::FinishKeyGen {
+            shares_provided: FromIterator::from_iter([(device.device_id(), provide_shares)]),
+        },
+        &mut test_rng,
+    );
     assert!(matches!(
         result,
         Err(frostsnap_core::Error::InvalidMessage { .. })
@@ -61,8 +67,8 @@ fn nonce_reuse() {
 
     let device = FrostSigner::new_random(&mut test_rng);
     let device_id = device.device_id();
-    let devices = FromIterator::from_iter([(device.device_id(), device.clone())]);
-    let device_set = BTreeSet::from_iter([device.device_id()]);
+    let devices = FromIterator::from_iter([(device_id, device)]);
+    let device_set = BTreeSet::from_iter([device_id]);
     let mut run = Run::new(coordinator, devices);
 
     let keygen_init = vec![run.coordinator.do_keygen(&device_set, threshold).unwrap()];
@@ -100,14 +106,14 @@ fn nonce_reuse() {
         }
     }
 
-    run.run_until_finished(&mut TestEnv);
+    run.run_until_finished(&mut TestEnv, &mut test_rng);
     let task1 = SignTask::Plain(b"utxo.club!".to_vec());
     let sign_init = run
         .coordinator
         .start_sign(task1, device_set.clone())
         .unwrap();
     run.extend(sign_init);
-    run.run_until_finished(&mut TestEnv);
+    run.run_until_finished(&mut TestEnv, &mut test_rng);
 
     let nonces = run
         .transcript
@@ -130,7 +136,7 @@ fn nonce_reuse() {
     });
     let sign_request_result = run
         .device(device_id)
-        .recv_coordinator_message(new_sign_request);
+        .recv_coordinator_message(new_sign_request, &mut test_rng);
 
     assert!(matches!(
         sign_request_result,
