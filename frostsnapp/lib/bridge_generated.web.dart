@@ -21,6 +21,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
 // Section: api2wire
 
   @protected
+  Object api2wire_ArcMutexVecPortDesc(ArcMutexVecPortDesc raw) {
+    return raw.shareOrMove();
+  }
+
+  @protected
   Object api2wire_FfiCoordinator(FfiCoordinator raw) {
     return raw.shareOrMove();
   }
@@ -69,6 +74,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   @protected
   List<dynamic> api2wire_box_autoadd_device_list_state(DeviceListState raw) {
     return api2wire_device_list_state(raw);
+  }
+
+  @protected
+  List<dynamic> api2wire_box_autoadd_ffi_serial(FfiSerial raw) {
+    return api2wire_ffi_serial(raw);
   }
 
   @protected
@@ -134,6 +144,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   @protected
   List<dynamic> api2wire_encoded_signature(EncodedSignature raw) {
     return [api2wire_u8_array_64(raw.field0)];
+  }
+
+  @protected
+  List<dynamic> api2wire_ffi_serial(FfiSerial raw) {
+    return [api2wire_ArcMutexVecPortDesc(raw.availablePorts)];
   }
 
   @protected
@@ -253,6 +268,10 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
 
 // Section: finalizer
 
+  late final Finalizer<PlatformPointer> _ArcMutexVecPortDescFinalizer =
+      Finalizer<PlatformPointer>(inner.drop_opaque_ArcMutexVecPortDesc);
+  Finalizer<PlatformPointer> get ArcMutexVecPortDescFinalizer =>
+      _ArcMutexVecPortDescFinalizer;
   late final Finalizer<PlatformPointer> _FfiCoordinatorFinalizer =
       Finalizer<PlatformPointer>(inner.drop_opaque_FfiCoordinator);
   Finalizer<PlatformPointer> get FfiCoordinatorFinalizer =>
@@ -311,7 +330,12 @@ class NativeWasmModule implements WasmModule {
 
   external dynamic /* List<dynamic> */ wire_device_list_state();
 
+  external dynamic /* List<dynamic> */ wire_get_device(List<dynamic> id);
+
   external dynamic /* void */ wire_new_coordinator(
+      NativePortType port_, String db_file);
+
+  external dynamic /* void */ wire_new_coordinator_host_handles_serial(
       NativePortType port_, String db_file);
 
   external dynamic /* void */ wire_echo_key_id(
@@ -324,6 +348,9 @@ class NativeWasmModule implements WasmModule {
       List<dynamic> that);
 
   external dynamic /* String */ wire_name__method__FrostKey(List<dynamic> that);
+
+  external dynamic /* List<dynamic> */ wire_devices__method__FrostKey(
+      List<dynamic> that);
 
   external dynamic /* void */ wire_satisfy__method__PortOpen(
       NativePortType port_, List<dynamic> that, String? err);
@@ -343,16 +370,11 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* List<dynamic> */
       wire_named_devices__method__DeviceListState(List<dynamic> that);
 
+  external dynamic /* void */ wire_set_available_ports__method__FfiSerial(
+      NativePortType port_, List<dynamic> that, List<dynamic> ports);
+
   external dynamic /* void */ wire_start_thread__method__Coordinator(
       NativePortType port_, List<dynamic> that);
-
-  external dynamic /* void */
-      wire_announce_available_ports__method__Coordinator(
-          NativePortType port_, List<dynamic> that, List<dynamic> ports);
-
-  external dynamic /* void */
-      wire_switch_to_host_handles_serial__method__Coordinator(
-          NativePortType port_, List<dynamic> that);
 
   external dynamic /* void */ wire_update_name_preview__method__Coordinator(
       NativePortType port_, List<dynamic> that, List<dynamic> id, String name);
@@ -364,9 +386,6 @@ class NativeWasmModule implements WasmModule {
       NativePortType port_, List<dynamic> that, List<dynamic> id);
 
   external dynamic /* void */ wire_cancel_all__method__Coordinator(
-      NativePortType port_, List<dynamic> that);
-
-  external dynamic /* void */ wire_registered_devices__method__Coordinator(
       NativePortType port_, List<dynamic> that);
 
   external dynamic /* List<dynamic> */ wire_key_state__method__Coordinator(
@@ -385,13 +404,6 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* List<dynamic>? */
       wire_get_signing_state__method__Coordinator(List<dynamic> that);
 
-  external dynamic /* List<dynamic> */
-      wire_devices_for_frost_key__method__Coordinator(
-          List<dynamic> that, List<dynamic> frost_key);
-
-  external dynamic /* List<dynamic> */ wire_get_device__method__Coordinator(
-      List<dynamic> that, List<dynamic> id);
-
   external dynamic /* int */ wire_nonces_available__method__Coordinator(
       List<dynamic> that, List<dynamic> id);
 
@@ -408,6 +420,10 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* void */
       wire_try_restore_signing_session__method__Coordinator(
           NativePortType port_, List<dynamic> that, List<dynamic> key_id);
+
+  external dynamic /*  */ drop_opaque_ArcMutexVecPortDesc(ptr);
+
+  external int /* *const c_void */ share_opaque_ArcMutexVecPortDesc(ptr);
 
   external dynamic /*  */ drop_opaque_FfiCoordinator(ptr);
 
@@ -466,8 +482,15 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   dynamic /* List<dynamic> */ wire_device_list_state() =>
       wasmModule.wire_device_list_state();
 
+  dynamic /* List<dynamic> */ wire_get_device(List<dynamic> id) =>
+      wasmModule.wire_get_device(id);
+
   void wire_new_coordinator(NativePortType port_, String db_file) =>
       wasmModule.wire_new_coordinator(port_, db_file);
+
+  void wire_new_coordinator_host_handles_serial(
+          NativePortType port_, String db_file) =>
+      wasmModule.wire_new_coordinator_host_handles_serial(port_, db_file);
 
   void wire_echo_key_id(NativePortType port_, List<dynamic> key_id) =>
       wasmModule.wire_echo_key_id(port_, key_id);
@@ -480,6 +503,10 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
 
   dynamic /* String */ wire_name__method__FrostKey(List<dynamic> that) =>
       wasmModule.wire_name__method__FrostKey(that);
+
+  dynamic /* List<dynamic> */ wire_devices__method__FrostKey(
+          List<dynamic> that) =>
+      wasmModule.wire_devices__method__FrostKey(that);
 
   void wire_satisfy__method__PortOpen(
           NativePortType port_, List<dynamic> that, String? err) =>
@@ -506,19 +533,14 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
           List<dynamic> that) =>
       wasmModule.wire_named_devices__method__DeviceListState(that);
 
+  void wire_set_available_ports__method__FfiSerial(
+          NativePortType port_, List<dynamic> that, List<dynamic> ports) =>
+      wasmModule.wire_set_available_ports__method__FfiSerial(
+          port_, that, ports);
+
   void wire_start_thread__method__Coordinator(
           NativePortType port_, List<dynamic> that) =>
       wasmModule.wire_start_thread__method__Coordinator(port_, that);
-
-  void wire_announce_available_ports__method__Coordinator(
-          NativePortType port_, List<dynamic> that, List<dynamic> ports) =>
-      wasmModule.wire_announce_available_ports__method__Coordinator(
-          port_, that, ports);
-
-  void wire_switch_to_host_handles_serial__method__Coordinator(
-          NativePortType port_, List<dynamic> that) =>
-      wasmModule.wire_switch_to_host_handles_serial__method__Coordinator(
-          port_, that);
 
   void wire_update_name_preview__method__Coordinator(NativePortType port_,
           List<dynamic> that, List<dynamic> id, String name) =>
@@ -536,10 +558,6 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   void wire_cancel_all__method__Coordinator(
           NativePortType port_, List<dynamic> that) =>
       wasmModule.wire_cancel_all__method__Coordinator(port_, that);
-
-  void wire_registered_devices__method__Coordinator(
-          NativePortType port_, List<dynamic> that) =>
-      wasmModule.wire_registered_devices__method__Coordinator(port_, that);
 
   dynamic /* List<dynamic> */ wire_key_state__method__Coordinator(
           List<dynamic> that) =>
@@ -562,15 +580,6 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
           List<dynamic> that) =>
       wasmModule.wire_get_signing_state__method__Coordinator(that);
 
-  dynamic /* List<dynamic> */ wire_devices_for_frost_key__method__Coordinator(
-          List<dynamic> that, List<dynamic> frost_key) =>
-      wasmModule.wire_devices_for_frost_key__method__Coordinator(
-          that, frost_key);
-
-  dynamic /* List<dynamic> */ wire_get_device__method__Coordinator(
-          List<dynamic> that, List<dynamic> id) =>
-      wasmModule.wire_get_device__method__Coordinator(that, id);
-
   dynamic /* int */ wire_nonces_available__method__Coordinator(
           List<dynamic> that, List<dynamic> id) =>
       wasmModule.wire_nonces_available__method__Coordinator(that, id);
@@ -589,6 +598,12 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
           NativePortType port_, List<dynamic> that, List<dynamic> key_id) =>
       wasmModule.wire_try_restore_signing_session__method__Coordinator(
           port_, that, key_id);
+
+  dynamic /*  */ drop_opaque_ArcMutexVecPortDesc(ptr) =>
+      wasmModule.drop_opaque_ArcMutexVecPortDesc(ptr);
+
+  int /* *const c_void */ share_opaque_ArcMutexVecPortDesc(ptr) =>
+      wasmModule.share_opaque_ArcMutexVecPortDesc(ptr);
 
   dynamic /*  */ drop_opaque_FfiCoordinator(ptr) =>
       wasmModule.drop_opaque_FfiCoordinator(ptr);

@@ -7,12 +7,15 @@ use anyhow::{anyhow, Context};
 use flutter_rust_bridge::{frb, RustOpaque, StreamSink, SyncReturn};
 pub use frostsnap_coordinator::frostsnap_core;
 use frostsnap_coordinator::frostsnap_core::message::SignTask;
+use frostsnap_coordinator::{DesktopSerial, UsbSerialManager};
 pub use frostsnap_coordinator::{DeviceChange, PortDesc};
 pub use frostsnap_core::message::{CoordinatorToUserKeyGenMessage, EncodedSignature};
 pub use frostsnap_core::{DeviceId, FrostKeyExt, KeyId};
 use lazy_static::lazy_static;
 use llsdb::LlsDb;
-use std::fs::OpenOptions;
+use std::collections::HashMap;
+use std::fs::{File, OpenOptions};
+use std::sync::Arc;
 pub use std::sync::{Mutex, RwLock};
 #[allow(unused)]
 use tracing::{event, Level as TLevel};
@@ -81,6 +84,11 @@ pub(crate) fn emit_device_events(new_events: Vec<DeviceChange>) {
     }
 }
 
+pub(crate) fn init_device_names(device_names: HashMap<DeviceId, String>) {
+    let mut device_list_and_stream = DEVICE_LIST.lock().unwrap();
+    device_list_and_stream.0.init_names(device_names);
+}
+
 #[derive(Clone, Debug)]
 pub struct Device {
     pub name: Option<String>,
@@ -106,6 +114,10 @@ impl FrostKey {
 
     pub fn name(&self) -> SyncReturn<String> {
         SyncReturn("KEY NAMES NOT IMPLEMENTED".into())
+    }
+
+    pub fn devices(&self) -> SyncReturn<Vec<Device>> {
+        SyncReturn(self.0.devices().map(|id| get_device(id).0).collect())
     }
 }
 
@@ -244,6 +256,14 @@ pub fn device_list_state() -> SyncReturn<DeviceListState> {
     SyncReturn(DEVICE_LIST.lock().unwrap().0.state())
 }
 
+pub fn get_device(id: DeviceId) -> SyncReturn<Device> {
+    let device = Device {
+        name: DEVICE_LIST.lock().unwrap().0.get_device_name(id).cloned(),
+        id,
+    };
+    SyncReturn(device)
+}
+
 // pub fn start_signing(devices: Vec<DeviceId>, message: String) ->
 
 pub type SessionHash = [u8; 32];
@@ -316,6 +336,26 @@ impl DeviceListState {
 }
 
 pub fn new_coordinator(db_file: String) -> anyhow::Result<Coordinator> {
+    let db = load_database(db_file)?;
+    let usb_manager = UsbSerialManager::new(Box::new(DesktopSerial));
+
+    Ok(Coordinator(RustOpaque::new(FfiCoordinator::new(
+        db,
+        usb_manager,
+    )?)))
+}
+
+pub fn new_coordinator_host_handles_serial(
+    db_file: String,
+) -> anyhow::Result<(Coordinator, FfiSerial)> {
+    let db = load_database(db_file)?;
+    let ffi_serial = FfiSerial::default();
+    let usb_manager = UsbSerialManager::new(Box::new(ffi_serial.clone()));
+    let coord = Coordinator(RustOpaque::new(FfiCoordinator::new(db, usb_manager)?));
+    Ok((coord, ffi_serial))
+}
+
+fn load_database(db_file: String) -> anyhow::Result<LlsDb<File>> {
     let file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -327,7 +367,26 @@ pub fn new_coordinator(db_file: String) -> anyhow::Result<Coordinator> {
     let db =
         LlsDb::load_or_init(file).context(format!("failed to load database from {db_file}"))?;
 
-    Ok(Coordinator(RustOpaque::new(FfiCoordinator::new(db)?)))
+    Ok(db)
+}
+
+#[derive(Debug, Clone)]
+pub struct FfiSerial {
+    pub(crate) available_ports: RustOpaque<Arc<Mutex<Vec<PortDesc>>>>,
+}
+
+impl Default for FfiSerial {
+    fn default() -> Self {
+        Self {
+            available_ports: RustOpaque::new(Default::default()),
+        }
+    }
+}
+
+impl FfiSerial {
+    pub fn set_available_ports(&self, ports: Vec<PortDesc>) {
+        *self.available_ports.lock().unwrap() = ports
+    }
 }
 
 pub struct Coordinator(pub RustOpaque<FfiCoordinator>);
@@ -335,14 +394,6 @@ pub struct Coordinator(pub RustOpaque<FfiCoordinator>);
 impl Coordinator {
     pub fn start_thread(&self) -> anyhow::Result<()> {
         self.0.start()
-    }
-
-    pub fn announce_available_ports(&self, ports: Vec<PortDesc>) {
-        self.0.set_available_ports(ports);
-    }
-
-    pub fn switch_to_host_handles_serial(&self) {
-        self.0.switch_to_host_handles_serial();
     }
 
     pub fn update_name_preview(&self, id: DeviceId, name: String) {
@@ -359,10 +410,6 @@ impl Coordinator {
 
     pub fn cancel_all(&self) {
         self.0.cancel_all()
-    }
-
-    pub fn registered_devices(&self) -> Vec<DeviceId> {
-        self.0.registered_devices()
     }
 
     pub fn key_state(&self) -> SyncReturn<KeyState> {
@@ -398,23 +445,6 @@ impl Coordinator {
 
     pub fn get_signing_state(&self) -> SyncReturn<Option<SigningState>> {
         SyncReturn(self.0.get_signing_state())
-    }
-
-    pub fn devices_for_frost_key(&self, frost_key: FrostKey) -> SyncReturn<Vec<Device>> {
-        SyncReturn(
-            frost_key
-                .0
-                .devices()
-                .map(|id| self.get_device(id).0)
-                .collect(),
-        )
-    }
-
-    pub fn get_device(&self, id: DeviceId) -> SyncReturn<Device> {
-        SyncReturn(Device {
-            name: self.0.get_device_name(id),
-            id,
-        })
     }
 
     pub fn nonces_available(&self, id: DeviceId) -> SyncReturn<usize> {

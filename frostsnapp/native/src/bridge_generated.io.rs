@@ -42,8 +42,21 @@ pub extern "C" fn wire_device_list_state() -> support::WireSyncReturn {
 }
 
 #[no_mangle]
+pub extern "C" fn wire_get_device(id: *mut wire_DeviceId) -> support::WireSyncReturn {
+    wire_get_device_impl(id)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_new_coordinator(port_: i64, db_file: *mut wire_uint_8_list) {
     wire_new_coordinator_impl(port_, db_file)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_new_coordinator_host_handles_serial(
+    port_: i64,
+    db_file: *mut wire_uint_8_list,
+) {
+    wire_new_coordinator_host_handles_serial_impl(port_, db_file)
 }
 
 #[no_mangle]
@@ -66,6 +79,13 @@ pub extern "C" fn wire_id__method__FrostKey(that: *mut wire_FrostKey) -> support
 #[no_mangle]
 pub extern "C" fn wire_name__method__FrostKey(that: *mut wire_FrostKey) -> support::WireSyncReturn {
     wire_name__method__FrostKey_impl(that)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_devices__method__FrostKey(
+    that: *mut wire_FrostKey,
+) -> support::WireSyncReturn {
+    wire_devices__method__FrostKey_impl(that)
 }
 
 #[no_mangle]
@@ -120,25 +140,17 @@ pub extern "C" fn wire_named_devices__method__DeviceListState(
 }
 
 #[no_mangle]
-pub extern "C" fn wire_start_thread__method__Coordinator(port_: i64, that: *mut wire_Coordinator) {
-    wire_start_thread__method__Coordinator_impl(port_, that)
-}
-
-#[no_mangle]
-pub extern "C" fn wire_announce_available_ports__method__Coordinator(
+pub extern "C" fn wire_set_available_ports__method__FfiSerial(
     port_: i64,
-    that: *mut wire_Coordinator,
+    that: *mut wire_FfiSerial,
     ports: *mut wire_list_port_desc,
 ) {
-    wire_announce_available_ports__method__Coordinator_impl(port_, that, ports)
+    wire_set_available_ports__method__FfiSerial_impl(port_, that, ports)
 }
 
 #[no_mangle]
-pub extern "C" fn wire_switch_to_host_handles_serial__method__Coordinator(
-    port_: i64,
-    that: *mut wire_Coordinator,
-) {
-    wire_switch_to_host_handles_serial__method__Coordinator_impl(port_, that)
+pub extern "C" fn wire_start_thread__method__Coordinator(port_: i64, that: *mut wire_Coordinator) {
+    wire_start_thread__method__Coordinator_impl(port_, that)
 }
 
 #[no_mangle]
@@ -176,14 +188,6 @@ pub extern "C" fn wire_cancel_all__method__Coordinator(port_: i64, that: *mut wi
 }
 
 #[no_mangle]
-pub extern "C" fn wire_registered_devices__method__Coordinator(
-    port_: i64,
-    that: *mut wire_Coordinator,
-) {
-    wire_registered_devices__method__Coordinator_impl(port_, that)
-}
-
-#[no_mangle]
 pub extern "C" fn wire_key_state__method__Coordinator(
     that: *mut wire_Coordinator,
 ) -> support::WireSyncReturn {
@@ -214,22 +218,6 @@ pub extern "C" fn wire_get_signing_state__method__Coordinator(
     that: *mut wire_Coordinator,
 ) -> support::WireSyncReturn {
     wire_get_signing_state__method__Coordinator_impl(that)
-}
-
-#[no_mangle]
-pub extern "C" fn wire_devices_for_frost_key__method__Coordinator(
-    that: *mut wire_Coordinator,
-    frost_key: *mut wire_FrostKey,
-) -> support::WireSyncReturn {
-    wire_devices_for_frost_key__method__Coordinator_impl(that, frost_key)
-}
-
-#[no_mangle]
-pub extern "C" fn wire_get_device__method__Coordinator(
-    that: *mut wire_Coordinator,
-    id: *mut wire_DeviceId,
-) -> support::WireSyncReturn {
-    wire_get_device__method__Coordinator_impl(that, id)
 }
 
 #[no_mangle]
@@ -268,6 +256,11 @@ pub extern "C" fn wire_try_restore_signing_session__method__Coordinator(
 }
 
 // Section: allocate functions
+
+#[no_mangle]
+pub extern "C" fn new_ArcMutexVecPortDesc() -> wire_ArcMutexVecPortDesc {
+    wire_ArcMutexVecPortDesc::new_with_null_ptr()
+}
 
 #[no_mangle]
 pub extern "C" fn new_FfiCoordinator() -> wire_FfiCoordinator {
@@ -313,6 +306,11 @@ pub extern "C" fn new_box_autoadd_device_id_0() -> *mut wire_DeviceId {
 #[no_mangle]
 pub extern "C" fn new_box_autoadd_device_list_state_0() -> *mut wire_DeviceListState {
     support::new_leak_box_ptr(wire_DeviceListState::new_with_null_ptr())
+}
+
+#[no_mangle]
+pub extern "C" fn new_box_autoadd_ffi_serial_0() -> *mut wire_FfiSerial {
+    support::new_leak_box_ptr(wire_FfiSerial::new_with_null_ptr())
 }
 
 #[no_mangle]
@@ -412,6 +410,21 @@ pub extern "C" fn new_uint_8_list_0(len: i32) -> *mut wire_uint_8_list {
 // Section: related functions
 
 #[no_mangle]
+pub extern "C" fn drop_opaque_ArcMutexVecPortDesc(ptr: *const c_void) {
+    unsafe {
+        Arc::<Arc<Mutex<Vec<PortDesc>>>>::decrement_strong_count(ptr as _);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn share_opaque_ArcMutexVecPortDesc(ptr: *const c_void) -> *const c_void {
+    unsafe {
+        Arc::<Arc<Mutex<Vec<PortDesc>>>>::increment_strong_count(ptr as _);
+        ptr
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn drop_opaque_FfiCoordinator(ptr: *const c_void) {
     unsafe {
         Arc::<FfiCoordinator>::decrement_strong_count(ptr as _);
@@ -505,6 +518,11 @@ pub extern "C" fn share_opaque_PortWriteSender(ptr: *const c_void) -> *const c_v
 
 // Section: impl Wire2Api
 
+impl Wire2Api<RustOpaque<Arc<Mutex<Vec<PortDesc>>>>> for wire_ArcMutexVecPortDesc {
+    fn wire2api(self) -> RustOpaque<Arc<Mutex<Vec<PortDesc>>>> {
+        unsafe { support::opaque_from_dart(self.ptr as _) }
+    }
+}
 impl Wire2Api<RustOpaque<FfiCoordinator>> for wire_FfiCoordinator {
     fn wire2api(self) -> RustOpaque<FfiCoordinator> {
         unsafe { support::opaque_from_dart(self.ptr as _) }
@@ -559,6 +577,12 @@ impl Wire2Api<DeviceListState> for *mut wire_DeviceListState {
     fn wire2api(self) -> DeviceListState {
         let wrap = unsafe { support::box_from_leak_ptr(self) };
         Wire2Api::<DeviceListState>::wire2api(*wrap).into()
+    }
+}
+impl Wire2Api<FfiSerial> for *mut wire_FfiSerial {
+    fn wire2api(self) -> FfiSerial {
+        let wrap = unsafe { support::box_from_leak_ptr(self) };
+        Wire2Api::<FfiSerial>::wire2api(*wrap).into()
     }
 }
 impl Wire2Api<FrostKey> for *mut wire_FrostKey {
@@ -638,6 +662,13 @@ impl Wire2Api<DeviceListState> for wire_DeviceListState {
 impl Wire2Api<EncodedSignature> for wire_EncodedSignature {
     fn wire2api(self) -> EncodedSignature {
         EncodedSignature(self.field0.wire2api())
+    }
+}
+impl Wire2Api<FfiSerial> for wire_FfiSerial {
+    fn wire2api(self) -> FfiSerial {
+        FfiSerial {
+            available_ports: self.available_ports.wire2api(),
+        }
     }
 }
 impl Wire2Api<FrostKey> for wire_FrostKey {
@@ -790,6 +821,12 @@ impl Wire2Api<Vec<u8>> for *mut wire_uint_8_list {
 
 #[repr(C)]
 #[derive(Clone)]
+pub struct wire_ArcMutexVecPortDesc {
+    ptr: *const core::ffi::c_void,
+}
+
+#[repr(C)]
+#[derive(Clone)]
 pub struct wire_FfiCoordinator {
     ptr: *const core::ffi::c_void,
 }
@@ -854,6 +891,12 @@ pub struct wire_DeviceListState {
 #[derive(Clone)]
 pub struct wire_EncodedSignature {
     field0: *mut wire_uint_8_list,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_FfiSerial {
+    available_ports: wire_ArcMutexVecPortDesc,
 }
 
 #[repr(C)]
@@ -975,6 +1018,13 @@ impl<T> NewWithNullPtr for *mut T {
     }
 }
 
+impl NewWithNullPtr for wire_ArcMutexVecPortDesc {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            ptr: core::ptr::null(),
+        }
+    }
+}
 impl NewWithNullPtr for wire_FfiCoordinator {
     fn new_with_null_ptr() -> Self {
         Self {
@@ -1085,6 +1135,20 @@ impl NewWithNullPtr for wire_EncodedSignature {
 }
 
 impl Default for wire_EncodedSignature {
+    fn default() -> Self {
+        Self::new_with_null_ptr()
+    }
+}
+
+impl NewWithNullPtr for wire_FfiSerial {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            available_ports: wire_ArcMutexVecPortDesc::new_with_null_ptr(),
+        }
+    }
+}
+
+impl Default for wire_FfiSerial {
     fn default() -> Self {
         Self::new_with_null_ptr()
     }

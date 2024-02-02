@@ -1,4 +1,4 @@
-use crate::api::{self, KeyState, PortEvent};
+use crate::api::{self, FfiSerial, KeyState, PortEvent};
 use crate::persist_core::PersistCore;
 use crate::SigningSession;
 use anyhow::{anyhow, Context};
@@ -11,15 +11,14 @@ use frostsnap_coordinator::frostsnap_core::message::{
     CoordinatorToUserMessage, SignTask,
 };
 use frostsnap_coordinator::frostsnap_core::KeyId;
-use frostsnap_coordinator::SigningDispatcher;
 use frostsnap_coordinator::{
-    frostsnap_core, DesktopSerial, PortChanges, PortDesc, PortOpenError, Serial, SerialPort,
-    UsbSerialManager,
+    frostsnap_core, PortChanges, PortDesc, PortOpenError, Serial, SerialPort, UsbSerialManager,
 };
 use frostsnap_coordinator::{serialport, DeviceChange};
+use frostsnap_coordinator::{SigningDispatcher, UsbSender};
 use frostsnap_core::{DeviceId, FrostCoordinator, Gist};
 use llsdb::{IndexHandle, LlsDb};
-use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeSet, VecDeque};
 use std::fs::File;
 use std::io;
 use std::sync::mpsc::SyncSender;
@@ -30,9 +29,7 @@ use tracing::{event, Level};
 
 pub struct FfiCoordinator {
     coordinator: Arc<Mutex<FrostCoordinator>>,
-    manager: Arc<Mutex<UsbSerialManager>>,
-    /// only used if host is handling serial (e.g. android)
-    ffi_serial: FfiSerial,
+    usb_manager: Mutex<Option<UsbSerialManager>>,
     pending_for_outbox: Arc<Mutex<VecDeque<CoordinatorSend>>>,
     thread_handle: Mutex<Option<JoinHandle<()>>>,
     keygen_stream: Arc<Mutex<Option<StreamSink<CoordinatorToUserKeyGenMessage>>>>,
@@ -40,11 +37,11 @@ pub struct FfiCoordinator {
     db: Arc<Mutex<LlsDb<File>>>,
     core_persist: IndexHandle<PersistCore>,
     device_names: IndexHandle<llsdb::index::BTreeMap<DeviceId, String>>,
+    usb_sender: UsbSender,
 }
 
 impl FfiCoordinator {
-    pub fn new(mut db: LlsDb<File>) -> anyhow::Result<Self> {
-        let manager = Arc::new(Mutex::new(UsbSerialManager::new(Box::new(DesktopSerial))));
+    pub fn new(mut db: LlsDb<File>, mut usb_manager: UsbSerialManager) -> anyhow::Result<Self> {
         let pending_for_outbox = Arc::new(Mutex::new(VecDeque::new()));
 
         let (core_persist, device_names, coordinator) = db
@@ -59,10 +56,22 @@ impl FfiCoordinator {
             })
             .context("initializing db")?;
 
+        let usb_sender = usb_manager.usb_sender();
+
+        *usb_manager.device_labels_mut() = db
+            .execute(|tx| tx.take_index(device_names).iter().collect())
+            .context("reading in device names from disk")?;
+
+        // HACK: if the global device list depends on db state then it shouldn't be global! The
+        // reason it needs these names is for convenience. There are too many places that have
+        // copies of the device names -- we need a central location.
+        crate::api::init_device_names(usb_manager.device_labels().clone());
+
+        let usb_manager = Mutex::new(Some(usb_manager));
+
         Ok(Self {
             coordinator: Arc::new(Mutex::new(coordinator)),
-            manager,
-            ffi_serial: FfiSerial::default(),
+            usb_manager,
             pending_for_outbox,
             thread_handle: Default::default(),
             keygen_stream: Default::default(),
@@ -70,16 +79,8 @@ impl FfiCoordinator {
             db: Arc::new(Mutex::new(db)),
             core_persist,
             device_names,
+            usb_sender,
         })
-    }
-
-    pub fn switch_to_host_handles_serial(&self) {
-        assert!(
-            self.thread_handle.lock().unwrap().is_none(),
-            "can't switch host to handle serial after you've started thread"
-        );
-        let manager = UsbSerialManager::new(Box::new(self.ffi_serial.clone()));
-        *self.manager.lock().unwrap() = manager;
     }
 
     pub fn start(&self) -> anyhow::Result<()> {
@@ -88,7 +89,12 @@ impl FfiCoordinator {
             "can't start coordinator thread again"
         );
 
-        let manager_loop = self.manager.clone();
+        let mut usb_manager = self
+            .usb_manager
+            .lock()
+            .unwrap()
+            .take()
+            .expect("can only start once");
         let pending_loop = self.pending_for_outbox.clone();
         let coordinator_loop = self.coordinator.clone();
         let keygen_stream_loop = self.keygen_stream.clone();
@@ -96,26 +102,29 @@ impl FfiCoordinator {
         let db_loop = self.db.clone();
         let core_persist = self.core_persist;
         let device_names = self.device_names;
-        {
-            let mut manager = manager_loop.lock().unwrap();
-            *manager.device_labels_mut() = db_loop
-                .lock()
-                .unwrap()
-                .execute(|tx| tx.take_index(device_names).iter().collect())
-                .context("reading in device names from disk")?;
-        }
+        let usb_sender = self.usb_sender.clone();
 
         let handle = std::thread::spawn(move || {
             loop {
                 // to give time for the other threads to get a lock
                 std::thread::sleep(Duration::from_millis(100));
-                let mut signing_session = signing_stream_loop.lock().unwrap();
 
-                let new_messages = {
+                let new_messages_from_devices = {
+                    // NOTE: Never hold locks on anything over poll_ports because poll ports makes
+                    // blocking calls up to flutter. If flutter is blocked on something else we'll
+                    // be deadlocked.
                     let PortChanges {
                         device_changes,
                         new_messages,
-                    } = manager_loop.lock().unwrap().poll_ports();
+                    } = usb_manager.poll_ports();
+
+                    let mut signing_session = signing_stream_loop.lock().unwrap();
+
+                    if let Some(signing_session) = &mut *signing_session {
+                        if let Some(message) = signing_session.resend_sign_request() {
+                            usb_sender.send(message);
+                        }
+                    }
 
                     if !device_changes.is_empty() {
                         for change in &device_changes {
@@ -158,18 +167,12 @@ impl FfiCoordinator {
                     new_messages
                 };
 
-                if let Some(signing_session) = &mut *signing_session {
-                    if let Some(message) = signing_session.resend_sign_request() {
-                        manager_loop.lock().unwrap().queue_in_port_outbox(message);
-                    }
-                }
-
                 let mut coordinator = coordinator_loop.lock().unwrap();
-                let mut pending_messages = pending_loop.lock().unwrap();
-                for (from, message) in new_messages {
+                let mut coordinator_outbox = pending_loop.lock().unwrap();
+                for (from, message) in new_messages_from_devices {
                     match coordinator.recv_device_message(from, message.clone()) {
                         Ok(messages) => {
-                            pending_messages.extend(messages);
+                            coordinator_outbox.extend(messages);
                         }
                         Err(e) => {
                             event!(
@@ -184,7 +187,7 @@ impl FfiCoordinator {
 
                 drop(coordinator);
 
-                while let Some(message) = pending_messages.pop_front() {
+                while let Some(message) = coordinator_outbox.pop_front() {
                     match message {
                         CoordinatorSend::ToDevice(msg) => {
                             let send_message = CoordinatorSendMessage {
@@ -192,10 +195,7 @@ impl FfiCoordinator {
                                 message_body: CoordinatorSendBody::Core(msg),
                             };
 
-                            manager_loop
-                                .lock()
-                                .unwrap()
-                                .queue_in_port_outbox(send_message);
+                            usb_sender.send(send_message);
                         }
                         CoordinatorSend::ToUser(msg) => match msg {
                             CoordinatorToUserMessage::KeyGen(event) => {
@@ -217,6 +217,7 @@ impl FfiCoordinator {
                                 }
                             }
                             CoordinatorToUserMessage::Signing(signing_message) => {
+                                let mut signing_session = signing_stream_loop.lock().unwrap();
                                 if let Some(signing_session) = &mut *signing_session {
                                     signing_session.process_to_user_message(signing_message);
 
@@ -282,20 +283,16 @@ impl FfiCoordinator {
         Ok(())
     }
 
-    pub fn set_available_ports(&self, ports: Vec<PortDesc>) {
-        *self.ffi_serial.available_ports.lock().unwrap() = ports;
-    }
-
     pub fn update_name_preview(&self, id: DeviceId, name: &str) {
-        self.manager.lock().unwrap().update_name_preview(id, name);
+        self.usb_sender.update_name_preview(id, name);
     }
 
     pub fn finish_naming(&self, id: DeviceId, name: &str) {
-        self.manager.lock().unwrap().finish_naming(id, name);
+        self.usb_sender.finish_naming(id, name);
     }
 
     pub fn send_cancel(&self, id: DeviceId) {
-        self.manager.lock().unwrap().send_cancel(id)
+        self.usb_sender.send_cancel(id)
     }
 
     pub fn cancel_all(&self) {
@@ -308,17 +305,7 @@ impl FfiCoordinator {
                 .execute(|tx| tx.take_index(self.core_persist).clear_signing_session());
         }
         self.coordinator.lock().unwrap().cancel();
-        self.manager.lock().unwrap().send_cancel_all()
-    }
-
-    pub fn registered_devices(&self) -> Vec<DeviceId> {
-        self.manager
-            .lock()
-            .unwrap()
-            .registered_devices()
-            .iter()
-            .cloned()
-            .collect::<Vec<_>>()
+        self.usb_sender.send_cancel_all()
     }
 
     pub fn generate_new_key(
@@ -346,23 +333,6 @@ impl FfiCoordinator {
         frost_keys(&self.coordinator.lock().unwrap())
     }
 
-    pub fn devices_by_ports(&self) -> HashMap<String, Vec<DeviceId>> {
-        self.manager.lock().unwrap().devices_by_ports().clone()
-    }
-
-    pub fn device_names(&self) -> HashMap<DeviceId, String> {
-        self.manager.lock().unwrap().device_labels().clone()
-    }
-
-    pub fn get_device_name(&self, id: DeviceId) -> Option<String> {
-        self.manager
-            .lock()
-            .unwrap()
-            .device_labels()
-            .get(&id)
-            .cloned()
-    }
-
     pub fn nonces_left(&self, id: DeviceId) -> Option<usize> {
         self.coordinator
             .lock()
@@ -380,15 +350,13 @@ impl FfiCoordinator {
     ) -> anyhow::Result<()> {
         // we need to lock this first to avoid race conditions where somehow get_signing_state is called before this completes.
         let mut signing_session = self.signing_session.lock().unwrap();
-        event!(Level::INFO, "starting signing");
         let mut coordinator = self.coordinator.lock().unwrap();
         let mut messages = coordinator.start_sign(task, devices)?;
         let dispatcher = SigningDispatcher::from_filter_out_start_sign(&mut messages);
         let mut new_session = SigningSession::new(stream, dispatcher);
 
-        let manager = self.manager.lock().unwrap();
-        for id in manager.registered_devices() {
-            new_session.connected(*id);
+        for device in api::device_list_state().0.devices {
+            new_session.connected(device.id);
         }
 
         self.pending_for_outbox.lock().unwrap().extend(messages);
@@ -398,13 +366,9 @@ impl FfiCoordinator {
     }
 
     pub fn get_signing_state(&self) -> Option<api::SigningState> {
-        Some(
-            self.signing_session
-                .lock()
-                .unwrap()
-                .as_ref()?
-                .signing_state(),
-        )
+        let signing_session = self.signing_session.lock().unwrap();
+        let state = signing_session.as_ref()?.signing_state();
+        Some(state)
     }
 
     pub fn try_restore_signing_session(
@@ -430,10 +394,9 @@ impl FfiCoordinator {
             dispatcher.set_signature_received(already_provided);
         }
         let mut session = SigningSession::new(stream, dispatcher);
-        let manager = self.manager.lock().unwrap();
 
-        for id in manager.registered_devices() {
-            session.connected(*id);
+        for device in api::device_list_state().0.devices {
+            session.connected(device.id);
         }
 
         self.signing_session.lock().unwrap().replace(session);
@@ -470,11 +433,6 @@ pub struct PortWriteSender(pub SyncSender<Result<(), String>>);
 pub struct PortReadSender(pub SyncSender<Result<Vec<u8>, String>>);
 #[derive(Debug)]
 pub struct PortBytesToReadSender(pub SyncSender<u32>);
-
-#[derive(Debug, Default, Clone)]
-pub struct FfiSerial {
-    available_ports: Arc<Mutex<Vec<PortDesc>>>,
-}
 
 impl Serial for FfiSerial {
     fn available_ports(&self) -> Vec<PortDesc> {

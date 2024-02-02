@@ -18,6 +18,14 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
 // Section: api2wire
 
   @protected
+  wire_ArcMutexVecPortDesc api2wire_ArcMutexVecPortDesc(
+      ArcMutexVecPortDesc raw) {
+    final ptr = inner.new_ArcMutexVecPortDesc();
+    _api_fill_to_wire_ArcMutexVecPortDesc(raw, ptr);
+    return ptr;
+  }
+
+  @protected
   wire_FfiCoordinator api2wire_FfiCoordinator(FfiCoordinator raw) {
     final ptr = inner.new_FfiCoordinator();
     _api_fill_to_wire_FfiCoordinator(raw, ptr);
@@ -87,6 +95,13 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
       DeviceListState raw) {
     final ptr = inner.new_box_autoadd_device_list_state_0();
     _api_fill_to_wire_device_list_state(raw, ptr.ref);
+    return ptr;
+  }
+
+  @protected
+  ffi.Pointer<wire_FfiSerial> api2wire_box_autoadd_ffi_serial(FfiSerial raw) {
+    final ptr = inner.new_box_autoadd_ffi_serial_0();
+    _api_fill_to_wire_ffi_serial(raw, ptr.ref);
     return ptr;
   }
 
@@ -229,6 +244,10 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
 
 // Section: finalizer
 
+  late final OpaqueTypeFinalizer _ArcMutexVecPortDescFinalizer =
+      OpaqueTypeFinalizer(inner._drop_opaque_ArcMutexVecPortDescPtr);
+  OpaqueTypeFinalizer get ArcMutexVecPortDescFinalizer =>
+      _ArcMutexVecPortDescFinalizer;
   late final OpaqueTypeFinalizer _FfiCoordinatorFinalizer =
       OpaqueTypeFinalizer(inner._drop_opaque_FfiCoordinatorPtr);
   OpaqueTypeFinalizer get FfiCoordinatorFinalizer => _FfiCoordinatorFinalizer;
@@ -251,6 +270,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
       OpaqueTypeFinalizer(inner._drop_opaque_PortWriteSenderPtr);
   OpaqueTypeFinalizer get PortWriteSenderFinalizer => _PortWriteSenderFinalizer;
 // Section: api_fill_to_wire
+
+  void _api_fill_to_wire_ArcMutexVecPortDesc(
+      ArcMutexVecPortDesc apiObj, wire_ArcMutexVecPortDesc wireObj) {
+    wireObj.ptr = apiObj.shareOrMove();
+  }
 
   void _api_fill_to_wire_FfiCoordinator(
       FfiCoordinator apiObj, wire_FfiCoordinator wireObj) {
@@ -296,6 +320,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   void _api_fill_to_wire_box_autoadd_device_list_state(
       DeviceListState apiObj, ffi.Pointer<wire_DeviceListState> wireObj) {
     _api_fill_to_wire_device_list_state(apiObj, wireObj.ref);
+  }
+
+  void _api_fill_to_wire_box_autoadd_ffi_serial(
+      FfiSerial apiObj, ffi.Pointer<wire_FfiSerial> wireObj) {
+    _api_fill_to_wire_ffi_serial(apiObj, wireObj.ref);
   }
 
   void _api_fill_to_wire_box_autoadd_frost_key(
@@ -361,6 +390,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   void _api_fill_to_wire_encoded_signature(
       EncodedSignature apiObj, wire_EncodedSignature wireObj) {
     wireObj.field0 = api2wire_u8_array_64(apiObj.field0);
+  }
+
+  void _api_fill_to_wire_ffi_serial(FfiSerial apiObj, wire_FfiSerial wireObj) {
+    wireObj.available_ports =
+        api2wire_ArcMutexVecPortDesc(apiObj.availablePorts);
   }
 
   void _api_fill_to_wire_frost_key(FrostKey apiObj, wire_FrostKey wireObj) {
@@ -626,6 +660,21 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _wire_device_list_state =
       _wire_device_list_statePtr.asFunction<WireSyncReturn Function()>();
 
+  WireSyncReturn wire_get_device(
+    ffi.Pointer<wire_DeviceId> id,
+  ) {
+    return _wire_get_device(
+      id,
+    );
+  }
+
+  late final _wire_get_devicePtr = _lookup<
+          ffi
+          .NativeFunction<WireSyncReturn Function(ffi.Pointer<wire_DeviceId>)>>(
+      'wire_get_device');
+  late final _wire_get_device = _wire_get_devicePtr
+      .asFunction<WireSyncReturn Function(ffi.Pointer<wire_DeviceId>)>();
+
   void wire_new_coordinator(
     int port_,
     ffi.Pointer<wire_uint_8_list> db_file,
@@ -642,6 +691,24 @@ class NativeWire implements FlutterRustBridgeWireBase {
               ffi.Pointer<wire_uint_8_list>)>>('wire_new_coordinator');
   late final _wire_new_coordinator = _wire_new_coordinatorPtr
       .asFunction<void Function(int, ffi.Pointer<wire_uint_8_list>)>();
+
+  void wire_new_coordinator_host_handles_serial(
+    int port_,
+    ffi.Pointer<wire_uint_8_list> db_file,
+  ) {
+    return _wire_new_coordinator_host_handles_serial(
+      port_,
+      db_file,
+    );
+  }
+
+  late final _wire_new_coordinator_host_handles_serialPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_uint_8_list>)>>(
+      'wire_new_coordinator_host_handles_serial');
+  late final _wire_new_coordinator_host_handles_serial =
+      _wire_new_coordinator_host_handles_serialPtr
+          .asFunction<void Function(int, ffi.Pointer<wire_uint_8_list>)>();
 
   void wire_echo_key_id(
     int port_,
@@ -705,6 +772,22 @@ class NativeWire implements FlutterRustBridgeWireBase {
       'wire_name__method__FrostKey');
   late final _wire_name__method__FrostKey = _wire_name__method__FrostKeyPtr
       .asFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>();
+
+  WireSyncReturn wire_devices__method__FrostKey(
+    ffi.Pointer<wire_FrostKey> that,
+  ) {
+    return _wire_devices__method__FrostKey(
+      that,
+    );
+  }
+
+  late final _wire_devices__method__FrostKeyPtr = _lookup<
+          ffi
+          .NativeFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>>(
+      'wire_devices__method__FrostKey');
+  late final _wire_devices__method__FrostKey =
+      _wire_devices__method__FrostKeyPtr
+          .asFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>();
 
   void wire_satisfy__method__PortOpen(
     int port_,
@@ -829,6 +912,28 @@ class NativeWire implements FlutterRustBridgeWireBase {
       _wire_named_devices__method__DeviceListStatePtr.asFunction<
           WireSyncReturn Function(ffi.Pointer<wire_DeviceListState>)>();
 
+  void wire_set_available_ports__method__FfiSerial(
+    int port_,
+    ffi.Pointer<wire_FfiSerial> that,
+    ffi.Pointer<wire_list_port_desc> ports,
+  ) {
+    return _wire_set_available_ports__method__FfiSerial(
+      port_,
+      that,
+      ports,
+    );
+  }
+
+  late final _wire_set_available_ports__method__FfiSerialPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_FfiSerial>,
+                  ffi.Pointer<wire_list_port_desc>)>>(
+      'wire_set_available_ports__method__FfiSerial');
+  late final _wire_set_available_ports__method__FfiSerial =
+      _wire_set_available_ports__method__FfiSerialPtr.asFunction<
+          void Function(int, ffi.Pointer<wire_FfiSerial>,
+              ffi.Pointer<wire_list_port_desc>)>();
+
   void wire_start_thread__method__Coordinator(
     int port_,
     ffi.Pointer<wire_Coordinator> that,
@@ -845,47 +950,6 @@ class NativeWire implements FlutterRustBridgeWireBase {
       'wire_start_thread__method__Coordinator');
   late final _wire_start_thread__method__Coordinator =
       _wire_start_thread__method__CoordinatorPtr
-          .asFunction<void Function(int, ffi.Pointer<wire_Coordinator>)>();
-
-  void wire_announce_available_ports__method__Coordinator(
-    int port_,
-    ffi.Pointer<wire_Coordinator> that,
-    ffi.Pointer<wire_list_port_desc> ports,
-  ) {
-    return _wire_announce_available_ports__method__Coordinator(
-      port_,
-      that,
-      ports,
-    );
-  }
-
-  late final _wire_announce_available_ports__method__CoordinatorPtr = _lookup<
-          ffi.NativeFunction<
-              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Coordinator>,
-                  ffi.Pointer<wire_list_port_desc>)>>(
-      'wire_announce_available_ports__method__Coordinator');
-  late final _wire_announce_available_ports__method__Coordinator =
-      _wire_announce_available_ports__method__CoordinatorPtr.asFunction<
-          void Function(int, ffi.Pointer<wire_Coordinator>,
-              ffi.Pointer<wire_list_port_desc>)>();
-
-  void wire_switch_to_host_handles_serial__method__Coordinator(
-    int port_,
-    ffi.Pointer<wire_Coordinator> that,
-  ) {
-    return _wire_switch_to_host_handles_serial__method__Coordinator(
-      port_,
-      that,
-    );
-  }
-
-  late final _wire_switch_to_host_handles_serial__method__CoordinatorPtr =
-      _lookup<
-              ffi.NativeFunction<
-                  ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Coordinator>)>>(
-          'wire_switch_to_host_handles_serial__method__Coordinator');
-  late final _wire_switch_to_host_handles_serial__method__Coordinator =
-      _wire_switch_to_host_handles_serial__method__CoordinatorPtr
           .asFunction<void Function(int, ffi.Pointer<wire_Coordinator>)>();
 
   void wire_update_name_preview__method__Coordinator(
@@ -976,24 +1040,6 @@ class NativeWire implements FlutterRustBridgeWireBase {
       _wire_cancel_all__method__CoordinatorPtr
           .asFunction<void Function(int, ffi.Pointer<wire_Coordinator>)>();
 
-  void wire_registered_devices__method__Coordinator(
-    int port_,
-    ffi.Pointer<wire_Coordinator> that,
-  ) {
-    return _wire_registered_devices__method__Coordinator(
-      port_,
-      that,
-    );
-  }
-
-  late final _wire_registered_devices__method__CoordinatorPtr = _lookup<
-          ffi.NativeFunction<
-              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Coordinator>)>>(
-      'wire_registered_devices__method__Coordinator');
-  late final _wire_registered_devices__method__Coordinator =
-      _wire_registered_devices__method__CoordinatorPtr
-          .asFunction<void Function(int, ffi.Pointer<wire_Coordinator>)>();
-
   WireSyncReturn wire_key_state__method__Coordinator(
     ffi.Pointer<wire_Coordinator> that,
   ) {
@@ -1078,46 +1124,6 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _wire_get_signing_state__method__Coordinator =
       _wire_get_signing_state__method__CoordinatorPtr
           .asFunction<WireSyncReturn Function(ffi.Pointer<wire_Coordinator>)>();
-
-  WireSyncReturn wire_devices_for_frost_key__method__Coordinator(
-    ffi.Pointer<wire_Coordinator> that,
-    ffi.Pointer<wire_FrostKey> frost_key,
-  ) {
-    return _wire_devices_for_frost_key__method__Coordinator(
-      that,
-      frost_key,
-    );
-  }
-
-  late final _wire_devices_for_frost_key__method__CoordinatorPtr = _lookup<
-          ffi.NativeFunction<
-              WireSyncReturn Function(
-                  ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_FrostKey>)>>(
-      'wire_devices_for_frost_key__method__Coordinator');
-  late final _wire_devices_for_frost_key__method__Coordinator =
-      _wire_devices_for_frost_key__method__CoordinatorPtr.asFunction<
-          WireSyncReturn Function(
-              ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_FrostKey>)>();
-
-  WireSyncReturn wire_get_device__method__Coordinator(
-    ffi.Pointer<wire_Coordinator> that,
-    ffi.Pointer<wire_DeviceId> id,
-  ) {
-    return _wire_get_device__method__Coordinator(
-      that,
-      id,
-    );
-  }
-
-  late final _wire_get_device__method__CoordinatorPtr = _lookup<
-          ffi.NativeFunction<
-              WireSyncReturn Function(
-                  ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_DeviceId>)>>(
-      'wire_get_device__method__Coordinator');
-  late final _wire_get_device__method__Coordinator =
-      _wire_get_device__method__CoordinatorPtr.asFunction<
-          WireSyncReturn Function(
-              ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_DeviceId>)>();
 
   WireSyncReturn wire_nonces_available__method__Coordinator(
     ffi.Pointer<wire_Coordinator> that,
@@ -1206,6 +1212,16 @@ class NativeWire implements FlutterRustBridgeWireBase {
       _wire_try_restore_signing_session__method__CoordinatorPtr.asFunction<
           void Function(
               int, ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_KeyId>)>();
+
+  wire_ArcMutexVecPortDesc new_ArcMutexVecPortDesc() {
+    return _new_ArcMutexVecPortDesc();
+  }
+
+  late final _new_ArcMutexVecPortDescPtr =
+      _lookup<ffi.NativeFunction<wire_ArcMutexVecPortDesc Function()>>(
+          'new_ArcMutexVecPortDesc');
+  late final _new_ArcMutexVecPortDesc = _new_ArcMutexVecPortDescPtr
+      .asFunction<wire_ArcMutexVecPortDesc Function()>();
 
   wire_FfiCoordinator new_FfiCoordinator() {
     return _new_FfiCoordinator();
@@ -1300,6 +1316,16 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _new_box_autoadd_device_list_state_0 =
       _new_box_autoadd_device_list_state_0Ptr
           .asFunction<ffi.Pointer<wire_DeviceListState> Function()>();
+
+  ffi.Pointer<wire_FfiSerial> new_box_autoadd_ffi_serial_0() {
+    return _new_box_autoadd_ffi_serial_0();
+  }
+
+  late final _new_box_autoadd_ffi_serial_0Ptr =
+      _lookup<ffi.NativeFunction<ffi.Pointer<wire_FfiSerial> Function()>>(
+          'new_box_autoadd_ffi_serial_0');
+  late final _new_box_autoadd_ffi_serial_0 = _new_box_autoadd_ffi_serial_0Ptr
+      .asFunction<ffi.Pointer<wire_FfiSerial> Function()>();
 
   ffi.Pointer<wire_FrostKey> new_box_autoadd_frost_key_0() {
     return _new_box_autoadd_frost_key_0();
@@ -1472,6 +1498,37 @@ class NativeWire implements FlutterRustBridgeWireBase {
       'new_uint_8_list_0');
   late final _new_uint_8_list_0 = _new_uint_8_list_0Ptr
       .asFunction<ffi.Pointer<wire_uint_8_list> Function(int)>();
+
+  void drop_opaque_ArcMutexVecPortDesc(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _drop_opaque_ArcMutexVecPortDesc(
+      ptr,
+    );
+  }
+
+  late final _drop_opaque_ArcMutexVecPortDescPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+          'drop_opaque_ArcMutexVecPortDesc');
+  late final _drop_opaque_ArcMutexVecPortDesc =
+      _drop_opaque_ArcMutexVecPortDescPtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  ffi.Pointer<ffi.Void> share_opaque_ArcMutexVecPortDesc(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _share_opaque_ArcMutexVecPortDesc(
+      ptr,
+    );
+  }
+
+  late final _share_opaque_ArcMutexVecPortDescPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Void> Function(
+              ffi.Pointer<ffi.Void>)>>('share_opaque_ArcMutexVecPortDesc');
+  late final _share_opaque_ArcMutexVecPortDesc =
+      _share_opaque_ArcMutexVecPortDescPtr
+          .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
 
   void drop_opaque_FfiCoordinator(
     ffi.Pointer<ffi.Void> ptr,
@@ -1694,6 +1751,10 @@ final class wire_uint_8_list extends ffi.Struct {
   external int len;
 }
 
+final class wire_DeviceId extends ffi.Struct {
+  external ffi.Pointer<wire_uint_8_list> field0;
+}
+
 final class wire_KeyId extends ffi.Struct {
   external ffi.Pointer<wire_uint_8_list> field0;
 }
@@ -1746,10 +1807,6 @@ final class wire_PortBytesToRead extends ffi.Struct {
   external wire_PortBytesToReadSender ready;
 }
 
-final class wire_DeviceId extends ffi.Struct {
-  external ffi.Pointer<wire_uint_8_list> field0;
-}
-
 final class wire_list_device_id extends ffi.Struct {
   external ffi.Pointer<wire_DeviceId> ptr;
 
@@ -1796,12 +1853,12 @@ final class wire_DeviceListState extends ffi.Struct {
   external int state_id;
 }
 
-final class wire_FfiCoordinator extends ffi.Struct {
+final class wire_ArcMutexVecPortDesc extends ffi.Struct {
   external ffi.Pointer<ffi.Void> ptr;
 }
 
-final class wire_Coordinator extends ffi.Struct {
-  external wire_FfiCoordinator field0;
+final class wire_FfiSerial extends ffi.Struct {
+  external wire_ArcMutexVecPortDesc available_ports;
 }
 
 final class wire_PortDesc extends ffi.Struct {
@@ -1819,6 +1876,14 @@ final class wire_list_port_desc extends ffi.Struct {
 
   @ffi.Int32()
   external int len;
+}
+
+final class wire_FfiCoordinator extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_Coordinator extends ffi.Struct {
+  external wire_FfiCoordinator field0;
 }
 
 typedef DartPostCObjectFnType = ffi.Pointer<

@@ -55,7 +55,7 @@ class _SignMessageFormState extends State<SignMessageForm> {
 
   @override
   Widget build(BuildContext context) {
-    final devices = coord.devicesForFrostKey(frostKey: widget.frostKey);
+    final devices = widget.frostKey.devices();
     final buttonReady = selected.length == widget.frostKey.threshold() &&
         _messageController.text.isNotEmpty;
 
@@ -210,7 +210,7 @@ class DeviceSigningProgress extends StatelessWidget {
                     itemBuilder: (context, index) {
                       final Widget icon;
                       final id = state.neededFrom[index];
-                      final device = coord.getDevice(id: id);
+                      final device = api.getDevice(id: id);
                       if (gotShares.contains(device.id)) {
                         icon = AnimatedCheckCircle();
                       } else if (devicesPluggedIn.contains(device.id)) {

@@ -99,6 +99,14 @@ impl DeviceList {
         output
     }
 
+    pub fn get_device_name(&self, id: DeviceId) -> Option<&String> {
+        self.names.get(&id)
+    }
+
+    pub fn init_names(&mut self, names: HashMap<DeviceId, String>) {
+        self.names = names;
+    }
+
     fn index_of(&self, id: DeviceId) -> Option<usize> {
         self.devices
             .iter()

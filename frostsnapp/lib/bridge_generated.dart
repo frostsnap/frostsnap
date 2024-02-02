@@ -162,6 +162,24 @@ class NativeImpl implements Native {
         argNames: [],
       );
 
+  Device getDevice({required DeviceId id, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_device_id(id);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner.wire_get_device(arg0),
+      parseSuccessData: _wire2api_device,
+      parseErrorData: null,
+      constMeta: kGetDeviceConstMeta,
+      argValues: [id],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kGetDeviceConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "get_device",
+        argNames: ["id"],
+      );
+
   Future<Coordinator> newCoordinator({required String dbFile, dynamic hint}) {
     var arg0 = _platform.api2wire_String(dbFile);
     return _platform.executeNormal(FlutterRustBridgeTask(
@@ -179,6 +197,27 @@ class NativeImpl implements Native {
         debugName: "new_coordinator",
         argNames: ["dbFile"],
       );
+
+  Future<(Coordinator, FfiSerial)> newCoordinatorHostHandlesSerial(
+      {required String dbFile, dynamic hint}) {
+    var arg0 = _platform.api2wire_String(dbFile);
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) =>
+          _platform.inner.wire_new_coordinator_host_handles_serial(port_, arg0),
+      parseSuccessData: _wire2api___record__coordinator_ffi_serial,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kNewCoordinatorHostHandlesSerialConstMeta,
+      argValues: [dbFile],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kNewCoordinatorHostHandlesSerialConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "new_coordinator_host_handles_serial",
+            argNames: ["dbFile"],
+          );
 
   Future<KeyId> echoKeyId({required KeyId keyId, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_key_id(keyId);
@@ -249,6 +288,24 @@ class NativeImpl implements Native {
   FlutterRustBridgeTaskConstMeta get kNameMethodFrostKeyConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
         debugName: "name__method__FrostKey",
+        argNames: ["that"],
+      );
+
+  List<Device> devicesMethodFrostKey({required FrostKey that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_frost_key(that);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner.wire_devices__method__FrostKey(arg0),
+      parseSuccessData: _wire2api_list_device,
+      parseErrorData: null,
+      constMeta: kDevicesMethodFrostKeyConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kDevicesMethodFrostKeyConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "devices__method__FrostKey",
         argNames: ["that"],
       );
 
@@ -381,6 +438,28 @@ class NativeImpl implements Native {
             argNames: ["that"],
           );
 
+  Future<void> setAvailablePortsMethodFfiSerial(
+      {required FfiSerial that, required List<PortDesc> ports, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_ffi_serial(that);
+    var arg1 = _platform.api2wire_list_port_desc(ports);
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner
+          .wire_set_available_ports__method__FfiSerial(port_, arg0, arg1),
+      parseSuccessData: _wire2api_unit,
+      parseErrorData: null,
+      constMeta: kSetAvailablePortsMethodFfiSerialConstMeta,
+      argValues: [that, ports],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kSetAvailablePortsMethodFfiSerialConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "set_available_ports__method__FfiSerial",
+            argNames: ["that", "ports"],
+          );
+
   Future<void> startThreadMethodCoordinator(
       {required Coordinator that, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
@@ -400,52 +479,6 @@ class NativeImpl implements Native {
         debugName: "start_thread__method__Coordinator",
         argNames: ["that"],
       );
-
-  Future<void> announceAvailablePortsMethodCoordinator(
-      {required Coordinator that,
-      required List<PortDesc> ports,
-      dynamic hint}) {
-    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
-    var arg1 = _platform.api2wire_list_port_desc(ports);
-    return _platform.executeNormal(FlutterRustBridgeTask(
-      callFfi: (port_) => _platform.inner
-          .wire_announce_available_ports__method__Coordinator(
-              port_, arg0, arg1),
-      parseSuccessData: _wire2api_unit,
-      parseErrorData: null,
-      constMeta: kAnnounceAvailablePortsMethodCoordinatorConstMeta,
-      argValues: [that, ports],
-      hint: hint,
-    ));
-  }
-
-  FlutterRustBridgeTaskConstMeta
-      get kAnnounceAvailablePortsMethodCoordinatorConstMeta =>
-          const FlutterRustBridgeTaskConstMeta(
-            debugName: "announce_available_ports__method__Coordinator",
-            argNames: ["that", "ports"],
-          );
-
-  Future<void> switchToHostHandlesSerialMethodCoordinator(
-      {required Coordinator that, dynamic hint}) {
-    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
-    return _platform.executeNormal(FlutterRustBridgeTask(
-      callFfi: (port_) => _platform.inner
-          .wire_switch_to_host_handles_serial__method__Coordinator(port_, arg0),
-      parseSuccessData: _wire2api_unit,
-      parseErrorData: null,
-      constMeta: kSwitchToHostHandlesSerialMethodCoordinatorConstMeta,
-      argValues: [that],
-      hint: hint,
-    ));
-  }
-
-  FlutterRustBridgeTaskConstMeta
-      get kSwitchToHostHandlesSerialMethodCoordinatorConstMeta =>
-          const FlutterRustBridgeTaskConstMeta(
-            debugName: "switch_to_host_handles_serial__method__Coordinator",
-            argNames: ["that"],
-          );
 
   Future<void> updateNamePreviewMethodCoordinator(
       {required Coordinator that,
@@ -540,27 +573,6 @@ class NativeImpl implements Native {
         argNames: ["that"],
       );
 
-  Future<List<DeviceId>> registeredDevicesMethodCoordinator(
-      {required Coordinator that, dynamic hint}) {
-    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
-    return _platform.executeNormal(FlutterRustBridgeTask(
-      callFfi: (port_) => _platform.inner
-          .wire_registered_devices__method__Coordinator(port_, arg0),
-      parseSuccessData: _wire2api_list_device_id,
-      parseErrorData: null,
-      constMeta: kRegisteredDevicesMethodCoordinatorConstMeta,
-      argValues: [that],
-      hint: hint,
-    ));
-  }
-
-  FlutterRustBridgeTaskConstMeta
-      get kRegisteredDevicesMethodCoordinatorConstMeta =>
-          const FlutterRustBridgeTaskConstMeta(
-            debugName: "registered_devices__method__Coordinator",
-            argNames: ["that"],
-          );
-
   KeyState keyStateMethodCoordinator(
       {required Coordinator that, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
@@ -649,49 +661,6 @@ class NativeImpl implements Native {
             debugName: "get_signing_state__method__Coordinator",
             argNames: ["that"],
           );
-
-  List<Device> devicesForFrostKeyMethodCoordinator(
-      {required Coordinator that, required FrostKey frostKey, dynamic hint}) {
-    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
-    var arg1 = _platform.api2wire_box_autoadd_frost_key(frostKey);
-    return _platform.executeSync(FlutterRustBridgeSyncTask(
-      callFfi: () => _platform.inner
-          .wire_devices_for_frost_key__method__Coordinator(arg0, arg1),
-      parseSuccessData: _wire2api_list_device,
-      parseErrorData: null,
-      constMeta: kDevicesForFrostKeyMethodCoordinatorConstMeta,
-      argValues: [that, frostKey],
-      hint: hint,
-    ));
-  }
-
-  FlutterRustBridgeTaskConstMeta
-      get kDevicesForFrostKeyMethodCoordinatorConstMeta =>
-          const FlutterRustBridgeTaskConstMeta(
-            debugName: "devices_for_frost_key__method__Coordinator",
-            argNames: ["that", "frostKey"],
-          );
-
-  Device getDeviceMethodCoordinator(
-      {required Coordinator that, required DeviceId id, dynamic hint}) {
-    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
-    var arg1 = _platform.api2wire_box_autoadd_device_id(id);
-    return _platform.executeSync(FlutterRustBridgeSyncTask(
-      callFfi: () =>
-          _platform.inner.wire_get_device__method__Coordinator(arg0, arg1),
-      parseSuccessData: _wire2api_device,
-      parseErrorData: null,
-      constMeta: kGetDeviceMethodCoordinatorConstMeta,
-      argValues: [that, id],
-      hint: hint,
-    ));
-  }
-
-  FlutterRustBridgeTaskConstMeta get kGetDeviceMethodCoordinatorConstMeta =>
-      const FlutterRustBridgeTaskConstMeta(
-        debugName: "get_device__method__Coordinator",
-        argNames: ["that", "id"],
-      );
 
   int noncesAvailableMethodCoordinator(
       {required Coordinator that, required DeviceId id, dynamic hint}) {
@@ -786,6 +755,13 @@ class NativeImpl implements Native {
             argNames: ["that", "keyId"],
           );
 
+  DropFnType get dropOpaqueArcMutexVecPortDesc =>
+      _platform.inner.drop_opaque_ArcMutexVecPortDesc;
+  ShareFnType get shareOpaqueArcMutexVecPortDesc =>
+      _platform.inner.share_opaque_ArcMutexVecPortDesc;
+  OpaqueTypeFinalizer get ArcMutexVecPortDescFinalizer =>
+      _platform.ArcMutexVecPortDescFinalizer;
+
   DropFnType get dropOpaqueFfiCoordinator =>
       _platform.inner.drop_opaque_FfiCoordinator;
   ShareFnType get shareOpaqueFfiCoordinator =>
@@ -833,6 +809,10 @@ class NativeImpl implements Native {
   }
 // Section: wire2api
 
+  ArcMutexVecPortDesc _wire2api_ArcMutexVecPortDesc(dynamic raw) {
+    return ArcMutexVecPortDesc.fromRaw(raw[0], raw[1], this);
+  }
+
   FfiCoordinator _wire2api_FfiCoordinator(dynamic raw) {
     return FfiCoordinator.fromRaw(raw[0], raw[1], this);
   }
@@ -864,6 +844,18 @@ class NativeImpl implements Native {
 
   String _wire2api_String(dynamic raw) {
     return raw as String;
+  }
+
+  (Coordinator, FfiSerial) _wire2api___record__coordinator_ffi_serial(
+      dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2) {
+      throw Exception('Expected 2 elements, got ${arr.length}');
+    }
+    return (
+      _wire2api_coordinator(arr[0]),
+      _wire2api_ffi_serial(arr[1]),
+    );
   }
 
   bool _wire2api_bool(dynamic raw) {
@@ -1001,6 +993,16 @@ class NativeImpl implements Native {
       throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
     return EncodedSignature(
       field0: _wire2api_u8_array_64(arr[0]),
+    );
+  }
+
+  FfiSerial _wire2api_ffi_serial(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return FfiSerial(
+      bridge: this,
+      availablePorts: _wire2api_ArcMutexVecPortDesc(arr[0]),
     );
   }
 

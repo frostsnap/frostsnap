@@ -14,6 +14,7 @@ Future<T?> showDeviceActionDialog<T>({
       barrierDismissible: false,
       context: context,
       builder: (dialogContext) {
+        debugPrint("started building device action dialog");
         complete.then((result) {
           if (dialogContext.mounted) {
             Navigator.pop(dialogContext, result);
@@ -26,7 +27,7 @@ Future<T?> showDeviceActionDialog<T>({
             }
           }
         });
-        return AlertDialog(
+        final dialog = AlertDialog(
             content: Container(
                 width: Platform.isAndroid ? double.maxFinite : 400.0,
                 // this align thing is necessary to stop the child from expanding beyond its BoxConstraints
@@ -40,6 +41,8 @@ Future<T?> showDeviceActionDialog<T>({
                   },
                   child: const Text("Cancel"))
             ]);
+        debugPrint("finished building device action dialog");
+        return dialog;
       });
 }
 

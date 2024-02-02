@@ -47,9 +47,18 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kDeviceListStateConstMeta;
 
+  Device getDevice({required DeviceId id, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kGetDeviceConstMeta;
+
   Future<Coordinator> newCoordinator({required String dbFile, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kNewCoordinatorConstMeta;
+
+  Future<(Coordinator, FfiSerial)> newCoordinatorHostHandlesSerial(
+      {required String dbFile, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kNewCoordinatorHostHandlesSerialConstMeta;
 
   Future<KeyId> echoKeyId({required KeyId keyId, dynamic hint});
 
@@ -66,6 +75,10 @@ abstract class Native {
   String nameMethodFrostKey({required FrostKey that, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kNameMethodFrostKeyConstMeta;
+
+  List<Device> devicesMethodFrostKey({required FrostKey that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kDevicesMethodFrostKeyConstMeta;
 
   Future<void> satisfyMethodPortOpen(
       {required PortOpen that, String? err, dynamic hint});
@@ -100,22 +113,15 @@ abstract class Native {
   FlutterRustBridgeTaskConstMeta
       get kNamedDevicesMethodDeviceListStateConstMeta;
 
+  Future<void> setAvailablePortsMethodFfiSerial(
+      {required FfiSerial that, required List<PortDesc> ports, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kSetAvailablePortsMethodFfiSerialConstMeta;
+
   Future<void> startThreadMethodCoordinator(
       {required Coordinator that, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kStartThreadMethodCoordinatorConstMeta;
-
-  Future<void> announceAvailablePortsMethodCoordinator(
-      {required Coordinator that, required List<PortDesc> ports, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta
-      get kAnnounceAvailablePortsMethodCoordinatorConstMeta;
-
-  Future<void> switchToHostHandlesSerialMethodCoordinator(
-      {required Coordinator that, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta
-      get kSwitchToHostHandlesSerialMethodCoordinatorConstMeta;
 
   Future<void> updateNamePreviewMethodCoordinator(
       {required Coordinator that,
@@ -144,12 +150,6 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kCancelAllMethodCoordinatorConstMeta;
 
-  Future<List<DeviceId>> registeredDevicesMethodCoordinator(
-      {required Coordinator that, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta
-      get kRegisteredDevicesMethodCoordinatorConstMeta;
-
   KeyState keyStateMethodCoordinator({required Coordinator that, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kKeyStateMethodCoordinatorConstMeta;
@@ -172,17 +172,6 @@ abstract class Native {
       {required Coordinator that, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kGetSigningStateMethodCoordinatorConstMeta;
-
-  List<Device> devicesForFrostKeyMethodCoordinator(
-      {required Coordinator that, required FrostKey frostKey, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta
-      get kDevicesForFrostKeyMethodCoordinatorConstMeta;
-
-  Device getDeviceMethodCoordinator(
-      {required Coordinator that, required DeviceId id, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kGetDeviceMethodCoordinatorConstMeta;
 
   int noncesAvailableMethodCoordinator(
       {required Coordinator that, required DeviceId id, dynamic hint});
@@ -209,6 +198,10 @@ abstract class Native {
   FlutterRustBridgeTaskConstMeta
       get kTryRestoreSigningSessionMethodCoordinatorConstMeta;
 
+  DropFnType get dropOpaqueArcMutexVecPortDesc;
+  ShareFnType get shareOpaqueArcMutexVecPortDesc;
+  OpaqueTypeFinalizer get ArcMutexVecPortDescFinalizer;
+
   DropFnType get dropOpaqueFfiCoordinator;
   ShareFnType get shareOpaqueFfiCoordinator;
   OpaqueTypeFinalizer get FfiCoordinatorFinalizer;
@@ -232,6 +225,22 @@ abstract class Native {
   DropFnType get dropOpaquePortWriteSender;
   ShareFnType get shareOpaquePortWriteSender;
   OpaqueTypeFinalizer get PortWriteSenderFinalizer;
+}
+
+@sealed
+class ArcMutexVecPortDesc extends FrbOpaque {
+  final Native bridge;
+  ArcMutexVecPortDesc.fromRaw(int ptr, int size, this.bridge)
+      : super.unsafe(ptr, size);
+  @override
+  DropFnType get dropFn => bridge.dropOpaqueArcMutexVecPortDesc;
+
+  @override
+  ShareFnType get shareFn => bridge.shareOpaqueArcMutexVecPortDesc;
+
+  @override
+  OpaqueTypeFinalizer get staticFinalizer =>
+      bridge.ArcMutexVecPortDescFinalizer;
 }
 
 @sealed
@@ -342,18 +351,6 @@ class Coordinator {
         that: this,
       );
 
-  Future<void> announceAvailablePorts(
-          {required List<PortDesc> ports, dynamic hint}) =>
-      bridge.announceAvailablePortsMethodCoordinator(
-        that: this,
-        ports: ports,
-      );
-
-  Future<void> switchToHostHandlesSerial({dynamic hint}) =>
-      bridge.switchToHostHandlesSerialMethodCoordinator(
-        that: this,
-      );
-
   Future<void> updateNamePreview(
           {required DeviceId id, required String name, dynamic hint}) =>
       bridge.updateNamePreviewMethodCoordinator(
@@ -377,11 +374,6 @@ class Coordinator {
       );
 
   Future<void> cancelAll({dynamic hint}) => bridge.cancelAllMethodCoordinator(
-        that: this,
-      );
-
-  Future<List<DeviceId>> registeredDevices({dynamic hint}) =>
-      bridge.registeredDevicesMethodCoordinator(
         that: this,
       );
 
@@ -410,18 +402,6 @@ class Coordinator {
   SigningState? getSigningState({dynamic hint}) =>
       bridge.getSigningStateMethodCoordinator(
         that: this,
-      );
-
-  List<Device> devicesForFrostKey({required FrostKey frostKey, dynamic hint}) =>
-      bridge.devicesForFrostKeyMethodCoordinator(
-        that: this,
-        frostKey: frostKey,
-      );
-
-  Device getDevice({required DeviceId id, dynamic hint}) =>
-      bridge.getDeviceMethodCoordinator(
-        that: this,
-        id: id,
       );
 
   int noncesAvailable({required DeviceId id, dynamic hint}) =>
@@ -542,6 +522,23 @@ class EncodedSignature {
   });
 }
 
+class FfiSerial {
+  final Native bridge;
+  final ArcMutexVecPortDesc availablePorts;
+
+  const FfiSerial({
+    required this.bridge,
+    required this.availablePorts,
+  });
+
+  Future<void> setAvailablePorts(
+          {required List<PortDesc> ports, dynamic hint}) =>
+      bridge.setAvailablePortsMethodFfiSerial(
+        that: this,
+        ports: ports,
+      );
+}
+
 class FrostKey {
   final Native bridge;
   final FrostsnapCoreCoordinatorFrostKeyState field0;
@@ -560,6 +557,10 @@ class FrostKey {
       );
 
   String name({dynamic hint}) => bridge.nameMethodFrostKey(
+        that: this,
+      );
+
+  List<Device> devices({dynamic hint}) => bridge.devicesMethodFrostKey(
         that: this,
       );
 }

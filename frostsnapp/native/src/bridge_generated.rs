@@ -128,6 +128,19 @@ fn wire_device_list_state_impl() -> support::WireSyncReturn {
         move || Result::<_, ()>::Ok(device_list_state()),
     )
 }
+fn wire_get_device_impl(id: impl Wire2Api<DeviceId> + UnwindSafe) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "get_device",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_id = id.wire2api();
+            Result::<_, ()>::Ok(get_device(api_id))
+        },
+    )
+}
 fn wire_new_coordinator_impl(port_: MessagePort, db_file: impl Wire2Api<String> + UnwindSafe) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, Coordinator, _>(
         WrapInfo {
@@ -138,6 +151,22 @@ fn wire_new_coordinator_impl(port_: MessagePort, db_file: impl Wire2Api<String> 
         move || {
             let api_db_file = db_file.wire2api();
             move |task_callback| new_coordinator(api_db_file)
+        },
+    )
+}
+fn wire_new_coordinator_host_handles_serial_impl(
+    port_: MessagePort,
+    db_file: impl Wire2Api<String> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (Coordinator, FfiSerial), _>(
+        WrapInfo {
+            debug_name: "new_coordinator_host_handles_serial",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_db_file = db_file.wire2api();
+            move |task_callback| new_coordinator_host_handles_serial(api_db_file)
         },
     )
 }
@@ -196,6 +225,21 @@ fn wire_name__method__FrostKey_impl(
         move || {
             let api_that = that.wire2api();
             Result::<_, ()>::Ok(FrostKey::name(&api_that))
+        },
+    )
+}
+fn wire_devices__method__FrostKey_impl(
+    that: impl Wire2Api<FrostKey> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "devices__method__FrostKey",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            Result::<_, ()>::Ok(FrostKey::devices(&api_that))
         },
     )
 }
@@ -307,6 +351,26 @@ fn wire_named_devices__method__DeviceListState_impl(
         },
     )
 }
+fn wire_set_available_ports__method__FfiSerial_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<FfiSerial> + UnwindSafe,
+    ports: impl Wire2Api<Vec<PortDesc>> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "set_available_ports__method__FfiSerial",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_ports = ports.wire2api();
+            move |task_callback| {
+                Result::<_, ()>::Ok(FfiSerial::set_available_ports(&api_that, api_ports))
+            }
+        },
+    )
+}
 fn wire_start_thread__method__Coordinator_impl(
     port_: MessagePort,
     that: impl Wire2Api<Coordinator> + UnwindSafe,
@@ -320,44 +384,6 @@ fn wire_start_thread__method__Coordinator_impl(
         move || {
             let api_that = that.wire2api();
             move |task_callback| Coordinator::start_thread(&api_that)
-        },
-    )
-}
-fn wire_announce_available_ports__method__Coordinator_impl(
-    port_: MessagePort,
-    that: impl Wire2Api<Coordinator> + UnwindSafe,
-    ports: impl Wire2Api<Vec<PortDesc>> + UnwindSafe,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
-        WrapInfo {
-            debug_name: "announce_available_ports__method__Coordinator",
-            port: Some(port_),
-            mode: FfiCallMode::Normal,
-        },
-        move || {
-            let api_that = that.wire2api();
-            let api_ports = ports.wire2api();
-            move |task_callback| {
-                Result::<_, ()>::Ok(Coordinator::announce_available_ports(&api_that, api_ports))
-            }
-        },
-    )
-}
-fn wire_switch_to_host_handles_serial__method__Coordinator_impl(
-    port_: MessagePort,
-    that: impl Wire2Api<Coordinator> + UnwindSafe,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
-        WrapInfo {
-            debug_name: "switch_to_host_handles_serial__method__Coordinator",
-            port: Some(port_),
-            mode: FfiCallMode::Normal,
-        },
-        move || {
-            let api_that = that.wire2api();
-            move |task_callback| {
-                Result::<_, ()>::Ok(Coordinator::switch_to_host_handles_serial(&api_that))
-            }
         },
     )
 }
@@ -441,22 +467,6 @@ fn wire_cancel_all__method__Coordinator_impl(
         },
     )
 }
-fn wire_registered_devices__method__Coordinator_impl(
-    port_: MessagePort,
-    that: impl Wire2Api<Coordinator> + UnwindSafe,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, Vec<mirror_DeviceId>, _>(
-        WrapInfo {
-            debug_name: "registered_devices__method__Coordinator",
-            port: Some(port_),
-            mode: FfiCallMode::Normal,
-        },
-        move || {
-            let api_that = that.wire2api();
-            move |task_callback| Result::<_, ()>::Ok(Coordinator::registered_devices(&api_that))
-        },
-    )
-}
 fn wire_key_state__method__Coordinator_impl(
     that: impl Wire2Api<Coordinator> + UnwindSafe,
 ) -> support::WireSyncReturn {
@@ -531,40 +541,6 @@ fn wire_get_signing_state__method__Coordinator_impl(
         move || {
             let api_that = that.wire2api();
             Result::<_, ()>::Ok(Coordinator::get_signing_state(&api_that))
-        },
-    )
-}
-fn wire_devices_for_frost_key__method__Coordinator_impl(
-    that: impl Wire2Api<Coordinator> + UnwindSafe,
-    frost_key: impl Wire2Api<FrostKey> + UnwindSafe,
-) -> support::WireSyncReturn {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
-        WrapInfo {
-            debug_name: "devices_for_frost_key__method__Coordinator",
-            port: None,
-            mode: FfiCallMode::Sync,
-        },
-        move || {
-            let api_that = that.wire2api();
-            let api_frost_key = frost_key.wire2api();
-            Result::<_, ()>::Ok(Coordinator::devices_for_frost_key(&api_that, api_frost_key))
-        },
-    )
-}
-fn wire_get_device__method__Coordinator_impl(
-    that: impl Wire2Api<Coordinator> + UnwindSafe,
-    id: impl Wire2Api<DeviceId> + UnwindSafe,
-) -> support::WireSyncReturn {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
-        WrapInfo {
-            debug_name: "get_device__method__Coordinator",
-            port: None,
-            mode: FfiCallMode::Sync,
-        },
-        move || {
-            let api_that = that.wire2api();
-            let api_id = id.wire2api();
-            Result::<_, ()>::Ok(Coordinator::get_device(&api_that, api_id))
         },
     )
 }
@@ -896,6 +872,18 @@ impl support::IntoDartExceptPrimitive for mirror_EncodedSignature {}
 impl rust2dart::IntoIntoDart<mirror_EncodedSignature> for EncodedSignature {
     fn into_into_dart(self) -> mirror_EncodedSignature {
         mirror_EncodedSignature(self)
+    }
+}
+
+impl support::IntoDart for FfiSerial {
+    fn into_dart(self) -> support::DartAbi {
+        vec![self.available_ports.into_dart()].into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for FfiSerial {}
+impl rust2dart::IntoIntoDart<FfiSerial> for FfiSerial {
+    fn into_into_dart(self) -> Self {
+        self
     }
 }
 

@@ -88,7 +88,7 @@ fn process_outbox(
     while let Some(message) = outbox.pop_front() {
         match message {
             CoordinatorSend::ToDevice(core_message) => {
-                ports.queue_in_port_outbox(CoordinatorSendMessage {
+                ports.usb_sender().send(CoordinatorSendMessage {
                     target_destinations: Destination::Particular(
                         core_message.default_destinations(),
                     ),
@@ -142,7 +142,8 @@ fn process_outbox(
                 CoordinatorToStorageMessage::StoreSigningState(_) => {
                     /* we don't persist this on the cli */
                 }
-                CoordinatorToStorageMessage::UpdateFrostKey(key) => {
+                CoordinatorToStorageMessage::UpdateFrostKey(key)
+                | CoordinatorToStorageMessage::NewKey(key) => {
                     db.save(db::State {
                         key,
                         device_labels: ports.device_labels().clone(),
@@ -239,7 +240,7 @@ fn main() -> anyhow::Result<()> {
                             let mut line = String::new();
                             std::io::stdin().read_line(&mut line)?;
                             line.pop();
-                            ports.finish_naming(id, &line);
+                            ports.usb_sender().finish_naming(id, &line);
                             eprintln!("Confirm name {line} on device");
                             waiting_for_name_ack.insert(id);
                         }
@@ -296,7 +297,7 @@ fn main() -> anyhow::Result<()> {
                     coordinator.do_keygen(&keygen_devices, threshold)?,
                 ),
             };
-            ports.queue_in_port_outbox(do_keygen_message);
+            ports.usb_sender().send(do_keygen_message);
 
             let mut outbox = VecDeque::new();
             loop {

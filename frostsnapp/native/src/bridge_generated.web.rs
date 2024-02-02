@@ -42,8 +42,18 @@ pub fn wire_device_list_state() -> support::WireSyncReturn {
 }
 
 #[wasm_bindgen]
+pub fn wire_get_device(id: JsValue) -> support::WireSyncReturn {
+    wire_get_device_impl(id)
+}
+
+#[wasm_bindgen]
 pub fn wire_new_coordinator(port_: MessagePort, db_file: String) {
     wire_new_coordinator_impl(port_, db_file)
+}
+
+#[wasm_bindgen]
+pub fn wire_new_coordinator_host_handles_serial(port_: MessagePort, db_file: String) {
+    wire_new_coordinator_host_handles_serial_impl(port_, db_file)
 }
 
 #[wasm_bindgen]
@@ -64,6 +74,11 @@ pub fn wire_id__method__FrostKey(that: JsValue) -> support::WireSyncReturn {
 #[wasm_bindgen]
 pub fn wire_name__method__FrostKey(that: JsValue) -> support::WireSyncReturn {
     wire_name__method__FrostKey_impl(that)
+}
+
+#[wasm_bindgen]
+pub fn wire_devices__method__FrostKey(that: JsValue) -> support::WireSyncReturn {
+    wire_devices__method__FrostKey_impl(that)
 }
 
 #[wasm_bindgen]
@@ -106,22 +121,17 @@ pub fn wire_named_devices__method__DeviceListState(that: JsValue) -> support::Wi
 }
 
 #[wasm_bindgen]
-pub fn wire_start_thread__method__Coordinator(port_: MessagePort, that: JsValue) {
-    wire_start_thread__method__Coordinator_impl(port_, that)
-}
-
-#[wasm_bindgen]
-pub fn wire_announce_available_ports__method__Coordinator(
+pub fn wire_set_available_ports__method__FfiSerial(
     port_: MessagePort,
     that: JsValue,
     ports: JsValue,
 ) {
-    wire_announce_available_ports__method__Coordinator_impl(port_, that, ports)
+    wire_set_available_ports__method__FfiSerial_impl(port_, that, ports)
 }
 
 #[wasm_bindgen]
-pub fn wire_switch_to_host_handles_serial__method__Coordinator(port_: MessagePort, that: JsValue) {
-    wire_switch_to_host_handles_serial__method__Coordinator_impl(port_, that)
+pub fn wire_start_thread__method__Coordinator(port_: MessagePort, that: JsValue) {
+    wire_start_thread__method__Coordinator_impl(port_, that)
 }
 
 #[wasm_bindgen]
@@ -155,11 +165,6 @@ pub fn wire_cancel_all__method__Coordinator(port_: MessagePort, that: JsValue) {
 }
 
 #[wasm_bindgen]
-pub fn wire_registered_devices__method__Coordinator(port_: MessagePort, that: JsValue) {
-    wire_registered_devices__method__Coordinator_impl(port_, that)
-}
-
-#[wasm_bindgen]
 pub fn wire_key_state__method__Coordinator(that: JsValue) -> support::WireSyncReturn {
     wire_key_state__method__Coordinator_impl(that)
 }
@@ -186,19 +191,6 @@ pub fn wire_start_signing__method__Coordinator(
 #[wasm_bindgen]
 pub fn wire_get_signing_state__method__Coordinator(that: JsValue) -> support::WireSyncReturn {
     wire_get_signing_state__method__Coordinator_impl(that)
-}
-
-#[wasm_bindgen]
-pub fn wire_devices_for_frost_key__method__Coordinator(
-    that: JsValue,
-    frost_key: JsValue,
-) -> support::WireSyncReturn {
-    wire_devices_for_frost_key__method__Coordinator_impl(that, frost_key)
-}
-
-#[wasm_bindgen]
-pub fn wire_get_device__method__Coordinator(that: JsValue, id: JsValue) -> support::WireSyncReturn {
-    wire_get_device__method__Coordinator_impl(that, id)
 }
 
 #[wasm_bindgen]
@@ -239,6 +231,21 @@ pub fn wire_try_restore_signing_session__method__Coordinator(
 // Section: allocate functions
 
 // Section: related functions
+
+#[wasm_bindgen]
+pub fn drop_opaque_ArcMutexVecPortDesc(ptr: *const c_void) {
+    unsafe {
+        Arc::<Arc<Mutex<Vec<PortDesc>>>>::decrement_strong_count(ptr as _);
+    }
+}
+
+#[wasm_bindgen]
+pub fn share_opaque_ArcMutexVecPortDesc(ptr: *const c_void) -> *const c_void {
+    unsafe {
+        Arc::<Arc<Mutex<Vec<PortDesc>>>>::increment_strong_count(ptr as _);
+        ptr
+    }
+}
 
 #[wasm_bindgen]
 pub fn drop_opaque_FfiCoordinator(ptr: *const c_void) {
@@ -402,6 +409,20 @@ impl Wire2Api<EncodedSignature> for JsValue {
             self_.length()
         );
         EncodedSignature(self_.get(0).wire2api())
+    }
+}
+impl Wire2Api<FfiSerial> for JsValue {
+    fn wire2api(self) -> FfiSerial {
+        let self_ = self.dyn_into::<JsArray>().unwrap();
+        assert_eq!(
+            self_.length(),
+            1,
+            "Expected 1 elements, got {}",
+            self_.length()
+        );
+        FfiSerial {
+            available_ports: self_.get(0).wire2api(),
+        }
     }
 }
 impl Wire2Api<FrostKey> for JsValue {
@@ -622,6 +643,16 @@ where
 {
     fn wire2api(self) -> Option<T> {
         (!self.is_null() && !self.is_undefined()).then(|| self.wire2api())
+    }
+}
+impl Wire2Api<RustOpaque<Arc<Mutex<Vec<PortDesc>>>>> for JsValue {
+    fn wire2api(self) -> RustOpaque<Arc<Mutex<Vec<PortDesc>>>> {
+        #[cfg(target_pointer_width = "64")]
+        {
+            compile_error!("64-bit pointers are not supported.");
+        }
+
+        unsafe { support::opaque_from_dart((self.as_f64().unwrap() as usize) as _) }
     }
 }
 impl Wire2Api<RustOpaque<FfiCoordinator>> for JsValue {

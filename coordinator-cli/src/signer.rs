@@ -182,7 +182,7 @@ impl<'a, 'b> Signer<'a, 'b> {
             }
 
             if let Some(send_message) = dispatcher.resend_sign_request() {
-                self.ports.queue_in_port_outbox(send_message);
+                self.ports.usb_sender().send(send_message);
             }
         };
 

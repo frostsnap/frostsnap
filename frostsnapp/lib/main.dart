@@ -21,15 +21,16 @@ void main() async {
   try {
     final appDir = await getApplicationSupportDirectory();
     final dbFile = '${appDir.path}/frostsnap.db';
-    coord = await api.newCoordinator(dbFile: dbFile);
-    globalHostPortHandler = HostPortHandler();
-
     if (Platform.isAndroid) {
+      final (_coord, ffiserial) =
+          await api.newCoordinatorHostHandlesSerial(dbFile: dbFile);
+      globalHostPortHandler = HostPortHandler(ffiserial);
+      coord = _coord;
       api.turnLogcatLoggingOn(level: Level.Debug);
-      coord.switchToHostHandlesSerial();
       // check for devices that were plugged in before the app even started
       globalHostPortHandler.scanDevices();
     } else {
+      coord = await api.newCoordinator(dbFile: dbFile);
       api.turnStderrLoggingOn(level: Level.Debug);
     }
 

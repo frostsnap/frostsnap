@@ -33,6 +33,10 @@ typedef struct wire_uint_8_list {
   int32_t len;
 } wire_uint_8_list;
 
+typedef struct wire_DeviceId {
+  struct wire_uint_8_list *field0;
+} wire_DeviceId;
+
 typedef struct wire_KeyId {
   struct wire_uint_8_list *field0;
 } wire_KeyId;
@@ -76,10 +80,6 @@ typedef struct wire_PortBytesToRead {
   struct wire_PortBytesToReadSender ready;
 } wire_PortBytesToRead;
 
-typedef struct wire_DeviceId {
-  struct wire_uint_8_list *field0;
-} wire_DeviceId;
-
 typedef struct wire_list_device_id {
   struct wire_DeviceId *ptr;
   int32_t len;
@@ -115,13 +115,13 @@ typedef struct wire_DeviceListState {
   uintptr_t state_id;
 } wire_DeviceListState;
 
-typedef struct wire_FfiCoordinator {
+typedef struct wire_ArcMutexVecPortDesc {
   const void *ptr;
-} wire_FfiCoordinator;
+} wire_ArcMutexVecPortDesc;
 
-typedef struct wire_Coordinator {
-  struct wire_FfiCoordinator field0;
-} wire_Coordinator;
+typedef struct wire_FfiSerial {
+  struct wire_ArcMutexVecPortDesc available_ports;
+} wire_FfiSerial;
 
 typedef struct wire_PortDesc {
   struct wire_uint_8_list *id;
@@ -133,6 +133,14 @@ typedef struct wire_list_port_desc {
   struct wire_PortDesc *ptr;
   int32_t len;
 } wire_list_port_desc;
+
+typedef struct wire_FfiCoordinator {
+  const void *ptr;
+} wire_FfiCoordinator;
+
+typedef struct wire_Coordinator {
+  struct wire_FfiCoordinator field0;
+} wire_Coordinator;
 
 void store_dart_post_cobject(DartPostCObjectFnType ptr);
 
@@ -160,7 +168,11 @@ WireSyncReturn wire_device_at_index(uintptr_t index);
 
 WireSyncReturn wire_device_list_state(void);
 
+WireSyncReturn wire_get_device(struct wire_DeviceId *id);
+
 void wire_new_coordinator(int64_t port_, struct wire_uint_8_list *db_file);
+
+void wire_new_coordinator_host_handles_serial(int64_t port_, struct wire_uint_8_list *db_file);
 
 void wire_echo_key_id(int64_t port_, struct wire_KeyId *key_id);
 
@@ -169,6 +181,8 @@ WireSyncReturn wire_threshold__method__FrostKey(struct wire_FrostKey *that);
 WireSyncReturn wire_id__method__FrostKey(struct wire_FrostKey *that);
 
 WireSyncReturn wire_name__method__FrostKey(struct wire_FrostKey *that);
+
+WireSyncReturn wire_devices__method__FrostKey(struct wire_FrostKey *that);
 
 void wire_satisfy__method__PortOpen(int64_t port_,
                                     struct wire_PortOpen *that,
@@ -191,14 +205,11 @@ WireSyncReturn wire_is_finished__method__SigningState(struct wire_SigningState *
 
 WireSyncReturn wire_named_devices__method__DeviceListState(struct wire_DeviceListState *that);
 
+void wire_set_available_ports__method__FfiSerial(int64_t port_,
+                                                 struct wire_FfiSerial *that,
+                                                 struct wire_list_port_desc *ports);
+
 void wire_start_thread__method__Coordinator(int64_t port_, struct wire_Coordinator *that);
-
-void wire_announce_available_ports__method__Coordinator(int64_t port_,
-                                                        struct wire_Coordinator *that,
-                                                        struct wire_list_port_desc *ports);
-
-void wire_switch_to_host_handles_serial__method__Coordinator(int64_t port_,
-                                                             struct wire_Coordinator *that);
 
 void wire_update_name_preview__method__Coordinator(int64_t port_,
                                                    struct wire_Coordinator *that,
@@ -216,8 +227,6 @@ void wire_send_cancel__method__Coordinator(int64_t port_,
 
 void wire_cancel_all__method__Coordinator(int64_t port_, struct wire_Coordinator *that);
 
-void wire_registered_devices__method__Coordinator(int64_t port_, struct wire_Coordinator *that);
-
 WireSyncReturn wire_key_state__method__Coordinator(struct wire_Coordinator *that);
 
 WireSyncReturn wire_get_key__method__Coordinator(struct wire_Coordinator *that,
@@ -230,12 +239,6 @@ void wire_start_signing__method__Coordinator(int64_t port_,
                                              struct wire_uint_8_list *message);
 
 WireSyncReturn wire_get_signing_state__method__Coordinator(struct wire_Coordinator *that);
-
-WireSyncReturn wire_devices_for_frost_key__method__Coordinator(struct wire_Coordinator *that,
-                                                               struct wire_FrostKey *frost_key);
-
-WireSyncReturn wire_get_device__method__Coordinator(struct wire_Coordinator *that,
-                                                    struct wire_DeviceId *id);
 
 WireSyncReturn wire_nonces_available__method__Coordinator(struct wire_Coordinator *that,
                                                           struct wire_DeviceId *id);
@@ -251,6 +254,8 @@ WireSyncReturn wire_can_restore_signing_session__method__Coordinator(struct wire
 void wire_try_restore_signing_session__method__Coordinator(int64_t port_,
                                                            struct wire_Coordinator *that,
                                                            struct wire_KeyId *key_id);
+
+struct wire_ArcMutexVecPortDesc new_ArcMutexVecPortDesc(void);
 
 struct wire_FfiCoordinator new_FfiCoordinator(void);
 
@@ -269,6 +274,8 @@ struct wire_Coordinator *new_box_autoadd_coordinator_0(void);
 struct wire_DeviceId *new_box_autoadd_device_id_0(void);
 
 struct wire_DeviceListState *new_box_autoadd_device_list_state_0(void);
+
+struct wire_FfiSerial *new_box_autoadd_ffi_serial_0(void);
 
 struct wire_FrostKey *new_box_autoadd_frost_key_0(void);
 
@@ -297,6 +304,10 @@ struct wire_list_frost_key *new_list_frost_key_0(int32_t len);
 struct wire_list_port_desc *new_list_port_desc_0(int32_t len);
 
 struct wire_uint_8_list *new_uint_8_list_0(int32_t len);
+
+void drop_opaque_ArcMutexVecPortDesc(const void *ptr);
+
+const void *share_opaque_ArcMutexVecPortDesc(const void *ptr);
 
 void drop_opaque_FfiCoordinator(const void *ptr);
 
@@ -334,35 +345,35 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_turn_logcat_logging_on);
     dummy_var ^= ((int64_t) (void*) wire_device_at_index);
     dummy_var ^= ((int64_t) (void*) wire_device_list_state);
+    dummy_var ^= ((int64_t) (void*) wire_get_device);
     dummy_var ^= ((int64_t) (void*) wire_new_coordinator);
+    dummy_var ^= ((int64_t) (void*) wire_new_coordinator_host_handles_serial);
     dummy_var ^= ((int64_t) (void*) wire_echo_key_id);
     dummy_var ^= ((int64_t) (void*) wire_threshold__method__FrostKey);
     dummy_var ^= ((int64_t) (void*) wire_id__method__FrostKey);
     dummy_var ^= ((int64_t) (void*) wire_name__method__FrostKey);
+    dummy_var ^= ((int64_t) (void*) wire_devices__method__FrostKey);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortOpen);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortRead);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortWrite);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortBytesToRead);
     dummy_var ^= ((int64_t) (void*) wire_is_finished__method__SigningState);
     dummy_var ^= ((int64_t) (void*) wire_named_devices__method__DeviceListState);
+    dummy_var ^= ((int64_t) (void*) wire_set_available_ports__method__FfiSerial);
     dummy_var ^= ((int64_t) (void*) wire_start_thread__method__Coordinator);
-    dummy_var ^= ((int64_t) (void*) wire_announce_available_ports__method__Coordinator);
-    dummy_var ^= ((int64_t) (void*) wire_switch_to_host_handles_serial__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_update_name_preview__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_finish_naming__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_send_cancel__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_cancel_all__method__Coordinator);
-    dummy_var ^= ((int64_t) (void*) wire_registered_devices__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_key_state__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_get_key__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_start_signing__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_get_signing_state__method__Coordinator);
-    dummy_var ^= ((int64_t) (void*) wire_devices_for_frost_key__method__Coordinator);
-    dummy_var ^= ((int64_t) (void*) wire_get_device__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_nonces_available__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_generate_new_key__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_can_restore_signing_session__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_try_restore_signing_session__method__Coordinator);
+    dummy_var ^= ((int64_t) (void*) new_ArcMutexVecPortDesc);
     dummy_var ^= ((int64_t) (void*) new_FfiCoordinator);
     dummy_var ^= ((int64_t) (void*) new_FrostsnapCoreCoordinatorFrostKeyState);
     dummy_var ^= ((int64_t) (void*) new_PortBytesToReadSender);
@@ -372,6 +383,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_coordinator_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_device_id_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_device_list_state_0);
+    dummy_var ^= ((int64_t) (void*) new_box_autoadd_ffi_serial_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_frost_key_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_key_id_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_key_state_0);
@@ -386,6 +398,8 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) new_list_frost_key_0);
     dummy_var ^= ((int64_t) (void*) new_list_port_desc_0);
     dummy_var ^= ((int64_t) (void*) new_uint_8_list_0);
+    dummy_var ^= ((int64_t) (void*) drop_opaque_ArcMutexVecPortDesc);
+    dummy_var ^= ((int64_t) (void*) share_opaque_ArcMutexVecPortDesc);
     dummy_var ^= ((int64_t) (void*) drop_opaque_FfiCoordinator);
     dummy_var ^= ((int64_t) (void*) share_opaque_FfiCoordinator);
     dummy_var ^= ((int64_t) (void*) drop_opaque_FrostsnapCoreCoordinatorFrostKeyState);

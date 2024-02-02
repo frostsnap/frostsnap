@@ -109,7 +109,6 @@ impl Gist for CoordinatorToStorageMessage {
             CoordinatorToStorageMessage::UpdateFrostKey(_) => "UpdateFrostKey",
             CoordinatorToStorageMessage::StoreSigningState(_) => "StoreSigningState",
             CoordinatorToStorageMessage::NewKey(_) => "NewKey",
-
         }
         .into()
     }
