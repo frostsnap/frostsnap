@@ -128,7 +128,7 @@ where
         Ok(())
     }
 
-    pub fn error_print(&mut self, str: impl AsRef<str>) -> Result<(), Error> {
+    pub fn error_print(&mut self, error: impl AsRef<str>) -> Result<(), Error> {
         let header_area = Rectangle::new(Point::zero(), Size::new(160, 10));
         header_area
             .into_styled(PrimitiveStyleBuilder::new().fill_color(Rgb565::RED).build())
@@ -161,7 +161,7 @@ where
 
         let character_style = MonoTextStyle::new(&FONT_5X8, Rgb565::WHITE);
         TextBox::with_textbox_style(
-            str.as_ref(),
+            error.as_ref(),
             Rectangle::new(Point::new(1, 11), Size::new(160, 80)),
             character_style,
             self.textbox_style,

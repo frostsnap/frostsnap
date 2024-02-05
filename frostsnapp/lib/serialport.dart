@@ -1,64 +1,78 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
+import 'package:flutter/material.dart';
+import 'package:frostsnapp/global.dart';
 import 'package:usb_serial/usb_serial.dart';
 import 'package:collection/collection.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
-HostPortHandler globalHostPortHandler = HostPortHandler();
-
 class HostPortHandler {
   Map<String, SerialPort> openPorts = {};
+  FfiSerial ffiserial;
+  StreamSubscription<PortEvent>? subscription;
 
-  HostPortHandler() {
-    if (Platform.isAndroid) {
-      UsbSerial.usbEventStream?.listen((UsbEvent msg) {
-        if (msg.event == UsbEvent.ACTION_USB_DETACHED) {
-          openPorts.remove(msg.device?.deviceName);
-        }
-        scanDevices();
-      });
-      api.subPortEvents().forEach((event) async {
-        switch (event) {
-          case PortEvent_Open(:final request):
-            {
-              try {
-                var port = openPorts[request.id];
-                port ??= await SerialPort.open(request.id, request.baudRate);
-                openPorts[request.id] = port;
-                request.satisfy();
-              } catch (e) {
-                request.satisfy(err: e.toString());
-              }
-            }
-          case PortEvent_Read(:final request):
-            {
-              try {
-                var port = _getPort(request.id);
-                var newBytes = port.read(request.len);
-                request.satisfy(bytes: newBytes);
-              } catch (e) {
-                request.satisfy(bytes: Uint8List(0), err: e.toString());
-              }
-            }
-          case PortEvent_Write(:final request):
-            {
-              try {
-                var port = _getPort(request.id);
-                port.write(request.bytes);
-                request.satisfy();
-              } catch (e) {
-                request.satisfy(err: e.toString());
-              }
-            }
-          case PortEvent_BytesToRead(:final request):
-            {
+  HostPortHandler(this.ffiserial) {
+    UsbSerial.usbEventStream?.listen((UsbEvent msg) {
+      if (msg.event == UsbEvent.ACTION_USB_DETACHED) {
+        openPorts.remove(msg.device?.deviceName);
+      }
+      debugPrint("Scanning devices because of new USB event");
+      scanDevices();
+    });
+    subscription = api.subPortEvents().listen((event) async {
+      switch (event) {
+        case PortEvent_Open(:final request):
+          {
+            try {
               var port = openPorts[request.id];
-              request.satisfy(bytesToRead: port?.buffer.length ?? 0);
+              port ??= await SerialPort.open(request.id, request.baudRate);
+              openPorts[request.id] = port;
+              request.satisfy();
+            } catch (e) {
+              request.satisfy(err: e.toString());
             }
-        }
-      });
-    }
+          }
+        case PortEvent_Read(:final request):
+          {
+            try {
+              var port = _getPort(request.id);
+              var newBytes = port.read(request.len);
+              request.satisfy(bytes: newBytes);
+            } catch (e) {
+              request.satisfy(bytes: Uint8List(0), err: e.toString());
+            }
+          }
+        case PortEvent_Write(:final request):
+          {
+            try {
+              var port = _getPort(request.id);
+              port.write(request.bytes);
+              request.satisfy();
+            } catch (e) {
+              request.satisfy(err: e.toString());
+            }
+          }
+        case PortEvent_BytesToRead(:final request):
+          {
+            var port = openPorts[request.id];
+            if (port == null) {
+              debugPrint("port for ${request.id} no longer connected");
+            }
+            request.satisfy(bytesToRead: port?.buffer.length ?? 0);
+          }
+      }
+    });
+
+    subscription!.onError((error) {
+      debugPrint("port event stream error: $error");
+    });
+
+    subscription!.onDone(() {
+      debugPrint("port event stream finished (but this should never happen!)");
+    });
+    debugPrint("Android serial port handler started");
   }
 
   void scanDevices() async {
@@ -69,7 +83,7 @@ class HostPortHandler {
           .map((device) => PortDesc(
               id: device.deviceName, pid: device.pid!, vid: device.vid!))
           .toList();
-      await api.announceAvailablePorts(ports: portDescriptions);
+      await ffiserial.setAvailablePorts(ports: portDescriptions);
     }
   }
 

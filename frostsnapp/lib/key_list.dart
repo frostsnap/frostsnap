@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/keygen.dart';
 
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
@@ -16,7 +17,7 @@ class KeyList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<KeyState>(
-        initialData: api.keyState(),
+        initialData: coord.keyState(),
         stream: api.subKeyEvents(),
         builder: (context, snap) {
           var keys = [];
@@ -56,12 +57,52 @@ class KeyList extends StatelessWidget {
   }
 }
 
-class KeyCard extends StatelessWidget {
+class KeyCard extends StatefulWidget {
   final FrostKey frostKey;
+
   const KeyCard({super.key, required this.frostKey});
 
   @override
+  State<KeyCard> createState() => _KeyCard();
+}
+
+class _KeyCard extends State<KeyCard> {
+  bool canContinueSigning = false;
+
+  @override
+  void initState() {
+    super.initState();
+    canContinueSigning =
+        coord.canRestoreSigningSession(keyId: widget.frostKey.id());
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final Widget button;
+
+    if (canContinueSigning) {
+      button = ElevatedButton(
+          onPressed: () async {
+            final stream = coord
+                .tryRestoreSigningSession(keyId: widget.frostKey.id())
+                .asBroadcastStream();
+            await signMessageDialog(context, stream);
+            setState(() {
+              canContinueSigning =
+                  coord.canRestoreSigningSession(keyId: widget.frostKey.id());
+            });
+          },
+          child: Text("Continue signing"));
+    } else {
+      button = ElevatedButton(
+          onPressed: () {
+            Navigator.push(context, MaterialPageRoute(builder: (context) {
+              return SignMessagePage(frostKey: widget.frostKey);
+            }));
+          },
+          child: Text("Sign"));
+    }
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(8.0),
@@ -69,19 +110,13 @@ class KeyCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text(
-              toHex(Uint8List.fromList(frostKey.id().field0)),
+              toHex(Uint8List.fromList(widget.frostKey.id().field0)),
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            Text("Threshold: ${frostKey.threshold()}"),
-            ElevatedButton(
-                onPressed: () {
-                  Navigator.push(context, MaterialPageRoute(builder: (context) {
-                    return SignMessagePage(frostKey: frostKey);
-                  }));
-                },
-                child: Text("Sign"))
+            Text("Threshold: ${widget.frostKey.threshold()}"),
+            button
           ],
         ),
       ),

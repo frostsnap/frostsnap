@@ -1,13 +1,16 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:typed_data';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/animated_check.dart';
 import 'package:frostsnapp/device_action.dart';
-import 'package:frostsnapp/device_list.dart';
+import 'package:frostsnapp/device_id_ext.dart';
 import 'package:frostsnapp/device_list_widget.dart';
+import 'package:frostsnapp/global.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'hex.dart';
+import "dart:developer" as developer;
 
 class SignMessagePage extends StatelessWidget {
   final FrostKey frostKey;
@@ -59,12 +62,16 @@ class _SignMessageFormState extends State<SignMessageForm> {
     var submitButtonOnPressed;
     if (buttonReady) {
       submitButtonOnPressed = () async {
-        final signatures = await _showSigningProgressDialog(context);
-        if (signatures != null) {
-          if (context.mounted) {
-            Navigator.pop(context);
-          }
-          await _showSignatureDialog(context, signatures[0]);
+        final signingStream = coord
+            .startSigning(
+                keyId: widget.frostKey.id(),
+                devices: selected.toList(),
+                message: _messageController.text)
+            .asBroadcastStream();
+
+        final signatures = await signMessageDialog(context, signingStream);
+        if (signatures != null && context.mounted) {
+          Navigator.pop(context);
         }
       };
     }
@@ -93,18 +100,21 @@ class _SignMessageFormState extends State<SignMessageForm> {
             itemCount: devices.length,
             itemBuilder: (context, index) {
               final device = devices[index];
+              final onChanged = (bool? value) {
+                setState(() {
+                  if (value == true) {
+                    selected.add(device.id);
+                  } else {
+                    selected.remove(device.id);
+                  }
+                });
+              };
+              final enoughNonces = coord.noncesAvailable(id: device.id) >= 1;
               return CheckboxListTile(
-                title: Text(device.name ?? "<unknown>"),
+                title: Text(
+                    "${device.name ?? '<unknown>'}${enoughNonces ? '' : ' (not enough nonces)'}"),
                 value: selected.contains(device.id),
-                onChanged: (bool? value) {
-                  setState(() {
-                    if (value == true) {
-                      selected.add(device.id);
-                    } else {
-                      selected.remove(device.id);
-                    }
-                  });
-                },
+                onChanged: enoughNonces ? onChanged : null,
               );
             },
           ),
@@ -116,96 +126,91 @@ class _SignMessageFormState extends State<SignMessageForm> {
       ],
     )));
   }
+}
 
-  Future<void> _showSignatureDialog(
-      BuildContext context, EncodedSignature signature) {
-    return showDialog(
-        context: context,
-        builder: (context) {
-          return AlertDialog(
-              title: Text("Signing success"),
-              content: Container(
-                  width: Platform.isAndroid ? double.maxFinite : 400.0,
-                  child: Align(
-                      alignment: Alignment.center,
-                      child: Column(
-                        children: [
-                          Text("Here's your signature"),
-                          SizedBox(height: 20),
-                          Text(toHex(
-                              Uint8List.fromList(signature.field0.toList())))
-                        ],
-                      ))));
-        });
+Future<List<EncodedSignature>?> signMessageDialog(
+    BuildContext context, Stream<SigningState> signingStream) async {
+  final signatures = await _showSigningProgressDialog(context, signingStream);
+  if (signatures != null && context.mounted) {
+    await _showSignatureDialog(context, signatures[0]);
   }
+  return signatures;
+}
 
-  Future<List<EncodedSignature>?> _showSigningProgressDialog(
-      BuildContext context) {
-    final signingStream = api
-        .startSigning(
-            keyId: widget.frostKey.id(),
-            devices: selected.toList(),
-            message: _messageController.text)
-        .asBroadcastStream();
-    final devices = widget.frostKey.devices();
+Future<List<EncodedSignature>?> _showSigningProgressDialog(
+  BuildContext context,
+  Stream<SigningState> signingStream,
+) {
+  final stream = signingStream.asBroadcastStream();
 
-    final finishedSigning = signingStream
-        .asyncMap(
-            (event) => event.whenOrNull(signed: (signatures) => signatures))
-        .firstWhere((signatures) => signatures != null);
+  final finishedSigning = stream
+      .asyncMap((event) => event.finishedSignatures)
+      .firstWhere((signatures) => signatures.isNotEmpty);
 
-    final List<Device> selectedDevices = selected
-        .map((id) =>
-            devices.firstWhere((device) => deviceIdEquals(device.id, id)))
-        .toList();
+  return showDeviceActionDialog(
+      context: context,
+      onCancel: () {
+        coord.cancelAll();
+      },
+      complete: finishedSigning,
+      content: Column(children: [
+        Text("Plug in each device"),
+        Expanded(child: DeviceSigningProgress(stream: stream)),
+      ]));
+}
 
-    return showDeviceActionDialog(
-        context: context,
-        onCancel: () {
-          api.cancelAll();
-        },
-        complete: finishedSigning,
-        content: Column(children: [
-          Text("Plug in each device"),
-          Expanded(
-              child: DeviceSigningProgress(
-                  stream: signingStream, signers: selectedDevices)),
-        ]));
-  }
+Future<void> _showSignatureDialog(
+    BuildContext context, EncodedSignature signature) {
+  return showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+            title: Text("Signing success"),
+            content: Container(
+                width: Platform.isAndroid ? double.maxFinite : 400.0,
+                child: Align(
+                    alignment: Alignment.center,
+                    child: Column(
+                      children: [
+                        Text("Here's your signature"),
+                        SizedBox(height: 20),
+                        SelectableText(toHex(
+                            Uint8List.fromList(signature.field0.toList())))
+                      ],
+                    ))));
+      });
 }
 
 class DeviceSigningProgress extends StatelessWidget {
-  final List<Device> signers;
-  final Stream<CoordinatorToUserSigningMessage> stream;
+  final Stream<SigningState> stream;
 
-  DeviceSigningProgress(
-      {super.key, required this.stream, required this.signers});
+  DeviceSigningProgress({super.key, required this.stream});
 
   @override
   Widget build(BuildContext context) {
-    final gotShares = deviceIdSet();
-
     return StreamBuilder(
         initialData: api.deviceListState(),
         stream: deviceListStateStream,
         builder: (context, snapshot) {
           final devicesPluggedIn = deviceIdSet();
-          if (snapshot.hasData) {
-            devicesPluggedIn
-                .addAll(snapshot.data!.devices.map((device) => device.id));
-          }
-          return StreamBuilder(
+          devicesPluggedIn
+              .addAll(snapshot.data!.devices.map((device) => device.id));
+          return StreamBuilder<SigningState>(
+              initialData: coord.getSigningState()!,
               stream: stream,
               builder: (context, snapshot) {
-                if (snapshot.hasData) {
-                  snapshot.data!
-                      .whenOrNull(gotShare: (from) => gotShares.add(from));
+                if (!snapshot.hasData) {
+                  return CircularProgressIndicator();
                 }
+                final state = snapshot.data!;
+                final gotShares = deviceIdSet();
+                gotShares.addAll(state.gotShares);
                 return ListView.builder(
-                    itemCount: signers.length,
+                    itemCount: state.neededFrom.length,
                     itemBuilder: (context, index) {
-                      final device = signers[index];
                       final Widget icon;
+                      final id = state.neededFrom[index];
+                      final device = api.getDevice(id: id);
                       if (gotShares.contains(device.id)) {
                         icon = AnimatedCheckCircle();
                       } else if (devicesPluggedIn.contains(device.id)) {

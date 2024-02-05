@@ -6,6 +6,7 @@ extern crate alloc;
 pub mod device_config;
 pub mod esp32_run;
 pub mod io;
+pub mod panic;
 #[cfg(feature = "frostypede")]
 pub mod st7735;
 pub mod state;

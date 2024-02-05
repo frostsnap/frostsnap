@@ -6,7 +6,7 @@ members = [
     "coordinator-cli",
     "frostsnap_coordinator",
     "frostsnap_comms",
-    "frostsnapp/native"
+    "frostsnapp/native",
 ]
 resolver = "2"
 
@@ -18,3 +18,4 @@ frostsnap_core = { path = "frostsnap_core", default-features = false }
 frostsnap_comms = { path = "frostsnap_comms", default-features = false }
 frostsnap_coordinator = { path = "frostsnap_coordinator" }
 tracing = { version = "0.1" }
+llsdb = { git = "https://github.com/LLFourn/llsdb.git" }

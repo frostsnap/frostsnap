@@ -48,21 +48,6 @@ pub struct CoordinatorSendMessage {
     pub message_body: CoordinatorSendBody,
 }
 
-impl CoordinatorSendMessage {
-    /// Whether every destination should be reached before its removed
-    pub fn should_keep_in_outbox_until_all_sent(&self) -> bool {
-        // We don't have any messages that need to be retained in the outbox anymore since this
-        // isn't a strong enough guarantee that they'll actually be delivered eventually. If you
-        // want to make sure that a message is sent to a device you will usually have to have some
-        // request/response type arrangement where you handle re-sending the messages when devices
-        // come back online after being disconnected.
-        //
-        // If this remains the case this can be removed along with the associated logic that
-        // preserves it.
-        false
-    }
-}
-
 #[derive(Encode, Decode, Debug, Clone)]
 pub enum Destination {
     /// Send to all devices -- this reduces message size for this common task

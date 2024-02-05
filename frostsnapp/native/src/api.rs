@@ -3,18 +3,19 @@ pub use crate::coordinator::{
 };
 use crate::device_list::DeviceList;
 pub use crate::FfiCoordinator;
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use flutter_rust_bridge::{frb, RustOpaque, StreamSink, SyncReturn};
 pub use frostsnap_coordinator::frostsnap_core;
 use frostsnap_coordinator::frostsnap_core::message::SignTask;
+use frostsnap_coordinator::{DesktopSerial, UsbSerialManager};
 pub use frostsnap_coordinator::{DeviceChange, PortDesc};
-pub use frostsnap_core::message::{
-    CoordinatorToUserKeyGenMessage, CoordinatorToUserSigningMessage, EncodedSignature,
-};
-pub use frostsnap_core::schnorr_fun;
-pub use frostsnap_core::{CoordinatorFrostKeyState, DeviceId, FrostKeyExt, KeyId};
+pub use frostsnap_core::message::{CoordinatorToUserKeyGenMessage, EncodedSignature};
+pub use frostsnap_core::{DeviceId, FrostKeyExt, KeyId};
 use lazy_static::lazy_static;
-pub use schnorr_fun::{fun::marker::Normal, Signature};
+use llsdb::LlsDb;
+use std::collections::HashMap;
+use std::fs::{File, OpenOptions};
+use std::sync::Arc;
 pub use std::sync::{Mutex, RwLock};
 #[allow(unused)]
 use tracing::{event, Level as TLevel};
@@ -23,7 +24,6 @@ lazy_static! {
     static ref PORT_EVENT_STREAM: RwLock<Option<StreamSink<PortEvent>>> = RwLock::default();
     static ref DEVICE_LIST: Mutex<(DeviceList, Option<StreamSink<DeviceListUpdate>>)> =
         Default::default();
-    static ref COORDINATOR: FfiCoordinator = FfiCoordinator::new();
     static ref KEY_EVENT_STREAM: Mutex<Option<StreamSink<KeyState>>> = Default::default();
 }
 
@@ -84,6 +84,11 @@ pub(crate) fn emit_device_events(new_events: Vec<DeviceChange>) {
     }
 }
 
+pub(crate) fn init_device_names(device_names: HashMap<DeviceId, String>) {
+    let mut device_list_and_stream = DEVICE_LIST.lock().unwrap();
+    device_list_and_stream.0.init_names(device_names);
+}
+
 #[derive(Clone, Debug)]
 pub struct Device {
     pub name: Option<String>,
@@ -112,16 +117,7 @@ impl FrostKey {
     }
 
     pub fn devices(&self) -> SyncReturn<Vec<Device>> {
-        let device_names = COORDINATOR.device_names();
-        SyncReturn(
-            self.0
-                .devices()
-                .map(|id| Device {
-                    name: device_names.get(&id).cloned(),
-                    id,
-                })
-                .collect(),
-        )
+        SyncReturn(self.0.devices().map(|id| get_device(id).0).collect())
     }
 }
 
@@ -227,6 +223,7 @@ pub fn turn_stderr_logging_on(level: Level) {
         .pretty()
         .finish();
     let _ = tracing::subscriber::set_global_default(subscriber);
+    event!(TLevel::INFO, "logging to stderr");
 }
 
 pub fn turn_logcat_logging_on(_level: Level) {
@@ -251,53 +248,6 @@ pub fn turn_logcat_logging_on(_level: Level) {
     panic!("Do not call turn_logcat_logging_on outside of android");
 }
 
-pub fn announce_available_ports(ports: Vec<PortDesc>) {
-    COORDINATOR.set_available_ports(ports);
-}
-
-pub fn switch_to_host_handles_serial() {
-    COORDINATOR.switch_to_host_handles_serial();
-}
-
-pub fn update_name_preview(id: DeviceId, name: String) {
-    COORDINATOR.update_name_preview(id, &name);
-}
-
-pub fn finish_naming(id: DeviceId, name: String) {
-    COORDINATOR.finish_naming(id, &name);
-}
-
-pub fn send_cancel(id: DeviceId) {
-    COORDINATOR.send_cancel(id);
-}
-
-pub fn cancel_all() {
-    COORDINATOR.cancel_all()
-}
-
-pub fn registered_devices() -> Vec<DeviceId> {
-    COORDINATOR.registered_devices()
-}
-
-pub fn start_coordinator_thread() {
-    COORDINATOR.start()
-}
-
-pub fn key_state() -> SyncReturn<KeyState> {
-    SyncReturn(KeyState {
-        keys: COORDINATOR.frost_keys(),
-    })
-}
-
-pub fn get_key(key_id: KeyId) -> SyncReturn<Option<FrostKey>> {
-    SyncReturn(
-        COORDINATOR
-            .frost_keys()
-            .into_iter()
-            .find(|frost_key| frost_key.id().0 == key_id),
-    )
-}
-
 pub fn device_at_index(index: usize) -> SyncReturn<Option<Device>> {
     SyncReturn(DEVICE_LIST.lock().unwrap().0.device_at_index(index))
 }
@@ -306,18 +256,12 @@ pub fn device_list_state() -> SyncReturn<DeviceListState> {
     SyncReturn(DEVICE_LIST.lock().unwrap().0.state())
 }
 
-pub fn start_signing(
-    key_id: KeyId,
-    devices: Vec<DeviceId>,
-    message: String,
-    stream: StreamSink<CoordinatorToUserSigningMessage>,
-) -> anyhow::Result<()> {
-    COORDINATOR.start_signing(
-        key_id,
-        devices.into_iter().collect(),
-        SignTask::Plain(message.into_bytes()),
-        stream,
-    )
+pub fn get_device(id: DeviceId) -> SyncReturn<Device> {
+    let device = Device {
+        name: DEVICE_LIST.lock().unwrap().0.get_device_name(id).cloned(),
+        id,
+    };
+    SyncReturn(device)
 }
 
 // pub fn start_signing(devices: Vec<DeviceId>, message: String) ->
@@ -329,10 +273,17 @@ pub type SessionHash = [u8; 32];
 pub struct _EncodedSignature(pub [u8; 64]);
 
 #[derive(Clone, Debug)]
-#[frb(mirror(CoordinatorToUserSigningMessage))]
-pub enum _CoordinatorToUserSigningMessage {
-    GotShare { from: DeviceId },
-    Signed { signatures: Vec<EncodedSignature> },
+pub struct SigningState {
+    pub got_shares: Vec<DeviceId>,
+    pub needed_from: Vec<DeviceId>,
+    // for some reason FRB woudln't allow Option here to empty vec implies not being finished
+    pub finished_signatures: Vec<EncodedSignature>,
+}
+
+impl SigningState {
+    pub fn is_finished(&self) -> SyncReturn<bool> {
+        SyncReturn(!self.finished_signatures.is_empty())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -342,14 +293,6 @@ pub enum _CoordinatorToUserKeyGenMessage {
     CheckKeyGen { session_hash: SessionHash },
     KeyGenAck { from: DeviceId },
     FinishedKey { key_id: KeyId },
-}
-
-pub fn generate_new_key(
-    threshold: usize,
-    devices: Vec<DeviceId>,
-    event_stream: StreamSink<CoordinatorToUserKeyGenMessage>,
-) {
-    COORDINATOR.generate_new_key(devices.into_iter().collect(), threshold, event_stream);
 }
 
 #[derive(Clone, Debug)]
@@ -390,4 +333,148 @@ impl DeviceListState {
                 .collect(),
         )
     }
+}
+
+pub fn new_coordinator(db_file: String) -> anyhow::Result<Coordinator> {
+    let db = load_database(db_file)?;
+    let usb_manager = UsbSerialManager::new(Box::new(DesktopSerial));
+
+    Ok(Coordinator(RustOpaque::new(FfiCoordinator::new(
+        db,
+        usb_manager,
+    )?)))
+}
+
+pub fn new_coordinator_host_handles_serial(
+    db_file: String,
+) -> anyhow::Result<(Coordinator, FfiSerial)> {
+    let db = load_database(db_file)?;
+    let ffi_serial = FfiSerial::default();
+    let usb_manager = UsbSerialManager::new(Box::new(ffi_serial.clone()));
+    let coord = Coordinator(RustOpaque::new(FfiCoordinator::new(db, usb_manager)?));
+    Ok((coord, ffi_serial))
+}
+
+fn load_database(db_file: String) -> anyhow::Result<LlsDb<File>> {
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true) // Creates the file if it does not exist
+        .open(db_file.clone())?;
+
+    event!(TLevel::INFO, path = db_file, "initializing database");
+
+    let db =
+        LlsDb::load_or_init(file).context(format!("failed to load database from {db_file}"))?;
+
+    Ok(db)
+}
+
+#[derive(Debug, Clone)]
+pub struct FfiSerial {
+    pub(crate) available_ports: RustOpaque<Arc<Mutex<Vec<PortDesc>>>>,
+}
+
+impl Default for FfiSerial {
+    fn default() -> Self {
+        Self {
+            available_ports: RustOpaque::new(Default::default()),
+        }
+    }
+}
+
+impl FfiSerial {
+    pub fn set_available_ports(&self, ports: Vec<PortDesc>) {
+        *self.available_ports.lock().unwrap() = ports
+    }
+}
+
+pub struct Coordinator(pub RustOpaque<FfiCoordinator>);
+
+impl Coordinator {
+    pub fn start_thread(&self) -> anyhow::Result<()> {
+        self.0.start()
+    }
+
+    pub fn update_name_preview(&self, id: DeviceId, name: String) {
+        self.0.update_name_preview(id, &name);
+    }
+
+    pub fn finish_naming(&self, id: DeviceId, name: String) {
+        self.0.finish_naming(id, &name)
+    }
+
+    pub fn send_cancel(&self, id: DeviceId) {
+        self.0.send_cancel(id);
+    }
+
+    pub fn cancel_all(&self) {
+        self.0.cancel_all()
+    }
+
+    pub fn key_state(&self) -> SyncReturn<KeyState> {
+        SyncReturn(KeyState {
+            keys: self.0.frost_keys(),
+        })
+    }
+
+    pub fn get_key(&self, key_id: KeyId) -> SyncReturn<Option<FrostKey>> {
+        SyncReturn(
+            self.0
+                .frost_keys()
+                .into_iter()
+                .find(|frost_key| frost_key.id().0 == key_id),
+        )
+    }
+
+    pub fn start_signing(
+        &self,
+        key_id: KeyId,
+        devices: Vec<DeviceId>,
+        message: String,
+        stream: StreamSink<SigningState>,
+    ) -> anyhow::Result<()> {
+        self.0.start_signing(
+            key_id,
+            devices.into_iter().collect(),
+            SignTask::Plain(message.into_bytes()),
+            stream,
+        )?;
+        Ok(())
+    }
+
+    pub fn get_signing_state(&self) -> SyncReturn<Option<SigningState>> {
+        SyncReturn(self.0.get_signing_state())
+    }
+
+    pub fn nonces_available(&self, id: DeviceId) -> SyncReturn<usize> {
+        SyncReturn(self.0.nonces_left(id).unwrap_or(0))
+    }
+
+    pub fn generate_new_key(
+        &self,
+        threshold: usize,
+        devices: Vec<DeviceId>,
+        event_stream: StreamSink<CoordinatorToUserKeyGenMessage>,
+    ) {
+        self.0
+            .generate_new_key(devices.into_iter().collect(), threshold, event_stream);
+    }
+
+    pub fn can_restore_signing_session(&self, key_id: KeyId) -> SyncReturn<bool> {
+        SyncReturn(self.0.can_restore_signing_session(key_id))
+    }
+
+    pub fn try_restore_signing_session(
+        &self,
+        key_id: KeyId,
+        stream: StreamSink<SigningState>,
+    ) -> anyhow::Result<()> {
+        self.0.try_restore_signing_session(key_id, stream)
+    }
+}
+
+// TODO: remove me?
+pub fn echo_key_id(key_id: KeyId) -> KeyId {
+    key_id
 }

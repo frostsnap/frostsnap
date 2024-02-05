@@ -6,13 +6,13 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/animated_check.dart';
 import 'package:frostsnapp/device_action.dart';
+import 'package:frostsnapp/device_id_ext.dart';
 import 'package:frostsnapp/device_list_widget.dart';
 import 'package:frostsnapp/device_setup.dart';
+import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/hex.dart';
 import 'dart:math';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
-
-import 'package:frostsnapp/device_list.dart';
 
 class KeyGenPage extends StatelessWidget {
   const KeyGenPage({super.key});
@@ -126,11 +126,11 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
     }).then((_) {
       if (mounted) {
         Navigator.pop(context);
-        api.cancelAll();
+        coord.cancelAll();
       }
       return null;
     });
-    final keygenStream = api
+    final keygenStream = coord
         .generateNewKey(
             devices: widget.devices.toList(), threshold: widget.threshold)
         .asBroadcastStream();
@@ -185,7 +185,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
   Widget build(BuildContext context) {
     return PopScope(
       onPopInvoked: (didPop) async {
-        api.cancelAll();
+        coord.cancelAll();
       },
       child: Scaffold(
           appBar: AppBar(
@@ -244,7 +244,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                     child: Text("No/Cancel"),
                     onPressed: () {
                       Navigator.pop(context, null);
-                      api.cancelAll();
+                      coord.cancelAll();
                     }),
               ],
               content: Container(
@@ -307,7 +307,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
       context: context,
       content: content,
       onCancel: () {
-        api.cancelAll();
+        coord.cancelAll();
         Navigator.pop(context);
       },
       complete: closeOn,
@@ -351,7 +351,7 @@ class KeyGenDeviceList extends StatelessWidget {
     if (device.name == null) {
       child = ElevatedButton(
           onPressed: () {
-            api.updateNamePreview(id: device.id, name: "");
+            coord.updateNamePreview(id: device.id, name: "");
             Navigator.push(context,
                 MaterialPageRoute(builder: (deviceSetupContex) {
               final completeWhen = deviceListChangeStream
@@ -367,10 +367,10 @@ class KeyGenDeviceList extends StatelessWidget {
                 deviceId: device.id,
                 popInvoked: (_) {
                   // This happens when we click back button
-                  api.sendCancel(id: device.id);
+                  coord.sendCancel(id: device.id);
                 },
                 onSubmitted: (value) async {
-                  api.finishNaming(id: device.id, name: value);
+                  coord.finishNaming(id: device.id, name: value);
                   await showDeviceActionDialog(
                       context: deviceSetupContex,
                       content: Column(children: [
@@ -396,11 +396,11 @@ class KeyGenDeviceList extends StatelessWidget {
                       ]),
                       complete: completeWhen,
                       onCancel: () async {
-                        await api.sendCancel(id: device.id);
+                        await coord.sendCancel(id: device.id);
                       });
                 },
                 onChanged: (value) async {
-                  await api.updateNamePreview(id: device.id, name: value);
+                  await coord.updateNamePreview(id: device.id, name: value);
                 },
               );
             }));

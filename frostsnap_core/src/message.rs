@@ -4,6 +4,7 @@ use crate::CoordinatorFrostKeyState;
 use crate::Gist;
 use crate::KeyId;
 use crate::SessionHash;
+use crate::SigningSessionState;
 use crate::Vec;
 use crate::NONCE_BATCH_SIZE;
 
@@ -97,7 +98,20 @@ impl CoordinatorToDeviceMessage {
 
 #[derive(Clone, Debug)]
 pub enum CoordinatorToStorageMessage {
-    UpdateState(CoordinatorFrostKeyState),
+    NewKey(CoordinatorFrostKeyState),
+    UpdateFrostKey(CoordinatorFrostKeyState),
+    StoreSigningState(SigningSessionState),
+}
+
+impl Gist for CoordinatorToStorageMessage {
+    fn gist(&self) -> String {
+        match self {
+            CoordinatorToStorageMessage::UpdateFrostKey(_) => "UpdateFrostKey",
+            CoordinatorToStorageMessage::StoreSigningState(_) => "StoreSigningState",
+            CoordinatorToStorageMessage::NewKey(_) => "NewKey",
+        }
+        .into()
+    }
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]

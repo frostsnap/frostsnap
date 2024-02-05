@@ -37,8 +37,10 @@ pub struct UsbSerialManager {
     registered_devices: BTreeSet<DeviceId>,
     /// Device labels
     device_labels: HashMap<DeviceId, String>,
-    /// Messages to devices outbox
-    port_outbox: Vec<CoordinatorSendMessage>,
+    /// Messages to devices waiting to be sent
+    port_outbox: std::sync::mpsc::Receiver<CoordinatorSendMessage>,
+    /// sometimes we need to put things in the outbox internally
+    outbox_sender: std::sync::mpsc::Sender<CoordinatorSendMessage>,
 }
 
 const COORDINATOR_MAGIC_BYTES_PERDIOD: std::time::Duration =
@@ -50,7 +52,9 @@ struct AwaitingMagic {
 }
 
 impl UsbSerialManager {
+    /// Returns self and a `UsbSender` which can be used to queue messages
     pub fn new(serial_impl: Box<dyn Serial>) -> Self {
+        let (sender, receiver) = std::sync::mpsc::channel();
         Self {
             serial_impl,
             connected: Default::default(),
@@ -62,7 +66,14 @@ impl UsbSerialManager {
             reverse_device_ports: Default::default(),
             registered_devices: Default::default(),
             device_labels: Default::default(),
-            port_outbox: Default::default(),
+            port_outbox: receiver,
+            outbox_sender: sender,
+        }
+    }
+
+    pub fn usb_sender(&self) -> UsbSender {
+        UsbSender {
+            sender: self.outbox_sender.clone(),
         }
     }
 
@@ -87,10 +98,6 @@ impl UsbSerialManager {
                 )
             }
         }
-    }
-
-    pub fn queue_in_port_outbox(&mut self, send: CoordinatorSendMessage) {
-        self.port_outbox.push(send);
     }
 
     pub fn active_ports(&self) -> HashSet<String> {
@@ -296,20 +303,25 @@ impl UsbSerialManager {
                         }
                     }
                     DeviceSendBody::SetName { name } => {
-                        match self.device_labels.get(&message.from) {
-                            Some(existing_name) => {
-                                if existing_name != &name {
-                                    device_changes.push(DeviceChange::Renamed {
-                                        id: message.from,
-                                        old_name: existing_name.into(),
-                                        new_name: name,
-                                    });
-                                }
+                        // FIXME: we are currently trusting the devices to tell us their name even
+                        // when we've just named them oursleves.
+                        if let Some(existing_name) = self.device_labels.get(&message.from) {
+                            if existing_name != &name {
+                                device_changes.push(DeviceChange::Renamed {
+                                    id: message.from,
+                                    old_name: existing_name.into(),
+                                    new_name: name.clone(),
+                                });
                             }
-                            None => {
-                                self.device_labels.insert(message.from, name);
-                            }
+                        } else {
+                            device_changes.push(DeviceChange::NewUnknownDevice {
+                                id: message.from,
+                                name: name.clone(),
+                            });
                         }
+                        // TODO: we shouldn't blindly accept names but rather ask the user to "set up" the
+                        // relationship between this device and the coordinator if this is a new name
+                        self.device_labels.insert(message.from, name);
                     }
                     DeviceSendBody::Announce => {
                         match self
@@ -322,13 +334,17 @@ impl UsbSerialManager {
                                     .or_default()
                                     .retain(|device_id| *device_id != message.from);
                             }
-                            None => device_changes.push(DeviceChange::Added { id: message.from }),
+                            None => {
+                                device_changes.push(DeviceChange::Connected { id: message.from })
+                            }
                         }
 
-                        self.port_outbox.push(CoordinatorSendMessage {
-                            message_body: CoordinatorSendBody::AnnounceAck {},
-                            target_destinations: Destination::from([message.from]),
-                        });
+                        self.outbox_sender
+                            .send(CoordinatorSendMessage {
+                                message_body: CoordinatorSendBody::AnnounceAck {},
+                                target_destinations: Destination::from([message.from]),
+                            })
+                            .unwrap();
 
                         self.reverse_device_ports
                             .entry(serial_number.clone())
@@ -364,8 +380,6 @@ impl UsbSerialManager {
             }
         }
 
-        let mut outbox = core::mem::take(&mut self.port_outbox);
-
         for device_id in self.device_ports.keys() {
             if self.registered_devices.contains(device_id) {
                 continue;
@@ -385,14 +399,19 @@ impl UsbSerialManager {
             }
         }
 
-        outbox.retain_mut(|send| {
+        while let Ok(mut send) = self.port_outbox.try_recv() {
             let mut ports_to_send_on = HashSet::new();
-            let (should_retain_in_outbox, wire_destinations) = match &mut send.target_destinations {
+            let wire_destinations = match &mut send.target_destinations {
                 Destination::All => {
                     ports_to_send_on.extend(self.device_ports.values().cloned());
-                    (false, Destination::All)
+                    Destination::All
                 }
                 Destination::Particular(devices) => {
+                    // You might be wondering why we bother to narrow down the wire destinations to
+                    // those devices that are actually available. There is no good reason for this
+                    // atm but it used to be necessary and it's nice to have only the devices that
+                    // were actually visible to the coordinator on a particular port receive
+                    // messages for sanity.
                     let mut destinations_available_now = BTreeSet::default();
                     devices.retain(|destination| match self.device_ports.get(destination) {
                         Some(port) => {
@@ -403,10 +422,15 @@ impl UsbSerialManager {
                         None => true,
                     });
 
-                    (
-                        send.should_keep_in_outbox_until_all_sent(),
-                        Destination::Particular(destinations_available_now),
-                    )
+                    if !devices.is_empty() {
+                        event!(
+                            Level::DEBUG,
+                            kind = send.gist(),
+                            "message not send to all intended recipients"
+                        );
+                    }
+
+                    Destination::Particular(destinations_available_now)
                 }
             };
 
@@ -454,11 +478,7 @@ impl UsbSerialManager {
                     }
                 }
             }
-
-            should_retain_in_outbox
-        });
-
-        self.port_outbox = outbox;
+        }
 
         PortChanges {
             device_changes,
@@ -487,54 +507,6 @@ impl UsbSerialManager {
 
     pub fn registered_devices(&self) -> &BTreeSet<DeviceId> {
         &self.registered_devices
-    }
-
-    pub fn update_name_preview(&mut self, device_id: DeviceId, name: &str) {
-        // repalce name preview messages rather than spamming
-        if matches!(
-            self.port_outbox.last(),
-            Some(CoordinatorSendMessage {
-                message_body: CoordinatorSendBody::Naming(frostsnap_comms::NameCommand::Preview(_)),
-                ..
-            })
-        ) {
-            self.port_outbox.pop();
-        }
-        self.port_outbox.push(CoordinatorSendMessage {
-            target_destinations: [device_id].into(),
-            message_body: CoordinatorSendBody::Naming(frostsnap_comms::NameCommand::Preview(
-                name.into(),
-            )),
-        });
-    }
-
-    pub fn finish_naming(&mut self, device_id: DeviceId, name: &str) {
-        event!(
-            Level::INFO,
-            name = name,
-            device_id = device_id.to_string(),
-            "Named device"
-        );
-        self.port_outbox.push(CoordinatorSendMessage {
-            target_destinations: [device_id].into(),
-            message_body: CoordinatorSendBody::Naming(frostsnap_comms::NameCommand::Finish(
-                name.into(),
-            )),
-        })
-    }
-
-    pub fn send_cancel_all(&mut self) {
-        self.port_outbox.push(CoordinatorSendMessage {
-            target_destinations: frostsnap_comms::Destination::All,
-            message_body: frostsnap_comms::CoordinatorSendBody::Cancel,
-        });
-    }
-
-    pub fn send_cancel(&mut self, device_id: DeviceId) {
-        self.port_outbox.push(CoordinatorSendMessage {
-            target_destinations: frostsnap_comms::Destination::Particular([device_id].into()),
-            message_body: frostsnap_comms::CoordinatorSendBody::Cancel,
-        });
     }
 
     pub fn connected_device_labels(&self) -> BTreeMap<DeviceId, String> {
@@ -566,6 +538,63 @@ impl UsbSerialManager {
     }
 }
 
+#[derive(Clone)]
+pub struct UsbSender {
+    sender: std::sync::mpsc::Sender<CoordinatorSendMessage>,
+}
+
+impl UsbSender {
+    pub fn send_cancel_all(&self) {
+        self.sender
+            .send(CoordinatorSendMessage {
+                target_destinations: frostsnap_comms::Destination::All,
+                message_body: frostsnap_comms::CoordinatorSendBody::Cancel,
+            })
+            .expect("receiver exists");
+    }
+
+    pub fn send_cancel(&self, device_id: DeviceId) {
+        self.sender
+            .send(CoordinatorSendMessage {
+                target_destinations: frostsnap_comms::Destination::Particular([device_id].into()),
+                message_body: frostsnap_comms::CoordinatorSendBody::Cancel,
+            })
+            .expect("receiver exists");
+    }
+
+    pub fn update_name_preview(&self, device_id: DeviceId, name: &str) {
+        self.sender
+            .send(CoordinatorSendMessage {
+                target_destinations: [device_id].into(),
+                message_body: CoordinatorSendBody::Naming(frostsnap_comms::NameCommand::Preview(
+                    name.into(),
+                )),
+            })
+            .expect("receiver exists");
+    }
+
+    pub fn finish_naming(&self, device_id: DeviceId, name: &str) {
+        event!(
+            Level::INFO,
+            name = name,
+            device_id = device_id.to_string(),
+            "Named device"
+        );
+        self.sender
+            .send(CoordinatorSendMessage {
+                target_destinations: [device_id].into(),
+                message_body: CoordinatorSendBody::Naming(frostsnap_comms::NameCommand::Finish(
+                    name.into(),
+                )),
+            })
+            .expect("receiver exists");
+    }
+
+    pub fn send(&self, message: CoordinatorSendMessage) {
+        self.sender.send(message).expect("receiver exists")
+    }
+}
+
 #[derive(Debug)]
 pub struct PortChanges {
     pub device_changes: Vec<DeviceChange>,
@@ -574,7 +603,7 @@ pub struct PortChanges {
 
 #[derive(Debug, Clone)]
 pub enum DeviceChange {
-    Added {
+    Connected {
         id: DeviceId,
     },
     Renamed {
@@ -584,6 +613,10 @@ pub enum DeviceChange {
     },
     NeedsName {
         id: DeviceId,
+    },
+    NewUnknownDevice {
+        id: DeviceId,
+        name: String,
     },
     Registered {
         id: DeviceId,
