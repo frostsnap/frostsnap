@@ -1,5 +1,5 @@
 use crate::DeviceId;
-use crate::{gen_pop_message, message::*, ActionError, Error, MessageResult, NONCE_BATCH_SIZE};
+use crate::{gen_pop_message, message::*, ActionError, Error, MessageResult, NONCE_CACHE_SIZE};
 use alloc::{
     boxed::Box,
     collections::{BTreeMap, BTreeSet},
@@ -141,7 +141,7 @@ impl FrostSigner {
                 };
 
                 let nonces = self
-                    .generate_nonces(aux_rand, 0, NONCE_BATCH_SIZE)
+                    .generate_nonces(aux_rand, 0, NONCE_CACHE_SIZE)
                     .map(|nonce| nonce.public())
                     .collect::<Vec<_>>()
                     .try_into()
@@ -278,7 +278,7 @@ impl FrostSigner {
                 },
                 CoordinatorToDeviceMessage::RequestSign(SignRequest { nonces, sign_task }),
             ) => {
-                let (my_nonces, my_nonce_index, _) = match nonces.get(&self.device_id()) {
+                let (my_nonces, my_nonce_index) = match nonces.get(&self.device_id()) {
                     Some(nonce) => nonce,
                     None => return Ok(Vec::new()),
                 };
@@ -354,8 +354,7 @@ impl FrostSigner {
             } => {
                 let sign_items = sign_task.sign_items();
                 let frost = frost::new_with_deterministic_nonces::<Sha256>();
-                let (_, my_nonce_index, my_replenish_index) =
-                    nonces.get(&self.device_id()).expect("already checked");
+                let (_, my_nonce_index) = nonces.get(&self.device_id()).expect("already checked");
 
                 // ⚠ Update nonce counter. Overflow would allow nonce reuse.
                 self.nonce_counter = my_nonce_index.saturating_add(sign_items.len());
@@ -370,7 +369,7 @@ impl FrostSigner {
                 {
                     let nonces_at_index = nonces
                         .iter()
-                        .map(|(id, (nonces, _, _))| (id.to_poly_index(), nonces[nonce_index]))
+                        .map(|(id, (nonces, _))| (id.to_poly_index(), nonces[nonce_index]))
                         .collect();
 
                     let mut xpub = crate::xpub::Xpub::new(key.frost_key.clone());
@@ -416,7 +415,11 @@ impl FrostSigner {
                 }
 
                 let replenish_nonces = self
-                    .generate_nonces(key.aux_rand, *my_replenish_index, sign_items.len())
+                    .generate_nonces(
+                        key.aux_rand,
+                        my_nonce_index + NONCE_CACHE_SIZE,
+                        sign_items.len(),
+                    )
                     .map(|nonce| nonce.public())
                     .collect();
 
@@ -462,7 +465,7 @@ pub enum SignerState {
     AwaitingSignAck {
         key: FrostsnapKey,
         sign_task: SignTask,
-        nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
+        nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize)>,
     },
     FrostKey {
         key: FrostsnapKey,

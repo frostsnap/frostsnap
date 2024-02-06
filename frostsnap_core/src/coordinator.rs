@@ -507,8 +507,6 @@ impl FrostCoordinator {
                             .get_mut(&device_id)
                             .ok_or(StartSignError::UnknownDevice { device_id })?;
                         let index_of_first_nonce = nonces_for_device.counter;
-                        let index_of_last_nonce =
-                            index_of_first_nonce + nonces_for_device.nonces.len();
                         let nonces = nonces_for_device
                             .nonces
                             .iter()
@@ -526,10 +524,7 @@ impl FrostCoordinator {
                         core::mem::swap(&mut nonces_for_device.nonces, &mut remaining);
                         nonces_for_device.counter += n_signatures;
 
-                        Ok((
-                            device_id,
-                            (nonces, index_of_first_nonce, index_of_last_nonce),
-                        ))
+                        Ok((device_id, (nonces, index_of_first_nonce)))
                     })
                     .collect::<Result<BTreeMap<_, _>, _>>()?;
 
@@ -542,7 +537,7 @@ impl FrostCoordinator {
                         let b_message = Message::raw(&sign_item.message[..]);
                         let indexed_nonces = signing_nonces
                             .iter()
-                            .map(|(id, (nonce, _, _))| (id.to_poly_index(), nonce[i]))
+                            .map(|(id, (nonce, _))| (id.to_poly_index(), nonce[i]))
                             .collect();
 
                         let xonly_frost_key = sign_item.derive_key(key.frost_key());

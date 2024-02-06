@@ -6,7 +6,7 @@ use crate::KeyId;
 use crate::SessionHash;
 use crate::SigningSessionState;
 use crate::Vec;
-use crate::NONCE_BATCH_SIZE;
+use crate::NONCE_CACHE_SIZE;
 
 use alloc::boxed::Box;
 use alloc::collections::{BTreeMap, BTreeSet};
@@ -52,7 +52,7 @@ pub enum CoordinatorToDeviceMessage {
 pub struct SignRequest {
     // TODO: explain these `usize` and create a nicely documented struct which explains the
     // mechanism
-    pub nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
+    pub nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize)>,
     pub sign_task: SignTask,
 }
 
@@ -150,7 +150,7 @@ pub struct KeyGenProvideShares {
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, Eq, PartialEq)]
 pub struct KeyGenResponse {
     pub encrypted_shares: KeyGenProvideShares,
-    pub nonces: Box<[Nonce; NONCE_BATCH_SIZE]>,
+    pub nonces: Box<[Nonce; NONCE_CACHE_SIZE]>,
 }
 
 #[derive(Clone, Debug)]
