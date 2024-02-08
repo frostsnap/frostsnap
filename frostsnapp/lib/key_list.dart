@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/keygen.dart';
+import 'package:frostsnapp/wallet.dart';
 
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'package:flutter/material.dart';
@@ -78,23 +79,30 @@ class _KeyCard extends State<KeyCard> {
 
   @override
   Widget build(BuildContext context) {
-    final Widget button;
+    final keyId = widget.frostKey.id();
+    final Widget signButton;
+    final Widget walletButton = ElevatedButton(
+        onPressed: () {
+          Navigator.push(context, MaterialPageRoute(builder: (context) {
+            return WalletHome(keyId: keyId);
+          }));
+        },
+        child: Text("₿"));
 
     if (canContinueSigning) {
-      button = ElevatedButton(
+      signButton = ElevatedButton(
           onPressed: () async {
             final stream = coord
-                .tryRestoreSigningSession(keyId: widget.frostKey.id())
+                .tryRestoreSigningSession(keyId: keyId)
                 .asBroadcastStream();
             await signMessageDialog(context, stream);
             setState(() {
-              canContinueSigning =
-                  coord.canRestoreSigningSession(keyId: widget.frostKey.id());
+              canContinueSigning = coord.canRestoreSigningSession(keyId: keyId);
             });
           },
           child: Text("Continue signing"));
     } else {
-      button = ElevatedButton(
+      signButton = ElevatedButton(
           onPressed: () {
             Navigator.push(context, MaterialPageRoute(builder: (context) {
               return SignMessagePage(frostKey: widget.frostKey);
@@ -116,7 +124,9 @@ class _KeyCard extends State<KeyCard> {
             ),
             const SizedBox(height: 8),
             Text("Threshold: ${widget.frostKey.threshold()}"),
-            button
+            Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [signButton, const SizedBox(width: 5), walletButton])
           ],
         ),
       ),

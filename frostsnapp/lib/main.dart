@@ -19,21 +19,27 @@ void main() async {
   String? startupError;
 
   try {
+    // set logging up first before doing anything else
+    if (Platform.isAndroid) {
+      api.turnLogcatLoggingOn(level: Level.Debug);
+    } else {
+      api.turnStderrLoggingOn(level: Level.Debug);
+    }
     final appDir = await getApplicationSupportDirectory();
     final dbFile = '${appDir.path}/frostsnap.db';
     if (Platform.isAndroid) {
-      final (_coord, ffiserial) =
-          await api.newCoordinatorHostHandlesSerial(dbFile: dbFile);
+      final (coord_, ffiserial, wallet_) =
+          await api.loadHostHandlesSerial(dbFile: dbFile);
       globalHostPortHandler = HostPortHandler(ffiserial);
-      coord = _coord;
-      api.turnLogcatLoggingOn(level: Level.Debug);
+      coord = coord_;
+      wallet = wallet_;
       // check for devices that were plugged in before the app even started
       globalHostPortHandler.scanDevices();
     } else {
-      coord = await api.newCoordinator(dbFile: dbFile);
-      api.turnStderrLoggingOn(level: Level.Debug);
+      final (coord_, wallet_) = await api.load(dbFile: dbFile);
+      coord = coord_;
+      wallet = wallet_;
     }
-
     coord.startThread();
   } catch (error, stacktrace) {
     print("$error");
@@ -98,7 +104,7 @@ class MyHomePage extends StatelessWidget {
 class StartupErrorWidget extends StatelessWidget {
   final String error;
 
-  StartupErrorWidget({Key? key, required this.error}) : super(key: key);
+  const StartupErrorWidget({Key? key, required this.error}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {

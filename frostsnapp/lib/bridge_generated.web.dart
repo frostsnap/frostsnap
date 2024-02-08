@@ -26,6 +26,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
+  Object api2wire_ChainSync(ChainSync raw) {
+    return raw.shareOrMove();
+  }
+
+  @protected
   Object api2wire_FfiCoordinator(FfiCoordinator raw) {
     return raw.shareOrMove();
   }
@@ -33,6 +38,17 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   @protected
   Object api2wire_FrostsnapCoreCoordinatorFrostKeyState(
       FrostsnapCoreCoordinatorFrostKeyState raw) {
+    return raw.shareOrMove();
+  }
+
+  @protected
+  Object api2wire_MutexBTreeMapKeyIdStreamSinkTxState(
+      MutexBTreeMapKeyIdStreamSinkTxState raw) {
+    return raw.shareOrMove();
+  }
+
+  @protected
+  Object api2wire_MutexCrateWalletWallet(MutexCrateWalletWallet raw) {
     return raw.shareOrMove();
   }
 
@@ -57,8 +73,23 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
+  Object api2wire_RTransaction(RTransaction raw) {
+    return raw.shareOrMove();
+  }
+
+  @protected
   String api2wire_String(String raw) {
     return raw;
+  }
+
+  @protected
+  List<String> api2wire_StringList(List<String> raw) {
+    return raw;
+  }
+
+  @protected
+  List<dynamic> api2wire_box_autoadd_confirmation_time(ConfirmationTime raw) {
+    return api2wire_confirmation_time(raw);
   }
 
   @protected
@@ -122,6 +153,21 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
+  List<dynamic> api2wire_box_autoadd_transaction(Transaction raw) {
+    return api2wire_transaction(raw);
+  }
+
+  @protected
+  List<dynamic> api2wire_box_autoadd_wallet(Wallet raw) {
+    return api2wire_wallet(raw);
+  }
+
+  @protected
+  List<dynamic> api2wire_confirmation_time(ConfirmationTime raw) {
+    return [api2wire_u32(raw.height), api2wire_u64(raw.time)];
+  }
+
+  @protected
   List<dynamic> api2wire_coordinator(Coordinator raw) {
     return [api2wire_FfiCoordinator(raw.field0)];
   }
@@ -154,6 +200,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   @protected
   List<dynamic> api2wire_frost_key(FrostKey raw) {
     return [api2wire_FrostsnapCoreCoordinatorFrostKeyState(raw.field0)];
+  }
+
+  @protected
+  Object api2wire_i64(int raw) {
+    return castNativeBigInt(raw);
   }
 
   @protected
@@ -194,6 +245,12 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   @protected
   String? api2wire_opt_String(String? raw) {
     return raw == null ? null : api2wire_String(raw);
+  }
+
+  @protected
+  List<dynamic>? api2wire_opt_box_autoadd_confirmation_time(
+      ConfirmationTime? raw) {
+    return raw == null ? null : api2wire_box_autoadd_confirmation_time(raw);
   }
 
   @protected
@@ -247,6 +304,20 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
+  List<dynamic> api2wire_transaction(Transaction raw) {
+    return [
+      api2wire_i64(raw.netValue),
+      api2wire_RTransaction(raw.inner),
+      api2wire_opt_box_autoadd_confirmation_time(raw.confirmationTime)
+    ];
+  }
+
+  @protected
+  Object api2wire_u64(int raw) {
+    return castNativeBigInt(raw);
+  }
+
+  @protected
   Uint8List api2wire_u8_array_32(U8Array32 raw) {
     return Uint8List.fromList(raw);
   }
@@ -266,12 +337,23 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
     return raw;
   }
 
+  @protected
+  List<dynamic> api2wire_wallet(Wallet raw) {
+    return [
+      api2wire_MutexCrateWalletWallet(raw.inner),
+      api2wire_MutexBTreeMapKeyIdStreamSinkTxState(raw.walletStreams),
+      api2wire_ChainSync(raw.chainSync)
+    ];
+  }
 // Section: finalizer
 
   late final Finalizer<PlatformPointer> _ArcMutexVecPortDescFinalizer =
       Finalizer<PlatformPointer>(inner.drop_opaque_ArcMutexVecPortDesc);
   Finalizer<PlatformPointer> get ArcMutexVecPortDescFinalizer =>
       _ArcMutexVecPortDescFinalizer;
+  late final Finalizer<PlatformPointer> _ChainSyncFinalizer =
+      Finalizer<PlatformPointer>(inner.drop_opaque_ChainSync);
+  Finalizer<PlatformPointer> get ChainSyncFinalizer => _ChainSyncFinalizer;
   late final Finalizer<PlatformPointer> _FfiCoordinatorFinalizer =
       Finalizer<PlatformPointer>(inner.drop_opaque_FfiCoordinator);
   Finalizer<PlatformPointer> get FfiCoordinatorFinalizer =>
@@ -283,6 +365,16 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   Finalizer<PlatformPointer>
       get FrostsnapCoreCoordinatorFrostKeyStateFinalizer =>
           _FrostsnapCoreCoordinatorFrostKeyStateFinalizer;
+  late final Finalizer<PlatformPointer>
+      _MutexBTreeMapKeyIdStreamSinkTxStateFinalizer =
+      Finalizer<PlatformPointer>(
+          inner.drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState);
+  Finalizer<PlatformPointer> get MutexBTreeMapKeyIdStreamSinkTxStateFinalizer =>
+      _MutexBTreeMapKeyIdStreamSinkTxStateFinalizer;
+  late final Finalizer<PlatformPointer> _MutexCrateWalletWalletFinalizer =
+      Finalizer<PlatformPointer>(inner.drop_opaque_MutexCrateWalletWallet);
+  Finalizer<PlatformPointer> get MutexCrateWalletWalletFinalizer =>
+      _MutexCrateWalletWalletFinalizer;
   late final Finalizer<PlatformPointer> _PortBytesToReadSenderFinalizer =
       Finalizer<PlatformPointer>(inner.drop_opaque_PortBytesToReadSender);
   Finalizer<PlatformPointer> get PortBytesToReadSenderFinalizer =>
@@ -299,6 +391,10 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
       Finalizer<PlatformPointer>(inner.drop_opaque_PortWriteSender);
   Finalizer<PlatformPointer> get PortWriteSenderFinalizer =>
       _PortWriteSenderFinalizer;
+  late final Finalizer<PlatformPointer> _RTransactionFinalizer =
+      Finalizer<PlatformPointer>(inner.drop_opaque_RTransaction);
+  Finalizer<PlatformPointer> get RTransactionFinalizer =>
+      _RTransactionFinalizer;
 }
 
 // Section: WASM wire module
@@ -332,14 +428,16 @@ class NativeWasmModule implements WasmModule {
 
   external dynamic /* List<dynamic> */ wire_get_device(List<dynamic> id);
 
-  external dynamic /* void */ wire_new_coordinator(
-      NativePortType port_, String db_file);
+  external dynamic /* void */ wire_load(NativePortType port_, String db_file);
 
-  external dynamic /* void */ wire_new_coordinator_host_handles_serial(
+  external dynamic /* void */ wire_load_host_handles_serial(
       NativePortType port_, String db_file);
 
   external dynamic /* void */ wire_echo_key_id(
       NativePortType port_, List<dynamic> key_id);
+
+  external dynamic /* String */ wire_txid__method__Transaction(
+      List<dynamic> that);
 
   external dynamic /* int */ wire_threshold__method__FrostKey(
       List<dynamic> that);
@@ -421,9 +519,34 @@ class NativeWasmModule implements WasmModule {
       wire_try_restore_signing_session__method__Coordinator(
           NativePortType port_, List<dynamic> that, List<dynamic> key_id);
 
+  external dynamic /* void */ wire_sub_tx_state__method__Wallet(
+      NativePortType port_, List<dynamic> that, List<dynamic> key_id);
+
+  external dynamic /* List<dynamic> */ wire_tx_state__method__Wallet(
+      List<dynamic> that, List<dynamic> key_id);
+
+  external dynamic /* void */ wire_sync_txids__method__Wallet(
+      NativePortType port_,
+      List<dynamic> that,
+      List<dynamic> key_id,
+      List<String> txids);
+
+  external dynamic /* void */ wire_sync__method__Wallet(
+      NativePortType port_, List<dynamic> that, List<dynamic> key_id);
+
+  external dynamic /* void */ wire_next_address__method__Wallet(
+      NativePortType port_, List<dynamic> that, List<dynamic> key_id);
+
+  external dynamic /* List<dynamic> */ wire_addresses_state__method__Wallet(
+      List<dynamic> that, List<dynamic> key_id);
+
   external dynamic /*  */ drop_opaque_ArcMutexVecPortDesc(ptr);
 
   external int /* *const c_void */ share_opaque_ArcMutexVecPortDesc(ptr);
+
+  external dynamic /*  */ drop_opaque_ChainSync(ptr);
+
+  external int /* *const c_void */ share_opaque_ChainSync(ptr);
 
   external dynamic /*  */ drop_opaque_FfiCoordinator(ptr);
 
@@ -434,6 +557,15 @@ class NativeWasmModule implements WasmModule {
 
   external int /* *const c_void */
       share_opaque_FrostsnapCoreCoordinatorFrostKeyState(ptr);
+
+  external dynamic /*  */ drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(ptr);
+
+  external int /* *const c_void */
+      share_opaque_MutexBTreeMapKeyIdStreamSinkTxState(ptr);
+
+  external dynamic /*  */ drop_opaque_MutexCrateWalletWallet(ptr);
+
+  external int /* *const c_void */ share_opaque_MutexCrateWalletWallet(ptr);
 
   external dynamic /*  */ drop_opaque_PortBytesToReadSender(ptr);
 
@@ -450,6 +582,10 @@ class NativeWasmModule implements WasmModule {
   external dynamic /*  */ drop_opaque_PortWriteSender(ptr);
 
   external int /* *const c_void */ share_opaque_PortWriteSender(ptr);
+
+  external dynamic /*  */ drop_opaque_RTransaction(ptr);
+
+  external int /* *const c_void */ share_opaque_RTransaction(ptr);
 }
 
 // Section: WASM wire connector
@@ -485,15 +621,17 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   dynamic /* List<dynamic> */ wire_get_device(List<dynamic> id) =>
       wasmModule.wire_get_device(id);
 
-  void wire_new_coordinator(NativePortType port_, String db_file) =>
-      wasmModule.wire_new_coordinator(port_, db_file);
+  void wire_load(NativePortType port_, String db_file) =>
+      wasmModule.wire_load(port_, db_file);
 
-  void wire_new_coordinator_host_handles_serial(
-          NativePortType port_, String db_file) =>
-      wasmModule.wire_new_coordinator_host_handles_serial(port_, db_file);
+  void wire_load_host_handles_serial(NativePortType port_, String db_file) =>
+      wasmModule.wire_load_host_handles_serial(port_, db_file);
 
   void wire_echo_key_id(NativePortType port_, List<dynamic> key_id) =>
       wasmModule.wire_echo_key_id(port_, key_id);
+
+  dynamic /* String */ wire_txid__method__Transaction(List<dynamic> that) =>
+      wasmModule.wire_txid__method__Transaction(that);
 
   dynamic /* int */ wire_threshold__method__FrostKey(List<dynamic> that) =>
       wasmModule.wire_threshold__method__FrostKey(that);
@@ -599,11 +737,41 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
       wasmModule.wire_try_restore_signing_session__method__Coordinator(
           port_, that, key_id);
 
+  void wire_sub_tx_state__method__Wallet(
+          NativePortType port_, List<dynamic> that, List<dynamic> key_id) =>
+      wasmModule.wire_sub_tx_state__method__Wallet(port_, that, key_id);
+
+  dynamic /* List<dynamic> */ wire_tx_state__method__Wallet(
+          List<dynamic> that, List<dynamic> key_id) =>
+      wasmModule.wire_tx_state__method__Wallet(that, key_id);
+
+  void wire_sync_txids__method__Wallet(NativePortType port_, List<dynamic> that,
+          List<dynamic> key_id, List<String> txids) =>
+      wasmModule.wire_sync_txids__method__Wallet(port_, that, key_id, txids);
+
+  void wire_sync__method__Wallet(
+          NativePortType port_, List<dynamic> that, List<dynamic> key_id) =>
+      wasmModule.wire_sync__method__Wallet(port_, that, key_id);
+
+  void wire_next_address__method__Wallet(
+          NativePortType port_, List<dynamic> that, List<dynamic> key_id) =>
+      wasmModule.wire_next_address__method__Wallet(port_, that, key_id);
+
+  dynamic /* List<dynamic> */ wire_addresses_state__method__Wallet(
+          List<dynamic> that, List<dynamic> key_id) =>
+      wasmModule.wire_addresses_state__method__Wallet(that, key_id);
+
   dynamic /*  */ drop_opaque_ArcMutexVecPortDesc(ptr) =>
       wasmModule.drop_opaque_ArcMutexVecPortDesc(ptr);
 
   int /* *const c_void */ share_opaque_ArcMutexVecPortDesc(ptr) =>
       wasmModule.share_opaque_ArcMutexVecPortDesc(ptr);
+
+  dynamic /*  */ drop_opaque_ChainSync(ptr) =>
+      wasmModule.drop_opaque_ChainSync(ptr);
+
+  int /* *const c_void */ share_opaque_ChainSync(ptr) =>
+      wasmModule.share_opaque_ChainSync(ptr);
 
   dynamic /*  */ drop_opaque_FfiCoordinator(ptr) =>
       wasmModule.drop_opaque_FfiCoordinator(ptr);
@@ -617,6 +785,19 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   int /* *const c_void */ share_opaque_FrostsnapCoreCoordinatorFrostKeyState(
           ptr) =>
       wasmModule.share_opaque_FrostsnapCoreCoordinatorFrostKeyState(ptr);
+
+  dynamic /*  */ drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(ptr) =>
+      wasmModule.drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(ptr);
+
+  int /* *const c_void */ share_opaque_MutexBTreeMapKeyIdStreamSinkTxState(
+          ptr) =>
+      wasmModule.share_opaque_MutexBTreeMapKeyIdStreamSinkTxState(ptr);
+
+  dynamic /*  */ drop_opaque_MutexCrateWalletWallet(ptr) =>
+      wasmModule.drop_opaque_MutexCrateWalletWallet(ptr);
+
+  int /* *const c_void */ share_opaque_MutexCrateWalletWallet(ptr) =>
+      wasmModule.share_opaque_MutexCrateWalletWallet(ptr);
 
   dynamic /*  */ drop_opaque_PortBytesToReadSender(ptr) =>
       wasmModule.drop_opaque_PortBytesToReadSender(ptr);
@@ -641,4 +822,10 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
 
   int /* *const c_void */ share_opaque_PortWriteSender(ptr) =>
       wasmModule.share_opaque_PortWriteSender(ptr);
+
+  dynamic /*  */ drop_opaque_RTransaction(ptr) =>
+      wasmModule.drop_opaque_RTransaction(ptr);
+
+  int /* *const c_void */ share_opaque_RTransaction(ptr) =>
+      wasmModule.share_opaque_RTransaction(ptr);
 }

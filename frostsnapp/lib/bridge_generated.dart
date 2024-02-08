@@ -180,44 +180,43 @@ class NativeImpl implements Native {
         argNames: ["id"],
       );
 
-  Future<Coordinator> newCoordinator({required String dbFile, dynamic hint}) {
+  Future<(Coordinator, Wallet)> load({required String dbFile, dynamic hint}) {
     var arg0 = _platform.api2wire_String(dbFile);
     return _platform.executeNormal(FlutterRustBridgeTask(
-      callFfi: (port_) => _platform.inner.wire_new_coordinator(port_, arg0),
-      parseSuccessData: (d) => _wire2api_coordinator(d),
+      callFfi: (port_) => _platform.inner.wire_load(port_, arg0),
+      parseSuccessData: _wire2api___record__coordinator_wallet,
       parseErrorData: _wire2api_FrbAnyhowException,
-      constMeta: kNewCoordinatorConstMeta,
+      constMeta: kLoadConstMeta,
       argValues: [dbFile],
       hint: hint,
     ));
   }
 
-  FlutterRustBridgeTaskConstMeta get kNewCoordinatorConstMeta =>
+  FlutterRustBridgeTaskConstMeta get kLoadConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
-        debugName: "new_coordinator",
+        debugName: "load",
         argNames: ["dbFile"],
       );
 
-  Future<(Coordinator, FfiSerial)> newCoordinatorHostHandlesSerial(
+  Future<(Coordinator, FfiSerial, Wallet)> loadHostHandlesSerial(
       {required String dbFile, dynamic hint}) {
     var arg0 = _platform.api2wire_String(dbFile);
     return _platform.executeNormal(FlutterRustBridgeTask(
       callFfi: (port_) =>
-          _platform.inner.wire_new_coordinator_host_handles_serial(port_, arg0),
-      parseSuccessData: _wire2api___record__coordinator_ffi_serial,
+          _platform.inner.wire_load_host_handles_serial(port_, arg0),
+      parseSuccessData: _wire2api___record__coordinator_ffi_serial_wallet,
       parseErrorData: _wire2api_FrbAnyhowException,
-      constMeta: kNewCoordinatorHostHandlesSerialConstMeta,
+      constMeta: kLoadHostHandlesSerialConstMeta,
       argValues: [dbFile],
       hint: hint,
     ));
   }
 
-  FlutterRustBridgeTaskConstMeta
-      get kNewCoordinatorHostHandlesSerialConstMeta =>
-          const FlutterRustBridgeTaskConstMeta(
-            debugName: "new_coordinator_host_handles_serial",
-            argNames: ["dbFile"],
-          );
+  FlutterRustBridgeTaskConstMeta get kLoadHostHandlesSerialConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "load_host_handles_serial",
+        argNames: ["dbFile"],
+      );
 
   Future<KeyId> echoKeyId({required KeyId keyId, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_key_id(keyId);
@@ -235,6 +234,24 @@ class NativeImpl implements Native {
       const FlutterRustBridgeTaskConstMeta(
         debugName: "echo_key_id",
         argNames: ["keyId"],
+      );
+
+  String txidMethodTransaction({required Transaction that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_transaction(that);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner.wire_txid__method__Transaction(arg0),
+      parseSuccessData: _wire2api_String,
+      parseErrorData: null,
+      constMeta: kTxidMethodTransactionConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kTxidMethodTransactionConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "txid__method__Transaction",
+        argNames: ["that"],
       );
 
   int thresholdMethodFrostKey({required FrostKey that, dynamic hint}) {
@@ -755,12 +772,146 @@ class NativeImpl implements Native {
             argNames: ["that", "keyId"],
           );
 
+  Stream<TxState> subTxStateMethodWallet(
+      {required Wallet that, required KeyId keyId, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_wallet(that);
+    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    return _platform.executeStream(FlutterRustBridgeTask(
+      callFfi: (port_) =>
+          _platform.inner.wire_sub_tx_state__method__Wallet(port_, arg0, arg1),
+      parseSuccessData: _wire2api_tx_state,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kSubTxStateMethodWalletConstMeta,
+      argValues: [that, keyId],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kSubTxStateMethodWalletConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "sub_tx_state__method__Wallet",
+        argNames: ["that", "keyId"],
+      );
+
+  TxState txStateMethodWallet(
+      {required Wallet that, required KeyId keyId, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_wallet(that);
+    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner.wire_tx_state__method__Wallet(arg0, arg1),
+      parseSuccessData: _wire2api_tx_state,
+      parseErrorData: null,
+      constMeta: kTxStateMethodWalletConstMeta,
+      argValues: [that, keyId],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kTxStateMethodWalletConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "tx_state__method__Wallet",
+        argNames: ["that", "keyId"],
+      );
+
+  Stream<double> syncTxidsMethodWallet(
+      {required Wallet that,
+      required KeyId keyId,
+      required List<String> txids,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_wallet(that);
+    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg2 = _platform.api2wire_StringList(txids);
+    return _platform.executeStream(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner
+          .wire_sync_txids__method__Wallet(port_, arg0, arg1, arg2),
+      parseSuccessData: _wire2api_f64,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kSyncTxidsMethodWalletConstMeta,
+      argValues: [that, keyId, txids],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kSyncTxidsMethodWalletConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "sync_txids__method__Wallet",
+        argNames: ["that", "keyId", "txids"],
+      );
+
+  Stream<double> syncMethodWallet(
+      {required Wallet that, required KeyId keyId, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_wallet(that);
+    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    return _platform.executeStream(FlutterRustBridgeTask(
+      callFfi: (port_) =>
+          _platform.inner.wire_sync__method__Wallet(port_, arg0, arg1),
+      parseSuccessData: _wire2api_f64,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kSyncMethodWalletConstMeta,
+      argValues: [that, keyId],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kSyncMethodWalletConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "sync__method__Wallet",
+        argNames: ["that", "keyId"],
+      );
+
+  Future<Address> nextAddressMethodWallet(
+      {required Wallet that, required KeyId keyId, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_wallet(that);
+    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) =>
+          _platform.inner.wire_next_address__method__Wallet(port_, arg0, arg1),
+      parseSuccessData: _wire2api_address,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kNextAddressMethodWalletConstMeta,
+      argValues: [that, keyId],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kNextAddressMethodWalletConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "next_address__method__Wallet",
+        argNames: ["that", "keyId"],
+      );
+
+  List<Address> addressesStateMethodWallet(
+      {required Wallet that, required KeyId keyId, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_wallet(that);
+    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () =>
+          _platform.inner.wire_addresses_state__method__Wallet(arg0, arg1),
+      parseSuccessData: _wire2api_list_address,
+      parseErrorData: null,
+      constMeta: kAddressesStateMethodWalletConstMeta,
+      argValues: [that, keyId],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kAddressesStateMethodWalletConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "addresses_state__method__Wallet",
+        argNames: ["that", "keyId"],
+      );
+
   DropFnType get dropOpaqueArcMutexVecPortDesc =>
       _platform.inner.drop_opaque_ArcMutexVecPortDesc;
   ShareFnType get shareOpaqueArcMutexVecPortDesc =>
       _platform.inner.share_opaque_ArcMutexVecPortDesc;
   OpaqueTypeFinalizer get ArcMutexVecPortDescFinalizer =>
       _platform.ArcMutexVecPortDescFinalizer;
+
+  DropFnType get dropOpaqueChainSync => _platform.inner.drop_opaque_ChainSync;
+  ShareFnType get shareOpaqueChainSync =>
+      _platform.inner.share_opaque_ChainSync;
+  OpaqueTypeFinalizer get ChainSyncFinalizer => _platform.ChainSyncFinalizer;
 
   DropFnType get dropOpaqueFfiCoordinator =>
       _platform.inner.drop_opaque_FfiCoordinator;
@@ -775,6 +926,20 @@ class NativeImpl implements Native {
       _platform.inner.share_opaque_FrostsnapCoreCoordinatorFrostKeyState;
   OpaqueTypeFinalizer get FrostsnapCoreCoordinatorFrostKeyStateFinalizer =>
       _platform.FrostsnapCoreCoordinatorFrostKeyStateFinalizer;
+
+  DropFnType get dropOpaqueMutexBTreeMapKeyIdStreamSinkTxState =>
+      _platform.inner.drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState;
+  ShareFnType get shareOpaqueMutexBTreeMapKeyIdStreamSinkTxState =>
+      _platform.inner.share_opaque_MutexBTreeMapKeyIdStreamSinkTxState;
+  OpaqueTypeFinalizer get MutexBTreeMapKeyIdStreamSinkTxStateFinalizer =>
+      _platform.MutexBTreeMapKeyIdStreamSinkTxStateFinalizer;
+
+  DropFnType get dropOpaqueMutexCrateWalletWallet =>
+      _platform.inner.drop_opaque_MutexCrateWalletWallet;
+  ShareFnType get shareOpaqueMutexCrateWalletWallet =>
+      _platform.inner.share_opaque_MutexCrateWalletWallet;
+  OpaqueTypeFinalizer get MutexCrateWalletWalletFinalizer =>
+      _platform.MutexCrateWalletWalletFinalizer;
 
   DropFnType get dropOpaquePortBytesToReadSender =>
       _platform.inner.drop_opaque_PortBytesToReadSender;
@@ -804,6 +969,13 @@ class NativeImpl implements Native {
   OpaqueTypeFinalizer get PortWriteSenderFinalizer =>
       _platform.PortWriteSenderFinalizer;
 
+  DropFnType get dropOpaqueRTransaction =>
+      _platform.inner.drop_opaque_RTransaction;
+  ShareFnType get shareOpaqueRTransaction =>
+      _platform.inner.share_opaque_RTransaction;
+  OpaqueTypeFinalizer get RTransactionFinalizer =>
+      _platform.RTransactionFinalizer;
+
   void dispose() {
     _platform.dispose();
   }
@@ -811,6 +983,10 @@ class NativeImpl implements Native {
 
   ArcMutexVecPortDesc _wire2api_ArcMutexVecPortDesc(dynamic raw) {
     return ArcMutexVecPortDesc.fromRaw(raw[0], raw[1], this);
+  }
+
+  ChainSync _wire2api_ChainSync(dynamic raw) {
+    return ChainSync.fromRaw(raw[0], raw[1], this);
   }
 
   FfiCoordinator _wire2api_FfiCoordinator(dynamic raw) {
@@ -824,6 +1000,15 @@ class NativeImpl implements Native {
   FrostsnapCoreCoordinatorFrostKeyState
       _wire2api_FrostsnapCoreCoordinatorFrostKeyState(dynamic raw) {
     return FrostsnapCoreCoordinatorFrostKeyState.fromRaw(raw[0], raw[1], this);
+  }
+
+  MutexBTreeMapKeyIdStreamSinkTxState
+      _wire2api_MutexBTreeMapKeyIdStreamSinkTxState(dynamic raw) {
+    return MutexBTreeMapKeyIdStreamSinkTxState.fromRaw(raw[0], raw[1], this);
+  }
+
+  MutexCrateWalletWallet _wire2api_MutexCrateWalletWallet(dynamic raw) {
+    return MutexCrateWalletWallet.fromRaw(raw[0], raw[1], this);
   }
 
   PortBytesToReadSender _wire2api_PortBytesToReadSender(dynamic raw) {
@@ -842,24 +1027,55 @@ class NativeImpl implements Native {
     return PortWriteSender.fromRaw(raw[0], raw[1], this);
   }
 
+  RTransaction _wire2api_RTransaction(dynamic raw) {
+    return RTransaction.fromRaw(raw[0], raw[1], this);
+  }
+
   String _wire2api_String(dynamic raw) {
     return raw as String;
   }
 
-  (Coordinator, FfiSerial) _wire2api___record__coordinator_ffi_serial(
-      dynamic raw) {
+  (Coordinator, FfiSerial, Wallet)
+      _wire2api___record__coordinator_ffi_serial_wallet(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3) {
+      throw Exception('Expected 3 elements, got ${arr.length}');
+    }
+    return (
+      _wire2api_coordinator(arr[0]),
+      _wire2api_ffi_serial(arr[1]),
+      _wire2api_wallet(arr[2]),
+    );
+  }
+
+  (Coordinator, Wallet) _wire2api___record__coordinator_wallet(dynamic raw) {
     final arr = raw as List<dynamic>;
     if (arr.length != 2) {
       throw Exception('Expected 2 elements, got ${arr.length}');
     }
     return (
       _wire2api_coordinator(arr[0]),
-      _wire2api_ffi_serial(arr[1]),
+      _wire2api_wallet(arr[1]),
+    );
+  }
+
+  Address _wire2api_address(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return Address(
+      index: _wire2api_u32(arr[0]),
+      addressString: _wire2api_String(arr[1]),
+      used: _wire2api_bool(arr[2]),
     );
   }
 
   bool _wire2api_bool(dynamic raw) {
     return raw as bool;
+  }
+
+  ConfirmationTime _wire2api_box_autoadd_confirmation_time(dynamic raw) {
+    return _wire2api_confirmation_time(raw);
   }
 
   Device _wire2api_box_autoadd_device(dynamic raw) {
@@ -896,6 +1112,16 @@ class NativeImpl implements Native {
 
   SigningState _wire2api_box_autoadd_signing_state(dynamic raw) {
     return _wire2api_signing_state(raw);
+  }
+
+  ConfirmationTime _wire2api_confirmation_time(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return ConfirmationTime(
+      height: _wire2api_u32(arr[0]),
+      time: _wire2api_u64(arr[1]),
+    );
   }
 
   Coordinator _wire2api_coordinator(dynamic raw) {
@@ -996,6 +1222,10 @@ class NativeImpl implements Native {
     );
   }
 
+  double _wire2api_f64(dynamic raw) {
+    return raw as double;
+  }
+
   FfiSerial _wire2api_ffi_serial(dynamic raw) {
     final arr = raw as List<dynamic>;
     if (arr.length != 1)
@@ -1020,6 +1250,10 @@ class NativeImpl implements Native {
     return raw as int;
   }
 
+  int _wire2api_i64(dynamic raw) {
+    return castInt(raw);
+  }
+
   KeyId _wire2api_key_id(dynamic raw) {
     final arr = raw as List<dynamic>;
     if (arr.length != 1)
@@ -1036,6 +1270,10 @@ class NativeImpl implements Native {
     return KeyState(
       keys: _wire2api_list_frost_key(arr[0]),
     );
+  }
+
+  List<Address> _wire2api_list_address(dynamic raw) {
+    return (raw as List<dynamic>).map(_wire2api_address).toList();
   }
 
   List<Device> _wire2api_list_device(dynamic raw) {
@@ -1058,8 +1296,16 @@ class NativeImpl implements Native {
     return (raw as List<dynamic>).map(_wire2api_frost_key).toList();
   }
 
+  List<Transaction> _wire2api_list_transaction(dynamic raw) {
+    return (raw as List<dynamic>).map(_wire2api_transaction).toList();
+  }
+
   String? _wire2api_opt_String(dynamic raw) {
     return raw == null ? null : _wire2api_String(raw);
+  }
+
+  ConfirmationTime? _wire2api_opt_box_autoadd_confirmation_time(dynamic raw) {
+    return raw == null ? null : _wire2api_box_autoadd_confirmation_time(raw);
   }
 
   Device? _wire2api_opt_box_autoadd_device(dynamic raw) {
@@ -1156,8 +1402,33 @@ class NativeImpl implements Native {
     );
   }
 
+  Transaction _wire2api_transaction(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return Transaction(
+      bridge: this,
+      netValue: _wire2api_i64(arr[0]),
+      inner: _wire2api_RTransaction(arr[1]),
+      confirmationTime: _wire2api_opt_box_autoadd_confirmation_time(arr[2]),
+    );
+  }
+
+  TxState _wire2api_tx_state(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return TxState(
+      txs: _wire2api_list_transaction(arr[0]),
+    );
+  }
+
   int _wire2api_u32(dynamic raw) {
     return raw as int;
+  }
+
+  int _wire2api_u64(dynamic raw) {
+    return castInt(raw);
   }
 
   int _wire2api_u8(dynamic raw) {
@@ -1186,6 +1457,18 @@ class NativeImpl implements Native {
 
   int _wire2api_usize(dynamic raw) {
     return castInt(raw);
+  }
+
+  Wallet _wire2api_wallet(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return Wallet(
+      bridge: this,
+      inner: _wire2api_MutexCrateWalletWallet(arr[0]),
+      walletStreams: _wire2api_MutexBTreeMapKeyIdStreamSinkTxState(arr[1]),
+      chainSync: _wire2api_ChainSync(arr[2]),
+    );
   }
 }
 
@@ -1220,4 +1503,5 @@ int api2wire_u8(int raw) {
 int api2wire_usize(int raw) {
   return raw;
 }
+
 // Section: finalizer

@@ -1,6 +1,7 @@
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'serialport.dart';
 
+late Wallet wallet;
 late Coordinator coord;
 late HostPortHandler globalHostPortHandler;
 

@@ -51,18 +51,22 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kGetDeviceConstMeta;
 
-  Future<Coordinator> newCoordinator({required String dbFile, dynamic hint});
+  Future<(Coordinator, Wallet)> load({required String dbFile, dynamic hint});
 
-  FlutterRustBridgeTaskConstMeta get kNewCoordinatorConstMeta;
+  FlutterRustBridgeTaskConstMeta get kLoadConstMeta;
 
-  Future<(Coordinator, FfiSerial)> newCoordinatorHostHandlesSerial(
+  Future<(Coordinator, FfiSerial, Wallet)> loadHostHandlesSerial(
       {required String dbFile, dynamic hint});
 
-  FlutterRustBridgeTaskConstMeta get kNewCoordinatorHostHandlesSerialConstMeta;
+  FlutterRustBridgeTaskConstMeta get kLoadHostHandlesSerialConstMeta;
 
   Future<KeyId> echoKeyId({required KeyId keyId, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kEchoKeyIdConstMeta;
+
+  String txidMethodTransaction({required Transaction that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kTxidMethodTransactionConstMeta;
 
   int thresholdMethodFrostKey({required FrostKey that, dynamic hint});
 
@@ -198,9 +202,46 @@ abstract class Native {
   FlutterRustBridgeTaskConstMeta
       get kTryRestoreSigningSessionMethodCoordinatorConstMeta;
 
+  Stream<TxState> subTxStateMethodWallet(
+      {required Wallet that, required KeyId keyId, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kSubTxStateMethodWalletConstMeta;
+
+  TxState txStateMethodWallet(
+      {required Wallet that, required KeyId keyId, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kTxStateMethodWalletConstMeta;
+
+  Stream<double> syncTxidsMethodWallet(
+      {required Wallet that,
+      required KeyId keyId,
+      required List<String> txids,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kSyncTxidsMethodWalletConstMeta;
+
+  Stream<double> syncMethodWallet(
+      {required Wallet that, required KeyId keyId, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kSyncMethodWalletConstMeta;
+
+  Future<Address> nextAddressMethodWallet(
+      {required Wallet that, required KeyId keyId, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kNextAddressMethodWalletConstMeta;
+
+  List<Address> addressesStateMethodWallet(
+      {required Wallet that, required KeyId keyId, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kAddressesStateMethodWalletConstMeta;
+
   DropFnType get dropOpaqueArcMutexVecPortDesc;
   ShareFnType get shareOpaqueArcMutexVecPortDesc;
   OpaqueTypeFinalizer get ArcMutexVecPortDescFinalizer;
+
+  DropFnType get dropOpaqueChainSync;
+  ShareFnType get shareOpaqueChainSync;
+  OpaqueTypeFinalizer get ChainSyncFinalizer;
 
   DropFnType get dropOpaqueFfiCoordinator;
   ShareFnType get shareOpaqueFfiCoordinator;
@@ -209,6 +250,14 @@ abstract class Native {
   DropFnType get dropOpaqueFrostsnapCoreCoordinatorFrostKeyState;
   ShareFnType get shareOpaqueFrostsnapCoreCoordinatorFrostKeyState;
   OpaqueTypeFinalizer get FrostsnapCoreCoordinatorFrostKeyStateFinalizer;
+
+  DropFnType get dropOpaqueMutexBTreeMapKeyIdStreamSinkTxState;
+  ShareFnType get shareOpaqueMutexBTreeMapKeyIdStreamSinkTxState;
+  OpaqueTypeFinalizer get MutexBTreeMapKeyIdStreamSinkTxStateFinalizer;
+
+  DropFnType get dropOpaqueMutexCrateWalletWallet;
+  ShareFnType get shareOpaqueMutexCrateWalletWallet;
+  OpaqueTypeFinalizer get MutexCrateWalletWalletFinalizer;
 
   DropFnType get dropOpaquePortBytesToReadSender;
   ShareFnType get shareOpaquePortBytesToReadSender;
@@ -225,6 +274,10 @@ abstract class Native {
   DropFnType get dropOpaquePortWriteSender;
   ShareFnType get shareOpaquePortWriteSender;
   OpaqueTypeFinalizer get PortWriteSenderFinalizer;
+
+  DropFnType get dropOpaqueRTransaction;
+  ShareFnType get shareOpaqueRTransaction;
+  OpaqueTypeFinalizer get RTransactionFinalizer;
 }
 
 @sealed
@@ -241,6 +294,20 @@ class ArcMutexVecPortDesc extends FrbOpaque {
   @override
   OpaqueTypeFinalizer get staticFinalizer =>
       bridge.ArcMutexVecPortDescFinalizer;
+}
+
+@sealed
+class ChainSync extends FrbOpaque {
+  final Native bridge;
+  ChainSync.fromRaw(int ptr, int size, this.bridge) : super.unsafe(ptr, size);
+  @override
+  DropFnType get dropFn => bridge.dropOpaqueChainSync;
+
+  @override
+  ShareFnType get shareFn => bridge.shareOpaqueChainSync;
+
+  @override
+  OpaqueTypeFinalizer get staticFinalizer => bridge.ChainSyncFinalizer;
 }
 
 @sealed
@@ -274,6 +341,39 @@ class FrostsnapCoreCoordinatorFrostKeyState extends FrbOpaque {
   @override
   OpaqueTypeFinalizer get staticFinalizer =>
       bridge.FrostsnapCoreCoordinatorFrostKeyStateFinalizer;
+}
+
+@sealed
+class MutexBTreeMapKeyIdStreamSinkTxState extends FrbOpaque {
+  final Native bridge;
+  MutexBTreeMapKeyIdStreamSinkTxState.fromRaw(int ptr, int size, this.bridge)
+      : super.unsafe(ptr, size);
+  @override
+  DropFnType get dropFn => bridge.dropOpaqueMutexBTreeMapKeyIdStreamSinkTxState;
+
+  @override
+  ShareFnType get shareFn =>
+      bridge.shareOpaqueMutexBTreeMapKeyIdStreamSinkTxState;
+
+  @override
+  OpaqueTypeFinalizer get staticFinalizer =>
+      bridge.MutexBTreeMapKeyIdStreamSinkTxStateFinalizer;
+}
+
+@sealed
+class MutexCrateWalletWallet extends FrbOpaque {
+  final Native bridge;
+  MutexCrateWalletWallet.fromRaw(int ptr, int size, this.bridge)
+      : super.unsafe(ptr, size);
+  @override
+  DropFnType get dropFn => bridge.dropOpaqueMutexCrateWalletWallet;
+
+  @override
+  ShareFnType get shareFn => bridge.shareOpaqueMutexCrateWalletWallet;
+
+  @override
+  OpaqueTypeFinalizer get staticFinalizer =>
+      bridge.MutexCrateWalletWalletFinalizer;
 }
 
 @sealed
@@ -335,6 +435,43 @@ class PortWriteSender extends FrbOpaque {
 
   @override
   OpaqueTypeFinalizer get staticFinalizer => bridge.PortWriteSenderFinalizer;
+}
+
+@sealed
+class RTransaction extends FrbOpaque {
+  final Native bridge;
+  RTransaction.fromRaw(int ptr, int size, this.bridge)
+      : super.unsafe(ptr, size);
+  @override
+  DropFnType get dropFn => bridge.dropOpaqueRTransaction;
+
+  @override
+  ShareFnType get shareFn => bridge.shareOpaqueRTransaction;
+
+  @override
+  OpaqueTypeFinalizer get staticFinalizer => bridge.RTransactionFinalizer;
+}
+
+class Address {
+  final int index;
+  final String addressString;
+  final bool used;
+
+  const Address({
+    required this.index,
+    required this.addressString,
+    required this.used,
+  });
+}
+
+class ConfirmationTime {
+  final int height;
+  final int time;
+
+  const ConfirmationTime({
+    required this.height,
+    required this.time,
+  });
 }
 
 class Coordinator {
@@ -711,6 +848,32 @@ class SigningState {
       );
 }
 
+class Transaction {
+  final Native bridge;
+  final int netValue;
+  final RTransaction inner;
+  final ConfirmationTime? confirmationTime;
+
+  const Transaction({
+    required this.bridge,
+    required this.netValue,
+    required this.inner,
+    this.confirmationTime,
+  });
+
+  String txid({dynamic hint}) => bridge.txidMethodTransaction(
+        that: this,
+      );
+}
+
+class TxState {
+  final List<Transaction> txs;
+
+  const TxState({
+    required this.txs,
+  });
+}
+
 class U8Array32 extends NonGrowableListView<int> {
   static const arraySize = 32;
   U8Array32(Uint8List inner)
@@ -736,4 +899,56 @@ class U8Array64 extends NonGrowableListView<int> {
         super(inner);
   U8Array64.unchecked(Uint8List inner) : super(inner);
   U8Array64.init() : super(Uint8List(arraySize));
+}
+
+class Wallet {
+  final Native bridge;
+  final MutexCrateWalletWallet inner;
+  final MutexBTreeMapKeyIdStreamSinkTxState walletStreams;
+  final ChainSync chainSync;
+
+  const Wallet({
+    required this.bridge,
+    required this.inner,
+    required this.walletStreams,
+    required this.chainSync,
+  });
+
+  Stream<TxState> subTxState({required KeyId keyId, dynamic hint}) =>
+      bridge.subTxStateMethodWallet(
+        that: this,
+        keyId: keyId,
+      );
+
+  TxState txState({required KeyId keyId, dynamic hint}) =>
+      bridge.txStateMethodWallet(
+        that: this,
+        keyId: keyId,
+      );
+
+  Stream<double> syncTxids(
+          {required KeyId keyId, required List<String> txids, dynamic hint}) =>
+      bridge.syncTxidsMethodWallet(
+        that: this,
+        keyId: keyId,
+        txids: txids,
+      );
+
+  Stream<double> sync({required KeyId keyId, dynamic hint}) =>
+      bridge.syncMethodWallet(
+        that: this,
+        keyId: keyId,
+      );
+
+  Future<Address> nextAddress({required KeyId keyId, dynamic hint}) =>
+      bridge.nextAddressMethodWallet(
+        that: this,
+        keyId: keyId,
+      );
+
+  List<Address> addressesState({required KeyId keyId, dynamic hint}) =>
+      bridge.addressesStateMethodWallet(
+        that: this,
+        keyId: keyId,
+      );
 }

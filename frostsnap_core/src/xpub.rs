@@ -1,4 +1,4 @@
-use bitcoin::{secp256k1, util::bip32::*, Network};
+use bitcoin::{bip32::*, secp256k1, Network};
 use schnorr_fun::{
     frost::FrostKey,
     fun::{g, marker::*, Point, Scalar, G},
@@ -88,7 +88,7 @@ impl<T: TweakableKey> Xpub<T> {
                 child_number: ChildNumber::from(0u32),
                 parent_fingerprint: Fingerprint::default(),
                 public_key: key.to_libsecp_key(),
-                chain_code: ChainCode::from([0u8; 32].as_ref()),
+                chain_code: ChainCode::from([0u8; 32]),
             },
             key,
         }

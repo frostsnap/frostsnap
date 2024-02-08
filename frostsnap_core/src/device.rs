@@ -378,8 +378,8 @@ impl FrostSigner {
                     let mut xonly_frost_key = xpub.key().clone().into_xonly_key();
 
                     if sign_item.tap_tweak {
-                        let tweak = bitcoin::util::taproot::TapTweakHash::from_key_and_tweak(
-                            bitcoin::XOnlyPublicKey::from_slice(
+                        let tweak = bitcoin::taproot::TapTweakHash::from_key_and_tweak(
+                            bitcoin::key::XOnlyPublicKey::from_slice(
                                 &xonly_frost_key.public_key().to_xonly_bytes(),
                             )
                             .unwrap(),

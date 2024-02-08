@@ -18,3 +18,5 @@ tracing = { version = "0.1" }
 tracing-android = "0.2"
 llsdb.workspace = true
 bincode.workspace = true
+bdk_chain = {  version = "0.9", features = ["serde"] }
+bdk_electrum = {  version = "0.7" }

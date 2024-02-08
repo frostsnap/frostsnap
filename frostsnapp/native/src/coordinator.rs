@@ -1,7 +1,7 @@
 use crate::api::{self, FfiSerial, KeyState, PortEvent};
 use crate::persist_core::PersistCore;
 use crate::SigningSession;
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, Context, Result};
 use flutter_rust_bridge::{RustOpaque, StreamSink};
 use frostsnap_coordinator::frostsnap_comms::{
     CoordinatorSendBody, CoordinatorSendMessage, Destination,
@@ -35,32 +35,39 @@ pub struct FfiCoordinator {
     keygen_stream: Arc<Mutex<Option<StreamSink<CoordinatorToUserKeyGenMessage>>>>,
     signing_session: Arc<Mutex<Option<SigningSession>>>,
     db: Arc<Mutex<LlsDb<File>>>,
-    core_persist: IndexHandle<PersistCore>,
+    persist_core: IndexHandle<PersistCore>,
     device_names: IndexHandle<llsdb::index::BTreeMap<DeviceId, String>>,
     usb_sender: UsbSender,
 }
 
 impl FfiCoordinator {
-    pub fn new(mut db: LlsDb<File>, mut usb_manager: UsbSerialManager) -> anyhow::Result<Self> {
+    pub fn new(
+        db: Arc<Mutex<LlsDb<File>>>,
+        mut usb_manager: UsbSerialManager,
+    ) -> anyhow::Result<Self> {
         let pending_for_outbox = Arc::new(Mutex::new(VecDeque::new()));
 
-        let (core_persist, device_names, coordinator) = db
+        let (persist_core, device_names_handle, coordinator) = db
+            .lock()
+            .unwrap()
             .execute(|tx| {
                 let persist = PersistCore::new(tx)?;
                 let (handle, api) = tx.store_and_take_index(persist);
                 let coordinator = api.core_coordinator()?;
                 let device_names_list = tx.take_list("device_names")?;
-                let device_names_btree = llsdb::index::BTreeMap::new(device_names_list, &tx)?;
-                let device_names_btree_handle = tx.store_index(device_names_btree);
-                Ok((handle, device_names_btree_handle, coordinator))
+                let device_names_index = llsdb::index::BTreeMap::new(device_names_list, &tx)?;
+                let device_names_handle = tx.store_index(device_names_index);
+                let device_names = tx.take_index(device_names_handle);
+                *usb_manager.device_labels_mut() = device_names
+                    .iter()
+                    .collect::<Result<_>>()
+                    .context("reading in device names from disk")?;
+
+                Ok((handle, device_names_handle, coordinator))
             })
             .context("initializing db")?;
 
         let usb_sender = usb_manager.usb_sender();
-
-        *usb_manager.device_labels_mut() = db
-            .execute(|tx| tx.take_index(device_names).iter().collect())
-            .context("reading in device names from disk")?;
 
         // HACK: if the global device list depends on db state then it shouldn't be global! The
         // reason it needs these names is for convenience. There are too many places that have
@@ -76,11 +83,15 @@ impl FfiCoordinator {
             thread_handle: Default::default(),
             keygen_stream: Default::default(),
             signing_session: Default::default(),
-            db: Arc::new(Mutex::new(db)),
-            core_persist,
-            device_names,
+            db,
+            persist_core,
+            device_names: device_names_handle,
             usb_sender,
         })
+    }
+
+    pub fn persist_core_handle(&self) -> IndexHandle<PersistCore> {
+        self.persist_core.clone()
     }
 
     pub fn start(&self) -> anyhow::Result<()> {
@@ -100,7 +111,7 @@ impl FfiCoordinator {
         let keygen_stream_loop = self.keygen_stream.clone();
         let signing_stream_loop = self.signing_session.clone();
         let db_loop = self.db.clone();
-        let core_persist = self.core_persist;
+        let core_persist = self.persist_core;
         let device_names = self.device_names;
         let usb_sender = self.usb_sender.clone();
 
@@ -254,7 +265,6 @@ impl FfiCoordinator {
                                     CoordinatorToStorageMessage::StoreSigningState(sign_state) => {
                                         persist.store_sign_session(sign_state)?
                                     }
-
                                     CoordinatorToStorageMessage::UpdateFrostKey(state) => {
                                         persist.set_key_state(state)?
                                     }
@@ -302,7 +312,7 @@ impl FfiCoordinator {
                 .db
                 .lock()
                 .unwrap()
-                .execute(|tx| tx.take_index(self.core_persist).clear_signing_session());
+                .execute(|tx| tx.take_index(self.persist_core).clear_signing_session());
         }
         self.coordinator.lock().unwrap().cancel();
         self.usb_sender.send_cancel_all()
@@ -380,7 +390,7 @@ impl FfiCoordinator {
             .db
             .lock()
             .unwrap()
-            .execute(|tx| tx.take_index(self.core_persist).persisted_signing())?;
+            .execute(|tx| tx.take_index(self.persist_core).persisted_signing())?;
 
         let signing_session_state =
             signing_session.ok_or(anyhow!("no signing session to restore"))?;
@@ -411,7 +421,7 @@ impl FfiCoordinator {
         self.db
             .lock()
             .unwrap()
-            .execute(|tx| Ok(tx.take_index(self.core_persist).is_sign_session_persisted()))
+            .execute(|tx| Ok(tx.take_index(self.persist_core).is_sign_session_persisted()))
             .unwrap()
     }
 }

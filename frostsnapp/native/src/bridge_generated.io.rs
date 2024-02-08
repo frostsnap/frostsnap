@@ -47,21 +47,25 @@ pub extern "C" fn wire_get_device(id: *mut wire_DeviceId) -> support::WireSyncRe
 }
 
 #[no_mangle]
-pub extern "C" fn wire_new_coordinator(port_: i64, db_file: *mut wire_uint_8_list) {
-    wire_new_coordinator_impl(port_, db_file)
+pub extern "C" fn wire_load(port_: i64, db_file: *mut wire_uint_8_list) {
+    wire_load_impl(port_, db_file)
 }
 
 #[no_mangle]
-pub extern "C" fn wire_new_coordinator_host_handles_serial(
-    port_: i64,
-    db_file: *mut wire_uint_8_list,
-) {
-    wire_new_coordinator_host_handles_serial_impl(port_, db_file)
+pub extern "C" fn wire_load_host_handles_serial(port_: i64, db_file: *mut wire_uint_8_list) {
+    wire_load_host_handles_serial_impl(port_, db_file)
 }
 
 #[no_mangle]
 pub extern "C" fn wire_echo_key_id(port_: i64, key_id: *mut wire_KeyId) {
     wire_echo_key_id_impl(port_, key_id)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_txid__method__Transaction(
+    that: *mut wire_Transaction,
+) -> support::WireSyncReturn {
+    wire_txid__method__Transaction_impl(that)
 }
 
 #[no_mangle]
@@ -255,11 +259,69 @@ pub extern "C" fn wire_try_restore_signing_session__method__Coordinator(
     wire_try_restore_signing_session__method__Coordinator_impl(port_, that, key_id)
 }
 
+#[no_mangle]
+pub extern "C" fn wire_sub_tx_state__method__Wallet(
+    port_: i64,
+    that: *mut wire_Wallet,
+    key_id: *mut wire_KeyId,
+) {
+    wire_sub_tx_state__method__Wallet_impl(port_, that, key_id)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_tx_state__method__Wallet(
+    that: *mut wire_Wallet,
+    key_id: *mut wire_KeyId,
+) -> support::WireSyncReturn {
+    wire_tx_state__method__Wallet_impl(that, key_id)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_sync_txids__method__Wallet(
+    port_: i64,
+    that: *mut wire_Wallet,
+    key_id: *mut wire_KeyId,
+    txids: *mut wire_StringList,
+) {
+    wire_sync_txids__method__Wallet_impl(port_, that, key_id, txids)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_sync__method__Wallet(
+    port_: i64,
+    that: *mut wire_Wallet,
+    key_id: *mut wire_KeyId,
+) {
+    wire_sync__method__Wallet_impl(port_, that, key_id)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_next_address__method__Wallet(
+    port_: i64,
+    that: *mut wire_Wallet,
+    key_id: *mut wire_KeyId,
+) {
+    wire_next_address__method__Wallet_impl(port_, that, key_id)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_addresses_state__method__Wallet(
+    that: *mut wire_Wallet,
+    key_id: *mut wire_KeyId,
+) -> support::WireSyncReturn {
+    wire_addresses_state__method__Wallet_impl(that, key_id)
+}
+
 // Section: allocate functions
 
 #[no_mangle]
 pub extern "C" fn new_ArcMutexVecPortDesc() -> wire_ArcMutexVecPortDesc {
     wire_ArcMutexVecPortDesc::new_with_null_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn new_ChainSync() -> wire_ChainSync {
+    wire_ChainSync::new_with_null_ptr()
 }
 
 #[no_mangle]
@@ -271,6 +333,17 @@ pub extern "C" fn new_FfiCoordinator() -> wire_FfiCoordinator {
 pub extern "C" fn new_FrostsnapCoreCoordinatorFrostKeyState(
 ) -> wire_FrostsnapCoreCoordinatorFrostKeyState {
     wire_FrostsnapCoreCoordinatorFrostKeyState::new_with_null_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn new_MutexBTreeMapKeyIdStreamSinkTxState(
+) -> wire_MutexBTreeMapKeyIdStreamSinkTxState {
+    wire_MutexBTreeMapKeyIdStreamSinkTxState::new_with_null_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn new_MutexCrateWalletWallet() -> wire_MutexCrateWalletWallet {
+    wire_MutexCrateWalletWallet::new_with_null_ptr()
 }
 
 #[no_mangle]
@@ -291,6 +364,25 @@ pub extern "C" fn new_PortReadSender() -> wire_PortReadSender {
 #[no_mangle]
 pub extern "C" fn new_PortWriteSender() -> wire_PortWriteSender {
     wire_PortWriteSender::new_with_null_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn new_RTransaction() -> wire_RTransaction {
+    wire_RTransaction::new_with_null_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn new_StringList_0(len: i32) -> *mut wire_StringList {
+    let wrap = wire_StringList {
+        ptr: support::new_leak_vec_ptr(<*mut wire_uint_8_list>::new_with_null_ptr(), len),
+        len,
+    };
+    support::new_leak_box_ptr(wrap)
+}
+
+#[no_mangle]
+pub extern "C" fn new_box_autoadd_confirmation_time_0() -> *mut wire_ConfirmationTime {
+    support::new_leak_box_ptr(wire_ConfirmationTime::new_with_null_ptr())
 }
 
 #[no_mangle]
@@ -351,6 +443,16 @@ pub extern "C" fn new_box_autoadd_port_write_0() -> *mut wire_PortWrite {
 #[no_mangle]
 pub extern "C" fn new_box_autoadd_signing_state_0() -> *mut wire_SigningState {
     support::new_leak_box_ptr(wire_SigningState::new_with_null_ptr())
+}
+
+#[no_mangle]
+pub extern "C" fn new_box_autoadd_transaction_0() -> *mut wire_Transaction {
+    support::new_leak_box_ptr(wire_Transaction::new_with_null_ptr())
+}
+
+#[no_mangle]
+pub extern "C" fn new_box_autoadd_wallet_0() -> *mut wire_Wallet {
+    support::new_leak_box_ptr(wire_Wallet::new_with_null_ptr())
 }
 
 #[no_mangle]
@@ -425,6 +527,21 @@ pub extern "C" fn share_opaque_ArcMutexVecPortDesc(ptr: *const c_void) -> *const
 }
 
 #[no_mangle]
+pub extern "C" fn drop_opaque_ChainSync(ptr: *const c_void) {
+    unsafe {
+        Arc::<ChainSync>::decrement_strong_count(ptr as _);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn share_opaque_ChainSync(ptr: *const c_void) -> *const c_void {
+    unsafe {
+        Arc::<ChainSync>::increment_strong_count(ptr as _);
+        ptr
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn drop_opaque_FfiCoordinator(ptr: *const c_void) {
     unsafe {
         Arc::<FfiCoordinator>::decrement_strong_count(ptr as _);
@@ -452,6 +569,38 @@ pub extern "C" fn share_opaque_FrostsnapCoreCoordinatorFrostKeyState(
 ) -> *const c_void {
     unsafe {
         Arc::<frostsnap_core::CoordinatorFrostKeyState>::increment_strong_count(ptr as _);
+        ptr
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(ptr: *const c_void) {
+    unsafe {
+        Arc::<Mutex<BTreeMap<KeyId, StreamSink<TxState>>>>::decrement_strong_count(ptr as _);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn share_opaque_MutexBTreeMapKeyIdStreamSinkTxState(
+    ptr: *const c_void,
+) -> *const c_void {
+    unsafe {
+        Arc::<Mutex<BTreeMap<KeyId, StreamSink<TxState>>>>::increment_strong_count(ptr as _);
+        ptr
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn drop_opaque_MutexCrateWalletWallet(ptr: *const c_void) {
+    unsafe {
+        Arc::<Mutex<crate::wallet::_Wallet>>::decrement_strong_count(ptr as _);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn share_opaque_MutexCrateWalletWallet(ptr: *const c_void) -> *const c_void {
+    unsafe {
+        Arc::<Mutex<crate::wallet::_Wallet>>::increment_strong_count(ptr as _);
         ptr
     }
 }
@@ -516,10 +665,30 @@ pub extern "C" fn share_opaque_PortWriteSender(ptr: *const c_void) -> *const c_v
     }
 }
 
+#[no_mangle]
+pub extern "C" fn drop_opaque_RTransaction(ptr: *const c_void) {
+    unsafe {
+        Arc::<RTransaction>::decrement_strong_count(ptr as _);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn share_opaque_RTransaction(ptr: *const c_void) -> *const c_void {
+    unsafe {
+        Arc::<RTransaction>::increment_strong_count(ptr as _);
+        ptr
+    }
+}
+
 // Section: impl Wire2Api
 
 impl Wire2Api<RustOpaque<Arc<Mutex<Vec<PortDesc>>>>> for wire_ArcMutexVecPortDesc {
     fn wire2api(self) -> RustOpaque<Arc<Mutex<Vec<PortDesc>>>> {
+        unsafe { support::opaque_from_dart(self.ptr as _) }
+    }
+}
+impl Wire2Api<RustOpaque<ChainSync>> for wire_ChainSync {
+    fn wire2api(self) -> RustOpaque<ChainSync> {
         unsafe { support::opaque_from_dart(self.ptr as _) }
     }
 }
@@ -532,6 +701,18 @@ impl Wire2Api<RustOpaque<frostsnap_core::CoordinatorFrostKeyState>>
     for wire_FrostsnapCoreCoordinatorFrostKeyState
 {
     fn wire2api(self) -> RustOpaque<frostsnap_core::CoordinatorFrostKeyState> {
+        unsafe { support::opaque_from_dart(self.ptr as _) }
+    }
+}
+impl Wire2Api<RustOpaque<Mutex<BTreeMap<KeyId, StreamSink<TxState>>>>>
+    for wire_MutexBTreeMapKeyIdStreamSinkTxState
+{
+    fn wire2api(self) -> RustOpaque<Mutex<BTreeMap<KeyId, StreamSink<TxState>>>> {
+        unsafe { support::opaque_from_dart(self.ptr as _) }
+    }
+}
+impl Wire2Api<RustOpaque<Mutex<crate::wallet::_Wallet>>> for wire_MutexCrateWalletWallet {
+    fn wire2api(self) -> RustOpaque<Mutex<crate::wallet::_Wallet>> {
         unsafe { support::opaque_from_dart(self.ptr as _) }
     }
 }
@@ -555,10 +736,30 @@ impl Wire2Api<RustOpaque<PortWriteSender>> for wire_PortWriteSender {
         unsafe { support::opaque_from_dart(self.ptr as _) }
     }
 }
+impl Wire2Api<RustOpaque<RTransaction>> for wire_RTransaction {
+    fn wire2api(self) -> RustOpaque<RTransaction> {
+        unsafe { support::opaque_from_dart(self.ptr as _) }
+    }
+}
 impl Wire2Api<String> for *mut wire_uint_8_list {
     fn wire2api(self) -> String {
         let vec: Vec<u8> = self.wire2api();
         String::from_utf8_lossy(&vec).into_owned()
+    }
+}
+impl Wire2Api<Vec<String>> for *mut wire_StringList {
+    fn wire2api(self) -> Vec<String> {
+        let vec = unsafe {
+            let wrap = support::box_from_leak_ptr(self);
+            support::vec_from_leak_ptr(wrap.ptr, wrap.len)
+        };
+        vec.into_iter().map(Wire2Api::wire2api).collect()
+    }
+}
+impl Wire2Api<ConfirmationTime> for *mut wire_ConfirmationTime {
+    fn wire2api(self) -> ConfirmationTime {
+        let wrap = unsafe { support::box_from_leak_ptr(self) };
+        Wire2Api::<ConfirmationTime>::wire2api(*wrap).into()
     }
 }
 impl Wire2Api<Coordinator> for *mut wire_Coordinator {
@@ -631,6 +832,26 @@ impl Wire2Api<SigningState> for *mut wire_SigningState {
     fn wire2api(self) -> SigningState {
         let wrap = unsafe { support::box_from_leak_ptr(self) };
         Wire2Api::<SigningState>::wire2api(*wrap).into()
+    }
+}
+impl Wire2Api<Transaction> for *mut wire_Transaction {
+    fn wire2api(self) -> Transaction {
+        let wrap = unsafe { support::box_from_leak_ptr(self) };
+        Wire2Api::<Transaction>::wire2api(*wrap).into()
+    }
+}
+impl Wire2Api<Wallet> for *mut wire_Wallet {
+    fn wire2api(self) -> Wallet {
+        let wrap = unsafe { support::box_from_leak_ptr(self) };
+        Wire2Api::<Wallet>::wire2api(*wrap).into()
+    }
+}
+impl Wire2Api<ConfirmationTime> for wire_ConfirmationTime {
+    fn wire2api(self) -> ConfirmationTime {
+        ConfirmationTime {
+            height: self.height.wire2api(),
+            time: self.time.wire2api(),
+        }
     }
 }
 impl Wire2Api<Coordinator> for wire_Coordinator {
@@ -789,6 +1010,15 @@ impl Wire2Api<SigningState> for wire_SigningState {
         }
     }
 }
+impl Wire2Api<Transaction> for wire_Transaction {
+    fn wire2api(self) -> Transaction {
+        Transaction {
+            net_value: self.net_value.wire2api(),
+            inner: self.inner.wire2api(),
+            confirmation_time: self.confirmation_time.wire2api(),
+        }
+    }
+}
 
 impl Wire2Api<[u8; 32]> for *mut wire_uint_8_list {
     fn wire2api(self) -> [u8; 32] {
@@ -817,11 +1047,26 @@ impl Wire2Api<Vec<u8>> for *mut wire_uint_8_list {
     }
 }
 
+impl Wire2Api<Wallet> for wire_Wallet {
+    fn wire2api(self) -> Wallet {
+        Wallet {
+            inner: self.inner.wire2api(),
+            wallet_streams: self.wallet_streams.wire2api(),
+            chain_sync: self.chain_sync.wire2api(),
+        }
+    }
+}
 // Section: wire structs
 
 #[repr(C)]
 #[derive(Clone)]
 pub struct wire_ArcMutexVecPortDesc {
+    ptr: *const core::ffi::c_void,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_ChainSync {
     ptr: *const core::ffi::c_void,
 }
 
@@ -834,6 +1079,18 @@ pub struct wire_FfiCoordinator {
 #[repr(C)]
 #[derive(Clone)]
 pub struct wire_FrostsnapCoreCoordinatorFrostKeyState {
+    ptr: *const core::ffi::c_void,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_MutexBTreeMapKeyIdStreamSinkTxState {
+    ptr: *const core::ffi::c_void,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_MutexCrateWalletWallet {
     ptr: *const core::ffi::c_void,
 }
 
@@ -859,6 +1116,26 @@ pub struct wire_PortReadSender {
 #[derive(Clone)]
 pub struct wire_PortWriteSender {
     ptr: *const core::ffi::c_void,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_RTransaction {
+    ptr: *const core::ffi::c_void,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_StringList {
+    ptr: *mut *mut wire_uint_8_list,
+    len: i32,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_ConfirmationTime {
+    height: u32,
+    time: u64,
 }
 
 #[repr(C)]
@@ -1001,9 +1278,25 @@ pub struct wire_SigningState {
 
 #[repr(C)]
 #[derive(Clone)]
+pub struct wire_Transaction {
+    net_value: i64,
+    inner: wire_RTransaction,
+    confirmation_time: *mut wire_ConfirmationTime,
+}
+
+#[repr(C)]
+#[derive(Clone)]
 pub struct wire_uint_8_list {
     ptr: *mut u8,
     len: i32,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_Wallet {
+    inner: wire_MutexCrateWalletWallet,
+    wallet_streams: wire_MutexBTreeMapKeyIdStreamSinkTxState,
+    chain_sync: wire_ChainSync,
 }
 
 // Section: impl NewWithNullPtr
@@ -1025,6 +1318,13 @@ impl NewWithNullPtr for wire_ArcMutexVecPortDesc {
         }
     }
 }
+impl NewWithNullPtr for wire_ChainSync {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            ptr: core::ptr::null(),
+        }
+    }
+}
 impl NewWithNullPtr for wire_FfiCoordinator {
     fn new_with_null_ptr() -> Self {
         Self {
@@ -1033,6 +1333,20 @@ impl NewWithNullPtr for wire_FfiCoordinator {
     }
 }
 impl NewWithNullPtr for wire_FrostsnapCoreCoordinatorFrostKeyState {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            ptr: core::ptr::null(),
+        }
+    }
+}
+impl NewWithNullPtr for wire_MutexBTreeMapKeyIdStreamSinkTxState {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            ptr: core::ptr::null(),
+        }
+    }
+}
+impl NewWithNullPtr for wire_MutexCrateWalletWallet {
     fn new_with_null_ptr() -> Self {
         Self {
             ptr: core::ptr::null(),
@@ -1065,6 +1379,28 @@ impl NewWithNullPtr for wire_PortWriteSender {
         Self {
             ptr: core::ptr::null(),
         }
+    }
+}
+impl NewWithNullPtr for wire_RTransaction {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            ptr: core::ptr::null(),
+        }
+    }
+}
+
+impl NewWithNullPtr for wire_ConfirmationTime {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            height: Default::default(),
+            time: Default::default(),
+        }
+    }
+}
+
+impl Default for wire_ConfirmationTime {
+    fn default() -> Self {
+        Self::new_with_null_ptr()
     }
 }
 
@@ -1286,6 +1622,38 @@ impl NewWithNullPtr for wire_SigningState {
 }
 
 impl Default for wire_SigningState {
+    fn default() -> Self {
+        Self::new_with_null_ptr()
+    }
+}
+
+impl NewWithNullPtr for wire_Transaction {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            net_value: Default::default(),
+            inner: wire_RTransaction::new_with_null_ptr(),
+            confirmation_time: core::ptr::null_mut(),
+        }
+    }
+}
+
+impl Default for wire_Transaction {
+    fn default() -> Self {
+        Self::new_with_null_ptr()
+    }
+}
+
+impl NewWithNullPtr for wire_Wallet {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            inner: wire_MutexCrateWalletWallet::new_with_null_ptr(),
+            wallet_streams: wire_MutexBTreeMapKeyIdStreamSinkTxState::new_with_null_ptr(),
+            chain_sync: wire_ChainSync::new_with_null_ptr(),
+        }
+    }
+}
+
+impl Default for wire_Wallet {
     fn default() -> Self {
         Self::new_with_null_ptr()
     }

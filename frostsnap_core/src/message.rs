@@ -286,10 +286,10 @@ impl SignTask {
                 tx_template,
                 prevouts,
             } => {
-                use bitcoin::util::sighash::SighashCache;
+                use bitcoin::sighash::SighashCache;
                 let mut tx_sighashes = vec![];
                 let _sighash_tx = tx_template.clone();
-                let schnorr_sighashty = bitcoin::SchnorrSighashType::Default;
+                let schnorr_sighashty = bitcoin::sighash::TapSighashType::Default;
                 for (i, _) in tx_template.input.iter().enumerate() {
                     let mut sighash_cache = SighashCache::new(&_sighash_tx);
                     let sighash = sighash_cache
@@ -305,8 +305,9 @@ impl SignTask {
                     .into_iter()
                     .zip(prevouts.iter())
                     .filter_map(|(sighash, input)| {
+                        use bitcoin::hashes::Hash;
                         Some(SignItem {
-                            message: sighash.to_vec(),
+                            message: sighash.as_raw_hash().to_byte_array().to_vec(),
                             bip32_path: input.bip32_path.clone()?,
                             tap_tweak: true,
                         })
@@ -335,7 +336,7 @@ impl SignItem {
         };
 
         if self.tap_tweak {
-            let tweak = bitcoin::util::taproot::TapTweakHash::from_key_and_tweak(
+            let tweak = bitcoin::taproot::TapTweakHash::from_key_and_tweak(
                 derived_key.to_libsecp_xonly(),
                 None,
             )

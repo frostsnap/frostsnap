@@ -1,4 +1,8 @@
-use frostsnap_coordinator::frostsnap_core::{self, FrostCoordinator};
+use frostsnap_coordinator::frostsnap_core::{
+    self,
+    schnorr_fun::{frost::FrostKey, fun::marker::Normal},
+    FrostCoordinator,
+};
 use llsdb::{
     index::{CellOption, IndexStore},
     Backend, Result, Transaction, TxIo,
@@ -26,6 +30,15 @@ impl PersistCore {
 }
 
 impl<'i, F: Backend> PersistApi<'i, F> {
+    pub fn frost_keys(&self) -> Result<Vec<FrostKey<Normal>>> {
+        self.key_cell
+            .get()
+            .transpose()
+            .into_iter()
+            .map(|key| Ok(key?.frost_key().clone()))
+            .collect()
+    }
+
     pub fn core_coordinator(&self) -> Result<FrostCoordinator> {
         Ok(match self.key_cell.get()? {
             None => FrostCoordinator::new(),
