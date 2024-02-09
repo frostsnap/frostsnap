@@ -1,6 +1,7 @@
 extern crate alloc;
 use core::marker::PhantomData;
 
+use alloc::collections::VecDeque;
 use alloc::format;
 use alloc::vec::Vec;
 
@@ -13,13 +14,12 @@ use frostsnap_comms::MagicBytes;
 use frostsnap_comms::ReceiveSerial;
 use frostsnap_comms::Upstream;
 use hal::{peripherals::USB_DEVICE, prelude::*, timer::Timer, uart, UsbSerialJtag};
-use ringbuffer::{AllocRingBuffer, RingBuffer};
 
-const RING_BUFFER_SIZE_LOG_2: usize = 8; // i.e. 256 bytes
+const RING_BUFFER_SIZE: usize = 2_usize.pow(8); // i.e. 256 bytes
 
 pub struct SerialInterface<'a, T, U, D> {
     io: SerialIo<'a, U>,
-    ring_buffer: AllocRingBuffer<u8>,
+    ring_buffer: VecDeque<u8>,
     magic_bytes_progress: usize,
     timer: &'a Timer<T>,
     direction: PhantomData<D>,
@@ -29,7 +29,7 @@ impl<'a, T, U, D> SerialInterface<'a, T, U, D> {
     pub fn new_uart(uart: uart::Uart<'a, U>, timer: &'a Timer<T>) -> Self {
         Self {
             io: SerialIo::Uart(uart),
-            ring_buffer: AllocRingBuffer::with_capacity_power_of_2(RING_BUFFER_SIZE_LOG_2),
+            ring_buffer: VecDeque::with_capacity(RING_BUFFER_SIZE),
             magic_bytes_progress: 0,
             timer,
             direction: PhantomData,
@@ -37,7 +37,7 @@ impl<'a, T, U, D> SerialInterface<'a, T, U, D> {
     }
 
     pub fn clone_buffer_to_vec(&self) -> Vec<u8> {
-        self.ring_buffer.clone().drain().collect::<Vec<u8>>()
+        self.ring_buffer.clone().into()
     }
 }
 
@@ -45,7 +45,7 @@ impl<'a, T, U> SerialInterface<'a, T, U, Upstream> {
     pub fn new_jtag(jtag: UsbSerialJtag<'a>, timer: &'a Timer<T>) -> Self {
         Self {
             io: SerialIo::Jtag(jtag),
-            ring_buffer: AllocRingBuffer::with_capacity_power_of_2(RING_BUFFER_SIZE_LOG_2),
+            ring_buffer: VecDeque::with_capacity(RING_BUFFER_SIZE),
             magic_bytes_progress: 0,
             timer,
             direction: PhantomData,
@@ -61,8 +61,8 @@ where
 {
     fn fill_buffer(&mut self) {
         while let Ok(c) = self.io.read_byte() {
-            self.ring_buffer.push(c);
-            if self.ring_buffer.is_full() {
+            self.ring_buffer.push_back(c);
+            if self.ring_buffer.len() == RING_BUFFER_SIZE {
                 break;
             }
         }
@@ -74,7 +74,7 @@ where
             return false;
         }
         let (progress, found) = frostsnap_comms::make_progress_on_magic_bytes::<D>(
-            self.ring_buffer.drain(),
+            core::iter::from_fn(|| self.ring_buffer.pop_front()),
             self.magic_bytes_progress,
         );
         self.magic_bytes_progress = progress;
@@ -128,7 +128,7 @@ where
                 // as possible.
                 self.fill_buffer();
 
-                if let Some(next_byte) = self.ring_buffer.dequeue() {
+                if let Some(next_byte) = self.ring_buffer.pop_front() {
                     break next_byte;
                 }
 

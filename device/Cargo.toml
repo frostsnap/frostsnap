@@ -34,9 +34,6 @@ critical-section = "1.1.2"
 nb = "1.1.0"
 fugit = "0.3.7"
 embedded-storage = "0.3.0"
-ringbuffer = { version = "0.14.2", default-features = false, features = [
-    "alloc",
-] }
 esp-storage = { version = "0.3.0", features = ["esp32c3"] }
 bincode = { workspace = true }
 display-interface = { version = "0.4.1", optional = true }
