@@ -123,11 +123,6 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
-  List<dynamic> api2wire_box_autoadd_key_state(KeyState raw) {
-    return api2wire_key_state(raw);
-  }
-
-  @protected
   List<dynamic> api2wire_box_autoadd_port_bytes_to_read(PortBytesToRead raw) {
     return api2wire_port_bytes_to_read(raw);
   }
@@ -213,11 +208,6 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
-  List<dynamic> api2wire_key_state(KeyState raw) {
-    return [api2wire_list_frost_key(raw.keys)];
-  }
-
-  @protected
   List<dynamic> api2wire_list_device(List<Device> raw) {
     return raw.map(api2wire_device).toList();
   }
@@ -230,11 +220,6 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   @protected
   List<dynamic> api2wire_list_encoded_signature(List<EncodedSignature> raw) {
     return raw.map(api2wire_encoded_signature).toList();
-  }
-
-  @protected
-  List<dynamic> api2wire_list_frost_key(List<FrostKey> raw) {
-    return raw.map(api2wire_frost_key).toList();
   }
 
   @protected
@@ -411,11 +396,6 @@ class NativeWasmModule implements WasmModule {
 
   external dynamic /* void */ wire_sub_device_events(NativePortType port_);
 
-  external dynamic /* void */ wire_sub_key_events(NativePortType port_);
-
-  external dynamic /* void */ wire_emit_key_event(
-      NativePortType port_, List<dynamic> event);
-
   external dynamic /* void */ wire_turn_stderr_logging_on(
       NativePortType port_, int level);
 
@@ -488,6 +468,9 @@ class NativeWasmModule implements WasmModule {
 
   external dynamic /* List<dynamic> */ wire_key_state__method__Coordinator(
       List<dynamic> that);
+
+  external dynamic /* void */ wire_sub_key_events__method__Coordinator(
+      NativePortType port_, List<dynamic> that);
 
   external dynamic /* List<dynamic>? */ wire_get_key__method__Coordinator(
       List<dynamic> that, List<dynamic> key_id);
@@ -600,12 +583,6 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   void wire_sub_device_events(NativePortType port_) =>
       wasmModule.wire_sub_device_events(port_);
 
-  void wire_sub_key_events(NativePortType port_) =>
-      wasmModule.wire_sub_key_events(port_);
-
-  void wire_emit_key_event(NativePortType port_, List<dynamic> event) =>
-      wasmModule.wire_emit_key_event(port_, event);
-
   void wire_turn_stderr_logging_on(NativePortType port_, int level) =>
       wasmModule.wire_turn_stderr_logging_on(port_, level);
 
@@ -700,6 +677,10 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   dynamic /* List<dynamic> */ wire_key_state__method__Coordinator(
           List<dynamic> that) =>
       wasmModule.wire_key_state__method__Coordinator(that);
+
+  void wire_sub_key_events__method__Coordinator(
+          NativePortType port_, List<dynamic> that) =>
+      wasmModule.wire_sub_key_events__method__Coordinator(port_, that);
 
   dynamic /* List<dynamic>? */ wire_get_key__method__Coordinator(
           List<dynamic> that, List<dynamic> key_id) =>

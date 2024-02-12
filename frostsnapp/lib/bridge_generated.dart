@@ -54,41 +54,6 @@ class NativeImpl implements Native {
         argNames: [],
       );
 
-  Stream<KeyState> subKeyEvents({dynamic hint}) {
-    return _platform.executeStream(FlutterRustBridgeTask(
-      callFfi: (port_) => _platform.inner.wire_sub_key_events(port_),
-      parseSuccessData: _wire2api_key_state,
-      parseErrorData: null,
-      constMeta: kSubKeyEventsConstMeta,
-      argValues: [],
-      hint: hint,
-    ));
-  }
-
-  FlutterRustBridgeTaskConstMeta get kSubKeyEventsConstMeta =>
-      const FlutterRustBridgeTaskConstMeta(
-        debugName: "sub_key_events",
-        argNames: [],
-      );
-
-  Future<void> emitKeyEvent({required KeyState event, dynamic hint}) {
-    var arg0 = _platform.api2wire_box_autoadd_key_state(event);
-    return _platform.executeNormal(FlutterRustBridgeTask(
-      callFfi: (port_) => _platform.inner.wire_emit_key_event(port_, arg0),
-      parseSuccessData: _wire2api_unit,
-      parseErrorData: null,
-      constMeta: kEmitKeyEventConstMeta,
-      argValues: [event],
-      hint: hint,
-    ));
-  }
-
-  FlutterRustBridgeTaskConstMeta get kEmitKeyEventConstMeta =>
-      const FlutterRustBridgeTaskConstMeta(
-        debugName: "emit_key_event",
-        argNames: ["event"],
-      );
-
   Future<void> turnStderrLoggingOn({required Level level, dynamic hint}) {
     var arg0 = api2wire_level(level);
     return _platform.executeNormal(FlutterRustBridgeTask(
@@ -606,6 +571,26 @@ class NativeImpl implements Native {
   FlutterRustBridgeTaskConstMeta get kKeyStateMethodCoordinatorConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
         debugName: "key_state__method__Coordinator",
+        argNames: ["that"],
+      );
+
+  Stream<KeyState> subKeyEventsMethodCoordinator(
+      {required Coordinator that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
+    return _platform.executeStream(FlutterRustBridgeTask(
+      callFfi: (port_) =>
+          _platform.inner.wire_sub_key_events__method__Coordinator(port_, arg0),
+      parseSuccessData: _wire2api_key_state,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kSubKeyEventsMethodCoordinatorConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kSubKeyEventsMethodCoordinatorConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "sub_key_events__method__Coordinator",
         argNames: ["that"],
       );
 

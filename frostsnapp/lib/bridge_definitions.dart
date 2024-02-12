@@ -23,14 +23,6 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kSubDeviceEventsConstMeta;
 
-  Stream<KeyState> subKeyEvents({dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kSubKeyEventsConstMeta;
-
-  Future<void> emitKeyEvent({required KeyState event, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kEmitKeyEventConstMeta;
-
   Future<void> turnStderrLoggingOn({required Level level, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kTurnStderrLoggingOnConstMeta;
@@ -157,6 +149,11 @@ abstract class Native {
   KeyState keyStateMethodCoordinator({required Coordinator that, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kKeyStateMethodCoordinatorConstMeta;
+
+  Stream<KeyState> subKeyEventsMethodCoordinator(
+      {required Coordinator that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kSubKeyEventsMethodCoordinatorConstMeta;
 
   FrostKey? getKeyMethodCoordinator(
       {required Coordinator that, required KeyId keyId, dynamic hint});
@@ -515,6 +512,11 @@ class Coordinator {
       );
 
   KeyState keyState({dynamic hint}) => bridge.keyStateMethodCoordinator(
+        that: this,
+      );
+
+  Stream<KeyState> subKeyEvents({dynamic hint}) =>
+      bridge.subKeyEventsMethodCoordinator(
         that: this,
       );
 

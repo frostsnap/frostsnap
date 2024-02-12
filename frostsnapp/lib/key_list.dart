@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/keygen.dart';
+import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/wallet.dart';
 
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
@@ -17,9 +18,9 @@ class KeyList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final keyStateSream = coord.subKeyEvents().toBehaviorSubject();
     return StreamBuilder<KeyState>(
-        initialData: coord.keyState(),
-        stream: api.subKeyEvents(),
+        stream: keyStateSream,
         builder: (context, snap) {
           var keys = [];
           if (snap.hasData) {
@@ -94,7 +95,7 @@ class _KeyCard extends State<KeyCard> {
           onPressed: () async {
             final stream = coord
                 .tryRestoreSigningSession(keyId: keyId)
-                .asBroadcastStream();
+                .toBehaviorSubject();
             await signMessageDialog(context, stream);
             setState(() {
               canContinueSigning = coord.canRestoreSigningSession(keyId: keyId);

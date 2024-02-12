@@ -323,8 +323,7 @@ class KeyGenDeviceList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final button = StreamBuilder(
-        initialData: api.deviceListState(),
-        stream: deviceListStateStream,
+        stream: deviceListSubject.map((update) => update.state),
         builder: (context, snapshot) {
           if (snapshot.hasData) {
             final deviceListState = snapshot.data!;
@@ -333,7 +332,7 @@ class KeyGenDeviceList extends StatelessWidget {
           } else if (snapshot.hasError) {
             return Text('Error: ${snapshot.error}');
           } else {
-            return Text('Unreachable: we set initialData');
+            return Text('Unreachable: this is a behavior subject');
           }
         });
 
@@ -381,7 +380,7 @@ class KeyGenDeviceList extends StatelessWidget {
                                 iconAssigner: (context, deviceId) {
                           if (deviceIdEquals(deviceId, device.id)) {
                             final label = LabeledDeviceText("'$value'?");
-                            final icon = const Row(
+                            const icon = const Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(Icons.visibility, color: Colors.orange),

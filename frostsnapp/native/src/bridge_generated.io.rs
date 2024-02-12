@@ -12,16 +12,6 @@ pub extern "C" fn wire_sub_device_events(port_: i64) {
 }
 
 #[no_mangle]
-pub extern "C" fn wire_sub_key_events(port_: i64) {
-    wire_sub_key_events_impl(port_)
-}
-
-#[no_mangle]
-pub extern "C" fn wire_emit_key_event(port_: i64, event: *mut wire_KeyState) {
-    wire_emit_key_event_impl(port_, event)
-}
-
-#[no_mangle]
 pub extern "C" fn wire_turn_stderr_logging_on(port_: i64, level: i32) {
     wire_turn_stderr_logging_on_impl(port_, level)
 }
@@ -196,6 +186,14 @@ pub extern "C" fn wire_key_state__method__Coordinator(
     that: *mut wire_Coordinator,
 ) -> support::WireSyncReturn {
     wire_key_state__method__Coordinator_impl(that)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_sub_key_events__method__Coordinator(
+    port_: i64,
+    that: *mut wire_Coordinator,
+) {
+    wire_sub_key_events__method__Coordinator_impl(port_, that)
 }
 
 #[no_mangle]
@@ -416,11 +414,6 @@ pub extern "C" fn new_box_autoadd_key_id_0() -> *mut wire_KeyId {
 }
 
 #[no_mangle]
-pub extern "C" fn new_box_autoadd_key_state_0() -> *mut wire_KeyState {
-    support::new_leak_box_ptr(wire_KeyState::new_with_null_ptr())
-}
-
-#[no_mangle]
 pub extern "C" fn new_box_autoadd_port_bytes_to_read_0() -> *mut wire_PortBytesToRead {
     support::new_leak_box_ptr(wire_PortBytesToRead::new_with_null_ptr())
 }
@@ -477,15 +470,6 @@ pub extern "C" fn new_list_device_id_0(len: i32) -> *mut wire_list_device_id {
 pub extern "C" fn new_list_encoded_signature_0(len: i32) -> *mut wire_list_encoded_signature {
     let wrap = wire_list_encoded_signature {
         ptr: support::new_leak_vec_ptr(<wire_EncodedSignature>::new_with_null_ptr(), len),
-        len,
-    };
-    support::new_leak_box_ptr(wrap)
-}
-
-#[no_mangle]
-pub extern "C" fn new_list_frost_key_0(len: i32) -> *mut wire_list_frost_key {
-    let wrap = wire_list_frost_key {
-        ptr: support::new_leak_vec_ptr(<wire_FrostKey>::new_with_null_ptr(), len),
         len,
     };
     support::new_leak_box_ptr(wrap)
@@ -798,12 +782,6 @@ impl Wire2Api<KeyId> for *mut wire_KeyId {
         Wire2Api::<KeyId>::wire2api(*wrap).into()
     }
 }
-impl Wire2Api<KeyState> for *mut wire_KeyState {
-    fn wire2api(self) -> KeyState {
-        let wrap = unsafe { support::box_from_leak_ptr(self) };
-        Wire2Api::<KeyState>::wire2api(*wrap).into()
-    }
-}
 impl Wire2Api<PortBytesToRead> for *mut wire_PortBytesToRead {
     fn wire2api(self) -> PortBytesToRead {
         let wrap = unsafe { support::box_from_leak_ptr(self) };
@@ -903,13 +881,6 @@ impl Wire2Api<KeyId> for wire_KeyId {
         KeyId(self.field0.wire2api())
     }
 }
-impl Wire2Api<KeyState> for wire_KeyState {
-    fn wire2api(self) -> KeyState {
-        KeyState {
-            keys: self.keys.wire2api(),
-        }
-    }
-}
 
 impl Wire2Api<Vec<Device>> for *mut wire_list_device {
     fn wire2api(self) -> Vec<Device> {
@@ -931,15 +902,6 @@ impl Wire2Api<Vec<DeviceId>> for *mut wire_list_device_id {
 }
 impl Wire2Api<Vec<EncodedSignature>> for *mut wire_list_encoded_signature {
     fn wire2api(self) -> Vec<EncodedSignature> {
-        let vec = unsafe {
-            let wrap = support::box_from_leak_ptr(self);
-            support::vec_from_leak_ptr(wrap.ptr, wrap.len)
-        };
-        vec.into_iter().map(Wire2Api::wire2api).collect()
-    }
-}
-impl Wire2Api<Vec<FrostKey>> for *mut wire_list_frost_key {
-    fn wire2api(self) -> Vec<FrostKey> {
         let vec = unsafe {
             let wrap = support::box_from_leak_ptr(self);
             support::vec_from_leak_ptr(wrap.ptr, wrap.len)
@@ -1190,12 +1152,6 @@ pub struct wire_KeyId {
 
 #[repr(C)]
 #[derive(Clone)]
-pub struct wire_KeyState {
-    keys: *mut wire_list_frost_key,
-}
-
-#[repr(C)]
-#[derive(Clone)]
 pub struct wire_list_device {
     ptr: *mut wire_Device,
     len: i32,
@@ -1212,13 +1168,6 @@ pub struct wire_list_device_id {
 #[derive(Clone)]
 pub struct wire_list_encoded_signature {
     ptr: *mut wire_EncodedSignature,
-    len: i32,
-}
-
-#[repr(C)]
-#[derive(Clone)]
-pub struct wire_list_frost_key {
-    ptr: *mut wire_FrostKey,
     len: i32,
 }
 
@@ -1513,20 +1462,6 @@ impl NewWithNullPtr for wire_KeyId {
 }
 
 impl Default for wire_KeyId {
-    fn default() -> Self {
-        Self::new_with_null_ptr()
-    }
-}
-
-impl NewWithNullPtr for wire_KeyState {
-    fn new_with_null_ptr() -> Self {
-        Self {
-            keys: core::ptr::null_mut(),
-        }
-    }
-}
-
-impl Default for wire_KeyState {
     fn default() -> Self {
         Self::new_with_null_ptr()
     }

@@ -168,13 +168,6 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   }
 
   @protected
-  ffi.Pointer<wire_KeyState> api2wire_box_autoadd_key_state(KeyState raw) {
-    final ptr = inner.new_box_autoadd_key_state_0();
-    _api_fill_to_wire_key_state(raw, ptr.ref);
-    return ptr;
-  }
-
-  @protected
   ffi.Pointer<wire_PortBytesToRead> api2wire_box_autoadd_port_bytes_to_read(
       PortBytesToRead raw) {
     final ptr = inner.new_box_autoadd_port_bytes_to_read_0();
@@ -255,15 +248,6 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
     final ans = inner.new_list_encoded_signature_0(raw.length);
     for (var i = 0; i < raw.length; ++i) {
       _api_fill_to_wire_encoded_signature(raw[i], ans.ref.ptr[i]);
-    }
-    return ans;
-  }
-
-  @protected
-  ffi.Pointer<wire_list_frost_key> api2wire_list_frost_key(List<FrostKey> raw) {
-    final ans = inner.new_list_frost_key_0(raw.length);
-    for (var i = 0; i < raw.length; ++i) {
-      _api_fill_to_wire_frost_key(raw[i], ans.ref.ptr[i]);
     }
     return ans;
   }
@@ -458,11 +442,6 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
     _api_fill_to_wire_key_id(apiObj, wireObj.ref);
   }
 
-  void _api_fill_to_wire_box_autoadd_key_state(
-      KeyState apiObj, ffi.Pointer<wire_KeyState> wireObj) {
-    _api_fill_to_wire_key_state(apiObj, wireObj.ref);
-  }
-
   void _api_fill_to_wire_box_autoadd_port_bytes_to_read(
       PortBytesToRead apiObj, ffi.Pointer<wire_PortBytesToRead> wireObj) {
     _api_fill_to_wire_port_bytes_to_read(apiObj, wireObj.ref);
@@ -541,10 +520,6 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
 
   void _api_fill_to_wire_key_id(KeyId apiObj, wire_KeyId wireObj) {
     wireObj.field0 = api2wire_u8_array_32(apiObj.field0);
-  }
-
-  void _api_fill_to_wire_key_state(KeyState apiObj, wire_KeyState wireObj) {
-    wireObj.keys = api2wire_list_frost_key(apiObj.keys);
   }
 
   void _api_fill_to_wire_port_bytes_to_read(
@@ -724,37 +699,6 @@ class NativeWire implements FlutterRustBridgeWireBase {
           'wire_sub_device_events');
   late final _wire_sub_device_events =
       _wire_sub_device_eventsPtr.asFunction<void Function(int)>();
-
-  void wire_sub_key_events(
-    int port_,
-  ) {
-    return _wire_sub_key_events(
-      port_,
-    );
-  }
-
-  late final _wire_sub_key_eventsPtr =
-      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Int64)>>(
-          'wire_sub_key_events');
-  late final _wire_sub_key_events =
-      _wire_sub_key_eventsPtr.asFunction<void Function(int)>();
-
-  void wire_emit_key_event(
-    int port_,
-    ffi.Pointer<wire_KeyState> event,
-  ) {
-    return _wire_emit_key_event(
-      port_,
-      event,
-    );
-  }
-
-  late final _wire_emit_key_eventPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Void Function(
-              ffi.Int64, ffi.Pointer<wire_KeyState>)>>('wire_emit_key_event');
-  late final _wire_emit_key_event = _wire_emit_key_eventPtr
-      .asFunction<void Function(int, ffi.Pointer<wire_KeyState>)>();
 
   void wire_turn_stderr_logging_on(
     int port_,
@@ -1222,6 +1166,24 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _wire_key_state__method__Coordinator =
       _wire_key_state__method__CoordinatorPtr
           .asFunction<WireSyncReturn Function(ffi.Pointer<wire_Coordinator>)>();
+
+  void wire_sub_key_events__method__Coordinator(
+    int port_,
+    ffi.Pointer<wire_Coordinator> that,
+  ) {
+    return _wire_sub_key_events__method__Coordinator(
+      port_,
+      that,
+    );
+  }
+
+  late final _wire_sub_key_events__method__CoordinatorPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Coordinator>)>>(
+      'wire_sub_key_events__method__Coordinator');
+  late final _wire_sub_key_events__method__Coordinator =
+      _wire_sub_key_events__method__CoordinatorPtr
+          .asFunction<void Function(int, ffi.Pointer<wire_Coordinator>)>();
 
   WireSyncReturn wire_get_key__method__Coordinator(
     ffi.Pointer<wire_Coordinator> that,
@@ -1707,16 +1669,6 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _new_box_autoadd_key_id_0 = _new_box_autoadd_key_id_0Ptr
       .asFunction<ffi.Pointer<wire_KeyId> Function()>();
 
-  ffi.Pointer<wire_KeyState> new_box_autoadd_key_state_0() {
-    return _new_box_autoadd_key_state_0();
-  }
-
-  late final _new_box_autoadd_key_state_0Ptr =
-      _lookup<ffi.NativeFunction<ffi.Pointer<wire_KeyState> Function()>>(
-          'new_box_autoadd_key_state_0');
-  late final _new_box_autoadd_key_state_0 = _new_box_autoadd_key_state_0Ptr
-      .asFunction<ffi.Pointer<wire_KeyState> Function()>();
-
   ffi.Pointer<wire_PortBytesToRead> new_box_autoadd_port_bytes_to_read_0() {
     return _new_box_autoadd_port_bytes_to_read_0();
   }
@@ -1833,21 +1785,6 @@ class NativeWire implements FlutterRustBridgeWireBase {
               ffi.Int32)>>('new_list_encoded_signature_0');
   late final _new_list_encoded_signature_0 = _new_list_encoded_signature_0Ptr
       .asFunction<ffi.Pointer<wire_list_encoded_signature> Function(int)>();
-
-  ffi.Pointer<wire_list_frost_key> new_list_frost_key_0(
-    int len,
-  ) {
-    return _new_list_frost_key_0(
-      len,
-    );
-  }
-
-  late final _new_list_frost_key_0Ptr = _lookup<
-      ffi.NativeFunction<
-          ffi.Pointer<wire_list_frost_key> Function(
-              ffi.Int32)>>('new_list_frost_key_0');
-  late final _new_list_frost_key_0 = _new_list_frost_key_0Ptr
-      .asFunction<ffi.Pointer<wire_list_frost_key> Function(int)>();
 
   ffi.Pointer<wire_list_port_desc> new_list_port_desc_0(
     int len,
@@ -2225,25 +2162,6 @@ class NativeWire implements FlutterRustBridgeWireBase {
 
 final class _Dart_Handle extends ffi.Opaque {}
 
-final class wire_FrostsnapCoreCoordinatorFrostKeyState extends ffi.Struct {
-  external ffi.Pointer<ffi.Void> ptr;
-}
-
-final class wire_FrostKey extends ffi.Struct {
-  external wire_FrostsnapCoreCoordinatorFrostKeyState field0;
-}
-
-final class wire_list_frost_key extends ffi.Struct {
-  external ffi.Pointer<wire_FrostKey> ptr;
-
-  @ffi.Int32()
-  external int len;
-}
-
-final class wire_KeyState extends ffi.Struct {
-  external ffi.Pointer<wire_list_frost_key> keys;
-}
-
 final class wire_uint_8_list extends ffi.Struct {
   external ffi.Pointer<ffi.Uint8> ptr;
 
@@ -2278,6 +2196,14 @@ final class wire_Transaction extends ffi.Struct {
   external wire_RTransaction inner;
 
   external ffi.Pointer<wire_ConfirmationTime> confirmation_time;
+}
+
+final class wire_FrostsnapCoreCoordinatorFrostKeyState extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_FrostKey extends ffi.Struct {
+  external wire_FrostsnapCoreCoordinatorFrostKeyState field0;
 }
 
 final class wire_PortOpenSender extends ffi.Struct {

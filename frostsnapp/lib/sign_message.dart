@@ -8,6 +8,7 @@ import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_id_ext.dart';
 import 'package:frostsnapp/device_list_widget.dart';
 import 'package:frostsnapp/global.dart';
+import 'package:frostsnapp/stream_ext.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'hex.dart';
 import "dart:developer" as developer;
@@ -67,7 +68,7 @@ class _SignMessageFormState extends State<SignMessageForm> {
                 keyId: widget.frostKey.id(),
                 devices: selected.toList(),
                 message: _messageController.text)
-            .asBroadcastStream();
+            .toBehaviorSubject();
 
         final signatures = await signMessageDialog(context, signingStream);
         if (signatures != null && context.mounted) {
@@ -141,7 +142,7 @@ Future<List<EncodedSignature>?> _showSigningProgressDialog(
   BuildContext context,
   Stream<SigningState> signingStream,
 ) {
-  final stream = signingStream.asBroadcastStream();
+  final stream = signingStream.toBehaviorSubject();
 
   final finishedSigning = stream
       .asyncMap((event) => event.finishedSignatures)
@@ -189,14 +190,12 @@ class DeviceSigningProgress extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder(
-        initialData: api.deviceListState(),
-        stream: deviceListStateStream,
+        stream: deviceListSubject.map((update) => update.state),
         builder: (context, snapshot) {
           final devicesPluggedIn = deviceIdSet();
           devicesPluggedIn
               .addAll(snapshot.data!.devices.map((device) => device.id));
           return StreamBuilder<SigningState>(
-              initialData: coord.getSigningState()!,
               stream: stream,
               builder: (context, snapshot) {
                 if (!snapshot.hasData) {

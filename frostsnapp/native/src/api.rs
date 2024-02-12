@@ -41,25 +41,13 @@ pub fn sub_port_events(event_stream: StreamSink<PortEvent>) {
 
 pub fn sub_device_events(new_stream: StreamSink<DeviceListUpdate>) {
     let mut device_list_and_stream = DEVICE_LIST.lock().unwrap();
-    let (_, stream) = &mut *device_list_and_stream;
-
+    let (list, stream) = &mut *device_list_and_stream;
+    new_stream.add(DeviceListUpdate {
+        changes: vec![],
+        state: list.state(),
+    });
     if let Some(old_stream) = stream.replace(new_stream) {
         old_stream.close();
-    }
-}
-
-pub fn sub_key_events(stream: StreamSink<KeyState>) {
-    let mut key_event_stream = KEY_EVENT_STREAM.lock().unwrap();
-    if let Some(existing) = key_event_stream.replace(stream) {
-        existing.close();
-    }
-}
-
-pub fn emit_key_event(event: KeyState) {
-    let mut key_events = KEY_EVENT_STREAM.lock().unwrap();
-
-    if let Some(key_events) = &mut *key_events {
-        key_events.add(event);
     }
 }
 
@@ -286,8 +274,6 @@ pub fn get_device(id: DeviceId) -> SyncReturn<Device> {
     SyncReturn(device)
 }
 
-// pub fn start_signing(devices: Vec<DeviceId>, message: String) ->
-
 pub type SessionHash = [u8; 32];
 
 #[derive(Clone, Debug, Copy)]
@@ -447,6 +433,11 @@ impl Coordinator {
         })
     }
 
+    pub fn sub_key_events(&self, stream: StreamSink<KeyState>) -> Result<()> {
+        self.0.sub_key_events(stream);
+        Ok(())
+    }
+
     pub fn get_key(&self, key_id: KeyId) -> SyncReturn<Option<FrostKey>> {
         SyncReturn(
             self.0
@@ -519,6 +510,7 @@ impl Wallet {
     }
 
     pub fn sub_tx_state(&self, key_id: KeyId, stream: StreamSink<TxState>) -> Result<()> {
+        stream.add(self.tx_state(key_id).0);
         if let Some(existing) = self.wallet_streams.lock().unwrap().insert(key_id, stream) {
             existing.close();
         }

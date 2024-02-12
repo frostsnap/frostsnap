@@ -22,7 +22,9 @@ impl core::fmt::Debug for SigningSession {
 
 impl SigningSession {
     pub fn new(stream: StreamSink<api::SigningState>, dispatcher: SigningDispatcher) -> Self {
-        Self { stream, dispatcher }
+        let self_ = Self { stream, dispatcher };
+        self_.stream.add(self_.signing_state());
+        self_
     }
     pub fn process_to_user_message(&mut self, message: CoordinatorToUserSigningMessage) {
         self.dispatcher.process_to_user_message(message);

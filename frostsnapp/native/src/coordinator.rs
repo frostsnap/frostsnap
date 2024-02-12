@@ -33,6 +33,7 @@ pub struct FfiCoordinator {
     pending_for_outbox: Arc<Mutex<VecDeque<CoordinatorSend>>>,
     thread_handle: Mutex<Option<JoinHandle<()>>>,
     keygen_stream: Arc<Mutex<Option<StreamSink<CoordinatorToUserKeyGenMessage>>>>,
+    key_event_stream: Arc<Mutex<Option<StreamSink<KeyState>>>>,
     signing_session: Arc<Mutex<Option<SigningSession>>>,
     db: Arc<Mutex<LlsDb<File>>>,
     persist_core: IndexHandle<PersistCore>,
@@ -83,6 +84,7 @@ impl FfiCoordinator {
             thread_handle: Default::default(),
             keygen_stream: Default::default(),
             signing_session: Default::default(),
+            key_event_stream: Default::default(),
             db,
             persist_core,
             device_names: device_names_handle,
@@ -110,6 +112,7 @@ impl FfiCoordinator {
         let coordinator_loop = self.coordinator.clone();
         let keygen_stream_loop = self.keygen_stream.clone();
         let signing_stream_loop = self.signing_session.clone();
+        let key_event_stream_loop = self.key_event_stream.clone();
         let db_loop = self.db.clone();
         let core_persist = self.persist_core;
         let device_names = self.device_names;
@@ -258,9 +261,13 @@ impl FfiCoordinator {
                                         // Note we do this here rather than in the ToUserMessage
                                         // because the key list is persisted and so its better to
                                         // nofify the app after the on disk state is written.
-                                        api::emit_key_event(KeyState {
-                                            keys: frost_keys(&coordinator_loop.lock().unwrap()),
-                                        });
+                                        if let Some(stream) =
+                                            &*key_event_stream_loop.lock().unwrap()
+                                        {
+                                            stream.add(KeyState {
+                                                keys: frost_keys(&coordinator_loop.lock().unwrap()),
+                                            });
+                                        }
                                     }
                                     CoordinatorToStorageMessage::StoreSigningState(sign_state) => {
                                         persist.store_sign_session(sign_state)?
@@ -291,6 +298,16 @@ impl FfiCoordinator {
 
         *self.thread_handle.lock().unwrap() = Some(handle);
         Ok(())
+    }
+
+    pub fn sub_key_events(&self, stream: StreamSink<KeyState>) {
+        let mut key_event_stream = self.key_event_stream.lock().unwrap();
+        stream.add(KeyState {
+            keys: self.frost_keys(),
+        });
+        if let Some(existing) = key_event_stream.replace(stream) {
+            existing.close();
+        }
     }
 
     pub fn update_name_preview(&self, id: DeviceId, name: &str) {

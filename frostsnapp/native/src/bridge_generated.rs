@@ -52,33 +52,6 @@ fn wire_sub_device_events_impl(port_: MessagePort) {
         },
     )
 }
-fn wire_sub_key_events_impl(port_: MessagePort) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
-        WrapInfo {
-            debug_name: "sub_key_events",
-            port: Some(port_),
-            mode: FfiCallMode::Stream,
-        },
-        move || {
-            move |task_callback| {
-                Result::<_, ()>::Ok(sub_key_events(task_callback.stream_sink::<_, KeyState>()))
-            }
-        },
-    )
-}
-fn wire_emit_key_event_impl(port_: MessagePort, event: impl Wire2Api<KeyState> + UnwindSafe) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
-        WrapInfo {
-            debug_name: "emit_key_event",
-            port: Some(port_),
-            mode: FfiCallMode::Normal,
-        },
-        move || {
-            let api_event = event.wire2api();
-            move |task_callback| Result::<_, ()>::Ok(emit_key_event(api_event))
-        },
-    )
-}
 fn wire_turn_stderr_logging_on_impl(port_: MessagePort, level: impl Wire2Api<Level> + UnwindSafe) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
         WrapInfo {
@@ -494,6 +467,24 @@ fn wire_key_state__method__Coordinator_impl(
         move || {
             let api_that = that.wire2api();
             Result::<_, ()>::Ok(Coordinator::key_state(&api_that))
+        },
+    )
+}
+fn wire_sub_key_events__method__Coordinator_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<Coordinator> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "sub_key_events__method__Coordinator",
+            port: Some(port_),
+            mode: FfiCallMode::Stream,
+        },
+        move || {
+            let api_that = that.wire2api();
+            move |task_callback| {
+                Coordinator::sub_key_events(&api_that, task_callback.stream_sink::<_, KeyState>())
+            }
         },
     )
 }

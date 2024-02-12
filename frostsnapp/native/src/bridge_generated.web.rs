@@ -12,16 +12,6 @@ pub fn wire_sub_device_events(port_: MessagePort) {
 }
 
 #[wasm_bindgen]
-pub fn wire_sub_key_events(port_: MessagePort) {
-    wire_sub_key_events_impl(port_)
-}
-
-#[wasm_bindgen]
-pub fn wire_emit_key_event(port_: MessagePort, event: JsValue) {
-    wire_emit_key_event_impl(port_, event)
-}
-
-#[wasm_bindgen]
 pub fn wire_turn_stderr_logging_on(port_: MessagePort, level: i32) {
     wire_turn_stderr_logging_on_impl(port_, level)
 }
@@ -172,6 +162,11 @@ pub fn wire_cancel_all__method__Coordinator(port_: MessagePort, that: JsValue) {
 #[wasm_bindgen]
 pub fn wire_key_state__method__Coordinator(that: JsValue) -> support::WireSyncReturn {
     wire_key_state__method__Coordinator_impl(that)
+}
+
+#[wasm_bindgen]
+pub fn wire_sub_key_events__method__Coordinator(port_: MessagePort, that: JsValue) {
+    wire_sub_key_events__method__Coordinator_impl(port_, that)
 }
 
 #[wasm_bindgen]
@@ -577,20 +572,6 @@ impl Wire2Api<KeyId> for JsValue {
         KeyId(self_.get(0).wire2api())
     }
 }
-impl Wire2Api<KeyState> for JsValue {
-    fn wire2api(self) -> KeyState {
-        let self_ = self.dyn_into::<JsArray>().unwrap();
-        assert_eq!(
-            self_.length(),
-            1,
-            "Expected 1 elements, got {}",
-            self_.length()
-        );
-        KeyState {
-            keys: self_.get(0).wire2api(),
-        }
-    }
-}
 
 impl Wire2Api<Vec<Device>> for JsValue {
     fn wire2api(self) -> Vec<Device> {
@@ -612,15 +593,6 @@ impl Wire2Api<Vec<DeviceId>> for JsValue {
 }
 impl Wire2Api<Vec<EncodedSignature>> for JsValue {
     fn wire2api(self) -> Vec<EncodedSignature> {
-        self.dyn_into::<JsArray>()
-            .unwrap()
-            .iter()
-            .map(Wire2Api::wire2api)
-            .collect()
-    }
-}
-impl Wire2Api<Vec<FrostKey>> for JsValue {
-    fn wire2api(self) -> Vec<FrostKey> {
         self.dyn_into::<JsArray>()
             .unwrap()
             .iter()

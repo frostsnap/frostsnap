@@ -9,23 +9,6 @@ typedef int64_t DartPort;
 
 typedef bool (*DartPostCObjectFnType)(DartPort port_id, void *message);
 
-typedef struct wire_FrostsnapCoreCoordinatorFrostKeyState {
-  const void *ptr;
-} wire_FrostsnapCoreCoordinatorFrostKeyState;
-
-typedef struct wire_FrostKey {
-  struct wire_FrostsnapCoreCoordinatorFrostKeyState field0;
-} wire_FrostKey;
-
-typedef struct wire_list_frost_key {
-  struct wire_FrostKey *ptr;
-  int32_t len;
-} wire_list_frost_key;
-
-typedef struct wire_KeyState {
-  struct wire_list_frost_key *keys;
-} wire_KeyState;
-
 typedef struct DartCObject *WireSyncReturn;
 
 typedef struct wire_uint_8_list {
@@ -55,6 +38,14 @@ typedef struct wire_Transaction {
   struct wire_RTransaction inner;
   struct wire_ConfirmationTime *confirmation_time;
 } wire_Transaction;
+
+typedef struct wire_FrostsnapCoreCoordinatorFrostKeyState {
+  const void *ptr;
+} wire_FrostsnapCoreCoordinatorFrostKeyState;
+
+typedef struct wire_FrostKey {
+  struct wire_FrostsnapCoreCoordinatorFrostKeyState field0;
+} wire_FrostKey;
 
 typedef struct wire_PortOpenSender {
   const void *ptr;
@@ -194,10 +185,6 @@ void wire_sub_port_events(int64_t port_);
 
 void wire_sub_device_events(int64_t port_);
 
-void wire_sub_key_events(int64_t port_);
-
-void wire_emit_key_event(int64_t port_, struct wire_KeyState *event);
-
 void wire_turn_stderr_logging_on(int64_t port_, int32_t level);
 
 void wire_turn_logcat_logging_on(int64_t port_, int32_t _level);
@@ -268,6 +255,8 @@ void wire_send_cancel__method__Coordinator(int64_t port_,
 void wire_cancel_all__method__Coordinator(int64_t port_, struct wire_Coordinator *that);
 
 WireSyncReturn wire_key_state__method__Coordinator(struct wire_Coordinator *that);
+
+void wire_sub_key_events__method__Coordinator(int64_t port_, struct wire_Coordinator *that);
 
 WireSyncReturn wire_get_key__method__Coordinator(struct wire_Coordinator *that,
                                                  struct wire_KeyId *key_id);
@@ -353,8 +342,6 @@ struct wire_FrostKey *new_box_autoadd_frost_key_0(void);
 
 struct wire_KeyId *new_box_autoadd_key_id_0(void);
 
-struct wire_KeyState *new_box_autoadd_key_state_0(void);
-
 struct wire_PortBytesToRead *new_box_autoadd_port_bytes_to_read_0(void);
 
 struct wire_PortOpen *new_box_autoadd_port_open_0(void);
@@ -374,8 +361,6 @@ struct wire_list_device *new_list_device_0(int32_t len);
 struct wire_list_device_id *new_list_device_id_0(int32_t len);
 
 struct wire_list_encoded_signature *new_list_encoded_signature_0(int32_t len);
-
-struct wire_list_frost_key *new_list_frost_key_0(int32_t len);
 
 struct wire_list_port_desc *new_list_port_desc_0(int32_t len);
 
@@ -431,8 +416,6 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     int64_t dummy_var = 0;
     dummy_var ^= ((int64_t) (void*) wire_sub_port_events);
     dummy_var ^= ((int64_t) (void*) wire_sub_device_events);
-    dummy_var ^= ((int64_t) (void*) wire_sub_key_events);
-    dummy_var ^= ((int64_t) (void*) wire_emit_key_event);
     dummy_var ^= ((int64_t) (void*) wire_turn_stderr_logging_on);
     dummy_var ^= ((int64_t) (void*) wire_turn_logcat_logging_on);
     dummy_var ^= ((int64_t) (void*) wire_device_at_index);
@@ -459,6 +442,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_send_cancel__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_cancel_all__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_key_state__method__Coordinator);
+    dummy_var ^= ((int64_t) (void*) wire_sub_key_events__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_get_key__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_start_signing__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_get_signing_state__method__Coordinator);
@@ -491,7 +475,6 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_ffi_serial_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_frost_key_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_key_id_0);
-    dummy_var ^= ((int64_t) (void*) new_box_autoadd_key_state_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_port_bytes_to_read_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_port_open_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_port_read_0);
@@ -502,7 +485,6 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) new_list_device_0);
     dummy_var ^= ((int64_t) (void*) new_list_device_id_0);
     dummy_var ^= ((int64_t) (void*) new_list_encoded_signature_0);
-    dummy_var ^= ((int64_t) (void*) new_list_frost_key_0);
     dummy_var ^= ((int64_t) (void*) new_list_port_desc_0);
     dummy_var ^= ((int64_t) (void*) new_uint_8_list_0);
     dummy_var ^= ((int64_t) (void*) drop_opaque_ArcMutexVecPortDesc);

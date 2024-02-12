@@ -270,7 +270,6 @@ class TxList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<TxState>(
-      initialData: wallet.txState(keyId: keyId),
       stream: wallet.subTxState(keyId: keyId),
       builder: (context, snapshot) {
         if (snapshot.hasData) {
