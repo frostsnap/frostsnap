@@ -183,37 +183,32 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      onPopInvoked: (didPop) async {
-        coord.cancelAll();
-      },
-      child: Scaffold(
-          appBar: AppBar(
-            title: const Text('Key Generation'),
-          ),
-          body: Center(
-              child:
-                  Column(mainAxisAlignment: MainAxisAlignment.start, children: [
-            MaybeExpandedVertical(child: DeviceListContainer(
-                child: DeviceListWithIcons(iconAssigner: (context, id) {
-              if (widget.devices.contains(id)) {
-                final Widget icon;
-                if (gotShares.contains(id)) {
-                  icon = AnimatedCheckCircle();
-                } else {
-                  // the aspect ratio stops the circular progress indicator from stretching itself
-                  icon = const AspectRatio(
-                      aspectRatio: 1, child: CircularProgressIndicator());
-                }
-                return (null, icon);
+    return Scaffold(
+        appBar: AppBar(
+          title: const Text('Key Generation'),
+        ),
+        body: Center(
+            child:
+                Column(mainAxisAlignment: MainAxisAlignment.start, children: [
+          MaybeExpandedVertical(child: DeviceListContainer(
+              child: DeviceListWithIcons(iconAssigner: (context, id) {
+            if (widget.devices.contains(id)) {
+              final Widget icon;
+              if (gotShares.contains(id)) {
+                icon = AnimatedCheckCircle();
+              } else {
+                // the aspect ratio stops the circular progress indicator from stretching itself
+                icon = const AspectRatio(
+                    aspectRatio: 1, child: CircularProgressIndicator());
               }
-              return (null, null);
-            }))),
-            const SizedBox(height: 20),
-            const Text("Waiting for devices to generate key",
-                style: TextStyle(fontSize: 20))
-          ]))),
-    );
+              return (null, icon);
+            }
+            return (null, null);
+          }))),
+          const SizedBox(height: 20),
+          const Text("Waiting for devices to generate key",
+              style: TextStyle(fontSize: 20))
+        ])));
   }
 
   Future<KeyId?> showCheckKeyGenDialog(

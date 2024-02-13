@@ -75,6 +75,7 @@ pub enum Prompt {
         old_name: Option<String>,
         new_name: String,
     },
+    DisplayBackup(String),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -90,4 +91,5 @@ pub enum UiEvent {
     KeyGenConfirm,
     SigningConfirm,
     NameConfirm(String),
+    BackupConfirm,
 }

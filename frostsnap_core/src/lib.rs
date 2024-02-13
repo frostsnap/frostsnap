@@ -162,6 +162,7 @@ pub enum ActionError {
         action: &'static str,
     },
     StateInconsistent(String),
+    KeyNotKnown(KeyId),
 }
 
 impl core::fmt::Display for ActionError {
@@ -173,6 +174,7 @@ impl core::fmt::Display for ActionError {
             ActionError::StateInconsistent(error) => {
                 write!(f, "action state inconsistent: {error}")
             }
+            ActionError::KeyNotKnown(key_id) => write!(f, "we don't know about this key: {key_id}"),
         }
     }
 }
