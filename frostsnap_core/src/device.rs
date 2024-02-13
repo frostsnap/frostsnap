@@ -2,6 +2,8 @@ use crate::{
     gen_pop_message, message::*, ActionError, Error, FrostKeyExt, MessageResult, NONCE_BATCH_SIZE,
 };
 use crate::{DeviceId, KeyId};
+use alloc::collections::BTreeSet;
+use alloc::string::String;
 use alloc::{collections::BTreeMap, string::ToString, vec::Vec};
 use core::iter;
 use rand_chacha::ChaCha20Rng;
@@ -65,6 +67,10 @@ impl FrostSigner {
 
     pub fn device_id(&self) -> DeviceId {
         DeviceId::new(self.keypair().public_key())
+    }
+
+    pub fn keys(&self) -> BTreeSet<KeyId> {
+        self.keys.keys().cloned().collect()
     }
 
     fn generate_nonces(
@@ -336,11 +342,11 @@ impl FrostSigner {
                 let session_hash = frost_key.into_xonly_key().public_key().to_xonly_bytes();
 
                 self.keys.insert(key.key_id(), key.clone());
-
-                let backup_display_msg = self.display_backup(key.key_id())?;
                 Ok(vec![
                     DeviceSend::ToCoordinator(DeviceToCoordinatorMessage::KeyGenAck(session_hash)),
-                    backup_display_msg,
+                    DeviceSend::ToUser(DeviceToUserMessage::DisplayBackup {
+                        backup: self.key_backup(key.key_id())?,
+                    }),
                     DeviceSend::ToStorage(DeviceToStorageMessage::SaveKey(key.clone())),
                 ])
             }
@@ -491,7 +497,7 @@ impl FrostSigner {
             .unwrap_or("None")
     }
 
-    pub fn display_backup(&mut self, key_id: KeyId) -> Result<DeviceSend, ActionError> {
+    pub fn key_backup(&mut self, key_id: KeyId) -> Result<String, ActionError> {
         match self.keys.get(&key_id) {
             Some(key) => {
                 let frost_key = key.encoded_frost_key.into_frost_key();
@@ -500,9 +506,7 @@ impl FrostSigner {
                     key.secret_share.mark_zero(),
                     key.share_index,
                 );
-                Ok(DeviceSend::ToUser(DeviceToUserMessage::DisplayBackup {
-                    backup: backup.to_string(),
-                }))
+                Ok(backup.to_string())
             }
             None => Err(ActionError::KeyNotKnown(key_id)),
         }

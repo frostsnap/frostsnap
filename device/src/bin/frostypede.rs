@@ -372,6 +372,12 @@ where
                             .print(format!("Confirm name '{}'?", new_name))
                             .unwrap(),
                     },
+                    Prompt::DisplayBackupRequest(key_id) => self
+                        .display
+                        .print(format!(
+                            "Are you sure you want to display the backup for key {key_id}?"
+                        ))
+                        .unwrap(),
                     Prompt::DisplayBackup(backup) => {
                         self.display.print(format!("Backup: {}", backup)).unwrap()
                     }
@@ -475,7 +481,12 @@ where
                             Prompt::NewName { new_name, .. } => {
                                 UiEvent::NameConfirm(new_name.clone())
                             }
-                            Prompt::DisplayBackup(_) => UiEvent::BackupConfirm,
+                            Prompt::DisplayBackupRequest(key_id) => {
+                                UiEvent::BackupRequestConfirm(*key_id)
+                            }
+                            Prompt::DisplayBackup(backup_string) => {
+                                UiEvent::BackupConfirm(backup_string.clone())
+                            }
                         };
                         event = Some(ui_event);
                     }
