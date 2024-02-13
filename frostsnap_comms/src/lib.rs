@@ -10,7 +10,7 @@ use alloc::vec::Vec;
 use alloc::{collections::BTreeSet, string::String};
 use bincode::{de::read::Reader, enc::write::Writer, Decode, Encode};
 use core::marker::PhantomData;
-use frostsnap_core::{DeviceId, Gist};
+use frostsnap_core::{DeviceId, Gist, KeyId};
 
 pub const BAUDRATE: u32 = 9600;
 /// Magic bytes are 7 bytes in length so when the bincode prefixes it with `00` it is 8 bytes long.
@@ -109,6 +109,7 @@ pub enum CoordinatorSendBody {
     Core(frostsnap_core::message::CoordinatorToDeviceMessage),
     Naming(NameCommand),
     AnnounceAck,
+    DisplayBackupRequest(KeyId),
     Cancel,
 }
 

@@ -323,6 +323,21 @@ where
                                                             ),
                                                     );
                                                 }
+                                                CoordinatorSendBody::DisplayBackupRequest(
+                                                    key_id,
+                                                ) => {
+                                                    match signer.keys().get(key_id) {
+                                                        Some(_) => {
+                                                            ui.set_workflow(ui::Workflow::UserPrompt(
+                                                            ui::Prompt::DisplayBackupRequest(*key_id),
+                                                        ));
+                                                        }
+                                                        _ => {
+                                                            // we don't know about this key, no backup to display
+                                                            // TODO: show error
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
 
@@ -374,7 +389,16 @@ where
                             name: new_name.into(),
                         });
                     }
-                    UiEvent::BackupConfirm => {}
+                    UiEvent::BackupRequestConfirm(key_id) => {
+                        ui.set_workflow(ui::Workflow::UserPrompt(
+                            ui::Prompt::DisplayBackupRequest(key_id),
+                        ));
+                    }
+                    UiEvent::BackupConfirm(ref backup_string) => {
+                        ui.set_workflow(ui::Workflow::UserPrompt(ui::Prompt::DisplayBackup(
+                            backup_string.clone(),
+                        )));
+                    }
                 }
                 ui.set_workflow(ui::Workflow::WaitingFor(
                     ui::WaitingFor::CoordinatorInstruction {
