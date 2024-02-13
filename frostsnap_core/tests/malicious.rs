@@ -6,7 +6,7 @@ use frostsnap_core::{DeviceId, FrostCoordinator, FrostSigner};
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::frost;
-use schnorr_fun::fun::Scalar;
+use schnorr_fun::fun::{poly, Scalar};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::common::{Env, Run, Send};
@@ -36,7 +36,7 @@ fn keygen_maliciously_replace_public_poly() {
         .unwrap();
 
     let frost = frost::new_with_deterministic_nonces::<sha2::Sha256>();
-    let malicious_poly = frost::generate_scalar_poly(1, &mut rand::thread_rng());
+    let malicious_poly = poly::scalar::generate(1, &mut rand::thread_rng());
     let provide_shares = KeyGenResponse::generate(
         &frost,
         &malicious_poly,
@@ -78,6 +78,7 @@ fn nonce_reuse() {
                     let sign_ack = run.device(from).sign_ack().unwrap();
                     run.extend_from_device(from, sign_ack);
                 }
+                DeviceToUserMessage::DisplayBackup { .. } => {}
                 DeviceToUserMessage::Canceled { .. } => {
                     panic!("no cancelling done");
                 }

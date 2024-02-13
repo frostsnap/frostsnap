@@ -222,12 +222,14 @@ pub enum DeviceToUserMessage {
     CheckKeyGen { session_hash: SessionHash },
     SignatureRequest { sign_task: SignTask, key_id: KeyId },
     Canceled { task: TaskKind },
+    DisplayBackup { backup: String },
 }
 
 #[derive(Clone, Debug)]
 pub enum TaskKind {
     KeyGen,
     Sign,
+    DisplayBackup,
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
@@ -360,7 +362,7 @@ impl SignTask {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub struct SignItem {
     pub message: Vec<u8>,
     pub tap_tweak: bool,

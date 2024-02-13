@@ -344,6 +344,9 @@ where
                         )),
                         None => self.display.print(format!("Confirm name '{}'?", new_name)),
                     },
+                    Prompt::DisplayBackup(backup) => {
+                        self.display.print(format!("Backup: {}", backup)).unwrap()
+                    }
                 }
                 self.display.confirm_bar(0.0);
             }
@@ -444,6 +447,7 @@ where
                             Prompt::NewName { new_name, .. } => {
                                 UiEvent::NameConfirm(new_name.clone())
                             }
+                            Prompt::DisplayBackup(_) => UiEvent::BackupConfirm,
                         };
                         event = Some(ui_event);
                     }

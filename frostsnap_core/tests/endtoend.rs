@@ -6,6 +6,7 @@ use frostsnap_core::{DeviceId, FrostCoordinator, FrostSigner, KeyId, SessionHash
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::binonce::Nonce;
+use schnorr_fun::fun::{g, G};
 use schnorr_fun::{Schnorr, Signature};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -20,6 +21,7 @@ struct TestEnv {
     pub coordinator_check: Option<SessionHash>,
     pub coordinator_got_keygen_acks: BTreeSet<DeviceId>,
     pub key_ids: BTreeSet<KeyId>,
+    pub keygen_backups: BTreeMap<DeviceId, String>,
 
     // signing
     pub received_signing_shares: BTreeSet<DeviceId>,
@@ -170,6 +172,9 @@ impl common::Env for TestEnv {
                 let sign_ack = run.device(from).sign_ack().unwrap();
                 run.extend_from_device(from, sign_ack);
             }
+            DeviceToUserMessage::DisplayBackup { backup } => {
+                self.keygen_backups.insert(from, backup);
+            }
             DeviceToUserMessage::Canceled { .. } => {
                 panic!("no cancelling done");
             }
@@ -218,9 +223,31 @@ fn test_end_to_end() {
         env.keygen_checks.values().all(|v| *v == session_hash),
         "devices should have seen the same hash"
     );
+    assert_eq!(
+        env.keygen_backups.keys().cloned().collect::<BTreeSet<_>>(),
+        device_set
+    );
+
     assert_eq!(env.coordinator_got_keygen_acks, device_set);
     assert_eq!(env.received_keygen_shares, device_set);
     let coord_frost_key = run.coordinator.iter_keys().next().unwrap();
+
+    let decoded_backups = env
+        .keygen_backups
+        .values()
+        .map(|backup| {
+            let decoded =
+                schnorr_fun::share_backup::decode_backup(backup.clone()).expect("valid backup");
+            (decoded.share_index, decoded.secret_share)
+        })
+        .collect::<Vec<_>>();
+    let interpolated_joint_secret =
+        schnorr_fun::fun::poly::scalar::interpolate_and_eval_poly_at_0(decoded_backups);
+    assert_eq!(
+        g!(interpolated_joint_secret * G),
+        coord_frost_key.frost_key().public_key()
+    );
+
     let key_id = coord_frost_key.key_id();
     let public_key = coord_frost_key.frost_key().public_key();
 

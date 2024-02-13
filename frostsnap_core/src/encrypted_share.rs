@@ -4,7 +4,7 @@ use chacha20::cipher::{KeyIvInit, StreamCipher};
 use chacha20::ChaCha20;
 use rand_core::RngCore;
 use schnorr_fun::frost::Frost;
-use schnorr_fun::fun::{g, marker::*, Point, Scalar, G};
+use schnorr_fun::fun::{g, marker::*, poly, Point, Scalar, G};
 use schnorr_fun::nonce::NonceGen;
 use sha2::{
     digest::{Digest, Update},
@@ -78,7 +78,7 @@ impl crate::message::KeyGenResponse {
             .collect();
 
         Self {
-            my_poly: schnorr_fun::frost::to_point_poly(my_poly),
+            my_poly: poly::scalar::to_point_poly(my_poly),
             proof_of_possession,
             encrypted_shares,
         }
