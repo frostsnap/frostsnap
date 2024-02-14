@@ -148,6 +148,14 @@ typedef struct wire_Coordinator {
   struct wire_FfiCoordinator field0;
 } wire_Coordinator;
 
+typedef struct wire_FrostsnapCoreMessageTransactionSignTask {
+  const void *ptr;
+} wire_FrostsnapCoreMessageTransactionSignTask;
+
+typedef struct wire_UnsignedTx {
+  struct wire_FrostsnapCoreMessageTransactionSignTask task;
+} wire_UnsignedTx;
+
 typedef struct wire_MutexCrateWalletWallet {
   const void *ptr;
 } wire_MutexCrateWalletWallet;
@@ -170,6 +178,10 @@ typedef struct wire_StringList {
   struct wire_uint_8_list **ptr;
   int32_t len;
 } wire_StringList;
+
+typedef struct wire_SignedTx {
+  struct wire_RTransaction inner;
+} wire_SignedTx;
 
 void store_dart_post_cobject(DartPostCObjectFnType ptr);
 
@@ -267,6 +279,11 @@ void wire_start_signing__method__Coordinator(int64_t port_,
                                              struct wire_list_device_id *devices,
                                              struct wire_uint_8_list *message);
 
+void wire_start_signing_tx__method__Coordinator(int64_t port_,
+                                                struct wire_Coordinator *that,
+                                                struct wire_UnsignedTx *unsigned_tx,
+                                                struct wire_list_device_id *devices);
+
 WireSyncReturn wire_get_signing_state__method__Coordinator(struct wire_Coordinator *that);
 
 WireSyncReturn wire_nonces_available__method__Coordinator(struct wire_Coordinator *that,
@@ -304,6 +321,33 @@ void wire_next_address__method__Wallet(int64_t port_,
 WireSyncReturn wire_addresses_state__method__Wallet(struct wire_Wallet *that,
                                                     struct wire_KeyId *key_id);
 
+WireSyncReturn wire_validate_destination_address__method__Wallet(struct wire_Wallet *that,
+                                                                 struct wire_uint_8_list *address);
+
+WireSyncReturn wire_validate_amount__method__Wallet(struct wire_Wallet *that,
+                                                    struct wire_uint_8_list *address,
+                                                    uint64_t value);
+
+void wire_send_to__method__Wallet(int64_t port_,
+                                  struct wire_Wallet *that,
+                                  struct wire_KeyId *key_id,
+                                  struct wire_uint_8_list *to_address,
+                                  uint64_t value,
+                                  double feerate);
+
+WireSyncReturn wire_complete_unsigned_tx__method__Wallet(struct wire_Wallet *that,
+                                                         struct wire_UnsignedTx *unsigned_tx,
+                                                         struct wire_list_encoded_signature *signatures);
+
+void wire_broadcast_tx__method__Wallet(int64_t port_,
+                                       struct wire_Wallet *that,
+                                       struct wire_KeyId *key_id,
+                                       struct wire_SignedTx *tx);
+
+WireSyncReturn wire_effect_of_tx__method__Wallet(struct wire_Wallet *that,
+                                                 struct wire_KeyId *key_id,
+                                                 struct wire_SignedTx *tx);
+
 struct wire_ArcMutexVecPortDesc new_ArcMutexVecPortDesc(void);
 
 struct wire_ChainSync new_ChainSync(void);
@@ -311,6 +355,8 @@ struct wire_ChainSync new_ChainSync(void);
 struct wire_FfiCoordinator new_FfiCoordinator(void);
 
 struct wire_FrostsnapCoreCoordinatorFrostKeyState new_FrostsnapCoreCoordinatorFrostKeyState(void);
+
+struct wire_FrostsnapCoreMessageTransactionSignTask new_FrostsnapCoreMessageTransactionSignTask(void);
 
 struct wire_MutexBTreeMapKeyIdStreamSinkTxState new_MutexBTreeMapKeyIdStreamSinkTxState(void);
 
@@ -350,9 +396,13 @@ struct wire_PortRead *new_box_autoadd_port_read_0(void);
 
 struct wire_PortWrite *new_box_autoadd_port_write_0(void);
 
+struct wire_SignedTx *new_box_autoadd_signed_tx_0(void);
+
 struct wire_SigningState *new_box_autoadd_signing_state_0(void);
 
 struct wire_Transaction *new_box_autoadd_transaction_0(void);
+
+struct wire_UnsignedTx *new_box_autoadd_unsigned_tx_0(void);
 
 struct wire_Wallet *new_box_autoadd_wallet_0(void);
 
@@ -381,6 +431,10 @@ const void *share_opaque_FfiCoordinator(const void *ptr);
 void drop_opaque_FrostsnapCoreCoordinatorFrostKeyState(const void *ptr);
 
 const void *share_opaque_FrostsnapCoreCoordinatorFrostKeyState(const void *ptr);
+
+void drop_opaque_FrostsnapCoreMessageTransactionSignTask(const void *ptr);
+
+const void *share_opaque_FrostsnapCoreMessageTransactionSignTask(const void *ptr);
 
 void drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(const void *ptr);
 
@@ -445,6 +499,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_sub_key_events__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_get_key__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_start_signing__method__Coordinator);
+    dummy_var ^= ((int64_t) (void*) wire_start_signing_tx__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_get_signing_state__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_nonces_available__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_generate_new_key__method__Coordinator);
@@ -456,10 +511,17 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_sync__method__Wallet);
     dummy_var ^= ((int64_t) (void*) wire_next_address__method__Wallet);
     dummy_var ^= ((int64_t) (void*) wire_addresses_state__method__Wallet);
+    dummy_var ^= ((int64_t) (void*) wire_validate_destination_address__method__Wallet);
+    dummy_var ^= ((int64_t) (void*) wire_validate_amount__method__Wallet);
+    dummy_var ^= ((int64_t) (void*) wire_send_to__method__Wallet);
+    dummy_var ^= ((int64_t) (void*) wire_complete_unsigned_tx__method__Wallet);
+    dummy_var ^= ((int64_t) (void*) wire_broadcast_tx__method__Wallet);
+    dummy_var ^= ((int64_t) (void*) wire_effect_of_tx__method__Wallet);
     dummy_var ^= ((int64_t) (void*) new_ArcMutexVecPortDesc);
     dummy_var ^= ((int64_t) (void*) new_ChainSync);
     dummy_var ^= ((int64_t) (void*) new_FfiCoordinator);
     dummy_var ^= ((int64_t) (void*) new_FrostsnapCoreCoordinatorFrostKeyState);
+    dummy_var ^= ((int64_t) (void*) new_FrostsnapCoreMessageTransactionSignTask);
     dummy_var ^= ((int64_t) (void*) new_MutexBTreeMapKeyIdStreamSinkTxState);
     dummy_var ^= ((int64_t) (void*) new_MutexCrateWalletWallet);
     dummy_var ^= ((int64_t) (void*) new_PortBytesToReadSender);
@@ -479,8 +541,10 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_port_open_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_port_read_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_port_write_0);
+    dummy_var ^= ((int64_t) (void*) new_box_autoadd_signed_tx_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_signing_state_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_transaction_0);
+    dummy_var ^= ((int64_t) (void*) new_box_autoadd_unsigned_tx_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_wallet_0);
     dummy_var ^= ((int64_t) (void*) new_list_device_0);
     dummy_var ^= ((int64_t) (void*) new_list_device_id_0);
@@ -495,6 +559,8 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) share_opaque_FfiCoordinator);
     dummy_var ^= ((int64_t) (void*) drop_opaque_FrostsnapCoreCoordinatorFrostKeyState);
     dummy_var ^= ((int64_t) (void*) share_opaque_FrostsnapCoreCoordinatorFrostKeyState);
+    dummy_var ^= ((int64_t) (void*) drop_opaque_FrostsnapCoreMessageTransactionSignTask);
+    dummy_var ^= ((int64_t) (void*) share_opaque_FrostsnapCoreMessageTransactionSignTask);
     dummy_var ^= ((int64_t) (void*) drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState);
     dummy_var ^= ((int64_t) (void*) share_opaque_MutexBTreeMapKeyIdStreamSinkTxState);
     dummy_var ^= ((int64_t) (void*) drop_opaque_MutexCrateWalletWallet);

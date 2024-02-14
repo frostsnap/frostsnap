@@ -1,5 +1,5 @@
-use crate::DeviceId;
 use crate::{gen_pop_message, message::*, ActionError, Error, MessageResult, NONCE_BATCH_SIZE};
+use crate::{DeviceId, FrostKeyExt};
 use alloc::{
     boxed::Box,
     collections::{BTreeMap, BTreeSet},
@@ -288,6 +288,20 @@ impl FrostSigner {
                     return Err(Error::signer_invalid_message(&message, format!( "Number of nonces ({}) was not the same as the number of signatures we were asked for {}", my_nonces.len(), n_signatures_requested)));
                 }
 
+                // everything has to be be signed by the same key for now
+                let fixed_key_id = key.frost_key.key_id();
+
+                if sign_task
+                    .sign_items()
+                    .iter()
+                    .any(|sign_item| sign_item.key_id != fixed_key_id)
+                {
+                    return Err(Error::signer_invalid_message(
+                        &message,
+                        "some sign items were not destined for a key we own",
+                    ));
+                }
+
                 let expected_nonces = self
                     .generate_nonces(key.aux_rand, *my_nonce_index, my_nonces.len())
                     .map(|nonce| nonce.public())
@@ -353,7 +367,7 @@ impl FrostSigner {
                 nonces,
             } => {
                 let sign_items = sign_task.sign_items();
-                let frost = frost::new_with_deterministic_nonces::<Sha256>();
+                let frost = frost::new_without_nonce_generation::<Sha256>();
                 let (_, my_nonce_index, my_replenish_index) =
                     nonces.get(&self.device_id()).expect("already checked");
 

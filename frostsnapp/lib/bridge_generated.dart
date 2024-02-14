@@ -643,6 +643,32 @@ class NativeImpl implements Native {
         argNames: ["that", "keyId", "devices", "message"],
       );
 
+  Stream<SigningState> startSigningTxMethodCoordinator(
+      {required Coordinator that,
+      required UnsignedTx unsignedTx,
+      required List<DeviceId> devices,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
+    var arg1 = _platform.api2wire_box_autoadd_unsigned_tx(unsignedTx);
+    var arg2 = _platform.api2wire_list_device_id(devices);
+    return _platform.executeStream(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner
+          .wire_start_signing_tx__method__Coordinator(port_, arg0, arg1, arg2),
+      parseSuccessData: (d) => _wire2api_signing_state(d),
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kStartSigningTxMethodCoordinatorConstMeta,
+      argValues: [that, unsignedTx, devices],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kStartSigningTxMethodCoordinatorConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "start_signing_tx__method__Coordinator",
+            argNames: ["that", "unsignedTx", "devices"],
+          );
+
   SigningState? getSigningStateMethodCoordinator(
       {required Coordinator that, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
@@ -886,6 +912,157 @@ class NativeImpl implements Native {
         argNames: ["that", "keyId"],
       );
 
+  String? validateDestinationAddressMethodWallet(
+      {required Wallet that, required String address, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_wallet(that);
+    var arg1 = _platform.api2wire_String(address);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner
+          .wire_validate_destination_address__method__Wallet(arg0, arg1),
+      parseSuccessData: _wire2api_opt_String,
+      parseErrorData: null,
+      constMeta: kValidateDestinationAddressMethodWalletConstMeta,
+      argValues: [that, address],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kValidateDestinationAddressMethodWalletConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "validate_destination_address__method__Wallet",
+            argNames: ["that", "address"],
+          );
+
+  String? validateAmountMethodWallet(
+      {required Wallet that,
+      required String address,
+      required int value,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_wallet(that);
+    var arg1 = _platform.api2wire_String(address);
+    var arg2 = _platform.api2wire_u64(value);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner
+          .wire_validate_amount__method__Wallet(arg0, arg1, arg2),
+      parseSuccessData: _wire2api_opt_String,
+      parseErrorData: null,
+      constMeta: kValidateAmountMethodWalletConstMeta,
+      argValues: [that, address, value],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kValidateAmountMethodWalletConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "validate_amount__method__Wallet",
+        argNames: ["that", "address", "value"],
+      );
+
+  Future<UnsignedTx> sendToMethodWallet(
+      {required Wallet that,
+      required KeyId keyId,
+      required String toAddress,
+      required int value,
+      required double feerate,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_wallet(that);
+    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg2 = _platform.api2wire_String(toAddress);
+    var arg3 = _platform.api2wire_u64(value);
+    var arg4 = api2wire_f64(feerate);
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner
+          .wire_send_to__method__Wallet(port_, arg0, arg1, arg2, arg3, arg4),
+      parseSuccessData: _wire2api_unsigned_tx,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kSendToMethodWalletConstMeta,
+      argValues: [that, keyId, toAddress, value, feerate],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kSendToMethodWalletConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "send_to__method__Wallet",
+        argNames: ["that", "keyId", "toAddress", "value", "feerate"],
+      );
+
+  SignedTx completeUnsignedTxMethodWallet(
+      {required Wallet that,
+      required UnsignedTx unsignedTx,
+      required List<EncodedSignature> signatures,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_wallet(that);
+    var arg1 = _platform.api2wire_box_autoadd_unsigned_tx(unsignedTx);
+    var arg2 = _platform.api2wire_list_encoded_signature(signatures);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner
+          .wire_complete_unsigned_tx__method__Wallet(arg0, arg1, arg2),
+      parseSuccessData: _wire2api_signed_tx,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kCompleteUnsignedTxMethodWalletConstMeta,
+      argValues: [that, unsignedTx, signatures],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kCompleteUnsignedTxMethodWalletConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "complete_unsigned_tx__method__Wallet",
+        argNames: ["that", "unsignedTx", "signatures"],
+      );
+
+  Future<void> broadcastTxMethodWallet(
+      {required Wallet that,
+      required KeyId keyId,
+      required SignedTx tx,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_wallet(that);
+    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg2 = _platform.api2wire_box_autoadd_signed_tx(tx);
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner
+          .wire_broadcast_tx__method__Wallet(port_, arg0, arg1, arg2),
+      parseSuccessData: _wire2api_unit,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kBroadcastTxMethodWalletConstMeta,
+      argValues: [that, keyId, tx],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kBroadcastTxMethodWalletConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "broadcast_tx__method__Wallet",
+        argNames: ["that", "keyId", "tx"],
+      );
+
+  EffectOfTx effectOfTxMethodWallet(
+      {required Wallet that,
+      required KeyId keyId,
+      required SignedTx tx,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_wallet(that);
+    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg2 = _platform.api2wire_box_autoadd_signed_tx(tx);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () =>
+          _platform.inner.wire_effect_of_tx__method__Wallet(arg0, arg1, arg2),
+      parseSuccessData: _wire2api_effect_of_tx,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kEffectOfTxMethodWalletConstMeta,
+      argValues: [that, keyId, tx],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kEffectOfTxMethodWalletConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "effect_of_tx__method__Wallet",
+        argNames: ["that", "keyId", "tx"],
+      );
+
   DropFnType get dropOpaqueArcMutexVecPortDesc =>
       _platform.inner.drop_opaque_ArcMutexVecPortDesc;
   ShareFnType get shareOpaqueArcMutexVecPortDesc =>
@@ -911,6 +1088,13 @@ class NativeImpl implements Native {
       _platform.inner.share_opaque_FrostsnapCoreCoordinatorFrostKeyState;
   OpaqueTypeFinalizer get FrostsnapCoreCoordinatorFrostKeyStateFinalizer =>
       _platform.FrostsnapCoreCoordinatorFrostKeyStateFinalizer;
+
+  DropFnType get dropOpaqueFrostsnapCoreMessageTransactionSignTask =>
+      _platform.inner.drop_opaque_FrostsnapCoreMessageTransactionSignTask;
+  ShareFnType get shareOpaqueFrostsnapCoreMessageTransactionSignTask =>
+      _platform.inner.share_opaque_FrostsnapCoreMessageTransactionSignTask;
+  OpaqueTypeFinalizer get FrostsnapCoreMessageTransactionSignTaskFinalizer =>
+      _platform.FrostsnapCoreMessageTransactionSignTaskFinalizer;
 
   DropFnType get dropOpaqueMutexBTreeMapKeyIdStreamSinkTxState =>
       _platform.inner.drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState;
@@ -987,6 +1171,12 @@ class NativeImpl implements Native {
     return FrostsnapCoreCoordinatorFrostKeyState.fromRaw(raw[0], raw[1], this);
   }
 
+  FrostsnapCoreMessageTransactionSignTask
+      _wire2api_FrostsnapCoreMessageTransactionSignTask(dynamic raw) {
+    return FrostsnapCoreMessageTransactionSignTask.fromRaw(
+        raw[0], raw[1], this);
+  }
+
   MutexBTreeMapKeyIdStreamSinkTxState
       _wire2api_MutexBTreeMapKeyIdStreamSinkTxState(dynamic raw) {
     return MutexBTreeMapKeyIdStreamSinkTxState.fromRaw(raw[0], raw[1], this);
@@ -1018,6 +1208,17 @@ class NativeImpl implements Native {
 
   String _wire2api_String(dynamic raw) {
     return raw as String;
+  }
+
+  (String, int) _wire2api___record__String_u64(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2) {
+      throw Exception('Expected 2 elements, got ${arr.length}');
+    }
+    return (
+      _wire2api_String(arr[0]),
+      _wire2api_u64(arr[1]),
+    );
   }
 
   (Coordinator, FfiSerial, Wallet)
@@ -1198,6 +1399,18 @@ class NativeImpl implements Native {
     );
   }
 
+  EffectOfTx _wire2api_effect_of_tx(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return EffectOfTx(
+      netValue: _wire2api_i64(arr[0]),
+      fee: _wire2api_u64(arr[1]),
+      feerate: _wire2api_f64(arr[2]),
+      foreignReceivingAddresses: _wire2api_list___record__String_u64(arr[3]),
+    );
+  }
+
   EncodedSignature _wire2api_encoded_signature(dynamic raw) {
     final arr = raw as List<dynamic>;
     if (arr.length != 1)
@@ -1255,6 +1468,10 @@ class NativeImpl implements Native {
     return KeyState(
       keys: _wire2api_list_frost_key(arr[0]),
     );
+  }
+
+  List<(String, int)> _wire2api_list___record__String_u64(dynamic raw) {
+    return (raw as List<dynamic>).map(_wire2api___record__String_u64).toList();
   }
 
   List<Address> _wire2api_list_address(dynamic raw) {
@@ -1375,6 +1592,15 @@ class NativeImpl implements Native {
     );
   }
 
+  SignedTx _wire2api_signed_tx(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return SignedTx(
+      inner: _wire2api_RTransaction(arr[0]),
+    );
+  }
+
   SigningState _wire2api_signing_state(dynamic raw) {
     final arr = raw as List<dynamic>;
     if (arr.length != 3)
@@ -1440,6 +1666,15 @@ class NativeImpl implements Native {
     return;
   }
 
+  UnsignedTx _wire2api_unsigned_tx(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return UnsignedTx(
+      task: _wire2api_FrostsnapCoreMessageTransactionSignTask(arr[0]),
+    );
+  }
+
   int _wire2api_usize(dynamic raw) {
     return castInt(raw);
   }
@@ -1458,6 +1693,11 @@ class NativeImpl implements Native {
 }
 
 // Section: api2wire
+
+@protected
+double api2wire_f64(double raw) {
+  return raw;
+}
 
 @protected
 int api2wire_i32(int raw) {

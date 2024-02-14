@@ -6,7 +6,7 @@ use std::{
 use anyhow::Result;
 use bdk_chain::{bitcoin, local_chain, tx_graph, ConfirmationTimeHeightAnchor};
 use bdk_electrum::{
-    electrum_client::{self, Client},
+    electrum_client::{self, Client, ElectrumApi},
     ElectrumExt,
 };
 
@@ -57,6 +57,11 @@ impl ChainSync {
             chain: update_chain,
             tx_graph: update_graph,
         })
+    }
+
+    pub fn broadcast(&self, tx: &bitcoin::Transaction) -> Result<()> {
+        self.client.transaction_broadcast(&tx)?;
+        Ok(())
     }
 }
 

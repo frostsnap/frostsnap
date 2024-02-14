@@ -148,6 +148,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "bdk_coin_select"
+version = "0.2.0"
+source = "git+https://github.com/LLFourn/coin-select.git?rev=8eb582bc08bee173a41508a915fd2609e954f313#8eb582bc08bee173a41508a915fd2609e954f313"
+
+[[package]]
 name = "bdk_electrum"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -987,7 +992,7 @@ dependencies = [
 [[package]]
 name = "llsdb"
 version = "0.1.0"
-source = "git+https://github.com/LLFourn/llsdb.git#251d23c336493cb145708110bc9c36b19a54cfa1"
+source = "git+https://github.com/LLFourn/llsdb.git?rev=b1540959897b098e7fea28799a377e210b365357#b1540959897b098e7fea28799a377e210b365357"
 dependencies = [
  "anyhow",
  "bincode",
@@ -1077,6 +1082,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bdk_chain",
+ "bdk_coin_select",
  "bdk_electrum",
  "bincode",
  "flutter_rust_bridge",

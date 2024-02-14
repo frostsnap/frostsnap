@@ -208,13 +208,23 @@ pub enum DeviceToStorageMessage {
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum SignTask {
-    Plain(Vec<u8>),                                                 // 1 nonce & sig
-    Nostr(#[bincode(with_serde)] Box<crate::nostr::UnsignedEvent>), // 1 nonce & sig
-    Transaction {
+    Plain {
+        message: Vec<u8>,
+        key_id: KeyId,
+    }, // 1 nonce & sig
+    Nostr {
         #[bincode(with_serde)]
-        tx_template: bitcoin::Transaction,
-        prevouts: Vec<TxInput>,
-    }, // N nonces and sigs
+        event: Box<crate::nostr::UnsignedEvent>,
+        key_id: KeyId,
+    }, // 1 nonce & sig
+    Transaction(TransactionSignTask),
+}
+
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct TransactionSignTask {
+    #[bincode(with_serde)]
+    pub tx_template: bitcoin::Transaction,
+    pub prevouts: Vec<TxInput>,
 }
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -223,7 +233,7 @@ pub struct TxInput {
     #[bincode(with_serde)]
     pub prevout: bitcoin::TxOut,
     /// The derivation path of our ket if it's ours
-    pub bip32_path: Option<Vec<u32>>,
+    pub key_path: Option<(KeyId, Vec<u32>)>,
 }
 
 impl core::borrow::Borrow<bitcoin::TxOut> for TxInput {
@@ -233,14 +243,15 @@ impl core::borrow::Borrow<bitcoin::TxOut> for TxInput {
 }
 
 // What to show on the device for signing requests
+// TODO: Remove this -- the device impl should decide what to show
 impl core::fmt::Display for SignTask {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            SignTask::Plain(message) => {
+            SignTask::Plain { message, .. } => {
                 write!(f, "Plain:{}", String::from_utf8_lossy(message))
             }
-            SignTask::Nostr(event) => write!(f, "Nostr: {}", event.content),
-            SignTask::Transaction { tx_template, .. } => {
+            SignTask::Nostr { event, .. } => write!(f, "Nostr: {}", event.content),
+            SignTask::Transaction(TransactionSignTask { tx_template, .. }) => {
                 let mut lines = vec![];
                 for output in &tx_template.output {
                     let address = bitcoin::Address::from_script(
@@ -272,20 +283,22 @@ impl SignTask {
 
     pub fn sign_items(&self) -> Vec<SignItem> {
         match self {
-            SignTask::Plain(message) => vec![SignItem {
+            SignTask::Plain { message, key_id } => vec![SignItem {
                 message: message.clone(),
                 tap_tweak: false,
                 bip32_path: vec![],
+                key_id: *key_id,
             }],
-            SignTask::Nostr(event) => vec![SignItem {
+            SignTask::Nostr { event, key_id } => vec![SignItem {
                 message: event.hash_bytes.clone(),
                 tap_tweak: false,
                 bip32_path: vec![],
+                key_id: *key_id,
             }],
-            SignTask::Transaction {
+            SignTask::Transaction(TransactionSignTask {
                 tx_template,
                 prevouts,
-            } => {
+            }) => {
                 use bitcoin::sighash::SighashCache;
                 let mut tx_sighashes = vec![];
                 let _sighash_tx = tx_template.clone();
@@ -306,10 +319,12 @@ impl SignTask {
                     .zip(prevouts.iter())
                     .filter_map(|(sighash, input)| {
                         use bitcoin::hashes::Hash;
+                        let (key_id, bip32_path) = input.key_path.clone()?;
                         Some(SignItem {
                             message: sighash.as_raw_hash().to_byte_array().to_vec(),
-                            bip32_path: input.bip32_path.clone()?,
+                            bip32_path,
                             tap_tweak: true,
+                            key_id,
                         })
                     })
                     .collect();
@@ -325,6 +340,7 @@ pub struct SignItem {
     pub message: Vec<u8>,
     pub tap_tweak: bool,
     pub bip32_path: Vec<u32>,
+    pub key_id: KeyId,
 }
 
 impl SignItem {

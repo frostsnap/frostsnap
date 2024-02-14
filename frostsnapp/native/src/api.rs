@@ -18,6 +18,7 @@ use lazy_static::lazy_static;
 use llsdb::LlsDb;
 pub use std::collections::{BTreeMap, HashMap};
 use std::fs::OpenOptions;
+use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
 pub use std::sync::{Mutex, RwLock};
@@ -455,9 +456,25 @@ impl Coordinator {
         stream: StreamSink<SigningState>,
     ) -> Result<()> {
         self.0.start_signing(
-            key_id,
             devices.into_iter().collect(),
-            SignTask::Plain(message.into_bytes()),
+            SignTask::Plain {
+                message: message.into_bytes(),
+                key_id,
+            },
+            stream,
+        )?;
+        Ok(())
+    }
+
+    pub fn start_signing_tx(
+        &self,
+        unsigned_tx: UnsignedTx,
+        devices: Vec<DeviceId>,
+        stream: StreamSink<SigningState>,
+    ) -> Result<()> {
+        self.0.start_signing(
+            devices.into_iter().collect(),
+            SignTask::Transaction(unsigned_tx.task.deref().clone()),
             stream,
         )?;
         Ok(())
@@ -629,6 +646,138 @@ impl Wallet {
     pub fn addresses_state(&self, key_id: KeyId) -> SyncReturn<Vec<Address>> {
         SyncReturn(self.inner.lock().unwrap().list_addresses(key_id))
     }
+
+    pub fn validate_destination_address(&self, address: String) -> SyncReturn<Option<String>> {
+        SyncReturn(match bitcoin::Address::from_str(&address) {
+            Ok(address) => match address.require_network(self.inner.lock().unwrap().network) {
+                Ok(_) => None,
+                Err(e) => Some(e.to_string()),
+            },
+            Err(e) => Some(e.to_string()),
+        })
+    }
+
+    pub fn validate_amount(&self, address: String, value: u64) -> SyncReturn<Option<String>> {
+        SyncReturn(match bitcoin::Address::from_str(&address) {
+            Ok(address) => match address.require_network(self.inner.lock().unwrap().network) {
+                Ok(address) => {
+                    let dust_value = address.script_pubkey().dust_value().to_sat();
+                    if value < dust_value {
+                        event!(
+                            TLevel::DEBUG,
+                            value = value,
+                            dust_value = dust_value,
+                            "address validation rejected"
+                        );
+                        Some(format!("Too small to send. Must be at least {dust_value}"))
+                    } else {
+                        None
+                    }
+                }
+                Err(_e) => None,
+            },
+            Err(_e) => None,
+        })
+    }
+
+    pub fn send_to(
+        &self,
+        key_id: KeyId,
+        to_address: String,
+        value: u64,
+        feerate: f64,
+    ) -> Result<UnsignedTx> {
+        let mut wallet = self.inner.lock().unwrap();
+        let to_address = bitcoin::Address::from_str(&to_address)
+            .expect("validation should have checked")
+            .require_network(wallet.network)
+            .expect("validation should have checked");
+        let signing_task = wallet.send_to(key_id, to_address, value, feerate as f32)?;
+        let unsigned_tx = UnsignedTx {
+            task: RustOpaque::new(signing_task),
+        };
+        Ok(unsigned_tx)
+    }
+
+    pub fn complete_unsigned_tx(
+        &self,
+        unsigned_tx: UnsignedTx,
+        signatures: Vec<EncodedSignature>,
+    ) -> Result<SyncReturn<SignedTx>> {
+        let tx = self
+            .inner
+            .lock()
+            .unwrap()
+            .complete_tx_sign_task(unsigned_tx.task.deref().clone(), signatures)?;
+        Ok(SyncReturn(SignedTx {
+            inner: RustOpaque::new(tx),
+        }))
+    }
+
+    pub fn broadcast_tx(&self, key_id: KeyId, tx: SignedTx) -> Result<()> {
+        match self.chain_sync.broadcast(&*tx.inner) {
+            Ok(_) => {
+                event!(
+                    TLevel::INFO,
+                    tx = tx.inner.txid().to_string(),
+                    "transaction successfully broadcast"
+                );
+                let mut inner = self.inner.lock().unwrap();
+                inner.broadcast_success(tx.inner.deref().to_owned());
+                let wallet_streams = self.wallet_streams.lock().unwrap();
+                if let Some(stream) = wallet_streams.get(&key_id) {
+                    let txs = inner.list_transactions(key_id);
+                    stream.add(TxState { txs });
+                }
+                Ok(())
+            }
+            Err(e) => {
+                use bdk_chain::bitcoin::consensus::Encodable;
+                use frostsnap_core::schnorr_fun::fun::hex;
+                let mut buf = vec![];
+                tx.inner.consensus_encode(&mut buf).unwrap();
+                let hex_tx = hex::encode(&buf);
+                event!(
+                    TLevel::ERROR,
+                    tx = tx.inner.txid().to_string(),
+                    hex = hex_tx,
+                    error = e.to_string(),
+                    "unable to broadcast"
+                );
+                Err(e)
+            }
+        }
+    }
+
+    pub fn effect_of_tx(&self, key_id: KeyId, tx: SignedTx) -> Result<SyncReturn<EffectOfTx>> {
+        let inner = self.inner.lock().unwrap();
+        let fee = inner.fee(&tx.inner)?;
+        Ok(SyncReturn(EffectOfTx {
+            net_value: inner.net_value(key_id, &tx.inner),
+            fee,
+            feerate: fee as f64 / (tx.inner.weight().to_wu() as f64 / 4.0),
+            foreign_receiving_addresses: inner
+                .spends_outside(&tx.inner)
+                .into_iter()
+                .map(|(spk, value)| {
+                    (
+                        bitcoin::Address::from_script(&spk, inner.network)
+                            .map(|address| address.to_string())
+                            .unwrap_or(spk.to_hex_string()),
+                        value,
+                    )
+                })
+                .collect(),
+        }))
+    }
+}
+
+pub struct SignedTx {
+    pub inner: RustOpaque<RTransaction>,
+}
+
+pub struct UnsignedTx {
+    pub task: RustOpaque<frostsnap_core::message::TransactionSignTask>,
 }
 
 #[derive(Clone, Debug)]
@@ -640,6 +789,14 @@ pub struct Address {
 
 pub struct TxState {
     pub txs: Vec<Transaction>,
+}
+
+#[derive(Clone, Debug)]
+pub struct EffectOfTx {
+    pub net_value: i64,
+    pub fee: u64,
+    pub feerate: f64,
+    pub foreign_receiving_addresses: Vec<(String, u64)>,
 }
 
 // TODO: remove me?

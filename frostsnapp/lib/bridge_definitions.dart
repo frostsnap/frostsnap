@@ -169,6 +169,14 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kStartSigningMethodCoordinatorConstMeta;
 
+  Stream<SigningState> startSigningTxMethodCoordinator(
+      {required Coordinator that,
+      required UnsignedTx unsignedTx,
+      required List<DeviceId> devices,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kStartSigningTxMethodCoordinatorConstMeta;
+
   SigningState? getSigningStateMethodCoordinator(
       {required Coordinator that, dynamic hint});
 
@@ -232,6 +240,54 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kAddressesStateMethodWalletConstMeta;
 
+  String? validateDestinationAddressMethodWallet(
+      {required Wallet that, required String address, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta
+      get kValidateDestinationAddressMethodWalletConstMeta;
+
+  String? validateAmountMethodWallet(
+      {required Wallet that,
+      required String address,
+      required int value,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kValidateAmountMethodWalletConstMeta;
+
+  Future<UnsignedTx> sendToMethodWallet(
+      {required Wallet that,
+      required KeyId keyId,
+      required String toAddress,
+      required int value,
+      required double feerate,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kSendToMethodWalletConstMeta;
+
+  SignedTx completeUnsignedTxMethodWallet(
+      {required Wallet that,
+      required UnsignedTx unsignedTx,
+      required List<EncodedSignature> signatures,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kCompleteUnsignedTxMethodWalletConstMeta;
+
+  Future<void> broadcastTxMethodWallet(
+      {required Wallet that,
+      required KeyId keyId,
+      required SignedTx tx,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kBroadcastTxMethodWalletConstMeta;
+
+  EffectOfTx effectOfTxMethodWallet(
+      {required Wallet that,
+      required KeyId keyId,
+      required SignedTx tx,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kEffectOfTxMethodWalletConstMeta;
+
   DropFnType get dropOpaqueArcMutexVecPortDesc;
   ShareFnType get shareOpaqueArcMutexVecPortDesc;
   OpaqueTypeFinalizer get ArcMutexVecPortDescFinalizer;
@@ -247,6 +303,10 @@ abstract class Native {
   DropFnType get dropOpaqueFrostsnapCoreCoordinatorFrostKeyState;
   ShareFnType get shareOpaqueFrostsnapCoreCoordinatorFrostKeyState;
   OpaqueTypeFinalizer get FrostsnapCoreCoordinatorFrostKeyStateFinalizer;
+
+  DropFnType get dropOpaqueFrostsnapCoreMessageTransactionSignTask;
+  ShareFnType get shareOpaqueFrostsnapCoreMessageTransactionSignTask;
+  OpaqueTypeFinalizer get FrostsnapCoreMessageTransactionSignTaskFinalizer;
 
   DropFnType get dropOpaqueMutexBTreeMapKeyIdStreamSinkTxState;
   ShareFnType get shareOpaqueMutexBTreeMapKeyIdStreamSinkTxState;
@@ -338,6 +398,25 @@ class FrostsnapCoreCoordinatorFrostKeyState extends FrbOpaque {
   @override
   OpaqueTypeFinalizer get staticFinalizer =>
       bridge.FrostsnapCoreCoordinatorFrostKeyStateFinalizer;
+}
+
+@sealed
+class FrostsnapCoreMessageTransactionSignTask extends FrbOpaque {
+  final Native bridge;
+  FrostsnapCoreMessageTransactionSignTask.fromRaw(
+      int ptr, int size, this.bridge)
+      : super.unsafe(ptr, size);
+  @override
+  DropFnType get dropFn =>
+      bridge.dropOpaqueFrostsnapCoreMessageTransactionSignTask;
+
+  @override
+  ShareFnType get shareFn =>
+      bridge.shareOpaqueFrostsnapCoreMessageTransactionSignTask;
+
+  @override
+  OpaqueTypeFinalizer get staticFinalizer =>
+      bridge.FrostsnapCoreMessageTransactionSignTaskFinalizer;
 }
 
 @sealed
@@ -538,6 +617,16 @@ class Coordinator {
         message: message,
       );
 
+  Stream<SigningState> startSigningTx(
+          {required UnsignedTx unsignedTx,
+          required List<DeviceId> devices,
+          dynamic hint}) =>
+      bridge.startSigningTxMethodCoordinator(
+        that: this,
+        unsignedTx: unsignedTx,
+        devices: devices,
+      );
+
   SigningState? getSigningState({dynamic hint}) =>
       bridge.getSigningStateMethodCoordinator(
         that: this,
@@ -650,6 +739,20 @@ class DeviceListUpdate {
   const DeviceListUpdate({
     required this.changes,
     required this.state,
+  });
+}
+
+class EffectOfTx {
+  final int netValue;
+  final int fee;
+  final double feerate;
+  final List<(String, int)> foreignReceivingAddresses;
+
+  const EffectOfTx({
+    required this.netValue,
+    required this.fee,
+    required this.feerate,
+    required this.foreignReceivingAddresses,
   });
 }
 
@@ -832,6 +935,14 @@ class PortWrite {
       );
 }
 
+class SignedTx {
+  final RTransaction inner;
+
+  const SignedTx({
+    required this.inner,
+  });
+}
+
 class SigningState {
   final Native bridge;
   final List<DeviceId> gotShares;
@@ -903,6 +1014,14 @@ class U8Array64 extends NonGrowableListView<int> {
   U8Array64.init() : super(Uint8List(arraySize));
 }
 
+class UnsignedTx {
+  final FrostsnapCoreMessageTransactionSignTask task;
+
+  const UnsignedTx({
+    required this.task,
+  });
+}
+
 class Wallet {
   final Native bridge;
   final MutexCrateWalletWallet inner;
@@ -952,5 +1071,59 @@ class Wallet {
       bridge.addressesStateMethodWallet(
         that: this,
         keyId: keyId,
+      );
+
+  String? validateDestinationAddress({required String address, dynamic hint}) =>
+      bridge.validateDestinationAddressMethodWallet(
+        that: this,
+        address: address,
+      );
+
+  String? validateAmount(
+          {required String address, required int value, dynamic hint}) =>
+      bridge.validateAmountMethodWallet(
+        that: this,
+        address: address,
+        value: value,
+      );
+
+  Future<UnsignedTx> sendTo(
+          {required KeyId keyId,
+          required String toAddress,
+          required int value,
+          required double feerate,
+          dynamic hint}) =>
+      bridge.sendToMethodWallet(
+        that: this,
+        keyId: keyId,
+        toAddress: toAddress,
+        value: value,
+        feerate: feerate,
+      );
+
+  SignedTx completeUnsignedTx(
+          {required UnsignedTx unsignedTx,
+          required List<EncodedSignature> signatures,
+          dynamic hint}) =>
+      bridge.completeUnsignedTxMethodWallet(
+        that: this,
+        unsignedTx: unsignedTx,
+        signatures: signatures,
+      );
+
+  Future<void> broadcastTx(
+          {required KeyId keyId, required SignedTx tx, dynamic hint}) =>
+      bridge.broadcastTxMethodWallet(
+        that: this,
+        keyId: keyId,
+        tx: tx,
+      );
+
+  EffectOfTx effectOfTx(
+          {required KeyId keyId, required SignedTx tx, dynamic hint}) =>
+      bridge.effectOfTxMethodWallet(
+        that: this,
+        keyId: keyId,
+        tx: tx,
       );
 }

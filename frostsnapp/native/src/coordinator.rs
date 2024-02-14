@@ -111,7 +111,7 @@ impl FfiCoordinator {
         let pending_loop = self.pending_for_outbox.clone();
         let coordinator_loop = self.coordinator.clone();
         let keygen_stream_loop = self.keygen_stream.clone();
-        let signing_stream_loop = self.signing_session.clone();
+        let signing_session_loop = self.signing_session.clone();
         let key_event_stream_loop = self.key_event_stream.clone();
         let db_loop = self.db.clone();
         let core_persist = self.persist_core;
@@ -132,51 +132,51 @@ impl FfiCoordinator {
                         new_messages,
                     } = usb_manager.poll_ports();
 
-                    let mut signing_session = signing_stream_loop.lock().unwrap();
+                    let mut signing_session = signing_session_loop.lock().unwrap();
+
+                    for change in &device_changes {
+                        match change {
+                            DeviceChange::Registered { id, .. } => {
+                                if let Some(signing_session) = &mut *signing_session {
+                                    signing_session.connected(*id);
+                                }
+                            }
+                            DeviceChange::Disconnected { id } => {
+                                if let Some(signing_session) = &mut *signing_session {
+                                    signing_session.disconnected(*id);
+                                }
+                            }
+                            DeviceChange::NewUnknownDevice { id, name } => {
+                                // TODO: We should be asking the user to accept the new device before writing anything to disk.
+                                let res = db_loop
+                                    .lock()
+                                    .unwrap()
+                                    .execute(|tx| tx.take_index(device_names).insert(*id, name));
+                                if let Err(e) = res {
+                                    event!(
+                                        Level::ERROR,
+                                        error = e.to_string(),
+                                        "unable to save device name"
+                                    );
+                                }
+                            }
+                            _ => { /* ignore rest */ }
+                        }
+                    }
 
                     if let Some(signing_session) = &mut *signing_session {
                         if let Some(message) = signing_session.resend_sign_request() {
+                            event!(Level::INFO, "Sending sign request");
                             usb_sender.send(message);
                         }
                     }
 
-                    if !device_changes.is_empty() {
-                        for change in &device_changes {
-                            match change {
-                                DeviceChange::Registered { id, .. } => {
-                                    if let Some(signing_session) = &mut *signing_session {
-                                        signing_session.connected(*id);
-                                    }
-                                }
-                                DeviceChange::Disconnected { id } => {
-                                    if let Some(signing_session) = &mut *signing_session {
-                                        signing_session.disconnected(*id);
-                                    }
-                                }
-                                DeviceChange::NewUnknownDevice { id, name } => {
-                                    // TODO: We should be asking the user to accept the new device before writing anything to disk.
-                                    let res = db_loop.lock().unwrap().execute(|tx| {
-                                        tx.take_index(device_names).insert(*id, name)
-                                    });
-                                    if let Err(e) = res {
-                                        event!(
-                                            Level::ERROR,
-                                            error = e.to_string(),
-                                            "unable to save device name"
-                                        );
-                                    }
-                                }
-                                _ => { /* ignore rest */ }
-                            }
-                        }
-
-                        crate::api::emit_device_events(
-                            device_changes
-                                .into_iter()
-                                .map(crate::api::DeviceChange::from)
-                                .collect(),
-                        );
-                    }
+                    crate::api::emit_device_events(
+                        device_changes
+                            .into_iter()
+                            .map(crate::api::DeviceChange::from)
+                            .collect(),
+                    );
 
                     new_messages
                 };
@@ -231,7 +231,7 @@ impl FfiCoordinator {
                                 }
                             }
                             CoordinatorToUserMessage::Signing(signing_message) => {
-                                let mut signing_session = signing_stream_loop.lock().unwrap();
+                                let mut signing_session = signing_session_loop.lock().unwrap();
                                 if let Some(signing_session) = &mut *signing_session {
                                     signing_session.process_to_user_message(signing_message);
 
@@ -370,7 +370,6 @@ impl FfiCoordinator {
 
     pub fn start_signing(
         &self,
-        _key_id: KeyId,
         devices: BTreeSet<DeviceId>,
         task: SignTask,
         stream: StreamSink<api::SigningState>,

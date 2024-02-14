@@ -56,7 +56,6 @@ class _SignMessageFormState extends State<SignMessageForm> {
 
   @override
   Widget build(BuildContext context) {
-    final devices = widget.frostKey.devices();
     final buttonReady = selected.length == widget.frostKey.threshold() &&
         _messageController.text.isNotEmpty;
 
@@ -97,27 +96,11 @@ class _SignMessageFormState extends State<SignMessageForm> {
           style: TextStyle(fontSize: 20.0),
         ),
         Expanded(
-          child: ListView.builder(
-            itemCount: devices.length,
-            itemBuilder: (context, index) {
-              final device = devices[index];
-              final onChanged = (bool? value) {
-                setState(() {
-                  if (value == true) {
-                    selected.add(device.id);
-                  } else {
-                    selected.remove(device.id);
-                  }
-                });
-              };
-              final enoughNonces = coord.noncesAvailable(id: device.id) >= 1;
-              return CheckboxListTile(
-                title: Text(
-                    "${device.name ?? '<unknown>'}${enoughNonces ? '' : ' (not enough nonces)'}"),
-                value: selected.contains(device.id),
-                onChanged: enoughNonces ? onChanged : null,
-              );
-            },
+          child: SigningDeviceSelector(
+            frostKey: widget.frostKey,
+            onChanged: (selectedDevices) => setState(() {
+              selected = selectedDevices;
+            }),
           ),
         ),
         ElevatedButton(
@@ -129,16 +112,71 @@ class _SignMessageFormState extends State<SignMessageForm> {
   }
 }
 
+class SigningDeviceSelector extends StatefulWidget {
+  final FrostKey frostKey;
+  final Function(Set<DeviceId>)? onChanged;
+
+  const SigningDeviceSelector(
+      {Key? key, required this.frostKey, this.onChanged})
+      : super(key: key);
+
+  @override
+  State<SigningDeviceSelector> createState() => _SigningDeviceSelectorState();
+}
+
+class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
+  Set<DeviceId> selected = deviceIdSet();
+
+  @override
+  void initState() {
+    super.initState();
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final devices = widget.frostKey.devices();
+
+    return ListView.builder(
+      itemCount: devices.length,
+      itemBuilder: (context, index) {
+        final device = devices[index];
+        final onChanged = (bool? value) {
+          setState(() {
+            if (value == true) {
+              selected.add(device.id);
+            } else {
+              selected.remove(device.id);
+            }
+          });
+          widget.onChanged?.call(selected);
+        };
+        final enoughNonces = coord.noncesAvailable(id: device.id) >= 1;
+        return CheckboxListTile(
+          title: Text(
+              "${device.name ?? '<unknown>'}${enoughNonces ? '' : ' (not enough nonces)'}"),
+          value: selected.contains(device.id),
+          onChanged: enoughNonces ? onChanged : null,
+        );
+      },
+    );
+  }
+}
+
 Future<List<EncodedSignature>?> signMessageDialog(
     BuildContext context, Stream<SigningState> signingStream) async {
-  final signatures = await _showSigningProgressDialog(context, signingStream);
+  final signatures = await showSigningProgressDialog(context, signingStream);
   if (signatures != null && context.mounted) {
     await _showSignatureDialog(context, signatures[0]);
   }
   return signatures;
 }
 
-Future<List<EncodedSignature>?> _showSigningProgressDialog(
+Future<List<EncodedSignature>?> showSigningProgressDialog(
   BuildContext context,
   Stream<SigningState> signingStream,
 ) {
@@ -192,6 +230,9 @@ class DeviceSigningProgress extends StatelessWidget {
     return StreamBuilder(
         stream: deviceListSubject.map((update) => update.state),
         builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return CircularProgressIndicator();
+          }
           final devicesPluggedIn = deviceIdSet();
           devicesPluggedIn
               .addAll(snapshot.data!.devices.map((device) => device.id));

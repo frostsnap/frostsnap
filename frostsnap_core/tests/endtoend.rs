@@ -3,7 +3,7 @@ use frostsnap_core::message::{
     DeviceToUserMessage, EncodedSignature, SignTask,
 };
 use frostsnap_core::{
-    CoordinatorState, DeviceId, FrostCoordinator, FrostSigner, KeyId, SessionHash,
+    CoordinatorState, DeviceId, FrostCoordinator, FrostKeyExt, FrostSigner, KeyId, SessionHash,
 };
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
@@ -140,21 +140,18 @@ fn test_end_to_end() {
     );
     assert_eq!(env.coordinator_got_keygen_acks, device_set);
     assert_eq!(env.received_keygen_shares, device_set);
-    let public_key = run
-        .coordinator
-        .frost_key_state()
-        .unwrap()
-        .frost_key()
-        .public_key();
+    let frost_key = run.coordinator.frost_key_state().unwrap().frost_key();
+    let public_key = frost_key.public_key();
+    let key_id = frost_key.key_id();
 
-    for (message, signers) in &[
-        (b"johnmcafee47".as_slice(), [0, 1]),
-        (b"pyramid schmee".as_slice(), [1, 2]),
+    for (message, signers) in [
+        (b"johnmcafee47".to_vec(), [0, 1]),
+        (b"pyramid schmee".to_vec(), [1, 2]),
     ] {
         env.signatures.clear();
         env.sign_tasks.clear();
         env.received_signing_shares.clear();
-        let task = SignTask::Plain(message.to_vec());
+        let task = SignTask::Plain { message, key_id };
         let set = BTreeSet::from_iter(signers.iter().map(|i| device_list[*i]));
 
         let sign_init = run

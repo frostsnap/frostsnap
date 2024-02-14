@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:frostsnapp/device_action.dart';
+import 'package:frostsnapp/device_id_ext.dart';
 import 'package:frostsnapp/global.dart';
+import 'package:frostsnapp/sign_message.dart';
+import 'package:frostsnapp/stream_ext.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
+import 'dart:io';
 
 class WalletHome extends StatefulWidget {
   final KeyId keyId;
@@ -14,6 +19,13 @@ class WalletHome extends StatefulWidget {
 
 class _WalletHomeState extends State<WalletHome> {
   int _selectedIndex = 0; // Tracks the current index for BottomNavigationBar
+  late Stream<TxState> txStream;
+
+  @override
+  void initState() {
+    super.initState();
+    txStream = wallet.subTxState(keyId: widget.keyId).toBehaviorSubject();
+  }
 
   // The widget options to display based on the selected index
   // A method that returns the correct widget based on the selected index
@@ -21,10 +33,17 @@ class _WalletHomeState extends State<WalletHome> {
     switch (_selectedIndex) {
       case 0:
         // Pass any required parameters to the WalletActivity widget
-        return WalletActivity(keyId: widget.keyId);
+        return WalletActivity(keyId: widget.keyId, txStream: txStream);
       case 1:
         // Placeholder for the Send page
-        return Text('TODO: Send Page');
+        return WalletSend(
+            keyId: widget.keyId,
+            txStream: txStream,
+            onBroadcastNewTx: () {
+              setState(() {
+                _selectedIndex = 0;
+              });
+            });
       case 2:
         // Placeholder for the Receive page
         return WalletReceive(keyId: widget.keyId);
@@ -65,8 +84,10 @@ class _WalletHomeState extends State<WalletHome> {
 // Renaming WalletHomePage to WalletActivity
 class WalletActivity extends StatefulWidget {
   final KeyId keyId;
+  final Stream<TxState> txStream;
 
-  const WalletActivity({super.key, required this.keyId});
+  const WalletActivity(
+      {super.key, required this.keyId, required this.txStream});
 
   @override
   State<WalletActivity> createState() => _WalletActivity();
@@ -74,6 +95,7 @@ class WalletActivity extends StatefulWidget {
 
 class _WalletActivity extends State<WalletActivity> {
   Stream<double>? syncProgressStream;
+
   // we need this so that flutter actually rebuilds the progress bar when you
   // click the button again.
   UniqueKey floatingProgressKey = UniqueKey();
@@ -88,19 +110,24 @@ class _WalletActivity extends State<WalletActivity> {
     // Your existing WalletActivity implementation
     return Scaffold(
       floatingActionButton: SpinningSyncButton(onPressed: () async {
-        final stream = wallet.sync(keyId: widget.keyId).asBroadcastStream();
+        final progressStream =
+            wallet.sync(keyId: widget.keyId).asBroadcastStream();
         setState(() {
-          syncProgressStream = stream;
+          syncProgressStream = progressStream;
           floatingProgressKey = UniqueKey();
         });
         // this waits until stream is done so the button will keep spinning.
-        await stream.toList();
+        await progressStream.toList();
       }),
       body: Stack(children: [
         if (syncProgressStream != null)
           FloatingProgress(
               key: floatingProgressKey, progressStream: syncProgressStream!),
-        TxList(keyId: widget.keyId),
+        Column(children: [
+          Balance(txStream: widget.txStream),
+          Expanded(
+              child: TxList(keyId: widget.keyId, txStream: widget.txStream))
+        ]),
       ]),
     );
   }
@@ -265,113 +292,87 @@ class _FloatingProgress extends State<FloatingProgress>
 
 class TxList extends StatelessWidget {
   final KeyId keyId;
-  const TxList({super.key, required this.keyId});
+  final Stream<TxState> txStream;
+  const TxList({super.key, required this.keyId, required this.txStream});
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<TxState>(
-      stream: wallet.subTxState(keyId: keyId),
+      stream: txStream,
       builder: (context, snapshot) {
-        if (snapshot.hasData) {
-          final transactions = snapshot.data!.txs;
-          const int init = 0;
-          int balance =
-              transactions.fold(init, (sum, item) => sum + item.netValue);
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Text(
-                  '${balance / 100000000}\u20BF', // Display balance in BTC
-                  style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold),
-                ),
-              ),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: transactions.length,
-                  itemBuilder: (context, index) {
-                    final transaction = transactions[index];
-                    String confirmationText;
-
-                    if (transaction.confirmationTime != null) {
-                      // Convert the Unix timestamp to a DateTime object
-                      DateTime confirmationDateTime =
-                          DateTime.fromMillisecondsSinceEpoch(
-                              transaction.confirmationTime!.time * 1000);
-                      // Format the DateTime object to a string
-                      String formattedTime =
-                          '${confirmationDateTime.year}-${confirmationDateTime.month.toString().padLeft(2, '0')}-${confirmationDateTime.day.toString().padLeft(2, '0')} ${confirmationDateTime.hour.toString().padLeft(2, '0')}:${confirmationDateTime.minute.toString().padLeft(2, '0')}';
-                      confirmationText =
-                          'Confirmation: ${transaction.confirmationTime!.height} ($formattedTime)';
-                    } else {
-                      confirmationText = 'Unconfirmed';
-                    }
-
-                    return Card(
-                      child: ListTile(
-                        leading: Icon(
-                          transaction.netValue > 0
-                              ? Icons.arrow_downward
-                              : Icons.arrow_upward,
-                          color: transaction.netValue > 0
-                              ? Colors.green
-                              : Colors.red,
-                        ),
-                        title: Row(
-                          children: <Widget>[
-                            Expanded(
-                              child: Text('ID: ${transaction.txid()}'),
-                            ),
-                            if (transaction.confirmationTime == null)
-                              SpinningSyncIcon(onPressed: () async {
-                                final stream = wallet.syncTxids(
-                                    keyId: keyId, txids: [transaction.txid()]);
-                                // wait till it's over
-                                await stream.toList();
-                              }),
-                            IconButton(
-                              icon: Icon(Icons.copy),
-                              onPressed: () {
-                                Clipboard.setData(
-                                    ClipboardData(text: transaction.txid()));
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                        'Transaction ID copied to clipboard'),
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            Text(
-                              'Value: ${transaction.netValue / 100000000}\u20BF', // Display net value in BTC
-                              style: TextStyle(
-                                color: transaction.netValue > 0
-                                    ? Colors.green
-                                    : Colors.red,
-                              ),
-                            ),
-                            Text(
-                              confirmationText, // Display confirmation height and time or 'Unconfirmed'
-                              style: TextStyle(
-                                  fontSize: 12), // Adjust the style as needed
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          );
-        } else {
+        if (!snapshot.hasData) {
           return Center(child: CircularProgressIndicator());
         }
+        final transactions = snapshot.data!.txs;
+        return ListView.builder(
+          itemCount: transactions.length,
+          itemBuilder: (context, index) {
+            final transaction = transactions[index];
+            String confirmationText;
+
+            if (transaction.confirmationTime != null) {
+              // Convert the Unix timestamp to a DateTime object
+              DateTime confirmationDateTime =
+                  DateTime.fromMillisecondsSinceEpoch(
+                      transaction.confirmationTime!.time * 1000);
+              // Format the DateTime object to a string
+              String formattedTime =
+                  '${confirmationDateTime.year}-${confirmationDateTime.month.toString().padLeft(2, '0')}-${confirmationDateTime.day.toString().padLeft(2, '0')} ${confirmationDateTime.hour.toString().padLeft(2, '0')}:${confirmationDateTime.minute.toString().padLeft(2, '0')}';
+              confirmationText =
+                  'Confirmation: ${transaction.confirmationTime!.height} ($formattedTime)';
+            } else {
+              confirmationText = 'Unconfirmed';
+            }
+
+            return Card(
+              child: ListTile(
+                leading: Icon(
+                  transaction.netValue > 0
+                      ? Icons.arrow_downward
+                      : Icons.arrow_upward,
+                  color: transaction.netValue > 0 ? Colors.green : Colors.red,
+                ),
+                title: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: NetValue(transaction.netValue),
+                    ),
+                    if (transaction.confirmationTime == null)
+                      SpinningSyncIcon(onPressed: () async {
+                        final stream = wallet.syncTxids(
+                            keyId: keyId, txids: [transaction.txid()]);
+                        // wait till it's over
+                        await stream.toList();
+                      }),
+                    IconButton(
+                      icon: Icon(Icons.copy),
+                      onPressed: () {
+                        Clipboard.setData(
+                            ClipboardData(text: transaction.txid()));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Transaction ID copied to clipboard'),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text('ID: ${transaction.txid()}'),
+                    Text(
+                      confirmationText, // Display confirmation height and time or 'Unconfirmed'
+                      style:
+                          TextStyle(fontSize: 12), // Adjust the style as needed
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
       },
     );
   }
@@ -450,4 +451,325 @@ class _WalletReceiveState extends State<WalletReceive> {
       ),
     );
   }
+}
+
+class WalletSend extends StatefulWidget {
+  final Stream<TxState> txStream;
+  final KeyId keyId;
+  final Function()? onBroadcastNewTx;
+
+  WalletSend({
+    Key? key,
+    required this.txStream,
+    required this.keyId,
+    this.onBroadcastNewTx,
+  }) : super(key: key);
+
+  @override
+  _WalletSendState createState() => _WalletSendState();
+}
+
+class _WalletSendState extends State<WalletSend> {
+  final _formKey = GlobalKey<FormState>();
+  String _address = '';
+  int _amount = 0;
+  double _feerate = 1.0; // Default fee rate
+  String _eta = "1 hr";
+  Set<DeviceId> selectedDevices = deviceIdSet();
+
+  void _updateETA() {
+    // TODO: get ETA
+    setState(() {
+      if (_feerate < 5.0) {
+        _eta = "2 hrs";
+      } else if (_feerate >= 5.0 && _feerate < 10.0) {
+        _eta = "1 hr";
+      } else {
+        _eta = "30 mins";
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final frostKey = coord.getKey(keyId: widget.keyId)!;
+    final enoughSelected = selectedDevices.length == frostKey.threshold();
+    return Scaffold(
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Balance(txStream: widget.txStream),
+              TextFormField(
+                decoration: InputDecoration(labelText: 'Address'),
+                validator: (value) {
+                  // Use the provided predicate for address validation
+                  return wallet.validateDestinationAddress(
+                      address: value ?? '');
+                },
+                onSaved: (value) => _address = value ?? '',
+              ),
+              TextFormField(
+                decoration: InputDecoration(labelText: 'Amount (sats)'),
+                keyboardType: TextInputType.numberWithOptions(decimal: false),
+                validator: (value) {
+                  // Convert value to int and use the provided predicate for amount validation
+                  final amount = int.tryParse(value ?? '') ?? 0;
+                  return wallet.validateAmount(
+                      address: _address, value: amount);
+                },
+                onSaved: (value) => _amount = int.tryParse(value ?? '') ?? 0,
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      decoration:
+                          InputDecoration(labelText: 'Fee Rate (sats/vByte)'),
+                      keyboardType:
+                          TextInputType.numberWithOptions(decimal: true),
+                      initialValue: _feerate.toString(),
+                      onChanged: (value) {
+                        setState(() {
+                          _feerate = double.tryParse(value) ?? _feerate;
+                          _updateETA();
+                        });
+                      },
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 10),
+                    child: Text(
+                      "ETA $_eta",
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  ),
+                ],
+              ),
+              Divider(height: 20.0, thickness: 2.0, color: Colors.grey),
+              Text(
+                'Select ${frostKey.threshold()} device${frostKey.threshold() > 1 ? "s" : ""} to sign with:',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 20.0),
+              ),
+              Expanded(
+                  child: SigningDeviceSelector(
+                      frostKey: frostKey,
+                      onChanged: (selected) {
+                        setState(() {
+                          selectedDevices = selected;
+                        });
+                      })),
+              Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16.0),
+                  child: ElevatedButton(
+                    onPressed: !enoughSelected
+                        ? null
+                        : () async {
+                            if (_formKey.currentState!.validate()) {
+                              _formKey.currentState!.save();
+                              final unsignedTx = await wallet.sendTo(
+                                  keyId: widget.keyId,
+                                  toAddress: _address,
+                                  value: _amount,
+                                  feerate: _feerate);
+                              final signingStream = coord.startSigningTx(
+                                  unsignedTx: unsignedTx,
+                                  devices: selectedDevices.toList());
+                              if (context.mounted) {
+                                final signatures =
+                                    await showSigningProgressDialog(
+                                        context, signingStream);
+                                if (signatures != null) {
+                                  final tx = wallet.completeUnsignedTx(
+                                      unsignedTx: unsignedTx,
+                                      signatures: signatures);
+                                  if (context.mounted) {
+                                    final wasBroadcast =
+                                        await _showBroadcastConfirmDialog(
+                                            context, widget.keyId, tx);
+                                    if (wasBroadcast) {
+                                      widget.onBroadcastNewTx?.call();
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          },
+                    child: Text('Submit Transaction'),
+                  )),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Future<bool> _showBroadcastConfirmDialog(
+    BuildContext context, KeyId keyId, SignedTx tx) async {
+  final wasBroadcast = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        final effect = wallet.effectOfTx(keyId: keyId, tx: tx);
+
+        List<TableRow> transactionRows =
+            effect.foreignReceivingAddresses.map((entry) {
+          final (address, value) = entry;
+          return TableRow(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Text('Send to ${address}'),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: NetValue(-value),
+              ),
+            ],
+          );
+        }).toList();
+
+        transactionRows.add(
+          TableRow(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Text(
+                    'Fee (${effect.feerate.toStringAsFixed(1)} sats/vByte)'),
+              ),
+              Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: NetValue(-effect.fee)),
+            ],
+          ),
+        );
+
+        transactionRows.add(
+          TableRow(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Text('Net value'),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: NetValue(effect.netValue),
+              ),
+            ],
+          ),
+        );
+
+        final effectWidget = Table(
+          columnWidths: const {
+            0: FlexColumnWidth(4),
+            1: FlexColumnWidth(2),
+          },
+          border: TableBorder.all(),
+          children: transactionRows,
+        );
+        return AlertDialog(
+            title: Text("Broadcast?"),
+            content: Container(
+                width: Platform.isAndroid ? double.maxFinite : 400.0,
+                child: Align(
+                  alignment: Alignment.center,
+                  child: effectWidget,
+                )),
+            actions: [
+              ElevatedButton(
+                  onPressed: () {
+                    if (dialogContext.mounted) {
+                      Navigator.pop(dialogContext, false);
+                    }
+                  },
+                  child: Text("Cancel")),
+              ElevatedButton(
+                  onPressed: () async {
+                    try {
+                      await wallet.broadcastTx(keyId: keyId, tx: tx);
+                      if (dialogContext.mounted) {
+                        Navigator.pop(context, true);
+                      }
+                    } catch (e) {
+                      if (dialogContext.mounted) {
+                        Navigator.pop(dialogContext, false);
+                        showErrorSnackbar(dialogContext, "Broadcast error: $e");
+                      }
+                    }
+                  },
+                  child: Text("Broadcast"))
+            ]);
+      });
+
+  return wasBroadcast ?? false;
+}
+
+class Balance extends StatelessWidget {
+  final Stream<TxState> txStream;
+
+  Balance({Key? key, required this.txStream}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<TxState>(
+      stream: txStream,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Text('Error: ${snapshot.error}');
+        }
+        final transactions = snapshot.data?.txs ?? [];
+        int balance = transactions.fold(0, (sum, tx) => sum + tx.netValue);
+        // Assuming the balance is in satoshis, convert it to BTC for display
+        final balanceInBTC = balance / 100000000;
+        return Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Text(
+            '$balanceInBTC\u20BF', // Unicode for Bitcoin symbol
+            style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class NetValue extends StatelessWidget {
+  int netValue;
+  NetValue(this.netValue, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      '${formatSatoshi(netValue)}\u20BF', // Display net value in BTC
+      style: TextStyle(
+        color: netValue > 0 ? Colors.green : Colors.red,
+      ),
+    );
+  }
+}
+
+String formatSatoshi(int satoshis) {
+  // Convert satoshis to BTC as a double
+  double btcAmount = satoshis / 100000000.0;
+
+  // Convert to string with 8 decimal places
+  String btcString = btcAmount.toStringAsFixed(8);
+
+  // Split the string into two parts: before and after the decimal
+  var parts = btcString.split('.');
+
+  // Format the fractional part into segments
+  String fractionalPart = parts[1].substring(0, 2) +
+      " " +
+      parts[1].substring(2, 5) +
+      " " +
+      parts[1].substring(5);
+
+  // Combine the whole number part with the formatted fractional part
+  return '${parts[0]}.${fractionalPart}';
 }

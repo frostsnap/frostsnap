@@ -426,7 +426,7 @@ impl UsbSerialManager {
                         event!(
                             Level::DEBUG,
                             kind = send.gist(),
-                            "message not send to all intended recipients"
+                            "message not sent to all intended recipients"
                         );
                     }
 

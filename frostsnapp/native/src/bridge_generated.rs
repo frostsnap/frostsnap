@@ -535,6 +535,33 @@ fn wire_start_signing__method__Coordinator_impl(
         },
     )
 }
+fn wire_start_signing_tx__method__Coordinator_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<Coordinator> + UnwindSafe,
+    unsigned_tx: impl Wire2Api<UnsignedTx> + UnwindSafe,
+    devices: impl Wire2Api<Vec<DeviceId>> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "start_signing_tx__method__Coordinator",
+            port: Some(port_),
+            mode: FfiCallMode::Stream,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_unsigned_tx = unsigned_tx.wire2api();
+            let api_devices = devices.wire2api();
+            move |task_callback| {
+                Coordinator::start_signing_tx(
+                    &api_that,
+                    api_unsigned_tx,
+                    api_devices,
+                    task_callback.stream_sink::<_, SigningState>(),
+                )
+            }
+        },
+    )
+}
 fn wire_get_signing_state__method__Coordinator_impl(
     that: impl Wire2Api<Coordinator> + UnwindSafe,
 ) -> support::WireSyncReturn {
@@ -760,6 +787,132 @@ fn wire_addresses_state__method__Wallet_impl(
         },
     )
 }
+fn wire_validate_destination_address__method__Wallet_impl(
+    that: impl Wire2Api<Wallet> + UnwindSafe,
+    address: impl Wire2Api<String> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "validate_destination_address__method__Wallet",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_address = address.wire2api();
+            Result::<_, ()>::Ok(Wallet::validate_destination_address(&api_that, api_address))
+        },
+    )
+}
+fn wire_validate_amount__method__Wallet_impl(
+    that: impl Wire2Api<Wallet> + UnwindSafe,
+    address: impl Wire2Api<String> + UnwindSafe,
+    value: impl Wire2Api<u64> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "validate_amount__method__Wallet",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_address = address.wire2api();
+            let api_value = value.wire2api();
+            Result::<_, ()>::Ok(Wallet::validate_amount(&api_that, api_address, api_value))
+        },
+    )
+}
+fn wire_send_to__method__Wallet_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<Wallet> + UnwindSafe,
+    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    to_address: impl Wire2Api<String> + UnwindSafe,
+    value: impl Wire2Api<u64> + UnwindSafe,
+    feerate: impl Wire2Api<f64> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, UnsignedTx, _>(
+        WrapInfo {
+            debug_name: "send_to__method__Wallet",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_key_id = key_id.wire2api();
+            let api_to_address = to_address.wire2api();
+            let api_value = value.wire2api();
+            let api_feerate = feerate.wire2api();
+            move |task_callback| {
+                Wallet::send_to(
+                    &api_that,
+                    api_key_id,
+                    api_to_address,
+                    api_value,
+                    api_feerate,
+                )
+            }
+        },
+    )
+}
+fn wire_complete_unsigned_tx__method__Wallet_impl(
+    that: impl Wire2Api<Wallet> + UnwindSafe,
+    unsigned_tx: impl Wire2Api<UnsignedTx> + UnwindSafe,
+    signatures: impl Wire2Api<Vec<EncodedSignature>> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "complete_unsigned_tx__method__Wallet",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_unsigned_tx = unsigned_tx.wire2api();
+            let api_signatures = signatures.wire2api();
+            Wallet::complete_unsigned_tx(&api_that, api_unsigned_tx, api_signatures)
+        },
+    )
+}
+fn wire_broadcast_tx__method__Wallet_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<Wallet> + UnwindSafe,
+    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    tx: impl Wire2Api<SignedTx> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "broadcast_tx__method__Wallet",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_key_id = key_id.wire2api();
+            let api_tx = tx.wire2api();
+            move |task_callback| Wallet::broadcast_tx(&api_that, api_key_id, api_tx)
+        },
+    )
+}
+fn wire_effect_of_tx__method__Wallet_impl(
+    that: impl Wire2Api<Wallet> + UnwindSafe,
+    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    tx: impl Wire2Api<SignedTx> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "effect_of_tx__method__Wallet",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_key_id = key_id.wire2api();
+            let api_tx = tx.wire2api();
+            Wallet::effect_of_tx(&api_that, api_key_id, api_tx)
+        },
+    )
+}
 // Section: wrapper structs
 
 #[derive(Clone)]
@@ -820,6 +973,12 @@ where
 {
     fn wire2api(self) -> Option<T> {
         (!self.is_null()).then(|| self.wire2api())
+    }
+}
+
+impl Wire2Api<f64> for f64 {
+    fn wire2api(self) -> f64 {
+        self
     }
 }
 
@@ -1036,6 +1195,26 @@ impl rust2dart::IntoIntoDart<DeviceListUpdate> for DeviceListUpdate {
     }
 }
 
+impl support::IntoDart for EffectOfTx {
+    fn into_dart(self) -> support::DartAbi {
+        vec![
+            self.net_value.into_into_dart().into_dart(),
+            self.fee.into_into_dart().into_dart(),
+            self.feerate.into_into_dart().into_dart(),
+            self.foreign_receiving_addresses
+                .into_into_dart()
+                .into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for EffectOfTx {}
+impl rust2dart::IntoIntoDart<EffectOfTx> for EffectOfTx {
+    fn into_into_dart(self) -> Self {
+        self
+    }
+}
+
 impl support::IntoDart for mirror_EncodedSignature {
     fn into_dart(self) -> support::DartAbi {
         vec![self.0 .0.into_into_dart().into_dart()].into_dart()
@@ -1179,6 +1358,18 @@ impl rust2dart::IntoIntoDart<PortWrite> for PortWrite {
     }
 }
 
+impl support::IntoDart for SignedTx {
+    fn into_dart(self) -> support::DartAbi {
+        vec![self.inner.into_dart()].into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for SignedTx {}
+impl rust2dart::IntoIntoDart<SignedTx> for SignedTx {
+    fn into_into_dart(self) -> Self {
+        self
+    }
+}
+
 impl support::IntoDart for SigningState {
     fn into_dart(self) -> support::DartAbi {
         vec![
@@ -1220,6 +1411,18 @@ impl support::IntoDart for TxState {
 }
 impl support::IntoDartExceptPrimitive for TxState {}
 impl rust2dart::IntoIntoDart<TxState> for TxState {
+    fn into_into_dart(self) -> Self {
+        self
+    }
+}
+
+impl support::IntoDart for UnsignedTx {
+    fn into_dart(self) -> support::DartAbi {
+        vec![self.task.into_dart()].into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for UnsignedTx {}
+impl rust2dart::IntoIntoDart<UnsignedTx> for UnsignedTx {
     fn into_into_dart(self) -> Self {
         self
     }
