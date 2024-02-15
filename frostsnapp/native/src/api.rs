@@ -427,6 +427,10 @@ impl Coordinator {
         self.0.cancel_all()
     }
 
+    pub fn display_backup(&self, id: DeviceId, key_id: KeyId) {
+        self.0.request_display_backup(id, key_id)
+    }
+
     pub fn key_state(&self) -> SyncReturn<KeyState> {
         SyncReturn(KeyState {
             keys: self.0.frost_keys(),

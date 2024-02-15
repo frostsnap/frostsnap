@@ -497,6 +497,12 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* void */ wire_cancel_all__method__Coordinator(
       NativePortType port_, List<dynamic> that);
 
+  external dynamic /* void */ wire_display_backup__method__Coordinator(
+      NativePortType port_,
+      List<dynamic> that,
+      List<dynamic> id,
+      List<dynamic> key_id);
+
   external dynamic /* List<dynamic> */ wire_key_state__method__Coordinator(
       List<dynamic> that);
 
@@ -752,6 +758,11 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   void wire_cancel_all__method__Coordinator(
           NativePortType port_, List<dynamic> that) =>
       wasmModule.wire_cancel_all__method__Coordinator(port_, that);
+
+  void wire_display_backup__method__Coordinator(NativePortType port_,
+          List<dynamic> that, List<dynamic> id, List<dynamic> key_id) =>
+      wasmModule.wire_display_backup__method__Coordinator(
+          port_, that, id, key_id);
 
   dynamic /* List<dynamic> */ wire_key_state__method__Coordinator(
           List<dynamic> that) =>

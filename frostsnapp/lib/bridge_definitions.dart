@@ -146,6 +146,14 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kCancelAllMethodCoordinatorConstMeta;
 
+  Future<void> displayBackupMethodCoordinator(
+      {required Coordinator that,
+      required DeviceId id,
+      required KeyId keyId,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kDisplayBackupMethodCoordinatorConstMeta;
+
   KeyState keyStateMethodCoordinator({required Coordinator that, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kKeyStateMethodCoordinatorConstMeta;
@@ -601,6 +609,14 @@ class Coordinator {
 
   Future<void> cancelAll({dynamic hint}) => bridge.cancelAllMethodCoordinator(
         that: this,
+      );
+
+  Future<void> displayBackup(
+          {required DeviceId id, required KeyId keyId, dynamic hint}) =>
+      bridge.displayBackupMethodCoordinator(
+        that: this,
+        id: id,
+        keyId: keyId,
       );
 
   KeyState keyState({dynamic hint}) => bridge.keyStateMethodCoordinator(

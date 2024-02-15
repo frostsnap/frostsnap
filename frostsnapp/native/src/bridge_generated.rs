@@ -455,6 +455,28 @@ fn wire_cancel_all__method__Coordinator_impl(
         },
     )
 }
+fn wire_display_backup__method__Coordinator_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<Coordinator> + UnwindSafe,
+    id: impl Wire2Api<DeviceId> + UnwindSafe,
+    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "display_backup__method__Coordinator",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_id = id.wire2api();
+            let api_key_id = key_id.wire2api();
+            move |task_callback| {
+                Result::<_, ()>::Ok(Coordinator::display_backup(&api_that, api_id, api_key_id))
+            }
+        },
+    )
+}
 fn wire_key_state__method__Coordinator_impl(
     that: impl Wire2Api<Coordinator> + UnwindSafe,
 ) -> support::WireSyncReturn {

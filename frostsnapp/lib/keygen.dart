@@ -344,59 +344,8 @@ class KeyGenDeviceList extends StatelessWidget {
     Widget child;
     if (device.name == null) {
       child = ElevatedButton(
-          onPressed: () {
-            coord.updateNamePreview(id: device.id, name: "");
-            Navigator.push(context,
-                MaterialPageRoute(builder: (deviceSetupContex) {
-              final completeWhen = deviceListChangeStream
-                  .firstWhere((change) =>
-                      change.kind == DeviceListChangeKind.Named &&
-                      deviceIdEquals(device.id, change.device.id))
-                  .whenComplete(() {
-                if (deviceSetupContex.mounted) {
-                  Navigator.pop(deviceSetupContex);
-                }
-              });
-              return DeviceSetup(
-                deviceId: device.id,
-                onCancel: () {
-                  coord.sendCancel(id: device.id);
-                },
-                onSubmitted: (value) async {
-                  coord.finishNaming(id: device.id, name: value);
-                  await showDeviceActionDialog(
-                      context: deviceSetupContex,
-                      content: Column(children: [
-                        Text("Confirm name '$value' on device"),
-                        Divider(),
-                        MaybeExpandedVertical(child: DeviceListContainer(child:
-                            DeviceListWithIcons(
-                                iconAssigner: (context, deviceId) {
-                          if (deviceIdEquals(deviceId, device.id)) {
-                            final label = LabeledDeviceText("'$value'?");
-                            const icon = const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.visibility, color: Colors.orange),
-                                  SizedBox(width: 4),
-                                  Text("Confirm"),
-                                ]);
-                            return (label, icon);
-                          } else {
-                            return (null, null);
-                          }
-                        })))
-                      ]),
-                      complete: completeWhen,
-                      onCancel: () async {
-                        await coord.sendCancel(id: device.id);
-                      });
-                },
-                onChanged: (value) async {
-                  await coord.updateNamePreview(id: device.id, name: value);
-                },
-              );
-            }));
+          onPressed: () async {
+            await handleDeviceRenaming(context, device);
           },
           child: const Text("NEW DEVICE"));
     } else {
