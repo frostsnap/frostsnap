@@ -20,22 +20,26 @@ fn keygen_maliciously_replace_public_poly() {
     let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
     let mut device = FrostSigner::new_random(&mut test_rng);
     let devices = BTreeSet::from_iter([device.device_id()]);
-    let devices: BTreeMap<_, _> = devices
+    let device_to_share_index: BTreeMap<_, _> = devices
         .into_iter()
         .enumerate()
         .map(|(index, id)| (id, Scalar::from((index + 1) as u32).non_zero().unwrap()))
         .collect();
     let _ = device
         .recv_coordinator_message(CoordinatorToDeviceMessage::DoKeyGen {
-            devices: devices.clone(),
+            device_to_share_index: device_to_share_index.clone(),
             threshold: 1,
         })
         .unwrap();
 
     let frost = frost::new_with_deterministic_nonces::<sha2::Sha256>();
     let malicious_poly = frost::generate_scalar_poly(1, &mut rand::thread_rng());
-    let provide_shares =
-        KeyGenProvideShares::generate(&frost, &malicious_poly, &devices, &mut rand::thread_rng());
+    let provide_shares = KeyGenProvideShares::generate(
+        &frost,
+        &malicious_poly,
+        &device_to_share_index,
+        &mut rand::thread_rng(),
+    );
 
     let result = device.recv_coordinator_message(CoordinatorToDeviceMessage::FinishKeyGen {
         shares_provided: FromIterator::from_iter([(device.device_id(), provide_shares)]),
@@ -90,7 +94,10 @@ fn nonce_reuse() {
 
     run.run_until_finished(&mut TestEnv);
     let task1 = SignTask::Plain(b"utxo.club!".to_vec());
-    let sign_init = run.coordinator.start_sign(task1, device_set).unwrap();
+    let sign_init = run
+        .coordinator
+        .start_sign(task1, device_set.clone())
+        .unwrap();
     run.extend(sign_init);
     run.run_until_finished(&mut TestEnv);
 
@@ -107,6 +114,7 @@ fn nonce_reuse() {
 
     // Receive a new sign request with the same nonces as the previous session
     let new_sign_request = CoordinatorToDeviceMessage::RequestSign(SignRequest {
+        targets: device_set,
         nonces: nonces.clone(),
         sign_task: SignTask::Plain(
             b"we lost track of first FROST txn on bitcoin mainnet @ bushbash 2022".to_vec(),

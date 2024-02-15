@@ -40,7 +40,7 @@ pub enum CoordinatorSend {
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub enum CoordinatorToDeviceMessage {
     DoKeyGen {
-        devices: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
+        device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
         threshold: usize,
     },
     FinishKeyGen {
@@ -53,17 +53,18 @@ pub enum CoordinatorToDeviceMessage {
 pub struct SignRequest {
     // TODO: explain these `usize` and create a nicely documented struct which explains the
     // mechanism
-    pub nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
+    pub nonces: BTreeMap<Scalar<Public, NonZero>, (Vec<Nonce>, usize, usize)>,
     pub sign_task: SignTask,
+    pub targets: BTreeSet<DeviceId>,
 }
 
 impl SignRequest {
-    pub fn signers(&self) -> impl Iterator<Item = DeviceId> + '_ {
+    pub fn signer_indicies(&self) -> impl Iterator<Item = Scalar<Public, NonZero>> + '_ {
         self.nonces.keys().cloned()
     }
 
-    pub fn contains_signer(&self, index: DeviceId) -> bool {
-        self.nonces.contains_key(&index)
+    pub fn contains_signer_index(&self, id: Scalar<Public, NonZero>) -> bool {
+        self.nonces.contains_key(&id)
     }
 }
 
@@ -76,15 +77,14 @@ impl Gist for CoordinatorToDeviceMessage {
 impl CoordinatorToDeviceMessage {
     pub fn default_destinations(&self) -> BTreeSet<DeviceId> {
         match self {
-            CoordinatorToDeviceMessage::DoKeyGen { devices, .. } => {
-                devices.keys().cloned().collect()
-            }
+            CoordinatorToDeviceMessage::DoKeyGen {
+                device_to_share_index,
+                ..
+            } => device_to_share_index.keys().cloned().collect(),
             CoordinatorToDeviceMessage::FinishKeyGen { shares_provided } => {
                 shares_provided.keys().cloned().collect()
             }
-            CoordinatorToDeviceMessage::RequestSign(SignRequest { nonces, .. }) => {
-                nonces.keys().cloned().collect()
-            }
+            CoordinatorToDeviceMessage::RequestSign(SignRequest { targets, .. }) => targets.clone(),
         }
     }
 }

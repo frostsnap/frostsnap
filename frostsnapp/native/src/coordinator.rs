@@ -351,8 +351,8 @@ impl FfiCoordinator {
         // we need to lock this first to avoid race conditions where somehow get_signing_state is called before this completes.
         let mut signing_session = self.signing_session.lock().unwrap();
         let mut coordinator = self.coordinator.lock().unwrap();
-        let mut messages = coordinator.start_sign(task, devices)?;
-        let dispatcher = SigningDispatcher::from_filter_out_start_sign(&mut messages);
+        let mut messages = coordinator.start_sign(task, devices.clone())?;
+        let dispatcher = SigningDispatcher::from_filter_out_start_sign(&mut messages, devices);
         let mut new_session = SigningSession::new(stream, dispatcher);
 
         for device in api::device_list_state().0.devices {
@@ -387,8 +387,10 @@ impl FfiCoordinator {
         let mut coordinator = self.coordinator.lock().unwrap();
         coordinator.restore_sign_session(signing_session_state.clone());
 
-        let mut dispatcher =
-            SigningDispatcher::new_from_request(signing_session_state.request.clone());
+        let mut dispatcher = SigningDispatcher::new_from_request(
+            signing_session_state.request.clone(),
+            signing_session_state.targets.clone(),
+        );
 
         for already_provided in signing_session_state.received_from() {
             dispatcher.set_signature_received(already_provided);

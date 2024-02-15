@@ -6,25 +6,28 @@ use frostsnap_core::{
     },
     DeviceId,
 };
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 /// Keeps track of when
 #[derive(Debug)]
 pub struct SigningDispatcher {
-    need_to_send_to: HashSet<DeviceId>,
+    need_to_send_to: BTreeSet<DeviceId>,
     signing_state_changed: bool,
     // FIXME: make accessors
     pub request: SignRequest,
     pub finished_signatures: Option<Vec<EncodedSignature>>,
-    pub targets: HashSet<DeviceId>,
-    pub got_signatures: HashSet<DeviceId>,
+    pub targets: BTreeSet<DeviceId>,
+    pub got_signatures: BTreeSet<DeviceId>,
 }
 
 impl SigningDispatcher {
     /// Takes in the messages from `start_sign` and extracts the signing request to handle separately.
     ///
     /// We need to do this because we want to only send out the message to the devices that are connected.
-    pub fn from_filter_out_start_sign(start_sign_messages: &mut Vec<CoordinatorSend>) -> Self {
+    pub fn from_filter_out_start_sign(
+        start_sign_messages: &mut Vec<CoordinatorSend>,
+        targets: BTreeSet<DeviceId>,
+    ) -> Self {
         let (i, request) = start_sign_messages
             .iter()
             .enumerate()
@@ -37,11 +40,10 @@ impl SigningDispatcher {
             .expect("must have a sign request");
 
         start_sign_messages.remove(i);
-        Self::new_from_request(request)
+        Self::new_from_request(request, targets)
     }
 
-    pub fn new_from_request(request: SignRequest) -> Self {
-        let targets = request.devices().collect::<HashSet<_>>();
+    pub fn new_from_request(request: SignRequest, targets: BTreeSet<DeviceId>) -> Self {
         Self {
             request,
             targets,
@@ -84,8 +86,10 @@ impl SigningDispatcher {
 
     pub fn resend_sign_request(&mut self) -> Option<CoordinatorSendMessage> {
         if !self.need_to_send_to.is_empty() {
+            let target_destinations = Destination::from(self.need_to_send_to.clone());
+            self.need_to_send_to = BTreeSet::new();
             return Some(CoordinatorSendMessage {
-                target_destinations: Destination::from(self.need_to_send_to.drain()),
+                target_destinations,
                 message_body: CoordinatorSendBody::Core(CoordinatorToDeviceMessage::RequestSign(
                     self.request.clone(),
                 )),
