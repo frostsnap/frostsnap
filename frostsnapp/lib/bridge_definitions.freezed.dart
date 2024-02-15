@@ -1449,3 +1449,347 @@ abstract class PortEvent_BytesToRead implements PortEvent {
   _$$PortEvent_BytesToReadImplCopyWith<_$PortEvent_BytesToReadImpl>
       get copyWith => throw _privateConstructorUsedError;
 }
+
+/// @nodoc
+mixin _$SignTaskDescription {
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>({
+    required TResult Function(String message) plain,
+    required TResult Function(UnsignedTx unsignedTx) transaction,
+  }) =>
+      throw _privateConstructorUsedError;
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>({
+    TResult? Function(String message)? plain,
+    TResult? Function(UnsignedTx unsignedTx)? transaction,
+  }) =>
+      throw _privateConstructorUsedError;
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>({
+    TResult Function(String message)? plain,
+    TResult Function(UnsignedTx unsignedTx)? transaction,
+    required TResult orElse(),
+  }) =>
+      throw _privateConstructorUsedError;
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>({
+    required TResult Function(SignTaskDescription_Plain value) plain,
+    required TResult Function(SignTaskDescription_Transaction value)
+        transaction,
+  }) =>
+      throw _privateConstructorUsedError;
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>({
+    TResult? Function(SignTaskDescription_Plain value)? plain,
+    TResult? Function(SignTaskDescription_Transaction value)? transaction,
+  }) =>
+      throw _privateConstructorUsedError;
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>({
+    TResult Function(SignTaskDescription_Plain value)? plain,
+    TResult Function(SignTaskDescription_Transaction value)? transaction,
+    required TResult orElse(),
+  }) =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $SignTaskDescriptionCopyWith<$Res> {
+  factory $SignTaskDescriptionCopyWith(
+          SignTaskDescription value, $Res Function(SignTaskDescription) then) =
+      _$SignTaskDescriptionCopyWithImpl<$Res, SignTaskDescription>;
+}
+
+/// @nodoc
+class _$SignTaskDescriptionCopyWithImpl<$Res, $Val extends SignTaskDescription>
+    implements $SignTaskDescriptionCopyWith<$Res> {
+  _$SignTaskDescriptionCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+}
+
+/// @nodoc
+abstract class _$$SignTaskDescription_PlainImplCopyWith<$Res> {
+  factory _$$SignTaskDescription_PlainImplCopyWith(
+          _$SignTaskDescription_PlainImpl value,
+          $Res Function(_$SignTaskDescription_PlainImpl) then) =
+      __$$SignTaskDescription_PlainImplCopyWithImpl<$Res>;
+  @useResult
+  $Res call({String message});
+}
+
+/// @nodoc
+class __$$SignTaskDescription_PlainImplCopyWithImpl<$Res>
+    extends _$SignTaskDescriptionCopyWithImpl<$Res,
+        _$SignTaskDescription_PlainImpl>
+    implements _$$SignTaskDescription_PlainImplCopyWith<$Res> {
+  __$$SignTaskDescription_PlainImplCopyWithImpl(
+      _$SignTaskDescription_PlainImpl _value,
+      $Res Function(_$SignTaskDescription_PlainImpl) _then)
+      : super(_value, _then);
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? message = null,
+  }) {
+    return _then(_$SignTaskDescription_PlainImpl(
+      message: null == message
+          ? _value.message
+          : message // ignore: cast_nullable_to_non_nullable
+              as String,
+    ));
+  }
+}
+
+/// @nodoc
+
+class _$SignTaskDescription_PlainImpl implements SignTaskDescription_Plain {
+  const _$SignTaskDescription_PlainImpl({required this.message});
+
+  @override
+  final String message;
+
+  @override
+  String toString() {
+    return 'SignTaskDescription.plain(message: $message)';
+  }
+
+  @override
+  bool operator ==(dynamic other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$SignTaskDescription_PlainImpl &&
+            (identical(other.message, message) || other.message == message));
+  }
+
+  @override
+  int get hashCode => Object.hash(runtimeType, message);
+
+  @JsonKey(ignore: true)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$SignTaskDescription_PlainImplCopyWith<_$SignTaskDescription_PlainImpl>
+      get copyWith => __$$SignTaskDescription_PlainImplCopyWithImpl<
+          _$SignTaskDescription_PlainImpl>(this, _$identity);
+
+  @override
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>({
+    required TResult Function(String message) plain,
+    required TResult Function(UnsignedTx unsignedTx) transaction,
+  }) {
+    return plain(message);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>({
+    TResult? Function(String message)? plain,
+    TResult? Function(UnsignedTx unsignedTx)? transaction,
+  }) {
+    return plain?.call(message);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>({
+    TResult Function(String message)? plain,
+    TResult Function(UnsignedTx unsignedTx)? transaction,
+    required TResult orElse(),
+  }) {
+    if (plain != null) {
+      return plain(message);
+    }
+    return orElse();
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>({
+    required TResult Function(SignTaskDescription_Plain value) plain,
+    required TResult Function(SignTaskDescription_Transaction value)
+        transaction,
+  }) {
+    return plain(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>({
+    TResult? Function(SignTaskDescription_Plain value)? plain,
+    TResult? Function(SignTaskDescription_Transaction value)? transaction,
+  }) {
+    return plain?.call(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>({
+    TResult Function(SignTaskDescription_Plain value)? plain,
+    TResult Function(SignTaskDescription_Transaction value)? transaction,
+    required TResult orElse(),
+  }) {
+    if (plain != null) {
+      return plain(this);
+    }
+    return orElse();
+  }
+}
+
+abstract class SignTaskDescription_Plain implements SignTaskDescription {
+  const factory SignTaskDescription_Plain({required final String message}) =
+      _$SignTaskDescription_PlainImpl;
+
+  String get message;
+  @JsonKey(ignore: true)
+  _$$SignTaskDescription_PlainImplCopyWith<_$SignTaskDescription_PlainImpl>
+      get copyWith => throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class _$$SignTaskDescription_TransactionImplCopyWith<$Res> {
+  factory _$$SignTaskDescription_TransactionImplCopyWith(
+          _$SignTaskDescription_TransactionImpl value,
+          $Res Function(_$SignTaskDescription_TransactionImpl) then) =
+      __$$SignTaskDescription_TransactionImplCopyWithImpl<$Res>;
+  @useResult
+  $Res call({UnsignedTx unsignedTx});
+}
+
+/// @nodoc
+class __$$SignTaskDescription_TransactionImplCopyWithImpl<$Res>
+    extends _$SignTaskDescriptionCopyWithImpl<$Res,
+        _$SignTaskDescription_TransactionImpl>
+    implements _$$SignTaskDescription_TransactionImplCopyWith<$Res> {
+  __$$SignTaskDescription_TransactionImplCopyWithImpl(
+      _$SignTaskDescription_TransactionImpl _value,
+      $Res Function(_$SignTaskDescription_TransactionImpl) _then)
+      : super(_value, _then);
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? unsignedTx = null,
+  }) {
+    return _then(_$SignTaskDescription_TransactionImpl(
+      unsignedTx: null == unsignedTx
+          ? _value.unsignedTx
+          : unsignedTx // ignore: cast_nullable_to_non_nullable
+              as UnsignedTx,
+    ));
+  }
+}
+
+/// @nodoc
+
+class _$SignTaskDescription_TransactionImpl
+    implements SignTaskDescription_Transaction {
+  const _$SignTaskDescription_TransactionImpl({required this.unsignedTx});
+
+  @override
+  final UnsignedTx unsignedTx;
+
+  @override
+  String toString() {
+    return 'SignTaskDescription.transaction(unsignedTx: $unsignedTx)';
+  }
+
+  @override
+  bool operator ==(dynamic other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$SignTaskDescription_TransactionImpl &&
+            (identical(other.unsignedTx, unsignedTx) ||
+                other.unsignedTx == unsignedTx));
+  }
+
+  @override
+  int get hashCode => Object.hash(runtimeType, unsignedTx);
+
+  @JsonKey(ignore: true)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$SignTaskDescription_TransactionImplCopyWith<
+          _$SignTaskDescription_TransactionImpl>
+      get copyWith => __$$SignTaskDescription_TransactionImplCopyWithImpl<
+          _$SignTaskDescription_TransactionImpl>(this, _$identity);
+
+  @override
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>({
+    required TResult Function(String message) plain,
+    required TResult Function(UnsignedTx unsignedTx) transaction,
+  }) {
+    return transaction(unsignedTx);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>({
+    TResult? Function(String message)? plain,
+    TResult? Function(UnsignedTx unsignedTx)? transaction,
+  }) {
+    return transaction?.call(unsignedTx);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>({
+    TResult Function(String message)? plain,
+    TResult Function(UnsignedTx unsignedTx)? transaction,
+    required TResult orElse(),
+  }) {
+    if (transaction != null) {
+      return transaction(unsignedTx);
+    }
+    return orElse();
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>({
+    required TResult Function(SignTaskDescription_Plain value) plain,
+    required TResult Function(SignTaskDescription_Transaction value)
+        transaction,
+  }) {
+    return transaction(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>({
+    TResult? Function(SignTaskDescription_Plain value)? plain,
+    TResult? Function(SignTaskDescription_Transaction value)? transaction,
+  }) {
+    return transaction?.call(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>({
+    TResult Function(SignTaskDescription_Plain value)? plain,
+    TResult Function(SignTaskDescription_Transaction value)? transaction,
+    required TResult orElse(),
+  }) {
+    if (transaction != null) {
+      return transaction(this);
+    }
+    return orElse();
+  }
+}
+
+abstract class SignTaskDescription_Transaction implements SignTaskDescription {
+  const factory SignTaskDescription_Transaction(
+          {required final UnsignedTx unsignedTx}) =
+      _$SignTaskDescription_TransactionImpl;
+
+  UnsignedTx get unsignedTx;
+  @JsonKey(ignore: true)
+  _$$SignTaskDescription_TransactionImplCopyWith<
+          _$SignTaskDescription_TransactionImpl>
+      get copyWith => throw _privateConstructorUsedError;
+}

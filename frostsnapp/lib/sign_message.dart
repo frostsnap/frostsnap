@@ -62,14 +62,16 @@ class _SignMessageFormState extends State<SignMessageForm> {
     var submitButtonOnPressed;
     if (buttonReady) {
       submitButtonOnPressed = () async {
+        final message = _messageController.text;
         final signingStream = coord
             .startSigning(
                 keyId: widget.frostKey.id(),
                 devices: selected.toList(),
-                message: _messageController.text)
+                message: message)
             .toBehaviorSubject();
 
-        final signatures = await signMessageDialog(context, signingStream);
+        final signatures =
+            await signMessageWorkflowDialog(context, signingStream, message);
         if (signatures != null && context.mounted) {
           Navigator.pop(context);
         }
@@ -143,6 +145,8 @@ class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
 
     return ListView.builder(
       itemCount: devices.length,
+      shrinkWrap: true,
+      physics: NeverScrollableScrollPhysics(),
       itemBuilder: (context, index) {
         final device = devices[index];
         final onChanged = (bool? value) {
@@ -167,18 +171,20 @@ class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
   }
 }
 
-Future<List<EncodedSignature>?> signMessageDialog(
-    BuildContext context, Stream<SigningState> signingStream) async {
-  final signatures = await showSigningProgressDialog(context, signingStream);
+Future<bool> signMessageWorkflowDialog(BuildContext context,
+    Stream<SigningState> signingStream, String message) async {
+  final signatures = await showSigningProgressDialog(
+      context, signingStream, Text("signing ‘$message’"));
   if (signatures != null && context.mounted) {
     await _showSignatureDialog(context, signatures[0]);
   }
-  return signatures;
+  return signatures == null;
 }
 
 Future<List<EncodedSignature>?> showSigningProgressDialog(
   BuildContext context,
   Stream<SigningState> signingStream,
+  Widget description,
 ) {
   final stream = signingStream.toBehaviorSubject();
 
@@ -193,6 +199,8 @@ Future<List<EncodedSignature>?> showSigningProgressDialog(
       },
       complete: finishedSigning,
       content: Column(children: [
+        description,
+        Divider(),
         Text("Plug in each device"),
         Expanded(child: DeviceSigningProgress(stream: stream)),
       ]));
@@ -211,7 +219,7 @@ Future<void> _showSignatureDialog(
                     alignment: Alignment.center,
                     child: Column(
                       children: [
-                        Text("Here's your signature"),
+                        Text("Here's your signature!"),
                         SizedBox(height: 20),
                         SelectableText(toHex(
                             Uint8List.fromList(signature.field0.toList())))

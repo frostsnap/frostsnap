@@ -760,6 +760,30 @@ class NativeImpl implements Native {
             argNames: ["that", "keyId"],
           );
 
+  SignTaskDescription? persistedSignSessionDescriptionMethodCoordinator(
+      {required Coordinator that, required KeyId keyId, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
+    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner
+          .wire_persisted_sign_session_description__method__Coordinator(
+              arg0, arg1),
+      parseSuccessData: _wire2api_opt_box_autoadd_sign_task_description,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kPersistedSignSessionDescriptionMethodCoordinatorConstMeta,
+      argValues: [that, keyId],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kPersistedSignSessionDescriptionMethodCoordinatorConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName:
+                "persisted_sign_session_description__method__Coordinator",
+            argNames: ["that", "keyId"],
+          );
+
   Stream<SigningState> tryRestoreSigningSessionMethodCoordinator(
       {required Coordinator that, required KeyId keyId, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
@@ -974,7 +998,7 @@ class NativeImpl implements Native {
     return _platform.executeNormal(FlutterRustBridgeTask(
       callFfi: (port_) => _platform.inner
           .wire_send_to__method__Wallet(port_, arg0, arg1, arg2, arg3, arg4),
-      parseSuccessData: _wire2api_unsigned_tx,
+      parseSuccessData: (d) => _wire2api_unsigned_tx(d),
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kSendToMethodWalletConstMeta,
       argValues: [that, keyId, toAddress, value, feerate],
@@ -1041,11 +1065,11 @@ class NativeImpl implements Native {
   EffectOfTx effectOfTxMethodWallet(
       {required Wallet that,
       required KeyId keyId,
-      required SignedTx tx,
+      required RTransaction tx,
       dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_wallet(that);
     var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
-    var arg2 = _platform.api2wire_box_autoadd_signed_tx(tx);
+    var arg2 = _platform.api2wire_RTransaction(tx);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
       callFfi: () =>
           _platform.inner.wire_effect_of_tx__method__Wallet(arg0, arg1, arg2),
@@ -1061,6 +1085,42 @@ class NativeImpl implements Native {
       const FlutterRustBridgeTaskConstMeta(
         debugName: "effect_of_tx__method__Wallet",
         argNames: ["that", "keyId", "tx"],
+      );
+
+  RTransaction txMethodSignedTx({required SignedTx that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_signed_tx(that);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner.wire_tx__method__SignedTx(arg0),
+      parseSuccessData: _wire2api_RTransaction,
+      parseErrorData: null,
+      constMeta: kTxMethodSignedTxConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kTxMethodSignedTxConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "tx__method__SignedTx",
+        argNames: ["that"],
+      );
+
+  RTransaction txMethodUnsignedTx({required UnsignedTx that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_unsigned_tx(that);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner.wire_tx__method__UnsignedTx(arg0),
+      parseSuccessData: _wire2api_RTransaction,
+      parseErrorData: null,
+      constMeta: kTxMethodUnsignedTxConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kTxMethodUnsignedTxConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "tx__method__UnsignedTx",
+        argNames: ["that"],
       );
 
   DropFnType get dropOpaqueArcMutexVecPortDesc =>
@@ -1296,8 +1356,16 @@ class NativeImpl implements Native {
     return _wire2api_port_write(raw);
   }
 
+  SignTaskDescription _wire2api_box_autoadd_sign_task_description(dynamic raw) {
+    return _wire2api_sign_task_description(raw);
+  }
+
   SigningState _wire2api_box_autoadd_signing_state(dynamic raw) {
     return _wire2api_signing_state(raw);
+  }
+
+  UnsignedTx _wire2api_box_autoadd_unsigned_tx(dynamic raw) {
+    return _wire2api_unsigned_tx(raw);
   }
 
   ConfirmationTime _wire2api_confirmation_time(dynamic raw) {
@@ -1518,6 +1586,13 @@ class NativeImpl implements Native {
     return raw == null ? null : _wire2api_box_autoadd_frost_key(raw);
   }
 
+  SignTaskDescription? _wire2api_opt_box_autoadd_sign_task_description(
+      dynamic raw) {
+    return raw == null
+        ? null
+        : _wire2api_box_autoadd_sign_task_description(raw);
+  }
+
   SigningState? _wire2api_opt_box_autoadd_signing_state(dynamic raw) {
     return raw == null ? null : _wire2api_box_autoadd_signing_state(raw);
   }
@@ -1592,11 +1667,27 @@ class NativeImpl implements Native {
     );
   }
 
+  SignTaskDescription _wire2api_sign_task_description(dynamic raw) {
+    switch (raw[0]) {
+      case 0:
+        return SignTaskDescription_Plain(
+          message: _wire2api_String(raw[1]),
+        );
+      case 1:
+        return SignTaskDescription_Transaction(
+          unsignedTx: _wire2api_box_autoadd_unsigned_tx(raw[1]),
+        );
+      default:
+        throw Exception("unreachable");
+    }
+  }
+
   SignedTx _wire2api_signed_tx(dynamic raw) {
     final arr = raw as List<dynamic>;
     if (arr.length != 1)
       throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
     return SignedTx(
+      bridge: this,
       inner: _wire2api_RTransaction(arr[0]),
     );
   }
@@ -1671,6 +1762,7 @@ class NativeImpl implements Native {
     if (arr.length != 1)
       throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
     return UnsignedTx(
+      bridge: this,
       task: _wire2api_FrostsnapCoreMessageTransactionSignTask(arr[0]),
     );
   }

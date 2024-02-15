@@ -537,6 +537,10 @@ class NativeWasmModule implements WasmModule {
       wire_can_restore_signing_session__method__Coordinator(
           List<dynamic> that, List<dynamic> key_id);
 
+  external dynamic /* List<dynamic>? */
+      wire_persisted_sign_session_description__method__Coordinator(
+          List<dynamic> that, List<dynamic> key_id);
+
   external dynamic /* void */
       wire_try_restore_signing_session__method__Coordinator(
           NativePortType port_, List<dynamic> that, List<dynamic> key_id);
@@ -588,7 +592,11 @@ class NativeWasmModule implements WasmModule {
       List<dynamic> tx);
 
   external dynamic /* List<dynamic> */ wire_effect_of_tx__method__Wallet(
-      List<dynamic> that, List<dynamic> key_id, List<dynamic> tx);
+      List<dynamic> that, List<dynamic> key_id, Object tx);
+
+  external dynamic /* Object */ wire_tx__method__SignedTx(List<dynamic> that);
+
+  external dynamic /* Object */ wire_tx__method__UnsignedTx(List<dynamic> that);
 
   external dynamic /*  */ drop_opaque_ArcMutexVecPortDesc(ptr);
 
@@ -794,6 +802,13 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
       wasmModule.wire_can_restore_signing_session__method__Coordinator(
           that, key_id);
 
+  dynamic /* List<dynamic>? */
+      wire_persisted_sign_session_description__method__Coordinator(
+              List<dynamic> that, List<dynamic> key_id) =>
+          wasmModule
+              .wire_persisted_sign_session_description__method__Coordinator(
+                  that, key_id);
+
   void wire_try_restore_signing_session__method__Coordinator(
           NativePortType port_, List<dynamic> that, List<dynamic> key_id) =>
       wasmModule.wire_try_restore_signing_session__method__Coordinator(
@@ -854,8 +869,14 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
       wasmModule.wire_broadcast_tx__method__Wallet(port_, that, key_id, tx);
 
   dynamic /* List<dynamic> */ wire_effect_of_tx__method__Wallet(
-          List<dynamic> that, List<dynamic> key_id, List<dynamic> tx) =>
+          List<dynamic> that, List<dynamic> key_id, Object tx) =>
       wasmModule.wire_effect_of_tx__method__Wallet(that, key_id, tx);
+
+  dynamic /* Object */ wire_tx__method__SignedTx(List<dynamic> that) =>
+      wasmModule.wire_tx__method__SignedTx(that);
+
+  dynamic /* Object */ wire_tx__method__UnsignedTx(List<dynamic> that) =>
+      wasmModule.wire_tx__method__UnsignedTx(that);
 
   dynamic /*  */ drop_opaque_ArcMutexVecPortDesc(ptr) =>
       wasmModule.drop_opaque_ArcMutexVecPortDesc(ptr);

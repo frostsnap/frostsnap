@@ -259,6 +259,14 @@ pub extern "C" fn wire_can_restore_signing_session__method__Coordinator(
 }
 
 #[no_mangle]
+pub extern "C" fn wire_persisted_sign_session_description__method__Coordinator(
+    that: *mut wire_Coordinator,
+    key_id: *mut wire_KeyId,
+) -> support::WireSyncReturn {
+    wire_persisted_sign_session_description__method__Coordinator_impl(that, key_id)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_try_restore_signing_session__method__Coordinator(
     port_: i64,
     that: *mut wire_Coordinator,
@@ -372,9 +380,21 @@ pub extern "C" fn wire_broadcast_tx__method__Wallet(
 pub extern "C" fn wire_effect_of_tx__method__Wallet(
     that: *mut wire_Wallet,
     key_id: *mut wire_KeyId,
-    tx: *mut wire_SignedTx,
+    tx: wire_RTransaction,
 ) -> support::WireSyncReturn {
     wire_effect_of_tx__method__Wallet_impl(that, key_id, tx)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_tx__method__SignedTx(that: *mut wire_SignedTx) -> support::WireSyncReturn {
+    wire_tx__method__SignedTx_impl(that)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_tx__method__UnsignedTx(
+    that: *mut wire_UnsignedTx,
+) -> support::WireSyncReturn {
+    wire_tx__method__UnsignedTx_impl(that)
 }
 
 // Section: allocate functions

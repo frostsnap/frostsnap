@@ -201,6 +201,12 @@ abstract class Native {
   FlutterRustBridgeTaskConstMeta
       get kCanRestoreSigningSessionMethodCoordinatorConstMeta;
 
+  SignTaskDescription? persistedSignSessionDescriptionMethodCoordinator(
+      {required Coordinator that, required KeyId keyId, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta
+      get kPersistedSignSessionDescriptionMethodCoordinatorConstMeta;
+
   Stream<SigningState> tryRestoreSigningSessionMethodCoordinator(
       {required Coordinator that, required KeyId keyId, dynamic hint});
 
@@ -283,10 +289,18 @@ abstract class Native {
   EffectOfTx effectOfTxMethodWallet(
       {required Wallet that,
       required KeyId keyId,
-      required SignedTx tx,
+      required RTransaction tx,
       dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kEffectOfTxMethodWalletConstMeta;
+
+  RTransaction txMethodSignedTx({required SignedTx that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kTxMethodSignedTxConstMeta;
+
+  RTransaction txMethodUnsignedTx({required UnsignedTx that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kTxMethodUnsignedTxConstMeta;
 
   DropFnType get dropOpaqueArcMutexVecPortDesc;
   ShareFnType get shareOpaqueArcMutexVecPortDesc;
@@ -654,6 +668,13 @@ class Coordinator {
         keyId: keyId,
       );
 
+  SignTaskDescription? persistedSignSessionDescription(
+          {required KeyId keyId, dynamic hint}) =>
+      bridge.persistedSignSessionDescriptionMethodCoordinator(
+        that: this,
+        keyId: keyId,
+      );
+
   Stream<SigningState> tryRestoreSigningSession(
           {required KeyId keyId, dynamic hint}) =>
       bridge.tryRestoreSigningSessionMethodCoordinator(
@@ -935,12 +956,28 @@ class PortWrite {
       );
 }
 
+@freezed
+sealed class SignTaskDescription with _$SignTaskDescription {
+  const factory SignTaskDescription.plain({
+    required String message,
+  }) = SignTaskDescription_Plain;
+  const factory SignTaskDescription.transaction({
+    required UnsignedTx unsignedTx,
+  }) = SignTaskDescription_Transaction;
+}
+
 class SignedTx {
+  final Native bridge;
   final RTransaction inner;
 
   const SignedTx({
+    required this.bridge,
     required this.inner,
   });
+
+  RTransaction tx({dynamic hint}) => bridge.txMethodSignedTx(
+        that: this,
+      );
 }
 
 class SigningState {
@@ -1015,11 +1052,17 @@ class U8Array64 extends NonGrowableListView<int> {
 }
 
 class UnsignedTx {
+  final Native bridge;
   final FrostsnapCoreMessageTransactionSignTask task;
 
   const UnsignedTx({
+    required this.bridge,
     required this.task,
   });
+
+  RTransaction tx({dynamic hint}) => bridge.txMethodUnsignedTx(
+        that: this,
+      );
 }
 
 class Wallet {
@@ -1120,7 +1163,7 @@ class Wallet {
       );
 
   EffectOfTx effectOfTx(
-          {required KeyId keyId, required SignedTx tx, dynamic hint}) =>
+          {required KeyId keyId, required RTransaction tx, dynamic hint}) =>
       bridge.effectOfTxMethodWallet(
         that: this,
         keyId: keyId,

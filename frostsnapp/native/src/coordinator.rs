@@ -440,6 +440,28 @@ impl FfiCoordinator {
             .execute(|tx| Ok(tx.take_index(self.persist_core).is_sign_session_persisted()))
             .unwrap()
     }
+
+    pub fn persisted_sign_session_description(
+        &self,
+        #[allow(unused)] /* we only have one key for now */ key_id: KeyId,
+    ) -> Result<Option<api::SignTaskDescription>> {
+        self.db.lock().unwrap().execute(|tx| {
+            Ok(tx
+                .take_index(self.persist_core)
+                .persisted_sign_session_task()?
+                .map(|task| match task {
+                    SignTask::Plain { message, .. } => api::SignTaskDescription::Plain {
+                        message: String::from_utf8_lossy(&message[..]).to_string(),
+                    },
+                    SignTask::Nostr { .. } => todo!("nostr restoring not yet implemented"),
+                    SignTask::Transaction(task) => api::SignTaskDescription::Transaction {
+                        unsigned_tx: api::UnsignedTx {
+                            task: RustOpaque::new(task),
+                        },
+                    },
+                }))
+        })
+    }
 }
 
 fn frost_keys(coordinator: &FrostCoordinator) -> Vec<crate::api::FrostKey> {

@@ -230,6 +230,14 @@ pub fn wire_can_restore_signing_session__method__Coordinator(
 }
 
 #[wasm_bindgen]
+pub fn wire_persisted_sign_session_description__method__Coordinator(
+    that: JsValue,
+    key_id: JsValue,
+) -> support::WireSyncReturn {
+    wire_persisted_sign_session_description__method__Coordinator_impl(that, key_id)
+}
+
+#[wasm_bindgen]
 pub fn wire_try_restore_signing_session__method__Coordinator(
     port_: MessagePort,
     that: JsValue,
@@ -331,6 +339,16 @@ pub fn wire_effect_of_tx__method__Wallet(
     tx: JsValue,
 ) -> support::WireSyncReturn {
     wire_effect_of_tx__method__Wallet_impl(that, key_id, tx)
+}
+
+#[wasm_bindgen]
+pub fn wire_tx__method__SignedTx(that: JsValue) -> support::WireSyncReturn {
+    wire_tx__method__SignedTx_impl(that)
+}
+
+#[wasm_bindgen]
+pub fn wire_tx__method__UnsignedTx(that: JsValue) -> support::WireSyncReturn {
+    wire_tx__method__UnsignedTx_impl(that)
 }
 
 // Section: allocate functions

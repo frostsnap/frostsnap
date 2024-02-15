@@ -1404,6 +1404,28 @@ class NativeWire implements FlutterRustBridgeWireBase {
           WireSyncReturn Function(
               ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_KeyId>)>();
 
+  WireSyncReturn wire_persisted_sign_session_description__method__Coordinator(
+    ffi.Pointer<wire_Coordinator> that,
+    ffi.Pointer<wire_KeyId> key_id,
+  ) {
+    return _wire_persisted_sign_session_description__method__Coordinator(
+      that,
+      key_id,
+    );
+  }
+
+  late final _wire_persisted_sign_session_description__method__CoordinatorPtr =
+      _lookup<
+              ffi.NativeFunction<
+                  WireSyncReturn Function(
+                      ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_KeyId>)>>(
+          'wire_persisted_sign_session_description__method__Coordinator');
+  late final _wire_persisted_sign_session_description__method__Coordinator =
+      _wire_persisted_sign_session_description__method__CoordinatorPtr
+          .asFunction<
+              WireSyncReturn Function(
+                  ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_KeyId>)>();
+
   void wire_try_restore_signing_session__method__Coordinator(
     int port_,
     ffi.Pointer<wire_Coordinator> that,
@@ -1681,7 +1703,7 @@ class NativeWire implements FlutterRustBridgeWireBase {
   WireSyncReturn wire_effect_of_tx__method__Wallet(
     ffi.Pointer<wire_Wallet> that,
     ffi.Pointer<wire_KeyId> key_id,
-    ffi.Pointer<wire_SignedTx> tx,
+    wire_RTransaction tx,
   ) {
     return _wire_effect_of_tx__method__Wallet(
       that,
@@ -1691,14 +1713,45 @@ class NativeWire implements FlutterRustBridgeWireBase {
   }
 
   late final _wire_effect_of_tx__method__WalletPtr = _lookup<
-          ffi.NativeFunction<
-              WireSyncReturn Function(ffi.Pointer<wire_Wallet>,
-                  ffi.Pointer<wire_KeyId>, ffi.Pointer<wire_SignedTx>)>>(
-      'wire_effect_of_tx__method__Wallet');
+      ffi.NativeFunction<
+          WireSyncReturn Function(
+              ffi.Pointer<wire_Wallet>,
+              ffi.Pointer<wire_KeyId>,
+              wire_RTransaction)>>('wire_effect_of_tx__method__Wallet');
   late final _wire_effect_of_tx__method__Wallet =
       _wire_effect_of_tx__method__WalletPtr.asFunction<
           WireSyncReturn Function(ffi.Pointer<wire_Wallet>,
-              ffi.Pointer<wire_KeyId>, ffi.Pointer<wire_SignedTx>)>();
+              ffi.Pointer<wire_KeyId>, wire_RTransaction)>();
+
+  WireSyncReturn wire_tx__method__SignedTx(
+    ffi.Pointer<wire_SignedTx> that,
+  ) {
+    return _wire_tx__method__SignedTx(
+      that,
+    );
+  }
+
+  late final _wire_tx__method__SignedTxPtr = _lookup<
+          ffi
+          .NativeFunction<WireSyncReturn Function(ffi.Pointer<wire_SignedTx>)>>(
+      'wire_tx__method__SignedTx');
+  late final _wire_tx__method__SignedTx = _wire_tx__method__SignedTxPtr
+      .asFunction<WireSyncReturn Function(ffi.Pointer<wire_SignedTx>)>();
+
+  WireSyncReturn wire_tx__method__UnsignedTx(
+    ffi.Pointer<wire_UnsignedTx> that,
+  ) {
+    return _wire_tx__method__UnsignedTx(
+      that,
+    );
+  }
+
+  late final _wire_tx__method__UnsignedTxPtr = _lookup<
+      ffi.NativeFunction<
+          WireSyncReturn Function(
+              ffi.Pointer<wire_UnsignedTx>)>>('wire_tx__method__UnsignedTx');
+  late final _wire_tx__method__UnsignedTx = _wire_tx__method__UnsignedTxPtr
+      .asFunction<WireSyncReturn Function(ffi.Pointer<wire_UnsignedTx>)>();
 
   wire_ArcMutexVecPortDesc new_ArcMutexVecPortDesc() {
     return _new_ArcMutexVecPortDesc();

@@ -297,6 +297,9 @@ void wire_generate_new_key__method__Coordinator(int64_t port_,
 WireSyncReturn wire_can_restore_signing_session__method__Coordinator(struct wire_Coordinator *that,
                                                                      struct wire_KeyId *key_id);
 
+WireSyncReturn wire_persisted_sign_session_description__method__Coordinator(struct wire_Coordinator *that,
+                                                                            struct wire_KeyId *key_id);
+
 void wire_try_restore_signing_session__method__Coordinator(int64_t port_,
                                                            struct wire_Coordinator *that,
                                                            struct wire_KeyId *key_id);
@@ -346,7 +349,11 @@ void wire_broadcast_tx__method__Wallet(int64_t port_,
 
 WireSyncReturn wire_effect_of_tx__method__Wallet(struct wire_Wallet *that,
                                                  struct wire_KeyId *key_id,
-                                                 struct wire_SignedTx *tx);
+                                                 struct wire_RTransaction tx);
+
+WireSyncReturn wire_tx__method__SignedTx(struct wire_SignedTx *that);
+
+WireSyncReturn wire_tx__method__UnsignedTx(struct wire_UnsignedTx *that);
 
 struct wire_ArcMutexVecPortDesc new_ArcMutexVecPortDesc(void);
 
@@ -504,6 +511,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_nonces_available__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_generate_new_key__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_can_restore_signing_session__method__Coordinator);
+    dummy_var ^= ((int64_t) (void*) wire_persisted_sign_session_description__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_try_restore_signing_session__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_sub_tx_state__method__Wallet);
     dummy_var ^= ((int64_t) (void*) wire_tx_state__method__Wallet);
@@ -517,6 +525,8 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_complete_unsigned_tx__method__Wallet);
     dummy_var ^= ((int64_t) (void*) wire_broadcast_tx__method__Wallet);
     dummy_var ^= ((int64_t) (void*) wire_effect_of_tx__method__Wallet);
+    dummy_var ^= ((int64_t) (void*) wire_tx__method__SignedTx);
+    dummy_var ^= ((int64_t) (void*) wire_tx__method__UnsignedTx);
     dummy_var ^= ((int64_t) (void*) new_ArcMutexVecPortDesc);
     dummy_var ^= ((int64_t) (void*) new_ChainSync);
     dummy_var ^= ((int64_t) (void*) new_FfiCoordinator);

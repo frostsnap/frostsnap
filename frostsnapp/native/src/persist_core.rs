@@ -1,5 +1,6 @@
 use frostsnap_coordinator::frostsnap_core::{
     self,
+    message::SignTask,
     schnorr_fun::{frost::FrostKey, fun::marker::Normal},
     FrostCoordinator,
 };
@@ -60,6 +61,11 @@ impl<'i, F: Backend> PersistApi<'i, F> {
 
     pub fn is_sign_session_persisted(&self) -> bool {
         self.signing_cell.is_some()
+    }
+
+    pub fn persisted_sign_session_task(&self) -> Result<Option<SignTask>> {
+        let opt = self.signing_cell.get()?;
+        Ok(opt.map(|sign_session_state| sign_session_state.request.sign_task))
     }
 
     pub fn store_sign_session(&self, state: frostsnap_core::SigningSessionState) -> Result<()> {

@@ -495,7 +495,7 @@ class _WalletSendState extends State<WalletSend> {
     final frostKey = coord.getKey(keyId: widget.keyId)!;
     final enoughSelected = selectedDevices.length == frostKey.threshold();
     return Scaffold(
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Form(
           key: _formKey,
@@ -555,14 +555,13 @@ class _WalletSendState extends State<WalletSend> {
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 20.0),
               ),
-              Expanded(
-                  child: SigningDeviceSelector(
-                      frostKey: frostKey,
-                      onChanged: (selected) {
-                        setState(() {
-                          selectedDevices = selected;
-                        });
-                      })),
+              SigningDeviceSelector(
+                  frostKey: frostKey,
+                  onChanged: (selected) {
+                    setState(() {
+                      selectedDevices = selected;
+                    });
+                  }),
               Padding(
                   padding: const EdgeInsets.symmetric(vertical: 16.0),
                   child: ElevatedButton(
@@ -580,22 +579,12 @@ class _WalletSendState extends State<WalletSend> {
                                   unsignedTx: unsignedTx,
                                   devices: selectedDevices.toList());
                               if (context.mounted) {
-                                final signatures =
-                                    await showSigningProgressDialog(
-                                        context, signingStream);
-                                if (signatures != null) {
-                                  final tx = wallet.completeUnsignedTx(
-                                      unsignedTx: unsignedTx,
-                                      signatures: signatures);
-                                  if (context.mounted) {
-                                    final wasBroadcast =
-                                        await _showBroadcastConfirmDialog(
-                                            context, widget.keyId, tx);
-                                    if (wasBroadcast) {
-                                      widget.onBroadcastNewTx?.call();
-                                    }
-                                  }
-                                }
+                                await signTransactionWorkflowDialog(
+                                    context: context,
+                                    signingStream: signingStream,
+                                    unsignedTx: unsignedTx,
+                                    keyId: widget.keyId,
+                                    onBroadcastNewTx: widget.onBroadcastNewTx);
                               }
                             }
                           },
@@ -609,13 +598,68 @@ class _WalletSendState extends State<WalletSend> {
   }
 }
 
+Future<void> signTransactionWorkflowDialog(
+    {required BuildContext context,
+    required Stream<SigningState> signingStream,
+    required UnsignedTx unsignedTx,
+    required KeyId keyId,
+    Function()? onBroadcastNewTx}) async {
+  final effect = wallet.effectOfTx(keyId: keyId, tx: unsignedTx.tx());
+
+  final signatures = await showSigningProgressDialog(
+    context,
+    signingStream,
+    describeEffect(effect),
+  );
+  if (signatures != null) {
+    final tx = wallet.completeUnsignedTx(
+        unsignedTx: unsignedTx, signatures: signatures);
+    if (context.mounted) {
+      final wasBroadcast =
+          await _showBroadcastConfirmDialog(context, keyId, tx);
+      if (wasBroadcast) {
+        onBroadcastNewTx?.call();
+      }
+    }
+  }
+}
+
+Widget describeEffect(EffectOfTx effect) {
+  final Widget description;
+
+  if (effect.foreignReceivingAddresses.length == 1) {
+    final (dest, amount) = effect.foreignReceivingAddresses[0];
+    description = RichText(
+      text: TextSpan(
+        style:
+            TextStyle(color: Colors.black, fontSize: 16), // Default text style
+        children: <TextSpan>[
+          TextSpan(text: 'Sending '),
+          TextSpan(
+              text: '${formatSatoshi(amount)}',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+          TextSpan(text: ' to '),
+          TextSpan(text: dest, style: TextStyle(fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+    ;
+  } else if (effect.foreignReceivingAddresses.isEmpty) {
+    description = Text("Internal transfer");
+  } else {
+    description = Text("can't describe this yet");
+  }
+
+  return description;
+}
+
 Future<bool> _showBroadcastConfirmDialog(
     BuildContext context, KeyId keyId, SignedTx tx) async {
   final wasBroadcast = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
-        final effect = wallet.effectOfTx(keyId: keyId, tx: tx);
+        final effect = wallet.effectOfTx(keyId: keyId, tx: tx.tx());
 
         List<TableRow> transactionRows =
             effect.foreignReceivingAddresses.map((entry) {
@@ -624,7 +668,7 @@ Future<bool> _showBroadcastConfirmDialog(
             children: [
               Padding(
                 padding: const EdgeInsets.all(8.0),
-                child: Text('Send to ${address}'),
+                child: Text('Send to $address'),
               ),
               Padding(
                 padding: const EdgeInsets.all(8.0),
@@ -664,7 +708,7 @@ Future<bool> _showBroadcastConfirmDialog(
           ),
         );
 
-        final effectWidget = Table(
+        final effectTable = Table(
           columnWidths: const {
             0: FlexColumnWidth(4),
             1: FlexColumnWidth(2),
@@ -672,6 +716,15 @@ Future<bool> _showBroadcastConfirmDialog(
           border: TableBorder.all(),
           children: transactionRows,
         );
+
+        final effectWidget = Column(
+          children: [
+            describeEffect(effect),
+            Divider(),
+            effectTable,
+          ],
+        );
+
         return AlertDialog(
             title: Text("Broadcast?"),
             content: Container(
@@ -745,7 +798,7 @@ class NetValue extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Text(
-      '${formatSatoshi(netValue)}\u20BF', // Display net value in BTC
+      '${formatSatoshi(netValue)}', // Display net value in BTC
       style: TextStyle(
         color: netValue > 0 ? Colors.green : Colors.red,
       ),
@@ -771,5 +824,5 @@ String formatSatoshi(int satoshis) {
       parts[1].substring(5);
 
   // Combine the whole number part with the formatted fractional part
-  return '${parts[0]}.${fractionalPart}';
+  return '${parts[0]}.${fractionalPart}\u20BF';
 }

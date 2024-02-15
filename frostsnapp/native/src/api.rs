@@ -502,6 +502,15 @@ impl Coordinator {
         SyncReturn(self.0.can_restore_signing_session(key_id))
     }
 
+    pub fn persisted_sign_session_description(
+        &self,
+        key_id: KeyId,
+    ) -> Result<SyncReturn<Option<SignTaskDescription>>> {
+        self.0
+            .persisted_sign_session_description(key_id)
+            .map(SyncReturn)
+    }
+
     pub fn try_restore_signing_session(
         &self,
         key_id: KeyId,
@@ -749,15 +758,19 @@ impl Wallet {
         }
     }
 
-    pub fn effect_of_tx(&self, key_id: KeyId, tx: SignedTx) -> Result<SyncReturn<EffectOfTx>> {
+    pub fn effect_of_tx(
+        &self,
+        key_id: KeyId,
+        tx: RustOpaque<RTransaction>,
+    ) -> Result<SyncReturn<EffectOfTx>> {
         let inner = self.inner.lock().unwrap();
-        let fee = inner.fee(&tx.inner)?;
+        let fee = inner.fee(&*tx)?;
         Ok(SyncReturn(EffectOfTx {
-            net_value: inner.net_value(key_id, &tx.inner),
+            net_value: inner.net_value(key_id, &*tx),
             fee,
-            feerate: fee as f64 / (tx.inner.weight().to_wu() as f64 / 4.0),
+            feerate: fee as f64 / (tx.weight().to_wu() as f64 / 4.0),
             foreign_receiving_addresses: inner
-                .spends_outside(&tx.inner)
+                .spends_outside(&*tx)
                 .into_iter()
                 .map(|(spk, value)| {
                     (
@@ -776,8 +789,20 @@ pub struct SignedTx {
     pub inner: RustOpaque<RTransaction>,
 }
 
+impl SignedTx {
+    pub fn tx(&self) -> SyncReturn<RustOpaque<RTransaction>> {
+        SyncReturn(self.inner.clone())
+    }
+}
+
 pub struct UnsignedTx {
     pub task: RustOpaque<frostsnap_core::message::TransactionSignTask>,
+}
+
+impl UnsignedTx {
+    pub fn tx(&self) -> SyncReturn<RustOpaque<RTransaction>> {
+        SyncReturn(RustOpaque::new(self.task.tx_template.clone()))
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -802,4 +827,14 @@ pub struct EffectOfTx {
 // TODO: remove me?
 pub fn echo_key_id(key_id: KeyId) -> KeyId {
     key_id
+}
+
+pub enum SignTaskDescription {
+    Plain { message: String },
+    // Nostr {
+    //     #[bincode(with_serde)]
+    //     event: Box<crate::nostr::UnsignedEvent>,
+    //     key_id: KeyId,
+    // }, // 1 nonce & sig
+    Transaction { unsigned_tx: UnsignedTx },
 }

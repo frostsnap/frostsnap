@@ -69,19 +69,26 @@ class KeyCard extends StatefulWidget {
 }
 
 class _KeyCard extends State<KeyCard> {
-  bool canContinueSigning = false;
+  SignTaskDescription? restorableSignSession;
 
   @override
   void initState() {
     super.initState();
-    canContinueSigning =
-        coord.canRestoreSigningSession(keyId: widget.frostKey.id());
+    restorableSignSession =
+        coord.persistedSignSessionDescription(keyId: widget.frostKey.id());
   }
 
   @override
   Widget build(BuildContext context) {
     final keyId = widget.frostKey.id();
-    final Widget signButton;
+    final signButton = ElevatedButton(
+        onPressed: () {
+          Navigator.push(context, MaterialPageRoute(builder: (context) {
+            return SignMessagePage(frostKey: widget.frostKey);
+          }));
+        },
+        child: Text("Sign"));
+
     final Widget walletButton = ElevatedButton(
         onPressed: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) {
@@ -90,26 +97,39 @@ class _KeyCard extends State<KeyCard> {
         },
         child: Text("₿"));
 
-    if (canContinueSigning) {
-      signButton = ElevatedButton(
+    final continueSigning;
+
+    if (restorableSignSession != null) {
+      continueSigning = ElevatedButton(
           onPressed: () async {
-            final stream = coord
+            final signingStream = coord
                 .tryRestoreSigningSession(keyId: keyId)
                 .toBehaviorSubject();
-            await signMessageDialog(context, stream);
+
+            switch (restorableSignSession!) {
+              case SignTaskDescription_Plain(:final message):
+                {
+                  await signMessageWorkflowDialog(
+                      context, signingStream, message);
+                }
+              case SignTaskDescription_Transaction(:final unsignedTx):
+                {
+                  await signTransactionWorkflowDialog(
+                      context: context,
+                      signingStream: signingStream,
+                      unsignedTx: unsignedTx,
+                      keyId: keyId);
+                }
+            }
+
             setState(() {
-              canContinueSigning = coord.canRestoreSigningSession(keyId: keyId);
+              restorableSignSession = coord.persistedSignSessionDescription(
+                  keyId: widget.frostKey.id());
             });
           },
           child: Text("Continue signing"));
     } else {
-      signButton = ElevatedButton(
-          onPressed: () {
-            Navigator.push(context, MaterialPageRoute(builder: (context) {
-              return SignMessagePage(frostKey: widget.frostKey);
-            }));
-          },
-          child: Text("Sign"));
+      continueSigning = Container();
     }
 
     return Card(
@@ -125,9 +145,13 @@ class _KeyCard extends State<KeyCard> {
             ),
             const SizedBox(height: 8),
             Text("Threshold: ${widget.frostKey.threshold()}"),
-            Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [signButton, const SizedBox(width: 5), walletButton])
+            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              signButton,
+              const SizedBox(width: 5),
+              walletButton,
+              const SizedBox(width: 5),
+              continueSigning
+            ])
           ],
         ),
       ),
