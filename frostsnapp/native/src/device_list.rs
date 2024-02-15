@@ -49,8 +49,18 @@ impl DeviceList {
                     old_name: _old_name,
                     new_name,
                 } => {
-                    // NOTE: ignoring old name for now
-                    self.names.insert(id, new_name);
+                    if let Some(index) = self.index_of(id) {
+                        // NOTE: ignoring old name for now
+                        self.names.insert(id, new_name.clone());
+                        output.push(api::DeviceListChange {
+                            kind: api::DeviceListChangeKind::Named,
+                            index,
+                            device: api::Device {
+                                id,
+                                name: Some(new_name),
+                            },
+                        });
+                    }
                 }
                 DeviceChange::NeedsName { id } => {
                     output.extend(self.append(id));

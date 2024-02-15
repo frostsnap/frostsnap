@@ -458,6 +458,10 @@ impl FfiCoordinator {
                 }))
         })
     }
+
+    pub fn request_display_backup(&self, id: DeviceId, key_id: KeyId) {
+        self.usb_sender.request_display_backup(id, key_id);
+    }
 }
 
 fn frost_keys(coordinator: &FrostCoordinator) -> Vec<crate::api::FrostKey> {
