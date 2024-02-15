@@ -370,6 +370,7 @@ impl FfiCoordinator {
 
     pub fn start_signing(
         &self,
+        key_id: KeyId,
         devices: BTreeSet<DeviceId>,
         task: SignTask,
         stream: StreamSink<api::SigningState>,
@@ -377,7 +378,7 @@ impl FfiCoordinator {
         // we need to lock this first to avoid race conditions where somehow get_signing_state is called before this completes.
         let mut signing_session = self.signing_session.lock().unwrap();
         let mut coordinator = self.coordinator.lock().unwrap();
-        let mut messages = coordinator.start_sign(task, devices)?;
+        let mut messages = coordinator.start_sign(key_id, task, devices)?;
         let dispatcher = SigningDispatcher::from_filter_out_start_sign(&mut messages);
         let mut new_session = SigningSession::new(stream, dispatcher);
 

@@ -406,10 +406,10 @@ impl _Wallet {
         let mut inputs: Vec<bitcoin::TxIn> = vec![];
         let mut prevouts = vec![];
 
-        for ((key_id, i), selected_utxo) in selected_utxos {
+        for ((_, i), selected_utxo) in selected_utxos {
             prevouts.push(frostsnap_core::message::TxInput {
                 prevout: selected_utxo.txout.clone(),
-                key_path: Some((*key_id, vec![*i])),
+                bip32_path: Some(vec![*i]),
             });
             inputs.push(bitcoin::TxIn {
                 previous_output: selected_utxo.outpoint,

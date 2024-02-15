@@ -518,6 +518,7 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* void */ wire_start_signing_tx__method__Coordinator(
       NativePortType port_,
       List<dynamic> that,
+      List<dynamic> key_id,
       List<dynamic> unsigned_tx,
       List<dynamic> devices);
 
@@ -779,10 +780,11 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   void wire_start_signing_tx__method__Coordinator(
           NativePortType port_,
           List<dynamic> that,
+          List<dynamic> key_id,
           List<dynamic> unsigned_tx,
           List<dynamic> devices) =>
       wasmModule.wire_start_signing_tx__method__Coordinator(
-          port_, that, unsigned_tx, devices);
+          port_, that, key_id, unsigned_tx, devices);
 
   dynamic /* List<dynamic>? */ wire_get_signing_state__method__Coordinator(
           List<dynamic> that) =>

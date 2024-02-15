@@ -192,10 +192,11 @@ pub fn wire_start_signing__method__Coordinator(
 pub fn wire_start_signing_tx__method__Coordinator(
     port_: MessagePort,
     that: JsValue,
+    key_id: JsValue,
     unsigned_tx: JsValue,
     devices: JsValue,
 ) {
-    wire_start_signing_tx__method__Coordinator_impl(port_, that, unsigned_tx, devices)
+    wire_start_signing_tx__method__Coordinator_impl(port_, that, key_id, unsigned_tx, devices)
 }
 
 #[wasm_bindgen]

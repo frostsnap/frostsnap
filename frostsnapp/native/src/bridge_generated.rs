@@ -538,6 +538,7 @@ fn wire_start_signing__method__Coordinator_impl(
 fn wire_start_signing_tx__method__Coordinator_impl(
     port_: MessagePort,
     that: impl Wire2Api<Coordinator> + UnwindSafe,
+    key_id: impl Wire2Api<KeyId> + UnwindSafe,
     unsigned_tx: impl Wire2Api<UnsignedTx> + UnwindSafe,
     devices: impl Wire2Api<Vec<DeviceId>> + UnwindSafe,
 ) {
@@ -549,11 +550,13 @@ fn wire_start_signing_tx__method__Coordinator_impl(
         },
         move || {
             let api_that = that.wire2api();
+            let api_key_id = key_id.wire2api();
             let api_unsigned_tx = unsigned_tx.wire2api();
             let api_devices = devices.wire2api();
             move |task_callback| {
                 Coordinator::start_signing_tx(
                     &api_that,
+                    api_key_id,
                     api_unsigned_tx,
                     api_devices,
                     task_callback.stream_sink::<_, SigningState>(),

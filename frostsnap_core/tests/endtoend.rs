@@ -88,7 +88,10 @@ impl common::Env for TestEnv {
                 let ack = run.device(from).keygen_ack().unwrap();
                 run.extend_from_device(from, ack);
             }
-            DeviceToUserMessage::SignatureRequest { sign_task } => {
+            DeviceToUserMessage::SignatureRequest {
+                sign_task,
+                key_id: _,
+            } => {
                 self.sign_tasks.insert(from, sign_task);
                 let sign_ack = run.device(from).sign_ack().unwrap();
                 run.extend_from_device(from, sign_ack);
@@ -151,12 +154,12 @@ fn test_end_to_end() {
         env.signatures.clear();
         env.sign_tasks.clear();
         env.received_signing_shares.clear();
-        let task = SignTask::Plain { message, key_id };
+        let task = SignTask::Plain { message };
         let set = BTreeSet::from_iter(signers.iter().map(|i| device_list[*i]));
 
         let sign_init = run
             .coordinator
-            .start_sign(task.clone(), set.clone())
+            .start_sign(key_id, task.clone(), set.clone())
             .unwrap();
         run.extend(sign_init);
         run.run_until_finished(&mut env);

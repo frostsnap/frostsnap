@@ -54,6 +54,7 @@ pub struct SignRequest {
     // mechanism
     pub nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
     pub sign_task: SignTask,
+    pub key_id: KeyId,
 }
 
 impl SignRequest {
@@ -190,7 +191,7 @@ pub enum CoordinatorToUserKeyGenMessage {
 #[derive(Clone, Debug)]
 pub enum DeviceToUserMessage {
     CheckKeyGen { session_hash: SessionHash },
-    SignatureRequest { sign_task: SignTask },
+    SignatureRequest { sign_task: SignTask, key_id: KeyId },
     Canceled { task: TaskKind },
 }
 
@@ -210,12 +211,10 @@ pub enum DeviceToStorageMessage {
 pub enum SignTask {
     Plain {
         message: Vec<u8>,
-        key_id: KeyId,
     }, // 1 nonce & sig
     Nostr {
         #[bincode(with_serde)]
         event: Box<crate::nostr::UnsignedEvent>,
-        key_id: KeyId,
     }, // 1 nonce & sig
     Transaction(TransactionSignTask),
 }
@@ -233,7 +232,7 @@ pub struct TxInput {
     #[bincode(with_serde)]
     pub prevout: bitcoin::TxOut,
     /// The derivation path of our ket if it's ours
-    pub key_path: Option<(KeyId, Vec<u32>)>,
+    pub bip32_path: Option<Vec<u32>>,
 }
 
 impl core::borrow::Borrow<bitcoin::TxOut> for TxInput {
@@ -283,17 +282,15 @@ impl SignTask {
 
     pub fn sign_items(&self) -> Vec<SignItem> {
         match self {
-            SignTask::Plain { message, key_id } => vec![SignItem {
+            SignTask::Plain { message } => vec![SignItem {
                 message: message.clone(),
                 tap_tweak: false,
                 bip32_path: vec![],
-                key_id: *key_id,
             }],
-            SignTask::Nostr { event, key_id } => vec![SignItem {
+            SignTask::Nostr { event } => vec![SignItem {
                 message: event.hash_bytes.clone(),
                 tap_tweak: false,
                 bip32_path: vec![],
-                key_id: *key_id,
             }],
             SignTask::Transaction(TransactionSignTask {
                 tx_template,
@@ -319,12 +316,11 @@ impl SignTask {
                     .zip(prevouts.iter())
                     .filter_map(|(sighash, input)| {
                         use bitcoin::hashes::Hash;
-                        let (key_id, bip32_path) = input.key_path.clone()?;
+                        let bip32_path = input.bip32_path.clone()?;
                         Some(SignItem {
                             message: sighash.as_raw_hash().to_byte_array().to_vec(),
                             bip32_path,
                             tap_tweak: true,
-                            key_id,
                         })
                     })
                     .collect();
@@ -340,7 +336,6 @@ pub struct SignItem {
     pub message: Vec<u8>,
     pub tap_tweak: bool,
     pub bip32_path: Vec<u32>,
-    pub key_id: KeyId,
 }
 
 impl SignItem {

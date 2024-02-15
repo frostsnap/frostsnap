@@ -171,6 +171,7 @@ abstract class Native {
 
   Stream<SigningState> startSigningTxMethodCoordinator(
       {required Coordinator that,
+      required KeyId keyId,
       required UnsignedTx unsignedTx,
       required List<DeviceId> devices,
       dynamic hint});
@@ -632,11 +633,13 @@ class Coordinator {
       );
 
   Stream<SigningState> startSigningTx(
-          {required UnsignedTx unsignedTx,
+          {required KeyId keyId,
+          required UnsignedTx unsignedTx,
           required List<DeviceId> devices,
           dynamic hint}) =>
       bridge.startSigningTxMethodCoordinator(
         that: this,
+        keyId: keyId,
         unsignedTx: unsignedTx,
         devices: devices,
       );

@@ -1296,12 +1296,14 @@ class NativeWire implements FlutterRustBridgeWireBase {
   void wire_start_signing_tx__method__Coordinator(
     int port_,
     ffi.Pointer<wire_Coordinator> that,
+    ffi.Pointer<wire_KeyId> key_id,
     ffi.Pointer<wire_UnsignedTx> unsigned_tx,
     ffi.Pointer<wire_list_device_id> devices,
   ) {
     return _wire_start_signing_tx__method__Coordinator(
       port_,
       that,
+      key_id,
       unsigned_tx,
       devices,
     );
@@ -1312,6 +1314,7 @@ class NativeWire implements FlutterRustBridgeWireBase {
               ffi.Void Function(
                   ffi.Int64,
                   ffi.Pointer<wire_Coordinator>,
+                  ffi.Pointer<wire_KeyId>,
                   ffi.Pointer<wire_UnsignedTx>,
                   ffi.Pointer<wire_list_device_id>)>>(
       'wire_start_signing_tx__method__Coordinator');
@@ -1320,6 +1323,7 @@ class NativeWire implements FlutterRustBridgeWireBase {
           void Function(
               int,
               ffi.Pointer<wire_Coordinator>,
+              ffi.Pointer<wire_KeyId>,
               ffi.Pointer<wire_UnsignedTx>,
               ffi.Pointer<wire_list_device_id>)>();
 

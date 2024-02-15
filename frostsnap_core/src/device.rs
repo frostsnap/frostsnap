@@ -1,5 +1,7 @@
-use crate::{gen_pop_message, message::*, ActionError, Error, MessageResult, NONCE_BATCH_SIZE};
-use crate::{DeviceId, FrostKeyExt};
+use crate::DeviceId;
+use crate::{
+    gen_pop_message, message::*, ActionError, Error, KeyId, MessageResult, NONCE_BATCH_SIZE,
+};
 use alloc::{
     boxed::Box,
     collections::{BTreeMap, BTreeSet},
@@ -276,7 +278,11 @@ impl FrostSigner {
                     key,
                     awaiting_ack: false,
                 },
-                CoordinatorToDeviceMessage::RequestSign(SignRequest { nonces, sign_task }),
+                CoordinatorToDeviceMessage::RequestSign(SignRequest {
+                    nonces,
+                    sign_task,
+                    key_id,
+                }),
             ) => {
                 let (my_nonces, my_nonce_index, _) = match nonces.get(&self.device_id()) {
                     Some(nonce) => nonce,
@@ -286,20 +292,6 @@ impl FrostSigner {
                 let n_signatures_requested = sign_task.sign_items().len();
                 if my_nonces.len() != n_signatures_requested {
                     return Err(Error::signer_invalid_message(&message, format!( "Number of nonces ({}) was not the same as the number of signatures we were asked for {}", my_nonces.len(), n_signatures_requested)));
-                }
-
-                // everything has to be be signed by the same key for now
-                let fixed_key_id = key.frost_key.key_id();
-
-                if sign_task
-                    .sign_items()
-                    .iter()
-                    .any(|sign_item| sign_item.key_id != fixed_key_id)
-                {
-                    return Err(Error::signer_invalid_message(
-                        &message,
-                        "some sign items were not destined for a key we own",
-                    ));
                 }
 
                 let expected_nonces = self
@@ -329,7 +321,7 @@ impl FrostSigner {
                     nonces,
                 };
                 Ok(vec![DeviceSend::ToUser(
-                    DeviceToUserMessage::SignatureRequest { sign_task },
+                    DeviceToUserMessage::SignatureRequest { sign_task, key_id },
                 )])
             }
             _ => Err(Error::signer_message_kind(&self.state, &message)),
@@ -507,6 +499,9 @@ pub struct FrostsnapKey {
 
 #[derive(Debug, Clone)]
 pub enum StartSignError {
+    UnknownKey {
+        key_id: KeyId,
+    },
     UnknownDevice {
         device_id: DeviceId,
     },
@@ -554,6 +549,10 @@ impl core::fmt::Display for StartSignError {
             StartSignError::UnknownDevice { device_id } => {
                 write!(f, "Unknown device {}", device_id)
             }
+            StartSignError::UnknownKey { key_id } => write!(
+                f,
+                "device does not have key is was asked to sign with, id: {key_id}"
+            ),
         }
     }
 }

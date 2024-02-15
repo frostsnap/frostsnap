@@ -1,6 +1,6 @@
 use crate::{
-    gen_pop_message, message::*, ActionError, Error, FrostKeyExt, MessageResult, SessionHash,
-    StartSignError,
+    gen_pop_message, message::*, ActionError, Error, FrostKeyExt, KeyId, MessageResult,
+    SessionHash, StartSignError,
 };
 use alloc::{
     collections::{BTreeMap, BTreeSet, VecDeque},
@@ -483,6 +483,7 @@ impl FrostCoordinator {
 
     pub fn start_sign(
         &mut self,
+        key_id: KeyId,
         sign_task: SignTask,
         signing_parties: BTreeSet<DeviceId>,
     ) -> Result<Vec<CoordinatorSend>, StartSignError> {
@@ -494,6 +495,10 @@ impl FrostCoordinator {
                         selected,
                         threshold: key.frost_key.threshold(),
                     });
+                }
+
+                if key.frost_key.key_id() != key_id {
+                    return Err(StartSignError::UnknownKey { key_id });
                 }
 
                 let sign_items = sign_task.sign_items();
@@ -561,6 +566,7 @@ impl FrostCoordinator {
                 let sign_request = SignRequest {
                     sign_task,
                     nonces: signing_nonces.clone(),
+                    key_id,
                 };
                 self.state = CoordinatorState::Signing {
                     key: key.clone(),

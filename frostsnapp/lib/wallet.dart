@@ -576,6 +576,7 @@ class _WalletSendState extends State<WalletSend> {
                                   value: _amount,
                                   feerate: _feerate);
                               final signingStream = coord.startSigningTx(
+                                  keyId: widget.keyId,
                                   unsignedTx: unsignedTx,
                                   devices: selectedDevices.toList());
                               if (context.mounted) {
@@ -636,14 +637,13 @@ Widget describeEffect(EffectOfTx effect) {
         children: <TextSpan>[
           TextSpan(text: 'Sending '),
           TextSpan(
-              text: '${formatSatoshi(amount)}',
+              text: formatSatoshi(amount),
               style: TextStyle(fontWeight: FontWeight.bold)),
           TextSpan(text: ' to '),
           TextSpan(text: dest, style: TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
     );
-    ;
   } else if (effect.foreignReceivingAddresses.isEmpty) {
     description = Text("Internal transfer");
   } else {
@@ -765,7 +765,7 @@ Future<bool> _showBroadcastConfirmDialog(
 class Balance extends StatelessWidget {
   final Stream<TxState> txStream;
 
-  Balance({Key? key, required this.txStream}) : super(key: key);
+  const Balance({Key? key, required this.txStream}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -792,13 +792,13 @@ class Balance extends StatelessWidget {
 }
 
 class NetValue extends StatelessWidget {
-  int netValue;
-  NetValue(this.netValue, {super.key});
+  final int netValue;
+  const NetValue(this.netValue, {super.key});
 
   @override
   Widget build(BuildContext context) {
     return Text(
-      '${formatSatoshi(netValue)}', // Display net value in BTC
+      formatSatoshi(netValue), // Display net value in BTC
       style: TextStyle(
         color: netValue > 0 ? Colors.green : Colors.red,
       ),

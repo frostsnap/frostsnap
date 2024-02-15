@@ -281,6 +281,7 @@ void wire_start_signing__method__Coordinator(int64_t port_,
 
 void wire_start_signing_tx__method__Coordinator(int64_t port_,
                                                 struct wire_Coordinator *that,
+                                                struct wire_KeyId *key_id,
                                                 struct wire_UnsignedTx *unsigned_tx,
                                                 struct wire_list_device_id *devices);
 

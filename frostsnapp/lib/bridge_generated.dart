@@ -645,19 +645,22 @@ class NativeImpl implements Native {
 
   Stream<SigningState> startSigningTxMethodCoordinator(
       {required Coordinator that,
+      required KeyId keyId,
       required UnsignedTx unsignedTx,
       required List<DeviceId> devices,
       dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
-    var arg1 = _platform.api2wire_box_autoadd_unsigned_tx(unsignedTx);
-    var arg2 = _platform.api2wire_list_device_id(devices);
+    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg2 = _platform.api2wire_box_autoadd_unsigned_tx(unsignedTx);
+    var arg3 = _platform.api2wire_list_device_id(devices);
     return _platform.executeStream(FlutterRustBridgeTask(
       callFfi: (port_) => _platform.inner
-          .wire_start_signing_tx__method__Coordinator(port_, arg0, arg1, arg2),
+          .wire_start_signing_tx__method__Coordinator(
+              port_, arg0, arg1, arg2, arg3),
       parseSuccessData: (d) => _wire2api_signing_state(d),
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kStartSigningTxMethodCoordinatorConstMeta,
-      argValues: [that, unsignedTx, devices],
+      argValues: [that, keyId, unsignedTx, devices],
       hint: hint,
     ));
   }
@@ -666,7 +669,7 @@ class NativeImpl implements Native {
       get kStartSigningTxMethodCoordinatorConstMeta =>
           const FlutterRustBridgeTaskConstMeta(
             debugName: "start_signing_tx__method__Coordinator",
-            argNames: ["that", "unsignedTx", "devices"],
+            argNames: ["that", "keyId", "unsignedTx", "devices"],
           );
 
   SigningState? getSigningStateMethodCoordinator(

@@ -219,10 +219,11 @@ pub extern "C" fn wire_start_signing__method__Coordinator(
 pub extern "C" fn wire_start_signing_tx__method__Coordinator(
     port_: i64,
     that: *mut wire_Coordinator,
+    key_id: *mut wire_KeyId,
     unsigned_tx: *mut wire_UnsignedTx,
     devices: *mut wire_list_device_id,
 ) {
-    wire_start_signing_tx__method__Coordinator_impl(port_, that, unsigned_tx, devices)
+    wire_start_signing_tx__method__Coordinator_impl(port_, that, key_id, unsigned_tx, devices)
 }
 
 #[no_mangle]

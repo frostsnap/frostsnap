@@ -456,10 +456,10 @@ impl Coordinator {
         stream: StreamSink<SigningState>,
     ) -> Result<()> {
         self.0.start_signing(
+            key_id,
             devices.into_iter().collect(),
             SignTask::Plain {
                 message: message.into_bytes(),
-                key_id,
             },
             stream,
         )?;
@@ -468,11 +468,13 @@ impl Coordinator {
 
     pub fn start_signing_tx(
         &self,
+        key_id: KeyId,
         unsigned_tx: UnsignedTx,
         devices: Vec<DeviceId>,
         stream: StreamSink<SigningState>,
     ) -> Result<()> {
         self.0.start_signing(
+            key_id,
             devices.into_iter().collect(),
             SignTask::Transaction(unsigned_tx.task.deref().clone()),
             stream,

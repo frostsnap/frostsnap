@@ -91,9 +91,11 @@ fn nonce_reuse() {
         .key_id();
     let task1 = SignTask::Plain {
         message: b"utxo.club!".to_vec(),
-        key_id,
     };
-    let sign_init = run.coordinator.start_sign(task1, device_set).unwrap();
+    let sign_init = run
+        .coordinator
+        .start_sign(key_id, task1, device_set)
+        .unwrap();
     run.extend(sign_init);
     run.run_until_finished(&mut TestEnv);
 
@@ -111,8 +113,8 @@ fn nonce_reuse() {
     // Receive a new sign request with the same nonces as the previous session
     let new_sign_request = CoordinatorToDeviceMessage::RequestSign(SignRequest {
         nonces: nonces.clone(),
+        key_id,
         sign_task: SignTask::Plain {
-            key_id,
             message: b"we lost track of first FROST txn on bitcoin mainnet @ bushbash 2022"
                 .to_vec(),
         },
