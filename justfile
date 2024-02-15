@@ -1,5 +1,5 @@
 default_board := "frostypede"
-non_device_packages := "-p native -p frostsnap_core -p coordinator-cli -p frostsnap_coordinator"
+non_device_packages := "-p native -p frostsnap_core -p frostsnap_coordinator"
 
 flash BOARD=default_board +ARGS="":
     cd device && cargo run --release --features {{BOARD}} --bin {{BOARD}}
@@ -28,9 +28,6 @@ lint-non-device +ARGS="":
 
 lint-device +ARGS="":
     cd device && cargo clippy {{ARGS}} --all-features --bins -- -Dwarnings
-
-keygen THRESHOLD TOTAL:
-    cargo run -p coordinator-cli -- -v keygen -t {{THRESHOLD}} -n {{TOTAL}}
 
 fix:
     cargo fmt --all
