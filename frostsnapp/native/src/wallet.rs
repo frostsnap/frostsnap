@@ -179,7 +179,7 @@ impl _Wallet {
         Descriptor::Tr(tr)
     }
 
-    fn ensure_key_exists(&mut self, key_id: KeyId) -> Result<()> {
+    fn lazily_initialize_key(&mut self, key_id: KeyId) -> Result<()> {
         if !self.graph.index.keychains().contains_key(&key_id) {
             let frost_keys = self
                 .db
@@ -213,8 +213,9 @@ impl _Wallet {
     }
 
     pub fn next_address(&mut self, key_id: KeyId) -> Result<api::Address> {
-        // reveal_next_spk will panic if the key doesn't exist
-        self.ensure_key_exists(key_id)?;
+        // We don't know in the wallet when a new key has been created so we need to lazily
+        // initialze the wallet with it when we first get asked for an address.
+        self.lazily_initialize_key(key_id)?;
         let ((index, spk), changeset) = self.graph.index.reveal_next_spk(&key_id);
         let spk = spk.to_owned();
         self.db
