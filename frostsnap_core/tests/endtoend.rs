@@ -1,6 +1,6 @@
 use frostsnap_core::message::{
-    CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, CoordinatorToUserSigningMessage,
-    DeviceToUserMessage, EncodedSignature, SignTask,
+    CoordinatorSend, CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage,
+    CoordinatorToUserSigningMessage, DeviceToUserMessage, EncodedSignature, SignTask,
 };
 use frostsnap_core::{
     CoordinatorState, DeviceId, FrostCoordinator, FrostSigner, KeyId, SessionHash,
@@ -119,7 +119,14 @@ fn test_end_to_end() {
     let mut run = Run::new(coordinator, devices);
 
     let keygen_init = vec![run.coordinator.do_keygen(&device_set, threshold).unwrap()];
-    run.extend(keygen_init);
+    let sends_with_destination: Vec<_> = keygen_init
+        .into_iter()
+        .map(|message| CoordinatorSend::ToDevice {
+            message,
+            destinations: device_set.clone(),
+        })
+        .collect();
+    run.extend(sends_with_destination);
 
     let mut env = TestEnv::default();
     run.run_until_finished(&mut env);
