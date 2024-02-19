@@ -2,7 +2,6 @@ use crate::DeviceId;
 use crate::{gen_pop_message, message::*, ActionError, Error, MessageResult, NONCE_BATCH_SIZE};
 use alloc::{boxed::Box, collections::BTreeMap, string::ToString, vec::Vec};
 use rand_chacha::ChaCha20Rng;
-use rand_core::RngCore;
 use schnorr_fun::{
     frost::{self, generate_scalar_poly, FrostKey},
     fun::{derive_nonce_rng, marker::*, KeyPair, Scalar, Tag},
@@ -71,22 +70,19 @@ impl FrostSigner {
     }
 
     pub fn generate_nonces(
-        &self,
-        keygen_id: [u8; 32],
+        &mut self,
+        aux_rand: [u8; 32],
         start: usize,
         n: usize,
-    ) -> impl Iterator<Item = NonceKeyPair> {
+    ) -> impl Iterator<Item = NonceKeyPair> + '_ {
         let mut nonce_rng = derive_nonce_rng! {
-            // use Deterministic nonce gen to create our polynomial so we reproduce it later
             nonce_gen => nonce::Deterministic::<Sha256>::default().tag(b"frostsnap/nonces"),
             secret => self.keypair.secret_key(),
-            // session id must be unique for each key generation session
-            public => [keygen_id],
+            public => [aux_rand],
             seedable_rng => ChaCha20Rng
         };
 
         nonce_rng.set_word_pos((start * 16) as u128);
-
         (0..n).map(move |_| NonceKeyPair::random(&mut nonce_rng))
     }
 
@@ -97,8 +93,9 @@ impl FrostSigner {
     pub fn recv_coordinator_message(
         &mut self,
         message: CoordinatorToDeviceMessage,
+        rng: &mut impl rand_core::RngCore,
     ) -> MessageResult<Vec<DeviceSend>> {
-        match (&self.state, message.clone()) {
+        match (self.state.clone(), message.clone()) {
             (
                 SignerState::Registered,
                 CoordinatorToDeviceMessage::DoKeyGen {
@@ -110,29 +107,15 @@ impl FrostSigner {
                     return Ok(vec![]);
                 }
                 let frost = frost::new_with_deterministic_nonces::<Sha256>();
-                // XXX: Right now now duplicate pubkeys are possible because we only have it in the
-                // device id and it's given to us as a BTreeSet.
-                let device_ids = device_to_share_index
-                    .keys()
-                    .map(|device| device.as_bytes())
-                    .collect::<Vec<_>>();
-                let mut poly_rng = derive_nonce_rng! {
-                    // use Deterministic nonce gen to create our polynomial so we reproduce it later
-                    nonce_gen => nonce::Deterministic::<Sha256>::default().tag(b"frostsnap/keygen"),
-                    secret => self.keypair.secret_key(),
-                    // session id must be unique for each key generation session
-                    public => [(threshold as u32).to_be_bytes(), &device_ids[..]],
-                    seedable_rng => ChaCha20Rng
-                };
-                let scalar_poly = generate_scalar_poly(threshold, &mut poly_rng);
                 let mut aux_rand = [0u8; 32];
-                poly_rng.fill_bytes(&mut aux_rand);
+                rng.fill_bytes(&mut aux_rand);
+                let scalar_poly = generate_scalar_poly(threshold, rng);
 
                 let encrypted_shares = KeyGenProvideShares::generate(
                     &frost,
                     &scalar_poly,
                     &device_to_share_index,
-                    &mut poly_rng,
+                    rng,
                 );
 
                 self.state = SignerState::KeyGen {
@@ -194,7 +177,7 @@ impl FrostSigner {
                 if point_polys
                     .get(my_index)
                     .expect("we have a point poly in this finish keygen")
-                    != &frost::to_point_poly(scalar_poly)
+                    != &frost::to_point_poly(&scalar_poly)
                 {
                     return Err(Error::signer_invalid_message(
                         &message,
@@ -276,7 +259,7 @@ impl FrostSigner {
                         frost_key,
                         secret_share,
                         share_index: *my_index,
-                        aux_rand: *aux_rand,
+                        aux_rand,
                     },
                     awaiting_ack: true,
                 };
@@ -364,7 +347,7 @@ impl FrostSigner {
     }
 
     pub fn sign_ack(&mut self) -> Result<Vec<DeviceSend>, ActionError> {
-        match &self.state {
+        match self.state.clone() {
             SignerState::AwaitingSignAck {
                 key,
                 sign_task,

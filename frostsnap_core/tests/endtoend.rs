@@ -106,15 +106,17 @@ fn test_end_to_end() {
     let threshold = 2;
     let schnorr = Schnorr::<sha2::Sha256>::verify_only();
     let coordinator = FrostCoordinator::new();
-    let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
 
     let devices = (0..n_parties)
-        .map(|_| FrostSigner::new_random(&mut test_rng))
+        .map(|i| {
+            let mut test_rng = ChaCha20Rng::from_seed([42u8 + i; 32]);
+            FrostSigner::new_random(&mut test_rng)
+        })
         .map(|device| (device.device_id(), device))
         .collect::<BTreeMap<_, _>>();
 
-    let device_set = devices.clone().into_keys().collect::<BTreeSet<_>>();
-    let device_list = devices.clone().into_keys().collect::<Vec<_>>();
+    let device_set = devices.keys().cloned().collect::<BTreeSet<_>>();
+    let device_list = devices.keys().cloned().collect::<Vec<_>>();
 
     let mut run = Run::new(coordinator, devices);
 
@@ -129,7 +131,8 @@ fn test_end_to_end() {
     run.extend(sends_with_destination);
 
     let mut env = TestEnv::default();
-    run.run_until_finished(&mut env);
+    let mut test_rng = ChaCha20Rng::from_seed([123u8; 32]);
+    run.run_until_finished(&mut env, &mut test_rng);
     assert!(matches!(
         run.coordinator.state(),
         CoordinatorState::FrostKey { .. }
@@ -169,7 +172,7 @@ fn test_end_to_end() {
             .start_sign(task.clone(), set.clone())
             .unwrap();
         run.extend(sign_init);
-        run.run_until_finished(&mut env);
+        run.run_until_finished(&mut env, &mut test_rng);
         assert!(matches!(
             run.coordinator.state(),
             CoordinatorState::FrostKey { .. }

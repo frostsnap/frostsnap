@@ -1,12 +1,10 @@
-use alloc::{collections::VecDeque, string::ToString, vec::Vec};
-use hal::{gpio, prelude::*, uart, UsbSerialJtag};
-
 use crate::{
     io::{self, UpstreamDetector},
     state, storage,
     ui::{self, UiEvent, UserInteraction},
     ConnectionState,
 };
+use alloc::{collections::VecDeque, string::ToString, vec::Vec};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{CoordinatorSendBody, DeviceSendBody, DeviceSendMessage, ReceiveSerial};
 use frostsnap_comms::{CoordinatorSendMessage, Downstream, MAGIC_BYTES_PERIOD};
@@ -17,25 +15,28 @@ use frostsnap_core::schnorr_fun::fun::marker::Normal;
 use frostsnap_core::schnorr_fun::fun::KeyPair;
 use frostsnap_core::schnorr_fun::fun::Scalar;
 use frostsnap_core::DeviceId;
+use hal::{gpio, uart, UsbSerialJtag};
+use rand_chacha::rand_core::RngCore;
 
-pub struct Run<'a, UpstreamUart, DownstreamUart, DownstreamDetect, Ui, T> {
+pub struct Run<'a, UpstreamUart, DownstreamUart, DownstreamDetect, Ui, T, Rng> {
     pub upstream_jtag: UsbSerialJtag<'a>,
     pub upstream_uart: uart::Uart<'a, UpstreamUart>,
     pub downstream_uart: uart::Uart<'a, DownstreamUart>,
-    pub rng: hal::Rng,
+    pub rng: Rng,
     pub ui: Ui,
     pub timer: hal::timer::Timer<T>,
     pub downstream_detect: DownstreamDetect,
 }
 
-impl<'a, UpstreamUart, DownstreamUart, DownstreamDetect, Ui, T>
-    Run<'a, UpstreamUart, DownstreamUart, DownstreamDetect, Ui, T>
+impl<'a, UpstreamUart, DownstreamUart, DownstreamDetect, Ui, T, Rng>
+    Run<'a, UpstreamUart, DownstreamUart, DownstreamDetect, Ui, T, Rng>
 where
     UpstreamUart: uart::Instance,
     DownstreamUart: uart::Instance,
     DownstreamDetect: gpio::InputPin,
     Ui: UserInteraction,
     T: hal::timer::Instance,
+    Rng: RngCore,
 {
     pub fn run(self) -> ! {
         let Run {
@@ -55,9 +56,7 @@ where
         let mut state = match flash.load() {
             Ok(state) => state,
             Err(_e) => {
-                let mut rand_bytes = [0u8; 32];
-                rng.read(&mut rand_bytes).unwrap();
-                let secret = Scalar::from_bytes(rand_bytes).unwrap().non_zero().unwrap();
+                let secret = Scalar::random(&mut rng);
                 let keypair: KeyPair = KeyPair::<Normal>::new(secret.clone());
                 let frost_signer = frostsnap_core::FrostSigner::new(keypair);
 
@@ -294,6 +293,7 @@ where
                                                             .signer
                                                             .recv_coordinator_message(
                                                                 core_message.clone(),
+                                                                &mut rng,
                                                             )
                                                             .expect(
                                                                 "failed to process coordinator message",

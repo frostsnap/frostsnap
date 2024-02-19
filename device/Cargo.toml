@@ -47,6 +47,7 @@ esp-hal-smartled = { version = "0.6.0", features = [
     "esp32c3",
 ], optional = true }
 smart-leds = { version = "0.3.0", optional = true }
+rand_chacha = { workspace = true }
 
 [[bin]]
 name = "frostypede"
