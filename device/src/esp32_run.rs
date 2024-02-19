@@ -15,45 +15,39 @@ use frostsnap_core::schnorr_fun::fun::marker::Normal;
 use frostsnap_core::schnorr_fun::fun::KeyPair;
 use frostsnap_core::schnorr_fun::fun::Scalar;
 use frostsnap_core::DeviceId;
-use hal::{gpio, prelude::*, uart, UsbSerialJtag};
-use rand_chacha::{
-    rand_core::{RngCore, SeedableRng},
-    ChaCha20Rng,
-};
+use hal::{gpio, uart, UsbSerialJtag};
+use rand_chacha::rand_core::RngCore;
 
-pub struct Run<'a, UpstreamUart, DownstreamUart, DownstreamDetect, Ui, T> {
+pub struct Run<'a, UpstreamUart, DownstreamUart, DownstreamDetect, Ui, T, Rng> {
     pub upstream_jtag: UsbSerialJtag<'a>,
     pub upstream_uart: uart::Uart<'a, UpstreamUart>,
     pub downstream_uart: uart::Uart<'a, DownstreamUart>,
-    pub seed_rng: hal::Rng,
+    pub rng: Rng,
     pub ui: Ui,
     pub timer: hal::timer::Timer<T>,
     pub downstream_detect: DownstreamDetect,
 }
 
-impl<'a, UpstreamUart, DownstreamUart, DownstreamDetect, Ui, T>
-    Run<'a, UpstreamUart, DownstreamUart, DownstreamDetect, Ui, T>
+impl<'a, UpstreamUart, DownstreamUart, DownstreamDetect, Ui, T, Rng>
+    Run<'a, UpstreamUart, DownstreamUart, DownstreamDetect, Ui, T, Rng>
 where
     UpstreamUart: uart::Instance,
     DownstreamUart: uart::Instance,
     DownstreamDetect: gpio::InputPin,
     Ui: UserInteraction,
     T: hal::timer::Instance,
+    Rng: RngCore,
 {
     pub fn run(self) -> ! {
         let Run {
             upstream_jtag,
             upstream_uart,
             downstream_uart,
-            mut seed_rng,
+            mut rng,
             mut ui,
             timer,
             downstream_detect,
         } = self;
-
-        let mut rand_bytes = [0u8; 32];
-        seed_rng.read(&mut rand_bytes).unwrap();
-        let mut rng = ChaCha20Rng::from_seed(rand_bytes);
 
         let flash = FlashStorage::new();
         let mut flash = storage::DeviceStorage::new(flash, storage::NVS_PARTITION_START);
@@ -62,9 +56,7 @@ where
         let mut state = match flash.load() {
             Ok(state) => state,
             Err(_e) => {
-                let mut rand_bytes = [0u8; 32];
-                rng.try_fill_bytes(&mut rand_bytes).unwrap();
-                let secret = Scalar::from_bytes(rand_bytes).unwrap().non_zero().unwrap();
+                let secret = Scalar::random(&mut rng);
                 let keypair: KeyPair = KeyPair::<Normal>::new(secret.clone());
                 let frost_signer = frostsnap_core::FrostSigner::new(keypair);
 

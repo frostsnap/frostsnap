@@ -34,6 +34,7 @@ use hal::{
     uart::{self, Uart},
     Delay, Rtc, UsbSerialJtag, IO,
 };
+use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 use smart_leds::{brightness, colors, SmartLedsWrite, RGB};
 
 #[global_allocator]
@@ -144,9 +145,15 @@ fn main() -> ! {
         Uart::new_with_config(peripherals.UART0, serial_conf, Some(txrx0), &clocks)
     };
 
-    let rng = hal::Rng::new(peripherals.RNG);
+    let mut hal_rng = hal::Rng::new(peripherals.RNG);
     delay.delay_ms(600u32); // To wait for ESP32c3 timers to stop being bonkers
     bl.set_high().unwrap();
+
+    let rng = {
+        let mut chacha_seed = [0u8; 32];
+        hal_rng.read(&mut chacha_seed).unwrap();
+        ChaCha20Rng::from_seed(chacha_seed)
+    };
 
     let ui = FrostyUi {
         select_button,
@@ -166,7 +173,7 @@ fn main() -> ! {
         upstream_jtag,
         upstream_uart,
         downstream_uart,
-        seed_rng: rng,
+        rng,
         ui,
         timer: timer0,
         downstream_detect,
