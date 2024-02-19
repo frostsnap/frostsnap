@@ -11,6 +11,7 @@ use crate::NONCE_BATCH_SIZE;
 use alloc::boxed::Box;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
+use schnorr_fun::fun::marker::NonZero;
 use schnorr_fun::fun::marker::Public;
 use schnorr_fun::fun::marker::Zero;
 use schnorr_fun::fun::Point;
@@ -31,7 +32,10 @@ pub enum DeviceSend {
 
 #[derive(Clone, Debug)]
 pub enum CoordinatorSend {
-    ToDevice(CoordinatorToDeviceMessage),
+    ToDevice {
+        message: CoordinatorToDeviceMessage,
+        destinations: BTreeSet<DeviceId>,
+    },
     ToUser(CoordinatorToUserMessage),
     ToStorage(CoordinatorToStorageMessage),
 }
@@ -39,7 +43,7 @@ pub enum CoordinatorSend {
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub enum CoordinatorToDeviceMessage {
     DoKeyGen {
-        devices: BTreeSet<DeviceId>,
+        device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
         threshold: usize,
     },
     FinishKeyGen {
@@ -52,17 +56,17 @@ pub enum CoordinatorToDeviceMessage {
 pub struct SignRequest {
     // TODO: explain these `usize` and create a nicely documented struct which explains the
     // mechanism
-    pub nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
+    pub nonces: BTreeMap<Scalar<Public, NonZero>, (Vec<Nonce>, usize, usize)>,
     pub sign_task: SignTask,
     pub key_id: KeyId,
 }
 
 impl SignRequest {
-    pub fn devices(&self) -> impl Iterator<Item = DeviceId> + '_ {
+    pub fn signer_indicies(&self) -> impl Iterator<Item = Scalar<Public, NonZero>> + '_ {
         self.nonces.keys().cloned()
     }
 
-    pub fn contains_device(&self, id: DeviceId) -> bool {
+    pub fn contains_signer_index(&self, id: Scalar<Public, NonZero>) -> bool {
         self.nonces.contains_key(&id)
     }
 }
@@ -70,20 +74,6 @@ impl SignRequest {
 impl Gist for CoordinatorToDeviceMessage {
     fn gist(&self) -> String {
         self.kind().into()
-    }
-}
-
-impl CoordinatorToDeviceMessage {
-    pub fn default_destinations(&self) -> BTreeSet<DeviceId> {
-        match self {
-            CoordinatorToDeviceMessage::DoKeyGen { devices, .. } => devices.clone(),
-            CoordinatorToDeviceMessage::FinishKeyGen { shares_provided } => {
-                shares_provided.keys().cloned().collect()
-            }
-            CoordinatorToDeviceMessage::RequestSign(SignRequest { nonces, .. }) => {
-                nonces.keys().cloned().collect()
-            }
-        }
     }
 }
 

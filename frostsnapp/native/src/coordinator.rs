@@ -203,10 +203,13 @@ impl FfiCoordinator {
 
                 while let Some(message) = coordinator_outbox.pop_front() {
                     match message {
-                        CoordinatorSend::ToDevice(msg) => {
+                        CoordinatorSend::ToDevice {
+                            message,
+                            destinations,
+                        } => {
                             let send_message = CoordinatorSendMessage {
-                                target_destinations: Destination::from(msg.default_destinations()),
-                                message_body: CoordinatorSendBody::Core(msg),
+                                target_destinations: Destination::from(destinations),
+                                message_body: CoordinatorSendBody::Core(message),
                             };
 
                             usb_sender.send(send_message);
@@ -349,7 +352,10 @@ impl FfiCoordinator {
             *coordinator = FrostCoordinator::default();
             coordinator.do_keygen(&devices, threshold).unwrap()
         };
-        let keygen_message = CoordinatorSend::ToDevice(keygen_message);
+        let keygen_message = CoordinatorSend::ToDevice {
+            destinations: devices,
+            message: keygen_message,
+        };
         self.pending_for_outbox
             .lock()
             .unwrap()
@@ -378,7 +384,7 @@ impl FfiCoordinator {
         // we need to lock this first to avoid race conditions where somehow get_signing_state is called before this completes.
         let mut signing_session = self.signing_session.lock().unwrap();
         let mut coordinator = self.coordinator.lock().unwrap();
-        let mut messages = coordinator.start_sign(key_id, task, devices)?;
+        let mut messages = coordinator.start_sign(key_id, task, devices.clone())?;
         let dispatcher = SigningDispatcher::from_filter_out_start_sign(&mut messages);
         let mut new_session = SigningSession::new(stream, dispatcher);
 
@@ -414,8 +420,10 @@ impl FfiCoordinator {
         let mut coordinator = self.coordinator.lock().unwrap();
         coordinator.restore_sign_session(signing_session_state.clone());
 
-        let mut dispatcher =
-            SigningDispatcher::new_from_request(signing_session_state.request.clone());
+        let mut dispatcher = SigningDispatcher::new_from_request(
+            signing_session_state.request.clone(),
+            signing_session_state.targets.clone(),
+        );
 
         for already_provided in signing_session_state.received_from() {
             dispatcher.set_signature_received(already_provided);

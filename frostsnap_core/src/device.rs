@@ -1,15 +1,7 @@
-use crate::DeviceId;
-use crate::{
-    gen_pop_message, message::*, ActionError, Error, KeyId, MessageResult, NONCE_BATCH_SIZE,
-};
-use alloc::{
-    boxed::Box,
-    collections::{BTreeMap, BTreeSet},
-    string::ToString,
-    vec::Vec,
-};
+use crate::{gen_pop_message, message::*, ActionError, Error, MessageResult, NONCE_BATCH_SIZE};
+use crate::{DeviceId, KeyId};
+use alloc::{boxed::Box, collections::BTreeMap, string::ToString, vec::Vec};
 use rand_chacha::ChaCha20Rng;
-use rand_core::RngCore;
 use schnorr_fun::{
     frost::{self, generate_scalar_poly, FrostKey},
     fun::{derive_nonce_rng, marker::*, KeyPair, Scalar, Tag},
@@ -78,22 +70,19 @@ impl FrostSigner {
     }
 
     pub fn generate_nonces(
-        &self,
-        keygen_id: [u8; 32],
+        &mut self,
+        aux_rand: [u8; 32],
         start: usize,
         n: usize,
-    ) -> impl Iterator<Item = NonceKeyPair> {
+    ) -> impl Iterator<Item = NonceKeyPair> + '_ {
         let mut nonce_rng = derive_nonce_rng! {
-            // use Deterministic nonce gen to create our polynomial so we reproduce it later
             nonce_gen => nonce::Deterministic::<Sha256>::default().tag(b"frostsnap/nonces"),
             secret => self.keypair.secret_key(),
-            // session id must be unique for each key generation session
-            public => [keygen_id],
+            public => [aux_rand],
             seedable_rng => ChaCha20Rng
         };
 
         nonce_rng.set_word_pos((start * 16) as u128);
-
         (0..n).map(move |_| NonceKeyPair::random(&mut nonce_rng))
     }
 
@@ -104,40 +93,34 @@ impl FrostSigner {
     pub fn recv_coordinator_message(
         &mut self,
         message: CoordinatorToDeviceMessage,
+        rng: &mut impl rand_core::RngCore,
     ) -> MessageResult<Vec<DeviceSend>> {
-        match (&self.state, message.clone()) {
+        match (self.state.clone(), message.clone()) {
             (
                 SignerState::Registered,
-                CoordinatorToDeviceMessage::DoKeyGen { devices, threshold },
+                CoordinatorToDeviceMessage::DoKeyGen {
+                    device_to_share_index,
+                    threshold,
+                },
             ) => {
-                if !devices.contains(&self.device_id()) {
+                if !device_to_share_index.contains_key(&self.device_id()) {
                     return Ok(vec![]);
                 }
                 let frost = frost::new_with_deterministic_nonces::<Sha256>();
-                // XXX: Right now now duplicate pubkeys are possible because we only have it in the
-                // device id and it's given to us as a BTreeSet.
-                let device_ids = devices
-                    .iter()
-                    .map(|device| device.as_bytes())
-                    .collect::<Vec<_>>();
-                let mut poly_rng = derive_nonce_rng! {
-                    // use Deterministic nonce gen to create our polynomial so we reproduce it later
-                    nonce_gen => nonce::Deterministic::<Sha256>::default().tag(b"frostsnap/keygen"),
-                    secret => self.keypair.secret_key(),
-                    // session id must be unique for each key generation session
-                    public => [(threshold as u32).to_be_bytes(), &device_ids[..]],
-                    seedable_rng => ChaCha20Rng
-                };
-                let scalar_poly = generate_scalar_poly(threshold, &mut poly_rng);
                 let mut aux_rand = [0u8; 32];
-                poly_rng.fill_bytes(&mut aux_rand);
+                rng.fill_bytes(&mut aux_rand);
+                let scalar_poly = generate_scalar_poly(threshold, rng);
 
-                let encrypted_shares =
-                    KeyGenProvideShares::generate(&frost, &scalar_poly, &devices, &mut poly_rng);
+                let encrypted_shares = KeyGenProvideShares::generate(
+                    &frost,
+                    &scalar_poly,
+                    &device_to_share_index,
+                    rng,
+                );
 
                 self.state = SignerState::KeyGen {
                     scalar_poly,
-                    devices,
+                    device_to_share_index,
                     threshold,
                     aux_rand,
                 };
@@ -158,33 +141,43 @@ impl FrostSigner {
             }
             (
                 SignerState::KeyGen {
-                    devices,
+                    device_to_share_index,
                     aux_rand,
                     scalar_poly,
                     ..
                 },
                 CoordinatorToDeviceMessage::FinishKeyGen { shares_provided },
             ) => {
-                if let Some(device) = devices
+                if let Some((device_id, _)) = device_to_share_index
                     .iter()
-                    .find(|device_id| !shares_provided.contains_key(device_id))
+                    .find(|(device_id, _)| !shares_provided.contains_key(device_id))
                 {
                     return Err(Error::signer_invalid_message(
                         &message,
-                        format!("Missing shares from {}", device),
+                        format!("Missing shares from {}", device_id),
                     ));
                 }
                 let frost = frost::new_with_deterministic_nonces::<Sha256>();
 
                 let point_polys: BTreeMap<_, _> = shares_provided
                     .iter()
-                    .map(|(device_id, share)| (device_id.to_poly_index(), share.my_poly.clone()))
+                    .map(|(device_id, share)| {
+                        (
+                            *device_to_share_index
+                                .get(device_id)
+                                .expect("we checked we have shares"),
+                            share.my_poly.clone(),
+                        )
+                    })
                     .collect();
                 // Confirm our point poly matches what we expect
+                let my_index = device_to_share_index
+                    .get(&self.device_id())
+                    .expect("we must exist");
                 if point_polys
-                    .get(&self.device_id().to_poly_index())
+                    .get(my_index)
                     .expect("we have a point poly in this finish keygen")
-                    != &frost::to_point_poly(scalar_poly)
+                    != &frost::to_point_poly(&scalar_poly)
                 {
                     return Err(Error::signer_invalid_message(
                         &message,
@@ -224,14 +217,15 @@ impl FrostSigner {
                     })
                     .collect::<Result<BTreeMap<_, _>, _>>()?;
 
-                let my_index = self.device_id().to_poly_index();
                 let my_shares = transpose_shares
                     .get(&self.device_id())
                     .expect("this device is part of the keygen")
                     .iter()
                     .map(|(provider_id, (encrypted_secret_share, pop))| {
                         (
-                            provider_id.to_poly_index(),
+                            *device_to_share_index
+                                .get(provider_id)
+                                .expect("just checked shares exist"),
                             (
                                 encrypted_secret_share.decrypt(self.keypair().secret_key()),
                                 pop.clone(),
@@ -240,7 +234,7 @@ impl FrostSigner {
                     })
                     .collect::<BTreeMap<_, _>>();
 
-                let pop_message = gen_pop_message(devices.iter().cloned());
+                let pop_message = gen_pop_message(device_to_share_index.keys().cloned());
                 let keygen = frost
                     .new_keygen(point_polys)
                     .map_err(|e| Error::signer_message_error(&message, e))?;
@@ -248,7 +242,7 @@ impl FrostSigner {
                 let (secret_share, frost_key) = frost
                     .finish_keygen(
                         keygen.clone(),
-                        my_index,
+                        *my_index,
                         my_shares,
                         Message::raw(&pop_message),
                     )
@@ -264,7 +258,8 @@ impl FrostSigner {
                     key: FrostsnapKey {
                         frost_key,
                         secret_share,
-                        aux_rand: *aux_rand,
+                        share_index: *my_index,
+                        aux_rand,
                     },
                     awaiting_ack: true,
                 };
@@ -284,7 +279,7 @@ impl FrostSigner {
                     key_id,
                 }),
             ) => {
-                let (my_nonces, my_nonce_index, _) = match nonces.get(&self.device_id()) {
+                let (my_nonces, my_nonce_index, _) = match nonces.get(&key.share_index) {
                     Some(nonce) => nonce,
                     None => return Ok(Vec::new()),
                 };
@@ -330,7 +325,9 @@ impl FrostSigner {
 
     pub fn keygen_ack(&mut self) -> Result<Vec<DeviceSend>, ActionError> {
         match &mut self.state {
-            SignerState::FrostKey { key, awaiting_ack } if *awaiting_ack => {
+            SignerState::FrostKey {
+                key, awaiting_ack, ..
+            } if *awaiting_ack => {
                 let session_hash = key
                     .frost_key
                     .clone()
@@ -352,7 +349,7 @@ impl FrostSigner {
     }
 
     pub fn sign_ack(&mut self) -> Result<Vec<DeviceSend>, ActionError> {
-        match &self.state {
+        match self.state.clone() {
             SignerState::AwaitingSignAck {
                 key,
                 sign_task,
@@ -361,7 +358,7 @@ impl FrostSigner {
                 let sign_items = sign_task.sign_items();
                 let frost = frost::new_without_nonce_generation::<Sha256>();
                 let (_, my_nonce_index, my_replenish_index) =
-                    nonces.get(&self.device_id()).expect("already checked");
+                    nonces.get(&key.share_index).expect("already checked");
 
                 // ⚠ Update nonce counter. Overflow would allow nonce reuse.
                 self.nonce_counter = my_nonce_index.saturating_add(sign_items.len());
@@ -376,7 +373,7 @@ impl FrostSigner {
                 {
                     let nonces_at_index = nonces
                         .iter()
-                        .map(|(id, (nonces, _, _))| (id.to_poly_index(), nonces[nonce_index]))
+                        .map(|(index, (nonces, _, _))| (*index, nonces[nonce_index]))
                         .collect();
 
                     let mut xpub = crate::xpub::Xpub::new(key.frost_key.clone());
@@ -406,7 +403,7 @@ impl FrostSigner {
                     let sig_share = frost.sign(
                         &xonly_frost_key,
                         &sign_session,
-                        self.device_id().to_poly_index(),
+                        key.share_index,
                         &key.secret_share,
                         secret_nonce,
                     );
@@ -414,7 +411,7 @@ impl FrostSigner {
                     assert!(frost.verify_signature_share(
                         &xonly_frost_key,
                         &sign_session,
-                        self.device_id().to_poly_index(),
+                        key.share_index,
                         sig_share,
                     ));
 
@@ -461,14 +458,14 @@ pub enum SignerState {
     Registered,
     KeyGen {
         scalar_poly: Vec<Scalar>,
-        devices: BTreeSet<DeviceId>,
+        device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
         threshold: usize,
         aux_rand: [u8; 32],
     },
     AwaitingSignAck {
         key: FrostsnapKey,
         sign_task: SignTask,
-        nonces: BTreeMap<DeviceId, (Vec<Nonce>, usize, usize)>,
+        nonces: BTreeMap<Scalar<Public, NonZero>, (Vec<Nonce>, usize, usize)>,
     },
     FrostKey {
         key: FrostsnapKey,
@@ -493,6 +490,8 @@ pub struct FrostsnapKey {
     pub frost_key: FrostKey<Normal>,
     /// Our secret share of it
     pub secret_share: Scalar,
+    /// Our secret share index
+    pub share_index: Scalar<Public, NonZero>,
     /// auxilliary randomness for generating nonces
     pub aux_rand: [u8; 32],
 }

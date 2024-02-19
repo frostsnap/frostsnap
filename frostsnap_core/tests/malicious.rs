@@ -1,12 +1,14 @@
 //! Tests for a malicious actions. A malicious coordinator, a malicious device or both.
 use frostsnap_core::message::{
-    CoordinatorToDeviceMessage, DeviceToUserMessage, KeyGenProvideShares, SignRequest, SignTask,
+    CoordinatorSend, CoordinatorToDeviceMessage, DeviceToUserMessage, KeyGenProvideShares,
+    SignRequest, SignTask,
 };
 use frostsnap_core::{DeviceId, FrostCoordinator, FrostKeyExt, FrostSigner};
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::frost;
-use std::collections::BTreeSet;
+use schnorr_fun::fun::Scalar;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::common::{Env, Run, Send};
 mod common;
@@ -19,21 +21,36 @@ fn keygen_maliciously_replace_public_poly() {
     let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
     let mut device = FrostSigner::new_random(&mut test_rng);
     let devices = BTreeSet::from_iter([device.device_id()]);
+    let device_to_share_index: BTreeMap<_, _> = devices
+        .into_iter()
+        .enumerate()
+        .map(|(index, id)| (id, Scalar::from((index + 1) as u32).non_zero().unwrap()))
+        .collect();
     let _ = device
-        .recv_coordinator_message(CoordinatorToDeviceMessage::DoKeyGen {
-            devices: devices.clone(),
-            threshold: 1,
-        })
+        .recv_coordinator_message(
+            CoordinatorToDeviceMessage::DoKeyGen {
+                device_to_share_index: device_to_share_index.clone(),
+                threshold: 1,
+            },
+            &mut test_rng,
+        )
         .unwrap();
 
     let frost = frost::new_with_deterministic_nonces::<sha2::Sha256>();
     let malicious_poly = frost::generate_scalar_poly(1, &mut rand::thread_rng());
-    let provide_shares =
-        KeyGenProvideShares::generate(&frost, &malicious_poly, &devices, &mut rand::thread_rng());
+    let provide_shares = KeyGenProvideShares::generate(
+        &frost,
+        &malicious_poly,
+        &device_to_share_index,
+        &mut rand::thread_rng(),
+    );
 
-    let result = device.recv_coordinator_message(CoordinatorToDeviceMessage::FinishKeyGen {
-        shares_provided: FromIterator::from_iter([(device.device_id(), provide_shares)]),
-    });
+    let result = device.recv_coordinator_message(
+        CoordinatorToDeviceMessage::FinishKeyGen {
+            shares_provided: FromIterator::from_iter([(device.device_id(), provide_shares)]),
+        },
+        &mut test_rng,
+    );
     assert!(matches!(
         result,
         Err(frostsnap_core::Error::InvalidMessage { .. })
@@ -50,12 +67,19 @@ fn nonce_reuse() {
 
     let device = FrostSigner::new_random(&mut test_rng);
     let device_id = device.device_id();
-    let devices = FromIterator::from_iter([(device.device_id(), device.clone())]);
-    let device_set = BTreeSet::from_iter([device.device_id()]);
+    let devices = FromIterator::from_iter([(device_id, device)]);
+    let device_set = BTreeSet::from_iter([device_id]);
     let mut run = Run::new(coordinator, devices);
 
     let keygen_init = vec![run.coordinator.do_keygen(&device_set, threshold).unwrap()];
-    run.extend(keygen_init);
+    let sends_with_destination: Vec<_> = keygen_init
+        .into_iter()
+        .map(|message| CoordinatorSend::ToDevice {
+            message,
+            destinations: device_set.clone(),
+        })
+        .collect();
+    run.extend(sends_with_destination);
 
     // just does enough to make progress
     struct TestEnv;
@@ -82,7 +106,7 @@ fn nonce_reuse() {
         }
     }
 
-    run.run_until_finished(&mut TestEnv);
+    run.run_until_finished(&mut TestEnv, &mut test_rng);
     let key_id = run
         .coordinator
         .frost_key_state()
@@ -97,18 +121,19 @@ fn nonce_reuse() {
         .start_sign(key_id, task1, device_set)
         .unwrap();
     run.extend(sign_init);
-    run.run_until_finished(&mut TestEnv);
+    run.run_until_finished(&mut TestEnv, &mut test_rng);
 
-    let nonces =
-        run.transcript
-            .iter()
-            .find_map(|m| match m {
-                Send::CoordinatorToDevice(CoordinatorToDeviceMessage::RequestSign(
-                    SignRequest { nonces, .. },
-                )) => Some(nonces),
-                _ => None,
-            })
-            .unwrap();
+    let nonces = run
+        .transcript
+        .iter()
+        .find_map(|m| match m {
+            Send::CoordinatorToDevice {
+                message: CoordinatorToDeviceMessage::RequestSign(SignRequest { nonces, .. }),
+                ..
+            } => Some(nonces),
+            _ => None,
+        })
+        .unwrap();
 
     // Receive a new sign request with the same nonces as the previous session
     let new_sign_request = CoordinatorToDeviceMessage::RequestSign(SignRequest {
@@ -121,7 +146,7 @@ fn nonce_reuse() {
     });
     let sign_request_result = run
         .device(device_id)
-        .recv_coordinator_message(new_sign_request);
+        .recv_coordinator_message(new_sign_request, &mut test_rng);
 
     assert!(matches!(
         sign_request_result,
