@@ -1,14 +1,14 @@
-use std::{
-    sync::{atomic::AtomicUsize, Arc},
-    time::UNIX_EPOCH,
-};
-
-use anyhow::Result;
+use anyhow::{Context, Result};
 use bdk_chain::{bitcoin, local_chain, tx_graph, ConfirmationTimeHeightAnchor};
 use bdk_electrum::{
     electrum_client::{self, Client, ElectrumApi},
     ElectrumExt,
 };
+use std::{
+    sync::{atomic::AtomicUsize, Arc},
+    time::UNIX_EPOCH,
+};
+use tracing::{event, Level};
 
 #[derive(Clone)]
 pub struct ChainSync {
@@ -29,8 +29,21 @@ impl ChainSync {
             .validate_domain(matches!(network, bitcoin::Network::Bitcoin))
             .build();
 
+        event!(
+            Level::INFO,
+            url = electrum_url,
+            "initializing to electrum server"
+        );
+        let electrum_client = Client::from_config(electrum_url, config)
+            .context(format!("initializing electrum client to {}", electrum_url))?;
+        event!(
+            Level::INFO,
+            url = electrum_url,
+            "initializing electrum server successful"
+        );
+
         Ok(Self {
-            client: Arc::new(Client::from_config(electrum_url, config)?),
+            client: Arc::new(electrum_client),
         })
     }
 
