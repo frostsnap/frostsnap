@@ -726,7 +726,7 @@ impl Wallet {
     }
 
     pub fn broadcast_tx(&self, key_id: KeyId, tx: SignedTx) -> Result<()> {
-        match self.chain_sync.broadcast(&*tx.inner) {
+        match self.chain_sync.broadcast(&tx.inner) {
             Ok(_) => {
                 event!(
                     TLevel::INFO,
@@ -766,13 +766,13 @@ impl Wallet {
         tx: RustOpaque<RTransaction>,
     ) -> Result<SyncReturn<EffectOfTx>> {
         let inner = self.inner.lock().unwrap();
-        let fee = inner.fee(&*tx)?;
+        let fee = inner.fee(&tx)?;
         Ok(SyncReturn(EffectOfTx {
-            net_value: inner.net_value(key_id, &*tx),
+            net_value: inner.net_value(key_id, &tx),
             fee,
             feerate: fee as f64 / (tx.weight().to_wu() as f64 / 4.0),
             foreign_receiving_addresses: inner
-                .spends_outside(&*tx)
+                .spends_outside(&tx)
                 .into_iter()
                 .map(|(spk, value)| {
                     (

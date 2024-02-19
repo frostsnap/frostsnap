@@ -93,7 +93,7 @@ impl FfiCoordinator {
     }
 
     pub fn persist_core_handle(&self) -> IndexHandle<PersistCore> {
-        self.persist_core.clone()
+        self.persist_core
     }
 
     pub fn start(&self) -> anyhow::Result<()> {

@@ -253,7 +253,7 @@ impl _Wallet {
                 let net_value = self
                     .graph
                     .index
-                    .net_value(&canonical_tx.tx_node.tx, key_id..=key_id);
+                    .net_value(canonical_tx.tx_node.tx, key_id..=key_id);
 
                 if net_value == 0 {
                     return None;

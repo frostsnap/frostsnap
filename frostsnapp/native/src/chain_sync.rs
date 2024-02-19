@@ -73,7 +73,7 @@ impl ChainSync {
     }
 
     pub fn broadcast(&self, tx: &bitcoin::Transaction) -> Result<()> {
-        self.client.transaction_broadcast(&tx)?;
+        self.client.transaction_broadcast(tx)?;
         Ok(())
     }
 }
@@ -89,7 +89,9 @@ pub struct SyncRequest {
     spks: Vec<bitcoin::ScriptBuf>,
     txids: Vec<bitcoin::Txid>,
     total_items: usize,
+    #[allow(clippy::type_complexity)] // allowing because this will be in bdk eventually
     inspect_spks: Option<Box<dyn FnMut(&bitcoin::ScriptBuf, usize, usize, usize)>>,
+    #[allow(clippy::type_complexity)]
     inspect_txids: Option<Box<dyn FnMut(&bitcoin::Txid, usize, usize, usize)>>,
     processed_count: Arc<AtomicUsize>,
     /// this is not meant to be here but BDK electrum desin is a bit off
