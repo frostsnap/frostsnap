@@ -24,18 +24,15 @@ impl SigningDispatcher {
     /// Takes in the messages from `start_sign` and extracts the signing request to handle separately.
     ///
     /// We need to do this because we want to only send out the message to the devices that are connected.
-    pub fn from_filter_out_start_sign(
-        start_sign_messages: &mut Vec<CoordinatorSend>,
-        targets: BTreeSet<DeviceId>,
-    ) -> Self {
-        let (i, request) = start_sign_messages
+    pub fn from_filter_out_start_sign(start_sign_messages: &mut Vec<CoordinatorSend>) -> Self {
+        let (i, request, targets) = start_sign_messages
             .iter()
             .enumerate()
             .find_map(|(i, m)| match m {
                 CoordinatorSend::ToDevice {
                     message: CoordinatorToDeviceMessage::RequestSign(request),
-                    ..
-                } => Some((i, request.clone())),
+                    destinations,
+                } => Some((i, request.clone(), destinations.clone())),
                 _ => None,
             })
             .expect("must have a sign request");

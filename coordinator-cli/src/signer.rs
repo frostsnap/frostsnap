@@ -85,10 +85,7 @@ impl<'a, 'b> Signer<'a, 'b> {
             .coordinator
             .start_sign(message, chosen_signers.clone())?;
 
-        let mut dispatcher = SigningDispatcher::from_filter_out_start_sign(
-            &mut sign_request_sends,
-            chosen_signers.clone(),
-        );
+        let mut dispatcher = SigningDispatcher::from_filter_out_start_sign(&mut sign_request_sends);
 
         for device in self.ports.registered_devices() {
             dispatcher.connected(*device);
