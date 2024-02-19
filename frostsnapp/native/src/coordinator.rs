@@ -358,7 +358,7 @@ impl FfiCoordinator {
         let mut signing_session = self.signing_session.lock().unwrap();
         let mut coordinator = self.coordinator.lock().unwrap();
         let mut messages = coordinator.start_sign(task, devices.clone())?;
-        let dispatcher = SigningDispatcher::from_filter_out_start_sign(&mut messages, devices);
+        let dispatcher = SigningDispatcher::from_filter_out_start_sign(&mut messages);
         let mut new_session = SigningSession::new(stream, dispatcher);
 
         for device in api::device_list_state().0.devices {
