@@ -189,10 +189,13 @@ impl FfiCoordinator {
 
                 while let Some(message) = coordinator_outbox.pop_front() {
                     match message {
-                        CoordinatorSend::ToDevice(msg) => {
+                        CoordinatorSend::ToDevice {
+                            message,
+                            destinations,
+                        } => {
                             let send_message = CoordinatorSendMessage {
-                                target_destinations: Destination::from(msg.default_destinations()),
-                                message_body: CoordinatorSendBody::Core(msg),
+                                target_destinations: Destination::from(destinations),
+                                message_body: CoordinatorSendBody::Core(message),
                             };
 
                             usb_sender.send(send_message);
@@ -322,7 +325,10 @@ impl FfiCoordinator {
             *coordinator = FrostCoordinator::default();
             coordinator.do_keygen(&devices, threshold).unwrap()
         };
-        let keygen_message = CoordinatorSend::ToDevice(keygen_message);
+        let keygen_message = CoordinatorSend::ToDevice {
+            destinations: devices,
+            message: keygen_message,
+        };
         self.pending_for_outbox
             .lock()
             .unwrap()

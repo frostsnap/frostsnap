@@ -257,8 +257,9 @@ impl FrostCoordinator {
                                         });
 
                                     // TODO: check order
-                                    outgoing.push(CoordinatorSend::ToDevice(
-                                        CoordinatorToDeviceMessage::FinishKeyGen {
+                                    outgoing.push(CoordinatorSend::ToDevice {
+                                        destinations: responses.keys().cloned().collect(),
+                                        message: CoordinatorToDeviceMessage::FinishKeyGen {
                                             shares_provided: responses
                                                 .into_iter()
                                                 .map(|(id, response)| {
@@ -266,7 +267,7 @@ impl FrostCoordinator {
                                                 })
                                                 .collect(),
                                         },
-                                    ));
+                                    });
                                     outgoing.push(CoordinatorSend::ToUser(
                                         CoordinatorToUserMessage::KeyGen(
                                             CoordinatorToUserKeyGenMessage::CheckKeyGen {
@@ -591,23 +592,23 @@ impl FrostCoordinator {
 
                 let key = key.clone();
                 let sign_request = SignRequest {
-                    targets: signing_parties.clone(),
                     sign_task,
                     nonces: signing_nonces.clone(),
                 };
                 self.state = CoordinatorState::Signing {
                     key: key.clone(),
                     sign_state: SigningSessionState {
-                        targets: signing_parties,
+                        targets: signing_parties.clone(),
                         sessions,
                         request: sign_request.clone(),
                     },
                 };
                 Ok(vec![
                     CoordinatorSend::ToStorage(CoordinatorToStorageMessage::UpdateFrostKey(key)),
-                    CoordinatorSend::ToDevice(CoordinatorToDeviceMessage::RequestSign(
-                        sign_request,
-                    )),
+                    CoordinatorSend::ToDevice {
+                        destinations: signing_parties,
+                        message: CoordinatorToDeviceMessage::RequestSign(sign_request),
+                    },
                 ])
             }
             _ => Err(StartSignError::CantSignInState {

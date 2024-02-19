@@ -4,7 +4,7 @@ use frostsnap_core::message::{
     DeviceToUserMessage,
 };
 use frostsnap_core::{DeviceId, FrostCoordinator, FrostSigner};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
 pub enum Send {
@@ -17,7 +17,10 @@ pub enum Send {
         from: DeviceId,
         message: DeviceToCoordinatorMessage,
     },
-    CoordinatorToDevice(CoordinatorToDeviceMessage),
+    CoordinatorToDevice {
+        destinations: BTreeSet<DeviceId>,
+        message: CoordinatorToDeviceMessage,
+    },
     CoordinatorToStorage(CoordinatorToStorageMessage),
     DeviceToStorage {
         from: DeviceId,
@@ -28,7 +31,13 @@ pub enum Send {
 impl From<CoordinatorSend> for Send {
     fn from(value: CoordinatorSend) -> Self {
         match value {
-            CoordinatorSend::ToDevice(v) => v.into(),
+            CoordinatorSend::ToDevice {
+                message,
+                destinations,
+            } => Send::CoordinatorToDevice {
+                destinations,
+                message,
+            },
             CoordinatorSend::ToUser(v) => v.into(),
             CoordinatorSend::ToStorage(v) => Send::CoordinatorToStorage(v),
         }
@@ -41,11 +50,14 @@ impl From<CoordinatorToUserMessage> for Send {
     }
 }
 
-impl From<CoordinatorToDeviceMessage> for Send {
-    fn from(value: CoordinatorToDeviceMessage) -> Self {
-        Send::CoordinatorToDevice(value)
-    }
-}
+// impl From<CoordinatorToDeviceMessage> for Send {
+//     fn from(value: CoordinatorToDeviceMessage) -> Self {
+//         Send::CoordinatorToDevice {
+//             destinations: BTreeSet::new(),
+//             message: value,
+//         }
+//     }
+// }
 
 impl Send {
     pub fn device_send(from: DeviceId, device_send: DeviceSend) -> Self {
@@ -146,8 +158,11 @@ impl Run {
                             .map(Send::from),
                     );
                 }
-                Send::CoordinatorToDevice(message) => {
-                    for destination in message.default_destinations() {
+                Send::CoordinatorToDevice {
+                    destinations,
+                    message,
+                } => {
+                    for destination in destinations {
                         self.message_stack.extend(
                             self.devices
                                 .get_mut(&destination)

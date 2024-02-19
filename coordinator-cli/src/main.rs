@@ -87,12 +87,13 @@ fn process_outbox(
 ) -> anyhow::Result<()> {
     while let Some(message) = outbox.pop_front() {
         match message {
-            CoordinatorSend::ToDevice(core_message) => {
+            CoordinatorSend::ToDevice {
+                message,
+                destinations,
+            } => {
                 ports.usb_sender().send(CoordinatorSendMessage {
-                    target_destinations: Destination::Particular(
-                        core_message.default_destinations(),
-                    ),
-                    message_body: CoordinatorSendBody::Core(core_message),
+                    target_destinations: Destination::from(destinations),
+                    message_body: CoordinatorSendBody::Core(message),
                 });
             }
             CoordinatorSend::ToUser(to_user_message) => match to_user_message {

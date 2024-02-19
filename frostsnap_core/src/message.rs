@@ -32,7 +32,10 @@ pub enum DeviceSend {
 
 #[derive(Clone, Debug)]
 pub enum CoordinatorSend {
-    ToDevice(CoordinatorToDeviceMessage),
+    ToDevice {
+        message: CoordinatorToDeviceMessage,
+        destinations: BTreeSet<DeviceId>,
+    },
     ToUser(CoordinatorToUserMessage),
     ToStorage(CoordinatorToStorageMessage),
 }
@@ -55,7 +58,6 @@ pub struct SignRequest {
     // mechanism
     pub nonces: BTreeMap<Scalar<Public, NonZero>, (Vec<Nonce>, usize, usize)>,
     pub sign_task: SignTask,
-    pub targets: BTreeSet<DeviceId>,
 }
 
 impl SignRequest {
@@ -71,21 +73,6 @@ impl SignRequest {
 impl Gist for CoordinatorToDeviceMessage {
     fn gist(&self) -> String {
         self.kind().into()
-    }
-}
-
-impl CoordinatorToDeviceMessage {
-    pub fn default_destinations(&self) -> BTreeSet<DeviceId> {
-        match self {
-            CoordinatorToDeviceMessage::DoKeyGen {
-                device_to_share_index,
-                ..
-            } => device_to_share_index.keys().cloned().collect(),
-            CoordinatorToDeviceMessage::FinishKeyGen { shares_provided } => {
-                shares_provided.keys().cloned().collect()
-            }
-            CoordinatorToDeviceMessage::RequestSign(SignRequest { targets, .. }) => targets.clone(),
-        }
     }
 }
 

@@ -1,6 +1,7 @@
 //! Tests for a malicious actions. A malicious coordinator, a malicious device or both.
 use frostsnap_core::message::{
-    CoordinatorToDeviceMessage, DeviceToUserMessage, KeyGenProvideShares, SignRequest, SignTask,
+    CoordinatorSend, CoordinatorToDeviceMessage, DeviceToUserMessage, KeyGenProvideShares,
+    SignRequest, SignTask,
 };
 use frostsnap_core::{DeviceId, FrostCoordinator, FrostSigner};
 use rand_chacha::rand_core::SeedableRng;
@@ -65,7 +66,14 @@ fn nonce_reuse() {
     let mut run = Run::new(coordinator, devices);
 
     let keygen_init = vec![run.coordinator.do_keygen(&device_set, threshold).unwrap()];
-    run.extend(keygen_init);
+    let sends_with_destination: Vec<_> = keygen_init
+        .into_iter()
+        .map(|message| CoordinatorSend::ToDevice {
+            message,
+            destinations: device_set.clone(),
+        })
+        .collect();
+    run.extend(sends_with_destination);
 
     // just does enough to make progress
     struct TestEnv;
@@ -101,20 +109,20 @@ fn nonce_reuse() {
     run.extend(sign_init);
     run.run_until_finished(&mut TestEnv);
 
-    let nonces =
-        run.transcript
-            .iter()
-            .find_map(|m| match m {
-                Send::CoordinatorToDevice(CoordinatorToDeviceMessage::RequestSign(
-                    SignRequest { nonces, .. },
-                )) => Some(nonces),
-                _ => None,
-            })
-            .unwrap();
+    let nonces = run
+        .transcript
+        .iter()
+        .find_map(|m| match m {
+            Send::CoordinatorToDevice {
+                message: CoordinatorToDeviceMessage::RequestSign(SignRequest { nonces, .. }),
+                ..
+            } => Some(nonces),
+            _ => None,
+        })
+        .unwrap();
 
     // Receive a new sign request with the same nonces as the previous session
     let new_sign_request = CoordinatorToDeviceMessage::RequestSign(SignRequest {
-        targets: device_set,
         nonces: nonces.clone(),
         sign_task: SignTask::Plain(
             b"we lost track of first FROST txn on bitcoin mainnet @ bushbash 2022".to_vec(),

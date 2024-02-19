@@ -32,9 +32,10 @@ impl SigningDispatcher {
             .iter()
             .enumerate()
             .find_map(|(i, m)| match m {
-                CoordinatorSend::ToDevice(CoordinatorToDeviceMessage::RequestSign(request)) => {
-                    Some((i, request.clone()))
-                }
+                CoordinatorSend::ToDevice {
+                    message: CoordinatorToDeviceMessage::RequestSign(request),
+                    ..
+                } => Some((i, request.clone())),
                 _ => None,
             })
             .expect("must have a sign request");
@@ -86,10 +87,8 @@ impl SigningDispatcher {
 
     pub fn resend_sign_request(&mut self) -> Option<CoordinatorSendMessage> {
         if !self.need_to_send_to.is_empty() {
-            let target_destinations = Destination::from(self.need_to_send_to.clone());
-            self.need_to_send_to = BTreeSet::new();
             return Some(CoordinatorSendMessage {
-                target_destinations,
+                target_destinations: Destination::from(core::mem::take(&mut self.need_to_send_to)),
                 message_body: CoordinatorSendBody::Core(CoordinatorToDeviceMessage::RequestSign(
                     self.request.clone(),
                 )),
