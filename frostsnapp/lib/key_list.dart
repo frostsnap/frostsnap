@@ -1,6 +1,8 @@
 import 'dart:typed_data';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/keygen.dart';
+import 'package:frostsnapp/stream_ext.dart';
+import 'package:frostsnapp/wallet.dart';
 
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'package:flutter/material.dart';
@@ -16,9 +18,9 @@ class KeyList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final keyStateSream = coord.subKeyEvents().toBehaviorSubject();
     return StreamBuilder<KeyState>(
-        initialData: coord.keyState(),
-        stream: api.subKeyEvents(),
+        stream: keyStateSream,
         builder: (context, snap) {
           var keys = [];
           if (snap.hasData) {
@@ -67,40 +69,67 @@ class KeyCard extends StatefulWidget {
 }
 
 class _KeyCard extends State<KeyCard> {
-  bool canContinueSigning = false;
+  SignTaskDescription? restorableSignSession;
 
   @override
   void initState() {
     super.initState();
-    canContinueSigning =
-        coord.canRestoreSigningSession(keyId: widget.frostKey.id());
+    restorableSignSession =
+        coord.persistedSignSessionDescription(keyId: widget.frostKey.id());
   }
 
   @override
   Widget build(BuildContext context) {
-    final Widget button;
+    final keyId = widget.frostKey.id();
+    final signButton = ElevatedButton(
+        onPressed: () {
+          Navigator.push(context, MaterialPageRoute(builder: (context) {
+            return SignMessagePage(frostKey: widget.frostKey);
+          }));
+        },
+        child: Text("Sign"));
 
-    if (canContinueSigning) {
-      button = ElevatedButton(
+    final Widget walletButton = ElevatedButton(
+        onPressed: () {
+          Navigator.push(context, MaterialPageRoute(builder: (context) {
+            return WalletHome(keyId: keyId);
+          }));
+        },
+        child: Text("₿"));
+
+    final continueSigning;
+
+    if (restorableSignSession != null) {
+      continueSigning = ElevatedButton(
           onPressed: () async {
-            final stream = coord
-                .tryRestoreSigningSession(keyId: widget.frostKey.id())
-                .asBroadcastStream();
-            await signMessageDialog(context, stream);
+            final signingStream = coord
+                .tryRestoreSigningSession(keyId: keyId)
+                .toBehaviorSubject();
+
+            switch (restorableSignSession!) {
+              case SignTaskDescription_Plain(:final message):
+                {
+                  await signMessageWorkflowDialog(
+                      context, signingStream, message);
+                }
+              case SignTaskDescription_Transaction(:final unsignedTx):
+                {
+                  await signTransactionWorkflowDialog(
+                      context: context,
+                      signingStream: signingStream,
+                      unsignedTx: unsignedTx,
+                      keyId: keyId);
+                }
+            }
+
             setState(() {
-              canContinueSigning =
-                  coord.canRestoreSigningSession(keyId: widget.frostKey.id());
+              restorableSignSession = coord.persistedSignSessionDescription(
+                  keyId: widget.frostKey.id());
             });
           },
           child: Text("Continue signing"));
     } else {
-      button = ElevatedButton(
-          onPressed: () {
-            Navigator.push(context, MaterialPageRoute(builder: (context) {
-              return SignMessagePage(frostKey: widget.frostKey);
-            }));
-          },
-          child: Text("Sign"));
+      continueSigning = Container();
     }
 
     return Card(
@@ -116,7 +145,13 @@ class _KeyCard extends State<KeyCard> {
             ),
             const SizedBox(height: 8),
             Text("Threshold: ${widget.frostKey.threshold()}"),
-            button
+            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              signButton,
+              const SizedBox(width: 5),
+              walletButton,
+              const SizedBox(width: 5),
+              continueSigning
+            ])
           ],
         ),
       ),

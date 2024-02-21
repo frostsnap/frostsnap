@@ -1,5 +1,5 @@
-use crate::DeviceId;
 use crate::{gen_pop_message, message::*, ActionError, Error, MessageResult, NONCE_BATCH_SIZE};
+use crate::{DeviceId, KeyId};
 use alloc::{boxed::Box, collections::BTreeMap, string::ToString, vec::Vec};
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::{
@@ -274,7 +274,9 @@ impl FrostSigner {
                     awaiting_ack: false,
                 },
                 CoordinatorToDeviceMessage::RequestSign(SignRequest {
-                    nonces, sign_task, ..
+                    nonces,
+                    sign_task,
+                    key_id,
                 }),
             ) => {
                 let (my_nonces, my_nonce_index, _) = match nonces.get(&key.share_index) {
@@ -314,7 +316,7 @@ impl FrostSigner {
                     nonces,
                 };
                 Ok(vec![DeviceSend::ToUser(
-                    DeviceToUserMessage::SignatureRequest { sign_task },
+                    DeviceToUserMessage::SignatureRequest { sign_task, key_id },
                 )])
             }
             _ => Err(Error::signer_message_kind(&self.state, &message)),
@@ -354,7 +356,7 @@ impl FrostSigner {
                 nonces,
             } => {
                 let sign_items = sign_task.sign_items();
-                let frost = frost::new_with_deterministic_nonces::<Sha256>();
+                let frost = frost::new_without_nonce_generation::<Sha256>();
                 let (_, my_nonce_index, my_replenish_index) =
                     nonces.get(&key.share_index).expect("already checked");
 
@@ -379,8 +381,8 @@ impl FrostSigner {
                     let mut xonly_frost_key = xpub.key().clone().into_xonly_key();
 
                     if sign_item.tap_tweak {
-                        let tweak = bitcoin::util::taproot::TapTweakHash::from_key_and_tweak(
-                            bitcoin::XOnlyPublicKey::from_slice(
+                        let tweak = bitcoin::taproot::TapTweakHash::from_key_and_tweak(
+                            bitcoin::key::XOnlyPublicKey::from_slice(
                                 &xonly_frost_key.public_key().to_xonly_bytes(),
                             )
                             .unwrap(),
@@ -496,6 +498,9 @@ pub struct FrostsnapKey {
 
 #[derive(Debug, Clone)]
 pub enum StartSignError {
+    UnknownKey {
+        key_id: KeyId,
+    },
     UnknownDevice {
         device_id: DeviceId,
     },
@@ -543,6 +548,10 @@ impl core::fmt::Display for StartSignError {
             StartSignError::UnknownDevice { device_id } => {
                 write!(f, "Unknown device {}", device_id)
             }
+            StartSignError::UnknownKey { key_id } => write!(
+                f,
+                "device does not have key is was asked to sign with, id: {key_id}"
+            ),
         }
     }
 }

@@ -1,4 +1,9 @@
-use frostsnap_coordinator::frostsnap_core::{self, FrostCoordinator};
+use frostsnap_coordinator::frostsnap_core::{
+    self,
+    message::SignTask,
+    schnorr_fun::{frost::FrostKey, fun::marker::Normal},
+    FrostCoordinator,
+};
 use llsdb::{
     index::{CellOption, IndexStore},
     Backend, Result, Transaction, TxIo,
@@ -26,6 +31,15 @@ impl PersistCore {
 }
 
 impl<'i, F: Backend> PersistApi<'i, F> {
+    pub fn frost_keys(&self) -> Result<Vec<FrostKey<Normal>>> {
+        self.key_cell
+            .get()
+            .transpose()
+            .into_iter()
+            .map(|key| Ok(key?.frost_key().clone()))
+            .collect()
+    }
+
     pub fn core_coordinator(&self) -> Result<FrostCoordinator> {
         Ok(match self.key_cell.get()? {
             None => FrostCoordinator::new(),
@@ -47,6 +61,11 @@ impl<'i, F: Backend> PersistApi<'i, F> {
 
     pub fn is_sign_session_persisted(&self) -> bool {
         self.signing_cell.is_some()
+    }
+
+    pub fn persisted_sign_session_task(&self) -> Result<Option<SignTask>> {
+        let opt = self.signing_cell.get()?;
+        Ok(opt.map(|sign_session_state| sign_session_state.request.sign_task))
     }
 
     pub fn store_sign_session(&self, state: frostsnap_core::SigningSessionState) -> Result<()> {

@@ -3,7 +3,7 @@ use frostsnap_core::message::{
     CoordinatorSend, CoordinatorToDeviceMessage, DeviceToUserMessage, KeyGenProvideShares,
     SignRequest, SignTask,
 };
-use frostsnap_core::{DeviceId, FrostCoordinator, FrostSigner};
+use frostsnap_core::{DeviceId, FrostCoordinator, FrostKeyExt, FrostSigner};
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::frost;
@@ -107,10 +107,18 @@ fn nonce_reuse() {
     }
 
     run.run_until_finished(&mut TestEnv, &mut test_rng);
-    let task1 = SignTask::Plain(b"utxo.club!".to_vec());
+    let key_id = run
+        .coordinator
+        .frost_key_state()
+        .unwrap()
+        .frost_key()
+        .key_id();
+    let task1 = SignTask::Plain {
+        message: b"utxo.club!".to_vec(),
+    };
     let sign_init = run
         .coordinator
-        .start_sign(task1, device_set.clone())
+        .start_sign(key_id, task1, device_set)
         .unwrap();
     run.extend(sign_init);
     run.run_until_finished(&mut TestEnv, &mut test_rng);
@@ -130,9 +138,11 @@ fn nonce_reuse() {
     // Receive a new sign request with the same nonces as the previous session
     let new_sign_request = CoordinatorToDeviceMessage::RequestSign(SignRequest {
         nonces: nonces.clone(),
-        sign_task: SignTask::Plain(
-            b"we lost track of first FROST txn on bitcoin mainnet @ bushbash 2022".to_vec(),
-        ),
+        key_id,
+        sign_task: SignTask::Plain {
+            message: b"we lost track of first FROST txn on bitcoin mainnet @ bushbash 2022"
+                .to_vec(),
+        },
     });
     let sign_request_result = run
         .device(device_id)

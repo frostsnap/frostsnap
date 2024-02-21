@@ -14,7 +14,6 @@ Future<T?> showDeviceActionDialog<T>({
       barrierDismissible: false,
       context: context,
       builder: (dialogContext) {
-        debugPrint("started building device action dialog");
         complete.then((result) {
           if (dialogContext.mounted) {
             Navigator.pop(dialogContext, result);
@@ -41,7 +40,6 @@ Future<T?> showDeviceActionDialog<T>({
                   },
                   child: const Text("Cancel"))
             ]);
-        debugPrint("finished building device action dialog");
         return dialog;
       });
 }

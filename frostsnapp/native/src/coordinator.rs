@@ -1,7 +1,7 @@
 use crate::api::{self, FfiSerial, KeyState, PortEvent};
 use crate::persist_core::PersistCore;
 use crate::SigningSession;
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, Context, Result};
 use flutter_rust_bridge::{RustOpaque, StreamSink};
 use frostsnap_coordinator::frostsnap_comms::{
     CoordinatorSendBody, CoordinatorSendMessage, Destination,
@@ -33,34 +33,42 @@ pub struct FfiCoordinator {
     pending_for_outbox: Arc<Mutex<VecDeque<CoordinatorSend>>>,
     thread_handle: Mutex<Option<JoinHandle<()>>>,
     keygen_stream: Arc<Mutex<Option<StreamSink<CoordinatorToUserKeyGenMessage>>>>,
+    key_event_stream: Arc<Mutex<Option<StreamSink<KeyState>>>>,
     signing_session: Arc<Mutex<Option<SigningSession>>>,
     db: Arc<Mutex<LlsDb<File>>>,
-    core_persist: IndexHandle<PersistCore>,
+    persist_core: IndexHandle<PersistCore>,
     device_names: IndexHandle<llsdb::index::BTreeMap<DeviceId, String>>,
     usb_sender: UsbSender,
 }
 
 impl FfiCoordinator {
-    pub fn new(mut db: LlsDb<File>, mut usb_manager: UsbSerialManager) -> anyhow::Result<Self> {
+    pub fn new(
+        db: Arc<Mutex<LlsDb<File>>>,
+        mut usb_manager: UsbSerialManager,
+    ) -> anyhow::Result<Self> {
         let pending_for_outbox = Arc::new(Mutex::new(VecDeque::new()));
 
-        let (core_persist, device_names, coordinator) = db
+        let (persist_core, device_names_handle, coordinator) = db
+            .lock()
+            .unwrap()
             .execute(|tx| {
                 let persist = PersistCore::new(tx)?;
                 let (handle, api) = tx.store_and_take_index(persist);
                 let coordinator = api.core_coordinator()?;
                 let device_names_list = tx.take_list("device_names")?;
-                let device_names_btree = llsdb::index::BTreeMap::new(device_names_list, &tx)?;
-                let device_names_btree_handle = tx.store_index(device_names_btree);
-                Ok((handle, device_names_btree_handle, coordinator))
+                let device_names_index = llsdb::index::BTreeMap::new(device_names_list, &tx)?;
+                let device_names_handle = tx.store_index(device_names_index);
+                let device_names = tx.take_index(device_names_handle);
+                *usb_manager.device_labels_mut() = device_names
+                    .iter()
+                    .collect::<Result<_>>()
+                    .context("reading in device names from disk")?;
+
+                Ok((handle, device_names_handle, coordinator))
             })
             .context("initializing db")?;
 
         let usb_sender = usb_manager.usb_sender();
-
-        *usb_manager.device_labels_mut() = db
-            .execute(|tx| tx.take_index(device_names).iter().collect())
-            .context("reading in device names from disk")?;
 
         // HACK: if the global device list depends on db state then it shouldn't be global! The
         // reason it needs these names is for convenience. There are too many places that have
@@ -76,11 +84,16 @@ impl FfiCoordinator {
             thread_handle: Default::default(),
             keygen_stream: Default::default(),
             signing_session: Default::default(),
-            db: Arc::new(Mutex::new(db)),
-            core_persist,
-            device_names,
+            key_event_stream: Default::default(),
+            db,
+            persist_core,
+            device_names: device_names_handle,
             usb_sender,
         })
+    }
+
+    pub fn persist_core_handle(&self) -> IndexHandle<PersistCore> {
+        self.persist_core
     }
 
     pub fn start(&self) -> anyhow::Result<()> {
@@ -98,9 +111,10 @@ impl FfiCoordinator {
         let pending_loop = self.pending_for_outbox.clone();
         let coordinator_loop = self.coordinator.clone();
         let keygen_stream_loop = self.keygen_stream.clone();
-        let signing_stream_loop = self.signing_session.clone();
+        let signing_session_loop = self.signing_session.clone();
+        let key_event_stream_loop = self.key_event_stream.clone();
         let db_loop = self.db.clone();
-        let core_persist = self.core_persist;
+        let core_persist = self.persist_core;
         let device_names = self.device_names;
         let usb_sender = self.usb_sender.clone();
 
@@ -118,51 +132,51 @@ impl FfiCoordinator {
                         new_messages,
                     } = usb_manager.poll_ports();
 
-                    let mut signing_session = signing_stream_loop.lock().unwrap();
+                    let mut signing_session = signing_session_loop.lock().unwrap();
+
+                    for change in &device_changes {
+                        match change {
+                            DeviceChange::Registered { id, .. } => {
+                                if let Some(signing_session) = &mut *signing_session {
+                                    signing_session.connected(*id);
+                                }
+                            }
+                            DeviceChange::Disconnected { id } => {
+                                if let Some(signing_session) = &mut *signing_session {
+                                    signing_session.disconnected(*id);
+                                }
+                            }
+                            DeviceChange::NewUnknownDevice { id, name } => {
+                                // TODO: We should be asking the user to accept the new device before writing anything to disk.
+                                let res = db_loop
+                                    .lock()
+                                    .unwrap()
+                                    .execute(|tx| tx.take_index(device_names).insert(*id, name));
+                                if let Err(e) = res {
+                                    event!(
+                                        Level::ERROR,
+                                        error = e.to_string(),
+                                        "unable to save device name"
+                                    );
+                                }
+                            }
+                            _ => { /* ignore rest */ }
+                        }
+                    }
 
                     if let Some(signing_session) = &mut *signing_session {
                         if let Some(message) = signing_session.resend_sign_request() {
+                            event!(Level::INFO, "Sending sign request");
                             usb_sender.send(message);
                         }
                     }
 
-                    if !device_changes.is_empty() {
-                        for change in &device_changes {
-                            match change {
-                                DeviceChange::Registered { id, .. } => {
-                                    if let Some(signing_session) = &mut *signing_session {
-                                        signing_session.connected(*id);
-                                    }
-                                }
-                                DeviceChange::Disconnected { id } => {
-                                    if let Some(signing_session) = &mut *signing_session {
-                                        signing_session.disconnected(*id);
-                                    }
-                                }
-                                DeviceChange::NewUnknownDevice { id, name } => {
-                                    // TODO: We should be asking the user to accept the new device before writing anything to disk.
-                                    let res = db_loop.lock().unwrap().execute(|tx| {
-                                        tx.take_index(device_names).insert(*id, name)
-                                    });
-                                    if let Err(e) = res {
-                                        event!(
-                                            Level::ERROR,
-                                            error = e.to_string(),
-                                            "unable to save device name"
-                                        );
-                                    }
-                                }
-                                _ => { /* ignore rest */ }
-                            }
-                        }
-
-                        crate::api::emit_device_events(
-                            device_changes
-                                .into_iter()
-                                .map(crate::api::DeviceChange::from)
-                                .collect(),
-                        );
-                    }
+                    crate::api::emit_device_events(
+                        device_changes
+                            .into_iter()
+                            .map(crate::api::DeviceChange::from)
+                            .collect(),
+                    );
 
                     new_messages
                 };
@@ -220,7 +234,7 @@ impl FfiCoordinator {
                                 }
                             }
                             CoordinatorToUserMessage::Signing(signing_message) => {
-                                let mut signing_session = signing_stream_loop.lock().unwrap();
+                                let mut signing_session = signing_session_loop.lock().unwrap();
                                 if let Some(signing_session) = &mut *signing_session {
                                     signing_session.process_to_user_message(signing_message);
 
@@ -250,14 +264,17 @@ impl FfiCoordinator {
                                         // Note we do this here rather than in the ToUserMessage
                                         // because the key list is persisted and so its better to
                                         // nofify the app after the on disk state is written.
-                                        api::emit_key_event(KeyState {
-                                            keys: frost_keys(&coordinator_loop.lock().unwrap()),
-                                        });
+                                        if let Some(stream) =
+                                            &*key_event_stream_loop.lock().unwrap()
+                                        {
+                                            stream.add(KeyState {
+                                                keys: frost_keys(&coordinator_loop.lock().unwrap()),
+                                            });
+                                        }
                                     }
                                     CoordinatorToStorageMessage::StoreSigningState(sign_state) => {
                                         persist.store_sign_session(sign_state)?
                                     }
-
                                     CoordinatorToStorageMessage::UpdateFrostKey(state) => {
                                         persist.set_key_state(state)?
                                     }
@@ -286,6 +303,16 @@ impl FfiCoordinator {
         Ok(())
     }
 
+    pub fn sub_key_events(&self, stream: StreamSink<KeyState>) {
+        let mut key_event_stream = self.key_event_stream.lock().unwrap();
+        stream.add(KeyState {
+            keys: self.frost_keys(),
+        });
+        if let Some(existing) = key_event_stream.replace(stream) {
+            existing.close();
+        }
+    }
+
     pub fn update_name_preview(&self, id: DeviceId, name: &str) {
         self.usb_sender.update_name_preview(id, name);
     }
@@ -305,7 +332,7 @@ impl FfiCoordinator {
                 .db
                 .lock()
                 .unwrap()
-                .execute(|tx| tx.take_index(self.core_persist).clear_signing_session());
+                .execute(|tx| tx.take_index(self.persist_core).clear_signing_session());
         }
         self.coordinator.lock().unwrap().cancel();
         self.usb_sender.send_cancel_all()
@@ -349,7 +376,7 @@ impl FfiCoordinator {
 
     pub fn start_signing(
         &self,
-        _key_id: KeyId,
+        key_id: KeyId,
         devices: BTreeSet<DeviceId>,
         task: SignTask,
         stream: StreamSink<api::SigningState>,
@@ -357,7 +384,7 @@ impl FfiCoordinator {
         // we need to lock this first to avoid race conditions where somehow get_signing_state is called before this completes.
         let mut signing_session = self.signing_session.lock().unwrap();
         let mut coordinator = self.coordinator.lock().unwrap();
-        let mut messages = coordinator.start_sign(task, devices.clone())?;
+        let mut messages = coordinator.start_sign(key_id, task, devices.clone())?;
         let dispatcher = SigningDispatcher::from_filter_out_start_sign(&mut messages);
         let mut new_session = SigningSession::new(stream, dispatcher);
 
@@ -386,7 +413,7 @@ impl FfiCoordinator {
             .db
             .lock()
             .unwrap()
-            .execute(|tx| tx.take_index(self.core_persist).persisted_signing())?;
+            .execute(|tx| tx.take_index(self.persist_core).persisted_signing())?;
 
         let signing_session_state =
             signing_session.ok_or(anyhow!("no signing session to restore"))?;
@@ -419,8 +446,30 @@ impl FfiCoordinator {
         self.db
             .lock()
             .unwrap()
-            .execute(|tx| Ok(tx.take_index(self.core_persist).is_sign_session_persisted()))
+            .execute(|tx| Ok(tx.take_index(self.persist_core).is_sign_session_persisted()))
             .unwrap()
+    }
+
+    pub fn persisted_sign_session_description(
+        &self,
+        #[allow(unused)] /* we only have one key for now */ key_id: KeyId,
+    ) -> Result<Option<api::SignTaskDescription>> {
+        self.db.lock().unwrap().execute(|tx| {
+            Ok(tx
+                .take_index(self.persist_core)
+                .persisted_sign_session_task()?
+                .map(|task| match task {
+                    SignTask::Plain { message, .. } => api::SignTaskDescription::Plain {
+                        message: String::from_utf8_lossy(&message[..]).to_string(),
+                    },
+                    SignTask::Nostr { .. } => todo!("nostr restoring not yet implemented"),
+                    SignTask::Transaction(task) => api::SignTaskDescription::Transaction {
+                        unsigned_tx: api::UnsignedTx {
+                            task: RustOpaque::new(task),
+                        },
+                    },
+                }))
+        })
     }
 }
 

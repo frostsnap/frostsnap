@@ -28,7 +28,6 @@ This repository is comprised of the following components:
 - [frostsnap_core/](/frostsnap_core/) - Software library for handling the state of Frostsnap coordinators and signers, and how to respond to messages of different kinds.
 - [frostsnap_comms/](/frostsnap_comms/) - Software library for how the devices and coordinators serialize different types of bincode messages.
 - [frostsnapp/](/frostsnapp/) - Desktop and mobile wallet app.
-- [coordinator-cli/](/coordinator-cli/) - A simple CLI Bitcoin wallet which instructs devices what to do over USB serial. It can also post to Nostr!
 
 All of this code is completely free open source software under the MIT license.
 

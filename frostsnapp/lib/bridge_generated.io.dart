@@ -26,6 +26,13 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   }
 
   @protected
+  wire_ChainSync api2wire_ChainSync(ChainSync raw) {
+    final ptr = inner.new_ChainSync();
+    _api_fill_to_wire_ChainSync(raw, ptr);
+    return ptr;
+  }
+
+  @protected
   wire_FfiCoordinator api2wire_FfiCoordinator(FfiCoordinator raw) {
     final ptr = inner.new_FfiCoordinator();
     _api_fill_to_wire_FfiCoordinator(raw, ptr);
@@ -38,6 +45,32 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
           FrostsnapCoreCoordinatorFrostKeyState raw) {
     final ptr = inner.new_FrostsnapCoreCoordinatorFrostKeyState();
     _api_fill_to_wire_FrostsnapCoreCoordinatorFrostKeyState(raw, ptr);
+    return ptr;
+  }
+
+  @protected
+  wire_FrostsnapCoreMessageTransactionSignTask
+      api2wire_FrostsnapCoreMessageTransactionSignTask(
+          FrostsnapCoreMessageTransactionSignTask raw) {
+    final ptr = inner.new_FrostsnapCoreMessageTransactionSignTask();
+    _api_fill_to_wire_FrostsnapCoreMessageTransactionSignTask(raw, ptr);
+    return ptr;
+  }
+
+  @protected
+  wire_MutexBTreeMapKeyIdStreamSinkTxState
+      api2wire_MutexBTreeMapKeyIdStreamSinkTxState(
+          MutexBTreeMapKeyIdStreamSinkTxState raw) {
+    final ptr = inner.new_MutexBTreeMapKeyIdStreamSinkTxState();
+    _api_fill_to_wire_MutexBTreeMapKeyIdStreamSinkTxState(raw, ptr);
+    return ptr;
+  }
+
+  @protected
+  wire_MutexCrateWalletWallet api2wire_MutexCrateWalletWallet(
+      MutexCrateWalletWallet raw) {
+    final ptr = inner.new_MutexCrateWalletWallet();
+    _api_fill_to_wire_MutexCrateWalletWallet(raw, ptr);
     return ptr;
   }
 
@@ -71,8 +104,32 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   }
 
   @protected
+  wire_RTransaction api2wire_RTransaction(RTransaction raw) {
+    final ptr = inner.new_RTransaction();
+    _api_fill_to_wire_RTransaction(raw, ptr);
+    return ptr;
+  }
+
+  @protected
   ffi.Pointer<wire_uint_8_list> api2wire_String(String raw) {
     return api2wire_uint_8_list(utf8.encoder.convert(raw));
+  }
+
+  @protected
+  ffi.Pointer<wire_StringList> api2wire_StringList(List<String> raw) {
+    final ans = inner.new_StringList_0(raw.length);
+    for (var i = 0; i < raw.length; i++) {
+      ans.ref.ptr[i] = api2wire_String(raw[i]);
+    }
+    return ans;
+  }
+
+  @protected
+  ffi.Pointer<wire_ConfirmationTime> api2wire_box_autoadd_confirmation_time(
+      ConfirmationTime raw) {
+    final ptr = inner.new_box_autoadd_confirmation_time_0();
+    _api_fill_to_wire_confirmation_time(raw, ptr.ref);
+    return ptr;
   }
 
   @protected
@@ -120,13 +177,6 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   }
 
   @protected
-  ffi.Pointer<wire_KeyState> api2wire_box_autoadd_key_state(KeyState raw) {
-    final ptr = inner.new_box_autoadd_key_state_0();
-    _api_fill_to_wire_key_state(raw, ptr.ref);
-    return ptr;
-  }
-
-  @protected
   ffi.Pointer<wire_PortBytesToRead> api2wire_box_autoadd_port_bytes_to_read(
       PortBytesToRead raw) {
     final ptr = inner.new_box_autoadd_port_bytes_to_read_0();
@@ -156,11 +206,46 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   }
 
   @protected
+  ffi.Pointer<wire_SignedTx> api2wire_box_autoadd_signed_tx(SignedTx raw) {
+    final ptr = inner.new_box_autoadd_signed_tx_0();
+    _api_fill_to_wire_signed_tx(raw, ptr.ref);
+    return ptr;
+  }
+
+  @protected
   ffi.Pointer<wire_SigningState> api2wire_box_autoadd_signing_state(
       SigningState raw) {
     final ptr = inner.new_box_autoadd_signing_state_0();
     _api_fill_to_wire_signing_state(raw, ptr.ref);
     return ptr;
+  }
+
+  @protected
+  ffi.Pointer<wire_Transaction> api2wire_box_autoadd_transaction(
+      Transaction raw) {
+    final ptr = inner.new_box_autoadd_transaction_0();
+    _api_fill_to_wire_transaction(raw, ptr.ref);
+    return ptr;
+  }
+
+  @protected
+  ffi.Pointer<wire_UnsignedTx> api2wire_box_autoadd_unsigned_tx(
+      UnsignedTx raw) {
+    final ptr = inner.new_box_autoadd_unsigned_tx_0();
+    _api_fill_to_wire_unsigned_tx(raw, ptr.ref);
+    return ptr;
+  }
+
+  @protected
+  ffi.Pointer<wire_Wallet> api2wire_box_autoadd_wallet(Wallet raw) {
+    final ptr = inner.new_box_autoadd_wallet_0();
+    _api_fill_to_wire_wallet(raw, ptr.ref);
+    return ptr;
+  }
+
+  @protected
+  int api2wire_i64(int raw) {
+    return raw;
   }
 
   @protected
@@ -192,15 +277,6 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   }
 
   @protected
-  ffi.Pointer<wire_list_frost_key> api2wire_list_frost_key(List<FrostKey> raw) {
-    final ans = inner.new_list_frost_key_0(raw.length);
-    for (var i = 0; i < raw.length; ++i) {
-      _api_fill_to_wire_frost_key(raw[i], ans.ref.ptr[i]);
-    }
-    return ans;
-  }
-
-  @protected
   ffi.Pointer<wire_list_port_desc> api2wire_list_port_desc(List<PortDesc> raw) {
     final ans = inner.new_list_port_desc_0(raw.length);
     for (var i = 0; i < raw.length; ++i) {
@@ -212,6 +288,19 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   @protected
   ffi.Pointer<wire_uint_8_list> api2wire_opt_String(String? raw) {
     return raw == null ? ffi.nullptr : api2wire_String(raw);
+  }
+
+  @protected
+  ffi.Pointer<wire_ConfirmationTime> api2wire_opt_box_autoadd_confirmation_time(
+      ConfirmationTime? raw) {
+    return raw == null
+        ? ffi.nullptr
+        : api2wire_box_autoadd_confirmation_time(raw);
+  }
+
+  @protected
+  int api2wire_u64(int raw) {
+    return raw;
   }
 
   @protected
@@ -248,6 +337,9 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
       OpaqueTypeFinalizer(inner._drop_opaque_ArcMutexVecPortDescPtr);
   OpaqueTypeFinalizer get ArcMutexVecPortDescFinalizer =>
       _ArcMutexVecPortDescFinalizer;
+  late final OpaqueTypeFinalizer _ChainSyncFinalizer =
+      OpaqueTypeFinalizer(inner._drop_opaque_ChainSyncPtr);
+  OpaqueTypeFinalizer get ChainSyncFinalizer => _ChainSyncFinalizer;
   late final OpaqueTypeFinalizer _FfiCoordinatorFinalizer =
       OpaqueTypeFinalizer(inner._drop_opaque_FfiCoordinatorPtr);
   OpaqueTypeFinalizer get FfiCoordinatorFinalizer => _FfiCoordinatorFinalizer;
@@ -256,6 +348,20 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
           inner._drop_opaque_FrostsnapCoreCoordinatorFrostKeyStatePtr);
   OpaqueTypeFinalizer get FrostsnapCoreCoordinatorFrostKeyStateFinalizer =>
       _FrostsnapCoreCoordinatorFrostKeyStateFinalizer;
+  late final OpaqueTypeFinalizer
+      _FrostsnapCoreMessageTransactionSignTaskFinalizer = OpaqueTypeFinalizer(
+          inner._drop_opaque_FrostsnapCoreMessageTransactionSignTaskPtr);
+  OpaqueTypeFinalizer get FrostsnapCoreMessageTransactionSignTaskFinalizer =>
+      _FrostsnapCoreMessageTransactionSignTaskFinalizer;
+  late final OpaqueTypeFinalizer _MutexBTreeMapKeyIdStreamSinkTxStateFinalizer =
+      OpaqueTypeFinalizer(
+          inner._drop_opaque_MutexBTreeMapKeyIdStreamSinkTxStatePtr);
+  OpaqueTypeFinalizer get MutexBTreeMapKeyIdStreamSinkTxStateFinalizer =>
+      _MutexBTreeMapKeyIdStreamSinkTxStateFinalizer;
+  late final OpaqueTypeFinalizer _MutexCrateWalletWalletFinalizer =
+      OpaqueTypeFinalizer(inner._drop_opaque_MutexCrateWalletWalletPtr);
+  OpaqueTypeFinalizer get MutexCrateWalletWalletFinalizer =>
+      _MutexCrateWalletWalletFinalizer;
   late final OpaqueTypeFinalizer _PortBytesToReadSenderFinalizer =
       OpaqueTypeFinalizer(inner._drop_opaque_PortBytesToReadSenderPtr);
   OpaqueTypeFinalizer get PortBytesToReadSenderFinalizer =>
@@ -269,10 +375,17 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   late final OpaqueTypeFinalizer _PortWriteSenderFinalizer =
       OpaqueTypeFinalizer(inner._drop_opaque_PortWriteSenderPtr);
   OpaqueTypeFinalizer get PortWriteSenderFinalizer => _PortWriteSenderFinalizer;
+  late final OpaqueTypeFinalizer _RTransactionFinalizer =
+      OpaqueTypeFinalizer(inner._drop_opaque_RTransactionPtr);
+  OpaqueTypeFinalizer get RTransactionFinalizer => _RTransactionFinalizer;
 // Section: api_fill_to_wire
 
   void _api_fill_to_wire_ArcMutexVecPortDesc(
       ArcMutexVecPortDesc apiObj, wire_ArcMutexVecPortDesc wireObj) {
+    wireObj.ptr = apiObj.shareOrMove();
+  }
+
+  void _api_fill_to_wire_ChainSync(ChainSync apiObj, wire_ChainSync wireObj) {
     wireObj.ptr = apiObj.shareOrMove();
   }
 
@@ -284,6 +397,23 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   void _api_fill_to_wire_FrostsnapCoreCoordinatorFrostKeyState(
       FrostsnapCoreCoordinatorFrostKeyState apiObj,
       wire_FrostsnapCoreCoordinatorFrostKeyState wireObj) {
+    wireObj.ptr = apiObj.shareOrMove();
+  }
+
+  void _api_fill_to_wire_FrostsnapCoreMessageTransactionSignTask(
+      FrostsnapCoreMessageTransactionSignTask apiObj,
+      wire_FrostsnapCoreMessageTransactionSignTask wireObj) {
+    wireObj.ptr = apiObj.shareOrMove();
+  }
+
+  void _api_fill_to_wire_MutexBTreeMapKeyIdStreamSinkTxState(
+      MutexBTreeMapKeyIdStreamSinkTxState apiObj,
+      wire_MutexBTreeMapKeyIdStreamSinkTxState wireObj) {
+    wireObj.ptr = apiObj.shareOrMove();
+  }
+
+  void _api_fill_to_wire_MutexCrateWalletWallet(
+      MutexCrateWalletWallet apiObj, wire_MutexCrateWalletWallet wireObj) {
     wireObj.ptr = apiObj.shareOrMove();
   }
 
@@ -305,6 +435,16 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   void _api_fill_to_wire_PortWriteSender(
       PortWriteSender apiObj, wire_PortWriteSender wireObj) {
     wireObj.ptr = apiObj.shareOrMove();
+  }
+
+  void _api_fill_to_wire_RTransaction(
+      RTransaction apiObj, wire_RTransaction wireObj) {
+    wireObj.ptr = apiObj.shareOrMove();
+  }
+
+  void _api_fill_to_wire_box_autoadd_confirmation_time(
+      ConfirmationTime apiObj, ffi.Pointer<wire_ConfirmationTime> wireObj) {
+    _api_fill_to_wire_confirmation_time(apiObj, wireObj.ref);
   }
 
   void _api_fill_to_wire_box_autoadd_coordinator(
@@ -337,11 +477,6 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
     _api_fill_to_wire_key_id(apiObj, wireObj.ref);
   }
 
-  void _api_fill_to_wire_box_autoadd_key_state(
-      KeyState apiObj, ffi.Pointer<wire_KeyState> wireObj) {
-    _api_fill_to_wire_key_state(apiObj, wireObj.ref);
-  }
-
   void _api_fill_to_wire_box_autoadd_port_bytes_to_read(
       PortBytesToRead apiObj, ffi.Pointer<wire_PortBytesToRead> wireObj) {
     _api_fill_to_wire_port_bytes_to_read(apiObj, wireObj.ref);
@@ -362,9 +497,35 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
     _api_fill_to_wire_port_write(apiObj, wireObj.ref);
   }
 
+  void _api_fill_to_wire_box_autoadd_signed_tx(
+      SignedTx apiObj, ffi.Pointer<wire_SignedTx> wireObj) {
+    _api_fill_to_wire_signed_tx(apiObj, wireObj.ref);
+  }
+
   void _api_fill_to_wire_box_autoadd_signing_state(
       SigningState apiObj, ffi.Pointer<wire_SigningState> wireObj) {
     _api_fill_to_wire_signing_state(apiObj, wireObj.ref);
+  }
+
+  void _api_fill_to_wire_box_autoadd_transaction(
+      Transaction apiObj, ffi.Pointer<wire_Transaction> wireObj) {
+    _api_fill_to_wire_transaction(apiObj, wireObj.ref);
+  }
+
+  void _api_fill_to_wire_box_autoadd_unsigned_tx(
+      UnsignedTx apiObj, ffi.Pointer<wire_UnsignedTx> wireObj) {
+    _api_fill_to_wire_unsigned_tx(apiObj, wireObj.ref);
+  }
+
+  void _api_fill_to_wire_box_autoadd_wallet(
+      Wallet apiObj, ffi.Pointer<wire_Wallet> wireObj) {
+    _api_fill_to_wire_wallet(apiObj, wireObj.ref);
+  }
+
+  void _api_fill_to_wire_confirmation_time(
+      ConfirmationTime apiObj, wire_ConfirmationTime wireObj) {
+    wireObj.height = api2wire_u32(apiObj.height);
+    wireObj.time = api2wire_u64(apiObj.time);
   }
 
   void _api_fill_to_wire_coordinator(
@@ -406,10 +567,6 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
     wireObj.field0 = api2wire_u8_array_32(apiObj.field0);
   }
 
-  void _api_fill_to_wire_key_state(KeyState apiObj, wire_KeyState wireObj) {
-    wireObj.keys = api2wire_list_frost_key(apiObj.keys);
-  }
-
   void _api_fill_to_wire_port_bytes_to_read(
       PortBytesToRead apiObj, wire_PortBytesToRead wireObj) {
     wireObj.id = api2wire_String(apiObj.id);
@@ -440,12 +597,37 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
     wireObj.ready = api2wire_PortWriteSender(apiObj.ready);
   }
 
+  void _api_fill_to_wire_signed_tx(SignedTx apiObj, wire_SignedTx wireObj) {
+    wireObj.inner = api2wire_RTransaction(apiObj.inner);
+  }
+
   void _api_fill_to_wire_signing_state(
       SigningState apiObj, wire_SigningState wireObj) {
     wireObj.got_shares = api2wire_list_device_id(apiObj.gotShares);
     wireObj.needed_from = api2wire_list_device_id(apiObj.neededFrom);
     wireObj.finished_signatures =
         api2wire_list_encoded_signature(apiObj.finishedSignatures);
+  }
+
+  void _api_fill_to_wire_transaction(
+      Transaction apiObj, wire_Transaction wireObj) {
+    wireObj.net_value = api2wire_i64(apiObj.netValue);
+    wireObj.inner = api2wire_RTransaction(apiObj.inner);
+    wireObj.confirmation_time =
+        api2wire_opt_box_autoadd_confirmation_time(apiObj.confirmationTime);
+  }
+
+  void _api_fill_to_wire_unsigned_tx(
+      UnsignedTx apiObj, wire_UnsignedTx wireObj) {
+    wireObj.task =
+        api2wire_FrostsnapCoreMessageTransactionSignTask(apiObj.task);
+  }
+
+  void _api_fill_to_wire_wallet(Wallet apiObj, wire_Wallet wireObj) {
+    wireObj.inner = api2wire_MutexCrateWalletWallet(apiObj.inner);
+    wireObj.wallet_streams =
+        api2wire_MutexBTreeMapKeyIdStreamSinkTxState(apiObj.walletStreams);
+    wireObj.chain_sync = api2wire_ChainSync(apiObj.chainSync);
   }
 }
 
@@ -573,37 +755,6 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _wire_sub_device_events =
       _wire_sub_device_eventsPtr.asFunction<void Function(int)>();
 
-  void wire_sub_key_events(
-    int port_,
-  ) {
-    return _wire_sub_key_events(
-      port_,
-    );
-  }
-
-  late final _wire_sub_key_eventsPtr =
-      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Int64)>>(
-          'wire_sub_key_events');
-  late final _wire_sub_key_events =
-      _wire_sub_key_eventsPtr.asFunction<void Function(int)>();
-
-  void wire_emit_key_event(
-    int port_,
-    ffi.Pointer<wire_KeyState> event,
-  ) {
-    return _wire_emit_key_event(
-      port_,
-      event,
-    );
-  }
-
-  late final _wire_emit_key_eventPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Void Function(
-              ffi.Int64, ffi.Pointer<wire_KeyState>)>>('wire_emit_key_event');
-  late final _wire_emit_key_event = _wire_emit_key_eventPtr
-      .asFunction<void Function(int, ffi.Pointer<wire_KeyState>)>();
-
   void wire_turn_stderr_logging_on(
     int port_,
     int level,
@@ -675,40 +826,39 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _wire_get_device = _wire_get_devicePtr
       .asFunction<WireSyncReturn Function(ffi.Pointer<wire_DeviceId>)>();
 
-  void wire_new_coordinator(
+  void wire_load(
     int port_,
     ffi.Pointer<wire_uint_8_list> db_file,
   ) {
-    return _wire_new_coordinator(
+    return _wire_load(
       port_,
       db_file,
     );
   }
 
-  late final _wire_new_coordinatorPtr = _lookup<
+  late final _wire_loadPtr = _lookup<
       ffi.NativeFunction<
-          ffi.Void Function(ffi.Int64,
-              ffi.Pointer<wire_uint_8_list>)>>('wire_new_coordinator');
-  late final _wire_new_coordinator = _wire_new_coordinatorPtr
+          ffi.Void Function(
+              ffi.Int64, ffi.Pointer<wire_uint_8_list>)>>('wire_load');
+  late final _wire_load = _wire_loadPtr
       .asFunction<void Function(int, ffi.Pointer<wire_uint_8_list>)>();
 
-  void wire_new_coordinator_host_handles_serial(
+  void wire_load_host_handles_serial(
     int port_,
     ffi.Pointer<wire_uint_8_list> db_file,
   ) {
-    return _wire_new_coordinator_host_handles_serial(
+    return _wire_load_host_handles_serial(
       port_,
       db_file,
     );
   }
 
-  late final _wire_new_coordinator_host_handles_serialPtr = _lookup<
-          ffi.NativeFunction<
-              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_uint_8_list>)>>(
-      'wire_new_coordinator_host_handles_serial');
-  late final _wire_new_coordinator_host_handles_serial =
-      _wire_new_coordinator_host_handles_serialPtr
-          .asFunction<void Function(int, ffi.Pointer<wire_uint_8_list>)>();
+  late final _wire_load_host_handles_serialPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Void Function(ffi.Int64,
+              ffi.Pointer<wire_uint_8_list>)>>('wire_load_host_handles_serial');
+  late final _wire_load_host_handles_serial = _wire_load_host_handles_serialPtr
+      .asFunction<void Function(int, ffi.Pointer<wire_uint_8_list>)>();
 
   void wire_echo_key_id(
     int port_,
@@ -726,6 +876,22 @@ class NativeWire implements FlutterRustBridgeWireBase {
               ffi.Int64, ffi.Pointer<wire_KeyId>)>>('wire_echo_key_id');
   late final _wire_echo_key_id = _wire_echo_key_idPtr
       .asFunction<void Function(int, ffi.Pointer<wire_KeyId>)>();
+
+  WireSyncReturn wire_txid__method__Transaction(
+    ffi.Pointer<wire_Transaction> that,
+  ) {
+    return _wire_txid__method__Transaction(
+      that,
+    );
+  }
+
+  late final _wire_txid__method__TransactionPtr = _lookup<
+          ffi.NativeFunction<
+              WireSyncReturn Function(ffi.Pointer<wire_Transaction>)>>(
+      'wire_txid__method__Transaction');
+  late final _wire_txid__method__Transaction =
+      _wire_txid__method__TransactionPtr
+          .asFunction<WireSyncReturn Function(ffi.Pointer<wire_Transaction>)>();
 
   WireSyncReturn wire_threshold__method__FrostKey(
     ffi.Pointer<wire_FrostKey> that,
@@ -1056,6 +1222,24 @@ class NativeWire implements FlutterRustBridgeWireBase {
       _wire_key_state__method__CoordinatorPtr
           .asFunction<WireSyncReturn Function(ffi.Pointer<wire_Coordinator>)>();
 
+  void wire_sub_key_events__method__Coordinator(
+    int port_,
+    ffi.Pointer<wire_Coordinator> that,
+  ) {
+    return _wire_sub_key_events__method__Coordinator(
+      port_,
+      that,
+    );
+  }
+
+  late final _wire_sub_key_events__method__CoordinatorPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Coordinator>)>>(
+      'wire_sub_key_events__method__Coordinator');
+  late final _wire_sub_key_events__method__Coordinator =
+      _wire_sub_key_events__method__CoordinatorPtr
+          .asFunction<void Function(int, ffi.Pointer<wire_Coordinator>)>();
+
   WireSyncReturn wire_get_key__method__Coordinator(
     ffi.Pointer<wire_Coordinator> that,
     ffi.Pointer<wire_KeyId> key_id,
@@ -1108,6 +1292,40 @@ class NativeWire implements FlutterRustBridgeWireBase {
               ffi.Pointer<wire_KeyId>,
               ffi.Pointer<wire_list_device_id>,
               ffi.Pointer<wire_uint_8_list>)>();
+
+  void wire_start_signing_tx__method__Coordinator(
+    int port_,
+    ffi.Pointer<wire_Coordinator> that,
+    ffi.Pointer<wire_KeyId> key_id,
+    ffi.Pointer<wire_UnsignedTx> unsigned_tx,
+    ffi.Pointer<wire_list_device_id> devices,
+  ) {
+    return _wire_start_signing_tx__method__Coordinator(
+      port_,
+      that,
+      key_id,
+      unsigned_tx,
+      devices,
+    );
+  }
+
+  late final _wire_start_signing_tx__method__CoordinatorPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Void Function(
+                  ffi.Int64,
+                  ffi.Pointer<wire_Coordinator>,
+                  ffi.Pointer<wire_KeyId>,
+                  ffi.Pointer<wire_UnsignedTx>,
+                  ffi.Pointer<wire_list_device_id>)>>(
+      'wire_start_signing_tx__method__Coordinator');
+  late final _wire_start_signing_tx__method__Coordinator =
+      _wire_start_signing_tx__method__CoordinatorPtr.asFunction<
+          void Function(
+              int,
+              ffi.Pointer<wire_Coordinator>,
+              ffi.Pointer<wire_KeyId>,
+              ffi.Pointer<wire_UnsignedTx>,
+              ffi.Pointer<wire_list_device_id>)>();
 
   WireSyncReturn wire_get_signing_state__method__Coordinator(
     ffi.Pointer<wire_Coordinator> that,
@@ -1190,6 +1408,28 @@ class NativeWire implements FlutterRustBridgeWireBase {
           WireSyncReturn Function(
               ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_KeyId>)>();
 
+  WireSyncReturn wire_persisted_sign_session_description__method__Coordinator(
+    ffi.Pointer<wire_Coordinator> that,
+    ffi.Pointer<wire_KeyId> key_id,
+  ) {
+    return _wire_persisted_sign_session_description__method__Coordinator(
+      that,
+      key_id,
+    );
+  }
+
+  late final _wire_persisted_sign_session_description__method__CoordinatorPtr =
+      _lookup<
+              ffi.NativeFunction<
+                  WireSyncReturn Function(
+                      ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_KeyId>)>>(
+          'wire_persisted_sign_session_description__method__Coordinator');
+  late final _wire_persisted_sign_session_description__method__Coordinator =
+      _wire_persisted_sign_session_description__method__CoordinatorPtr
+          .asFunction<
+              WireSyncReturn Function(
+                  ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_KeyId>)>();
+
   void wire_try_restore_signing_session__method__Coordinator(
     int port_,
     ffi.Pointer<wire_Coordinator> that,
@@ -1213,6 +1453,310 @@ class NativeWire implements FlutterRustBridgeWireBase {
           void Function(
               int, ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_KeyId>)>();
 
+  void wire_sub_tx_state__method__Wallet(
+    int port_,
+    ffi.Pointer<wire_Wallet> that,
+    ffi.Pointer<wire_KeyId> key_id,
+  ) {
+    return _wire_sub_tx_state__method__Wallet(
+      port_,
+      that,
+      key_id,
+    );
+  }
+
+  late final _wire_sub_tx_state__method__WalletPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Wallet>,
+              ffi.Pointer<wire_KeyId>)>>('wire_sub_tx_state__method__Wallet');
+  late final _wire_sub_tx_state__method__Wallet =
+      _wire_sub_tx_state__method__WalletPtr.asFunction<
+          void Function(
+              int, ffi.Pointer<wire_Wallet>, ffi.Pointer<wire_KeyId>)>();
+
+  WireSyncReturn wire_tx_state__method__Wallet(
+    ffi.Pointer<wire_Wallet> that,
+    ffi.Pointer<wire_KeyId> key_id,
+  ) {
+    return _wire_tx_state__method__Wallet(
+      that,
+      key_id,
+    );
+  }
+
+  late final _wire_tx_state__method__WalletPtr = _lookup<
+      ffi.NativeFunction<
+          WireSyncReturn Function(ffi.Pointer<wire_Wallet>,
+              ffi.Pointer<wire_KeyId>)>>('wire_tx_state__method__Wallet');
+  late final _wire_tx_state__method__Wallet =
+      _wire_tx_state__method__WalletPtr.asFunction<
+          WireSyncReturn Function(
+              ffi.Pointer<wire_Wallet>, ffi.Pointer<wire_KeyId>)>();
+
+  void wire_sync_txids__method__Wallet(
+    int port_,
+    ffi.Pointer<wire_Wallet> that,
+    ffi.Pointer<wire_KeyId> key_id,
+    ffi.Pointer<wire_StringList> txids,
+  ) {
+    return _wire_sync_txids__method__Wallet(
+      port_,
+      that,
+      key_id,
+      txids,
+    );
+  }
+
+  late final _wire_sync_txids__method__WalletPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Wallet>,
+                  ffi.Pointer<wire_KeyId>, ffi.Pointer<wire_StringList>)>>(
+      'wire_sync_txids__method__Wallet');
+  late final _wire_sync_txids__method__Wallet =
+      _wire_sync_txids__method__WalletPtr.asFunction<
+          void Function(int, ffi.Pointer<wire_Wallet>, ffi.Pointer<wire_KeyId>,
+              ffi.Pointer<wire_StringList>)>();
+
+  void wire_sync__method__Wallet(
+    int port_,
+    ffi.Pointer<wire_Wallet> that,
+    ffi.Pointer<wire_KeyId> key_id,
+  ) {
+    return _wire_sync__method__Wallet(
+      port_,
+      that,
+      key_id,
+    );
+  }
+
+  late final _wire_sync__method__WalletPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Wallet>,
+              ffi.Pointer<wire_KeyId>)>>('wire_sync__method__Wallet');
+  late final _wire_sync__method__Wallet =
+      _wire_sync__method__WalletPtr.asFunction<
+          void Function(
+              int, ffi.Pointer<wire_Wallet>, ffi.Pointer<wire_KeyId>)>();
+
+  void wire_next_address__method__Wallet(
+    int port_,
+    ffi.Pointer<wire_Wallet> that,
+    ffi.Pointer<wire_KeyId> key_id,
+  ) {
+    return _wire_next_address__method__Wallet(
+      port_,
+      that,
+      key_id,
+    );
+  }
+
+  late final _wire_next_address__method__WalletPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Wallet>,
+              ffi.Pointer<wire_KeyId>)>>('wire_next_address__method__Wallet');
+  late final _wire_next_address__method__Wallet =
+      _wire_next_address__method__WalletPtr.asFunction<
+          void Function(
+              int, ffi.Pointer<wire_Wallet>, ffi.Pointer<wire_KeyId>)>();
+
+  WireSyncReturn wire_addresses_state__method__Wallet(
+    ffi.Pointer<wire_Wallet> that,
+    ffi.Pointer<wire_KeyId> key_id,
+  ) {
+    return _wire_addresses_state__method__Wallet(
+      that,
+      key_id,
+    );
+  }
+
+  late final _wire_addresses_state__method__WalletPtr = _lookup<
+          ffi.NativeFunction<
+              WireSyncReturn Function(
+                  ffi.Pointer<wire_Wallet>, ffi.Pointer<wire_KeyId>)>>(
+      'wire_addresses_state__method__Wallet');
+  late final _wire_addresses_state__method__Wallet =
+      _wire_addresses_state__method__WalletPtr.asFunction<
+          WireSyncReturn Function(
+              ffi.Pointer<wire_Wallet>, ffi.Pointer<wire_KeyId>)>();
+
+  WireSyncReturn wire_validate_destination_address__method__Wallet(
+    ffi.Pointer<wire_Wallet> that,
+    ffi.Pointer<wire_uint_8_list> address,
+  ) {
+    return _wire_validate_destination_address__method__Wallet(
+      that,
+      address,
+    );
+  }
+
+  late final _wire_validate_destination_address__method__WalletPtr = _lookup<
+          ffi.NativeFunction<
+              WireSyncReturn Function(
+                  ffi.Pointer<wire_Wallet>, ffi.Pointer<wire_uint_8_list>)>>(
+      'wire_validate_destination_address__method__Wallet');
+  late final _wire_validate_destination_address__method__Wallet =
+      _wire_validate_destination_address__method__WalletPtr.asFunction<
+          WireSyncReturn Function(
+              ffi.Pointer<wire_Wallet>, ffi.Pointer<wire_uint_8_list>)>();
+
+  WireSyncReturn wire_validate_amount__method__Wallet(
+    ffi.Pointer<wire_Wallet> that,
+    ffi.Pointer<wire_uint_8_list> address,
+    int value,
+  ) {
+    return _wire_validate_amount__method__Wallet(
+      that,
+      address,
+      value,
+    );
+  }
+
+  late final _wire_validate_amount__method__WalletPtr = _lookup<
+      ffi.NativeFunction<
+          WireSyncReturn Function(
+              ffi.Pointer<wire_Wallet>,
+              ffi.Pointer<wire_uint_8_list>,
+              ffi.Uint64)>>('wire_validate_amount__method__Wallet');
+  late final _wire_validate_amount__method__Wallet =
+      _wire_validate_amount__method__WalletPtr.asFunction<
+          WireSyncReturn Function(
+              ffi.Pointer<wire_Wallet>, ffi.Pointer<wire_uint_8_list>, int)>();
+
+  void wire_send_to__method__Wallet(
+    int port_,
+    ffi.Pointer<wire_Wallet> that,
+    ffi.Pointer<wire_KeyId> key_id,
+    ffi.Pointer<wire_uint_8_list> to_address,
+    int value,
+    double feerate,
+  ) {
+    return _wire_send_to__method__Wallet(
+      port_,
+      that,
+      key_id,
+      to_address,
+      value,
+      feerate,
+    );
+  }
+
+  late final _wire_send_to__method__WalletPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Void Function(
+              ffi.Int64,
+              ffi.Pointer<wire_Wallet>,
+              ffi.Pointer<wire_KeyId>,
+              ffi.Pointer<wire_uint_8_list>,
+              ffi.Uint64,
+              ffi.Double)>>('wire_send_to__method__Wallet');
+  late final _wire_send_to__method__Wallet =
+      _wire_send_to__method__WalletPtr.asFunction<
+          void Function(int, ffi.Pointer<wire_Wallet>, ffi.Pointer<wire_KeyId>,
+              ffi.Pointer<wire_uint_8_list>, int, double)>();
+
+  WireSyncReturn wire_complete_unsigned_tx__method__Wallet(
+    ffi.Pointer<wire_Wallet> that,
+    ffi.Pointer<wire_UnsignedTx> unsigned_tx,
+    ffi.Pointer<wire_list_encoded_signature> signatures,
+  ) {
+    return _wire_complete_unsigned_tx__method__Wallet(
+      that,
+      unsigned_tx,
+      signatures,
+    );
+  }
+
+  late final _wire_complete_unsigned_tx__method__WalletPtr = _lookup<
+          ffi.NativeFunction<
+              WireSyncReturn Function(
+                  ffi.Pointer<wire_Wallet>,
+                  ffi.Pointer<wire_UnsignedTx>,
+                  ffi.Pointer<wire_list_encoded_signature>)>>(
+      'wire_complete_unsigned_tx__method__Wallet');
+  late final _wire_complete_unsigned_tx__method__Wallet =
+      _wire_complete_unsigned_tx__method__WalletPtr.asFunction<
+          WireSyncReturn Function(
+              ffi.Pointer<wire_Wallet>,
+              ffi.Pointer<wire_UnsignedTx>,
+              ffi.Pointer<wire_list_encoded_signature>)>();
+
+  void wire_broadcast_tx__method__Wallet(
+    int port_,
+    ffi.Pointer<wire_Wallet> that,
+    ffi.Pointer<wire_KeyId> key_id,
+    ffi.Pointer<wire_SignedTx> tx,
+  ) {
+    return _wire_broadcast_tx__method__Wallet(
+      port_,
+      that,
+      key_id,
+      tx,
+    );
+  }
+
+  late final _wire_broadcast_tx__method__WalletPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Wallet>,
+                  ffi.Pointer<wire_KeyId>, ffi.Pointer<wire_SignedTx>)>>(
+      'wire_broadcast_tx__method__Wallet');
+  late final _wire_broadcast_tx__method__Wallet =
+      _wire_broadcast_tx__method__WalletPtr.asFunction<
+          void Function(int, ffi.Pointer<wire_Wallet>, ffi.Pointer<wire_KeyId>,
+              ffi.Pointer<wire_SignedTx>)>();
+
+  WireSyncReturn wire_effect_of_tx__method__Wallet(
+    ffi.Pointer<wire_Wallet> that,
+    ffi.Pointer<wire_KeyId> key_id,
+    wire_RTransaction tx,
+  ) {
+    return _wire_effect_of_tx__method__Wallet(
+      that,
+      key_id,
+      tx,
+    );
+  }
+
+  late final _wire_effect_of_tx__method__WalletPtr = _lookup<
+      ffi.NativeFunction<
+          WireSyncReturn Function(
+              ffi.Pointer<wire_Wallet>,
+              ffi.Pointer<wire_KeyId>,
+              wire_RTransaction)>>('wire_effect_of_tx__method__Wallet');
+  late final _wire_effect_of_tx__method__Wallet =
+      _wire_effect_of_tx__method__WalletPtr.asFunction<
+          WireSyncReturn Function(ffi.Pointer<wire_Wallet>,
+              ffi.Pointer<wire_KeyId>, wire_RTransaction)>();
+
+  WireSyncReturn wire_tx__method__SignedTx(
+    ffi.Pointer<wire_SignedTx> that,
+  ) {
+    return _wire_tx__method__SignedTx(
+      that,
+    );
+  }
+
+  late final _wire_tx__method__SignedTxPtr = _lookup<
+          ffi
+          .NativeFunction<WireSyncReturn Function(ffi.Pointer<wire_SignedTx>)>>(
+      'wire_tx__method__SignedTx');
+  late final _wire_tx__method__SignedTx = _wire_tx__method__SignedTxPtr
+      .asFunction<WireSyncReturn Function(ffi.Pointer<wire_SignedTx>)>();
+
+  WireSyncReturn wire_tx__method__UnsignedTx(
+    ffi.Pointer<wire_UnsignedTx> that,
+  ) {
+    return _wire_tx__method__UnsignedTx(
+      that,
+    );
+  }
+
+  late final _wire_tx__method__UnsignedTxPtr = _lookup<
+      ffi.NativeFunction<
+          WireSyncReturn Function(
+              ffi.Pointer<wire_UnsignedTx>)>>('wire_tx__method__UnsignedTx');
+  late final _wire_tx__method__UnsignedTx = _wire_tx__method__UnsignedTxPtr
+      .asFunction<WireSyncReturn Function(ffi.Pointer<wire_UnsignedTx>)>();
+
   wire_ArcMutexVecPortDesc new_ArcMutexVecPortDesc() {
     return _new_ArcMutexVecPortDesc();
   }
@@ -1222,6 +1766,15 @@ class NativeWire implements FlutterRustBridgeWireBase {
           'new_ArcMutexVecPortDesc');
   late final _new_ArcMutexVecPortDesc = _new_ArcMutexVecPortDescPtr
       .asFunction<wire_ArcMutexVecPortDesc Function()>();
+
+  wire_ChainSync new_ChainSync() {
+    return _new_ChainSync();
+  }
+
+  late final _new_ChainSyncPtr =
+      _lookup<ffi.NativeFunction<wire_ChainSync Function()>>('new_ChainSync');
+  late final _new_ChainSync =
+      _new_ChainSyncPtr.asFunction<wire_ChainSync Function()>();
 
   wire_FfiCoordinator new_FfiCoordinator() {
     return _new_FfiCoordinator();
@@ -1245,6 +1798,42 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _new_FrostsnapCoreCoordinatorFrostKeyState =
       _new_FrostsnapCoreCoordinatorFrostKeyStatePtr
           .asFunction<wire_FrostsnapCoreCoordinatorFrostKeyState Function()>();
+
+  wire_FrostsnapCoreMessageTransactionSignTask
+      new_FrostsnapCoreMessageTransactionSignTask() {
+    return _new_FrostsnapCoreMessageTransactionSignTask();
+  }
+
+  late final _new_FrostsnapCoreMessageTransactionSignTaskPtr = _lookup<
+      ffi.NativeFunction<
+          wire_FrostsnapCoreMessageTransactionSignTask
+              Function()>>('new_FrostsnapCoreMessageTransactionSignTask');
+  late final _new_FrostsnapCoreMessageTransactionSignTask =
+      _new_FrostsnapCoreMessageTransactionSignTaskPtr.asFunction<
+          wire_FrostsnapCoreMessageTransactionSignTask Function()>();
+
+  wire_MutexBTreeMapKeyIdStreamSinkTxState
+      new_MutexBTreeMapKeyIdStreamSinkTxState() {
+    return _new_MutexBTreeMapKeyIdStreamSinkTxState();
+  }
+
+  late final _new_MutexBTreeMapKeyIdStreamSinkTxStatePtr = _lookup<
+          ffi
+          .NativeFunction<wire_MutexBTreeMapKeyIdStreamSinkTxState Function()>>(
+      'new_MutexBTreeMapKeyIdStreamSinkTxState');
+  late final _new_MutexBTreeMapKeyIdStreamSinkTxState =
+      _new_MutexBTreeMapKeyIdStreamSinkTxStatePtr
+          .asFunction<wire_MutexBTreeMapKeyIdStreamSinkTxState Function()>();
+
+  wire_MutexCrateWalletWallet new_MutexCrateWalletWallet() {
+    return _new_MutexCrateWalletWallet();
+  }
+
+  late final _new_MutexCrateWalletWalletPtr =
+      _lookup<ffi.NativeFunction<wire_MutexCrateWalletWallet Function()>>(
+          'new_MutexCrateWalletWallet');
+  late final _new_MutexCrateWalletWallet = _new_MutexCrateWalletWalletPtr
+      .asFunction<wire_MutexCrateWalletWallet Function()>();
 
   wire_PortBytesToReadSender new_PortBytesToReadSender() {
     return _new_PortBytesToReadSender();
@@ -1285,6 +1874,41 @@ class NativeWire implements FlutterRustBridgeWireBase {
           'new_PortWriteSender');
   late final _new_PortWriteSender =
       _new_PortWriteSenderPtr.asFunction<wire_PortWriteSender Function()>();
+
+  wire_RTransaction new_RTransaction() {
+    return _new_RTransaction();
+  }
+
+  late final _new_RTransactionPtr =
+      _lookup<ffi.NativeFunction<wire_RTransaction Function()>>(
+          'new_RTransaction');
+  late final _new_RTransaction =
+      _new_RTransactionPtr.asFunction<wire_RTransaction Function()>();
+
+  ffi.Pointer<wire_StringList> new_StringList_0(
+    int len,
+  ) {
+    return _new_StringList_0(
+      len,
+    );
+  }
+
+  late final _new_StringList_0Ptr = _lookup<
+          ffi.NativeFunction<ffi.Pointer<wire_StringList> Function(ffi.Int32)>>(
+      'new_StringList_0');
+  late final _new_StringList_0 = _new_StringList_0Ptr
+      .asFunction<ffi.Pointer<wire_StringList> Function(int)>();
+
+  ffi.Pointer<wire_ConfirmationTime> new_box_autoadd_confirmation_time_0() {
+    return _new_box_autoadd_confirmation_time_0();
+  }
+
+  late final _new_box_autoadd_confirmation_time_0Ptr = _lookup<
+          ffi.NativeFunction<ffi.Pointer<wire_ConfirmationTime> Function()>>(
+      'new_box_autoadd_confirmation_time_0');
+  late final _new_box_autoadd_confirmation_time_0 =
+      _new_box_autoadd_confirmation_time_0Ptr
+          .asFunction<ffi.Pointer<wire_ConfirmationTime> Function()>();
 
   ffi.Pointer<wire_Coordinator> new_box_autoadd_coordinator_0() {
     return _new_box_autoadd_coordinator_0();
@@ -1347,16 +1971,6 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _new_box_autoadd_key_id_0 = _new_box_autoadd_key_id_0Ptr
       .asFunction<ffi.Pointer<wire_KeyId> Function()>();
 
-  ffi.Pointer<wire_KeyState> new_box_autoadd_key_state_0() {
-    return _new_box_autoadd_key_state_0();
-  }
-
-  late final _new_box_autoadd_key_state_0Ptr =
-      _lookup<ffi.NativeFunction<ffi.Pointer<wire_KeyState> Function()>>(
-          'new_box_autoadd_key_state_0');
-  late final _new_box_autoadd_key_state_0 = _new_box_autoadd_key_state_0Ptr
-      .asFunction<ffi.Pointer<wire_KeyState> Function()>();
-
   ffi.Pointer<wire_PortBytesToRead> new_box_autoadd_port_bytes_to_read_0() {
     return _new_box_autoadd_port_bytes_to_read_0();
   }
@@ -1398,6 +2012,16 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _new_box_autoadd_port_write_0 = _new_box_autoadd_port_write_0Ptr
       .asFunction<ffi.Pointer<wire_PortWrite> Function()>();
 
+  ffi.Pointer<wire_SignedTx> new_box_autoadd_signed_tx_0() {
+    return _new_box_autoadd_signed_tx_0();
+  }
+
+  late final _new_box_autoadd_signed_tx_0Ptr =
+      _lookup<ffi.NativeFunction<ffi.Pointer<wire_SignedTx> Function()>>(
+          'new_box_autoadd_signed_tx_0');
+  late final _new_box_autoadd_signed_tx_0 = _new_box_autoadd_signed_tx_0Ptr
+      .asFunction<ffi.Pointer<wire_SignedTx> Function()>();
+
   ffi.Pointer<wire_SigningState> new_box_autoadd_signing_state_0() {
     return _new_box_autoadd_signing_state_0();
   }
@@ -1408,6 +2032,36 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _new_box_autoadd_signing_state_0 =
       _new_box_autoadd_signing_state_0Ptr
           .asFunction<ffi.Pointer<wire_SigningState> Function()>();
+
+  ffi.Pointer<wire_Transaction> new_box_autoadd_transaction_0() {
+    return _new_box_autoadd_transaction_0();
+  }
+
+  late final _new_box_autoadd_transaction_0Ptr =
+      _lookup<ffi.NativeFunction<ffi.Pointer<wire_Transaction> Function()>>(
+          'new_box_autoadd_transaction_0');
+  late final _new_box_autoadd_transaction_0 = _new_box_autoadd_transaction_0Ptr
+      .asFunction<ffi.Pointer<wire_Transaction> Function()>();
+
+  ffi.Pointer<wire_UnsignedTx> new_box_autoadd_unsigned_tx_0() {
+    return _new_box_autoadd_unsigned_tx_0();
+  }
+
+  late final _new_box_autoadd_unsigned_tx_0Ptr =
+      _lookup<ffi.NativeFunction<ffi.Pointer<wire_UnsignedTx> Function()>>(
+          'new_box_autoadd_unsigned_tx_0');
+  late final _new_box_autoadd_unsigned_tx_0 = _new_box_autoadd_unsigned_tx_0Ptr
+      .asFunction<ffi.Pointer<wire_UnsignedTx> Function()>();
+
+  ffi.Pointer<wire_Wallet> new_box_autoadd_wallet_0() {
+    return _new_box_autoadd_wallet_0();
+  }
+
+  late final _new_box_autoadd_wallet_0Ptr =
+      _lookup<ffi.NativeFunction<ffi.Pointer<wire_Wallet> Function()>>(
+          'new_box_autoadd_wallet_0');
+  late final _new_box_autoadd_wallet_0 = _new_box_autoadd_wallet_0Ptr
+      .asFunction<ffi.Pointer<wire_Wallet> Function()>();
 
   ffi.Pointer<wire_list_device> new_list_device_0(
     int len,
@@ -1453,21 +2107,6 @@ class NativeWire implements FlutterRustBridgeWireBase {
               ffi.Int32)>>('new_list_encoded_signature_0');
   late final _new_list_encoded_signature_0 = _new_list_encoded_signature_0Ptr
       .asFunction<ffi.Pointer<wire_list_encoded_signature> Function(int)>();
-
-  ffi.Pointer<wire_list_frost_key> new_list_frost_key_0(
-    int len,
-  ) {
-    return _new_list_frost_key_0(
-      len,
-    );
-  }
-
-  late final _new_list_frost_key_0Ptr = _lookup<
-      ffi.NativeFunction<
-          ffi.Pointer<wire_list_frost_key> Function(
-              ffi.Int32)>>('new_list_frost_key_0');
-  late final _new_list_frost_key_0 = _new_list_frost_key_0Ptr
-      .asFunction<ffi.Pointer<wire_list_frost_key> Function(int)>();
 
   ffi.Pointer<wire_list_port_desc> new_list_port_desc_0(
     int len,
@@ -1530,6 +2169,35 @@ class NativeWire implements FlutterRustBridgeWireBase {
       _share_opaque_ArcMutexVecPortDescPtr
           .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
 
+  void drop_opaque_ChainSync(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _drop_opaque_ChainSync(
+      ptr,
+    );
+  }
+
+  late final _drop_opaque_ChainSyncPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+          'drop_opaque_ChainSync');
+  late final _drop_opaque_ChainSync = _drop_opaque_ChainSyncPtr
+      .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  ffi.Pointer<ffi.Void> share_opaque_ChainSync(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _share_opaque_ChainSync(
+      ptr,
+    );
+  }
+
+  late final _share_opaque_ChainSyncPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Void> Function(
+              ffi.Pointer<ffi.Void>)>>('share_opaque_ChainSync');
+  late final _share_opaque_ChainSync = _share_opaque_ChainSyncPtr
+      .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
+
   void drop_opaque_FfiCoordinator(
     ffi.Pointer<ffi.Void> ptr,
   ) {
@@ -1588,6 +2256,99 @@ class NativeWire implements FlutterRustBridgeWireBase {
       'share_opaque_FrostsnapCoreCoordinatorFrostKeyState');
   late final _share_opaque_FrostsnapCoreCoordinatorFrostKeyState =
       _share_opaque_FrostsnapCoreCoordinatorFrostKeyStatePtr
+          .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
+
+  void drop_opaque_FrostsnapCoreMessageTransactionSignTask(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _drop_opaque_FrostsnapCoreMessageTransactionSignTask(
+      ptr,
+    );
+  }
+
+  late final _drop_opaque_FrostsnapCoreMessageTransactionSignTaskPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+          'drop_opaque_FrostsnapCoreMessageTransactionSignTask');
+  late final _drop_opaque_FrostsnapCoreMessageTransactionSignTask =
+      _drop_opaque_FrostsnapCoreMessageTransactionSignTaskPtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  ffi.Pointer<ffi.Void> share_opaque_FrostsnapCoreMessageTransactionSignTask(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _share_opaque_FrostsnapCoreMessageTransactionSignTask(
+      ptr,
+    );
+  }
+
+  late final _share_opaque_FrostsnapCoreMessageTransactionSignTaskPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>>(
+      'share_opaque_FrostsnapCoreMessageTransactionSignTask');
+  late final _share_opaque_FrostsnapCoreMessageTransactionSignTask =
+      _share_opaque_FrostsnapCoreMessageTransactionSignTaskPtr
+          .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
+
+  void drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(
+      ptr,
+    );
+  }
+
+  late final _drop_opaque_MutexBTreeMapKeyIdStreamSinkTxStatePtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+          'drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState');
+  late final _drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState =
+      _drop_opaque_MutexBTreeMapKeyIdStreamSinkTxStatePtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  ffi.Pointer<ffi.Void> share_opaque_MutexBTreeMapKeyIdStreamSinkTxState(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _share_opaque_MutexBTreeMapKeyIdStreamSinkTxState(
+      ptr,
+    );
+  }
+
+  late final _share_opaque_MutexBTreeMapKeyIdStreamSinkTxStatePtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>>(
+      'share_opaque_MutexBTreeMapKeyIdStreamSinkTxState');
+  late final _share_opaque_MutexBTreeMapKeyIdStreamSinkTxState =
+      _share_opaque_MutexBTreeMapKeyIdStreamSinkTxStatePtr
+          .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
+
+  void drop_opaque_MutexCrateWalletWallet(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _drop_opaque_MutexCrateWalletWallet(
+      ptr,
+    );
+  }
+
+  late final _drop_opaque_MutexCrateWalletWalletPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+          'drop_opaque_MutexCrateWalletWallet');
+  late final _drop_opaque_MutexCrateWalletWallet =
+      _drop_opaque_MutexCrateWalletWalletPtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  ffi.Pointer<ffi.Void> share_opaque_MutexCrateWalletWallet(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _share_opaque_MutexCrateWalletWallet(
+      ptr,
+    );
+  }
+
+  late final _share_opaque_MutexCrateWalletWalletPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Void> Function(
+              ffi.Pointer<ffi.Void>)>>('share_opaque_MutexCrateWalletWallet');
+  late final _share_opaque_MutexCrateWalletWallet =
+      _share_opaque_MutexCrateWalletWalletPtr
           .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
 
   void drop_opaque_PortBytesToReadSender(
@@ -1708,6 +2469,35 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _share_opaque_PortWriteSender = _share_opaque_PortWriteSenderPtr
       .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
 
+  void drop_opaque_RTransaction(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _drop_opaque_RTransaction(
+      ptr,
+    );
+  }
+
+  late final _drop_opaque_RTransactionPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+          'drop_opaque_RTransaction');
+  late final _drop_opaque_RTransaction = _drop_opaque_RTransactionPtr
+      .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  ffi.Pointer<ffi.Void> share_opaque_RTransaction(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _share_opaque_RTransaction(
+      ptr,
+    );
+  }
+
+  late final _share_opaque_RTransactionPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Void> Function(
+              ffi.Pointer<ffi.Void>)>>('share_opaque_RTransaction');
+  late final _share_opaque_RTransaction = _share_opaque_RTransactionPtr
+      .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
+
   void free_WireSyncReturn(
     WireSyncReturn ptr,
   ) {
@@ -1725,25 +2515,6 @@ class NativeWire implements FlutterRustBridgeWireBase {
 
 final class _Dart_Handle extends ffi.Opaque {}
 
-final class wire_FrostsnapCoreCoordinatorFrostKeyState extends ffi.Struct {
-  external ffi.Pointer<ffi.Void> ptr;
-}
-
-final class wire_FrostKey extends ffi.Struct {
-  external wire_FrostsnapCoreCoordinatorFrostKeyState field0;
-}
-
-final class wire_list_frost_key extends ffi.Struct {
-  external ffi.Pointer<wire_FrostKey> ptr;
-
-  @ffi.Int32()
-  external int len;
-}
-
-final class wire_KeyState extends ffi.Struct {
-  external ffi.Pointer<wire_list_frost_key> keys;
-}
-
 final class wire_uint_8_list extends ffi.Struct {
   external ffi.Pointer<ffi.Uint8> ptr;
 
@@ -1757,6 +2528,35 @@ final class wire_DeviceId extends ffi.Struct {
 
 final class wire_KeyId extends ffi.Struct {
   external ffi.Pointer<wire_uint_8_list> field0;
+}
+
+final class wire_RTransaction extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_ConfirmationTime extends ffi.Struct {
+  @ffi.Uint32()
+  external int height;
+
+  @ffi.Uint64()
+  external int time;
+}
+
+final class wire_Transaction extends ffi.Struct {
+  @ffi.Int64()
+  external int net_value;
+
+  external wire_RTransaction inner;
+
+  external ffi.Pointer<wire_ConfirmationTime> confirmation_time;
+}
+
+final class wire_FrostsnapCoreCoordinatorFrostKeyState extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_FrostKey extends ffi.Struct {
+  external wire_FrostsnapCoreCoordinatorFrostKeyState field0;
 }
 
 final class wire_PortOpenSender extends ffi.Struct {
@@ -1884,6 +2684,45 @@ final class wire_FfiCoordinator extends ffi.Struct {
 
 final class wire_Coordinator extends ffi.Struct {
   external wire_FfiCoordinator field0;
+}
+
+final class wire_FrostsnapCoreMessageTransactionSignTask extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_UnsignedTx extends ffi.Struct {
+  external wire_FrostsnapCoreMessageTransactionSignTask task;
+}
+
+final class wire_MutexCrateWalletWallet extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_MutexBTreeMapKeyIdStreamSinkTxState extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_ChainSync extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_Wallet extends ffi.Struct {
+  external wire_MutexCrateWalletWallet inner;
+
+  external wire_MutexBTreeMapKeyIdStreamSinkTxState wallet_streams;
+
+  external wire_ChainSync chain_sync;
+}
+
+final class wire_StringList extends ffi.Struct {
+  external ffi.Pointer<ffi.Pointer<wire_uint_8_list>> ptr;
+
+  @ffi.Int32()
+  external int len;
+}
+
+final class wire_SignedTx extends ffi.Struct {
+  external wire_RTransaction inner;
 }
 
 typedef DartPostCObjectFnType = ffi.Pointer<

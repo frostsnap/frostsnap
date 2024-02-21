@@ -6,9 +6,6 @@ on:
       - master
   pull_request:
  
-env:
-  NON_DEVICE_PACKAGES: -p frostsnap_comms -p frostsnap_core -p frostsnap_coordinator
-
 jobs:
   device:
     runs-on: ubuntu-latest

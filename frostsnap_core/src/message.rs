@@ -58,6 +58,7 @@ pub struct SignRequest {
     // mechanism
     pub nonces: BTreeMap<Scalar<Public, NonZero>, (Vec<Nonce>, usize, usize)>,
     pub sign_task: SignTask,
+    pub key_id: KeyId,
 }
 
 impl SignRequest {
@@ -180,7 +181,7 @@ pub enum CoordinatorToUserKeyGenMessage {
 #[derive(Clone, Debug)]
 pub enum DeviceToUserMessage {
     CheckKeyGen { session_hash: SessionHash },
-    SignatureRequest { sign_task: SignTask },
+    SignatureRequest { sign_task: SignTask, key_id: KeyId },
     Canceled { task: TaskKind },
 }
 
@@ -198,13 +199,21 @@ pub enum DeviceToStorageMessage {
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum SignTask {
-    Plain(Vec<u8>),                                                 // 1 nonce & sig
-    Nostr(#[bincode(with_serde)] Box<crate::nostr::UnsignedEvent>), // 1 nonce & sig
-    Transaction {
+    Plain {
+        message: Vec<u8>,
+    }, // 1 nonce & sig
+    Nostr {
         #[bincode(with_serde)]
-        tx_template: bitcoin::Transaction,
-        prevouts: Vec<TxInput>,
-    }, // N nonces and sigs
+        event: Box<crate::nostr::UnsignedEvent>,
+    }, // 1 nonce & sig
+    Transaction(TransactionSignTask),
+}
+
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct TransactionSignTask {
+    #[bincode(with_serde)]
+    pub tx_template: bitcoin::Transaction,
+    pub prevouts: Vec<TxInput>,
 }
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -223,14 +232,15 @@ impl core::borrow::Borrow<bitcoin::TxOut> for TxInput {
 }
 
 // What to show on the device for signing requests
+// TODO: Remove this -- the device impl should decide what to show
 impl core::fmt::Display for SignTask {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            SignTask::Plain(message) => {
+            SignTask::Plain { message, .. } => {
                 write!(f, "Plain:{}", String::from_utf8_lossy(message))
             }
-            SignTask::Nostr(event) => write!(f, "Nostr: {}", event.content),
-            SignTask::Transaction { tx_template, .. } => {
+            SignTask::Nostr { event, .. } => write!(f, "Nostr: {}", event.content),
+            SignTask::Transaction(TransactionSignTask { tx_template, .. }) => {
                 let mut lines = vec![];
                 for output in &tx_template.output {
                     let address = bitcoin::Address::from_script(
@@ -262,24 +272,24 @@ impl SignTask {
 
     pub fn sign_items(&self) -> Vec<SignItem> {
         match self {
-            SignTask::Plain(message) => vec![SignItem {
+            SignTask::Plain { message } => vec![SignItem {
                 message: message.clone(),
                 tap_tweak: false,
                 bip32_path: vec![],
             }],
-            SignTask::Nostr(event) => vec![SignItem {
+            SignTask::Nostr { event } => vec![SignItem {
                 message: event.hash_bytes.clone(),
                 tap_tweak: false,
                 bip32_path: vec![],
             }],
-            SignTask::Transaction {
+            SignTask::Transaction(TransactionSignTask {
                 tx_template,
                 prevouts,
-            } => {
-                use bitcoin::util::sighash::SighashCache;
+            }) => {
+                use bitcoin::sighash::SighashCache;
                 let mut tx_sighashes = vec![];
                 let _sighash_tx = tx_template.clone();
-                let schnorr_sighashty = bitcoin::SchnorrSighashType::Default;
+                let schnorr_sighashty = bitcoin::sighash::TapSighashType::Default;
                 for (i, _) in tx_template.input.iter().enumerate() {
                     let mut sighash_cache = SighashCache::new(&_sighash_tx);
                     let sighash = sighash_cache
@@ -295,9 +305,11 @@ impl SignTask {
                     .into_iter()
                     .zip(prevouts.iter())
                     .filter_map(|(sighash, input)| {
+                        use bitcoin::hashes::Hash;
+                        let bip32_path = input.bip32_path.clone()?;
                         Some(SignItem {
-                            message: sighash.to_vec(),
-                            bip32_path: input.bip32_path.clone()?,
+                            message: sighash.as_raw_hash().to_byte_array().to_vec(),
+                            bip32_path,
                             tap_tweak: true,
                         })
                     })
@@ -325,7 +337,7 @@ impl SignItem {
         };
 
         if self.tap_tweak {
-            let tweak = bitcoin::util::taproot::TapTweakHash::from_key_and_tweak(
+            let tweak = bitcoin::taproot::TapTweakHash::from_key_and_tweak(
                 derived_key.to_libsecp_xonly(),
                 None,
             )

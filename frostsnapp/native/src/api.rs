@@ -1,9 +1,12 @@
+pub use crate::chain_sync::ChainSync;
 pub use crate::coordinator::{
     PortBytesToReadSender, PortOpenSender, PortReadSender, PortWriteSender,
 };
 use crate::device_list::DeviceList;
 pub use crate::FfiCoordinator;
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, Context, Result};
+pub use bdk_chain::bitcoin;
+pub use bitcoin::Transaction as RTransaction;
 use flutter_rust_bridge::{frb, RustOpaque, StreamSink, SyncReturn};
 pub use frostsnap_coordinator::frostsnap_core;
 use frostsnap_coordinator::frostsnap_core::message::SignTask;
@@ -13,12 +16,15 @@ pub use frostsnap_core::message::{CoordinatorToUserKeyGenMessage, EncodedSignatu
 pub use frostsnap_core::{DeviceId, FrostKeyExt, KeyId};
 use lazy_static::lazy_static;
 use llsdb::LlsDb;
-use std::collections::HashMap;
-use std::fs::{File, OpenOptions};
+pub use std::collections::{BTreeMap, HashMap};
+use std::fs::OpenOptions;
+use std::ops::Deref;
+use std::str::FromStr;
 use std::sync::Arc;
 pub use std::sync::{Mutex, RwLock};
+use std::time::Instant;
 #[allow(unused)]
-use tracing::{event, Level as TLevel};
+use tracing::{event, span, Level as TLevel};
 
 lazy_static! {
     static ref PORT_EVENT_STREAM: RwLock<Option<StreamSink<PortEvent>>> = RwLock::default();
@@ -36,29 +42,17 @@ pub fn sub_port_events(event_stream: StreamSink<PortEvent>) {
 
 pub fn sub_device_events(new_stream: StreamSink<DeviceListUpdate>) {
     let mut device_list_and_stream = DEVICE_LIST.lock().unwrap();
-    let (_, stream) = &mut *device_list_and_stream;
-
+    let (list, stream) = &mut *device_list_and_stream;
+    new_stream.add(DeviceListUpdate {
+        changes: vec![],
+        state: list.state(),
+    });
     if let Some(old_stream) = stream.replace(new_stream) {
         old_stream.close();
     }
 }
 
-pub fn sub_key_events(stream: StreamSink<KeyState>) {
-    let mut key_event_stream = KEY_EVENT_STREAM.lock().unwrap();
-    if let Some(existing) = key_event_stream.replace(stream) {
-        existing.close();
-    }
-}
-
-pub fn emit_key_event(event: KeyState) {
-    let mut key_events = KEY_EVENT_STREAM.lock().unwrap();
-
-    if let Some(key_events) = &mut *key_events {
-        key_events.add(event);
-    }
-}
-
-pub(crate) fn emit_event(event: PortEvent) -> anyhow::Result<()> {
+pub(crate) fn emit_event(event: PortEvent) -> Result<()> {
     let stream = PORT_EVENT_STREAM.read().expect("lock must not be poisoned");
 
     let stream = stream.as_ref().expect("init_events must be called first");
@@ -87,6 +81,23 @@ pub(crate) fn emit_device_events(new_events: Vec<DeviceChange>) {
 pub(crate) fn init_device_names(device_names: HashMap<DeviceId, String>) {
     let mut device_list_and_stream = DEVICE_LIST.lock().unwrap();
     device_list_and_stream.0.init_names(device_names);
+}
+
+pub struct Transaction {
+    pub net_value: i64,
+    pub inner: RustOpaque<RTransaction>,
+    pub confirmation_time: Option<ConfirmationTime>,
+}
+
+impl Transaction {
+    pub fn txid(&self) -> SyncReturn<String> {
+        SyncReturn(self.inner.txid().to_string())
+    }
+}
+
+pub struct ConfirmationTime {
+    pub height: u32,
+    pub time: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -264,8 +275,6 @@ pub fn get_device(id: DeviceId) -> SyncReturn<Device> {
     SyncReturn(device)
 }
 
-// pub fn start_signing(devices: Vec<DeviceId>, message: String) ->
-
 pub type SessionHash = [u8; 32];
 
 #[derive(Clone, Debug, Copy)]
@@ -335,27 +344,21 @@ impl DeviceListState {
     }
 }
 
-pub fn new_coordinator(db_file: String) -> anyhow::Result<Coordinator> {
-    let db = load_database(db_file)?;
+pub fn load(db_file: String) -> anyhow::Result<(Coordinator, Wallet)> {
     let usb_manager = UsbSerialManager::new(Box::new(DesktopSerial));
-
-    Ok(Coordinator(RustOpaque::new(FfiCoordinator::new(
-        db,
-        usb_manager,
-    )?)))
+    _load(db_file, usb_manager)
 }
 
-pub fn new_coordinator_host_handles_serial(
+pub fn load_host_handles_serial(
     db_file: String,
-) -> anyhow::Result<(Coordinator, FfiSerial)> {
-    let db = load_database(db_file)?;
+) -> anyhow::Result<(Coordinator, FfiSerial, Wallet)> {
     let ffi_serial = FfiSerial::default();
     let usb_manager = UsbSerialManager::new(Box::new(ffi_serial.clone()));
-    let coord = Coordinator(RustOpaque::new(FfiCoordinator::new(db, usb_manager)?));
-    Ok((coord, ffi_serial))
+    let (coord, wallet) = _load(db_file, usb_manager)?;
+    Ok((coord, ffi_serial, wallet))
 }
 
-fn load_database(db_file: String) -> anyhow::Result<LlsDb<File>> {
+fn _load(db_file: String, usb_serial_manager: UsbSerialManager) -> Result<(Coordinator, Wallet)> {
     let file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -367,7 +370,20 @@ fn load_database(db_file: String) -> anyhow::Result<LlsDb<File>> {
     let db =
         LlsDb::load_or_init(file).context(format!("failed to load database from {db_file}"))?;
 
-    Ok(db)
+    let db = Arc::new(Mutex::new(db));
+
+    let coordinator = FfiCoordinator::new(db.clone(), usb_serial_manager)?;
+    let persist_core_handle = coordinator.persist_core_handle();
+    let wallet = crate::wallet::_Wallet::load_or_init(
+        db.clone(),
+        bitcoin::Network::Signet,
+        persist_core_handle,
+    )?;
+    let coordinator = Coordinator(RustOpaque::new(coordinator));
+    let chain_sync = ChainSync::new(wallet.network)?;
+    let wallet = Wallet::new(wallet, chain_sync);
+
+    Ok((coordinator, wallet))
 }
 
 #[derive(Debug, Clone)]
@@ -392,7 +408,7 @@ impl FfiSerial {
 pub struct Coordinator(pub RustOpaque<FfiCoordinator>);
 
 impl Coordinator {
-    pub fn start_thread(&self) -> anyhow::Result<()> {
+    pub fn start_thread(&self) -> Result<()> {
         self.0.start()
     }
 
@@ -418,6 +434,11 @@ impl Coordinator {
         })
     }
 
+    pub fn sub_key_events(&self, stream: StreamSink<KeyState>) -> Result<()> {
+        self.0.sub_key_events(stream);
+        Ok(())
+    }
+
     pub fn get_key(&self, key_id: KeyId) -> SyncReturn<Option<FrostKey>> {
         SyncReturn(
             self.0
@@ -433,11 +454,29 @@ impl Coordinator {
         devices: Vec<DeviceId>,
         message: String,
         stream: StreamSink<SigningState>,
-    ) -> anyhow::Result<()> {
+    ) -> Result<()> {
         self.0.start_signing(
             key_id,
             devices.into_iter().collect(),
-            SignTask::Plain(message.into_bytes()),
+            SignTask::Plain {
+                message: message.into_bytes(),
+            },
+            stream,
+        )?;
+        Ok(())
+    }
+
+    pub fn start_signing_tx(
+        &self,
+        key_id: KeyId,
+        unsigned_tx: UnsignedTx,
+        devices: Vec<DeviceId>,
+        stream: StreamSink<SigningState>,
+    ) -> Result<()> {
+        self.0.start_signing(
+            key_id,
+            devices.into_iter().collect(),
+            SignTask::Transaction(unsigned_tx.task.deref().clone()),
             stream,
         )?;
         Ok(())
@@ -465,16 +504,339 @@ impl Coordinator {
         SyncReturn(self.0.can_restore_signing_session(key_id))
     }
 
+    pub fn persisted_sign_session_description(
+        &self,
+        key_id: KeyId,
+    ) -> Result<SyncReturn<Option<SignTaskDescription>>> {
+        self.0
+            .persisted_sign_session_description(key_id)
+            .map(SyncReturn)
+    }
+
     pub fn try_restore_signing_session(
         &self,
         key_id: KeyId,
         stream: StreamSink<SigningState>,
-    ) -> anyhow::Result<()> {
+    ) -> Result<()> {
         self.0.try_restore_signing_session(key_id, stream)
     }
+}
+
+pub struct Wallet {
+    pub inner: RustOpaque<Mutex<crate::wallet::_Wallet>>,
+    pub wallet_streams: RustOpaque<Mutex<BTreeMap<KeyId, StreamSink<TxState>>>>,
+    pub chain_sync: RustOpaque<ChainSync>,
+}
+
+impl Wallet {
+    fn new(wallet: crate::wallet::_Wallet, chain_sync: ChainSync) -> Self {
+        Self {
+            inner: RustOpaque::new(Mutex::new(wallet)),
+            wallet_streams: RustOpaque::new(Default::default()),
+            chain_sync: RustOpaque::new(chain_sync),
+        }
+    }
+
+    pub fn sub_tx_state(&self, key_id: KeyId, stream: StreamSink<TxState>) -> Result<()> {
+        stream.add(self.tx_state(key_id).0);
+        if let Some(existing) = self.wallet_streams.lock().unwrap().insert(key_id, stream) {
+            existing.close();
+        }
+
+        Ok(())
+    }
+
+    pub fn tx_state(&self, key_id: KeyId) -> SyncReturn<TxState> {
+        let txs = self.inner.lock().unwrap().list_transactions(key_id);
+        SyncReturn(TxState { txs })
+    }
+
+    pub fn sync_txids(
+        &self,
+        key_id: KeyId,
+        txids: Vec<String>,
+        stream: StreamSink<f64>,
+    ) -> Result<()> {
+        let span = span!(TLevel::DEBUG, "syncing txids");
+        event!(TLevel::INFO, "starting sync");
+        let _enter = span.enter();
+        let chain_sync = self.chain_sync.clone();
+        let start = Instant::now();
+
+        let mut sync_request = {
+            let wallet = self.inner.lock().unwrap();
+            let txids = txids
+                .into_iter()
+                .map(|txid| bitcoin::Txid::from_str(&txid).unwrap())
+                .collect();
+            wallet.sync_txs(txids)
+        };
+
+        let inspect_stream = stream.clone();
+
+        sync_request.inspect_all(move |_item, _i, total_processed, total| {
+            inspect_stream.add(total_processed as f64 / total as f64);
+        });
+
+        let update = chain_sync.sync(sync_request)?;
+        let mut wallet = self.inner.lock().unwrap();
+        let something_changed = wallet.finish_sync(update)?;
+
+        if something_changed {
+            let txs = wallet.list_transactions(key_id);
+            drop(wallet);
+            if let Some(wallet_stream) = self.wallet_streams.lock().unwrap().get(&key_id) {
+                wallet_stream.add(TxState { txs });
+            }
+
+            event!(
+                TLevel::INFO,
+                elapsed = start.elapsed().as_millis(),
+                "finished syncing txids with changes"
+            );
+        } else {
+            event!(
+                TLevel::INFO,
+                elapsed = start.elapsed().as_millis(),
+                "finished syncing txids without chanages"
+            );
+        }
+
+        stream.add(100.0);
+        stream.close();
+
+        Ok(())
+    }
+
+    pub fn sync(&self, key_id: KeyId, stream: StreamSink<f64>) -> Result<()> {
+        let span = span!(TLevel::DEBUG, "syncing", key_id = key_id.to_string());
+        let _enter = span.enter();
+        let start = Instant::now();
+        event!(TLevel::INFO, "starting sync");
+        let mut sync_request = {
+            let wallet = self.inner.lock().unwrap();
+            wallet.start_sync(key_id)
+        };
+        let chain_sync = self.chain_sync.clone();
+        let inspect_stream = stream.clone();
+
+        sync_request.inspect_all(move |_item, _i, total_processed, total| {
+            inspect_stream.add(total_processed as f64 / total as f64);
+        });
+
+        let update = chain_sync.sync(sync_request)?;
+        let mut wallet = self.inner.lock().unwrap();
+        let something_changed = wallet.finish_sync(update)?;
+
+        if something_changed {
+            let txs = wallet.list_transactions(key_id);
+            drop(wallet);
+            if let Some(wallet_stream) = self.wallet_streams.lock().unwrap().get(&key_id) {
+                wallet_stream.add(TxState { txs });
+            }
+
+            event!(TLevel::INFO, "finished with changes");
+        } else {
+            event!(
+                TLevel::INFO,
+                elapsed = start.elapsed().as_millis(),
+                "finished without changes"
+            );
+        }
+
+        stream.add(100.0);
+        stream.close();
+
+        Ok(())
+    }
+
+    pub fn next_address(&self, key_id: KeyId) -> Result<Address> {
+        self.inner.lock().unwrap().next_address(key_id)
+    }
+
+    pub fn addresses_state(&self, key_id: KeyId) -> SyncReturn<Vec<Address>> {
+        SyncReturn(self.inner.lock().unwrap().list_addresses(key_id))
+    }
+
+    pub fn validate_destination_address(&self, address: String) -> SyncReturn<Option<String>> {
+        SyncReturn(match bitcoin::Address::from_str(&address) {
+            Ok(address) => match address.require_network(self.inner.lock().unwrap().network) {
+                Ok(_) => None,
+                Err(e) => Some(e.to_string()),
+            },
+            Err(e) => Some(e.to_string()),
+        })
+    }
+
+    pub fn validate_amount(&self, address: String, value: u64) -> SyncReturn<Option<String>> {
+        SyncReturn(match bitcoin::Address::from_str(&address) {
+            Ok(address) => match address.require_network(self.inner.lock().unwrap().network) {
+                Ok(address) => {
+                    let dust_value = address.script_pubkey().dust_value().to_sat();
+                    if value < dust_value {
+                        event!(
+                            TLevel::DEBUG,
+                            value = value,
+                            dust_value = dust_value,
+                            "address validation rejected"
+                        );
+                        Some(format!("Too small to send. Must be at least {dust_value}"))
+                    } else {
+                        None
+                    }
+                }
+                Err(_e) => None,
+            },
+            Err(_e) => None,
+        })
+    }
+
+    pub fn send_to(
+        &self,
+        key_id: KeyId,
+        to_address: String,
+        value: u64,
+        feerate: f64,
+    ) -> Result<UnsignedTx> {
+        let mut wallet = self.inner.lock().unwrap();
+        let to_address = bitcoin::Address::from_str(&to_address)
+            .expect("validation should have checked")
+            .require_network(wallet.network)
+            .expect("validation should have checked");
+        let signing_task = wallet.send_to(key_id, to_address, value, feerate as f32)?;
+        let unsigned_tx = UnsignedTx {
+            task: RustOpaque::new(signing_task),
+        };
+        Ok(unsigned_tx)
+    }
+
+    pub fn complete_unsigned_tx(
+        &self,
+        unsigned_tx: UnsignedTx,
+        signatures: Vec<EncodedSignature>,
+    ) -> Result<SyncReturn<SignedTx>> {
+        let tx = self
+            .inner
+            .lock()
+            .unwrap()
+            .complete_tx_sign_task(unsigned_tx.task.deref().clone(), signatures)?;
+        Ok(SyncReturn(SignedTx {
+            inner: RustOpaque::new(tx),
+        }))
+    }
+
+    pub fn broadcast_tx(&self, key_id: KeyId, tx: SignedTx) -> Result<()> {
+        match self.chain_sync.broadcast(&tx.inner) {
+            Ok(_) => {
+                event!(
+                    TLevel::INFO,
+                    tx = tx.inner.txid().to_string(),
+                    "transaction successfully broadcast"
+                );
+                let mut inner = self.inner.lock().unwrap();
+                inner.broadcast_success(tx.inner.deref().to_owned());
+                let wallet_streams = self.wallet_streams.lock().unwrap();
+                if let Some(stream) = wallet_streams.get(&key_id) {
+                    let txs = inner.list_transactions(key_id);
+                    stream.add(TxState { txs });
+                }
+                Ok(())
+            }
+            Err(e) => {
+                use bdk_chain::bitcoin::consensus::Encodable;
+                use frostsnap_core::schnorr_fun::fun::hex;
+                let mut buf = vec![];
+                tx.inner.consensus_encode(&mut buf).unwrap();
+                let hex_tx = hex::encode(&buf);
+                event!(
+                    TLevel::ERROR,
+                    tx = tx.inner.txid().to_string(),
+                    hex = hex_tx,
+                    error = e.to_string(),
+                    "unable to broadcast"
+                );
+                Err(e)
+            }
+        }
+    }
+
+    pub fn effect_of_tx(
+        &self,
+        key_id: KeyId,
+        tx: RustOpaque<RTransaction>,
+    ) -> Result<SyncReturn<EffectOfTx>> {
+        let inner = self.inner.lock().unwrap();
+        let fee = inner.fee(&tx)?;
+        Ok(SyncReturn(EffectOfTx {
+            net_value: inner.net_value(key_id, &tx),
+            fee,
+            feerate: fee as f64 / (tx.weight().to_wu() as f64 / 4.0),
+            foreign_receiving_addresses: inner
+                .spends_outside(&tx)
+                .into_iter()
+                .map(|(spk, value)| {
+                    (
+                        bitcoin::Address::from_script(&spk, inner.network)
+                            .map(|address| address.to_string())
+                            .unwrap_or(spk.to_hex_string()),
+                        value,
+                    )
+                })
+                .collect(),
+        }))
+    }
+}
+
+pub struct SignedTx {
+    pub inner: RustOpaque<RTransaction>,
+}
+
+impl SignedTx {
+    pub fn tx(&self) -> SyncReturn<RustOpaque<RTransaction>> {
+        SyncReturn(self.inner.clone())
+    }
+}
+
+pub struct UnsignedTx {
+    pub task: RustOpaque<frostsnap_core::message::TransactionSignTask>,
+}
+
+impl UnsignedTx {
+    pub fn tx(&self) -> SyncReturn<RustOpaque<RTransaction>> {
+        SyncReturn(RustOpaque::new(self.task.tx_template.clone()))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Address {
+    pub index: u32,
+    pub address_string: String,
+    pub used: bool,
+}
+
+pub struct TxState {
+    pub txs: Vec<Transaction>,
+}
+
+#[derive(Clone, Debug)]
+pub struct EffectOfTx {
+    pub net_value: i64,
+    pub fee: u64,
+    pub feerate: f64,
+    pub foreign_receiving_addresses: Vec<(String, u64)>,
 }
 
 // TODO: remove me?
 pub fn echo_key_id(key_id: KeyId) -> KeyId {
     key_id
+}
+
+pub enum SignTaskDescription {
+    Plain { message: String },
+    // Nostr {
+    //     #[bincode(with_serde)]
+    //     event: Box<crate::nostr::UnsignedEvent>,
+    //     key_id: KeyId,
+    // }, // 1 nonce & sig
+    Transaction { unsigned_tx: UnsignedTx },
 }
