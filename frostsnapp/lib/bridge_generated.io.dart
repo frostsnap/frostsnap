@@ -40,11 +40,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   }
 
   @protected
-  wire_FrostsnapCoreCoordinatorFrostKeyState
-      api2wire_FrostsnapCoreCoordinatorFrostKeyState(
-          FrostsnapCoreCoordinatorFrostKeyState raw) {
-    final ptr = inner.new_FrostsnapCoreCoordinatorFrostKeyState();
-    _api_fill_to_wire_FrostsnapCoreCoordinatorFrostKeyState(raw, ptr);
+  wire_FrostsnapCoreCoordinatorFrostKey
+      api2wire_FrostsnapCoreCoordinatorFrostKey(
+          FrostsnapCoreCoordinatorFrostKey raw) {
+    final ptr = inner.new_FrostsnapCoreCoordinatorFrostKey();
+    _api_fill_to_wire_FrostsnapCoreCoordinatorFrostKey(raw, ptr);
     return ptr;
   }
 
@@ -343,11 +343,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   late final OpaqueTypeFinalizer _FfiCoordinatorFinalizer =
       OpaqueTypeFinalizer(inner._drop_opaque_FfiCoordinatorPtr);
   OpaqueTypeFinalizer get FfiCoordinatorFinalizer => _FfiCoordinatorFinalizer;
-  late final OpaqueTypeFinalizer
-      _FrostsnapCoreCoordinatorFrostKeyStateFinalizer = OpaqueTypeFinalizer(
-          inner._drop_opaque_FrostsnapCoreCoordinatorFrostKeyStatePtr);
-  OpaqueTypeFinalizer get FrostsnapCoreCoordinatorFrostKeyStateFinalizer =>
-      _FrostsnapCoreCoordinatorFrostKeyStateFinalizer;
+  late final OpaqueTypeFinalizer _FrostsnapCoreCoordinatorFrostKeyFinalizer =
+      OpaqueTypeFinalizer(
+          inner._drop_opaque_FrostsnapCoreCoordinatorFrostKeyPtr);
+  OpaqueTypeFinalizer get FrostsnapCoreCoordinatorFrostKeyFinalizer =>
+      _FrostsnapCoreCoordinatorFrostKeyFinalizer;
   late final OpaqueTypeFinalizer
       _FrostsnapCoreMessageTransactionSignTaskFinalizer = OpaqueTypeFinalizer(
           inner._drop_opaque_FrostsnapCoreMessageTransactionSignTaskPtr);
@@ -394,9 +394,9 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
     wireObj.ptr = apiObj.shareOrMove();
   }
 
-  void _api_fill_to_wire_FrostsnapCoreCoordinatorFrostKeyState(
-      FrostsnapCoreCoordinatorFrostKeyState apiObj,
-      wire_FrostsnapCoreCoordinatorFrostKeyState wireObj) {
+  void _api_fill_to_wire_FrostsnapCoreCoordinatorFrostKey(
+      FrostsnapCoreCoordinatorFrostKey apiObj,
+      wire_FrostsnapCoreCoordinatorFrostKey wireObj) {
     wireObj.ptr = apiObj.shareOrMove();
   }
 
@@ -559,8 +559,7 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   }
 
   void _api_fill_to_wire_frost_key(FrostKey apiObj, wire_FrostKey wireObj) {
-    wireObj.field0 =
-        api2wire_FrostsnapCoreCoordinatorFrostKeyState(apiObj.field0);
+    wireObj.field0 = api2wire_FrostsnapCoreCoordinatorFrostKey(apiObj.field0);
   }
 
   void _api_fill_to_wire_key_id(KeyId apiObj, wire_KeyId wireObj) {
@@ -1786,18 +1785,16 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _new_FfiCoordinator =
       _new_FfiCoordinatorPtr.asFunction<wire_FfiCoordinator Function()>();
 
-  wire_FrostsnapCoreCoordinatorFrostKeyState
-      new_FrostsnapCoreCoordinatorFrostKeyState() {
-    return _new_FrostsnapCoreCoordinatorFrostKeyState();
+  wire_FrostsnapCoreCoordinatorFrostKey new_FrostsnapCoreCoordinatorFrostKey() {
+    return _new_FrostsnapCoreCoordinatorFrostKey();
   }
 
-  late final _new_FrostsnapCoreCoordinatorFrostKeyStatePtr = _lookup<
-      ffi.NativeFunction<
-          wire_FrostsnapCoreCoordinatorFrostKeyState
-              Function()>>('new_FrostsnapCoreCoordinatorFrostKeyState');
-  late final _new_FrostsnapCoreCoordinatorFrostKeyState =
-      _new_FrostsnapCoreCoordinatorFrostKeyStatePtr
-          .asFunction<wire_FrostsnapCoreCoordinatorFrostKeyState Function()>();
+  late final _new_FrostsnapCoreCoordinatorFrostKeyPtr = _lookup<
+          ffi.NativeFunction<wire_FrostsnapCoreCoordinatorFrostKey Function()>>(
+      'new_FrostsnapCoreCoordinatorFrostKey');
+  late final _new_FrostsnapCoreCoordinatorFrostKey =
+      _new_FrostsnapCoreCoordinatorFrostKeyPtr
+          .asFunction<wire_FrostsnapCoreCoordinatorFrostKey Function()>();
 
   wire_FrostsnapCoreMessageTransactionSignTask
       new_FrostsnapCoreMessageTransactionSignTask() {
@@ -2227,35 +2224,35 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _share_opaque_FfiCoordinator = _share_opaque_FfiCoordinatorPtr
       .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
 
-  void drop_opaque_FrostsnapCoreCoordinatorFrostKeyState(
+  void drop_opaque_FrostsnapCoreCoordinatorFrostKey(
     ffi.Pointer<ffi.Void> ptr,
   ) {
-    return _drop_opaque_FrostsnapCoreCoordinatorFrostKeyState(
+    return _drop_opaque_FrostsnapCoreCoordinatorFrostKey(
       ptr,
     );
   }
 
-  late final _drop_opaque_FrostsnapCoreCoordinatorFrostKeyStatePtr =
+  late final _drop_opaque_FrostsnapCoreCoordinatorFrostKeyPtr =
       _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
-          'drop_opaque_FrostsnapCoreCoordinatorFrostKeyState');
-  late final _drop_opaque_FrostsnapCoreCoordinatorFrostKeyState =
-      _drop_opaque_FrostsnapCoreCoordinatorFrostKeyStatePtr
+          'drop_opaque_FrostsnapCoreCoordinatorFrostKey');
+  late final _drop_opaque_FrostsnapCoreCoordinatorFrostKey =
+      _drop_opaque_FrostsnapCoreCoordinatorFrostKeyPtr
           .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
 
-  ffi.Pointer<ffi.Void> share_opaque_FrostsnapCoreCoordinatorFrostKeyState(
+  ffi.Pointer<ffi.Void> share_opaque_FrostsnapCoreCoordinatorFrostKey(
     ffi.Pointer<ffi.Void> ptr,
   ) {
-    return _share_opaque_FrostsnapCoreCoordinatorFrostKeyState(
+    return _share_opaque_FrostsnapCoreCoordinatorFrostKey(
       ptr,
     );
   }
 
-  late final _share_opaque_FrostsnapCoreCoordinatorFrostKeyStatePtr = _lookup<
+  late final _share_opaque_FrostsnapCoreCoordinatorFrostKeyPtr = _lookup<
           ffi.NativeFunction<
               ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>>(
-      'share_opaque_FrostsnapCoreCoordinatorFrostKeyState');
-  late final _share_opaque_FrostsnapCoreCoordinatorFrostKeyState =
-      _share_opaque_FrostsnapCoreCoordinatorFrostKeyStatePtr
+      'share_opaque_FrostsnapCoreCoordinatorFrostKey');
+  late final _share_opaque_FrostsnapCoreCoordinatorFrostKey =
+      _share_opaque_FrostsnapCoreCoordinatorFrostKeyPtr
           .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
 
   void drop_opaque_FrostsnapCoreMessageTransactionSignTask(
@@ -2551,12 +2548,12 @@ final class wire_Transaction extends ffi.Struct {
   external ffi.Pointer<wire_ConfirmationTime> confirmation_time;
 }
 
-final class wire_FrostsnapCoreCoordinatorFrostKeyState extends ffi.Struct {
+final class wire_FrostsnapCoreCoordinatorFrostKey extends ffi.Struct {
   external ffi.Pointer<ffi.Void> ptr;
 }
 
 final class wire_FrostKey extends ffi.Struct {
-  external wire_FrostsnapCoreCoordinatorFrostKeyState field0;
+  external wire_FrostsnapCoreCoordinatorFrostKey field0;
 }
 
 final class wire_PortOpenSender extends ffi.Struct {

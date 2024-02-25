@@ -402,16 +402,16 @@ pub fn share_opaque_FfiCoordinator(ptr: *const c_void) -> *const c_void {
 }
 
 #[wasm_bindgen]
-pub fn drop_opaque_FrostsnapCoreCoordinatorFrostKeyState(ptr: *const c_void) {
+pub fn drop_opaque_FrostsnapCoreCoordinatorFrostKey(ptr: *const c_void) {
     unsafe {
-        Arc::<frostsnap_core::CoordinatorFrostKeyState>::decrement_strong_count(ptr as _);
+        Arc::<frostsnap_core::CoordinatorFrostKey>::decrement_strong_count(ptr as _);
     }
 }
 
 #[wasm_bindgen]
-pub fn share_opaque_FrostsnapCoreCoordinatorFrostKeyState(ptr: *const c_void) -> *const c_void {
+pub fn share_opaque_FrostsnapCoreCoordinatorFrostKey(ptr: *const c_void) -> *const c_void {
     unsafe {
-        Arc::<frostsnap_core::CoordinatorFrostKeyState>::increment_strong_count(ptr as _);
+        Arc::<frostsnap_core::CoordinatorFrostKey>::increment_strong_count(ptr as _);
         ptr
     }
 }
@@ -937,8 +937,8 @@ impl Wire2Api<RustOpaque<FfiCoordinator>> for JsValue {
         unsafe { support::opaque_from_dart((self.as_f64().unwrap() as usize) as _) }
     }
 }
-impl Wire2Api<RustOpaque<frostsnap_core::CoordinatorFrostKeyState>> for JsValue {
-    fn wire2api(self) -> RustOpaque<frostsnap_core::CoordinatorFrostKeyState> {
+impl Wire2Api<RustOpaque<frostsnap_core::CoordinatorFrostKey>> for JsValue {
+    fn wire2api(self) -> RustOpaque<frostsnap_core::CoordinatorFrostKey> {
         #[cfg(target_pointer_width = "64")]
         {
             compile_error!("64-bit pointers are not supported.");

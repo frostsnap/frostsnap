@@ -51,7 +51,7 @@ impl EncryptedShare {
     }
 }
 
-impl crate::KeyGenProvideShares {
+impl crate::message::KeyGenResponse {
     pub fn generate(
         frost: &Frost<sha2::Sha256, impl NonceGen>,
         my_poly: &[Scalar],

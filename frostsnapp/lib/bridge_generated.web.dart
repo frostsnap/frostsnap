@@ -36,8 +36,8 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
-  Object api2wire_FrostsnapCoreCoordinatorFrostKeyState(
-      FrostsnapCoreCoordinatorFrostKeyState raw) {
+  Object api2wire_FrostsnapCoreCoordinatorFrostKey(
+      FrostsnapCoreCoordinatorFrostKey raw) {
     return raw.shareOrMove();
   }
 
@@ -210,7 +210,7 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
 
   @protected
   List<dynamic> api2wire_frost_key(FrostKey raw) {
-    return [api2wire_FrostsnapCoreCoordinatorFrostKeyState(raw.field0)];
+    return [api2wire_FrostsnapCoreCoordinatorFrostKey(raw.field0)];
   }
 
   @protected
@@ -370,12 +370,10 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   Finalizer<PlatformPointer> get FfiCoordinatorFinalizer =>
       _FfiCoordinatorFinalizer;
   late final Finalizer<PlatformPointer>
-      _FrostsnapCoreCoordinatorFrostKeyStateFinalizer =
-      Finalizer<PlatformPointer>(
-          inner.drop_opaque_FrostsnapCoreCoordinatorFrostKeyState);
-  Finalizer<PlatformPointer>
-      get FrostsnapCoreCoordinatorFrostKeyStateFinalizer =>
-          _FrostsnapCoreCoordinatorFrostKeyStateFinalizer;
+      _FrostsnapCoreCoordinatorFrostKeyFinalizer = Finalizer<PlatformPointer>(
+          inner.drop_opaque_FrostsnapCoreCoordinatorFrostKey);
+  Finalizer<PlatformPointer> get FrostsnapCoreCoordinatorFrostKeyFinalizer =>
+      _FrostsnapCoreCoordinatorFrostKeyFinalizer;
   late final Finalizer<PlatformPointer>
       _FrostsnapCoreMessageTransactionSignTaskFinalizer =
       Finalizer<PlatformPointer>(
@@ -611,11 +609,10 @@ class NativeWasmModule implements WasmModule {
 
   external int /* *const c_void */ share_opaque_FfiCoordinator(ptr);
 
-  external dynamic /*  */ drop_opaque_FrostsnapCoreCoordinatorFrostKeyState(
-      ptr);
+  external dynamic /*  */ drop_opaque_FrostsnapCoreCoordinatorFrostKey(ptr);
 
   external int /* *const c_void */
-      share_opaque_FrostsnapCoreCoordinatorFrostKeyState(ptr);
+      share_opaque_FrostsnapCoreCoordinatorFrostKey(ptr);
 
   external dynamic /*  */ drop_opaque_FrostsnapCoreMessageTransactionSignTask(
       ptr);
@@ -898,12 +895,11 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   int /* *const c_void */ share_opaque_FfiCoordinator(ptr) =>
       wasmModule.share_opaque_FfiCoordinator(ptr);
 
-  dynamic /*  */ drop_opaque_FrostsnapCoreCoordinatorFrostKeyState(ptr) =>
-      wasmModule.drop_opaque_FrostsnapCoreCoordinatorFrostKeyState(ptr);
+  dynamic /*  */ drop_opaque_FrostsnapCoreCoordinatorFrostKey(ptr) =>
+      wasmModule.drop_opaque_FrostsnapCoreCoordinatorFrostKey(ptr);
 
-  int /* *const c_void */ share_opaque_FrostsnapCoreCoordinatorFrostKeyState(
-          ptr) =>
-      wasmModule.share_opaque_FrostsnapCoreCoordinatorFrostKeyState(ptr);
+  int /* *const c_void */ share_opaque_FrostsnapCoreCoordinatorFrostKey(ptr) =>
+      wasmModule.share_opaque_FrostsnapCoreCoordinatorFrostKey(ptr);
 
   dynamic /*  */ drop_opaque_FrostsnapCoreMessageTransactionSignTask(ptr) =>
       wasmModule.drop_opaque_FrostsnapCoreMessageTransactionSignTask(ptr);

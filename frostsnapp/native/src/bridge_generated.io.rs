@@ -416,9 +416,8 @@ pub extern "C" fn new_FfiCoordinator() -> wire_FfiCoordinator {
 }
 
 #[no_mangle]
-pub extern "C" fn new_FrostsnapCoreCoordinatorFrostKeyState(
-) -> wire_FrostsnapCoreCoordinatorFrostKeyState {
-    wire_FrostsnapCoreCoordinatorFrostKeyState::new_with_null_ptr()
+pub extern "C" fn new_FrostsnapCoreCoordinatorFrostKey() -> wire_FrostsnapCoreCoordinatorFrostKey {
+    wire_FrostsnapCoreCoordinatorFrostKey::new_with_null_ptr()
 }
 
 #[no_mangle]
@@ -645,18 +644,18 @@ pub extern "C" fn share_opaque_FfiCoordinator(ptr: *const c_void) -> *const c_vo
 }
 
 #[no_mangle]
-pub extern "C" fn drop_opaque_FrostsnapCoreCoordinatorFrostKeyState(ptr: *const c_void) {
+pub extern "C" fn drop_opaque_FrostsnapCoreCoordinatorFrostKey(ptr: *const c_void) {
     unsafe {
-        Arc::<frostsnap_core::CoordinatorFrostKeyState>::decrement_strong_count(ptr as _);
+        Arc::<frostsnap_core::CoordinatorFrostKey>::decrement_strong_count(ptr as _);
     }
 }
 
 #[no_mangle]
-pub extern "C" fn share_opaque_FrostsnapCoreCoordinatorFrostKeyState(
+pub extern "C" fn share_opaque_FrostsnapCoreCoordinatorFrostKey(
     ptr: *const c_void,
 ) -> *const c_void {
     unsafe {
-        Arc::<frostsnap_core::CoordinatorFrostKeyState>::increment_strong_count(ptr as _);
+        Arc::<frostsnap_core::CoordinatorFrostKey>::increment_strong_count(ptr as _);
         ptr
     }
 }
@@ -802,10 +801,10 @@ impl Wire2Api<RustOpaque<FfiCoordinator>> for wire_FfiCoordinator {
         unsafe { support::opaque_from_dart(self.ptr as _) }
     }
 }
-impl Wire2Api<RustOpaque<frostsnap_core::CoordinatorFrostKeyState>>
-    for wire_FrostsnapCoreCoordinatorFrostKeyState
+impl Wire2Api<RustOpaque<frostsnap_core::CoordinatorFrostKey>>
+    for wire_FrostsnapCoreCoordinatorFrostKey
 {
-    fn wire2api(self) -> RustOpaque<frostsnap_core::CoordinatorFrostKeyState> {
+    fn wire2api(self) -> RustOpaque<frostsnap_core::CoordinatorFrostKey> {
         unsafe { support::opaque_from_dart(self.ptr as _) }
     }
 }
@@ -1195,7 +1194,7 @@ pub struct wire_FfiCoordinator {
 
 #[repr(C)]
 #[derive(Clone)]
-pub struct wire_FrostsnapCoreCoordinatorFrostKeyState {
+pub struct wire_FrostsnapCoreCoordinatorFrostKey {
     ptr: *const core::ffi::c_void,
 }
 
@@ -1302,7 +1301,7 @@ pub struct wire_FfiSerial {
 #[repr(C)]
 #[derive(Clone)]
 pub struct wire_FrostKey {
-    field0: wire_FrostsnapCoreCoordinatorFrostKeyState,
+    field0: wire_FrostsnapCoreCoordinatorFrostKey,
 }
 
 #[repr(C)]
@@ -1454,7 +1453,7 @@ impl NewWithNullPtr for wire_FfiCoordinator {
         }
     }
 }
-impl NewWithNullPtr for wire_FrostsnapCoreCoordinatorFrostKeyState {
+impl NewWithNullPtr for wire_FrostsnapCoreCoordinatorFrostKey {
     fn new_with_null_ptr() -> Self {
         Self {
             ptr: core::ptr::null(),
@@ -1622,7 +1621,7 @@ impl Default for wire_FfiSerial {
 impl NewWithNullPtr for wire_FrostKey {
     fn new_with_null_ptr() -> Self {
         Self {
-            field0: wire_FrostsnapCoreCoordinatorFrostKeyState::new_with_null_ptr(),
+            field0: wire_FrostsnapCoreCoordinatorFrostKey::new_with_null_ptr(),
         }
     }
 }

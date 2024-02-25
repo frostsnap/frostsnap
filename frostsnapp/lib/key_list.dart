@@ -141,7 +141,10 @@ class _KeyCard extends State<KeyCard> {
             Text(
               toHex(Uint8List.fromList(widget.frostKey.id().field0)),
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  fontFamily: 'Monospace'),
             ),
             const SizedBox(height: 8),
             Text("Threshold: ${widget.frostKey.threshold()}"),

@@ -9,7 +9,6 @@ pub mod io;
 pub mod panic;
 #[cfg(feature = "frostypede")]
 pub mod st7735;
-pub mod state;
 pub mod storage;
 pub mod ui;
 

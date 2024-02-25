@@ -53,11 +53,12 @@ impl FfiCoordinator {
             .unwrap()
             .execute(|tx| {
                 let persist = PersistCore::new(tx)?;
-                let (handle, api) = tx.store_and_take_index(persist);
-                let coordinator = api.core_coordinator()?;
+                let handle = tx.store_index(persist);
                 let device_names_list = tx.take_list("device_names")?;
                 let device_names_index = llsdb::index::BTreeMap::new(device_names_list, &tx)?;
                 let device_names_handle = tx.store_index(device_names_index);
+                let core_api = tx.take_index(handle);
+                let coordinator = core_api.core_coordinator()?;
                 let device_names = tx.take_index(device_names_handle);
                 *usb_manager.device_labels_mut() = device_names
                     .iter()
@@ -122,24 +123,26 @@ impl FfiCoordinator {
             loop {
                 // to give time for the other threads to get a lock
                 std::thread::sleep(Duration::from_millis(100));
+                // NOTE: Never hold locks on anything over poll_ports because poll ports makes
+                // blocking calls up to flutter. If flutter is blocked on something else we'll
+                // be deadlocked.
+                let PortChanges {
+                    device_changes,
+                    new_messages,
+                } = usb_manager.poll_ports();
+                let mut coordinator = coordinator_loop.lock().unwrap();
+                let mut signing_session = signing_session_loop.lock().unwrap();
+                let mut coordinator_outbox = pending_loop.lock().unwrap();
 
                 let new_messages_from_devices = {
-                    // NOTE: Never hold locks on anything over poll_ports because poll ports makes
-                    // blocking calls up to flutter. If flutter is blocked on something else we'll
-                    // be deadlocked.
-                    let PortChanges {
-                        device_changes,
-                        new_messages,
-                    } = usb_manager.poll_ports();
-
-                    let mut signing_session = signing_session_loop.lock().unwrap();
-
                     for change in &device_changes {
                         match change {
                             DeviceChange::Registered { id, .. } => {
                                 if let Some(signing_session) = &mut *signing_session {
                                     signing_session.connected(*id);
                                 }
+                                coordinator_outbox
+                                    .extend(coordinator.maybe_request_nonce_replenishment(*id));
                             }
                             DeviceChange::Disconnected { id } => {
                                 if let Some(signing_session) = &mut *signing_session {
@@ -181,8 +184,6 @@ impl FfiCoordinator {
                     new_messages
                 };
 
-                let mut coordinator = coordinator_loop.lock().unwrap();
-                let mut coordinator_outbox = pending_loop.lock().unwrap();
                 for (from, message) in new_messages_from_devices {
                     match coordinator.recv_device_message(from, message.clone()) {
                         Ok(messages) => {
@@ -234,7 +235,6 @@ impl FfiCoordinator {
                                 }
                             }
                             CoordinatorToUserMessage::Signing(signing_message) => {
-                                let mut signing_session = signing_session_loop.lock().unwrap();
                                 if let Some(signing_session) = &mut *signing_session {
                                     signing_session.process_to_user_message(signing_message);
 
@@ -252,31 +252,15 @@ impl FfiCoordinator {
                             let mut db = db_loop.lock().unwrap();
                             let res = db.execute(|tx| {
                                 let mut persist = tx.take_index(core_persist);
-                                match to_storage {
-                                    CoordinatorToStorageMessage::NewKey(new_key) => {
-                                        // we only have one key so we just overwrite it
-                                        persist.set_key_state(new_key)?;
-                                        // signing sessions are not longer relevant.
-                                        persist.clear_signing_session()?;
-                                        // keygen is finished so we need to tell the global key list
-                                        // that there's a new key.
-                                        //
-                                        // Note we do this here rather than in the ToUserMessage
-                                        // because the key list is persisted and so its better to
-                                        // nofify the app after the on disk state is written.
-                                        if let Some(stream) =
-                                            &*key_event_stream_loop.lock().unwrap()
-                                        {
-                                            stream.add(KeyState {
-                                                keys: frost_keys(&coordinator_loop.lock().unwrap()),
-                                            });
-                                        }
-                                    }
-                                    CoordinatorToStorageMessage::StoreSigningState(sign_state) => {
-                                        persist.store_sign_session(sign_state)?
-                                    }
-                                    CoordinatorToStorageMessage::UpdateFrostKey(state) => {
-                                        persist.set_key_state(state)?
+                                persist.consume_message(to_storage.clone())?;
+                                if let CoordinatorToStorageMessage::NewKey(_) = &to_storage {
+                                    // Note we do this here rather than in the ToUserMessage
+                                    // because the key list is persisted and so its better to
+                                    // nofify the app after the on disk state is written.
+                                    if let Some(stream) = &*key_event_stream_loop.lock().unwrap() {
+                                        stream.add(KeyState {
+                                            keys: frost_keys(&coordinator_loop.lock().unwrap()),
+                                        });
                                     }
                                 }
                                 Ok(())
@@ -284,7 +268,11 @@ impl FfiCoordinator {
 
                             match res {
                                 Ok(_) => {
-                                    event!(Level::INFO, kind = update_kind, "Updated persistence")
+                                    event!(
+                                        Level::INFO,
+                                        kind = update_kind,
+                                        "Updated core persistence"
+                                    )
                                 }
                                 Err(e) => event!(
                                     Level::ERROR,
@@ -343,23 +331,21 @@ impl FfiCoordinator {
         devices: BTreeSet<DeviceId>,
         threshold: usize,
         stream: StreamSink<CoordinatorToUserKeyGenMessage>,
-    ) {
+    ) -> anyhow::Result<()> {
         if let Some(existing) = self.keygen_stream.lock().unwrap().replace(stream) {
             existing.close();
         }
-        let keygen_message = {
+        let keygen_messages = {
             let mut coordinator = self.coordinator.lock().unwrap();
-            *coordinator = FrostCoordinator::default();
-            coordinator.do_keygen(&devices, threshold).unwrap()
+            coordinator.do_keygen(&devices, threshold as u16)?
         };
-        let keygen_message = CoordinatorSend::ToDevice {
-            destinations: devices,
-            message: keygen_message,
-        };
+
         self.pending_for_outbox
             .lock()
             .unwrap()
-            .push_back(keygen_message);
+            .extend(keygen_messages);
+
+        Ok(())
     }
 
     pub fn frost_keys(&self) -> Vec<crate::api::FrostKey> {
@@ -370,8 +356,9 @@ impl FfiCoordinator {
         self.coordinator
             .lock()
             .unwrap()
-            .frost_key_state()?
-            .nonces_left(id)
+            .device_nonces()
+            .get(&id)
+            .map(|nonces| nonces.nonces.len())
     }
 
     pub fn start_signing(
@@ -475,9 +462,8 @@ impl FfiCoordinator {
 
 fn frost_keys(coordinator: &FrostCoordinator) -> Vec<crate::api::FrostKey> {
     coordinator
-        .frost_key_state()
-        .into_iter()
-        .map(|key_state| crate::api::FrostKey(RustOpaque::new(key_state.clone())))
+        .iter_keys()
+        .map(|coord_frost_key| crate::api::FrostKey(RustOpaque::new(coord_frost_key.clone())))
         .collect()
 }
 

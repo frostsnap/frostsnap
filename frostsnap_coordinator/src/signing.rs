@@ -37,7 +37,7 @@ impl SigningDispatcher {
             })
             .expect("must have a sign request");
 
-        start_sign_messages.remove(i);
+        let _ /*already cloned*/ = start_sign_messages.remove(i);
         Self::new_from_request(request, targets)
     }
 

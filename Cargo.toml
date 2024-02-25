@@ -16,7 +16,7 @@ serde = { version = "1", features = ["derive","alloc"], default-features = false
 frostsnap_core = { path = "frostsnap_core", default-features = false }
 frostsnap_comms = { path = "frostsnap_comms", default-features = false }
 frostsnap_coordinator = { path = "frostsnap_coordinator" }
-tracing = { version = "0.1" }
+tracing = { version = "0.1", default-features = false }
 llsdb = { git = "https://github.com/LLFourn/llsdb.git", rev = "b1540959897b098e7fea28799a377e210b365357" }
 rand_chacha = { version = "0.3", default-features = false }
 

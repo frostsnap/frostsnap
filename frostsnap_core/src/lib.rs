@@ -28,7 +28,7 @@ use schnorr_fun::fun::{hex, Point, Tag};
 use sha2::digest::Digest;
 use sha2::Sha256;
 
-pub const NONCE_BATCH_SIZE: usize = 10;
+const NONCE_BATCH_SIZE: u64 = 10;
 
 pub type SessionHash = [u8; 32];
 
@@ -82,29 +82,26 @@ pub enum Error {
 }
 
 impl Error {
-    pub fn coordinator_message_kind(
-        state: &CoordinatorState,
-        message: &DeviceToCoordinatorMessage,
+    pub fn coordinator_message_kind(state: &Option<CoordinatorState>, kind: &'static str) -> Self {
+        Self::MessageKind {
+            state: state.as_ref().map(|x| x.name()).unwrap_or("None"),
+            kind,
+        }
+    }
+
+    pub fn signer_message_kind(
+        state: &Option<SignerState>,
+        message: &CoordinatorToDeviceMessage,
     ) -> Self {
         Self::MessageKind {
-            state: state.name(),
+            state: state.as_ref().map(|x| x.name()).unwrap_or("None"),
             kind: message.kind(),
         }
     }
 
-    pub fn signer_message_kind(state: &SignerState, message: &CoordinatorToDeviceMessage) -> Self {
-        Self::MessageKind {
-            state: state.name(),
-            kind: message.kind(),
-        }
-    }
-
-    pub fn coordinator_invalid_message(
-        message: &DeviceToCoordinatorMessage,
-        reason: impl ToString,
-    ) -> Self {
+    pub fn coordinator_invalid_message(kind: &'static str, reason: impl ToString) -> Self {
         Self::InvalidMessage {
-            kind: message.kind(),
+            kind,
             reason: reason.to_string(),
         }
     }
@@ -164,6 +161,7 @@ pub enum ActionError {
         in_state: &'static str,
         action: &'static str,
     },
+    StateInconsistent(String),
 }
 
 impl core::fmt::Display for ActionError {
@@ -171,6 +169,9 @@ impl core::fmt::Display for ActionError {
         match self {
             ActionError::WrongState { in_state, action } => {
                 write!(f, "Can not {} while in {}", action, in_state)
+            }
+            ActionError::StateInconsistent(error) => {
+                write!(f, "action state inconsistent: {error}")
             }
         }
     }

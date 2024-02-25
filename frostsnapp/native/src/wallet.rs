@@ -123,13 +123,14 @@ impl _Wallet {
 
                     let persisted_frost_keys = tx
                         .take_index(persist_core)
-                        .frost_keys()
+                        .coord_frost_keys()
                         .context("reading persisted frost keys")?;
-                    for frost_key in persisted_frost_keys {
-                        let key_id = frost_key.key_id();
-                        graph
-                            .index
-                            .add_keychain(key_id, Self::get_descriptor(&frost_key));
+                    for coord_frost_key in persisted_frost_keys {
+                        let key_id = coord_frost_key.key_id();
+                        graph.index.add_keychain(
+                            key_id,
+                            Self::get_descriptor(coord_frost_key.frost_key()),
+                        );
                         if let Some(derivation_index) = keychain.get(&key_id)? {
                             let _ = graph.index.reveal_to_target(&key_id, derivation_index);
                         }
@@ -181,18 +182,18 @@ impl _Wallet {
 
     fn lazily_initialize_key(&mut self, key_id: KeyId) -> Result<()> {
         if !self.graph.index.keychains().contains_key(&key_id) {
-            let frost_keys = self
+            let coord_frost_keys = self
                 .db
                 .lock()
                 .unwrap()
-                .execute(|tx| tx.take_index(self.persist_core).frost_keys())?;
-            let found = frost_keys
+                .execute(|tx| tx.take_index(self.persist_core).coord_frost_keys())?;
+            let found = coord_frost_keys
                 .into_iter()
-                .find(|frost_key| frost_key.key_id() == key_id)
+                .find(|coord_frost_key| coord_frost_key.frost_key().key_id() == key_id)
                 .ok_or(anyhow!("key {key_id} doesn't exist in database"))?;
             self.graph
                 .index
-                .add_keychain(key_id, Self::get_descriptor(&found));
+                .add_keychain(key_id, Self::get_descriptor(found.frost_key()));
         }
         Ok(())
     }

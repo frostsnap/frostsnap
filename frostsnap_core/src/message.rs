@@ -1,14 +1,14 @@
 use crate::encrypted_share::EncryptedShare;
 use crate::xpub::TweakableKey;
-use crate::CoordinatorFrostKeyState;
+use crate::CoordinatorFrostKey;
+use crate::FrostsnapSecretKey;
 use crate::Gist;
 use crate::KeyId;
 use crate::SessionHash;
 use crate::SigningSessionState;
 use crate::Vec;
-use crate::NONCE_BATCH_SIZE;
-
 use alloc::boxed::Box;
+use alloc::collections::VecDeque;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 use schnorr_fun::fun::marker::NonZero;
@@ -24,6 +24,7 @@ use schnorr_fun::Signature;
 use crate::DeviceId;
 
 #[derive(Clone, Debug)]
+#[must_use]
 pub enum DeviceSend {
     ToUser(DeviceToUserMessage),
     ToCoordinator(DeviceToCoordinatorMessage),
@@ -31,6 +32,7 @@ pub enum DeviceSend {
 }
 
 #[derive(Clone, Debug)]
+#[must_use]
 pub enum CoordinatorSend {
     ToDevice {
         message: CoordinatorToDeviceMessage,
@@ -44,21 +46,30 @@ pub enum CoordinatorSend {
 pub enum CoordinatorToDeviceMessage {
     DoKeyGen {
         device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
-        threshold: usize,
+        threshold: u16,
     },
     FinishKeyGen {
-        shares_provided: BTreeMap<DeviceId, KeyGenProvideShares>,
+        shares_provided: BTreeMap<DeviceId, KeyGenResponse>,
     },
     RequestSign(SignRequest),
+    RequestNonces,
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub struct SignRequest {
-    // TODO: explain these `usize` and create a nicely documented struct which explains the
-    // mechanism
-    pub nonces: BTreeMap<Scalar<Public, NonZero>, (Vec<Nonce>, usize, usize)>,
+    pub nonces: BTreeMap<Scalar<Public, NonZero>, SignRequestNonces>,
     pub sign_task: SignTask,
     pub key_id: KeyId,
+}
+
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+pub struct SignRequestNonces {
+    /// the nonces the device should sign with
+    pub nonces: Vec<Nonce>,
+    /// The index of the first nonce
+    pub start: u64,
+    /// How many nonces the coordiantor has remaining
+    pub nonces_remaining: u64,
 }
 
 impl SignRequest {
@@ -80,6 +91,7 @@ impl Gist for CoordinatorToDeviceMessage {
 impl CoordinatorToDeviceMessage {
     pub fn kind(&self) -> &'static str {
         match self {
+            CoordinatorToDeviceMessage::RequestNonces => "RequestNonces",
             CoordinatorToDeviceMessage::DoKeyGen { .. } => "DoKeyGen",
             CoordinatorToDeviceMessage::FinishKeyGen { .. } => "FinishKeyGen",
             CoordinatorToDeviceMessage::RequestSign { .. } => "RequestSign",
@@ -87,19 +99,35 @@ impl CoordinatorToDeviceMessage {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub enum CoordinatorToStorageMessage {
-    NewKey(CoordinatorFrostKeyState),
-    UpdateFrostKey(CoordinatorFrostKeyState),
+    NewKey(CoordinatorFrostKey),
+    NoncesUsed {
+        device_id: DeviceId,
+        /// if nonce_counter = x, then the coordinator expects x to be the next nonce used.
+        /// (anything < x has been used)
+        nonce_counter: u64,
+    },
+    ResetNonces {
+        device_id: DeviceId,
+        nonces: DeviceNonces,
+    },
+    NewNonces {
+        device_id: DeviceId,
+        new_nonces: Vec<Nonce>,
+    },
     StoreSigningState(SigningSessionState),
 }
 
 impl Gist for CoordinatorToStorageMessage {
     fn gist(&self) -> String {
+        use CoordinatorToStorageMessage::*;
         match self {
-            CoordinatorToStorageMessage::UpdateFrostKey(_) => "UpdateFrostKey",
-            CoordinatorToStorageMessage::StoreSigningState(_) => "StoreSigningState",
-            CoordinatorToStorageMessage::NewKey(_) => "NewKey",
+            NoncesUsed { .. } => "NoncesUsed",
+            StoreSigningState(_) => "StoreSigningState",
+            ResetNonces { .. } => "ResetNonces",
+            NewNonces { .. } => "NewNonces",
+            NewKey(_) => "NewKey",
         }
         .into()
     }
@@ -107,12 +135,28 @@ impl Gist for CoordinatorToStorageMessage {
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub enum DeviceToCoordinatorMessage {
+    NonceResponse(DeviceNonces),
     KeyGenResponse(KeyGenResponse),
     KeyGenAck(SessionHash),
     SignatureShare {
         signature_shares: Vec<Scalar<Public, Zero>>,
-        new_nonces: Vec<Nonce>,
+        new_nonces: DeviceNonces,
     },
+}
+
+#[derive(
+    Debug, Clone, bincode::Encode, bincode::Decode, serde::Serialize, serde::Deserialize, Default,
+)]
+pub struct DeviceNonces {
+    /// the nonce index of the first nonce in `nonces`
+    pub start_index: u64,
+    pub nonces: VecDeque<Nonce>,
+}
+
+impl DeviceNonces {
+    pub fn replenish_start(&self) -> u64 {
+        self.start_index + self.nonces.len() as u64
+    }
 }
 
 impl Gist for DeviceToCoordinatorMessage {
@@ -124,6 +168,7 @@ impl Gist for DeviceToCoordinatorMessage {
 impl DeviceToCoordinatorMessage {
     pub fn kind(&self) -> &'static str {
         match self {
+            DeviceToCoordinatorMessage::NonceResponse { .. } => "NonceResponse",
             DeviceToCoordinatorMessage::KeyGenResponse(_) => "KeyGenProvideShares",
             DeviceToCoordinatorMessage::KeyGenAck(_) => "KeyGenAck",
             DeviceToCoordinatorMessage::SignatureShare { .. } => "SignatureShare",
@@ -132,16 +177,10 @@ impl DeviceToCoordinatorMessage {
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, Eq, PartialEq)]
-pub struct KeyGenProvideShares {
+pub struct KeyGenResponse {
     pub my_poly: Vec<Point>,
     pub encrypted_shares: BTreeMap<DeviceId, EncryptedShare>,
     pub proof_of_possession: Signature,
-}
-
-#[derive(Clone, Debug, bincode::Encode, bincode::Decode, Eq, PartialEq)]
-pub struct KeyGenResponse {
-    pub encrypted_shares: KeyGenProvideShares,
-    pub nonces: Box<[Nonce; NONCE_BATCH_SIZE]>,
 }
 
 #[derive(Clone, Debug)]
@@ -191,10 +230,10 @@ pub enum TaskKind {
     Sign,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub enum DeviceToStorageMessage {
-    SaveKey,
-    ExpendNonce,
+    SaveKey(FrostsnapSecretKey),
+    ExpendNonce { nonce_counter: u64 },
 }
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash, Ord, PartialOrd)]

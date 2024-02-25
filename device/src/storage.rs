@@ -1,6 +1,5 @@
 extern crate alloc;
-use crate::state::FrostState;
-use alloc::format;
+use alloc::{format, string::String};
 use bincode::{
     de::read::Reader,
     enc::write::Writer,
@@ -8,55 +7,106 @@ use bincode::{
 };
 use embedded_storage::{ReadStorage, Storage};
 use esp_storage::{FlashStorage, FlashStorageError};
+use frostsnap_core::{message::DeviceToStorageMessage, schnorr_fun::fun::Scalar};
 
-pub const NVS_PARTITION_START: u32 = 0x9000;
-pub const NVS_PARTITION_SIZE: usize = 0x6000;
-
-pub struct DeviceStorageRw<'a> {
-    nvs: &'a mut DeviceStorage,
-    pos: u32,
-}
+const NVS_PARTITION_START: u32 = 0x9000;
+const _NVS_PARTITION_SIZE: usize = 0x6000;
+const HEADER_LEN: usize = 256;
+const DATA_START: u32 = NVS_PARTITION_START + HEADER_LEN as u32;
+const MAGIC_BYTES_LEN: usize = 8;
+const MAGIC_BYTES: [u8; MAGIC_BYTES_LEN] = *b"fsheader";
 
 pub struct DeviceStorage {
     flash: FlashStorage,
-    start_pos: u32,
+    pos: u32,
+}
+
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+pub enum Change {
+    Core(DeviceToStorageMessage),
+    Name(String),
+}
+
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+pub struct Header {
+    pub secret_key: Scalar,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct MagicBytes;
+
+impl bincode::Encode for MagicBytes {
+    fn encode<E: bincode::enc::Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
+        encoder.writer().write(MAGIC_BYTES.as_ref())
+    }
+}
+
+impl bincode::Decode for MagicBytes {
+    fn decode<D: bincode::de::Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
+        let mut bytes = [0u8; MAGIC_BYTES_LEN];
+        decoder.reader().read(&mut bytes)?;
+        if bytes == MAGIC_BYTES {
+            Ok(MagicBytes)
+        } else {
+            Err(bincode::error::DecodeError::Other("invalid magic bytes"))
+        }
+    }
 }
 
 impl DeviceStorage {
-    pub fn new(flash: FlashStorage, start_pos: u32) -> Self {
-        Self { flash, start_pos }
-    }
-
-    pub fn rw(&mut self) -> DeviceStorageRw<'_> {
-        let start = self.start_pos;
-        DeviceStorageRw {
-            nvs: self,
-            pos: start,
+    pub fn new(flash: FlashStorage) -> Self {
+        Self {
+            flash,
+            pos: DATA_START,
         }
     }
 
-    pub fn erase(&mut self) -> Result<(), FlashStorageError> {
-        let buf = [0u8; NVS_PARTITION_SIZE];
-        self.flash.write(self.start_pos, &buf)
+    pub fn read_header(&mut self) -> Result<Option<Header>, FlashStorageError> {
+        let mut header_bytes = [0u8; HEADER_LEN];
+        self.flash.read(NVS_PARTITION_START, &mut header_bytes)?;
+        match bincode::decode_from_slice::<(MagicBytes, Header), _>(
+            &header_bytes,
+            bincode::config::standard(),
+        ) {
+            Ok(((_, header), _)) => Ok(Some(header)),
+            Err(bincode::error::DecodeError::Other("invalid magic bytes")) => Ok(None),
+            Err(e) => panic!("nvs: invalid header. {e}"),
+        }
     }
 
-    pub fn load(&mut self) -> Result<FrostState, DecodeError> {
-        // TODO when this errors we need to know whether it was because it's a fresh device or
-        // because it's corrupted.
-        bincode::decode_from_reader(self.rw(), bincode::config::standard())
+    pub fn write_header(&mut self, header: Header) -> Result<(), FlashStorageError> {
+        let mut header_bytes = [0u8; HEADER_LEN];
+        bincode::encode_into_slice(
+            &(MagicBytes, header),
+            &mut header_bytes,
+            bincode::config::standard(),
+        )
+        .expect("header shouldn't be too long");
+        self.flash.write(NVS_PARTITION_START, &header_bytes)
     }
 
-    pub fn save(&mut self, state: &FrostState) -> Result<(), EncodeError> {
-        // We write it in one go to try and get atomicity
-        let bytes = bincode::encode_to_vec(state, bincode::config::standard()).unwrap();
-        self.rw().write(&bytes)
+    pub fn push(&mut self, change: Change) -> Result<(), bincode::error::EncodeError> {
+        bincode::encode_into_writer(change, self, bincode::config::standard())
+    }
+
+    pub fn iter(&mut self) -> impl Iterator<Item = Change> + '_ {
+        self.pos = DATA_START;
+        core::iter::from_fn(move || {
+            let pos_before_read = self.pos;
+            match bincode::decode_from_reader(&mut *self, bincode::config::standard()) {
+                Ok(change) => Some(change),
+                Err(_) => {
+                    self.pos = pos_before_read;
+                    None
+                }
+            }
+        })
     }
 }
 
-impl<'a> Reader for DeviceStorageRw<'a> {
+impl Reader for DeviceStorage {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), DecodeError> {
-        self.nvs
-            .flash
+        self.flash
             .read(self.pos, bytes)
             .map_err(|e| DecodeError::OtherString(format!("Flash read error {:?}", e)))?;
         self.pos += bytes.len() as u32;
@@ -64,10 +114,9 @@ impl<'a> Reader for DeviceStorageRw<'a> {
     }
 }
 
-impl<'a> Writer for DeviceStorageRw<'a> {
+impl Writer for DeviceStorage {
     fn write(&mut self, bytes: &[u8]) -> Result<(), EncodeError> {
-        self.nvs
-            .flash
+        self.flash
             .write(self.pos, bytes)
             .map_err(|e| EncodeError::OtherString(format!("Flash write error {:?}", e)))?;
         self.pos += bytes.len() as u32;

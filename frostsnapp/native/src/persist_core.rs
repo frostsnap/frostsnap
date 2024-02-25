@@ -1,11 +1,10 @@
 use frostsnap_coordinator::frostsnap_core::{
     self,
-    message::SignTask,
-    schnorr_fun::{frost::FrostKey, fun::marker::Normal},
-    FrostCoordinator,
+    message::{CoordinatorToStorageMessage, SignTask},
+    CoordinatorFrostKey, FrostCoordinator,
 };
 use llsdb::{
-    index::{CellOption, IndexStore},
+    index::{self, IndexStore},
     Backend, Result, Transaction, TxIo,
 };
 use std::cell::RefMut;
@@ -13,46 +12,42 @@ use std::cell::RefMut;
 /// persiting frostsnap_core state
 #[derive(Debug)]
 pub struct PersistCore {
-    key_cell: CellOption<frostsnap_core::CoordinatorFrostKeyState>,
-    signing_cell: CellOption<frostsnap_core::SigningSessionState>,
+    log: index::Vec<CoordinatorToStorageMessage>,
+    signing_cell: index::CellOption<frostsnap_core::SigningSessionState>,
 }
 
 impl PersistCore {
     pub fn new(tx: &mut Transaction<'_, impl Backend>) -> Result<Self> {
-        let key_list = tx.take_list("frostsnap/keys")?;
-        let key_cell = CellOption::new(key_list, tx)?;
+        let log_list = tx.take_list("frostsnap/log")?;
+        let log = index::Vec::new(log_list, tx)?;
         let signing_list = tx.take_list("frostsnap/signing")?;
-        let signing_cell = CellOption::new(signing_list, tx)?;
-        Ok(Self {
-            key_cell,
-            signing_cell,
-        })
+        let signing_cell = index::CellOption::new(signing_list, tx)?;
+        Ok(Self { log, signing_cell })
     }
 }
 
 impl<'i, F: Backend> PersistApi<'i, F> {
-    pub fn frost_keys(&self) -> Result<Vec<FrostKey<Normal>>> {
-        self.key_cell
-            .get()
-            .transpose()
-            .into_iter()
-            .map(|key| Ok(key?.frost_key().clone()))
-            .collect()
+    pub fn coord_frost_keys(&self) -> Result<Vec<CoordinatorFrostKey>> {
+        Ok(self.core_coordinator()?.iter_keys().cloned().collect())
     }
 
     pub fn core_coordinator(&self) -> Result<FrostCoordinator> {
-        Ok(match self.key_cell.get()? {
-            None => FrostCoordinator::new(),
-            Some(key) => FrostCoordinator::from_stored_key(key),
-        })
+        let mut coord = FrostCoordinator::new();
+        for change in self.log.iter() {
+            coord.apply_change(change?);
+        }
+        Ok(coord)
     }
 
-    pub fn set_key_state(
-        &mut self,
-        key_state: frostsnap_core::CoordinatorFrostKeyState,
-    ) -> Result<()> {
-        self.key_cell.replace(Some(&key_state))?;
-        Ok(())
+    pub fn consume_message(&mut self, message: CoordinatorToStorageMessage) -> Result<()> {
+        match message {
+            // handle store signing state separately because it's transient
+            CoordinatorToStorageMessage::StoreSigningState(signing_state) => {
+                self.signing_cell.replace(Some(&signing_state))?;
+                Ok(())
+            }
+            message => self.log.push(&message),
+        }
     }
 
     pub fn persisted_signing(&self) -> Result<Option<frostsnap_core::SigningSessionState>> {
@@ -68,11 +63,6 @@ impl<'i, F: Backend> PersistApi<'i, F> {
         Ok(opt.map(|sign_session_state| sign_session_state.request.sign_task))
     }
 
-    pub fn store_sign_session(&self, state: frostsnap_core::SigningSessionState) -> Result<()> {
-        self.signing_cell.replace(Some(&state))?;
-        Ok(())
-    }
-
     pub fn clear_signing_session(&self) -> Result<()> {
         self.signing_cell.clear()
     }
@@ -81,25 +71,29 @@ impl<'i, F: Backend> PersistApi<'i, F> {
 // Everything below can be auto-derived in the future
 #[derive(Debug)]
 pub struct PersistApi<'i, F> {
-    key_cell: <CellOption<frostsnap_core::CoordinatorFrostKeyState> as IndexStore>::Api<'i, F>,
-    signing_cell: <CellOption<frostsnap_core::SigningSessionState> as IndexStore>::Api<'i, F>,
+    log: <index::Vec<frostsnap_core::message::CoordinatorToStorageMessage> as IndexStore>::Api<
+        'i,
+        F,
+    >,
+    signing_cell:
+        <index::CellOption<frostsnap_core::SigningSessionState> as IndexStore>::Api<'i, F>,
 }
 
 impl IndexStore for PersistCore {
     type Api<'i, F> = PersistApi<'i, F>;
 
     fn tx_fail_rollback(&mut self) {
-        self.key_cell.tx_fail_rollback();
+        self.log.tx_fail_rollback();
         self.signing_cell.tx_fail_rollback();
     }
 
     fn tx_success(&mut self) {
-        self.key_cell.tx_success();
+        self.log.tx_success();
         self.signing_cell.tx_success()
     }
 
     fn owned_lists(&self) -> std::vec::Vec<llsdb::ListSlot> {
-        self.key_cell
+        self.log
             .owned_lists()
             .into_iter()
             .chain(self.signing_cell.owned_lists())
@@ -110,14 +104,11 @@ impl IndexStore for PersistCore {
     where
         Self: Sized,
     {
-        let (key_cell, signing_cell) = RefMut::map_split(store, |persist| {
-            (&mut persist.key_cell, &mut persist.signing_cell)
+        let (log, signing_cell) = RefMut::map_split(store, |persist| {
+            (&mut persist.log, &mut persist.signing_cell)
         });
-        let key_cell = CellOption::create_api(key_cell, io.clone());
-        let signing_cell = CellOption::create_api(signing_cell, io.clone());
-        PersistApi {
-            key_cell,
-            signing_cell,
-        }
+        let log = index::Vec::create_api(log, io.clone());
+        let signing_cell = index::CellOption::create_api(signing_cell, io.clone());
+        PersistApi { log, signing_cell }
     }
 }

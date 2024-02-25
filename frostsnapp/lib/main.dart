@@ -37,6 +37,7 @@ void main() async {
       globalHostPortHandler.scanDevices();
     } else {
       final (coord_, wallet_) = await api.load(dbFile: dbFile);
+      globalHostPortHandler = HostPortHandler(null);
       coord = coord_;
       wallet = wallet_;
     }
