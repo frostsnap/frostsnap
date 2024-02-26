@@ -54,11 +54,12 @@ where
         let flash = FlashStorage::new();
         let mut flash = storage::DeviceStorage::new(flash);
 
+        ui.set_workflow(ui::Workflow::BusyDoing(ui::BusyTask::Loading));
         let (mut signer, mut name) =
             match flash.read_header().expect("failed to read header from nvs") {
                 Some(header) => {
                     let mut signer = FrostSigner::new(KeyPair::<Normal>::new(header.secret_key));
-                    let mut name = None;
+                    let mut name: Option<alloc::string::String> = None;
 
                     for change in flash.iter() {
                         match change {
@@ -70,7 +71,6 @@ where
                             }
                         }
                     }
-
                     (signer, name)
                 }
                 None => {
@@ -97,8 +97,16 @@ where
         let mut sends_upstream = UpstreamSends::new(device_id);
         let mut sends_user: Vec<DeviceToUserMessage> = vec![];
         let mut outbox = VecDeque::new();
-        let mut upstream_detector =
-            UpstreamDetector::new(upstream_uart, upstream_jtag, &timer, MAGIC_BYTES_PERIOD);
+        // because loading from flash is taking a bit longer than it did before we need to add an
+        // arbitrary delay to switching over to JTAG. The real solution is to stop using delays in
+        // favor of detecting automatically what the upstream device is.
+        const TEMP_DELAY_JTAG_SWITCHING: u64 = 500;
+        let mut upstream_detector = UpstreamDetector::new(
+            upstream_uart,
+            upstream_jtag,
+            &timer,
+            MAGIC_BYTES_PERIOD + TEMP_DELAY_JTAG_SWITCHING,
+        );
         let mut upstream_sent_magic_bytes = false;
         let mut upstream_received_first_message = false;
         let mut next_write_magic_bytes = 0;
