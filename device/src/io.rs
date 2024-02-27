@@ -322,12 +322,14 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
 
 pub fn set_upstream_port_mode_jtag() {
     let usb_device = unsafe { &*USB_DEVICE::PTR };
-    usb_device.conf0.modify(|_, w| w.usb_pad_enable().set_bit());
+    usb_device
+        .conf0()
+        .modify(|_, w| w.usb_pad_enable().set_bit());
 }
 
 pub fn set_upstream_port_mode_uart() {
     let usb_device = unsafe { &*USB_DEVICE::PTR };
     usb_device
-        .conf0
+        .conf0()
         .modify(|_, w| w.usb_pad_enable().clear_bit());
 }

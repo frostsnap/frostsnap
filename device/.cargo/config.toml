@@ -3,9 +3,6 @@ runner = "espflash flash --baud 921600 --bootloader bootloader.bin"
 
 [build]
 rustflags = [
-  # enable the atomic codegen option for RISCV
-  "-C", "target-feature=+a",
-
   # Tell the `core` library that we have atomics, even though it's not
   # specified in the target definition
   "--cfg", "target_has_atomic_load_store",
@@ -13,15 +10,22 @@ rustflags = [
   "--cfg", 'target_has_atomic_load_store="16"',
   "--cfg", 'target_has_atomic_load_store="32"',
   "--cfg", 'target_has_atomic_load_store="ptr"',
-  "--cfg", "target_has_atomic",
-  "--cfg", 'target_has_atomic="8"',
-  "--cfg", 'target_has_atomic="16"',
-  "--cfg", 'target_has_atomic="32"',
-  "--cfg", 'target_has_atomic="ptr"',
+
+  # enable the atomic codegen option for RISCV
+  # LL: I disabled all this.
+  # see https://github.com/taiki-e/portable-atomic/issues/148#issuecomment-1920135639
+  #
+  # "-C", "target-feature=+a",
+  # "--cfg", "target_has_atomic",
+  # "--cfg", 'target_has_atomic="8"',
+  # "--cfg", 'target_has_atomic="16"',
+  # "--cfg", 'target_has_atomic="32"',
+  # "--cfg", 'target_has_atomic="ptr"',
 
   # Required to obtain backtraces (e.g. when using the "esp-backtrace" crate.)
   # NOTE: May negatively impact performance of produced code
-  "-C", "force-frame-pointers",
+  # LL: I turned this off because I got rid of esp-backtrace crate
+  # "-C", "force-frame-pointers",
   "-C", "link-arg=-Tlinkall.x"
 ]
 target = "riscv32imc-unknown-none-elf"

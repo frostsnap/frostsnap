@@ -61,16 +61,11 @@ where
         clocks: &Clocks,
         framebuf: FrameBuf<Rgb565, [Rgb565; 12800]>,
     ) -> Result<Self, Error> {
-        let spi = Spi::new(
-            spi,
-            sck,
-            mosi,
-            miso,
-            cs,
-            16u32.MHz(),
-            SpiMode::Mode0,
-            clocks,
-        );
+        let spi = Spi::new(spi, 16u32.MHz(), SpiMode::Mode0, clocks)
+            .with_sck(sck)
+            .with_mosi(mosi)
+            .with_miso(miso)
+            .with_cs(cs);
 
         let di = SPIInterfaceNoCS::new(spi, dc);
         let mut delay = Delay::new(clocks);
