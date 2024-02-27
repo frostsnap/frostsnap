@@ -13,8 +13,7 @@ use crate::alloc::string::String;
 use core::mem::MaybeUninit;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use embedded_graphics_framebuf::FrameBuf;
-use esp_backtrace as _;
-use esp_hal_smartled::{smartLedAdapter, SmartLedsAdapter};
+use esp_hal_smartled::{smartLedBuffer, SmartLedsAdapter};
 use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_device::{
     esp32_run,
@@ -41,7 +40,7 @@ use smart_leds::{brightness, colors, SmartLedsWrite, RGB};
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
 
 fn init_heap() {
-    const HEAP_SIZE: usize = 300 * 1024;
+    const HEAP_SIZE: usize = 128 * 1024;
     static mut HEAP: MaybeUninit<[u8; HEAP_SIZE]> = MaybeUninit::uninit();
 
     unsafe {
@@ -69,7 +68,7 @@ fn main() -> ! {
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
     // Disable the RTC and TIMG watchdog timers
-    let mut rtc = Rtc::new(peripherals.RTC_CNTL);
+    let mut rtc = Rtc::new(peripherals.LPWR);
     let timer_group0 = TimerGroup::new(peripherals.TIMG0, &clocks);
     let mut wdt0 = timer_group0.wdt;
     let timer_group1 = TimerGroup::new(peripherals.TIMG1, &clocks);
@@ -115,7 +114,8 @@ fn main() -> ! {
 
     // RGB LED
     let rmt = Rmt::new(peripherals.RMT, 80u32.MHz(), &clocks).unwrap();
-    let mut led = <smartLedAdapter!(0, 1)>::new(rmt.channel0, io.pins.gpio0);
+    let rmt_buffer = smartLedBuffer!(1);
+    let mut led = SmartLedsAdapter::new(rmt.channel0, io.pins.gpio0, rmt_buffer);
     led.write(brightness([colors::BLACK].iter().cloned(), 0))
         .unwrap();
 
@@ -505,11 +505,9 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     // Disable the RTC and TIMG watchdog timers
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
 
-    // RGB LED
-    // White: found coordinator
-    // Blue: found another device upstream
     let rmt = Rmt::new(peripherals.RMT, 80u32.MHz(), &clocks).unwrap();
-    let mut led = <smartLedAdapter!(0, 1)>::new(rmt.channel0, io.pins.gpio0);
+    let rmt_buffer = smartLedBuffer!(1);
+    let mut led = SmartLedsAdapter::new(rmt.channel0, io.pins.gpio0, rmt_buffer);
     led.write(brightness([colors::RED].iter().cloned(), 10))
         .unwrap();
 
