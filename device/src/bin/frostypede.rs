@@ -18,7 +18,7 @@ use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_device::{
     esp32_run,
     io::{set_upstream_port_mode_jtag, set_upstream_port_mode_uart},
-    st7735::{self, ST7735},
+    st7735::ST7735,
     ui::{BusyTask, Prompt, UiEvent, UserInteraction, WaitingFor, WaitingResponse, Workflow},
     ConnectionState,
 };
@@ -98,15 +98,12 @@ fn main() -> ! {
     bl.set_low().unwrap();
     let framearray = [Rgb565::WHITE; 160 * 80];
     let framebuf = FrameBuf::new(framearray, 160, 80);
-    let display = st7735::ST7735::new(
-        // &mut bl,
+    let display = ST7735::new(
         io.pins.gpio6.into_push_pull_output().into(),
         io.pins.gpio10.into_push_pull_output().into(),
         peripherals.SPI2,
         io.pins.gpio2,
-        io.pins.gpio7,
         io.pins.gpio3,
-        io.pins.gpio12,
         &clocks,
         framebuf,
     )
@@ -511,15 +508,12 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     let framearray = [Rgb565::WHITE; 160 * 80];
     let framebuf = FrameBuf::new(framearray, 160, 80);
     // let mut bl = io.pins.gpio11.into_push_pull_output();
-    if let Ok(mut display) = st7735::ST7735::new(
-        // &mut bl,
+    if let Ok(mut display) = ST7735::new(
         io.pins.gpio6.into_push_pull_output().into(),
         io.pins.gpio10.into_push_pull_output().into(),
         peripherals.SPI2,
         io.pins.gpio2,
-        io.pins.gpio7,
         io.pins.gpio3,
-        io.pins.gpio12,
         &clocks,
         framebuf,
     ) {
