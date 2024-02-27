@@ -17,7 +17,7 @@ use embedded_text::{
 };
 use hal::{
     clock::Clocks,
-    gpio::{AnyPin, InputPin, Output, OutputPin, PushPull},
+    gpio::{AnyPin, Output, OutputPin, PushPull},
     peripheral::Peripheral,
     prelude::*,
     spi::{
@@ -36,7 +36,6 @@ pub struct ST7735<'d, SPI>
 where
     SPI: Instance,
 {
-    // pub bl: &'d mut GpioPin<Output<PushPull>, RA, IRA, InputOutputPinType, Gpio11Signals, 11>,
     pub display: Display<SpiInterface<'d, SPI>, ST7735s, AnyPin<Output<PushPull>>>,
     character_style: MonoTextStyle<'d, Rgb565>,
     textbox_style: TextBoxStyle,
@@ -48,23 +47,18 @@ where
     SPI: Instance,
 {
     #[allow(clippy::too_many_arguments)]
-    pub fn new<SCK: OutputPin, MOSI: OutputPin, MISO: InputPin, CS: OutputPin>(
-        // bl: &'d mut GpioPin<Output<PushPull>, RA, IRA, InputOutputPinType, Gpio11Signals, 11>,
+    pub fn new<SCK: OutputPin, MOSI: OutputPin>(
         dc: AnyPin<Output<PushPull>>,
         rst: AnyPin<Output<PushPull>>,
         spi: impl Peripheral<P = SPI> + 'd,
         sck: impl Peripheral<P = SCK> + 'd,
-        cs: impl Peripheral<P = CS> + 'd,
         mosi: impl Peripheral<P = MOSI> + 'd,
-        miso: impl Peripheral<P = MISO> + 'd,
         clocks: &Clocks,
         framebuf: FrameBuf<Rgb565, [Rgb565; 12800]>,
     ) -> Result<Self, mipidsi::Error> {
         let spi = Spi::new(spi, 16u32.MHz(), SpiMode::Mode0, clocks)
             .with_sck(sck)
-            .with_mosi(mosi)
-            .with_miso(miso)
-            .with_cs(cs);
+            .with_mosi(mosi);
 
         let di = SPIInterfaceNoCS::new(spi, dc);
         let mut delay = Delay::new(clocks);
