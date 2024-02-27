@@ -271,14 +271,13 @@ where
                 return;
             }
             AnimationProgress::FinalTick => {
-                self.display.clear(Rgb565::BLACK).unwrap();
+                self.display.clear(Rgb565::BLACK);
             }
             AnimationProgress::Done => { /* splash is done no need to anything */ }
         }
 
         self.display
-            .header(self.device_name.as_deref().unwrap_or("New Device"))
-            .unwrap();
+            .header(self.device_name.as_deref().unwrap_or("New Device"));
 
         match &self.workflow {
             Workflow::None => {
@@ -292,12 +291,8 @@ where
             } => match existing_name {
                 Some(existing_name) => self
                     .display
-                    .print(&format!("Renaming {}:\n> {}", existing_name, current_name))
-                    .unwrap(),
-                None => self
-                    .display
-                    .print(format!("Naming:\n> {}", current_name))
-                    .unwrap(),
+                    .print(&format!("Renaming {}:\n> {}", existing_name, current_name)),
+                None => self.display.print(format!("Naming:\n> {}", current_name)),
             },
             Workflow::WaitingFor(waiting_for) => match waiting_for {
                 WaitingFor::LookingForUpstream { jtag } => {
@@ -306,18 +301,16 @@ where
                         .unwrap();
 
                     if *jtag {
-                        self.display
-                            .print("Looking for coordinator USB host")
-                            .unwrap();
+                        self.display.print("Looking for coordinator USB host");
                     } else {
-                        self.display.print("Looking for upstream device").unwrap();
+                        self.display.print("Looking for upstream device");
                     }
                 }
                 WaitingFor::CoordinatorAnnounceAck => {
                     self.led
                         .write(brightness([colors::PURPLE].iter().cloned(), 10))
                         .unwrap();
-                    self.display.print("Waiting for FrostSnap app").unwrap();
+                    self.display.print("Waiting for FrostSnap app");
                 }
                 WaitingFor::CoordinatorInstruction { completed_task: _ } => {
                     self.led
@@ -330,18 +323,16 @@ where
                             body.push_str(&format!("NAME: {}\n", label));
 
                             body.push_str("Ready..");
-                            self.display.print(body).unwrap();
+                            self.display.print(body);
                         }
                         None => {
-                            self.display.print("Press 'New Device'").unwrap();
+                            self.display.print("Press 'New Device'");
                         }
                     };
                 }
                 WaitingFor::CoordinatorResponse(response) => match response {
                     WaitingResponse::KeyGen => {
-                        self.display
-                            .print("Finished!\nWaiting for coordinator..")
-                            .unwrap();
+                        self.display.print("Finished!\nWaiting for coordinator..");
                     }
                 },
             },
@@ -352,28 +343,21 @@ where
 
                 match prompt {
                     Prompt::Signing(task) => {
-                        self.display.print(format!("Sign {}", task)).unwrap();
+                        self.display.print(format!("Sign {}", task));
                     }
                     Prompt::KeyGen(session_hash) => {
                         self.display
-                            .print(format!("Ok {}", hex::encode(session_hash)))
-                            .unwrap();
+                            .print(format!("Ok {}", hex::encode(session_hash)));
                     }
                     Prompt::NewName { old_name, new_name } => match old_name {
-                        Some(old_name) => self
-                            .display
-                            .print(format!(
-                                "Rename this device from '{}' to '{}'?",
-                                old_name, new_name
-                            ))
-                            .unwrap(),
-                        None => self
-                            .display
-                            .print(format!("Confirm name '{}'?", new_name))
-                            .unwrap(),
+                        Some(old_name) => self.display.print(format!(
+                            "Rename this device from '{}' to '{}'?",
+                            old_name, new_name
+                        )),
+                        None => self.display.print(format!("Confirm name '{}'?", new_name)),
                     },
                 }
-                self.display.confirm_bar(0.0).unwrap();
+                self.display.confirm_bar(0.0);
             }
             Workflow::BusyDoing(task) => {
                 self.led
@@ -381,14 +365,14 @@ where
                     .unwrap();
 
                 match task {
-                    BusyTask::KeyGen => self.display.print("Generating key..").unwrap(),
-                    BusyTask::Signing => self.display.print("Signing..").unwrap(),
-                    BusyTask::VerifyingShare => self.display.print("Verifying key..").unwrap(),
-                    BusyTask::Loading => self.display.print("loading..").unwrap(),
+                    BusyTask::KeyGen => self.display.print("Generating key.."),
+                    BusyTask::Signing => self.display.print("Signing.."),
+                    BusyTask::VerifyingShare => self.display.print("Verifying key.."),
+                    BusyTask::Loading => self.display.print("loading.."),
                 }
             }
             Workflow::Debug(string) => {
-                self.display.print(string).unwrap();
+                self.display.print(string);
             }
         }
 
@@ -460,7 +444,7 @@ where
                                 30,
                             ))
                             .unwrap();
-                        self.display.confirm_bar(progress).unwrap();
+                        self.display.confirm_bar(progress);
                     }
                     AnimationProgress::FinalTick => {
                         self.led
@@ -505,11 +489,11 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     // Disable the RTC and TIMG watchdog timers
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
 
-    let rmt = Rmt::new(peripherals.RMT, 80u32.MHz(), &clocks).unwrap();
-    let rmt_buffer = smartLedBuffer!(1);
-    let mut led = SmartLedsAdapter::new(rmt.channel0, io.pins.gpio0, rmt_buffer);
-    led.write(brightness([colors::RED].iter().cloned(), 10))
-        .unwrap();
+    if let Ok(rmt) = Rmt::new(peripherals.RMT, 80u32.MHz(), &clocks) {
+        let rmt_buffer = smartLedBuffer!(1);
+        let mut led = SmartLedsAdapter::new(rmt.channel0, io.pins.gpio0, rmt_buffer);
+        let _ = led.write(brightness([colors::RED].iter().cloned(), 10));
+    }
 
     let mut panic_buf = frostsnap_device::panic::PanicBuffer::<512>::default();
 
@@ -539,7 +523,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         &clocks,
         framebuf,
     ) {
-        let _ = display.error_print(panic_buf.as_str());
+        display.error_print(panic_buf.as_str());
     }
 
     loop {}
