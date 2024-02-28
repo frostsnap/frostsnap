@@ -89,6 +89,8 @@ class _DoKeyGenButtonState extends State<DoKeyGenButton> {
                   }));
                   if (keyId != null) {
                     widget.onSuccess?.call(keyId);
+                  } else {
+                    coord.cancelAll();
                   }
                 },
           child: const Text('Generate Key',
@@ -126,7 +128,6 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
     }).then((_) {
       if (mounted) {
         Navigator.pop(context);
-        coord.cancelAll();
       }
       return null;
     });
@@ -238,8 +239,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                 ElevatedButton(
                     child: Text("No/Cancel"),
                     onPressed: () {
-                      Navigator.pop(context, null);
-                      coord.cancelAll();
+                      Navigator.pop(context);
                     }),
               ],
               content: Container(
@@ -302,7 +302,6 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
       context: context,
       content: content,
       onCancel: () {
-        coord.cancelAll();
         Navigator.pop(context);
       },
       complete: closeOn,
