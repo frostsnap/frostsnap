@@ -31,7 +31,7 @@ use hal::{
     spi,
     timer::{Timer, TimerGroup},
     uart::{self, Uart},
-    Delay, Rtc, UsbSerialJtag, IO,
+    Delay, UsbSerialJtag, IO,
 };
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 use smart_leds::{brightness, colors, SmartLedsWrite, RGB};
@@ -67,21 +67,12 @@ fn main() -> ! {
     let system = peripherals.SYSTEM.split();
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
-    // Disable the RTC and TIMG watchdog timers
-    let mut rtc = Rtc::new(peripherals.LPWR);
     let timer_group0 = TimerGroup::new(peripherals.TIMG0, &clocks);
-    let mut wdt0 = timer_group0.wdt;
     let timer_group1 = TimerGroup::new(peripherals.TIMG1, &clocks);
-    let mut wdt1 = timer_group1.wdt;
     let mut timer0 = timer_group0.timer0;
     timer0.start(1u64.secs());
     let mut timer1 = timer_group1.timer0;
     timer1.start(1u64.secs());
-
-    rtc.swd.disable();
-    rtc.rwdt.disable();
-    wdt0.disable();
-    wdt1.disable();
 
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
 
