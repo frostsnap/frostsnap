@@ -90,16 +90,19 @@ impl FrostSigner {
     ) -> MessageResult<Vec<DeviceSend>> {
         use CoordinatorToDeviceMessage::*;
         match (self.action_state.clone(), message.clone()) {
-            (_, RequestNonces) => {
+            (_, RequestNonces(requested_nonces)) => {
                 let nonces = self
-                    .generate_nonces(self.nonce_counter)
-                    .take(NONCE_BATCH_SIZE as usize)
+                    .generate_nonces(
+                        self.nonce_counter + NONCE_BATCH_SIZE.saturating_sub(requested_nonces),
+                    )
+                    .take(requested_nonces as usize)
                     .map(|nonce| nonce.public())
                     .collect();
 
                 Ok(vec![DeviceSend::ToCoordinator(
                     DeviceToCoordinatorMessage::NonceResponse(DeviceNonces {
-                        start_index: self.nonce_counter,
+                        start_index: self.nonce_counter
+                            + NONCE_BATCH_SIZE.saturating_sub(requested_nonces),
                         nonces,
                     }),
                 )])
@@ -382,10 +385,9 @@ impl FrostSigner {
 
                     // This calculates the index after the last nonce the coordinator had. This is
                     // where we want to start providing new nonces.
-                    let replenish_start = self.nonce_counter + my_session_nonces.nonces_remaining;
+                    let replenish_start = self.nonce_counter + NONCE_BATCH_SIZE;
                     // How many nonces we should give them from that point
-                    let replenish_amount =
-                        NONCE_BATCH_SIZE.saturating_sub(my_session_nonces.nonces_remaining);
+                    let replenish_amount = sign_items.len();
 
                     let replenish_nonces = self
                         .generate_nonces(replenish_start)

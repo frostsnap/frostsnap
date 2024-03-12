@@ -819,9 +819,9 @@ class NativeWire implements FlutterRustBridgeWireBase {
   }
 
   late final _wire_get_devicePtr = _lookup<
-          ffi
-          .NativeFunction<WireSyncReturn Function(ffi.Pointer<wire_DeviceId>)>>(
-      'wire_get_device');
+      ffi.NativeFunction<
+          WireSyncReturn Function(
+              ffi.Pointer<wire_DeviceId>)>>('wire_get_device');
   late final _wire_get_device = _wire_get_devicePtr
       .asFunction<WireSyncReturn Function(ffi.Pointer<wire_DeviceId>)>();
 
@@ -901,9 +901,9 @@ class NativeWire implements FlutterRustBridgeWireBase {
   }
 
   late final _wire_threshold__method__FrostKeyPtr = _lookup<
-          ffi
-          .NativeFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>>(
-      'wire_threshold__method__FrostKey');
+      ffi.NativeFunction<
+          WireSyncReturn Function(
+              ffi.Pointer<wire_FrostKey>)>>('wire_threshold__method__FrostKey');
   late final _wire_threshold__method__FrostKey =
       _wire_threshold__method__FrostKeyPtr
           .asFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>();
@@ -917,9 +917,9 @@ class NativeWire implements FlutterRustBridgeWireBase {
   }
 
   late final _wire_id__method__FrostKeyPtr = _lookup<
-          ffi
-          .NativeFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>>(
-      'wire_id__method__FrostKey');
+      ffi.NativeFunction<
+          WireSyncReturn Function(
+              ffi.Pointer<wire_FrostKey>)>>('wire_id__method__FrostKey');
   late final _wire_id__method__FrostKey = _wire_id__method__FrostKeyPtr
       .asFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>();
 
@@ -932,9 +932,9 @@ class NativeWire implements FlutterRustBridgeWireBase {
   }
 
   late final _wire_name__method__FrostKeyPtr = _lookup<
-          ffi
-          .NativeFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>>(
-      'wire_name__method__FrostKey');
+      ffi.NativeFunction<
+          WireSyncReturn Function(
+              ffi.Pointer<wire_FrostKey>)>>('wire_name__method__FrostKey');
   late final _wire_name__method__FrostKey = _wire_name__method__FrostKeyPtr
       .asFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>();
 
@@ -947,9 +947,9 @@ class NativeWire implements FlutterRustBridgeWireBase {
   }
 
   late final _wire_devices__method__FrostKeyPtr = _lookup<
-          ffi
-          .NativeFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>>(
-      'wire_devices__method__FrostKey');
+      ffi.NativeFunction<
+          WireSyncReturn Function(
+              ffi.Pointer<wire_FrostKey>)>>('wire_devices__method__FrostKey');
   late final _wire_devices__method__FrostKey =
       _wire_devices__method__FrostKeyPtr
           .asFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>();
@@ -1735,9 +1735,9 @@ class NativeWire implements FlutterRustBridgeWireBase {
   }
 
   late final _wire_tx__method__SignedTxPtr = _lookup<
-          ffi
-          .NativeFunction<WireSyncReturn Function(ffi.Pointer<wire_SignedTx>)>>(
-      'wire_tx__method__SignedTx');
+      ffi.NativeFunction<
+          WireSyncReturn Function(
+              ffi.Pointer<wire_SignedTx>)>>('wire_tx__method__SignedTx');
   late final _wire_tx__method__SignedTx = _wire_tx__method__SignedTxPtr
       .asFunction<WireSyncReturn Function(ffi.Pointer<wire_SignedTx>)>();
 
@@ -1815,9 +1815,9 @@ class NativeWire implements FlutterRustBridgeWireBase {
   }
 
   late final _new_MutexBTreeMapKeyIdStreamSinkTxStatePtr = _lookup<
-          ffi
-          .NativeFunction<wire_MutexBTreeMapKeyIdStreamSinkTxState Function()>>(
-      'new_MutexBTreeMapKeyIdStreamSinkTxState');
+      ffi.NativeFunction<
+          wire_MutexBTreeMapKeyIdStreamSinkTxState
+              Function()>>('new_MutexBTreeMapKeyIdStreamSinkTxState');
   late final _new_MutexBTreeMapKeyIdStreamSinkTxState =
       _new_MutexBTreeMapKeyIdStreamSinkTxStatePtr
           .asFunction<wire_MutexBTreeMapKeyIdStreamSinkTxState Function()>();
@@ -2069,9 +2069,9 @@ class NativeWire implements FlutterRustBridgeWireBase {
   }
 
   late final _new_list_device_0Ptr = _lookup<
-          ffi
-          .NativeFunction<ffi.Pointer<wire_list_device> Function(ffi.Int32)>>(
-      'new_list_device_0');
+      ffi.NativeFunction<
+          ffi.Pointer<wire_list_device> Function(
+              ffi.Int32)>>('new_list_device_0');
   late final _new_list_device_0 = _new_list_device_0Ptr
       .asFunction<ffi.Pointer<wire_list_device> Function(int)>();
 
@@ -2129,9 +2129,9 @@ class NativeWire implements FlutterRustBridgeWireBase {
   }
 
   late final _new_uint_8_list_0Ptr = _lookup<
-          ffi
-          .NativeFunction<ffi.Pointer<wire_uint_8_list> Function(ffi.Int32)>>(
-      'new_uint_8_list_0');
+      ffi.NativeFunction<
+          ffi.Pointer<wire_uint_8_list> Function(
+              ffi.Int32)>>('new_uint_8_list_0');
   late final _new_uint_8_list_0 = _new_uint_8_list_0Ptr
       .asFunction<ffi.Pointer<wire_uint_8_list> Function(int)>();
 

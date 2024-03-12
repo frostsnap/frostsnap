@@ -28,7 +28,7 @@ use schnorr_fun::fun::{hex, Point, Tag};
 use sha2::digest::Digest;
 use sha2::Sha256;
 
-const NONCE_BATCH_SIZE: u64 = 10;
+const NONCE_BATCH_SIZE: u64 = 2;
 
 pub type SessionHash = [u8; 32];
 

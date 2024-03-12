@@ -1,5 +1,6 @@
 use crate::{
-    gen_pop_message, message::*, ActionError, Error, FrostKeyExt, KeyId, MessageResult, SessionHash,
+    gen_pop_message, message::*, ActionError, Error, FrostKeyExt, KeyId, MessageResult,
+    SessionHash, NONCE_BATCH_SIZE,
 };
 use alloc::{
     collections::{BTreeMap, BTreeSet},
@@ -474,6 +475,8 @@ impl FrostCoordinator {
         // ToStroage messages so we persist which nonces we're usign
         let mut used_nonces = vec![];
 
+        let mut outgoing = vec![];
+
         for &device_id in &signing_parties {
             let share_index = *key
                 .device_to_share_index
@@ -486,6 +489,13 @@ impl FrostCoordinator {
                     device_id,
                     have: nonces_for_device.nonces.len(),
                     need: n_signatures,
+                });
+            } else if nonces_for_device.nonces.len() < NONCE_BATCH_SIZE as usize {
+                outgoing.push(CoordinatorSend::ToDevice {
+                    message: CoordinatorToDeviceMessage::RequestNonces(
+                        NONCE_BATCH_SIZE - (nonces_for_device.nonces.len() as u64),
+                    ),
+                    destinations: BTreeSet::from_iter(core::iter::once(device_id)),
                 });
             }
             let nonces = core::iter::from_fn(|| {
@@ -501,7 +511,6 @@ impl FrostCoordinator {
                 SignRequestNonces {
                     nonces,
                     start: index_of_first_nonce,
-                    nonces_remaining: nonces_for_device.nonces.len() as u64,
                 },
             );
             used_nonces.push(CoordinatorToStorageMessage::NoncesUsed {
@@ -550,8 +559,6 @@ impl FrostCoordinator {
             },
         });
 
-        let mut outgoing = vec![];
-
         outgoing.extend(used_nonces.into_iter().map(CoordinatorSend::ToStorage));
         outgoing.push(CoordinatorSend::ToDevice {
             destinations: signing_parties,
@@ -565,14 +572,16 @@ impl FrostCoordinator {
         &self,
         device_id: DeviceId,
     ) -> Option<CoordinatorSend> {
-        let needs_replenishment = match self.device_nonces.get(&device_id) {
-            Some(device_nonces) => device_nonces.nonces.len() < MIN_NONCES_BEFORE_REQUEST,
-            None => true,
+        let missing_nonces = match self.device_nonces.get(&device_id) {
+            Some(device_nonces) => {
+                NONCE_BATCH_SIZE.saturating_sub(device_nonces.nonces.len() as u64)
+            }
+            None => NONCE_BATCH_SIZE,
         };
 
-        if needs_replenishment {
+        if missing_nonces > 0 {
             Some(CoordinatorSend::ToDevice {
-                message: CoordinatorToDeviceMessage::RequestNonces,
+                message: CoordinatorToDeviceMessage::RequestNonces(missing_nonces),
                 destinations: FromIterator::from_iter([device_id]),
             })
         } else {

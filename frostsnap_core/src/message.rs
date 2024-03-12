@@ -52,7 +52,7 @@ pub enum CoordinatorToDeviceMessage {
         shares_provided: BTreeMap<DeviceId, KeyGenResponse>,
     },
     RequestSign(SignRequest),
-    RequestNonces,
+    RequestNonces(u64),
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
@@ -68,8 +68,6 @@ pub struct SignRequestNonces {
     pub nonces: Vec<Nonce>,
     /// The index of the first nonce
     pub start: u64,
-    /// How many nonces the coordiantor has remaining
-    pub nonces_remaining: u64,
 }
 
 impl SignRequest {
@@ -91,7 +89,7 @@ impl Gist for CoordinatorToDeviceMessage {
 impl CoordinatorToDeviceMessage {
     pub fn kind(&self) -> &'static str {
         match self {
-            CoordinatorToDeviceMessage::RequestNonces => "RequestNonces",
+            CoordinatorToDeviceMessage::RequestNonces(..) => "RequestNonces",
             CoordinatorToDeviceMessage::DoKeyGen { .. } => "DoKeyGen",
             CoordinatorToDeviceMessage::FinishKeyGen { .. } => "FinishKeyGen",
             CoordinatorToDeviceMessage::RequestSign { .. } => "RequestSign",
