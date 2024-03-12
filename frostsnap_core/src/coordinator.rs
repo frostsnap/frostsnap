@@ -1,6 +1,5 @@
 use crate::{
-    gen_pop_message, message::*, ActionError, Error, FrostKeyExt, KeyId, MessageResult,
-    SessionHash, StartSignError,
+    gen_pop_message, message::*, ActionError, Error, FrostKeyExt, KeyId, MessageResult, SessionHash,
 };
 use alloc::{
     collections::{BTreeMap, BTreeSet},
@@ -687,3 +686,70 @@ impl CoordinatorFrostKey {
         self.device_to_share_index.keys().cloned()
     }
 }
+
+#[derive(Debug, Clone)]
+pub enum StartSignError {
+    UnknownKey {
+        key_id: KeyId,
+    },
+    DeviceNotPartOfKey {
+        device_id: DeviceId,
+    },
+    NotEnoughDevicesSelected {
+        selected: usize,
+        threshold: usize,
+    },
+    CantSignInState {
+        in_state: &'static str,
+    },
+    NotEnoughNoncesForDevice {
+        device_id: DeviceId,
+        have: usize,
+        need: usize,
+    },
+}
+
+impl core::fmt::Display for StartSignError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            StartSignError::NotEnoughDevicesSelected {
+                selected,
+                threshold,
+            } => {
+                write!(
+                    f,
+                    "Need more than {} signers for threshold {}",
+                    selected, threshold
+                )
+            }
+            StartSignError::CantSignInState { in_state } => {
+                write!(f, "Can't sign in state {}", in_state)
+            }
+            StartSignError::NotEnoughNoncesForDevice {
+                device_id,
+                have,
+                need,
+            } => {
+                write!(
+                    f,
+                    "Not enough nonces for device {}, have {}, need {}",
+                    device_id, have, need,
+                )
+            }
+            StartSignError::DeviceNotPartOfKey { device_id } => {
+                write!(
+                    f,
+                    "Don't know the share index for device that was part of sign request. ID: {}",
+                    device_id
+                )
+            }
+            StartSignError::UnknownKey { key_id } => write!(
+                f,
+                "device does not have key is was asked to sign with, id: {key_id}"
+            ),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for StartSignError {}
