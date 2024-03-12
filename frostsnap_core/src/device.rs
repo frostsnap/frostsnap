@@ -64,13 +64,13 @@ impl FrostSigner {
     }
 
     fn generate_nonces(
+        &self,
         // this is always the device key for now but because of lifetimes issues it has to be passed in
-        secret_key: &Scalar,
         start: u64,
     ) -> impl Iterator<Item = NonceKeyPair> + '_ {
         let mut nonce_rng = derive_nonce_rng! {
             nonce_gen => nonce::Deterministic::<Sha256>::default().tag(b"frostsnap/nonces"),
-            secret => secret_key,
+            secret => self.keypair.secret_key(),
             public => [b""],
             seedable_rng => ChaCha20Rng
         };
@@ -80,7 +80,7 @@ impl FrostSigner {
     }
 
     pub fn generate_public_nonces(&self, start: u64) -> impl Iterator<Item = Nonce> + '_ {
-        Self::generate_nonces(self.keypair.secret_key(), start).map(|nonce| nonce.public())
+        self.generate_nonces(start).map(|nonce| nonce.public())
     }
 
     pub fn recv_coordinator_message(
@@ -91,7 +91,8 @@ impl FrostSigner {
         use CoordinatorToDeviceMessage::*;
         match (self.action_state.clone(), message.clone()) {
             (_, RequestNonces) => {
-                let nonces = Self::generate_nonces(self.keypair.secret_key(), self.nonce_counter)
+                let nonces = self
+                    .generate_nonces(self.nonce_counter)
                     .take(NONCE_BATCH_SIZE as usize)
                     .map(|nonce| nonce.public())
                     .collect();
@@ -288,11 +289,11 @@ impl FrostSigner {
                     return Err(Error::signer_invalid_message(&message, format!("Number of nonces ({}) was not the same as the number of signatures we were asked for {}", my_nonces.nonces.len(), n_signatures_requested)));
                 }
 
-                let expected_nonces =
-                    Self::generate_nonces(self.keypair.secret_key(), my_nonces.start)
-                        .take(my_nonces.nonces.len())
-                        .map(|nonce| nonce.public())
-                        .collect::<Vec<_>>();
+                let expected_nonces = self
+                    .generate_nonces(my_nonces.start)
+                    .take(my_nonces.nonces.len())
+                    .map(|nonce| nonce.public())
+                    .collect::<Vec<_>>();
                 if expected_nonces != my_nonces.nonces {
                     return Err(Error::signer_invalid_message(
                         &message,
@@ -386,11 +387,11 @@ impl FrostSigner {
                     let replenish_amount =
                         NONCE_BATCH_SIZE.saturating_sub(my_session_nonces.nonces_remaining);
 
-                    let replenish_nonces =
-                        Self::generate_nonces(self.keypair.secret_key(), replenish_start)
-                            .take(replenish_amount as usize)
-                            .map(|nonce| nonce.public())
-                            .collect();
+                    let replenish_nonces = self
+                        .generate_nonces(replenish_start)
+                        .take(replenish_amount as usize)
+                        .map(|nonce| nonce.public())
+                        .collect();
 
                     DeviceNonces {
                         start_index: replenish_start,
@@ -398,9 +399,9 @@ impl FrostSigner {
                     }
                 };
 
-                let secret_nonces =
-                    Self::generate_nonces(self.keypair.secret_key(), my_session_nonces.start)
-                        .take(my_session_nonces.nonces.len());
+                let secret_nonces = self
+                    .generate_nonces(my_session_nonces.start)
+                    .take(my_session_nonces.nonces.len());
 
                 let frost = frost::new_without_nonce_generation::<Sha256>();
                 let share_index = key.share_index;
