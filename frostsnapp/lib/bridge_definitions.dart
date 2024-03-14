@@ -315,9 +315,9 @@ abstract class Native {
   ShareFnType get shareOpaqueFfiCoordinator;
   OpaqueTypeFinalizer get FfiCoordinatorFinalizer;
 
-  DropFnType get dropOpaqueFrostsnapCoreCoordinatorFrostKeyState;
-  ShareFnType get shareOpaqueFrostsnapCoreCoordinatorFrostKeyState;
-  OpaqueTypeFinalizer get FrostsnapCoreCoordinatorFrostKeyStateFinalizer;
+  DropFnType get dropOpaqueFrostsnapCoreCoordinatorFrostKey;
+  ShareFnType get shareOpaqueFrostsnapCoreCoordinatorFrostKey;
+  OpaqueTypeFinalizer get FrostsnapCoreCoordinatorFrostKeyFinalizer;
 
   DropFnType get dropOpaqueFrostsnapCoreMessageTransactionSignTask;
   ShareFnType get shareOpaqueFrostsnapCoreMessageTransactionSignTask;
@@ -398,21 +398,19 @@ class FfiCoordinator extends FrbOpaque {
 }
 
 @sealed
-class FrostsnapCoreCoordinatorFrostKeyState extends FrbOpaque {
+class FrostsnapCoreCoordinatorFrostKey extends FrbOpaque {
   final Native bridge;
-  FrostsnapCoreCoordinatorFrostKeyState.fromRaw(int ptr, int size, this.bridge)
+  FrostsnapCoreCoordinatorFrostKey.fromRaw(int ptr, int size, this.bridge)
       : super.unsafe(ptr, size);
   @override
-  DropFnType get dropFn =>
-      bridge.dropOpaqueFrostsnapCoreCoordinatorFrostKeyState;
+  DropFnType get dropFn => bridge.dropOpaqueFrostsnapCoreCoordinatorFrostKey;
 
   @override
-  ShareFnType get shareFn =>
-      bridge.shareOpaqueFrostsnapCoreCoordinatorFrostKeyState;
+  ShareFnType get shareFn => bridge.shareOpaqueFrostsnapCoreCoordinatorFrostKey;
 
   @override
   OpaqueTypeFinalizer get staticFinalizer =>
-      bridge.FrostsnapCoreCoordinatorFrostKeyStateFinalizer;
+      bridge.FrostsnapCoreCoordinatorFrostKeyFinalizer;
 }
 
 @sealed
@@ -807,7 +805,7 @@ class FfiSerial {
 
 class FrostKey {
   final Native bridge;
-  final FrostsnapCoreCoordinatorFrostKeyState field0;
+  final FrostsnapCoreCoordinatorFrostKey field0;
 
   const FrostKey({
     required this.bridge,

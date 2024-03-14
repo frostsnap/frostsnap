@@ -614,12 +614,12 @@ fn wire_generate_new_key__method__Coordinator_impl(
             let api_threshold = threshold.wire2api();
             let api_devices = devices.wire2api();
             move |task_callback| {
-                Result::<_, ()>::Ok(Coordinator::generate_new_key(
+                Coordinator::generate_new_key(
                     &api_that,
                     api_threshold,
                     api_devices,
                     task_callback.stream_sink::<_, mirror_CoordinatorToUserKeyGenMessage>(),
-                ))
+                )
             }
         },
     )

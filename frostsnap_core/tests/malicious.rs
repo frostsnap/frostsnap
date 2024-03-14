@@ -1,9 +1,8 @@
 //! Tests for a malicious actions. A malicious coordinator, a malicious device or both.
 use frostsnap_core::message::{
-    CoordinatorSend, CoordinatorToDeviceMessage, DeviceToUserMessage, KeyGenProvideShares,
-    SignRequest, SignTask,
+    CoordinatorToDeviceMessage, DeviceToUserMessage, KeyGenResponse, SignRequest, SignTask,
 };
-use frostsnap_core::{DeviceId, FrostCoordinator, FrostKeyExt, FrostSigner};
+use frostsnap_core::{DeviceId, FrostCoordinator, FrostSigner};
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::frost;
@@ -38,7 +37,7 @@ fn keygen_maliciously_replace_public_poly() {
 
     let frost = frost::new_with_deterministic_nonces::<sha2::Sha256>();
     let malicious_poly = frost::generate_scalar_poly(1, &mut rand::thread_rng());
-    let provide_shares = KeyGenProvideShares::generate(
+    let provide_shares = KeyGenResponse::generate(
         &frost,
         &malicious_poly,
         &device_to_share_index,
@@ -61,26 +60,6 @@ fn keygen_maliciously_replace_public_poly() {
 /// The device should reject signing the second request.
 #[test]
 fn nonce_reuse() {
-    let threshold = 1;
-    let coordinator = FrostCoordinator::new();
-    let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
-
-    let device = FrostSigner::new_random(&mut test_rng);
-    let device_id = device.device_id();
-    let devices = FromIterator::from_iter([(device_id, device)]);
-    let device_set = BTreeSet::from_iter([device_id]);
-    let mut run = Run::new(coordinator, devices);
-
-    let keygen_init = vec![run.coordinator.do_keygen(&device_set, threshold).unwrap()];
-    let sends_with_destination: Vec<_> = keygen_init
-        .into_iter()
-        .map(|message| CoordinatorSend::ToDevice {
-            message,
-            destinations: device_set.clone(),
-        })
-        .collect();
-    run.extend(sends_with_destination);
-
     // just does enough to make progress
     struct TestEnv;
     impl Env for TestEnv {
@@ -105,14 +84,27 @@ fn nonce_reuse() {
             }
         }
     }
+    let threshold = 1;
+    let coordinator = FrostCoordinator::new();
+    let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
+
+    let device = FrostSigner::new_random(&mut test_rng);
+    let device_id = device.device_id();
+    let devices = FromIterator::from_iter([(device_id, device)]);
+    let device_set = BTreeSet::from_iter([device_id]);
+    let mut run = Run::new(coordinator, devices);
+
+    // set up nonces for devices first
+    for &device_id in &device_set {
+        run.extend(run.coordinator.maybe_request_nonce_replenishment(device_id));
+    }
+    run.run_until_finished(&mut TestEnv, &mut test_rng);
+
+    let keygen_init = run.coordinator.do_keygen(&device_set, threshold).unwrap();
+    run.extend(keygen_init);
 
     run.run_until_finished(&mut TestEnv, &mut test_rng);
-    let key_id = run
-        .coordinator
-        .frost_key_state()
-        .unwrap()
-        .frost_key()
-        .key_id();
+    let key_id = run.coordinator.iter_keys().next().unwrap().key_id();
     let task1 = SignTask::Plain {
         message: b"utxo.club!".to_vec(),
     };

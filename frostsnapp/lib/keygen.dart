@@ -364,8 +364,7 @@ class KeyGenDeviceList extends StatelessWidget {
               });
               return DeviceSetup(
                 deviceId: device.id,
-                popInvoked: (_) {
-                  // This happens when we click back button
+                onCancel: () {
                   coord.sendCancel(id: device.id);
                 },
                 onSubmitted: (value) async {

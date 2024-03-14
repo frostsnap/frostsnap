@@ -10,10 +10,13 @@ import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class HostPortHandler {
   Map<String, SerialPort> openPorts = {};
-  FfiSerial ffiserial;
+  final FfiSerial? ffiserial;
   StreamSubscription<PortEvent>? subscription;
 
   HostPortHandler(this.ffiserial) {
+    if (ffiserial == null) {
+      return;
+    }
     UsbSerial.usbEventStream?.listen((UsbEvent msg) {
       if (msg.event == UsbEvent.ACTION_USB_DETACHED) {
         openPorts.remove(msg.device?.deviceName);
@@ -76,14 +79,14 @@ class HostPortHandler {
   }
 
   void scanDevices() async {
-    if (Platform.isAndroid) {
+    if (ffiserial != null) {
       List<UsbDevice> devices = await UsbSerial.listDevices();
       final List<PortDesc> portDescriptions = devices
           .where((device) => device.vid != null && device.pid != null)
           .map((device) => PortDesc(
               id: device.deviceName, pid: device.pid!, vid: device.vid!))
           .toList();
-      await ffiserial.setAvailablePorts(ports: portDescriptions);
+      await ffiserial!.setAvailablePorts(ports: portDescriptions);
     }
   }
 

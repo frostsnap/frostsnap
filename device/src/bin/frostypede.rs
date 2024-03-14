@@ -384,6 +384,7 @@ where
                     BusyTask::KeyGen => self.display.print("Generating key..").unwrap(),
                     BusyTask::Signing => self.display.print("Signing..").unwrap(),
                     BusyTask::VerifyingShare => self.display.print("Verifying key..").unwrap(),
+                    BusyTask::Loading => self.display.print("loading..").unwrap(),
                 }
             }
             Workflow::Debug(string) => {

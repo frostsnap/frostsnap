@@ -9,17 +9,22 @@ class DeviceSetup extends StatelessWidget {
       required this.deviceId,
       this.onSubmitted,
       this.onChanged,
-      this.popInvoked});
+      this.onCancel});
 
   final DeviceId deviceId;
   final ValueChanged<String>? onSubmitted;
   final ValueChanged<String>? onChanged;
-  final PopInvokedCallback? popInvoked;
+  final Function()? onCancel;
 
   @override
   Widget build(BuildContext context) {
+    bool submitted = false;
     return PopScope(
-        onPopInvoked: popInvoked,
+        onPopInvoked: (didPop) {
+          if (!submitted) {
+            onCancel?.call();
+          }
+        },
         child: Scaffold(
           appBar: AppBar(
             title: const Text('Device Setup'),
@@ -32,7 +37,10 @@ class DeviceSetup extends StatelessWidget {
                   hintText: 'What do you want name this device?',
                   labelText: 'Name',
                 ),
-                onSubmitted: onSubmitted,
+                onSubmitted: (name) {
+                  submitted = true;
+                  onSubmitted?.call(name);
+                },
                 onChanged: onChanged,
               ),
             ],

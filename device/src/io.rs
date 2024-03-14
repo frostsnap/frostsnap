@@ -87,9 +87,11 @@ where
     ) -> Result<(), bincode::error::EncodeError> {
         bincode::encode_into_writer(
             &ReceiveSerial::<D::Opposite>::Message(message),
-            self,
+            &mut *self,
             bincode::config::standard(),
-        )
+        )?;
+        self.io.flush();
+        Ok(())
     }
 
     pub fn receive(&mut self) -> Option<Result<ReceiveSerial<D>, bincode::error::DecodeError>> {
@@ -107,9 +109,11 @@ where
     pub fn write_magic_bytes(&mut self) -> Result<(), bincode::error::EncodeError> {
         bincode::encode_into_writer(
             &ReceiveSerial::<D::Opposite>::MagicBytes(MagicBytes::default()),
-            self,
+            &mut *self,
             bincode::config::standard(),
-        )
+        )?;
+        self.io.flush();
+        Ok(())
     }
 }
 
@@ -178,9 +182,11 @@ impl<'a, U> SerialIo<'a, U> {
         U: uart::Instance,
     {
         match self {
-            SerialIo::Jtag(jtag) => jtag
-                .write_bytes(bytes)
-                .map_err(|_| SerialInterfaceError::JtagError)?,
+            SerialIo::Jtag(jtag) => {
+                for byte in bytes {
+                    while jtag.write_byte_nb(*byte).is_err() {}
+                }
+            }
             SerialIo::Uart(uart) => {
                 for byte in bytes {
                     while let Err(e) = uart.write(*byte) {
@@ -197,21 +203,23 @@ impl<'a, U> SerialIo<'a, U> {
         Ok(())
     }
 
-    // NOTE: flush is useless on these devices except for blocking until writing is finished.
-    // This comment is here to stop you thinking it's useful and re-implementing it.
-    // fn flush(&mut self)
-    // where
-    //     U: uart::Instance,
-    // {
-    //     match self {
-    //         SerialIo::Uart(uart) => {
-    //             while let Err(_) = uart.flush() {}
-    //         }
-    //         SerialIo::Jtag(jtag) => {
-    //             let _ = jtag.flush().unwrap();
-    //         },
-    //     }
-    // }
+    fn flush(&mut self)
+    where
+        U: uart::Instance,
+    {
+        match self {
+            SerialIo::Uart(_) => {
+                // there is no reason to call this on uart. The hardware doesn't have a "flush"
+                // operation. Things that are in the write buffer will get written
+                // uart.flush();
+            }
+            SerialIo::Jtag(jtag) => {
+                // JTAG actually does need to get flushed sometimes. We don't need to block on it
+                // though so ignore return value.
+                let _ = jtag.flush();
+            }
+        }
+    }
 }
 
 #[derive(Debug)]

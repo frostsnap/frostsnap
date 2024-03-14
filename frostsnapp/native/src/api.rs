@@ -112,7 +112,7 @@ pub struct KeyState {
 }
 
 #[derive(Clone, Debug)]
-pub struct FrostKey(pub(crate) RustOpaque<frostsnap_core::CoordinatorFrostKeyState>);
+pub struct FrostKey(pub(crate) RustOpaque<frostsnap_core::CoordinatorFrostKey>);
 
 impl FrostKey {
     pub fn threshold(&self) -> SyncReturn<usize> {
@@ -495,9 +495,9 @@ impl Coordinator {
         threshold: usize,
         devices: Vec<DeviceId>,
         event_stream: StreamSink<CoordinatorToUserKeyGenMessage>,
-    ) {
+    ) -> anyhow::Result<()> {
         self.0
-            .generate_new_key(devices.into_iter().collect(), threshold, event_stream);
+            .generate_new_key(devices.into_iter().collect(), threshold, event_stream)
     }
 
     pub fn can_restore_signing_session(&self, key_id: KeyId) -> SyncReturn<bool> {

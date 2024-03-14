@@ -727,7 +727,7 @@ class NativeImpl implements Native {
       callFfi: (port_) => _platform.inner
           .wire_generate_new_key__method__Coordinator(port_, arg0, arg1, arg2),
       parseSuccessData: _wire2api_coordinator_to_user_key_gen_message,
-      parseErrorData: null,
+      parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kGenerateNewKeyMethodCoordinatorConstMeta,
       argValues: [that, threshold, devices],
       hint: hint,
@@ -1145,12 +1145,12 @@ class NativeImpl implements Native {
   OpaqueTypeFinalizer get FfiCoordinatorFinalizer =>
       _platform.FfiCoordinatorFinalizer;
 
-  DropFnType get dropOpaqueFrostsnapCoreCoordinatorFrostKeyState =>
-      _platform.inner.drop_opaque_FrostsnapCoreCoordinatorFrostKeyState;
-  ShareFnType get shareOpaqueFrostsnapCoreCoordinatorFrostKeyState =>
-      _platform.inner.share_opaque_FrostsnapCoreCoordinatorFrostKeyState;
-  OpaqueTypeFinalizer get FrostsnapCoreCoordinatorFrostKeyStateFinalizer =>
-      _platform.FrostsnapCoreCoordinatorFrostKeyStateFinalizer;
+  DropFnType get dropOpaqueFrostsnapCoreCoordinatorFrostKey =>
+      _platform.inner.drop_opaque_FrostsnapCoreCoordinatorFrostKey;
+  ShareFnType get shareOpaqueFrostsnapCoreCoordinatorFrostKey =>
+      _platform.inner.share_opaque_FrostsnapCoreCoordinatorFrostKey;
+  OpaqueTypeFinalizer get FrostsnapCoreCoordinatorFrostKeyFinalizer =>
+      _platform.FrostsnapCoreCoordinatorFrostKeyFinalizer;
 
   DropFnType get dropOpaqueFrostsnapCoreMessageTransactionSignTask =>
       _platform.inner.drop_opaque_FrostsnapCoreMessageTransactionSignTask;
@@ -1229,9 +1229,9 @@ class NativeImpl implements Native {
     return FrbAnyhowException(raw as String);
   }
 
-  FrostsnapCoreCoordinatorFrostKeyState
-      _wire2api_FrostsnapCoreCoordinatorFrostKeyState(dynamic raw) {
-    return FrostsnapCoreCoordinatorFrostKeyState.fromRaw(raw[0], raw[1], this);
+  FrostsnapCoreCoordinatorFrostKey _wire2api_FrostsnapCoreCoordinatorFrostKey(
+      dynamic raw) {
+    return FrostsnapCoreCoordinatorFrostKey.fromRaw(raw[0], raw[1], this);
   }
 
   FrostsnapCoreMessageTransactionSignTask
@@ -1511,7 +1511,7 @@ class NativeImpl implements Native {
       throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
     return FrostKey(
       bridge: this,
-      field0: _wire2api_FrostsnapCoreCoordinatorFrostKeyState(arr[0]),
+      field0: _wire2api_FrostsnapCoreCoordinatorFrostKey(arr[0]),
     );
   }
 

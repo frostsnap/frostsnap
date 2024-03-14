@@ -1,6 +1,6 @@
 use crate::{
     io::{self, UpstreamDetector},
-    state, storage,
+    storage,
     ui::{self, UiEvent, UserInteraction},
     ConnectionState,
 };
@@ -8,13 +8,15 @@ use alloc::{collections::VecDeque, string::ToString, vec::Vec};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{CoordinatorSendBody, DeviceSendBody, DeviceSendMessage, ReceiveSerial};
 use frostsnap_comms::{CoordinatorSendMessage, Downstream, MAGIC_BYTES_PERIOD};
-use frostsnap_core::message::{
-    CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, DeviceToUserMessage,
-};
-use frostsnap_core::schnorr_fun::fun::marker::Normal;
-use frostsnap_core::schnorr_fun::fun::KeyPair;
-use frostsnap_core::schnorr_fun::fun::Scalar;
+use frostsnap_core::schnorr_fun::fun::{KeyPair, Scalar};
 use frostsnap_core::DeviceId;
+use frostsnap_core::{
+    message::{
+        CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, DeviceToUserMessage,
+    },
+    schnorr_fun::fun::marker::Normal,
+    FrostSigner,
+};
 use hal::{gpio, uart, UsbSerialJtag};
 use rand_chacha::rand_core::RngCore;
 
@@ -50,27 +52,40 @@ where
         } = self;
 
         let flash = FlashStorage::new();
-        let mut flash = storage::DeviceStorage::new(flash, storage::NVS_PARTITION_START);
+        let mut flash = storage::DeviceStorage::new(flash);
 
-        // Load state from Flash memory if available. If not, generate secret and save.
-        let mut state = match flash.load() {
-            Ok(state) => state,
-            Err(_e) => {
-                let secret = Scalar::random(&mut rng);
-                let keypair: KeyPair = KeyPair::<Normal>::new(secret.clone());
-                let frost_signer = frostsnap_core::FrostSigner::new(keypair);
+        ui.set_workflow(ui::Workflow::BusyDoing(ui::BusyTask::Loading));
+        let (mut signer, mut name) =
+            match flash.read_header().expect("failed to read header from nvs") {
+                Some(header) => {
+                    let mut signer = FrostSigner::new(KeyPair::<Normal>::new(header.secret_key));
+                    let mut name: Option<alloc::string::String> = None;
 
-                let state = state::FrostState {
-                    signer: frost_signer.clone(),
-                    name: None,
-                };
-                flash.save(&state).unwrap();
-                state
-            }
-        };
+                    for change in flash.iter() {
+                        match change {
+                            storage::Change::Core(core) => {
+                                signer.apply_change(core);
+                            }
+                            storage::Change::Name(name_update) => {
+                                name = Some(name_update);
+                            }
+                        }
+                    }
+                    (signer, name)
+                }
+                None => {
+                    let secret_key = Scalar::random(&mut rng);
+                    let keypair = KeyPair::<Normal>::new(secret_key.clone());
+                    flash
+                        .write_header(crate::storage::Header { secret_key })
+                        .unwrap();
+                    let signer = FrostSigner::new(keypair);
+                    (signer, None)
+                }
+            };
 
-        let device_id = state.signer.device_id();
-        if let Some(name) = &state.name {
+        let device_id = signer.device_id();
+        if let Some(name) = &name {
             ui.set_device_name(name.into());
         }
 
@@ -82,8 +97,16 @@ where
         let mut sends_upstream = UpstreamSends::new(device_id);
         let mut sends_user: Vec<DeviceToUserMessage> = vec![];
         let mut outbox = VecDeque::new();
-        let mut upstream_detector =
-            UpstreamDetector::new(upstream_uart, upstream_jtag, &timer, MAGIC_BYTES_PERIOD);
+        // because loading from flash is taking a bit longer than it did before we need to add an
+        // arbitrary delay to switching over to JTAG. The real solution is to stop using delays in
+        // favor of detecting automatically what the upstream device is.
+        const TEMP_DELAY_JTAG_SWITCHING: u64 = 500;
+        let mut upstream_detector = UpstreamDetector::new(
+            upstream_uart,
+            upstream_jtag,
+            &timer,
+            MAGIC_BYTES_PERIOD + TEMP_DELAY_JTAG_SWITCHING,
+        );
         let mut upstream_sent_magic_bytes = false;
         let mut upstream_received_first_message = false;
         let mut next_write_magic_bytes = 0;
@@ -100,7 +123,7 @@ where
             if soft_reset {
                 soft_reset = false;
                 sends_upstream.messages.clear();
-                let _ = state.signer.cancel_action();
+                let _ = signer.cancel_action();
                 sends_user.clear();
                 sends_downstream.clear();
                 downstream_connection_state = ConnectionState::Disconnected;
@@ -109,7 +132,7 @@ where
                 upstream_received_first_message = false;
                 outbox.clear();
                 sends_upstream.send(DeviceSendBody::Announce);
-                sends_upstream.send(match &state.name {
+                sends_upstream.send(match &name {
                     Some(name) => DeviceSendBody::SetName { name: name.into() },
                     None => DeviceSendBody::NeedName,
                 });
@@ -227,8 +250,8 @@ where
                                                     //
                                                     // We first ask the
                                                     // core logic to cancel what it's doing
-                                                    let core_cancel = state.signer.cancel_action();
-                                                    if core_cancel.is_empty() {
+                                                    let core_cancel = signer.cancel_action();
+                                                    if core_cancel.is_none() {
                                                         // .. but if it's not doing anything then we
                                                         // are probably cancelling something in the
                                                         // ui
@@ -248,11 +271,13 @@ where
                                                 }
                                                 CoordinatorSendBody::Naming(naming) => match naming
                                                 {
-                                                    frostsnap_comms::NameCommand::Preview(name) => {
+                                                    frostsnap_comms::NameCommand::Preview(
+                                                        preview_name,
+                                                    ) => {
                                                         ui.set_workflow(
                                                             ui::Workflow::NamingDevice {
-                                                                old_name: state.name.clone(),
-                                                                new_name: name.clone(),
+                                                                old_name: name.clone(),
+                                                                new_name: preview_name.clone(),
                                                             },
                                                         );
                                                     }
@@ -261,7 +286,7 @@ where
                                                     ) => {
                                                         ui.set_workflow(ui::Workflow::UserPrompt(
                                                             ui::Prompt::NewName {
-                                                                old_name: state.name.clone(),
+                                                                old_name: name.clone(),
                                                                 new_name: new_name.clone(),
                                                             },
                                                         ));
@@ -278,7 +303,6 @@ where
                                                             ui.set_workflow(ui::Workflow::BusyDoing(
                                                                 ui::BusyTask::KeyGen,
                                                             ));
-                                                            state.signer.clear_state();
                                                         }
                                                         CoordinatorToDeviceMessage::FinishKeyGen {
                                                             ..
@@ -289,8 +313,7 @@ where
                                                     }
 
                                                     outbox.extend(
-                                                        state
-                                                            .signer
+                                                            signer
                                                             .recv_coordinator_message(
                                                                 core_message.clone(),
                                                                 &mut rng,
@@ -333,25 +356,23 @@ where
             if let Some(ui_event) = ui.poll() {
                 match ui_event {
                     UiEvent::KeyGenConfirm => outbox.extend(
-                        state
-                            .signer
+                        signer
                             .keygen_ack()
                             .expect("state changed while confirming keygen"),
                     ),
                     UiEvent::SigningConfirm => {
                         ui.set_workflow(ui::Workflow::BusyDoing(ui::BusyTask::Signing));
-                        outbox.extend(
-                            state
-                                .signer
-                                .sign_ack()
-                                .expect("state changed while acking sign"),
-                        );
+                        outbox.extend(signer.sign_ack().expect("state changed while acking sign"));
                     }
-                    UiEvent::NameConfirm(ref name) => {
-                        state.name = Some(name.into());
-                        flash.save(&state).unwrap();
-                        ui.set_device_name(name.into());
-                        sends_upstream.send(DeviceSendBody::SetName { name: name.into() });
+                    UiEvent::NameConfirm(ref new_name) => {
+                        name = Some(new_name.into());
+                        flash
+                            .push(storage::Change::Name(new_name.clone()))
+                            .expect("flash write fail");
+                        ui.set_device_name(new_name.into());
+                        sends_upstream.send(DeviceSendBody::SetName {
+                            name: new_name.into(),
+                        });
                     }
                 }
                 ui.set_workflow(ui::Workflow::WaitingFor(
@@ -365,8 +386,8 @@ where
             // ⚠ pop_front ensures messages are sent in order. E.g. update nonce NVS before sending sig.
             while let Some(send) = outbox.pop_front() {
                 match send {
-                    DeviceSend::ToStorage(_) => {
-                        flash.save(&state).unwrap();
+                    DeviceSend::ToStorage(message) => {
+                        flash.push(storage::Change::Core(message)).unwrap();
                     }
                     DeviceSend::ToCoordinator(message) => {
                         if matches!(message, DeviceToCoordinatorMessage::KeyGenResponse(_)) {

@@ -39,12 +39,12 @@ typedef struct wire_Transaction {
   struct wire_ConfirmationTime *confirmation_time;
 } wire_Transaction;
 
-typedef struct wire_FrostsnapCoreCoordinatorFrostKeyState {
+typedef struct wire_FrostsnapCoreCoordinatorFrostKey {
   const void *ptr;
-} wire_FrostsnapCoreCoordinatorFrostKeyState;
+} wire_FrostsnapCoreCoordinatorFrostKey;
 
 typedef struct wire_FrostKey {
-  struct wire_FrostsnapCoreCoordinatorFrostKeyState field0;
+  struct wire_FrostsnapCoreCoordinatorFrostKey field0;
 } wire_FrostKey;
 
 typedef struct wire_PortOpenSender {
@@ -362,7 +362,7 @@ struct wire_ChainSync new_ChainSync(void);
 
 struct wire_FfiCoordinator new_FfiCoordinator(void);
 
-struct wire_FrostsnapCoreCoordinatorFrostKeyState new_FrostsnapCoreCoordinatorFrostKeyState(void);
+struct wire_FrostsnapCoreCoordinatorFrostKey new_FrostsnapCoreCoordinatorFrostKey(void);
 
 struct wire_FrostsnapCoreMessageTransactionSignTask new_FrostsnapCoreMessageTransactionSignTask(void);
 
@@ -436,9 +436,9 @@ void drop_opaque_FfiCoordinator(const void *ptr);
 
 const void *share_opaque_FfiCoordinator(const void *ptr);
 
-void drop_opaque_FrostsnapCoreCoordinatorFrostKeyState(const void *ptr);
+void drop_opaque_FrostsnapCoreCoordinatorFrostKey(const void *ptr);
 
-const void *share_opaque_FrostsnapCoreCoordinatorFrostKeyState(const void *ptr);
+const void *share_opaque_FrostsnapCoreCoordinatorFrostKey(const void *ptr);
 
 void drop_opaque_FrostsnapCoreMessageTransactionSignTask(const void *ptr);
 
@@ -531,7 +531,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) new_ArcMutexVecPortDesc);
     dummy_var ^= ((int64_t) (void*) new_ChainSync);
     dummy_var ^= ((int64_t) (void*) new_FfiCoordinator);
-    dummy_var ^= ((int64_t) (void*) new_FrostsnapCoreCoordinatorFrostKeyState);
+    dummy_var ^= ((int64_t) (void*) new_FrostsnapCoreCoordinatorFrostKey);
     dummy_var ^= ((int64_t) (void*) new_FrostsnapCoreMessageTransactionSignTask);
     dummy_var ^= ((int64_t) (void*) new_MutexBTreeMapKeyIdStreamSinkTxState);
     dummy_var ^= ((int64_t) (void*) new_MutexCrateWalletWallet);
@@ -568,8 +568,8 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) share_opaque_ChainSync);
     dummy_var ^= ((int64_t) (void*) drop_opaque_FfiCoordinator);
     dummy_var ^= ((int64_t) (void*) share_opaque_FfiCoordinator);
-    dummy_var ^= ((int64_t) (void*) drop_opaque_FrostsnapCoreCoordinatorFrostKeyState);
-    dummy_var ^= ((int64_t) (void*) share_opaque_FrostsnapCoreCoordinatorFrostKeyState);
+    dummy_var ^= ((int64_t) (void*) drop_opaque_FrostsnapCoreCoordinatorFrostKey);
+    dummy_var ^= ((int64_t) (void*) share_opaque_FrostsnapCoreCoordinatorFrostKey);
     dummy_var ^= ((int64_t) (void*) drop_opaque_FrostsnapCoreMessageTransactionSignTask);
     dummy_var ^= ((int64_t) (void*) share_opaque_FrostsnapCoreMessageTransactionSignTask);
     dummy_var ^= ((int64_t) (void*) drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState);

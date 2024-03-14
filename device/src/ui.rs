@@ -82,6 +82,7 @@ pub enum BusyTask {
     KeyGen,
     Signing,
     VerifyingShare,
+    Loading,
 }
 
 #[derive(Clone, Debug)]
