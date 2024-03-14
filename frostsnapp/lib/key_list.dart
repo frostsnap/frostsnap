@@ -170,7 +170,7 @@ class _KeyCard extends State<KeyCard> {
               const SizedBox(width: 5),
               walletButton,
               const SizedBox(width: 5),
-              continueSigning
+              continueSigning,
             ])
           ],
         ),

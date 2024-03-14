@@ -168,6 +168,11 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kGetKeyMethodCoordinatorConstMeta;
 
+  List<KeyId> keysForDeviceMethodCoordinator(
+      {required Coordinator that, required DeviceId deviceId, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kKeysForDeviceMethodCoordinatorConstMeta;
+
   Stream<SigningState> startSigningMethodCoordinator(
       {required Coordinator that,
       required KeyId keyId,
@@ -632,6 +637,12 @@ class Coordinator {
       bridge.getKeyMethodCoordinator(
         that: this,
         keyId: keyId,
+      );
+
+  List<KeyId> keysForDevice({required DeviceId deviceId, dynamic hint}) =>
+      bridge.keysForDeviceMethodCoordinator(
+        that: this,
+        deviceId: deviceId,
       );
 
   Stream<SigningState> startSigning(

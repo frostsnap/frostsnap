@@ -188,6 +188,14 @@ pub fn wire_get_key__method__Coordinator(
 }
 
 #[wasm_bindgen]
+pub fn wire_keys_for_device__method__Coordinator(
+    that: JsValue,
+    device_id: JsValue,
+) -> support::WireSyncReturn {
+    wire_keys_for_device__method__Coordinator_impl(that, device_id)
+}
+
+#[wasm_bindgen]
 pub fn wire_start_signing__method__Coordinator(
     port_: MessagePort,
     that: JsValue,
