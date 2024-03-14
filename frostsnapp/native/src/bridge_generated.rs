@@ -527,6 +527,23 @@ fn wire_get_key__method__Coordinator_impl(
         },
     )
 }
+fn wire_keys_for_device__method__Coordinator_impl(
+    that: impl Wire2Api<Coordinator> + UnwindSafe,
+    device_id: impl Wire2Api<DeviceId> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "keys_for_device__method__Coordinator",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_device_id = device_id.wire2api();
+            Result::<_, ()>::Ok(Coordinator::keys_for_device(&api_that, api_device_id))
+        },
+    )
+}
 fn wire_start_signing__method__Coordinator_impl(
     port_: MessagePort,
     that: impl Wire2Api<Coordinator> + UnwindSafe,

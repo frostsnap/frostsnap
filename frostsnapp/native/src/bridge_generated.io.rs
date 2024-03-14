@@ -215,6 +215,14 @@ pub extern "C" fn wire_get_key__method__Coordinator(
 }
 
 #[no_mangle]
+pub extern "C" fn wire_keys_for_device__method__Coordinator(
+    that: *mut wire_Coordinator,
+    device_id: *mut wire_DeviceId,
+) -> support::WireSyncReturn {
+    wire_keys_for_device__method__Coordinator_impl(that, device_id)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_start_signing__method__Coordinator(
     port_: i64,
     that: *mut wire_Coordinator,

@@ -451,6 +451,27 @@ impl Coordinator {
         )
     }
 
+    pub fn keys_for_device(&self, device_id: DeviceId) -> SyncReturn<Vec<KeyId>> {
+        SyncReturn(
+            self.0
+                .frost_keys()
+                .into_iter()
+                .filter_map(|frost_key| {
+                    if frost_key
+                        .devices()
+                        .0
+                        .into_iter()
+                        .any(|device| device.id == device_id)
+                    {
+                        Some(frost_key.id().0)
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+        )
+    }
+
     pub fn start_signing(
         &self,
         key_id: KeyId,
