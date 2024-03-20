@@ -182,6 +182,16 @@ pub extern "C" fn wire_cancel_all__method__Coordinator(port_: i64, that: *mut wi
 }
 
 #[no_mangle]
+pub extern "C" fn wire_display_backup__method__Coordinator(
+    port_: i64,
+    that: *mut wire_Coordinator,
+    id: *mut wire_DeviceId,
+    key_id: *mut wire_KeyId,
+) {
+    wire_display_backup__method__Coordinator_impl(port_, that, id, key_id)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_key_state__method__Coordinator(
     that: *mut wire_Coordinator,
 ) -> support::WireSyncReturn {
@@ -202,6 +212,14 @@ pub extern "C" fn wire_get_key__method__Coordinator(
     key_id: *mut wire_KeyId,
 ) -> support::WireSyncReturn {
     wire_get_key__method__Coordinator_impl(that, key_id)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_keys_for_device__method__Coordinator(
+    that: *mut wire_Coordinator,
+    device_id: *mut wire_DeviceId,
+) -> support::WireSyncReturn {
+    wire_keys_for_device__method__Coordinator_impl(that, device_id)
 }
 
 #[no_mangle]

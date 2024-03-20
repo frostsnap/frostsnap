@@ -428,6 +428,10 @@ impl Coordinator {
         self.0.cancel_all()
     }
 
+    pub fn display_backup(&self, id: DeviceId, key_id: KeyId) {
+        self.0.request_display_backup(id, key_id)
+    }
+
     pub fn key_state(&self) -> SyncReturn<KeyState> {
         SyncReturn(KeyState {
             keys: self.0.frost_keys(),
@@ -445,6 +449,27 @@ impl Coordinator {
                 .frost_keys()
                 .into_iter()
                 .find(|frost_key| frost_key.id().0 == key_id),
+        )
+    }
+
+    pub fn keys_for_device(&self, device_id: DeviceId) -> SyncReturn<Vec<KeyId>> {
+        SyncReturn(
+            self.0
+                .frost_keys()
+                .into_iter()
+                .filter_map(|frost_key| {
+                    if frost_key
+                        .devices()
+                        .0
+                        .into_iter()
+                        .any(|device| device.id == device_id)
+                    {
+                        Some(frost_key.id().0)
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
         )
     }
 

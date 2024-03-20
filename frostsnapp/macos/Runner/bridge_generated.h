@@ -266,12 +266,20 @@ void wire_send_cancel__method__Coordinator(int64_t port_,
 
 void wire_cancel_all__method__Coordinator(int64_t port_, struct wire_Coordinator *that);
 
+void wire_display_backup__method__Coordinator(int64_t port_,
+                                              struct wire_Coordinator *that,
+                                              struct wire_DeviceId *id,
+                                              struct wire_KeyId *key_id);
+
 WireSyncReturn wire_key_state__method__Coordinator(struct wire_Coordinator *that);
 
 void wire_sub_key_events__method__Coordinator(int64_t port_, struct wire_Coordinator *that);
 
 WireSyncReturn wire_get_key__method__Coordinator(struct wire_Coordinator *that,
                                                  struct wire_KeyId *key_id);
+
+WireSyncReturn wire_keys_for_device__method__Coordinator(struct wire_Coordinator *that,
+                                                         struct wire_DeviceId *device_id);
 
 void wire_start_signing__method__Coordinator(int64_t port_,
                                              struct wire_Coordinator *that,
@@ -503,9 +511,11 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_finish_naming__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_send_cancel__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_cancel_all__method__Coordinator);
+    dummy_var ^= ((int64_t) (void*) wire_display_backup__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_key_state__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_sub_key_events__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_get_key__method__Coordinator);
+    dummy_var ^= ((int64_t) (void*) wire_keys_for_device__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_start_signing__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_start_signing_tx__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_get_signing_state__method__Coordinator);

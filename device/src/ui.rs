@@ -1,5 +1,5 @@
 use alloc::string::String;
-use frostsnap_core::SessionHash;
+use frostsnap_core::{KeyId, SessionHash};
 
 pub trait UserInteraction {
     fn set_downstream_connection_state(&mut self, state: crate::ConnectionState);
@@ -75,6 +75,8 @@ pub enum Prompt {
         old_name: Option<String>,
         new_name: String,
     },
+    DisplayBackupRequest(KeyId),
+    DisplayBackup(String),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -90,4 +92,6 @@ pub enum UiEvent {
     KeyGenConfirm,
     SigningConfirm,
     NameConfirm(String),
+    BackupRequestConfirm(KeyId),
+    BackupConfirm(String),
 }

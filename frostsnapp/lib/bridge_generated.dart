@@ -555,6 +555,31 @@ class NativeImpl implements Native {
         argNames: ["that"],
       );
 
+  Future<void> displayBackupMethodCoordinator(
+      {required Coordinator that,
+      required DeviceId id,
+      required KeyId keyId,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
+    var arg1 = _platform.api2wire_box_autoadd_device_id(id);
+    var arg2 = _platform.api2wire_box_autoadd_key_id(keyId);
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner
+          .wire_display_backup__method__Coordinator(port_, arg0, arg1, arg2),
+      parseSuccessData: _wire2api_unit,
+      parseErrorData: null,
+      constMeta: kDisplayBackupMethodCoordinatorConstMeta,
+      argValues: [that, id, keyId],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kDisplayBackupMethodCoordinatorConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "display_backup__method__Coordinator",
+        argNames: ["that", "id", "keyId"],
+      );
+
   KeyState keyStateMethodCoordinator(
       {required Coordinator that, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
@@ -613,6 +638,27 @@ class NativeImpl implements Native {
       const FlutterRustBridgeTaskConstMeta(
         debugName: "get_key__method__Coordinator",
         argNames: ["that", "keyId"],
+      );
+
+  List<KeyId> keysForDeviceMethodCoordinator(
+      {required Coordinator that, required DeviceId deviceId, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
+    var arg1 = _platform.api2wire_box_autoadd_device_id(deviceId);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () =>
+          _platform.inner.wire_keys_for_device__method__Coordinator(arg0, arg1),
+      parseSuccessData: _wire2api_list_key_id,
+      parseErrorData: null,
+      constMeta: kKeysForDeviceMethodCoordinatorConstMeta,
+      argValues: [that, deviceId],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kKeysForDeviceMethodCoordinatorConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "keys_for_device__method__Coordinator",
+        argNames: ["that", "deviceId"],
       );
 
   Stream<SigningState> startSigningMethodCoordinator(
@@ -1567,6 +1613,10 @@ class NativeImpl implements Native {
 
   List<FrostKey> _wire2api_list_frost_key(dynamic raw) {
     return (raw as List<dynamic>).map(_wire2api_frost_key).toList();
+  }
+
+  List<KeyId> _wire2api_list_key_id(dynamic raw) {
+    return (raw as List<dynamic>).map(_wire2api_key_id).toList();
   }
 
   List<Transaction> _wire2api_list_transaction(dynamic raw) {

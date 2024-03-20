@@ -75,7 +75,7 @@ where
                 }
                 None => {
                     let secret_key = Scalar::random(&mut rng);
-                    let keypair = KeyPair::<Normal>::new(secret_key.clone());
+                    let keypair = KeyPair::<Normal>::new(secret_key);
                     flash
                         .write_header(crate::storage::Header { secret_key })
                         .unwrap();
@@ -323,6 +323,21 @@ where
                                                             ),
                                                     );
                                                 }
+                                                CoordinatorSendBody::DisplayBackupRequest(
+                                                    key_id,
+                                                ) => {
+                                                    match signer.keys().get(key_id) {
+                                                        Some(_) => {
+                                                            ui.set_workflow(ui::Workflow::UserPrompt(
+                                                            ui::Prompt::DisplayBackupRequest(*key_id),
+                                                        ));
+                                                        }
+                                                        _ => {
+                                                            // we don't know about this key, no backup to display
+                                                            // TODO: show error
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
 
@@ -374,6 +389,16 @@ where
                             name: new_name.into(),
                         });
                     }
+                    UiEvent::BackupRequestConfirm(key_id) => {
+                        ui.set_workflow(ui::Workflow::UserPrompt(
+                            ui::Prompt::DisplayBackupRequest(key_id),
+                        ));
+                    }
+                    UiEvent::BackupConfirm(ref backup_string) => {
+                        ui.set_workflow(ui::Workflow::UserPrompt(ui::Prompt::DisplayBackup(
+                            backup_string.clone(),
+                        )));
+                    }
                 }
                 ui.set_workflow(ui::Workflow::WaitingFor(
                     ui::WaitingFor::CoordinatorInstruction {
@@ -408,6 +433,9 @@ where
                                     sign_task.to_string(),
                                 )));
                             }
+                            DeviceToUserMessage::DisplayBackup { backup } => ui.set_workflow(
+                                ui::Workflow::UserPrompt(ui::Prompt::DisplayBackup(backup)),
+                            ),
                             DeviceToUserMessage::Canceled { .. } => {
                                 ui.cancel();
                             }

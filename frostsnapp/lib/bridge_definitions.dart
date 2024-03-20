@@ -146,6 +146,14 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kCancelAllMethodCoordinatorConstMeta;
 
+  Future<void> displayBackupMethodCoordinator(
+      {required Coordinator that,
+      required DeviceId id,
+      required KeyId keyId,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kDisplayBackupMethodCoordinatorConstMeta;
+
   KeyState keyStateMethodCoordinator({required Coordinator that, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kKeyStateMethodCoordinatorConstMeta;
@@ -159,6 +167,11 @@ abstract class Native {
       {required Coordinator that, required KeyId keyId, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kGetKeyMethodCoordinatorConstMeta;
+
+  List<KeyId> keysForDeviceMethodCoordinator(
+      {required Coordinator that, required DeviceId deviceId, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kKeysForDeviceMethodCoordinatorConstMeta;
 
   Stream<SigningState> startSigningMethodCoordinator(
       {required Coordinator that,
@@ -603,6 +616,14 @@ class Coordinator {
         that: this,
       );
 
+  Future<void> displayBackup(
+          {required DeviceId id, required KeyId keyId, dynamic hint}) =>
+      bridge.displayBackupMethodCoordinator(
+        that: this,
+        id: id,
+        keyId: keyId,
+      );
+
   KeyState keyState({dynamic hint}) => bridge.keyStateMethodCoordinator(
         that: this,
       );
@@ -616,6 +637,12 @@ class Coordinator {
       bridge.getKeyMethodCoordinator(
         that: this,
         keyId: keyId,
+      );
+
+  List<KeyId> keysForDevice({required DeviceId deviceId, dynamic hint}) =>
+      bridge.keysForDeviceMethodCoordinator(
+        that: this,
+        deviceId: deviceId,
       );
 
   Stream<SigningState> startSigning(
