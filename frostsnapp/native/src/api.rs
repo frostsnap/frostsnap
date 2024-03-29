@@ -275,8 +275,6 @@ pub fn get_device(id: DeviceId) -> SyncReturn<Device> {
     SyncReturn(device)
 }
 
-pub type SessionHash = [u8; 32];
-
 #[derive(Clone, Debug, Copy)]
 #[frb(mirror(EncodedSignature))]
 pub struct _EncodedSignature(pub [u8; 64]);
@@ -299,7 +297,7 @@ impl SigningState {
 #[frb(mirror(CoordinatorToUserKeyGenMessage))]
 pub enum _CoordinatorToUserKeyGenMessage {
     ReceivedShares { from: DeviceId },
-    CheckKeyGen { session_hash: SessionHash },
+    CheckKeyGen { session_hash: [u8; 32] },
     KeyGenAck { from: DeviceId },
     FinishedKey { key_id: KeyId },
 }
@@ -363,6 +361,7 @@ fn _load(db_file: String, usb_serial_manager: UsbSerialManager) -> Result<(Coord
         .read(true)
         .write(true)
         .create(true) // Creates the file if it does not exist
+        .truncate(false)
         .open(db_file.clone())?;
 
     event!(TLevel::INFO, path = db_file, "initializing database");
