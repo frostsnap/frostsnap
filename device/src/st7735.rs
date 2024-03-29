@@ -15,7 +15,7 @@ use embedded_text::{
     style::{TextBoxStyle, TextBoxStyleBuilder},
     TextBox,
 };
-use hal::{
+use esp_hal::{
     clock::Clocks,
     gpio::{AnyPin, Output, OutputPin, PushPull},
     peripheral::Peripheral,

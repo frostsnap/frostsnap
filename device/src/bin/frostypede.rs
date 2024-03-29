@@ -13,6 +13,17 @@ use crate::alloc::string::String;
 use core::mem::MaybeUninit;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use embedded_graphics_framebuf::FrameBuf;
+use esp_hal::{
+    clock::ClockControl,
+    gpio::{GpioPin, Input, PullUp},
+    peripherals::Peripherals,
+    prelude::*,
+    rmt::{Rmt, TxChannel},
+    spi,
+    timer::{self, Timer, TimerGroup},
+    uart::{self, Uart},
+    Delay, Rng, UsbSerialJtag, IO,
+};
 use esp_hal_smartled::{smartLedBuffer, SmartLedsAdapter};
 use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_device::{
@@ -21,17 +32,6 @@ use frostsnap_device::{
     st7735::ST7735,
     ui::{BusyTask, Prompt, UiEvent, UserInteraction, WaitingFor, WaitingResponse, Workflow},
     ConnectionState,
-};
-use hal::{
-    clock::ClockControl,
-    gpio::{GpioPin, Input, PullUp},
-    peripherals::Peripherals,
-    prelude::*,
-    rmt::{Rmt, TxChannel},
-    spi,
-    timer::{Timer, TimerGroup},
-    uart::{self, Uart},
-    Delay, UsbSerialJtag, IO,
 };
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 use smart_leds::{brightness, colors, SmartLedsWrite, RGB};
@@ -103,7 +103,7 @@ fn main() -> ! {
     // RGB LED
     let rmt = Rmt::new(peripherals.RMT, 80u32.MHz(), &clocks).unwrap();
     let rmt_buffer = smartLedBuffer!(1);
-    let mut led = SmartLedsAdapter::new(rmt.channel0, io.pins.gpio0, rmt_buffer);
+    let mut led = SmartLedsAdapter::new(rmt.channel0, io.pins.gpio0, rmt_buffer, &clocks);
     led.write(brightness([colors::BLACK].iter().cloned(), 0))
         .unwrap();
 
@@ -118,7 +118,7 @@ fn main() -> ! {
             io.pins.gpio18.into_push_pull_output(),
             io.pins.gpio19.into_floating_input(),
         );
-        hal::Uart::new_with_config(peripherals.UART1, serial_conf, Some(txrx1), &clocks)
+        Uart::new_with_config(peripherals.UART1, serial_conf, Some(txrx1), &clocks)
     };
 
     let downstream_uart = {
@@ -133,7 +133,7 @@ fn main() -> ! {
         Uart::new_with_config(peripherals.UART0, serial_conf, Some(txrx0), &clocks)
     };
 
-    let mut hal_rng = hal::Rng::new(peripherals.RNG);
+    let mut hal_rng = Rng::new(peripherals.RNG);
     delay.delay_ms(600u32); // To wait for ESP32c3 timers to stop being bonkers
     bl.set_high().unwrap();
 
@@ -172,10 +172,10 @@ fn main() -> ! {
 pub struct FrostyUi<'t, 'd, C, T, SPI>
 where
     SPI: spi::master::Instance,
-    C: TxChannel<0>,
+    C: TxChannel,
 {
     select_button: GpioPin<Input<PullUp>, 9>,
-    led: SmartLedsAdapter<C, 0, 25>,
+    led: SmartLedsAdapter<C, 25>,
     display: ST7735<'d, SPI>,
     downstream_connection_state: ConnectionState,
     workflow: Workflow,
@@ -195,7 +195,7 @@ struct AnimationState<'t, T> {
 
 impl<'t, T> AnimationState<'t, T>
 where
-    T: hal::timer::Instance,
+    T: timer::Instance,
 {
     pub fn new(timer: &'t Timer<T>, duration_ticks: u64) -> Self {
         Self {
@@ -248,8 +248,8 @@ pub enum AnimationProgress {
 impl<'t, 'd, C, T, SPI> FrostyUi<'t, 'd, C, T, SPI>
 where
     SPI: spi::master::Instance,
-    C: TxChannel<0>,
-    T: hal::timer::Instance,
+    C: TxChannel,
+    T: timer::Instance,
 {
     fn render(&mut self) {
         let splash_progress = self.splash_state.poll();
@@ -382,8 +382,8 @@ where
 impl<'d, 't, C, T, SPI> UserInteraction for FrostyUi<'d, 't, C, T, SPI>
 where
     SPI: spi::master::Instance,
-    C: TxChannel<0>,
-    T: hal::timer::Instance,
+    C: TxChannel,
+    T: timer::Instance,
 {
     fn set_downstream_connection_state(&mut self, state: ConnectionState) {
         if state != self.downstream_connection_state {
@@ -479,7 +479,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 
     if let Ok(rmt) = Rmt::new(peripherals.RMT, 80u32.MHz(), &clocks) {
         let rmt_buffer = smartLedBuffer!(1);
-        let mut led = SmartLedsAdapter::new(rmt.channel0, io.pins.gpio0, rmt_buffer);
+        let mut led = SmartLedsAdapter::new(rmt.channel0, io.pins.gpio0, rmt_buffer, &clocks);
         let _ = led.write(brightness([colors::RED].iter().cloned(), 10));
     }
 
