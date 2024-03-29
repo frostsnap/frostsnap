@@ -363,6 +363,7 @@ fn _load(db_file: String, usb_serial_manager: UsbSerialManager) -> Result<(Coord
         .read(true)
         .write(true)
         .create(true) // Creates the file if it does not exist
+        .truncate(false)
         .open(db_file.clone())?;
 
     event!(TLevel::INFO, path = db_file, "initializing database");
