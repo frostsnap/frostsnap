@@ -116,6 +116,14 @@ pub fn wire_named_devices__method__DeviceListState(that: JsValue) -> support::Wi
 }
 
 #[wasm_bindgen]
+pub fn wire_get_device__method__DeviceListState(
+    that: JsValue,
+    id: JsValue,
+) -> support::WireSyncReturn {
+    wire_get_device__method__DeviceListState_impl(that, id)
+}
+
+#[wasm_bindgen]
 pub fn wire_set_available_ports__method__FfiSerial(
     port_: MessagePort,
     that: JsValue,

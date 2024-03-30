@@ -7,7 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:frostsnapp/animated_check.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_id_ext.dart';
-import 'package:frostsnapp/device_list_widget.dart';
+import 'package:frostsnapp/device_list.dart';
+import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/device_setup.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/hex.dart';
@@ -331,27 +332,8 @@ class KeyGenDeviceList extends StatelessWidget {
         });
 
     return Column(children: [
-      MaybeExpandedVertical(
-          child: DeviceListContainer(
-              child: DeviceList(deviceBuilder: _buildDevice))),
+      MaybeExpandedVertical(child: DeviceListContainer(child: DeviceList())),
       button,
     ]);
-  }
-
-  Widget _buildDevice(BuildContext context, Device device,
-      Orientation orientation, Animation<double> animation) {
-    Widget child;
-    if (device.name == null) {
-      child = ElevatedButton(
-          onPressed: () async {
-            await handleDeviceRenaming(context, device);
-          },
-          child: const Text("NEW DEVICE"));
-    } else {
-      child = LabeledDeviceText(device.name!);
-    }
-
-    return DeviceBoxContainer(
-        orientation: orientation, animation: animation, child: child);
   }
 }

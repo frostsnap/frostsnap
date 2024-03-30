@@ -420,6 +420,27 @@ class NativeImpl implements Native {
             argNames: ["that"],
           );
 
+  Device? getDeviceMethodDeviceListState(
+      {required DeviceListState that, required DeviceId id, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_device_list_state(that);
+    var arg1 = _platform.api2wire_box_autoadd_device_id(id);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () =>
+          _platform.inner.wire_get_device__method__DeviceListState(arg0, arg1),
+      parseSuccessData: _wire2api_opt_box_autoadd_device,
+      parseErrorData: null,
+      constMeta: kGetDeviceMethodDeviceListStateConstMeta,
+      argValues: [that, id],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kGetDeviceMethodDeviceListStateConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "get_device__method__DeviceListState",
+        argNames: ["that", "id"],
+      );
+
   Future<void> setAvailablePortsMethodFfiSerial(
       {required FfiSerial that, required List<PortDesc> ports, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_ffi_serial(that);

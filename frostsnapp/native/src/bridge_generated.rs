@@ -339,6 +339,23 @@ fn wire_named_devices__method__DeviceListState_impl(
         },
     )
 }
+fn wire_get_device__method__DeviceListState_impl(
+    that: impl Wire2Api<DeviceListState> + UnwindSafe,
+    id: impl Wire2Api<DeviceId> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "get_device__method__DeviceListState",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_id = id.wire2api();
+            Result::<_, ()>::Ok(DeviceListState::get_device(&api_that, api_id))
+        },
+    )
+}
 fn wire_set_available_ports__method__FfiSerial_impl(
     port_: MessagePort,
     that: impl Wire2Api<FfiSerial> + UnwindSafe,

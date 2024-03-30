@@ -479,6 +479,10 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* List<dynamic> */
       wire_named_devices__method__DeviceListState(List<dynamic> that);
 
+  external dynamic /* List<dynamic>? */
+      wire_get_device__method__DeviceListState(
+          List<dynamic> that, List<dynamic> id);
+
   external dynamic /* void */ wire_set_available_ports__method__FfiSerial(
       NativePortType port_, List<dynamic> that, List<dynamic> ports);
 
@@ -736,6 +740,10 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   dynamic /* List<dynamic> */ wire_named_devices__method__DeviceListState(
           List<dynamic> that) =>
       wasmModule.wire_named_devices__method__DeviceListState(that);
+
+  dynamic /* List<dynamic>? */ wire_get_device__method__DeviceListState(
+          List<dynamic> that, List<dynamic> id) =>
+      wasmModule.wire_get_device__method__DeviceListState(that, id);
 
   void wire_set_available_ports__method__FfiSerial(
           NativePortType port_, List<dynamic> that, List<dynamic> ports) =>

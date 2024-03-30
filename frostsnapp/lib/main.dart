@@ -47,6 +47,7 @@ void main() async {
     print("$stacktrace");
     startupError = "$error\n$stacktrace";
   }
+  deviceListSubject;
   runApp(MyApp(startupError: startupError));
 }
 

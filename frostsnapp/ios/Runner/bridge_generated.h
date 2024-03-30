@@ -244,6 +244,9 @@ WireSyncReturn wire_is_finished__method__SigningState(struct wire_SigningState *
 
 WireSyncReturn wire_named_devices__method__DeviceListState(struct wire_DeviceListState *that);
 
+WireSyncReturn wire_get_device__method__DeviceListState(struct wire_DeviceListState *that,
+                                                        struct wire_DeviceId *id);
+
 void wire_set_available_ports__method__FfiSerial(int64_t port_,
                                                  struct wire_FfiSerial *that,
                                                  struct wire_list_port_desc *ports);
@@ -505,6 +508,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortBytesToRead);
     dummy_var ^= ((int64_t) (void*) wire_is_finished__method__SigningState);
     dummy_var ^= ((int64_t) (void*) wire_named_devices__method__DeviceListState);
+    dummy_var ^= ((int64_t) (void*) wire_get_device__method__DeviceListState);
     dummy_var ^= ((int64_t) (void*) wire_set_available_ports__method__FfiSerial);
     dummy_var ^= ((int64_t) (void*) wire_start_thread__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_update_name_preview__method__Coordinator);

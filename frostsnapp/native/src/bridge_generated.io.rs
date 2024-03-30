@@ -134,6 +134,14 @@ pub extern "C" fn wire_named_devices__method__DeviceListState(
 }
 
 #[no_mangle]
+pub extern "C" fn wire_get_device__method__DeviceListState(
+    that: *mut wire_DeviceListState,
+    id: *mut wire_DeviceId,
+) -> support::WireSyncReturn {
+    wire_get_device__method__DeviceListState_impl(that, id)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_set_available_ports__method__FfiSerial(
     port_: i64,
     that: *mut wire_FfiSerial,

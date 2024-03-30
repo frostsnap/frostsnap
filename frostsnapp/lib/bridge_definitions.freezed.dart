@@ -102,23 +102,26 @@ class _$CoordinatorToUserKeyGenMessageCopyWithImpl<$Res,
 }
 
 /// @nodoc
-abstract class _$$CoordinatorToUserKeyGenMessage_ReceivedSharesCopyWith<$Res> {
-  factory _$$CoordinatorToUserKeyGenMessage_ReceivedSharesCopyWith(
-          _$CoordinatorToUserKeyGenMessage_ReceivedShares value,
-          $Res Function(_$CoordinatorToUserKeyGenMessage_ReceivedShares) then) =
-      __$$CoordinatorToUserKeyGenMessage_ReceivedSharesCopyWithImpl<$Res>;
+abstract class _$$CoordinatorToUserKeyGenMessage_ReceivedSharesImplCopyWith<
+    $Res> {
+  factory _$$CoordinatorToUserKeyGenMessage_ReceivedSharesImplCopyWith(
+          _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl value,
+          $Res Function(_$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl)
+              then) =
+      __$$CoordinatorToUserKeyGenMessage_ReceivedSharesImplCopyWithImpl<$Res>;
   @useResult
   $Res call({DeviceId from});
 }
 
 /// @nodoc
-class __$$CoordinatorToUserKeyGenMessage_ReceivedSharesCopyWithImpl<$Res>
+class __$$CoordinatorToUserKeyGenMessage_ReceivedSharesImplCopyWithImpl<$Res>
     extends _$CoordinatorToUserKeyGenMessageCopyWithImpl<$Res,
-        _$CoordinatorToUserKeyGenMessage_ReceivedShares>
-    implements _$$CoordinatorToUserKeyGenMessage_ReceivedSharesCopyWith<$Res> {
-  __$$CoordinatorToUserKeyGenMessage_ReceivedSharesCopyWithImpl(
-      _$CoordinatorToUserKeyGenMessage_ReceivedShares _value,
-      $Res Function(_$CoordinatorToUserKeyGenMessage_ReceivedShares) _then)
+        _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl>
+    implements
+        _$$CoordinatorToUserKeyGenMessage_ReceivedSharesImplCopyWith<$Res> {
+  __$$CoordinatorToUserKeyGenMessage_ReceivedSharesImplCopyWithImpl(
+      _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl _value,
+      $Res Function(_$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl) _then)
       : super(_value, _then);
 
   @pragma('vm:prefer-inline')
@@ -126,7 +129,7 @@ class __$$CoordinatorToUserKeyGenMessage_ReceivedSharesCopyWithImpl<$Res>
   $Res call({
     Object? from = null,
   }) {
-    return _then(_$CoordinatorToUserKeyGenMessage_ReceivedShares(
+    return _then(_$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl(
       from: null == from
           ? _value.from
           : from // ignore: cast_nullable_to_non_nullable
@@ -137,9 +140,10 @@ class __$$CoordinatorToUserKeyGenMessage_ReceivedSharesCopyWithImpl<$Res>
 
 /// @nodoc
 
-class _$CoordinatorToUserKeyGenMessage_ReceivedShares
+class _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl
     implements CoordinatorToUserKeyGenMessage_ReceivedShares {
-  const _$CoordinatorToUserKeyGenMessage_ReceivedShares({required this.from});
+  const _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl(
+      {required this.from});
 
   @override
   final DeviceId from;
@@ -153,7 +157,7 @@ class _$CoordinatorToUserKeyGenMessage_ReceivedShares
   bool operator ==(dynamic other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _$CoordinatorToUserKeyGenMessage_ReceivedShares &&
+            other is _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl &&
             (identical(other.from, from) || other.from == from));
   }
 
@@ -163,11 +167,11 @@ class _$CoordinatorToUserKeyGenMessage_ReceivedShares
   @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
-  _$$CoordinatorToUserKeyGenMessage_ReceivedSharesCopyWith<
-          _$CoordinatorToUserKeyGenMessage_ReceivedShares>
+  _$$CoordinatorToUserKeyGenMessage_ReceivedSharesImplCopyWith<
+          _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl>
       get copyWith =>
-          __$$CoordinatorToUserKeyGenMessage_ReceivedSharesCopyWithImpl<
-                  _$CoordinatorToUserKeyGenMessage_ReceivedShares>(
+          __$$CoordinatorToUserKeyGenMessage_ReceivedSharesImplCopyWithImpl<
+                  _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl>(
               this, _$identity);
 
   @override
@@ -261,33 +265,34 @@ abstract class CoordinatorToUserKeyGenMessage_ReceivedShares
     implements CoordinatorToUserKeyGenMessage {
   const factory CoordinatorToUserKeyGenMessage_ReceivedShares(
           {required final DeviceId from}) =
-      _$CoordinatorToUserKeyGenMessage_ReceivedShares;
+      _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl;
 
   DeviceId get from;
   @JsonKey(ignore: true)
-  _$$CoordinatorToUserKeyGenMessage_ReceivedSharesCopyWith<
-          _$CoordinatorToUserKeyGenMessage_ReceivedShares>
+  _$$CoordinatorToUserKeyGenMessage_ReceivedSharesImplCopyWith<
+          _$CoordinatorToUserKeyGenMessage_ReceivedSharesImpl>
       get copyWith => throw _privateConstructorUsedError;
 }
 
 /// @nodoc
-abstract class _$$CoordinatorToUserKeyGenMessage_CheckKeyGenCopyWith<$Res> {
-  factory _$$CoordinatorToUserKeyGenMessage_CheckKeyGenCopyWith(
-          _$CoordinatorToUserKeyGenMessage_CheckKeyGen value,
-          $Res Function(_$CoordinatorToUserKeyGenMessage_CheckKeyGen) then) =
-      __$$CoordinatorToUserKeyGenMessage_CheckKeyGenCopyWithImpl<$Res>;
+abstract class _$$CoordinatorToUserKeyGenMessage_CheckKeyGenImplCopyWith<$Res> {
+  factory _$$CoordinatorToUserKeyGenMessage_CheckKeyGenImplCopyWith(
+          _$CoordinatorToUserKeyGenMessage_CheckKeyGenImpl value,
+          $Res Function(_$CoordinatorToUserKeyGenMessage_CheckKeyGenImpl)
+              then) =
+      __$$CoordinatorToUserKeyGenMessage_CheckKeyGenImplCopyWithImpl<$Res>;
   @useResult
   $Res call({U8Array32 sessionHash});
 }
 
 /// @nodoc
-class __$$CoordinatorToUserKeyGenMessage_CheckKeyGenCopyWithImpl<$Res>
+class __$$CoordinatorToUserKeyGenMessage_CheckKeyGenImplCopyWithImpl<$Res>
     extends _$CoordinatorToUserKeyGenMessageCopyWithImpl<$Res,
-        _$CoordinatorToUserKeyGenMessage_CheckKeyGen>
-    implements _$$CoordinatorToUserKeyGenMessage_CheckKeyGenCopyWith<$Res> {
-  __$$CoordinatorToUserKeyGenMessage_CheckKeyGenCopyWithImpl(
-      _$CoordinatorToUserKeyGenMessage_CheckKeyGen _value,
-      $Res Function(_$CoordinatorToUserKeyGenMessage_CheckKeyGen) _then)
+        _$CoordinatorToUserKeyGenMessage_CheckKeyGenImpl>
+    implements _$$CoordinatorToUserKeyGenMessage_CheckKeyGenImplCopyWith<$Res> {
+  __$$CoordinatorToUserKeyGenMessage_CheckKeyGenImplCopyWithImpl(
+      _$CoordinatorToUserKeyGenMessage_CheckKeyGenImpl _value,
+      $Res Function(_$CoordinatorToUserKeyGenMessage_CheckKeyGenImpl) _then)
       : super(_value, _then);
 
   @pragma('vm:prefer-inline')
@@ -295,7 +300,7 @@ class __$$CoordinatorToUserKeyGenMessage_CheckKeyGenCopyWithImpl<$Res>
   $Res call({
     Object? sessionHash = null,
   }) {
-    return _then(_$CoordinatorToUserKeyGenMessage_CheckKeyGen(
+    return _then(_$CoordinatorToUserKeyGenMessage_CheckKeyGenImpl(
       sessionHash: null == sessionHash
           ? _value.sessionHash
           : sessionHash // ignore: cast_nullable_to_non_nullable
@@ -306,9 +311,9 @@ class __$$CoordinatorToUserKeyGenMessage_CheckKeyGenCopyWithImpl<$Res>
 
 /// @nodoc
 
-class _$CoordinatorToUserKeyGenMessage_CheckKeyGen
+class _$CoordinatorToUserKeyGenMessage_CheckKeyGenImpl
     implements CoordinatorToUserKeyGenMessage_CheckKeyGen {
-  const _$CoordinatorToUserKeyGenMessage_CheckKeyGen(
+  const _$CoordinatorToUserKeyGenMessage_CheckKeyGenImpl(
       {required this.sessionHash});
 
   @override
@@ -323,7 +328,7 @@ class _$CoordinatorToUserKeyGenMessage_CheckKeyGen
   bool operator ==(dynamic other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _$CoordinatorToUserKeyGenMessage_CheckKeyGen &&
+            other is _$CoordinatorToUserKeyGenMessage_CheckKeyGenImpl &&
             const DeepCollectionEquality()
                 .equals(other.sessionHash, sessionHash));
   }
@@ -335,11 +340,12 @@ class _$CoordinatorToUserKeyGenMessage_CheckKeyGen
   @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
-  _$$CoordinatorToUserKeyGenMessage_CheckKeyGenCopyWith<
-          _$CoordinatorToUserKeyGenMessage_CheckKeyGen>
+  _$$CoordinatorToUserKeyGenMessage_CheckKeyGenImplCopyWith<
+          _$CoordinatorToUserKeyGenMessage_CheckKeyGenImpl>
       get copyWith =>
-          __$$CoordinatorToUserKeyGenMessage_CheckKeyGenCopyWithImpl<
-              _$CoordinatorToUserKeyGenMessage_CheckKeyGen>(this, _$identity);
+          __$$CoordinatorToUserKeyGenMessage_CheckKeyGenImplCopyWithImpl<
+                  _$CoordinatorToUserKeyGenMessage_CheckKeyGenImpl>(
+              this, _$identity);
 
   @override
   @optionalTypeArgs
@@ -432,33 +438,33 @@ abstract class CoordinatorToUserKeyGenMessage_CheckKeyGen
     implements CoordinatorToUserKeyGenMessage {
   const factory CoordinatorToUserKeyGenMessage_CheckKeyGen(
           {required final U8Array32 sessionHash}) =
-      _$CoordinatorToUserKeyGenMessage_CheckKeyGen;
+      _$CoordinatorToUserKeyGenMessage_CheckKeyGenImpl;
 
   U8Array32 get sessionHash;
   @JsonKey(ignore: true)
-  _$$CoordinatorToUserKeyGenMessage_CheckKeyGenCopyWith<
-          _$CoordinatorToUserKeyGenMessage_CheckKeyGen>
+  _$$CoordinatorToUserKeyGenMessage_CheckKeyGenImplCopyWith<
+          _$CoordinatorToUserKeyGenMessage_CheckKeyGenImpl>
       get copyWith => throw _privateConstructorUsedError;
 }
 
 /// @nodoc
-abstract class _$$CoordinatorToUserKeyGenMessage_KeyGenAckCopyWith<$Res> {
-  factory _$$CoordinatorToUserKeyGenMessage_KeyGenAckCopyWith(
-          _$CoordinatorToUserKeyGenMessage_KeyGenAck value,
-          $Res Function(_$CoordinatorToUserKeyGenMessage_KeyGenAck) then) =
-      __$$CoordinatorToUserKeyGenMessage_KeyGenAckCopyWithImpl<$Res>;
+abstract class _$$CoordinatorToUserKeyGenMessage_KeyGenAckImplCopyWith<$Res> {
+  factory _$$CoordinatorToUserKeyGenMessage_KeyGenAckImplCopyWith(
+          _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl value,
+          $Res Function(_$CoordinatorToUserKeyGenMessage_KeyGenAckImpl) then) =
+      __$$CoordinatorToUserKeyGenMessage_KeyGenAckImplCopyWithImpl<$Res>;
   @useResult
   $Res call({DeviceId from});
 }
 
 /// @nodoc
-class __$$CoordinatorToUserKeyGenMessage_KeyGenAckCopyWithImpl<$Res>
+class __$$CoordinatorToUserKeyGenMessage_KeyGenAckImplCopyWithImpl<$Res>
     extends _$CoordinatorToUserKeyGenMessageCopyWithImpl<$Res,
-        _$CoordinatorToUserKeyGenMessage_KeyGenAck>
-    implements _$$CoordinatorToUserKeyGenMessage_KeyGenAckCopyWith<$Res> {
-  __$$CoordinatorToUserKeyGenMessage_KeyGenAckCopyWithImpl(
-      _$CoordinatorToUserKeyGenMessage_KeyGenAck _value,
-      $Res Function(_$CoordinatorToUserKeyGenMessage_KeyGenAck) _then)
+        _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl>
+    implements _$$CoordinatorToUserKeyGenMessage_KeyGenAckImplCopyWith<$Res> {
+  __$$CoordinatorToUserKeyGenMessage_KeyGenAckImplCopyWithImpl(
+      _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl _value,
+      $Res Function(_$CoordinatorToUserKeyGenMessage_KeyGenAckImpl) _then)
       : super(_value, _then);
 
   @pragma('vm:prefer-inline')
@@ -466,7 +472,7 @@ class __$$CoordinatorToUserKeyGenMessage_KeyGenAckCopyWithImpl<$Res>
   $Res call({
     Object? from = null,
   }) {
-    return _then(_$CoordinatorToUserKeyGenMessage_KeyGenAck(
+    return _then(_$CoordinatorToUserKeyGenMessage_KeyGenAckImpl(
       from: null == from
           ? _value.from
           : from // ignore: cast_nullable_to_non_nullable
@@ -477,9 +483,9 @@ class __$$CoordinatorToUserKeyGenMessage_KeyGenAckCopyWithImpl<$Res>
 
 /// @nodoc
 
-class _$CoordinatorToUserKeyGenMessage_KeyGenAck
+class _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl
     implements CoordinatorToUserKeyGenMessage_KeyGenAck {
-  const _$CoordinatorToUserKeyGenMessage_KeyGenAck({required this.from});
+  const _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl({required this.from});
 
   @override
   final DeviceId from;
@@ -493,7 +499,7 @@ class _$CoordinatorToUserKeyGenMessage_KeyGenAck
   bool operator ==(dynamic other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _$CoordinatorToUserKeyGenMessage_KeyGenAck &&
+            other is _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl &&
             (identical(other.from, from) || other.from == from));
   }
 
@@ -503,10 +509,11 @@ class _$CoordinatorToUserKeyGenMessage_KeyGenAck
   @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
-  _$$CoordinatorToUserKeyGenMessage_KeyGenAckCopyWith<
-          _$CoordinatorToUserKeyGenMessage_KeyGenAck>
-      get copyWith => __$$CoordinatorToUserKeyGenMessage_KeyGenAckCopyWithImpl<
-          _$CoordinatorToUserKeyGenMessage_KeyGenAck>(this, _$identity);
+  _$$CoordinatorToUserKeyGenMessage_KeyGenAckImplCopyWith<
+          _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl>
+      get copyWith =>
+          __$$CoordinatorToUserKeyGenMessage_KeyGenAckImplCopyWithImpl<
+              _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl>(this, _$identity);
 
   @override
   @optionalTypeArgs
@@ -599,33 +606,34 @@ abstract class CoordinatorToUserKeyGenMessage_KeyGenAck
     implements CoordinatorToUserKeyGenMessage {
   const factory CoordinatorToUserKeyGenMessage_KeyGenAck(
           {required final DeviceId from}) =
-      _$CoordinatorToUserKeyGenMessage_KeyGenAck;
+      _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl;
 
   DeviceId get from;
   @JsonKey(ignore: true)
-  _$$CoordinatorToUserKeyGenMessage_KeyGenAckCopyWith<
-          _$CoordinatorToUserKeyGenMessage_KeyGenAck>
+  _$$CoordinatorToUserKeyGenMessage_KeyGenAckImplCopyWith<
+          _$CoordinatorToUserKeyGenMessage_KeyGenAckImpl>
       get copyWith => throw _privateConstructorUsedError;
 }
 
 /// @nodoc
-abstract class _$$CoordinatorToUserKeyGenMessage_FinishedKeyCopyWith<$Res> {
-  factory _$$CoordinatorToUserKeyGenMessage_FinishedKeyCopyWith(
-          _$CoordinatorToUserKeyGenMessage_FinishedKey value,
-          $Res Function(_$CoordinatorToUserKeyGenMessage_FinishedKey) then) =
-      __$$CoordinatorToUserKeyGenMessage_FinishedKeyCopyWithImpl<$Res>;
+abstract class _$$CoordinatorToUserKeyGenMessage_FinishedKeyImplCopyWith<$Res> {
+  factory _$$CoordinatorToUserKeyGenMessage_FinishedKeyImplCopyWith(
+          _$CoordinatorToUserKeyGenMessage_FinishedKeyImpl value,
+          $Res Function(_$CoordinatorToUserKeyGenMessage_FinishedKeyImpl)
+              then) =
+      __$$CoordinatorToUserKeyGenMessage_FinishedKeyImplCopyWithImpl<$Res>;
   @useResult
   $Res call({KeyId keyId});
 }
 
 /// @nodoc
-class __$$CoordinatorToUserKeyGenMessage_FinishedKeyCopyWithImpl<$Res>
+class __$$CoordinatorToUserKeyGenMessage_FinishedKeyImplCopyWithImpl<$Res>
     extends _$CoordinatorToUserKeyGenMessageCopyWithImpl<$Res,
-        _$CoordinatorToUserKeyGenMessage_FinishedKey>
-    implements _$$CoordinatorToUserKeyGenMessage_FinishedKeyCopyWith<$Res> {
-  __$$CoordinatorToUserKeyGenMessage_FinishedKeyCopyWithImpl(
-      _$CoordinatorToUserKeyGenMessage_FinishedKey _value,
-      $Res Function(_$CoordinatorToUserKeyGenMessage_FinishedKey) _then)
+        _$CoordinatorToUserKeyGenMessage_FinishedKeyImpl>
+    implements _$$CoordinatorToUserKeyGenMessage_FinishedKeyImplCopyWith<$Res> {
+  __$$CoordinatorToUserKeyGenMessage_FinishedKeyImplCopyWithImpl(
+      _$CoordinatorToUserKeyGenMessage_FinishedKeyImpl _value,
+      $Res Function(_$CoordinatorToUserKeyGenMessage_FinishedKeyImpl) _then)
       : super(_value, _then);
 
   @pragma('vm:prefer-inline')
@@ -633,7 +641,7 @@ class __$$CoordinatorToUserKeyGenMessage_FinishedKeyCopyWithImpl<$Res>
   $Res call({
     Object? keyId = null,
   }) {
-    return _then(_$CoordinatorToUserKeyGenMessage_FinishedKey(
+    return _then(_$CoordinatorToUserKeyGenMessage_FinishedKeyImpl(
       keyId: null == keyId
           ? _value.keyId
           : keyId // ignore: cast_nullable_to_non_nullable
@@ -644,9 +652,9 @@ class __$$CoordinatorToUserKeyGenMessage_FinishedKeyCopyWithImpl<$Res>
 
 /// @nodoc
 
-class _$CoordinatorToUserKeyGenMessage_FinishedKey
+class _$CoordinatorToUserKeyGenMessage_FinishedKeyImpl
     implements CoordinatorToUserKeyGenMessage_FinishedKey {
-  const _$CoordinatorToUserKeyGenMessage_FinishedKey({required this.keyId});
+  const _$CoordinatorToUserKeyGenMessage_FinishedKeyImpl({required this.keyId});
 
   @override
   final KeyId keyId;
@@ -660,7 +668,7 @@ class _$CoordinatorToUserKeyGenMessage_FinishedKey
   bool operator ==(dynamic other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _$CoordinatorToUserKeyGenMessage_FinishedKey &&
+            other is _$CoordinatorToUserKeyGenMessage_FinishedKeyImpl &&
             (identical(other.keyId, keyId) || other.keyId == keyId));
   }
 
@@ -670,11 +678,12 @@ class _$CoordinatorToUserKeyGenMessage_FinishedKey
   @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
-  _$$CoordinatorToUserKeyGenMessage_FinishedKeyCopyWith<
-          _$CoordinatorToUserKeyGenMessage_FinishedKey>
+  _$$CoordinatorToUserKeyGenMessage_FinishedKeyImplCopyWith<
+          _$CoordinatorToUserKeyGenMessage_FinishedKeyImpl>
       get copyWith =>
-          __$$CoordinatorToUserKeyGenMessage_FinishedKeyCopyWithImpl<
-              _$CoordinatorToUserKeyGenMessage_FinishedKey>(this, _$identity);
+          __$$CoordinatorToUserKeyGenMessage_FinishedKeyImplCopyWithImpl<
+                  _$CoordinatorToUserKeyGenMessage_FinishedKeyImpl>(
+              this, _$identity);
 
   @override
   @optionalTypeArgs
@@ -767,12 +776,12 @@ abstract class CoordinatorToUserKeyGenMessage_FinishedKey
     implements CoordinatorToUserKeyGenMessage {
   const factory CoordinatorToUserKeyGenMessage_FinishedKey(
           {required final KeyId keyId}) =
-      _$CoordinatorToUserKeyGenMessage_FinishedKey;
+      _$CoordinatorToUserKeyGenMessage_FinishedKeyImpl;
 
   KeyId get keyId;
   @JsonKey(ignore: true)
-  _$$CoordinatorToUserKeyGenMessage_FinishedKeyCopyWith<
-          _$CoordinatorToUserKeyGenMessage_FinishedKey>
+  _$$CoordinatorToUserKeyGenMessage_FinishedKeyImplCopyWith<
+          _$CoordinatorToUserKeyGenMessage_FinishedKeyImpl>
       get copyWith => throw _privateConstructorUsedError;
 }
 
@@ -849,20 +858,20 @@ class _$PortEventCopyWithImpl<$Res, $Val extends PortEvent>
 }
 
 /// @nodoc
-abstract class _$$PortEvent_OpenCopyWith<$Res> {
-  factory _$$PortEvent_OpenCopyWith(
-          _$PortEvent_Open value, $Res Function(_$PortEvent_Open) then) =
-      __$$PortEvent_OpenCopyWithImpl<$Res>;
+abstract class _$$PortEvent_OpenImplCopyWith<$Res> {
+  factory _$$PortEvent_OpenImplCopyWith(_$PortEvent_OpenImpl value,
+          $Res Function(_$PortEvent_OpenImpl) then) =
+      __$$PortEvent_OpenImplCopyWithImpl<$Res>;
   @useResult
   $Res call({PortOpen request});
 }
 
 /// @nodoc
-class __$$PortEvent_OpenCopyWithImpl<$Res>
-    extends _$PortEventCopyWithImpl<$Res, _$PortEvent_Open>
-    implements _$$PortEvent_OpenCopyWith<$Res> {
-  __$$PortEvent_OpenCopyWithImpl(
-      _$PortEvent_Open _value, $Res Function(_$PortEvent_Open) _then)
+class __$$PortEvent_OpenImplCopyWithImpl<$Res>
+    extends _$PortEventCopyWithImpl<$Res, _$PortEvent_OpenImpl>
+    implements _$$PortEvent_OpenImplCopyWith<$Res> {
+  __$$PortEvent_OpenImplCopyWithImpl(
+      _$PortEvent_OpenImpl _value, $Res Function(_$PortEvent_OpenImpl) _then)
       : super(_value, _then);
 
   @pragma('vm:prefer-inline')
@@ -870,7 +879,7 @@ class __$$PortEvent_OpenCopyWithImpl<$Res>
   $Res call({
     Object? request = null,
   }) {
-    return _then(_$PortEvent_Open(
+    return _then(_$PortEvent_OpenImpl(
       request: null == request
           ? _value.request
           : request // ignore: cast_nullable_to_non_nullable
@@ -881,8 +890,8 @@ class __$$PortEvent_OpenCopyWithImpl<$Res>
 
 /// @nodoc
 
-class _$PortEvent_Open implements PortEvent_Open {
-  const _$PortEvent_Open({required this.request});
+class _$PortEvent_OpenImpl implements PortEvent_Open {
+  const _$PortEvent_OpenImpl({required this.request});
 
   @override
   final PortOpen request;
@@ -896,7 +905,7 @@ class _$PortEvent_Open implements PortEvent_Open {
   bool operator ==(dynamic other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _$PortEvent_Open &&
+            other is _$PortEvent_OpenImpl &&
             (identical(other.request, request) || other.request == request));
   }
 
@@ -906,8 +915,9 @@ class _$PortEvent_Open implements PortEvent_Open {
   @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
-  _$$PortEvent_OpenCopyWith<_$PortEvent_Open> get copyWith =>
-      __$$PortEvent_OpenCopyWithImpl<_$PortEvent_Open>(this, _$identity);
+  _$$PortEvent_OpenImplCopyWith<_$PortEvent_OpenImpl> get copyWith =>
+      __$$PortEvent_OpenImplCopyWithImpl<_$PortEvent_OpenImpl>(
+          this, _$identity);
 
   @override
   @optionalTypeArgs
@@ -986,30 +996,30 @@ class _$PortEvent_Open implements PortEvent_Open {
 
 abstract class PortEvent_Open implements PortEvent {
   const factory PortEvent_Open({required final PortOpen request}) =
-      _$PortEvent_Open;
+      _$PortEvent_OpenImpl;
 
   @override
   PortOpen get request;
   @JsonKey(ignore: true)
-  _$$PortEvent_OpenCopyWith<_$PortEvent_Open> get copyWith =>
+  _$$PortEvent_OpenImplCopyWith<_$PortEvent_OpenImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
 
 /// @nodoc
-abstract class _$$PortEvent_WriteCopyWith<$Res> {
-  factory _$$PortEvent_WriteCopyWith(
-          _$PortEvent_Write value, $Res Function(_$PortEvent_Write) then) =
-      __$$PortEvent_WriteCopyWithImpl<$Res>;
+abstract class _$$PortEvent_WriteImplCopyWith<$Res> {
+  factory _$$PortEvent_WriteImplCopyWith(_$PortEvent_WriteImpl value,
+          $Res Function(_$PortEvent_WriteImpl) then) =
+      __$$PortEvent_WriteImplCopyWithImpl<$Res>;
   @useResult
   $Res call({PortWrite request});
 }
 
 /// @nodoc
-class __$$PortEvent_WriteCopyWithImpl<$Res>
-    extends _$PortEventCopyWithImpl<$Res, _$PortEvent_Write>
-    implements _$$PortEvent_WriteCopyWith<$Res> {
-  __$$PortEvent_WriteCopyWithImpl(
-      _$PortEvent_Write _value, $Res Function(_$PortEvent_Write) _then)
+class __$$PortEvent_WriteImplCopyWithImpl<$Res>
+    extends _$PortEventCopyWithImpl<$Res, _$PortEvent_WriteImpl>
+    implements _$$PortEvent_WriteImplCopyWith<$Res> {
+  __$$PortEvent_WriteImplCopyWithImpl(
+      _$PortEvent_WriteImpl _value, $Res Function(_$PortEvent_WriteImpl) _then)
       : super(_value, _then);
 
   @pragma('vm:prefer-inline')
@@ -1017,7 +1027,7 @@ class __$$PortEvent_WriteCopyWithImpl<$Res>
   $Res call({
     Object? request = null,
   }) {
-    return _then(_$PortEvent_Write(
+    return _then(_$PortEvent_WriteImpl(
       request: null == request
           ? _value.request
           : request // ignore: cast_nullable_to_non_nullable
@@ -1028,8 +1038,8 @@ class __$$PortEvent_WriteCopyWithImpl<$Res>
 
 /// @nodoc
 
-class _$PortEvent_Write implements PortEvent_Write {
-  const _$PortEvent_Write({required this.request});
+class _$PortEvent_WriteImpl implements PortEvent_Write {
+  const _$PortEvent_WriteImpl({required this.request});
 
   @override
   final PortWrite request;
@@ -1043,7 +1053,7 @@ class _$PortEvent_Write implements PortEvent_Write {
   bool operator ==(dynamic other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _$PortEvent_Write &&
+            other is _$PortEvent_WriteImpl &&
             (identical(other.request, request) || other.request == request));
   }
 
@@ -1053,8 +1063,9 @@ class _$PortEvent_Write implements PortEvent_Write {
   @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
-  _$$PortEvent_WriteCopyWith<_$PortEvent_Write> get copyWith =>
-      __$$PortEvent_WriteCopyWithImpl<_$PortEvent_Write>(this, _$identity);
+  _$$PortEvent_WriteImplCopyWith<_$PortEvent_WriteImpl> get copyWith =>
+      __$$PortEvent_WriteImplCopyWithImpl<_$PortEvent_WriteImpl>(
+          this, _$identity);
 
   @override
   @optionalTypeArgs
@@ -1133,30 +1144,30 @@ class _$PortEvent_Write implements PortEvent_Write {
 
 abstract class PortEvent_Write implements PortEvent {
   const factory PortEvent_Write({required final PortWrite request}) =
-      _$PortEvent_Write;
+      _$PortEvent_WriteImpl;
 
   @override
   PortWrite get request;
   @JsonKey(ignore: true)
-  _$$PortEvent_WriteCopyWith<_$PortEvent_Write> get copyWith =>
+  _$$PortEvent_WriteImplCopyWith<_$PortEvent_WriteImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
 
 /// @nodoc
-abstract class _$$PortEvent_ReadCopyWith<$Res> {
-  factory _$$PortEvent_ReadCopyWith(
-          _$PortEvent_Read value, $Res Function(_$PortEvent_Read) then) =
-      __$$PortEvent_ReadCopyWithImpl<$Res>;
+abstract class _$$PortEvent_ReadImplCopyWith<$Res> {
+  factory _$$PortEvent_ReadImplCopyWith(_$PortEvent_ReadImpl value,
+          $Res Function(_$PortEvent_ReadImpl) then) =
+      __$$PortEvent_ReadImplCopyWithImpl<$Res>;
   @useResult
   $Res call({PortRead request});
 }
 
 /// @nodoc
-class __$$PortEvent_ReadCopyWithImpl<$Res>
-    extends _$PortEventCopyWithImpl<$Res, _$PortEvent_Read>
-    implements _$$PortEvent_ReadCopyWith<$Res> {
-  __$$PortEvent_ReadCopyWithImpl(
-      _$PortEvent_Read _value, $Res Function(_$PortEvent_Read) _then)
+class __$$PortEvent_ReadImplCopyWithImpl<$Res>
+    extends _$PortEventCopyWithImpl<$Res, _$PortEvent_ReadImpl>
+    implements _$$PortEvent_ReadImplCopyWith<$Res> {
+  __$$PortEvent_ReadImplCopyWithImpl(
+      _$PortEvent_ReadImpl _value, $Res Function(_$PortEvent_ReadImpl) _then)
       : super(_value, _then);
 
   @pragma('vm:prefer-inline')
@@ -1164,7 +1175,7 @@ class __$$PortEvent_ReadCopyWithImpl<$Res>
   $Res call({
     Object? request = null,
   }) {
-    return _then(_$PortEvent_Read(
+    return _then(_$PortEvent_ReadImpl(
       request: null == request
           ? _value.request
           : request // ignore: cast_nullable_to_non_nullable
@@ -1175,8 +1186,8 @@ class __$$PortEvent_ReadCopyWithImpl<$Res>
 
 /// @nodoc
 
-class _$PortEvent_Read implements PortEvent_Read {
-  const _$PortEvent_Read({required this.request});
+class _$PortEvent_ReadImpl implements PortEvent_Read {
+  const _$PortEvent_ReadImpl({required this.request});
 
   @override
   final PortRead request;
@@ -1190,7 +1201,7 @@ class _$PortEvent_Read implements PortEvent_Read {
   bool operator ==(dynamic other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _$PortEvent_Read &&
+            other is _$PortEvent_ReadImpl &&
             (identical(other.request, request) || other.request == request));
   }
 
@@ -1200,8 +1211,9 @@ class _$PortEvent_Read implements PortEvent_Read {
   @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
-  _$$PortEvent_ReadCopyWith<_$PortEvent_Read> get copyWith =>
-      __$$PortEvent_ReadCopyWithImpl<_$PortEvent_Read>(this, _$identity);
+  _$$PortEvent_ReadImplCopyWith<_$PortEvent_ReadImpl> get copyWith =>
+      __$$PortEvent_ReadImplCopyWithImpl<_$PortEvent_ReadImpl>(
+          this, _$identity);
 
   @override
   @optionalTypeArgs
@@ -1280,30 +1292,31 @@ class _$PortEvent_Read implements PortEvent_Read {
 
 abstract class PortEvent_Read implements PortEvent {
   const factory PortEvent_Read({required final PortRead request}) =
-      _$PortEvent_Read;
+      _$PortEvent_ReadImpl;
 
   @override
   PortRead get request;
   @JsonKey(ignore: true)
-  _$$PortEvent_ReadCopyWith<_$PortEvent_Read> get copyWith =>
+  _$$PortEvent_ReadImplCopyWith<_$PortEvent_ReadImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
 
 /// @nodoc
-abstract class _$$PortEvent_BytesToReadCopyWith<$Res> {
-  factory _$$PortEvent_BytesToReadCopyWith(_$PortEvent_BytesToRead value,
-          $Res Function(_$PortEvent_BytesToRead) then) =
-      __$$PortEvent_BytesToReadCopyWithImpl<$Res>;
+abstract class _$$PortEvent_BytesToReadImplCopyWith<$Res> {
+  factory _$$PortEvent_BytesToReadImplCopyWith(
+          _$PortEvent_BytesToReadImpl value,
+          $Res Function(_$PortEvent_BytesToReadImpl) then) =
+      __$$PortEvent_BytesToReadImplCopyWithImpl<$Res>;
   @useResult
   $Res call({PortBytesToRead request});
 }
 
 /// @nodoc
-class __$$PortEvent_BytesToReadCopyWithImpl<$Res>
-    extends _$PortEventCopyWithImpl<$Res, _$PortEvent_BytesToRead>
-    implements _$$PortEvent_BytesToReadCopyWith<$Res> {
-  __$$PortEvent_BytesToReadCopyWithImpl(_$PortEvent_BytesToRead _value,
-      $Res Function(_$PortEvent_BytesToRead) _then)
+class __$$PortEvent_BytesToReadImplCopyWithImpl<$Res>
+    extends _$PortEventCopyWithImpl<$Res, _$PortEvent_BytesToReadImpl>
+    implements _$$PortEvent_BytesToReadImplCopyWith<$Res> {
+  __$$PortEvent_BytesToReadImplCopyWithImpl(_$PortEvent_BytesToReadImpl _value,
+      $Res Function(_$PortEvent_BytesToReadImpl) _then)
       : super(_value, _then);
 
   @pragma('vm:prefer-inline')
@@ -1311,7 +1324,7 @@ class __$$PortEvent_BytesToReadCopyWithImpl<$Res>
   $Res call({
     Object? request = null,
   }) {
-    return _then(_$PortEvent_BytesToRead(
+    return _then(_$PortEvent_BytesToReadImpl(
       request: null == request
           ? _value.request
           : request // ignore: cast_nullable_to_non_nullable
@@ -1322,8 +1335,8 @@ class __$$PortEvent_BytesToReadCopyWithImpl<$Res>
 
 /// @nodoc
 
-class _$PortEvent_BytesToRead implements PortEvent_BytesToRead {
-  const _$PortEvent_BytesToRead({required this.request});
+class _$PortEvent_BytesToReadImpl implements PortEvent_BytesToRead {
+  const _$PortEvent_BytesToReadImpl({required this.request});
 
   @override
   final PortBytesToRead request;
@@ -1337,7 +1350,7 @@ class _$PortEvent_BytesToRead implements PortEvent_BytesToRead {
   bool operator ==(dynamic other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _$PortEvent_BytesToRead &&
+            other is _$PortEvent_BytesToReadImpl &&
             (identical(other.request, request) || other.request == request));
   }
 
@@ -1347,9 +1360,9 @@ class _$PortEvent_BytesToRead implements PortEvent_BytesToRead {
   @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
-  _$$PortEvent_BytesToReadCopyWith<_$PortEvent_BytesToRead> get copyWith =>
-      __$$PortEvent_BytesToReadCopyWithImpl<_$PortEvent_BytesToRead>(
-          this, _$identity);
+  _$$PortEvent_BytesToReadImplCopyWith<_$PortEvent_BytesToReadImpl>
+      get copyWith => __$$PortEvent_BytesToReadImplCopyWithImpl<
+          _$PortEvent_BytesToReadImpl>(this, _$identity);
 
   @override
   @optionalTypeArgs
@@ -1428,13 +1441,13 @@ class _$PortEvent_BytesToRead implements PortEvent_BytesToRead {
 
 abstract class PortEvent_BytesToRead implements PortEvent {
   const factory PortEvent_BytesToRead(
-      {required final PortBytesToRead request}) = _$PortEvent_BytesToRead;
+      {required final PortBytesToRead request}) = _$PortEvent_BytesToReadImpl;
 
   @override
   PortBytesToRead get request;
   @JsonKey(ignore: true)
-  _$$PortEvent_BytesToReadCopyWith<_$PortEvent_BytesToRead> get copyWith =>
-      throw _privateConstructorUsedError;
+  _$$PortEvent_BytesToReadImplCopyWith<_$PortEvent_BytesToReadImpl>
+      get copyWith => throw _privateConstructorUsedError;
 }
 
 /// @nodoc
@@ -1499,21 +1512,23 @@ class _$SignTaskDescriptionCopyWithImpl<$Res, $Val extends SignTaskDescription>
 }
 
 /// @nodoc
-abstract class _$$SignTaskDescription_PlainCopyWith<$Res> {
-  factory _$$SignTaskDescription_PlainCopyWith(
-          _$SignTaskDescription_Plain value,
-          $Res Function(_$SignTaskDescription_Plain) then) =
-      __$$SignTaskDescription_PlainCopyWithImpl<$Res>;
+abstract class _$$SignTaskDescription_PlainImplCopyWith<$Res> {
+  factory _$$SignTaskDescription_PlainImplCopyWith(
+          _$SignTaskDescription_PlainImpl value,
+          $Res Function(_$SignTaskDescription_PlainImpl) then) =
+      __$$SignTaskDescription_PlainImplCopyWithImpl<$Res>;
   @useResult
   $Res call({String message});
 }
 
 /// @nodoc
-class __$$SignTaskDescription_PlainCopyWithImpl<$Res>
-    extends _$SignTaskDescriptionCopyWithImpl<$Res, _$SignTaskDescription_Plain>
-    implements _$$SignTaskDescription_PlainCopyWith<$Res> {
-  __$$SignTaskDescription_PlainCopyWithImpl(_$SignTaskDescription_Plain _value,
-      $Res Function(_$SignTaskDescription_Plain) _then)
+class __$$SignTaskDescription_PlainImplCopyWithImpl<$Res>
+    extends _$SignTaskDescriptionCopyWithImpl<$Res,
+        _$SignTaskDescription_PlainImpl>
+    implements _$$SignTaskDescription_PlainImplCopyWith<$Res> {
+  __$$SignTaskDescription_PlainImplCopyWithImpl(
+      _$SignTaskDescription_PlainImpl _value,
+      $Res Function(_$SignTaskDescription_PlainImpl) _then)
       : super(_value, _then);
 
   @pragma('vm:prefer-inline')
@@ -1521,7 +1536,7 @@ class __$$SignTaskDescription_PlainCopyWithImpl<$Res>
   $Res call({
     Object? message = null,
   }) {
-    return _then(_$SignTaskDescription_Plain(
+    return _then(_$SignTaskDescription_PlainImpl(
       message: null == message
           ? _value.message
           : message // ignore: cast_nullable_to_non_nullable
@@ -1532,8 +1547,8 @@ class __$$SignTaskDescription_PlainCopyWithImpl<$Res>
 
 /// @nodoc
 
-class _$SignTaskDescription_Plain implements SignTaskDescription_Plain {
-  const _$SignTaskDescription_Plain({required this.message});
+class _$SignTaskDescription_PlainImpl implements SignTaskDescription_Plain {
+  const _$SignTaskDescription_PlainImpl({required this.message});
 
   @override
   final String message;
@@ -1547,7 +1562,7 @@ class _$SignTaskDescription_Plain implements SignTaskDescription_Plain {
   bool operator ==(dynamic other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _$SignTaskDescription_Plain &&
+            other is _$SignTaskDescription_PlainImpl &&
             (identical(other.message, message) || other.message == message));
   }
 
@@ -1557,9 +1572,9 @@ class _$SignTaskDescription_Plain implements SignTaskDescription_Plain {
   @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
-  _$$SignTaskDescription_PlainCopyWith<_$SignTaskDescription_Plain>
-      get copyWith => __$$SignTaskDescription_PlainCopyWithImpl<
-          _$SignTaskDescription_Plain>(this, _$identity);
+  _$$SignTaskDescription_PlainImplCopyWith<_$SignTaskDescription_PlainImpl>
+      get copyWith => __$$SignTaskDescription_PlainImplCopyWithImpl<
+          _$SignTaskDescription_PlainImpl>(this, _$identity);
 
   @override
   @optionalTypeArgs
@@ -1627,32 +1642,32 @@ class _$SignTaskDescription_Plain implements SignTaskDescription_Plain {
 
 abstract class SignTaskDescription_Plain implements SignTaskDescription {
   const factory SignTaskDescription_Plain({required final String message}) =
-      _$SignTaskDescription_Plain;
+      _$SignTaskDescription_PlainImpl;
 
   String get message;
   @JsonKey(ignore: true)
-  _$$SignTaskDescription_PlainCopyWith<_$SignTaskDescription_Plain>
+  _$$SignTaskDescription_PlainImplCopyWith<_$SignTaskDescription_PlainImpl>
       get copyWith => throw _privateConstructorUsedError;
 }
 
 /// @nodoc
-abstract class _$$SignTaskDescription_TransactionCopyWith<$Res> {
-  factory _$$SignTaskDescription_TransactionCopyWith(
-          _$SignTaskDescription_Transaction value,
-          $Res Function(_$SignTaskDescription_Transaction) then) =
-      __$$SignTaskDescription_TransactionCopyWithImpl<$Res>;
+abstract class _$$SignTaskDescription_TransactionImplCopyWith<$Res> {
+  factory _$$SignTaskDescription_TransactionImplCopyWith(
+          _$SignTaskDescription_TransactionImpl value,
+          $Res Function(_$SignTaskDescription_TransactionImpl) then) =
+      __$$SignTaskDescription_TransactionImplCopyWithImpl<$Res>;
   @useResult
   $Res call({UnsignedTx unsignedTx});
 }
 
 /// @nodoc
-class __$$SignTaskDescription_TransactionCopyWithImpl<$Res>
+class __$$SignTaskDescription_TransactionImplCopyWithImpl<$Res>
     extends _$SignTaskDescriptionCopyWithImpl<$Res,
-        _$SignTaskDescription_Transaction>
-    implements _$$SignTaskDescription_TransactionCopyWith<$Res> {
-  __$$SignTaskDescription_TransactionCopyWithImpl(
-      _$SignTaskDescription_Transaction _value,
-      $Res Function(_$SignTaskDescription_Transaction) _then)
+        _$SignTaskDescription_TransactionImpl>
+    implements _$$SignTaskDescription_TransactionImplCopyWith<$Res> {
+  __$$SignTaskDescription_TransactionImplCopyWithImpl(
+      _$SignTaskDescription_TransactionImpl _value,
+      $Res Function(_$SignTaskDescription_TransactionImpl) _then)
       : super(_value, _then);
 
   @pragma('vm:prefer-inline')
@@ -1660,7 +1675,7 @@ class __$$SignTaskDescription_TransactionCopyWithImpl<$Res>
   $Res call({
     Object? unsignedTx = null,
   }) {
-    return _then(_$SignTaskDescription_Transaction(
+    return _then(_$SignTaskDescription_TransactionImpl(
       unsignedTx: null == unsignedTx
           ? _value.unsignedTx
           : unsignedTx // ignore: cast_nullable_to_non_nullable
@@ -1671,9 +1686,9 @@ class __$$SignTaskDescription_TransactionCopyWithImpl<$Res>
 
 /// @nodoc
 
-class _$SignTaskDescription_Transaction
+class _$SignTaskDescription_TransactionImpl
     implements SignTaskDescription_Transaction {
-  const _$SignTaskDescription_Transaction({required this.unsignedTx});
+  const _$SignTaskDescription_TransactionImpl({required this.unsignedTx});
 
   @override
   final UnsignedTx unsignedTx;
@@ -1687,7 +1702,7 @@ class _$SignTaskDescription_Transaction
   bool operator ==(dynamic other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _$SignTaskDescription_Transaction &&
+            other is _$SignTaskDescription_TransactionImpl &&
             (identical(other.unsignedTx, unsignedTx) ||
                 other.unsignedTx == unsignedTx));
   }
@@ -1698,9 +1713,10 @@ class _$SignTaskDescription_Transaction
   @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
-  _$$SignTaskDescription_TransactionCopyWith<_$SignTaskDescription_Transaction>
-      get copyWith => __$$SignTaskDescription_TransactionCopyWithImpl<
-          _$SignTaskDescription_Transaction>(this, _$identity);
+  _$$SignTaskDescription_TransactionImplCopyWith<
+          _$SignTaskDescription_TransactionImpl>
+      get copyWith => __$$SignTaskDescription_TransactionImplCopyWithImpl<
+          _$SignTaskDescription_TransactionImpl>(this, _$identity);
 
   @override
   @optionalTypeArgs
@@ -1769,10 +1785,11 @@ class _$SignTaskDescription_Transaction
 abstract class SignTaskDescription_Transaction implements SignTaskDescription {
   const factory SignTaskDescription_Transaction(
           {required final UnsignedTx unsignedTx}) =
-      _$SignTaskDescription_Transaction;
+      _$SignTaskDescription_TransactionImpl;
 
   UnsignedTx get unsignedTx;
   @JsonKey(ignore: true)
-  _$$SignTaskDescription_TransactionCopyWith<_$SignTaskDescription_Transaction>
+  _$$SignTaskDescription_TransactionImplCopyWith<
+          _$SignTaskDescription_TransactionImpl>
       get copyWith => throw _privateConstructorUsedError;
 }

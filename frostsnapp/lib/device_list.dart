@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:frostsnapp/device_settings.dart';
+import 'package:frostsnapp/device_setup.dart';
 import 'package:frostsnapp/serialport.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'global.dart';
@@ -16,7 +18,8 @@ const double iconSize = 20.0;
 class DeviceList extends StatefulWidget {
   final DeviceBuilder deviceBuilder;
 
-  const DeviceList({Key? key, required this.deviceBuilder}) : super(key: key);
+  DeviceList({Key? key, this.deviceBuilder = buildInteractiveDevice})
+      : super(key: key);
 
   @override
   State<StatefulWidget> createState() => _DeviceListState();
@@ -218,4 +221,34 @@ class MaybeExpandedVertical extends StatelessWidget {
         ? Expanded(child: child)
         : child;
   }
+}
+
+Widget buildInteractiveDevice(BuildContext context, Device device,
+    Orientation orientation, Animation<double> animation) {
+  Widget child;
+  if (device.name == null) {
+    child = ElevatedButton(
+        onPressed: () async {
+          await Navigator.push(context, MaterialPageRoute(builder: (context) {
+            return DeviceSetup(id: device.id);
+          }));
+        },
+        child: const Text("NEW DEVICE"));
+  } else {
+    child = Column(children: [
+      LabeledDeviceText(device.name!),
+      IconButton(
+        icon: Icon(Icons.settings),
+        onPressed: () {
+          Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (context) => DeviceSettings(id: device.id)));
+        },
+      )
+    ]);
+  }
+
+  return DeviceBoxContainer(
+      orientation: orientation, animation: animation, child: child);
 }

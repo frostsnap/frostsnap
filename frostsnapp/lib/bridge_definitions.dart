@@ -109,6 +109,11 @@ abstract class Native {
   FlutterRustBridgeTaskConstMeta
       get kNamedDevicesMethodDeviceListStateConstMeta;
 
+  Device? getDeviceMethodDeviceListState(
+      {required DeviceListState that, required DeviceId id, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kGetDeviceMethodDeviceListStateConstMeta;
+
   Future<void> setAvailablePortsMethodFfiSerial(
       {required FfiSerial that, required List<PortDesc> ports, dynamic hint});
 
@@ -778,6 +783,12 @@ class DeviceListState {
   List<DeviceId> namedDevices({dynamic hint}) =>
       bridge.namedDevicesMethodDeviceListState(
         that: this,
+      );
+
+  Device? getDevice({required DeviceId id, dynamic hint}) =>
+      bridge.getDeviceMethodDeviceListState(
+        that: this,
+        id: id,
       );
 }
 

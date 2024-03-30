@@ -340,6 +340,10 @@ impl DeviceListState {
                 .collect(),
         )
     }
+
+    pub fn get_device(&self, id: DeviceId) -> SyncReturn<Option<Device>> {
+        SyncReturn(self.devices.iter().find(|device| device.id == id).cloned())
+    }
 }
 
 pub fn load(db_file: String) -> anyhow::Result<(Coordinator, Wallet)> {
