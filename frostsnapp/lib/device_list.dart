@@ -92,6 +92,21 @@ class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final orientation = effectiveOrientation(context);
+
+    final noDevices = StreamBuilder(
+        stream: deviceListSubject,
+        builder: (context, snapshot) {
+          if (snapshot.hasData && snapshot.data!.state.devices.isNotEmpty) {
+            return SizedBox();
+          } else {
+            return Center(
+              child: Text(
+                'No devices connected',
+                style: TextStyle(color: Colors.grey, fontSize: 24.0),
+              ),
+            );
+          }
+        });
     final list = AnimatedList(
         key: deviceListKey,
         itemBuilder: (context, index, animation) {
@@ -103,7 +118,7 @@ class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
             ? Axis.horizontal
             : Axis.vertical);
 
-    return list;
+    return Stack(children: [noDevices, list]);
   }
 }
 

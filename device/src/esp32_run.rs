@@ -323,21 +323,6 @@ where
                                                             ),
                                                     );
                                                 }
-                                                CoordinatorSendBody::DisplayBackupRequest(
-                                                    key_id,
-                                                ) => {
-                                                    match signer.keys().get(key_id) {
-                                                        Some(_) => {
-                                                            ui.set_workflow(ui::Workflow::UserPrompt(
-                                                            ui::Prompt::DisplayBackupRequest(*key_id),
-                                                        ));
-                                                        }
-                                                        _ => {
-                                                            // we don't know about this key, no backup to display
-                                                            // TODO: show error
-                                                        }
-                                                    }
-                                                }
                                             }
                                         }
 
@@ -389,15 +374,12 @@ where
                             name: new_name.into(),
                         });
                     }
-                    UiEvent::BackupRequestConfirm(key_id) => {
-                        ui.set_workflow(ui::Workflow::UserPrompt(
-                            ui::Prompt::DisplayBackupRequest(key_id),
-                        ));
-                    }
-                    UiEvent::BackupConfirm(ref backup_string) => {
-                        ui.set_workflow(ui::Workflow::UserPrompt(ui::Prompt::DisplayBackup(
-                            backup_string.clone(),
-                        )));
+                    UiEvent::BackupRequestConfirm(_) => {
+                        outbox.extend(
+                            signer
+                                .display_backup_ack()
+                                .expect("state changed while displaying backup"),
+                        );
                     }
                 }
                 ui.set_workflow(ui::Workflow::WaitingFor(
@@ -433,11 +415,15 @@ where
                                     sign_task.to_string(),
                                 )));
                             }
-                            DeviceToUserMessage::DisplayBackup { backup } => ui.set_workflow(
-                                ui::Workflow::UserPrompt(ui::Prompt::DisplayBackup(backup)),
-                            ),
+                            DeviceToUserMessage::DisplayBackupRequest { key_id } => ui
+                                .set_workflow(ui::Workflow::UserPrompt(
+                                    ui::Prompt::DisplayBackupRequest(key_id),
+                                )),
                             DeviceToUserMessage::Canceled { .. } => {
                                 ui.cancel();
+                            }
+                            DeviceToUserMessage::DisplayBackup { key_id: _, backup } => {
+                                ui.set_workflow(ui::Workflow::DisplayBackup { backup });
                             }
                         };
                     }

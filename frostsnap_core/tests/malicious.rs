@@ -78,10 +78,11 @@ fn nonce_reuse() {
                     let sign_ack = run.device(from).sign_ack().unwrap();
                     run.extend_from_device(from, sign_ack);
                 }
-                DeviceToUserMessage::DisplayBackup { .. } => {}
+                DeviceToUserMessage::DisplayBackupRequest { .. } => {}
                 DeviceToUserMessage::Canceled { .. } => {
                     panic!("no cancelling done");
                 }
+                _ => { /* do nothing */ }
             }
         }
     }

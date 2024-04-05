@@ -346,13 +346,7 @@ where
                     },
                     Prompt::DisplayBackupRequest(key_id) => self
                         .display
-                        .print(format!(
-                            "Are you sure you want to display the backup for key {key_id}?"
-                        ))
-                        .unwrap(),
-                    Prompt::DisplayBackup(backup) => {
-                        self.display.print(format!("Backup: {}", backup)).unwrap()
-                    }
+                        .print(format!("Display the backup for key {key_id}?")),
                 }
                 self.display.confirm_bar(0.0);
             }
@@ -371,6 +365,7 @@ where
             Workflow::Debug(string) => {
                 self.display.print(string);
             }
+            Workflow::DisplayBackup { backup } => self.display.print(format!("Backup: {}", backup)),
         }
 
         self.display
@@ -456,10 +451,8 @@ where
                             Prompt::DisplayBackupRequest(key_id) => {
                                 UiEvent::BackupRequestConfirm(*key_id)
                             }
-                            Prompt::DisplayBackup(backup_string) => {
-                                UiEvent::BackupConfirm(backup_string.clone())
-                            }
                         };
+
                         event = Some(ui_event);
                     }
                     AnimationProgress::Done => {}

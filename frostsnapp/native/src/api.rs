@@ -431,8 +431,14 @@ impl Coordinator {
         self.0.cancel_all()
     }
 
-    pub fn display_backup(&self, id: DeviceId, key_id: KeyId) {
-        self.0.request_display_backup(id, key_id)
+    pub fn display_backup(
+        &self,
+        id: DeviceId,
+        key_id: KeyId,
+        stream: StreamSink<()>,
+    ) -> Result<()> {
+        self.0.request_display_backup(id, key_id, stream)?;
+        Ok(())
     }
 
     pub fn key_state(&self) -> SyncReturn<KeyState> {

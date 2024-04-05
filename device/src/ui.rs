@@ -20,6 +20,7 @@ pub trait UserInteraction {
                 Workflow::NamingDevice { old_name, new_name }
             }
             Workflow::NamingDevice { .. }
+            | Workflow::DisplayBackup { .. }
             | Workflow::UserPrompt(_)
             | Workflow::BusyDoing(_)
             | Workflow::WaitingFor(_) => Workflow::WaitingFor(WaitingFor::CoordinatorInstruction {
@@ -59,6 +60,9 @@ pub enum Workflow {
         old_name: Option<String>,
         new_name: String,
     },
+    DisplayBackup {
+        backup: String,
+    },
 }
 
 impl Default for Workflow {
@@ -76,7 +80,6 @@ pub enum Prompt {
         new_name: String,
     },
     DisplayBackupRequest(KeyId),
-    DisplayBackup(String),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -93,5 +96,4 @@ pub enum UiEvent {
     SigningConfirm,
     NameConfirm(String),
     BackupRequestConfirm(KeyId),
-    BackupConfirm(String),
 }

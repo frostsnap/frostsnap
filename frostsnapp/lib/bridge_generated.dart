@@ -576,7 +576,7 @@ class NativeImpl implements Native {
         argNames: ["that"],
       );
 
-  Future<void> displayBackupMethodCoordinator(
+  Stream<void> displayBackupMethodCoordinator(
       {required Coordinator that,
       required DeviceId id,
       required KeyId keyId,
@@ -584,11 +584,11 @@ class NativeImpl implements Native {
     var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
     var arg1 = _platform.api2wire_box_autoadd_device_id(id);
     var arg2 = _platform.api2wire_box_autoadd_key_id(keyId);
-    return _platform.executeNormal(FlutterRustBridgeTask(
+    return _platform.executeStream(FlutterRustBridgeTask(
       callFfi: (port_) => _platform.inner
           .wire_display_backup__method__Coordinator(port_, arg0, arg1, arg2),
       parseSuccessData: _wire2api_unit,
-      parseErrorData: null,
+      parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kDisplayBackupMethodCoordinatorConstMeta,
       argValues: [that, id, keyId],
       hint: hint,

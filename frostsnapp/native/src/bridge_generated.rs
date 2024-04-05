@@ -482,14 +482,19 @@ fn wire_display_backup__method__Coordinator_impl(
         WrapInfo {
             debug_name: "display_backup__method__Coordinator",
             port: Some(port_),
-            mode: FfiCallMode::Normal,
+            mode: FfiCallMode::Stream,
         },
         move || {
             let api_that = that.wire2api();
             let api_id = id.wire2api();
             let api_key_id = key_id.wire2api();
             move |task_callback| {
-                Result::<_, ()>::Ok(Coordinator::display_backup(&api_that, api_id, api_key_id))
+                Coordinator::display_backup(
+                    &api_that,
+                    api_id,
+                    api_key_id,
+                    task_callback.stream_sink::<_, ()>(),
+                )
             }
         },
     )

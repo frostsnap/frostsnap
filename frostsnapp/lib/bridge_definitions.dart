@@ -151,7 +151,7 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kCancelAllMethodCoordinatorConstMeta;
 
-  Future<void> displayBackupMethodCoordinator(
+  Stream<void> displayBackupMethodCoordinator(
       {required Coordinator that,
       required DeviceId id,
       required KeyId keyId,
@@ -621,7 +621,7 @@ class Coordinator {
         that: this,
       );
 
-  Future<void> displayBackup(
+  Stream<void> displayBackup(
           {required DeviceId id, required KeyId keyId, dynamic hint}) =>
       bridge.displayBackupMethodCoordinator(
         that: this,

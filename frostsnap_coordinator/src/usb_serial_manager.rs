@@ -8,7 +8,7 @@ use frostsnap_comms::{CoordinatorSendBody, Destination, DeviceSendBody};
 use frostsnap_comms::{CoordinatorSendMessage, MAGIC_BYTES_PERIOD};
 use frostsnap_comms::{ReceiveSerial, Upstream};
 use frostsnap_core::message::DeviceToCoordinatorMessage;
-use frostsnap_core::{DeviceId, Gist, KeyId};
+use frostsnap_core::{DeviceId, Gist};
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
@@ -592,15 +592,6 @@ impl UsbSender {
 
     pub fn send(&self, message: CoordinatorSendMessage) {
         self.sender.send(message).expect("receiver exists")
-    }
-
-    pub fn request_display_backup(&self, device_id: DeviceId, key_id: KeyId) {
-        self.sender
-            .send(CoordinatorSendMessage {
-                target_destinations: [device_id].into(),
-                message_body: CoordinatorSendBody::DisplayBackupRequest(key_id),
-            })
-            .expect("receiver exists");
     }
 }
 

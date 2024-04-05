@@ -3,7 +3,6 @@ use crate::{
 };
 use crate::{DeviceId, KeyId};
 use alloc::collections::BTreeSet;
-use alloc::string::String;
 use alloc::{collections::BTreeMap, string::ToString, vec::Vec};
 use core::iter;
 use rand_chacha::ChaCha20Rng;
@@ -56,6 +55,7 @@ impl FrostSigner {
         let task = match self.action_state.take()? {
             SignerState::KeyGen { .. } | SignerState::KeyGenAck { .. } => TaskKind::KeyGen,
             SignerState::AwaitingSignAck { .. } => TaskKind::Sign,
+            SignerState::DisplayBackup { .. } => TaskKind::DisplayBackup,
         };
 
         Some(DeviceSend::ToUser(DeviceToUserMessage::Canceled { task }))
@@ -331,6 +331,21 @@ impl FrostSigner {
                     DeviceToUserMessage::SignatureRequest { sign_task, key_id },
                 )])
             }
+            (None, CoordinatorToDeviceMessage::DisplayBackup { key_id }) => {
+                let _key = self.keys.get(&key_id).ok_or(Error::signer_invalid_message(
+                    &message,
+                    "signer doesn't have a share for this key",
+                ))?;
+
+                self.action_state = Some(SignerState::DisplayBackup {
+                    key_id,
+                    awaiting_ack: true,
+                });
+
+                Ok(vec![DeviceSend::ToUser(
+                    DeviceToUserMessage::DisplayBackupRequest { key_id },
+                )])
+            }
             _ => Err(Error::signer_message_kind(&self.action_state, &message)),
         }
     }
@@ -344,9 +359,6 @@ impl FrostSigner {
                 self.keys.insert(key.key_id(), key.clone());
                 Ok(vec![
                     DeviceSend::ToCoordinator(DeviceToCoordinatorMessage::KeyGenAck(session_hash)),
-                    DeviceSend::ToUser(DeviceToUserMessage::DisplayBackup {
-                        backup: self.key_backup(key.key_id())?,
-                    }),
                     DeviceSend::ToStorage(DeviceToStorageMessage::SaveKey(key.clone())),
                 ])
             }
@@ -490,26 +502,43 @@ impl FrostSigner {
         }
     }
 
-    pub fn action_state_name(&self) -> &'static str {
-        self.action_state
-            .as_ref()
-            .map(|x| x.name())
-            .unwrap_or("None")
-    }
-
-    pub fn key_backup(&mut self, key_id: KeyId) -> Result<String, ActionError> {
-        match self.keys.get(&key_id) {
-            Some(key) => {
+    pub fn display_backup_ack(&mut self) -> Result<Vec<DeviceSend>, ActionError> {
+        match self.action_state {
+            Some(SignerState::DisplayBackup {
+                key_id,
+                awaiting_ack: true,
+            }) => {
+                let key = self.keys.get(&key_id).expect("key must exist");
                 let frost_key = key.encoded_frost_key.into_frost_key();
                 let backup = schnorr_fun::share_backup::ShareBackup::new::<sha2::Sha256>(
                     &frost_key.point_polynomial(),
                     key.secret_share.mark_zero(),
                     key.share_index,
-                );
-                Ok(backup.to_string())
+                )
+                .to_string();
+
+                self.action_state = Some(SignerState::DisplayBackup {
+                    key_id,
+                    awaiting_ack: false,
+                });
+
+                Ok(vec![
+                    DeviceSend::ToCoordinator(DeviceToCoordinatorMessage::DisplayBackupConfirmed),
+                    DeviceSend::ToUser(DeviceToUserMessage::DisplayBackup { key_id, backup }),
+                ])
             }
-            None => Err(ActionError::KeyNotKnown(key_id)),
+            _ => Err(ActionError::WrongState {
+                in_state: self.action_state_name(),
+                action: "display_backup_ack",
+            }),
         }
+    }
+
+    pub fn action_state_name(&self) -> &'static str {
+        self.action_state
+            .as_ref()
+            .map(|x| x.name())
+            .unwrap_or("None")
     }
 }
 
@@ -528,6 +557,10 @@ pub enum SignerState {
         sign_task: SignTask,
         session_nonces: BTreeMap<Scalar<Public, NonZero>, SignRequestNonces>,
     },
+    DisplayBackup {
+        key_id: KeyId,
+        awaiting_ack: bool,
+    },
 }
 
 impl SignerState {
@@ -536,6 +569,7 @@ impl SignerState {
             SignerState::KeyGen { .. } => "KeyGen",
             SignerState::KeyGenAck { .. } => "KeyGenAck",
             SignerState::AwaitingSignAck { .. } => "AwaitingSignAck",
+            SignerState::DisplayBackup { .. } => "DisplayBackup",
         }
     }
 }

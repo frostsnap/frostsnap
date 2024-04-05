@@ -53,6 +53,9 @@ pub enum CoordinatorToDeviceMessage {
     },
     RequestSign(SignRequest),
     RequestNonces,
+    DisplayBackup {
+        key_id: KeyId,
+    },
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
@@ -95,6 +98,7 @@ impl CoordinatorToDeviceMessage {
             CoordinatorToDeviceMessage::DoKeyGen { .. } => "DoKeyGen",
             CoordinatorToDeviceMessage::FinishKeyGen { .. } => "FinishKeyGen",
             CoordinatorToDeviceMessage::RequestSign { .. } => "RequestSign",
+            CoordinatorToDeviceMessage::DisplayBackup { .. } => "DisplayBackup",
         }
     }
 }
@@ -142,6 +146,7 @@ pub enum DeviceToCoordinatorMessage {
         signature_shares: Vec<Scalar<Public, Zero>>,
         new_nonces: DeviceNonces,
     },
+    DisplayBackupConfirmed,
 }
 
 #[derive(
@@ -167,11 +172,13 @@ impl Gist for DeviceToCoordinatorMessage {
 
 impl DeviceToCoordinatorMessage {
     pub fn kind(&self) -> &'static str {
+        use DeviceToCoordinatorMessage::*;
         match self {
-            DeviceToCoordinatorMessage::NonceResponse { .. } => "NonceResponse",
-            DeviceToCoordinatorMessage::KeyGenResponse(_) => "KeyGenProvideShares",
-            DeviceToCoordinatorMessage::KeyGenAck(_) => "KeyGenAck",
-            DeviceToCoordinatorMessage::SignatureShare { .. } => "SignatureShare",
+            NonceResponse { .. } => "NonceResponse",
+            KeyGenResponse(_) => "KeyGenProvideShares",
+            KeyGenAck(_) => "KeyGenAck",
+            SignatureShare { .. } => "SignatureShare",
+            DisplayBackupConfirmed => "DisplayBackupConfirmed",
         }
     }
 }
@@ -187,6 +194,7 @@ pub struct KeyGenResponse {
 pub enum CoordinatorToUserMessage {
     KeyGen(CoordinatorToUserKeyGenMessage),
     Signing(CoordinatorToUserSigningMessage),
+    DisplayBackupConfirmed { device_id: DeviceId },
 }
 
 #[derive(Clone, Debug, Copy)]
@@ -222,7 +230,8 @@ pub enum DeviceToUserMessage {
     CheckKeyGen { session_hash: SessionHash },
     SignatureRequest { sign_task: SignTask, key_id: KeyId },
     Canceled { task: TaskKind },
-    DisplayBackup { backup: String },
+    DisplayBackupRequest { key_id: KeyId },
+    DisplayBackup { key_id: KeyId, backup: String },
 }
 
 #[derive(Clone, Debug)]

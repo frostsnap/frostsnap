@@ -394,6 +394,17 @@ impl FrostCoordinator {
 
                 Ok(outgoing)
             }
+            (state, DeviceToCoordinatorMessage::DisplayBackupConfirmed) => {
+                if let Some(CoordinatorState::DisplayBackup) = state {
+                    Ok(vec![CoordinatorSend::ToUser(
+                        CoordinatorToUserMessage::DisplayBackupConfirmed { device_id: from },
+                    )])
+                } else {
+                    // it's ok if a device acks a display backup after we're no longer looking at it
+                    // (it shouldn't happen unless the user is trying to make it happen!).
+                    Ok(vec![])
+                }
+            }
             _ => Err(Error::coordinator_message_kind(
                 &self.action_state,
                 message_kind,
@@ -589,6 +600,28 @@ impl FrostCoordinator {
         }
     }
 
+    pub fn request_device_display_backup(
+        &mut self,
+        device_id: DeviceId,
+        key_id: KeyId,
+    ) -> Result<Vec<CoordinatorSend>, ActionError> {
+        let key = self
+            .keys
+            .get(&key_id)
+            .ok_or(ActionError::StateInconsistent("no such key".into()))?;
+        let _ = key
+            .device_to_share_index
+            .get(&device_id)
+            .ok_or(ActionError::StateInconsistent(
+                "device does not have share in key".into(),
+            ))?;
+        self.action_state = Some(CoordinatorState::DisplayBackup);
+        Ok(vec![CoordinatorSend::ToDevice {
+            message: CoordinatorToDeviceMessage::DisplayBackup { key_id },
+            destinations: BTreeSet::from_iter([device_id]),
+        }])
+    }
+
     pub fn state_name(&self) -> &'static str {
         self.action_state
             .as_ref()
@@ -617,6 +650,7 @@ impl CoordinatorState {
                 KeyGenState::WaitingForAcks { .. } => "WaitingForAcks",
             },
             CoordinatorState::Signing { .. } => "Signing",
+            CoordinatorState::DisplayBackup => "DisplayBackup",
         }
     }
 }
@@ -642,6 +676,7 @@ pub enum CoordinatorState {
         sign_state: SigningSessionState,
         key: CoordinatorFrostKey,
     },
+    DisplayBackup,
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
