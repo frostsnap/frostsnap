@@ -231,10 +231,6 @@ fn test_end_to_end() {
         env.keygen_checks.values().all(|v| *v == session_hash),
         "devices should have seen the same hash"
     );
-    // assert_eq!(
-    //     env.keygen_backups.keys().cloned().collect::<BTreeSet<_>>(),
-    //     device_set
-    // );
 
     assert_eq!(env.coordinator_got_keygen_acks, device_set);
     assert_eq!(env.received_keygen_shares, device_set);
@@ -289,6 +285,7 @@ fn test_end_to_end() {
 
 #[test]
 fn test_display_backup() {
+    use rand::seq::SliceRandom;
     let n_parties = 3;
     let threshold = 2;
     let coordinator = FrostCoordinator::new();
@@ -348,9 +345,20 @@ fn test_display_backup() {
             (decoded.share_index, decoded.secret_share)
         })
         .collect::<Vec<_>>();
+
+    let threshold_interpolated_joint_secret =
+        schnorr_fun::fun::poly::scalar::interpolate_and_eval_poly_at_0(
+            decoded_backups
+                .choose_multiple(&mut test_rng, 2)
+                .cloned()
+                .collect(),
+        );
     let interpolated_joint_secret =
         schnorr_fun::fun::poly::scalar::interpolate_and_eval_poly_at_0(decoded_backups);
-
+    assert_eq!(
+        threshold_interpolated_joint_secret,
+        interpolated_joint_secret
+    );
     assert_eq!(
         g!(interpolated_joint_secret * G),
         coord_frost_key.frost_key().public_key()
