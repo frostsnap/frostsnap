@@ -5,6 +5,8 @@ authors = ["nickfarrow <nick@nickfarrow.com>"]
 edition = "2021"
 
 [features]
+default = ["v2"]
+v2 = ["air101"]
 frostypede = ["air101", "air101-r2223", "rgb-led"]
 ai-042c3 = ["rgb-led", "dep:display-interface", "dep:ssd1306"]
 air101 = [
@@ -33,6 +35,7 @@ mipidsi = { version = "0.7.1", features = ["batch"], optional = true }
 embedded-graphics-framebuf = { version = "0.5.0", optional = true }
 embedded-graphics = "0.8.1"
 embedded-text = "0.7.0"
+u8g2-fonts = { version = "0.3.0", features = ["embedded_graphics_textstyle"] }
 esp-hal-smartled = { version = "0.9.0", features = [
     "esp32c3",
 ], optional = true }

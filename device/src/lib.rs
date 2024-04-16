@@ -9,6 +9,8 @@ pub mod io;
 pub mod panic;
 #[cfg(feature = "frostypede")]
 pub mod st7735;
+#[cfg(feature = "v2")]
+pub mod st7789;
 pub mod storage;
 pub mod ui;
 
