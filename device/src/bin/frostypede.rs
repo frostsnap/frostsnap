@@ -41,8 +41,9 @@ static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
 
 fn init_heap() {
     // const HEAP_SIZE: usize = 165 * 1024;
-    const HEAP_SIZE: usize = 166 * 1024;
+    const HEAP_SIZE: usize = 166;
     // const HEAP_SIZE: usize = 166 * 1024;
+    // const HEAP_SIZE: usize = 317 * 1024; //324608 - 475
     static mut HEAP: MaybeUninit<[u8; HEAP_SIZE]> = MaybeUninit::uninit();
 
     unsafe {
@@ -91,16 +92,17 @@ fn main() -> ! {
 
     let framearray = [Rgb565::WHITE; 160 * 80];
     let framebuf = FrameBuf::new(framearray, 160, 80);
-    let mut display = ST7735::new(
-        io.pins.gpio6.into_push_pull_output().into(),
-        io.pins.gpio10.into_push_pull_output().into(),
-        peripherals.SPI2,
-        io.pins.gpio2,
-        io.pins.gpio3,
-        &clocks,
-        framebuf,
-    )
-    .unwrap();
+    //// SIZE 25684
+    // let mut display = ST7735::new(
+    //     io.pins.gpio6.into_push_pull_output().into(),
+    //     io.pins.gpio10.into_push_pull_output().into(),
+    //     peripherals.SPI2,
+    //     io.pins.gpio2,
+    //     io.pins.gpio3,
+    //     &clocks,
+    //     framebuf,
+    // )
+    // .unwrap();
 
     delay.delay_ms(3_000u32);
 
@@ -108,12 +110,13 @@ fn main() -> ! {
     let mut i = 0;
     loop {
         // show something
-        display.splash_screen((i as f32 / 100.0 % 1.0));
-        delay.delay_ms(3_000u32);
+        // display.splash_screen((i as f32 / 100.0 % 1.0));
+        // delay.delay_ms(3_000u32);
         // WE CRASH HERE WITH 166 BYTE HEAP, WE GO FURTHER IF 165
-        filler.push(i);
-        delay.delay_ms(3_000u32);
-        display.set_mem_debug(ALLOCATOR.used(), ALLOCATOR.free());
+        let fill_material = [0u8; 25684];
+        filler.push(fill_material);
+        delay.delay_ms(3_000u32); // 40 bytes a second
+                                  // display.set_mem_debug(ALLOCATOR.used(), ALLOCATOR.free());
         i += 1;
     }
 }
