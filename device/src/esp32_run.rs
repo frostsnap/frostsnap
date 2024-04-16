@@ -5,7 +5,8 @@ use crate::{
     ConnectionState,
 };
 use alloc::{collections::VecDeque, string::ToString, vec::Vec};
-use esp_hal::{gpio, timer, uart, UsbSerialJtag};
+use esp_hal::timer;
+use esp_hal::{gpio, uart, usb_serial_jtag::UsbSerialJtag};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{CoordinatorSendBody, DeviceSendBody, DeviceSendMessage, ReceiveSerial};
 use frostsnap_comms::{CoordinatorSendMessage, Downstream, MAGIC_BYTES_PERIOD};

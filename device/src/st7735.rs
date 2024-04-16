@@ -17,6 +17,7 @@ use embedded_text::{
 };
 use esp_hal::{
     clock::Clocks,
+    delay::Delay,
     gpio::{AnyPin, Output, OutputPin, PushPull},
     peripheral::Peripheral,
     prelude::*,
@@ -24,8 +25,8 @@ use esp_hal::{
         master::{Instance, Spi},
         FullDuplexMode, SpiMode,
     },
-    Delay,
 };
+
 use mipidsi::ColorInversion;
 use mipidsi::{models::ST7735s, Display};
 

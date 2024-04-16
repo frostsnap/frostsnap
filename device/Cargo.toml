@@ -5,7 +5,7 @@ authors = ["nickfarrow <nick@nickfarrow.com>"]
 edition = "2021"
 
 [features]
-frostypede = ["air101", "air101-r2223", "rgb-led"]
+frostypede = ["air101", "air101-r2223", "rgb-led", "mem_debug"]
 ai-042c3 = ["rgb-led", "dep:display-interface", "dep:ssd1306"]
 air101 = [
     "dep:display-interface-spi",
@@ -21,6 +21,7 @@ mem_debug = []
 frostsnap_core = { workspace = true }
 frostsnap_comms = { workspace = true }
 esp-hal = { package = "esp-hal", version = "0.16.1", features = ["esp32c3"] }
+#esp-hal = { git = "https://github.com/esp-rs/esp-hal", rev = "1fdfc9270e3b5505d5ed2dd3eddd077c9d4f638f" }
 esp-alloc = "0.3.0"
 nb = "1"
 embedded-storage = "0.3.1"
@@ -42,3 +43,14 @@ rand_chacha = { workspace = true }
 [[bin]]
 name = "frostypede"
 required-features = ["frostypede"]
+
+
+[patch.crates-io] 
+esp32 =   { git = "https://github.com/esp-rs/esp-pacs", rev = "963c280621f0b7ec26546a5eff24a5032305437f" } 
+esp32s2 = { git = "https://github.com/esp-rs/esp-pacs", rev = "963c280621f0b7ec26546a5eff24a5032305437f" } 
+esp32s3 = { git = "https://github.com/esp-rs/esp-pacs", rev = "963c280621f0b7ec26546a5eff24a5032305437f" } 
+esp32c2 = { git = "https://github.com/esp-rs/esp-pacs", rev = "963c280621f0b7ec26546a5eff24a5032305437f" } 
+esp32c3 = { git = "https://github.com/esp-rs/esp-pacs", rev = "963c280621f0b7ec26546a5eff24a5032305437f" } 
+esp32c6 = { git = "https://github.com/esp-rs/esp-pacs", rev = "963c280621f0b7ec26546a5eff24a5032305437f" } 
+esp32h2 = { git = "https://github.com/esp-rs/esp-pacs", rev = "963c280621f0b7ec26546a5eff24a5032305437f" } 
+esp32p4 = { git = "https://github.com/esp-rs/esp-pacs", rev = "963c280621f0b7ec26546a5eff24a5032305437f" } 

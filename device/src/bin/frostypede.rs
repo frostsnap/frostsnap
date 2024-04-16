@@ -40,7 +40,9 @@ use smart_leds::{brightness, colors, SmartLedsWrite, RGB};
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
 
 fn init_heap() {
-    const HEAP_SIZE: usize = 128 * 1024;
+    // const HEAP_SIZE: usize = 165 * 1024;
+    const HEAP_SIZE: usize = 166 * 1024;
+    // const HEAP_SIZE: usize = 166 * 1024;
     static mut HEAP: MaybeUninit<[u8; HEAP_SIZE]> = MaybeUninit::uninit();
 
     unsafe {
@@ -89,7 +91,7 @@ fn main() -> ! {
     bl.set_low().unwrap();
     let framearray = [Rgb565::WHITE; 160 * 80];
     let framebuf = FrameBuf::new(framearray, 160, 80);
-    let display = ST7735::new(
+    let mut display = ST7735::new(
         io.pins.gpio6.into_push_pull_output().into(),
         io.pins.gpio10.into_push_pull_output().into(),
         peripherals.SPI2,
@@ -107,7 +109,7 @@ fn main() -> ! {
     led.write(brightness([colors::BLACK].iter().cloned(), 0))
         .unwrap();
 
-    let upstream_jtag = UsbSerialJtag::new(peripherals.USB_DEVICE);
+    // let upstream_jtag = UsbSerialJtag::new(peripherals.USB_DEVICE);
 
     let upstream_uart = {
         let serial_conf = uart::config::Config {
@@ -137,36 +139,19 @@ fn main() -> ! {
     delay.delay_ms(600u32); // To wait for ESP32c3 timers to stop being bonkers
     bl.set_high().unwrap();
 
-    let rng = {
-        let mut chacha_seed = [0u8; 32];
-        hal_rng.read(&mut chacha_seed).unwrap();
-        ChaCha20Rng::from_seed(chacha_seed)
-    };
+    let mut filler = vec![];
+    let mut i = 0;
+    loop {
+        display.splash_screen((i as f32 / 100.0 % 1.0));
+        display.set_mem_debug(ALLOCATOR.used(), ALLOCATOR.free());
 
-    let ui = FrostyUi {
-        select_button,
-        led,
-        display,
-        downstream_connection_state: ConnectionState::Disconnected,
-        workflow: Default::default(),
-        device_name: Default::default(),
-        splash_state: AnimationState::new(&timer1, (600 * ticks_per_ms).into()),
-        changes: false,
-        confirm_state: AnimationState::new(&timer1, (700 * ticks_per_ms).into()),
-        timer: &timer1,
-    };
-
-    // let _now1 = timer1.now();
-    esp32_run::Run {
-        upstream_jtag,
-        upstream_uart,
-        downstream_uart,
-        rng,
-        ui,
-        timer: timer0,
-        downstream_detect,
+        display.flush().unwrap();
+        filler.push(i);
+        // delay.delay_ms(10000000u32);
+        delay.delay_ms(1u32);
+        filler.push(i);
+        i += 1;
     }
-    .run()
 }
 
 pub struct FrostyUi<'t, 'd, C, T, SPI>
