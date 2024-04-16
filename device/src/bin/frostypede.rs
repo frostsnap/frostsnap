@@ -87,8 +87,8 @@ fn main() -> ! {
     let downstream_detect = io.pins.gpio13.into_pull_up_input();
 
     let mut bl = io.pins.gpio1.into_push_pull_output();
-    // Turn off backlight to hide artifacts as display initializes
-    bl.set_low().unwrap();
+    bl.set_high().unwrap();
+
     let framearray = [Rgb565::WHITE; 160 * 80];
     let framebuf = FrameBuf::new(framearray, 160, 80);
     let mut display = ST7735::new(
@@ -102,54 +102,18 @@ fn main() -> ! {
     )
     .unwrap();
 
-    // RGB LED
-    let rmt = Rmt::new(peripherals.RMT, 80u32.MHz(), &clocks).unwrap();
-    let rmt_buffer = smartLedBuffer!(1);
-    let mut led = SmartLedsAdapter::new(rmt.channel0, io.pins.gpio0, rmt_buffer, &clocks);
-    led.write(brightness([colors::BLACK].iter().cloned(), 0))
-        .unwrap();
-
-    // let upstream_jtag = UsbSerialJtag::new(peripherals.USB_DEVICE);
-
-    let upstream_uart = {
-        let serial_conf = uart::config::Config {
-            baudrate: frostsnap_comms::BAUDRATE,
-            ..Default::default()
-        };
-        let txrx1 = uart::TxRxPins::new_tx_rx(
-            io.pins.gpio18.into_push_pull_output(),
-            io.pins.gpio19.into_floating_input(),
-        );
-        Uart::new_with_config(peripherals.UART1, serial_conf, Some(txrx1), &clocks)
-    };
-
-    let downstream_uart = {
-        let serial_conf = uart::config::Config {
-            baudrate: frostsnap_comms::BAUDRATE,
-            ..Default::default()
-        };
-        let txrx0 = uart::TxRxPins::new_tx_rx(
-            io.pins.gpio21.into_push_pull_output(),
-            io.pins.gpio20.into_floating_input(),
-        );
-        Uart::new_with_config(peripherals.UART0, serial_conf, Some(txrx0), &clocks)
-    };
-
-    let mut hal_rng = Rng::new(peripherals.RNG);
-    delay.delay_ms(600u32); // To wait for ESP32c3 timers to stop being bonkers
-    bl.set_high().unwrap();
+    delay.delay_ms(3_000u32);
 
     let mut filler = vec![];
     let mut i = 0;
     loop {
+        // show something
         display.splash_screen((i as f32 / 100.0 % 1.0));
+        delay.delay_ms(3_000u32);
+        // WE CRASH HERE WITH 166 BYTE HEAP, WE GO FURTHER IF 165
+        filler.push(i);
+        delay.delay_ms(3_000u32);
         display.set_mem_debug(ALLOCATOR.used(), ALLOCATOR.free());
-
-        display.flush().unwrap();
-        filler.push(i);
-        // delay.delay_ms(10000000u32);
-        delay.delay_ms(1u32);
-        filler.push(i);
         i += 1;
     }
 }
