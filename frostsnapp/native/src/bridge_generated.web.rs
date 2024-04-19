@@ -226,6 +226,35 @@ pub fn wire_start_signing_tx__method__Coordinator(
 }
 
 #[wasm_bindgen]
+pub fn wire_create_nostr_event__method__Coordinator(
+    port_: MessagePort,
+    that: JsValue,
+    key_id: JsValue,
+    event_content: String,
+) {
+    wire_create_nostr_event__method__Coordinator_impl(port_, that, key_id, event_content)
+}
+
+#[wasm_bindgen]
+pub fn wire_start_signing_nostr__method__Coordinator(
+    port_: MessagePort,
+    that: JsValue,
+    key_id: JsValue,
+    unsigned_event: JsValue,
+    devices: JsValue,
+) {
+    wire_start_signing_nostr__method__Coordinator_impl(port_, that, key_id, unsigned_event, devices)
+}
+
+#[wasm_bindgen]
+pub fn wire_get_npub__method__Coordinator(
+    that: JsValue,
+    key_id: JsValue,
+) -> support::WireSyncReturn {
+    wire_get_npub__method__Coordinator_impl(that, key_id)
+}
+
+#[wasm_bindgen]
 pub fn wire_get_signing_state__method__Coordinator(that: JsValue) -> support::WireSyncReturn {
     wire_get_signing_state__method__Coordinator_impl(that)
 }
@@ -378,6 +407,24 @@ pub fn wire_tx__method__UnsignedTx(that: JsValue) -> support::WireSyncReturn {
     wire_tx__method__UnsignedTx_impl(that)
 }
 
+#[wasm_bindgen]
+pub fn wire_note_id__method__UnsignedNostrEvent(that: JsValue) -> support::WireSyncReturn {
+    wire_note_id__method__UnsignedNostrEvent_impl(that)
+}
+
+#[wasm_bindgen]
+pub fn wire_add_signature__method__UnsignedNostrEvent(
+    that: JsValue,
+    signature: JsValue,
+) -> support::WireSyncReturn {
+    wire_add_signature__method__UnsignedNostrEvent_impl(that, signature)
+}
+
+#[wasm_bindgen]
+pub fn wire_broadcast__method__SignedNostrEvent(port_: MessagePort, that: JsValue) {
+    wire_broadcast__method__SignedNostrEvent_impl(port_, that)
+}
+
 // Section: allocate functions
 
 // Section: related functions
@@ -453,6 +500,36 @@ pub fn drop_opaque_FrostsnapCoreMessageTransactionSignTask(ptr: *const c_void) {
 pub fn share_opaque_FrostsnapCoreMessageTransactionSignTask(ptr: *const c_void) -> *const c_void {
     unsafe {
         Arc::<frostsnap_core::message::TransactionSignTask>::increment_strong_count(ptr as _);
+        ptr
+    }
+}
+
+#[wasm_bindgen]
+pub fn drop_opaque_FrostsnapCoreNostrEvent(ptr: *const c_void) {
+    unsafe {
+        Arc::<frostsnap_core::nostr::Event>::decrement_strong_count(ptr as _);
+    }
+}
+
+#[wasm_bindgen]
+pub fn share_opaque_FrostsnapCoreNostrEvent(ptr: *const c_void) -> *const c_void {
+    unsafe {
+        Arc::<frostsnap_core::nostr::Event>::increment_strong_count(ptr as _);
+        ptr
+    }
+}
+
+#[wasm_bindgen]
+pub fn drop_opaque_FrostsnapCoreNostrUnsignedEvent(ptr: *const c_void) {
+    unsafe {
+        Arc::<frostsnap_core::nostr::UnsignedEvent>::decrement_strong_count(ptr as _);
+    }
+}
+
+#[wasm_bindgen]
+pub fn share_opaque_FrostsnapCoreNostrUnsignedEvent(ptr: *const c_void) -> *const c_void {
+    unsafe {
+        Arc::<frostsnap_core::nostr::UnsignedEvent>::increment_strong_count(ptr as _);
         ptr
     }
 }
@@ -822,6 +899,20 @@ impl Wire2Api<PortWrite> for JsValue {
         }
     }
 }
+impl Wire2Api<SignedNostrEvent> for JsValue {
+    fn wire2api(self) -> SignedNostrEvent {
+        let self_ = self.dyn_into::<JsArray>().unwrap();
+        assert_eq!(
+            self_.length(),
+            1,
+            "Expected 1 elements, got {}",
+            self_.length()
+        );
+        SignedNostrEvent {
+            signed_event: self_.get(0).wire2api(),
+        }
+    }
+}
 impl Wire2Api<SignedTx> for JsValue {
     fn wire2api(self) -> SignedTx {
         let self_ = self.dyn_into::<JsArray>().unwrap();
@@ -890,6 +981,20 @@ impl Wire2Api<[u8; 64]> for Box<[u8]> {
 impl Wire2Api<Vec<u8>> for Box<[u8]> {
     fn wire2api(self) -> Vec<u8> {
         self.into_vec()
+    }
+}
+impl Wire2Api<UnsignedNostrEvent> for JsValue {
+    fn wire2api(self) -> UnsignedNostrEvent {
+        let self_ = self.dyn_into::<JsArray>().unwrap();
+        assert_eq!(
+            self_.length(),
+            1,
+            "Expected 1 elements, got {}",
+            self_.length()
+        );
+        UnsignedNostrEvent {
+            unsigned_event: self_.get(0).wire2api(),
+        }
     }
 }
 impl Wire2Api<UnsignedTx> for JsValue {
@@ -975,6 +1080,26 @@ impl Wire2Api<RustOpaque<frostsnap_core::CoordinatorFrostKey>> for JsValue {
 }
 impl Wire2Api<RustOpaque<frostsnap_core::message::TransactionSignTask>> for JsValue {
     fn wire2api(self) -> RustOpaque<frostsnap_core::message::TransactionSignTask> {
+        #[cfg(target_pointer_width = "64")]
+        {
+            compile_error!("64-bit pointers are not supported.");
+        }
+
+        unsafe { support::opaque_from_dart((self.as_f64().unwrap() as usize) as _) }
+    }
+}
+impl Wire2Api<RustOpaque<frostsnap_core::nostr::Event>> for JsValue {
+    fn wire2api(self) -> RustOpaque<frostsnap_core::nostr::Event> {
+        #[cfg(target_pointer_width = "64")]
+        {
+            compile_error!("64-bit pointers are not supported.");
+        }
+
+        unsafe { support::opaque_from_dart((self.as_f64().unwrap() as usize) as _) }
+    }
+}
+impl Wire2Api<RustOpaque<frostsnap_core::nostr::UnsignedEvent>> for JsValue {
+    fn wire2api(self) -> RustOpaque<frostsnap_core::nostr::UnsignedEvent> {
         #[cfg(target_pointer_width = "64")]
         {
             compile_error!("64-bit pointers are not supported.");

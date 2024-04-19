@@ -196,6 +196,30 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kStartSigningTxMethodCoordinatorConstMeta;
 
+  Future<UnsignedNostrEvent> createNostrEventMethodCoordinator(
+      {required Coordinator that,
+      required KeyId keyId,
+      required String eventContent,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta
+      get kCreateNostrEventMethodCoordinatorConstMeta;
+
+  Stream<SigningState> startSigningNostrMethodCoordinator(
+      {required Coordinator that,
+      required KeyId keyId,
+      required UnsignedNostrEvent unsignedEvent,
+      required List<DeviceId> devices,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta
+      get kStartSigningNostrMethodCoordinatorConstMeta;
+
+  String getNpubMethodCoordinator(
+      {required Coordinator that, required KeyId keyId, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kGetNpubMethodCoordinatorConstMeta;
+
   SigningState? getSigningStateMethodCoordinator(
       {required Coordinator that, dynamic hint});
 
@@ -321,6 +345,24 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kTxMethodUnsignedTxConstMeta;
 
+  String noteIdMethodUnsignedNostrEvent(
+      {required UnsignedNostrEvent that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kNoteIdMethodUnsignedNostrEventConstMeta;
+
+  SignedNostrEvent addSignatureMethodUnsignedNostrEvent(
+      {required UnsignedNostrEvent that,
+      required EncodedSignature signature,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta
+      get kAddSignatureMethodUnsignedNostrEventConstMeta;
+
+  Future<void> broadcastMethodSignedNostrEvent(
+      {required SignedNostrEvent that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kBroadcastMethodSignedNostrEventConstMeta;
+
   DropFnType get dropOpaqueArcMutexVecPortDesc;
   ShareFnType get shareOpaqueArcMutexVecPortDesc;
   OpaqueTypeFinalizer get ArcMutexVecPortDescFinalizer;
@@ -340,6 +382,14 @@ abstract class Native {
   DropFnType get dropOpaqueFrostsnapCoreMessageTransactionSignTask;
   ShareFnType get shareOpaqueFrostsnapCoreMessageTransactionSignTask;
   OpaqueTypeFinalizer get FrostsnapCoreMessageTransactionSignTaskFinalizer;
+
+  DropFnType get dropOpaqueFrostsnapCoreNostrEvent;
+  ShareFnType get shareOpaqueFrostsnapCoreNostrEvent;
+  OpaqueTypeFinalizer get FrostsnapCoreNostrEventFinalizer;
+
+  DropFnType get dropOpaqueFrostsnapCoreNostrUnsignedEvent;
+  ShareFnType get shareOpaqueFrostsnapCoreNostrUnsignedEvent;
+  OpaqueTypeFinalizer get FrostsnapCoreNostrUnsignedEventFinalizer;
 
   DropFnType get dropOpaqueMutexBTreeMapKeyIdStreamSinkTxState;
   ShareFnType get shareOpaqueMutexBTreeMapKeyIdStreamSinkTxState;
@@ -448,6 +498,38 @@ class FrostsnapCoreMessageTransactionSignTask extends FrbOpaque {
   @override
   OpaqueTypeFinalizer get staticFinalizer =>
       bridge.FrostsnapCoreMessageTransactionSignTaskFinalizer;
+}
+
+@sealed
+class FrostsnapCoreNostrEvent extends FrbOpaque {
+  final Native bridge;
+  FrostsnapCoreNostrEvent.fromRaw(int ptr, int size, this.bridge)
+      : super.unsafe(ptr, size);
+  @override
+  DropFnType get dropFn => bridge.dropOpaqueFrostsnapCoreNostrEvent;
+
+  @override
+  ShareFnType get shareFn => bridge.shareOpaqueFrostsnapCoreNostrEvent;
+
+  @override
+  OpaqueTypeFinalizer get staticFinalizer =>
+      bridge.FrostsnapCoreNostrEventFinalizer;
+}
+
+@sealed
+class FrostsnapCoreNostrUnsignedEvent extends FrbOpaque {
+  final Native bridge;
+  FrostsnapCoreNostrUnsignedEvent.fromRaw(int ptr, int size, this.bridge)
+      : super.unsafe(ptr, size);
+  @override
+  DropFnType get dropFn => bridge.dropOpaqueFrostsnapCoreNostrUnsignedEvent;
+
+  @override
+  ShareFnType get shareFn => bridge.shareOpaqueFrostsnapCoreNostrUnsignedEvent;
+
+  @override
+  OpaqueTypeFinalizer get staticFinalizer =>
+      bridge.FrostsnapCoreNostrUnsignedEventFinalizer;
 }
 
 @sealed
@@ -672,6 +754,32 @@ class Coordinator {
         keyId: keyId,
         unsignedTx: unsignedTx,
         devices: devices,
+      );
+
+  Future<UnsignedNostrEvent> createNostrEvent(
+          {required KeyId keyId, required String eventContent, dynamic hint}) =>
+      bridge.createNostrEventMethodCoordinator(
+        that: this,
+        keyId: keyId,
+        eventContent: eventContent,
+      );
+
+  Stream<SigningState> startSigningNostr(
+          {required KeyId keyId,
+          required UnsignedNostrEvent unsignedEvent,
+          required List<DeviceId> devices,
+          dynamic hint}) =>
+      bridge.startSigningNostrMethodCoordinator(
+        that: this,
+        keyId: keyId,
+        unsignedEvent: unsignedEvent,
+        devices: devices,
+      );
+
+  String getNpub({required KeyId keyId, dynamic hint}) =>
+      bridge.getNpubMethodCoordinator(
+        that: this,
+        keyId: keyId,
       );
 
   SigningState? getSigningState({dynamic hint}) =>
@@ -1000,9 +1108,27 @@ sealed class SignTaskDescription with _$SignTaskDescription {
   const factory SignTaskDescription.plain({
     required String message,
   }) = SignTaskDescription_Plain;
+  const factory SignTaskDescription.nostr({
+    required UnsignedNostrEvent unsignedEvent,
+  }) = SignTaskDescription_Nostr;
   const factory SignTaskDescription.transaction({
     required UnsignedTx unsignedTx,
   }) = SignTaskDescription_Transaction;
+}
+
+class SignedNostrEvent {
+  final Native bridge;
+  final FrostsnapCoreNostrEvent signedEvent;
+
+  const SignedNostrEvent({
+    required this.bridge,
+    required this.signedEvent,
+  });
+
+  Future<void> broadcast({dynamic hint}) =>
+      bridge.broadcastMethodSignedNostrEvent(
+        that: this,
+      );
 }
 
 class SignedTx {
@@ -1088,6 +1214,27 @@ class U8Array64 extends NonGrowableListView<int> {
         super(inner);
   U8Array64.unchecked(Uint8List inner) : super(inner);
   U8Array64.init() : super(Uint8List(arraySize));
+}
+
+class UnsignedNostrEvent {
+  final Native bridge;
+  final FrostsnapCoreNostrUnsignedEvent unsignedEvent;
+
+  const UnsignedNostrEvent({
+    required this.bridge,
+    required this.unsignedEvent,
+  });
+
+  String noteId({dynamic hint}) => bridge.noteIdMethodUnsignedNostrEvent(
+        that: this,
+      );
+
+  SignedNostrEvent addSignature(
+          {required EncodedSignature signature, dynamic hint}) =>
+      bridge.addSignatureMethodUnsignedNostrEvent(
+        that: this,
+        signature: signature,
+      );
 }
 
 class UnsignedTx {

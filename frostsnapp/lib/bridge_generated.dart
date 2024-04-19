@@ -739,6 +739,84 @@ class NativeImpl implements Native {
             argNames: ["that", "keyId", "unsignedTx", "devices"],
           );
 
+  Future<UnsignedNostrEvent> createNostrEventMethodCoordinator(
+      {required Coordinator that,
+      required KeyId keyId,
+      required String eventContent,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
+    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg2 = _platform.api2wire_String(eventContent);
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner
+          .wire_create_nostr_event__method__Coordinator(
+              port_, arg0, arg1, arg2),
+      parseSuccessData: (d) => _wire2api_unsigned_nostr_event(d),
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kCreateNostrEventMethodCoordinatorConstMeta,
+      argValues: [that, keyId, eventContent],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kCreateNostrEventMethodCoordinatorConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "create_nostr_event__method__Coordinator",
+            argNames: ["that", "keyId", "eventContent"],
+          );
+
+  Stream<SigningState> startSigningNostrMethodCoordinator(
+      {required Coordinator that,
+      required KeyId keyId,
+      required UnsignedNostrEvent unsignedEvent,
+      required List<DeviceId> devices,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
+    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg2 =
+        _platform.api2wire_box_autoadd_unsigned_nostr_event(unsignedEvent);
+    var arg3 = _platform.api2wire_list_device_id(devices);
+    return _platform.executeStream(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner
+          .wire_start_signing_nostr__method__Coordinator(
+              port_, arg0, arg1, arg2, arg3),
+      parseSuccessData: (d) => _wire2api_signing_state(d),
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kStartSigningNostrMethodCoordinatorConstMeta,
+      argValues: [that, keyId, unsignedEvent, devices],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kStartSigningNostrMethodCoordinatorConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "start_signing_nostr__method__Coordinator",
+            argNames: ["that", "keyId", "unsignedEvent", "devices"],
+          );
+
+  String getNpubMethodCoordinator(
+      {required Coordinator that, required KeyId keyId, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
+    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () =>
+          _platform.inner.wire_get_npub__method__Coordinator(arg0, arg1),
+      parseSuccessData: _wire2api_String,
+      parseErrorData: null,
+      constMeta: kGetNpubMethodCoordinatorConstMeta,
+      argValues: [that, keyId],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kGetNpubMethodCoordinatorConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "get_npub__method__Coordinator",
+        argNames: ["that", "keyId"],
+      );
+
   SigningState? getSigningStateMethodCoordinator(
       {required Coordinator that, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
@@ -1193,6 +1271,71 @@ class NativeImpl implements Native {
         argNames: ["that"],
       );
 
+  String noteIdMethodUnsignedNostrEvent(
+      {required UnsignedNostrEvent that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_unsigned_nostr_event(that);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () =>
+          _platform.inner.wire_note_id__method__UnsignedNostrEvent(arg0),
+      parseSuccessData: _wire2api_String,
+      parseErrorData: null,
+      constMeta: kNoteIdMethodUnsignedNostrEventConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kNoteIdMethodUnsignedNostrEventConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "note_id__method__UnsignedNostrEvent",
+        argNames: ["that"],
+      );
+
+  SignedNostrEvent addSignatureMethodUnsignedNostrEvent(
+      {required UnsignedNostrEvent that,
+      required EncodedSignature signature,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_unsigned_nostr_event(that);
+    var arg1 = _platform.api2wire_box_autoadd_encoded_signature(signature);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner
+          .wire_add_signature__method__UnsignedNostrEvent(arg0, arg1),
+      parseSuccessData: _wire2api_signed_nostr_event,
+      parseErrorData: null,
+      constMeta: kAddSignatureMethodUnsignedNostrEventConstMeta,
+      argValues: [that, signature],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kAddSignatureMethodUnsignedNostrEventConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "add_signature__method__UnsignedNostrEvent",
+            argNames: ["that", "signature"],
+          );
+
+  Future<void> broadcastMethodSignedNostrEvent(
+      {required SignedNostrEvent that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_signed_nostr_event(that);
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) =>
+          _platform.inner.wire_broadcast__method__SignedNostrEvent(port_, arg0),
+      parseSuccessData: _wire2api_unit,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kBroadcastMethodSignedNostrEventConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kBroadcastMethodSignedNostrEventConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "broadcast__method__SignedNostrEvent",
+            argNames: ["that"],
+          );
+
   DropFnType get dropOpaqueArcMutexVecPortDesc =>
       _platform.inner.drop_opaque_ArcMutexVecPortDesc;
   ShareFnType get shareOpaqueArcMutexVecPortDesc =>
@@ -1225,6 +1368,20 @@ class NativeImpl implements Native {
       _platform.inner.share_opaque_FrostsnapCoreMessageTransactionSignTask;
   OpaqueTypeFinalizer get FrostsnapCoreMessageTransactionSignTaskFinalizer =>
       _platform.FrostsnapCoreMessageTransactionSignTaskFinalizer;
+
+  DropFnType get dropOpaqueFrostsnapCoreNostrEvent =>
+      _platform.inner.drop_opaque_FrostsnapCoreNostrEvent;
+  ShareFnType get shareOpaqueFrostsnapCoreNostrEvent =>
+      _platform.inner.share_opaque_FrostsnapCoreNostrEvent;
+  OpaqueTypeFinalizer get FrostsnapCoreNostrEventFinalizer =>
+      _platform.FrostsnapCoreNostrEventFinalizer;
+
+  DropFnType get dropOpaqueFrostsnapCoreNostrUnsignedEvent =>
+      _platform.inner.drop_opaque_FrostsnapCoreNostrUnsignedEvent;
+  ShareFnType get shareOpaqueFrostsnapCoreNostrUnsignedEvent =>
+      _platform.inner.share_opaque_FrostsnapCoreNostrUnsignedEvent;
+  OpaqueTypeFinalizer get FrostsnapCoreNostrUnsignedEventFinalizer =>
+      _platform.FrostsnapCoreNostrUnsignedEventFinalizer;
 
   DropFnType get dropOpaqueMutexBTreeMapKeyIdStreamSinkTxState =>
       _platform.inner.drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState;
@@ -1305,6 +1462,15 @@ class NativeImpl implements Native {
       _wire2api_FrostsnapCoreMessageTransactionSignTask(dynamic raw) {
     return FrostsnapCoreMessageTransactionSignTask.fromRaw(
         raw[0], raw[1], this);
+  }
+
+  FrostsnapCoreNostrEvent _wire2api_FrostsnapCoreNostrEvent(dynamic raw) {
+    return FrostsnapCoreNostrEvent.fromRaw(raw[0], raw[1], this);
+  }
+
+  FrostsnapCoreNostrUnsignedEvent _wire2api_FrostsnapCoreNostrUnsignedEvent(
+      dynamic raw) {
+    return FrostsnapCoreNostrUnsignedEvent.fromRaw(raw[0], raw[1], this);
   }
 
   MutexBTreeMapKeyIdStreamSinkTxState
@@ -1432,6 +1598,10 @@ class NativeImpl implements Native {
 
   SigningState _wire2api_box_autoadd_signing_state(dynamic raw) {
     return _wire2api_signing_state(raw);
+  }
+
+  UnsignedNostrEvent _wire2api_box_autoadd_unsigned_nostr_event(dynamic raw) {
+    return _wire2api_unsigned_nostr_event(raw);
   }
 
   UnsignedTx _wire2api_box_autoadd_unsigned_tx(dynamic raw) {
@@ -1748,12 +1918,26 @@ class NativeImpl implements Native {
           message: _wire2api_String(raw[1]),
         );
       case 1:
+        return SignTaskDescription_Nostr(
+          unsignedEvent: _wire2api_box_autoadd_unsigned_nostr_event(raw[1]),
+        );
+      case 2:
         return SignTaskDescription_Transaction(
           unsignedTx: _wire2api_box_autoadd_unsigned_tx(raw[1]),
         );
       default:
         throw Exception("unreachable");
     }
+  }
+
+  SignedNostrEvent _wire2api_signed_nostr_event(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return SignedNostrEvent(
+      bridge: this,
+      signedEvent: _wire2api_FrostsnapCoreNostrEvent(arr[0]),
+    );
   }
 
   SignedTx _wire2api_signed_tx(dynamic raw) {
@@ -1829,6 +2013,16 @@ class NativeImpl implements Native {
 
   void _wire2api_unit(dynamic raw) {
     return;
+  }
+
+  UnsignedNostrEvent _wire2api_unsigned_nostr_event(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return UnsignedNostrEvent(
+      bridge: this,
+      unsignedEvent: _wire2api_FrostsnapCoreNostrUnsignedEvent(arr[0]),
+    );
   }
 
   UnsignedTx _wire2api_unsigned_tx(dynamic raw) {

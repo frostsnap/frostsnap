@@ -253,6 +253,35 @@ pub extern "C" fn wire_start_signing_tx__method__Coordinator(
 }
 
 #[no_mangle]
+pub extern "C" fn wire_create_nostr_event__method__Coordinator(
+    port_: i64,
+    that: *mut wire_Coordinator,
+    key_id: *mut wire_KeyId,
+    event_content: *mut wire_uint_8_list,
+) {
+    wire_create_nostr_event__method__Coordinator_impl(port_, that, key_id, event_content)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_start_signing_nostr__method__Coordinator(
+    port_: i64,
+    that: *mut wire_Coordinator,
+    key_id: *mut wire_KeyId,
+    unsigned_event: *mut wire_UnsignedNostrEvent,
+    devices: *mut wire_list_device_id,
+) {
+    wire_start_signing_nostr__method__Coordinator_impl(port_, that, key_id, unsigned_event, devices)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_get_npub__method__Coordinator(
+    that: *mut wire_Coordinator,
+    key_id: *mut wire_KeyId,
+) -> support::WireSyncReturn {
+    wire_get_npub__method__Coordinator_impl(that, key_id)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_get_signing_state__method__Coordinator(
     that: *mut wire_Coordinator,
 ) -> support::WireSyncReturn {
@@ -424,6 +453,29 @@ pub extern "C" fn wire_tx__method__UnsignedTx(
     wire_tx__method__UnsignedTx_impl(that)
 }
 
+#[no_mangle]
+pub extern "C" fn wire_note_id__method__UnsignedNostrEvent(
+    that: *mut wire_UnsignedNostrEvent,
+) -> support::WireSyncReturn {
+    wire_note_id__method__UnsignedNostrEvent_impl(that)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_add_signature__method__UnsignedNostrEvent(
+    that: *mut wire_UnsignedNostrEvent,
+    signature: *mut wire_EncodedSignature,
+) -> support::WireSyncReturn {
+    wire_add_signature__method__UnsignedNostrEvent_impl(that, signature)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_broadcast__method__SignedNostrEvent(
+    port_: i64,
+    that: *mut wire_SignedNostrEvent,
+) {
+    wire_broadcast__method__SignedNostrEvent_impl(port_, that)
+}
+
 // Section: allocate functions
 
 #[no_mangle]
@@ -450,6 +502,16 @@ pub extern "C" fn new_FrostsnapCoreCoordinatorFrostKey() -> wire_FrostsnapCoreCo
 pub extern "C" fn new_FrostsnapCoreMessageTransactionSignTask(
 ) -> wire_FrostsnapCoreMessageTransactionSignTask {
     wire_FrostsnapCoreMessageTransactionSignTask::new_with_null_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn new_FrostsnapCoreNostrEvent() -> wire_FrostsnapCoreNostrEvent {
+    wire_FrostsnapCoreNostrEvent::new_with_null_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn new_FrostsnapCoreNostrUnsignedEvent() -> wire_FrostsnapCoreNostrUnsignedEvent {
+    wire_FrostsnapCoreNostrUnsignedEvent::new_with_null_ptr()
 }
 
 #[no_mangle]
@@ -518,6 +580,11 @@ pub extern "C" fn new_box_autoadd_device_list_state_0() -> *mut wire_DeviceListS
 }
 
 #[no_mangle]
+pub extern "C" fn new_box_autoadd_encoded_signature_0() -> *mut wire_EncodedSignature {
+    support::new_leak_box_ptr(wire_EncodedSignature::new_with_null_ptr())
+}
+
+#[no_mangle]
 pub extern "C" fn new_box_autoadd_ffi_serial_0() -> *mut wire_FfiSerial {
     support::new_leak_box_ptr(wire_FfiSerial::new_with_null_ptr())
 }
@@ -553,6 +620,11 @@ pub extern "C" fn new_box_autoadd_port_write_0() -> *mut wire_PortWrite {
 }
 
 #[no_mangle]
+pub extern "C" fn new_box_autoadd_signed_nostr_event_0() -> *mut wire_SignedNostrEvent {
+    support::new_leak_box_ptr(wire_SignedNostrEvent::new_with_null_ptr())
+}
+
+#[no_mangle]
 pub extern "C" fn new_box_autoadd_signed_tx_0() -> *mut wire_SignedTx {
     support::new_leak_box_ptr(wire_SignedTx::new_with_null_ptr())
 }
@@ -565,6 +637,11 @@ pub extern "C" fn new_box_autoadd_signing_state_0() -> *mut wire_SigningState {
 #[no_mangle]
 pub extern "C" fn new_box_autoadd_transaction_0() -> *mut wire_Transaction {
     support::new_leak_box_ptr(wire_Transaction::new_with_null_ptr())
+}
+
+#[no_mangle]
+pub extern "C" fn new_box_autoadd_unsigned_nostr_event_0() -> *mut wire_UnsignedNostrEvent {
+    support::new_leak_box_ptr(wire_UnsignedNostrEvent::new_with_null_ptr())
 }
 
 #[no_mangle]
@@ -699,6 +776,38 @@ pub extern "C" fn share_opaque_FrostsnapCoreMessageTransactionSignTask(
 ) -> *const c_void {
     unsafe {
         Arc::<frostsnap_core::message::TransactionSignTask>::increment_strong_count(ptr as _);
+        ptr
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn drop_opaque_FrostsnapCoreNostrEvent(ptr: *const c_void) {
+    unsafe {
+        Arc::<frostsnap_core::nostr::Event>::decrement_strong_count(ptr as _);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn share_opaque_FrostsnapCoreNostrEvent(ptr: *const c_void) -> *const c_void {
+    unsafe {
+        Arc::<frostsnap_core::nostr::Event>::increment_strong_count(ptr as _);
+        ptr
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn drop_opaque_FrostsnapCoreNostrUnsignedEvent(ptr: *const c_void) {
+    unsafe {
+        Arc::<frostsnap_core::nostr::UnsignedEvent>::decrement_strong_count(ptr as _);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn share_opaque_FrostsnapCoreNostrUnsignedEvent(
+    ptr: *const c_void,
+) -> *const c_void {
+    unsafe {
+        Arc::<frostsnap_core::nostr::UnsignedEvent>::increment_strong_count(ptr as _);
         ptr
     }
 }
@@ -841,6 +950,18 @@ impl Wire2Api<RustOpaque<frostsnap_core::message::TransactionSignTask>>
         unsafe { support::opaque_from_dart(self.ptr as _) }
     }
 }
+impl Wire2Api<RustOpaque<frostsnap_core::nostr::Event>> for wire_FrostsnapCoreNostrEvent {
+    fn wire2api(self) -> RustOpaque<frostsnap_core::nostr::Event> {
+        unsafe { support::opaque_from_dart(self.ptr as _) }
+    }
+}
+impl Wire2Api<RustOpaque<frostsnap_core::nostr::UnsignedEvent>>
+    for wire_FrostsnapCoreNostrUnsignedEvent
+{
+    fn wire2api(self) -> RustOpaque<frostsnap_core::nostr::UnsignedEvent> {
+        unsafe { support::opaque_from_dart(self.ptr as _) }
+    }
+}
 impl Wire2Api<RustOpaque<Mutex<BTreeMap<KeyId, StreamSink<TxState>>>>>
     for wire_MutexBTreeMapKeyIdStreamSinkTxState
 {
@@ -917,6 +1038,12 @@ impl Wire2Api<DeviceListState> for *mut wire_DeviceListState {
         Wire2Api::<DeviceListState>::wire2api(*wrap).into()
     }
 }
+impl Wire2Api<EncodedSignature> for *mut wire_EncodedSignature {
+    fn wire2api(self) -> EncodedSignature {
+        let wrap = unsafe { support::box_from_leak_ptr(self) };
+        Wire2Api::<EncodedSignature>::wire2api(*wrap).into()
+    }
+}
 impl Wire2Api<FfiSerial> for *mut wire_FfiSerial {
     fn wire2api(self) -> FfiSerial {
         let wrap = unsafe { support::box_from_leak_ptr(self) };
@@ -959,6 +1086,12 @@ impl Wire2Api<PortWrite> for *mut wire_PortWrite {
         Wire2Api::<PortWrite>::wire2api(*wrap).into()
     }
 }
+impl Wire2Api<SignedNostrEvent> for *mut wire_SignedNostrEvent {
+    fn wire2api(self) -> SignedNostrEvent {
+        let wrap = unsafe { support::box_from_leak_ptr(self) };
+        Wire2Api::<SignedNostrEvent>::wire2api(*wrap).into()
+    }
+}
 impl Wire2Api<SignedTx> for *mut wire_SignedTx {
     fn wire2api(self) -> SignedTx {
         let wrap = unsafe { support::box_from_leak_ptr(self) };
@@ -975,6 +1108,12 @@ impl Wire2Api<Transaction> for *mut wire_Transaction {
     fn wire2api(self) -> Transaction {
         let wrap = unsafe { support::box_from_leak_ptr(self) };
         Wire2Api::<Transaction>::wire2api(*wrap).into()
+    }
+}
+impl Wire2Api<UnsignedNostrEvent> for *mut wire_UnsignedNostrEvent {
+    fn wire2api(self) -> UnsignedNostrEvent {
+        let wrap = unsafe { support::box_from_leak_ptr(self) };
+        Wire2Api::<UnsignedNostrEvent>::wire2api(*wrap).into()
     }
 }
 impl Wire2Api<UnsignedTx> for *mut wire_UnsignedTx {
@@ -1129,6 +1268,13 @@ impl Wire2Api<PortWrite> for wire_PortWrite {
         }
     }
 }
+impl Wire2Api<SignedNostrEvent> for wire_SignedNostrEvent {
+    fn wire2api(self) -> SignedNostrEvent {
+        SignedNostrEvent {
+            signed_event: self.signed_event.wire2api(),
+        }
+    }
+}
 impl Wire2Api<SignedTx> for wire_SignedTx {
     fn wire2api(self) -> SignedTx {
         SignedTx {
@@ -1181,6 +1327,13 @@ impl Wire2Api<Vec<u8>> for *mut wire_uint_8_list {
         }
     }
 }
+impl Wire2Api<UnsignedNostrEvent> for wire_UnsignedNostrEvent {
+    fn wire2api(self) -> UnsignedNostrEvent {
+        UnsignedNostrEvent {
+            unsigned_event: self.unsigned_event.wire2api(),
+        }
+    }
+}
 impl Wire2Api<UnsignedTx> for wire_UnsignedTx {
     fn wire2api(self) -> UnsignedTx {
         UnsignedTx {
@@ -1227,6 +1380,18 @@ pub struct wire_FrostsnapCoreCoordinatorFrostKey {
 #[repr(C)]
 #[derive(Clone)]
 pub struct wire_FrostsnapCoreMessageTransactionSignTask {
+    ptr: *const core::ffi::c_void,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_FrostsnapCoreNostrEvent {
+    ptr: *const core::ffi::c_void,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_FrostsnapCoreNostrUnsignedEvent {
     ptr: *const core::ffi::c_void,
 }
 
@@ -1405,6 +1570,12 @@ pub struct wire_PortWrite {
 
 #[repr(C)]
 #[derive(Clone)]
+pub struct wire_SignedNostrEvent {
+    signed_event: wire_FrostsnapCoreNostrEvent,
+}
+
+#[repr(C)]
+#[derive(Clone)]
 pub struct wire_SignedTx {
     inner: wire_RTransaction,
 }
@@ -1430,6 +1601,12 @@ pub struct wire_Transaction {
 pub struct wire_uint_8_list {
     ptr: *mut u8,
     len: i32,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_UnsignedNostrEvent {
+    unsigned_event: wire_FrostsnapCoreNostrUnsignedEvent,
 }
 
 #[repr(C)]
@@ -1487,6 +1664,20 @@ impl NewWithNullPtr for wire_FrostsnapCoreCoordinatorFrostKey {
     }
 }
 impl NewWithNullPtr for wire_FrostsnapCoreMessageTransactionSignTask {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            ptr: core::ptr::null(),
+        }
+    }
+}
+impl NewWithNullPtr for wire_FrostsnapCoreNostrEvent {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            ptr: core::ptr::null(),
+        }
+    }
+}
+impl NewWithNullPtr for wire_FrostsnapCoreNostrUnsignedEvent {
     fn new_with_null_ptr() -> Self {
         Self {
             ptr: core::ptr::null(),
@@ -1751,6 +1942,20 @@ impl Default for wire_PortWrite {
     }
 }
 
+impl NewWithNullPtr for wire_SignedNostrEvent {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            signed_event: wire_FrostsnapCoreNostrEvent::new_with_null_ptr(),
+        }
+    }
+}
+
+impl Default for wire_SignedNostrEvent {
+    fn default() -> Self {
+        Self::new_with_null_ptr()
+    }
+}
+
 impl NewWithNullPtr for wire_SignedTx {
     fn new_with_null_ptr() -> Self {
         Self {
@@ -1792,6 +1997,20 @@ impl NewWithNullPtr for wire_Transaction {
 }
 
 impl Default for wire_Transaction {
+    fn default() -> Self {
+        Self::new_with_null_ptr()
+    }
+}
+
+impl NewWithNullPtr for wire_UnsignedNostrEvent {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            unsigned_event: wire_FrostsnapCoreNostrUnsignedEvent::new_with_null_ptr(),
+        }
+    }
+}
+
+impl Default for wire_UnsignedNostrEvent {
     fn default() -> Self {
         Self::new_with_null_ptr()
     }
