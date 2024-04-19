@@ -21,5 +21,7 @@ bincode.workspace = true
 bdk_chain = {  version = "0.9", features = ["serde", "std"] }
 bdk_electrum = {  version = "0.7" }
 bdk_coin_select = { git = "https://github.com/LLFourn/coin-select.git", rev ="8eb582bc08bee173a41508a915fd2609e954f313" }
-tungstenite = { version = "0.21.0", features = ["rustls", "native-tls"] }
+tungstenite = { version = "0.21.0", default-features = false, features = ["rustls", "native-tls", "handshake"] }
 url = "2.5.0"
+
+openssl = { version = "*", features = ["vendored"] }
