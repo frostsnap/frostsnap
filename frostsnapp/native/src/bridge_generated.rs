@@ -626,6 +626,75 @@ fn wire_start_signing_tx__method__Coordinator_impl(
         },
     )
 }
+fn wire_create_nostr_event__method__Coordinator_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<Coordinator> + UnwindSafe,
+    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    event_content: impl Wire2Api<String> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, UnsignedNostrEvent, _>(
+        WrapInfo {
+            debug_name: "create_nostr_event__method__Coordinator",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_key_id = key_id.wire2api();
+            let api_event_content = event_content.wire2api();
+            move |task_callback| {
+                Coordinator::create_nostr_event(&api_that, api_key_id, api_event_content)
+            }
+        },
+    )
+}
+fn wire_start_signing_nostr__method__Coordinator_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<Coordinator> + UnwindSafe,
+    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    unsigned_event: impl Wire2Api<UnsignedNostrEvent> + UnwindSafe,
+    devices: impl Wire2Api<Vec<DeviceId>> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "start_signing_nostr__method__Coordinator",
+            port: Some(port_),
+            mode: FfiCallMode::Stream,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_key_id = key_id.wire2api();
+            let api_unsigned_event = unsigned_event.wire2api();
+            let api_devices = devices.wire2api();
+            move |task_callback| {
+                Coordinator::start_signing_nostr(
+                    &api_that,
+                    api_key_id,
+                    api_unsigned_event,
+                    api_devices,
+                    task_callback.stream_sink::<_, SigningState>(),
+                )
+            }
+        },
+    )
+}
+fn wire_get_npub__method__Coordinator_impl(
+    that: impl Wire2Api<Coordinator> + UnwindSafe,
+    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "get_npub__method__Coordinator",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_key_id = key_id.wire2api();
+            Result::<_, ()>::Ok(Coordinator::get_npub(&api_that, api_key_id))
+        },
+    )
+}
 fn wire_get_signing_state__method__Coordinator_impl(
     that: impl Wire2Api<Coordinator> + UnwindSafe,
 ) -> support::WireSyncReturn {
@@ -1021,6 +1090,54 @@ fn wire_tx__method__UnsignedTx_impl(
         move || {
             let api_that = that.wire2api();
             Result::<_, ()>::Ok(UnsignedTx::tx(&api_that))
+        },
+    )
+}
+fn wire_note_id__method__UnsignedNostrEvent_impl(
+    that: impl Wire2Api<UnsignedNostrEvent> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "note_id__method__UnsignedNostrEvent",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            Result::<_, ()>::Ok(UnsignedNostrEvent::note_id(&api_that))
+        },
+    )
+}
+fn wire_add_signature__method__UnsignedNostrEvent_impl(
+    that: impl Wire2Api<UnsignedNostrEvent> + UnwindSafe,
+    signature: impl Wire2Api<EncodedSignature> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "add_signature__method__UnsignedNostrEvent",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_signature = signature.wire2api();
+            Result::<_, ()>::Ok(UnsignedNostrEvent::add_signature(&api_that, api_signature))
+        },
+    )
+}
+fn wire_broadcast__method__SignedNostrEvent_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<SignedNostrEvent> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "broadcast__method__SignedNostrEvent",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_that = that.wire2api();
+            move |task_callback| SignedNostrEvent::broadcast(&api_that)
         },
     )
 }
@@ -1473,8 +1590,11 @@ impl support::IntoDart for SignTaskDescription {
     fn into_dart(self) -> support::DartAbi {
         match self {
             Self::Plain { message } => vec![0.into_dart(), message.into_into_dart().into_dart()],
+            Self::Nostr { unsigned_event } => {
+                vec![1.into_dart(), unsigned_event.into_into_dart().into_dart()]
+            }
             Self::Transaction { unsigned_tx } => {
-                vec![1.into_dart(), unsigned_tx.into_into_dart().into_dart()]
+                vec![2.into_dart(), unsigned_tx.into_into_dart().into_dart()]
             }
         }
         .into_dart()
@@ -1482,6 +1602,18 @@ impl support::IntoDart for SignTaskDescription {
 }
 impl support::IntoDartExceptPrimitive for SignTaskDescription {}
 impl rust2dart::IntoIntoDart<SignTaskDescription> for SignTaskDescription {
+    fn into_into_dart(self) -> Self {
+        self
+    }
+}
+
+impl support::IntoDart for SignedNostrEvent {
+    fn into_dart(self) -> support::DartAbi {
+        vec![self.signed_event.into_dart()].into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for SignedNostrEvent {}
+impl rust2dart::IntoIntoDart<SignedNostrEvent> for SignedNostrEvent {
     fn into_into_dart(self) -> Self {
         self
     }
@@ -1540,6 +1672,18 @@ impl support::IntoDart for TxState {
 }
 impl support::IntoDartExceptPrimitive for TxState {}
 impl rust2dart::IntoIntoDart<TxState> for TxState {
+    fn into_into_dart(self) -> Self {
+        self
+    }
+}
+
+impl support::IntoDart for UnsignedNostrEvent {
+    fn into_dart(self) -> support::DartAbi {
+        vec![self.unsigned_event.into_dart()].into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for UnsignedNostrEvent {}
+impl rust2dart::IntoIntoDart<UnsignedNostrEvent> for UnsignedNostrEvent {
     fn into_into_dart(self) -> Self {
         self
     }

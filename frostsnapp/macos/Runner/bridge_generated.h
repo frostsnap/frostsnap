@@ -156,6 +156,14 @@ typedef struct wire_UnsignedTx {
   struct wire_FrostsnapCoreMessageTransactionSignTask task;
 } wire_UnsignedTx;
 
+typedef struct wire_FrostsnapCoreNostrUnsignedEvent {
+  const void *ptr;
+} wire_FrostsnapCoreNostrUnsignedEvent;
+
+typedef struct wire_UnsignedNostrEvent {
+  struct wire_FrostsnapCoreNostrUnsignedEvent unsigned_event;
+} wire_UnsignedNostrEvent;
+
 typedef struct wire_MutexCrateWalletWallet {
   const void *ptr;
 } wire_MutexCrateWalletWallet;
@@ -182,6 +190,14 @@ typedef struct wire_StringList {
 typedef struct wire_SignedTx {
   struct wire_RTransaction inner;
 } wire_SignedTx;
+
+typedef struct wire_FrostsnapCoreNostrEvent {
+  const void *ptr;
+} wire_FrostsnapCoreNostrEvent;
+
+typedef struct wire_SignedNostrEvent {
+  struct wire_FrostsnapCoreNostrEvent signed_event;
+} wire_SignedNostrEvent;
 
 void store_dart_post_cobject(DartPostCObjectFnType ptr);
 
@@ -296,6 +312,20 @@ void wire_start_signing_tx__method__Coordinator(int64_t port_,
                                                 struct wire_UnsignedTx *unsigned_tx,
                                                 struct wire_list_device_id *devices);
 
+void wire_create_nostr_event__method__Coordinator(int64_t port_,
+                                                  struct wire_Coordinator *that,
+                                                  struct wire_KeyId *key_id,
+                                                  struct wire_uint_8_list *event_content);
+
+void wire_start_signing_nostr__method__Coordinator(int64_t port_,
+                                                   struct wire_Coordinator *that,
+                                                   struct wire_KeyId *key_id,
+                                                   struct wire_UnsignedNostrEvent *unsigned_event,
+                                                   struct wire_list_device_id *devices);
+
+WireSyncReturn wire_get_npub__method__Coordinator(struct wire_Coordinator *that,
+                                                  struct wire_KeyId *key_id);
+
 WireSyncReturn wire_get_signing_state__method__Coordinator(struct wire_Coordinator *that);
 
 WireSyncReturn wire_nonces_available__method__Coordinator(struct wire_Coordinator *that,
@@ -367,6 +397,13 @@ WireSyncReturn wire_tx__method__SignedTx(struct wire_SignedTx *that);
 
 WireSyncReturn wire_tx__method__UnsignedTx(struct wire_UnsignedTx *that);
 
+WireSyncReturn wire_note_id__method__UnsignedNostrEvent(struct wire_UnsignedNostrEvent *that);
+
+WireSyncReturn wire_add_signature__method__UnsignedNostrEvent(struct wire_UnsignedNostrEvent *that,
+                                                              struct wire_EncodedSignature *signature);
+
+void wire_broadcast__method__SignedNostrEvent(int64_t port_, struct wire_SignedNostrEvent *that);
+
 struct wire_ArcMutexVecPortDesc new_ArcMutexVecPortDesc(void);
 
 struct wire_ChainSync new_ChainSync(void);
@@ -376,6 +413,10 @@ struct wire_FfiCoordinator new_FfiCoordinator(void);
 struct wire_FrostsnapCoreCoordinatorFrostKey new_FrostsnapCoreCoordinatorFrostKey(void);
 
 struct wire_FrostsnapCoreMessageTransactionSignTask new_FrostsnapCoreMessageTransactionSignTask(void);
+
+struct wire_FrostsnapCoreNostrEvent new_FrostsnapCoreNostrEvent(void);
+
+struct wire_FrostsnapCoreNostrUnsignedEvent new_FrostsnapCoreNostrUnsignedEvent(void);
 
 struct wire_MutexBTreeMapKeyIdStreamSinkTxState new_MutexBTreeMapKeyIdStreamSinkTxState(void);
 
@@ -401,6 +442,8 @@ struct wire_DeviceId *new_box_autoadd_device_id_0(void);
 
 struct wire_DeviceListState *new_box_autoadd_device_list_state_0(void);
 
+struct wire_EncodedSignature *new_box_autoadd_encoded_signature_0(void);
+
 struct wire_FfiSerial *new_box_autoadd_ffi_serial_0(void);
 
 struct wire_FrostKey *new_box_autoadd_frost_key_0(void);
@@ -415,11 +458,15 @@ struct wire_PortRead *new_box_autoadd_port_read_0(void);
 
 struct wire_PortWrite *new_box_autoadd_port_write_0(void);
 
+struct wire_SignedNostrEvent *new_box_autoadd_signed_nostr_event_0(void);
+
 struct wire_SignedTx *new_box_autoadd_signed_tx_0(void);
 
 struct wire_SigningState *new_box_autoadd_signing_state_0(void);
 
 struct wire_Transaction *new_box_autoadd_transaction_0(void);
+
+struct wire_UnsignedNostrEvent *new_box_autoadd_unsigned_nostr_event_0(void);
 
 struct wire_UnsignedTx *new_box_autoadd_unsigned_tx_0(void);
 
@@ -454,6 +501,14 @@ const void *share_opaque_FrostsnapCoreCoordinatorFrostKey(const void *ptr);
 void drop_opaque_FrostsnapCoreMessageTransactionSignTask(const void *ptr);
 
 const void *share_opaque_FrostsnapCoreMessageTransactionSignTask(const void *ptr);
+
+void drop_opaque_FrostsnapCoreNostrEvent(const void *ptr);
+
+const void *share_opaque_FrostsnapCoreNostrEvent(const void *ptr);
+
+void drop_opaque_FrostsnapCoreNostrUnsignedEvent(const void *ptr);
+
+const void *share_opaque_FrostsnapCoreNostrUnsignedEvent(const void *ptr);
 
 void drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(const void *ptr);
 
@@ -522,6 +577,9 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_keys_for_device__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_start_signing__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_start_signing_tx__method__Coordinator);
+    dummy_var ^= ((int64_t) (void*) wire_create_nostr_event__method__Coordinator);
+    dummy_var ^= ((int64_t) (void*) wire_start_signing_nostr__method__Coordinator);
+    dummy_var ^= ((int64_t) (void*) wire_get_npub__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_get_signing_state__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_nonces_available__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_generate_new_key__method__Coordinator);
@@ -542,11 +600,16 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_effect_of_tx__method__Wallet);
     dummy_var ^= ((int64_t) (void*) wire_tx__method__SignedTx);
     dummy_var ^= ((int64_t) (void*) wire_tx__method__UnsignedTx);
+    dummy_var ^= ((int64_t) (void*) wire_note_id__method__UnsignedNostrEvent);
+    dummy_var ^= ((int64_t) (void*) wire_add_signature__method__UnsignedNostrEvent);
+    dummy_var ^= ((int64_t) (void*) wire_broadcast__method__SignedNostrEvent);
     dummy_var ^= ((int64_t) (void*) new_ArcMutexVecPortDesc);
     dummy_var ^= ((int64_t) (void*) new_ChainSync);
     dummy_var ^= ((int64_t) (void*) new_FfiCoordinator);
     dummy_var ^= ((int64_t) (void*) new_FrostsnapCoreCoordinatorFrostKey);
     dummy_var ^= ((int64_t) (void*) new_FrostsnapCoreMessageTransactionSignTask);
+    dummy_var ^= ((int64_t) (void*) new_FrostsnapCoreNostrEvent);
+    dummy_var ^= ((int64_t) (void*) new_FrostsnapCoreNostrUnsignedEvent);
     dummy_var ^= ((int64_t) (void*) new_MutexBTreeMapKeyIdStreamSinkTxState);
     dummy_var ^= ((int64_t) (void*) new_MutexCrateWalletWallet);
     dummy_var ^= ((int64_t) (void*) new_PortBytesToReadSender);
@@ -559,6 +622,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_coordinator_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_device_id_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_device_list_state_0);
+    dummy_var ^= ((int64_t) (void*) new_box_autoadd_encoded_signature_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_ffi_serial_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_frost_key_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_key_id_0);
@@ -566,9 +630,11 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_port_open_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_port_read_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_port_write_0);
+    dummy_var ^= ((int64_t) (void*) new_box_autoadd_signed_nostr_event_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_signed_tx_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_signing_state_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_transaction_0);
+    dummy_var ^= ((int64_t) (void*) new_box_autoadd_unsigned_nostr_event_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_unsigned_tx_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_wallet_0);
     dummy_var ^= ((int64_t) (void*) new_list_device_0);
@@ -586,6 +652,10 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) share_opaque_FrostsnapCoreCoordinatorFrostKey);
     dummy_var ^= ((int64_t) (void*) drop_opaque_FrostsnapCoreMessageTransactionSignTask);
     dummy_var ^= ((int64_t) (void*) share_opaque_FrostsnapCoreMessageTransactionSignTask);
+    dummy_var ^= ((int64_t) (void*) drop_opaque_FrostsnapCoreNostrEvent);
+    dummy_var ^= ((int64_t) (void*) share_opaque_FrostsnapCoreNostrEvent);
+    dummy_var ^= ((int64_t) (void*) drop_opaque_FrostsnapCoreNostrUnsignedEvent);
+    dummy_var ^= ((int64_t) (void*) share_opaque_FrostsnapCoreNostrUnsignedEvent);
     dummy_var ^= ((int64_t) (void*) drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState);
     dummy_var ^= ((int64_t) (void*) share_opaque_MutexBTreeMapKeyIdStreamSinkTxState);
     dummy_var ^= ((int64_t) (void*) drop_opaque_MutexCrateWalletWallet);

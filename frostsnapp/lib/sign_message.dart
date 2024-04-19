@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:typed_data';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:frostsnapp/animated_check.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_id_ext.dart';
@@ -73,6 +74,7 @@ class _SignMessageFormState extends State<SignMessageForm> {
         final signatures =
             await signMessageWorkflowDialog(context, signingStream, message);
         if (signatures != null && context.mounted) {
+          await _showSignatureDialog(context, signatures[0], message);
           Navigator.pop(context);
         }
       };
@@ -171,14 +173,12 @@ class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
   }
 }
 
-Future<bool> signMessageWorkflowDialog(BuildContext context,
+Future<List<EncodedSignature>?> signMessageWorkflowDialog(BuildContext context,
     Stream<SigningState> signingStream, String message) async {
   final signatures = await showSigningProgressDialog(
       context, signingStream, Text("signing ‘$message’"));
-  if (signatures != null && context.mounted) {
-    await _showSignatureDialog(context, signatures[0]);
-  }
-  return signatures == null;
+
+  return signatures;
 }
 
 Future<List<EncodedSignature>?> showSigningProgressDialog(
@@ -207,7 +207,7 @@ Future<List<EncodedSignature>?> showSigningProgressDialog(
 }
 
 Future<void> _showSignatureDialog(
-    BuildContext context, EncodedSignature signature) {
+    BuildContext context, EncodedSignature signature, String signedDetails) {
   return showDialog(
       context: context,
       builder: (context) {

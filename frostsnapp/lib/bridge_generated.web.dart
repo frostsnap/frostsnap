@@ -48,6 +48,17 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
+  Object api2wire_FrostsnapCoreNostrEvent(FrostsnapCoreNostrEvent raw) {
+    return raw.shareOrMove();
+  }
+
+  @protected
+  Object api2wire_FrostsnapCoreNostrUnsignedEvent(
+      FrostsnapCoreNostrUnsignedEvent raw) {
+    return raw.shareOrMove();
+  }
+
+  @protected
   Object api2wire_MutexBTreeMapKeyIdStreamSinkTxState(
       MutexBTreeMapKeyIdStreamSinkTxState raw) {
     return raw.shareOrMove();
@@ -114,6 +125,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
+  List<dynamic> api2wire_box_autoadd_encoded_signature(EncodedSignature raw) {
+    return api2wire_encoded_signature(raw);
+  }
+
+  @protected
   List<dynamic> api2wire_box_autoadd_ffi_serial(FfiSerial raw) {
     return api2wire_ffi_serial(raw);
   }
@@ -149,6 +165,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
+  List<dynamic> api2wire_box_autoadd_signed_nostr_event(SignedNostrEvent raw) {
+    return api2wire_signed_nostr_event(raw);
+  }
+
+  @protected
   List<dynamic> api2wire_box_autoadd_signed_tx(SignedTx raw) {
     return api2wire_signed_tx(raw);
   }
@@ -161,6 +182,12 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   @protected
   List<dynamic> api2wire_box_autoadd_transaction(Transaction raw) {
     return api2wire_transaction(raw);
+  }
+
+  @protected
+  List<dynamic> api2wire_box_autoadd_unsigned_nostr_event(
+      UnsignedNostrEvent raw) {
+    return api2wire_unsigned_nostr_event(raw);
   }
 
   @protected
@@ -296,6 +323,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
+  List<dynamic> api2wire_signed_nostr_event(SignedNostrEvent raw) {
+    return [api2wire_FrostsnapCoreNostrEvent(raw.signedEvent)];
+  }
+
+  @protected
   List<dynamic> api2wire_signed_tx(SignedTx raw) {
     return [api2wire_RTransaction(raw.inner)];
   }
@@ -344,6 +376,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
+  List<dynamic> api2wire_unsigned_nostr_event(UnsignedNostrEvent raw) {
+    return [api2wire_FrostsnapCoreNostrUnsignedEvent(raw.unsignedEvent)];
+  }
+
+  @protected
   List<dynamic> api2wire_unsigned_tx(UnsignedTx raw) {
     return [api2wire_FrostsnapCoreMessageTransactionSignTask(raw.task)];
   }
@@ -381,6 +418,15 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   Finalizer<PlatformPointer>
       get FrostsnapCoreMessageTransactionSignTaskFinalizer =>
           _FrostsnapCoreMessageTransactionSignTaskFinalizer;
+  late final Finalizer<PlatformPointer> _FrostsnapCoreNostrEventFinalizer =
+      Finalizer<PlatformPointer>(inner.drop_opaque_FrostsnapCoreNostrEvent);
+  Finalizer<PlatformPointer> get FrostsnapCoreNostrEventFinalizer =>
+      _FrostsnapCoreNostrEventFinalizer;
+  late final Finalizer<PlatformPointer>
+      _FrostsnapCoreNostrUnsignedEventFinalizer = Finalizer<PlatformPointer>(
+          inner.drop_opaque_FrostsnapCoreNostrUnsignedEvent);
+  Finalizer<PlatformPointer> get FrostsnapCoreNostrUnsignedEventFinalizer =>
+      _FrostsnapCoreNostrUnsignedEventFinalizer;
   late final Finalizer<PlatformPointer>
       _MutexBTreeMapKeyIdStreamSinkTxStateFinalizer =
       Finalizer<PlatformPointer>(
@@ -534,6 +580,22 @@ class NativeWasmModule implements WasmModule {
       List<dynamic> unsigned_tx,
       List<dynamic> devices);
 
+  external dynamic /* void */ wire_create_nostr_event__method__Coordinator(
+      NativePortType port_,
+      List<dynamic> that,
+      List<dynamic> key_id,
+      String event_content);
+
+  external dynamic /* void */ wire_start_signing_nostr__method__Coordinator(
+      NativePortType port_,
+      List<dynamic> that,
+      List<dynamic> key_id,
+      List<dynamic> unsigned_event,
+      List<dynamic> devices);
+
+  external dynamic /* String */ wire_get_npub__method__Coordinator(
+      List<dynamic> that, List<dynamic> key_id);
+
   external dynamic /* List<dynamic>? */
       wire_get_signing_state__method__Coordinator(List<dynamic> that);
 
@@ -611,6 +673,16 @@ class NativeWasmModule implements WasmModule {
 
   external dynamic /* Object */ wire_tx__method__UnsignedTx(List<dynamic> that);
 
+  external dynamic /* String */ wire_note_id__method__UnsignedNostrEvent(
+      List<dynamic> that);
+
+  external dynamic /* List<dynamic> */
+      wire_add_signature__method__UnsignedNostrEvent(
+          List<dynamic> that, List<dynamic> signature);
+
+  external dynamic /* void */ wire_broadcast__method__SignedNostrEvent(
+      NativePortType port_, List<dynamic> that);
+
   external dynamic /*  */ drop_opaque_ArcMutexVecPortDesc(ptr);
 
   external int /* *const c_void */ share_opaque_ArcMutexVecPortDesc(ptr);
@@ -633,6 +705,15 @@ class NativeWasmModule implements WasmModule {
 
   external int /* *const c_void */
       share_opaque_FrostsnapCoreMessageTransactionSignTask(ptr);
+
+  external dynamic /*  */ drop_opaque_FrostsnapCoreNostrEvent(ptr);
+
+  external int /* *const c_void */ share_opaque_FrostsnapCoreNostrEvent(ptr);
+
+  external dynamic /*  */ drop_opaque_FrostsnapCoreNostrUnsignedEvent(ptr);
+
+  external int /* *const c_void */ share_opaque_FrostsnapCoreNostrUnsignedEvent(
+      ptr);
 
   external dynamic /*  */ drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(ptr);
 
@@ -810,6 +891,24 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
       wasmModule.wire_start_signing_tx__method__Coordinator(
           port_, that, key_id, unsigned_tx, devices);
 
+  void wire_create_nostr_event__method__Coordinator(NativePortType port_,
+          List<dynamic> that, List<dynamic> key_id, String event_content) =>
+      wasmModule.wire_create_nostr_event__method__Coordinator(
+          port_, that, key_id, event_content);
+
+  void wire_start_signing_nostr__method__Coordinator(
+          NativePortType port_,
+          List<dynamic> that,
+          List<dynamic> key_id,
+          List<dynamic> unsigned_event,
+          List<dynamic> devices) =>
+      wasmModule.wire_start_signing_nostr__method__Coordinator(
+          port_, that, key_id, unsigned_event, devices);
+
+  dynamic /* String */ wire_get_npub__method__Coordinator(
+          List<dynamic> that, List<dynamic> key_id) =>
+      wasmModule.wire_get_npub__method__Coordinator(that, key_id);
+
   dynamic /* List<dynamic>? */ wire_get_signing_state__method__Coordinator(
           List<dynamic> that) =>
       wasmModule.wire_get_signing_state__method__Coordinator(that);
@@ -904,6 +1003,19 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   dynamic /* Object */ wire_tx__method__UnsignedTx(List<dynamic> that) =>
       wasmModule.wire_tx__method__UnsignedTx(that);
 
+  dynamic /* String */ wire_note_id__method__UnsignedNostrEvent(
+          List<dynamic> that) =>
+      wasmModule.wire_note_id__method__UnsignedNostrEvent(that);
+
+  dynamic /* List<dynamic> */ wire_add_signature__method__UnsignedNostrEvent(
+          List<dynamic> that, List<dynamic> signature) =>
+      wasmModule.wire_add_signature__method__UnsignedNostrEvent(
+          that, signature);
+
+  void wire_broadcast__method__SignedNostrEvent(
+          NativePortType port_, List<dynamic> that) =>
+      wasmModule.wire_broadcast__method__SignedNostrEvent(port_, that);
+
   dynamic /*  */ drop_opaque_ArcMutexVecPortDesc(ptr) =>
       wasmModule.drop_opaque_ArcMutexVecPortDesc(ptr);
 
@@ -934,6 +1046,18 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   int /* *const c_void */ share_opaque_FrostsnapCoreMessageTransactionSignTask(
           ptr) =>
       wasmModule.share_opaque_FrostsnapCoreMessageTransactionSignTask(ptr);
+
+  dynamic /*  */ drop_opaque_FrostsnapCoreNostrEvent(ptr) =>
+      wasmModule.drop_opaque_FrostsnapCoreNostrEvent(ptr);
+
+  int /* *const c_void */ share_opaque_FrostsnapCoreNostrEvent(ptr) =>
+      wasmModule.share_opaque_FrostsnapCoreNostrEvent(ptr);
+
+  dynamic /*  */ drop_opaque_FrostsnapCoreNostrUnsignedEvent(ptr) =>
+      wasmModule.drop_opaque_FrostsnapCoreNostrUnsignedEvent(ptr);
+
+  int /* *const c_void */ share_opaque_FrostsnapCoreNostrUnsignedEvent(ptr) =>
+      wasmModule.share_opaque_FrostsnapCoreNostrUnsignedEvent(ptr);
 
   dynamic /*  */ drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(ptr) =>
       wasmModule.drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(ptr);
