@@ -320,6 +320,9 @@ where
                         )),
                         None => self.display.print(format!("Confirm name '{}'?", new_name)),
                     },
+                    Prompt::DisplayBackupRequest(key_id) => self
+                        .display
+                        .print(format!("Display the backup for key {key_id}?")),
                 }
                 self.display.confirm_bar(0.0);
             }
@@ -332,6 +335,7 @@ where
             Workflow::Debug(string) => {
                 self.display.print(string);
             }
+            Workflow::DisplayBackup { backup } => self.display.print(format!("Backup: {}", backup)),
         }
 
         match self.upstream_connection_state {
@@ -423,6 +427,7 @@ where
                 Prompt::KeyGen(_) => UiEvent::KeyGenConfirm,
                 Prompt::Signing(_) => UiEvent::SigningConfirm,
                 Prompt::NewName { new_name, .. } => UiEvent::NameConfirm(new_name.clone()),
+                Prompt::DisplayBackupRequest(keyid) => UiEvent::BackupRequestConfirm(*keyid),
             };
             event = Some(ui_event);
 
