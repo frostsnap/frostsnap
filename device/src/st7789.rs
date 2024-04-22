@@ -177,50 +177,33 @@ where
             .unwrap();
     }
 
-    pub fn upstream_state(&mut self, color: Rgb565) {
+    pub fn upstream_state(&mut self, color: Rgb565, is_device: bool) {
         let arrow = Triangle::new(Point::new(20, 20), Point::new(30, 20), Point::new(25, 7));
 
-        arrow
-            .into_styled(
+        if is_device {
+            arrow.into_styled(
                 PrimitiveStyleBuilder::new()
-                    .fill_color(color)
+                    .stroke_color(color)
+                    .stroke_width(1)
                     .build(),
             )
-            // if upstream {
-            //     arrow.into_styled(
-            //         PrimitiveStyleBuilder::new()
-            //             .stroke_color(Rgb565::GREEN)
-            //             .stroke_width(1)
-            //             .build(),
-            //     )
-            // } else {
-            //     arrow.into_styled(
-            //         PrimitiveStyleBuilder::new()
-            //             .fill_color(Rgb565::GREEN)
-            //             .build(),
-            //     )
-            // }
-            .draw(&mut self.framebuf)
-            .unwrap();
-        self.flush().unwrap();
+        } else {
+            arrow.into_styled(PrimitiveStyleBuilder::new().fill_color(color).build())
+        }
+        .draw(&mut self.framebuf)
+        .unwrap();
     }
 
-    pub fn downstream_state(&mut self, downstream: bool) {
+    pub fn downstream_state(&mut self, color: Option<Rgb565>) {
         Triangle::new(Point::new(32, 7), Point::new(42, 7), Point::new(37, 20))
             .into_styled(
                 PrimitiveStyleBuilder::new()
-                    .stroke_color(if downstream {
-                        Rgb565::GREEN
-                    } else {
-                        // same color as background if no downstream
-                        Rgb565::new(4, 8, 17)
-                    })
+                    .stroke_color(color.unwrap_or(Rgb565::new(4, 8, 17) /* background color */))
                     .stroke_width(1)
                     .build(),
             )
             .draw(&mut self.framebuf)
             .unwrap();
-        self.flush().unwrap();
     }
 }
 

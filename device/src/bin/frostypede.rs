@@ -31,7 +31,7 @@ use frostsnap_device::{
     io::{set_upstream_port_mode_jtag, set_upstream_port_mode_uart},
     st7735::ST7735,
     ui::{BusyTask, Prompt, UiEvent, UserInteraction, WaitingFor, WaitingResponse, Workflow},
-    ConnectionState,
+    UpstreamConnectionState,
 };
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 use smart_leds::{brightness, colors, SmartLedsWrite, RGB};
@@ -147,7 +147,7 @@ fn main() -> ! {
         select_button,
         led,
         display,
-        downstream_connection_state: ConnectionState::Disconnected,
+        downstream_connection_state: UpstreamConnectionState::Disconnected,
         workflow: Default::default(),
         device_name: Default::default(),
         splash_state: AnimationState::new(&timer1, (600 * ticks_per_ms).into()),
@@ -177,7 +177,7 @@ where
     select_button: GpioPin<Input<PullUp>, 9>,
     led: SmartLedsAdapter<C, 25>,
     display: ST7735<'d, SPI>,
-    downstream_connection_state: ConnectionState,
+    downstream_connection_state: UpstreamConnectionState,
     workflow: Workflow,
     device_name: Option<String>,
     splash_state: AnimationState<'t, T>,
@@ -370,9 +370,9 @@ where
 
         self.display
             .set_top_left_square(match self.downstream_connection_state {
-                ConnectionState::Disconnected => Rgb565::RED,
-                ConnectionState::Connected => Rgb565::YELLOW,
-                ConnectionState::Established => Rgb565::GREEN,
+                UpstreamConnectionState::Disconnected => Rgb565::RED,
+                UpstreamConnectionState::Connected => Rgb565::YELLOW,
+                UpstreamConnectionState::Established => Rgb565::GREEN,
             });
 
         #[cfg(feature = "mem_debug")]
@@ -389,7 +389,7 @@ where
     C: TxChannel,
     T: timer::Instance,
 {
-    fn set_downstream_connection_state(&mut self, state: ConnectionState) {
+    fn set_downstream_connection_state(&mut self, state: UpstreamConnectionState) {
         if state != self.downstream_connection_state {
             self.changes = true;
             self.downstream_connection_state = state;

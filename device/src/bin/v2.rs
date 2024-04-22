@@ -27,7 +27,7 @@ use frostsnap_device::{
     io::{set_upstream_port_mode_jtag, set_upstream_port_mode_uart},
     st7789,
     ui::{BusyTask, Prompt, UiEvent, UserInteraction, WaitingFor, WaitingResponse, Workflow},
-    ConnectionState,
+    DownstreamConnectionState, UpstreamConnectionState,
 };
 use mipidsi::{
     models::{Model, ST7789},
@@ -40,7 +40,7 @@ use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
 
 fn init_heap() {
-    const HEAP_SIZE: usize = 172 * 1024;
+    const HEAP_SIZE: usize = 128 * 1024;
     static mut HEAP: MaybeUninit<[u8; HEAP_SIZE]> = MaybeUninit::uninit();
 
     unsafe {
@@ -61,11 +61,6 @@ fn init_heap() {
 
 #[entry]
 fn main() -> ! {
-    // First thing we do otherwise it appears as JTAG to the OS first and then it switches. If this
-    // is annoying maybe we can make a feature flag to do it later because it seems that espflash
-    // relies on the device being in jtag mode immediately after reseting it.
-    // set_upstream_port_mode_uart();
-
     init_heap();
     let peripherals = Peripherals::take();
     let system = peripherals.SYSTEM.split();
@@ -147,7 +142,8 @@ fn main() -> ! {
 
     let ui = FrostyUi {
         display,
-        downstream_connection_state: ConnectionState::Disconnected,
+        downstream_connection_state: DownstreamConnectionState::Disconnected,
+        upstream_connection_state: UpstreamConnectionState::Disconnected,
         workflow: Default::default(),
         device_name: Default::default(),
         splash_state: AnimationState::new(&timer1, (600 * ticks_per_ms).into()),
@@ -165,6 +161,7 @@ fn main() -> ! {
         ui,
         timer: timer0,
         downstream_detect,
+        upstream_detect,
     };
     run.run()
 }
@@ -174,7 +171,8 @@ where
     DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
 {
     display: st7789::Graphics<'t, DT>,
-    downstream_connection_state: ConnectionState,
+    downstream_connection_state: DownstreamConnectionState,
+    upstream_connection_state: UpstreamConnectionState,
     workflow: Workflow,
     device_name: Option<String>,
     splash_state: AnimationState<'t, T>,
@@ -336,12 +334,29 @@ where
             }
         }
 
-        self.display
-            .upstream_state(match self.downstream_connection_state {
-                ConnectionState::Disconnected => Rgb565::RED,
-                ConnectionState::Connected => Rgb565::YELLOW,
-                ConnectionState::Established => Rgb565::GREEN,
-            });
+        match self.upstream_connection_state {
+            UpstreamConnectionState::Disconnected => {
+                self.display.upstream_state(Rgb565::RED, false);
+            }
+            UpstreamConnectionState::Connected { is_device } => {
+                self.display.upstream_state(Rgb565::YELLOW, is_device);
+            }
+            UpstreamConnectionState::Established { is_device } => {
+                self.display.upstream_state(Rgb565::GREEN, is_device);
+            }
+        }
+
+        match self.downstream_connection_state {
+            DownstreamConnectionState::Disconnected => {
+                self.display.downstream_state(None);
+            }
+            DownstreamConnectionState::Connected => {
+                self.display.downstream_state(Some(Rgb565::YELLOW));
+            }
+            DownstreamConnectionState::Established => {
+                self.display.downstream_state(Some(Rgb565::GREEN));
+            }
+        }
 
         #[cfg(feature = "mem_debug")]
         self.display
@@ -356,10 +371,20 @@ where
     T: timer::Instance,
     DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
 {
-    fn set_downstream_connection_state(&mut self, state: ConnectionState) {
+    fn set_downstream_connection_state(
+        &mut self,
+        state: frostsnap_device::DownstreamConnectionState,
+    ) {
         if state != self.downstream_connection_state {
             self.changes = true;
             self.downstream_connection_state = state;
+        }
+    }
+
+    fn set_upstream_connection_state(&mut self, state: frostsnap_device::UpstreamConnectionState) {
+        if state != self.upstream_connection_state {
+            self.changes = true;
+            self.upstream_connection_state = state;
         }
     }
 
@@ -377,7 +402,6 @@ where
     }
 
     fn set_workflow(&mut self, workflow: Workflow) {
-        // panic!("{:?}", self.changes.clone());
         if let Workflow::Debug(_) = self.workflow {
             return;
         }

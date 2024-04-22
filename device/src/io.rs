@@ -44,6 +44,13 @@ impl<'a, T, U, D> SerialInterface<'a, T, U, D> {
     pub fn clone_buffer_to_vec(&self) -> Vec<u8> {
         self.ring_buffer.clone().into()
     }
+
+    pub fn is_jtag(&self) -> bool {
+        match self.io {
+            SerialIo::Uart(_) => false,
+            SerialIo::Jtag(_) => true,
+        }
+    }
 }
 
 impl<'a, T, U> SerialInterface<'a, T, U, Upstream> {
@@ -232,97 +239,6 @@ pub enum SerialInterfaceError {
     UartReadError,
     UartWriteError(uart::Error),
     JtagError,
-}
-
-pub struct UpstreamDetector<'a, T, U> {
-    timer: &'a Timer<T>,
-    switch_time: Option<u64>,
-    pub switched: bool,
-    state: DetectorState<'a, T, U>,
-    magic_bytes_period: u64,
-}
-
-pub enum DetectorState<'a, T, U> {
-    Unreachable,
-    Detected(SerialInterface<'a, T, U, Upstream>),
-    NotDetected {
-        jtag: SerialInterface<'a, T, U, Upstream>,
-        uart: SerialInterface<'a, T, U, Upstream>,
-    },
-}
-
-impl<'a, T, U> UpstreamDetector<'a, T, U> {
-    pub fn new(
-        uart: uart::Uart<'a, U>,
-        jtag: UsbSerialJtag<'a>,
-        timer: &'a Timer<T>,
-        magic_bytes_period: u64, // after how many ms is magic bytes sent again
-    ) -> Self {
-        Self {
-            timer,
-            switch_time: None,
-            switched: false,
-            state: DetectorState::NotDetected {
-                jtag: SerialInterface::new_jtag(jtag, timer),
-                uart: SerialInterface::new_uart(uart, timer),
-            },
-            magic_bytes_period,
-        }
-    }
-
-    pub fn looking_at_jtag(&self) -> bool {
-        self.switched
-    }
-
-    pub fn serial_interface(&mut self) -> Option<&mut SerialInterface<'a, T, U, Upstream>>
-    where
-        T: timer::Instance,
-        U: uart::Instance,
-    {
-        self.poll();
-        match &mut self.state {
-            DetectorState::Detected(serial_interface) => Some(serial_interface),
-            _ => None,
-        }
-    }
-
-    pub fn poll(&mut self)
-    where
-        T: timer::Instance,
-        U: uart::Instance,
-    {
-        let state = core::mem::replace(&mut self.state, DetectorState::Unreachable);
-
-        match state {
-            DetectorState::Unreachable => unreachable!(),
-            DetectorState::Detected(_) => {
-                self.state = state;
-            }
-            DetectorState::NotDetected { mut jtag, mut uart } => {
-                let now = self.timer.now();
-                let switch_time = self.switch_time.get_or_insert(
-                    // we assume we are in uart mode to start with
-                    now + 80_000 * (self.magic_bytes_period + self.magic_bytes_period / 2),
-                );
-
-                self.state = if now > *switch_time {
-                    if !self.switched {
-                        set_upstream_port_mode_jtag();
-                        self.switched = true;
-                    }
-                    if jtag.find_and_remove_magic_bytes() {
-                        DetectorState::Detected(jtag)
-                    } else {
-                        DetectorState::NotDetected { uart, jtag }
-                    }
-                } else if uart.find_and_remove_magic_bytes() {
-                    DetectorState::Detected(uart)
-                } else {
-                    DetectorState::NotDetected { uart, jtag }
-                };
-            }
-        };
-    }
 }
 
 pub fn set_upstream_port_mode_jtag() {

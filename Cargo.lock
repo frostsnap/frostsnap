@@ -432,16 +432,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7517c040926d7b02b111884aa089177db80878533127f7c1b480d852c5fb4112"
 
 [[package]]
-name = "display-interface-i2c"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4895cd4e54e5536ef370d7f1eec787aad8275dd8ad15815aebfa71dd847b4ebf"
-dependencies = [
- "display-interface",
- "embedded-hal 0.2.7",
-]
-
-[[package]]
 name = "display-interface-spi"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -658,18 +648,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "esp-hal-smartled"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16070db09f056cad1407a0abe1fe0606a3623295428de3e06e89d9a5033da5f3"
-dependencies = [
- "document-features",
- "esp-hal",
- "fugit",
- "smart-leds-trait",
-]
-
-[[package]]
 name = "esp-riscv-rt"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -871,15 +849,12 @@ dependencies = [
  "embedded-text",
  "esp-alloc",
  "esp-hal",
- "esp-hal-smartled",
  "esp-storage",
  "frostsnap_comms",
  "frostsnap_core",
  "mipidsi",
  "nb 1.1.0",
  "rand_chacha",
- "smart-leds",
- "ssd1306",
  "u8g2-fonts",
 ]
 
@@ -1463,15 +1438,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08c74e62047bb2de4ff487b251e4a92e24f48745648451635cec7d591162d9f"
 
 [[package]]
-name = "rgb"
-version = "0.8.37"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05aaa8004b64fd573fc9d002f4e632d51ad4f026c2b5ba95fcb6c2f32c2c47d8"
-dependencies = [
- "bytemuck",
-]
-
-[[package]]
 name = "ring"
 version = "0.17.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1730,43 +1696,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6ecd384b10a64542d77071bd64bd7b231f4ed5940fba55e98c3de13824cf3d7"
 
 [[package]]
-name = "smart-leds"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66df34e571fa9993fa6f99131a374d58ca3d694b75f9baac93458fe0d6057bf0"
-dependencies = [
- "smart-leds-trait",
-]
-
-[[package]]
-name = "smart-leds-trait"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0bc64ee02bbbf469603016df746c0ed224f263280b6ebb49b7ebadbff375c572"
-dependencies = [
- "rgb",
-]
-
-[[package]]
 name = "spin"
 version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
 dependencies = [
  "lock_api",
-]
-
-[[package]]
-name = "ssd1306"
-version = "0.8.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b37918f6137f2b58427181c3e10a731bef1061a9756b13ffbade64f21892acc6"
-dependencies = [
- "display-interface",
- "display-interface-i2c",
- "display-interface-spi",
- "embedded-graphics-core",
- "embedded-hal 0.2.7",
 ]
 
 [[package]]

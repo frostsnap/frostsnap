@@ -2,7 +2,8 @@ use alloc::string::String;
 use frostsnap_core::{KeyId, SessionHash};
 
 pub trait UserInteraction {
-    fn set_downstream_connection_state(&mut self, state: crate::ConnectionState);
+    fn set_downstream_connection_state(&mut self, state: crate::DownstreamConnectionState);
+    fn set_upstream_connection_state(&mut self, state: crate::UpstreamConnectionState);
 
     fn set_device_name(&mut self, name: String);
 
