@@ -141,7 +141,7 @@ where
                     break next_byte;
                 }
 
-                if (self.timer.now() - start_time) / 40_000 > 1_000 {
+                if (self.timer.now() - start_time) / 80_000 > 1_000 {
                     return Err(DecodeError::UnexpectedEnd {
                         additional: bytes.len() - i + 1,
                     });
@@ -302,7 +302,7 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
                 let now = self.timer.now();
                 let switch_time = self.switch_time.get_or_insert(
                     // we assume we are in uart mode to start with
-                    now + 40_000 * (self.magic_bytes_period + self.magic_bytes_period / 2),
+                    now + 80_000 * (self.magic_bytes_period + self.magic_bytes_period / 2),
                 );
 
                 self.state = if now > *switch_time {

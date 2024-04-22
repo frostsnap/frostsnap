@@ -40,7 +40,7 @@ use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
 
 fn init_heap() {
-    const HEAP_SIZE: usize = 128 * 1024;
+    const HEAP_SIZE: usize = 172 * 1024;
     static mut HEAP: MaybeUninit<[u8; HEAP_SIZE]> = MaybeUninit::uninit();
 
     unsafe {
@@ -69,7 +69,7 @@ fn main() -> ! {
     init_heap();
     let peripherals = Peripherals::take();
     let system = peripherals.SYSTEM.split();
-    let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
+    let clocks = ClockControl::max(system.clock_control).freeze();
 
     let timer_group0 = TimerGroup::new(peripherals.TIMG0, &clocks);
     let timer_group1 = TimerGroup::new(peripherals.TIMG1, &clocks);
@@ -101,11 +101,14 @@ fn main() -> ! {
         .with_orientation(Orientation::Portrait(false))
         .init(&mut delay, Some(io.pins.gpio6.into_push_pull_output())) // RES
         .unwrap();
-    let framearray = [Rgb565::BLACK; 240 * 280];
-    let framebuf = FrameBuf::new(framearray, 240, 280);
+    let mut framearray = [Rgb565::BLACK; 240 * 280];
+    let framebuf = FrameBuf::new(&mut framearray, 240, 280);
     let mut display = st7789::Graphics::new(display, framebuf).unwrap();
     display.clear(Rgb565::BLACK);
+    display.header("Frostsnap");
+    display.print("Starting...");
     display.flush().unwrap();
+    bl.set_high().unwrap();
 
     let upstream_jtag = UsbSerialJtag::new(peripherals.USB_DEVICE);
 
@@ -142,8 +145,6 @@ fn main() -> ! {
         ChaCha20Rng::from_seed(chacha_seed)
     };
 
-    bl.set_high().unwrap();
-
     let ui = FrostyUi {
         display,
         downstream_connection_state: ConnectionState::Disconnected,
@@ -156,7 +157,7 @@ fn main() -> ! {
     };
 
     // let _now1 = timer1.now();
-    esp32_run::Run {
+    let run = esp32_run::Run {
         upstream_jtag,
         upstream_uart,
         downstream_uart,
@@ -164,15 +165,15 @@ fn main() -> ! {
         ui,
         timer: timer0,
         downstream_detect,
-    }
-    .run()
+    };
+    run.run()
 }
 
 pub struct FrostyUi<'t, T, DT>
 where
     DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
 {
-    display: st7789::Graphics<DT>,
+    display: st7789::Graphics<'t, DT>,
     downstream_connection_state: ConnectionState,
     workflow: Workflow,
     device_name: Option<String>,
@@ -335,12 +336,12 @@ where
             }
         }
 
-        // self.display
-        //     .set_top_left_square(match self.downstream_connection_state {
-        //         ConnectionState::Disconnected => Rgb565::RED,
-        //         ConnectionState::Connected => Rgb565::YELLOW,
-        //         ConnectionState::Established => Rgb565::GREEN,
-        //     });
+        self.display
+            .upstream_state(match self.downstream_connection_state {
+                ConnectionState::Disconnected => Rgb565::RED,
+                ConnectionState::Connected => Rgb565::YELLOW,
+                ConnectionState::Established => Rgb565::GREEN,
+            });
 
         #[cfg(feature = "mem_debug")]
         self.display
@@ -376,6 +377,7 @@ where
     }
 
     fn set_workflow(&mut self, workflow: Workflow) {
+        // panic!("{:?}", self.changes.clone());
         if let Workflow::Debug(_) = self.workflow {
             return;
         }
@@ -386,13 +388,20 @@ where
     fn poll(&mut self) -> Option<UiEvent> {
         // keep the timer register fresh
         let _now = self.timer.now();
+
         let mut event = None;
         if !self.splash_state.is_finished() {
             self.render();
             return event;
         }
-
         if let Workflow::UserPrompt(prompt) = &self.workflow {
+            let ui_event = match prompt {
+                Prompt::KeyGen(_) => UiEvent::KeyGenConfirm,
+                Prompt::Signing(_) => UiEvent::SigningConfirm,
+                Prompt::NewName { new_name, .. } => UiEvent::NameConfirm(new_name.clone()),
+            };
+            event = Some(ui_event);
+
             // if self.select_button.is_low().unwrap() {
             //     match self.confirm_state.poll() {
             //         AnimationProgress::Progress(progress) => {
@@ -466,11 +475,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         .with_orientation(Orientation::Portrait(false))
         .init(&mut delay, Some(io.pins.gpio6.into_push_pull_output())) // RES
         .unwrap();
-    let framearray = [Rgb565::BLACK; 240 * 280];
-    let framebuf = FrameBuf::new(framearray, 240, 280);
-    let mut display = st7789::Graphics::new(display, framebuf).unwrap();
-    display.clear(Rgb565::BLACK);
-    display.error_print(panic_buf.as_str());
+    st7789::error_print(&mut display, panic_buf.as_str());
     bl.set_high().unwrap();
 
     loop {}

@@ -20,7 +20,7 @@ use frostsnap_core::{
 };
 use rand_chacha::rand_core::RngCore;
 
-pub struct Run<'a, UpstreamUart, DownstreamUart, DownstreamDetect, Ui, T, Rng> {
+pub struct Run<'a, UpstreamUart, DownstreamUart, DownstreamDetect, T, Rng, Ui> {
     pub upstream_jtag: UsbSerialJtag<'a>,
     pub upstream_uart: uart::Uart<'a, UpstreamUart>,
     pub downstream_uart: uart::Uart<'a, DownstreamUart>,
@@ -30,8 +30,8 @@ pub struct Run<'a, UpstreamUart, DownstreamUart, DownstreamDetect, Ui, T, Rng> {
     pub downstream_detect: DownstreamDetect,
 }
 
-impl<'a, UpstreamUart, DownstreamUart, DownstreamDetect, Ui, T, Rng>
-    Run<'a, UpstreamUart, DownstreamUart, DownstreamDetect, Ui, T, Rng>
+impl<'a, UpstreamUart, DownstreamUart, DownstreamDetect, T, Rng, Ui>
+    Run<'a, UpstreamUart, DownstreamUart, DownstreamDetect, T, Rng, Ui>
 where
     UpstreamUart: uart::Instance,
     DownstreamUart: uart::Instance,
@@ -55,6 +55,7 @@ where
         let mut flash = storage::DeviceStorage::new(flash);
 
         ui.set_workflow(ui::Workflow::BusyDoing(ui::BusyTask::Loading));
+
         let (mut signer, mut name) =
             match flash.read_header().expect("failed to read header from nvs") {
                 Some(header) => {
@@ -83,7 +84,6 @@ where
                     (signer, None)
                 }
             };
-
         let device_id = signer.device_id();
         if let Some(name) = &name {
             ui.set_device_name(name.into());
@@ -137,7 +137,6 @@ where
                     None => DeviceSendBody::NeedName,
                 });
             }
-
             let is_usb_connected_downstream = !downstream_detect.is_input_high();
 
             match (is_usb_connected_downstream, downstream_connection_state) {
@@ -148,7 +147,7 @@ where
                 (true, ConnectionState::Connected) => {
                     let now = timer.now();
                     if now > next_write_magic_bytes {
-                        next_write_magic_bytes = now + 40_000 * MAGIC_BYTES_PERIOD;
+                        next_write_magic_bytes = now + 80_000 * MAGIC_BYTES_PERIOD;
                         downstream_serial
                             .write_magic_bytes()
                             .expect("couldn't write magic bytes downstream");
@@ -203,11 +202,13 @@ where
             }
 
             match upstream_detector.serial_interface() {
-                None => ui.set_workflow(ui::Workflow::WaitingFor(
-                    ui::WaitingFor::LookingForUpstream {
-                        jtag: upstream_detector.looking_at_jtag(),
-                    },
-                )),
+                None => {
+                    ui.set_workflow(ui::Workflow::WaitingFor(
+                        ui::WaitingFor::LookingForUpstream {
+                            jtag: upstream_detector.looking_at_jtag(),
+                        },
+                    ));
+                }
                 Some(upstream_serial) => {
                     if !upstream_sent_magic_bytes {
                         upstream_serial
@@ -388,7 +389,6 @@ where
                     },
                 ));
             }
-
             // Handle message outbox to send: ToStorage, ToCoordinator, ToUser.
             // ⚠ pop_front ensures messages are sent in order. E.g. update nonce NVS before sending sig.
             while let Some(send) = outbox.pop_front() {

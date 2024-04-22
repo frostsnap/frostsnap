@@ -65,7 +65,7 @@ fn main() -> ! {
     init_heap();
     let peripherals = Peripherals::take();
     let system = peripherals.SYSTEM.split();
-    let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
+    let clocks = ClockControl::max(system.clock_control).freeze();
 
     let timer_group0 = TimerGroup::new(peripherals.TIMG0, &clocks);
     let timer_group1 = TimerGroup::new(peripherals.TIMG1, &clocks);

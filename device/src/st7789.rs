@@ -17,20 +17,23 @@ use embedded_text::{
 use mipidsi::Error;
 use u8g2_fonts::{fonts, U8g2TextStyle};
 
-pub struct Graphics<DT>
+pub struct Graphics<'d, DT>
 where
     DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
 {
     display: DT,
     textbox_style: TextBoxStyle,
-    framebuf: FrameBuf<Rgb565, [Rgb565; 67200]>,
+    framebuf: FrameBuf<Rgb565, &'d mut [Rgb565; 67200]>,
 }
 
-impl<DT> Graphics<DT>
+impl<'d, DT> Graphics<'d, DT>
 where
     DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
 {
-    pub fn new(display: DT, framebuf: FrameBuf<Rgb565, [Rgb565; 67200]>) -> Result<Self, Error> {
+    pub fn new(
+        display: DT,
+        framebuf: FrameBuf<Rgb565, &'d mut [Rgb565; 67200]>,
+    ) -> Result<Self, Error> {
         // println!("graphics init");
 
         let textbox_style = TextBoxStyleBuilder::new()
@@ -64,56 +67,8 @@ where
     pub fn clear(&mut self, c: Rgb565) {
         Rectangle::new(Point::new(0, 0), self.display.size())
             .into_styled(PrimitiveStyleBuilder::new().fill_color(c).build())
-            // .draw(&mut self.display)
-            .draw(&mut self.framebuf)
+            .draw(&mut self.display)
             .unwrap();
-    }
-
-    pub fn error_print(&mut self, error: impl AsRef<str>) {
-        let y = 25;
-        let header_area = Rectangle::new(Point::zero(), Size::new(self.display.size().width, y));
-        let _ = header_area
-            .into_styled(PrimitiveStyleBuilder::new().fill_color(Rgb565::RED).build())
-            .draw(&mut self.framebuf);
-
-        let header_charstyle = MonoTextStyle::new(&FONT_7X14, Rgb565::WHITE);
-        let textbox_style = TextBoxStyleBuilder::new()
-            .alignment(HorizontalAlignment::Center)
-            .build();
-        let _ = TextBox::with_textbox_style(
-            "ERROR",
-            Rectangle::new(Point::new(1, 9), Size::new(self.display.size().width, y)),
-            header_charstyle,
-            textbox_style,
-        )
-        .draw(&mut self.framebuf);
-
-        Line::new(Point::new(0, y as i32), Point::new(self.display.size().width as i32, y as i32))
-            .into_styled(PrimitiveStyle::with_stroke(Rgb565::CSS_DARK_GRAY, 1))
-            .draw(&mut self.framebuf)
-            .unwrap();
-
-        let _ = Rectangle::new(
-            Point::new(0, (y + 1) as i32),
-            Size::new(self.display.size().width, y + 1),
-        )
-        .into_styled(
-            PrimitiveStyleBuilder::new()
-                .fill_color(Rgb565::BLACK)
-                .build(),
-        )
-        .draw(&mut self.framebuf);
-
-        let character_style = MonoTextStyle::new(&FONT_7X14, Rgb565::WHITE);
-        let _ = TextBox::with_textbox_style(
-            error.as_ref(),
-            Rectangle::new(Point::new(1, (y + 1) as i32), self.display.size()),
-            character_style,
-            self.textbox_style,
-        )
-        .draw(&mut self.framebuf);
-
-        let _ = self.flush();
     }
 
     pub fn print(&mut self, str: impl AsRef<str>) {
@@ -163,7 +118,7 @@ where
         TextBox::with_textbox_style(
             device_label.as_ref(),
             Rectangle::new(
-                Point::new(10, 5),
+                Point::new(10, 7),
                 Size::new(self.display.size().width - 20, y),
             ),
             U8g2TextStyle::new(fonts::u8g2_font_profont17_mf, Rgb565::WHITE),
@@ -222,25 +177,31 @@ where
             .unwrap();
     }
 
-    pub fn upstream_state(&mut self, upstream: bool) {
+    pub fn upstream_state(&mut self, color: Rgb565) {
         let arrow = Triangle::new(Point::new(20, 20), Point::new(30, 20), Point::new(25, 7));
 
-        if upstream {
-            arrow.into_styled(
+        arrow
+            .into_styled(
                 PrimitiveStyleBuilder::new()
-                    .stroke_color(Rgb565::GREEN)
-                    .stroke_width(1)
+                    .fill_color(color)
                     .build(),
             )
-        } else {
-            arrow.into_styled(
-                PrimitiveStyleBuilder::new()
-                    .fill_color(Rgb565::GREEN)
-                    .build(),
-            )
-        }
-        .draw(&mut self.framebuf)
-        .unwrap();
+            // if upstream {
+            //     arrow.into_styled(
+            //         PrimitiveStyleBuilder::new()
+            //             .stroke_color(Rgb565::GREEN)
+            //             .stroke_width(1)
+            //             .build(),
+            //     )
+            // } else {
+            //     arrow.into_styled(
+            //         PrimitiveStyleBuilder::new()
+            //             .fill_color(Rgb565::GREEN)
+            //             .build(),
+            //     )
+            // }
+            .draw(&mut self.framebuf)
+            .unwrap();
         self.flush().unwrap();
     }
 
@@ -261,4 +222,57 @@ where
             .unwrap();
         self.flush().unwrap();
     }
+}
+
+pub fn error_print<DT>(display: &mut DT, error: impl AsRef<str>)
+where
+    DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
+{
+    let y = 25;
+    let header_area = Rectangle::new(Point::zero(), Size::new(display.size().width, y));
+    let _ = header_area
+        .into_styled(PrimitiveStyleBuilder::new().fill_color(Rgb565::RED).build())
+        .draw(display);
+
+    let header_charstyle = MonoTextStyle::new(&FONT_7X14, Rgb565::WHITE);
+    let textbox_style = TextBoxStyleBuilder::new()
+        .alignment(HorizontalAlignment::Center)
+        .build();
+    let _ = TextBox::with_textbox_style(
+        "ERROR",
+        Rectangle::new(Point::new(1, 9), Size::new(display.size().width, y)),
+        header_charstyle,
+        textbox_style,
+    )
+    .draw(display);
+
+    Line::new(
+        Point::new(0, y as i32),
+        Point::new(display.size().width as i32, y as i32),
+    )
+    .into_styled(PrimitiveStyle::with_stroke(Rgb565::CSS_DARK_GRAY, 1))
+    .draw(display)
+    .unwrap();
+
+    let _ = Rectangle::new(
+        Point::new(0, (y + 1) as i32),
+        Size::new(display.size().width, display.size().height),
+    )
+    .into_styled(
+        PrimitiveStyleBuilder::new()
+            .fill_color(Rgb565::BLACK)
+            .build(),
+    )
+    .draw(display);
+
+    let character_style = MonoTextStyle::new(&FONT_7X14, Rgb565::WHITE);
+    let textbox_style = TextBoxStyleBuilder::new().build();
+
+    let _ = TextBox::with_textbox_style(
+        error.as_ref(),
+        Rectangle::new(Point::new(1, (y + 1) as i32), display.size()),
+        character_style,
+        textbox_style,
+    )
+    .draw(display);
 }
