@@ -13,26 +13,25 @@ use crate::alloc::string::String;
 use core::mem::MaybeUninit;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use embedded_graphics_framebuf::FrameBuf;
-use esp_backtrace as _;
-use esp_hal_smartled::{smartLedAdapter, SmartLedsAdapter};
-use frostsnap_core::schnorr_fun::fun::hex;
-use frostsnap_device::{
-    esp32_run,
-    io::{set_upstream_port_mode_jtag, set_upstream_port_mode_uart},
-    st7735::{self, ST7735},
-    ui::{BusyTask, Prompt, UiEvent, UserInteraction, WaitingFor, WaitingResponse, Workflow},
-    ConnectionState,
-};
-use hal::{
+use esp_hal::{
     clock::ClockControl,
     gpio::{GpioPin, Input, PullUp},
     peripherals::Peripherals,
     prelude::*,
     rmt::{Rmt, TxChannel},
     spi,
-    timer::{Timer, TimerGroup},
+    timer::{self, Timer, TimerGroup},
     uart::{self, Uart},
-    Delay, Rtc, UsbSerialJtag, IO,
+    Delay, Rng, UsbSerialJtag, IO,
+};
+use esp_hal_smartled::{smartLedBuffer, SmartLedsAdapter};
+use frostsnap_core::schnorr_fun::fun::hex;
+use frostsnap_device::{
+    esp32_run,
+    io::{set_upstream_port_mode_jtag, set_upstream_port_mode_uart},
+    st7735::ST7735,
+    ui::{BusyTask, Prompt, UiEvent, UserInteraction, WaitingFor, WaitingResponse, Workflow},
+    ConnectionState,
 };
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 use smart_leds::{brightness, colors, SmartLedsWrite, RGB};
@@ -41,7 +40,7 @@ use smart_leds::{brightness, colors, SmartLedsWrite, RGB};
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
 
 fn init_heap() {
-    const HEAP_SIZE: usize = 300 * 1024;
+    const HEAP_SIZE: usize = 128 * 1024;
     static mut HEAP: MaybeUninit<[u8; HEAP_SIZE]> = MaybeUninit::uninit();
 
     unsafe {
@@ -68,21 +67,12 @@ fn main() -> ! {
     let system = peripherals.SYSTEM.split();
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
-    // Disable the RTC and TIMG watchdog timers
-    let mut rtc = Rtc::new(peripherals.RTC_CNTL);
     let timer_group0 = TimerGroup::new(peripherals.TIMG0, &clocks);
-    let mut wdt0 = timer_group0.wdt;
     let timer_group1 = TimerGroup::new(peripherals.TIMG1, &clocks);
-    let mut wdt1 = timer_group1.wdt;
     let mut timer0 = timer_group0.timer0;
     timer0.start(1u64.secs());
     let mut timer1 = timer_group1.timer0;
     timer1.start(1u64.secs());
-
-    rtc.swd.disable();
-    rtc.rwdt.disable();
-    wdt0.disable();
-    wdt1.disable();
 
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
 
@@ -99,15 +89,12 @@ fn main() -> ! {
     bl.set_low().unwrap();
     let framearray = [Rgb565::WHITE; 160 * 80];
     let framebuf = FrameBuf::new(framearray, 160, 80);
-    let display = st7735::ST7735::new(
-        // &mut bl,
+    let display = ST7735::new(
         io.pins.gpio6.into_push_pull_output().into(),
         io.pins.gpio10.into_push_pull_output().into(),
         peripherals.SPI2,
         io.pins.gpio2,
-        io.pins.gpio7,
         io.pins.gpio3,
-        io.pins.gpio12,
         &clocks,
         framebuf,
     )
@@ -115,7 +102,8 @@ fn main() -> ! {
 
     // RGB LED
     let rmt = Rmt::new(peripherals.RMT, 80u32.MHz(), &clocks).unwrap();
-    let mut led = <smartLedAdapter!(0, 1)>::new(rmt.channel0, io.pins.gpio0);
+    let rmt_buffer = smartLedBuffer!(1);
+    let mut led = SmartLedsAdapter::new(rmt.channel0, io.pins.gpio0, rmt_buffer, &clocks);
     led.write(brightness([colors::BLACK].iter().cloned(), 0))
         .unwrap();
 
@@ -130,7 +118,7 @@ fn main() -> ! {
             io.pins.gpio18.into_push_pull_output(),
             io.pins.gpio19.into_floating_input(),
         );
-        hal::Uart::new_with_config(peripherals.UART1, serial_conf, Some(txrx1), &clocks)
+        Uart::new_with_config(peripherals.UART1, serial_conf, Some(txrx1), &clocks)
     };
 
     let downstream_uart = {
@@ -145,7 +133,7 @@ fn main() -> ! {
         Uart::new_with_config(peripherals.UART0, serial_conf, Some(txrx0), &clocks)
     };
 
-    let mut hal_rng = hal::Rng::new(peripherals.RNG);
+    let mut hal_rng = Rng::new(peripherals.RNG);
     delay.delay_ms(600u32); // To wait for ESP32c3 timers to stop being bonkers
     bl.set_high().unwrap();
 
@@ -184,10 +172,10 @@ fn main() -> ! {
 pub struct FrostyUi<'t, 'd, C, T, SPI>
 where
     SPI: spi::master::Instance,
-    C: TxChannel<0>,
+    C: TxChannel,
 {
     select_button: GpioPin<Input<PullUp>, 9>,
-    led: SmartLedsAdapter<C, 0, 25>,
+    led: SmartLedsAdapter<C, 25>,
     display: ST7735<'d, SPI>,
     downstream_connection_state: ConnectionState,
     workflow: Workflow,
@@ -207,7 +195,7 @@ struct AnimationState<'t, T> {
 
 impl<'t, T> AnimationState<'t, T>
 where
-    T: hal::timer::Instance,
+    T: timer::Instance,
 {
     pub fn new(timer: &'t Timer<T>, duration_ticks: u64) -> Self {
         Self {
@@ -260,8 +248,8 @@ pub enum AnimationProgress {
 impl<'t, 'd, C, T, SPI> FrostyUi<'t, 'd, C, T, SPI>
 where
     SPI: spi::master::Instance,
-    C: TxChannel<0>,
-    T: hal::timer::Instance,
+    C: TxChannel,
+    T: timer::Instance,
 {
     fn render(&mut self) {
         let splash_progress = self.splash_state.poll();
@@ -271,14 +259,13 @@ where
                 return;
             }
             AnimationProgress::FinalTick => {
-                self.display.clear(Rgb565::BLACK).unwrap();
+                self.display.clear(Rgb565::BLACK);
             }
             AnimationProgress::Done => { /* splash is done no need to anything */ }
         }
 
         self.display
-            .header(self.device_name.as_deref().unwrap_or("New Device"))
-            .unwrap();
+            .header(self.device_name.as_deref().unwrap_or("New Device"));
 
         match &self.workflow {
             Workflow::None => {
@@ -292,12 +279,8 @@ where
             } => match existing_name {
                 Some(existing_name) => self
                     .display
-                    .print(&format!("Renaming {}:\n> {}", existing_name, current_name))
-                    .unwrap(),
-                None => self
-                    .display
-                    .print(format!("Naming:\n> {}", current_name))
-                    .unwrap(),
+                    .print(&format!("Renaming {}:\n> {}", existing_name, current_name)),
+                None => self.display.print(format!("Naming:\n> {}", current_name)),
             },
             Workflow::WaitingFor(waiting_for) => match waiting_for {
                 WaitingFor::LookingForUpstream { jtag } => {
@@ -306,18 +289,16 @@ where
                         .unwrap();
 
                     if *jtag {
-                        self.display
-                            .print("Looking for coordinator USB host")
-                            .unwrap();
+                        self.display.print("Looking for coordinator USB host");
                     } else {
-                        self.display.print("Looking for upstream device").unwrap();
+                        self.display.print("Looking for upstream device");
                     }
                 }
                 WaitingFor::CoordinatorAnnounceAck => {
                     self.led
                         .write(brightness([colors::PURPLE].iter().cloned(), 10))
                         .unwrap();
-                    self.display.print("Waiting for FrostSnap app").unwrap();
+                    self.display.print("Waiting for FrostSnap app");
                 }
                 WaitingFor::CoordinatorInstruction { completed_task: _ } => {
                     self.led
@@ -330,18 +311,16 @@ where
                             body.push_str(&format!("NAME: {}\n", label));
 
                             body.push_str("Ready..");
-                            self.display.print(body).unwrap();
+                            self.display.print(body);
                         }
                         None => {
-                            self.display.print("Press 'New Device'").unwrap();
+                            self.display.print("Press 'New Device'");
                         }
                     };
                 }
                 WaitingFor::CoordinatorResponse(response) => match response {
                     WaitingResponse::KeyGen => {
-                        self.display
-                            .print("Finished!\nWaiting for coordinator..")
-                            .unwrap();
+                        self.display.print("Finished!\nWaiting for coordinator..");
                     }
                 },
             },
@@ -352,28 +331,21 @@ where
 
                 match prompt {
                     Prompt::Signing(task) => {
-                        self.display.print(format!("Sign {}", task)).unwrap();
+                        self.display.print(format!("Sign {}", task));
                     }
                     Prompt::KeyGen(session_hash) => {
                         self.display
-                            .print(format!("Ok {}", hex::encode(session_hash)))
-                            .unwrap();
+                            .print(format!("Ok {}", hex::encode(session_hash)));
                     }
                     Prompt::NewName { old_name, new_name } => match old_name {
-                        Some(old_name) => self
-                            .display
-                            .print(format!(
-                                "Rename this device from '{}' to '{}'?",
-                                old_name, new_name
-                            ))
-                            .unwrap(),
-                        None => self
-                            .display
-                            .print(format!("Confirm name '{}'?", new_name))
-                            .unwrap(),
+                        Some(old_name) => self.display.print(format!(
+                            "Rename this device from '{}' to '{}'?",
+                            old_name, new_name
+                        )),
+                        None => self.display.print(format!("Confirm name '{}'?", new_name)),
                     },
                 }
-                self.display.confirm_bar(0.0).unwrap();
+                self.display.confirm_bar(0.0);
             }
             Workflow::BusyDoing(task) => {
                 self.led
@@ -381,14 +353,14 @@ where
                     .unwrap();
 
                 match task {
-                    BusyTask::KeyGen => self.display.print("Generating key..").unwrap(),
-                    BusyTask::Signing => self.display.print("Signing..").unwrap(),
-                    BusyTask::VerifyingShare => self.display.print("Verifying key..").unwrap(),
-                    BusyTask::Loading => self.display.print("loading..").unwrap(),
+                    BusyTask::KeyGen => self.display.print("Generating key.."),
+                    BusyTask::Signing => self.display.print("Signing.."),
+                    BusyTask::VerifyingShare => self.display.print("Verifying key.."),
+                    BusyTask::Loading => self.display.print("loading.."),
                 }
             }
             Workflow::Debug(string) => {
-                self.display.print(string).unwrap();
+                self.display.print(string);
             }
         }
 
@@ -410,8 +382,8 @@ where
 impl<'d, 't, C, T, SPI> UserInteraction for FrostyUi<'d, 't, C, T, SPI>
 where
     SPI: spi::master::Instance,
-    C: TxChannel<0>,
-    T: hal::timer::Instance,
+    C: TxChannel,
+    T: timer::Instance,
 {
     fn set_downstream_connection_state(&mut self, state: ConnectionState) {
         if state != self.downstream_connection_state {
@@ -460,7 +432,7 @@ where
                                 30,
                             ))
                             .unwrap();
-                        self.display.confirm_bar(progress).unwrap();
+                        self.display.confirm_bar(progress);
                     }
                     AnimationProgress::FinalTick => {
                         self.led
@@ -505,13 +477,11 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     // Disable the RTC and TIMG watchdog timers
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
 
-    // RGB LED
-    // White: found coordinator
-    // Blue: found another device upstream
-    let rmt = Rmt::new(peripherals.RMT, 80u32.MHz(), &clocks).unwrap();
-    let mut led = <smartLedAdapter!(0, 1)>::new(rmt.channel0, io.pins.gpio0);
-    led.write(brightness([colors::RED].iter().cloned(), 10))
-        .unwrap();
+    if let Ok(rmt) = Rmt::new(peripherals.RMT, 80u32.MHz(), &clocks) {
+        let rmt_buffer = smartLedBuffer!(1);
+        let mut led = SmartLedsAdapter::new(rmt.channel0, io.pins.gpio0, rmt_buffer, &clocks);
+        let _ = led.write(brightness([colors::RED].iter().cloned(), 10));
+    }
 
     let mut panic_buf = frostsnap_device::panic::PanicBuffer::<512>::default();
 
@@ -529,19 +499,16 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     let framearray = [Rgb565::WHITE; 160 * 80];
     let framebuf = FrameBuf::new(framearray, 160, 80);
     // let mut bl = io.pins.gpio11.into_push_pull_output();
-    if let Ok(mut display) = st7735::ST7735::new(
-        // &mut bl,
+    if let Ok(mut display) = ST7735::new(
         io.pins.gpio6.into_push_pull_output().into(),
         io.pins.gpio10.into_push_pull_output().into(),
         peripherals.SPI2,
         io.pins.gpio2,
-        io.pins.gpio7,
         io.pins.gpio3,
-        io.pins.gpio12,
         &clocks,
         framebuf,
     ) {
-        let _ = display.error_print(panic_buf.as_str());
+        display.error_print(panic_buf.as_str());
     }
 
     loop {}

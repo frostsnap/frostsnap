@@ -1,5 +1,4 @@
 // Air101 ST7735 driver
-
 use display_interface_spi::SPIInterfaceNoCS;
 use embedded_graphics::{
     mono_font::{
@@ -16,9 +15,9 @@ use embedded_text::{
     style::{TextBoxStyle, TextBoxStyleBuilder},
     TextBox,
 };
-use hal::{
+use esp_hal::{
     clock::Clocks,
-    gpio::{AnyPin, InputPin, Output, OutputPin, PushPull},
+    gpio::{AnyPin, Output, OutputPin, PushPull},
     peripheral::Peripheral,
     prelude::*,
     spi::{
@@ -28,7 +27,7 @@ use hal::{
     Delay,
 };
 use mipidsi::ColorInversion;
-use mipidsi::{models::ST7735s, Display, Error};
+use mipidsi::{models::ST7735s, Display};
 
 pub type SpiInterface<'d, SPI> =
     SPIInterfaceNoCS<Spi<'d, SPI, FullDuplexMode>, AnyPin<Output<PushPull>>>;
@@ -37,7 +36,6 @@ pub struct ST7735<'d, SPI>
 where
     SPI: Instance,
 {
-    // pub bl: &'d mut GpioPin<Output<PushPull>, RA, IRA, InputOutputPinType, Gpio11Signals, 11>,
     pub display: Display<SpiInterface<'d, SPI>, ST7735s, AnyPin<Output<PushPull>>>,
     character_style: MonoTextStyle<'d, Rgb565>,
     textbox_style: TextBoxStyle,
@@ -49,28 +47,18 @@ where
     SPI: Instance,
 {
     #[allow(clippy::too_many_arguments)]
-    pub fn new<SCK: OutputPin, MOSI: OutputPin, MISO: InputPin, CS: OutputPin>(
-        // bl: &'d mut GpioPin<Output<PushPull>, RA, IRA, InputOutputPinType, Gpio11Signals, 11>,
+    pub fn new<SCK: OutputPin, MOSI: OutputPin>(
         dc: AnyPin<Output<PushPull>>,
         rst: AnyPin<Output<PushPull>>,
         spi: impl Peripheral<P = SPI> + 'd,
         sck: impl Peripheral<P = SCK> + 'd,
-        cs: impl Peripheral<P = CS> + 'd,
         mosi: impl Peripheral<P = MOSI> + 'd,
-        miso: impl Peripheral<P = MISO> + 'd,
         clocks: &Clocks,
         framebuf: FrameBuf<Rgb565, [Rgb565; 12800]>,
-    ) -> Result<Self, Error> {
-        let spi = Spi::new(
-            spi,
-            sck,
-            mosi,
-            miso,
-            cs,
-            16u32.MHz(),
-            SpiMode::Mode0,
-            clocks,
-        );
+    ) -> Result<Self, mipidsi::Error> {
+        let spi = Spi::new(spi, 16u32.MHz(), SpiMode::Mode0, clocks)
+            .with_sck(sck)
+            .with_mosi(mosi);
 
         let di = SPIInterfaceNoCS::new(spi, dc);
         let mut delay = Delay::new(clocks);
@@ -94,11 +82,9 @@ where
             .with_invert_colors(INVERT_COLORS)
             .with_color_order(mipidsi::options::ColorOrder::Bgr)
             .init(&mut delay, Some(rst))
-            .unwrap();
+            .expect("infallible");
 
-        display
-            .set_orientation(mipidsi::options::Orientation::Landscape(true))
-            .unwrap();
+        display.set_orientation(mipidsi::options::Orientation::Landscape(true))?;
 
         let character_style = MonoTextStyle::new(&FONT_7X14, Rgb565::WHITE);
         let textbox_style = TextBoxStyleBuilder::new()
@@ -114,69 +100,61 @@ where
             framebuf,
         };
 
-        _self.clear(Rgb565::BLACK).unwrap();
-        _self.flush().unwrap();
+        _self.clear(Rgb565::BLACK);
+        _self.flush()?;
 
         Ok(_self)
     }
 
-    pub fn flush(&mut self) -> Result<(), Error> {
+    pub fn flush(&mut self) -> Result<(), mipidsi::Error> {
         let area = Rectangle::new(Point::new(0, 0), self.framebuf.size());
-        self.display
-            .fill_contiguous(&area, self.framebuf.data)
-            .unwrap();
+        self.display.fill_contiguous(&area, self.framebuf.data)?;
         Ok(())
     }
 
-    pub fn error_print(&mut self, error: impl AsRef<str>) -> Result<(), Error> {
+    pub fn error_print(&mut self, error: impl AsRef<str>) {
         let header_area = Rectangle::new(Point::zero(), Size::new(160, 10));
-        header_area
+        let _ = header_area
             .into_styled(PrimitiveStyleBuilder::new().fill_color(Rgb565::RED).build())
-            .draw(&mut self.framebuf)
-            .unwrap();
+            .draw(&mut self.framebuf);
 
         let header_charstyle = MonoTextStyle::new(&FONT_5X8, Rgb565::WHITE);
-        TextBox::with_textbox_style(
+        let _ = TextBox::with_textbox_style(
             "ERROR",
             Rectangle::new(Point::new(1, 1), Size::new(80, 10)),
             header_charstyle,
             self.textbox_style,
         )
-        .draw(&mut self.framebuf)
-        .unwrap();
+        .draw(&mut self.framebuf);
 
         Line::new(Point::new(0, 10), Point::new(160, 10))
             .into_styled(PrimitiveStyle::with_stroke(Rgb565::CSS_DARK_GRAY, 1))
             .draw(&mut self.framebuf)
             .unwrap();
 
-        Rectangle::new(Point::new(0, 11), Size::new(160, 80))
+        let _ = Rectangle::new(Point::new(0, 11), Size::new(160, 80))
             .into_styled(
                 PrimitiveStyleBuilder::new()
                     .fill_color(Rgb565::BLACK)
                     .build(),
             )
-            .draw(&mut self.framebuf)
-            .unwrap();
+            .draw(&mut self.framebuf);
 
         let character_style = MonoTextStyle::new(&FONT_5X8, Rgb565::WHITE);
-        TextBox::with_textbox_style(
+        let _ = TextBox::with_textbox_style(
             error.as_ref(),
             Rectangle::new(Point::new(1, 11), Size::new(160, 80)),
             character_style,
             self.textbox_style,
         )
-        .draw(&mut self.framebuf)
-        .unwrap();
+        .draw(&mut self.framebuf);
 
-        self.flush().unwrap();
-
-        Ok(())
+        let _ = self.flush();
     }
 
-    pub fn splash_screen(&mut self, percent: f32) -> Result<(), Error> {
+    pub fn splash_screen(&mut self, percent: f32) -> Result<(), mipidsi::Error> {
         let incomplete = 1.0 - percent;
-        self.clear(Rgb565::BLACK).unwrap();
+        self.clear(Rgb565::BLACK);
 
         TextBox::with_textbox_style(
             "Frost",
@@ -209,8 +187,7 @@ where
         .draw(&mut self.framebuf)
         .unwrap();
 
-        self.flush().unwrap();
-        Ok(())
+        self.flush()
     }
 
     pub fn set_top_left_square(&mut self, color: Rgb565) {
@@ -226,7 +203,7 @@ where
             .unwrap();
     }
 
-    pub fn header(&mut self, device_label: impl AsRef<str>) -> Result<(), Error> {
+    pub fn header(&mut self, device_label: impl AsRef<str>) {
         Rectangle::new(Point::zero(), Size::new(160, 10))
             .into_styled(
                 PrimitiveStyleBuilder::new()
@@ -253,11 +230,9 @@ where
             .into_styled(PrimitiveStyle::with_stroke(Rgb565::CSS_DARK_GRAY, 1))
             .draw(&mut self.framebuf)
             .unwrap();
-
-        Ok(())
     }
 
-    pub fn print(&mut self, str: impl AsRef<str>) -> Result<(), Error> {
+    pub fn print(&mut self, str: impl AsRef<str>) {
         Rectangle::new(Point::new(0, 11), Size::new(160, 80))
             .into_styled(
                 PrimitiveStyleBuilder::new()
@@ -275,11 +250,9 @@ where
         )
         .draw(&mut self.framebuf)
         .unwrap();
-
-        Ok(())
     }
 
-    pub fn confirm_bar(&mut self, percent: f32) -> Result<(), Error> {
+    pub fn confirm_bar(&mut self, percent: f32) {
         let y = 78;
         if percent == 0.0 {
             Line::new(Point::new(0, y), Point::new(160, y))
@@ -298,17 +271,13 @@ where
                 .draw(&mut self.display)
                 .unwrap();
         }
-
-        Ok(())
     }
 
-    pub fn clear(&mut self, c: Rgb565) -> Result<(), Error> {
+    pub fn clear(&mut self, c: Rgb565) {
         Rectangle::new(Point::new(0, 0), Size::new(160, 80))
             .into_styled(PrimitiveStyleBuilder::new().fill_color(c).build())
             .draw(&mut self.framebuf)
             .unwrap();
-
-        Ok(())
     }
 
     pub fn set_mem_debug(&mut self, used: usize, free: usize) {

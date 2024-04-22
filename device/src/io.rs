@@ -9,11 +9,16 @@ use bincode::de::read::Reader;
 use bincode::enc::write::Writer;
 use bincode::error::DecodeError;
 use bincode::error::EncodeError;
+use esp_hal::{
+    peripherals::USB_DEVICE,
+    prelude::*,
+    timer::{self, Timer},
+    uart, UsbSerialJtag,
+};
 use frostsnap_comms::Direction;
 use frostsnap_comms::MagicBytes;
 use frostsnap_comms::ReceiveSerial;
 use frostsnap_comms::Upstream;
-use hal::{peripherals::USB_DEVICE, prelude::*, timer::Timer, uart, UsbSerialJtag};
 
 const RING_BUFFER_SIZE: usize = 2_usize.pow(8); // i.e. 256 bytes
 
@@ -56,7 +61,7 @@ impl<'a, T, U> SerialInterface<'a, T, U, Upstream> {
 impl<'a, T, U, D> SerialInterface<'a, T, U, D>
 where
     U: uart::Instance,
-    T: hal::timer::Instance,
+    T: timer::Instance,
     D: Direction,
 {
     fn fill_buffer(&mut self) {
@@ -120,7 +125,7 @@ where
 impl<'a, T, U, D> Reader for SerialInterface<'a, T, U, D>
 where
     U: uart::Instance,
-    T: hal::timer::Instance,
+    T: timer::Instance,
     D: Direction,
 {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), DecodeError> {
@@ -271,7 +276,7 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
 
     pub fn serial_interface(&mut self) -> Option<&mut SerialInterface<'a, T, U, Upstream>>
     where
-        T: hal::timer::Instance,
+        T: timer::Instance,
         U: uart::Instance,
     {
         self.poll();
@@ -283,7 +288,7 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
 
     pub fn poll(&mut self)
     where
-        T: hal::timer::Instance,
+        T: timer::Instance,
         U: uart::Instance,
     {
         let state = core::mem::replace(&mut self.state, DetectorState::Unreachable);
@@ -322,12 +327,14 @@ impl<'a, T, U> UpstreamDetector<'a, T, U> {
 
 pub fn set_upstream_port_mode_jtag() {
     let usb_device = unsafe { &*USB_DEVICE::PTR };
-    usb_device.conf0.modify(|_, w| w.usb_pad_enable().set_bit());
+    usb_device
+        .conf0()
+        .modify(|_, w| w.usb_pad_enable().set_bit());
 }
 
 pub fn set_upstream_port_mode_uart() {
     let usb_device = unsafe { &*USB_DEVICE::PTR };
     usb_device
-        .conf0
+        .conf0()
         .modify(|_, w| w.usb_pad_enable().clear_bit());
 }
