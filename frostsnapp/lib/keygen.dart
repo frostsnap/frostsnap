@@ -7,7 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:frostsnapp/animated_check.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_id_ext.dart';
-import 'package:frostsnapp/device_list_widget.dart';
+import 'package:frostsnapp/device_list.dart';
+import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/device_setup.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/hex.dart';
@@ -89,6 +90,8 @@ class _DoKeyGenButtonState extends State<DoKeyGenButton> {
                   }));
                   if (keyId != null) {
                     widget.onSuccess?.call(keyId);
+                  } else {
+                    coord.cancelAll();
                   }
                 },
           child: const Text('Generate Key',
@@ -126,7 +129,6 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
     }).then((_) {
       if (mounted) {
         Navigator.pop(context);
-        coord.cancelAll();
       }
       return null;
     });
@@ -183,37 +185,32 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      onPopInvoked: (didPop) async {
-        coord.cancelAll();
-      },
-      child: Scaffold(
-          appBar: AppBar(
-            title: const Text('Key Generation'),
-          ),
-          body: Center(
-              child:
-                  Column(mainAxisAlignment: MainAxisAlignment.start, children: [
-            MaybeExpandedVertical(child: DeviceListContainer(
-                child: DeviceListWithIcons(iconAssigner: (context, id) {
-              if (widget.devices.contains(id)) {
-                final Widget icon;
-                if (gotShares.contains(id)) {
-                  icon = AnimatedCheckCircle();
-                } else {
-                  // the aspect ratio stops the circular progress indicator from stretching itself
-                  icon = const AspectRatio(
-                      aspectRatio: 1, child: CircularProgressIndicator());
-                }
-                return (null, icon);
+    return Scaffold(
+        appBar: AppBar(
+          title: const Text('Key Generation'),
+        ),
+        body: Center(
+            child:
+                Column(mainAxisAlignment: MainAxisAlignment.start, children: [
+          MaybeExpandedVertical(child: DeviceListContainer(
+              child: DeviceListWithIcons(iconAssigner: (context, id) {
+            if (widget.devices.contains(id)) {
+              final Widget icon;
+              if (gotShares.contains(id)) {
+                icon = AnimatedCheckCircle();
+              } else {
+                // the aspect ratio stops the circular progress indicator from stretching itself
+                icon = const AspectRatio(
+                    aspectRatio: 1, child: CircularProgressIndicator());
               }
-              return (null, null);
-            }))),
-            const SizedBox(height: 20),
-            const Text("Waiting for devices to generate key",
-                style: TextStyle(fontSize: 20))
-          ]))),
-    );
+              return (null, icon);
+            }
+            return (null, null);
+          }))),
+          const SizedBox(height: 20),
+          const Text("Waiting for devices to generate key",
+              style: TextStyle(fontSize: 20))
+        ])));
   }
 
   Future<KeyId?> showCheckKeyGenDialog(
@@ -243,8 +240,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                 ElevatedButton(
                     child: Text("No/Cancel"),
                     onPressed: () {
-                      Navigator.pop(context, null);
-                      coord.cancelAll();
+                      Navigator.pop(context);
                     }),
               ],
               content: Container(
@@ -307,7 +303,6 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
       context: context,
       content: content,
       onCancel: () {
-        coord.cancelAll();
         Navigator.pop(context);
       },
       complete: closeOn,
@@ -337,78 +332,8 @@ class KeyGenDeviceList extends StatelessWidget {
         });
 
     return Column(children: [
-      MaybeExpandedVertical(
-          child: DeviceListContainer(
-              child: DeviceList(deviceBuilder: _buildDevice))),
+      MaybeExpandedVertical(child: DeviceListContainer(child: DeviceList())),
       button,
     ]);
-  }
-
-  Widget _buildDevice(BuildContext context, Device device,
-      Orientation orientation, Animation<double> animation) {
-    Widget child;
-    if (device.name == null) {
-      child = ElevatedButton(
-          onPressed: () {
-            coord.updateNamePreview(id: device.id, name: "");
-            Navigator.push(context,
-                MaterialPageRoute(builder: (deviceSetupContex) {
-              final completeWhen = deviceListChangeStream
-                  .firstWhere((change) =>
-                      change.kind == DeviceListChangeKind.Named &&
-                      deviceIdEquals(device.id, change.device.id))
-                  .whenComplete(() {
-                if (deviceSetupContex.mounted) {
-                  Navigator.pop(deviceSetupContex);
-                }
-              });
-              return DeviceSetup(
-                deviceId: device.id,
-                onCancel: () {
-                  coord.sendCancel(id: device.id);
-                },
-                onSubmitted: (value) async {
-                  coord.finishNaming(id: device.id, name: value);
-                  await showDeviceActionDialog(
-                      context: deviceSetupContex,
-                      content: Column(children: [
-                        Text("Confirm name '$value' on device"),
-                        Divider(),
-                        MaybeExpandedVertical(child: DeviceListContainer(child:
-                            DeviceListWithIcons(
-                                iconAssigner: (context, deviceId) {
-                          if (deviceIdEquals(deviceId, device.id)) {
-                            final label = LabeledDeviceText("'$value'?");
-                            const icon = const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.visibility, color: Colors.orange),
-                                  SizedBox(width: 4),
-                                  Text("Confirm"),
-                                ]);
-                            return (label, icon);
-                          } else {
-                            return (null, null);
-                          }
-                        })))
-                      ]),
-                      complete: completeWhen,
-                      onCancel: () async {
-                        await coord.sendCancel(id: device.id);
-                      });
-                },
-                onChanged: (value) async {
-                  await coord.updateNamePreview(id: device.id, name: value);
-                },
-              );
-            }));
-          },
-          child: const Text("NEW DEVICE"));
-    } else {
-      child = LabeledDeviceText(device.name!);
-    }
-
-    return DeviceBoxContainer(
-        orientation: orientation, animation: animation, child: child);
   }
 }

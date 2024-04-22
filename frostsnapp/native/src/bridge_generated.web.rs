@@ -116,6 +116,14 @@ pub fn wire_named_devices__method__DeviceListState(that: JsValue) -> support::Wi
 }
 
 #[wasm_bindgen]
+pub fn wire_get_device__method__DeviceListState(
+    that: JsValue,
+    id: JsValue,
+) -> support::WireSyncReturn {
+    wire_get_device__method__DeviceListState_impl(that, id)
+}
+
+#[wasm_bindgen]
 pub fn wire_set_available_ports__method__FfiSerial(
     port_: MessagePort,
     that: JsValue,
@@ -160,6 +168,16 @@ pub fn wire_cancel_all__method__Coordinator(port_: MessagePort, that: JsValue) {
 }
 
 #[wasm_bindgen]
+pub fn wire_display_backup__method__Coordinator(
+    port_: MessagePort,
+    that: JsValue,
+    id: JsValue,
+    key_id: JsValue,
+) {
+    wire_display_backup__method__Coordinator_impl(port_, that, id, key_id)
+}
+
+#[wasm_bindgen]
 pub fn wire_key_state__method__Coordinator(that: JsValue) -> support::WireSyncReturn {
     wire_key_state__method__Coordinator_impl(that)
 }
@@ -175,6 +193,14 @@ pub fn wire_get_key__method__Coordinator(
     key_id: JsValue,
 ) -> support::WireSyncReturn {
     wire_get_key__method__Coordinator_impl(that, key_id)
+}
+
+#[wasm_bindgen]
+pub fn wire_keys_for_device__method__Coordinator(
+    that: JsValue,
+    device_id: JsValue,
+) -> support::WireSyncReturn {
+    wire_keys_for_device__method__Coordinator_impl(that, device_id)
 }
 
 #[wasm_bindgen]

@@ -6,6 +6,7 @@ use frostsnap_core::{DeviceId, FrostCoordinator, FrostSigner, KeyId, SessionHash
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::binonce::Nonce;
+use schnorr_fun::fun::{g, G};
 use schnorr_fun::{Schnorr, Signature};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -29,6 +30,9 @@ struct TestEnv {
     // storage
     pub coord_nonces: BTreeMap<(DeviceId, u64), Nonce>,
     pub device_nonces: BTreeMap<DeviceId, u64>,
+
+    pub backups: BTreeMap<DeviceId, (KeyId, String)>,
+    pub backup_confirmed_on_coordinator: BTreeSet<DeviceId>,
 }
 
 impl common::Env for TestEnv {
@@ -107,7 +111,6 @@ impl common::Env for TestEnv {
     }
 
     fn user_react_to_coordinator(&mut self, _run: &mut Run, message: CoordinatorToUserMessage) {
-        /* nothing to do here -- need keygen ack*/
         match message {
             CoordinatorToUserMessage::KeyGen(keygen_message) => match keygen_message {
                 CoordinatorToUserKeyGenMessage::ReceivedShares { from } => {
@@ -147,6 +150,9 @@ impl common::Env for TestEnv {
                         .unwrap();
                 }
             },
+            CoordinatorToUserMessage::DisplayBackupConfirmed { device_id } => {
+                self.backup_confirmed_on_coordinator.insert(device_id);
+            }
         }
     }
 
@@ -169,6 +175,13 @@ impl common::Env for TestEnv {
                 self.sign_tasks.insert(from, sign_task);
                 let sign_ack = run.device(from).sign_ack().unwrap();
                 run.extend_from_device(from, sign_ack);
+            }
+            DeviceToUserMessage::DisplayBackupRequest { .. } => {
+                let backup_ack = run.device(from).display_backup_ack().unwrap();
+                run.extend_from_device(from, backup_ack);
+            }
+            DeviceToUserMessage::DisplayBackup { key_id, backup } => {
+                self.backups.insert(from, (key_id, backup));
             }
             DeviceToUserMessage::Canceled { .. } => {
                 panic!("no cancelling done");
@@ -218,9 +231,11 @@ fn test_end_to_end() {
         env.keygen_checks.values().all(|v| *v == session_hash),
         "devices should have seen the same hash"
     );
+
     assert_eq!(env.coordinator_got_keygen_acks, device_set);
     assert_eq!(env.received_keygen_shares, device_set);
     let coord_frost_key = run.coordinator.iter_keys().next().unwrap();
+
     let key_id = coord_frost_key.key_id();
     let public_key = coord_frost_key.frost_key().public_key();
 
@@ -266,4 +281,86 @@ fn test_end_to_end() {
             assert_eq!(device_nonce, coord_next_nonce);
         }
     }
+}
+
+#[test]
+fn test_display_backup() {
+    use rand::seq::SliceRandom;
+    let n_parties = 3;
+    let threshold = 2;
+    let coordinator = FrostCoordinator::new();
+    let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
+
+    let devices = (0..n_parties)
+        .map(|_| FrostSigner::new_random(&mut test_rng))
+        .map(|device| (device.device_id(), device))
+        .collect::<BTreeMap<_, _>>();
+
+    let device_set = devices.keys().cloned().collect::<BTreeSet<_>>();
+    let device_list = devices.keys().cloned().collect::<Vec<_>>();
+    let mut env = TestEnv::default();
+    let mut test_rng = ChaCha20Rng::from_seed([123u8; 32]);
+
+    let mut run = Run::new(coordinator, devices);
+
+    let keygen_init = run.coordinator.do_keygen(&device_set, threshold).unwrap();
+    run.extend(keygen_init);
+
+    run.run_until_finished(&mut env, &mut test_rng);
+    let coord_frost_key = run.coordinator.iter_keys().next().unwrap().clone();
+    let key_id = coord_frost_key.key_id();
+
+    let display_backup = run
+        .coordinator
+        .request_device_display_backup(device_list[0], key_id)
+        .unwrap();
+    run.extend(display_backup);
+    run.run_until_finished(&mut env, &mut test_rng);
+
+    assert_eq!(env.backups.len(), 1);
+    assert_eq!(env.backup_confirmed_on_coordinator.len(), 1);
+
+    let mut display_backup = run
+        .coordinator
+        .request_device_display_backup(device_list[1], key_id)
+        .unwrap();
+    display_backup.extend(
+        run.coordinator
+            .request_device_display_backup(device_list[2], key_id)
+            .unwrap(),
+    );
+    run.extend(display_backup);
+    run.run_until_finished(&mut env, &mut test_rng);
+
+    assert_eq!(env.backups.len(), 3);
+    assert_eq!(env.backup_confirmed_on_coordinator.len(), 3);
+
+    let decoded_backups = env
+        .backups
+        .values()
+        .map(|(bu_key_id, backup)| {
+            assert_eq!(*bu_key_id, key_id);
+            let decoded =
+                schnorr_fun::share_backup::decode_backup(backup.clone()).expect("valid backup");
+            (decoded.share_index, decoded.secret_share)
+        })
+        .collect::<Vec<_>>();
+
+    let threshold_interpolated_joint_secret =
+        schnorr_fun::fun::poly::scalar::interpolate_and_eval_poly_at_0(
+            decoded_backups
+                .choose_multiple(&mut test_rng, 2)
+                .cloned()
+                .collect(),
+        );
+    let interpolated_joint_secret =
+        schnorr_fun::fun::poly::scalar::interpolate_and_eval_poly_at_0(decoded_backups);
+    assert_eq!(
+        threshold_interpolated_joint_secret,
+        interpolated_joint_secret
+    );
+    assert_eq!(
+        g!(interpolated_joint_secret * G),
+        coord_frost_key.frost_key().public_key()
+    );
 }

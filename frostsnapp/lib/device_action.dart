@@ -5,7 +5,7 @@ import 'dart:async';
 Future<T?> showDeviceActionDialog<T>({
   required BuildContext context,
   required Widget content,
-  required Future<T?> complete,
+  Future<T?>? complete,
   Function()? onCancel,
 }) async {
   var canceled = false;
@@ -14,7 +14,7 @@ Future<T?> showDeviceActionDialog<T>({
       barrierDismissible: false,
       context: context,
       builder: (dialogContext) {
-        complete.then((result) {
+        complete?.then((result) {
           if (dialogContext.mounted) {
             Navigator.pop(dialogContext, result);
           }

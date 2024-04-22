@@ -1,12 +1,13 @@
 use crate::{
-    gen_pop_message, message::*, ActionError, Error, FrostKeyExt, KeyId, MessageResult, SessionHash,
+    gen_pop_message, message::*, xpub::TweakableKey, ActionError, Error, FrostKeyExt, KeyId,
+    MessageResult, SessionHash,
 };
 use alloc::{
     collections::{BTreeMap, BTreeSet},
     vec::Vec,
 };
 use schnorr_fun::{
-    frost::{self, FrostKey, SignSession},
+    frost::{self, EncodedFrostKey, FrostKey, SignSession},
     fun::{marker::*, Scalar},
     Message,
 };
@@ -155,7 +156,9 @@ impl FrostCoordinator {
                             })
                             .collect();
                         let frost = frost::new_without_nonce_generation::<Sha256>();
-                        let keygen = frost.new_keygen(point_polys).unwrap();
+                        let keygen = frost
+                            .new_keygen::<&[Scalar]>(point_polys, &BTreeMap::new())
+                            .unwrap();
                         // let keygen_id = frost.keygen_id(&keygen);
                         let pop_message = gen_pop_message(responses.keys().cloned());
 
@@ -174,7 +177,7 @@ impl FrostCoordinator {
                         self.action_state =
                             Some(CoordinatorState::KeyGen(KeyGenState::WaitingForAcks {
                                 device_to_share_index: device_to_share_index.clone(),
-                                frost_key,
+                                frost_key: frost_key.into(),
                                 acks: responses
                                     .clone()
                                     .into_keys()
@@ -233,10 +236,10 @@ impl FrostCoordinator {
                 let all_acks = acks.values().all(|ack| *ack);
                 if all_acks {
                     let key = CoordinatorFrostKey {
-                        frost_key: frost_key.clone(),
+                        encoded_frost_key: frost_key.clone(),
                         device_to_share_index: device_to_share_index.clone(),
                     };
-                    let key_id = key.frost_key.key_id();
+                    let key_id = key.encoded_frost_key.into_frost_key().key_id();
                     self.action_state = None;
 
                     let change = CoordinatorToStorageMessage::NewKey(key);
@@ -294,7 +297,7 @@ impl FrostCoordinator {
                 // valid.
                 for (session_progress, signature_share) in sessions.iter().zip(signature_shares) {
                     let session = &session_progress.sign_session;
-                    let xonly_frost_key = &session_progress.key;
+                    let xonly_frost_key = &session_progress.key.into_frost_key().into_xonly_key();
                     if !session
                         .participants()
                         .any(|x_coord| x_coord == *from_share_index)
@@ -332,9 +335,10 @@ impl FrostCoordinator {
                         .insert(from, *signature_share);
                 }
 
-                let all_finished = sessions
-                    .iter()
-                    .all(|session| session.signature_shares.len() == key.frost_key.threshold());
+                let all_finished = sessions.iter().all(|session| {
+                    session.signature_shares.len()
+                        == key.encoded_frost_key.into_frost_key().threshold()
+                });
 
                 // the coordinator may want to persist this so a signing session can be restored
                 outgoing.push(CoordinatorSend::ToStorage(
@@ -347,8 +351,11 @@ impl FrostCoordinator {
                     let signatures = sessions
                         .iter()
                         .map(|session_progress| {
+                            let xonly_frost_key =
+                                session_progress.key.into_frost_key().into_xonly();
+
                             frost.combine_signature_shares(
-                                &session_progress.key,
+                                &xonly_frost_key,
                                 &session_progress.sign_session,
                                 session_progress
                                     .signature_shares
@@ -386,6 +393,17 @@ impl FrostCoordinator {
                 }
 
                 Ok(outgoing)
+            }
+            (state, DeviceToCoordinatorMessage::DisplayBackupConfirmed) => {
+                if let Some(CoordinatorState::DisplayBackup) = state {
+                    Ok(vec![CoordinatorSend::ToUser(
+                        CoordinatorToUserMessage::DisplayBackupConfirmed { device_id: from },
+                    )])
+                } else {
+                    // it's ok if a device acks a display backup after we're no longer looking at it
+                    // (it shouldn't happen unless the user is trying to make it happen!).
+                    Ok(vec![])
+                }
             }
             _ => Err(Error::coordinator_message_kind(
                 &self.action_state,
@@ -458,11 +476,12 @@ impl FrostCoordinator {
             .keys
             .get(&key_id)
             .ok_or(StartSignError::UnknownKey { key_id })?;
+        let frost_key = key.encoded_frost_key.into_frost_key();
         let selected = signing_parties.len();
-        if selected < key.frost_key.threshold() {
+        if selected < frost_key.threshold() {
             return Err(StartSignError::NotEnoughDevicesSelected {
                 selected,
-                threshold: key.frost_key.threshold(),
+                threshold: frost_key.threshold(),
             });
         }
 
@@ -522,13 +541,14 @@ impl FrostCoordinator {
                     .map(|(index, sign_req_nonces)| (*index, sign_req_nonces.nonces[i]))
                     .collect();
 
-                let xonly_frost_key = sign_item.derive_key(key.frost_key());
+                let xonly_frost_key = sign_item.derive_key(&key.frost_key());
 
                 let sign_session =
                     frost.start_sign_session(&xonly_frost_key, indexed_nonces, b_message);
                 SignSessionProgress {
+                    sign_item: sign_item.clone(),
                     sign_session,
-                    key: xonly_frost_key,
+                    key: xonly_frost_key.into(),
                     signature_shares: Default::default(),
                 }
             })
@@ -580,6 +600,28 @@ impl FrostCoordinator {
         }
     }
 
+    pub fn request_device_display_backup(
+        &mut self,
+        device_id: DeviceId,
+        key_id: KeyId,
+    ) -> Result<Vec<CoordinatorSend>, ActionError> {
+        let key = self
+            .keys
+            .get(&key_id)
+            .ok_or(ActionError::StateInconsistent("no such key".into()))?;
+        let _ = key
+            .device_to_share_index
+            .get(&device_id)
+            .ok_or(ActionError::StateInconsistent(
+                "device does not have share in key".into(),
+            ))?;
+        self.action_state = Some(CoordinatorState::DisplayBackup);
+        Ok(vec![CoordinatorSend::ToDevice {
+            message: CoordinatorToDeviceMessage::DisplayBackup { key_id },
+            destinations: BTreeSet::from_iter([device_id]),
+        }])
+    }
+
     pub fn state_name(&self) -> &'static str {
         self.action_state
             .as_ref()
@@ -608,15 +650,17 @@ impl CoordinatorState {
                 KeyGenState::WaitingForAcks { .. } => "WaitingForAcks",
             },
             CoordinatorState::Signing { .. } => "Signing",
+            CoordinatorState::DisplayBackup => "DisplayBackup",
         }
     }
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub struct SignSessionProgress {
+    sign_item: SignItem,
     sign_session: SignSession,
     signature_shares: BTreeMap<DeviceId, Scalar<Public, Zero>>,
-    key: FrostKey<EvenY>,
+    key: EncodedFrostKey,
 }
 
 impl SignSessionProgress {
@@ -632,6 +676,7 @@ pub enum CoordinatorState {
         sign_state: SigningSessionState,
         key: CoordinatorFrostKey,
     },
+    DisplayBackup,
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
@@ -656,7 +701,7 @@ pub enum KeyGenState {
         threshold: u16,
     },
     WaitingForAcks {
-        frost_key: FrostKey<Normal>,
+        frost_key: EncodedFrostKey,
         device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
         acks: BTreeMap<DeviceId, bool>,
         session_hash: SessionHash,
@@ -665,21 +710,21 @@ pub enum KeyGenState {
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, serde::Serialize, serde::Deserialize)]
 pub struct CoordinatorFrostKey {
-    frost_key: FrostKey<Normal>,
+    encoded_frost_key: EncodedFrostKey,
     device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
 }
 
 impl CoordinatorFrostKey {
     pub fn threshold(&self) -> usize {
-        self.frost_key.threshold()
+        self.encoded_frost_key.threshold()
     }
 
-    pub fn frost_key(&self) -> &FrostKey<Normal> {
-        &self.frost_key
+    pub fn frost_key(&self) -> FrostKey<Normal> {
+        self.encoded_frost_key.clone().into()
     }
 
     pub fn key_id(&self) -> KeyId {
-        self.frost_key.key_id()
+        self.encoded_frost_key.into_frost_key().key_id()
     }
 
     pub fn devices(&self) -> impl Iterator<Item = DeviceId> + '_ {

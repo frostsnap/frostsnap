@@ -479,6 +479,10 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* List<dynamic> */
       wire_named_devices__method__DeviceListState(List<dynamic> that);
 
+  external dynamic /* List<dynamic>? */
+      wire_get_device__method__DeviceListState(
+          List<dynamic> that, List<dynamic> id);
+
   external dynamic /* void */ wire_set_available_ports__method__FfiSerial(
       NativePortType port_, List<dynamic> that, List<dynamic> ports);
 
@@ -497,6 +501,12 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* void */ wire_cancel_all__method__Coordinator(
       NativePortType port_, List<dynamic> that);
 
+  external dynamic /* void */ wire_display_backup__method__Coordinator(
+      NativePortType port_,
+      List<dynamic> that,
+      List<dynamic> id,
+      List<dynamic> key_id);
+
   external dynamic /* List<dynamic> */ wire_key_state__method__Coordinator(
       List<dynamic> that);
 
@@ -505,6 +515,10 @@ class NativeWasmModule implements WasmModule {
 
   external dynamic /* List<dynamic>? */ wire_get_key__method__Coordinator(
       List<dynamic> that, List<dynamic> key_id);
+
+  external dynamic /* List<dynamic> */
+      wire_keys_for_device__method__Coordinator(
+          List<dynamic> that, List<dynamic> device_id);
 
   external dynamic /* void */ wire_start_signing__method__Coordinator(
       NativePortType port_,
@@ -727,6 +741,10 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
           List<dynamic> that) =>
       wasmModule.wire_named_devices__method__DeviceListState(that);
 
+  dynamic /* List<dynamic>? */ wire_get_device__method__DeviceListState(
+          List<dynamic> that, List<dynamic> id) =>
+      wasmModule.wire_get_device__method__DeviceListState(that, id);
+
   void wire_set_available_ports__method__FfiSerial(
           NativePortType port_, List<dynamic> that, List<dynamic> ports) =>
       wasmModule.wire_set_available_ports__method__FfiSerial(
@@ -753,6 +771,11 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
           NativePortType port_, List<dynamic> that) =>
       wasmModule.wire_cancel_all__method__Coordinator(port_, that);
 
+  void wire_display_backup__method__Coordinator(NativePortType port_,
+          List<dynamic> that, List<dynamic> id, List<dynamic> key_id) =>
+      wasmModule.wire_display_backup__method__Coordinator(
+          port_, that, id, key_id);
+
   dynamic /* List<dynamic> */ wire_key_state__method__Coordinator(
           List<dynamic> that) =>
       wasmModule.wire_key_state__method__Coordinator(that);
@@ -764,6 +787,10 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   dynamic /* List<dynamic>? */ wire_get_key__method__Coordinator(
           List<dynamic> that, List<dynamic> key_id) =>
       wasmModule.wire_get_key__method__Coordinator(that, key_id);
+
+  dynamic /* List<dynamic> */ wire_keys_for_device__method__Coordinator(
+          List<dynamic> that, List<dynamic> device_id) =>
+      wasmModule.wire_keys_for_device__method__Coordinator(that, device_id);
 
   void wire_start_signing__method__Coordinator(
           NativePortType port_,

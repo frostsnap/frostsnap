@@ -339,6 +339,23 @@ fn wire_named_devices__method__DeviceListState_impl(
         },
     )
 }
+fn wire_get_device__method__DeviceListState_impl(
+    that: impl Wire2Api<DeviceListState> + UnwindSafe,
+    id: impl Wire2Api<DeviceId> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "get_device__method__DeviceListState",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_id = id.wire2api();
+            Result::<_, ()>::Ok(DeviceListState::get_device(&api_that, api_id))
+        },
+    )
+}
 fn wire_set_available_ports__method__FfiSerial_impl(
     port_: MessagePort,
     that: impl Wire2Api<FfiSerial> + UnwindSafe,
@@ -455,6 +472,33 @@ fn wire_cancel_all__method__Coordinator_impl(
         },
     )
 }
+fn wire_display_backup__method__Coordinator_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<Coordinator> + UnwindSafe,
+    id: impl Wire2Api<DeviceId> + UnwindSafe,
+    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "display_backup__method__Coordinator",
+            port: Some(port_),
+            mode: FfiCallMode::Stream,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_id = id.wire2api();
+            let api_key_id = key_id.wire2api();
+            move |task_callback| {
+                Coordinator::display_backup(
+                    &api_that,
+                    api_id,
+                    api_key_id,
+                    task_callback.stream_sink::<_, ()>(),
+                )
+            }
+        },
+    )
+}
 fn wire_key_state__method__Coordinator_impl(
     that: impl Wire2Api<Coordinator> + UnwindSafe,
 ) -> support::WireSyncReturn {
@@ -502,6 +546,23 @@ fn wire_get_key__method__Coordinator_impl(
             let api_that = that.wire2api();
             let api_key_id = key_id.wire2api();
             Result::<_, ()>::Ok(Coordinator::get_key(&api_that, api_key_id))
+        },
+    )
+}
+fn wire_keys_for_device__method__Coordinator_impl(
+    that: impl Wire2Api<Coordinator> + UnwindSafe,
+    device_id: impl Wire2Api<DeviceId> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "keys_for_device__method__Coordinator",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_device_id = device_id.wire2api();
+            Result::<_, ()>::Ok(Coordinator::keys_for_device(&api_that, api_device_id))
         },
     )
 }

@@ -34,6 +34,7 @@ pub struct FfiCoordinator {
     thread_handle: Mutex<Option<JoinHandle<()>>>,
     keygen_stream: Arc<Mutex<Option<StreamSink<CoordinatorToUserKeyGenMessage>>>>,
     key_event_stream: Arc<Mutex<Option<StreamSink<KeyState>>>>,
+    backup_event_stream: Arc<Mutex<Option<StreamSink<()>>>>,
     signing_session: Arc<Mutex<Option<SigningSession>>>,
     db: Arc<Mutex<LlsDb<File>>>,
     persist_core: IndexHandle<PersistCore>,
@@ -86,6 +87,7 @@ impl FfiCoordinator {
             keygen_stream: Default::default(),
             signing_session: Default::default(),
             key_event_stream: Default::default(),
+            backup_event_stream: Default::default(),
             db,
             persist_core,
             device_names: device_names_handle,
@@ -114,6 +116,7 @@ impl FfiCoordinator {
         let keygen_stream_loop = self.keygen_stream.clone();
         let signing_session_loop = self.signing_session.clone();
         let key_event_stream_loop = self.key_event_stream.clone();
+        let backup_event_stream = self.backup_event_stream.clone();
         let db_loop = self.db.clone();
         let core_persist = self.persist_core;
         let device_names = self.device_names;
@@ -244,6 +247,11 @@ impl FfiCoordinator {
                                         });
                                         event!(Level::INFO, "received signatures from all devices");
                                     }
+                                }
+                            }
+                            CoordinatorToUserMessage::DisplayBackupConfirmed { device_id: _ } => {
+                                if let Some(stream) = &mut *backup_event_stream.lock().unwrap() {
+                                    stream.add(());
                                 }
                             }
                         },
@@ -457,6 +465,28 @@ impl FfiCoordinator {
                     },
                 }))
         })
+    }
+
+    pub fn request_display_backup(
+        &self,
+        device_id: DeviceId,
+        key_id: KeyId,
+        stream: StreamSink<()>,
+    ) -> anyhow::Result<()> {
+        // XXX: We should be storing the id to make sure the device that sends the backup ack is
+        // from the one we expected. In practice it doesn't matter that much and flutter rust bridge
+        // was giving me extreme grief. Can try again with frb v2.
+        if let Some(old_stream) = self.backup_event_stream.lock().unwrap().replace(stream) {
+            old_stream.close();
+        }
+        let messages = self
+            .coordinator
+            .lock()
+            .unwrap()
+            .request_device_display_backup(device_id, key_id)?;
+        self.pending_for_outbox.lock().unwrap().extend(messages);
+
+        Ok(())
     }
 }
 

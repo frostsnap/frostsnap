@@ -75,7 +75,7 @@ where
                 }
                 None => {
                     let secret_key = Scalar::random(&mut rng);
-                    let keypair = KeyPair::<Normal>::new(secret_key.clone());
+                    let keypair = KeyPair::<Normal>::new(secret_key);
                     flash
                         .write_header(crate::storage::Header { secret_key })
                         .unwrap();
@@ -374,6 +374,13 @@ where
                             name: new_name.into(),
                         });
                     }
+                    UiEvent::BackupRequestConfirm(_) => {
+                        outbox.extend(
+                            signer
+                                .display_backup_ack()
+                                .expect("state changed while displaying backup"),
+                        );
+                    }
                 }
                 ui.set_workflow(ui::Workflow::WaitingFor(
                     ui::WaitingFor::CoordinatorInstruction {
@@ -408,8 +415,15 @@ where
                                     sign_task.to_string(),
                                 )));
                             }
+                            DeviceToUserMessage::DisplayBackupRequest { key_id } => ui
+                                .set_workflow(ui::Workflow::UserPrompt(
+                                    ui::Prompt::DisplayBackupRequest(key_id),
+                                )),
                             DeviceToUserMessage::Canceled { .. } => {
                                 ui.cancel();
+                            }
+                            DeviceToUserMessage::DisplayBackup { key_id: _, backup } => {
+                                ui.set_workflow(ui::Workflow::DisplayBackup { backup });
                             }
                         };
                     }

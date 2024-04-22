@@ -1,5 +1,5 @@
 use alloc::string::String;
-use frostsnap_core::SessionHash;
+use frostsnap_core::{KeyId, SessionHash};
 
 pub trait UserInteraction {
     fn set_downstream_connection_state(&mut self, state: crate::ConnectionState);
@@ -20,6 +20,7 @@ pub trait UserInteraction {
                 Workflow::NamingDevice { old_name, new_name }
             }
             Workflow::NamingDevice { .. }
+            | Workflow::DisplayBackup { .. }
             | Workflow::UserPrompt(_)
             | Workflow::BusyDoing(_)
             | Workflow::WaitingFor(_) => Workflow::WaitingFor(WaitingFor::CoordinatorInstruction {
@@ -59,6 +60,9 @@ pub enum Workflow {
         old_name: Option<String>,
         new_name: String,
     },
+    DisplayBackup {
+        backup: String,
+    },
 }
 
 impl Default for Workflow {
@@ -75,6 +79,7 @@ pub enum Prompt {
         old_name: Option<String>,
         new_name: String,
     },
+    DisplayBackupRequest(KeyId),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -90,4 +95,5 @@ pub enum UiEvent {
     KeyGenConfirm,
     SigningConfirm,
     NameConfirm(String),
+    BackupRequestConfirm(KeyId),
 }

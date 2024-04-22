@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:frostsnapp/global.dart';
+import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/keygen.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/wallet.dart';
@@ -19,6 +20,15 @@ class KeyList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final keyStateSream = coord.subKeyEvents().toBehaviorSubject();
+
+    final showDevicesButton = ElevatedButton(
+        onPressed: () {
+          Navigator.push(context, MaterialPageRoute(builder: (context) {
+            return DeviceSettingsPage();
+          }));
+        },
+        child: Text("Show Devices"));
+
     return StreamBuilder<KeyState>(
         stream: keyStateSream,
         builder: (context, snap) {
@@ -42,17 +52,24 @@ class KeyList extends StatelessWidget {
               children: [
                 list,
                 const SizedBox(height: 8),
-                ElevatedButton(
-                  child: const Text("New key"),
-                  onPressed: () async {
-                    final newId = await Navigator.push(context,
-                        MaterialPageRoute(builder: (context) {
-                      return const KeyGenPage();
-                    }));
-                    if (newId != null) {
-                      onNewKey?.call(newId);
-                    }
-                  },
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ElevatedButton(
+                      child: const Text("New key"),
+                      onPressed: () async {
+                        final newId = await Navigator.push(context,
+                            MaterialPageRoute(builder: (context) {
+                          return const KeyGenPage();
+                        }));
+                        if (newId != null) {
+                          onNewKey?.call(newId);
+                        }
+                      },
+                    ),
+                    SizedBox(width: 4),
+                    showDevicesButton
+                  ],
                 )
               ]);
         });
@@ -153,7 +170,7 @@ class _KeyCard extends State<KeyCard> {
               const SizedBox(width: 5),
               walletButton,
               const SizedBox(width: 5),
-              continueSigning
+              continueSigning,
             ])
           ],
         ),

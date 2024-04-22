@@ -129,7 +129,7 @@ impl _Wallet {
                         let key_id = coord_frost_key.key_id();
                         graph.index.add_keychain(
                             key_id,
-                            Self::get_descriptor(coord_frost_key.frost_key()),
+                            Self::get_descriptor(&coord_frost_key.frost_key()),
                         );
                         if let Some(derivation_index) = keychain.get(&key_id)? {
                             let _ = graph.index.reveal_to_target(&key_id, derivation_index);
@@ -193,7 +193,7 @@ impl _Wallet {
                 .ok_or(anyhow!("key {key_id} doesn't exist in database"))?;
             self.graph
                 .index
-                .add_keychain(key_id, Self::get_descriptor(found.frost_key()));
+                .add_keychain(key_id, Self::get_descriptor(&found.frost_key()));
         }
         Ok(())
     }
