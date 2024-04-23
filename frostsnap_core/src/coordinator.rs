@@ -278,11 +278,13 @@ impl FrostCoordinator {
                             "Signer is unknown",
                         ))?;
 
-                if new_nonces.nonces.len() != n_signatures {
+                // If there have been uncompleted sign requests, the device should replenish more
+                // nonces than required for this particular signing session.
+                if new_nonces.nonces.len() < n_signatures {
                     return Err(Error::coordinator_invalid_message(
                         message_kind,
                         format!(
-                            "Signer did not replenish the correct number of nonces. Expected {n_signatures}, got {}",
+                            "Signer did not replenish enough nonces. Expected {n_signatures}, got {}",
                             new_nonces.nonces.len()
                         ),
                     ));
