@@ -17,10 +17,7 @@ use embedded_text::{
 use mipidsi::Error;
 use u8g2_fonts::{fonts, U8g2TextStyle};
 
-pub struct Graphics<'d, DT>
-where
-    DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
-{
+pub struct Graphics<'d, DT> {
     display: DT,
     textbox_style: TextBoxStyle,
     framebuf: FrameBuf<Rgb565, &'d mut [Rgb565; 67200]>,
@@ -52,16 +49,9 @@ where
     }
 
     pub fn flush(&mut self) -> Result<(), Error> {
-        let area = Rectangle::new(Point::new(0, 0), self.display.size());
-        // println!("flush");
         self.display
             // .fill_contiguous(&area, self.framebuf.data)
-            .draw_iter(self.framebuf.into_iter())
-        // .unwrap_or_else(|e| {
-        //     panic!("flush {:?}", e);
-        // });
-        // println!("flushed");
-        // Ok(())
+            .draw_iter(&self.framebuf)
     }
 
     pub fn clear(&mut self, c: Rgb565) {
@@ -171,7 +161,7 @@ where
             .draw(&mut self.display)
             .unwrap();
 
-        Line::new(Point::new(length, y), Point::new(x as i32, y))
+        Line::new(Point::new(length, y), Point::new(x, y))
             .into_styled(PrimitiveStyle::with_stroke(Rgb565::new(7, 14, 7), stroke))
             .draw(&mut self.display)
             .unwrap();
@@ -204,6 +194,35 @@ where
             )
             .draw(&mut self.framebuf)
             .unwrap();
+    }
+
+    pub fn set_mem_debug(&mut self, used: usize, free: usize) {
+        let display = &self.display;
+        Rectangle::new(
+            Point::new(0, display.size().height as i32),
+            Size::new(display.size().width, display.size().height),
+        )
+        .into_styled(
+            PrimitiveStyleBuilder::new()
+                .fill_color(Rgb565::BLACK)
+                .build(),
+        )
+        .draw(&mut self.framebuf)
+        .unwrap();
+
+        TextBox::with_textbox_style(
+            &format!("{}/{}", used, free),
+            Rectangle::new(
+                Point::new(0, display.size().height as i32),
+                Size::new(display.size().width, 20),
+            ),
+            MonoTextStyle::new(&FONT_7X14, Rgb565::GREEN),
+            TextBoxStyleBuilder::new()
+                .alignment(HorizontalAlignment::Right)
+                .build(),
+        )
+        .draw(&mut self.framebuf)
+        .unwrap();
     }
 }
 

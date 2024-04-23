@@ -5,18 +5,20 @@
 
 #[macro_use]
 extern crate alloc;
-use crate::alloc::string::String;
-use alloc::string::ToString;
+use alloc::string::String;
+// use alloc::string::ToString;
 use core::mem::MaybeUninit;
+use cst816s::CST816S;
 use display_interface_spi::SPIInterfaceNoCS;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use embedded_graphics_framebuf::FrameBuf;
+use embedded_hal as hal;
 use esp_hal::{
     clock::ClockControl,
-    gpio::{GpioPin, Input, PullUp},
+    i2c::I2C,
     peripherals::Peripherals,
     prelude::*,
-    spi::{self, master::Spi, SpiMode},
+    spi::{master::Spi, SpiMode},
     timer::{self, Timer, TimerGroup},
     uart::{self, Uart},
     Delay, Rng, UsbSerialJtag, IO,
@@ -24,16 +26,12 @@ use esp_hal::{
 use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_device::{
     esp32_run,
-    io::{set_upstream_port_mode_jtag, set_upstream_port_mode_uart},
+    io::set_upstream_port_mode_jtag,
     st7789,
     ui::{BusyTask, Prompt, UiEvent, UserInteraction, WaitingFor, WaitingResponse, Workflow},
     DownstreamConnectionState, UpstreamConnectionState,
 };
-use mipidsi::{
-    models::{Model, ST7789},
-    options::{ColorInversion, ColorOrder},
-    Builder, Display, Error, Orientation,
-};
+use mipidsi::{options::ColorInversion, Builder, Error, Orientation};
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
 #[global_allocator]
@@ -89,7 +87,7 @@ fn main() -> ! {
         .with_sck(io.pins.gpio8)
         .with_mosi(io.pins.gpio7);
     let di = SPIInterfaceNoCS::new(spi, io.pins.gpio9.into_push_pull_output());
-    let mut display = Builder::st7789(di)
+    let display = Builder::st7789(di)
         .with_display_size(240, 280)
         .with_window_offset_handler(|_| (0, 20)) // 240*280 panel
         .with_invert_colors(ColorInversion::Inverted)
@@ -99,6 +97,21 @@ fn main() -> ! {
     let mut framearray = [Rgb565::BLACK; 240 * 280];
     let framebuf = FrameBuf::new(&mut framearray, 240, 280);
     let mut display = st7789::Graphics::new(display, framebuf).unwrap();
+
+    let i2c = I2C::new(
+        peripherals.I2C0,
+        io.pins.gpio4,
+        io.pins.gpio5,
+        400u32.kHz(),
+        &clocks,
+    );
+    let mut capsense = CST816S::new(
+        i2c,
+        io.pins.gpio2.into_pull_up_input(),
+        io.pins.gpio3.into_push_pull_output(),
+    );
+    capsense.setup(&mut delay).unwrap();
+
     display.clear(Rgb565::BLACK);
     display.header("Frostsnap");
     display.print("Starting...");
@@ -132,7 +145,7 @@ fn main() -> ! {
     };
 
     let mut hal_rng = Rng::new(peripherals.RNG);
-    delay.delay_ms(600u32); // To wait for ESP32c3 timers to stop being bonkers
+    // delay.delay_ms(600u32); // To wait for ESP32c3 timers to stop being bonkers
 
     let rng = {
         let mut chacha_seed = [0u8; 32];
@@ -142,14 +155,16 @@ fn main() -> ! {
 
     let ui = FrostyUi {
         display,
+        capsense,
         downstream_connection_state: DownstreamConnectionState::Disconnected,
         upstream_connection_state: UpstreamConnectionState::Disconnected,
         workflow: Default::default(),
         device_name: Default::default(),
-        splash_state: AnimationState::new(&timer1, (600 * ticks_per_ms).into()),
         changes: false,
         confirm_state: AnimationState::new(&timer1, (700 * ticks_per_ms).into()),
+        last_touch: None,
         timer: &timer1,
+        ticks_per_ms: ticks_per_ms.into(),
     };
 
     // let _now1 = timer1.now();
@@ -166,19 +181,18 @@ fn main() -> ! {
     run.run()
 }
 
-pub struct FrostyUi<'t, T, DT>
-where
-    DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
-{
+pub struct FrostyUi<'t, T, DT, I2C, PINT, RST> {
     display: st7789::Graphics<'t, DT>,
+    capsense: CST816S<I2C, PINT, RST>,
+    last_touch: Option<u64>,
     downstream_connection_state: DownstreamConnectionState,
     upstream_connection_state: UpstreamConnectionState,
     workflow: Workflow,
     device_name: Option<String>,
-    splash_state: AnimationState<'t, T>,
     changes: bool,
     confirm_state: AnimationState<'t, T>,
     timer: &'t Timer<T>,
+    ticks_per_ms: u64,
 }
 
 struct AnimationState<'t, T> {
@@ -199,10 +213,6 @@ where
             start: None,
             finished: false,
         }
-    }
-
-    pub fn is_finished(&self) -> bool {
-        self.finished
     }
 
     pub fn reset(&mut self) {
@@ -240,25 +250,12 @@ pub enum AnimationProgress {
     Done,
 }
 
-impl<'t, T, DT> FrostyUi<'t, T, DT>
+impl<'t, T, DT, I2C, PINT, RST> FrostyUi<'t, T, DT, I2C, PINT, RST>
 where
     T: timer::Instance,
     DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
 {
     fn render(&mut self) {
-        let splash_progress = self.splash_state.poll();
-        match splash_progress {
-            AnimationProgress::Progress(progress) => {
-                // self.display.print(progress.to_string());
-                return;
-            }
-            AnimationProgress::FinalTick => {
-                self.display.clear(Rgb565::BLACK);
-                self.display.flush().unwrap();
-            }
-            AnimationProgress::Done => { /* splash is done no need to anything */ }
-        }
-
         self.display
             .header(self.device_name.as_deref().unwrap_or("New Device"));
 
@@ -370,8 +367,13 @@ where
     }
 }
 
-impl<'t, T, DT> UserInteraction for FrostyUi<'t, T, DT>
+impl<'t, T, DT, I2C, PINT, RST, CommE> UserInteraction for FrostyUi<'t, T, DT, I2C, PINT, RST>
 where
+    I2C: hal::blocking::i2c::Write<Error = CommE>
+        + hal::blocking::i2c::Read<Error = CommE>
+        + hal::blocking::i2c::WriteRead<Error = CommE>,
+    PINT: hal::digital::v2::InputPin,
+    RST: hal::digital::v2::StatefulOutputPin,
     T: timer::Instance,
     DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
 {
@@ -406,7 +408,7 @@ where
     }
 
     fn set_workflow(&mut self, workflow: Workflow) {
-        if let Workflow::Debug(_) = self.workflow {
+        if matches!(self.workflow, Workflow::Debug(_)) && !matches!(workflow, Workflow::Debug(_)) {
             return;
         }
         self.workflow = workflow;
@@ -415,46 +417,49 @@ where
 
     fn poll(&mut self) -> Option<UiEvent> {
         // keep the timer register fresh
-        let _now = self.timer.now();
+        let now = self.timer.now();
 
         let mut event = None;
-        if !self.splash_state.is_finished() {
-            self.render();
-            return event;
-        }
-        if let Workflow::UserPrompt(prompt) = &self.workflow {
-            let ui_event = match prompt {
-                Prompt::KeyGen(_) => UiEvent::KeyGenConfirm,
-                Prompt::Signing(_) => UiEvent::SigningConfirm,
-                Prompt::NewName { new_name, .. } => UiEvent::NameConfirm(new_name.clone()),
-                Prompt::DisplayBackupRequest(keyid) => UiEvent::BackupRequestConfirm(*keyid),
-            };
-            event = Some(ui_event);
 
-            // if self.select_button.is_low().unwrap() {
-            //     match self.confirm_state.poll() {
-            //         AnimationProgress::Progress(progress) => {
-            //             self.display.confirm_bar(progress);
-            //         }
-            //         AnimationProgress::FinalTick => {
-            //             let ui_event = match prompt {
-            //                 Prompt::KeyGen(_) => UiEvent::KeyGenConfirm,
-            //                 Prompt::Signing(_) => UiEvent::SigningConfirm,
-            //                 Prompt::NewName { new_name, .. } => {
-            //                     UiEvent::NameConfirm(new_name.clone())
-            //                 }
-            //             };
-            //             event = Some(ui_event);
-            //         }
-            //         AnimationProgress::Done => {}
-            //     }
-            // } else {
-            //     // deal with button released before confirming
-            //     if self.confirm_state.start.is_some() {
-            //         self.confirm_state.reset();
-            //         self.changes = true;
-            //     }
-            // }
+        if let Workflow::UserPrompt(prompt) = &self.workflow {
+            let is_pressed = match self.capsense.read_one_touch_event(true) {
+                None => match self.last_touch {
+                    None => false,
+                    Some(last_touch) => last_touch > now - 10 * self.ticks_per_ms,
+                },
+                Some(_touch) => {
+                    self.last_touch = Some(now);
+                    true
+                }
+            };
+
+            if is_pressed {
+                match self.confirm_state.poll() {
+                    AnimationProgress::Progress(progress) => {
+                        self.display.confirm_bar(progress);
+                    }
+                    AnimationProgress::FinalTick => {
+                        let ui_event = match prompt {
+                            Prompt::KeyGen(_) => UiEvent::KeyGenConfirm,
+                            Prompt::Signing(_) => UiEvent::SigningConfirm,
+                            Prompt::NewName { new_name, .. } => {
+                                UiEvent::NameConfirm(new_name.clone())
+                            }
+                            Prompt::DisplayBackupRequest(key_id) => {
+                                UiEvent::BackupRequestConfirm(*key_id)
+                            }
+                        };
+                        event = Some(ui_event);
+                    }
+                    AnimationProgress::Done => {}
+                }
+            } else {
+                // deal with button released before confirming
+                if self.confirm_state.start.is_some() {
+                    self.confirm_state.reset();
+                    self.changes = true;
+                }
+            }
         }
 
         if self.changes {
