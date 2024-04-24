@@ -364,3 +364,101 @@ fn test_display_backup() {
         coord_frost_key.frost_key().public_key()
     );
 }
+
+#[test]
+fn fully_replenish_nonces() {
+    let threshold = 1;
+    let coordinator = FrostCoordinator::new();
+    let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
+
+    let device = FrostSigner::new_random(&mut test_rng);
+    let devices = BTreeMap::from_iter(std::iter::once((device.device_id(), device.clone())));
+
+    let device_set = devices.keys().cloned().collect::<BTreeSet<_>>();
+    let mut env = TestEnv::default();
+    let mut test_rng = ChaCha20Rng::from_seed([123u8; 32]);
+
+    let mut run = Run::new(coordinator, devices);
+
+    let keygen_init = run.coordinator.do_keygen(&device_set, threshold).unwrap();
+    run.extend(keygen_init);
+
+    let request_nonces = run
+        .coordinator
+        .maybe_request_nonce_replenishment(device.device_id())
+        .unwrap();
+    run.extend(std::iter::once(request_nonces));
+
+    run.run_until_finished(&mut env, &mut test_rng);
+    let coord_frost_key = run.coordinator.iter_keys().next().unwrap().clone();
+    let key_id = coord_frost_key.key_id();
+
+    let uncompleting_sign_task = SignTask::Plain {
+        message: b"frostsnap in taiwan".to_vec(),
+    };
+
+    let initial_nonces_on_coordinator = run
+        .coordinator
+        .device_nonces()
+        .get(&device.device_id())
+        .unwrap()
+        .clone();
+
+    let _unused_sign_request = run
+        .coordinator
+        .start_sign(key_id, uncompleting_sign_task, device_set.clone())
+        .unwrap();
+
+    let fewer_nonces_on_coordinator = run
+        .coordinator
+        .device_nonces()
+        .get(&device.device_id())
+        .unwrap()
+        .clone();
+
+    assert_eq!(
+        fewer_nonces_on_coordinator.start_index,
+        initial_nonces_on_coordinator.start_index + 1,
+        "sanity check the coordinator counter increased"
+    );
+    assert_eq!(
+        fewer_nonces_on_coordinator.nonces.len(),
+        initial_nonces_on_coordinator.nonces.len() - 1,
+        "testing coordinator has expended one nonce"
+    );
+
+    run.coordinator.cancel();
+
+    let completing_sign_task = SignTask::Plain {
+        message: b"rip purple boards rip blue boards rip frostypedeV1".to_vec(),
+    };
+
+    let used_sign_request = run
+        .coordinator
+        .start_sign(key_id, completing_sign_task, device_set)
+        .unwrap()
+        .clone();
+
+    run.extend(used_sign_request);
+    // Test that this run completes without erroring, fully replenishing the nonces
+    run.run_until_finished(&mut env, &mut test_rng);
+
+    let final_nonces_on_coordinator = run
+        .coordinator
+        .device_nonces()
+        .get(&device.device_id())
+        .unwrap();
+
+    assert_eq!(
+        final_nonces_on_coordinator.start_index,
+        initial_nonces_on_coordinator.start_index + 2,
+        "sanity check the coordinator counter has increased by two"
+    );
+
+    // Nonces should be fully replenished despite only having requested one signature!
+    assert_eq!(
+        final_nonces_on_coordinator.nonces.len(),
+        initial_nonces_on_coordinator.nonces.len(),
+        "testing that the device response fully replenished the coordinator nonces"
+    );
+}
