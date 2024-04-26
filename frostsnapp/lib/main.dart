@@ -7,7 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'dart:io';
 import 'package:flutter/rendering.dart';
-import 'package:wakelock/wakelock.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 void main() async {
   // enable this if you're trying to figure out why things are displaying in
@@ -55,9 +55,9 @@ void main() async {
       return; // not supported by wakelock
     }
     if (update.state.devices.isNotEmpty) {
-      Wakelock.enable();
+      WakelockPlus.enable();
     } else {
-      Wakelock.disable();
+      WakelockPlus.disable();
     }
   });
   runApp(MyApp(startupError: startupError));

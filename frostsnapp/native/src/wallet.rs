@@ -16,7 +16,7 @@ use frostsnap_coordinator::frostsnap_core::{
     message::{BitcoinTransactionSignTask, EncodedSignature},
     schnorr_fun::{frost::FrostKey, fun::marker::Normal},
     tweak::TweakableKey,
-    FrostKeyExt, KeyId,
+    CoordinatorFrostKey, FrostKeyExt, KeyId,
 };
 use llsdb::{IndexHandle, LinkedList, LlsDb};
 use std::{
@@ -27,7 +27,11 @@ use std::{
 };
 use tracing::{event, Level};
 
-use crate::{api, chain_sync::SyncRequest, persist_core::PersistCore};
+use crate::{
+    api::{self, UnsignedTx},
+    chain_sync::SyncRequest,
+    persist_core::PersistCore,
+};
 
 pub type TxGraphChangeSet = tx_graph::ChangeSet<ConfirmationTimeHeightAnchor>;
 pub type ChainChangeSet = local_chain::ChangeSet;
@@ -145,7 +149,7 @@ impl _Wallet {
                     for coord_frost_key in persisted_frost_keys {
                         let key_id = coord_frost_key.key_id();
                         for (keychain, descriptor) in
-                            Self::get_descriptors(&coord_frost_key.frost_key())
+                            Self::get_descriptors(&coord_frost_key.frost_key(), network)
                         {
                             let _dont_persist_descriptors = graph
                                 .index
@@ -199,12 +203,13 @@ impl _Wallet {
 
     fn get_descriptors(
         frost_key: &FrostKey<Normal>,
+        network: bitcoin::Network,
     ) -> Vec<(Keychain, Descriptor<DescriptorPublicKey>)> {
         let secp = secp256k1::Secp256k1::verification_only();
 
         let (app_key, chaincode) =
             frost_key.app_tweak_and_expand(frostsnap_core::tweak::AppTweakKind::Bitcoin);
-        let root_bitcoin_xpub = *frostsnap_core::tweak::Xpub::new(app_key, chaincode).xpub();
+        let root_bitcoin_xpub = frostsnap_core::tweak::Xpub::new(app_key, chaincode).xpub(network);
 
         [Keychain::External, Keychain::Internal]
             .into_iter()
@@ -239,17 +244,10 @@ impl _Wallet {
             .get_descriptor(&(key_id, Keychain::External))
             .is_none()
         {
-            let coord_frost_keys = self
-                .db
-                .lock()
-                .unwrap()
-                .execute(|tx| tx.take_index(self.persist_core).coord_frost_keys())?;
-            let found = coord_frost_keys
-                .into_iter()
-                .find(|coord_frost_key| coord_frost_key.frost_key().key_id() == key_id)
+            let found = self
+                .get_frost_key(key_id)?
                 .ok_or(anyhow!("key {key_id} doesn't exist in database"))?;
-
-            for (keychain, descriptor) in Self::get_descriptors(&found.frost_key()) {
+            for (keychain, descriptor) in Self::get_descriptors(&found.frost_key(), self.network) {
                 let _intentionally_ignore_saving_descriptors = self
                     .graph
                     .index
@@ -257,6 +255,19 @@ impl _Wallet {
             }
         }
         Ok(())
+    }
+
+    fn get_frost_key(&self, key_id: KeyId) -> Result<Option<CoordinatorFrostKey>> {
+        let coord_frost_keys = self
+            .db
+            .lock()
+            .unwrap()
+            .execute(|tx| tx.take_index(self.persist_core).coord_frost_keys())?;
+        let found = coord_frost_keys
+            .into_iter()
+            .find(|coord_frost_key| coord_frost_key.frost_key().key_id() == key_id);
+
+        Ok(found)
     }
 
     pub fn list_addresses(&self, key_id: KeyId) -> Vec<api::Address> {
@@ -639,5 +650,101 @@ impl _Wallet {
                 "failed to persist broadcast"
             );
         }
+    }
+
+    pub fn xpub(&self, key_id: KeyId) -> Result<Option<bip32::Xpub>> {
+        Ok(self.get_frost_key(key_id)?.map(|coord_frost_key| {
+            coord_frost_key
+                .frost_key()
+                .bitcoin_app_xpub()
+                .xpub(self.network)
+                .clone()
+        }))
+    }
+
+    pub fn psbt_to_unsigned_tx(
+        &self,
+        psbt: &bitcoin::psbt::Psbt,
+        key_id: KeyId,
+    ) -> Result<UnsignedTx> {
+        let frost_key_xpub = self.xpub(key_id)?.ok_or(anyhow!("no such key {key_id}"))?;
+        let our_fingerprint = frost_key_xpub.fingerprint();
+        let mut prevouts = vec![];
+        let secp = secp256k1::Secp256k1::verification_only();
+
+        for (i, input) in psbt.inputs.iter().enumerate() {
+            let txout = match &input.witness_utxo {
+                Some(txout) => txout,
+                None => {
+                    event!(
+                        Level::INFO,
+                        "Skipping signing PSBT input {i} because it doesn't have a witness_utxo"
+                    );
+                    continue;
+                }
+            };
+
+            prevouts.push(frostsnap_core::message::TxInput {
+                prevout: txout.clone(),
+                bip32_path: None,
+            });
+            let prevout = prevouts.last_mut().unwrap();
+
+            let tap_internal_key = match &input.tap_internal_key {
+                Some(tap_internal_key) => tap_internal_key,
+                None => {
+                    event!(Level::INFO,
+                        "Skipping signing PSBT input {i} because it doesn't have an tap_internal_key"
+                    );
+                    continue;
+                }
+            };
+
+            let (fingerprint, derivation_path) = match input.tap_key_origins.get(tap_internal_key) {
+                Some(origin) => origin.1.clone(),
+                None => {
+                    event!(Level::INFO,"Skipping signing PSBT input {i} because it doesn't provide a source for the tap_internal_key");
+                    continue;
+                }
+            };
+
+            if fingerprint != our_fingerprint {
+                event!(Level::INFO,"Skipping signing PSBT input {i} because internal key fingerprint doesn't match ours");
+                continue;
+            }
+
+            let input_xpub = frost_key_xpub.derive_pub(&secp, &derivation_path).unwrap();
+
+            if input_xpub.to_x_only_pub() != *tap_internal_key {
+                return Err(anyhow!("Corrupt PSBT -- The key's fingerprint matches but the derived key does not match the tap_internal_key"))?;
+            }
+
+            prevout.bip32_path = Some(derivation_path.to_u32_vec());
+        }
+
+        Ok(UnsignedTx {
+            task: RustOpaque::new(frostsnap_core::message::BitcoinTransactionSignTask {
+                tx_template: psbt.clone().extract_tx()?,
+                prevouts,
+            }),
+        })
+    }
+
+    pub fn add_signatures_to_psbt(
+        &self,
+        psbt: &bitcoin::psbt::Psbt,
+        signatures: Vec<EncodedSignature>,
+    ) -> Result<bitcoin::psbt::Psbt> {
+        let mut psbt = psbt.clone();
+        for (txin, signature) in psbt.inputs.iter_mut().zip(signatures) {
+            let schnorr_sig = bitcoin::taproot::Signature {
+                sig: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.0).unwrap(),
+                hash_ty: bitcoin::sighash::TapSighashType::Default,
+            };
+            let witness = bitcoin::Witness::from_slice(&[schnorr_sig.to_vec()]);
+            txin.final_script_witness = Some(witness);
+        }
+
+        Ok(psbt.clone())
     }
 }

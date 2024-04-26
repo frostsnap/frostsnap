@@ -201,6 +201,41 @@ class NativeImpl implements Native {
         argNames: ["keyId"],
       );
 
+  Psbt psbtBytesToPsbt({required Uint8List psbtBytes, dynamic hint}) {
+    var arg0 = _platform.api2wire_uint_8_list(psbtBytes);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner.wire_psbt_bytes_to_psbt(arg0),
+      parseSuccessData: _wire2api_psbt,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kPsbtBytesToPsbtConstMeta,
+      argValues: [psbtBytes],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kPsbtBytesToPsbtConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "psbt_bytes_to_psbt",
+        argNames: ["psbtBytes"],
+      );
+
+  Future<QrReader> newQrReader({dynamic hint}) {
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner.wire_new_qr_reader(port_),
+      parseSuccessData: (d) => _wire2api_qr_reader(d),
+      parseErrorData: null,
+      constMeta: kNewQrReaderConstMeta,
+      argValues: [],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kNewQrReaderConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "new_qr_reader",
+        argNames: [],
+      );
+
   String txidMethodTransaction({required Transaction that, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_transaction(that);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
@@ -1120,6 +1155,32 @@ class NativeImpl implements Native {
         argNames: ["that", "keyId", "toAddress", "value", "feerate"],
       );
 
+  Psbt completeUnsignedPsbtMethodWallet(
+      {required Wallet that,
+      required Psbt psbt,
+      required List<EncodedSignature> signatures,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_wallet(that);
+    var arg1 = _platform.api2wire_box_autoadd_psbt(psbt);
+    var arg2 = _platform.api2wire_list_encoded_signature(signatures);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner
+          .wire_complete_unsigned_psbt__method__Wallet(arg0, arg1, arg2),
+      parseSuccessData: _wire2api_psbt,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kCompleteUnsignedPsbtMethodWalletConstMeta,
+      argValues: [that, psbt, signatures],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kCompleteUnsignedPsbtMethodWalletConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "complete_unsigned_psbt__method__Wallet",
+            argNames: ["that", "psbt", "signatures"],
+          );
+
   SignedTx completeUnsignedTxMethodWallet(
       {required Wallet that,
       required UnsignedTx unsignedTx,
@@ -1195,6 +1256,77 @@ class NativeImpl implements Native {
         argNames: ["that", "keyId", "tx"],
       );
 
+  EffectOfTx effectOfPsbtTxMethodWallet(
+      {required Wallet that,
+      required KeyId keyId,
+      required Psbt psbt,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_wallet(that);
+    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg2 = _platform.api2wire_box_autoadd_psbt(psbt);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner
+          .wire_effect_of_psbt_tx__method__Wallet(arg0, arg1, arg2),
+      parseSuccessData: _wire2api_effect_of_tx,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kEffectOfPsbtTxMethodWalletConstMeta,
+      argValues: [that, keyId, psbt],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kEffectOfPsbtTxMethodWalletConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "effect_of_psbt_tx__method__Wallet",
+        argNames: ["that", "keyId", "psbt"],
+      );
+
+  UnsignedTx psbtToUnsignedTxMethodWallet(
+      {required Wallet that,
+      required Psbt psbt,
+      required KeyId keyId,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_wallet(that);
+    var arg1 = _platform.api2wire_box_autoadd_psbt(psbt);
+    var arg2 = _platform.api2wire_box_autoadd_key_id(keyId);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner
+          .wire_psbt_to_unsigned_tx__method__Wallet(arg0, arg1, arg2),
+      parseSuccessData: _wire2api_unsigned_tx,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kPsbtToUnsignedTxMethodWalletConstMeta,
+      argValues: [that, psbt, keyId],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kPsbtToUnsignedTxMethodWalletConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "psbt_to_unsigned_tx__method__Wallet",
+        argNames: ["that", "psbt", "keyId"],
+      );
+
+  String descriptorForKeyMethodWallet(
+      {required Wallet that, required KeyId keyId, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_wallet(that);
+    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () =>
+          _platform.inner.wire_descriptor_for_key__method__Wallet(arg0, arg1),
+      parseSuccessData: _wire2api_String,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kDescriptorForKeyMethodWalletConstMeta,
+      argValues: [that, keyId],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kDescriptorForKeyMethodWalletConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "descriptor_for_key__method__Wallet",
+        argNames: ["that", "keyId"],
+      );
+
   RTransaction txMethodSignedTx({required SignedTx that, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_signed_tx(that);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
@@ -1231,12 +1363,58 @@ class NativeImpl implements Native {
         argNames: ["that"],
       );
 
+  Uint8List toBytesMethodPsbt({required Psbt that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_psbt(that);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner.wire_to_bytes__method__Psbt(arg0),
+      parseSuccessData: _wire2api_uint_8_list,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kToBytesMethodPsbtConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kToBytesMethodPsbtConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "to_bytes__method__Psbt",
+        argNames: ["that"],
+      );
+
+  Future<QrDecoderStatus> decodeFromBytesMethodQrReader(
+      {required QrReader that, required Uint8List bytes, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_qr_reader(that);
+    var arg1 = _platform.api2wire_uint_8_list(bytes);
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner
+          .wire_decode_from_bytes__method__QrReader(port_, arg0, arg1),
+      parseSuccessData: _wire2api_qr_decoder_status,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kDecodeFromBytesMethodQrReaderConstMeta,
+      argValues: [that, bytes],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kDecodeFromBytesMethodQrReaderConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "decode_from_bytes__method__QrReader",
+        argNames: ["that", "bytes"],
+      );
+
   DropFnType get dropOpaqueArcMutexVecPortDesc =>
       _platform.inner.drop_opaque_ArcMutexVecPortDesc;
   ShareFnType get shareOpaqueArcMutexVecPortDesc =>
       _platform.inner.share_opaque_ArcMutexVecPortDesc;
   OpaqueTypeFinalizer get ArcMutexVecPortDescFinalizer =>
       _platform.ArcMutexVecPortDescFinalizer;
+
+  DropFnType get dropOpaqueBitcoinPsbt =>
+      _platform.inner.drop_opaque_BitcoinPsbt;
+  ShareFnType get shareOpaqueBitcoinPsbt =>
+      _platform.inner.share_opaque_BitcoinPsbt;
+  OpaqueTypeFinalizer get BitcoinPsbtFinalizer =>
+      _platform.BitcoinPsbtFinalizer;
 
   DropFnType get dropOpaqueChainSync => _platform.inner.drop_opaque_ChainSync;
   ShareFnType get shareOpaqueChainSync =>
@@ -1249,6 +1427,13 @@ class NativeImpl implements Native {
       _platform.inner.share_opaque_FfiCoordinator;
   OpaqueTypeFinalizer get FfiCoordinatorFinalizer =>
       _platform.FfiCoordinatorFinalizer;
+
+  DropFnType get dropOpaqueFfiQrReader =>
+      _platform.inner.drop_opaque_FfiQrReader;
+  ShareFnType get shareOpaqueFfiQrReader =>
+      _platform.inner.share_opaque_FfiQrReader;
+  OpaqueTypeFinalizer get FfiQrReaderFinalizer =>
+      _platform.FfiQrReaderFinalizer;
 
   DropFnType get dropOpaqueFrostsnapCoreCoordinatorFrostKey =>
       _platform.inner.drop_opaque_FrostsnapCoreCoordinatorFrostKey;
@@ -1325,12 +1510,20 @@ class NativeImpl implements Native {
     return ArcMutexVecPortDesc.fromRaw(raw[0], raw[1], this);
   }
 
+  BitcoinPsbt _wire2api_BitcoinPsbt(dynamic raw) {
+    return BitcoinPsbt.fromRaw(raw[0], raw[1], this);
+  }
+
   ChainSync _wire2api_ChainSync(dynamic raw) {
     return ChainSync.fromRaw(raw[0], raw[1], this);
   }
 
   FfiCoordinator _wire2api_FfiCoordinator(dynamic raw) {
     return FfiCoordinator.fromRaw(raw[0], raw[1], this);
+  }
+
+  FfiQrReader _wire2api_FfiQrReader(dynamic raw) {
+    return FfiQrReader.fromRaw(raw[0], raw[1], this);
   }
 
   FrbAnyhowException _wire2api_FrbAnyhowException(dynamic raw) {
@@ -1435,6 +1628,10 @@ class NativeImpl implements Native {
     return _wire2api_confirmation_time(raw);
   }
 
+  DecodingProgress _wire2api_box_autoadd_decoding_progress(dynamic raw) {
+    return _wire2api_decoding_progress(raw);
+  }
+
   Device _wire2api_box_autoadd_device(dynamic raw) {
     return _wire2api_device(raw);
   }
@@ -1488,6 +1685,16 @@ class NativeImpl implements Native {
     return Coordinator(
       bridge: this,
       field0: _wire2api_FfiCoordinator(arr[0]),
+    );
+  }
+
+  DecodingProgress _wire2api_decoding_progress(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return DecodingProgress(
+      decodedFrames: _wire2api_usize(arr[0]),
+      sequenceCount: _wire2api_usize(arr[1]),
     );
   }
 
@@ -1787,6 +1994,45 @@ class NativeImpl implements Native {
       id: _wire2api_String(arr[0]),
       bytes: _wire2api_uint_8_list(arr[1]),
       ready: _wire2api_PortWriteSender(arr[2]),
+    );
+  }
+
+  Psbt _wire2api_psbt(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return Psbt(
+      bridge: this,
+      inner: _wire2api_BitcoinPsbt(arr[0]),
+    );
+  }
+
+  QrDecoderStatus _wire2api_qr_decoder_status(dynamic raw) {
+    switch (raw[0]) {
+      case 0:
+        return QrDecoderStatus_Progress(
+          _wire2api_box_autoadd_decoding_progress(raw[1]),
+        );
+      case 1:
+        return QrDecoderStatus_Decoded(
+          _wire2api_uint_8_list(raw[1]),
+        );
+      case 2:
+        return QrDecoderStatus_Failed(
+          _wire2api_String(raw[1]),
+        );
+      default:
+        throw Exception("unreachable");
+    }
+  }
+
+  QrReader _wire2api_qr_reader(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return QrReader(
+      bridge: this,
+      field0: _wire2api_FfiQrReader(arr[0]),
     );
   }
 

@@ -4,8 +4,11 @@ pub use crate::ffi_serial_port::{
     PortBytesToReadSender, PortOpenSender, PortReadSender, PortWriteSender,
 };
 pub use crate::FfiCoordinator;
+pub use crate::FfiQrReader;
+use crate::QrDecoderStatus;
 use anyhow::{anyhow, Context, Result};
 pub use bdk_chain::bitcoin;
+pub use bitcoin::psbt::Psbt as BitcoinPsbt;
 pub use bitcoin::Transaction as RTransaction;
 use flutter_rust_bridge::{frb, RustOpaque, StreamSink, SyncReturn};
 pub use frostsnap_coordinator::firmware_upgrade::FirmwareUpgradeConfirmState;
@@ -765,6 +768,20 @@ impl Wallet {
         Ok(unsigned_tx)
     }
 
+    pub fn complete_unsigned_psbt(
+        &self,
+        psbt: Psbt,
+        signatures: Vec<EncodedSignature>,
+    ) -> Result<SyncReturn<Psbt>> {
+        let psbt = self
+            .inner
+            .lock()
+            .unwrap()
+            .add_signatures_to_psbt(&psbt.inner, signatures)
+            .map(RustOpaque::new)?;
+        Ok(SyncReturn(Psbt { inner: psbt }))
+    }
+
     pub fn complete_unsigned_tx(
         &self,
         unsigned_tx: UnsignedTx,
@@ -774,7 +791,8 @@ impl Wallet {
             .inner
             .lock()
             .unwrap()
-            .complete_tx_sign_task(unsigned_tx.task.deref().clone(), signatures)?;
+            .complete_tx_sign_task(unsigned_tx.task.deref().clone(), signatures.clone())?;
+
         Ok(SyncReturn(SignedTx {
             inner: RustOpaque::new(tx),
         }))
@@ -840,6 +858,49 @@ impl Wallet {
                 .collect(),
         }))
     }
+
+    pub fn effect_of_psbt_tx(&self, key_id: KeyId, psbt: Psbt) -> Result<SyncReturn<EffectOfTx>> {
+        let inner = self.inner.lock().unwrap();
+        let fee = psbt.inner.fee()?.to_sat();
+        let tx = psbt.inner.deref().clone().extract_tx()?;
+        Ok(SyncReturn(EffectOfTx {
+            net_value: inner.net_value(key_id, &tx),
+            fee,
+            feerate: fee as f64 / (tx.weight().to_wu() as f64 / 4.0),
+            foreign_receiving_addresses: inner
+                .spends_outside(&tx)
+                .into_iter()
+                .map(|(spk, value)| {
+                    (
+                        bitcoin::Address::from_script(&spk, inner.network)
+                            .map(|address| address.to_string())
+                            .unwrap_or(spk.to_hex_string()),
+                        value,
+                    )
+                })
+                .collect(),
+        }))
+    }
+
+    pub fn psbt_to_unsigned_tx(&self, psbt: Psbt, key_id: KeyId) -> Result<SyncReturn<UnsignedTx>> {
+        Ok(SyncReturn(
+            self.inner
+                .lock()
+                .unwrap()
+                .psbt_to_unsigned_tx(&*psbt.inner, key_id)?,
+        ))
+    }
+
+    pub fn descriptor_for_key(&self, key_id: KeyId) -> Result<SyncReturn<String>> {
+        let xpub = self
+            .inner
+            .lock()
+            .unwrap()
+            .xpub(key_id)?
+            .ok_or(anyhow!("no such key {key_id}"))?;
+        let str_descriptor = format!("tr([{}/]{})", xpub.fingerprint(), xpub);
+        Ok(SyncReturn(str_descriptor))
+    }
 }
 
 pub struct SignedTx {
@@ -894,4 +955,46 @@ pub enum SignTaskDescription {
     //     key_id: KeyId,
     // }, // 1 nonce & sig
     Transaction { unsigned_tx: UnsignedTx },
+}
+
+pub struct Psbt {
+    pub inner: RustOpaque<BitcoinPsbt>,
+}
+
+impl Psbt {
+    pub fn to_bytes(&self) -> Result<SyncReturn<Vec<u8>>> {
+        let psbt_bytes = self.inner.serialize();
+        Ok(SyncReturn(psbt_bytes))
+    }
+}
+
+pub fn psbt_bytes_to_psbt(psbt_bytes: Vec<u8>) -> Result<SyncReturn<Psbt>> {
+    let psbt = match bitcoin::psbt::Psbt::deserialize(&psbt_bytes) {
+        Ok(psbt) => psbt,
+        Err(e) => {
+            event!(
+                TLevel::ERROR,
+                "Failed to deserialize PSBT {e} {:?}",
+                psbt_bytes
+            );
+            return Err(anyhow!("Failed to deserialize PSBT: {e}"));
+        }
+    };
+    Ok(SyncReturn(Psbt {
+        inner: RustOpaque::new(psbt),
+    }))
+}
+
+pub struct QrReader(pub RustOpaque<FfiQrReader>);
+
+pub fn new_qr_reader() -> QrReader {
+    QrReader(RustOpaque::new(FfiQrReader::new()))
+}
+
+impl QrReader {
+    pub fn decode_from_bytes(&self, bytes: Vec<u8>) -> Result<QrDecoderStatus> {
+        let decoded_qr = crate::camera::read_qr_code_bytes(&bytes)?;
+        let decoded_ur = self.0.ingest_ur_strings(decoded_qr)?;
+        Ok(decoded_ur)
+    }
 }

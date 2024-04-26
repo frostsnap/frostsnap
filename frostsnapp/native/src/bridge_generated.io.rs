@@ -52,6 +52,18 @@ pub extern "C" fn wire_echo_key_id(port_: i64, key_id: *mut wire_KeyId) {
 }
 
 #[no_mangle]
+pub extern "C" fn wire_psbt_bytes_to_psbt(
+    psbt_bytes: *mut wire_uint_8_list,
+) -> support::WireSyncReturn {
+    wire_psbt_bytes_to_psbt_impl(psbt_bytes)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_new_qr_reader(port_: i64) {
+    wire_new_qr_reader_impl(port_)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_txid__method__Transaction(
     that: *mut wire_Transaction,
 ) -> support::WireSyncReturn {
@@ -399,6 +411,15 @@ pub extern "C" fn wire_send_to__method__Wallet(
 }
 
 #[no_mangle]
+pub extern "C" fn wire_complete_unsigned_psbt__method__Wallet(
+    that: *mut wire_Wallet,
+    psbt: *mut wire_Psbt,
+    signatures: *mut wire_list_encoded_signature,
+) -> support::WireSyncReturn {
+    wire_complete_unsigned_psbt__method__Wallet_impl(that, psbt, signatures)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_complete_unsigned_tx__method__Wallet(
     that: *mut wire_Wallet,
     unsigned_tx: *mut wire_UnsignedTx,
@@ -427,6 +448,32 @@ pub extern "C" fn wire_effect_of_tx__method__Wallet(
 }
 
 #[no_mangle]
+pub extern "C" fn wire_effect_of_psbt_tx__method__Wallet(
+    that: *mut wire_Wallet,
+    key_id: *mut wire_KeyId,
+    psbt: *mut wire_Psbt,
+) -> support::WireSyncReturn {
+    wire_effect_of_psbt_tx__method__Wallet_impl(that, key_id, psbt)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_psbt_to_unsigned_tx__method__Wallet(
+    that: *mut wire_Wallet,
+    psbt: *mut wire_Psbt,
+    key_id: *mut wire_KeyId,
+) -> support::WireSyncReturn {
+    wire_psbt_to_unsigned_tx__method__Wallet_impl(that, psbt, key_id)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_descriptor_for_key__method__Wallet(
+    that: *mut wire_Wallet,
+    key_id: *mut wire_KeyId,
+) -> support::WireSyncReturn {
+    wire_descriptor_for_key__method__Wallet_impl(that, key_id)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_tx__method__SignedTx(that: *mut wire_SignedTx) -> support::WireSyncReturn {
     wire_tx__method__SignedTx_impl(that)
 }
@@ -438,11 +485,30 @@ pub extern "C" fn wire_tx__method__UnsignedTx(
     wire_tx__method__UnsignedTx_impl(that)
 }
 
+#[no_mangle]
+pub extern "C" fn wire_to_bytes__method__Psbt(that: *mut wire_Psbt) -> support::WireSyncReturn {
+    wire_to_bytes__method__Psbt_impl(that)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_decode_from_bytes__method__QrReader(
+    port_: i64,
+    that: *mut wire_QrReader,
+    bytes: *mut wire_uint_8_list,
+) {
+    wire_decode_from_bytes__method__QrReader_impl(port_, that, bytes)
+}
+
 // Section: allocate functions
 
 #[no_mangle]
 pub extern "C" fn new_ArcMutexVecPortDesc() -> wire_ArcMutexVecPortDesc {
     wire_ArcMutexVecPortDesc::new_with_null_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn new_BitcoinPsbt() -> wire_BitcoinPsbt {
+    wire_BitcoinPsbt::new_with_null_ptr()
 }
 
 #[no_mangle]
@@ -453,6 +519,11 @@ pub extern "C" fn new_ChainSync() -> wire_ChainSync {
 #[no_mangle]
 pub extern "C" fn new_FfiCoordinator() -> wire_FfiCoordinator {
     wire_FfiCoordinator::new_with_null_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn new_FfiQrReader() -> wire_FfiQrReader {
+    wire_FfiQrReader::new_with_null_ptr()
 }
 
 #[no_mangle]
@@ -572,6 +643,16 @@ pub extern "C" fn new_box_autoadd_port_write_0() -> *mut wire_PortWrite {
 }
 
 #[no_mangle]
+pub extern "C" fn new_box_autoadd_psbt_0() -> *mut wire_Psbt {
+    support::new_leak_box_ptr(wire_Psbt::new_with_null_ptr())
+}
+
+#[no_mangle]
+pub extern "C" fn new_box_autoadd_qr_reader_0() -> *mut wire_QrReader {
+    support::new_leak_box_ptr(wire_QrReader::new_with_null_ptr())
+}
+
+#[no_mangle]
 pub extern "C" fn new_box_autoadd_signed_tx_0() -> *mut wire_SignedTx {
     support::new_leak_box_ptr(wire_SignedTx::new_with_null_ptr())
 }
@@ -654,6 +735,21 @@ pub extern "C" fn share_opaque_ArcMutexVecPortDesc(ptr: *const c_void) -> *const
 }
 
 #[no_mangle]
+pub extern "C" fn drop_opaque_BitcoinPsbt(ptr: *const c_void) {
+    unsafe {
+        Arc::<BitcoinPsbt>::decrement_strong_count(ptr as _);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn share_opaque_BitcoinPsbt(ptr: *const c_void) -> *const c_void {
+    unsafe {
+        Arc::<BitcoinPsbt>::increment_strong_count(ptr as _);
+        ptr
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn drop_opaque_ChainSync(ptr: *const c_void) {
     unsafe {
         Arc::<ChainSync>::decrement_strong_count(ptr as _);
@@ -679,6 +775,21 @@ pub extern "C" fn drop_opaque_FfiCoordinator(ptr: *const c_void) {
 pub extern "C" fn share_opaque_FfiCoordinator(ptr: *const c_void) -> *const c_void {
     unsafe {
         Arc::<FfiCoordinator>::increment_strong_count(ptr as _);
+        ptr
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn drop_opaque_FfiQrReader(ptr: *const c_void) {
+    unsafe {
+        Arc::<FfiQrReader>::decrement_strong_count(ptr as _);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn share_opaque_FfiQrReader(ptr: *const c_void) -> *const c_void {
+    unsafe {
+        Arc::<FfiQrReader>::increment_strong_count(ptr as _);
         ptr
     }
 }
@@ -835,6 +946,11 @@ impl Wire2Api<RustOpaque<Arc<Mutex<Vec<PortDesc>>>>> for wire_ArcMutexVecPortDes
         unsafe { support::opaque_from_dart(self.ptr as _) }
     }
 }
+impl Wire2Api<RustOpaque<BitcoinPsbt>> for wire_BitcoinPsbt {
+    fn wire2api(self) -> RustOpaque<BitcoinPsbt> {
+        unsafe { support::opaque_from_dart(self.ptr as _) }
+    }
+}
 impl Wire2Api<RustOpaque<ChainSync>> for wire_ChainSync {
     fn wire2api(self) -> RustOpaque<ChainSync> {
         unsafe { support::opaque_from_dart(self.ptr as _) }
@@ -842,6 +958,11 @@ impl Wire2Api<RustOpaque<ChainSync>> for wire_ChainSync {
 }
 impl Wire2Api<RustOpaque<FfiCoordinator>> for wire_FfiCoordinator {
     fn wire2api(self) -> RustOpaque<FfiCoordinator> {
+        unsafe { support::opaque_from_dart(self.ptr as _) }
+    }
+}
+impl Wire2Api<RustOpaque<FfiQrReader>> for wire_FfiQrReader {
+    fn wire2api(self) -> RustOpaque<FfiQrReader> {
         unsafe { support::opaque_from_dart(self.ptr as _) }
     }
 }
@@ -981,6 +1102,18 @@ impl Wire2Api<PortWrite> for *mut wire_PortWrite {
     fn wire2api(self) -> PortWrite {
         let wrap = unsafe { support::box_from_leak_ptr(self) };
         Wire2Api::<PortWrite>::wire2api(*wrap).into()
+    }
+}
+impl Wire2Api<Psbt> for *mut wire_Psbt {
+    fn wire2api(self) -> Psbt {
+        let wrap = unsafe { support::box_from_leak_ptr(self) };
+        Wire2Api::<Psbt>::wire2api(*wrap).into()
+    }
+}
+impl Wire2Api<QrReader> for *mut wire_QrReader {
+    fn wire2api(self) -> QrReader {
+        let wrap = unsafe { support::box_from_leak_ptr(self) };
+        Wire2Api::<QrReader>::wire2api(*wrap).into()
     }
 }
 impl Wire2Api<SignedTx> for *mut wire_SignedTx {
@@ -1149,6 +1282,18 @@ impl Wire2Api<PortWrite> for wire_PortWrite {
         }
     }
 }
+impl Wire2Api<Psbt> for wire_Psbt {
+    fn wire2api(self) -> Psbt {
+        Psbt {
+            inner: self.inner.wire2api(),
+        }
+    }
+}
+impl Wire2Api<QrReader> for wire_QrReader {
+    fn wire2api(self) -> QrReader {
+        QrReader(self.field0.wire2api())
+    }
+}
 impl Wire2Api<SignedTx> for wire_SignedTx {
     fn wire2api(self) -> SignedTx {
         SignedTx {
@@ -1219,6 +1364,12 @@ pub struct wire_ArcMutexVecPortDesc {
 
 #[repr(C)]
 #[derive(Clone)]
+pub struct wire_BitcoinPsbt {
+    ptr: *const core::ffi::c_void,
+}
+
+#[repr(C)]
+#[derive(Clone)]
 pub struct wire_ChainSync {
     ptr: *const core::ffi::c_void,
 }
@@ -1226,6 +1377,12 @@ pub struct wire_ChainSync {
 #[repr(C)]
 #[derive(Clone)]
 pub struct wire_FfiCoordinator {
+    ptr: *const core::ffi::c_void,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_FfiQrReader {
     ptr: *const core::ffi::c_void,
 }
 
@@ -1418,6 +1575,18 @@ pub struct wire_PortWrite {
 
 #[repr(C)]
 #[derive(Clone)]
+pub struct wire_Psbt {
+    inner: wire_BitcoinPsbt,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_QrReader {
+    field0: wire_FfiQrReader,
+}
+
+#[repr(C)]
+#[derive(Clone)]
 pub struct wire_SignedTx {
     inner: wire_RTransaction,
 }
@@ -1470,6 +1639,13 @@ impl NewWithNullPtr for wire_ArcMutexVecPortDesc {
         }
     }
 }
+impl NewWithNullPtr for wire_BitcoinPsbt {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            ptr: core::ptr::null(),
+        }
+    }
+}
 impl NewWithNullPtr for wire_ChainSync {
     fn new_with_null_ptr() -> Self {
         Self {
@@ -1478,6 +1654,13 @@ impl NewWithNullPtr for wire_ChainSync {
     }
 }
 impl NewWithNullPtr for wire_FfiCoordinator {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            ptr: core::ptr::null(),
+        }
+    }
+}
+impl NewWithNullPtr for wire_FfiQrReader {
     fn new_with_null_ptr() -> Self {
         Self {
             ptr: core::ptr::null(),
@@ -1753,6 +1936,34 @@ impl NewWithNullPtr for wire_PortWrite {
 }
 
 impl Default for wire_PortWrite {
+    fn default() -> Self {
+        Self::new_with_null_ptr()
+    }
+}
+
+impl NewWithNullPtr for wire_Psbt {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            inner: wire_BitcoinPsbt::new_with_null_ptr(),
+        }
+    }
+}
+
+impl Default for wire_Psbt {
+    fn default() -> Self {
+        Self::new_with_null_ptr()
+    }
+}
+
+impl NewWithNullPtr for wire_QrReader {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            field0: wire_FfiQrReader::new_with_null_ptr(),
+        }
+    }
+}
+
+impl Default for wire_QrReader {
     fn default() -> Self {
         Self::new_with_null_ptr()
     }

@@ -26,12 +26,22 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
+  Object api2wire_BitcoinPsbt(BitcoinPsbt raw) {
+    return raw.shareOrMove();
+  }
+
+  @protected
   Object api2wire_ChainSync(ChainSync raw) {
     return raw.shareOrMove();
   }
 
   @protected
   Object api2wire_FfiCoordinator(FfiCoordinator raw) {
+    return raw.shareOrMove();
+  }
+
+  @protected
+  Object api2wire_FfiQrReader(FfiQrReader raw) {
     return raw.shareOrMove();
   }
 
@@ -151,6 +161,16 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   @protected
   List<dynamic> api2wire_box_autoadd_port_write(PortWrite raw) {
     return api2wire_port_write(raw);
+  }
+
+  @protected
+  List<dynamic> api2wire_box_autoadd_psbt(Psbt raw) {
+    return api2wire_psbt(raw);
+  }
+
+  @protected
+  List<dynamic> api2wire_box_autoadd_qr_reader(QrReader raw) {
+    return api2wire_qr_reader(raw);
   }
 
   @protected
@@ -301,6 +321,16 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
+  List<dynamic> api2wire_psbt(Psbt raw) {
+    return [api2wire_BitcoinPsbt(raw.inner)];
+  }
+
+  @protected
+  List<dynamic> api2wire_qr_reader(QrReader raw) {
+    return [api2wire_FfiQrReader(raw.field0)];
+  }
+
+  @protected
   List<dynamic> api2wire_signed_tx(SignedTx raw) {
     return [api2wire_RTransaction(raw.inner)];
   }
@@ -358,6 +388,9 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
       Finalizer<PlatformPointer>(inner.drop_opaque_ArcMutexVecPortDesc);
   Finalizer<PlatformPointer> get ArcMutexVecPortDescFinalizer =>
       _ArcMutexVecPortDescFinalizer;
+  late final Finalizer<PlatformPointer> _BitcoinPsbtFinalizer =
+      Finalizer<PlatformPointer>(inner.drop_opaque_BitcoinPsbt);
+  Finalizer<PlatformPointer> get BitcoinPsbtFinalizer => _BitcoinPsbtFinalizer;
   late final Finalizer<PlatformPointer> _ChainSyncFinalizer =
       Finalizer<PlatformPointer>(inner.drop_opaque_ChainSync);
   Finalizer<PlatformPointer> get ChainSyncFinalizer => _ChainSyncFinalizer;
@@ -365,6 +398,9 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
       Finalizer<PlatformPointer>(inner.drop_opaque_FfiCoordinator);
   Finalizer<PlatformPointer> get FfiCoordinatorFinalizer =>
       _FfiCoordinatorFinalizer;
+  late final Finalizer<PlatformPointer> _FfiQrReaderFinalizer =
+      Finalizer<PlatformPointer>(inner.drop_opaque_FfiQrReader);
+  Finalizer<PlatformPointer> get FfiQrReaderFinalizer => _FfiQrReaderFinalizer;
   late final Finalizer<PlatformPointer>
       _FrostsnapCoreCoordinatorFrostKeyFinalizer = Finalizer<PlatformPointer>(
           inner.drop_opaque_FrostsnapCoreCoordinatorFrostKey);
@@ -442,6 +478,11 @@ class NativeWasmModule implements WasmModule {
 
   external dynamic /* void */ wire_echo_key_id(
       NativePortType port_, List<dynamic> key_id);
+
+  external dynamic /* List<dynamic> */ wire_psbt_bytes_to_psbt(
+      Uint8List psbt_bytes);
+
+  external dynamic /* void */ wire_new_qr_reader(NativePortType port_);
 
   external dynamic /* String */ wire_txid__method__Transaction(
       List<dynamic> that);
@@ -596,6 +637,10 @@ class NativeWasmModule implements WasmModule {
       double feerate);
 
   external dynamic /* List<dynamic> */
+      wire_complete_unsigned_psbt__method__Wallet(
+          List<dynamic> that, List<dynamic> psbt, List<dynamic> signatures);
+
+  external dynamic /* List<dynamic> */
       wire_complete_unsigned_tx__method__Wallet(List<dynamic> that,
           List<dynamic> unsigned_tx, List<dynamic> signatures);
 
@@ -608,13 +653,32 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* List<dynamic> */ wire_effect_of_tx__method__Wallet(
       List<dynamic> that, List<dynamic> key_id, Object tx);
 
+  external dynamic /* List<dynamic> */ wire_effect_of_psbt_tx__method__Wallet(
+      List<dynamic> that, List<dynamic> key_id, List<dynamic> psbt);
+
+  external dynamic /* List<dynamic> */ wire_psbt_to_unsigned_tx__method__Wallet(
+      List<dynamic> that, List<dynamic> psbt, List<dynamic> key_id);
+
+  external dynamic /* String */ wire_descriptor_for_key__method__Wallet(
+      List<dynamic> that, List<dynamic> key_id);
+
   external dynamic /* Object */ wire_tx__method__SignedTx(List<dynamic> that);
 
   external dynamic /* Object */ wire_tx__method__UnsignedTx(List<dynamic> that);
 
+  external dynamic /* Uint8List */ wire_to_bytes__method__Psbt(
+      List<dynamic> that);
+
+  external dynamic /* void */ wire_decode_from_bytes__method__QrReader(
+      NativePortType port_, List<dynamic> that, Uint8List bytes);
+
   external dynamic /*  */ drop_opaque_ArcMutexVecPortDesc(ptr);
 
   external int /* *const c_void */ share_opaque_ArcMutexVecPortDesc(ptr);
+
+  external dynamic /*  */ drop_opaque_BitcoinPsbt(ptr);
+
+  external int /* *const c_void */ share_opaque_BitcoinPsbt(ptr);
 
   external dynamic /*  */ drop_opaque_ChainSync(ptr);
 
@@ -623,6 +687,10 @@ class NativeWasmModule implements WasmModule {
   external dynamic /*  */ drop_opaque_FfiCoordinator(ptr);
 
   external int /* *const c_void */ share_opaque_FfiCoordinator(ptr);
+
+  external dynamic /*  */ drop_opaque_FfiQrReader(ptr);
+
+  external int /* *const c_void */ share_opaque_FfiQrReader(ptr);
 
   external dynamic /*  */ drop_opaque_FrostsnapCoreCoordinatorFrostKey(ptr);
 
@@ -700,6 +768,12 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
 
   void wire_echo_key_id(NativePortType port_, List<dynamic> key_id) =>
       wasmModule.wire_echo_key_id(port_, key_id);
+
+  dynamic /* List<dynamic> */ wire_psbt_bytes_to_psbt(Uint8List psbt_bytes) =>
+      wasmModule.wire_psbt_bytes_to_psbt(psbt_bytes);
+
+  void wire_new_qr_reader(NativePortType port_) =>
+      wasmModule.wire_new_qr_reader(port_);
 
   dynamic /* String */ wire_txid__method__Transaction(List<dynamic> that) =>
       wasmModule.wire_txid__method__Transaction(that);
@@ -891,6 +965,11 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
       wasmModule.wire_send_to__method__Wallet(
           port_, that, key_id, to_address, value, feerate);
 
+  dynamic /* List<dynamic> */ wire_complete_unsigned_psbt__method__Wallet(
+          List<dynamic> that, List<dynamic> psbt, List<dynamic> signatures) =>
+      wasmModule.wire_complete_unsigned_psbt__method__Wallet(
+          that, psbt, signatures);
+
   dynamic /* List<dynamic> */ wire_complete_unsigned_tx__method__Wallet(
           List<dynamic> that,
           List<dynamic> unsigned_tx,
@@ -906,17 +985,42 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
           List<dynamic> that, List<dynamic> key_id, Object tx) =>
       wasmModule.wire_effect_of_tx__method__Wallet(that, key_id, tx);
 
+  dynamic /* List<dynamic> */ wire_effect_of_psbt_tx__method__Wallet(
+          List<dynamic> that, List<dynamic> key_id, List<dynamic> psbt) =>
+      wasmModule.wire_effect_of_psbt_tx__method__Wallet(that, key_id, psbt);
+
+  dynamic /* List<dynamic> */ wire_psbt_to_unsigned_tx__method__Wallet(
+          List<dynamic> that, List<dynamic> psbt, List<dynamic> key_id) =>
+      wasmModule.wire_psbt_to_unsigned_tx__method__Wallet(that, psbt, key_id);
+
+  dynamic /* String */ wire_descriptor_for_key__method__Wallet(
+          List<dynamic> that, List<dynamic> key_id) =>
+      wasmModule.wire_descriptor_for_key__method__Wallet(that, key_id);
+
   dynamic /* Object */ wire_tx__method__SignedTx(List<dynamic> that) =>
       wasmModule.wire_tx__method__SignedTx(that);
 
   dynamic /* Object */ wire_tx__method__UnsignedTx(List<dynamic> that) =>
       wasmModule.wire_tx__method__UnsignedTx(that);
 
+  dynamic /* Uint8List */ wire_to_bytes__method__Psbt(List<dynamic> that) =>
+      wasmModule.wire_to_bytes__method__Psbt(that);
+
+  void wire_decode_from_bytes__method__QrReader(
+          NativePortType port_, List<dynamic> that, Uint8List bytes) =>
+      wasmModule.wire_decode_from_bytes__method__QrReader(port_, that, bytes);
+
   dynamic /*  */ drop_opaque_ArcMutexVecPortDesc(ptr) =>
       wasmModule.drop_opaque_ArcMutexVecPortDesc(ptr);
 
   int /* *const c_void */ share_opaque_ArcMutexVecPortDesc(ptr) =>
       wasmModule.share_opaque_ArcMutexVecPortDesc(ptr);
+
+  dynamic /*  */ drop_opaque_BitcoinPsbt(ptr) =>
+      wasmModule.drop_opaque_BitcoinPsbt(ptr);
+
+  int /* *const c_void */ share_opaque_BitcoinPsbt(ptr) =>
+      wasmModule.share_opaque_BitcoinPsbt(ptr);
 
   dynamic /*  */ drop_opaque_ChainSync(ptr) =>
       wasmModule.drop_opaque_ChainSync(ptr);
@@ -929,6 +1033,12 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
 
   int /* *const c_void */ share_opaque_FfiCoordinator(ptr) =>
       wasmModule.share_opaque_FfiCoordinator(ptr);
+
+  dynamic /*  */ drop_opaque_FfiQrReader(ptr) =>
+      wasmModule.drop_opaque_FfiQrReader(ptr);
+
+  int /* *const c_void */ share_opaque_FfiQrReader(ptr) =>
+      wasmModule.share_opaque_FfiQrReader(ptr);
 
   dynamic /*  */ drop_opaque_FrostsnapCoreCoordinatorFrostKey(ptr) =>
       wasmModule.drop_opaque_FrostsnapCoreCoordinatorFrostKey(ptr);

@@ -166,6 +166,14 @@ typedef struct wire_StringList {
   int32_t len;
 } wire_StringList;
 
+typedef struct wire_BitcoinPsbt {
+  const void *ptr;
+} wire_BitcoinPsbt;
+
+typedef struct wire_Psbt {
+  struct wire_BitcoinPsbt inner;
+} wire_Psbt;
+
 typedef struct wire_EncodedSignature {
   struct wire_uint_8_list *field0;
 } wire_EncodedSignature;
@@ -178,6 +186,14 @@ typedef struct wire_list_encoded_signature {
 typedef struct wire_SignedTx {
   struct wire_RTransaction inner;
 } wire_SignedTx;
+
+typedef struct wire_FfiQrReader {
+  const void *ptr;
+} wire_FfiQrReader;
+
+typedef struct wire_QrReader {
+  struct wire_FfiQrReader field0;
+} wire_QrReader;
 
 void store_dart_post_cobject(DartPostCObjectFnType ptr);
 
@@ -208,6 +224,10 @@ void wire_load(int64_t port_, struct wire_uint_8_list *db_file);
 void wire_load_host_handles_serial(int64_t port_, struct wire_uint_8_list *db_file);
 
 void wire_echo_key_id(int64_t port_, struct wire_KeyId *key_id);
+
+WireSyncReturn wire_psbt_bytes_to_psbt(struct wire_uint_8_list *psbt_bytes);
+
+void wire_new_qr_reader(int64_t port_);
 
 WireSyncReturn wire_txid__method__Transaction(struct wire_Transaction *that);
 
@@ -350,6 +370,10 @@ void wire_send_to__method__Wallet(int64_t port_,
                                   uint64_t value,
                                   double feerate);
 
+WireSyncReturn wire_complete_unsigned_psbt__method__Wallet(struct wire_Wallet *that,
+                                                           struct wire_Psbt *psbt,
+                                                           struct wire_list_encoded_signature *signatures);
+
 WireSyncReturn wire_complete_unsigned_tx__method__Wallet(struct wire_Wallet *that,
                                                          struct wire_UnsignedTx *unsigned_tx,
                                                          struct wire_list_encoded_signature *signatures);
@@ -363,15 +387,36 @@ WireSyncReturn wire_effect_of_tx__method__Wallet(struct wire_Wallet *that,
                                                  struct wire_KeyId *key_id,
                                                  struct wire_RTransaction tx);
 
+WireSyncReturn wire_effect_of_psbt_tx__method__Wallet(struct wire_Wallet *that,
+                                                      struct wire_KeyId *key_id,
+                                                      struct wire_Psbt *psbt);
+
+WireSyncReturn wire_psbt_to_unsigned_tx__method__Wallet(struct wire_Wallet *that,
+                                                        struct wire_Psbt *psbt,
+                                                        struct wire_KeyId *key_id);
+
+WireSyncReturn wire_descriptor_for_key__method__Wallet(struct wire_Wallet *that,
+                                                       struct wire_KeyId *key_id);
+
 WireSyncReturn wire_tx__method__SignedTx(struct wire_SignedTx *that);
 
 WireSyncReturn wire_tx__method__UnsignedTx(struct wire_UnsignedTx *that);
 
+WireSyncReturn wire_to_bytes__method__Psbt(struct wire_Psbt *that);
+
+void wire_decode_from_bytes__method__QrReader(int64_t port_,
+                                              struct wire_QrReader *that,
+                                              struct wire_uint_8_list *bytes);
+
 struct wire_ArcMutexVecPortDesc new_ArcMutexVecPortDesc(void);
+
+struct wire_BitcoinPsbt new_BitcoinPsbt(void);
 
 struct wire_ChainSync new_ChainSync(void);
 
 struct wire_FfiCoordinator new_FfiCoordinator(void);
+
+struct wire_FfiQrReader new_FfiQrReader(void);
 
 struct wire_FrostsnapCoreCoordinatorFrostKey new_FrostsnapCoreCoordinatorFrostKey(void);
 
@@ -417,6 +462,10 @@ struct wire_PortRead *new_box_autoadd_port_read_0(void);
 
 struct wire_PortWrite *new_box_autoadd_port_write_0(void);
 
+struct wire_Psbt *new_box_autoadd_psbt_0(void);
+
+struct wire_QrReader *new_box_autoadd_qr_reader_0(void);
+
 struct wire_SignedTx *new_box_autoadd_signed_tx_0(void);
 
 struct wire_Transaction *new_box_autoadd_transaction_0(void);
@@ -439,6 +488,10 @@ void drop_opaque_ArcMutexVecPortDesc(const void *ptr);
 
 const void *share_opaque_ArcMutexVecPortDesc(const void *ptr);
 
+void drop_opaque_BitcoinPsbt(const void *ptr);
+
+const void *share_opaque_BitcoinPsbt(const void *ptr);
+
 void drop_opaque_ChainSync(const void *ptr);
 
 const void *share_opaque_ChainSync(const void *ptr);
@@ -446,6 +499,10 @@ const void *share_opaque_ChainSync(const void *ptr);
 void drop_opaque_FfiCoordinator(const void *ptr);
 
 const void *share_opaque_FfiCoordinator(const void *ptr);
+
+void drop_opaque_FfiQrReader(const void *ptr);
+
+const void *share_opaque_FfiQrReader(const void *ptr);
 
 void drop_opaque_FrostsnapCoreCoordinatorFrostKey(const void *ptr);
 
@@ -497,6 +554,8 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_load);
     dummy_var ^= ((int64_t) (void*) wire_load_host_handles_serial);
     dummy_var ^= ((int64_t) (void*) wire_echo_key_id);
+    dummy_var ^= ((int64_t) (void*) wire_psbt_bytes_to_psbt);
+    dummy_var ^= ((int64_t) (void*) wire_new_qr_reader);
     dummy_var ^= ((int64_t) (void*) wire_txid__method__Transaction);
     dummy_var ^= ((int64_t) (void*) wire_ready__method__Device);
     dummy_var ^= ((int64_t) (void*) wire_needs_firmware_upgrade__method__Device);
@@ -539,14 +598,22 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_validate_destination_address__method__Wallet);
     dummy_var ^= ((int64_t) (void*) wire_validate_amount__method__Wallet);
     dummy_var ^= ((int64_t) (void*) wire_send_to__method__Wallet);
+    dummy_var ^= ((int64_t) (void*) wire_complete_unsigned_psbt__method__Wallet);
     dummy_var ^= ((int64_t) (void*) wire_complete_unsigned_tx__method__Wallet);
     dummy_var ^= ((int64_t) (void*) wire_broadcast_tx__method__Wallet);
     dummy_var ^= ((int64_t) (void*) wire_effect_of_tx__method__Wallet);
+    dummy_var ^= ((int64_t) (void*) wire_effect_of_psbt_tx__method__Wallet);
+    dummy_var ^= ((int64_t) (void*) wire_psbt_to_unsigned_tx__method__Wallet);
+    dummy_var ^= ((int64_t) (void*) wire_descriptor_for_key__method__Wallet);
     dummy_var ^= ((int64_t) (void*) wire_tx__method__SignedTx);
     dummy_var ^= ((int64_t) (void*) wire_tx__method__UnsignedTx);
+    dummy_var ^= ((int64_t) (void*) wire_to_bytes__method__Psbt);
+    dummy_var ^= ((int64_t) (void*) wire_decode_from_bytes__method__QrReader);
     dummy_var ^= ((int64_t) (void*) new_ArcMutexVecPortDesc);
+    dummy_var ^= ((int64_t) (void*) new_BitcoinPsbt);
     dummy_var ^= ((int64_t) (void*) new_ChainSync);
     dummy_var ^= ((int64_t) (void*) new_FfiCoordinator);
+    dummy_var ^= ((int64_t) (void*) new_FfiQrReader);
     dummy_var ^= ((int64_t) (void*) new_FrostsnapCoreCoordinatorFrostKey);
     dummy_var ^= ((int64_t) (void*) new_FrostsnapCoreMessageBitcoinTransactionSignTask);
     dummy_var ^= ((int64_t) (void*) new_MutexBTreeMapKeyIdStreamSinkTxState);
@@ -569,6 +636,8 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_port_open_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_port_read_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_port_write_0);
+    dummy_var ^= ((int64_t) (void*) new_box_autoadd_psbt_0);
+    dummy_var ^= ((int64_t) (void*) new_box_autoadd_qr_reader_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_signed_tx_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_transaction_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_unsigned_tx_0);
@@ -580,10 +649,14 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) new_uint_8_list_0);
     dummy_var ^= ((int64_t) (void*) drop_opaque_ArcMutexVecPortDesc);
     dummy_var ^= ((int64_t) (void*) share_opaque_ArcMutexVecPortDesc);
+    dummy_var ^= ((int64_t) (void*) drop_opaque_BitcoinPsbt);
+    dummy_var ^= ((int64_t) (void*) share_opaque_BitcoinPsbt);
     dummy_var ^= ((int64_t) (void*) drop_opaque_ChainSync);
     dummy_var ^= ((int64_t) (void*) share_opaque_ChainSync);
     dummy_var ^= ((int64_t) (void*) drop_opaque_FfiCoordinator);
     dummy_var ^= ((int64_t) (void*) share_opaque_FfiCoordinator);
+    dummy_var ^= ((int64_t) (void*) drop_opaque_FfiQrReader);
+    dummy_var ^= ((int64_t) (void*) share_opaque_FfiQrReader);
     dummy_var ^= ((int64_t) (void*) drop_opaque_FrostsnapCoreCoordinatorFrostKey);
     dummy_var ^= ((int64_t) (void*) share_opaque_FrostsnapCoreCoordinatorFrostKey);
     dummy_var ^= ((int64_t) (void*) drop_opaque_FrostsnapCoreMessageBitcoinTransactionSignTask);

@@ -250,7 +250,7 @@ pub enum SignTask {
     Nostr {
         #[bincode(with_serde)]
         event: Box<crate::nostr::UnsignedEvent>,
-    }, // 1 nonce & sig
+    },
     BitcoinTransaction(BitcoinTransactionSignTask),
 }
 

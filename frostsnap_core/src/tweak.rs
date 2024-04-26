@@ -64,6 +64,10 @@ pub trait TweakableKey: Clone {
 
         (app_key, extra)
     }
+    fn bitcoin_app_xpub(&self) -> Xpub<Self> {
+        let (app_key, chaincode) = self.app_tweak_and_expand(AppTweakKind::Bitcoin);
+        Xpub::new(app_key, chaincode)
+    }
 }
 
 impl TweakableKey for FrostKey<Normal> {
@@ -172,8 +176,10 @@ impl<T: TweakableKey> Xpub<T> {
         self.key
     }
 
-    pub fn xpub(&self) -> &bitcoin::bip32::Xpub {
-        &self.xpub
+    pub fn xpub(&self, network: bitcoin::Network) -> bitcoin::bip32::Xpub {
+        let mut xpub = self.xpub.clone();
+        xpub.network = network;
+        xpub
     }
 }
 
@@ -192,7 +198,7 @@ mod test {
 
         let mut app_xpub = Xpub::new(app_key, chaincode);
         let secp = Secp256k1::verification_only();
-        let xpub = app_xpub.xpub();
+        let xpub = app_xpub.xpub(bitcoin::Network::Bitcoin);
         let path = [1337u32, 42, 0];
         let child_path = path
             .iter()
@@ -201,6 +207,6 @@ mod test {
         let derived_xpub = xpub.derive_pub(&secp, &child_path).unwrap();
         app_xpub.derive_bip32(&path);
 
-        assert_eq!(app_xpub.xpub(), &derived_xpub);
+        assert_eq!(app_xpub.xpub(bitcoin::Network::Bitcoin), &derived_xpub);
     }
 }

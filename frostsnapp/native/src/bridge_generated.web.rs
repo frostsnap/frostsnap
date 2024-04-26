@@ -52,6 +52,16 @@ pub fn wire_echo_key_id(port_: MessagePort, key_id: JsValue) {
 }
 
 #[wasm_bindgen]
+pub fn wire_psbt_bytes_to_psbt(psbt_bytes: Box<[u8]>) -> support::WireSyncReturn {
+    wire_psbt_bytes_to_psbt_impl(psbt_bytes)
+}
+
+#[wasm_bindgen]
+pub fn wire_new_qr_reader(port_: MessagePort) {
+    wire_new_qr_reader_impl(port_)
+}
+
+#[wasm_bindgen]
 pub fn wire_txid__method__Transaction(that: JsValue) -> support::WireSyncReturn {
     wire_txid__method__Transaction_impl(that)
 }
@@ -348,6 +358,15 @@ pub fn wire_send_to__method__Wallet(
 }
 
 #[wasm_bindgen]
+pub fn wire_complete_unsigned_psbt__method__Wallet(
+    that: JsValue,
+    psbt: JsValue,
+    signatures: JsValue,
+) -> support::WireSyncReturn {
+    wire_complete_unsigned_psbt__method__Wallet_impl(that, psbt, signatures)
+}
+
+#[wasm_bindgen]
 pub fn wire_complete_unsigned_tx__method__Wallet(
     that: JsValue,
     unsigned_tx: JsValue,
@@ -376,6 +395,32 @@ pub fn wire_effect_of_tx__method__Wallet(
 }
 
 #[wasm_bindgen]
+pub fn wire_effect_of_psbt_tx__method__Wallet(
+    that: JsValue,
+    key_id: JsValue,
+    psbt: JsValue,
+) -> support::WireSyncReturn {
+    wire_effect_of_psbt_tx__method__Wallet_impl(that, key_id, psbt)
+}
+
+#[wasm_bindgen]
+pub fn wire_psbt_to_unsigned_tx__method__Wallet(
+    that: JsValue,
+    psbt: JsValue,
+    key_id: JsValue,
+) -> support::WireSyncReturn {
+    wire_psbt_to_unsigned_tx__method__Wallet_impl(that, psbt, key_id)
+}
+
+#[wasm_bindgen]
+pub fn wire_descriptor_for_key__method__Wallet(
+    that: JsValue,
+    key_id: JsValue,
+) -> support::WireSyncReturn {
+    wire_descriptor_for_key__method__Wallet_impl(that, key_id)
+}
+
+#[wasm_bindgen]
 pub fn wire_tx__method__SignedTx(that: JsValue) -> support::WireSyncReturn {
     wire_tx__method__SignedTx_impl(that)
 }
@@ -383,6 +428,20 @@ pub fn wire_tx__method__SignedTx(that: JsValue) -> support::WireSyncReturn {
 #[wasm_bindgen]
 pub fn wire_tx__method__UnsignedTx(that: JsValue) -> support::WireSyncReturn {
     wire_tx__method__UnsignedTx_impl(that)
+}
+
+#[wasm_bindgen]
+pub fn wire_to_bytes__method__Psbt(that: JsValue) -> support::WireSyncReturn {
+    wire_to_bytes__method__Psbt_impl(that)
+}
+
+#[wasm_bindgen]
+pub fn wire_decode_from_bytes__method__QrReader(
+    port_: MessagePort,
+    that: JsValue,
+    bytes: Box<[u8]>,
+) {
+    wire_decode_from_bytes__method__QrReader_impl(port_, that, bytes)
 }
 
 // Section: allocate functions
@@ -400,6 +459,21 @@ pub fn drop_opaque_ArcMutexVecPortDesc(ptr: *const c_void) {
 pub fn share_opaque_ArcMutexVecPortDesc(ptr: *const c_void) -> *const c_void {
     unsafe {
         Arc::<Arc<Mutex<Vec<PortDesc>>>>::increment_strong_count(ptr as _);
+        ptr
+    }
+}
+
+#[wasm_bindgen]
+pub fn drop_opaque_BitcoinPsbt(ptr: *const c_void) {
+    unsafe {
+        Arc::<BitcoinPsbt>::decrement_strong_count(ptr as _);
+    }
+}
+
+#[wasm_bindgen]
+pub fn share_opaque_BitcoinPsbt(ptr: *const c_void) -> *const c_void {
+    unsafe {
+        Arc::<BitcoinPsbt>::increment_strong_count(ptr as _);
         ptr
     }
 }
@@ -430,6 +504,21 @@ pub fn drop_opaque_FfiCoordinator(ptr: *const c_void) {
 pub fn share_opaque_FfiCoordinator(ptr: *const c_void) -> *const c_void {
     unsafe {
         Arc::<FfiCoordinator>::increment_strong_count(ptr as _);
+        ptr
+    }
+}
+
+#[wasm_bindgen]
+pub fn drop_opaque_FfiQrReader(ptr: *const c_void) {
+    unsafe {
+        Arc::<FfiQrReader>::decrement_strong_count(ptr as _);
+    }
+}
+
+#[wasm_bindgen]
+pub fn share_opaque_FfiQrReader(ptr: *const c_void) -> *const c_void {
+    unsafe {
+        Arc::<FfiQrReader>::increment_strong_count(ptr as _);
         ptr
     }
 }
@@ -837,6 +926,32 @@ impl Wire2Api<PortWrite> for JsValue {
         }
     }
 }
+impl Wire2Api<Psbt> for JsValue {
+    fn wire2api(self) -> Psbt {
+        let self_ = self.dyn_into::<JsArray>().unwrap();
+        assert_eq!(
+            self_.length(),
+            1,
+            "Expected 1 elements, got {}",
+            self_.length()
+        );
+        Psbt {
+            inner: self_.get(0).wire2api(),
+        }
+    }
+}
+impl Wire2Api<QrReader> for JsValue {
+    fn wire2api(self) -> QrReader {
+        let self_ = self.dyn_into::<JsArray>().unwrap();
+        assert_eq!(
+            self_.length(),
+            1,
+            "Expected 1 elements, got {}",
+            self_.length()
+        );
+        QrReader(self_.get(0).wire2api())
+    }
+}
 impl Wire2Api<SignedTx> for JsValue {
     fn wire2api(self) -> SignedTx {
         let self_ = self.dyn_into::<JsArray>().unwrap();
@@ -942,6 +1057,16 @@ impl Wire2Api<RustOpaque<Arc<Mutex<Vec<PortDesc>>>>> for JsValue {
         unsafe { support::opaque_from_dart((self.as_f64().unwrap() as usize) as _) }
     }
 }
+impl Wire2Api<RustOpaque<BitcoinPsbt>> for JsValue {
+    fn wire2api(self) -> RustOpaque<BitcoinPsbt> {
+        #[cfg(target_pointer_width = "64")]
+        {
+            compile_error!("64-bit pointers are not supported.");
+        }
+
+        unsafe { support::opaque_from_dart((self.as_f64().unwrap() as usize) as _) }
+    }
+}
 impl Wire2Api<RustOpaque<ChainSync>> for JsValue {
     fn wire2api(self) -> RustOpaque<ChainSync> {
         #[cfg(target_pointer_width = "64")]
@@ -954,6 +1079,16 @@ impl Wire2Api<RustOpaque<ChainSync>> for JsValue {
 }
 impl Wire2Api<RustOpaque<FfiCoordinator>> for JsValue {
     fn wire2api(self) -> RustOpaque<FfiCoordinator> {
+        #[cfg(target_pointer_width = "64")]
+        {
+            compile_error!("64-bit pointers are not supported.");
+        }
+
+        unsafe { support::opaque_from_dart((self.as_f64().unwrap() as usize) as _) }
+    }
+}
+impl Wire2Api<RustOpaque<FfiQrReader>> for JsValue {
+    fn wire2api(self) -> RustOpaque<FfiQrReader> {
         #[cfg(target_pointer_width = "64")]
         {
             compile_error!("64-bit pointers are not supported.");

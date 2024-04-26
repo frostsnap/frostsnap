@@ -20,6 +20,9 @@ use std::sync::Arc;
 
 // Section: imports
 
+use crate::camera::DecodingProgress;
+use crate::camera::QrDecoderStatus;
+
 // Section: wire functions
 
 fn wire_sub_port_events_impl(port_: MessagePort) {
@@ -154,6 +157,31 @@ fn wire_echo_key_id_impl(port_: MessagePort, key_id: impl Wire2Api<KeyId> + Unwi
             let api_key_id = key_id.wire2api();
             move |task_callback| Result::<_, ()>::Ok(echo_key_id(api_key_id))
         },
+    )
+}
+fn wire_psbt_bytes_to_psbt_impl(
+    psbt_bytes: impl Wire2Api<Vec<u8>> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "psbt_bytes_to_psbt",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_psbt_bytes = psbt_bytes.wire2api();
+            psbt_bytes_to_psbt(api_psbt_bytes)
+        },
+    )
+}
+fn wire_new_qr_reader_impl(port_: MessagePort) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, QrReader, _>(
+        WrapInfo {
+            debug_name: "new_qr_reader",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || move |task_callback| Result::<_, ()>::Ok(new_qr_reader()),
     )
 }
 fn wire_txid__method__Transaction_impl(
@@ -975,6 +1003,25 @@ fn wire_send_to__method__Wallet_impl(
         },
     )
 }
+fn wire_complete_unsigned_psbt__method__Wallet_impl(
+    that: impl Wire2Api<Wallet> + UnwindSafe,
+    psbt: impl Wire2Api<Psbt> + UnwindSafe,
+    signatures: impl Wire2Api<Vec<EncodedSignature>> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "complete_unsigned_psbt__method__Wallet",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_psbt = psbt.wire2api();
+            let api_signatures = signatures.wire2api();
+            Wallet::complete_unsigned_psbt(&api_that, api_psbt, api_signatures)
+        },
+    )
+}
 fn wire_complete_unsigned_tx__method__Wallet_impl(
     that: impl Wire2Api<Wallet> + UnwindSafe,
     unsigned_tx: impl Wire2Api<UnsignedTx> + UnwindSafe,
@@ -1033,6 +1080,61 @@ fn wire_effect_of_tx__method__Wallet_impl(
         },
     )
 }
+fn wire_effect_of_psbt_tx__method__Wallet_impl(
+    that: impl Wire2Api<Wallet> + UnwindSafe,
+    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    psbt: impl Wire2Api<Psbt> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "effect_of_psbt_tx__method__Wallet",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_key_id = key_id.wire2api();
+            let api_psbt = psbt.wire2api();
+            Wallet::effect_of_psbt_tx(&api_that, api_key_id, api_psbt)
+        },
+    )
+}
+fn wire_psbt_to_unsigned_tx__method__Wallet_impl(
+    that: impl Wire2Api<Wallet> + UnwindSafe,
+    psbt: impl Wire2Api<Psbt> + UnwindSafe,
+    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "psbt_to_unsigned_tx__method__Wallet",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_psbt = psbt.wire2api();
+            let api_key_id = key_id.wire2api();
+            Wallet::psbt_to_unsigned_tx(&api_that, api_psbt, api_key_id)
+        },
+    )
+}
+fn wire_descriptor_for_key__method__Wallet_impl(
+    that: impl Wire2Api<Wallet> + UnwindSafe,
+    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "descriptor_for_key__method__Wallet",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_key_id = key_id.wire2api();
+            Wallet::descriptor_for_key(&api_that, api_key_id)
+        },
+    )
+}
 fn wire_tx__method__SignedTx_impl(
     that: impl Wire2Api<SignedTx> + UnwindSafe,
 ) -> support::WireSyncReturn {
@@ -1060,6 +1162,39 @@ fn wire_tx__method__UnsignedTx_impl(
         move || {
             let api_that = that.wire2api();
             Result::<_, ()>::Ok(UnsignedTx::tx(&api_that))
+        },
+    )
+}
+fn wire_to_bytes__method__Psbt_impl(
+    that: impl Wire2Api<Psbt> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "to_bytes__method__Psbt",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            Psbt::to_bytes(&api_that)
+        },
+    )
+}
+fn wire_decode_from_bytes__method__QrReader_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<QrReader> + UnwindSafe,
+    bytes: impl Wire2Api<Vec<u8>> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, QrDecoderStatus, _>(
+        WrapInfo {
+            debug_name: "decode_from_bytes__method__QrReader",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_bytes = bytes.wire2api();
+            move |task_callback| QrReader::decode_from_bytes(&api_that, api_bytes)
         },
     )
 }
@@ -1238,6 +1373,22 @@ impl support::IntoDart for Coordinator {
 }
 impl support::IntoDartExceptPrimitive for Coordinator {}
 impl rust2dart::IntoIntoDart<Coordinator> for Coordinator {
+    fn into_into_dart(self) -> Self {
+        self
+    }
+}
+
+impl support::IntoDart for DecodingProgress {
+    fn into_dart(self) -> support::DartAbi {
+        vec![
+            self.decoded_frames.into_into_dart().into_dart(),
+            self.sequence_count.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for DecodingProgress {}
+impl rust2dart::IntoIntoDart<DecodingProgress> for DecodingProgress {
     fn into_into_dart(self) -> Self {
         self
     }
@@ -1537,6 +1688,47 @@ impl support::IntoDart for PortWrite {
 }
 impl support::IntoDartExceptPrimitive for PortWrite {}
 impl rust2dart::IntoIntoDart<PortWrite> for PortWrite {
+    fn into_into_dart(self) -> Self {
+        self
+    }
+}
+
+impl support::IntoDart for Psbt {
+    fn into_dart(self) -> support::DartAbi {
+        vec![self.inner.into_dart()].into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for Psbt {}
+impl rust2dart::IntoIntoDart<Psbt> for Psbt {
+    fn into_into_dart(self) -> Self {
+        self
+    }
+}
+
+impl support::IntoDart for QrDecoderStatus {
+    fn into_dart(self) -> support::DartAbi {
+        match self {
+            Self::Progress(field0) => vec![0.into_dart(), field0.into_into_dart().into_dart()],
+            Self::Decoded(field0) => vec![1.into_dart(), field0.into_into_dart().into_dart()],
+            Self::Failed(field0) => vec![2.into_dart(), field0.into_into_dart().into_dart()],
+        }
+        .into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for QrDecoderStatus {}
+impl rust2dart::IntoIntoDart<QrDecoderStatus> for QrDecoderStatus {
+    fn into_into_dart(self) -> Self {
+        self
+    }
+}
+
+impl support::IntoDart for QrReader {
+    fn into_dart(self) -> support::DartAbi {
+        vec![self.0.into_dart()].into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for QrReader {}
+impl rust2dart::IntoIntoDart<QrReader> for QrReader {
     fn into_into_dart(self) -> Self {
         self
     }

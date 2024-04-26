@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_id_ext.dart';
 import 'package:frostsnapp/global.dart';
+import 'package:frostsnapp/psbt.dart';
 import 'package:frostsnapp/sign_message.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
@@ -405,28 +406,49 @@ class _WalletReceiveState extends State<WalletReceive> {
 
   @override
   Widget build(BuildContext context) {
+    final keyXpub = wallet.descriptorForKey(keyId: widget.keyId);
     return Scaffold(
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(10.0),
-            child: ElevatedButton(
-              onPressed: _addAddress,
-              child: Text('Get New Address'),
-            ),
+        body: Padding(
+      padding: const EdgeInsets.all(10.0),
+      child: Column(children: [
+        Padding(
+          padding: const EdgeInsets.all(10.0),
+          child: ElevatedButton(
+            onPressed: _addAddress,
+            child: Text('Get New Address'),
           ),
-          Expanded(
-            child: AnimatedList(
-              key: _listKey,
-              initialItemCount: _addresses.length,
-              itemBuilder: (context, index, animation) {
-                return _buildAddressItem(_addresses[index], animation);
-              },
-            ),
+        ),
+        Expanded(
+          child: AnimatedList(
+            key: _listKey,
+            initialItemCount: _addresses.length,
+            itemBuilder: (context, index, animation) {
+              return _buildAddressItem(_addresses[index], animation);
+            },
           ),
-        ],
-      ),
-    );
+        ),
+        Text(
+          "Wallet Descriptor",
+          textAlign: TextAlign.left,
+          style: TextStyle(fontSize: 20.0),
+        ),
+        ListTile(
+          title: Text(
+            keyXpub,
+            style: TextStyle(fontFamily: 'Monospace'),
+          ),
+          trailing: IconButton(
+            icon: Icon(Icons.copy),
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: keyXpub));
+              ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Descriptor copied to clipboard!')));
+            },
+          ),
+        ),
+        const SizedBox(width: 15),
+      ]),
+    ));
   }
 
   Widget _buildAddressItem(Address address, Animation<double> animation) {
@@ -494,119 +516,132 @@ class _WalletSendState extends State<WalletSend> {
   Widget build(BuildContext context) {
     final frostKey = coord.getKey(keyId: widget.keyId)!;
     final enoughSelected = selectedDevices.length == frostKey.threshold();
+
+    final Widget signPsbtButton = ElevatedButton(
+        onPressed: () {
+          Navigator.push(context, MaterialPageRoute(builder: (context) {
+            return LoadPsbtPage(
+              keyId: widget.keyId,
+            );
+          }));
+        },
+        child: Text(
+          "Load PSBT",
+        ));
+
     return Scaffold(
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Balance(txStream: widget.txStream),
-              TextFormField(
-                decoration: InputDecoration(labelText: 'Address'),
-                validator: (value) {
-                  // Use the provided predicate for address validation
-                  return wallet.validateDestinationAddress(
-                      address: value ?? '');
-                },
-                onSaved: (value) => _address = value ?? '',
-              ),
-              TextFormField(
-                decoration: InputDecoration(labelText: 'Amount (sats)'),
-                keyboardType: TextInputType.numberWithOptions(decimal: false),
-                validator: (value) {
-                  // Convert value to int and use the provided predicate for amount validation
-                  final amount = int.tryParse(value ?? '') ?? 0;
-                  return wallet.validateAmount(
-                      address: _address, value: amount);
-                },
-                onSaved: (value) => _amount = int.tryParse(value ?? '') ?? 0,
-              ),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      decoration:
-                          InputDecoration(labelText: 'Fee Rate (sats/vByte)'),
-                      keyboardType:
-                          TextInputType.numberWithOptions(decimal: true),
-                      initialValue: _feerate.toString(),
-                      onChanged: (value) {
+      body: Container(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(children: [
+            Expanded(
+                child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Balance(txStream: widget.txStream),
+                  TextFormField(
+                    decoration: InputDecoration(labelText: 'Address'),
+                    validator: (value) {
+                      // Use the provided predicate for address validation
+                      return wallet.validateDestinationAddress(
+                          address: value ?? '');
+                    },
+                    onSaved: (value) => _address = value ?? '',
+                  ),
+                  TextFormField(
+                    decoration: InputDecoration(labelText: 'Amount (sats)'),
+                    keyboardType:
+                        TextInputType.numberWithOptions(decimal: false),
+                    validator: (value) {
+                      // Convert value to int and use the provided predicate for amount validation
+                      final amount = int.tryParse(value ?? '') ?? 0;
+                      return wallet.validateAmount(
+                          address: _address, value: amount);
+                    },
+                    onSaved: (value) =>
+                        _amount = int.tryParse(value ?? '') ?? 0,
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          decoration: InputDecoration(
+                              labelText: 'Fee Rate (sats/vByte)'),
+                          keyboardType:
+                              TextInputType.numberWithOptions(decimal: true),
+                          initialValue: _feerate.toString(),
+                          onChanged: (value) {
+                            setState(() {
+                              _feerate = double.tryParse(value) ?? _feerate;
+                              _updateETA();
+                            });
+                          },
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 10),
+                        child: Text(
+                          "ETA $_eta",
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                    ],
+                  ),
+                  Divider(height: 20.0, thickness: 2.0, color: Colors.grey),
+                  Text(
+                    'Select ${frostKey.threshold()} device${frostKey.threshold() > 1 ? "s" : ""} to sign with:',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 20.0),
+                  ),
+                  SigningDeviceSelector(
+                      frostKey: frostKey,
+                      onChanged: (selected) {
                         setState(() {
-                          _feerate = double.tryParse(value) ?? _feerate;
-                          _updateETA();
+                          selectedDevices = selected;
                         });
-                      },
-                    ),
-                  ),
+                      }),
                   Padding(
-                    padding: const EdgeInsets.only(left: 10),
-                    child: Text(
-                      "ETA $_eta",
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  ),
+                      padding: const EdgeInsets.symmetric(vertical: 16.0),
+                      child: ElevatedButton(
+                        onPressed: !enoughSelected
+                            ? null
+                            : () async {
+                                if (_formKey.currentState!.validate()) {
+                                  _formKey.currentState!.save();
+                                  final unsignedTx = await wallet.sendTo(
+                                      keyId: widget.keyId,
+                                      toAddress: _address,
+                                      value: _amount,
+                                      feerate: _feerate);
+                                  final signingStream = coord.startSigningTx(
+                                      keyId: widget.keyId,
+                                      unsignedTx: unsignedTx,
+                                      devices: selectedDevices.toList());
+                                  if (context.mounted) {
+                                    await signAndBroadcastWorkflowDialog(
+                                        context: context,
+                                        signingStream: signingStream,
+                                        unsignedTx: unsignedTx,
+                                        keyId: widget.keyId,
+                                        onBroadcastNewTx:
+                                            widget.onBroadcastNewTx);
+                                  }
+                                }
+                              },
+                        child: Text('Submit Transaction'),
+                      )),
                 ],
               ),
-              Divider(height: 20.0, thickness: 2.0, color: Colors.grey),
-              Text(
-                'Select ${frostKey.threshold()} device${frostKey.threshold() > 1 ? "s" : ""} to sign with:',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 20.0),
-              ),
-              SigningDeviceSelector(
-                  frostKey: frostKey,
-                  onChanged: (selected) {
-                    setState(() {
-                      selectedDevices = selected;
-                    });
-                  }),
-              Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 16.0),
-                  child: ElevatedButton(
-                    onPressed: !enoughSelected
-                        ? null
-                        : () async {
-                            if (_formKey.currentState!.validate()) {
-                              _formKey.currentState!.save();
-                              try {
-                                final unsignedTx = await wallet.sendTo(
-                                    keyId: widget.keyId,
-                                    toAddress: _address,
-                                    value: _amount,
-                                    feerate: _feerate);
-                                final signingStream = coord.startSigningTx(
-                                    keyId: widget.keyId,
-                                    unsignedTx: unsignedTx,
-                                    devices: selectedDevices.toList());
-                                if (context.mounted) {
-                                  await signTransactionWorkflowDialog(
-                                      context: context,
-                                      signingStream: signingStream,
-                                      unsignedTx: unsignedTx,
-                                      keyId: widget.keyId,
-                                      onBroadcastNewTx:
-                                          widget.onBroadcastNewTx);
-                                }
-                              } catch (e) {
-                                if (context.mounted) {
-                                  showErrorSnackbar(context, e.toString());
-                                }
-                              }
-                            }
-                          },
-                    child: Text('Submit Transaction'),
-                  )),
-            ],
-          ),
-        ),
-      ),
+            )),
+            // const SizedBox(height: 15),
+            signPsbtButton,
+          ])),
     );
   }
 }
 
-Future<void> signTransactionWorkflowDialog(
+Future<void> signAndBroadcastWorkflowDialog(
     {required BuildContext context,
     required Stream<SigningState> signingStream,
     required UnsignedTx unsignedTx,
@@ -623,12 +658,84 @@ Future<void> signTransactionWorkflowDialog(
     final tx = wallet.completeUnsignedTx(
         unsignedTx: unsignedTx, signatures: signatures);
     if (context.mounted) {
-      final wasBroadcast =
-          await _showBroadcastConfirmDialog(context, keyId, tx);
+      final wasBroadcast = await showBroadcastConfirmDialog(context, keyId, tx);
       if (wasBroadcast) {
         onBroadcastNewTx?.call();
       }
     }
+  }
+}
+
+class EffectTable extends StatelessWidget {
+  final EffectOfTx effect;
+  const EffectTable({super.key, required this.effect});
+
+  @override
+  Widget build(BuildContext context) {
+    List<TableRow> transactionRows =
+        effect.foreignReceivingAddresses.map((entry) {
+      final (address, value) = entry;
+      return TableRow(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Text('Send to $address'),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: NetValue(-value),
+          ),
+        ],
+      );
+    }).toList();
+
+    transactionRows.add(
+      TableRow(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child:
+                Text('Fee (${effect.feerate.toStringAsFixed(1)} sats/vByte)'),
+          ),
+          Padding(
+              padding: const EdgeInsets.all(8.0), child: NetValue(-effect.fee)),
+        ],
+      ),
+    );
+
+    transactionRows.add(
+      TableRow(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Text('Net value'),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: NetValue(effect.netValue),
+          ),
+        ],
+      ),
+    );
+
+    final effectTable = Table(
+      columnWidths: const {
+        0: FlexColumnWidth(4),
+        1: FlexColumnWidth(2),
+      },
+      border: TableBorder.all(),
+      children: transactionRows,
+    );
+
+    final effectWidget = Column(
+      children: [
+        describeEffect(effect),
+        Divider(),
+        effectTable,
+      ],
+    );
+
+    return effectWidget;
   }
 }
 
@@ -660,78 +767,14 @@ Widget describeEffect(EffectOfTx effect) {
   return description;
 }
 
-Future<bool> _showBroadcastConfirmDialog(
+Future<bool> showBroadcastConfirmDialog(
     BuildContext context, KeyId keyId, SignedTx tx) async {
   final wasBroadcast = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
         final effect = wallet.effectOfTx(keyId: keyId, tx: tx.tx());
-
-        List<TableRow> transactionRows =
-            effect.foreignReceivingAddresses.map((entry) {
-          final (address, value) = entry;
-          return TableRow(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Text('Send to $address'),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: NetValue(-value),
-              ),
-            ],
-          );
-        }).toList();
-
-        transactionRows.add(
-          TableRow(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Text(
-                    'Fee (${effect.feerate.toStringAsFixed(1)} sats/vByte)'),
-              ),
-              Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: NetValue(-effect.fee)),
-            ],
-          ),
-        );
-
-        transactionRows.add(
-          TableRow(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Text('Net value'),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: NetValue(effect.netValue),
-              ),
-            ],
-          ),
-        );
-
-        final effectTable = Table(
-          columnWidths: const {
-            0: FlexColumnWidth(4),
-            1: FlexColumnWidth(2),
-          },
-          border: TableBorder.all(),
-          children: transactionRows,
-        );
-
-        final effectWidget = Column(
-          children: [
-            describeEffect(effect),
-            Divider(),
-            effectTable,
-          ],
-        );
-
+        final effectWidget = EffectTable(effect: effect);
         return AlertDialog(
             title: Text("Broadcast?"),
             content: Container(

@@ -56,6 +56,14 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kEchoKeyIdConstMeta;
 
+  Psbt psbtBytesToPsbt({required Uint8List psbtBytes, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kPsbtBytesToPsbtConstMeta;
+
+  Future<QrReader> newQrReader({dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kNewQrReaderConstMeta;
+
   String txidMethodTransaction({required Transaction that, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kTxidMethodTransactionConstMeta;
@@ -299,6 +307,14 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kSendToMethodWalletConstMeta;
 
+  Psbt completeUnsignedPsbtMethodWallet(
+      {required Wallet that,
+      required Psbt psbt,
+      required List<EncodedSignature> signatures,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kCompleteUnsignedPsbtMethodWalletConstMeta;
+
   SignedTx completeUnsignedTxMethodWallet(
       {required Wallet that,
       required UnsignedTx unsignedTx,
@@ -323,6 +339,27 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kEffectOfTxMethodWalletConstMeta;
 
+  EffectOfTx effectOfPsbtTxMethodWallet(
+      {required Wallet that,
+      required KeyId keyId,
+      required Psbt psbt,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kEffectOfPsbtTxMethodWalletConstMeta;
+
+  UnsignedTx psbtToUnsignedTxMethodWallet(
+      {required Wallet that,
+      required Psbt psbt,
+      required KeyId keyId,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kPsbtToUnsignedTxMethodWalletConstMeta;
+
+  String descriptorForKeyMethodWallet(
+      {required Wallet that, required KeyId keyId, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kDescriptorForKeyMethodWalletConstMeta;
+
   RTransaction txMethodSignedTx({required SignedTx that, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kTxMethodSignedTxConstMeta;
@@ -331,9 +368,22 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kTxMethodUnsignedTxConstMeta;
 
+  Uint8List toBytesMethodPsbt({required Psbt that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kToBytesMethodPsbtConstMeta;
+
+  Future<QrDecoderStatus> decodeFromBytesMethodQrReader(
+      {required QrReader that, required Uint8List bytes, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kDecodeFromBytesMethodQrReaderConstMeta;
+
   DropFnType get dropOpaqueArcMutexVecPortDesc;
   ShareFnType get shareOpaqueArcMutexVecPortDesc;
   OpaqueTypeFinalizer get ArcMutexVecPortDescFinalizer;
+
+  DropFnType get dropOpaqueBitcoinPsbt;
+  ShareFnType get shareOpaqueBitcoinPsbt;
+  OpaqueTypeFinalizer get BitcoinPsbtFinalizer;
 
   DropFnType get dropOpaqueChainSync;
   ShareFnType get shareOpaqueChainSync;
@@ -342,6 +392,10 @@ abstract class Native {
   DropFnType get dropOpaqueFfiCoordinator;
   ShareFnType get shareOpaqueFfiCoordinator;
   OpaqueTypeFinalizer get FfiCoordinatorFinalizer;
+
+  DropFnType get dropOpaqueFfiQrReader;
+  ShareFnType get shareOpaqueFfiQrReader;
+  OpaqueTypeFinalizer get FfiQrReaderFinalizer;
 
   DropFnType get dropOpaqueFrostsnapCoreCoordinatorFrostKey;
   ShareFnType get shareOpaqueFrostsnapCoreCoordinatorFrostKey;
@@ -398,6 +452,20 @@ class ArcMutexVecPortDesc extends FrbOpaque {
 }
 
 @sealed
+class BitcoinPsbt extends FrbOpaque {
+  final Native bridge;
+  BitcoinPsbt.fromRaw(int ptr, int size, this.bridge) : super.unsafe(ptr, size);
+  @override
+  DropFnType get dropFn => bridge.dropOpaqueBitcoinPsbt;
+
+  @override
+  ShareFnType get shareFn => bridge.shareOpaqueBitcoinPsbt;
+
+  @override
+  OpaqueTypeFinalizer get staticFinalizer => bridge.BitcoinPsbtFinalizer;
+}
+
+@sealed
 class ChainSync extends FrbOpaque {
   final Native bridge;
   ChainSync.fromRaw(int ptr, int size, this.bridge) : super.unsafe(ptr, size);
@@ -424,6 +492,20 @@ class FfiCoordinator extends FrbOpaque {
 
   @override
   OpaqueTypeFinalizer get staticFinalizer => bridge.FfiCoordinatorFinalizer;
+}
+
+@sealed
+class FfiQrReader extends FrbOpaque {
+  final Native bridge;
+  FfiQrReader.fromRaw(int ptr, int size, this.bridge) : super.unsafe(ptr, size);
+  @override
+  DropFnType get dropFn => bridge.dropOpaqueFfiQrReader;
+
+  @override
+  ShareFnType get shareFn => bridge.shareOpaqueFfiQrReader;
+
+  @override
+  OpaqueTypeFinalizer get staticFinalizer => bridge.FfiQrReaderFinalizer;
 }
 
 @sealed
@@ -736,6 +818,16 @@ class Coordinator {
       );
 }
 
+class DecodingProgress {
+  final int decodedFrames;
+  final int sequenceCount;
+
+  const DecodingProgress({
+    required this.decodedFrames,
+    required this.sequenceCount,
+  });
+}
+
 class Device {
   final Native bridge;
   final String? name;
@@ -1044,6 +1136,50 @@ class PortWrite {
       );
 }
 
+class Psbt {
+  final Native bridge;
+  final BitcoinPsbt inner;
+
+  const Psbt({
+    required this.bridge,
+    required this.inner,
+  });
+
+  Uint8List toBytes({dynamic hint}) => bridge.toBytesMethodPsbt(
+        that: this,
+      );
+}
+
+@freezed
+sealed class QrDecoderStatus with _$QrDecoderStatus {
+  const factory QrDecoderStatus.progress(
+    DecodingProgress field0,
+  ) = QrDecoderStatus_Progress;
+  const factory QrDecoderStatus.decoded(
+    Uint8List field0,
+  ) = QrDecoderStatus_Decoded;
+  const factory QrDecoderStatus.failed(
+    String field0,
+  ) = QrDecoderStatus_Failed;
+}
+
+class QrReader {
+  final Native bridge;
+  final FfiQrReader field0;
+
+  const QrReader({
+    required this.bridge,
+    required this.field0,
+  });
+
+  Future<QrDecoderStatus> decodeFromBytes(
+          {required Uint8List bytes, dynamic hint}) =>
+      bridge.decodeFromBytesMethodQrReader(
+        that: this,
+        bytes: bytes,
+      );
+}
+
 @freezed
 sealed class SignTaskDescription with _$SignTaskDescription {
   const factory SignTaskDescription.plain({
@@ -1226,6 +1362,16 @@ class Wallet {
         feerate: feerate,
       );
 
+  Psbt completeUnsignedPsbt(
+          {required Psbt psbt,
+          required List<EncodedSignature> signatures,
+          dynamic hint}) =>
+      bridge.completeUnsignedPsbtMethodWallet(
+        that: this,
+        psbt: psbt,
+        signatures: signatures,
+      );
+
   SignedTx completeUnsignedTx(
           {required UnsignedTx unsignedTx,
           required List<EncodedSignature> signatures,
@@ -1250,5 +1396,27 @@ class Wallet {
         that: this,
         keyId: keyId,
         tx: tx,
+      );
+
+  EffectOfTx effectOfPsbtTx(
+          {required KeyId keyId, required Psbt psbt, dynamic hint}) =>
+      bridge.effectOfPsbtTxMethodWallet(
+        that: this,
+        keyId: keyId,
+        psbt: psbt,
+      );
+
+  UnsignedTx psbtToUnsignedTx(
+          {required Psbt psbt, required KeyId keyId, dynamic hint}) =>
+      bridge.psbtToUnsignedTxMethodWallet(
+        that: this,
+        psbt: psbt,
+        keyId: keyId,
+      );
+
+  String descriptorForKey({required KeyId keyId, dynamic hint}) =>
+      bridge.descriptorForKeyMethodWallet(
+        that: this,
+        keyId: keyId,
       );
 }

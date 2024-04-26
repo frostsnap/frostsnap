@@ -2,6 +2,8 @@
 #![allow(clippy::unnecessary_literal_unwrap)]
 mod api;
 mod bridge_generated;
+mod camera;
+pub use camera::*;
 mod coordinator;
 mod persist_core;
 pub use coordinator::*;
