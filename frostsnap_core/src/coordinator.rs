@@ -1,6 +1,5 @@
 use crate::{
-    gen_pop_message, message::*, xpub::TweakableKey, ActionError, Error, FrostKeyExt, KeyId,
-    MessageResult, SessionHash,
+    gen_pop_message, message::*, ActionError, Error, FrostKeyExt, KeyId, MessageResult, SessionHash,
 };
 use alloc::{
     collections::{BTreeMap, BTreeSet},
@@ -9,7 +8,7 @@ use alloc::{
 use schnorr_fun::{
     frost::{self, EncodedFrostKey, FrostKey, SignSession},
     fun::{marker::*, Scalar},
-    Message,
+    Message, Schnorr,
 };
 use sha2::Sha256;
 
@@ -297,7 +296,7 @@ impl FrostCoordinator {
                 // valid.
                 for (session_progress, signature_share) in sessions.iter().zip(signature_shares) {
                     let session = &session_progress.sign_session;
-                    let xonly_frost_key = &session_progress.key.into_frost_key().into_xonly_key();
+                    let xonly_frost_key = &session_progress.tweaked_frost_key();
                     if !session
                         .participants()
                         .any(|x_coord| x_coord == *from_share_index)
@@ -317,7 +316,7 @@ impl FrostCoordinator {
                         return Err(Error::coordinator_invalid_message(
                             message_kind,
                             format!(
-                                "Inavlid signature share under key {}",
+                                "Invalid signature share under key {}",
                                 xonly_frost_key.public_key()
                             ),
                         ));
@@ -351,10 +350,9 @@ impl FrostCoordinator {
                     let signatures = sessions
                         .iter()
                         .map(|session_progress| {
-                            let xonly_frost_key =
-                                session_progress.key.into_frost_key().into_xonly();
+                            let xonly_frost_key = session_progress.tweaked_frost_key();
 
-                            frost.combine_signature_shares(
+                            let sig = frost.combine_signature_shares(
                                 &xonly_frost_key,
                                 &session_progress.sign_session,
                                 session_progress
@@ -362,7 +360,15 @@ impl FrostCoordinator {
                                     .iter()
                                     .map(|(_, &share)| share)
                                     .collect(),
-                            )
+                            );
+
+                            assert!(session_progress.sign_item.verify(
+                                &Schnorr::verify_only(),
+                                session_progress.key.into_frost_key().public_key(),
+                                &sig,
+                            ));
+
+                            sig
                         })
                         .map(EncodedSignature::new)
                         .collect();
@@ -666,6 +672,10 @@ pub struct SignSessionProgress {
 impl SignSessionProgress {
     pub fn received_from(&self) -> impl Iterator<Item = DeviceId> + '_ {
         self.signature_shares.keys().cloned()
+    }
+
+    pub fn tweaked_frost_key(&self) -> FrostKey<EvenY> {
+        self.sign_item.derive_key(&self.key.into_frost_key())
     }
 }
 
