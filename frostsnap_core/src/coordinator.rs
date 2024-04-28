@@ -6,9 +6,9 @@ use alloc::{
     vec::Vec,
 };
 use schnorr_fun::{
-    frost::{self, EncodedFrostKey, FrostKey, SignSession},
+    frost::{self, EncodedFrostKey, Frost, FrostKey, SignSession},
     fun::{marker::*, Scalar},
-    Message, Schnorr,
+    Message, Schnorr, Signature,
 };
 use sha2::Sha256;
 
@@ -362,11 +362,10 @@ impl FrostCoordinator {
                                     .collect(),
                             );
 
-                            assert!(session_progress.sign_item.verify(
-                                &Schnorr::verify_only(),
-                                session_progress.key.into_frost_key().public_key(),
+                            assert!(session_progress.verify_final_signature(
+                                &frost.schnorr,
                                 &sig,
-                            ));
+                            ), "we have verified the signature shares so combined should be correct");
 
                             sig
                         })
@@ -541,22 +540,17 @@ impl FrostCoordinator {
             .iter()
             .enumerate()
             .map(|(i, sign_item)| {
-                let b_message = Message::raw(&sign_item.message[..]);
                 let indexed_nonces = signing_nonces
                     .iter()
                     .map(|(index, sign_req_nonces)| (*index, sign_req_nonces.nonces[i]))
                     .collect();
 
-                let xonly_frost_key = sign_item.derive_key(&key.frost_key());
-
-                let sign_session =
-                    frost.start_sign_session(&xonly_frost_key, indexed_nonces, b_message);
-                SignSessionProgress {
-                    sign_item: sign_item.clone(),
-                    sign_session,
-                    key: xonly_frost_key.into(),
-                    signature_shares: Default::default(),
-                }
+                SignSessionProgress::new(
+                    &frost,
+                    key.encoded_frost_key.clone(),
+                    sign_item.clone(),
+                    indexed_nonces,
+                )
             })
             .collect();
 
@@ -670,12 +664,43 @@ pub struct SignSessionProgress {
 }
 
 impl SignSessionProgress {
+    pub fn new<NG>(
+        frost: &Frost<sha2::Sha256, NG>,
+        root_key: EncodedFrostKey,
+        sign_item: SignItem,
+        nonces: BTreeMap<frost::PartyIndex, frost::Nonce>,
+    ) -> Self {
+        // FIXME: This shouldn't be raw -- plain messages should do domain separation
+        let b_message = Message::raw(&sign_item.message[..]);
+        let tweaked_key = sign_item.derive_key(&root_key.into_frost_key());
+        let sign_session = frost.start_sign_session(&tweaked_key, nonces, b_message);
+        Self {
+            sign_item,
+            sign_session,
+            signature_shares: Default::default(),
+            key: root_key,
+        }
+    }
+
     pub fn received_from(&self) -> impl Iterator<Item = DeviceId> + '_ {
         self.signature_shares.keys().cloned()
     }
 
     pub fn tweaked_frost_key(&self) -> FrostKey<EvenY> {
         self.sign_item.derive_key(&self.key.into_frost_key())
+    }
+
+    pub fn verify_final_signature<NG>(
+        &self,
+        schnorr: &Schnorr<sha2::Sha256, NG>,
+        signature: &Signature,
+    ) -> bool {
+        // FIXME: This shouldn't be raw -- plain messages should do domain separation
+        let b_message = Message::<Public>::raw(&self.sign_item.message[..]);
+
+        let derived_key = self.tweaked_frost_key().public_key();
+
+        schnorr.verify(&derived_key, b_message, signature)
     }
 }
 
