@@ -49,6 +49,10 @@ impl FrostCoordinator {
                 nonce_counter,
             } => {
                 let device_nonces = self.device_nonces.entry(device_id).or_default();
+                let _nonce = device_nonces
+                    .nonces
+                    .pop_front()
+                    .expect("we need to have had a nonce to apply a NonceUsed change");
                 device_nonces.start_index = device_nonces.start_index.max(nonce_counter);
             }
             ResetNonces { device_id, nonces } => {
@@ -277,11 +281,13 @@ impl FrostCoordinator {
                             "Signer is unknown",
                         ))?;
 
-                if new_nonces.nonces.len() != n_signatures {
+                // If there have been uncompleted sign requests, the device should replenish more
+                // nonces than required for this particular signing session.
+                if new_nonces.nonces.len() < n_signatures {
                     return Err(Error::coordinator_invalid_message(
                         message_kind,
                         format!(
-                            "Signer did not replenish the correct number of nonces. Expected {n_signatures}, got {}",
+                            "Signer did not replenish enough nonces. Expected {n_signatures}, got {}",
                             new_nonces.nonces.len()
                         ),
                     ));
@@ -495,7 +501,7 @@ impl FrostCoordinator {
 
         // For the ToDevice message
         let mut signing_nonces = BTreeMap::default();
-        // ToStroage messages so we persist which nonces we're usign
+        // ToStorage messages so we persist which nonces we're usign
         let mut used_nonces = vec![];
 
         for &device_id in &signing_parties {
