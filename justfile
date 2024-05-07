@@ -1,4 +1,4 @@
-default_board := "frostypede"
+default_board := "v2"
 non_device_packages := "-p native -p frostsnap_core -p frostsnap_coordinator"
 
 flash BOARD=default_board +ARGS="":

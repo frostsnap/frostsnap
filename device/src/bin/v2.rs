@@ -1,40 +1,43 @@
-// Frostsnap custom PCB rev 1.1
-// GPIO13 Downstream detection
-// GPIO5 Left button
-// GPIO9 Right button
-// GPIO0 RGB LED
+// Frostsnap custom PCB rev 2.x
 
 #![no_std]
 #![no_main]
 
 #[macro_use]
 extern crate alloc;
-use crate::alloc::string::String;
+use alloc::string::String;
+// use alloc::string::ToString;
 use core::mem::MaybeUninit;
+use cst816s::CST816S;
+use display_interface_spi::SPIInterfaceNoCS;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use embedded_graphics_framebuf::FrameBuf;
+use embedded_hal as hal;
 use esp_hal::{
     clock::ClockControl,
-    gpio::{GpioPin, Input, PullUp},
+    i2c::I2C,
+    ledc::{
+        channel::{self, ChannelIFace},
+        timer::{self as timerledc, LSClockSource, TimerIFace},
+        LSGlobalClkSource, LowSpeed, LEDC,
+    },
     peripherals::Peripherals,
     prelude::*,
-    rmt::{Rmt, TxChannel},
-    spi,
+    spi::{master::Spi, SpiMode},
     timer::{self, Timer, TimerGroup},
     uart::{self, Uart},
     Delay, Rng, UsbSerialJtag, IO,
 };
-use esp_hal_smartled::{smartLedBuffer, SmartLedsAdapter};
 use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_device::{
     esp32_run,
-    io::{set_upstream_port_mode_jtag, set_upstream_port_mode_uart},
-    st7735::ST7735,
+    io::set_upstream_port_mode_jtag,
+    st7789,
     ui::{BusyTask, Prompt, UiEvent, UserInteraction, WaitingFor, WaitingResponse, Workflow},
-    ConnectionState,
+    DownstreamConnectionState, UpstreamConnectionState,
 };
+use mipidsi::{options::ColorInversion, Builder, Error, Orientation};
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
-use smart_leds::{brightness, colors, SmartLedsWrite, RGB};
 
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
@@ -55,17 +58,16 @@ fn init_heap() {
 ///
 /// GPIO18:     JTAG/UART1 TX (connect downstream)
 /// GPIO19:     JTAG/UART1 RX (connect downstream)
+///
+/// GPIO0: Upstream detection
+/// GPIO10: Downstream detection
+
 #[entry]
 fn main() -> ! {
-    // First thing we do otherwise it appears as JTAG to the OS first and then it switches. If this
-    // is annoying maybe we can make a feature flag to do it later because it seems that espflash
-    // relies on the device being in jtag mode immediately after reseting it.
-    set_upstream_port_mode_uart();
-
     init_heap();
     let peripherals = Peripherals::take();
     let system = peripherals.SYSTEM.split();
-    let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
+    let clocks = ClockControl::max(system.clock_control).freeze();
 
     let timer_group0 = TimerGroup::new(peripherals.TIMG0, &clocks);
     let timer_group1 = TimerGroup::new(peripherals.TIMG1, &clocks);
@@ -80,32 +82,63 @@ fn main() -> ! {
     // compute instead of using constant for 80MHz cpu speed
     let ticks_per_ms = clocks.cpu_clock.raw() / timer1.divider() / 1000;
 
-    // construct the select button
-    let select_button = io.pins.gpio9.into_pull_up_input();
-    let downstream_detect = io.pins.gpio13.into_pull_up_input();
+    let upstream_detect = io.pins.gpio0.into_pull_up_input();
+    let downstream_detect = io.pins.gpio10.into_pull_up_input();
 
-    let mut bl = io.pins.gpio1.into_push_pull_output();
+    let bl = io.pins.gpio1.into_push_pull_output();
     // Turn off backlight to hide artifacts as display initializes
-    bl.set_low().unwrap();
-    let framearray = [Rgb565::WHITE; 160 * 80];
-    let framebuf = FrameBuf::new(framearray, 160, 80);
-    let display = ST7735::new(
-        io.pins.gpio6.into_push_pull_output().into(),
-        io.pins.gpio10.into_push_pull_output().into(),
-        peripherals.SPI2,
-        io.pins.gpio2,
-        io.pins.gpio3,
-        &clocks,
-        framebuf,
-    )
-    .unwrap();
-
-    // RGB LED
-    let rmt = Rmt::new(peripherals.RMT, 80u32.MHz(), &clocks).unwrap();
-    let rmt_buffer = smartLedBuffer!(1);
-    let mut led = SmartLedsAdapter::new(rmt.channel0, io.pins.gpio0, rmt_buffer, &clocks);
-    led.write(brightness([colors::BLACK].iter().cloned(), 0))
+    let mut ledc = LEDC::new(peripherals.LEDC, &clocks);
+    ledc.set_global_slow_clock(LSGlobalClkSource::APBClk);
+    let mut lstimer0 = ledc.get_timer::<LowSpeed>(timerledc::Number::Timer0);
+    lstimer0
+        .configure(timerledc::config::Config {
+            duty: timerledc::config::Duty::Duty10Bit,
+            clock_source: LSClockSource::APBClk,
+            frequency: 24u32.kHz(),
+        })
         .unwrap();
+    let mut channel0 = ledc.get_channel(channel::Number::Channel0, bl);
+    channel0
+        .configure(channel::config::Config {
+            timer: &lstimer0,
+            duty_pct: 0,
+            pin_config: channel::config::PinConfig::PushPull,
+        })
+        .unwrap();
+
+    let spi = Spi::new(peripherals.SPI2, 40u32.MHz(), SpiMode::Mode2, &clocks)
+        .with_sck(io.pins.gpio8)
+        .with_mosi(io.pins.gpio7);
+    let di = SPIInterfaceNoCS::new(spi, io.pins.gpio9.into_push_pull_output());
+    let display = Builder::st7789(di)
+        .with_display_size(240, 280)
+        .with_window_offset_handler(|_| (0, 20)) // 240*280 panel
+        .with_invert_colors(ColorInversion::Inverted)
+        .with_orientation(Orientation::Portrait(false))
+        .init(&mut delay, Some(io.pins.gpio6.into_push_pull_output())) // RES
+        .unwrap();
+    let mut framearray = [Rgb565::BLACK; 240 * 280];
+    let framebuf = FrameBuf::new(&mut framearray, 240, 280);
+    let mut display = st7789::Graphics::new(display, framebuf).unwrap();
+
+    let i2c = I2C::new(
+        peripherals.I2C0,
+        io.pins.gpio4,
+        io.pins.gpio5,
+        400u32.kHz(),
+        &clocks,
+    );
+    let mut capsense = CST816S::new(
+        i2c,
+        io.pins.gpio2.into_pull_up_input(),
+        io.pins.gpio3.into_push_pull_output(),
+    );
+    capsense.setup(&mut delay).unwrap();
+
+    display.clear(Rgb565::BLACK);
+    display.header("Frostsnap");
+    display.flush().unwrap();
+    channel0.start_duty_fade(0, 30, 500).unwrap();
 
     let upstream_jtag = UsbSerialJtag::new(peripherals.USB_DEVICE);
 
@@ -134,8 +167,7 @@ fn main() -> ! {
     };
 
     let mut hal_rng = Rng::new(peripherals.RNG);
-    delay.delay_ms(600u32); // To wait for ESP32c3 timers to stop being bonkers
-    bl.set_high().unwrap();
+    // delay.delay_ms(600u32); // To wait for ESP32c3 timers to stop being bonkers
 
     let rng = {
         let mut chacha_seed = [0u8; 32];
@@ -144,20 +176,21 @@ fn main() -> ! {
     };
 
     let ui = FrostyUi {
-        select_button,
-        led,
         display,
-        downstream_connection_state: ConnectionState::Disconnected,
+        capsense,
+        downstream_connection_state: DownstreamConnectionState::Disconnected,
+        upstream_connection_state: UpstreamConnectionState::Disconnected,
         workflow: Default::default(),
         device_name: Default::default(),
-        splash_state: AnimationState::new(&timer1, (600 * ticks_per_ms).into()),
         changes: false,
-        confirm_state: AnimationState::new(&timer1, (700 * ticks_per_ms).into()),
+        confirm_state: AnimationState::new(&timer1, 600 * 80_000),
+        last_touch: None,
         timer: &timer1,
+        ticks_per_ms: ticks_per_ms.into(),
     };
 
     // let _now1 = timer1.now();
-    esp32_run::Run {
+    let run = esp32_run::Run {
         upstream_jtag,
         upstream_uart,
         downstream_uart,
@@ -165,25 +198,23 @@ fn main() -> ! {
         ui,
         timer: timer0,
         downstream_detect,
-    }
-    .run()
+        upstream_detect,
+    };
+    run.run()
 }
 
-pub struct FrostyUi<'t, 'd, C, T, SPI>
-where
-    SPI: spi::master::Instance,
-    C: TxChannel,
-{
-    select_button: GpioPin<Input<PullUp>, 9>,
-    led: SmartLedsAdapter<C, 25>,
-    display: ST7735<'d, SPI>,
-    downstream_connection_state: ConnectionState,
+pub struct FrostyUi<'t, T, DT, I2C, PINT, RST> {
+    display: st7789::Graphics<'t, DT>,
+    capsense: CST816S<I2C, PINT, RST>,
+    last_touch: Option<u64>,
+    downstream_connection_state: DownstreamConnectionState,
+    upstream_connection_state: UpstreamConnectionState,
     workflow: Workflow,
     device_name: Option<String>,
-    splash_state: AnimationState<'t, T>,
     changes: bool,
     confirm_state: AnimationState<'t, T>,
     timer: &'t Timer<T>,
+    ticks_per_ms: u64,
 }
 
 struct AnimationState<'t, T> {
@@ -204,10 +235,6 @@ where
             start: None,
             finished: false,
         }
-    }
-
-    pub fn is_finished(&self) -> bool {
-        self.finished
     }
 
     pub fn reset(&mut self) {
@@ -245,34 +272,17 @@ pub enum AnimationProgress {
     Done,
 }
 
-impl<'t, 'd, C, T, SPI> FrostyUi<'t, 'd, C, T, SPI>
+impl<'t, T, DT, I2C, PINT, RST> FrostyUi<'t, T, DT, I2C, PINT, RST>
 where
-    SPI: spi::master::Instance,
-    C: TxChannel,
     T: timer::Instance,
+    DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
 {
     fn render(&mut self) {
-        let splash_progress = self.splash_state.poll();
-        match splash_progress {
-            AnimationProgress::Progress(progress) => {
-                self.display.splash_screen(progress).unwrap();
-                return;
-            }
-            AnimationProgress::FinalTick => {
-                self.display.clear(Rgb565::BLACK);
-            }
-            AnimationProgress::Done => { /* splash is done no need to anything */ }
-        }
-
         self.display
             .header(self.device_name.as_deref().unwrap_or("New Device"));
 
         match &self.workflow {
-            Workflow::None => {
-                self.led
-                    .write(brightness([colors::WHITE].iter().cloned(), 10))
-                    .unwrap();
-            }
+            Workflow::None => {}
             Workflow::NamingDevice {
                 old_name: existing_name,
                 new_name: current_name,
@@ -284,10 +294,6 @@ where
             },
             Workflow::WaitingFor(waiting_for) => match waiting_for {
                 WaitingFor::LookingForUpstream { jtag } => {
-                    self.led
-                        .write(brightness([colors::PURPLE].iter().cloned(), 10))
-                        .unwrap();
-
                     if *jtag {
                         self.display.print("Looking for coordinator USB host");
                     } else {
@@ -295,16 +301,9 @@ where
                     }
                 }
                 WaitingFor::CoordinatorAnnounceAck => {
-                    self.led
-                        .write(brightness([colors::PURPLE].iter().cloned(), 10))
-                        .unwrap();
                     self.display.print("Waiting for FrostSnap app");
                 }
                 WaitingFor::CoordinatorInstruction { completed_task: _ } => {
-                    self.led
-                        .write(brightness([colors::GREEN].iter().cloned(), 10))
-                        .unwrap();
-
                     match &self.device_name {
                         Some(label) => {
                             let mut body = String::new();
@@ -325,10 +324,6 @@ where
                 },
             },
             Workflow::UserPrompt(prompt) => {
-                self.led
-                    .write(brightness([colors::YELLOW].iter().cloned(), 10))
-                    .unwrap();
-
                 match prompt {
                     Prompt::Signing(task) => {
                         self.display.print(format!("Sign {}", task));
@@ -348,32 +343,43 @@ where
                         .display
                         .print(format!("Display the backup for key {key_id}?")),
                 }
-                self.display.confirm_bar(0.0);
+                self.display.button();
             }
-            Workflow::BusyDoing(task) => {
-                self.led
-                    .write(brightness([colors::YELLOW].iter().cloned(), 10))
-                    .unwrap();
-
-                match task {
-                    BusyTask::KeyGen => self.display.print("Generating key.."),
-                    BusyTask::Signing => self.display.print("Signing.."),
-                    BusyTask::VerifyingShare => self.display.print("Verifying key.."),
-                    BusyTask::Loading => self.display.print("loading.."),
-                }
-            }
+            Workflow::BusyDoing(task) => match task {
+                BusyTask::KeyGen => self.display.print("Generating key.."),
+                BusyTask::Signing => self.display.print("Signing.."),
+                BusyTask::VerifyingShare => self.display.print("Verifying key.."),
+                BusyTask::Loading => self.display.print("loading.."),
+            },
             Workflow::Debug(string) => {
                 self.display.print(string);
             }
             Workflow::DisplayBackup { backup } => self.display.print(format!("Backup: {}", backup)),
         }
 
-        self.display
-            .set_top_left_square(match self.downstream_connection_state {
-                ConnectionState::Disconnected => Rgb565::RED,
-                ConnectionState::Connected => Rgb565::YELLOW,
-                ConnectionState::Established => Rgb565::GREEN,
-            });
+        match self.upstream_connection_state {
+            UpstreamConnectionState::Disconnected => {
+                self.display.upstream_state(Rgb565::RED, false);
+            }
+            UpstreamConnectionState::Connected { is_device } => {
+                self.display.upstream_state(Rgb565::YELLOW, is_device);
+            }
+            UpstreamConnectionState::Established { is_device } => {
+                self.display.upstream_state(Rgb565::GREEN, is_device);
+            }
+        }
+
+        match self.downstream_connection_state {
+            DownstreamConnectionState::Disconnected => {
+                self.display.downstream_state(None);
+            }
+            DownstreamConnectionState::Connected => {
+                self.display.downstream_state(Some(Rgb565::YELLOW));
+            }
+            DownstreamConnectionState::Established => {
+                self.display.downstream_state(Some(Rgb565::GREEN));
+            }
+        }
 
         #[cfg(feature = "mem_debug")]
         self.display
@@ -383,16 +389,30 @@ where
     }
 }
 
-impl<'d, 't, C, T, SPI> UserInteraction for FrostyUi<'d, 't, C, T, SPI>
+impl<'t, T, DT, I2C, PINT, RST, CommE> UserInteraction for FrostyUi<'t, T, DT, I2C, PINT, RST>
 where
-    SPI: spi::master::Instance,
-    C: TxChannel,
+    I2C: hal::blocking::i2c::Write<Error = CommE>
+        + hal::blocking::i2c::Read<Error = CommE>
+        + hal::blocking::i2c::WriteRead<Error = CommE>,
+    PINT: hal::digital::v2::InputPin,
+    RST: hal::digital::v2::StatefulOutputPin,
     T: timer::Instance,
+    DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
 {
-    fn set_downstream_connection_state(&mut self, state: ConnectionState) {
+    fn set_downstream_connection_state(
+        &mut self,
+        state: frostsnap_device::DownstreamConnectionState,
+    ) {
         if state != self.downstream_connection_state {
             self.changes = true;
             self.downstream_connection_state = state;
+        }
+    }
+
+    fn set_upstream_connection_state(&mut self, state: frostsnap_device::UpstreamConnectionState) {
+        if state != self.upstream_connection_state {
+            self.changes = true;
+            self.upstream_connection_state = state;
         }
     }
 
@@ -410,7 +430,7 @@ where
     }
 
     fn set_workflow(&mut self, workflow: Workflow) {
-        if let Workflow::Debug(_) = self.workflow {
+        if matches!(self.workflow, Workflow::Debug(_)) && !matches!(workflow, Workflow::Debug(_)) {
             return;
         }
         self.workflow = workflow;
@@ -419,29 +439,28 @@ where
 
     fn poll(&mut self) -> Option<UiEvent> {
         // keep the timer register fresh
-        let _now = self.timer.now();
+        let now = self.timer.now();
+
         let mut event = None;
-        if !self.splash_state.is_finished() {
-            self.render();
-            return event;
-        }
 
         if let Workflow::UserPrompt(prompt) = &self.workflow {
-            if self.select_button.is_low().unwrap() {
+            let is_pressed = match self.capsense.read_one_touch_event(true) {
+                None => match self.last_touch {
+                    None => false,
+                    Some(last_touch) => last_touch > now - 10 * self.ticks_per_ms,
+                },
+                Some(_touch) => {
+                    self.last_touch = Some(now);
+                    true
+                }
+            };
+
+            if is_pressed {
                 match self.confirm_state.poll() {
                     AnimationProgress::Progress(progress) => {
-                        self.led
-                            .write(brightness(
-                                [RGB::new(0, (128.0 * progress) as u8, 0)].iter().cloned(),
-                                30,
-                            ))
-                            .unwrap();
                         self.display.confirm_bar(progress);
                     }
                     AnimationProgress::FinalTick => {
-                        self.led
-                            .write(brightness([colors::GREEN].iter().cloned(), 30))
-                            .unwrap();
                         let ui_event = match prompt {
                             Prompt::KeyGen(_) => UiEvent::KeyGenConfirm,
                             Prompt::Signing(_) => UiEvent::SigningConfirm,
@@ -452,7 +471,6 @@ where
                                 UiEvent::BackupRequestConfirm(*key_id)
                             }
                         };
-
                         event = Some(ui_event);
                     }
                     AnimationProgress::Done => {}
@@ -485,12 +503,10 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     // Disable the RTC and TIMG watchdog timers
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
 
-    if let Ok(rmt) = Rmt::new(peripherals.RMT, 80u32.MHz(), &clocks) {
-        let rmt_buffer = smartLedBuffer!(1);
-        let mut led = SmartLedsAdapter::new(rmt.channel0, io.pins.gpio0, rmt_buffer, &clocks);
-        let _ = led.write(brightness([colors::RED].iter().cloned(), 10));
-    }
+    let mut bl = io.pins.gpio1.into_push_pull_output();
+    bl.set_low().unwrap();
 
+    let mut delay = Delay::new(&clocks);
     let mut panic_buf = frostsnap_device::panic::PanicBuffer::<512>::default();
 
     let _ = match info.location() {
@@ -504,20 +520,19 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         None => write!(&mut panic_buf, "{}", info),
     };
 
-    let framearray = [Rgb565::WHITE; 160 * 80];
-    let framebuf = FrameBuf::new(framearray, 160, 80);
-    // let mut bl = io.pins.gpio11.into_push_pull_output();
-    if let Ok(mut display) = ST7735::new(
-        io.pins.gpio6.into_push_pull_output().into(),
-        io.pins.gpio10.into_push_pull_output().into(),
-        peripherals.SPI2,
-        io.pins.gpio2,
-        io.pins.gpio3,
-        &clocks,
-        framebuf,
-    ) {
-        display.error_print(panic_buf.as_str());
-    }
+    let spi = Spi::new(peripherals.SPI2, 40u32.MHz(), SpiMode::Mode2, &clocks)
+        .with_sck(io.pins.gpio8)
+        .with_mosi(io.pins.gpio7);
+    let di = SPIInterfaceNoCS::new(spi, io.pins.gpio9.into_push_pull_output());
+    let mut display = Builder::st7789(di)
+        .with_display_size(240, 280)
+        .with_window_offset_handler(|_| (0, 20)) // 240*280 panel
+        .with_invert_colors(ColorInversion::Inverted)
+        .with_orientation(Orientation::Portrait(false))
+        .init(&mut delay, Some(io.pins.gpio6.into_push_pull_output())) // RES
+        .unwrap();
+    st7789::error_print(&mut display, panic_buf.as_str());
+    bl.set_high().unwrap();
 
     loop {}
 }
