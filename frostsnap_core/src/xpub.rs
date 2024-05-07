@@ -7,7 +7,7 @@ use schnorr_fun::{
 /// Encapsulates bip32 derivations on a key
 pub struct Xpub<T> {
     key: T,
-    xpub: ExtendedPubKey,
+    xpub: bitcoin::bip32::Xpub,
 }
 
 pub trait TweakableKey: Clone {
@@ -82,7 +82,7 @@ impl TweakableKey for Point {
 impl<T: TweakableKey> Xpub<T> {
     pub fn new(key: T) -> Self {
         Self {
-            xpub: ExtendedPubKey {
+            xpub: bitcoin::bip32::Xpub {
                 network: Network::Bitcoin,
                 depth: 0,
                 child_number: ChildNumber::from(0u32),
@@ -108,7 +108,7 @@ impl<T: TweakableKey> Xpub<T> {
                     .non_zero()
                     .expect("sk cannot be zero"),
             );
-            self.xpub = ExtendedPubKey {
+            self.xpub = bitcoin::bip32::Xpub {
                 network: self.xpub.network,
                 depth: self.xpub.depth + 1,
                 parent_fingerprint: self.xpub.fingerprint(),
@@ -127,7 +127,7 @@ impl<T: TweakableKey> Xpub<T> {
         self.key
     }
 
-    pub fn xpub(&self) -> &ExtendedPubKey {
+    pub fn xpub(&self) -> &bitcoin::bip32::Xpub {
         &self.xpub
     }
 }

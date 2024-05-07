@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use bdk_chain::{
-    bitcoin::{self, ScriptBuf, Transaction},
+    bitcoin::{self, Amount, ScriptBuf, Transaction},
     indexed_tx_graph::{self, IndexedTxGraph},
     keychain::KeychainTxOutIndex,
     local_chain::{self, LocalChain},
@@ -8,8 +8,7 @@ use bdk_chain::{
         descriptor::{DescriptorXKey, Tr, Wildcard},
         Descriptor, DescriptorPublicKey,
     },
-    tx_graph::{self},
-    Append, ChainPosition, ConfirmationTimeHeightAnchor, FullTxOut,
+    tx_graph, Append, ChainPosition, ConfirmationTimeHeightAnchor, FullTxOut,
 };
 use flutter_rust_bridge::RustOpaque;
 use frostsnap_coordinator::frostsnap_core::{
@@ -255,13 +254,13 @@ impl _Wallet {
                 let net_value = self
                     .graph
                     .index
-                    .net_value(canonical_tx.tx_node.tx, key_id..=key_id);
+                    .net_value(&canonical_tx.tx_node.tx, key_id..=key_id);
 
                 if net_value == 0 {
                     return None;
                 }
                 Some(api::Transaction {
-                    inner: RustOpaque::new(canonical_tx.tx_node.tx.clone()),
+                    inner: RustOpaque::new((*canonical_tx.tx_node.tx).clone()),
                     confirmation_time,
                     net_value,
                 })
@@ -334,7 +333,7 @@ impl _Wallet {
             .iter()
             .map(|(_path, utxo)| Candidate {
                 input_count: 1,
-                value: utxo.txout.value,
+                value: utxo.txout.value.to_sat(),
                 weight: TR_KEYSPEND_TXIN_WEIGHT,
                 is_segwit: true,
             })
@@ -342,7 +341,7 @@ impl _Wallet {
 
         let target_output = bitcoin::TxOut {
             script_pubkey: to_address.script_pubkey(),
-            value,
+            value: Amount::from_sat(value),
         };
         let mut outputs = vec![target_output];
 
@@ -351,7 +350,7 @@ impl _Wallet {
             outputs: TargetOutputs::fund_outputs(
                 outputs
                     .iter()
-                    .map(|output| (output.weight() as u32, output.value)),
+                    .map(|output| (output.weight().to_wu() as u32, output.value.to_sat())),
             ),
         };
 
@@ -432,12 +431,12 @@ impl _Wallet {
             self.graph.index.mark_used(key_id, i);
             outputs.push(bitcoin::TxOut {
                 script_pubkey: change_spk.to_owned(),
-                value,
+                value: Amount::from_sat(value),
             });
         }
 
         let tx_template = Transaction {
-            version: 0x02,
+            version: bitcoin::transaction::Version(0x02),
             lock_time: bitcoin::absolute::LockTime::Blocks(
                 bitcoin::absolute::Height::from_consensus(self.chain.tip().height())?,
             ),
@@ -486,6 +485,9 @@ impl _Wallet {
         }
 
         outputs
+            .into_iter()
+            .map(|(script, amount)| (script, amount.to_sat()))
+            .collect()
     }
 
     pub fn net_value(&self, key_id: KeyId, tx: &Transaction) -> i64 {

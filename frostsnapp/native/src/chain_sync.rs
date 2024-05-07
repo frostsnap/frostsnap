@@ -4,10 +4,7 @@ use bdk_electrum::{
     electrum_client::{self, Client, ElectrumApi},
     ElectrumExt,
 };
-use std::{
-    sync::{atomic::AtomicUsize, Arc},
-    time::UNIX_EPOCH,
-};
+use std::sync::{atomic::AtomicUsize, Arc};
 use tracing::{event, Level};
 
 #[derive(Clone)]
@@ -58,13 +55,9 @@ impl ChainSync {
         let missing = electrum_update
             .relevant_txids
             .missing_full_txs(&start_sync.existing_graph);
-        let now = std::time::SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("no a time traveler")
-            .as_secs();
         let update_graph = electrum_update
             .relevant_txids
-            .into_confirmation_time_tx_graph(&self.client, Some(now), missing)?;
+            .into_confirmation_time_tx_graph(&self.client, missing)?;
         let update_chain = electrum_update.chain_update;
         Ok(Update {
             chain: update_chain,
@@ -79,7 +72,7 @@ impl ChainSync {
 }
 
 pub struct Update {
-    pub chain: local_chain::Update,
+    pub chain: local_chain::CheckPoint,
     pub tx_graph: tx_graph::TxGraph<ConfirmationTimeHeightAnchor>,
 }
 

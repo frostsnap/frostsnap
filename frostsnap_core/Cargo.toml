@@ -12,7 +12,7 @@ rand_chacha = { workspace = true }
 sha2 = {  version = "0.10", default-features = false }
 chacha20 = { version = "0.9", default-features = false }
 serde = { workspace = true }
-bitcoin = { version = "0.30", features = ["no-std", "serde"], default-features = false }
+bitcoin = { version = "0.31", features = ["no-std", "serde"], default-features = false }
 bincode = { workspace = true }
 serde_json = { version = "1", optional = true }
 tracing = { workspace = true, default-features = false, optional = true }
