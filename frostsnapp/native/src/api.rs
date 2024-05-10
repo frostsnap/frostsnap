@@ -10,6 +10,7 @@ pub use bitcoin::Transaction as RTransaction;
 use flutter_rust_bridge::{frb, RustOpaque, StreamSink, SyncReturn};
 pub use frostsnap_coordinator::frostsnap_core;
 use frostsnap_coordinator::frostsnap_core::message::SignTask;
+use frostsnap_coordinator::frostsnap_core::nostr;
 use frostsnap_coordinator::{DesktopSerial, UsbSerialManager};
 pub use frostsnap_coordinator::{DeviceChange, PortDesc};
 pub use frostsnap_core::message::{CoordinatorToUserKeyGenMessage, EncodedSignature};
@@ -516,6 +517,67 @@ impl Coordinator {
         Ok(())
     }
 
+    pub fn create_nostr_event(
+        &self,
+        key_id: KeyId,
+        event_content: String,
+    ) -> Result<UnsignedNostrEvent> {
+        let xonly_frost_key = self
+            .get_key(key_id)
+            .0
+            .expect("should know about key")
+            .0
+            .frost_key()
+            .clone()
+            .into_xonly_key();
+        let public_key = xonly_frost_key.public_key();
+        let created_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("Time went backwards")
+            .as_secs() as i64;
+        let new_event = frostsnap_core::nostr::UnsignedEvent::new(
+            public_key,
+            1,
+            Vec::new(),
+            event_content,
+            created_at,
+        );
+        let unsigned_nostr_event = UnsignedNostrEvent {
+            unsigned_event: RustOpaque::new(new_event),
+        };
+        Ok(unsigned_nostr_event)
+    }
+
+    pub fn start_signing_nostr(
+        &self,
+        key_id: KeyId,
+        unsigned_event: UnsignedNostrEvent,
+        devices: Vec<DeviceId>,
+        stream: StreamSink<SigningState>,
+    ) -> Result<()> {
+        self.0.start_signing(
+            key_id,
+            devices.into_iter().collect(),
+            SignTask::Nostr {
+                event: Box::new(unsigned_event.unsigned_event.deref().clone()),
+            },
+            stream,
+        )?;
+        Ok(())
+    }
+
+    pub fn get_npub(&self, key_id: KeyId) -> SyncReturn<String> {
+        let xonly_frost_key = self
+            .get_key(key_id)
+            .0
+            .expect("should know about key")
+            .0
+            .frost_key()
+            .clone()
+            .into_xonly_key();
+        SyncReturn(nostr::get_npub(xonly_frost_key.public_key()))
+    }
+
     pub fn get_signing_state(&self) -> SyncReturn<Option<SigningState>> {
         SyncReturn(self.0.get_signing_state())
     }
@@ -860,6 +922,63 @@ pub struct EffectOfTx {
     pub foreign_receiving_addresses: Vec<(String, u64)>,
 }
 
+pub struct UnsignedNostrEvent {
+    pub unsigned_event: RustOpaque<frostsnap_core::nostr::UnsignedEvent>,
+}
+
+impl UnsignedNostrEvent {
+    pub fn note_id(&self) -> SyncReturn<String> {
+        SyncReturn(self.unsigned_event.note_id())
+    }
+
+    pub fn add_signature(&self, signature: EncodedSignature) -> SyncReturn<SignedNostrEvent> {
+        let signature = frostsnap_core::schnorr_fun::Signature::from_bytes(signature.0).unwrap();
+        let signed_event = self.unsigned_event.add_signature(signature);
+        SyncReturn(SignedNostrEvent {
+            signed_event: RustOpaque::new(signed_event),
+        })
+    }
+}
+
+pub struct SignedNostrEvent {
+    pub signed_event: RustOpaque<frostsnap_core::nostr::Event>,
+}
+
+impl SignedNostrEvent {
+    pub fn broadcast(&self) -> Result<()> {
+        let event_msg = self.signed_event.to_websocket_msg();
+        event!(TLevel::INFO, event = event_msg, "broadcasting nostr event");
+
+        let message = tungstenite::Message::Text(event_msg.clone());
+        for relay in [
+            "wss://relay.primal.net",
+            "wss://relay.snort.social",
+            "wss://nostr.bitcoiner.social",
+            "wss://relay.damus.io",
+        ] {
+            let (mut client, _response) =
+                match tungstenite::connect(url::Url::parse(relay).unwrap()) {
+                    Err(err) => {
+                        let err_str = err.to_string();
+                        event!(
+                            TLevel::WARN,
+                            err_str = err_str,
+                            "failed to connect to relay"
+                        );
+                        continue;
+                    }
+                    Ok((client, response)) => (client, response),
+                };
+
+            client
+                .send(message.clone())
+                .map_err(|err| anyhow!("could not send message to relay: {}", err.to_string()))?;
+            event!(TLevel::INFO, relay = relay, "broadcasted");
+        }
+        Ok(())
+    }
+}
+
 // TODO: remove me?
 pub fn echo_key_id(key_id: KeyId) -> KeyId {
     key_id
@@ -867,10 +986,6 @@ pub fn echo_key_id(key_id: KeyId) -> KeyId {
 
 pub enum SignTaskDescription {
     Plain { message: String },
-    // Nostr {
-    //     #[bincode(with_serde)]
-    //     event: Box<crate::nostr::UnsignedEvent>,
-    //     key_id: KeyId,
-    // }, // 1 nonce & sig
+    Nostr { unsigned_event: UnsignedNostrEvent },
     Transaction { unsigned_tx: UnsignedTx },
 }

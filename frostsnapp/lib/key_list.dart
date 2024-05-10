@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/keygen.dart';
+import 'package:frostsnapp/nostr.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/wallet.dart';
 
@@ -114,6 +115,14 @@ class _KeyCard extends State<KeyCard> {
         },
         child: Text("₿"));
 
+    final Widget nostrButton = ElevatedButton(
+        onPressed: () {
+          Navigator.push(context, MaterialPageRoute(builder: (context) {
+            return NostrPage(frostKey: widget.frostKey);
+          }));
+        },
+        child: Text("🦩"));
+
     final continueSigning;
 
     if (restorableSignSession != null) {
@@ -137,6 +146,9 @@ class _KeyCard extends State<KeyCard> {
                       unsignedTx: unsignedTx,
                       keyId: keyId);
                 }
+              case SignTaskDescription_Nostr(:final unsignedEvent):
+                await signMessageWorkflowDialog(
+                    context, signingStream, unsignedEvent.toString());
             }
 
             setState(() {
@@ -170,7 +182,9 @@ class _KeyCard extends State<KeyCard> {
               const SizedBox(width: 5),
               walletButton,
               const SizedBox(width: 5),
-              continueSigning,
+              nostrButton,
+              const SizedBox(width: 5),
+              continueSigning
             ])
           ],
         ),
