@@ -47,7 +47,9 @@ class KeyList extends StatelessWidget {
                 itemBuilder: (context, index) =>
                     itemBuilder(context, keys[index]));
           }
-          return Column(
+          return SizedBox(
+            width: MediaQuery.of(context).size.width * 0.6,
+            child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -57,7 +59,7 @@ class KeyList extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     ElevatedButton(
-                      child: const Text("New key"),
+                      child: const Text("New Key"),
                       onPressed: () async {
                         final newId = await Navigator.push(context,
                             MaterialPageRoute(builder: (context) {
@@ -72,7 +74,9 @@ class KeyList extends StatelessWidget {
                     showDevicesButton
                   ],
                 )
-              ]);
+              ],
+            ),
+          );
         });
   }
 }
@@ -153,7 +157,7 @@ class _KeyCard extends State<KeyCard> {
     return Card(
       color: backgroundSecondaryColor,
       child: Padding(
-        padding: const EdgeInsets.all(8.0),
+        padding: const EdgeInsets.all(15.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
@@ -166,7 +170,9 @@ class _KeyCard extends State<KeyCard> {
                   fontFamily: 'Monospace'),
             ),
             const SizedBox(height: 8),
-            Text("Threshold: ${widget.frostKey.threshold()}"),
+            Text(
+                "${widget.frostKey.threshold()}-of-${widget.frostKey.devices().length}"),
+            const SizedBox(height: 8),
             Row(mainAxisAlignment: MainAxisAlignment.center, children: [
               signButton,
               const SizedBox(width: 5),
@@ -216,15 +222,14 @@ class _KeyListWithConfetti extends State<KeyListWithConfetti> {
           ),
         ),
       ),
-      Positioned.fill(
-          child: KeyList(
+      KeyList(
         itemBuilder: (context, key) {
           return KeyCard(frostKey: key);
         },
         onNewKey: (keyId) {
           _confettiController.play();
         },
-      )),
+      ),
       Center(
         child: ConfettiWidget(
             confettiController: _confettiController,

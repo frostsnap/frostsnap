@@ -133,7 +133,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                                     Text(snapshot.connectionState ==
                                             ConnectionState.waiting
                                         ? "Confirm on device to show backup"
-                                        : "Record backup displayed on device screen. Press cancel when finished."),
+                                        : "Record backup displayed on device screen.\nPress 'Cancel' when finished."),
                                     Divider(),
                                     MaybeExpandedVertical(child:
                                         DeviceListContainer(child:

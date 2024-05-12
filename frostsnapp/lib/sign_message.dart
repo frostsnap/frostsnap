@@ -205,7 +205,7 @@ Future<List<EncodedSignature>?> showSigningProgressDialog(
       content: Column(children: [
         description,
         Divider(),
-        Text("Plug in each device"),
+        Text("Plug in a device to sign:"),
         Expanded(child: DeviceSigningProgress(stream: stream)),
       ]));
 }
@@ -216,14 +216,14 @@ Future<void> _showSignatureDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
-            title: Text("Signing success"),
+            title: Text("Signed", style: TextStyle(color: textColor)),
             content: Container(
                 width: Platform.isAndroid ? double.maxFinite : 400.0,
                 child: Align(
                     alignment: Alignment.center,
                     child: Column(
                       children: [
-                        Text("Here's your signature!"),
+                        Text("Signature:"),
                         SizedBox(height: 20),
                         SelectableText(toHex(
                             Uint8List.fromList(signature.field0.toList())))

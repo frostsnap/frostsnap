@@ -8,8 +8,6 @@ import 'package:frostsnapp/animated_check.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_id_ext.dart';
 import 'package:frostsnapp/device_list.dart';
-import 'package:frostsnapp/device_settings.dart';
-import 'package:frostsnapp/device_setup.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/hex.dart';
 import 'package:frostsnapp/theme.dart';
@@ -239,7 +237,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                 ),
                 SizedBox(width: 20),
                 ElevatedButton(
-                    child: Text("No/Cancel"),
+                    child: Text("No / Cancel"),
                     onPressed: () {
                       Navigator.pop(context);
                     }),
@@ -250,9 +248,10 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                   child: Align(
                     alignment: Alignment.center,
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      Text("Do all the devices show:"),
                       Divider(),
                       hexBox,
+                      Divider(),
+                      Text("Do all the devices show this code?"),
                     ]),
                   )));
         });
