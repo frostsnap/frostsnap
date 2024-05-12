@@ -197,25 +197,39 @@ class _KeyListWithConfetti extends State<KeyListWithConfetti> {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Positioned.fill(
-            child: KeyList(
-          itemBuilder: (context, key) {
-            return KeyCard(frostKey: key);
-          },
-          onNewKey: (keyId) {
-            _confettiController.play();
-          },
-        )),
-        Center(
-          child: ConfettiWidget(
-              confettiController: _confettiController,
-              blastDirectionality: BlastDirectionality.explosive,
-              numberOfParticles: 50),
+    return Column(children: [
+      Padding(
+        padding: const EdgeInsets.all(50.0),
+        child: Center(
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              double maxWidth = 300;
+              double width =
+                  constraints.maxWidth > 600 ? maxWidth * 1.5 : maxWidth;
+              return Image.asset(
+                'assets/frostsnap-logo-boxed.png',
+                width: width,
+              );
+            },
+          ),
         ),
-      ],
-    );
+      ),
+      Positioned.fill(
+          child: KeyList(
+        itemBuilder: (context, key) {
+          return KeyCard(frostKey: key);
+        },
+        onNewKey: (keyId) {
+          _confettiController.play();
+        },
+      )),
+      Center(
+        child: ConfettiWidget(
+            confettiController: _confettiController,
+            blastDirectionality: BlastDirectionality.explosive,
+            numberOfParticles: 50),
+      ),
+    ]);
   }
 
   @override
