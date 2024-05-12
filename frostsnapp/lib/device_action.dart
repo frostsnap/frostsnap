@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'dart:io';
 import 'dart:async';
 
+import 'package:frostsnapp/theme.dart';
+
 Future<T?> showDeviceActionDialog<T>({
   required BuildContext context,
   required Widget content,
@@ -49,12 +51,12 @@ void showErrorSnackbar(BuildContext context, String errorMessage) {
     content: Text(
       errorMessage,
       style: TextStyle(
-        color: Colors.white, // White text color
+        color: textColor,
         fontSize: 16.0,
       ),
     ),
-    backgroundColor: Colors.red, // Red background color
-    duration: Duration(seconds: 3), // Adjust the duration as needed
+    backgroundColor: errorColor,
+    duration: Duration(seconds: 3),
   );
 
   ScaffoldMessenger.of(context).showSnackBar(snackBar);

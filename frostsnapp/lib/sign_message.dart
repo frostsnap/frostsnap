@@ -9,6 +9,7 @@ import 'package:frostsnapp/device_id_ext.dart';
 import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/stream_ext.dart';
+import 'package:frostsnapp/theme.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'hex.dart';
 import "dart:developer" as developer;
@@ -162,9 +163,12 @@ class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
         final enoughNonces = coord.noncesAvailable(id: device.id) >= 1;
         return CheckboxListTile(
           title: Text(
-              "${device.name ?? '<unknown>'}${enoughNonces ? '' : ' (not enough nonces)'}"),
+            "${device.name ?? '<unknown>'}${enoughNonces ? '' : ' (not enough nonces)'}",
+            style: TextStyle(color: textColor),
+          ),
           value: selected.contains(device.id),
           onChanged: enoughNonces ? onChanged : null,
+          checkColor: backgroundSecondaryColor,
         );
       },
     );
@@ -263,13 +267,14 @@ class DeviceSigningProgress extends StatelessWidget {
                         icon = AnimatedCheckCircle();
                       } else if (devicesPluggedIn.contains(device.id)) {
                         icon = Icon(Icons.touch_app,
-                            color: Colors.orange, size: iconSize);
+                            color: awaitingColor, size: iconSize);
                       } else {
                         icon = Icon(Icons.circle_outlined,
-                            color: Colors.blue, size: iconSize);
+                            color: uninterestedColor, size: iconSize);
                       }
                       return ListTile(
-                        title: Text(device.name ?? "<unknown>"),
+                        title: Text(device.name ?? "<unknown>",
+                            style: defaultTextStyle),
                         trailing: Container(height: iconSize, child: icon),
                       );
                     });

@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/keygen.dart';
+import 'package:frostsnapp/theme.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/wallet.dart';
 
@@ -150,6 +151,7 @@ class _KeyCard extends State<KeyCard> {
     }
 
     return Card(
+      color: backgroundSecondaryColor,
       child: Padding(
         padding: const EdgeInsets.all(8.0),
         child: Column(

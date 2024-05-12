@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/device_setup.dart';
+import 'package:frostsnapp/theme.dart';
 import 'package:frostsnapp/serialport.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'global.dart';
@@ -102,7 +103,7 @@ class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
             return Center(
               child: Text(
                 'No devices connected',
-                style: TextStyle(color: Colors.grey, fontSize: 24.0),
+                style: TextStyle(color: textColor, fontSize: 24.0),
               ),
             );
           }
@@ -146,7 +147,7 @@ class DeviceBoxContainer extends StatelessWidget {
             child: Container(
               constraints: BoxConstraints(minHeight: 90.0, minWidth: 150.0),
               child: Card(
-                color: Colors.white70,
+                color: backgroundSecondaryColor,
                 child: Center(
                   child: child,
                 ),
@@ -178,7 +179,6 @@ class DeviceListContainer extends StatelessWidget {
         constraints: BoxConstraints(
             maxHeight: isPortrait ? double.maxFinite : 90.0,
             maxWidth: isPortrait ? 300.0 : double.maxFinite),
-        // decoration: BoxDecoration(border: Border.all(color: Colors.black, width: 2.0)),
         child: Align(alignment: Alignment.center, child: child));
   }
 }

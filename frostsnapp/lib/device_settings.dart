@@ -8,6 +8,7 @@ import 'package:frostsnapp/device_setup.dart';
 import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/hex.dart';
+import 'package:frostsnapp/theme.dart';
 import 'dart:typed_data';
 
 class DeviceSettingsPage extends StatelessWidget {
@@ -112,6 +113,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                       style: const TextStyle(
                         fontSize: 14,
                         fontFamily: 'Monospace',
+                        color: textColor,
                       ),
                     )),
                     SizedBox(width: 4),
@@ -147,7 +149,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
                                                 Icon(Icons.visibility,
-                                                    color: Colors.orange),
+                                                    color: awaitingColor),
                                                 SizedBox(width: 4),
                                                 Text("Confirm"),
                                               ]);
@@ -156,7 +158,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
                                                 Icon(Icons.edit_document,
-                                                    color: Colors.green),
+                                                    color: successColor),
                                                 SizedBox(width: 4),
                                                 Text("Record backup"),
                                               ]);

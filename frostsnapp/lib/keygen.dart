@@ -12,6 +12,7 @@ import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/device_setup.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/hex.dart';
+import 'package:frostsnapp/theme.dart';
 import 'dart:math';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
@@ -96,7 +97,7 @@ class _DoKeyGenButtonState extends State<DoKeyGenButton> {
                 },
           child: const Text('Generate Key',
               style: TextStyle(
-                color: Colors.white,
+                color: textColor,
                 fontSize: 16.0,
               )))
     ]);
@@ -281,7 +282,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                         icon = const Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.touch_app, color: Colors.orange),
+                              Icon(Icons.touch_app, color: awaitingColor),
                               SizedBox(width: 4),
                               Text("Confirm"),
                             ]);

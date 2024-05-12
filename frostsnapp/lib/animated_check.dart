@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:math' as math;
 
 import 'package:frostsnapp/device_list.dart';
+import 'package:frostsnapp/theme.dart';
 
 class CirclePainter extends CustomPainter {
   final double progress;
@@ -11,7 +12,7 @@ class CirclePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.green
+      ..color = successColor
       ..strokeWidth = 2.0
       ..style = PaintingStyle.stroke;
 
@@ -66,7 +67,7 @@ class _AnimatedCheckCircleState extends State<AnimatedCheckCircle>
     return Stack(
       alignment: Alignment.center,
       children: [
-        Icon(Icons.check, size: widget.size, color: Colors.green),
+        Icon(Icons.check, size: widget.size, color: successColor),
         AnimatedBuilder(
           animation: _controller,
           builder: (context, child) {
