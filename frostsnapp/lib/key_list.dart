@@ -28,7 +28,7 @@ class KeyList extends StatelessWidget {
             return DeviceSettingsPage();
           }));
         },
-        child: Text("Show Devices"));
+        child: Text("Devices"));
 
     return StreamBuilder<KeyState>(
         stream: keyStateSream,
@@ -47,13 +47,13 @@ class KeyList extends StatelessWidget {
                 itemBuilder: (context, index) =>
                     itemBuilder(context, keys[index]));
           }
-          return SizedBox(
-            width: MediaQuery.of(context).size.width * 0.6,
+          return ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: 600),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                list,
+                Padding(padding: EdgeInsets.all(15.0), child: list),
                 const SizedBox(height: 8),
                 Row(
                   mainAxisSize: MainAxisSize.min,
@@ -70,7 +70,7 @@ class KeyList extends StatelessWidget {
                         }
                       },
                     ),
-                    SizedBox(width: 4),
+                    SizedBox(width: 20),
                     showDevicesButton
                   ],
                 )
@@ -157,7 +157,7 @@ class _KeyCard extends State<KeyCard> {
     return Card(
       color: backgroundSecondaryColor,
       child: Padding(
-        padding: const EdgeInsets.all(15.0),
+        padding: const EdgeInsets.all(10.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
@@ -177,9 +177,9 @@ class _KeyCard extends State<KeyCard> {
               signButton,
               const SizedBox(width: 5),
               walletButton,
-              const SizedBox(width: 5),
-              continueSigning,
-            ])
+            ]),
+            const SizedBox(width: 5),
+            continueSigning,
           ],
         ),
       ),
@@ -206,14 +206,16 @@ class _KeyListWithConfetti extends State<KeyListWithConfetti> {
   @override
   Widget build(BuildContext context) {
     return Column(children: [
-      Padding(
-        padding: const EdgeInsets.all(50.0),
-        child: Center(
+      SizedBox(height: 50),
+      Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: 600),
           child: LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) {
               double maxWidth = 300;
-              double width =
-                  constraints.maxWidth > 600 ? maxWidth * 1.5 : maxWidth;
+              double width = constraints.maxWidth > maxWidth
+                  ? constraints.maxWidth * 0.8
+                  : maxWidth;
               return Image.asset(
                 'assets/frostsnap-logo-boxed.png',
                 width: width,

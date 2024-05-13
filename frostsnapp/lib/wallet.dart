@@ -409,15 +409,17 @@ class _WalletReceiveState extends State<WalletReceive> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Column(
+        body: Center(
+            child: ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: 800),
+      child: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(10.0),
-            child: ElevatedButton(
-              onPressed: _addAddress,
-              child: Text('Get New Address'),
-            ),
+          SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: _addAddress,
+            child: Text('Get New Address'),
           ),
+          SizedBox(height: 20),
           Expanded(
             child: AnimatedList(
               key: _listKey,
@@ -429,7 +431,7 @@ class _WalletReceiveState extends State<WalletReceive> {
           ),
         ],
       ),
-    );
+    )));
   }
 
   Widget _buildAddressItem(Address address, Animation<double> animation) {
@@ -502,108 +504,118 @@ class _WalletSendState extends State<WalletSend> {
     final frostKey = coord.getKey(keyId: widget.keyId)!;
     final enoughSelected = selectedDevices.length == frostKey.threshold();
     return Scaffold(
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Balance(txStream: widget.txStream),
-              TextFormField(
-                decoration: InputDecoration(labelText: 'Address'),
-                validator: (value) {
-                  // Use the provided predicate for address validation
-                  return wallet.validateDestinationAddress(
-                      address: value ?? '');
-                },
-                onSaved: (value) => _address = value ?? '',
-              ),
-              TextFormField(
-                decoration: InputDecoration(labelText: 'Amount (sats)'),
-                keyboardType: TextInputType.numberWithOptions(decimal: false),
-                validator: (value) {
-                  // Convert value to int and use the provided predicate for amount validation
-                  final amount = int.tryParse(value ?? '') ?? 0;
-                  return wallet.validateAmount(
-                      address: _address, value: amount);
-                },
-                onSaved: (value) => _amount = int.tryParse(value ?? '') ?? 0,
-              ),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      decoration:
-                          InputDecoration(labelText: 'Fee Rate (sats/vByte)'),
-                      keyboardType:
-                          TextInputType.numberWithOptions(decimal: true),
-                      initialValue: _feerate.toString(),
-                      onChanged: (value) {
-                        setState(() {
-                          _feerate = double.tryParse(value) ?? _feerate;
-                          _updateETA();
-                        });
-                      },
-                    ),
+        body: SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: 800),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Balance(txStream: widget.txStream),
+                      TextFormField(
+                        decoration: InputDecoration(labelText: 'Address'),
+                        validator: (value) {
+                          // Use the provided predicate for address validation
+                          return wallet.validateDestinationAddress(
+                              address: value ?? '');
+                        },
+                        onSaved: (value) => _address = value ?? '',
+                      ),
+                      TextFormField(
+                        decoration: InputDecoration(labelText: 'Amount (sats)'),
+                        keyboardType:
+                            TextInputType.numberWithOptions(decimal: false),
+                        validator: (value) {
+                          // Convert value to int and use the provided predicate for amount validation
+                          final amount = int.tryParse(value ?? '') ?? 0;
+                          return wallet.validateAmount(
+                              address: _address, value: amount);
+                        },
+                        onSaved: (value) =>
+                            _amount = int.tryParse(value ?? '') ?? 0,
+                      ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              decoration: InputDecoration(
+                                  labelText: 'Fee Rate (sats/vByte)'),
+                              keyboardType: TextInputType.numberWithOptions(
+                                  decimal: true),
+                              initialValue: _feerate.toString(),
+                              onChanged: (value) {
+                                setState(() {
+                                  _feerate = double.tryParse(value) ?? _feerate;
+                                  _updateETA();
+                                });
+                              },
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(left: 10),
+                            child: Text(
+                              "ETA $_eta",
+                              style: TextStyle(color: textColor),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Divider(
+                          height: 20.0,
+                          thickness: 2.0,
+                          color: backgroundTertiaryColor),
+                      Text(
+                        'Select ${frostKey.threshold()} device${frostKey.threshold() > 1 ? "s" : ""} to sign with:',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 20.0),
+                      ),
+                      SigningDeviceSelector(
+                          frostKey: frostKey,
+                          onChanged: (selected) {
+                            setState(() {
+                              selectedDevices = selected;
+                            });
+                          }),
+                      Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 16.0),
+                          child: ElevatedButton(
+                            onPressed: !enoughSelected
+                                ? null
+                                : () async {
+                                    if (_formKey.currentState!.validate()) {
+                                      _formKey.currentState!.save();
+                                      final unsignedTx = await wallet.sendTo(
+                                          keyId: widget.keyId,
+                                          toAddress: _address,
+                                          value: _amount,
+                                          feerate: _feerate);
+                                      final signingStream =
+                                          coord.startSigningTx(
+                                              keyId: widget.keyId,
+                                              unsignedTx: unsignedTx,
+                                              devices:
+                                                  selectedDevices.toList());
+                                      if (context.mounted) {
+                                        await signTransactionWorkflowDialog(
+                                            context: context,
+                                            signingStream: signingStream,
+                                            unsignedTx: unsignedTx,
+                                            keyId: widget.keyId,
+                                            onBroadcastNewTx:
+                                                widget.onBroadcastNewTx);
+                                      }
+                                    }
+                                  },
+                            child: Text('Submit Transaction'),
+                          )),
+                    ],
                   ),
-                  Padding(
-                    padding: const EdgeInsets.only(left: 10),
-                    child: Text(
-                      "ETA $_eta",
-                      style: TextStyle(color: textColor),
-                    ),
-                  ),
-                ],
+                ),
               ),
-              Divider(
-                  height: 20.0, thickness: 2.0, color: backgroundTertiaryColor),
-              Text(
-                'Select ${frostKey.threshold()} device${frostKey.threshold() > 1 ? "s" : ""} to sign with:',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 20.0),
-              ),
-              SigningDeviceSelector(
-                  frostKey: frostKey,
-                  onChanged: (selected) {
-                    setState(() {
-                      selectedDevices = selected;
-                    });
-                  }),
-              Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 16.0),
-                  child: ElevatedButton(
-                    onPressed: !enoughSelected
-                        ? null
-                        : () async {
-                            if (_formKey.currentState!.validate()) {
-                              _formKey.currentState!.save();
-                              final unsignedTx = await wallet.sendTo(
-                                  keyId: widget.keyId,
-                                  toAddress: _address,
-                                  value: _amount,
-                                  feerate: _feerate);
-                              final signingStream = coord.startSigningTx(
-                                  keyId: widget.keyId,
-                                  unsignedTx: unsignedTx,
-                                  devices: selectedDevices.toList());
-                              if (context.mounted) {
-                                await signTransactionWorkflowDialog(
-                                    context: context,
-                                    signingStream: signingStream,
-                                    unsignedTx: unsignedTx,
-                                    keyId: widget.keyId,
-                                    onBroadcastNewTx: widget.onBroadcastNewTx);
-                              }
-                            }
-                          },
-                    child: Text('Submit Transaction'),
-                  )),
-            ],
-          ),
-        ),
-      ),
-    );
+            )));
   }
 }
 

@@ -80,38 +80,37 @@ class _SignMessageFormState extends State<SignMessageForm> {
     }
 
     return Center(
-        child: Container(
-            child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        TextField(
-          controller: _messageController,
-          onChanged: (_) {
-            setState(() {});
-          },
-          decoration: InputDecoration(labelText: 'Message to sign'),
-        ),
-        SizedBox(height: 20.0),
-        Text(
-          'Select ${widget.frostKey.threshold()} device${widget.frostKey.threshold() > 1 ? "s" : ""} to sign with:',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 20.0),
-        ),
-        Expanded(
-          child: SigningDeviceSelector(
-            frostKey: widget.frostKey,
-            onChanged: (selectedDevices) => setState(() {
-              selected = selectedDevices;
-            }),
-          ),
-        ),
-        ElevatedButton(
-          onPressed: submitButtonOnPressed,
-          child: Text('Submit'),
-        ),
-      ],
-    )));
+        child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: 800),
+            child: Center(
+                child: Column(
+              children: [
+                TextField(
+                  controller: _messageController,
+                  onChanged: (_) {
+                    setState(() {});
+                  },
+                  decoration: InputDecoration(labelText: 'Message to sign'),
+                ),
+                SizedBox(height: 20.0),
+                Text(
+                  'Select ${widget.frostKey.threshold()} device${widget.frostKey.threshold() > 1 ? "s" : ""} to sign with:',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 20.0),
+                ),
+                SigningDeviceSelector(
+                  frostKey: widget.frostKey,
+                  onChanged: (selectedDevices) => setState(() {
+                    selected = selectedDevices;
+                  }),
+                ),
+                SizedBox(height: 10.0),
+                ElevatedButton(
+                  onPressed: submitButtonOnPressed,
+                  child: Text('Submit'),
+                ),
+              ],
+            ))));
   }
 }
 

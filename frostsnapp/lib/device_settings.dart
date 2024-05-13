@@ -186,16 +186,19 @@ class _DeviceSettingsState extends State<DeviceSettings> {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          "Device Settings",
+        appBar: AppBar(
+          title: Text(
+            "Change Device Settings",
+          ),
         ),
-      ),
-      body: Material(
-        child: Column(
-          children: body,
-        ),
-      ),
-    );
+        body: Material(
+            child: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: 800),
+            child: Column(
+              children: body,
+            ),
+          ),
+        )));
   }
 }

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 const Color textColor = Color.fromARGB(255, 100, 197, 241);
 const Color successColor = Color.fromARGB(255, 21, 255, 0);
 const Color awaitingColor = Color.fromARGB(255, 251, 255, 0);
-const Color uninterestedColor = Color.fromARGB(255, 120, 139, 150);
+const Color uninterestedColor = Color.fromARGB(255, 88, 88, 88);
 const Color errorColor = Color.fromARGB(255, 172, 23, 23);
 const Color backgroundPrimaryColor = Color.fromARGB(255, 4, 8, 26);
 const Color backgroundSecondaryColor = Color.fromARGB(255, 0, 20, 43);
@@ -70,8 +70,15 @@ final ThemeData frostsnappTheme = ThemeData(
     style: ElevatedButton.styleFrom(
       backgroundColor: backgroundTertiaryColor,
       foregroundColor: textColor,
+      disabledBackgroundColor: uninterestedColor,
+      // disabledForegroundColor: uninterestedColor
     ),
   ),
+  sliderTheme: SliderThemeData(
+      activeTrackColor: backgroundTertiaryColor,
+      inactiveTrackColor: backgroundTertiaryColor,
+      disabledActiveTrackColor: backgroundSecondaryColor,
+      disabledInactiveTrackColor: backgroundSecondaryColor),
   outlinedButtonTheme: OutlinedButtonThemeData(
     style: OutlinedButton.styleFrom(
       backgroundColor: backgroundTertiaryColor,
