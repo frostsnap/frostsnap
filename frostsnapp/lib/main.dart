@@ -65,7 +65,8 @@ class MyApp extends StatelessWidget {
         theme: frostsnappTheme,
         home: startupError == null
             ? const MyHomePage(title: 'Frostsnapp')
-            : StartupErrorWidget(error: startupError!));
+            : StartupErrorWidget(error: startupError!),
+        debugShowCheckedModeBanner: false);
   }
 }
 
