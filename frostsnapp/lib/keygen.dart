@@ -8,10 +8,9 @@ import 'package:frostsnapp/animated_check.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_id_ext.dart';
 import 'package:frostsnapp/device_list.dart';
-import 'package:frostsnapp/device_settings.dart';
-import 'package:frostsnapp/device_setup.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/hex.dart';
+import 'package:frostsnapp/theme.dart';
 import 'dart:math';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
@@ -49,6 +48,25 @@ class _DoKeyGenButtonState extends State<DoKeyGenButton> {
     final nDevices = widget.deviceListState.devices.length;
     final int selectedThreshold =
         thresholdSlider ?? (nNamedDevices / 2 + 1).toInt();
+
+    final slider = nNamedDevices > 1
+        ? ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: 150),
+            child: Slider(
+              value: selectedThreshold.toDouble(),
+              onChanged: nNamedDevices <= 1
+                  ? null
+                  : (newValue) {
+                      setState(() {
+                        thresholdSlider = newValue.round();
+                      });
+                    },
+              divisions: max(nNamedDevices - 1, 1),
+              min: 1,
+              max: max(nNamedDevices.toDouble(), 1),
+            ),
+          )
+        : Container();
     return Column(children: [
       Text(
         nNamedDevices > 0
@@ -59,22 +77,8 @@ class _DoKeyGenButtonState extends State<DoKeyGenButton> {
         style: const TextStyle(fontSize: 18.0),
         textAlign: TextAlign.center,
       ),
-      SizedBox(
-        width: MediaQuery.of(context).size.width * 0.5,
-        child: Slider(
-            // Force 1 <= threshold <= devicecount
-            value: selectedThreshold.toDouble(),
-            onChanged: nNamedDevices <= 1
-                ? null
-                : (newValue) {
-                    setState(() {
-                      thresholdSlider = newValue.round();
-                    });
-                  },
-            divisions: max(nNamedDevices - 1, 1),
-            min: 1,
-            max: max(nNamedDevices.toDouble(), 1)),
-      ),
+      const SizedBox(height: 10),
+      slider,
       ElevatedButton(
           onPressed: nNamedDevices == 0
               ? null
@@ -96,7 +100,7 @@ class _DoKeyGenButtonState extends State<DoKeyGenButton> {
                 },
           child: const Text('Generate Key',
               style: TextStyle(
-                color: Colors.white,
+                color: textColor,
                 fontSize: 16.0,
               )))
     ]);
@@ -192,7 +196,8 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
         body: Center(
             child:
                 Column(mainAxisAlignment: MainAxisAlignment.start, children: [
-          MaybeExpandedVertical(child: DeviceListContainer(
+          SizedBox(height: 20),
+          Expanded(child: DeviceListContainer(
               child: DeviceListWithIcons(iconAssigner: (context, id) {
             if (widget.devices.contains(id)) {
               final Widget icon;
@@ -209,7 +214,8 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
           }))),
           const SizedBox(height: 20),
           const Text("Waiting for devices to generate key",
-              style: TextStyle(fontSize: 20))
+              style: TextStyle(fontSize: 20)),
+          SizedBox(height: 20),
         ])));
   }
 
@@ -238,7 +244,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                 ),
                 SizedBox(width: 20),
                 ElevatedButton(
-                    child: Text("No/Cancel"),
+                    child: Text("No / Cancel"),
                     onPressed: () {
                       Navigator.pop(context);
                     }),
@@ -249,9 +255,10 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                   child: Align(
                     alignment: Alignment.center,
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      Text("Do all the devices show:"),
                       Divider(),
                       hexBox,
+                      Divider(),
+                      Text("Do all the devices show this code?"),
                     ]),
                   )));
         });
@@ -281,7 +288,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                         icon = const Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.touch_app, color: Colors.orange),
+                              Icon(Icons.touch_app, color: awaitingColor),
                               SizedBox(width: 4),
                               Text("Confirm"),
                             ]);
@@ -313,27 +320,42 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
 class KeyGenDeviceList extends StatelessWidget {
   final OnSuccess? onSuccess;
 
-  const KeyGenDeviceList({super.key, this.onSuccess});
+  const KeyGenDeviceList({Key? key, this.onSuccess});
 
   @override
   Widget build(BuildContext context) {
     final button = StreamBuilder(
-        stream: deviceListSubject.map((update) => update.state),
-        builder: (context, snapshot) {
-          if (snapshot.hasData) {
-            final deviceListState = snapshot.data!;
-            return DoKeyGenButton(
-                deviceListState: deviceListState, onSuccess: onSuccess);
-          } else if (snapshot.hasError) {
-            return Text('Error: ${snapshot.error}');
-          } else {
-            return Text('Unreachable: this is a behavior subject');
-          }
-        });
+      stream: deviceListSubject.map((update) => update.state),
+      builder: (context, snapshot) {
+        if (snapshot.hasData) {
+          final deviceListState = snapshot.data!;
+          return DoKeyGenButton(
+            deviceListState: deviceListState,
+            onSuccess: onSuccess,
+          );
+        } else if (snapshot.hasError) {
+          return Text('Error: ${snapshot.error}');
+        } else {
+          return Text('Unreachable: this is a behavior subject');
+        }
+      },
+    );
 
-    return Column(children: [
-      MaybeExpandedVertical(child: DeviceListContainer(child: DeviceList())),
-      button,
-    ]);
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox(height: 20),
+          Expanded(
+            child: DeviceListContainer(
+              child: DeviceList(),
+            ),
+          ),
+          SizedBox(height: 20),
+          button,
+          SizedBox(height: 20),
+        ],
+      ),
+    );
   }
 }

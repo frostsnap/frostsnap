@@ -5,6 +5,7 @@ import 'package:frostsnapp/device_list.dart';
 
 import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/global.dart';
+import 'package:frostsnapp/theme.dart';
 
 class DeviceSetup extends StatelessWidget {
   final DeviceId id;
@@ -85,7 +86,7 @@ class _DeviceNameField extends State<DeviceNameField> {
                   if (deviceIdEquals(deviceId, widget.id)) {
                     final label = LabeledDeviceText("'$name'?");
                     const icon = Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.visibility, color: Colors.orange),
+                      Icon(Icons.visibility, color: awaitingColor),
                       SizedBox(width: 4),
                       Text("Confirm"),
                     ]);

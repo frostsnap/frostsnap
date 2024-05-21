@@ -5,6 +5,7 @@ import 'package:frostsnapp/device_id_ext.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/sign_message.dart';
 import 'package:frostsnapp/stream_ext.dart';
+import 'package:frostsnapp/theme.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'dart:io';
 
@@ -68,6 +69,8 @@ class _WalletHomeState extends State<WalletHome> {
           // Display the widget based on the current index
           child: _getSelectedWidget()),
       bottomNavigationBar: BottomNavigationBar(
+        selectedItemColor: textColor,
+        unselectedItemColor: uninterestedColor,
         items: const <BottomNavigationBarItem>[
           BottomNavigationBarItem(icon: Icon(Icons.list), label: 'Activity'),
           BottomNavigationBarItem(icon: Icon(Icons.send), label: 'Send'),
@@ -281,8 +284,8 @@ class _FloatingProgress extends State<FloatingProgress>
           duration: _progressFadeController.duration!,
           child: LinearProgressIndicator(
             value: progress,
-            backgroundColor: Colors.grey[200],
-            valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+            backgroundColor: backgroundTertiaryColor,
+            valueColor: AlwaysStoppedAnimation<Color>(textColor),
           ),
         ),
       ),
@@ -330,7 +333,7 @@ class TxList extends StatelessWidget {
                   transaction.netValue > 0
                       ? Icons.arrow_downward
                       : Icons.arrow_upward,
-                  color: transaction.netValue > 0 ? Colors.green : Colors.red,
+                  color: transaction.netValue > 0 ? textColor : errorColor,
                 ),
                 title: Row(
                   children: <Widget>[
@@ -406,15 +409,17 @@ class _WalletReceiveState extends State<WalletReceive> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Column(
+        body: Center(
+            child: ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: 800),
+      child: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(10.0),
-            child: ElevatedButton(
-              onPressed: _addAddress,
-              child: Text('Get New Address'),
-            ),
+          SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: _addAddress,
+            child: Text('Get New Address'),
           ),
+          SizedBox(height: 20),
           Expanded(
             child: AnimatedList(
               key: _listKey,
@@ -426,21 +431,25 @@ class _WalletReceiveState extends State<WalletReceive> {
           ),
         ],
       ),
-    );
+    )));
   }
 
   Widget _buildAddressItem(Address address, Animation<double> animation) {
     return SizeTransition(
       sizeFactor: animation,
       child: Card(
-        color: address.used ? Colors.grey.shade300 : Colors.white,
+        color:
+            address.used ? backgroundTertiaryColor : backgroundSecondaryColor,
         child: ListTile(
           title: Text(
             '${address.index}: ${address.addressString}',
-            style: TextStyle(fontFamily: 'Monospace'),
+            style: TextStyle(fontFamily: 'Monospace', color: textColor),
           ),
           trailing: IconButton(
-            icon: Icon(Icons.copy),
+            icon: Icon(
+              Icons.copy,
+              color: backgroundTertiaryColor,
+            ),
             onPressed: () {
               Clipboard.setData(ClipboardData(text: address.addressString));
               ScaffoldMessenger.of(context).showSnackBar(
@@ -495,107 +504,118 @@ class _WalletSendState extends State<WalletSend> {
     final frostKey = coord.getKey(keyId: widget.keyId)!;
     final enoughSelected = selectedDevices.length == frostKey.threshold();
     return Scaffold(
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Balance(txStream: widget.txStream),
-              TextFormField(
-                decoration: InputDecoration(labelText: 'Address'),
-                validator: (value) {
-                  // Use the provided predicate for address validation
-                  return wallet.validateDestinationAddress(
-                      address: value ?? '');
-                },
-                onSaved: (value) => _address = value ?? '',
-              ),
-              TextFormField(
-                decoration: InputDecoration(labelText: 'Amount (sats)'),
-                keyboardType: TextInputType.numberWithOptions(decimal: false),
-                validator: (value) {
-                  // Convert value to int and use the provided predicate for amount validation
-                  final amount = int.tryParse(value ?? '') ?? 0;
-                  return wallet.validateAmount(
-                      address: _address, value: amount);
-                },
-                onSaved: (value) => _amount = int.tryParse(value ?? '') ?? 0,
-              ),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      decoration:
-                          InputDecoration(labelText: 'Fee Rate (sats/vByte)'),
-                      keyboardType:
-                          TextInputType.numberWithOptions(decimal: true),
-                      initialValue: _feerate.toString(),
-                      onChanged: (value) {
-                        setState(() {
-                          _feerate = double.tryParse(value) ?? _feerate;
-                          _updateETA();
-                        });
-                      },
-                    ),
+        body: SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: 800),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Balance(txStream: widget.txStream),
+                      TextFormField(
+                        decoration: InputDecoration(labelText: 'Address'),
+                        validator: (value) {
+                          // Use the provided predicate for address validation
+                          return wallet.validateDestinationAddress(
+                              address: value ?? '');
+                        },
+                        onSaved: (value) => _address = value ?? '',
+                      ),
+                      TextFormField(
+                        decoration: InputDecoration(labelText: 'Amount (sats)'),
+                        keyboardType:
+                            TextInputType.numberWithOptions(decimal: false),
+                        validator: (value) {
+                          // Convert value to int and use the provided predicate for amount validation
+                          final amount = int.tryParse(value ?? '') ?? 0;
+                          return wallet.validateAmount(
+                              address: _address, value: amount);
+                        },
+                        onSaved: (value) =>
+                            _amount = int.tryParse(value ?? '') ?? 0,
+                      ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              decoration: InputDecoration(
+                                  labelText: 'Fee Rate (sats/vByte)'),
+                              keyboardType: TextInputType.numberWithOptions(
+                                  decimal: true),
+                              initialValue: _feerate.toString(),
+                              onChanged: (value) {
+                                setState(() {
+                                  _feerate = double.tryParse(value) ?? _feerate;
+                                  _updateETA();
+                                });
+                              },
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(left: 10),
+                            child: Text(
+                              "ETA $_eta",
+                              style: TextStyle(color: textColor),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Divider(
+                          height: 20.0,
+                          thickness: 2.0,
+                          color: backgroundTertiaryColor),
+                      Text(
+                        'Select ${frostKey.threshold()} device${frostKey.threshold() > 1 ? "s" : ""} to sign with:',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 20.0),
+                      ),
+                      SigningDeviceSelector(
+                          frostKey: frostKey,
+                          onChanged: (selected) {
+                            setState(() {
+                              selectedDevices = selected;
+                            });
+                          }),
+                      Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 16.0),
+                          child: ElevatedButton(
+                            onPressed: !enoughSelected
+                                ? null
+                                : () async {
+                                    if (_formKey.currentState!.validate()) {
+                                      _formKey.currentState!.save();
+                                      final unsignedTx = await wallet.sendTo(
+                                          keyId: widget.keyId,
+                                          toAddress: _address,
+                                          value: _amount,
+                                          feerate: _feerate);
+                                      final signingStream =
+                                          coord.startSigningTx(
+                                              keyId: widget.keyId,
+                                              unsignedTx: unsignedTx,
+                                              devices:
+                                                  selectedDevices.toList());
+                                      if (context.mounted) {
+                                        await signTransactionWorkflowDialog(
+                                            context: context,
+                                            signingStream: signingStream,
+                                            unsignedTx: unsignedTx,
+                                            keyId: widget.keyId,
+                                            onBroadcastNewTx:
+                                                widget.onBroadcastNewTx);
+                                      }
+                                    }
+                                  },
+                            child: Text('Submit Transaction'),
+                          )),
+                    ],
                   ),
-                  Padding(
-                    padding: const EdgeInsets.only(left: 10),
-                    child: Text(
-                      "ETA $_eta",
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  ),
-                ],
+                ),
               ),
-              Divider(height: 20.0, thickness: 2.0, color: Colors.grey),
-              Text(
-                'Select ${frostKey.threshold()} device${frostKey.threshold() > 1 ? "s" : ""} to sign with:',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 20.0),
-              ),
-              SigningDeviceSelector(
-                  frostKey: frostKey,
-                  onChanged: (selected) {
-                    setState(() {
-                      selectedDevices = selected;
-                    });
-                  }),
-              Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 16.0),
-                  child: ElevatedButton(
-                    onPressed: !enoughSelected
-                        ? null
-                        : () async {
-                            if (_formKey.currentState!.validate()) {
-                              _formKey.currentState!.save();
-                              final unsignedTx = await wallet.sendTo(
-                                  keyId: widget.keyId,
-                                  toAddress: _address,
-                                  value: _amount,
-                                  feerate: _feerate);
-                              final signingStream = coord.startSigningTx(
-                                  keyId: widget.keyId,
-                                  unsignedTx: unsignedTx,
-                                  devices: selectedDevices.toList());
-                              if (context.mounted) {
-                                await signTransactionWorkflowDialog(
-                                    context: context,
-                                    signingStream: signingStream,
-                                    unsignedTx: unsignedTx,
-                                    keyId: widget.keyId,
-                                    onBroadcastNewTx: widget.onBroadcastNewTx);
-                              }
-                            }
-                          },
-                    child: Text('Submit Transaction'),
-                  )),
-            ],
-          ),
-        ),
-      ),
-    );
+            )));
   }
 }
 
@@ -632,8 +652,7 @@ Widget describeEffect(EffectOfTx effect) {
     final (dest, amount) = effect.foreignReceivingAddresses[0];
     description = RichText(
       text: TextSpan(
-        style:
-            TextStyle(color: Colors.black, fontSize: 16), // Default text style
+        style: TextStyle(color: textColor, fontSize: 16), // Default text style
         children: <TextSpan>[
           TextSpan(text: 'Sending '),
           TextSpan(
@@ -800,7 +819,7 @@ class NetValue extends StatelessWidget {
     return Text(
       formatSatoshi(netValue), // Display net value in BTC
       style: TextStyle(
-        color: netValue > 0 ? Colors.green : Colors.red,
+        color: netValue > 0 ? textColor : errorColor,
       ),
     );
   }

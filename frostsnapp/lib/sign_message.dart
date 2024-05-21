@@ -9,6 +9,7 @@ import 'package:frostsnapp/device_id_ext.dart';
 import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/stream_ext.dart';
+import 'package:frostsnapp/theme.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'hex.dart';
 import "dart:developer" as developer;
@@ -79,38 +80,37 @@ class _SignMessageFormState extends State<SignMessageForm> {
     }
 
     return Center(
-        child: Container(
-            child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        TextField(
-          controller: _messageController,
-          onChanged: (_) {
-            setState(() {});
-          },
-          decoration: InputDecoration(labelText: 'Message to sign'),
-        ),
-        SizedBox(height: 20.0),
-        Text(
-          'Select ${widget.frostKey.threshold()} device${widget.frostKey.threshold() > 1 ? "s" : ""} to sign with:',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 20.0),
-        ),
-        Expanded(
-          child: SigningDeviceSelector(
-            frostKey: widget.frostKey,
-            onChanged: (selectedDevices) => setState(() {
-              selected = selectedDevices;
-            }),
-          ),
-        ),
-        ElevatedButton(
-          onPressed: submitButtonOnPressed,
-          child: Text('Submit'),
-        ),
-      ],
-    )));
+        child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: 800),
+            child: Center(
+                child: Column(
+              children: [
+                TextField(
+                  controller: _messageController,
+                  onChanged: (_) {
+                    setState(() {});
+                  },
+                  decoration: InputDecoration(labelText: 'Message to sign'),
+                ),
+                SizedBox(height: 20.0),
+                Text(
+                  'Select ${widget.frostKey.threshold()} device${widget.frostKey.threshold() > 1 ? "s" : ""} to sign with:',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 20.0),
+                ),
+                SigningDeviceSelector(
+                  frostKey: widget.frostKey,
+                  onChanged: (selectedDevices) => setState(() {
+                    selected = selectedDevices;
+                  }),
+                ),
+                SizedBox(height: 10.0),
+                ElevatedButton(
+                  onPressed: submitButtonOnPressed,
+                  child: Text('Submit'),
+                ),
+              ],
+            ))));
   }
 }
 
@@ -162,9 +162,12 @@ class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
         final enoughNonces = coord.noncesAvailable(id: device.id) >= 1;
         return CheckboxListTile(
           title: Text(
-              "${device.name ?? '<unknown>'}${enoughNonces ? '' : ' (not enough nonces)'}"),
+            "${device.name ?? '<unknown>'}${enoughNonces ? '' : ' (not enough nonces)'}",
+            style: TextStyle(color: textColor),
+          ),
           value: selected.contains(device.id),
           onChanged: enoughNonces ? onChanged : null,
+          checkColor: backgroundSecondaryColor,
         );
       },
     );
@@ -201,7 +204,7 @@ Future<List<EncodedSignature>?> showSigningProgressDialog(
       content: Column(children: [
         description,
         Divider(),
-        Text("Plug in each device"),
+        Text("Plug in a device to sign:"),
         Expanded(child: DeviceSigningProgress(stream: stream)),
       ]));
 }
@@ -212,14 +215,14 @@ Future<void> _showSignatureDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
-            title: Text("Signing success"),
+            title: Text("Signed", style: TextStyle(color: textColor)),
             content: Container(
                 width: Platform.isAndroid ? double.maxFinite : 400.0,
                 child: Align(
                     alignment: Alignment.center,
                     child: Column(
                       children: [
-                        Text("Here's your signature!"),
+                        Text("Signature:"),
                         SizedBox(height: 20),
                         SelectableText(toHex(
                             Uint8List.fromList(signature.field0.toList())))
@@ -263,13 +266,14 @@ class DeviceSigningProgress extends StatelessWidget {
                         icon = AnimatedCheckCircle();
                       } else if (devicesPluggedIn.contains(device.id)) {
                         icon = Icon(Icons.touch_app,
-                            color: Colors.orange, size: iconSize);
+                            color: awaitingColor, size: iconSize);
                       } else {
                         icon = Icon(Icons.circle_outlined,
-                            color: Colors.blue, size: iconSize);
+                            color: uninterestedColor, size: iconSize);
                       }
                       return ListTile(
-                        title: Text(device.name ?? "<unknown>"),
+                        title: Text(device.name ?? "<unknown>",
+                            style: defaultTextStyle),
                         trailing: Container(height: iconSize, child: icon),
                       );
                     });

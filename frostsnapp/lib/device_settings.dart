@@ -8,6 +8,7 @@ import 'package:frostsnapp/device_setup.dart';
 import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/hex.dart';
+import 'package:frostsnapp/theme.dart';
 import 'dart:typed_data';
 
 class DeviceSettingsPage extends StatelessWidget {
@@ -112,6 +113,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                       style: const TextStyle(
                         fontSize: 14,
                         fontFamily: 'Monospace',
+                        color: textColor,
                       ),
                     )),
                     SizedBox(width: 4),
@@ -131,7 +133,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                                     Text(snapshot.connectionState ==
                                             ConnectionState.waiting
                                         ? "Confirm on device to show backup"
-                                        : "Record backup displayed on device screen. Press cancel when finished."),
+                                        : "Record backup displayed on device screen.\nPress 'Cancel' when finished."),
                                     Divider(),
                                     MaybeExpandedVertical(child:
                                         DeviceListContainer(child:
@@ -147,7 +149,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
                                                 Icon(Icons.visibility,
-                                                    color: Colors.orange),
+                                                    color: awaitingColor),
                                                 SizedBox(width: 4),
                                                 Text("Confirm"),
                                               ]);
@@ -156,7 +158,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
                                                 Icon(Icons.edit_document,
-                                                    color: Colors.green),
+                                                    color: successColor),
                                                 SizedBox(width: 4),
                                                 Text("Record backup"),
                                               ]);
@@ -184,16 +186,19 @@ class _DeviceSettingsState extends State<DeviceSettings> {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          "Device Settings",
+        appBar: AppBar(
+          title: Text(
+            "Change Device Settings",
+          ),
         ),
-      ),
-      body: Material(
-        child: Column(
-          children: body,
-        ),
-      ),
-    );
+        body: Material(
+            child: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: 800),
+            child: Column(
+              children: body,
+            ),
+          ),
+        )));
   }
 }

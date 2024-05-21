@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'dart:io';
 import 'package:flutter/rendering.dart';
+import 'theme.dart';
 
 void main() async {
   // enable this if you're trying to figure out why things are displaying in
@@ -61,33 +62,11 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
         title: 'Frostsnapp',
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSwatch(
-            primarySwatch: Colors.blue,
-            backgroundColor: Colors.white,
-            errorColor: Colors.red,
-          ).copyWith(
-            secondary: Colors.blueAccent,
-          ),
-          textButtonTheme: TextButtonThemeData(
-            style: TextButton.styleFrom(backgroundColor: Colors.blueAccent),
-          ),
-          elevatedButtonTheme: ElevatedButtonThemeData(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
-              foregroundColor: Colors.white,
-            ),
-          ),
-          outlinedButtonTheme: OutlinedButtonThemeData(
-            style: OutlinedButton.styleFrom(
-              backgroundColor: Colors.blue,
-              side: BorderSide(color: Colors.blue),
-            ),
-          ),
-        ),
+        theme: frostsnappTheme,
         home: startupError == null
             ? const MyHomePage(title: 'Frostsnapp')
-            : StartupErrorWidget(error: startupError!));
+            : StartupErrorWidget(error: startupError!),
+        debugShowCheckedModeBanner: false);
   }
 }
 
@@ -126,7 +105,7 @@ class StartupErrorWidget extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 24.0,
                   fontWeight: FontWeight.bold,
-                  color: Colors.red,
+                  color: errorColor,
                 ),
               ),
               SizedBox(height: 8),
@@ -134,22 +113,22 @@ class StartupErrorWidget extends StatelessWidget {
                 'Please report this to the frostsnap team',
                 style: TextStyle(
                   fontSize: 16.0,
-                  color: Colors.black54,
+                  color: textColor,
                 ),
               ),
               SizedBox(height: 20),
               Container(
                 padding: EdgeInsets.all(8.0),
                 decoration: BoxDecoration(
-                  color: Colors.grey[200],
+                  color: backgroundSecondaryColor,
                   borderRadius: BorderRadius.circular(4.0),
-                  border: Border.all(color: Colors.grey[400]!),
+                  border: Border.all(color: backgroundPrimaryColor),
                 ),
                 child: SelectableText(
                   error,
                   style: TextStyle(
                     fontFamily: 'Courier', // Monospaced font
-                    color: Colors.black,
+                    color: textColor,
                   ),
                 ),
               ),
