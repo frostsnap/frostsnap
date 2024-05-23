@@ -433,7 +433,7 @@ where
                 self.display
                     .print(format!("{}: {}", self.timer.now(), string));
             }
-            Workflow::DisplayBackup { backup } => self.display.print(format!("Backup: {}", backup)),
+            Workflow::DisplayBackup { backup } => self.display.show_backup(backup.clone()),
         }
 
         if let Some(upstream_connection) = self.upstream_connection_state {
