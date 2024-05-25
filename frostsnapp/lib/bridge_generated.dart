@@ -256,6 +256,24 @@ class NativeImpl implements Native {
         argNames: ["bytes"],
       );
 
+  Uint8List polynomialIdentifier({required FrostKey frostKey, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_frost_key(frostKey);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner.wire_polynomial_identifier(arg0),
+      parseSuccessData: _wire2api_uint_8_list,
+      parseErrorData: null,
+      constMeta: kPolynomialIdentifierConstMeta,
+      argValues: [frostKey],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kPolynomialIdentifierConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "polynomial_identifier",
+        argNames: ["frostKey"],
+      );
+
   String txidMethodTransaction({required Transaction that, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_transaction(that);
     return _platform.executeSync(FlutterRustBridgeSyncTask(

@@ -140,7 +140,10 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
         .then((state) async {
       final keyId = await showCheckKeyGenDialog(
           sessionHash: state.sessionHash!, stream: widget.stream);
-      if (mounted && keyId != null) {
+      if (keyId != null) {
+        await showBackupDialogue(keyId: keyId);
+      }
+      if (mounted) {
         Navigator.pop(context, keyId);
       }
     });
@@ -322,6 +325,66 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                     ]);
               });
         });
+  }
+
+  Future<void> showBackupDialogue({required KeyId keyId}) async {
+    final frostKey = coord.getKey(keyId: keyId)!;
+    final polynomialIdentifier = api.polynomialIdentifier(frostKey: frostKey);
+
+    return showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+            actions: [
+              ElevatedButton(
+                child: Text("I have written down my backups"),
+                onPressed: () {
+                  coord.cancelAll();
+                  Navigator.pop(context);
+                },
+              ),
+            ],
+            content: SizedBox(
+              width: Platform.isAndroid ? double.maxFinite : 400.0,
+              child: Align(
+                alignment: Alignment.center,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                        "Write down each device's backup for this key onto separate pieces of paper:"),
+                    SizedBox(height: 8),
+                    Divider(),
+                    Center(
+                      child: Text(
+                        "frost[${frostKey.threshold()}]\n xxxx xxxx xxxx \n xxxx xxxx xxxx \n xxxx xxxx xxxx \n xxxx xxxx xxxx \n xxxx xxxx xxx \n",
+                        style: TextStyle(fontFamily: 'Courier', fontSize: 20),
+                      ),
+                    ),
+                    Text(
+                      "Identifier: ${toSpacedHex(polynomialIdentifier)}",
+                      style: TextStyle(fontFamily: 'Courier', fontSize: 18),
+                    ),
+                    Divider(),
+                    SizedBox(height: 16),
+                    Text(
+                        "Alongside each backup, also record the identifier above."),
+                    SizedBox(height: 8),
+                    Text(
+                        "This identifier is useful for knowing that these share backups belong to the same key and are compatibile."),
+                    SizedBox(height: 24),
+                    Text(
+                        "Any ${frostKey.threshold()} of these backups will provide complete control over this key."),
+                    SizedBox(height: 8),
+                    Text(
+                        "You should store these backups securely in separate locations."),
+                  ],
+                ),
+              ),
+            ));
+      },
+    );
   }
 }
 

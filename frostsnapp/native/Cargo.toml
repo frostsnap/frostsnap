@@ -22,6 +22,7 @@ bitcoin.workspace = true
 image = "0.24"
 ur = { git = "https://github.com/nickfarrow/ur-rs", rev = "2e267e5e019b6c8129f66efba00327ff3d0ae5a4" }
 rusqlite = "0.31.0"
+sha2.workspace = true
 
 # TODO: use espflash as a library to do the build
 # [build-dependencies]
