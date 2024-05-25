@@ -370,12 +370,7 @@ impl FrostSigner {
                     .to_xonly_bytes();
 
                 self.keys.insert(key.key_id(), key.clone());
-                let backup = schnorr_fun::share_backup::ShareBackup::new::<sha2::Sha256>(
-                    &frost_key.point_polynomial(),
-                    key.secret_share.mark_zero(),
-                    key.share_index,
-                )
-                .to_string();
+                let backup = key.secret_share.to_bech32_backup();
 
                 Ok(vec![
                     DeviceSend::ToCoordinator(DeviceToCoordinatorMessage::KeyGenAck(session_hash)),

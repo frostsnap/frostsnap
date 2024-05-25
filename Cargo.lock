@@ -1523,6 +1523,7 @@ dependencies = [
  "image",
  "lazy_static",
  "rusqlite",
+ "sha2",
  "tracing",
  "tracing-android",
  "tracing-subscriber",

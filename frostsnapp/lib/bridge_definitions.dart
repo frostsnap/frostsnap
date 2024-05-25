@@ -69,6 +69,13 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kNewQrEncoderConstMeta;
 
+  /// Create an identifier that's used to determine compatibility of shamir secret shares.
+  /// The first 4 bech32 chars from a hash of the polynomial coefficients.
+  /// Collision expected once in (32)^4 = 2^20.
+  Uint8List polynomialIdentifier({required FrostKey frostKey, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kPolynomialIdentifierConstMeta;
+
   String txidMethodTransaction({required Transaction that, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kTxidMethodTransactionConstMeta;
