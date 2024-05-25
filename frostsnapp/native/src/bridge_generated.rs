@@ -156,6 +156,21 @@ fn wire_echo_key_id_impl(port_: MessagePort, key_id: impl Wire2Api<KeyId> + Unwi
         },
     )
 }
+fn wire_get_share_compatibility_identifier_impl(
+    frost_key: impl Wire2Api<FrostKey> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "get_share_compatibility_identifier",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_frost_key = frost_key.wire2api();
+            Result::<_, ()>::Ok(get_share_compatibility_identifier(api_frost_key))
+        },
+    )
+}
 fn wire_txid__method__Transaction_impl(
     that: impl Wire2Api<Transaction> + UnwindSafe,
 ) -> support::WireSyncReturn {

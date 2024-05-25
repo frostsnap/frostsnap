@@ -1280,6 +1280,7 @@ dependencies = [
  "frostsnap_coordinator",
  "lazy_static",
  "llsdb",
+ "sha2",
  "tracing",
  "tracing-android",
  "tracing-subscriber",
@@ -1633,7 +1634,7 @@ checksum = "e86697c916019a8588c99b5fac3cead74ec0b4b819707a682fd4d23fa0ce1ba1"
 [[package]]
 name = "schnorr_fun"
 version = "0.10.0"
-source = "git+https://github.com/nickfarrow/secp256kfun?rev=fca8e6abbe759ffc0aaa3e9523b7b917bdbea9fe#fca8e6abbe759ffc0aaa3e9523b7b917bdbea9fe"
+source = "git+https://github.com/nickfarrow/secp256kfun?rev=b8d560aaae3e7ab57c8fc9a3829ad4420bce675f#b8d560aaae3e7ab57c8fc9a3829ad4420bce675f"
 dependencies = [
  "bech32 0.9.1",
  "secp256kfun",
@@ -1697,7 +1698,7 @@ dependencies = [
 [[package]]
 name = "secp256kfun"
 version = "0.10.0"
-source = "git+https://github.com/nickfarrow/secp256kfun?rev=fca8e6abbe759ffc0aaa3e9523b7b917bdbea9fe#fca8e6abbe759ffc0aaa3e9523b7b917bdbea9fe"
+source = "git+https://github.com/nickfarrow/secp256kfun?rev=b8d560aaae3e7ab57c8fc9a3829ad4420bce675f#b8d560aaae3e7ab57c8fc9a3829ad4420bce675f"
 dependencies = [
  "bincode",
  "digest",
@@ -1712,7 +1713,7 @@ dependencies = [
 [[package]]
 name = "secp256kfun_arithmetic_macros"
 version = "0.1.0"
-source = "git+https://github.com/nickfarrow/secp256kfun?rev=fca8e6abbe759ffc0aaa3e9523b7b917bdbea9fe#fca8e6abbe759ffc0aaa3e9523b7b917bdbea9fe"
+source = "git+https://github.com/nickfarrow/secp256kfun?rev=b8d560aaae3e7ab57c8fc9a3829ad4420bce675f#b8d560aaae3e7ab57c8fc9a3829ad4420bce675f"
 dependencies = [
  "proc-macro2",
  "quote",

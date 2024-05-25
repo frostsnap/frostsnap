@@ -443,6 +443,9 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* void */ wire_echo_key_id(
       NativePortType port_, List<dynamic> key_id);
 
+  external dynamic /* Uint8List */ wire_get_share_compatibility_identifier(
+      List<dynamic> frost_key);
+
   external dynamic /* String */ wire_txid__method__Transaction(
       List<dynamic> that);
 
@@ -700,6 +703,10 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
 
   void wire_echo_key_id(NativePortType port_, List<dynamic> key_id) =>
       wasmModule.wire_echo_key_id(port_, key_id);
+
+  dynamic /* Uint8List */ wire_get_share_compatibility_identifier(
+          List<dynamic> frost_key) =>
+      wasmModule.wire_get_share_compatibility_identifier(frost_key);
 
   dynamic /* String */ wire_txid__method__Transaction(List<dynamic> that) =>
       wasmModule.wire_txid__method__Transaction(that);

@@ -56,6 +56,11 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kEchoKeyIdConstMeta;
 
+  Uint8List getShareCompatibilityIdentifier(
+      {required FrostKey frostKey, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kGetShareCompatibilityIdentifierConstMeta;
+
   String txidMethodTransaction({required Transaction that, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kTxidMethodTransactionConstMeta;

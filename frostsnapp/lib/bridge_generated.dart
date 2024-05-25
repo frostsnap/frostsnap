@@ -201,6 +201,27 @@ class NativeImpl implements Native {
         argNames: ["keyId"],
       );
 
+  Uint8List getShareCompatibilityIdentifier(
+      {required FrostKey frostKey, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_frost_key(frostKey);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () =>
+          _platform.inner.wire_get_share_compatibility_identifier(arg0),
+      parseSuccessData: _wire2api_uint_8_list,
+      parseErrorData: null,
+      constMeta: kGetShareCompatibilityIdentifierConstMeta,
+      argValues: [frostKey],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kGetShareCompatibilityIdentifierConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "get_share_compatibility_identifier",
+            argNames: ["frostKey"],
+          );
+
   String txidMethodTransaction({required Transaction that, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_transaction(that);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
