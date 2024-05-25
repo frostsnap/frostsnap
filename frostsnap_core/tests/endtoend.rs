@@ -311,7 +311,9 @@ fn test_display_backup() {
     run.run_until_finished(&mut env, &mut test_rng);
     let coord_frost_key = run.coordinator.iter_keys().next().unwrap().clone();
     let key_id = coord_frost_key.key_id();
+    assert_eq!(env.backups.len(), n_parties);
 
+    env.backups = BTreeMap::new(); // clear backups so we can request one again for a party
     let display_backup = run
         .coordinator
         .request_device_display_backup(device_list[0], key_id)
