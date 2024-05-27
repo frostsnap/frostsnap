@@ -5,7 +5,7 @@ use crate::{
     DownstreamConnectionState, UpstreamConnectionState,
 };
 use alloc::{collections::VecDeque, string::ToString, vec::Vec};
-use esp_hal::{gpio, timer, uart, UsbSerialJtag};
+use esp_hal::{gpio, timer, uart, usb_serial_jtag::UsbSerialJtag, Blocking};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{CoordinatorSendBody, DeviceSendBody, DeviceSendMessage, ReceiveSerial};
 use frostsnap_comms::{CoordinatorSendMessage, Downstream, MAGIC_BYTES_PERIOD};
@@ -22,12 +22,12 @@ use rand_chacha::rand_core::RngCore;
 
 pub struct Run<'a, UpstreamUart, DownstreamUart, UpstreamDetectPin, DownstreamDetectPin, T, Rng, Ui>
 {
-    pub upstream_jtag: UsbSerialJtag<'a>,
-    pub upstream_uart: uart::Uart<'a, UpstreamUart>,
-    pub downstream_uart: uart::Uart<'a, DownstreamUart>,
+    pub upstream_jtag: UsbSerialJtag<'a, Blocking>,
+    pub upstream_uart: uart::Uart<'a, UpstreamUart, Blocking>,
+    pub downstream_uart: uart::Uart<'a, DownstreamUart, Blocking>,
     pub rng: Rng,
     pub ui: Ui,
-    pub timer: timer::Timer<T>,
+    pub timer: timer::Timer<T, Blocking>,
     pub downstream_detect: DownstreamDetectPin,
     pub upstream_detect: UpstreamDetectPin,
 }

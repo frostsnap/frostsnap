@@ -6,15 +6,16 @@
 #[macro_use]
 extern crate alloc;
 use alloc::string::String;
-// use alloc::string::ToString;
 use core::mem::MaybeUninit;
 use cst816s::CST816S;
-use display_interface_spi::SPIInterfaceNoCS;
+use display_interface_spi::SPIInterface;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use embedded_graphics_framebuf::FrameBuf;
 use embedded_hal as hal;
 use esp_hal::{
     clock::ClockControl,
+    delay::Delay,
+    gpio::{IO, NO_PIN},
     i2c::I2C,
     ledc::{
         channel::{self, ChannelIFace},
@@ -23,10 +24,12 @@ use esp_hal::{
     },
     peripherals::Peripherals,
     prelude::*,
+    rng::Rng,
     spi::{master::Spi, SpiMode},
     timer::{self, Timer, TimerGroup},
     uart::{self, Uart},
-    Delay, Rng, UsbSerialJtag, IO,
+    usb_serial_jtag::UsbSerialJtag,
+    Blocking,
 };
 use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_device::{
@@ -36,7 +39,11 @@ use frostsnap_device::{
     ui::{BusyTask, Prompt, UiEvent, UserInteraction, WaitingFor, WaitingResponse, Workflow},
     DownstreamConnectionState, UpstreamConnectionState,
 };
-use mipidsi::{options::ColorInversion, Builder, Error, Orientation};
+use mipidsi::{
+    error::Error,
+    models::ST7789,
+    options::{ColorInversion, Orientation, Rotation},
+};
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
 #[global_allocator]
@@ -69,8 +76,8 @@ fn main() -> ! {
     let system = peripherals.SYSTEM.split();
     let clocks = ClockControl::max(system.clock_control).freeze();
 
-    let timer_group0 = TimerGroup::new(peripherals.TIMG0, &clocks);
-    let timer_group1 = TimerGroup::new(peripherals.TIMG1, &clocks);
+    let timer_group0 = TimerGroup::new(peripherals.TIMG0, &clocks, None);
+    let timer_group1 = TimerGroup::new(peripherals.TIMG1, &clocks, None);
     let mut timer0 = timer_group0.timer0;
     timer0.start(1u64.secs());
     let mut timer1 = timer_group1.timer0;
@@ -106,16 +113,29 @@ fn main() -> ! {
         })
         .unwrap();
 
-    let spi = Spi::new(peripherals.SPI2, 40u32.MHz(), SpiMode::Mode2, &clocks)
-        .with_sck(io.pins.gpio8)
-        .with_mosi(io.pins.gpio7);
-    let di = SPIInterfaceNoCS::new(spi, io.pins.gpio9.into_push_pull_output());
-    let display = Builder::st7789(di)
-        .with_display_size(240, 280)
-        .with_window_offset_handler(|_| (0, 20)) // 240*280 panel
-        .with_invert_colors(ColorInversion::Inverted)
-        .with_orientation(Orientation::Portrait(false))
-        .init(&mut delay, Some(io.pins.gpio6.into_push_pull_output())) // RES
+    let mut rst = io.pins.gpio6.into_push_pull_output();
+    rst.set_high(); // reset pin must be set to high for display to operate
+
+    let spi = Spi::new(peripherals.SPI2, 40u32.MHz(), SpiMode::Mode0, &clocks).with_pins(
+        Some(io.pins.gpio8),
+        Some(io.pins.gpio7),
+        NO_PIN,
+        NO_PIN,
+    );
+    let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(
+        spi,
+        io.pins.gpio11.into_push_pull_output(), // mipidsi Builder requires SpiDevice, definitely wrong pin
+    );
+
+    // let di = SPIInterface::new(spi, io.pins.gpio9.into_push_pull_output());
+    let di = SPIInterface::new(spi_device, io.pins.gpio9.into_push_pull_output());
+    let display = mipidsi::Builder::new(ST7789, di)
+        .display_size(240, 280)
+        .display_offset(0, 20) // 240*280 panel
+        .invert_colors(ColorInversion::Inverted)
+        .orientation(Orientation::new().rotate(Rotation::Deg90))
+        .reset_pin(rst)
+        .init(&mut delay)
         .unwrap();
     let mut framearray = [Rgb565::BLACK; 240 * 280];
     let framebuf = FrameBuf::new(&mut framearray, 240, 280);
@@ -127,6 +147,7 @@ fn main() -> ! {
         io.pins.gpio5,
         400u32.kHz(),
         &clocks,
+        None,
     );
     let mut capsense = CST816S::new(
         i2c,
@@ -140,7 +161,7 @@ fn main() -> ! {
     display.flush().unwrap();
     channel0.start_duty_fade(0, 30, 500).unwrap();
 
-    let upstream_jtag = UsbSerialJtag::new(peripherals.USB_DEVICE);
+    let upstream_jtag = UsbSerialJtag::new(peripherals.USB_DEVICE, None);
 
     let upstream_uart = {
         let serial_conf = uart::config::Config {
@@ -151,7 +172,7 @@ fn main() -> ! {
             io.pins.gpio18.into_push_pull_output(),
             io.pins.gpio19.into_floating_input(),
         );
-        Uart::new_with_config(peripherals.UART1, serial_conf, Some(txrx1), &clocks)
+        Uart::new_with_config(peripherals.UART1, serial_conf, Some(txrx1), &clocks, None)
     };
 
     let downstream_uart = {
@@ -163,7 +184,7 @@ fn main() -> ! {
             io.pins.gpio21.into_push_pull_output(),
             io.pins.gpio20.into_floating_input(),
         );
-        Uart::new_with_config(peripherals.UART0, serial_conf, Some(txrx0), &clocks)
+        Uart::new_with_config(peripherals.UART0, serial_conf, Some(txrx0), &clocks, None)
     };
 
     let mut hal_rng = Rng::new(peripherals.RNG);
@@ -171,7 +192,7 @@ fn main() -> ! {
 
     let rng = {
         let mut chacha_seed = [0u8; 32];
-        hal_rng.read(&mut chacha_seed).unwrap();
+        hal_rng.read(&mut chacha_seed);
         ChaCha20Rng::from_seed(chacha_seed)
     };
 
@@ -213,12 +234,12 @@ pub struct FrostyUi<'t, T, DT, I2C, PINT, RST> {
     device_name: Option<String>,
     changes: bool,
     confirm_state: AnimationState<'t, T>,
-    timer: &'t Timer<T>,
+    timer: &'t Timer<T, Blocking>,
     ticks_per_ms: u64,
 }
 
 struct AnimationState<'t, T> {
-    timer: &'t Timer<T>,
+    timer: &'t Timer<T, Blocking>,
     start: Option<u64>,
     duration_ticks: u64,
     finished: bool,
@@ -228,7 +249,7 @@ impl<'t, T> AnimationState<'t, T>
 where
     T: timer::Instance,
 {
-    pub fn new(timer: &'t Timer<T>, duration_ticks: u64) -> Self {
+    pub fn new(timer: &'t Timer<T, Blocking>, duration_ticks: u64) -> Self {
         Self {
             timer,
             duration_ticks,
@@ -389,13 +410,11 @@ where
     }
 }
 
-impl<'t, T, DT, I2C, PINT, RST, CommE> UserInteraction for FrostyUi<'t, T, DT, I2C, PINT, RST>
+impl<'t, T, DT, I2C, PINT, RST, CommE, PinE> UserInteraction for FrostyUi<'t, T, DT, I2C, PINT, RST>
 where
-    I2C: hal::blocking::i2c::Write<Error = CommE>
-        + hal::blocking::i2c::Read<Error = CommE>
-        + hal::blocking::i2c::WriteRead<Error = CommE>,
-    PINT: hal::digital::v2::InputPin,
-    RST: hal::digital::v2::StatefulOutputPin,
+    I2C: hal::i2c::I2c<Error = CommE>,
+    PINT: hal::digital::InputPin,
+    RST: hal::digital::StatefulOutputPin<Error = PinE>,
     T: timer::Instance,
     DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
 {
@@ -504,7 +523,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
 
     let mut bl = io.pins.gpio1.into_push_pull_output();
-    bl.set_low().unwrap();
+    bl.set_low();
 
     let mut delay = Delay::new(&clocks);
     let mut panic_buf = frostsnap_device::panic::PanicBuffer::<512>::default();
@@ -520,19 +539,28 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         None => write!(&mut panic_buf, "{}", info),
     };
 
-    let spi = Spi::new(peripherals.SPI2, 40u32.MHz(), SpiMode::Mode2, &clocks)
-        .with_sck(io.pins.gpio8)
-        .with_mosi(io.pins.gpio7);
-    let di = SPIInterfaceNoCS::new(spi, io.pins.gpio9.into_push_pull_output());
-    let mut display = Builder::st7789(di)
-        .with_display_size(240, 280)
-        .with_window_offset_handler(|_| (0, 20)) // 240*280 panel
-        .with_invert_colors(ColorInversion::Inverted)
-        .with_orientation(Orientation::Portrait(false))
-        .init(&mut delay, Some(io.pins.gpio6.into_push_pull_output())) // RES
+    let spi = Spi::new(peripherals.SPI2, 40u32.MHz(), SpiMode::Mode0, &clocks).with_pins(
+        Some(io.pins.gpio8),
+        Some(io.pins.gpio7),
+        NO_PIN,
+        NO_PIN,
+    );
+    let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(
+        spi,
+        io.pins.gpio11.into_push_pull_output(),
+    );
+
+    let di = SPIInterface::new(spi_device, io.pins.gpio9.into_push_pull_output());
+    let mut display = mipidsi::Builder::new(ST7789, di)
+        .display_size(240, 280)
+        .display_offset(0, 20) // 240*280 panel
+        .invert_colors(ColorInversion::Inverted)
+        .orientation(Orientation::new().rotate(Rotation::Deg90))
+        .reset_pin(io.pins.gpio6.into_push_pull_output())
+        .init(&mut delay)
         .unwrap();
     st7789::error_print(&mut display, panic_buf.as_str());
-    bl.set_high().unwrap();
+    bl.set_high();
 
     loop {}
 }

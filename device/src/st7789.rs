@@ -15,7 +15,7 @@ use embedded_text::{
     style::{TextBoxStyle, TextBoxStyleBuilder},
     TextBox,
 };
-use mipidsi::Error;
+use mipidsi::error::Error;
 use u8g2_fonts::{fonts, U8g2TextStyle};
 
 pub struct Graphics<'d, DT> {
