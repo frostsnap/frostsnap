@@ -93,7 +93,7 @@ pub enum Prompt {
         old_name: Option<String>,
         new_name: String,
     },
-    DisplayBackupRequest(KeyId),
+    DisplayBackupRequest((String, KeyId)),
     ConfirmFirmwareUpgrade {
         firmware_digest: FirmwareDigest,
         size: u32,

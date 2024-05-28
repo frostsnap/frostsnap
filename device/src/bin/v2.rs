@@ -362,9 +362,9 @@ where
                         )),
                         None => self.display.print(format!("Confirm name '{}'?", new_name)),
                     },
-                    Prompt::DisplayBackupRequest(key_id) => self
+                    Prompt::DisplayBackupRequest((key_name, _key_id)) => self
                         .display
-                        .print(format!("Display the backup for key {key_id}?")),
+                        .print(format!("Display the backup for key '{key_name}'?")),
                     Prompt::ConfirmFirmwareUpgrade {
                         firmware_digest, ..
                     } => self
@@ -496,7 +496,7 @@ where
                             Prompt::NewName { new_name, .. } => {
                                 UiEvent::NameConfirm(new_name.clone())
                             }
-                            Prompt::DisplayBackupRequest(key_id) => {
+                            Prompt::DisplayBackupRequest((_key_name, key_id)) => {
                                 UiEvent::BackupRequestConfirm(*key_id)
                             }
                             Prompt::ConfirmFirmwareUpgrade {

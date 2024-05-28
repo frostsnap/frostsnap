@@ -315,6 +315,17 @@ impl FfiCoordinator {
 
                                     tx.take_index(key_names).insert(key_id, &key_name).unwrap();
 
+                                    // Send key name to device
+                                    let send_message = CoordinatorSendMessage {
+                                        target_destinations: Destination::from(
+                                            coordinator_frost_key.devices(),
+                                        ),
+                                        message_body: CoordinatorSendBody::KeyName((
+                                            key_id, key_name,
+                                        )),
+                                    };
+                                    usb_sender.send(send_message);
+
                                     // Note we do this here rather than in the ToUserMessage
                                     // because the key list is persisted and so its better to
                                     // nofify the app after the on disk state is written.
