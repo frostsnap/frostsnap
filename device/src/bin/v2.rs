@@ -39,11 +39,7 @@ use frostsnap_device::{
     ui::{BusyTask, Prompt, UiEvent, UserInteraction, WaitingFor, WaitingResponse, Workflow},
     DownstreamConnectionState, UpstreamConnectionState,
 };
-use mipidsi::{
-    error::Error,
-    models::ST7789,
-    options::{ColorInversion, Orientation, Rotation},
-};
+use mipidsi::{error::Error, models::ST7789, options::ColorInversion};
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
 #[global_allocator]
@@ -113,28 +109,16 @@ fn main() -> ! {
         })
         .unwrap();
 
-    let mut rst = io.pins.gpio6.into_push_pull_output();
-    rst.set_high(); // reset pin must be set to high for display to operate
-
-    let spi = Spi::new(peripherals.SPI2, 40u32.MHz(), SpiMode::Mode0, &clocks).with_pins(
-        Some(io.pins.gpio8),
-        Some(io.pins.gpio7),
-        NO_PIN,
-        NO_PIN,
-    );
-    let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(
-        spi,
-        io.pins.gpio11.into_push_pull_output(), // mipidsi Builder requires SpiDevice, definitely wrong pin
-    );
-
-    // let di = SPIInterface::new(spi, io.pins.gpio9.into_push_pull_output());
+    let spi = Spi::new(peripherals.SPI2, 40u32.MHz(), SpiMode::Mode2, &clocks)
+        .with_sck(io.pins.gpio8)
+        .with_mosi(io.pins.gpio7);
+    let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, NoCs);
     let di = SPIInterface::new(spi_device, io.pins.gpio9.into_push_pull_output());
     let display = mipidsi::Builder::new(ST7789, di)
         .display_size(240, 280)
         .display_offset(0, 20) // 240*280 panel
         .invert_colors(ColorInversion::Inverted)
-        .orientation(Orientation::new().rotate(Rotation::Deg90))
-        .reset_pin(rst)
+        .reset_pin(io.pins.gpio6.into_push_pull_output())
         .init(&mut delay)
         .unwrap();
     let mut framearray = [Rgb565::BLACK; 240 * 280];
@@ -222,6 +206,23 @@ fn main() -> ! {
         upstream_detect,
     };
     run.run()
+}
+
+/// Noop impl of OutputPin.
+struct NoCs;
+
+impl embedded_hal::digital::OutputPin for NoCs {
+    fn set_low(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn set_high(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
+impl embedded_hal::digital::ErrorType for NoCs {
+    type Error = core::convert::Infallible;
 }
 
 pub struct FrostyUi<'t, T, DT, I2C, PINT, RST> {
@@ -539,23 +540,19 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         None => write!(&mut panic_buf, "{}", info),
     };
 
-    let spi = Spi::new(peripherals.SPI2, 40u32.MHz(), SpiMode::Mode0, &clocks).with_pins(
+    let spi = Spi::new(peripherals.SPI2, 40u32.MHz(), SpiMode::Mode2, &clocks).with_pins(
         Some(io.pins.gpio8),
         Some(io.pins.gpio7),
         NO_PIN,
         NO_PIN,
     );
-    let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(
-        spi,
-        io.pins.gpio11.into_push_pull_output(),
-    );
+    let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, NoCs);
 
     let di = SPIInterface::new(spi_device, io.pins.gpio9.into_push_pull_output());
     let mut display = mipidsi::Builder::new(ST7789, di)
         .display_size(240, 280)
         .display_offset(0, 20) // 240*280 panel
         .invert_colors(ColorInversion::Inverted)
-        .orientation(Orientation::new().rotate(Rotation::Deg90))
         .reset_pin(io.pins.gpio6.into_push_pull_output())
         .init(&mut delay)
         .unwrap();
