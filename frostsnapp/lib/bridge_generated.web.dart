@@ -215,7 +215,10 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
 
   @protected
   List<dynamic> api2wire_frost_key(FrostKey raw) {
-    return [api2wire_FrostsnapCoreCoordinatorFrostKey(raw.field0)];
+    return [
+      api2wire_FrostsnapCoreCoordinatorFrostKey(raw.frostKey),
+      api2wire_String(raw.keyName)
+    ];
   }
 
   @protected
@@ -536,7 +539,8 @@ class NativeWasmModule implements WasmModule {
       NativePortType port_,
       List<dynamic> that,
       int threshold,
-      List<dynamic> devices);
+      List<dynamic> devices,
+      String key_name);
 
   external dynamic /* List<dynamic>? */
       wire_persisted_sign_session_description__method__Coordinator(
@@ -558,6 +562,9 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* void */
       wire_enter_firmware_upgrade_mode__method__Coordinator(
           NativePortType port_, List<dynamic> that);
+
+  external dynamic /* String? */ wire_get_key_name__method__Coordinator(
+      List<dynamic> that, List<dynamic> key_id);
 
   external dynamic /* void */ wire_sub_tx_state__method__Wallet(
       NativePortType port_, List<dynamic> that, List<dynamic> key_id);
@@ -814,10 +821,14 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
           List<dynamic> that, List<dynamic> id) =>
       wasmModule.wire_nonces_available__method__Coordinator(that, id);
 
-  void wire_generate_new_key__method__Coordinator(NativePortType port_,
-          List<dynamic> that, int threshold, List<dynamic> devices) =>
+  void wire_generate_new_key__method__Coordinator(
+          NativePortType port_,
+          List<dynamic> that,
+          int threshold,
+          List<dynamic> devices,
+          String key_name) =>
       wasmModule.wire_generate_new_key__method__Coordinator(
-          port_, that, threshold, devices);
+          port_, that, threshold, devices, key_name);
 
   dynamic /* List<dynamic>? */
       wire_persisted_sign_session_description__method__Coordinator(
@@ -847,6 +858,10 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
           NativePortType port_, List<dynamic> that) =>
       wasmModule.wire_enter_firmware_upgrade_mode__method__Coordinator(
           port_, that);
+
+  dynamic /* String? */ wire_get_key_name__method__Coordinator(
+          List<dynamic> that, List<dynamic> key_id) =>
+      wasmModule.wire_get_key_name__method__Coordinator(that, key_id);
 
   void wire_sub_tx_state__method__Wallet(
           NativePortType port_, List<dynamic> that, List<dynamic> key_id) =>

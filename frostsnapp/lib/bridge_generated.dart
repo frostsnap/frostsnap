@@ -762,17 +762,20 @@ class NativeImpl implements Native {
       {required Coordinator that,
       required int threshold,
       required List<DeviceId> devices,
+      required String keyName,
       dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
     var arg1 = api2wire_usize(threshold);
     var arg2 = _platform.api2wire_list_device_id(devices);
+    var arg3 = _platform.api2wire_String(keyName);
     return _platform.executeStream(FlutterRustBridgeTask(
       callFfi: (port_) => _platform.inner
-          .wire_generate_new_key__method__Coordinator(port_, arg0, arg1, arg2),
+          .wire_generate_new_key__method__Coordinator(
+              port_, arg0, arg1, arg2, arg3),
       parseSuccessData: _wire2api_key_gen_state,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kGenerateNewKeyMethodCoordinatorConstMeta,
-      argValues: [that, threshold, devices],
+      argValues: [that, threshold, devices, keyName],
       hint: hint,
     ));
   }
@@ -781,7 +784,7 @@ class NativeImpl implements Native {
       get kGenerateNewKeyMethodCoordinatorConstMeta =>
           const FlutterRustBridgeTaskConstMeta(
             debugName: "generate_new_key__method__Coordinator",
-            argNames: ["that", "threshold", "devices"],
+            argNames: ["that", "threshold", "devices", "keyName"],
           );
 
   SignTaskDescription? persistedSignSessionDescriptionMethodCoordinator(
@@ -914,6 +917,27 @@ class NativeImpl implements Native {
             debugName: "enter_firmware_upgrade_mode__method__Coordinator",
             argNames: ["that"],
           );
+
+  String? getKeyNameMethodCoordinator(
+      {required Coordinator that, required KeyId keyId, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
+    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () =>
+          _platform.inner.wire_get_key_name__method__Coordinator(arg0, arg1),
+      parseSuccessData: _wire2api_opt_String,
+      parseErrorData: null,
+      constMeta: kGetKeyNameMethodCoordinatorConstMeta,
+      argValues: [that, keyId],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kGetKeyNameMethodCoordinatorConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "get_key_name__method__Coordinator",
+        argNames: ["that", "keyId"],
+      );
 
   Stream<TxState> subTxStateMethodWallet(
       {required Wallet that, required KeyId keyId, dynamic hint}) {
@@ -1604,11 +1628,12 @@ class NativeImpl implements Native {
 
   FrostKey _wire2api_frost_key(dynamic raw) {
     final arr = raw as List<dynamic>;
-    if (arr.length != 1)
-      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
     return FrostKey(
       bridge: this,
-      field0: _wire2api_FrostsnapCoreCoordinatorFrostKey(arr[0]),
+      frostKey: _wire2api_FrostsnapCoreCoordinatorFrostKey(arr[0]),
+      keyName: _wire2api_String(arr[1]),
     );
   }
 

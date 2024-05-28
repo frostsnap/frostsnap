@@ -20,7 +20,7 @@ use frostsnap_coordinator::{
 use frostsnap_coordinator::{Completion, DeviceChange};
 use frostsnap_core::{DeviceId, FrostCoordinator, Gist, KeyId};
 use llsdb::{IndexHandle, LlsDb};
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs::File;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -37,6 +37,8 @@ pub struct FfiCoordinator {
     db: Arc<Mutex<LlsDb<File>>>,
     persist_core: IndexHandle<PersistCore>,
     device_names: IndexHandle<llsdb::index::BTreeMap<DeviceId, String>>,
+    key_names: IndexHandle<llsdb::index::BTreeMap<KeyId, String>>,
+    pending_keygen_name: Arc<Mutex<Option<String>>>,
     usb_sender: UsbSender,
     firmware_bin: FirmwareBin,
     firmware_upgrade_progress: Arc<Mutex<Option<StreamSink<f32>>>>,
@@ -49,7 +51,7 @@ impl FfiCoordinator {
     ) -> anyhow::Result<Self> {
         let pending_for_outbox = Arc::new(Mutex::new(VecDeque::new()));
 
-        let (persist_core, device_names_handle, coordinator) = db
+        let (persist_core, device_names_handle, key_names_handle, coordinator) = db
             .lock()
             .unwrap()
             .execute(|tx| {
@@ -58,6 +60,9 @@ impl FfiCoordinator {
                 let device_names_list = tx.take_list("device_names")?;
                 let device_names_index = llsdb::index::BTreeMap::new(device_names_list, &tx)?;
                 let device_names_handle = tx.store_index(device_names_index);
+                let key_names_list = tx.take_list("key_names")?;
+                let key_names_index = llsdb::index::BTreeMap::new(key_names_list, &tx)?;
+                let key_names_handle = tx.store_index(key_names_index);
                 let core_api = tx.take_index(handle);
                 let coordinator = core_api.core_coordinator()?;
                 let device_names = tx.take_index(device_names_handle);
@@ -66,7 +71,7 @@ impl FfiCoordinator {
                     .collect::<Result<_>>()
                     .context("reading in device names from disk")?;
 
-                Ok((handle, device_names_handle, coordinator))
+                Ok((handle, device_names_handle, key_names_handle, coordinator))
             })
             .context("initializing db")?;
 
@@ -91,6 +96,8 @@ impl FfiCoordinator {
             db,
             persist_core,
             device_names: device_names_handle,
+            key_names: key_names_handle,
+            pending_keygen_name: Default::default(),
             usb_sender,
             firmware_bin,
         })
@@ -119,6 +126,8 @@ impl FfiCoordinator {
         let db_loop = self.db.clone();
         let core_persist = self.persist_core;
         let device_names = self.device_names;
+        let key_names = self.key_names;
+        let pending_keygen_name_loop = self.pending_keygen_name.clone();
         let usb_sender = self.usb_sender.clone();
         let firmware_upgrade_progress = self.firmware_upgrade_progress.clone();
 
@@ -291,13 +300,35 @@ impl FfiCoordinator {
                             let res = db.execute(|tx| {
                                 let mut persist = tx.take_index(core_persist);
                                 persist.consume_core_message(to_storage.clone())?;
-                                if let CoordinatorToStorageMessage::NewKey(_) = &to_storage {
+                                if let CoordinatorToStorageMessage::NewKey(coordinator_frost_key) =
+                                    &to_storage
+                                {
+                                    let key_id = coordinator_frost_key.key_id();
+                                    let mut pending_key_name_guard =
+                                        pending_keygen_name_loop.lock().unwrap();
+                                    let key_name = pending_key_name_guard
+                                        .as_deref()
+                                        .expect("key must have pending name from beginning keygen")
+                                        .to_string();
+
+                                    *pending_key_name_guard = None;
+
+                                    tx.take_index(key_names).insert(key_id, &key_name).unwrap();
+
                                     // Note we do this here rather than in the ToUserMessage
                                     // because the key list is persisted and so its better to
                                     // nofify the app after the on disk state is written.
                                     if let Some(stream) = &*key_event_stream_loop.lock().unwrap() {
+                                        let key_names = tx
+                                            .take_index(key_names)
+                                            .iter()
+                                            .map(|kv| kv.unwrap())
+                                            .collect();
                                         stream.add(KeyState {
-                                            keys: frost_keys(&coordinator_loop.lock().unwrap()),
+                                            keys: frost_keys(
+                                                &coordinator_loop.lock().unwrap(),
+                                                key_names,
+                                            ),
                                         });
                                     }
                                 }
@@ -360,6 +391,7 @@ impl FfiCoordinator {
         &self,
         devices: BTreeSet<DeviceId>,
         threshold: usize,
+        key_name: String,
         sink: StreamSink<frostsnap_coordinator::keygen::KeyGenState>,
     ) -> anyhow::Result<()> {
         let ui_protocol =
@@ -369,6 +401,9 @@ impl FfiCoordinator {
             let mut coordinator = self.coordinator.lock().unwrap();
             coordinator.do_keygen(&devices, threshold as u16)?
         };
+
+        let mut pending_keygen_name = self.pending_keygen_name.lock().unwrap();
+        *pending_keygen_name = Some(key_name);
 
         self.pending_for_outbox
             .lock()
@@ -382,7 +417,20 @@ impl FfiCoordinator {
     }
 
     pub fn frost_keys(&self) -> Vec<crate::api::FrostKey> {
-        frost_keys(&self.coordinator.lock().unwrap())
+        let coordinator = self.coordinator.lock().unwrap();
+        self.db
+            .lock()
+            .unwrap()
+            .execute(|tx| {
+                let key_names = tx
+                    .take_index(self.key_names)
+                    .iter()
+                    .map(|kv| kv.unwrap())
+                    .collect();
+
+                Ok(frost_keys(&coordinator, key_names))
+            })
+            .unwrap()
     }
 
     pub fn nonces_left(&self, id: DeviceId) -> Option<usize> {
@@ -555,12 +603,32 @@ impl FfiCoordinator {
         }
         Ok(())
     }
+
+    pub fn get_key_name(&self, key_id: &KeyId) -> Option<String> {
+        self.db
+            .lock()
+            .unwrap()
+            .execute(|tx| {
+                let key_names = tx.take_index(self.key_names);
+                key_names.get(key_id)
+            })
+            .unwrap()
+    }
 }
 
-fn frost_keys(coordinator: &FrostCoordinator) -> Vec<crate::api::FrostKey> {
+fn frost_keys(
+    coordinator: &FrostCoordinator,
+    key_names: BTreeMap<KeyId, String>,
+) -> Vec<crate::api::FrostKey> {
     coordinator
         .iter_keys()
-        .map(|coord_frost_key| crate::api::FrostKey(RustOpaque::new(coord_frost_key.clone())))
+        .map(|coord_frost_key| crate::api::FrostKey {
+            frost_key: RustOpaque::new(coord_frost_key.clone()),
+            key_name: key_names
+                .get(&coord_frost_key.key_id())
+                .expect("keys must have names from keygen")
+                .to_string(),
+        })
         .collect()
 }
 

@@ -239,8 +239,9 @@ pub fn wire_generate_new_key__method__Coordinator(
     that: JsValue,
     threshold: usize,
     devices: JsValue,
+    key_name: String,
 ) {
-    wire_generate_new_key__method__Coordinator_impl(port_, that, threshold, devices)
+    wire_generate_new_key__method__Coordinator_impl(port_, that, threshold, devices, key_name)
 }
 
 #[wasm_bindgen]
@@ -278,6 +279,14 @@ pub fn wire_cancel_protocol__method__Coordinator(port_: MessagePort, that: JsVal
 #[wasm_bindgen]
 pub fn wire_enter_firmware_upgrade_mode__method__Coordinator(port_: MessagePort, that: JsValue) {
     wire_enter_firmware_upgrade_mode__method__Coordinator_impl(port_, that)
+}
+
+#[wasm_bindgen]
+pub fn wire_get_key_name__method__Coordinator(
+    that: JsValue,
+    key_id: JsValue,
+) -> support::WireSyncReturn {
+    wire_get_key_name__method__Coordinator_impl(that, key_id)
 }
 
 #[wasm_bindgen]
@@ -695,11 +704,14 @@ impl Wire2Api<FrostKey> for JsValue {
         let self_ = self.dyn_into::<JsArray>().unwrap();
         assert_eq!(
             self_.length(),
-            1,
-            "Expected 1 elements, got {}",
+            2,
+            "Expected 2 elements, got {}",
             self_.length()
         );
-        FrostKey(self_.get(0).wire2api())
+        FrostKey {
+            frost_key: self_.get(0).wire2api(),
+            key_name: self_.get(1).wire2api(),
+        }
     }
 }
 
