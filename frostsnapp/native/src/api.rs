@@ -381,7 +381,8 @@ fn _load(db_file: String, usb_serial_manager: UsbSerialManager) -> Result<(Coord
         db.clone(),
         bitcoin::Network::Signet,
         persist_core_handle,
-    )?;
+    )
+    .with_context(|| format!("loading wallet from data in {db_file}"))?;
     let coordinator = Coordinator(RustOpaque::new(coordinator));
     let chain_sync = ChainSync::new(wallet.network)?;
     let wallet = Wallet::new(wallet, chain_sync);
@@ -597,20 +598,21 @@ impl Wallet {
         let chain_sync = self.chain_sync.clone();
         let start = Instant::now();
 
-        let mut sync_request = {
+        let sync_request = {
             let wallet = self.inner.lock().unwrap();
             let txids = txids
                 .into_iter()
                 .map(|txid| bitcoin::Txid::from_str(&txid).unwrap())
                 .collect();
-            wallet.sync_txs(txids)
+            let sync_request = wallet.sync_txs(txids);
+            let total = sync_request.txids.len();
+            let mut i = 0;
+            let inspect_stream = stream.clone();
+            sync_request.inspect_txids(move |_txid| {
+                inspect_stream.add((i as f64) / (total - 1) as f64);
+                i += 1;
+            })
         };
-
-        let inspect_stream = stream.clone();
-
-        sync_request.inspect_all(move |_item, _i, total_processed, total| {
-            inspect_stream.add(total_processed as f64 / total as f64);
-        });
 
         let update = chain_sync.sync(sync_request)?;
         let mut wallet = self.inner.lock().unwrap();
@@ -647,16 +649,18 @@ impl Wallet {
         let _enter = span.enter();
         let start = Instant::now();
         event!(TLevel::INFO, "starting sync");
-        let mut sync_request = {
+        let sync_request = {
+            let inspect_stream = stream.clone();
             let wallet = self.inner.lock().unwrap();
-            wallet.start_sync(key_id)
+            let sync_req = wallet.start_sync(key_id);
+            let total = sync_req.spks.len();
+            let mut i = 0;
+            sync_req.inspect_spks(move |_spk| {
+                inspect_stream.add((i as f64) / (total - 1) as f64);
+                i += 1;
+            })
         };
         let chain_sync = self.chain_sync.clone();
-        let inspect_stream = stream.clone();
-
-        sync_request.inspect_all(move |_item, _i, total_processed, total| {
-            inspect_stream.add(total_processed as f64 / total as f64);
-        });
 
         let update = chain_sync.sync(sync_request)?;
         let mut wallet = self.inner.lock().unwrap();
