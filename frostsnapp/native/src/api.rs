@@ -609,7 +609,7 @@ impl Wallet {
             let mut i = 0;
             let inspect_stream = stream.clone();
             sync_request.inspect_txids(move |_txid| {
-                inspect_stream.add((i as f64) / (total - 1) as f64);
+                inspect_stream.add(i as f64 / total as f64);
                 i += 1;
             })
         };
@@ -656,7 +656,7 @@ impl Wallet {
             let total = sync_req.spks.len();
             let mut i = 0;
             sync_req.inspect_spks(move |_spk| {
-                inspect_stream.add((i as f64) / (total - 1) as f64);
+                inspect_stream.add(i as f64 / total as f64);
                 i += 1;
             })
         };
