@@ -57,6 +57,16 @@ pub fn wire_txid__method__Transaction(that: JsValue) -> support::WireSyncReturn 
 }
 
 #[wasm_bindgen]
+pub fn wire_ready__method__Device(that: JsValue) -> support::WireSyncReturn {
+    wire_ready__method__Device_impl(that)
+}
+
+#[wasm_bindgen]
+pub fn wire_needs_firmware_upgrade__method__Device(that: JsValue) -> support::WireSyncReturn {
+    wire_needs_firmware_upgrade__method__Device_impl(that)
+}
+
+#[wasm_bindgen]
 pub fn wire_threshold__method__FrostKey(that: JsValue) -> support::WireSyncReturn {
     wire_threshold__method__FrostKey_impl(that)
 }
@@ -103,16 +113,6 @@ pub fn wire_satisfy__method__PortBytesToRead(
     bytes_to_read: u32,
 ) {
     wire_satisfy__method__PortBytesToRead_impl(port_, that, bytes_to_read)
-}
-
-#[wasm_bindgen]
-pub fn wire_is_finished__method__SigningState(that: JsValue) -> support::WireSyncReturn {
-    wire_is_finished__method__SigningState_impl(that)
-}
-
-#[wasm_bindgen]
-pub fn wire_named_devices__method__DeviceListState(that: JsValue) -> support::WireSyncReturn {
-    wire_named_devices__method__DeviceListState_impl(that)
 }
 
 #[wasm_bindgen]
@@ -226,11 +226,6 @@ pub fn wire_start_signing_tx__method__Coordinator(
 }
 
 #[wasm_bindgen]
-pub fn wire_get_signing_state__method__Coordinator(that: JsValue) -> support::WireSyncReturn {
-    wire_get_signing_state__method__Coordinator_impl(that)
-}
-
-#[wasm_bindgen]
 pub fn wire_nonces_available__method__Coordinator(
     that: JsValue,
     id: JsValue,
@@ -249,14 +244,6 @@ pub fn wire_generate_new_key__method__Coordinator(
 }
 
 #[wasm_bindgen]
-pub fn wire_can_restore_signing_session__method__Coordinator(
-    that: JsValue,
-    key_id: JsValue,
-) -> support::WireSyncReturn {
-    wire_can_restore_signing_session__method__Coordinator_impl(that, key_id)
-}
-
-#[wasm_bindgen]
 pub fn wire_persisted_sign_session_description__method__Coordinator(
     that: JsValue,
     key_id: JsValue,
@@ -271,6 +258,26 @@ pub fn wire_try_restore_signing_session__method__Coordinator(
     key_id: JsValue,
 ) {
     wire_try_restore_signing_session__method__Coordinator_impl(port_, that, key_id)
+}
+
+#[wasm_bindgen]
+pub fn wire_start_firmware_upgrade__method__Coordinator(port_: MessagePort, that: JsValue) {
+    wire_start_firmware_upgrade__method__Coordinator_impl(port_, that)
+}
+
+#[wasm_bindgen]
+pub fn wire_upgrade_firmware_digest__method__Coordinator(that: JsValue) -> support::WireSyncReturn {
+    wire_upgrade_firmware_digest__method__Coordinator_impl(that)
+}
+
+#[wasm_bindgen]
+pub fn wire_cancel_protocol__method__Coordinator(port_: MessagePort, that: JsValue) {
+    wire_cancel_protocol__method__Coordinator_impl(port_, that)
+}
+
+#[wasm_bindgen]
+pub fn wire_enter_firmware_upgrade_mode__method__Coordinator(port_: MessagePort, that: JsValue) {
+    wire_enter_firmware_upgrade_mode__method__Coordinator_impl(port_, that)
 }
 
 #[wasm_bindgen]
@@ -617,13 +624,15 @@ impl Wire2Api<Device> for JsValue {
         let self_ = self.dyn_into::<JsArray>().unwrap();
         assert_eq!(
             self_.length(),
-            2,
-            "Expected 2 elements, got {}",
+            4,
+            "Expected 4 elements, got {}",
             self_.length()
         );
         Device {
             name: self_.get(0).wire2api(),
-            id: self_.get(1).wire2api(),
+            firmware_digest: self_.get(1).wire2api(),
+            latest_digest: self_.get(2).wire2api(),
+            id: self_.get(3).wire2api(),
         }
     }
 }
@@ -839,22 +848,6 @@ impl Wire2Api<SignedTx> for JsValue {
         );
         SignedTx {
             inner: self_.get(0).wire2api(),
-        }
-    }
-}
-impl Wire2Api<SigningState> for JsValue {
-    fn wire2api(self) -> SigningState {
-        let self_ = self.dyn_into::<JsArray>().unwrap();
-        assert_eq!(
-            self_.length(),
-            3,
-            "Expected 3 elements, got {}",
-            self_.length()
-        );
-        SigningState {
-            got_shares: self_.get(0).wire2api(),
-            needed_from: self_.get(1).wire2api(),
-            finished_signatures: self_.get(2).wire2api(),
         }
     }
 }

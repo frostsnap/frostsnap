@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:collection';
 import 'dart:typed_data';
 import 'dart:io';
 
@@ -8,10 +7,9 @@ import 'package:frostsnapp/animated_check.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_id_ext.dart';
 import 'package:frostsnapp/device_list.dart';
-import 'package:frostsnapp/device_settings.dart';
-import 'package:frostsnapp/device_setup.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/hex.dart';
+import 'package:frostsnapp/stream_ext.dart';
 import 'dart:math';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
@@ -45,17 +43,27 @@ class _DoKeyGenButtonState extends State<DoKeyGenButton> {
 
   @override
   Widget build(BuildContext context) {
-    final nNamedDevices = widget.deviceListState.namedDevices().length;
-    final nDevices = widget.deviceListState.devices.length;
+    final readyDevices =
+        widget.deviceListState.devices.where((device) => device.ready());
+    final anyNeedUpgrade = widget.deviceListState.devices
+        .any((device) => device.needsFirmwareUpgrade());
     final int selectedThreshold =
-        thresholdSlider ?? (nNamedDevices / 2 + 1).toInt();
+        thresholdSlider ?? (readyDevices.length / 2 + 1).toInt();
+
+    String prompt =
+        'Threshold: ${selectedThreshold.toInt()}-of-${readyDevices.length}';
+
+    if (anyNeedUpgrade) {
+      prompt = "Upgrade firmware of all devices first";
+    } else if (widget.deviceListState.devices.isEmpty) {
+      prompt = "Plug in devices to generate a key";
+    } else if (readyDevices.isEmpty) {
+      prompt = "Set up devices first in order to generate a key";
+    }
+
     return Column(children: [
       Text(
-        nNamedDevices > 0
-            ? 'Threshold: ${selectedThreshold.toInt()}-of-$nNamedDevices'
-            : nDevices > 0
-                ? "Set up devices first in order to generate a key"
-                : "Plug in devices to generate a key",
+        prompt,
         style: const TextStyle(fontSize: 18.0),
         textAlign: TextAlign.center,
       ),
@@ -64,34 +72,34 @@ class _DoKeyGenButtonState extends State<DoKeyGenButton> {
         child: Slider(
             // Force 1 <= threshold <= devicecount
             value: selectedThreshold.toDouble(),
-            onChanged: nNamedDevices <= 1
+            onChanged: readyDevices.length <= 1
                 ? null
                 : (newValue) {
                     setState(() {
                       thresholdSlider = newValue.round();
                     });
                   },
-            divisions: max(nNamedDevices - 1, 1),
+            divisions: max(readyDevices.length - 1, 1),
             min: 1,
-            max: max(nNamedDevices.toDouble(), 1)),
+            max: max(readyDevices.length.toDouble(), 1)),
       ),
       ElevatedButton(
-          onPressed: nNamedDevices == 0
+          onPressed: readyDevices.isEmpty
               ? null
               : () async {
                   final keyId = await Navigator.push(context,
                       MaterialPageRoute(builder: (context) {
-                    final devices = deviceIdSet();
-                    devices.addAll(widget.deviceListState.namedDevices());
+                    final stream = coord
+                        .generateNewKey(
+                            threshold: selectedThreshold,
+                            devices: readyDevices.map((e) => e.id).toList())
+                        .toBehaviorSubject();
                     return DoKeyGenScreen(
-                      threshold: selectedThreshold,
-                      devices: devices,
+                      stream: stream,
                     );
                   }));
                   if (keyId != null) {
                     widget.onSuccess?.call(keyId);
-                  } else {
-                    coord.cancelAll();
                   }
                 },
           child: const Text('Generate Key',
@@ -106,81 +114,36 @@ class _DoKeyGenButtonState extends State<DoKeyGenButton> {
 typedef OnSuccess = Function(KeyId);
 
 class DoKeyGenScreen extends StatefulWidget {
-  final int threshold;
-  final HashSet<DeviceId> devices;
-
-  const DoKeyGenScreen(
-      {Key? key, required this.devices, required this.threshold})
-      : super(key: key);
+  final Stream<KeyGenState> stream;
+  const DoKeyGenScreen({super.key, required this.stream});
 
   @override
-  _DoKeyGenScreenState createState() => _DoKeyGenScreenState();
+  State<DoKeyGenScreen> createState() => _DoKeyGenScreenState();
 }
 
 class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
-  HashSet<DeviceId> gotShares = deviceIdSet();
+  late Future aborted;
 
   @override
   void initState() {
     super.initState();
-    final deviceRemoved = deviceListChangeStream.firstWhere((change) {
-      return change.kind == DeviceListChangeKind.Removed &&
-          widget.devices.contains(change.device.id);
-    }).then((_) {
+    aborted = widget.stream.firstWhere((state) => state.aborted != null);
+    aborted.then((state) {
       if (mounted) {
         Navigator.pop(context);
-      }
-      return null;
-    });
-    final keygenStream = coord
-        .generateNewKey(
-            devices: widget.devices.toList(), threshold: widget.threshold)
-        .asBroadcastStream();
-    final Future<U8Array32> gotAllShares = keygenStream.transform(
-        StreamTransformer<CoordinatorToUserKeyGenMessage,
-            U8Array32>.fromHandlers(handleData: (event, sink) {
-      final sessionHash =
-          event.whenOrNull(checkKeyGen: (sessionHash) => sessionHash);
-      if (sessionHash != null) {
-        sink.add(sessionHash);
-      }
-    })).first;
-    final Stream<DeviceId> ackUpdates = keygenStream
-        .transform(StreamTransformer.fromHandlers(handleData: (event, sink) {
-      final deviceId = event.whenOrNull(keyGenAck: (id) => id);
-      if (deviceId != null) {
-        sink.add(deviceId);
-      }
-    }));
-    keygenStream.forEach((event) {
-      if (mounted) {
-        event.whenOrNull(
-            receivedShares: (id) => setState(() => gotShares.add(id)));
+        showErrorSnackbar(context, state.aborted!);
       }
     });
-    final devicesFinishedKey = keygenStream
-        .asyncMap((event) => event.whenOrNull(finishedKey: (keyId) => keyId))
-        .firstWhere((element) => element != null);
 
-    final Future<KeyId?> closeDialogWhen =
-        Future.any([devicesFinishedKey, deviceRemoved]);
-
-    gotAllShares.then((sessionHash) async {
-      if (mounted) {
-        final keyId = await showCheckKeyGenDialog(
-            sessionHash: sessionHash,
-            ackUpdates: ackUpdates,
-            closeOn: closeDialogWhen);
-        if (mounted) {
-          Navigator.pop(context, keyId);
-        }
+    widget.stream
+        .firstWhere((state) => state.sessionHash != null)
+        .then((state) async {
+      final keyId = await showCheckKeyGenDialog(
+          sessionHash: state.sessionHash!, stream: widget.stream);
+      if (mounted && keyId != null) {
+        Navigator.pop(context, keyId);
       }
     });
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
   }
 
   @override
@@ -189,49 +152,67 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
         appBar: AppBar(
           title: const Text('Key Generation'),
         ),
-        body: Center(
-            child:
-                Column(mainAxisAlignment: MainAxisAlignment.start, children: [
-          MaybeExpandedVertical(child: DeviceListContainer(
-              child: DeviceListWithIcons(iconAssigner: (context, id) {
-            if (widget.devices.contains(id)) {
-              final Widget icon;
-              if (gotShares.contains(id)) {
-                icon = AnimatedCheckCircle();
-              } else {
-                // the aspect ratio stops the circular progress indicator from stretching itself
-                icon = const AspectRatio(
-                    aspectRatio: 1, child: CircularProgressIndicator());
+        body: StreamBuilder(
+            stream: widget.stream,
+            builder: (context, snap) {
+              if (!snap.hasData) {
+                return CircularProgressIndicator();
               }
-              return (null, icon);
-            }
-            return (null, null);
-          }))),
-          const SizedBox(height: 20),
-          const Text("Waiting for devices to generate key",
-              style: TextStyle(fontSize: 20))
-        ])));
+
+              final state = snap.data!;
+              final gotShares = deviceIdSet(state.gotShares);
+              final devices = deviceIdSet(state.devices);
+
+              return Center(
+                  child: Column(
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      children: [
+                    MaybeExpandedVertical(child: DeviceListContainer(
+                        child: DeviceListWithIcons(iconAssigner: (context, id) {
+                      if (devices.contains(id)) {
+                        final Widget icon;
+                        if (gotShares.contains(id)) {
+                          icon = AnimatedCheckCircle();
+                        } else {
+                          // the aspect ratio stops the circular progress indicator from stretching itself
+                          icon = const AspectRatio(
+                              aspectRatio: 1,
+                              child: CircularProgressIndicator());
+                        }
+                        return (null, icon);
+                      }
+                      return (null, null);
+                    }))),
+                    const SizedBox(height: 20),
+                    const Text("Waiting for devices to generate key",
+                        style: TextStyle(fontSize: 20))
+                  ]));
+            }));
   }
 
-  Future<KeyId?> showCheckKeyGenDialog(
-      {required U8Array32 sessionHash,
-      required Stream<DeviceId> ackUpdates,
-      required Future<KeyId?> closeOn}) {
+  Future<KeyId?> showCheckKeyGenDialog({
+    required U8Array32 sessionHash,
+    required Stream<KeyGenState> stream,
+  }) {
     final hexBox = toHexBox(Uint8List.fromList(sessionHash));
 
     return showDialog(
         context: context,
         builder: (context) {
+          aborted.then((_) {
+            if (context.mounted) {
+              debugPrint("ABORT");
+              Navigator.pop(context);
+            }
+          });
           return AlertDialog(
               actions: [
                 ElevatedButton(
                   child: Text("Yes"),
                   onPressed: () async {
                     final keyId = await showDeviceConfirmDialog(
-                        sessionHash: sessionHash,
-                        ackUpdates: ackUpdates,
-                        closeOn: closeOn);
-                    if (context.mounted) {
+                        sessionHash: sessionHash, stream: stream);
+                    if (context.mounted && keyId != null) {
                       Navigator.pop(context, keyId);
                     }
                   },
@@ -241,9 +222,10 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                     child: Text("No/Cancel"),
                     onPressed: () {
                       Navigator.pop(context);
+                      coord.cancelProtocol();
                     }),
               ],
-              content: Container(
+              content: SizedBox(
                   width: Platform.isAndroid ? double.maxFinite : 400.0,
                   height: double.maxFinite,
                   child: Align(
@@ -257,23 +239,25 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
         });
   }
 
-  Future<KeyId?> showDeviceConfirmDialog(
-      {required U8Array32 sessionHash,
-      required Stream<DeviceId> ackUpdates,
-      required Future<KeyId?> closeOn}) {
-    final acks = deviceIdSet();
-    final content = StreamBuilder<DeviceId>(
-        stream: ackUpdates,
+  Future<KeyId?> showDeviceConfirmDialog({
+    required U8Array32 sessionHash,
+    required Stream<KeyGenState> stream,
+  }) {
+    final content = StreamBuilder(
+        stream: stream,
         builder: (context, snap) {
-          if (snap.hasData) {
-            acks.add(snap.data!);
+          if (!snap.hasData) {
+            return CircularProgressIndicator();
           }
+          final state = snap.data!;
+          final devices = deviceIdSet(state.devices);
+          final acks = deviceIdSet(state.sessionAcks);
 
           final deviceList = DeviceListContainer(
               child: DeviceListWithIcons(
                   key: const Key("dialog-device-list"),
                   iconAssigner: (context, id) {
-                    if (widget.devices.contains(id)) {
+                    if (devices.contains(id)) {
                       final Widget icon;
                       if (acks.contains(id)) {
                         icon = AnimatedCheckCircle();
@@ -300,13 +284,15 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
         });
 
     return showDeviceActionDialog<KeyId>(
-      context: context,
-      content: content,
-      onCancel: () {
-        Navigator.pop(context);
-      },
-      complete: closeOn,
-    );
+        context: context,
+        content: content,
+        onCancel: () {
+          coord.cancelProtocol();
+        },
+        complete: stream
+            .firstWhere(
+                (state) => state.aborted != null || state.finished != null)
+            .then((state) => state.finished));
   }
 }
 

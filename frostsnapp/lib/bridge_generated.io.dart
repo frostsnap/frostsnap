@@ -141,6 +141,13 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   }
 
   @protected
+  ffi.Pointer<wire_Device> api2wire_box_autoadd_device(Device raw) {
+    final ptr = inner.new_box_autoadd_device_0();
+    _api_fill_to_wire_device(raw, ptr.ref);
+    return ptr;
+  }
+
+  @protected
   ffi.Pointer<wire_DeviceId> api2wire_box_autoadd_device_id(DeviceId raw) {
     final ptr = inner.new_box_autoadd_device_id_0();
     _api_fill_to_wire_device_id(raw, ptr.ref);
@@ -209,14 +216,6 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   ffi.Pointer<wire_SignedTx> api2wire_box_autoadd_signed_tx(SignedTx raw) {
     final ptr = inner.new_box_autoadd_signed_tx_0();
     _api_fill_to_wire_signed_tx(raw, ptr.ref);
-    return ptr;
-  }
-
-  @protected
-  ffi.Pointer<wire_SigningState> api2wire_box_autoadd_signing_state(
-      SigningState raw) {
-    final ptr = inner.new_box_autoadd_signing_state_0();
-    _api_fill_to_wire_signing_state(raw, ptr.ref);
     return ptr;
   }
 
@@ -454,6 +453,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
     _api_fill_to_wire_coordinator(apiObj, wireObj.ref);
   }
 
+  void _api_fill_to_wire_box_autoadd_device(
+      Device apiObj, ffi.Pointer<wire_Device> wireObj) {
+    _api_fill_to_wire_device(apiObj, wireObj.ref);
+  }
+
   void _api_fill_to_wire_box_autoadd_device_id(
       DeviceId apiObj, ffi.Pointer<wire_DeviceId> wireObj) {
     _api_fill_to_wire_device_id(apiObj, wireObj.ref);
@@ -504,11 +508,6 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
     _api_fill_to_wire_signed_tx(apiObj, wireObj.ref);
   }
 
-  void _api_fill_to_wire_box_autoadd_signing_state(
-      SigningState apiObj, ffi.Pointer<wire_SigningState> wireObj) {
-    _api_fill_to_wire_signing_state(apiObj, wireObj.ref);
-  }
-
   void _api_fill_to_wire_box_autoadd_transaction(
       Transaction apiObj, ffi.Pointer<wire_Transaction> wireObj) {
     _api_fill_to_wire_transaction(apiObj, wireObj.ref);
@@ -537,6 +536,8 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
 
   void _api_fill_to_wire_device(Device apiObj, wire_Device wireObj) {
     wireObj.name = api2wire_opt_String(apiObj.name);
+    wireObj.firmware_digest = api2wire_String(apiObj.firmwareDigest);
+    wireObj.latest_digest = api2wire_String(apiObj.latestDigest);
     _api_fill_to_wire_device_id(apiObj.id, wireObj.id);
   }
 
@@ -600,14 +601,6 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
 
   void _api_fill_to_wire_signed_tx(SignedTx apiObj, wire_SignedTx wireObj) {
     wireObj.inner = api2wire_RTransaction(apiObj.inner);
-  }
-
-  void _api_fill_to_wire_signing_state(
-      SigningState apiObj, wire_SigningState wireObj) {
-    wireObj.got_shares = api2wire_list_device_id(apiObj.gotShares);
-    wireObj.needed_from = api2wire_list_device_id(apiObj.neededFrom);
-    wireObj.finished_signatures =
-        api2wire_list_encoded_signature(apiObj.finishedSignatures);
   }
 
   void _api_fill_to_wire_transaction(
@@ -894,6 +887,37 @@ class NativeWire implements FlutterRustBridgeWireBase {
       _wire_txid__method__TransactionPtr
           .asFunction<WireSyncReturn Function(ffi.Pointer<wire_Transaction>)>();
 
+  WireSyncReturn wire_ready__method__Device(
+    ffi.Pointer<wire_Device> that,
+  ) {
+    return _wire_ready__method__Device(
+      that,
+    );
+  }
+
+  late final _wire_ready__method__DevicePtr = _lookup<
+          ffi
+          .NativeFunction<WireSyncReturn Function(ffi.Pointer<wire_Device>)>>(
+      'wire_ready__method__Device');
+  late final _wire_ready__method__Device = _wire_ready__method__DevicePtr
+      .asFunction<WireSyncReturn Function(ffi.Pointer<wire_Device>)>();
+
+  WireSyncReturn wire_needs_firmware_upgrade__method__Device(
+    ffi.Pointer<wire_Device> that,
+  ) {
+    return _wire_needs_firmware_upgrade__method__Device(
+      that,
+    );
+  }
+
+  late final _wire_needs_firmware_upgrade__method__DevicePtr = _lookup<
+          ffi
+          .NativeFunction<WireSyncReturn Function(ffi.Pointer<wire_Device>)>>(
+      'wire_needs_firmware_upgrade__method__Device');
+  late final _wire_needs_firmware_upgrade__method__Device =
+      _wire_needs_firmware_upgrade__method__DevicePtr
+          .asFunction<WireSyncReturn Function(ffi.Pointer<wire_Device>)>();
+
   WireSyncReturn wire_threshold__method__FrostKey(
     ffi.Pointer<wire_FrostKey> that,
   ) {
@@ -1046,38 +1070,6 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _wire_satisfy__method__PortBytesToRead =
       _wire_satisfy__method__PortBytesToReadPtr.asFunction<
           void Function(int, ffi.Pointer<wire_PortBytesToRead>, int)>();
-
-  WireSyncReturn wire_is_finished__method__SigningState(
-    ffi.Pointer<wire_SigningState> that,
-  ) {
-    return _wire_is_finished__method__SigningState(
-      that,
-    );
-  }
-
-  late final _wire_is_finished__method__SigningStatePtr = _lookup<
-          ffi.NativeFunction<
-              WireSyncReturn Function(ffi.Pointer<wire_SigningState>)>>(
-      'wire_is_finished__method__SigningState');
-  late final _wire_is_finished__method__SigningState =
-      _wire_is_finished__method__SigningStatePtr.asFunction<
-          WireSyncReturn Function(ffi.Pointer<wire_SigningState>)>();
-
-  WireSyncReturn wire_named_devices__method__DeviceListState(
-    ffi.Pointer<wire_DeviceListState> that,
-  ) {
-    return _wire_named_devices__method__DeviceListState(
-      that,
-    );
-  }
-
-  late final _wire_named_devices__method__DeviceListStatePtr = _lookup<
-          ffi.NativeFunction<
-              WireSyncReturn Function(ffi.Pointer<wire_DeviceListState>)>>(
-      'wire_named_devices__method__DeviceListState');
-  late final _wire_named_devices__method__DeviceListState =
-      _wire_named_devices__method__DeviceListStatePtr.asFunction<
-          WireSyncReturn Function(ffi.Pointer<wire_DeviceListState>)>();
 
   WireSyncReturn wire_get_device__method__DeviceListState(
     ffi.Pointer<wire_DeviceListState> that,
@@ -1392,22 +1384,6 @@ class NativeWire implements FlutterRustBridgeWireBase {
               ffi.Pointer<wire_UnsignedTx>,
               ffi.Pointer<wire_list_device_id>)>();
 
-  WireSyncReturn wire_get_signing_state__method__Coordinator(
-    ffi.Pointer<wire_Coordinator> that,
-  ) {
-    return _wire_get_signing_state__method__Coordinator(
-      that,
-    );
-  }
-
-  late final _wire_get_signing_state__method__CoordinatorPtr = _lookup<
-          ffi.NativeFunction<
-              WireSyncReturn Function(ffi.Pointer<wire_Coordinator>)>>(
-      'wire_get_signing_state__method__Coordinator');
-  late final _wire_get_signing_state__method__Coordinator =
-      _wire_get_signing_state__method__CoordinatorPtr
-          .asFunction<WireSyncReturn Function(ffi.Pointer<wire_Coordinator>)>();
-
   WireSyncReturn wire_nonces_available__method__Coordinator(
     ffi.Pointer<wire_Coordinator> that,
     ffi.Pointer<wire_DeviceId> id,
@@ -1451,27 +1427,6 @@ class NativeWire implements FlutterRustBridgeWireBase {
       _wire_generate_new_key__method__CoordinatorPtr.asFunction<
           void Function(int, ffi.Pointer<wire_Coordinator>, int,
               ffi.Pointer<wire_list_device_id>)>();
-
-  WireSyncReturn wire_can_restore_signing_session__method__Coordinator(
-    ffi.Pointer<wire_Coordinator> that,
-    ffi.Pointer<wire_KeyId> key_id,
-  ) {
-    return _wire_can_restore_signing_session__method__Coordinator(
-      that,
-      key_id,
-    );
-  }
-
-  late final _wire_can_restore_signing_session__method__CoordinatorPtr =
-      _lookup<
-              ffi.NativeFunction<
-                  WireSyncReturn Function(
-                      ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_KeyId>)>>(
-          'wire_can_restore_signing_session__method__Coordinator');
-  late final _wire_can_restore_signing_session__method__Coordinator =
-      _wire_can_restore_signing_session__method__CoordinatorPtr.asFunction<
-          WireSyncReturn Function(
-              ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_KeyId>)>();
 
   WireSyncReturn wire_persisted_sign_session_description__method__Coordinator(
     ffi.Pointer<wire_Coordinator> that,
@@ -1517,6 +1472,77 @@ class NativeWire implements FlutterRustBridgeWireBase {
       _wire_try_restore_signing_session__method__CoordinatorPtr.asFunction<
           void Function(
               int, ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_KeyId>)>();
+
+  void wire_start_firmware_upgrade__method__Coordinator(
+    int port_,
+    ffi.Pointer<wire_Coordinator> that,
+  ) {
+    return _wire_start_firmware_upgrade__method__Coordinator(
+      port_,
+      that,
+    );
+  }
+
+  late final _wire_start_firmware_upgrade__method__CoordinatorPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Coordinator>)>>(
+      'wire_start_firmware_upgrade__method__Coordinator');
+  late final _wire_start_firmware_upgrade__method__Coordinator =
+      _wire_start_firmware_upgrade__method__CoordinatorPtr
+          .asFunction<void Function(int, ffi.Pointer<wire_Coordinator>)>();
+
+  WireSyncReturn wire_upgrade_firmware_digest__method__Coordinator(
+    ffi.Pointer<wire_Coordinator> that,
+  ) {
+    return _wire_upgrade_firmware_digest__method__Coordinator(
+      that,
+    );
+  }
+
+  late final _wire_upgrade_firmware_digest__method__CoordinatorPtr = _lookup<
+          ffi.NativeFunction<
+              WireSyncReturn Function(ffi.Pointer<wire_Coordinator>)>>(
+      'wire_upgrade_firmware_digest__method__Coordinator');
+  late final _wire_upgrade_firmware_digest__method__Coordinator =
+      _wire_upgrade_firmware_digest__method__CoordinatorPtr
+          .asFunction<WireSyncReturn Function(ffi.Pointer<wire_Coordinator>)>();
+
+  void wire_cancel_protocol__method__Coordinator(
+    int port_,
+    ffi.Pointer<wire_Coordinator> that,
+  ) {
+    return _wire_cancel_protocol__method__Coordinator(
+      port_,
+      that,
+    );
+  }
+
+  late final _wire_cancel_protocol__method__CoordinatorPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Coordinator>)>>(
+      'wire_cancel_protocol__method__Coordinator');
+  late final _wire_cancel_protocol__method__Coordinator =
+      _wire_cancel_protocol__method__CoordinatorPtr
+          .asFunction<void Function(int, ffi.Pointer<wire_Coordinator>)>();
+
+  void wire_enter_firmware_upgrade_mode__method__Coordinator(
+    int port_,
+    ffi.Pointer<wire_Coordinator> that,
+  ) {
+    return _wire_enter_firmware_upgrade_mode__method__Coordinator(
+      port_,
+      that,
+    );
+  }
+
+  late final _wire_enter_firmware_upgrade_mode__method__CoordinatorPtr =
+      _lookup<
+              ffi.NativeFunction<
+                  ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Coordinator>)>>(
+          'wire_enter_firmware_upgrade_mode__method__Coordinator');
+  late final _wire_enter_firmware_upgrade_mode__method__Coordinator =
+      _wire_enter_firmware_upgrade_mode__method__CoordinatorPtr
+          .asFunction<void Function(int, ffi.Pointer<wire_Coordinator>)>();
 
   void wire_sub_tx_state__method__Wallet(
     int port_,
@@ -1983,6 +2009,16 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _new_box_autoadd_coordinator_0 = _new_box_autoadd_coordinator_0Ptr
       .asFunction<ffi.Pointer<wire_Coordinator> Function()>();
 
+  ffi.Pointer<wire_Device> new_box_autoadd_device_0() {
+    return _new_box_autoadd_device_0();
+  }
+
+  late final _new_box_autoadd_device_0Ptr =
+      _lookup<ffi.NativeFunction<ffi.Pointer<wire_Device> Function()>>(
+          'new_box_autoadd_device_0');
+  late final _new_box_autoadd_device_0 = _new_box_autoadd_device_0Ptr
+      .asFunction<ffi.Pointer<wire_Device> Function()>();
+
   ffi.Pointer<wire_DeviceId> new_box_autoadd_device_id_0() {
     return _new_box_autoadd_device_id_0();
   }
@@ -2084,17 +2120,6 @@ class NativeWire implements FlutterRustBridgeWireBase {
           'new_box_autoadd_signed_tx_0');
   late final _new_box_autoadd_signed_tx_0 = _new_box_autoadd_signed_tx_0Ptr
       .asFunction<ffi.Pointer<wire_SignedTx> Function()>();
-
-  ffi.Pointer<wire_SigningState> new_box_autoadd_signing_state_0() {
-    return _new_box_autoadd_signing_state_0();
-  }
-
-  late final _new_box_autoadd_signing_state_0Ptr =
-      _lookup<ffi.NativeFunction<ffi.Pointer<wire_SigningState> Function()>>(
-          'new_box_autoadd_signing_state_0');
-  late final _new_box_autoadd_signing_state_0 =
-      _new_box_autoadd_signing_state_0Ptr
-          .asFunction<ffi.Pointer<wire_SigningState> Function()>();
 
   ffi.Pointer<wire_Transaction> new_box_autoadd_transaction_0() {
     return _new_box_autoadd_transaction_0();
@@ -2616,6 +2641,16 @@ final class wire_Transaction extends ffi.Struct {
   external ffi.Pointer<wire_ConfirmationTime> confirmation_time;
 }
 
+final class wire_Device extends ffi.Struct {
+  external ffi.Pointer<wire_uint_8_list> name;
+
+  external ffi.Pointer<wire_uint_8_list> firmware_digest;
+
+  external ffi.Pointer<wire_uint_8_list> latest_digest;
+
+  external wire_DeviceId id;
+}
+
 final class wire_FrostsnapCoreCoordinatorFrostKey extends ffi.Struct {
   external ffi.Pointer<ffi.Void> ptr;
 }
@@ -2672,38 +2707,6 @@ final class wire_PortBytesToRead extends ffi.Struct {
   external wire_PortBytesToReadSender ready;
 }
 
-final class wire_list_device_id extends ffi.Struct {
-  external ffi.Pointer<wire_DeviceId> ptr;
-
-  @ffi.Int32()
-  external int len;
-}
-
-final class wire_EncodedSignature extends ffi.Struct {
-  external ffi.Pointer<wire_uint_8_list> field0;
-}
-
-final class wire_list_encoded_signature extends ffi.Struct {
-  external ffi.Pointer<wire_EncodedSignature> ptr;
-
-  @ffi.Int32()
-  external int len;
-}
-
-final class wire_SigningState extends ffi.Struct {
-  external ffi.Pointer<wire_list_device_id> got_shares;
-
-  external ffi.Pointer<wire_list_device_id> needed_from;
-
-  external ffi.Pointer<wire_list_encoded_signature> finished_signatures;
-}
-
-final class wire_Device extends ffi.Struct {
-  external ffi.Pointer<wire_uint_8_list> name;
-
-  external wire_DeviceId id;
-}
-
 final class wire_list_device extends ffi.Struct {
   external ffi.Pointer<wire_Device> ptr;
 
@@ -2751,6 +2754,13 @@ final class wire_Coordinator extends ffi.Struct {
   external wire_FfiCoordinator field0;
 }
 
+final class wire_list_device_id extends ffi.Struct {
+  external ffi.Pointer<wire_DeviceId> ptr;
+
+  @ffi.Int32()
+  external int len;
+}
+
 final class wire_FrostsnapCoreMessageBitcoinTransactionSignTask
     extends ffi.Struct {
   external ffi.Pointer<ffi.Void> ptr;
@@ -2782,6 +2792,17 @@ final class wire_Wallet extends ffi.Struct {
 
 final class wire_StringList extends ffi.Struct {
   external ffi.Pointer<ffi.Pointer<wire_uint_8_list>> ptr;
+
+  @ffi.Int32()
+  external int len;
+}
+
+final class wire_EncodedSignature extends ffi.Struct {
+  external ffi.Pointer<wire_uint_8_list> field0;
+}
+
+final class wire_list_encoded_signature extends ffi.Struct {
+  external ffi.Pointer<wire_EncodedSignature> ptr;
 
   @ffi.Int32()
   external int len;

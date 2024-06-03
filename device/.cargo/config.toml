@@ -1,5 +1,5 @@
 [target.riscv32imc-unknown-none-elf]
-runner = "espflash flash --baud 921600 --bootloader bootloader.bin"
+runner = "espflash flash --baud 921600 --partition-table partitions.csv"
 
 [build]
 rustflags = [

@@ -60,6 +60,14 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kTxidMethodTransactionConstMeta;
 
+  bool readyMethodDevice({required Device that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kReadyMethodDeviceConstMeta;
+
+  bool needsFirmwareUpgradeMethodDevice({required Device that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kNeedsFirmwareUpgradeMethodDeviceConstMeta;
+
   int thresholdMethodFrostKey({required FrostKey that, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kThresholdMethodFrostKeyConstMeta;
@@ -98,16 +106,6 @@ abstract class Native {
       {required PortBytesToRead that, required int bytesToRead, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kSatisfyMethodPortBytesToReadConstMeta;
-
-  bool isFinishedMethodSigningState({required SigningState that, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kIsFinishedMethodSigningStateConstMeta;
-
-  List<DeviceId> namedDevicesMethodDeviceListState(
-      {required DeviceListState that, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta
-      get kNamedDevicesMethodDeviceListStateConstMeta;
 
   Device? getDeviceMethodDeviceListState(
       {required DeviceListState that, required DeviceId id, dynamic hint});
@@ -196,29 +194,18 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kStartSigningTxMethodCoordinatorConstMeta;
 
-  SigningState? getSigningStateMethodCoordinator(
-      {required Coordinator that, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kGetSigningStateMethodCoordinatorConstMeta;
-
   int noncesAvailableMethodCoordinator(
       {required Coordinator that, required DeviceId id, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kNoncesAvailableMethodCoordinatorConstMeta;
 
-  Stream<CoordinatorToUserKeyGenMessage> generateNewKeyMethodCoordinator(
+  Stream<KeyGenState> generateNewKeyMethodCoordinator(
       {required Coordinator that,
       required int threshold,
       required List<DeviceId> devices,
       dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kGenerateNewKeyMethodCoordinatorConstMeta;
-
-  bool canRestoreSigningSessionMethodCoordinator(
-      {required Coordinator that, required KeyId keyId, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta
-      get kCanRestoreSigningSessionMethodCoordinatorConstMeta;
 
   SignTaskDescription? persistedSignSessionDescriptionMethodCoordinator(
       {required Coordinator that, required KeyId keyId, dynamic hint});
@@ -231,6 +218,29 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta
       get kTryRestoreSigningSessionMethodCoordinatorConstMeta;
+
+  Stream<FirmwareUpgradeConfirmState> startFirmwareUpgradeMethodCoordinator(
+      {required Coordinator that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta
+      get kStartFirmwareUpgradeMethodCoordinatorConstMeta;
+
+  String upgradeFirmwareDigestMethodCoordinator(
+      {required Coordinator that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta
+      get kUpgradeFirmwareDigestMethodCoordinatorConstMeta;
+
+  Future<void> cancelProtocolMethodCoordinator(
+      {required Coordinator that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kCancelProtocolMethodCoordinatorConstMeta;
+
+  Stream<double> enterFirmwareUpgradeModeMethodCoordinator(
+      {required Coordinator that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta
+      get kEnterFirmwareUpgradeModeMethodCoordinatorConstMeta;
 
   Stream<TxState> subTxStateMethodWallet(
       {required Wallet that, required KeyId keyId, dynamic hint});
@@ -675,18 +685,13 @@ class Coordinator {
         devices: devices,
       );
 
-  SigningState? getSigningState({dynamic hint}) =>
-      bridge.getSigningStateMethodCoordinator(
-        that: this,
-      );
-
   int noncesAvailable({required DeviceId id, dynamic hint}) =>
       bridge.noncesAvailableMethodCoordinator(
         that: this,
         id: id,
       );
 
-  Stream<CoordinatorToUserKeyGenMessage> generateNewKey(
+  Stream<KeyGenState> generateNewKey(
           {required int threshold,
           required List<DeviceId> devices,
           dynamic hint}) =>
@@ -694,12 +699,6 @@ class Coordinator {
         that: this,
         threshold: threshold,
         devices: devices,
-      );
-
-  bool canRestoreSigningSession({required KeyId keyId, dynamic hint}) =>
-      bridge.canRestoreSigningSessionMethodCoordinator(
-        that: this,
-        keyId: keyId,
       );
 
   SignTaskDescription? persistedSignSessionDescription(
@@ -715,33 +714,51 @@ class Coordinator {
         that: this,
         keyId: keyId,
       );
-}
 
-@freezed
-sealed class CoordinatorToUserKeyGenMessage
-    with _$CoordinatorToUserKeyGenMessage {
-  const factory CoordinatorToUserKeyGenMessage.receivedShares({
-    required DeviceId from,
-  }) = CoordinatorToUserKeyGenMessage_ReceivedShares;
-  const factory CoordinatorToUserKeyGenMessage.checkKeyGen({
-    required U8Array32 sessionHash,
-  }) = CoordinatorToUserKeyGenMessage_CheckKeyGen;
-  const factory CoordinatorToUserKeyGenMessage.keyGenAck({
-    required DeviceId from,
-  }) = CoordinatorToUserKeyGenMessage_KeyGenAck;
-  const factory CoordinatorToUserKeyGenMessage.finishedKey({
-    required KeyId keyId,
-  }) = CoordinatorToUserKeyGenMessage_FinishedKey;
+  Stream<FirmwareUpgradeConfirmState> startFirmwareUpgrade({dynamic hint}) =>
+      bridge.startFirmwareUpgradeMethodCoordinator(
+        that: this,
+      );
+
+  String upgradeFirmwareDigest({dynamic hint}) =>
+      bridge.upgradeFirmwareDigestMethodCoordinator(
+        that: this,
+      );
+
+  Future<void> cancelProtocol({dynamic hint}) =>
+      bridge.cancelProtocolMethodCoordinator(
+        that: this,
+      );
+
+  Stream<double> enterFirmwareUpgradeMode({dynamic hint}) =>
+      bridge.enterFirmwareUpgradeModeMethodCoordinator(
+        that: this,
+      );
 }
 
 class Device {
+  final Native bridge;
   final String? name;
+  final String firmwareDigest;
+  final String latestDigest;
   final DeviceId id;
 
   const Device({
+    required this.bridge,
     this.name,
+    required this.firmwareDigest,
+    required this.latestDigest,
     required this.id,
   });
+
+  bool ready({dynamic hint}) => bridge.readyMethodDevice(
+        that: this,
+      );
+
+  bool needsFirmwareUpgrade({dynamic hint}) =>
+      bridge.needsFirmwareUpgradeMethodDevice(
+        that: this,
+      );
 }
 
 class DeviceId {
@@ -780,11 +797,6 @@ class DeviceListState {
     required this.devices,
     required this.stateId,
   });
-
-  List<DeviceId> namedDevices({dynamic hint}) =>
-      bridge.namedDevicesMethodDeviceListState(
-        that: this,
-      );
 
   Device? getDevice({required DeviceId id, dynamic hint}) =>
       bridge.getDeviceMethodDeviceListState(
@@ -842,6 +854,20 @@ class FfiSerial {
       );
 }
 
+class FirmwareUpgradeConfirmState {
+  final List<DeviceId> confirmations;
+  final List<DeviceId> devices;
+  final List<DeviceId> needUpgrade;
+  final bool abort;
+
+  const FirmwareUpgradeConfirmState({
+    required this.confirmations,
+    required this.devices,
+    required this.needUpgrade,
+    required this.abort,
+  });
+}
+
 class FrostKey {
   final Native bridge;
   final FrostsnapCoreCoordinatorFrostKey field0;
@@ -866,6 +892,26 @@ class FrostKey {
   List<Device> devices({dynamic hint}) => bridge.devicesMethodFrostKey(
         that: this,
       );
+}
+
+class KeyGenState {
+  final List<DeviceId> devices;
+  final List<DeviceId> gotShares;
+  final List<DeviceId> sessionAcks;
+  final U8Array32? sessionHash;
+  final KeyId? finished;
+  final String? aborted;
+  final int threshold;
+
+  const KeyGenState({
+    required this.devices,
+    required this.gotShares,
+    required this.sessionAcks,
+    this.sessionHash,
+    this.finished,
+    this.aborted,
+    required this.threshold,
+  });
 }
 
 class KeyId {
@@ -1021,21 +1067,15 @@ class SignedTx {
 }
 
 class SigningState {
-  final Native bridge;
   final List<DeviceId> gotShares;
   final List<DeviceId> neededFrom;
   final List<EncodedSignature> finishedSignatures;
 
   const SigningState({
-    required this.bridge,
     required this.gotShares,
     required this.neededFrom,
     required this.finishedSignatures,
   });
-
-  bool isFinished({dynamic hint}) => bridge.isFinishedMethodSigningState(
-        that: this,
-      );
 }
 
 class Transaction {

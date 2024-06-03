@@ -1,17 +1,16 @@
 default_board := "v2"
 non_device_packages := "-p native -p frostsnap_core -p frostsnap_coordinator"
 
+alias erase := erase-device
+
 flash BOARD=default_board +ARGS="":
-    cd device && cargo run --release --features {{BOARD}} --bin {{BOARD}}
+    cd device && cargo run --release --features {{BOARD}} --bin {{BOARD}} -- --erase-parts otadata,factory {{ARGS}}
 
-erase-device BOARD=default_board +ARGS="":
-    cd device && cargo run --release --features {{BOARD}} --bin {{BOARD}} -- --erase-data-parts nvs --partition-table partitions.csv
-
-erase:
-    just erase-device
+erase-device +ARGS="nvs":
+    cd device && espflash erase-parts --partition-table partitions.csv {{ARGS}}
 
 build-device BOARD=default_board +ARGS="":
-    cd device && cargo build {{ARGS}} --features {{BOARD}} --bin {{BOARD}}
+    cd device && cargo build --release --features {{BOARD}} --bin {{BOARD}} {{ARGS}}
 
 test +ARGS="":
     cargo test {{ARGS}} {{non_device_packages}}
@@ -29,14 +28,18 @@ lint-non-device +ARGS="":
 lint-device +ARGS="":
     cd device && cargo clippy {{ARGS}} --all-features --bins -- -Dwarnings
 
+gen:
+    just "frostsnapp/gen"
+
 fix:
     cargo clippy --fix --allow-dirty --allow-staged {{non_device_packages}} --all-features --tests --bins
     ( cd device && cargo clippy --fix --allow-dirty --allow-staged --all-features --bins; )
     cargo fmt --all
     ( cd frostsnapp && dart format .; )
 
-run:
-    just frostsnapp/run
+run +ARGS="":
+    just build-device
+    just frostsnapp/run {{ARGS}}
 
 check: check-non-device check-device
 lint: lint-non-device lint-device

@@ -4,10 +4,13 @@ import 'dart:collection';
 import 'package:flutter/foundation.dart';
 import 'package:frostsnapp/bridge_definitions.dart';
 
-HashSet<DeviceId> deviceIdSet() {
-  return HashSet<DeviceId>(
+HashSet<DeviceId> deviceIdSet(List<DeviceId> devices) {
+  final set = HashSet<DeviceId>(
       equals: (a, b) => listEquals(a.field0, b.field0),
       hashCode: (a) => Object.hashAll(a.field0));
+
+  set.addAll(devices);
+  return set;
 }
 
 bool deviceIdEquals(DeviceId lhs, DeviceId rhs) =>

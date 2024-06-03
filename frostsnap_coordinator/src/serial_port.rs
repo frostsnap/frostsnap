@@ -1,6 +1,6 @@
-use frostsnap_comms::{Downstream, MagicBytes, ReceiveSerial, Upstream};
+use frostsnap_comms::{Downstream, MagicBytes, ReceiveSerial, Upstream, BINCODE_CONFIG};
 pub use serialport;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 
 pub type SerialPort = Box<dyn serialport::SerialPort>;
 
@@ -41,7 +41,7 @@ impl FramedSerialPort {
         }
     }
 
-    fn anything_to_read(&self) -> bool {
+    pub fn anything_to_read(&self) -> bool {
         match self.inner.get_ref().bytes_to_read() {
             Ok(len) => len > 0,
             // just say there's something there to get the caller to read and get the error rather than returing it here
@@ -72,11 +72,8 @@ impl FramedSerialPort {
         &mut self,
         message: &ReceiveSerial<Upstream>,
     ) -> Result<(), bincode::error::EncodeError> {
-        let _bytes_written = bincode::encode_into_std_write(
-            message,
-            self.inner.get_mut(),
-            bincode::config::standard(),
-        )?;
+        let _bytes_written =
+            bincode::encode_into_std_write(message, self.inner.get_mut(), BINCODE_CONFIG)?;
         Ok(())
     }
 
@@ -92,8 +89,19 @@ impl FramedSerialPort {
         }
         Ok(Some(bincode::decode_from_reader(
             &mut self.inner,
-            bincode::config::standard(),
+            BINCODE_CONFIG,
         )?))
+    }
+
+    pub fn raw_write(&mut self, bytes: &[u8]) -> Result<(), std::io::Error> {
+        let io_device = self.inner.get_mut();
+        io_device.write_all(bytes)?;
+        Ok(())
+    }
+
+    pub fn raw_read(&mut self, bytes: &mut [u8]) -> Result<(), std::io::Error> {
+        self.inner.read_exact(bytes)?;
+        Ok(())
     }
 }
 
@@ -124,7 +132,7 @@ impl Serial for DesktopSerial {
             // This timeout should never be hit in any normal circumstance but it's important to
             // have in case a device is bisbehaving. Note: 10ms is too low and leads to errors when
             // writing.
-            .timeout(Duration::from_millis(1_000))
+            .timeout(Duration::from_millis(5_000))
             .open()
             .map_err(|e| {
                 if e.to_string() == "Device or resource busy" {

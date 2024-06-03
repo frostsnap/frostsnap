@@ -6,6 +6,7 @@ extern crate alloc;
 pub mod device_config;
 pub mod esp32_run;
 pub mod io;
+pub mod ota;
 pub mod panic;
 #[cfg(feature = "v2")]
 pub mod st7789;
@@ -13,10 +14,19 @@ pub mod storage;
 pub mod ui;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct UpstreamConnection {
+    pub is_device: bool,
+    pub state: UpstreamConnectionState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum UpstreamConnectionState {
-    Disconnected,
-    Connected { is_device: bool },
-    Established { is_device: bool },
+    /// We're always at least connected since how did we get power unless we were connected!
+    Connected,
+    /// Received magic bytes from upstream device
+    Established,
+    /// The coordinator has Ack'd us
+    EstablishedAndCoordAck,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

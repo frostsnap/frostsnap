@@ -41,7 +41,7 @@ class SignMessageForm extends StatefulWidget {
 
 class _SignMessageFormState extends State<SignMessageForm> {
   final _messageController = TextEditingController();
-  Set<DeviceId> selected = deviceIdSet();
+  Set<DeviceId> selected = deviceIdSet([]);
 
   @override
   void initState() {
@@ -127,7 +127,7 @@ class SigningDeviceSelector extends StatefulWidget {
 }
 
 class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
-  Set<DeviceId> selected = deviceIdSet();
+  Set<DeviceId> selected = deviceIdSet([]);
 
   @override
   void initState() {
@@ -195,7 +195,7 @@ Future<List<EncodedSignature>?> showSigningProgressDialog(
   return showDeviceActionDialog(
       context: context,
       onCancel: () {
-        coord.cancelAll();
+        coord.cancelProtocol();
       },
       complete: finishedSigning,
       content: Column(children: [
@@ -241,9 +241,8 @@ class DeviceSigningProgress extends StatelessWidget {
           if (!snapshot.hasData) {
             return CircularProgressIndicator();
           }
-          final devicesPluggedIn = deviceIdSet();
-          devicesPluggedIn
-              .addAll(snapshot.data!.devices.map((device) => device.id));
+          final devicesPluggedIn = deviceIdSet(
+              snapshot.data!.devices.map((device) => device.id).toList());
           return StreamBuilder<SigningState>(
               stream: stream,
               builder: (context, snapshot) {
@@ -251,8 +250,7 @@ class DeviceSigningProgress extends StatelessWidget {
                   return CircularProgressIndicator();
                 }
                 final state = snapshot.data!;
-                final gotShares = deviceIdSet();
-                gotShares.addAll(state.gotShares);
+                final gotShares = deviceIdSet(state.gotShares);
                 return ListView.builder(
                     itemCount: state.neededFrom.length,
                     itemBuilder: (context, index) {

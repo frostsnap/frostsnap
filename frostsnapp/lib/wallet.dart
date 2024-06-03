@@ -475,7 +475,7 @@ class _WalletSendState extends State<WalletSend> {
   int _amount = 0;
   double _feerate = 1.0; // Default fee rate
   String _eta = "1 hr";
-  Set<DeviceId> selectedDevices = deviceIdSet();
+  Set<DeviceId> selectedDevices = deviceIdSet([]);
 
   void _updateETA() {
     // TODO: get ETA

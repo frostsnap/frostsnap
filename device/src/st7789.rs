@@ -2,11 +2,13 @@
 
 use embedded_graphics::{
     draw_target::DrawTarget,
+    geometry::AnchorX,
     image::Image,
     mono_font::{ascii::FONT_7X14, MonoTextStyle},
     pixelcolor::Rgb565,
     prelude::*,
     primitives::*,
+    text::Alignment,
 };
 use embedded_graphics_framebuf::FrameBuf;
 use embedded_iconoir::{icons::size24px::gestures::OpenSelectHandGesture, prelude::IconoirNewIcon};
@@ -17,6 +19,8 @@ use embedded_text::{
 };
 use mipidsi::error::Error;
 use u8g2_fonts::{fonts, U8g2TextStyle};
+
+use crate::{DownstreamConnectionState, UpstreamConnectionState};
 
 pub struct Graphics<'d, DT> {
     display: DT,
@@ -74,7 +78,6 @@ where
             )
             .draw(&mut self.framebuf)
             .unwrap();
-
         let _overflow = TextBox::with_textbox_style(
             str.as_ref(),
             Rectangle::new(Point::new(x_offset, y as i32), body_area),
@@ -85,8 +88,6 @@ where
         )
         .draw(&mut self.framebuf)
         .unwrap();
-
-        // self.flush().unwrap();
     }
 
     pub fn header(&mut self, device_label: impl AsRef<str>) {
@@ -139,6 +140,50 @@ where
         .unwrap();
     }
 
+    pub fn progress_bar(&mut self, percent: f32) {
+        let bar_y = self.display.size().height as f32 * 0.8;
+        let bar_x = self.display.size().width as f32 * 0.5;
+        let bar_width = self.display.size().width as f32 * 0.8;
+        let bar_height = 20;
+
+        let border = Rectangle::with_center(
+            Point::new(bar_x as i32, bar_y as i32),
+            Size::new(bar_width as u32, bar_height),
+        );
+
+        border
+            .into_styled(
+                PrimitiveStyleBuilder::new()
+                    .fill_color(Rgb565::CSS_DARK_GRAY)
+                    .build(),
+            )
+            .draw(&mut self.framebuf)
+            .unwrap();
+
+        let progress = border.resized_width((bar_width * percent) as u32, AnchorX::Left);
+
+        progress
+            .into_styled(
+                PrimitiveStyleBuilder::new()
+                    .fill_color(Rgb565::CSS_REBECCAPURPLE)
+                    .build(),
+            )
+            .draw(&mut self.framebuf)
+            .unwrap();
+
+        embedded_graphics::text::Text::with_alignment(
+            &format!("{}%", (percent * 100.0) as u32),
+            Point::new(
+                (self.display.size().width / 2) as i32,
+                (bar_y as u32 + bar_height + 10) as i32,
+            ),
+            U8g2TextStyle::new(fonts::u8g2_font_profont22_mf, Rgb565::WHITE),
+            Alignment::Center,
+        )
+        .draw(&mut self.framebuf)
+        .unwrap();
+    }
+
     pub fn button(&mut self) {
         Rectangle::new(
             Point::new(70, self.display.size().height as i32 - 37),
@@ -176,31 +221,38 @@ where
         .unwrap();
     }
 
-    pub fn upstream_state(&mut self, color: Rgb565, is_device: bool) {
+    pub fn upstream_state(&mut self, connection_state: UpstreamConnectionState) {
+        let color = match connection_state {
+            UpstreamConnectionState::Connected => Rgb565::CSS_DIM_GRAY,
+            UpstreamConnectionState::Established
+            | UpstreamConnectionState::EstablishedAndCoordAck => Rgb565::GREEN,
+        };
         let arrow = Triangle::new(Point::new(20, 20), Point::new(30, 20), Point::new(25, 7));
+        arrow
+            .into_styled(PrimitiveStyleBuilder::new().fill_color(color).build())
+            .draw(&mut self.framebuf)
+            .unwrap();
 
-        if is_device {
-            arrow.into_styled(
-                PrimitiveStyleBuilder::new()
-                    .stroke_color(color)
-                    .stroke_width(1)
-                    .build(),
-            )
-        } else {
-            arrow.into_styled(PrimitiveStyleBuilder::new().fill_color(color).build())
-        }
-        .draw(&mut self.framebuf)
-        .unwrap();
+        let circle = Circle::with_center(Point::new(50, 13), 10);
+        let color = match connection_state {
+            UpstreamConnectionState::Connected => Rgb565::CSS_DIM_GRAY,
+            UpstreamConnectionState::Established => Rgb565::CSS_ORANGE,
+            UpstreamConnectionState::EstablishedAndCoordAck => Rgb565::GREEN,
+        };
+        circle
+            .into_styled(PrimitiveStyleBuilder::new().fill_color(color).build())
+            .draw(&mut self.framebuf)
+            .unwrap();
     }
 
-    pub fn downstream_state(&mut self, color: Option<Rgb565>) {
+    pub fn downstream_state(&mut self, connection_state: DownstreamConnectionState) {
+        let color = match connection_state {
+            DownstreamConnectionState::Disconnected => Rgb565::CSS_DIM_GRAY,
+            DownstreamConnectionState::Connected => Rgb565::CSS_ORANGE,
+            DownstreamConnectionState::Established => Rgb565::GREEN,
+        };
         Triangle::new(Point::new(32, 7), Point::new(42, 7), Point::new(37, 20))
-            .into_styled(
-                PrimitiveStyleBuilder::new()
-                    .stroke_color(color.unwrap_or(Rgb565::new(4, 8, 17) /* background color */))
-                    .stroke_width(1)
-                    .build(),
-            )
+            .into_styled(PrimitiveStyleBuilder::new().fill_color(color).build())
             .draw(&mut self.framebuf)
             .unwrap();
     }

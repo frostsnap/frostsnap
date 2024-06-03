@@ -10,6 +10,8 @@ pub mod message;
 pub mod nostr;
 pub mod tweak;
 
+pub use sha2;
+
 pub use bincode;
 pub use key_id::*;
 pub use serde;
@@ -24,7 +26,9 @@ extern crate alloc;
 
 use crate::message::*;
 use alloc::{string::String, string::ToString, vec::Vec};
-use schnorr_fun::fun::{hex, Point, Tag};
+use schnorr_fun::fun::{Point, Tag};
+// rexport hex module so serialization impl macros work outside this crate
+pub use schnorr_fun::fun::hex;
 use sha2::digest::Digest;
 use sha2::Sha256;
 
@@ -34,6 +38,12 @@ pub type SessionHash = [u8; 32];
 
 #[derive(Clone, Copy, PartialEq, Hash, Eq, Ord, PartialOrd)]
 pub struct DeviceId(pub [u8; 33]);
+
+impl Default for DeviceId {
+    fn default() -> Self {
+        Self([0u8; 33])
+    }
+}
 
 impl_display_debug_serialize! {
     fn to_bytes(device_id: &DeviceId) -> [u8;33] {

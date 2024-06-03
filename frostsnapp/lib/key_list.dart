@@ -29,7 +29,7 @@ class KeyList extends StatelessWidget {
         },
         child: Text("Show Devices"));
 
-    return StreamBuilder<KeyState>(
+    final content = StreamBuilder<KeyState>(
         stream: keyStateSream,
         builder: (context, snap) {
           var keys = [];
@@ -50,7 +50,7 @@ class KeyList extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                list,
+                Expanded(child: list),
                 const SizedBox(height: 8),
                 Row(
                   mainAxisSize: MainAxisSize.min,
@@ -70,9 +70,11 @@ class KeyList extends StatelessWidget {
                     SizedBox(width: 4),
                     showDevicesButton
                   ],
-                )
+                ),
               ]);
         });
+
+    return Padding(padding: const EdgeInsets.only(bottom: 20), child: content);
   }
 }
 

@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'dart:io';
 import 'package:flutter/rendering.dart';
+import 'package:wakelock/wakelock.dart';
 
 void main() async {
   // enable this if you're trying to figure out why things are displaying in
@@ -47,7 +48,18 @@ void main() async {
     print("$stacktrace");
     startupError = "$error\n$stacktrace";
   }
-  deviceListSubject;
+
+  // we want to stop the app from sleeping on mobile if there's a device plugged in.
+  deviceListSubject.forEach((update) {
+    if (Platform.isLinux) {
+      return; // not supported by wakelock
+    }
+    if (update.state.devices.isNotEmpty) {
+      Wakelock.enable();
+    } else {
+      Wakelock.disable();
+    }
+  });
   runApp(MyApp(startupError: startupError));
 }
 

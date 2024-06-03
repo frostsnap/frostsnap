@@ -1,7 +1,10 @@
-use frostsnap_coordinator::frostsnap_core::{
-    self,
-    message::{CoordinatorToStorageMessage, SignTask},
-    CoordinatorFrostKey, FrostCoordinator,
+use frostsnap_coordinator::{
+    frostsnap_core::{
+        self,
+        message::{CoordinatorToStorageMessage, SignTask},
+        CoordinatorFrostKey, FrostCoordinator, KeyId,
+    },
+    UiToStorageMessage,
 };
 use llsdb::{
     index::{self, IndexStore},
@@ -39,7 +42,7 @@ impl<'i, F: Backend> PersistApi<'i, F> {
         Ok(coord)
     }
 
-    pub fn consume_message(&mut self, message: CoordinatorToStorageMessage) -> Result<()> {
+    pub fn consume_core_message(&mut self, message: CoordinatorToStorageMessage) -> Result<()> {
         match message {
             // handle store signing state separately because it's transient
             CoordinatorToStorageMessage::StoreSigningState(signing_state) => {
@@ -50,21 +53,26 @@ impl<'i, F: Backend> PersistApi<'i, F> {
         }
     }
 
+    pub fn consume_ui_message(&mut self, message: UiToStorageMessage) -> Result<()> {
+        use frostsnap_coordinator::UiToStorageMessage;
+        match message {
+            UiToStorageMessage::ClearSigningSession => self.signing_cell.clear(),
+        }
+    }
+
     pub fn persisted_signing(&self) -> Result<Option<frostsnap_core::SigningSessionState>> {
         self.signing_cell.get()
     }
 
-    pub fn is_sign_session_persisted(&self) -> bool {
-        self.signing_cell.is_some()
-    }
-
-    pub fn persisted_sign_session_task(&self) -> Result<Option<SignTask>> {
+    pub fn persisted_sign_session_task(&self, key_id: KeyId) -> Result<Option<SignTask>> {
         let opt = self.signing_cell.get()?;
-        Ok(opt.map(|sign_session_state| sign_session_state.request.sign_task))
-    }
-
-    pub fn clear_signing_session(&self) -> Result<()> {
-        self.signing_cell.clear()
+        Ok(opt.and_then(|sign_session_state| {
+            if sign_session_state.request.key_id == key_id {
+                Some(sign_session_state.request.sign_task)
+            } else {
+                None
+            }
+        }))
     }
 }
 

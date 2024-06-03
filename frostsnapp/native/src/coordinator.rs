@@ -1,27 +1,27 @@
-use crate::api::{self, FfiSerial, KeyState, PortEvent};
+use crate::api::{self, KeyState};
 use crate::persist_core::PersistCore;
-use crate::SigningSession;
 use anyhow::{anyhow, Context, Result};
 use flutter_rust_bridge::{RustOpaque, StreamSink};
+use frostsnap_coordinator::backup::BackupProtocol;
+use frostsnap_coordinator::firmware_upgrade::{
+    FirmwareUpgradeConfirmState, FirmwareUpgradeProtocol,
+};
 use frostsnap_coordinator::frostsnap_comms::{
-    CoordinatorSendBody, CoordinatorSendMessage, Destination,
+    CoordinatorSendBody, CoordinatorSendMessage, Destination, FirmwareDigest,
 };
 use frostsnap_coordinator::frostsnap_core::message::{
-    CoordinatorSend, CoordinatorToStorageMessage, CoordinatorToUserKeyGenMessage,
-    CoordinatorToUserMessage, SignTask,
+    CoordinatorSend, CoordinatorToStorageMessage, SignTask,
 };
-use frostsnap_coordinator::frostsnap_core::KeyId;
+use frostsnap_coordinator::keygen::KeyGenState;
+use frostsnap_coordinator::signing::SigningState;
 use frostsnap_coordinator::{
-    frostsnap_core, PortChanges, PortDesc, PortOpenError, Serial, SerialPort, UsbSerialManager,
+    frostsnap_core, AppMessageBody, FirmwareBin, UiProtocol, UsbSender, UsbSerialManager,
 };
-use frostsnap_coordinator::{serialport, DeviceChange};
-use frostsnap_coordinator::{SigningDispatcher, UsbSender};
-use frostsnap_core::{DeviceId, FrostCoordinator, Gist};
+use frostsnap_coordinator::{Completion, DeviceChange};
+use frostsnap_core::{DeviceId, FrostCoordinator, Gist, KeyId};
 use llsdb::{IndexHandle, LlsDb};
 use std::collections::{BTreeSet, VecDeque};
 use std::fs::File;
-use std::io;
-use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -31,15 +31,15 @@ pub struct FfiCoordinator {
     coordinator: Arc<Mutex<FrostCoordinator>>,
     usb_manager: Mutex<Option<UsbSerialManager>>,
     pending_for_outbox: Arc<Mutex<VecDeque<CoordinatorSend>>>,
-    thread_handle: Mutex<Option<JoinHandle<()>>>,
-    keygen_stream: Arc<Mutex<Option<StreamSink<CoordinatorToUserKeyGenMessage>>>>,
     key_event_stream: Arc<Mutex<Option<StreamSink<KeyState>>>>,
-    backup_event_stream: Arc<Mutex<Option<StreamSink<()>>>>,
-    signing_session: Arc<Mutex<Option<SigningSession>>>,
+    thread_handle: Mutex<Option<JoinHandle<()>>>,
+    ui_protocol: Arc<Mutex<Option<Box<dyn UiProtocol>>>>,
     db: Arc<Mutex<LlsDb<File>>>,
     persist_core: IndexHandle<PersistCore>,
     device_names: IndexHandle<llsdb::index::BTreeMap<DeviceId, String>>,
     usb_sender: UsbSender,
+    firmware_bin: FirmwareBin,
+    firmware_upgrade_progress: Arc<Mutex<Option<StreamSink<f32>>>>,
 }
 
 impl FfiCoordinator {
@@ -76,6 +76,7 @@ impl FfiCoordinator {
         // reason it needs these names is for convenience. There are too many places that have
         // copies of the device names -- we need a central location.
         crate::api::init_device_names(usb_manager.device_labels().clone());
+        let firmware_bin = usb_manager.upgrade_bin();
 
         let usb_manager = Mutex::new(Some(usb_manager));
 
@@ -84,14 +85,14 @@ impl FfiCoordinator {
             usb_manager,
             pending_for_outbox,
             thread_handle: Default::default(),
-            keygen_stream: Default::default(),
-            signing_session: Default::default(),
             key_event_stream: Default::default(),
-            backup_event_stream: Default::default(),
+            ui_protocol: Default::default(),
+            firmware_upgrade_progress: Default::default(),
             db,
             persist_core,
             device_names: device_names_handle,
             usb_sender,
+            firmware_bin,
         })
     }
 
@@ -113,43 +114,63 @@ impl FfiCoordinator {
             .expect("can only start once");
         let pending_loop = self.pending_for_outbox.clone();
         let coordinator_loop = self.coordinator.clone();
-        let keygen_stream_loop = self.keygen_stream.clone();
-        let signing_session_loop = self.signing_session.clone();
+        let ui_protocol = self.ui_protocol.clone();
         let key_event_stream_loop = self.key_event_stream.clone();
-        let backup_event_stream = self.backup_event_stream.clone();
         let db_loop = self.db.clone();
         let core_persist = self.persist_core;
         let device_names = self.device_names;
         let usb_sender = self.usb_sender.clone();
+        let firmware_upgrade_progress = self.firmware_upgrade_progress.clone();
 
         let handle = std::thread::spawn(move || {
             loop {
                 // to give time for the other threads to get a lock
                 std::thread::sleep(Duration::from_millis(100));
+
+                // check for firmware upgrade mode before locking anything else
+                let mut firmware_upgrade_progress_loop = firmware_upgrade_progress.lock().unwrap();
+                if let Some(firmware_upgrade_pogress) = &mut *firmware_upgrade_progress_loop {
+                    // We're in a firmware upgrade.
+                    // Do the firmware upgrade and then carry on as usual
+                    let progress_iter = usb_manager.run_firmware_upgrade();
+                    for progress in progress_iter {
+                        match progress {
+                            Ok(progress) => {
+                                firmware_upgrade_pogress.add(progress);
+                            }
+                            Err(_e) => {
+                                break;
+                            }
+                        }
+                    }
+
+                    firmware_upgrade_pogress.close();
+                    *firmware_upgrade_progress_loop = None;
+                }
+
                 // NOTE: Never hold locks on anything over poll_ports because poll ports makes
                 // blocking calls up to flutter. If flutter is blocked on something else we'll
                 // be deadlocked.
-                let PortChanges {
-                    device_changes,
-                    new_messages,
-                } = usb_manager.poll_ports();
+                let device_changes = usb_manager.poll_ports();
                 let mut coordinator = coordinator_loop.lock().unwrap();
-                let mut signing_session = signing_session_loop.lock().unwrap();
+                let mut ui_protocol_loop = ui_protocol.lock().unwrap();
                 let mut coordinator_outbox = pending_loop.lock().unwrap();
+                let mut messages_from_devices = vec![];
 
-                let new_messages_from_devices = {
+                // process new messages from devices
+                {
                     for change in &device_changes {
                         match change {
                             DeviceChange::Registered { id, .. } => {
-                                if let Some(signing_session) = &mut *signing_session {
-                                    signing_session.connected(*id);
+                                if let Some(protocol) = &mut *ui_protocol_loop {
+                                    protocol.connected(*id);
                                 }
                                 coordinator_outbox
                                     .extend(coordinator.maybe_request_nonce_replenishment(*id));
                             }
                             DeviceChange::Disconnected { id } => {
-                                if let Some(signing_session) = &mut *signing_session {
-                                    signing_session.disconnected(*id);
+                                if let Some(protocol) = &mut *ui_protocol_loop {
+                                    protocol.disconnected(*id);
                                 }
                             }
                             DeviceChange::NewUnknownDevice { id, name } => {
@@ -166,14 +187,42 @@ impl FfiCoordinator {
                                     );
                                 }
                             }
+                            DeviceChange::AppMessage(message) => {
+                                messages_from_devices.push(message.clone());
+                            }
                             _ => { /* ignore rest */ }
                         }
                     }
 
-                    if let Some(signing_session) = &mut *signing_session {
-                        if let Some(message) = signing_session.resend_sign_request() {
-                            event!(Level::INFO, "Sending sign request");
+                    if let Some(ui_protocol) = &mut *ui_protocol_loop {
+                        let (to_device, to_storage) = ui_protocol.poll();
+                        for message in to_device {
                             usb_sender.send(message);
+                        }
+                        if !to_storage.is_empty() {
+                            let res = db_loop.lock().unwrap().execute(|tx| {
+                                let mut persist = tx.take_index(core_persist);
+                                for message in to_storage {
+                                    persist.consume_ui_message(message)?;
+                                }
+                                Ok(())
+                            });
+
+                            if let Err(e) = res {
+                                event!(
+                                    Level::ERROR,
+                                    "persitence failed to consume ui message: {e}"
+                                );
+                            }
+                        }
+
+                        if let Some(completion) = ui_protocol.is_complete() {
+                            *ui_protocol_loop = None;
+                            if let Completion::Abort = completion {
+                                event!(Level::INFO, "canceling protocol due to abort");
+                                coordinator.cancel();
+                                usb_sender.send_cancel_all();
+                            }
                         }
                     }
 
@@ -183,24 +232,31 @@ impl FfiCoordinator {
                             .map(crate::api::DeviceChange::from)
                             .collect(),
                     );
-
-                    new_messages
                 };
 
-                for (from, message) in new_messages_from_devices {
-                    match coordinator.recv_device_message(from, message.clone()) {
-                        Ok(messages) => {
-                            coordinator_outbox.extend(messages);
+                for app_message in messages_from_devices {
+                    match app_message.body {
+                        AppMessageBody::Core(core_message) => {
+                            match coordinator.recv_device_message(app_message.from, core_message) {
+                                Ok(messages) => {
+                                    coordinator_outbox.extend(messages);
+                                }
+                                Err(e) => {
+                                    event!(
+                                        Level::ERROR,
+                                        from = app_message.from.to_string(),
+                                        "Failed to process message: {}",
+                                        e
+                                    );
+                                }
+                            };
                         }
-                        Err(e) => {
-                            event!(
-                                Level::ERROR,
-                                from = from.to_string(),
-                                "Failed to process message: {}",
-                                e
-                            );
+                        AppMessageBody::AckUpgradeMode => {
+                            if let Some(ui_protocol) = &mut *ui_protocol_loop {
+                                ui_protocol.process_upgrade_mode_ack(app_message.from);
+                            }
                         }
-                    };
+                    }
                 }
 
                 drop(coordinator);
@@ -218,49 +274,17 @@ impl FfiCoordinator {
 
                             usb_sender.send(send_message);
                         }
-                        CoordinatorSend::ToUser(msg) => match msg {
-                            CoordinatorToUserMessage::KeyGen(event) => {
-                                let mut stream_opt = keygen_stream_loop.lock().unwrap();
-                                if let Some(stream) = stream_opt.as_ref() {
-                                    let is_finished = matches!(
-                                        event,
-                                        CoordinatorToUserKeyGenMessage::FinishedKey { .. }
-                                    );
-
-                                    if !stream.add(event) {
-                                        event!(Level::ERROR, "failed to emit keygen event");
-                                    }
-
-                                    if is_finished {
-                                        stream.close();
-                                        *stream_opt = None;
-                                    }
-                                }
+                        CoordinatorSend::ToUser(msg) => {
+                            if let Some(ui_protocol) = &mut *ui_protocol_loop {
+                                ui_protocol.process_to_user_message(msg);
                             }
-                            CoordinatorToUserMessage::Signing(signing_message) => {
-                                if let Some(signing_session) = &mut *signing_session {
-                                    signing_session.process_to_user_message(signing_message);
-
-                                    if signing_session.is_complete() {
-                                        let _ = db_loop.lock().unwrap().execute(|tx| {
-                                            tx.take_index(core_persist).clear_signing_session()
-                                        });
-                                        event!(Level::INFO, "received signatures from all devices");
-                                    }
-                                }
-                            }
-                            CoordinatorToUserMessage::DisplayBackupConfirmed { device_id: _ } => {
-                                if let Some(stream) = &mut *backup_event_stream.lock().unwrap() {
-                                    stream.add(());
-                                }
-                            }
-                        },
+                        }
                         CoordinatorSend::ToStorage(to_storage) => {
                             let update_kind = to_storage.gist();
                             let mut db = db_loop.lock().unwrap();
                             let res = db.execute(|tx| {
                                 let mut persist = tx.take_index(core_persist);
-                                persist.consume_message(to_storage.clone())?;
+                                persist.consume_core_message(to_storage.clone())?;
                                 if let CoordinatorToStorageMessage::NewKey(_) = &to_storage {
                                     // Note we do this here rather than in the ToUserMessage
                                     // because the key list is persisted and so its better to
@@ -322,14 +346,6 @@ impl FfiCoordinator {
     }
 
     pub fn cancel_all(&self) {
-        if let Some(mut signing_session) = self.signing_session.lock().unwrap().take() {
-            signing_session.cancel();
-            let _ = self
-                .db
-                .lock()
-                .unwrap()
-                .execute(|tx| tx.take_index(self.persist_core).clear_signing_session());
-        }
         self.coordinator.lock().unwrap().cancel();
         self.usb_sender.send_cancel_all()
     }
@@ -338,11 +354,11 @@ impl FfiCoordinator {
         &self,
         devices: BTreeSet<DeviceId>,
         threshold: usize,
-        stream: StreamSink<CoordinatorToUserKeyGenMessage>,
+        sink: StreamSink<frostsnap_coordinator::keygen::KeyGenState>,
     ) -> anyhow::Result<()> {
-        if let Some(existing) = self.keygen_stream.lock().unwrap().replace(stream) {
-            existing.close();
-        }
+        let ui_protocol =
+            frostsnap_coordinator::keygen::KeyGen::new(SinkWrap(sink), devices.clone(), threshold);
+
         let keygen_messages = {
             let mut coordinator = self.coordinator.lock().unwrap();
             coordinator.do_keygen(&devices, threshold as u16)?
@@ -352,6 +368,9 @@ impl FfiCoordinator {
             .lock()
             .unwrap()
             .extend(keygen_messages);
+
+        ui_protocol.emit_state();
+        self.start_protocol(ui_protocol);
 
         Ok(())
     }
@@ -374,85 +393,63 @@ impl FfiCoordinator {
         key_id: KeyId,
         devices: BTreeSet<DeviceId>,
         task: SignTask,
-        stream: StreamSink<api::SigningState>,
+        sink: StreamSink<api::SigningState>,
     ) -> anyhow::Result<()> {
-        // we need to lock this first to avoid race conditions where somehow get_signing_state is called before this completes.
-        let mut signing_session = self.signing_session.lock().unwrap();
         let mut coordinator = self.coordinator.lock().unwrap();
         let mut messages = coordinator.start_sign(key_id, task, devices.clone())?;
-        let dispatcher = SigningDispatcher::from_filter_out_start_sign(&mut messages);
-        let mut new_session = SigningSession::new(stream, dispatcher);
-
-        for device in api::device_list_state().0.devices {
-            new_session.connected(device.id);
-        }
+        let mut ui_protocol =
+            frostsnap_coordinator::signing::SigningDispatcher::from_filter_out_start_sign(
+                &mut messages,
+                SinkWrap(sink),
+            );
 
         self.pending_for_outbox.lock().unwrap().extend(messages);
-        signing_session.replace(new_session);
+        ui_protocol.emit_state();
+        self.start_protocol(ui_protocol);
 
         Ok(())
-    }
-
-    pub fn get_signing_state(&self) -> Option<api::SigningState> {
-        let signing_session = self.signing_session.lock().unwrap();
-        let state = signing_session.as_ref()?.signing_state();
-        Some(state)
     }
 
     pub fn try_restore_signing_session(
         &self,
         #[allow(unused)] /* we only have one key for now */ key_id: KeyId,
-        stream: StreamSink<api::SigningState>,
+        sink: StreamSink<api::SigningState>,
     ) -> anyhow::Result<()> {
-        let signing_session = self
+        let signing_session_state = self
             .db
             .lock()
             .unwrap()
             .execute(|tx| tx.take_index(self.persist_core).persisted_signing())?;
 
         let signing_session_state =
-            signing_session.ok_or(anyhow!("no signing session to restore"))?;
+            signing_session_state.ok_or(anyhow!("no signing session to restore"))?;
         let mut coordinator = self.coordinator.lock().unwrap();
         coordinator.restore_sign_session(signing_session_state.clone());
 
-        let mut dispatcher = SigningDispatcher::new_from_request(
+        let mut dispatcher = frostsnap_coordinator::signing::SigningDispatcher::new_from_request(
             signing_session_state.request.clone(),
             signing_session_state.targets.clone(),
+            SinkWrap(sink),
         );
 
         for already_provided in signing_session_state.received_from() {
             dispatcher.set_signature_received(already_provided);
         }
-        let mut session = SigningSession::new(stream, dispatcher);
 
-        for device in api::device_list_state().0.devices {
-            session.connected(device.id);
-        }
-
-        self.signing_session.lock().unwrap().replace(session);
+        dispatcher.emit_state();
+        self.start_protocol(dispatcher);
 
         Ok(())
     }
 
-    pub fn can_restore_signing_session(
-        &self,
-        #[allow(unused)] /* we only have one key for now */ key_id: KeyId,
-    ) -> bool {
-        self.db
-            .lock()
-            .unwrap()
-            .execute(|tx| Ok(tx.take_index(self.persist_core).is_sign_session_persisted()))
-            .unwrap()
-    }
-
     pub fn persisted_sign_session_description(
         &self,
-        #[allow(unused)] /* we only have one key for now */ key_id: KeyId,
+        key_id: KeyId,
     ) -> Result<Option<api::SignTaskDescription>> {
         self.db.lock().unwrap().execute(|tx| {
             Ok(tx
                 .take_index(self.persist_core)
-                .persisted_sign_session_task()?
+                .persisted_sign_session_task(key_id)?
                 .map(|task| match task {
                     SignTask::Plain { message, .. } => api::SignTaskDescription::Plain {
                         message: String::from_utf8_lossy(&message[..]).to_string(),
@@ -476,9 +473,8 @@ impl FfiCoordinator {
         // XXX: We should be storing the id to make sure the device that sends the backup ack is
         // from the one we expected. In practice it doesn't matter that much and flutter rust bridge
         // was giving me extreme grief. Can try again with frb v2.
-        if let Some(old_stream) = self.backup_event_stream.lock().unwrap().replace(stream) {
-            old_stream.close();
-        }
+        let backup_protocol = BackupProtocol::new(device_id, SinkWrap(stream));
+
         let messages = self
             .coordinator
             .lock()
@@ -486,6 +482,70 @@ impl FfiCoordinator {
             .request_device_display_backup(device_id, key_id)?;
         self.pending_for_outbox.lock().unwrap().extend(messages);
 
+        self.start_protocol(backup_protocol);
+
+        Ok(())
+    }
+
+    pub fn begin_upgrade_firmware(
+        &self,
+        sink: StreamSink<FirmwareUpgradeConfirmState>,
+    ) -> anyhow::Result<()> {
+        let bin = self.firmware_bin;
+        let devices = api::device_list_state()
+            .0
+            .devices
+            .into_iter()
+            .map(|device| device.id)
+            .collect();
+
+        let need_upgrade = api::device_list_state()
+            .0
+            .devices
+            .into_iter()
+            .filter(|device| device.needs_firmware_upgrade().0)
+            .map(|device| device.id)
+            .collect();
+
+        let ui_protocol = FirmwareUpgradeProtocol::new(devices, need_upgrade, bin, SinkWrap(sink));
+        ui_protocol.emit_state();
+        self.start_protocol(ui_protocol);
+
+        Ok(())
+    }
+
+    pub fn upgrade_firmware_digest(&self) -> FirmwareDigest {
+        self.firmware_bin.digest()
+    }
+
+    fn start_protocol<P: UiProtocol + Send + 'static>(&self, mut protocol: P) {
+        for device in api::device_list_state().0.devices {
+            protocol.connected(device.id);
+        }
+        if let Some(mut prev) = self.ui_protocol.lock().unwrap().replace(Box::new(protocol)) {
+            prev.cancel();
+        }
+    }
+
+    pub fn cancel_protocol(&self) {
+        if let Some(proto) = &mut *self.ui_protocol.lock().unwrap() {
+            proto.cancel();
+        }
+    }
+
+    pub fn enter_firmware_upgrade_mode(&self, sink: StreamSink<f32>) -> Result<()> {
+        match &mut *self.firmware_upgrade_progress.lock().unwrap() {
+            Some(_) => {
+                event!(
+                    Level::ERROR,
+                    "tried to enter firmware upgrade mode while we were already in an upgrade"
+                );
+                return Err(anyhow!(
+                    "trierd to enter firmware upgrade mode while already in an upgrade"
+                ));
+            }
+            progress => *progress = Some(sink),
+        }
         Ok(())
     }
 }
@@ -497,215 +557,25 @@ fn frost_keys(coordinator: &FrostCoordinator) -> Vec<crate::api::FrostKey> {
         .collect()
 }
 
-// Newtypes needed here because type aliases lead to weird types in the bindings
-#[derive(Debug)]
-pub struct PortOpenSender(pub SyncSender<Result<(), PortOpenError>>);
-#[derive(Debug)]
-pub struct PortWriteSender(pub SyncSender<Result<(), String>>);
-#[derive(Debug)]
-pub struct PortReadSender(pub SyncSender<Result<Vec<u8>, String>>);
-#[derive(Debug)]
-pub struct PortBytesToReadSender(pub SyncSender<u32>);
+// we need to wrap it so we can impl it on foreign FRB type. You can't do a single generic impl. Try
+// it if you don't believe me.
+struct SinkWrap<T>(StreamSink<T>);
 
-impl Serial for FfiSerial {
-    fn available_ports(&self) -> Vec<PortDesc> {
-        self.available_ports.lock().unwrap().clone()
-    }
+macro_rules! bridge_sink {
+    ($type:ty) => {
+        impl frostsnap_coordinator::Sink<$type> for SinkWrap<$type> {
+            fn send(&self, state: $type) {
+                self.0.add(state);
+            }
 
-    fn open_device_port(&self, id: &str, baud_rate: u32) -> Result<SerialPort, PortOpenError> {
-        let (tx, rx) = std::sync::mpsc::sync_channel(0);
-
-        crate::api::emit_event(PortEvent::Open {
-            request: crate::api::PortOpen {
-                id: id.into(),
-                baud_rate,
-                ready: RustOpaque::new(PortOpenSender(tx)),
-            },
-        })
-        .map_err(|e| PortOpenError::Other(e.into()))?;
-
-        rx.recv().map_err(|e| PortOpenError::Other(Box::new(e)))??;
-
-        let port = FfiSerialPort {
-            id: id.to_string(),
-            baud_rate,
-        };
-
-        Ok(Box::new(port))
-    }
-}
-
-pub struct FfiSerialPort {
-    id: String,
-    baud_rate: u32,
-}
-
-impl io::Read for FfiSerialPort {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        loop {
-            let (tx, rx) = std::sync::mpsc::sync_channel::<Result<Vec<u8>, String>>(0);
-            crate::api::emit_event(PortEvent::Read {
-                request: crate::api::PortRead {
-                    id: self.id.clone(),
-                    len: buf.len(),
-                    ready: RustOpaque::new(PortReadSender(tx)),
-                },
-            })
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::BrokenPipe, e.to_string()))?;
-
-            let result = rx.recv().unwrap();
-            match result {
-                Ok(bytes) => {
-                    if !bytes.is_empty() {
-                        buf[0..bytes.len()].copy_from_slice(&bytes);
-                        return Ok(bytes.len());
-                    } else {
-                        // we got 0 bytes so wait a little while for more data
-                        std::thread::sleep(std::time::Duration::from_millis(1));
-                    }
-                }
-                Err(e) => return Err(io::Error::new(io::ErrorKind::Other, e)),
+            fn close(&self) {
+                self.0.close();
             }
         }
-    }
+    };
 }
 
-impl std::io::Write for FfiSerialPort {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let (tx, rx) = std::sync::mpsc::sync_channel(0);
-
-        crate::api::emit_event(PortEvent::Write {
-            request: crate::api::PortWrite {
-                id: self.id.clone(),
-                bytes: buf.to_vec(),
-                ready: RustOpaque::new(PortWriteSender(tx)),
-            },
-        })
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::BrokenPipe, e.to_string()))?;
-
-        match rx.recv().unwrap() {
-            Ok(()) => Ok(buf.len()),
-            Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
-        }
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        // assume FFI host will flush after each write
-        Ok(())
-    }
-}
-
-mod _impl {
-    use super::serialport::*;
-    use super::{PortBytesToReadSender, PortEvent, RustOpaque};
-
-    #[allow(unused)]
-    impl SerialPort for super::FfiSerialPort {
-        fn name(&self) -> Option<String> {
-            Some(self.id.clone())
-        }
-        fn baud_rate(&self) -> Result<u32> {
-            Ok(self.baud_rate)
-        }
-        fn bytes_to_read(&self) -> Result<u32> {
-            let (tx, rx) = std::sync::mpsc::sync_channel(0);
-
-            crate::api::emit_event(PortEvent::BytesToRead {
-                request: crate::api::PortBytesToRead {
-                    id: self.id.clone(),
-                    ready: RustOpaque::new(PortBytesToReadSender(tx)),
-                },
-            })
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::BrokenPipe, e.to_string()))?;
-
-            Ok(rx.recv().unwrap())
-        }
-
-        fn data_bits(&self) -> Result<DataBits> {
-            unimplemented!()
-        }
-
-        fn flow_control(&self) -> Result<FlowControl> {
-            unimplemented!()
-        }
-
-        fn parity(&self) -> Result<Parity> {
-            unimplemented!()
-        }
-
-        fn stop_bits(&self) -> Result<StopBits> {
-            unimplemented!()
-        }
-
-        fn timeout(&self) -> core::time::Duration {
-            unimplemented!()
-        }
-
-        fn set_baud_rate(&mut self, baud_rate: u32) -> Result<()> {
-            unimplemented!()
-        }
-
-        fn set_data_bits(&mut self, data_bits: DataBits) -> Result<()> {
-            unimplemented!()
-        }
-
-        fn set_flow_control(&mut self, flow_control: FlowControl) -> Result<()> {
-            unimplemented!()
-        }
-
-        fn set_parity(&mut self, parity: Parity) -> Result<()> {
-            unimplemented!()
-        }
-
-        fn set_stop_bits(&mut self, stop_bits: StopBits) -> Result<()> {
-            unimplemented!()
-        }
-
-        fn set_timeout(&mut self, timeout: core::time::Duration) -> Result<()> {
-            unimplemented!()
-        }
-
-        fn write_request_to_send(&mut self, level: bool) -> Result<()> {
-            unimplemented!()
-        }
-
-        fn write_data_terminal_ready(&mut self, level: bool) -> Result<()> {
-            unimplemented!()
-        }
-
-        fn read_clear_to_send(&mut self) -> Result<bool> {
-            unimplemented!()
-        }
-
-        fn read_data_set_ready(&mut self) -> Result<bool> {
-            unimplemented!()
-        }
-
-        fn read_ring_indicator(&mut self) -> Result<bool> {
-            unimplemented!()
-        }
-
-        fn read_carrier_detect(&mut self) -> Result<bool> {
-            unimplemented!()
-        }
-        fn bytes_to_write(&self) -> Result<u32> {
-            unimplemented!()
-        }
-
-        fn clear(&self, buffer_to_clear: ClearBuffer) -> Result<()> {
-            unimplemented!()
-        }
-
-        fn try_clone(&self) -> Result<Box<dyn SerialPort>> {
-            unimplemented!()
-        }
-
-        fn set_break(&self) -> Result<()> {
-            unimplemented!()
-        }
-
-        fn clear_break(&self) -> Result<()> {
-            unimplemented!()
-        }
-    }
-}
+bridge_sink!(KeyGenState);
+bridge_sink!(FirmwareUpgradeConfirmState);
+bridge_sink!(SigningState);
+bridge_sink!(());
