@@ -8,7 +8,7 @@ mod key_id;
 mod macros;
 pub mod message;
 pub mod nostr;
-pub mod xpub;
+pub mod tweak;
 
 pub use bincode;
 pub use key_id::*;

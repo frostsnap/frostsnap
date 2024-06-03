@@ -337,9 +337,10 @@ abstract class Native {
   ShareFnType get shareOpaqueFrostsnapCoreCoordinatorFrostKey;
   OpaqueTypeFinalizer get FrostsnapCoreCoordinatorFrostKeyFinalizer;
 
-  DropFnType get dropOpaqueFrostsnapCoreMessageTransactionSignTask;
-  ShareFnType get shareOpaqueFrostsnapCoreMessageTransactionSignTask;
-  OpaqueTypeFinalizer get FrostsnapCoreMessageTransactionSignTaskFinalizer;
+  DropFnType get dropOpaqueFrostsnapCoreMessageBitcoinTransactionSignTask;
+  ShareFnType get shareOpaqueFrostsnapCoreMessageBitcoinTransactionSignTask;
+  OpaqueTypeFinalizer
+      get FrostsnapCoreMessageBitcoinTransactionSignTaskFinalizer;
 
   DropFnType get dropOpaqueMutexBTreeMapKeyIdStreamSinkTxState;
   ShareFnType get shareOpaqueMutexBTreeMapKeyIdStreamSinkTxState;
@@ -432,22 +433,22 @@ class FrostsnapCoreCoordinatorFrostKey extends FrbOpaque {
 }
 
 @sealed
-class FrostsnapCoreMessageTransactionSignTask extends FrbOpaque {
+class FrostsnapCoreMessageBitcoinTransactionSignTask extends FrbOpaque {
   final Native bridge;
-  FrostsnapCoreMessageTransactionSignTask.fromRaw(
+  FrostsnapCoreMessageBitcoinTransactionSignTask.fromRaw(
       int ptr, int size, this.bridge)
       : super.unsafe(ptr, size);
   @override
   DropFnType get dropFn =>
-      bridge.dropOpaqueFrostsnapCoreMessageTransactionSignTask;
+      bridge.dropOpaqueFrostsnapCoreMessageBitcoinTransactionSignTask;
 
   @override
   ShareFnType get shareFn =>
-      bridge.shareOpaqueFrostsnapCoreMessageTransactionSignTask;
+      bridge.shareOpaqueFrostsnapCoreMessageBitcoinTransactionSignTask;
 
   @override
   OpaqueTypeFinalizer get staticFinalizer =>
-      bridge.FrostsnapCoreMessageTransactionSignTaskFinalizer;
+      bridge.FrostsnapCoreMessageBitcoinTransactionSignTaskFinalizer;
 }
 
 @sealed
@@ -1092,7 +1093,7 @@ class U8Array64 extends NonGrowableListView<int> {
 
 class UnsignedTx {
   final Native bridge;
-  final FrostsnapCoreMessageTransactionSignTask task;
+  final FrostsnapCoreMessageBitcoinTransactionSignTask task;
 
   const UnsignedTx({
     required this.bridge,

@@ -447,9 +447,9 @@ pub extern "C" fn new_FrostsnapCoreCoordinatorFrostKey() -> wire_FrostsnapCoreCo
 }
 
 #[no_mangle]
-pub extern "C" fn new_FrostsnapCoreMessageTransactionSignTask(
-) -> wire_FrostsnapCoreMessageTransactionSignTask {
-    wire_FrostsnapCoreMessageTransactionSignTask::new_with_null_ptr()
+pub extern "C" fn new_FrostsnapCoreMessageBitcoinTransactionSignTask(
+) -> wire_FrostsnapCoreMessageBitcoinTransactionSignTask {
+    wire_FrostsnapCoreMessageBitcoinTransactionSignTask::new_with_null_ptr()
 }
 
 #[no_mangle]
@@ -687,18 +687,22 @@ pub extern "C" fn share_opaque_FrostsnapCoreCoordinatorFrostKey(
 }
 
 #[no_mangle]
-pub extern "C" fn drop_opaque_FrostsnapCoreMessageTransactionSignTask(ptr: *const c_void) {
+pub extern "C" fn drop_opaque_FrostsnapCoreMessageBitcoinTransactionSignTask(ptr: *const c_void) {
     unsafe {
-        Arc::<frostsnap_core::message::TransactionSignTask>::decrement_strong_count(ptr as _);
+        Arc::<frostsnap_core::message::BitcoinTransactionSignTask>::decrement_strong_count(
+            ptr as _,
+        );
     }
 }
 
 #[no_mangle]
-pub extern "C" fn share_opaque_FrostsnapCoreMessageTransactionSignTask(
+pub extern "C" fn share_opaque_FrostsnapCoreMessageBitcoinTransactionSignTask(
     ptr: *const c_void,
 ) -> *const c_void {
     unsafe {
-        Arc::<frostsnap_core::message::TransactionSignTask>::increment_strong_count(ptr as _);
+        Arc::<frostsnap_core::message::BitcoinTransactionSignTask>::increment_strong_count(
+            ptr as _,
+        );
         ptr
     }
 }
@@ -834,10 +838,10 @@ impl Wire2Api<RustOpaque<frostsnap_core::CoordinatorFrostKey>>
         unsafe { support::opaque_from_dart(self.ptr as _) }
     }
 }
-impl Wire2Api<RustOpaque<frostsnap_core::message::TransactionSignTask>>
-    for wire_FrostsnapCoreMessageTransactionSignTask
+impl Wire2Api<RustOpaque<frostsnap_core::message::BitcoinTransactionSignTask>>
+    for wire_FrostsnapCoreMessageBitcoinTransactionSignTask
 {
-    fn wire2api(self) -> RustOpaque<frostsnap_core::message::TransactionSignTask> {
+    fn wire2api(self) -> RustOpaque<frostsnap_core::message::BitcoinTransactionSignTask> {
         unsafe { support::opaque_from_dart(self.ptr as _) }
     }
 }
@@ -1226,7 +1230,7 @@ pub struct wire_FrostsnapCoreCoordinatorFrostKey {
 
 #[repr(C)]
 #[derive(Clone)]
-pub struct wire_FrostsnapCoreMessageTransactionSignTask {
+pub struct wire_FrostsnapCoreMessageBitcoinTransactionSignTask {
     ptr: *const core::ffi::c_void,
 }
 
@@ -1435,7 +1439,7 @@ pub struct wire_uint_8_list {
 #[repr(C)]
 #[derive(Clone)]
 pub struct wire_UnsignedTx {
-    task: wire_FrostsnapCoreMessageTransactionSignTask,
+    task: wire_FrostsnapCoreMessageBitcoinTransactionSignTask,
 }
 
 #[repr(C)]
@@ -1486,7 +1490,7 @@ impl NewWithNullPtr for wire_FrostsnapCoreCoordinatorFrostKey {
         }
     }
 }
-impl NewWithNullPtr for wire_FrostsnapCoreMessageTransactionSignTask {
+impl NewWithNullPtr for wire_FrostsnapCoreMessageBitcoinTransactionSignTask {
     fn new_with_null_ptr() -> Self {
         Self {
             ptr: core::ptr::null(),
@@ -1800,7 +1804,7 @@ impl Default for wire_Transaction {
 impl NewWithNullPtr for wire_UnsignedTx {
     fn new_with_null_ptr() -> Self {
         Self {
-            task: wire_FrostsnapCoreMessageTransactionSignTask::new_with_null_ptr(),
+            task: wire_FrostsnapCoreMessageBitcoinTransactionSignTask::new_with_null_ptr(),
         }
     }
 }

@@ -511,7 +511,7 @@ impl Coordinator {
         self.0.start_signing(
             key_id,
             devices.into_iter().collect(),
-            SignTask::Transaction(unsigned_tx.task.deref().clone()),
+            SignTask::BitcoinTransaction(unsigned_tx.task.deref().clone()),
             stream,
         )?;
         Ok(())
@@ -836,7 +836,7 @@ impl SignedTx {
 }
 
 pub struct UnsignedTx {
-    pub task: RustOpaque<frostsnap_core::message::TransactionSignTask>,
+    pub task: RustOpaque<frostsnap_core::message::BitcoinTransactionSignTask>,
 }
 
 impl UnsignedTx {
