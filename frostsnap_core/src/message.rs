@@ -312,7 +312,7 @@ impl SignTask {
         self.sign_items()
             .iter()
             .enumerate()
-            .all(|(i, item)| item.verify(schnorr, root_public_key, &signatures[i]))
+            .all(|(i, item)| item.verify_final_signature(schnorr, root_public_key, &signatures[i]))
     }
 
     pub fn sign_items(&self) -> Vec<SignItem> {
@@ -394,17 +394,18 @@ impl SignItem {
         }
     }
 
-    pub fn verify<NG>(
+    pub fn verify_final_signature<NG>(
         &self,
         schnorr: &Schnorr<sha2::Sha256, NG>,
         root_public_key: Point,
         signature: &Signature,
     ) -> bool {
-        // FIXME: This shouldn't be raw -- plain messages should do domain separation
-        let b_message = Message::<Public>::raw(&self.message[..]);
-
         let derived_key = self.derive_key(&root_public_key);
+        schnorr.verify(&derived_key, self.schnorr_fun_message(), signature)
+    }
 
-        schnorr.verify(&derived_key, b_message, signature)
+    pub fn schnorr_fun_message(&self) -> schnorr_fun::Message<Public> {
+        // FIXME: This shouldn't be raw -- plain messages should do domain separation
+        Message::raw(&self.message[..])
     }
 }

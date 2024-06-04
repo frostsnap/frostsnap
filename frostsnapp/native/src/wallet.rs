@@ -381,7 +381,7 @@ impl _Wallet {
         let chain_changeset = self.chain.apply_update(update.chain_update)?;
         self.db.lock().unwrap().execute(|tx| {
             let chain_list = self.chain_list_handle.api(&tx);
-            let changed = chain_changeset.is_empty() && indexed_tx_graph_changeset.is_empty();
+            let changed = !chain_changeset.is_empty() || !indexed_tx_graph_changeset.is_empty();
 
             if !chain_changeset.is_empty() {
                 chain_list.push(&bincode::serde::Compat(chain_changeset))?;
@@ -510,10 +510,10 @@ impl _Wallet {
         let mut inputs: Vec<bitcoin::TxIn> = vec![];
         let mut prevouts = vec![];
 
-        for ((_, i), selected_utxo) in selected_utxos {
+        for (((_key_id, keychain), i), selected_utxo) in selected_utxos {
             prevouts.push(frostsnap_core::message::TxInput {
                 prevout: selected_utxo.txout.clone(),
-                bip32_path: Some(vec![*i]),
+                bip32_path: Some(vec![*keychain as _, *i]),
             });
             inputs.push(bitcoin::TxIn {
                 previous_output: selected_utxo.outpoint,
