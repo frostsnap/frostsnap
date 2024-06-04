@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use bdk_chain::{
     bitcoin::{self, bip32, secp256k1, Amount, ScriptBuf, SignedAmount, Transaction},
-    indexed_tx_graph::{self, IndexedTxGraph},
+    indexed_tx_graph,
     keychain::{self, KeychainTxOutIndex},
     local_chain::{self, LocalChain},
     miniscript::{
@@ -29,9 +29,20 @@ use tracing::{event, Level};
 
 use crate::{api, chain_sync::SyncRequest, persist_core::PersistCore};
 
+pub type TxGraphChangeSet = tx_graph::ChangeSet<ConfirmationTimeHeightAnchor>;
+pub type ChainChangeSet = local_chain::ChangeSet;
+pub type WalletIndexedTxGraph = indexed_tx_graph::IndexedTxGraph<
+    ConfirmationTimeHeightAnchor,
+    KeychainTxOutIndex<(KeyId, Keychain)>,
+>;
+pub type WalletIndexedTxGraphChangeSet = indexed_tx_graph::ChangeSet<
+    ConfirmationTimeHeightAnchor,
+    keychain::ChangeSet<(KeyId, Keychain)>,
+>;
+
 // Flutter rust bridge is annoyed if I call this `Wallet`
 pub struct _Wallet {
-    graph: IndexedTxGraph<ConfirmationTimeHeightAnchor, KeychainTxOutIndex<(KeyId, Keychain)>>,
+    graph: WalletIndexedTxGraph,
     chain: LocalChain,
     pub network: bitcoin::Network,
     db: Arc<Mutex<LlsDb<File>>>,
@@ -42,9 +53,6 @@ pub struct _Wallet {
         LinkedList<bincode::serde::Compat<BTreeMap<bdk_chain::DescriptorId, u32>>>,
     persist_core: IndexHandle<PersistCore>,
 }
-
-pub type TxGraphChangeSet = tx_graph::ChangeSet<ConfirmationTimeHeightAnchor>;
-pub type ChainChangeSet = local_chain::ChangeSet;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub enum Keychain {
@@ -127,10 +135,7 @@ impl _Wallet {
                         },
                     )?;
 
-                    let mut graph = IndexedTxGraph::<
-                        ConfirmationTimeHeightAnchor,
-                        KeychainTxOutIndex<(KeyId, Keychain)>,
-                    >::default();
+                    let mut graph = WalletIndexedTxGraph::default();
 
                     let persisted_frost_keys = tx
                         .take_index(persist_core)
@@ -307,9 +312,12 @@ impl _Wallet {
         changeset: keychain::ChangeSet<K>,
     ) -> Result<()> {
         let list = self.spk_revelation_list_handle.api(tx);
-        // note carefully that we ignore the changeset's added descriptor changes since we don't
-        // want to store these for BDK since we cand derive them from our frost keys
-        list.push(&bincode::serde::Compat(changeset.last_revealed))?;
+
+        if !changeset.last_revealed.is_empty() {
+            // note carefully that we ignore the changeset's added descriptor changes since we don't
+            // want to store these for BDK since we cand derive them from our frost keys
+            list.push(&bincode::serde::Compat(changeset.last_revealed))?;
+        }
 
         Ok(())
     }
@@ -369,21 +377,37 @@ impl _Wallet {
         &mut self,
         update: spk_client::SyncResult<ConfirmationTimeHeightAnchor>,
     ) -> Result<bool> {
+        let indexed_tx_graph_changeset = self.graph.apply_update(update.graph_update);
+        let chain_changeset = self.chain.apply_update(update.chain_update)?;
         self.db.lock().unwrap().execute(|tx| {
             let chain_list = self.chain_list_handle.api(&tx);
-            let tx_graph_list = self.tx_graph_list_handle.api(&tx);
-            let chain_changeset = self.chain.apply_update(update.chain_update)?;
+            let changed = chain_changeset.is_empty() && indexed_tx_graph_changeset.is_empty();
+
             if !chain_changeset.is_empty() {
                 chain_list.push(&bincode::serde::Compat(chain_changeset))?;
             }
-            let graph_changeset = self.graph.apply_update(update.graph_update);
-            if !graph_changeset.is_empty() {
-                tx_graph_list.push(&bincode::serde::Compat(graph_changeset.graph))?;
-                Ok(true)
-            } else {
-                Ok(false)
-            }
+
+            self.consume_indexed_tx_graph_changeset(tx, indexed_tx_graph_changeset)?;
+
+            Ok(changed)
         })
+    }
+
+    fn consume_indexed_tx_graph_changeset(
+        &self,
+        tx: &mut llsdb::Transaction<impl llsdb::Backend>,
+        mut changeset: WalletIndexedTxGraphChangeSet,
+    ) -> Result<()> {
+        // We never want to add keychain descriptors to the database. We derive them from the keys.
+        changeset.indexer.keychains_added.clear();
+        if !changeset.graph.is_empty() {
+            let tx_graph_list = self.tx_graph_list_handle.api(&tx);
+            tx_graph_list.push(&bincode::serde::Compat(changeset.graph))?;
+        }
+
+        self.consume_spk_revelation_change(tx, changeset.indexer)?;
+
+        Ok(())
     }
 
     pub fn send_to(
@@ -593,7 +617,7 @@ impl _Wallet {
     }
 
     pub fn broadcast_success(&mut self, tx: Transaction) {
-        let mut changes = indexed_tx_graph::ChangeSet::default();
+        let mut changes = WalletIndexedTxGraphChangeSet::default();
         changes.append(
             self.graph.insert_seen_at(
                 tx.txid(),
@@ -605,15 +629,9 @@ impl _Wallet {
         );
         changes.append(self.graph.insert_tx(tx));
 
-        // we do our best here, if it fails to persist we should recover from this eventually
+        // We do our best here, if it fails to persist we should recover from this eventually
         let res = self.db.lock().unwrap().execute(|tx| {
-            if !changes.graph.is_empty() {
-                self.tx_graph_list_handle
-                    .api(&tx)
-                    .push(&bincode::serde::Compat(changes.graph))?;
-            }
-            // it's unlikely to have any changes but just in case
-            self.consume_spk_revelation_change(tx, changes.indexer)?;
+            self.consume_indexed_tx_graph_changeset(tx, changes)?;
             Ok(())
         });
 
