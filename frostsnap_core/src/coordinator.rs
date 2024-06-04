@@ -1,6 +1,5 @@
 use crate::{
-    gen_pop_message, message::*, ActionError, Error, FrostKeyExt, KeyId,
-    MessageResult, SessionHash,
+    gen_pop_message, message::*, ActionError, Error, FrostKeyExt, KeyId, MessageResult, SessionHash,
 };
 use alloc::{
     collections::{BTreeMap, BTreeSet},

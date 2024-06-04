@@ -30,9 +30,9 @@ lint-device +ARGS="":
     cd device && cargo clippy {{ARGS}} --all-features --bins -- -Dwarnings
 
 fix:
-    cargo fmt --all
     cargo clippy --fix --allow-dirty --allow-staged {{non_device_packages}} --all-features --tests --bins
     ( cd device && cargo clippy --fix --allow-dirty --allow-staged --all-features --bins; )
+    cargo fmt --all
     ( cd frostsnapp && dart format .; )
 
 run:
