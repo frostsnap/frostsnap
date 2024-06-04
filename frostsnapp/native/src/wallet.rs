@@ -208,7 +208,7 @@ impl _Wallet {
 
         [Keychain::External, Keychain::Internal]
             .into_iter()
-            .map(move |keychain| {
+            .map(|keychain| {
                 let child_xpub = root_bitcoin_xpub
                     .ckd_pub(
                         &secp,
