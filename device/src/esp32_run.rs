@@ -119,6 +119,7 @@ where
         // it waits until we've named it). Announcing and labeling has been sorted out this counter
         // thingy will go away naturally.
         let mut upstream_first_message_timeout_counter = 0;
+        let mut pending_key_name = None;
 
         ui.set_workflow(ui::Workflow::WaitingFor(
             ui::WaitingFor::LookingForUpstream {
@@ -145,6 +146,7 @@ where
                 upstream_connection.state = UpstreamConnectionState::Connected;
                 next_write_magic_bytes_downstream = 0;
                 upgrade = None;
+                pending_key_name = None;
                 outbox.clear();
                 ui.cancel();
             }
@@ -377,17 +379,8 @@ where
                                                         },
                                                     }
                                                 }
-                                                CoordinatorSendBody::KeyName((key_id, key_name)) => {
-                                                    if key_names.contains_key(key_id) {
-                                                        panic!("Renaming keys is not yet supported.");
-                                                    }
-                                                    flash
-                                                        .push(storage::Change::KeyNamed((
-                                                            *key_id,
-                                                            key_name.clone(),
-                                                        )))
-                                                        .expect("flash write fail");
-                                                    key_names.insert(*key_id, key_name.clone());
+                                                CoordinatorSendBody::KeyName(ref key_name) => {
+                                                    pending_key_name = Some(key_name.clone());
                                                 }
                                             }
                                         }
@@ -437,11 +430,24 @@ where
                     },
                 )); // this is just the default
                 match ui_event {
-                    UiEvent::KeyGenConfirm => outbox.extend(
-                        signer
-                            .keygen_ack()
-                            .expect("state changed while confirming keygen"),
-                    ),
+                    UiEvent::KeyGenConfirm {
+                        ref key_name,
+                        ref key_id,
+                    } => {
+                        outbox.extend(
+                            signer
+                                .keygen_ack()
+                                .expect("state changed while confirming keygen"),
+                        );
+
+                        if key_names.contains_key(key_id) {
+                            panic!("Renaming keys is not yet supported.");
+                        }
+                        flash
+                            .push(storage::Change::KeyNamed((*key_id, key_name.clone())))
+                            .expect("flash write fail");
+                        key_names.insert(*key_id, key_name.clone());
+                    }
                     UiEvent::SigningConfirm => {
                         ui.set_busy_task(ui::BusyTask::Signing);
                         outbox.extend(signer.sign_ack().expect("state changed while acking sign"));
@@ -494,10 +500,15 @@ where
                     }
                     DeviceSend::ToUser(user_send) => {
                         match user_send {
-                            DeviceToUserMessage::CheckKeyGen { session_hash } => {
-                                ui.set_workflow(ui::Workflow::UserPrompt(ui::Prompt::KeyGen(
+                            DeviceToUserMessage::CheckKeyGen {
+                                key_id,
+                                session_hash,
+                            } => {
+                                ui.set_workflow(ui::Workflow::UserPrompt(ui::Prompt::KeyGen {
+                                    key_id,
                                     session_hash,
-                                )));
+                                    key_name: pending_key_name.clone().unwrap(),
+                                }));
                             }
                             DeviceToUserMessage::SignatureRequest { sign_task, .. } => {
                                 ui.set_workflow(ui::Workflow::UserPrompt(ui::Prompt::Signing(

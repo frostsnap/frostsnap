@@ -315,17 +315,6 @@ impl FfiCoordinator {
 
                                     tx.take_index(key_names).insert(key_id, &key_name).unwrap();
 
-                                    // Send key name to device
-                                    let send_message = CoordinatorSendMessage {
-                                        target_destinations: Destination::from(
-                                            coordinator_frost_key.devices(),
-                                        ),
-                                        message_body: CoordinatorSendBody::KeyName((
-                                            key_id, key_name,
-                                        )),
-                                    };
-                                    usb_sender.send(send_message);
-
                                     // Note we do this here rather than in the ToUserMessage
                                     // because the key list is persisted and so its better to
                                     // nofify the app after the on disk state is written.
@@ -414,12 +403,19 @@ impl FfiCoordinator {
         };
 
         let mut pending_keygen_name = self.pending_keygen_name.lock().unwrap();
-        *pending_keygen_name = Some(key_name);
+        *pending_keygen_name = Some(key_name.clone());
 
         self.pending_for_outbox
             .lock()
             .unwrap()
             .extend(keygen_messages);
+
+        // Send pending key name to devices
+        let send_message = CoordinatorSendMessage {
+            target_destinations: Destination::from(devices),
+            message_body: CoordinatorSendBody::KeyName(key_name),
+        };
+        self.usb_sender.send(send_message);
 
         ui_protocol.emit_state();
         self.start_protocol(ui_protocol);

@@ -222,11 +222,24 @@ pub enum CoordinatorToUserKeyGenMessage {
 
 #[derive(Clone, Debug)]
 pub enum DeviceToUserMessage {
-    CheckKeyGen { session_hash: SessionHash },
-    SignatureRequest { sign_task: SignTask, key_id: KeyId },
-    Canceled { task: TaskKind },
-    DisplayBackupRequest { key_id: KeyId },
-    DisplayBackup { key_id: KeyId, backup: String },
+    CheckKeyGen {
+        key_id: KeyId,
+        session_hash: SessionHash,
+    },
+    SignatureRequest {
+        sign_task: SignTask,
+        key_id: KeyId,
+    },
+    Canceled {
+        task: TaskKind,
+    },
+    DisplayBackupRequest {
+        key_id: KeyId,
+    },
+    DisplayBackup {
+        key_id: KeyId,
+        backup: String,
+    },
 }
 
 #[derive(Clone, Debug)]

@@ -87,7 +87,11 @@ impl Default for Workflow {
 #[derive(Clone, Debug)]
 
 pub enum Prompt {
-    KeyGen(SessionHash),
+    KeyGen {
+        session_hash: SessionHash,
+        key_name: String,
+        key_id: KeyId,
+    },
     Signing(String),
     NewName {
         old_name: Option<String>,
@@ -118,7 +122,10 @@ pub enum FirmwareUpgradeStatus {
 
 #[derive(Clone, Debug)]
 pub enum UiEvent {
-    KeyGenConfirm,
+    KeyGenConfirm {
+        key_name: String,
+        key_id: KeyId,
+    },
     SigningConfirm,
     NameConfirm(String),
     BackupRequestConfirm(KeyId),

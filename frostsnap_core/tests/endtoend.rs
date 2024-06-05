@@ -164,7 +164,10 @@ impl common::Env for TestEnv {
         message: DeviceToUserMessage,
     ) {
         match message {
-            DeviceToUserMessage::CheckKeyGen { session_hash } => {
+            DeviceToUserMessage::CheckKeyGen {
+                session_hash,
+                key_id: _,
+            } => {
                 self.keygen_checks.insert(from, session_hash);
                 let ack = run.device(from).keygen_ack().unwrap();
                 run.extend_from_device(from, ack);
