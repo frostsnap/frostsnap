@@ -14,7 +14,7 @@ use esp_hal::Blocking;
 use esp_hal::{
     peripherals::USB_DEVICE,
     prelude::*,
-    timer::{self, Timer},
+    timer::{self, timg::Timer},
     uart,
     usb_serial_jtag::UsbSerialJtag,
 };
@@ -71,7 +71,7 @@ impl<'a, T, U> SerialInterface<'a, T, U, Upstream> {
 impl<'a, T, U, D> SerialInterface<'a, T, U, D>
 where
     U: uart::Instance,
-    T: timer::Instance,
+    T: timer::timg::Instance,
     D: Direction,
 {
     fn fill_buffer(&mut self) {
@@ -135,12 +135,12 @@ where
 impl<'a, T, U, D> Reader for SerialInterface<'a, T, U, D>
 where
     U: uart::Instance,
-    T: timer::Instance,
+    T: timer::timg::Instance,
     D: Direction,
 {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), DecodeError> {
         for (i, target_byte) in bytes.iter_mut().enumerate() {
-            let start_time = self.timer.now();
+            let start_time = self.timer.now().ticks();
 
             *target_byte = loop {
                 // eagerly fill the buffer so we pull bytes from the hardware serial buffer as fast
@@ -151,7 +151,7 @@ where
                     break next_byte;
                 }
 
-                if (self.timer.now() - start_time) / 80_000 > 1_000 {
+                if (self.timer.now().ticks() - start_time) / 80_000 > 1_000 {
                     return Err(DecodeError::UnexpectedEnd {
                         additional: bytes.len() - i + 1,
                     });

@@ -15,18 +15,22 @@ use embedded_hal as hal;
 use esp_hal::{
     clock::ClockControl,
     delay::Delay,
-    gpio::{IO, NO_PIN},
+    gpio::{Input, Io, Level, Output, Pull, NO_PIN},
     i2c::I2C,
     ledc::{
         channel::{self, ChannelIFace},
         timer::{self as timerledc, LSClockSource, TimerIFace},
-        LSGlobalClkSource, LowSpeed, LEDC,
+        LSGlobalClkSource, Ledc, LowSpeed,
     },
     peripherals::Peripherals,
     prelude::*,
     rng::Rng,
     spi::{master::Spi, SpiMode},
-    timer::{self, Timer, TimerGroup},
+    system::SystemControl,
+    timer::{
+        self,
+        timg::{Timer, TimerGroup},
+    },
     uart::{self, Uart},
     usb_serial_jtag::UsbSerialJtag,
     Blocking,
@@ -69,28 +73,28 @@ fn init_heap() {
 fn main() -> ! {
     init_heap();
     let peripherals = Peripherals::take();
-    let system = peripherals.SYSTEM.split();
+    let system = SystemControl::new(peripherals.SYSTEM);
     let clocks = ClockControl::max(system.clock_control).freeze();
 
     let timer_group0 = TimerGroup::new(peripherals.TIMG0, &clocks, None);
     let timer_group1 = TimerGroup::new(peripherals.TIMG1, &clocks, None);
-    let mut timer0 = timer_group0.timer0;
-    timer0.start(1u64.secs());
-    let mut timer1 = timer_group1.timer0;
-    timer1.start(1u64.secs());
+    let timer0 = timer_group0.timer0;
+    timer0.start();
+    let timer1 = timer_group1.timer0;
+    timer1.start();
 
-    let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
+    let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
 
     let mut delay = Delay::new(&clocks);
     // compute instead of using constant for 80MHz cpu speed
     let ticks_per_ms = clocks.cpu_clock.raw() / timer1.divider() / 1000;
 
-    let upstream_detect = io.pins.gpio0.into_pull_up_input();
-    let downstream_detect = io.pins.gpio10.into_pull_up_input();
+    let upstream_detect = Input::new(io.pins.gpio0, Pull::None);
+    let downstream_detect = Input::new(io.pins.gpio10, Pull::None);
 
-    let bl = io.pins.gpio1.into_push_pull_output();
+    // let bl = Output::new(, Level::Low);
     // Turn off backlight to hide artifacts as display initializes
-    let mut ledc = LEDC::new(peripherals.LEDC, &clocks);
+    let mut ledc = Ledc::new(peripherals.LEDC, &clocks);
     ledc.set_global_slow_clock(LSGlobalClkSource::APBClk);
     let mut lstimer0 = ledc.get_timer::<LowSpeed>(timerledc::Number::Timer0);
     lstimer0
@@ -100,7 +104,7 @@ fn main() -> ! {
             frequency: 24u32.kHz(),
         })
         .unwrap();
-    let mut channel0 = ledc.get_channel(channel::Number::Channel0, bl);
+    let mut channel0 = ledc.get_channel(channel::Number::Channel0, io.pins.gpio1);
     channel0
         .configure(channel::config::Config {
             timer: &lstimer0,
@@ -113,12 +117,12 @@ fn main() -> ! {
         .with_sck(io.pins.gpio8)
         .with_mosi(io.pins.gpio7);
     let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, NoCs);
-    let di = SPIInterface::new(spi_device, io.pins.gpio9.into_push_pull_output());
+    let di = SPIInterface::new(spi_device, Output::new(io.pins.gpio9, Level::Low));
     let display = mipidsi::Builder::new(ST7789, di)
         .display_size(240, 280)
         .display_offset(0, 20) // 240*280 panel
         .invert_colors(ColorInversion::Inverted)
-        .reset_pin(io.pins.gpio6.into_push_pull_output())
+        .reset_pin(Output::new(io.pins.gpio6, Level::Low))
         .init(&mut delay)
         .unwrap();
     let mut framearray = [Rgb565::BLACK; 240 * 280];
@@ -135,8 +139,8 @@ fn main() -> ! {
     );
     let mut capsense = CST816S::new(
         i2c,
-        io.pins.gpio2.into_pull_up_input(),
-        io.pins.gpio3.into_push_pull_output(),
+        Input::new(io.pins.gpio2, Pull::Down),
+        Output::new(io.pins.gpio3, Level::Low),
     );
     capsense.setup(&mut delay).unwrap();
 
@@ -152,10 +156,7 @@ fn main() -> ! {
             baudrate: frostsnap_comms::BAUDRATE,
             ..Default::default()
         };
-        let txrx1 = uart::TxRxPins::new_tx_rx(
-            io.pins.gpio18.into_push_pull_output(),
-            io.pins.gpio19.into_floating_input(),
-        );
+        let txrx1 = uart::TxRxPins::new_tx_rx(io.pins.gpio18, io.pins.gpio19);
         Uart::new_with_config(peripherals.UART1, serial_conf, Some(txrx1), &clocks, None)
     };
 
@@ -164,10 +165,7 @@ fn main() -> ! {
             baudrate: frostsnap_comms::BAUDRATE,
             ..Default::default()
         };
-        let txrx0 = uart::TxRxPins::new_tx_rx(
-            io.pins.gpio21.into_push_pull_output(),
-            io.pins.gpio20.into_floating_input(),
-        );
+        let txrx0 = uart::TxRxPins::new_tx_rx(io.pins.gpio21, io.pins.gpio20);
         Uart::new_with_config(peripherals.UART0, serial_conf, Some(txrx0), &clocks, None)
     };
 
@@ -248,7 +246,7 @@ struct AnimationState<'t, T> {
 
 impl<'t, T> AnimationState<'t, T>
 where
-    T: timer::Instance,
+    T: timer::timg::Instance,
 {
     pub fn new(timer: &'t Timer<T, Blocking>, duration_ticks: u64) -> Self {
         Self {
@@ -268,7 +266,7 @@ where
         if self.finished {
             return AnimationProgress::Done;
         }
-        let now = self.timer.now();
+        let now = self.timer.now().ticks();
         match self.start {
             Some(start) => {
                 let duration = now.saturating_sub(start);
@@ -296,7 +294,7 @@ pub enum AnimationProgress {
 
 impl<'t, T, DT, I2C, PINT, RST> FrostyUi<'t, T, DT, I2C, PINT, RST>
 where
-    T: timer::Instance,
+    T: timer::timg::Instance,
     DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
 {
     fn render(&mut self) {
@@ -416,7 +414,7 @@ where
     I2C: hal::i2c::I2c<Error = CommE>,
     PINT: hal::digital::InputPin,
     RST: hal::digital::StatefulOutputPin<Error = PinE>,
-    T: timer::Instance,
+    T: timer::timg::Instance,
     DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
 {
     fn set_downstream_connection_state(
@@ -459,7 +457,7 @@ where
 
     fn poll(&mut self) -> Option<UiEvent> {
         // keep the timer register fresh
-        let now = self.timer.now();
+        let now = self.timer.now().ticks();
 
         let mut event = None;
 
@@ -518,13 +516,12 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     use core::fmt::Write;
     set_upstream_port_mode_jtag();
     let peripherals = unsafe { Peripherals::steal() };
-    let system = peripherals.SYSTEM.split();
+    let system = SystemControl::new(peripherals.SYSTEM);
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
     // Disable the RTC and TIMG watchdog timers
-    let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
+    let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
 
-    let mut bl = io.pins.gpio1.into_push_pull_output();
-    bl.set_low();
+    let mut bl = Output::new(io.pins.gpio1, Level::Low);
 
     let mut delay = Delay::new(&clocks);
     let mut panic_buf = frostsnap_device::panic::PanicBuffer::<512>::default();
@@ -548,12 +545,12 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     );
     let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, NoCs);
 
-    let di = SPIInterface::new(spi_device, io.pins.gpio9.into_push_pull_output());
+    let di = SPIInterface::new(spi_device, Output::new(io.pins.gpio9, Level::Low));
     let mut display = mipidsi::Builder::new(ST7789, di)
         .display_size(240, 280)
         .display_offset(0, 20) // 240*280 panel
         .invert_colors(ColorInversion::Inverted)
-        .reset_pin(io.pins.gpio6.into_push_pull_output())
+        .reset_pin(Output::new(io.pins.gpio6, Level::Low))
         .init(&mut delay)
         .unwrap();
     st7789::error_print(&mut display, panic_buf.as_str());

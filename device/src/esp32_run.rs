@@ -5,7 +5,13 @@ use crate::{
     DownstreamConnectionState, UpstreamConnectionState,
 };
 use alloc::{collections::VecDeque, string::ToString, vec::Vec};
-use esp_hal::{gpio, timer, uart, usb_serial_jtag::UsbSerialJtag, Blocking};
+use esp_hal::{
+    gpio,
+    timer::{self, timg::Timer},
+    uart,
+    usb_serial_jtag::UsbSerialJtag,
+    Blocking,
+};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{CoordinatorSendBody, DeviceSendBody, DeviceSendMessage, ReceiveSerial};
 use frostsnap_comms::{CoordinatorSendMessage, Downstream, MAGIC_BYTES_PERIOD};
@@ -20,27 +26,27 @@ use frostsnap_core::{
 };
 use rand_chacha::rand_core::RngCore;
 
-pub struct Run<'a, UpstreamUart, DownstreamUart, UpstreamDetectPin, DownstreamDetectPin, T, Rng, Ui>
+pub struct Run<'a, UpstreamUart, DownstreamUart, Rng, Ui, T, DownstreamDetectPin, UpstreamDetectPin>
 {
     pub upstream_jtag: UsbSerialJtag<'a, Blocking>,
     pub upstream_uart: uart::Uart<'a, UpstreamUart, Blocking>,
     pub downstream_uart: uart::Uart<'a, DownstreamUart, Blocking>,
     pub rng: Rng,
     pub ui: Ui,
-    pub timer: timer::Timer<T, Blocking>,
-    pub downstream_detect: DownstreamDetectPin,
-    pub upstream_detect: UpstreamDetectPin,
+    pub timer: Timer<T, Blocking>,
+    pub downstream_detect: gpio::Input<'a, DownstreamDetectPin>,
+    pub upstream_detect: gpio::Input<'a, UpstreamDetectPin>,
 }
 
-impl<'a, UpstreamUart, DownstreamUart, UpstreamDetectPin, DownstreamDetectPin, T, Rng, Ui>
-    Run<'a, UpstreamUart, DownstreamUart, UpstreamDetectPin, DownstreamDetectPin, T, Rng, Ui>
+impl<'a, UpstreamUart, DownstreamUart, Rng, Ui, T, DownstreamDetectPin, UpstreamDetectPin>
+    Run<'a, UpstreamUart, DownstreamUart, Rng, Ui, T, DownstreamDetectPin, UpstreamDetectPin>
 where
     UpstreamUart: uart::Instance,
     DownstreamUart: uart::Instance,
-    UpstreamDetectPin: gpio::InputPin,
     DownstreamDetectPin: gpio::InputPin,
+    UpstreamDetectPin: gpio::InputPin,
     Ui: UserInteraction,
-    T: timer::Instance,
+    T: timer::timg::Instance,
     Rng: RngCore,
 {
     pub fn run(self) -> ! {
@@ -114,7 +120,7 @@ where
         // thingy will go away naturally.
         let mut upstream_first_message_timeout_counter = 0;
 
-        let detect_device_upstream = !upstream_detect.is_input_high();
+        let detect_device_upstream = !upstream_detect.is_high();
 
         let mut upstream_serial = if detect_device_upstream {
             ui.set_workflow(ui::Workflow::WaitingFor(
@@ -133,6 +139,9 @@ where
         ui.set_upstream_connection_state(UpstreamConnectionState::Connected {
             is_device: !upstream_serial.is_jtag(),
         });
+
+        // let write_downstream_bytes_timer = PeriodicTimer::new(timer);
+        // write_downstream_bytes_timer.start(0);
 
         loop {
             if soft_reset {
@@ -153,7 +162,7 @@ where
                     None => DeviceSendBody::NeedName,
                 });
             }
-            let is_usb_connected_downstream = !downstream_detect.is_input_high();
+            let is_usb_connected_downstream = !downstream_detect.is_high();
 
             match (is_usb_connected_downstream, downstream_connection_state) {
                 (true, DownstreamConnectionState::Disconnected) => {
