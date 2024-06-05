@@ -38,7 +38,7 @@ use esp_hal::{
 use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_device::{
     esp32_run,
-    io::set_upstream_port_mode_jtag,
+    io::{set_upstream_port_mode_jtag, set_upstream_port_mode_uart, SerialInterface},
     st7789,
     ui::{BusyTask, Prompt, UiEvent, UserInteraction, WaitingFor, WaitingResponse, Workflow},
     DownstreamConnectionState, UpstreamConnectionState,
@@ -87,7 +87,7 @@ fn main() -> ! {
 
     let mut delay = Delay::new(&clocks);
     // compute instead of using constant for 80MHz cpu speed
-    let ticks_per_ms = clocks.cpu_clock.raw() / timer1.divider() / 1000;
+    let ticks_per_ms = clocks.cpu_clock.raw() / timer1.divider() / 1_000;
 
     let upstream_detect = Input::new(io.pins.gpio0, Pull::None);
     let downstream_detect = Input::new(io.pins.gpio10, Pull::None);
@@ -149,15 +149,21 @@ fn main() -> ! {
     display.flush().unwrap();
     channel0.start_duty_fade(0, 30, 500).unwrap();
 
-    let upstream_jtag = UsbSerialJtag::new(peripherals.USB_DEVICE, None);
-
-    let upstream_uart = {
+    let detect_device_upstream = !upstream_detect.is_high();
+    let upstream_serial = if detect_device_upstream {
+        set_upstream_port_mode_uart();
         let serial_conf = uart::config::Config {
             baudrate: frostsnap_comms::BAUDRATE,
             ..Default::default()
         };
         let txrx1 = uart::TxRxPins::new_tx_rx(io.pins.gpio18, io.pins.gpio19);
-        Uart::new_with_config(peripherals.UART1, serial_conf, Some(txrx1), &clocks, None)
+        SerialInterface::new_uart(
+            Uart::new_with_config(peripherals.UART1, serial_conf, Some(txrx1), &clocks, None),
+            &timer0,
+        )
+    } else {
+        set_upstream_port_mode_jtag();
+        SerialInterface::new_jtag(UsbSerialJtag::new(peripherals.USB_DEVICE, None), &timer0)
     };
 
     let downstream_uart = {
@@ -194,14 +200,12 @@ fn main() -> ! {
 
     // let _now1 = timer1.now();
     let run = esp32_run::Run {
-        upstream_jtag,
-        upstream_uart,
+        upstream_serial,
         downstream_uart,
         rng,
         ui,
-        timer: timer0,
+        timer: &timer0,
         downstream_detect,
-        upstream_detect,
     };
     run.run()
 }
