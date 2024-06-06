@@ -330,7 +330,6 @@ impl _Wallet {
             .collect::<Vec<_>>();
 
         txs.sort_unstable_by_key(|tx| core::cmp::Reverse(tx.chain_position));
-
         txs.into_iter()
             .filter_map(|canonical_tx| {
                 let confirmation_time = match canonical_tx.chain_position {
@@ -367,7 +366,7 @@ impl _Wallet {
             .graph
             .index
             .revealed_spks(Self::key_index_range(key_id))
-            .map(|(_, _, spk)| spk.to_owned())
+            .map(|(_, spk)| spk.to_owned())
             .collect::<Vec<_>>();
 
         SyncRequest::from_chain_tip(self.chain.tip()).chain_spks(interesting_spks)
@@ -428,7 +427,9 @@ impl _Wallet {
             .filter_chain_unspents(
                 &self.chain,
                 self.chain.tip().block_id(),
-                self.graph.index.outpoints(),
+                self.graph
+                    .index
+                    .keychain_outpoints_in_range(Self::key_index_range(key_id)),
             )
             .collect();
 
@@ -466,7 +467,7 @@ impl _Wallet {
                 .full_txs()
                 .filter_map(|tx| {
                     Some(
-                        self.graph.graph().calculate_fee(&tx).ok()? as f32
+                        self.graph.graph().calculate_fee(&tx).ok()?.to_sat() as f32
                             / tx.weight().to_wu() as f32,
                     )
                 })
@@ -578,26 +579,22 @@ impl _Wallet {
     }
 
     pub fn spends_outside(&self, tx: &Transaction) -> BTreeMap<ScriptBuf, u64> {
-        let mut outputs = BTreeMap::new();
+        let mut foreign_outputs = BTreeMap::new();
 
         for txout in &tx.output {
-            if self
+            let is_owned_by_our_wallet = self
                 .graph
                 .index
                 .index_of_spk(&txout.script_pubkey)
-                .is_none()
-            {
-                outputs
+                .is_some();
+            if !is_owned_by_our_wallet {
+                let value = foreign_outputs
                     .entry(txout.script_pubkey.clone())
-                    .and_modify(|v| *v += txout.value)
-                    .or_insert(txout.value);
+                    .or_default();
+                *value += txout.value.to_sat();
             }
         }
-
-        outputs
-            .into_iter()
-            .map(|(script, amount)| (script, amount.to_sat()))
-            .collect()
+        foreign_outputs
     }
 
     pub fn net_value(&self, key_id: KeyId, tx: &Transaction) -> i64 {
@@ -613,7 +610,7 @@ impl _Wallet {
 
     pub fn fee(&self, tx: &Transaction) -> Result<u64> {
         let fee = self.graph.graph().calculate_fee(tx)?;
-        Ok(fee)
+        Ok(fee.to_sat())
     }
 
     pub fn broadcast_success(&mut self, tx: Transaction) {

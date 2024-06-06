@@ -1,16 +1,13 @@
 use anyhow::{Context, Result};
 pub use bdk_chain::spk_client::SyncRequest;
 use bdk_chain::{bitcoin, spk_client, ConfirmationTimeHeightAnchor};
-use bdk_electrum::{
-    electrum_client::{self, Client, ElectrumApi},
-    ElectrumExt,
-};
+use bdk_electrum::{electrum_client, BdkElectrumClient};
 use std::sync::Arc;
 use tracing::{event, Level};
 
 #[derive(Clone)]
 pub struct ChainSync {
-    client: Arc<Client>,
+    client: Arc<BdkElectrumClient<electrum_client::Client>>,
 }
 
 impl ChainSync {
@@ -32,8 +29,9 @@ impl ChainSync {
             url = electrum_url,
             "initializing to electrum server"
         );
-        let electrum_client = Client::from_config(electrum_url, config)
+        let electrum_client = electrum_client::Client::from_config(electrum_url, config)
             .context(format!("initializing electrum client to {}", electrum_url))?;
+        let bdk_electrum_client = BdkElectrumClient::new(electrum_client);
         event!(
             Level::INFO,
             url = electrum_url,
@@ -41,7 +39,7 @@ impl ChainSync {
         );
 
         Ok(Self {
-            client: Arc::new(electrum_client),
+            client: Arc::new(bdk_electrum_client),
         })
     }
 

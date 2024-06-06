@@ -570,22 +570,29 @@ class _WalletSendState extends State<WalletSend> {
                         : () async {
                             if (_formKey.currentState!.validate()) {
                               _formKey.currentState!.save();
-                              final unsignedTx = await wallet.sendTo(
-                                  keyId: widget.keyId,
-                                  toAddress: _address,
-                                  value: _amount,
-                                  feerate: _feerate);
-                              final signingStream = coord.startSigningTx(
-                                  keyId: widget.keyId,
-                                  unsignedTx: unsignedTx,
-                                  devices: selectedDevices.toList());
-                              if (context.mounted) {
-                                await signTransactionWorkflowDialog(
-                                    context: context,
-                                    signingStream: signingStream,
-                                    unsignedTx: unsignedTx,
+                              try {
+                                final unsignedTx = await wallet.sendTo(
                                     keyId: widget.keyId,
-                                    onBroadcastNewTx: widget.onBroadcastNewTx);
+                                    toAddress: _address,
+                                    value: _amount,
+                                    feerate: _feerate);
+                                final signingStream = coord.startSigningTx(
+                                    keyId: widget.keyId,
+                                    unsignedTx: unsignedTx,
+                                    devices: selectedDevices.toList());
+                                if (context.mounted) {
+                                  await signTransactionWorkflowDialog(
+                                      context: context,
+                                      signingStream: signingStream,
+                                      unsignedTx: unsignedTx,
+                                      keyId: widget.keyId,
+                                      onBroadcastNewTx:
+                                          widget.onBroadcastNewTx);
+                                }
+                              } catch (e) {
+                                if (context.mounted) {
+                                  showErrorSnackbar(context, e.toString());
+                                }
                               }
                             }
                           },
@@ -778,11 +785,11 @@ class Balance extends StatelessWidget {
         final transactions = snapshot.data?.txs ?? [];
         int balance = transactions.fold(0, (sum, tx) => sum + tx.netValue);
         // Assuming the balance is in satoshis, convert it to BTC for display
-        final balanceInBTC = balance / 100000000;
+        final balanceInBTC = formatSatoshi(balance);
         return Padding(
           padding: const EdgeInsets.all(20.0),
           child: Text(
-            '$balanceInBTC\u20BF', // Unicode for Bitcoin symbol
+            '$balanceInBTC', // Unicode for Bitcoin symbol
             style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold),
           ),
         );
