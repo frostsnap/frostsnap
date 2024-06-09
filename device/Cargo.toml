@@ -35,6 +35,7 @@ rand_chacha = { workspace = true }
 cst816s = { git = "https://github.com/fxweidinger/cst816s", rev = "82f88186e94a94126b962d30b4c0129fd3c1c5f8" }
 embedded-hal = { version = "1.0" }
 embedded-iconoir = "0.2.3"
+fugit = "0.3.7"
 
 [[bin]]
 name = "v2"

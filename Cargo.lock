@@ -909,6 +909,7 @@ dependencies = [
  "esp-storage",
  "frostsnap_comms",
  "frostsnap_core",
+ "fugit",
  "mipidsi",
  "nb 1.1.0",
  "rand_chacha",

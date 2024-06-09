@@ -12,7 +12,6 @@ use bincode::error::EncodeError;
 use embedded_hal_nb::serial::{Read, Write};
 use esp_hal::Blocking;
 use esp_hal::{
-    peripherals::USB_DEVICE,
     prelude::*,
     timer::{self, timg::Timer},
     uart,
@@ -140,7 +139,7 @@ where
 {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), DecodeError> {
         for (i, target_byte) in bytes.iter_mut().enumerate() {
-            let start_time = self.timer.now().ticks();
+            let start_time = self.timer.now();
 
             *target_byte = loop {
                 // eagerly fill the buffer so we pull bytes from the hardware serial buffer as fast
@@ -151,7 +150,14 @@ where
                     break next_byte;
                 }
 
-                if (self.timer.now().ticks() - start_time) / 80_000 > 1_000 {
+                if self
+                    .timer
+                    .now()
+                    .checked_duration_since(start_time)
+                    .unwrap()
+                    .to_millis()
+                    > 1_000
+                {
                     return Err(DecodeError::UnexpectedEnd {
                         additional: bytes.len() - i + 1,
                     });
@@ -242,18 +248,4 @@ pub enum SerialInterfaceError {
     UartReadError,
     UartWriteError(uart::Error),
     JtagError,
-}
-
-pub fn set_upstream_port_mode_jtag() {
-    let usb_device = unsafe { &*USB_DEVICE::PTR };
-    usb_device
-        .conf0()
-        .modify(|_, w| w.usb_pad_enable().set_bit());
-}
-
-pub fn set_upstream_port_mode_uart() {
-    let usb_device = unsafe { &*USB_DEVICE::PTR };
-    usb_device
-        .conf0()
-        .modify(|_, w| w.usb_pad_enable().clear_bit());
 }
