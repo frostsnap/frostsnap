@@ -49,11 +49,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   }
 
   @protected
-  wire_FrostsnapCoreMessageTransactionSignTask
-      api2wire_FrostsnapCoreMessageTransactionSignTask(
-          FrostsnapCoreMessageTransactionSignTask raw) {
-    final ptr = inner.new_FrostsnapCoreMessageTransactionSignTask();
-    _api_fill_to_wire_FrostsnapCoreMessageTransactionSignTask(raw, ptr);
+  wire_FrostsnapCoreMessageBitcoinTransactionSignTask
+      api2wire_FrostsnapCoreMessageBitcoinTransactionSignTask(
+          FrostsnapCoreMessageBitcoinTransactionSignTask raw) {
+    final ptr = inner.new_FrostsnapCoreMessageBitcoinTransactionSignTask();
+    _api_fill_to_wire_FrostsnapCoreMessageBitcoinTransactionSignTask(raw, ptr);
     return ptr;
   }
 
@@ -349,10 +349,12 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   OpaqueTypeFinalizer get FrostsnapCoreCoordinatorFrostKeyFinalizer =>
       _FrostsnapCoreCoordinatorFrostKeyFinalizer;
   late final OpaqueTypeFinalizer
-      _FrostsnapCoreMessageTransactionSignTaskFinalizer = OpaqueTypeFinalizer(
-          inner._drop_opaque_FrostsnapCoreMessageTransactionSignTaskPtr);
-  OpaqueTypeFinalizer get FrostsnapCoreMessageTransactionSignTaskFinalizer =>
-      _FrostsnapCoreMessageTransactionSignTaskFinalizer;
+      _FrostsnapCoreMessageBitcoinTransactionSignTaskFinalizer =
+      OpaqueTypeFinalizer(
+          inner._drop_opaque_FrostsnapCoreMessageBitcoinTransactionSignTaskPtr);
+  OpaqueTypeFinalizer
+      get FrostsnapCoreMessageBitcoinTransactionSignTaskFinalizer =>
+          _FrostsnapCoreMessageBitcoinTransactionSignTaskFinalizer;
   late final OpaqueTypeFinalizer _MutexBTreeMapKeyIdStreamSinkTxStateFinalizer =
       OpaqueTypeFinalizer(
           inner._drop_opaque_MutexBTreeMapKeyIdStreamSinkTxStatePtr);
@@ -400,9 +402,9 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
     wireObj.ptr = apiObj.shareOrMove();
   }
 
-  void _api_fill_to_wire_FrostsnapCoreMessageTransactionSignTask(
-      FrostsnapCoreMessageTransactionSignTask apiObj,
-      wire_FrostsnapCoreMessageTransactionSignTask wireObj) {
+  void _api_fill_to_wire_FrostsnapCoreMessageBitcoinTransactionSignTask(
+      FrostsnapCoreMessageBitcoinTransactionSignTask apiObj,
+      wire_FrostsnapCoreMessageBitcoinTransactionSignTask wireObj) {
     wireObj.ptr = apiObj.shareOrMove();
   }
 
@@ -619,7 +621,7 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   void _api_fill_to_wire_unsigned_tx(
       UnsignedTx apiObj, wire_UnsignedTx wireObj) {
     wireObj.task =
-        api2wire_FrostsnapCoreMessageTransactionSignTask(apiObj.task);
+        api2wire_FrostsnapCoreMessageBitcoinTransactionSignTask(apiObj.task);
   }
 
   void _api_fill_to_wire_wallet(Wallet apiObj, wire_Wallet wireObj) {
@@ -1860,18 +1862,18 @@ class NativeWire implements FlutterRustBridgeWireBase {
       _new_FrostsnapCoreCoordinatorFrostKeyPtr
           .asFunction<wire_FrostsnapCoreCoordinatorFrostKey Function()>();
 
-  wire_FrostsnapCoreMessageTransactionSignTask
-      new_FrostsnapCoreMessageTransactionSignTask() {
-    return _new_FrostsnapCoreMessageTransactionSignTask();
+  wire_FrostsnapCoreMessageBitcoinTransactionSignTask
+      new_FrostsnapCoreMessageBitcoinTransactionSignTask() {
+    return _new_FrostsnapCoreMessageBitcoinTransactionSignTask();
   }
 
-  late final _new_FrostsnapCoreMessageTransactionSignTaskPtr = _lookup<
-      ffi.NativeFunction<
-          wire_FrostsnapCoreMessageTransactionSignTask
-              Function()>>('new_FrostsnapCoreMessageTransactionSignTask');
-  late final _new_FrostsnapCoreMessageTransactionSignTask =
-      _new_FrostsnapCoreMessageTransactionSignTaskPtr.asFunction<
-          wire_FrostsnapCoreMessageTransactionSignTask Function()>();
+  late final _new_FrostsnapCoreMessageBitcoinTransactionSignTaskPtr = _lookup<
+          ffi.NativeFunction<
+              wire_FrostsnapCoreMessageBitcoinTransactionSignTask Function()>>(
+      'new_FrostsnapCoreMessageBitcoinTransactionSignTask');
+  late final _new_FrostsnapCoreMessageBitcoinTransactionSignTask =
+      _new_FrostsnapCoreMessageBitcoinTransactionSignTaskPtr.asFunction<
+          wire_FrostsnapCoreMessageBitcoinTransactionSignTask Function()>();
 
   wire_MutexBTreeMapKeyIdStreamSinkTxState
       new_MutexBTreeMapKeyIdStreamSinkTxState() {
@@ -2319,35 +2321,37 @@ class NativeWire implements FlutterRustBridgeWireBase {
       _share_opaque_FrostsnapCoreCoordinatorFrostKeyPtr
           .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
 
-  void drop_opaque_FrostsnapCoreMessageTransactionSignTask(
+  void drop_opaque_FrostsnapCoreMessageBitcoinTransactionSignTask(
     ffi.Pointer<ffi.Void> ptr,
   ) {
-    return _drop_opaque_FrostsnapCoreMessageTransactionSignTask(
+    return _drop_opaque_FrostsnapCoreMessageBitcoinTransactionSignTask(
       ptr,
     );
   }
 
-  late final _drop_opaque_FrostsnapCoreMessageTransactionSignTaskPtr =
+  late final _drop_opaque_FrostsnapCoreMessageBitcoinTransactionSignTaskPtr =
       _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
-          'drop_opaque_FrostsnapCoreMessageTransactionSignTask');
-  late final _drop_opaque_FrostsnapCoreMessageTransactionSignTask =
-      _drop_opaque_FrostsnapCoreMessageTransactionSignTaskPtr
+          'drop_opaque_FrostsnapCoreMessageBitcoinTransactionSignTask');
+  late final _drop_opaque_FrostsnapCoreMessageBitcoinTransactionSignTask =
+      _drop_opaque_FrostsnapCoreMessageBitcoinTransactionSignTaskPtr
           .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
 
-  ffi.Pointer<ffi.Void> share_opaque_FrostsnapCoreMessageTransactionSignTask(
+  ffi.Pointer<ffi.Void>
+      share_opaque_FrostsnapCoreMessageBitcoinTransactionSignTask(
     ffi.Pointer<ffi.Void> ptr,
   ) {
-    return _share_opaque_FrostsnapCoreMessageTransactionSignTask(
+    return _share_opaque_FrostsnapCoreMessageBitcoinTransactionSignTask(
       ptr,
     );
   }
 
-  late final _share_opaque_FrostsnapCoreMessageTransactionSignTaskPtr = _lookup<
-          ffi.NativeFunction<
-              ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>>(
-      'share_opaque_FrostsnapCoreMessageTransactionSignTask');
-  late final _share_opaque_FrostsnapCoreMessageTransactionSignTask =
-      _share_opaque_FrostsnapCoreMessageTransactionSignTaskPtr
+  late final _share_opaque_FrostsnapCoreMessageBitcoinTransactionSignTaskPtr =
+      _lookup<
+              ffi.NativeFunction<
+                  ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>>(
+          'share_opaque_FrostsnapCoreMessageBitcoinTransactionSignTask');
+  late final _share_opaque_FrostsnapCoreMessageBitcoinTransactionSignTask =
+      _share_opaque_FrostsnapCoreMessageBitcoinTransactionSignTaskPtr
           .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
 
   void drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(
@@ -2747,12 +2751,13 @@ final class wire_Coordinator extends ffi.Struct {
   external wire_FfiCoordinator field0;
 }
 
-final class wire_FrostsnapCoreMessageTransactionSignTask extends ffi.Struct {
+final class wire_FrostsnapCoreMessageBitcoinTransactionSignTask
+    extends ffi.Struct {
   external ffi.Pointer<ffi.Void> ptr;
 }
 
 final class wire_UnsignedTx extends ffi.Struct {
-  external wire_FrostsnapCoreMessageTransactionSignTask task;
+  external wire_FrostsnapCoreMessageBitcoinTransactionSignTask task;
 }
 
 final class wire_MutexCrateWalletWallet extends ffi.Struct {

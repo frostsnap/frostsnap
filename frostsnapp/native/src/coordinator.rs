@@ -458,7 +458,7 @@ impl FfiCoordinator {
                         message: String::from_utf8_lossy(&message[..]).to_string(),
                     },
                     SignTask::Nostr { .. } => todo!("nostr restoring not yet implemented"),
-                    SignTask::Transaction(task) => api::SignTaskDescription::Transaction {
+                    SignTask::BitcoinTransaction(task) => api::SignTaskDescription::Transaction {
                         unsigned_tx: api::UnsignedTx {
                             task: RustOpaque::new(task),
                         },

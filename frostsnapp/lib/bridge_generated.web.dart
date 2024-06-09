@@ -42,8 +42,8 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
-  Object api2wire_FrostsnapCoreMessageTransactionSignTask(
-      FrostsnapCoreMessageTransactionSignTask raw) {
+  Object api2wire_FrostsnapCoreMessageBitcoinTransactionSignTask(
+      FrostsnapCoreMessageBitcoinTransactionSignTask raw) {
     return raw.shareOrMove();
   }
 
@@ -345,7 +345,7 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
 
   @protected
   List<dynamic> api2wire_unsigned_tx(UnsignedTx raw) {
-    return [api2wire_FrostsnapCoreMessageTransactionSignTask(raw.task)];
+    return [api2wire_FrostsnapCoreMessageBitcoinTransactionSignTask(raw.task)];
   }
 
   @protected
@@ -375,12 +375,12 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   Finalizer<PlatformPointer> get FrostsnapCoreCoordinatorFrostKeyFinalizer =>
       _FrostsnapCoreCoordinatorFrostKeyFinalizer;
   late final Finalizer<PlatformPointer>
-      _FrostsnapCoreMessageTransactionSignTaskFinalizer =
+      _FrostsnapCoreMessageBitcoinTransactionSignTaskFinalizer =
       Finalizer<PlatformPointer>(
-          inner.drop_opaque_FrostsnapCoreMessageTransactionSignTask);
+          inner.drop_opaque_FrostsnapCoreMessageBitcoinTransactionSignTask);
   Finalizer<PlatformPointer>
-      get FrostsnapCoreMessageTransactionSignTaskFinalizer =>
-          _FrostsnapCoreMessageTransactionSignTaskFinalizer;
+      get FrostsnapCoreMessageBitcoinTransactionSignTaskFinalizer =>
+          _FrostsnapCoreMessageBitcoinTransactionSignTaskFinalizer;
   late final Finalizer<PlatformPointer>
       _MutexBTreeMapKeyIdStreamSinkTxStateFinalizer =
       Finalizer<PlatformPointer>(
@@ -628,11 +628,11 @@ class NativeWasmModule implements WasmModule {
   external int /* *const c_void */
       share_opaque_FrostsnapCoreCoordinatorFrostKey(ptr);
 
-  external dynamic /*  */ drop_opaque_FrostsnapCoreMessageTransactionSignTask(
-      ptr);
+  external dynamic /*  */
+      drop_opaque_FrostsnapCoreMessageBitcoinTransactionSignTask(ptr);
 
   external int /* *const c_void */
-      share_opaque_FrostsnapCoreMessageTransactionSignTask(ptr);
+      share_opaque_FrostsnapCoreMessageBitcoinTransactionSignTask(ptr);
 
   external dynamic /*  */ drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(ptr);
 
@@ -928,12 +928,15 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   int /* *const c_void */ share_opaque_FrostsnapCoreCoordinatorFrostKey(ptr) =>
       wasmModule.share_opaque_FrostsnapCoreCoordinatorFrostKey(ptr);
 
-  dynamic /*  */ drop_opaque_FrostsnapCoreMessageTransactionSignTask(ptr) =>
-      wasmModule.drop_opaque_FrostsnapCoreMessageTransactionSignTask(ptr);
-
-  int /* *const c_void */ share_opaque_FrostsnapCoreMessageTransactionSignTask(
+  dynamic /*  */ drop_opaque_FrostsnapCoreMessageBitcoinTransactionSignTask(
           ptr) =>
-      wasmModule.share_opaque_FrostsnapCoreMessageTransactionSignTask(ptr);
+      wasmModule
+          .drop_opaque_FrostsnapCoreMessageBitcoinTransactionSignTask(ptr);
+
+  int /* *const c_void */
+      share_opaque_FrostsnapCoreMessageBitcoinTransactionSignTask(ptr) =>
+          wasmModule
+              .share_opaque_FrostsnapCoreMessageBitcoinTransactionSignTask(ptr);
 
   dynamic /*  */ drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(ptr) =>
       wasmModule.drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(ptr);

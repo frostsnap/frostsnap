@@ -1219,12 +1219,15 @@ class NativeImpl implements Native {
   OpaqueTypeFinalizer get FrostsnapCoreCoordinatorFrostKeyFinalizer =>
       _platform.FrostsnapCoreCoordinatorFrostKeyFinalizer;
 
-  DropFnType get dropOpaqueFrostsnapCoreMessageTransactionSignTask =>
-      _platform.inner.drop_opaque_FrostsnapCoreMessageTransactionSignTask;
-  ShareFnType get shareOpaqueFrostsnapCoreMessageTransactionSignTask =>
-      _platform.inner.share_opaque_FrostsnapCoreMessageTransactionSignTask;
-  OpaqueTypeFinalizer get FrostsnapCoreMessageTransactionSignTaskFinalizer =>
-      _platform.FrostsnapCoreMessageTransactionSignTaskFinalizer;
+  DropFnType get dropOpaqueFrostsnapCoreMessageBitcoinTransactionSignTask =>
+      _platform
+          .inner.drop_opaque_FrostsnapCoreMessageBitcoinTransactionSignTask;
+  ShareFnType get shareOpaqueFrostsnapCoreMessageBitcoinTransactionSignTask =>
+      _platform
+          .inner.share_opaque_FrostsnapCoreMessageBitcoinTransactionSignTask;
+  OpaqueTypeFinalizer
+      get FrostsnapCoreMessageBitcoinTransactionSignTaskFinalizer =>
+          _platform.FrostsnapCoreMessageBitcoinTransactionSignTaskFinalizer;
 
   DropFnType get dropOpaqueMutexBTreeMapKeyIdStreamSinkTxState =>
       _platform.inner.drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState;
@@ -1301,9 +1304,9 @@ class NativeImpl implements Native {
     return FrostsnapCoreCoordinatorFrostKey.fromRaw(raw[0], raw[1], this);
   }
 
-  FrostsnapCoreMessageTransactionSignTask
-      _wire2api_FrostsnapCoreMessageTransactionSignTask(dynamic raw) {
-    return FrostsnapCoreMessageTransactionSignTask.fromRaw(
+  FrostsnapCoreMessageBitcoinTransactionSignTask
+      _wire2api_FrostsnapCoreMessageBitcoinTransactionSignTask(dynamic raw) {
+    return FrostsnapCoreMessageBitcoinTransactionSignTask.fromRaw(
         raw[0], raw[1], this);
   }
 
@@ -1837,7 +1840,7 @@ class NativeImpl implements Native {
       throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
     return UnsignedTx(
       bridge: this,
-      task: _wire2api_FrostsnapCoreMessageTransactionSignTask(arr[0]),
+      task: _wire2api_FrostsnapCoreMessageBitcoinTransactionSignTask(arr[0]),
     );
   }
 

@@ -1,6 +1,7 @@
+use bitcoin::{OutPoint, TxIn};
 use frostsnap_core::message::{
-    CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, CoordinatorToUserSigningMessage,
-    DeviceToUserMessage, EncodedSignature, SignTask,
+    BitcoinTransactionSignTask, CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage,
+    CoordinatorToUserSigningMessage, DeviceToUserMessage, EncodedSignature, SignTask, TxInput,
 };
 use frostsnap_core::{DeviceId, FrostCoordinator, FrostSigner, KeyId, SessionHash};
 use rand_chacha::rand_core::SeedableRng;
@@ -191,7 +192,7 @@ impl common::Env for TestEnv {
 }
 
 #[test]
-fn test_end_to_end() {
+fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
     let n_parties = 3;
     let threshold = 2;
     let schnorr = Schnorr::<sha2::Sha256>::verify_only();
@@ -238,8 +239,6 @@ fn test_end_to_end() {
 
     let key_id = coord_frost_key.key_id();
     let public_key = coord_frost_key.frost_key().public_key();
-
-    run.run_until_finished(&mut env, &mut test_rng);
 
     for (message, signers) in [("johnmcafee47", [0, 1]), ("pyramid schmee", [1, 2])] {
         env.signatures.clear();
@@ -365,8 +364,9 @@ fn test_display_backup() {
     );
 }
 
+// this test needs a better name and to properly explain what it's doing
 #[test]
-fn fully_replenish_nonces() {
+fn when_we_abandon_a_sign_request_we_should_be_able_to_start_a_new_one() {
     let threshold = 1;
     let coordinator = FrostCoordinator::new();
     let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
@@ -376,8 +376,6 @@ fn fully_replenish_nonces() {
 
     let device_set = devices.keys().cloned().collect::<BTreeSet<_>>();
     let mut env = TestEnv::default();
-    let mut test_rng = ChaCha20Rng::from_seed([123u8; 32]);
-
     let mut run = Run::new(coordinator, devices);
 
     let keygen_init = run.coordinator.do_keygen(&device_set, threshold).unwrap();
@@ -461,4 +459,87 @@ fn fully_replenish_nonces() {
         initial_nonces_on_coordinator.nonces.len(),
         "testing that the device response fully replenished the coordinator nonces"
     );
+}
+
+#[test]
+fn signing_a_bitcoin_transaction_produces_valid_signatures() {
+    let n_parties = 3;
+    let threshold = 2;
+    let schnorr = Schnorr::<sha2::Sha256>::verify_only();
+    let coordinator = FrostCoordinator::new();
+    let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
+
+    let devices = (0..n_parties)
+        .map(|_| FrostSigner::new_random(&mut test_rng))
+        .map(|device| (device.device_id(), device))
+        .collect::<BTreeMap<_, _>>();
+
+    let device_set = devices.keys().cloned().collect::<BTreeSet<_>>();
+    let device_list = devices.keys().cloned().collect::<Vec<_>>();
+    let mut env = TestEnv::default();
+    let mut test_rng = ChaCha20Rng::from_seed([123u8; 32]);
+
+    let mut run = Run::new(coordinator, devices);
+
+    // set up nonces for devices first
+    for &device_id in &device_set {
+        run.extend(run.coordinator.maybe_request_nonce_replenishment(device_id));
+    }
+
+    let keygen_init = run.coordinator.do_keygen(&device_set, threshold).unwrap();
+    run.extend(keygen_init);
+
+    run.run_until_finished(&mut env, &mut test_rng);
+
+    let task = SignTask::BitcoinTransaction(BitcoinTransactionSignTask {
+        tx_template: bitcoin::Transaction {
+            version: bitcoin::transaction::Version(0x02),
+            lock_time: bitcoin::blockdata::locktime::absolute::LockTime::ZERO,
+            input: vec![
+                TxIn {
+                    previous_output: OutPoint::default(),
+                    script_sig: Default::default(),
+                    sequence: Default::default(),
+                    witness: Default::default(),
+                },
+                TxIn {
+                    previous_output: OutPoint::default(),
+                    script_sig: Default::default(),
+                    sequence: Default::default(),
+                    witness: Default::default(),
+                },
+            ],
+            output: Default::default(),
+        },
+        prevouts: vec![
+            TxInput {
+                prevout: bitcoin::TxOut {
+                    script_pubkey: bitcoin::ScriptBuf::default(),
+                    value: bitcoin::Amount::from_sat(42),
+                },
+                bip32_path: Some(vec![0, 7]),
+            },
+            TxInput {
+                prevout: bitcoin::TxOut {
+                    script_pubkey: bitcoin::ScriptBuf::default(),
+                    value: bitcoin::Amount::from_sat(42),
+                },
+                bip32_path: Some(vec![1, 42]),
+            },
+        ],
+    });
+
+    let coord_frost_key = run.coordinator.iter_keys().next().unwrap();
+    let root_public_key = coord_frost_key.frost_key().public_key();
+
+    let set = [device_list[0], device_list[1]].into_iter().collect();
+    let key_id = coord_frost_key.key_id();
+    let sign_init = run
+        .coordinator
+        .start_sign(key_id, task.clone(), set)
+        .unwrap();
+    run.extend(sign_init);
+    run.run_until_finished(&mut env, &mut test_rng);
+    assert!(task.verify(&schnorr, root_public_key, &env.signatures));
+    // TODO: test actual transaction validity
 }

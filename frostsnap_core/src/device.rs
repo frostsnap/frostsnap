@@ -427,9 +427,7 @@ impl FrostSigner {
 
                 let frost = frost::new_without_nonce_generation::<Sha256>();
                 let share_index = key.share_index;
-                let mut xpub =
-                    crate::xpub::Xpub::new(key.encoded_frost_key.into_frost_key().clone());
-
+                let frost_key = key.encoded_frost_key.into_frost_key();
                 let mut signature_shares = vec![];
 
                 for (signature_index, (sign_item, secret_nonce)) in
@@ -442,31 +440,13 @@ impl FrostSigner {
                         })
                         .collect();
 
-                    xpub.derive_bip32(&sign_item.bip32_path);
-                    let mut xonly_frost_key = xpub.key().clone().into_xonly_key();
-
-                    if sign_item.tap_tweak {
-                        let tweak = bitcoin::taproot::TapTweakHash::from_key_and_tweak(
-                            bitcoin::key::XOnlyPublicKey::from_slice(
-                                &xonly_frost_key.public_key().to_xonly_bytes(),
-                            )
-                            .unwrap(),
-                            None,
-                        )
-                        .to_scalar();
-                        xonly_frost_key = xonly_frost_key
-                            .tweak(
-                                Scalar::<Public, Zero>::from_slice(&tweak.to_be_bytes()).unwrap(),
-                            )
-                            .expect("computationally unreachable");
-                    }
-
+                    let derived_xonly_key = sign_item.derive_key(&frost_key);
                     let message = Message::raw(&sign_item.message[..]);
                     let sign_session =
-                        frost.start_sign_session(&xonly_frost_key, nonces_at_index, message);
+                        frost.start_sign_session(&derived_xonly_key, nonces_at_index, message);
 
                     let sig_share = frost.sign(
-                        &xonly_frost_key,
+                        &derived_xonly_key,
                         &sign_session,
                         share_index,
                         secret_share,
@@ -474,7 +454,7 @@ impl FrostSigner {
                     );
 
                     assert!(frost.verify_signature_share(
-                        &xonly_frost_key,
+                        &derived_xonly_key,
                         &sign_session,
                         share_index,
                         sig_share,

@@ -1,19 +1,14 @@
 use crate::encrypted_share::EncryptedShare;
-use crate::xpub::TweakableKey;
-use crate::CoordinatorFrostKey;
-use crate::FrostsnapSecretKey;
-use crate::Gist;
-use crate::KeyId;
-use crate::SessionHash;
-use crate::SigningSessionState;
-use crate::Vec;
+use crate::tweak::AppTweak;
+use crate::{
+    tweak::TweakableKey, CoordinatorFrostKey, FrostsnapSecretKey, Gist, KeyId, SessionHash,
+    SigningSessionState, Vec,
+};
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
-use schnorr_fun::fun::marker::NonZero;
-use schnorr_fun::fun::marker::Public;
-use schnorr_fun::fun::marker::Zero;
+use schnorr_fun::fun::marker::*;
 use schnorr_fun::fun::Point;
 use schnorr_fun::fun::Scalar;
 use schnorr_fun::musig::Nonce;
@@ -256,11 +251,11 @@ pub enum SignTask {
         #[bincode(with_serde)]
         event: Box<crate::nostr::UnsignedEvent>,
     }, // 1 nonce & sig
-    Transaction(TransactionSignTask),
+    BitcoinTransaction(BitcoinTransactionSignTask),
 }
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct TransactionSignTask {
+pub struct BitcoinTransactionSignTask {
     #[bincode(with_serde)]
     pub tx_template: bitcoin::Transaction,
     pub prevouts: Vec<TxInput>,
@@ -290,7 +285,7 @@ impl core::fmt::Display for SignTask {
                 write!(f, "Plain:{}", String::from_utf8_lossy(message))
             }
             SignTask::Nostr { event, .. } => write!(f, "Nostr: {}", event.content),
-            SignTask::Transaction(TransactionSignTask { tx_template, .. }) => {
+            SignTask::BitcoinTransaction(BitcoinTransactionSignTask { tx_template, .. }) => {
                 let mut lines = vec![];
                 for output in &tx_template.output {
                     let address = bitcoin::Address::from_script(
@@ -317,22 +312,20 @@ impl SignTask {
         self.sign_items()
             .iter()
             .enumerate()
-            .all(|(i, item)| item.verify(schnorr, root_public_key, &signatures[i]))
+            .all(|(i, item)| item.verify_final_signature(schnorr, root_public_key, &signatures[i]))
     }
 
     pub fn sign_items(&self) -> Vec<SignItem> {
         match self {
             SignTask::Plain { message } => vec![SignItem {
                 message: message.clone(),
-                tap_tweak: false,
-                bip32_path: vec![],
+                app_tweak: AppTweak::TestMessage,
             }],
             SignTask::Nostr { event } => vec![SignItem {
                 message: event.hash_bytes.clone(),
-                tap_tweak: false,
-                bip32_path: vec![],
+                app_tweak: AppTweak::Nostr,
             }],
-            SignTask::Transaction(TransactionSignTask {
+            SignTask::BitcoinTransaction(BitcoinTransactionSignTask {
                 tx_template,
                 prevouts,
             }) => {
@@ -345,7 +338,7 @@ impl SignTask {
                     let sighash = sighash_cache
                         .taproot_key_spend_signature_hash(
                             i,
-                            &bitcoin::psbt::Prevouts::All(prevouts),
+                            &bitcoin::sighash::Prevouts::All(prevouts),
                             schnorr_sighashty,
                         )
                         .unwrap(); // TODO remove unwrap
@@ -359,8 +352,7 @@ impl SignTask {
                         let bip32_path = input.bip32_path.clone()?;
                         Some(SignItem {
                             message: sighash.as_raw_hash().to_byte_array().to_vec(),
-                            bip32_path,
-                            tap_tweak: true,
+                            app_tweak: AppTweak::Bitcoin { bip32_path },
                         })
                     })
                     .collect();
@@ -374,45 +366,46 @@ impl SignTask {
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub struct SignItem {
     pub message: Vec<u8>,
-    pub tap_tweak: bool,
-    pub bip32_path: Vec<u32>,
+    pub app_tweak: AppTweak,
 }
 
 impl SignItem {
     pub fn derive_key<K: TweakableKey>(&self, root_key: &K) -> K::XOnly {
-        let derived_key = {
-            let mut xpub = crate::xpub::Xpub::new(root_key.clone());
-            xpub.derive_bip32(&self.bip32_path);
-            xpub.into_key()
-        };
+        let (app_key, extra) = root_key.app_tweak_and_expand(self.app_tweak.kind());
 
-        if self.tap_tweak {
-            let tweak = bitcoin::taproot::TapTweakHash::from_key_and_tweak(
-                derived_key.to_libsecp_xonly(),
-                None,
-            )
-            .to_scalar();
-            derived_key.into_xonly_with_tweak(
-                Scalar::<Public, _>::from_bytes_mod_order(tweak.to_be_bytes())
-                    .non_zero()
-                    .expect("computationally unreachable"),
-            )
-        } else {
-            derived_key.into_xonly()
+        match &self.app_tweak {
+            AppTweak::Bitcoin { bip32_path } => {
+                let mut xpub = crate::tweak::Xpub::new(app_key, extra);
+                xpub.derive_bip32(bip32_path);
+                let derived_key = xpub.into_key();
+                let tweak = bitcoin::taproot::TapTweakHash::from_key_and_tweak(
+                    derived_key.to_libsecp_xonly(),
+                    None,
+                )
+                .to_scalar();
+                derived_key.into_xonly_with_tweak(
+                    Scalar::<Public, _>::from_bytes_mod_order(tweak.to_be_bytes())
+                        .non_zero()
+                        .expect("computationally unreachable"),
+                )
+            }
+            AppTweak::Nostr => app_key.into_xonly(),
+            AppTweak::TestMessage => app_key.into_xonly(),
         }
     }
 
-    pub fn verify<NG>(
+    pub fn verify_final_signature<NG>(
         &self,
         schnorr: &Schnorr<sha2::Sha256, NG>,
         root_public_key: Point,
         signature: &Signature,
     ) -> bool {
-        // FIXME: This shouldn't be raw -- plain messages should do domain separation
-        let b_message = Message::<Public>::raw(&self.message[..]);
-
         let derived_key = self.derive_key(&root_public_key);
+        schnorr.verify(&derived_key, self.schnorr_fun_message(), signature)
+    }
 
-        schnorr.verify(&derived_key, b_message, signature)
+    pub fn schnorr_fun_message(&self) -> schnorr_fun::Message<Public> {
+        // FIXME: This shouldn't be raw -- plain messages should do domain separation
+        Message::raw(&self.message[..])
     }
 }

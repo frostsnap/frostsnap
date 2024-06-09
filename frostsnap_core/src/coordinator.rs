@@ -666,7 +666,7 @@ pub struct SignSessionProgress {
     sign_item: SignItem,
     sign_session: SignSession,
     signature_shares: BTreeMap<DeviceId, Scalar<Public, Zero>>,
-    key: EncodedFrostKey,
+    root_key: EncodedFrostKey,
 }
 
 impl SignSessionProgress {
@@ -676,15 +676,14 @@ impl SignSessionProgress {
         sign_item: SignItem,
         nonces: BTreeMap<frost::PartyIndex, frost::Nonce>,
     ) -> Self {
-        // FIXME: This shouldn't be raw -- plain messages should do domain separation
-        let b_message = Message::raw(&sign_item.message[..]);
         let tweaked_key = sign_item.derive_key(&root_key.into_frost_key());
-        let sign_session = frost.start_sign_session(&tweaked_key, nonces, b_message);
+        let sign_session =
+            frost.start_sign_session(&tweaked_key, nonces, sign_item.schnorr_fun_message());
         Self {
             sign_item,
             sign_session,
             signature_shares: Default::default(),
-            key: root_key,
+            root_key,
         }
     }
 
@@ -693,7 +692,7 @@ impl SignSessionProgress {
     }
 
     pub fn tweaked_frost_key(&self) -> FrostKey<EvenY> {
-        self.sign_item.derive_key(&self.key.into_frost_key())
+        self.sign_item.derive_key(&self.root_key.into_frost_key())
     }
 
     pub fn verify_final_signature<NG>(
@@ -701,12 +700,11 @@ impl SignSessionProgress {
         schnorr: &Schnorr<sha2::Sha256, NG>,
         signature: &Signature,
     ) -> bool {
-        // FIXME: This shouldn't be raw -- plain messages should do domain separation
-        let b_message = Message::<Public>::raw(&self.sign_item.message[..]);
-
-        let derived_key = self.tweaked_frost_key().public_key();
-
-        schnorr.verify(&derived_key, b_message, signature)
+        self.sign_item.verify_final_signature(
+            schnorr,
+            self.root_key.into_frost_key().public_key(),
+            signature,
+        )
     }
 }
 

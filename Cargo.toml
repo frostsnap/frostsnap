@@ -19,6 +19,10 @@ frostsnap_coordinator = { path = "frostsnap_coordinator" }
 tracing = { version = "0.1", default-features = false }
 llsdb = { git = "https://github.com/LLFourn/llsdb.git", rev = "b1540959897b098e7fea28799a377e210b365357" }
 rand_chacha = { version = "0.3", default-features = false }
+sha2 = { version = "0.10", default-features = false }
+
 
 [patch.crates-io]
-bdk_chain = { git = "https://github.com/LLFourn/bdk.git", rev = "775dad3"  , version = "0.9" }
+# bdk_chain = { path = "../bdk/crates/chain" }
+bdk_chain = { git = "https://github.com/LLFourn/bdk.git", rev = "165f06b8f78bd24f57dfbfd66da1faa189c67457" }
+bdk_electrum = { git = "https://github.com/LLFourn/bdk.git", rev = "165f06b8f78bd24f57dfbfd66da1faa189c67457" }

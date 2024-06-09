@@ -18,6 +18,6 @@ tracing = { workspace = true, features = ["std"] }
 tracing-android = "0.2"
 llsdb.workspace = true
 bincode.workspace = true
-bdk_chain = {  version = "0.9", features = ["serde"] }
-bdk_electrum = {  version = "0.7" }
-bdk_coin_select = { git = "https://github.com/LLFourn/coin-select.git", rev ="8eb582bc08bee173a41508a915fd2609e954f313" }
+bdk_chain = {  version = "0.15", features = ["serde"] }
+bdk_electrum = {  version = "0.14" }
+bdk_coin_select = { version = "0.3" }
