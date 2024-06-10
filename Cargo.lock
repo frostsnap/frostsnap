@@ -125,7 +125,7 @@ dependencies = [
 [[package]]
 name = "bdk_chain"
 version = "0.15.0"
-source = "git+https://github.com/LLFourn/bdk.git?rev=a6528923ad2e48a4bf258ba35c757f5cc194cf81#a6528923ad2e48a4bf258ba35c757f5cc194cf81"
+source = "git+https://github.com/LLFourn/bdk.git?rev=165f06b8f78bd24f57dfbfd66da1faa189c67457#165f06b8f78bd24f57dfbfd66da1faa189c67457"
 dependencies = [
  "bitcoin",
  "miniscript",
@@ -141,7 +141,7 @@ checksum = "3c084bf76f0f67546fc814ffa82044144be1bb4618183a15016c162f8b087ad4"
 [[package]]
 name = "bdk_electrum"
 version = "0.14.0"
-source = "git+https://github.com/LLFourn/bdk.git?rev=a6528923ad2e48a4bf258ba35c757f5cc194cf81#a6528923ad2e48a4bf258ba35c757f5cc194cf81"
+source = "git+https://github.com/LLFourn/bdk.git?rev=165f06b8f78bd24f57dfbfd66da1faa189c67457#165f06b8f78bd24f57dfbfd66da1faa189c67457"
 dependencies = [
  "bdk_chain",
  "electrum-client",
