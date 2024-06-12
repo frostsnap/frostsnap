@@ -11,8 +11,15 @@ resolver = "2"
 
 
 [workspace.dependencies]
-bincode = {  version = "2.0.0-rc.3", features = ["serde", "alloc", "derive"], default-features = false }
-serde = { version = "1", features = ["derive","alloc"], default-features = false }
+bincode = { version = "2.0.0-rc.3", features = [
+    "serde",
+    "alloc",
+    "derive",
+], default-features = false }
+serde = { version = "1", features = [
+    "derive",
+    "alloc",
+], default-features = false }
 frostsnap_core = { path = "frostsnap_core", default-features = false }
 frostsnap_comms = { path = "frostsnap_comms", default-features = false }
 frostsnap_coordinator = { path = "frostsnap_coordinator" }
@@ -26,3 +33,18 @@ sha2 = { version = "0.10", default-features = false }
 # bdk_chain = { path = "../bdk/crates/chain" }
 bdk_chain = { git = "https://github.com/LLFourn/bdk.git", rev = "165f06b8f78bd24f57dfbfd66da1faa189c67457" }
 bdk_electrum = { git = "https://github.com/LLFourn/bdk.git", rev = "165f06b8f78bd24f57dfbfd66da1faa189c67457" }
+
+[profile.dev]
+# Rust debug is too slow.
+# For debug builds always builds with some optimization
+opt-level = "s"
+
+[profile.release]
+# LLVM can perform better optimizations using a single thread
+codegen-units = 1
+debug = 2
+debug-assertions = false
+incremental = false
+lto = 'fat'
+opt-level = 's'
+overflow-checks = false

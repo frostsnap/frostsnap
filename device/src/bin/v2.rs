@@ -6,37 +6,45 @@
 #[macro_use]
 extern crate alloc;
 use alloc::string::String;
-// use alloc::string::ToString;
 use core::mem::MaybeUninit;
 use cst816s::CST816S;
-use display_interface_spi::SPIInterfaceNoCS;
+use display_interface_spi::SPIInterface;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use embedded_graphics_framebuf::FrameBuf;
 use embedded_hal as hal;
 use esp_hal::{
     clock::ClockControl,
+    delay::Delay,
+    gpio::{Input, Io, Level, Output, Pull},
     i2c::I2C,
     ledc::{
         channel::{self, ChannelIFace},
         timer::{self as timerledc, LSClockSource, TimerIFace},
-        LSGlobalClkSource, LowSpeed, LEDC,
+        LSGlobalClkSource, Ledc, LowSpeed,
     },
     peripherals::Peripherals,
     prelude::*,
+    rng::Rng,
     spi::{master::Spi, SpiMode},
-    timer::{self, Timer, TimerGroup},
+    system::SystemControl,
+    timer::{
+        self,
+        timg::{Timer, TimerGroup},
+    },
     uart::{self, Uart},
-    Delay, Rng, UsbSerialJtag, IO,
+    usb_serial_jtag::UsbSerialJtag,
+    Blocking,
 };
 use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_device::{
     esp32_run,
-    io::set_upstream_port_mode_jtag,
+    io::SerialInterface,
     st7789,
     ui::{BusyTask, Prompt, UiEvent, UserInteraction, WaitingFor, WaitingResponse, Workflow},
     DownstreamConnectionState, UpstreamConnectionState,
 };
-use mipidsi::{options::ColorInversion, Builder, Error, Orientation};
+use fugit::{Duration, Instant};
+use mipidsi::{error::Error, models::ST7789, options::ColorInversion};
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
 #[global_allocator]
@@ -66,28 +74,23 @@ fn init_heap() {
 fn main() -> ! {
     init_heap();
     let peripherals = Peripherals::take();
-    let system = peripherals.SYSTEM.split();
+    let system = SystemControl::new(peripherals.SYSTEM);
     let clocks = ClockControl::max(system.clock_control).freeze();
 
-    let timer_group0 = TimerGroup::new(peripherals.TIMG0, &clocks);
-    let timer_group1 = TimerGroup::new(peripherals.TIMG1, &clocks);
-    let mut timer0 = timer_group0.timer0;
-    timer0.start(1u64.secs());
-    let mut timer1 = timer_group1.timer0;
-    timer1.start(1u64.secs());
+    let timg0 = TimerGroup::new(peripherals.TIMG0, &clocks, None);
+    let timg1 = TimerGroup::new(peripherals.TIMG1, &clocks, None);
+    let timer0 = timg0.timer0;
+    let timer1 = timg1.timer0;
 
-    let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
+    let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
 
     let mut delay = Delay::new(&clocks);
-    // compute instead of using constant for 80MHz cpu speed
-    let ticks_per_ms = clocks.cpu_clock.raw() / timer1.divider() / 1000;
 
-    let upstream_detect = io.pins.gpio0.into_pull_up_input();
-    let downstream_detect = io.pins.gpio10.into_pull_up_input();
+    let upstream_detect = Input::new(io.pins.gpio0, Pull::Up);
+    let downstream_detect = Input::new(io.pins.gpio10, Pull::Up);
 
-    let bl = io.pins.gpio1.into_push_pull_output();
     // Turn off backlight to hide artifacts as display initializes
-    let mut ledc = LEDC::new(peripherals.LEDC, &clocks);
+    let mut ledc = Ledc::new(peripherals.LEDC, &clocks);
     ledc.set_global_slow_clock(LSGlobalClkSource::APBClk);
     let mut lstimer0 = ledc.get_timer::<LowSpeed>(timerledc::Number::Timer0);
     lstimer0
@@ -97,7 +100,7 @@ fn main() -> ! {
             frequency: 24u32.kHz(),
         })
         .unwrap();
-    let mut channel0 = ledc.get_channel(channel::Number::Channel0, bl);
+    let mut channel0 = ledc.get_channel(channel::Number::Channel0, io.pins.gpio1);
     channel0
         .configure(channel::config::Config {
             timer: &lstimer0,
@@ -109,13 +112,14 @@ fn main() -> ! {
     let spi = Spi::new(peripherals.SPI2, 40u32.MHz(), SpiMode::Mode2, &clocks)
         .with_sck(io.pins.gpio8)
         .with_mosi(io.pins.gpio7);
-    let di = SPIInterfaceNoCS::new(spi, io.pins.gpio9.into_push_pull_output());
-    let display = Builder::st7789(di)
-        .with_display_size(240, 280)
-        .with_window_offset_handler(|_| (0, 20)) // 240*280 panel
-        .with_invert_colors(ColorInversion::Inverted)
-        .with_orientation(Orientation::Portrait(false))
-        .init(&mut delay, Some(io.pins.gpio6.into_push_pull_output())) // RES
+    let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, NoCs);
+    let di = SPIInterface::new(spi_device, Output::new(io.pins.gpio9, Level::Low));
+    let display = mipidsi::Builder::new(ST7789, di)
+        .display_size(240, 280)
+        .display_offset(0, 20) // 240*280 panel
+        .invert_colors(ColorInversion::Inverted)
+        .reset_pin(Output::new(io.pins.gpio6, Level::Low))
+        .init(&mut delay)
         .unwrap();
     let mut framearray = [Rgb565::BLACK; 240 * 280];
     let framebuf = FrameBuf::new(&mut framearray, 240, 280);
@@ -127,11 +131,12 @@ fn main() -> ! {
         io.pins.gpio5,
         400u32.kHz(),
         &clocks,
+        None,
     );
     let mut capsense = CST816S::new(
         i2c,
-        io.pins.gpio2.into_pull_up_input(),
-        io.pins.gpio3.into_push_pull_output(),
+        Input::new(io.pins.gpio2, Pull::Down),
+        Output::new(io.pins.gpio3, Level::Low),
     );
     capsense.setup(&mut delay).unwrap();
 
@@ -140,18 +145,19 @@ fn main() -> ! {
     display.flush().unwrap();
     channel0.start_duty_fade(0, 30, 500).unwrap();
 
-    let upstream_jtag = UsbSerialJtag::new(peripherals.USB_DEVICE);
-
-    let upstream_uart = {
+    let detect_device_upstream = upstream_detect.is_low();
+    let upstream_serial = if detect_device_upstream {
         let serial_conf = uart::config::Config {
             baudrate: frostsnap_comms::BAUDRATE,
             ..Default::default()
         };
-        let txrx1 = uart::TxRxPins::new_tx_rx(
-            io.pins.gpio18.into_push_pull_output(),
-            io.pins.gpio19.into_floating_input(),
-        );
-        Uart::new_with_config(peripherals.UART1, serial_conf, Some(txrx1), &clocks)
+        let txrx1 = uart::TxRxPins::new_tx_rx(io.pins.gpio18, io.pins.gpio19);
+        SerialInterface::new_uart(
+            Uart::new_with_config(peripherals.UART1, serial_conf, Some(txrx1), &clocks, None),
+            &timer0,
+        )
+    } else {
+        SerialInterface::new_jtag(UsbSerialJtag::new(peripherals.USB_DEVICE, None), &timer0)
     };
 
     let downstream_uart = {
@@ -159,19 +165,15 @@ fn main() -> ! {
             baudrate: frostsnap_comms::BAUDRATE,
             ..Default::default()
         };
-        let txrx0 = uart::TxRxPins::new_tx_rx(
-            io.pins.gpio21.into_push_pull_output(),
-            io.pins.gpio20.into_floating_input(),
-        );
-        Uart::new_with_config(peripherals.UART0, serial_conf, Some(txrx0), &clocks)
+        let txrx0 = uart::TxRxPins::new_tx_rx(io.pins.gpio21, io.pins.gpio20);
+        Uart::new_with_config(peripherals.UART0, serial_conf, Some(txrx0), &clocks, None)
     };
 
     let mut hal_rng = Rng::new(peripherals.RNG);
-    // delay.delay_ms(600u32); // To wait for ESP32c3 timers to stop being bonkers
 
     let rng = {
         let mut chacha_seed = [0u8; 32];
-        hal_rng.read(&mut chacha_seed).unwrap();
+        hal_rng.read(&mut chacha_seed);
         ChaCha20Rng::from_seed(chacha_seed)
     };
 
@@ -183,55 +185,67 @@ fn main() -> ! {
         workflow: Default::default(),
         device_name: Default::default(),
         changes: false,
-        confirm_state: AnimationState::new(&timer1, 600 * 80_000),
+        confirm_state: AnimationState::new(&timer1, 600.millis()),
         last_touch: None,
         timer: &timer1,
-        ticks_per_ms: ticks_per_ms.into(),
     };
 
-    // let _now1 = timer1.now();
     let run = esp32_run::Run {
-        upstream_jtag,
-        upstream_uart,
+        upstream_serial,
         downstream_uart,
         rng,
         ui,
-        timer: timer0,
+        timer: &timer0,
         downstream_detect,
-        upstream_detect,
     };
     run.run()
+}
+
+/// Dummy CS pin for our display
+struct NoCs;
+
+impl embedded_hal::digital::OutputPin for NoCs {
+    fn set_low(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn set_high(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
+impl embedded_hal::digital::ErrorType for NoCs {
+    type Error = core::convert::Infallible;
 }
 
 pub struct FrostyUi<'t, T, DT, I2C, PINT, RST> {
     display: st7789::Graphics<'t, DT>,
     capsense: CST816S<I2C, PINT, RST>,
-    last_touch: Option<u64>,
+    last_touch: Option<Instant<u64, 1, 1_000_000>>,
     downstream_connection_state: DownstreamConnectionState,
     upstream_connection_state: UpstreamConnectionState,
     workflow: Workflow,
     device_name: Option<String>,
     changes: bool,
     confirm_state: AnimationState<'t, T>,
-    timer: &'t Timer<T>,
-    ticks_per_ms: u64,
+    timer: &'t Timer<T, Blocking>,
 }
 
 struct AnimationState<'t, T> {
-    timer: &'t Timer<T>,
-    start: Option<u64>,
-    duration_ticks: u64,
+    timer: &'t Timer<T, Blocking>,
+    start: Option<Instant<u64, 1, 1_000_000>>,
+    bar_duration: Duration<u64, 1, 1_000_000>,
     finished: bool,
 }
 
 impl<'t, T> AnimationState<'t, T>
 where
-    T: timer::Instance,
+    T: timer::timg::Instance,
 {
-    pub fn new(timer: &'t Timer<T>, duration_ticks: u64) -> Self {
+    pub fn new(timer: &'t Timer<T, Blocking>, bar_duration: Duration<u64, 1, 1_000_000>) -> Self {
         Self {
             timer,
-            duration_ticks,
+            bar_duration,
             start: None,
             finished: false,
         }
@@ -249,9 +263,11 @@ where
         let now = self.timer.now();
         match self.start {
             Some(start) => {
-                let duration = now.saturating_sub(start);
-                if duration < self.duration_ticks {
-                    AnimationProgress::Progress(duration as f32 / self.duration_ticks as f32)
+                let duration = now.checked_duration_since(start).unwrap();
+                if duration < self.bar_duration {
+                    AnimationProgress::Progress(
+                        duration.to_millis() as f32 / self.bar_duration.to_millis() as f32,
+                    )
                 } else {
                     self.finished = true;
                     AnimationProgress::FinalTick
@@ -274,7 +290,7 @@ pub enum AnimationProgress {
 
 impl<'t, T, DT, I2C, PINT, RST> FrostyUi<'t, T, DT, I2C, PINT, RST>
 where
-    T: timer::Instance,
+    T: timer::timg::Instance,
     DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
 {
     fn render(&mut self) {
@@ -389,14 +405,12 @@ where
     }
 }
 
-impl<'t, T, DT, I2C, PINT, RST, CommE> UserInteraction for FrostyUi<'t, T, DT, I2C, PINT, RST>
+impl<'t, T, DT, I2C, PINT, RST, CommE, PinE> UserInteraction for FrostyUi<'t, T, DT, I2C, PINT, RST>
 where
-    I2C: hal::blocking::i2c::Write<Error = CommE>
-        + hal::blocking::i2c::Read<Error = CommE>
-        + hal::blocking::i2c::WriteRead<Error = CommE>,
-    PINT: hal::digital::v2::InputPin,
-    RST: hal::digital::v2::StatefulOutputPin,
-    T: timer::Instance,
+    I2C: hal::i2c::I2c<Error = CommE>,
+    PINT: hal::digital::InputPin,
+    RST: hal::digital::StatefulOutputPin<Error = PinE>,
+    T: timer::timg::Instance,
     DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
 {
     fn set_downstream_connection_state(
@@ -447,7 +461,9 @@ where
             let is_pressed = match self.capsense.read_one_touch_event(true) {
                 None => match self.last_touch {
                     None => false,
-                    Some(last_touch) => last_touch > now - 10 * self.ticks_per_ms,
+                    Some(last_touch) => {
+                        now.checked_duration_since(last_touch).unwrap().to_millis() < 20
+                    }
                 },
                 Some(_touch) => {
                     self.last_touch = Some(now);
@@ -496,15 +512,13 @@ where
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     use core::fmt::Write;
-    set_upstream_port_mode_jtag();
     let peripherals = unsafe { Peripherals::steal() };
-    let system = peripherals.SYSTEM.split();
+    let system = SystemControl::new(peripherals.SYSTEM);
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
     // Disable the RTC and TIMG watchdog timers
-    let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
+    let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
 
-    let mut bl = io.pins.gpio1.into_push_pull_output();
-    bl.set_low().unwrap();
+    let mut bl = Output::new(io.pins.gpio1, Level::Low);
 
     let mut delay = Delay::new(&clocks);
     let mut panic_buf = frostsnap_device::panic::PanicBuffer::<512>::default();
@@ -523,16 +537,18 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     let spi = Spi::new(peripherals.SPI2, 40u32.MHz(), SpiMode::Mode2, &clocks)
         .with_sck(io.pins.gpio8)
         .with_mosi(io.pins.gpio7);
-    let di = SPIInterfaceNoCS::new(spi, io.pins.gpio9.into_push_pull_output());
-    let mut display = Builder::st7789(di)
-        .with_display_size(240, 280)
-        .with_window_offset_handler(|_| (0, 20)) // 240*280 panel
-        .with_invert_colors(ColorInversion::Inverted)
-        .with_orientation(Orientation::Portrait(false))
-        .init(&mut delay, Some(io.pins.gpio6.into_push_pull_output())) // RES
+    let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, NoCs);
+
+    let di = SPIInterface::new(spi_device, Output::new(io.pins.gpio9, Level::Low));
+    let mut display = mipidsi::Builder::new(ST7789, di)
+        .display_size(240, 280)
+        .display_offset(0, 20) // 240*280 panel
+        .invert_colors(ColorInversion::Inverted)
+        .reset_pin(Output::new(io.pins.gpio6, Level::Low))
+        .init(&mut delay)
         .unwrap();
     st7789::error_print(&mut display, panic_buf.as_str());
-    bl.set_high().unwrap();
+    bl.set_high();
 
     loop {}
 }

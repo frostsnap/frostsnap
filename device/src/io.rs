@@ -9,11 +9,13 @@ use bincode::de::read::Reader;
 use bincode::enc::write::Writer;
 use bincode::error::DecodeError;
 use bincode::error::EncodeError;
+use embedded_hal_nb::serial::{Read, Write};
+use esp_hal::Blocking;
 use esp_hal::{
-    peripherals::USB_DEVICE,
     prelude::*,
-    timer::{self, Timer},
-    uart, UsbSerialJtag,
+    timer::{self, timg::Timer},
+    uart,
+    usb_serial_jtag::UsbSerialJtag,
 };
 use frostsnap_comms::Direction;
 use frostsnap_comms::MagicBytes;
@@ -26,12 +28,12 @@ pub struct SerialInterface<'a, T, U, D> {
     io: SerialIo<'a, U>,
     ring_buffer: VecDeque<u8>,
     magic_bytes_progress: usize,
-    timer: &'a Timer<T>,
+    timer: &'a Timer<T, Blocking>,
     direction: PhantomData<D>,
 }
 
 impl<'a, T, U, D> SerialInterface<'a, T, U, D> {
-    pub fn new_uart(uart: uart::Uart<'a, U>, timer: &'a Timer<T>) -> Self {
+    pub fn new_uart(uart: uart::Uart<'a, U, Blocking>, timer: &'a Timer<T, Blocking>) -> Self {
         Self {
             io: SerialIo::Uart(uart),
             ring_buffer: VecDeque::with_capacity(RING_BUFFER_SIZE),
@@ -54,7 +56,7 @@ impl<'a, T, U, D> SerialInterface<'a, T, U, D> {
 }
 
 impl<'a, T, U> SerialInterface<'a, T, U, Upstream> {
-    pub fn new_jtag(jtag: UsbSerialJtag<'a>, timer: &'a Timer<T>) -> Self {
+    pub fn new_jtag(jtag: UsbSerialJtag<'a, Blocking>, timer: &'a Timer<T, Blocking>) -> Self {
         Self {
             io: SerialIo::Jtag(jtag),
             ring_buffer: VecDeque::with_capacity(RING_BUFFER_SIZE),
@@ -68,7 +70,7 @@ impl<'a, T, U> SerialInterface<'a, T, U, Upstream> {
 impl<'a, T, U, D> SerialInterface<'a, T, U, D>
 where
     U: uart::Instance,
-    T: timer::Instance,
+    T: timer::timg::Instance,
     D: Direction,
 {
     fn fill_buffer(&mut self) {
@@ -132,7 +134,7 @@ where
 impl<'a, T, U, D> Reader for SerialInterface<'a, T, U, D>
 where
     U: uart::Instance,
-    T: timer::Instance,
+    T: timer::timg::Instance,
     D: Direction,
 {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), DecodeError> {
@@ -148,7 +150,14 @@ where
                     break next_byte;
                 }
 
-                if (self.timer.now() - start_time) / 80_000 > 1_000 {
+                if self
+                    .timer
+                    .now()
+                    .checked_duration_since(start_time)
+                    .unwrap()
+                    .to_millis()
+                    > 1_000
+                {
                     return Err(DecodeError::UnexpectedEnd {
                         additional: bytes.len() - i + 1,
                     });
@@ -172,8 +181,8 @@ where
 }
 
 pub enum SerialIo<'a, U> {
-    Uart(uart::Uart<'a, U>),
-    Jtag(UsbSerialJtag<'a>),
+    Uart(uart::Uart<'a, U, Blocking>),
+    Jtag(UsbSerialJtag<'a, Blocking>),
 }
 
 impl<'a, U> SerialIo<'a, U> {
@@ -239,18 +248,4 @@ pub enum SerialInterfaceError {
     UartReadError,
     UartWriteError(uart::Error),
     JtagError,
-}
-
-pub fn set_upstream_port_mode_jtag() {
-    let usb_device = unsafe { &*USB_DEVICE::PTR };
-    usb_device
-        .conf0()
-        .modify(|_, w| w.usb_pad_enable().set_bit());
-}
-
-pub fn set_upstream_port_mode_uart() {
-    let usb_device = unsafe { &*USB_DEVICE::PTR };
-    usb_device
-        .conf0()
-        .modify(|_, w| w.usb_pad_enable().clear_bit());
 }

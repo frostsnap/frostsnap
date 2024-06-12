@@ -15,7 +15,7 @@ use embedded_text::{
     style::{TextBoxStyle, TextBoxStyleBuilder},
     TextBox,
 };
-use mipidsi::Error;
+use mipidsi::error::Error;
 use u8g2_fonts::{fonts, U8g2TextStyle};
 
 pub struct Graphics<'d, DT> {
@@ -78,7 +78,7 @@ where
         let _overflow = TextBox::with_textbox_style(
             str.as_ref(),
             Rectangle::new(Point::new(x_offset, y as i32), body_area),
-            U8g2TextStyle::new(fonts::u8g2_font_profont29_mf, Rgb565::WHITE),
+            U8g2TextStyle::new(fonts::u8g2_font_profont22_mf, Rgb565::WHITE),
             // U8g2TextStyle::new(fonts::u8g2_font_helvR14_tf, Rgb565::WHITE),
             // U8g2TextStyle::new(fonts::u8g2_font_spleen12x24_mf, Rgb565::WHITE),
             self.textbox_style,

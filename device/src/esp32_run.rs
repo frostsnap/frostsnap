@@ -1,13 +1,19 @@
 use crate::{
-    io::{self, set_upstream_port_mode_jtag, set_upstream_port_mode_uart, SerialInterface},
+    io::{self, SerialInterface},
     storage,
     ui::{self, UiEvent, UserInteraction},
     DownstreamConnectionState, UpstreamConnectionState,
 };
 use alloc::{collections::VecDeque, string::ToString, vec::Vec};
-use esp_hal::{gpio, timer, uart, UsbSerialJtag};
+use esp_hal::{
+    gpio,
+    timer::{self, timg::Timer},
+    uart, Blocking,
+};
 use esp_storage::FlashStorage;
-use frostsnap_comms::{CoordinatorSendBody, DeviceSendBody, DeviceSendMessage, ReceiveSerial};
+use frostsnap_comms::{
+    CoordinatorSendBody, DeviceSendBody, DeviceSendMessage, ReceiveSerial, Upstream,
+};
 use frostsnap_comms::{CoordinatorSendMessage, Downstream, MAGIC_BYTES_PERIOD};
 use frostsnap_core::schnorr_fun::fun::{KeyPair, Scalar};
 use frostsnap_core::DeviceId;
@@ -20,39 +26,33 @@ use frostsnap_core::{
 };
 use rand_chacha::rand_core::RngCore;
 
-pub struct Run<'a, UpstreamUart, DownstreamUart, UpstreamDetectPin, DownstreamDetectPin, T, Rng, Ui>
-{
-    pub upstream_jtag: UsbSerialJtag<'a>,
-    pub upstream_uart: uart::Uart<'a, UpstreamUart>,
-    pub downstream_uart: uart::Uart<'a, DownstreamUart>,
+pub struct Run<'a, UpstreamUart, DownstreamUart, Rng, Ui, T, DownstreamDetectPin> {
+    pub upstream_serial: SerialInterface<'a, T, UpstreamUart, Upstream>,
+    pub downstream_uart: uart::Uart<'a, DownstreamUart, Blocking>,
     pub rng: Rng,
     pub ui: Ui,
-    pub timer: timer::Timer<T>,
-    pub downstream_detect: DownstreamDetectPin,
-    pub upstream_detect: UpstreamDetectPin,
+    pub timer: &'a Timer<T, Blocking>,
+    pub downstream_detect: gpio::Input<'a, DownstreamDetectPin>,
 }
 
-impl<'a, UpstreamUart, DownstreamUart, UpstreamDetectPin, DownstreamDetectPin, T, Rng, Ui>
-    Run<'a, UpstreamUart, DownstreamUart, UpstreamDetectPin, DownstreamDetectPin, T, Rng, Ui>
+impl<'a, UpstreamUart, DownstreamUart, Rng, Ui, T, DownstreamDetectPin>
+    Run<'a, UpstreamUart, DownstreamUart, Rng, Ui, T, DownstreamDetectPin>
 where
     UpstreamUart: uart::Instance,
     DownstreamUart: uart::Instance,
-    UpstreamDetectPin: gpio::InputPin,
     DownstreamDetectPin: gpio::InputPin,
     Ui: UserInteraction,
-    T: timer::Instance,
+    T: timer::timg::Instance,
     Rng: RngCore,
 {
     pub fn run(self) -> ! {
         let Run {
-            upstream_jtag,
-            upstream_uart,
+            mut upstream_serial,
             downstream_uart,
             mut rng,
             mut ui,
             timer,
             downstream_detect,
-            upstream_detect,
         } = self;
 
         let flash = FlashStorage::new();
@@ -94,7 +94,7 @@ where
         }
 
         let mut downstream_serial =
-            io::SerialInterface::<_, _, Downstream>::new_uart(downstream_uart, &timer);
+            io::SerialInterface::<_, _, Downstream>::new_uart(downstream_uart, timer);
         let mut soft_reset = true;
         let mut downstream_connection_state = DownstreamConnectionState::Disconnected;
         let mut sends_downstream: Vec<CoordinatorSendMessage> = vec![];
@@ -114,21 +114,11 @@ where
         // thingy will go away naturally.
         let mut upstream_first_message_timeout_counter = 0;
 
-        let detect_device_upstream = !upstream_detect.is_input_high();
-
-        let mut upstream_serial = if detect_device_upstream {
-            ui.set_workflow(ui::Workflow::WaitingFor(
-                ui::WaitingFor::LookingForUpstream { jtag: false },
-            ));
-            set_upstream_port_mode_uart();
-            SerialInterface::new_uart(upstream_uart, &timer)
-        } else {
-            ui.set_workflow(ui::Workflow::WaitingFor(
-                ui::WaitingFor::LookingForUpstream { jtag: true },
-            ));
-            set_upstream_port_mode_jtag();
-            SerialInterface::new_jtag(upstream_jtag, &timer)
-        };
+        ui.set_workflow(ui::Workflow::WaitingFor(
+            ui::WaitingFor::LookingForUpstream {
+                jtag: upstream_serial.is_jtag(),
+            },
+        ));
 
         ui.set_upstream_connection_state(UpstreamConnectionState::Connected {
             is_device: !upstream_serial.is_jtag(),
@@ -153,7 +143,7 @@ where
                     None => DeviceSendBody::NeedName,
                 });
             }
-            let is_usb_connected_downstream = !downstream_detect.is_input_high();
+            let is_usb_connected_downstream = !downstream_detect.is_high();
 
             match (is_usb_connected_downstream, downstream_connection_state) {
                 (true, DownstreamConnectionState::Disconnected) => {
