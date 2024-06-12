@@ -145,7 +145,7 @@ fn main() -> ! {
     display.flush().unwrap();
     channel0.start_duty_fade(0, 30, 500).unwrap();
 
-    let detect_device_upstream = !upstream_detect.is_high();
+    let detect_device_upstream = upstream_detect.is_low();
     let upstream_serial = if detect_device_upstream {
         let serial_conf = uart::config::Config {
             baudrate: frostsnap_comms::BAUDRATE,

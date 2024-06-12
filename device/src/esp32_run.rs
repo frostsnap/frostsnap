@@ -114,15 +114,11 @@ where
         // thingy will go away naturally.
         let mut upstream_first_message_timeout_counter = 0;
 
-        if upstream_serial.is_jtag() {
-            ui.set_workflow(ui::Workflow::WaitingFor(
-                ui::WaitingFor::LookingForUpstream { jtag: true },
-            ));
-        } else {
-            ui.set_workflow(ui::Workflow::WaitingFor(
-                ui::WaitingFor::LookingForUpstream { jtag: false },
-            ));
-        }
+        ui.set_workflow(ui::Workflow::WaitingFor(
+            ui::WaitingFor::LookingForUpstream {
+                jtag: upstream_serial.is_jtag(),
+            },
+        ));
 
         ui.set_upstream_connection_state(UpstreamConnectionState::Connected {
             is_device: !upstream_serial.is_jtag(),
