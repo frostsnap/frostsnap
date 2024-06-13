@@ -23,6 +23,7 @@ impl FirmwareUpgradeProtocol {
                 need_upgrade: need_upgrade.into_iter().collect(),
                 confirmations: Default::default(),
                 abort: false,
+                upgrade_ready_to_start: false,
             },
             sent_first_message: false,
             firmware_bin,
@@ -42,7 +43,9 @@ impl UiProtocol for FirmwareUpgradeProtocol {
     }
 
     fn is_complete(&self) -> Option<Completion> {
-        if self.state.confirmations == self.state.devices {
+        if BTreeSet::from_iter(self.state.confirmations.iter())
+            == BTreeSet::from_iter(self.state.devices.iter())
+        {
             Some(Completion::Success)
         } else if self.state.abort {
             Some(Completion::Abort)
@@ -81,6 +84,13 @@ impl UiProtocol for FirmwareUpgradeProtocol {
             self.sent_first_message = true;
         }
 
+        // we only want to emit te ready state after we've been polled so coordinator loop has a
+        // chance to clean up this protocol.
+        if matches!(self.is_complete(), Some(Completion::Success)) {
+            self.state.upgrade_ready_to_start = true;
+            self.emit_state()
+        }
+
         (to_devices, vec![])
     }
 }
@@ -91,4 +101,5 @@ pub struct FirmwareUpgradeConfirmState {
     pub devices: Vec<DeviceId>,
     pub need_upgrade: Vec<DeviceId>,
     pub abort: bool,
+    pub upgrade_ready_to_start: bool,
 }

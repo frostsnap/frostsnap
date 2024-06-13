@@ -9,6 +9,9 @@ use frostsnap_core::{message::CoordinatorToUserMessage, DeviceId};
 ///
 /// With the `poll` method it can communicate to the devices or the coordinator's storage.
 pub trait UiProtocol: Send {
+    fn name(&self) -> &'static str {
+        core::any::type_name_of_val(self)
+    }
     fn cancel(&mut self);
     fn is_complete(&self) -> Option<Completion>;
     fn connected(&mut self, _id: DeviceId) {}

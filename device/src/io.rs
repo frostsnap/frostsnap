@@ -11,6 +11,7 @@ use bincode::enc::write::Writer;
 use bincode::error::DecodeError;
 use bincode::error::EncodeError;
 use embedded_hal_nb::serial::{Read, Write};
+use esp_hal::clock::Clocks;
 use esp_hal::Blocking;
 use esp_hal::{
     prelude::*,
@@ -24,7 +25,7 @@ use frostsnap_comms::ReceiveSerial;
 use frostsnap_comms::Upstream;
 use frostsnap_comms::BINCODE_CONFIG;
 
-const RING_BUFFER_SIZE: usize = 2_usize.pow(8); // i.e. 256 bytes
+const RING_BUFFER_SIZE: usize = 256;
 
 pub struct SerialInterface<'a, T, U, D> {
     io: SerialIo<'a, U>,
@@ -35,9 +36,13 @@ pub struct SerialInterface<'a, T, U, D> {
 }
 
 impl<'a, T, U, D> SerialInterface<'a, T, U, D> {
-    pub fn new_uart(uart: uart::Uart<'a, U, Blocking>, timer: &'a Timer<T, Blocking>) -> Self {
+    pub fn new_uart(
+        uart: uart::Uart<'a, U, Blocking>,
+        timer: &'a Timer<T, Blocking>,
+        clocks: &'a Clocks<'a>,
+    ) -> Self {
         Self {
-            io: SerialIo::Uart(uart),
+            io: SerialIo::Uart { uart, clocks },
             ring_buffer: VecDeque::with_capacity(RING_BUFFER_SIZE),
             magic_bytes_progress: 0,
             timer,
@@ -50,10 +55,7 @@ impl<'a, T, U, D> SerialInterface<'a, T, U, D> {
     }
 
     pub fn is_jtag(&self) -> bool {
-        match self.io {
-            SerialIo::Uart(_) => false,
-            SerialIo::Jtag(_) => true,
-        }
+        matches!(self.io, SerialIo::Jtag(_))
     }
 }
 
@@ -189,53 +191,61 @@ where
 }
 
 pub enum SerialIo<'a, U> {
-    Uart(uart::Uart<'a, U, Blocking>),
+    Uart {
+        uart: uart::Uart<'a, U, Blocking>,
+        /// clocks is needed to change the baudrate
+        clocks: &'a Clocks<'a>,
+    },
     Jtag(UsbSerialJtag<'a, Blocking>),
 }
 
-impl<'a, U> SerialIo<'a, U> {
-    pub fn read_byte(&mut self) -> nb::Result<u8, Infallible>
-    where
-        U: uart::Instance,
-    {
+impl<'a, U> SerialIo<'a, U>
+where
+    U: uart::Instance,
+{
+    pub fn change_baud(&mut self, baudrate: u32) {
+        self.flush();
+        match self {
+            SerialIo::Uart { uart, clocks } => {
+                uart.change_baud(
+                    baudrate,
+                    uart::config::Config::default().clock_source,
+                    clocks,
+                );
+            }
+            SerialIo::Jtag(_) => { /* no baud rate for USB jtag */ }
+        }
+    }
+    pub fn read_byte(&mut self) -> nb::Result<u8, Infallible> {
         match self {
             SerialIo::Jtag(jtag) => jtag.read_byte(),
-            SerialIo::Uart(uart) => uart.read().map_err(|e| match e {
+            SerialIo::Uart { uart, .. } => uart.read().map_err(|e| match e {
                 nb::Error::Other(_) => unreachable!("we have not set a timeout"),
                 nb::Error::WouldBlock => nb::Error::WouldBlock,
             }),
         }
     }
 
-    pub fn write_byte_nb(&mut self, byte: u8) -> nb::Result<(), Infallible>
-    where
-        U: uart::Instance,
-    {
+    pub fn write_byte_nb(&mut self, byte: u8) -> nb::Result<(), Infallible> {
         match self {
             SerialIo::Jtag(jtag) => jtag.write_byte_nb(byte),
-            SerialIo::Uart(uart) => uart.write(byte).map_err(|e| match e {
+            SerialIo::Uart { uart, .. } => uart.write(byte).map_err(|e| match e {
                 nb::Error::Other(_) => unreachable!("we have not set a timeout"),
                 nb::Error::WouldBlock => nb::Error::WouldBlock,
             }),
         }
     }
 
-    pub fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), SerialInterfaceError>
-    where
-        U: uart::Instance,
-    {
+    pub fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), SerialInterfaceError> {
         for byte in bytes {
             while self.write_byte_nb(*byte).is_err() {}
         }
         Ok(())
     }
 
-    pub fn nb_flush(&mut self)
-    where
-        U: uart::Instance,
-    {
+    pub fn nb_flush(&mut self) {
         match self {
-            SerialIo::Uart(_) => {
+            SerialIo::Uart { .. } => {
                 // there is no reason to call this on uart. It will just block until data is
                 // actually written.
             }
@@ -250,12 +260,9 @@ impl<'a, U> SerialIo<'a, U> {
     // Blocking flush. The only time to use this is to make sure everything has been written before
     // moving onto something else. Usually you don't want this but it's necessary to do if you write
     // something before resetting.
-    pub fn flush(&mut self)
-    where
-        U: uart::Instance,
-    {
+    pub fn flush(&mut self) {
         match self {
-            SerialIo::Uart(uart) => {
+            SerialIo::Uart { uart, .. } => {
                 // just waits until evertything has been written
                 while let Err(nb::Error::WouldBlock) = uart.flush() {
                     // wait

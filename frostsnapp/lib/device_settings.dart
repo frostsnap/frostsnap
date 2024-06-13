@@ -330,9 +330,7 @@ class _FirmwareUpgradeDialogState extends State<FirmwareUpgradeDialog> {
         return;
       }
 
-      final ready = setEquals(
-          deviceIdSet(newState.devices), deviceIdSet(newState.confirmations));
-      if (ready) {
+      if (newState.upgradeReadyToStart) {
         if (mounted && progress == null) {
           final progressStream = coord.enterFirmwareUpgradeMode();
           progressStream.listen((progress_) {

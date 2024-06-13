@@ -859,12 +859,14 @@ class FirmwareUpgradeConfirmState {
   final List<DeviceId> devices;
   final List<DeviceId> needUpgrade;
   final bool abort;
+  final bool upgradeReadyToStart;
 
   const FirmwareUpgradeConfirmState({
     required this.confirmations,
     required this.devices,
     required this.needUpgrade,
     required this.abort,
+    required this.upgradeReadyToStart,
   });
 }
 

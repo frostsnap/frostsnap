@@ -1,5 +1,5 @@
 use crate::{
-    io::{self, SerialInterface},
+    io::SerialInterface,
     ota, storage,
     ui::{self, UiEvent, UserInteraction},
     DownstreamConnectionState, UpstreamConnection, UpstreamConnectionState,
@@ -29,7 +29,7 @@ use rand_chacha::rand_core::RngCore;
 
 pub struct Run<'a, UpstreamUart, DownstreamUart, Rng, Ui, T, DownstreamDetectPin> {
     pub upstream_serial: SerialInterface<'a, T, UpstreamUart, Upstream>,
-    pub downstream_uart: uart::Uart<'a, DownstreamUart, Blocking>,
+    pub downstream_serial: SerialInterface<'a, T, DownstreamUart, Downstream>,
     pub rng: Rng,
     pub ui: Ui,
     pub timer: &'a Timer<T, Blocking>,
@@ -50,7 +50,7 @@ where
     pub fn run(self) -> ! {
         let Run {
             mut upstream_serial,
-            downstream_uart,
+            mut downstream_serial,
             mut rng,
             mut ui,
             timer,
@@ -99,8 +99,6 @@ where
             ui.set_device_name(name.into());
         }
 
-        let mut downstream_serial =
-            io::SerialInterface::<_, _, Downstream>::new_uart(downstream_uart, timer);
         let mut soft_reset = true;
         let mut downstream_connection_state = DownstreamConnectionState::Disconnected;
         let mut sends_downstream: Vec<CoordinatorSendMessage> = vec![];

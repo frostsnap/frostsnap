@@ -6,8 +6,8 @@ use embedded_storage::{nor_flash, ReadStorage, Storage};
 use esp_hal::{sha::Sha, uart, Blocking};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{
-    DeviceSendBody, FirmwareDigest, FIRMWARE_IMAGE_SIZE, FIRMWARE_NEXT_CHUNK_READY_SIGNAL,
-    FIRMWARE_UPGRADE_CHUNK_LEN,
+    DeviceSendBody, FirmwareDigest, BAUDRATE, FIRMWARE_IMAGE_SIZE,
+    FIRMWARE_NEXT_CHUNK_READY_SIGNAL, FIRMWARE_UPGRADE_CHUNK_LEN,
 };
 use nb::block;
 
@@ -27,6 +27,8 @@ const SECTOR_SIZE: u32 = 4096;
 const ESP32_OTADATA_SIZE: u32 = 32;
 const FS_PARTITION_METADATA_SIZE: u32 = 256;
 const SECTORS_PER_IMAGE: u32 = FIRMWARE_IMAGE_SIZE / SECTOR_SIZE;
+/// We switch the baudrate during OTA update to make it faster
+const OTA_UPDATE_BAUD: u32 = 921_600;
 
 #[derive(Debug, Clone, Copy)]
 pub struct OtaConfig {
@@ -211,7 +213,9 @@ impl OtaConfig {
         }
     }
 
+    /// Write to the otadata parition to indicate that a different partition should be the main one.
     fn switch_partition(&self, flash: &mut FlashStorage, slot: u8, metadata: Option<OtaMetadata>) {
+        // to select it the parition must be higher than the other one
         let next_seq = match self.current_slot(flash) {
             Some((current_slot, seq, _)) => {
                 if slot == current_slot {
@@ -224,6 +228,7 @@ impl OtaConfig {
             None => 1,
         };
 
+        // it also needs a valid checksum on the parition
         let cs = CRC.checksum(&next_seq.to_le_bytes());
         let mut bytes = [0xffu8; ESP32_OTADATA_SIZE as usize + FS_PARTITION_METADATA_SIZE as usize];
         bytes[0..4].copy_from_slice(&next_seq.to_le_bytes());
@@ -330,7 +335,11 @@ impl FirmwareUpgradeMode {
                     }
                     State::Erase { seq } => {
                         let mut finished = false;
-                        for _ in 0..32 {
+                        /// So we erase multiple sectors poll (otherwise it's slow).
+                        const ERASE_CHUNK_SIZE: usize = 32;
+                        for _ in 0..ERASE_CHUNK_SIZE {
+                            // it's faster to read and check if it's already erased than just to go
+                            // and erase it
                             if partition
                                 .get_sector(flash, *seq)
                                 .unwrap()
@@ -420,6 +429,11 @@ impl FirmwareUpgradeMode {
             FirmwareUpgradeMode::Passive { size, .. } => size,
         };
 
+        upstream_io.change_baud(OTA_UPDATE_BAUD);
+        if let Some(downstream_io) = downstream_io.as_mut() {
+            downstream_io.change_baud(OTA_UPDATE_BAUD);
+        }
+
         let mut in_buf = [0xffu8; SECTOR_SIZE as usize];
         let mut i = 0;
         let mut byte_count = 0;
@@ -495,6 +509,13 @@ impl FirmwareUpgradeMode {
             downstream_io.flush();
         }
 
+        // change it back to the original baudrate but keep in mind that the devices are meant to
+        // restart after the upgrade.
+        upstream_io.change_baud(BAUDRATE);
+        if let Some(downstream_io) = downstream_io.as_mut() {
+            downstream_io.change_baud(BAUDRATE);
+        }
+
         if let FirmwareUpgradeMode::Upgrading {
             ota_slot,
             expected_digest,
@@ -518,4 +539,4 @@ impl FirmwareUpgradeMode {
 }
 
 #[derive(Clone, Copy, Debug, bincode::Encode, bincode::Decode)]
-pub struct OtaMetadata {}
+pub struct OtaMetadata {/* it's empty for now but this is where I would put signatures on the firmware etc */}

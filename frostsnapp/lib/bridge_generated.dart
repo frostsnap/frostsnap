@@ -1591,13 +1591,14 @@ class NativeImpl implements Native {
   FirmwareUpgradeConfirmState _wire2api_firmware_upgrade_confirm_state(
       dynamic raw) {
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return FirmwareUpgradeConfirmState(
       confirmations: _wire2api_list_device_id(arr[0]),
       devices: _wire2api_list_device_id(arr[1]),
       needUpgrade: _wire2api_list_device_id(arr[2]),
       abort: _wire2api_bool(arr[3]),
+      upgradeReadyToStart: _wire2api_bool(arr[4]),
     );
   }
 

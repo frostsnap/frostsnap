@@ -217,9 +217,15 @@ impl FfiCoordinator {
                         }
 
                         if let Some(completion) = ui_protocol.is_complete() {
+                            event!(
+                                Level::INFO,
+                                "UI Protocol {} completed with {:?}",
+                                ui_protocol.name(),
+                                completion
+                            );
                             *ui_protocol_loop = None;
                             if let Completion::Abort = completion {
-                                event!(Level::INFO, "canceling protocol due to abort");
+                                event!(Level::DEBUG, "canceling protocol due to abort");
                                 coordinator.cancel();
                                 usb_sender.send_cancel_all();
                             }
@@ -519,6 +525,7 @@ impl FfiCoordinator {
     }
 
     fn start_protocol<P: UiProtocol + Send + 'static>(&self, mut protocol: P) {
+        event!(Level::INFO, "Starting UI protocol {}", protocol.name());
         for device in api::device_list_state().0.devices {
             protocol.connected(device.id);
         }

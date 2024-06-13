@@ -316,6 +316,7 @@ pub struct _FirmwareUpgradeConfirmState {
     pub devices: Vec<DeviceId>,
     pub need_upgrade: Vec<DeviceId>,
     pub abort: bool,
+    pub upgrade_ready_to_start: bool,
 }
 
 #[derive(Clone, Debug)]

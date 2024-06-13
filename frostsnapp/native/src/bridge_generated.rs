@@ -1100,6 +1100,7 @@ const _: fn() = || {
         let _: Vec<DeviceId> = FirmwareUpgradeConfirmState.devices;
         let _: Vec<DeviceId> = FirmwareUpgradeConfirmState.need_upgrade;
         let _: bool = FirmwareUpgradeConfirmState.abort;
+        let _: bool = FirmwareUpgradeConfirmState.upgrade_ready_to_start;
     }
     {
         let KeyGenState = None::<KeyGenState>.unwrap();
@@ -1389,6 +1390,7 @@ impl support::IntoDart for mirror_FirmwareUpgradeConfirmState {
             self.0.devices.into_into_dart().into_dart(),
             self.0.need_upgrade.into_into_dart().into_dart(),
             self.0.abort.into_into_dart().into_dart(),
+            self.0.upgrade_ready_to_start.into_into_dart().into_dart(),
         ]
         .into_dart()
     }

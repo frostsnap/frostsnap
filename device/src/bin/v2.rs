@@ -158,18 +158,20 @@ fn main() -> ! {
         SerialInterface::new_uart(
             Uart::new_with_config(peripherals.UART1, serial_conf, Some(txrx1), &clocks, None),
             &timer0,
+            &clocks,
         )
     } else {
         SerialInterface::new_jtag(UsbSerialJtag::new(peripherals.USB_DEVICE, None), &timer0)
     };
-
-    let downstream_uart = {
+    let downstream_serial = {
         let serial_conf = uart::config::Config {
             baudrate: frostsnap_comms::BAUDRATE,
             ..Default::default()
         };
         let txrx0 = uart::TxRxPins::new_tx_rx(io.pins.gpio21, io.pins.gpio20);
-        Uart::new_with_config(peripherals.UART0, serial_conf, Some(txrx0), &clocks, None)
+        let uart =
+            Uart::new_with_config(peripherals.UART0, serial_conf, Some(txrx0), &clocks, None);
+        SerialInterface::new_uart(uart, &timer0, &clocks)
     };
     let sha256 = esp_hal::sha::Sha::new(peripherals.SHA, esp_hal::sha::ShaMode::SHA256, None);
 
@@ -196,7 +198,7 @@ fn main() -> ! {
 
     let run = esp32_run::Run {
         upstream_serial,
-        downstream_uart,
+        downstream_serial,
         rng,
         ui,
         timer: &timer0,
