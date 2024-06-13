@@ -248,29 +248,32 @@ Widget buildInteractiveDevice(BuildContext context, Device device,
   final upToDate = device.firmwareDigest! == coord.upgradeFirmwareDigest();
 
   if (device.name == null) {
-    if (upToDate) {
-      children.add(ElevatedButton(
-          onPressed: () async {
-            await Navigator.push(context, MaterialPageRoute(builder: (context) {
-              return DeviceSetup(id: device.id);
-            }));
-          },
-          child: const Text("NEW DEVICE")));
-    }
+    // children.add(Text("New Frostsnap Device"));
   } else {
     children.add(LabeledDeviceText(device.name!));
   }
 
   if (upToDate) {
-    children.add(IconButton(
-      icon: Icon(Icons.settings),
-      onPressed: () {
-        Navigator.push(
-            context,
-            MaterialPageRoute(
-                builder: (context) => DeviceSettings(id: device.id)));
-      },
-    ));
+    if (device.name == null) {
+      children.add(IconButton.outlined(
+          onPressed: () async {
+            await Navigator.push(context, MaterialPageRoute(builder: (context) {
+              return DeviceSetup(id: device.id);
+            }));
+          },
+          color: Colors.blue,
+          icon: Icon(Icons.phonelink_setup)));
+    } else {
+      children.add(IconButton(
+        icon: Icon(Icons.settings),
+        onPressed: () {
+          Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (context) => DeviceSettings(id: device.id)));
+        },
+      ));
+    }
   } else {
     children.add(Row(mainAxisAlignment: MainAxisAlignment.center, children: [
       IconButton.outlined(
