@@ -486,20 +486,22 @@ impl FirmwareUpgradeMode {
                 }
             }
 
-            if let Some(downstream_io) = downstream_io.as_mut() {
-                while let Ok(byte) = downstream_io.read_byte() {
-                    assert!(
-                        byte == FIRMWARE_NEXT_CHUNK_READY_SIGNAL,
-                        "invalid control byte sent by downstream"
-                    );
-                    downstream_ready = true;
+            if !finished_writing {
+                if let Some(downstream_io) = downstream_io.as_mut() {
+                    while let Ok(byte) = downstream_io.read_byte() {
+                        assert!(
+                            byte == FIRMWARE_NEXT_CHUNK_READY_SIGNAL,
+                            "invalid control byte sent by downstream"
+                        );
+                        downstream_ready = true;
+                    }
                 }
-            }
 
-            if downstream_ready && !told_upstream_im_ready {
-                block!(upstream_io.write_byte_nb(FIRMWARE_NEXT_CHUNK_READY_SIGNAL)).unwrap();
-                upstream_io.nb_flush();
-                told_upstream_im_ready = true;
+                if downstream_ready && !told_upstream_im_ready {
+                    block!(upstream_io.write_byte_nb(FIRMWARE_NEXT_CHUNK_READY_SIGNAL)).unwrap();
+                    upstream_io.nb_flush();
+                    told_upstream_im_ready = true;
+                }
             }
         }
 
