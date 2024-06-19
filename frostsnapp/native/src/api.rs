@@ -1,4 +1,3 @@
-pub use crate::chain_sync::ChainSync;
 use crate::device_list::DeviceList;
 pub use crate::ffi_serial_port::{
     PortBytesToReadSender, PortOpenSender, PortReadSender, PortWriteSender,
@@ -7,19 +6,19 @@ pub use crate::FfiCoordinator;
 pub use crate::FfiQrReader;
 use crate::QrDecoderStatus;
 use anyhow::{anyhow, Context, Result};
-pub use bdk_chain::bitcoin;
 pub use bitcoin::psbt::Psbt as BitcoinPsbt;
 pub use bitcoin::Transaction as RTransaction;
 use flutter_rust_bridge::{frb, RustOpaque, StreamSink, SyncReturn};
+pub use frostsnap_coordinator::bitcoin::wallet::ConfirmationTime;
+pub use frostsnap_coordinator::bitcoin::{chain_sync::ChainSync, wallet::FrostsnapWallet};
 pub use frostsnap_coordinator::firmware_upgrade::FirmwareUpgradeConfirmState;
 pub use frostsnap_coordinator::frostsnap_core;
-use frostsnap_coordinator::frostsnap_core::message::SignTask;
 pub use frostsnap_coordinator::{
     keygen::KeyGenState, signing::SigningState, DeviceChange, PortDesc,
 };
 use frostsnap_coordinator::{DesktopSerial, UsbSerialManager};
 pub use frostsnap_core::message::EncodedSignature;
-pub use frostsnap_core::{DeviceId, FrostKeyExt, KeyId};
+pub use frostsnap_core::{DeviceId, FrostKeyExt, KeyId, SignTask};
 use lazy_static::lazy_static;
 use llsdb::LlsDb;
 pub use std::collections::{BTreeMap, HashMap};
@@ -30,7 +29,7 @@ use std::sync::Arc;
 pub use std::sync::{Mutex, RwLock};
 use std::time::Instant;
 #[allow(unused)]
-use tracing::{event, span, Level as TLevel};
+use tracing::{event, span, Level};
 
 lazy_static! {
     static ref PORT_EVENT_STREAM: RwLock<Option<StreamSink<PortEvent>>> = RwLock::default();
@@ -91,8 +90,18 @@ pub(crate) fn init_device_names(device_names: HashMap<DeviceId, String>) {
 
 pub struct Transaction {
     pub net_value: i64,
-    pub inner: RustOpaque<RTransaction>,
+    pub inner: RustOpaque<Arc<RTransaction>>,
     pub confirmation_time: Option<ConfirmationTime>,
+}
+
+impl From<frostsnap_coordinator::bitcoin::wallet::Transaction> for Transaction {
+    fn from(value: frostsnap_coordinator::bitcoin::wallet::Transaction) -> Self {
+        Self {
+            net_value: value.net_value,
+            inner: RustOpaque::new(value.inner),
+            confirmation_time: value.confirmation_time,
+        }
+    }
 }
 
 impl Transaction {
@@ -101,7 +110,8 @@ impl Transaction {
     }
 }
 
-pub struct ConfirmationTime {
+#[frb(mirror(ConfirmationTime))]
+pub struct _ConfirmationTime {
     pub height: u32,
     pub time: u64,
 }
@@ -162,7 +172,7 @@ pub struct _PortDesc {
 pub struct _DeviceId(pub [u8; 33]);
 
 #[frb(mirror(KeyId))]
-pub struct _KeyId(pub [u8; 32]);
+pub struct _KeyId(pub [u8; 33]);
 
 #[derive(Debug)]
 pub enum PortEvent {
@@ -238,31 +248,31 @@ impl PortBytesToRead {
     }
 }
 
-pub enum Level {
+pub enum LogLevel {
     Debug,
     Info,
 }
 
-pub fn turn_stderr_logging_on(level: Level) {
+pub fn turn_stderr_logging_on(level: LogLevel) {
     let subscriber = tracing_subscriber::fmt()
         .with_max_level(match level {
-            Level::Info => TLevel::INFO,
-            Level::Debug => TLevel::DEBUG,
+            LogLevel::Info => Level::INFO,
+            LogLevel::Debug => Level::DEBUG,
         })
         .without_time()
         .pretty()
         .finish();
     let _ = tracing::subscriber::set_global_default(subscriber);
-    event!(TLevel::INFO, "logging to stderr");
+    event!(Level::INFO, "logging to stderr");
 }
 
-pub fn turn_logcat_logging_on(_level: Level) {
+pub fn turn_logcat_logging_on(_level: LogLevel) {
     #[cfg(target_os = "android")]
     {
         let subscriber = tracing_subscriber::fmt()
             .with_max_level(match _level {
-                Level::Info => tracing::Level::INFO,
-                Level::Debug => tracing::Level::DEBUG,
+                LogLevel::Info => tracing::Level::INFO,
+                LogLevel::Debug => tracing::Level::DEBUG,
             })
             .without_time()
             .finish();
@@ -272,7 +282,7 @@ pub fn turn_logcat_logging_on(_level: Level) {
             subscriber.with(tracing_android::layer("rust-frostsnapp").unwrap())
         };
         let _ = tracing::subscriber::set_global_default(subscriber);
-        event!(TLevel::INFO, "frostsnap logging to logcat");
+        event!(Level::INFO, "frostsnap logging to logcat");
     }
     #[cfg(not(target_os = "android"))]
     panic!("Do not call turn_logcat_logging_on outside of android");
@@ -354,21 +364,234 @@ impl DeviceListState {
     }
 }
 
-pub fn load(db_file: String) -> anyhow::Result<(Coordinator, Wallet)> {
+pub struct Wallet {
+    pub inner: RustOpaque<Mutex<FrostsnapWallet>>,
+    pub wallet_streams: RustOpaque<Mutex<BTreeMap<KeyId, StreamSink<TxState>>>>,
+    pub chain_sync: RustOpaque<ChainSync>,
+}
+
+impl Wallet {
+    pub fn sub_tx_state(&self, key_id: KeyId, stream: StreamSink<TxState>) -> Result<()> {
+        stream.add(self.tx_state(key_id).0);
+        if let Some(existing) = self.wallet_streams.lock().unwrap().insert(key_id, stream) {
+            existing.close();
+        }
+
+        Ok(())
+    }
+
+    pub fn tx_state(&self, key_id: KeyId) -> SyncReturn<TxState> {
+        let txs = self.inner.lock().unwrap().list_transactions(key_id);
+        SyncReturn(txs.into())
+    }
+
+    pub fn sync_txids(
+        &self,
+        key_id: KeyId,
+        txids: Vec<String>,
+        stream: StreamSink<f64>,
+    ) -> Result<()> {
+        let span = span!(Level::DEBUG, "syncing txids");
+        event!(Level::INFO, "starting sync");
+        let _enter = span.enter();
+        let chain_sync = self.chain_sync.clone();
+        let start = Instant::now();
+
+        let sync_request = {
+            let wallet = self.inner.lock().unwrap();
+            let txids = txids
+                .into_iter()
+                .map(|txid| bitcoin::Txid::from_str(&txid).unwrap())
+                .collect();
+            let sync_request = wallet.sync_txs(txids);
+            let total = sync_request.txids.len();
+            let mut i = 0;
+            let inspect_stream = stream.clone();
+            sync_request.inspect_txids(move |_txid| {
+                inspect_stream.add(i as f64 / total as f64);
+                i += 1;
+            })
+        };
+
+        let update = chain_sync.sync(sync_request)?;
+        let mut wallet = self.inner.lock().unwrap();
+        let something_changed = wallet.finish_sync(update)?;
+
+        if something_changed {
+            let txs = wallet.list_transactions(key_id);
+            drop(wallet);
+            if let Some(wallet_stream) = self.wallet_streams.lock().unwrap().get(&key_id) {
+                wallet_stream.add(txs.into());
+            }
+
+            event!(
+                Level::INFO,
+                elapsed = start.elapsed().as_millis(),
+                "finished syncing txids with changes"
+            );
+        } else {
+            event!(
+                Level::INFO,
+                elapsed = start.elapsed().as_millis(),
+                "finished syncing txids without chanages"
+            );
+        }
+
+        stream.add(100.0);
+        stream.close();
+
+        Ok(())
+    }
+
+    pub fn sync(&self, key_id: KeyId, stream: StreamSink<f64>) -> Result<()> {
+        let span = span!(Level::DEBUG, "syncing", key_id = key_id.to_string());
+        let _enter = span.enter();
+        let start = Instant::now();
+        event!(Level::INFO, "starting sync");
+        let sync_request = {
+            let inspect_stream = stream.clone();
+            let wallet = self.inner.lock().unwrap();
+            let sync_req = wallet.start_sync(key_id);
+            let total = sync_req.spks.len();
+            let mut i = 0;
+            sync_req.inspect_spks(move |_spk| {
+                inspect_stream.add(i as f64 / total as f64);
+                i += 1;
+            })
+        };
+        let chain_sync = self.chain_sync.clone();
+
+        let update = chain_sync.sync(sync_request)?;
+        let mut wallet = self.inner.lock().unwrap();
+        let something_changed = wallet.finish_sync(update)?;
+
+        if something_changed {
+            let txs = wallet.list_transactions(key_id);
+            drop(wallet);
+            if let Some(wallet_stream) = self.wallet_streams.lock().unwrap().get(&key_id) {
+                wallet_stream.add(txs.into());
+            }
+
+            event!(Level::INFO, "finished with changes");
+        } else {
+            event!(
+                Level::INFO,
+                elapsed = start.elapsed().as_millis(),
+                "finished without changes"
+            );
+        }
+
+        stream.add(100.0);
+        stream.close();
+
+        Ok(())
+    }
+
+    pub fn next_address(&self, key_id: KeyId) -> Result<Address> {
+        self.inner
+            .lock()
+            .unwrap()
+            .next_address(key_id)
+            .map(Into::into)
+    }
+
+    pub fn addresses_state(&self, key_id: KeyId) -> SyncReturn<Vec<Address>> {
+        SyncReturn(
+            self.inner
+                .lock()
+                .unwrap()
+                .list_addresses(key_id)
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+        )
+    }
+
+    pub fn send_to(
+        &self,
+        key_id: KeyId,
+        to_address: String,
+        value: u64,
+        feerate: f64,
+    ) -> Result<UnsignedTx> {
+        let mut wallet = self.inner.lock().unwrap();
+        let to_address = bitcoin::Address::from_str(&to_address)
+            .expect("validation should have checked")
+            .require_network(wallet.network)
+            .expect("validation should have checked");
+        let signing_task = wallet.send_to(key_id, to_address, value, feerate as f32)?;
+        let unsigned_tx = UnsignedTx {
+            template_tx: RustOpaque::new(signing_task),
+        };
+        Ok(unsigned_tx)
+    }
+
+    pub fn broadcast_tx(&self, key_id: KeyId, tx: SignedTx) -> Result<()> {
+        match self.chain_sync.broadcast(&*tx.signed_tx) {
+            Ok(_) => {
+                event!(
+                    Level::INFO,
+                    tx = tx.signed_tx.txid().to_string(),
+                    "transaction successfully broadcast"
+                );
+                let mut inner = self.inner.lock().unwrap();
+                inner.broadcast_success(tx.signed_tx.deref().to_owned());
+                let wallet_streams = self.wallet_streams.lock().unwrap();
+                if let Some(stream) = wallet_streams.get(&key_id) {
+                    let txs = inner.list_transactions(key_id);
+                    stream.add(txs.into());
+                }
+                Ok(())
+            }
+            Err(e) => {
+                use bitcoin::consensus::Encodable;
+                use frostsnap_core::schnorr_fun::fun::hex;
+                let mut buf = vec![];
+                tx.signed_tx.consensus_encode(&mut buf).unwrap();
+                let hex_tx = hex::encode(&buf);
+                event!(
+                    Level::ERROR,
+                    tx = tx.signed_tx.txid().to_string(),
+                    hex = hex_tx,
+                    error = e.to_string(),
+                    "unable to broadcast"
+                );
+                Err(e)
+            }
+        }
+    }
+
+    pub fn psbt_to_unsigned_tx(&self, psbt: Psbt, key_id: KeyId) -> Result<SyncReturn<UnsignedTx>> {
+        let template = self
+            .inner
+            .lock()
+            .unwrap()
+            .psbt_to_tx_template(&*psbt.inner, key_id.to_root_pubkey().expect("valid key id"))?;
+
+        Ok(SyncReturn(UnsignedTx {
+            template_tx: RustOpaque::new(template),
+        }))
+    }
+}
+
+pub fn load(db_file: String) -> anyhow::Result<(Coordinator, Wallet, BitcoinContext)> {
     let usb_manager = UsbSerialManager::new(Box::new(DesktopSerial), crate::FIRMWARE);
     _load(db_file, usb_manager)
 }
 
 pub fn load_host_handles_serial(
     db_file: String,
-) -> anyhow::Result<(Coordinator, FfiSerial, Wallet)> {
+) -> anyhow::Result<(Coordinator, FfiSerial, Wallet, BitcoinContext)> {
     let ffi_serial = FfiSerial::default();
     let usb_manager = UsbSerialManager::new(Box::new(ffi_serial.clone()), crate::FIRMWARE);
-    let (coord, wallet) = _load(db_file, usb_manager)?;
-    Ok((coord, ffi_serial, wallet))
+    let (coord, wallet, bitcoin_context) = _load(db_file, usb_manager)?;
+    Ok((coord, ffi_serial, wallet, bitcoin_context))
 }
 
-fn _load(db_file: String, usb_serial_manager: UsbSerialManager) -> Result<(Coordinator, Wallet)> {
+fn _load(
+    db_file: String,
+    usb_serial_manager: UsbSerialManager,
+) -> Result<(Coordinator, Wallet, BitcoinContext)> {
     let file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -376,7 +599,7 @@ fn _load(db_file: String, usb_serial_manager: UsbSerialManager) -> Result<(Coord
         .truncate(false)
         .open(db_file.clone())?;
 
-    event!(TLevel::INFO, path = db_file, "initializing database");
+    event!(Level::INFO, path = db_file, "initializing database");
 
     let db =
         LlsDb::load_or_init(file).context(format!("failed to load database from {db_file}"))?;
@@ -384,18 +607,21 @@ fn _load(db_file: String, usb_serial_manager: UsbSerialManager) -> Result<(Coord
     let db = Arc::new(Mutex::new(db));
 
     let coordinator = FfiCoordinator::new(db.clone(), usb_serial_manager)?;
-    let persist_core_handle = coordinator.persist_core_handle();
-    let wallet = crate::wallet::_Wallet::load_or_init(
-        db.clone(),
-        bitcoin::Network::Signet,
-        persist_core_handle,
-    )
-    .with_context(|| format!("loading wallet from data in {db_file}"))?;
+    let wallet = FrostsnapWallet::load_or_init(db.clone(), bitcoin::Network::Signet)
+        .with_context(|| format!("loading wallet from data in {db_file}"))?;
     let coordinator = Coordinator(RustOpaque::new(coordinator));
     let chain_sync = ChainSync::new(wallet.network)?;
-    let wallet = Wallet::new(wallet, chain_sync);
+    let bitcoin_context = BitcoinContext {
+        network: RustOpaque::new(wallet.network),
+    };
 
-    Ok((coordinator, wallet))
+    let wallet = Wallet {
+        inner: RustOpaque::new(Mutex::new(wallet)),
+        chain_sync: RustOpaque::new(chain_sync),
+        wallet_streams: RustOpaque::new(Default::default()),
+    };
+
+    Ok((coordinator, wallet, bitcoin_context))
 }
 
 #[derive(Debug, Clone)]
@@ -501,9 +727,7 @@ impl Coordinator {
         self.0.start_signing(
             key_id,
             devices.into_iter().collect(),
-            SignTask::Plain {
-                message: message.into_bytes(),
-            },
+            SignTask::Plain { message },
             stream,
         )?;
         Ok(())
@@ -519,7 +743,7 @@ impl Coordinator {
         self.0.start_signing(
             key_id,
             devices.into_iter().collect(),
-            SignTask::BitcoinTransaction(unsigned_tx.task.deref().clone()),
+            SignTask::BitcoinTransaction(unsigned_tx.template_tx.deref().clone()),
             stream,
         )?;
         Ok(())
@@ -577,163 +801,30 @@ impl Coordinator {
     }
 }
 
-pub struct Wallet {
-    pub inner: RustOpaque<Mutex<crate::wallet::_Wallet>>,
-    pub wallet_streams: RustOpaque<Mutex<BTreeMap<KeyId, StreamSink<TxState>>>>,
-    pub chain_sync: RustOpaque<ChainSync>,
+/// The point of this is to keep bitcoin API functionalities that don't require the wallet separate
+/// from it.
+pub struct BitcoinContext {
+    pub network: RustOpaque<bitcoin::Network>,
 }
 
-impl Wallet {
-    fn new(wallet: crate::wallet::_Wallet, chain_sync: ChainSync) -> Self {
-        Self {
-            inner: RustOpaque::new(Mutex::new(wallet)),
-            wallet_streams: RustOpaque::new(Default::default()),
-            chain_sync: RustOpaque::new(chain_sync),
-        }
-    }
-
-    pub fn sub_tx_state(&self, key_id: KeyId, stream: StreamSink<TxState>) -> Result<()> {
-        stream.add(self.tx_state(key_id).0);
-        if let Some(existing) = self.wallet_streams.lock().unwrap().insert(key_id, stream) {
-            existing.close();
-        }
-
-        Ok(())
-    }
-
-    pub fn tx_state(&self, key_id: KeyId) -> SyncReturn<TxState> {
-        let txs = self.inner.lock().unwrap().list_transactions(key_id);
-        SyncReturn(TxState { txs })
-    }
-
-    pub fn sync_txids(
-        &self,
-        key_id: KeyId,
-        txids: Vec<String>,
-        stream: StreamSink<f64>,
-    ) -> Result<()> {
-        let span = span!(TLevel::DEBUG, "syncing txids");
-        event!(TLevel::INFO, "starting sync");
-        let _enter = span.enter();
-        let chain_sync = self.chain_sync.clone();
-        let start = Instant::now();
-
-        let sync_request = {
-            let wallet = self.inner.lock().unwrap();
-            let txids = txids
-                .into_iter()
-                .map(|txid| bitcoin::Txid::from_str(&txid).unwrap())
-                .collect();
-            let sync_request = wallet.sync_txs(txids);
-            let total = sync_request.txids.len();
-            let mut i = 0;
-            let inspect_stream = stream.clone();
-            sync_request.inspect_txids(move |_txid| {
-                inspect_stream.add(i as f64 / total as f64);
-                i += 1;
-            })
-        };
-
-        let update = chain_sync.sync(sync_request)?;
-        let mut wallet = self.inner.lock().unwrap();
-        let something_changed = wallet.finish_sync(update)?;
-
-        if something_changed {
-            let txs = wallet.list_transactions(key_id);
-            drop(wallet);
-            if let Some(wallet_stream) = self.wallet_streams.lock().unwrap().get(&key_id) {
-                wallet_stream.add(TxState { txs });
-            }
-
-            event!(
-                TLevel::INFO,
-                elapsed = start.elapsed().as_millis(),
-                "finished syncing txids with changes"
-            );
-        } else {
-            event!(
-                TLevel::INFO,
-                elapsed = start.elapsed().as_millis(),
-                "finished syncing txids without chanages"
-            );
-        }
-
-        stream.add(100.0);
-        stream.close();
-
-        Ok(())
-    }
-
-    pub fn sync(&self, key_id: KeyId, stream: StreamSink<f64>) -> Result<()> {
-        let span = span!(TLevel::DEBUG, "syncing", key_id = key_id.to_string());
-        let _enter = span.enter();
-        let start = Instant::now();
-        event!(TLevel::INFO, "starting sync");
-        let sync_request = {
-            let inspect_stream = stream.clone();
-            let wallet = self.inner.lock().unwrap();
-            let sync_req = wallet.start_sync(key_id);
-            let total = sync_req.spks.len();
-            let mut i = 0;
-            sync_req.inspect_spks(move |_spk| {
-                inspect_stream.add(i as f64 / total as f64);
-                i += 1;
-            })
-        };
-        let chain_sync = self.chain_sync.clone();
-
-        let update = chain_sync.sync(sync_request)?;
-        let mut wallet = self.inner.lock().unwrap();
-        let something_changed = wallet.finish_sync(update)?;
-
-        if something_changed {
-            let txs = wallet.list_transactions(key_id);
-            drop(wallet);
-            if let Some(wallet_stream) = self.wallet_streams.lock().unwrap().get(&key_id) {
-                wallet_stream.add(TxState { txs });
-            }
-
-            event!(TLevel::INFO, "finished with changes");
-        } else {
-            event!(
-                TLevel::INFO,
-                elapsed = start.elapsed().as_millis(),
-                "finished without changes"
-            );
-        }
-
-        stream.add(100.0);
-        stream.close();
-
-        Ok(())
-    }
-
-    pub fn next_address(&self, key_id: KeyId) -> Result<Address> {
-        self.inner.lock().unwrap().next_address(key_id)
-    }
-
-    pub fn addresses_state(&self, key_id: KeyId) -> SyncReturn<Vec<Address>> {
-        SyncReturn(self.inner.lock().unwrap().list_addresses(key_id))
-    }
-
-    pub fn validate_destination_address(&self, address: String) -> SyncReturn<Option<String>> {
-        SyncReturn(match bitcoin::Address::from_str(&address) {
-            Ok(address) => match address.require_network(self.inner.lock().unwrap().network) {
-                Ok(_) => None,
-                Err(e) => Some(e.to_string()),
-            },
-            Err(e) => Some(e.to_string()),
-        })
+impl BitcoinContext {
+    pub fn descriptor_for_key(&self, key_id: KeyId) -> SyncReturn<String> {
+        let descriptor = frostsnap_coordinator::bitcoin::multi_x_descriptor_for_account(
+            key_id.to_root_pubkey().expect("valid key id"),
+            frostsnap_core::tweak::Account::Segwitv1,
+            *self.network,
+        );
+        SyncReturn(descriptor.to_string())
     }
 
     pub fn validate_amount(&self, address: String, value: u64) -> SyncReturn<Option<String>> {
         SyncReturn(match bitcoin::Address::from_str(&address) {
-            Ok(address) => match address.require_network(self.inner.lock().unwrap().network) {
+            Ok(address) => match address.require_network(*self.network) {
                 Ok(address) => {
                     let dust_value = address.script_pubkey().dust_value().to_sat();
                     if value < dust_value {
                         event!(
-                            TLevel::DEBUG,
+                            Level::DEBUG,
                             value = value,
                             dust_value = dust_value,
                             "address validation rejected"
@@ -749,177 +840,119 @@ impl Wallet {
         })
     }
 
-    pub fn send_to(
-        &self,
-        key_id: KeyId,
-        to_address: String,
-        value: u64,
-        feerate: f64,
-    ) -> Result<UnsignedTx> {
-        let mut wallet = self.inner.lock().unwrap();
-        let to_address = bitcoin::Address::from_str(&to_address)
-            .expect("validation should have checked")
-            .require_network(wallet.network)
-            .expect("validation should have checked");
-        let signing_task = wallet.send_to(key_id, to_address, value, feerate as f32)?;
-        let unsigned_tx = UnsignedTx {
-            task: RustOpaque::new(signing_task),
-        };
-        Ok(unsigned_tx)
+    pub fn validate_destination_address(&self, address: String) -> SyncReturn<Option<String>> {
+        SyncReturn(match bitcoin::Address::from_str(&address) {
+            Ok(address) => match address.require_network(*self.network) {
+                Ok(_) => None,
+                Err(e) => Some(e.to_string()),
+            },
+            Err(e) => Some(e.to_string()),
+        })
     }
+}
 
-    pub fn complete_unsigned_psbt(
-        &self,
-        psbt: Psbt,
-        signatures: Vec<EncodedSignature>,
-    ) -> Result<SyncReturn<Psbt>> {
-        let psbt = self
-            .inner
-            .lock()
-            .unwrap()
-            .add_signatures_to_psbt(&psbt.inner, signatures)
-            .map(RustOpaque::new)?;
-        Ok(SyncReturn(Psbt { inner: psbt }))
-    }
-
-    pub fn complete_unsigned_tx(
-        &self,
-        unsigned_tx: UnsignedTx,
-        signatures: Vec<EncodedSignature>,
-    ) -> Result<SyncReturn<SignedTx>> {
-        let tx = self
-            .inner
-            .lock()
-            .unwrap()
-            .complete_tx_sign_task(unsigned_tx.task.deref().clone(), signatures.clone())?;
-
-        Ok(SyncReturn(SignedTx {
-            inner: RustOpaque::new(tx),
-        }))
-    }
-
-    pub fn broadcast_tx(&self, key_id: KeyId, tx: SignedTx) -> Result<()> {
-        match self.chain_sync.broadcast(&tx.inner) {
-            Ok(_) => {
-                event!(
-                    TLevel::INFO,
-                    tx = tx.inner.txid().to_string(),
-                    "transaction successfully broadcast"
-                );
-                let mut inner = self.inner.lock().unwrap();
-                inner.broadcast_success(tx.inner.deref().to_owned());
-                let wallet_streams = self.wallet_streams.lock().unwrap();
-                if let Some(stream) = wallet_streams.get(&key_id) {
-                    let txs = inner.list_transactions(key_id);
-                    stream.add(TxState { txs });
-                }
-                Ok(())
-            }
-            Err(e) => {
-                use bdk_chain::bitcoin::consensus::Encodable;
-                use frostsnap_core::schnorr_fun::fun::hex;
-                let mut buf = vec![];
-                tx.inner.consensus_encode(&mut buf).unwrap();
-                let hex_tx = hex::encode(&buf);
-                event!(
-                    TLevel::ERROR,
-                    tx = tx.inner.txid().to_string(),
-                    hex = hex_tx,
-                    error = e.to_string(),
-                    "unable to broadcast"
-                );
-                Err(e)
-            }
-        }
-    }
-
-    pub fn effect_of_tx(
-        &self,
-        key_id: KeyId,
-        tx: RustOpaque<RTransaction>,
-    ) -> Result<SyncReturn<EffectOfTx>> {
-        let inner = self.inner.lock().unwrap();
-        let fee = inner.fee(&tx)?;
-        Ok(SyncReturn(EffectOfTx {
-            net_value: inner.net_value(key_id, &tx),
-            fee,
-            feerate: fee as f64 / (tx.weight().to_wu() as f64 / 4.0),
-            foreign_receiving_addresses: inner
-                .spends_outside(&tx)
-                .into_iter()
-                .map(|(spk, value)| {
-                    (
-                        bitcoin::Address::from_script(&spk, inner.network)
-                            .map(|address| address.to_string())
-                            .unwrap_or(spk.to_hex_string()),
-                        value,
-                    )
-                })
-                .collect(),
-        }))
-    }
-
-    pub fn effect_of_psbt_tx(&self, key_id: KeyId, psbt: Psbt) -> Result<SyncReturn<EffectOfTx>> {
-        let inner = self.inner.lock().unwrap();
-        let fee = psbt.inner.fee()?.to_sat();
-        let tx = psbt.inner.deref().clone().extract_tx()?;
-        Ok(SyncReturn(EffectOfTx {
-            net_value: inner.net_value(key_id, &tx),
-            fee,
-            feerate: fee as f64 / (tx.weight().to_wu() as f64 / 4.0),
-            foreign_receiving_addresses: inner
-                .spends_outside(&tx)
-                .into_iter()
-                .map(|(spk, value)| {
-                    (
-                        bitcoin::Address::from_script(&spk, inner.network)
-                            .map(|address| address.to_string())
-                            .unwrap_or(spk.to_hex_string()),
-                        value,
-                    )
-                })
-                .collect(),
-        }))
-    }
-
-    pub fn psbt_to_unsigned_tx(&self, psbt: Psbt, key_id: KeyId) -> Result<SyncReturn<UnsignedTx>> {
-        Ok(SyncReturn(
-            self.inner
-                .lock()
-                .unwrap()
-                .psbt_to_unsigned_tx(&*psbt.inner, key_id)?,
-        ))
-    }
-
-    pub fn descriptor_for_key(&self, key_id: KeyId) -> Result<SyncReturn<String>> {
-        let xpub = self
-            .inner
-            .lock()
-            .unwrap()
-            .xpub(key_id)?
-            .ok_or(anyhow!("no such key {key_id}"))?;
-        let str_descriptor = format!("tr([{}/]{})", xpub.fingerprint(), xpub);
-        Ok(SyncReturn(str_descriptor))
-    }
+#[derive(Clone)]
+pub struct UnsignedTx {
+    pub template_tx: RustOpaque<frostsnap_core::bitcoin_transaction::TransactionTemplate>,
 }
 
 pub struct SignedTx {
-    pub inner: RustOpaque<RTransaction>,
+    pub signed_tx: RustOpaque<RTransaction>,
+    pub unsigned_tx: UnsignedTx,
 }
 
 impl SignedTx {
-    pub fn tx(&self) -> SyncReturn<RustOpaque<RTransaction>> {
-        SyncReturn(self.inner.clone())
+    pub fn effect(
+        &self,
+        key_id: KeyId,
+        network: RustOpaque<bitcoin::Network>,
+    ) -> Result<SyncReturn<EffectOfTx>> {
+        self.unsigned_tx.effect(key_id, network)
     }
 }
 
-pub struct UnsignedTx {
-    pub task: RustOpaque<frostsnap_core::message::BitcoinTransactionSignTask>,
-}
-
 impl UnsignedTx {
-    pub fn tx(&self) -> SyncReturn<RustOpaque<RTransaction>> {
-        SyncReturn(RustOpaque::new(self.task.tx_template.clone()))
+    pub fn attach_signatures_to_psbt(&self, signatures: Vec<EncodedSignature>, psbt: Psbt) -> Psbt {
+        let mut signed_psbt = psbt.inner.deref().clone();
+        let mut signatures = signatures.into_iter();
+        for (i, _, _) in self.template_tx.iter_locally_owned_inputs() {
+            let signature = signatures.next();
+            // we are assuming the signatures are correct here.
+            let input = &mut signed_psbt.inputs[i];
+            let schnorr_sig = bitcoin::taproot::Signature {
+                sig: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.unwrap().0)
+                    .unwrap(),
+                hash_ty: bitcoin::sighash::TapSighashType::Default,
+            };
+            let witness = bitcoin::Witness::from_slice(&[schnorr_sig.to_vec()]);
+            // FIXME: we probably shouldn't be setting the final_script_witness here since that's the job of the PSBT finalizer
+            // Instead, it should just set the tap_key_sig and then the finalizer can extract it and set the final_script_witness
+            input.final_script_witness = Some(witness);
+        }
+
+        Psbt {
+            inner: RustOpaque::new(signed_psbt),
+        }
+    }
+
+    pub fn complete(&self, signatures: Vec<EncodedSignature>) -> SignedTx {
+        let mut tx = self.template_tx.to_rust_bitcoin_tx();
+        for (txin, signature) in tx.input.iter_mut().zip(signatures) {
+            let schnorr_sig = bitcoin::taproot::Signature {
+                sig: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.0).unwrap(),
+                hash_ty: bitcoin::sighash::TapSighashType::Default,
+            };
+            let witness = bitcoin::Witness::from_slice(&[schnorr_sig.to_vec()]);
+            txin.witness = witness;
+        }
+        SignedTx {
+            signed_tx: RustOpaque::new(tx),
+            unsigned_tx: self.clone(),
+        }
+    }
+
+    pub fn effect(
+        &self,
+        key_id: KeyId,
+        network: RustOpaque<bitcoin::Network>,
+    ) -> Result<SyncReturn<EffectOfTx>> {
+        use frostsnap_core::bitcoin_transaction::RootOwner;
+        let fee = self
+            .template_tx
+            .fee()
+            .ok_or(anyhow!("invalid transaction"))?;
+        let mut net_value = self.template_tx.net_value();
+        let value_for_this_key = net_value
+            .remove(&RootOwner::Local(key_id))
+            .ok_or(anyhow!("this transaction has no effect on this key"))?;
+
+        let foreign_receiving_addresses = net_value
+            .into_iter()
+            .filter_map(|(owner, value)| match owner {
+                RootOwner::Local(_) => Some(Err(anyhow!(
+                    "we don't support spending from multiple different keys"
+                ))),
+                RootOwner::Foreign(spk) => {
+                    if value > 0 {
+                        Some(Ok((
+                            bitcoin::Address::from_script(spk.as_script(), *network)
+                                .expect("will have address form")
+                                .to_string(),
+                            value as u64,
+                        )))
+                    } else {
+                        None
+                    }
+                }
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(SyncReturn(EffectOfTx {
+            net_value: value_for_this_key,
+            fee,
+            feerate: self.template_tx.feerate(),
+            foreign_receiving_addresses,
+        }))
     }
 }
 
@@ -930,15 +963,33 @@ pub struct Address {
     pub used: bool,
 }
 
+impl From<frostsnap_coordinator::bitcoin::wallet::AddressInfo> for Address {
+    fn from(value: frostsnap_coordinator::bitcoin::wallet::AddressInfo) -> Self {
+        Self {
+            index: value.index,
+            address_string: value.address.to_string(),
+            used: value.used,
+        }
+    }
+}
+
 pub struct TxState {
     pub txs: Vec<Transaction>,
+}
+
+impl From<Vec<frostsnap_coordinator::bitcoin::wallet::Transaction>> for TxState {
+    fn from(value: Vec<frostsnap_coordinator::bitcoin::wallet::Transaction>) -> Self {
+        Self {
+            txs: value.into_iter().map(From::from).collect(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct EffectOfTx {
     pub net_value: i64,
     pub fee: u64,
-    pub feerate: f64,
+    pub feerate: Option<f64>,
     pub foreign_receiving_addresses: Vec<(String, u64)>,
 }
 
@@ -973,7 +1024,7 @@ pub fn psbt_bytes_to_psbt(psbt_bytes: Vec<u8>) -> Result<SyncReturn<Psbt>> {
         Ok(psbt) => psbt,
         Err(e) => {
             event!(
-                TLevel::ERROR,
+                Level::ERROR,
                 "Failed to deserialize PSBT {e} {:?}",
                 psbt_bytes
             );

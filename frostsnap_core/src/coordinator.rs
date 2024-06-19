@@ -1,5 +1,6 @@
 use crate::{
-    gen_pop_message, message::*, ActionError, Error, FrostKeyExt, KeyId, MessageResult, SessionHash,
+    gen_pop_message, message::*, ActionError, Error, FrostKeyExt, KeyId, MessageResult,
+    SessionHash, SignItem, SignTask, SignTaskError,
 };
 use alloc::{
     collections::{BTreeMap, BTreeSet},
@@ -496,7 +497,11 @@ impl FrostCoordinator {
             });
         }
 
-        let sign_items = sign_task.sign_items();
+        let checked_sign_task = sign_task
+            .check(frost_key.key_id())
+            .map_err(StartSignError::SignTask)?;
+
+        let sign_items = checked_sign_task.sign_items();
         let n_signatures = sign_items.len();
 
         // For the ToDevice message
@@ -562,7 +567,7 @@ impl FrostCoordinator {
 
         let key = key.clone();
         let sign_request = SignRequest {
-            sign_task,
+            sign_task: checked_sign_task.into_inner(),
             nonces: signing_nonces.clone(),
             key_id,
         };
@@ -676,7 +681,9 @@ impl SignSessionProgress {
         sign_item: SignItem,
         nonces: BTreeMap<frost::PartyIndex, frost::Nonce>,
     ) -> Self {
-        let tweaked_key = sign_item.derive_key(&root_key.into_frost_key());
+        let tweaked_key = sign_item
+            .app_tweak
+            .derive_xonly_key(&root_key.into_frost_key());
         let sign_session =
             frost.start_sign_session(&tweaked_key, nonces, sign_item.schnorr_fun_message());
         Self {
@@ -692,7 +699,9 @@ impl SignSessionProgress {
     }
 
     pub fn tweaked_frost_key(&self) -> FrostKey<EvenY> {
-        self.sign_item.derive_key(&self.root_key.into_frost_key())
+        self.sign_item
+            .app_tweak
+            .derive_xonly_key(&self.root_key.into_frost_key())
     }
 
     pub fn verify_final_signature<NG>(
@@ -702,7 +711,7 @@ impl SignSessionProgress {
     ) -> bool {
         self.sign_item.verify_final_signature(
             schnorr,
-            self.root_key.into_frost_key().public_key(),
+            self.root_key.into_frost_key().key_id(),
             signature,
         )
     }
@@ -791,6 +800,7 @@ pub enum StartSignError {
         have: usize,
         need: usize,
     },
+    SignTask(SignTaskError),
 }
 
 impl core::fmt::Display for StartSignError {
@@ -831,6 +841,9 @@ impl core::fmt::Display for StartSignError {
                 f,
                 "device does not have key is was asked to sign with, id: {key_id}"
             ),
+            StartSignError::SignTask(error) => {
+                write!(f, "{error}")
+            }
         }
     }
 }

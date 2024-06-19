@@ -23,11 +23,11 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kSubDeviceEventsConstMeta;
 
-  Future<void> turnStderrLoggingOn({required Level level, dynamic hint});
+  Future<void> turnStderrLoggingOn({required LogLevel level, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kTurnStderrLoggingOnConstMeta;
 
-  Future<void> turnLogcatLoggingOn({required Level level, dynamic hint});
+  Future<void> turnLogcatLoggingOn({required LogLevel level, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kTurnLogcatLoggingOnConstMeta;
 
@@ -43,12 +43,13 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kGetDeviceConstMeta;
 
-  Future<(Coordinator, Wallet)> load({required String dbFile, dynamic hint});
+  Future<(Coordinator, Wallet, BitcoinContext)> load(
+      {required String dbFile, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kLoadConstMeta;
 
-  Future<(Coordinator, FfiSerial, Wallet)> loadHostHandlesSerial(
-      {required String dbFile, dynamic hint});
+  Future<(Coordinator, FfiSerial, Wallet, BitcoinContext)>
+      loadHostHandlesSerial({required String dbFile, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kLoadHostHandlesSerialConstMeta;
 
@@ -119,6 +120,65 @@ abstract class Native {
       {required DeviceListState that, required DeviceId id, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kGetDeviceMethodDeviceListStateConstMeta;
+
+  Stream<TxState> subTxStateMethodWallet(
+      {required Wallet that, required KeyId keyId, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kSubTxStateMethodWalletConstMeta;
+
+  TxState txStateMethodWallet(
+      {required Wallet that, required KeyId keyId, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kTxStateMethodWalletConstMeta;
+
+  Stream<double> syncTxidsMethodWallet(
+      {required Wallet that,
+      required KeyId keyId,
+      required List<String> txids,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kSyncTxidsMethodWalletConstMeta;
+
+  Stream<double> syncMethodWallet(
+      {required Wallet that, required KeyId keyId, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kSyncMethodWalletConstMeta;
+
+  Future<Address> nextAddressMethodWallet(
+      {required Wallet that, required KeyId keyId, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kNextAddressMethodWalletConstMeta;
+
+  List<Address> addressesStateMethodWallet(
+      {required Wallet that, required KeyId keyId, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kAddressesStateMethodWalletConstMeta;
+
+  Future<UnsignedTx> sendToMethodWallet(
+      {required Wallet that,
+      required KeyId keyId,
+      required String toAddress,
+      required int value,
+      required double feerate,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kSendToMethodWalletConstMeta;
+
+  Future<void> broadcastTxMethodWallet(
+      {required Wallet that,
+      required KeyId keyId,
+      required SignedTx tx,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kBroadcastTxMethodWalletConstMeta;
+
+  UnsignedTx psbtToUnsignedTxMethodWallet(
+      {required Wallet that,
+      required Psbt psbt,
+      required KeyId keyId,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kPsbtToUnsignedTxMethodWalletConstMeta;
 
   Future<void> setAvailablePortsMethodFfiSerial(
       {required FfiSerial that, required List<PortDesc> ports, dynamic hint});
@@ -250,123 +310,58 @@ abstract class Native {
   FlutterRustBridgeTaskConstMeta
       get kEnterFirmwareUpgradeModeMethodCoordinatorConstMeta;
 
-  Stream<TxState> subTxStateMethodWallet(
-      {required Wallet that, required KeyId keyId, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kSubTxStateMethodWalletConstMeta;
-
-  TxState txStateMethodWallet(
-      {required Wallet that, required KeyId keyId, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kTxStateMethodWalletConstMeta;
-
-  Stream<double> syncTxidsMethodWallet(
-      {required Wallet that,
-      required KeyId keyId,
-      required List<String> txids,
-      dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kSyncTxidsMethodWalletConstMeta;
-
-  Stream<double> syncMethodWallet(
-      {required Wallet that, required KeyId keyId, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kSyncMethodWalletConstMeta;
-
-  Future<Address> nextAddressMethodWallet(
-      {required Wallet that, required KeyId keyId, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kNextAddressMethodWalletConstMeta;
-
-  List<Address> addressesStateMethodWallet(
-      {required Wallet that, required KeyId keyId, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kAddressesStateMethodWalletConstMeta;
-
-  String? validateDestinationAddressMethodWallet(
-      {required Wallet that, required String address, dynamic hint});
+  String descriptorForKeyMethodBitcoinContext(
+      {required BitcoinContext that, required KeyId keyId, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta
-      get kValidateDestinationAddressMethodWalletConstMeta;
+      get kDescriptorForKeyMethodBitcoinContextConstMeta;
 
-  String? validateAmountMethodWallet(
-      {required Wallet that,
+  String? validateAmountMethodBitcoinContext(
+      {required BitcoinContext that,
       required String address,
       required int value,
       dynamic hint});
 
-  FlutterRustBridgeTaskConstMeta get kValidateAmountMethodWalletConstMeta;
+  FlutterRustBridgeTaskConstMeta
+      get kValidateAmountMethodBitcoinContextConstMeta;
 
-  Future<UnsignedTx> sendToMethodWallet(
-      {required Wallet that,
+  String? validateDestinationAddressMethodBitcoinContext(
+      {required BitcoinContext that, required String address, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta
+      get kValidateDestinationAddressMethodBitcoinContextConstMeta;
+
+  EffectOfTx effectMethodSignedTx(
+      {required SignedTx that,
       required KeyId keyId,
-      required String toAddress,
-      required int value,
-      required double feerate,
+      required BitcoinNetwork network,
       dynamic hint});
 
-  FlutterRustBridgeTaskConstMeta get kSendToMethodWalletConstMeta;
+  FlutterRustBridgeTaskConstMeta get kEffectMethodSignedTxConstMeta;
 
-  Psbt completeUnsignedPsbtMethodWallet(
-      {required Wallet that,
+  Future<Psbt> attachSignaturesToPsbtMethodUnsignedTx(
+      {required UnsignedTx that,
+      required List<EncodedSignature> signatures,
       required Psbt psbt,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta
+      get kAttachSignaturesToPsbtMethodUnsignedTxConstMeta;
+
+  Future<SignedTx> completeMethodUnsignedTx(
+      {required UnsignedTx that,
       required List<EncodedSignature> signatures,
       dynamic hint});
 
-  FlutterRustBridgeTaskConstMeta get kCompleteUnsignedPsbtMethodWalletConstMeta;
+  FlutterRustBridgeTaskConstMeta get kCompleteMethodUnsignedTxConstMeta;
 
-  SignedTx completeUnsignedTxMethodWallet(
-      {required Wallet that,
-      required UnsignedTx unsignedTx,
-      required List<EncodedSignature> signatures,
-      dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kCompleteUnsignedTxMethodWalletConstMeta;
-
-  Future<void> broadcastTxMethodWallet(
-      {required Wallet that,
+  EffectOfTx effectMethodUnsignedTx(
+      {required UnsignedTx that,
       required KeyId keyId,
-      required SignedTx tx,
+      required BitcoinNetwork network,
       dynamic hint});
 
-  FlutterRustBridgeTaskConstMeta get kBroadcastTxMethodWalletConstMeta;
-
-  EffectOfTx effectOfTxMethodWallet(
-      {required Wallet that,
-      required KeyId keyId,
-      required RTransaction tx,
-      dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kEffectOfTxMethodWalletConstMeta;
-
-  EffectOfTx effectOfPsbtTxMethodWallet(
-      {required Wallet that,
-      required KeyId keyId,
-      required Psbt psbt,
-      dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kEffectOfPsbtTxMethodWalletConstMeta;
-
-  UnsignedTx psbtToUnsignedTxMethodWallet(
-      {required Wallet that,
-      required Psbt psbt,
-      required KeyId keyId,
-      dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kPsbtToUnsignedTxMethodWalletConstMeta;
-
-  String descriptorForKeyMethodWallet(
-      {required Wallet that, required KeyId keyId, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kDescriptorForKeyMethodWalletConstMeta;
-
-  RTransaction txMethodSignedTx({required SignedTx that, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kTxMethodSignedTxConstMeta;
-
-  RTransaction txMethodUnsignedTx({required UnsignedTx that, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kTxMethodUnsignedTxConstMeta;
+  FlutterRustBridgeTaskConstMeta get kEffectMethodUnsignedTxConstMeta;
 
   Uint8List toBytesMethodPsbt({required Psbt that, dynamic hint});
 
@@ -380,6 +375,14 @@ abstract class Native {
   DropFnType get dropOpaqueArcMutexVecPortDesc;
   ShareFnType get shareOpaqueArcMutexVecPortDesc;
   OpaqueTypeFinalizer get ArcMutexVecPortDescFinalizer;
+
+  DropFnType get dropOpaqueArcRTransaction;
+  ShareFnType get shareOpaqueArcRTransaction;
+  OpaqueTypeFinalizer get ArcRTransactionFinalizer;
+
+  DropFnType get dropOpaqueBitcoinNetwork;
+  ShareFnType get shareOpaqueBitcoinNetwork;
+  OpaqueTypeFinalizer get BitcoinNetworkFinalizer;
 
   DropFnType get dropOpaqueBitcoinPsbt;
   ShareFnType get shareOpaqueBitcoinPsbt;
@@ -397,22 +400,22 @@ abstract class Native {
   ShareFnType get shareOpaqueFfiQrReader;
   OpaqueTypeFinalizer get FfiQrReaderFinalizer;
 
+  DropFnType get dropOpaqueFrostsnapCoreBitcoinTransactionTransactionTemplate;
+  ShareFnType get shareOpaqueFrostsnapCoreBitcoinTransactionTransactionTemplate;
+  OpaqueTypeFinalizer
+      get FrostsnapCoreBitcoinTransactionTransactionTemplateFinalizer;
+
   DropFnType get dropOpaqueFrostsnapCoreCoordinatorFrostKey;
   ShareFnType get shareOpaqueFrostsnapCoreCoordinatorFrostKey;
   OpaqueTypeFinalizer get FrostsnapCoreCoordinatorFrostKeyFinalizer;
-
-  DropFnType get dropOpaqueFrostsnapCoreMessageBitcoinTransactionSignTask;
-  ShareFnType get shareOpaqueFrostsnapCoreMessageBitcoinTransactionSignTask;
-  OpaqueTypeFinalizer
-      get FrostsnapCoreMessageBitcoinTransactionSignTaskFinalizer;
 
   DropFnType get dropOpaqueMutexBTreeMapKeyIdStreamSinkTxState;
   ShareFnType get shareOpaqueMutexBTreeMapKeyIdStreamSinkTxState;
   OpaqueTypeFinalizer get MutexBTreeMapKeyIdStreamSinkTxStateFinalizer;
 
-  DropFnType get dropOpaqueMutexCrateWalletWallet;
-  ShareFnType get shareOpaqueMutexCrateWalletWallet;
-  OpaqueTypeFinalizer get MutexCrateWalletWalletFinalizer;
+  DropFnType get dropOpaqueMutexFrostsnapWallet;
+  ShareFnType get shareOpaqueMutexFrostsnapWallet;
+  OpaqueTypeFinalizer get MutexFrostsnapWalletFinalizer;
 
   DropFnType get dropOpaquePortBytesToReadSender;
   ShareFnType get shareOpaquePortBytesToReadSender;
@@ -449,6 +452,36 @@ class ArcMutexVecPortDesc extends FrbOpaque {
   @override
   OpaqueTypeFinalizer get staticFinalizer =>
       bridge.ArcMutexVecPortDescFinalizer;
+}
+
+@sealed
+class ArcRTransaction extends FrbOpaque {
+  final Native bridge;
+  ArcRTransaction.fromRaw(int ptr, int size, this.bridge)
+      : super.unsafe(ptr, size);
+  @override
+  DropFnType get dropFn => bridge.dropOpaqueArcRTransaction;
+
+  @override
+  ShareFnType get shareFn => bridge.shareOpaqueArcRTransaction;
+
+  @override
+  OpaqueTypeFinalizer get staticFinalizer => bridge.ArcRTransactionFinalizer;
+}
+
+@sealed
+class BitcoinNetwork extends FrbOpaque {
+  final Native bridge;
+  BitcoinNetwork.fromRaw(int ptr, int size, this.bridge)
+      : super.unsafe(ptr, size);
+  @override
+  DropFnType get dropFn => bridge.dropOpaqueBitcoinNetwork;
+
+  @override
+  ShareFnType get shareFn => bridge.shareOpaqueBitcoinNetwork;
+
+  @override
+  OpaqueTypeFinalizer get staticFinalizer => bridge.BitcoinNetworkFinalizer;
 }
 
 @sealed
@@ -509,6 +542,25 @@ class FfiQrReader extends FrbOpaque {
 }
 
 @sealed
+class FrostsnapCoreBitcoinTransactionTransactionTemplate extends FrbOpaque {
+  final Native bridge;
+  FrostsnapCoreBitcoinTransactionTransactionTemplate.fromRaw(
+      int ptr, int size, this.bridge)
+      : super.unsafe(ptr, size);
+  @override
+  DropFnType get dropFn =>
+      bridge.dropOpaqueFrostsnapCoreBitcoinTransactionTransactionTemplate;
+
+  @override
+  ShareFnType get shareFn =>
+      bridge.shareOpaqueFrostsnapCoreBitcoinTransactionTransactionTemplate;
+
+  @override
+  OpaqueTypeFinalizer get staticFinalizer =>
+      bridge.FrostsnapCoreBitcoinTransactionTransactionTemplateFinalizer;
+}
+
+@sealed
 class FrostsnapCoreCoordinatorFrostKey extends FrbOpaque {
   final Native bridge;
   FrostsnapCoreCoordinatorFrostKey.fromRaw(int ptr, int size, this.bridge)
@@ -522,25 +574,6 @@ class FrostsnapCoreCoordinatorFrostKey extends FrbOpaque {
   @override
   OpaqueTypeFinalizer get staticFinalizer =>
       bridge.FrostsnapCoreCoordinatorFrostKeyFinalizer;
-}
-
-@sealed
-class FrostsnapCoreMessageBitcoinTransactionSignTask extends FrbOpaque {
-  final Native bridge;
-  FrostsnapCoreMessageBitcoinTransactionSignTask.fromRaw(
-      int ptr, int size, this.bridge)
-      : super.unsafe(ptr, size);
-  @override
-  DropFnType get dropFn =>
-      bridge.dropOpaqueFrostsnapCoreMessageBitcoinTransactionSignTask;
-
-  @override
-  ShareFnType get shareFn =>
-      bridge.shareOpaqueFrostsnapCoreMessageBitcoinTransactionSignTask;
-
-  @override
-  OpaqueTypeFinalizer get staticFinalizer =>
-      bridge.FrostsnapCoreMessageBitcoinTransactionSignTaskFinalizer;
 }
 
 @sealed
@@ -561,19 +594,19 @@ class MutexBTreeMapKeyIdStreamSinkTxState extends FrbOpaque {
 }
 
 @sealed
-class MutexCrateWalletWallet extends FrbOpaque {
+class MutexFrostsnapWallet extends FrbOpaque {
   final Native bridge;
-  MutexCrateWalletWallet.fromRaw(int ptr, int size, this.bridge)
+  MutexFrostsnapWallet.fromRaw(int ptr, int size, this.bridge)
       : super.unsafe(ptr, size);
   @override
-  DropFnType get dropFn => bridge.dropOpaqueMutexCrateWalletWallet;
+  DropFnType get dropFn => bridge.dropOpaqueMutexFrostsnapWallet;
 
   @override
-  ShareFnType get shareFn => bridge.shareOpaqueMutexCrateWalletWallet;
+  ShareFnType get shareFn => bridge.shareOpaqueMutexFrostsnapWallet;
 
   @override
   OpaqueTypeFinalizer get staticFinalizer =>
-      bridge.MutexCrateWalletWalletFinalizer;
+      bridge.MutexFrostsnapWalletFinalizer;
 }
 
 @sealed
@@ -662,6 +695,38 @@ class Address {
     required this.addressString,
     required this.used,
   });
+}
+
+/// The point of this is to keep bitcoin API functionalities that don't require the wallet separate
+/// from it.
+class BitcoinContext {
+  final Native bridge;
+  final BitcoinNetwork network;
+
+  const BitcoinContext({
+    required this.bridge,
+    required this.network,
+  });
+
+  String descriptorForKey({required KeyId keyId, dynamic hint}) =>
+      bridge.descriptorForKeyMethodBitcoinContext(
+        that: this,
+        keyId: keyId,
+      );
+
+  String? validateAmount(
+          {required String address, required int value, dynamic hint}) =>
+      bridge.validateAmountMethodBitcoinContext(
+        that: this,
+        address: address,
+        value: value,
+      );
+
+  String? validateDestinationAddress({required String address, dynamic hint}) =>
+      bridge.validateDestinationAddressMethodBitcoinContext(
+        that: this,
+        address: address,
+      );
 }
 
 class ConfirmationTime {
@@ -910,13 +975,13 @@ class DeviceListUpdate {
 class EffectOfTx {
   final int netValue;
   final int fee;
-  final double feerate;
+  final double? feerate;
   final List<(String, int)> foreignReceivingAddresses;
 
   const EffectOfTx({
     required this.netValue,
     required this.fee,
-    required this.feerate,
+    this.feerate,
     required this.foreignReceivingAddresses,
   });
 }
@@ -1009,7 +1074,7 @@ class KeyGenState {
 }
 
 class KeyId {
-  final U8Array32 field0;
+  final U8Array33 field0;
 
   const KeyId({
     required this.field0,
@@ -1024,7 +1089,7 @@ class KeyState {
   });
 }
 
-enum Level {
+enum LogLevel {
   Debug,
   Info,
 }
@@ -1192,15 +1257,23 @@ sealed class SignTaskDescription with _$SignTaskDescription {
 
 class SignedTx {
   final Native bridge;
-  final RTransaction inner;
+  final RTransaction signedTx;
+  final UnsignedTx unsignedTx;
 
   const SignedTx({
     required this.bridge,
-    required this.inner,
+    required this.signedTx,
+    required this.unsignedTx,
   });
 
-  RTransaction tx({dynamic hint}) => bridge.txMethodSignedTx(
+  EffectOfTx effect(
+          {required KeyId keyId,
+          required BitcoinNetwork network,
+          dynamic hint}) =>
+      bridge.effectMethodSignedTx(
         that: this,
+        keyId: keyId,
+        network: network,
       );
 }
 
@@ -1219,7 +1292,7 @@ class SigningState {
 class Transaction {
   final Native bridge;
   final int netValue;
-  final RTransaction inner;
+  final ArcRTransaction inner;
   final ConfirmationTime? confirmationTime;
 
   const Transaction({
@@ -1271,21 +1344,44 @@ class U8Array64 extends NonGrowableListView<int> {
 
 class UnsignedTx {
   final Native bridge;
-  final FrostsnapCoreMessageBitcoinTransactionSignTask task;
+  final FrostsnapCoreBitcoinTransactionTransactionTemplate templateTx;
 
   const UnsignedTx({
     required this.bridge,
-    required this.task,
+    required this.templateTx,
   });
 
-  RTransaction tx({dynamic hint}) => bridge.txMethodUnsignedTx(
+  Future<Psbt> attachSignaturesToPsbt(
+          {required List<EncodedSignature> signatures,
+          required Psbt psbt,
+          dynamic hint}) =>
+      bridge.attachSignaturesToPsbtMethodUnsignedTx(
         that: this,
+        signatures: signatures,
+        psbt: psbt,
+      );
+
+  Future<SignedTx> complete(
+          {required List<EncodedSignature> signatures, dynamic hint}) =>
+      bridge.completeMethodUnsignedTx(
+        that: this,
+        signatures: signatures,
+      );
+
+  EffectOfTx effect(
+          {required KeyId keyId,
+          required BitcoinNetwork network,
+          dynamic hint}) =>
+      bridge.effectMethodUnsignedTx(
+        that: this,
+        keyId: keyId,
+        network: network,
       );
 }
 
 class Wallet {
   final Native bridge;
-  final MutexCrateWalletWallet inner;
+  final MutexFrostsnapWallet inner;
   final MutexBTreeMapKeyIdStreamSinkTxState walletStreams;
   final ChainSync chainSync;
 
@@ -1334,20 +1430,6 @@ class Wallet {
         keyId: keyId,
       );
 
-  String? validateDestinationAddress({required String address, dynamic hint}) =>
-      bridge.validateDestinationAddressMethodWallet(
-        that: this,
-        address: address,
-      );
-
-  String? validateAmount(
-          {required String address, required int value, dynamic hint}) =>
-      bridge.validateAmountMethodWallet(
-        that: this,
-        address: address,
-        value: value,
-      );
-
   Future<UnsignedTx> sendTo(
           {required KeyId keyId,
           required String toAddress,
@@ -1362,26 +1444,6 @@ class Wallet {
         feerate: feerate,
       );
 
-  Psbt completeUnsignedPsbt(
-          {required Psbt psbt,
-          required List<EncodedSignature> signatures,
-          dynamic hint}) =>
-      bridge.completeUnsignedPsbtMethodWallet(
-        that: this,
-        psbt: psbt,
-        signatures: signatures,
-      );
-
-  SignedTx completeUnsignedTx(
-          {required UnsignedTx unsignedTx,
-          required List<EncodedSignature> signatures,
-          dynamic hint}) =>
-      bridge.completeUnsignedTxMethodWallet(
-        that: this,
-        unsignedTx: unsignedTx,
-        signatures: signatures,
-      );
-
   Future<void> broadcastTx(
           {required KeyId keyId, required SignedTx tx, dynamic hint}) =>
       bridge.broadcastTxMethodWallet(
@@ -1390,33 +1452,11 @@ class Wallet {
         tx: tx,
       );
 
-  EffectOfTx effectOfTx(
-          {required KeyId keyId, required RTransaction tx, dynamic hint}) =>
-      bridge.effectOfTxMethodWallet(
-        that: this,
-        keyId: keyId,
-        tx: tx,
-      );
-
-  EffectOfTx effectOfPsbtTx(
-          {required KeyId keyId, required Psbt psbt, dynamic hint}) =>
-      bridge.effectOfPsbtTxMethodWallet(
-        that: this,
-        keyId: keyId,
-        psbt: psbt,
-      );
-
   UnsignedTx psbtToUnsignedTx(
           {required Psbt psbt, required KeyId keyId, dynamic hint}) =>
       bridge.psbtToUnsignedTxMethodWallet(
         that: this,
         psbt: psbt,
-        keyId: keyId,
-      );
-
-  String descriptorForKey({required KeyId keyId, dynamic hint}) =>
-      bridge.descriptorForKeyMethodWallet(
-        that: this,
         keyId: keyId,
       );
 }

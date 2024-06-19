@@ -10,7 +10,7 @@ use frostsnap_coordinator::frostsnap_comms::{
     CoordinatorSendBody, CoordinatorSendMessage, Destination, FirmwareDigest,
 };
 use frostsnap_coordinator::frostsnap_core::message::{
-    CoordinatorSend, CoordinatorToStorageMessage, SignTask,
+    CoordinatorSend, CoordinatorToStorageMessage,
 };
 use frostsnap_coordinator::keygen::KeyGenState;
 use frostsnap_coordinator::signing::SigningState;
@@ -18,7 +18,7 @@ use frostsnap_coordinator::{
     frostsnap_core, AppMessageBody, FirmwareBin, UiProtocol, UsbSender, UsbSerialManager,
 };
 use frostsnap_coordinator::{Completion, DeviceChange};
-use frostsnap_core::{DeviceId, FrostCoordinator, Gist, KeyId};
+use frostsnap_core::{DeviceId, FrostCoordinator, Gist, KeyId, SignTask};
 use llsdb::{IndexHandle, LlsDb};
 use std::collections::{BTreeSet, VecDeque};
 use std::fs::File;
@@ -133,12 +133,14 @@ impl FfiCoordinator {
                     // We're in a firmware upgrade.
                     // Do the firmware upgrade and then carry on as usual
                     let progress_iter = usb_manager.run_firmware_upgrade();
+                    let mut error = Ok(());
                     for progress in progress_iter {
                         match progress {
                             Ok(progress) => {
                                 firmware_upgrade_pogress.add(progress);
                             }
-                            Err(_e) => {
+                            Err(e) => {
+                                error = Err(e);
                                 break;
                             }
                         }
@@ -146,6 +148,18 @@ impl FfiCoordinator {
 
                     firmware_upgrade_pogress.close();
                     *firmware_upgrade_progress_loop = None;
+                    match error {
+                        Ok(_) => {
+                            event!(Level::INFO, "firmware upgrade completed")
+                        }
+                        Err(e) => {
+                            event!(
+                                Level::ERROR,
+                                error = e.to_string(),
+                                "firmware upgrade error'd out"
+                            );
+                        }
+                    }
                 }
 
                 // NOTE: Never hold locks on anything over poll_ports because poll ports makes
@@ -457,13 +471,11 @@ impl FfiCoordinator {
                 .take_index(self.persist_core)
                 .persisted_sign_session_task(key_id)?
                 .map(|task| match task {
-                    SignTask::Plain { message, .. } => api::SignTaskDescription::Plain {
-                        message: String::from_utf8_lossy(&message[..]).to_string(),
-                    },
+                    SignTask::Plain { message, .. } => api::SignTaskDescription::Plain { message },
                     SignTask::Nostr { .. } => todo!("nostr restoring not yet implemented"),
                     SignTask::BitcoinTransaction(task) => api::SignTaskDescription::Transaction {
                         unsigned_tx: api::UnsignedTx {
-                            task: RustOpaque::new(task),
+                            template_tx: RustOpaque::new(task),
                         },
                     },
                 }))

@@ -1,9 +1,13 @@
-use bitcoin::{OutPoint, TxIn};
+use frostsnap_core::bitcoin_transaction::{LocalSpk, TransactionTemplate};
 use frostsnap_core::message::{
-    BitcoinTransactionSignTask, CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage,
-    CoordinatorToUserSigningMessage, DeviceToUserMessage, EncodedSignature, SignTask, TxInput,
+    CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, CoordinatorToUserSigningMessage,
+    DeviceToUserMessage, EncodedSignature,
 };
-use frostsnap_core::{DeviceId, FrostCoordinator, FrostSigner, KeyId, SessionHash};
+use frostsnap_core::tweak::AppBip32Path;
+use frostsnap_core::{
+    CheckedSignTask, DeviceId, FrostCoordinator, FrostKeyExt, FrostSigner, KeyId, SessionHash,
+    SignTask,
+};
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::binonce::Nonce;
@@ -25,7 +29,7 @@ struct TestEnv {
 
     // signing
     pub received_signing_shares: BTreeSet<DeviceId>,
-    pub sign_tasks: BTreeMap<DeviceId, SignTask>,
+    pub sign_tasks: BTreeMap<DeviceId, CheckedSignTask>,
     pub signatures: Vec<Signature>,
 
     // storage
@@ -238,15 +242,15 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
     let coord_frost_key = run.coordinator.iter_keys().next().unwrap();
 
     let key_id = coord_frost_key.key_id();
-    let public_key = coord_frost_key.frost_key().public_key();
 
     for (message, signers) in [("johnmcafee47", [0, 1]), ("pyramid schmee", [1, 2])] {
         env.signatures.clear();
         env.sign_tasks.clear();
         env.received_signing_shares.clear();
         let task = SignTask::Plain {
-            message: message.as_bytes().to_vec(),
+            message: message.into(),
         };
+        let checked_task = task.clone().check(key_id).unwrap();
         let set = BTreeSet::from_iter(signers.iter().map(|i| device_list[*i]));
 
         let sign_init = run
@@ -256,9 +260,9 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
         run.extend(sign_init);
         run.run_until_finished(&mut env, &mut test_rng);
         assert_eq!(env.sign_tasks.keys().cloned().collect::<BTreeSet<_>>(), set);
-        assert!(env.sign_tasks.values().all(|v| *v == task));
+        assert!(env.sign_tasks.values().all(|v| *v == checked_task));
         assert_eq!(env.received_signing_shares, set);
-        assert!(task.verify(&schnorr, public_key, &env.signatures));
+        assert!(checked_task.verify_final_signatures(&schnorr, &env.signatures));
 
         // check view of the coordianttor and device nonces are the same
         for &device in &device_set {
@@ -392,7 +396,7 @@ fn when_we_abandon_a_sign_request_we_should_be_able_to_start_a_new_one() {
     let key_id = coord_frost_key.key_id();
 
     let uncompleting_sign_task = SignTask::Plain {
-        message: b"frostsnap in taiwan".to_vec(),
+        message: "frostsnap in taiwan".into(),
     };
 
     let initial_nonces_on_coordinator = run
@@ -428,7 +432,7 @@ fn when_we_abandon_a_sign_request_we_should_be_able_to_start_a_new_one() {
     run.coordinator.cancel();
 
     let completing_sign_task = SignTask::Plain {
-        message: b"rip purple boards rip blue boards rip frostypedeV1".to_vec(),
+        message: "rip purple boards rip blue boards rip frostypedeV1".into(),
     };
 
     let used_sign_request = run
@@ -491,46 +495,28 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
 
     run.run_until_finished(&mut env, &mut test_rng);
 
-    let task = SignTask::BitcoinTransaction(BitcoinTransactionSignTask {
-        tx_template: bitcoin::Transaction {
-            version: bitcoin::transaction::Version(0x02),
-            lock_time: bitcoin::blockdata::locktime::absolute::LockTime::ZERO,
-            input: vec![
-                TxIn {
-                    previous_output: OutPoint::default(),
-                    script_sig: Default::default(),
-                    sequence: Default::default(),
-                    witness: Default::default(),
-                },
-                TxIn {
-                    previous_output: OutPoint::default(),
-                    script_sig: Default::default(),
-                    sequence: Default::default(),
-                    witness: Default::default(),
-                },
-            ],
-            output: Default::default(),
-        },
-        prevouts: vec![
-            TxInput {
-                prevout: bitcoin::TxOut {
-                    script_pubkey: bitcoin::ScriptBuf::default(),
-                    value: bitcoin::Amount::from_sat(42),
-                },
-                bip32_path: Some(vec![0, 7]),
-            },
-            TxInput {
-                prevout: bitcoin::TxOut {
-                    script_pubkey: bitcoin::ScriptBuf::default(),
-                    value: bitcoin::Amount::from_sat(42),
-                },
-                bip32_path: Some(vec![1, 42]),
-            },
-        ],
-    });
-
     let coord_frost_key = run.coordinator.iter_keys().next().unwrap();
     let root_public_key = coord_frost_key.frost_key().public_key();
+    let mut tx_template = TransactionTemplate::new();
+
+    tx_template.push_imaginary_owned_input(
+        LocalSpk {
+            root_key: root_public_key,
+            bip32_path: AppBip32Path::external(7),
+        },
+        bitcoin::Amount::from_sat(42_000),
+    );
+
+    tx_template.push_imaginary_owned_input(
+        LocalSpk {
+            root_key: root_public_key,
+            bip32_path: AppBip32Path::internal(42),
+        },
+        bitcoin::Amount::from_sat(1_337_000),
+    );
+
+    let task = SignTask::BitcoinTransaction(tx_template);
+    let checked_task = task.clone().check(root_public_key.key_id()).unwrap();
 
     let set = [device_list[0], device_list[1]].into_iter().collect();
     let key_id = coord_frost_key.key_id();
@@ -540,6 +526,6 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
         .unwrap();
     run.extend(sign_init);
     run.run_until_finished(&mut env, &mut test_rng);
-    assert!(task.verify(&schnorr, root_public_key, &env.signatures));
+    assert!(checked_task.verify_final_signatures(&schnorr, &env.signatures));
     // TODO: test actual transaction validity
 }

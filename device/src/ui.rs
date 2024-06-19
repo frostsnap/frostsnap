@@ -88,7 +88,7 @@ impl Default for Workflow {
 
 pub enum Prompt {
     KeyGen(SessionHash),
-    Signing(String),
+    Signing(SignPrompt),
     NewName {
         old_name: Option<String>,
         new_name: String,
@@ -98,6 +98,16 @@ pub enum Prompt {
         firmware_digest: FirmwareDigest,
         size: u32,
     },
+}
+
+#[derive(Clone, Debug)]
+pub enum SignPrompt {
+    Bitcoin {
+        fee: bitcoin::Amount,
+        foreign_recipients: alloc::vec::Vec<(bitcoin::Address, bitcoin::Amount)>,
+    },
+    Plain(String),
+    Nostr(String),
 }
 
 #[derive(Clone, Copy, Debug)]

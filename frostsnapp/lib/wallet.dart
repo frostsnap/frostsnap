@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnapp/device_action.dart';
@@ -6,8 +8,8 @@ import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/psbt.dart';
 import 'package:frostsnapp/sign_message.dart';
 import 'package:frostsnapp/stream_ext.dart';
+
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
-import 'dart:io';
 
 class WalletHome extends StatefulWidget {
   final KeyId keyId;
@@ -257,10 +259,9 @@ class _FloatingProgress extends State<FloatingProgress>
       setState(() {
         progress = event;
       });
-    })
-      ..onDone(() {
-        _progressFadeController.forward();
-      });
+    }).onDone(() {
+      _progressFadeController.forward();
+    });
   }
 
   @override
@@ -406,7 +407,7 @@ class _WalletReceiveState extends State<WalletReceive> {
 
   @override
   Widget build(BuildContext context) {
-    final keyXpub = wallet.descriptorForKey(keyId: widget.keyId);
+    final keyXpub = bitcoinContext.descriptorForKey(keyId: widget.keyId);
     return Scaffold(
         body: Padding(
       padding: const EdgeInsets.all(10.0),
@@ -480,7 +481,7 @@ class WalletSend extends StatefulWidget {
   final KeyId keyId;
   final Function()? onBroadcastNewTx;
 
-  WalletSend({
+  const WalletSend({
     Key? key,
     required this.txStream,
     required this.keyId,
@@ -544,7 +545,7 @@ class _WalletSendState extends State<WalletSend> {
                     decoration: InputDecoration(labelText: 'Address'),
                     validator: (value) {
                       // Use the provided predicate for address validation
-                      return wallet.validateDestinationAddress(
+                      return bitcoinContext.validateDestinationAddress(
                           address: value ?? '');
                     },
                     onSaved: (value) => _address = value ?? '',
@@ -556,7 +557,7 @@ class _WalletSendState extends State<WalletSend> {
                     validator: (value) {
                       // Convert value to int and use the provided predicate for amount validation
                       final amount = int.tryParse(value ?? '') ?? 0;
-                      return wallet.validateAmount(
+                      return bitcoinContext.validateAmount(
                           address: _address, value: amount);
                     },
                     onSaved: (value) =>
@@ -594,7 +595,7 @@ class _WalletSendState extends State<WalletSend> {
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 20.0),
                   ),
-                  SigningDeviceSelector(
+
                       frostKey: frostKey,
                       onChanged: (selected) {
                         setState(() {
@@ -647,7 +648,8 @@ Future<void> signAndBroadcastWorkflowDialog(
     required UnsignedTx unsignedTx,
     required KeyId keyId,
     Function()? onBroadcastNewTx}) async {
-  final effect = wallet.effectOfTx(keyId: keyId, tx: unsignedTx.tx());
+  final effect =
+      unsignedTx.effect(keyId: keyId, network: bitcoinContext.network);
 
   final signatures = await showSigningProgressDialog(
     context,
@@ -655,10 +657,10 @@ Future<void> signAndBroadcastWorkflowDialog(
     describeEffect(effect),
   );
   if (signatures != null) {
-    final tx = wallet.completeUnsignedTx(
-        unsignedTx: unsignedTx, signatures: signatures);
+    final signedTx = await unsignedTx.complete(signatures: signatures);
     if (context.mounted) {
-      final wasBroadcast = await showBroadcastConfirmDialog(context, keyId, tx);
+      final wasBroadcast =
+          await showBroadcastConfirmDialog(context, keyId, signedTx);
       if (wasBroadcast) {
         onBroadcastNewTx?.call();
       }
@@ -693,10 +695,10 @@ class EffectTable extends StatelessWidget {
       TableRow(
         children: [
           Padding(
-            padding: const EdgeInsets.all(8.0),
-            child:
-                Text('Fee (${effect.feerate.toStringAsFixed(1)} sats/vByte)'),
-          ),
+              padding: const EdgeInsets.all(8.0),
+              child: effect.feerate != null
+                  ? Text("${effect.feerate!.toStringAsFixed(1)} (sats/vb))")
+                  : Text("unknown")),
           Padding(
               padding: const EdgeInsets.all(8.0), child: NetValue(-effect.fee)),
         ],
@@ -773,11 +775,11 @@ Future<bool> showBroadcastConfirmDialog(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
-        final effect = wallet.effectOfTx(keyId: keyId, tx: tx.tx());
+        final effect = tx.effect(keyId: keyId, network: bitcoinContext.network);
         final effectWidget = EffectTable(effect: effect);
         return AlertDialog(
             title: Text("Broadcast?"),
-            content: Container(
+            content: SizedBox(
                 width: Platform.isAndroid ? double.maxFinite : 400.0,
                 child: Align(
                   alignment: Alignment.center,
@@ -832,7 +834,7 @@ class Balance extends StatelessWidget {
         return Padding(
           padding: const EdgeInsets.all(20.0),
           child: Text(
-            '$balanceInBTC', // Unicode for Bitcoin symbol
+            balanceInBTC, // Unicode for Bitcoin symbol
             style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold),
           ),
         );
@@ -867,12 +869,9 @@ String formatSatoshi(int satoshis) {
   var parts = btcString.split('.');
 
   // Format the fractional part into segments
-  String fractionalPart = parts[1].substring(0, 2) +
-      " " +
-      parts[1].substring(2, 5) +
-      " " +
-      parts[1].substring(5);
+  String fractionalPart =
+      "${parts[1].substring(0, 2)} ${parts[1].substring(2, 5)} ${parts[1].substring(5)}";
 
   // Combine the whole number part with the formatted fractional part
-  return '${parts[0]}.${fractionalPart}\u20BF';
+  return '${parts[0]}.$fractionalPart\u20BF';
 }

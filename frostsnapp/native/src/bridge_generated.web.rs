@@ -134,6 +134,75 @@ pub fn wire_get_device__method__DeviceListState(
 }
 
 #[wasm_bindgen]
+pub fn wire_sub_tx_state__method__Wallet(port_: MessagePort, that: JsValue, key_id: JsValue) {
+    wire_sub_tx_state__method__Wallet_impl(port_, that, key_id)
+}
+
+#[wasm_bindgen]
+pub fn wire_tx_state__method__Wallet(that: JsValue, key_id: JsValue) -> support::WireSyncReturn {
+    wire_tx_state__method__Wallet_impl(that, key_id)
+}
+
+#[wasm_bindgen]
+pub fn wire_sync_txids__method__Wallet(
+    port_: MessagePort,
+    that: JsValue,
+    key_id: JsValue,
+    txids: JsValue,
+) {
+    wire_sync_txids__method__Wallet_impl(port_, that, key_id, txids)
+}
+
+#[wasm_bindgen]
+pub fn wire_sync__method__Wallet(port_: MessagePort, that: JsValue, key_id: JsValue) {
+    wire_sync__method__Wallet_impl(port_, that, key_id)
+}
+
+#[wasm_bindgen]
+pub fn wire_next_address__method__Wallet(port_: MessagePort, that: JsValue, key_id: JsValue) {
+    wire_next_address__method__Wallet_impl(port_, that, key_id)
+}
+
+#[wasm_bindgen]
+pub fn wire_addresses_state__method__Wallet(
+    that: JsValue,
+    key_id: JsValue,
+) -> support::WireSyncReturn {
+    wire_addresses_state__method__Wallet_impl(that, key_id)
+}
+
+#[wasm_bindgen]
+pub fn wire_send_to__method__Wallet(
+    port_: MessagePort,
+    that: JsValue,
+    key_id: JsValue,
+    to_address: String,
+    value: u64,
+    feerate: f64,
+) {
+    wire_send_to__method__Wallet_impl(port_, that, key_id, to_address, value, feerate)
+}
+
+#[wasm_bindgen]
+pub fn wire_broadcast_tx__method__Wallet(
+    port_: MessagePort,
+    that: JsValue,
+    key_id: JsValue,
+    tx: JsValue,
+) {
+    wire_broadcast_tx__method__Wallet_impl(port_, that, key_id, tx)
+}
+
+#[wasm_bindgen]
+pub fn wire_psbt_to_unsigned_tx__method__Wallet(
+    that: JsValue,
+    psbt: JsValue,
+    key_id: JsValue,
+) -> support::WireSyncReturn {
+    wire_psbt_to_unsigned_tx__method__Wallet_impl(that, psbt, key_id)
+}
+
+#[wasm_bindgen]
 pub fn wire_set_available_ports__method__FfiSerial(
     port_: MessagePort,
     that: JsValue,
@@ -291,143 +360,61 @@ pub fn wire_enter_firmware_upgrade_mode__method__Coordinator(port_: MessagePort,
 }
 
 #[wasm_bindgen]
-pub fn wire_sub_tx_state__method__Wallet(port_: MessagePort, that: JsValue, key_id: JsValue) {
-    wire_sub_tx_state__method__Wallet_impl(port_, that, key_id)
-}
-
-#[wasm_bindgen]
-pub fn wire_tx_state__method__Wallet(that: JsValue, key_id: JsValue) -> support::WireSyncReturn {
-    wire_tx_state__method__Wallet_impl(that, key_id)
-}
-
-#[wasm_bindgen]
-pub fn wire_sync_txids__method__Wallet(
-    port_: MessagePort,
-    that: JsValue,
-    key_id: JsValue,
-    txids: JsValue,
-) {
-    wire_sync_txids__method__Wallet_impl(port_, that, key_id, txids)
-}
-
-#[wasm_bindgen]
-pub fn wire_sync__method__Wallet(port_: MessagePort, that: JsValue, key_id: JsValue) {
-    wire_sync__method__Wallet_impl(port_, that, key_id)
-}
-
-#[wasm_bindgen]
-pub fn wire_next_address__method__Wallet(port_: MessagePort, that: JsValue, key_id: JsValue) {
-    wire_next_address__method__Wallet_impl(port_, that, key_id)
-}
-
-#[wasm_bindgen]
-pub fn wire_addresses_state__method__Wallet(
+pub fn wire_descriptor_for_key__method__BitcoinContext(
     that: JsValue,
     key_id: JsValue,
 ) -> support::WireSyncReturn {
-    wire_addresses_state__method__Wallet_impl(that, key_id)
+    wire_descriptor_for_key__method__BitcoinContext_impl(that, key_id)
 }
 
 #[wasm_bindgen]
-pub fn wire_validate_destination_address__method__Wallet(
-    that: JsValue,
-    address: String,
-) -> support::WireSyncReturn {
-    wire_validate_destination_address__method__Wallet_impl(that, address)
-}
-
-#[wasm_bindgen]
-pub fn wire_validate_amount__method__Wallet(
+pub fn wire_validate_amount__method__BitcoinContext(
     that: JsValue,
     address: String,
     value: u64,
 ) -> support::WireSyncReturn {
-    wire_validate_amount__method__Wallet_impl(that, address, value)
+    wire_validate_amount__method__BitcoinContext_impl(that, address, value)
 }
 
 #[wasm_bindgen]
-pub fn wire_send_to__method__Wallet(
+pub fn wire_validate_destination_address__method__BitcoinContext(
+    that: JsValue,
+    address: String,
+) -> support::WireSyncReturn {
+    wire_validate_destination_address__method__BitcoinContext_impl(that, address)
+}
+
+#[wasm_bindgen]
+pub fn wire_effect__method__SignedTx(
+    that: JsValue,
+    key_id: JsValue,
+    network: JsValue,
+) -> support::WireSyncReturn {
+    wire_effect__method__SignedTx_impl(that, key_id, network)
+}
+
+#[wasm_bindgen]
+pub fn wire_attach_signatures_to_psbt__method__UnsignedTx(
     port_: MessagePort,
     that: JsValue,
-    key_id: JsValue,
-    to_address: String,
-    value: u64,
-    feerate: f64,
-) {
-    wire_send_to__method__Wallet_impl(port_, that, key_id, to_address, value, feerate)
-}
-
-#[wasm_bindgen]
-pub fn wire_complete_unsigned_psbt__method__Wallet(
-    that: JsValue,
-    psbt: JsValue,
     signatures: JsValue,
-) -> support::WireSyncReturn {
-    wire_complete_unsigned_psbt__method__Wallet_impl(that, psbt, signatures)
-}
-
-#[wasm_bindgen]
-pub fn wire_complete_unsigned_tx__method__Wallet(
-    that: JsValue,
-    unsigned_tx: JsValue,
-    signatures: JsValue,
-) -> support::WireSyncReturn {
-    wire_complete_unsigned_tx__method__Wallet_impl(that, unsigned_tx, signatures)
-}
-
-#[wasm_bindgen]
-pub fn wire_broadcast_tx__method__Wallet(
-    port_: MessagePort,
-    that: JsValue,
-    key_id: JsValue,
-    tx: JsValue,
+    psbt: JsValue,
 ) {
-    wire_broadcast_tx__method__Wallet_impl(port_, that, key_id, tx)
+    wire_attach_signatures_to_psbt__method__UnsignedTx_impl(port_, that, signatures, psbt)
 }
 
 #[wasm_bindgen]
-pub fn wire_effect_of_tx__method__Wallet(
+pub fn wire_complete__method__UnsignedTx(port_: MessagePort, that: JsValue, signatures: JsValue) {
+    wire_complete__method__UnsignedTx_impl(port_, that, signatures)
+}
+
+#[wasm_bindgen]
+pub fn wire_effect__method__UnsignedTx(
     that: JsValue,
     key_id: JsValue,
-    tx: JsValue,
+    network: JsValue,
 ) -> support::WireSyncReturn {
-    wire_effect_of_tx__method__Wallet_impl(that, key_id, tx)
-}
-
-#[wasm_bindgen]
-pub fn wire_effect_of_psbt_tx__method__Wallet(
-    that: JsValue,
-    key_id: JsValue,
-    psbt: JsValue,
-) -> support::WireSyncReturn {
-    wire_effect_of_psbt_tx__method__Wallet_impl(that, key_id, psbt)
-}
-
-#[wasm_bindgen]
-pub fn wire_psbt_to_unsigned_tx__method__Wallet(
-    that: JsValue,
-    psbt: JsValue,
-    key_id: JsValue,
-) -> support::WireSyncReturn {
-    wire_psbt_to_unsigned_tx__method__Wallet_impl(that, psbt, key_id)
-}
-
-#[wasm_bindgen]
-pub fn wire_descriptor_for_key__method__Wallet(
-    that: JsValue,
-    key_id: JsValue,
-) -> support::WireSyncReturn {
-    wire_descriptor_for_key__method__Wallet_impl(that, key_id)
-}
-
-#[wasm_bindgen]
-pub fn wire_tx__method__SignedTx(that: JsValue) -> support::WireSyncReturn {
-    wire_tx__method__SignedTx_impl(that)
-}
-
-#[wasm_bindgen]
-pub fn wire_tx__method__UnsignedTx(that: JsValue) -> support::WireSyncReturn {
-    wire_tx__method__UnsignedTx_impl(that)
+    wire_effect__method__UnsignedTx_impl(that, key_id, network)
 }
 
 #[wasm_bindgen]
@@ -459,6 +446,36 @@ pub fn drop_opaque_ArcMutexVecPortDesc(ptr: *const c_void) {
 pub fn share_opaque_ArcMutexVecPortDesc(ptr: *const c_void) -> *const c_void {
     unsafe {
         Arc::<Arc<Mutex<Vec<PortDesc>>>>::increment_strong_count(ptr as _);
+        ptr
+    }
+}
+
+#[wasm_bindgen]
+pub fn drop_opaque_ArcRTransaction(ptr: *const c_void) {
+    unsafe {
+        Arc::<Arc<RTransaction>>::decrement_strong_count(ptr as _);
+    }
+}
+
+#[wasm_bindgen]
+pub fn share_opaque_ArcRTransaction(ptr: *const c_void) -> *const c_void {
+    unsafe {
+        Arc::<Arc<RTransaction>>::increment_strong_count(ptr as _);
+        ptr
+    }
+}
+
+#[wasm_bindgen]
+pub fn drop_opaque_BitcoinNetwork(ptr: *const c_void) {
+    unsafe {
+        Arc::<bitcoin::Network>::decrement_strong_count(ptr as _);
+    }
+}
+
+#[wasm_bindgen]
+pub fn share_opaque_BitcoinNetwork(ptr: *const c_void) -> *const c_void {
+    unsafe {
+        Arc::<bitcoin::Network>::increment_strong_count(ptr as _);
         ptr
     }
 }
@@ -524,6 +541,27 @@ pub fn share_opaque_FfiQrReader(ptr: *const c_void) -> *const c_void {
 }
 
 #[wasm_bindgen]
+pub fn drop_opaque_FrostsnapCoreBitcoinTransactionTransactionTemplate(ptr: *const c_void) {
+    unsafe {
+        Arc::<frostsnap_core::bitcoin_transaction::TransactionTemplate>::decrement_strong_count(
+            ptr as _,
+        );
+    }
+}
+
+#[wasm_bindgen]
+pub fn share_opaque_FrostsnapCoreBitcoinTransactionTransactionTemplate(
+    ptr: *const c_void,
+) -> *const c_void {
+    unsafe {
+        Arc::<frostsnap_core::bitcoin_transaction::TransactionTemplate>::increment_strong_count(
+            ptr as _,
+        );
+        ptr
+    }
+}
+
+#[wasm_bindgen]
 pub fn drop_opaque_FrostsnapCoreCoordinatorFrostKey(ptr: *const c_void) {
     unsafe {
         Arc::<frostsnap_core::CoordinatorFrostKey>::decrement_strong_count(ptr as _);
@@ -534,27 +572,6 @@ pub fn drop_opaque_FrostsnapCoreCoordinatorFrostKey(ptr: *const c_void) {
 pub fn share_opaque_FrostsnapCoreCoordinatorFrostKey(ptr: *const c_void) -> *const c_void {
     unsafe {
         Arc::<frostsnap_core::CoordinatorFrostKey>::increment_strong_count(ptr as _);
-        ptr
-    }
-}
-
-#[wasm_bindgen]
-pub fn drop_opaque_FrostsnapCoreMessageBitcoinTransactionSignTask(ptr: *const c_void) {
-    unsafe {
-        Arc::<frostsnap_core::message::BitcoinTransactionSignTask>::decrement_strong_count(
-            ptr as _,
-        );
-    }
-}
-
-#[wasm_bindgen]
-pub fn share_opaque_FrostsnapCoreMessageBitcoinTransactionSignTask(
-    ptr: *const c_void,
-) -> *const c_void {
-    unsafe {
-        Arc::<frostsnap_core::message::BitcoinTransactionSignTask>::increment_strong_count(
-            ptr as _,
-        );
         ptr
     }
 }
@@ -575,16 +592,16 @@ pub fn share_opaque_MutexBTreeMapKeyIdStreamSinkTxState(ptr: *const c_void) -> *
 }
 
 #[wasm_bindgen]
-pub fn drop_opaque_MutexCrateWalletWallet(ptr: *const c_void) {
+pub fn drop_opaque_MutexFrostsnapWallet(ptr: *const c_void) {
     unsafe {
-        Arc::<Mutex<crate::wallet::_Wallet>>::decrement_strong_count(ptr as _);
+        Arc::<Mutex<FrostsnapWallet>>::decrement_strong_count(ptr as _);
     }
 }
 
 #[wasm_bindgen]
-pub fn share_opaque_MutexCrateWalletWallet(ptr: *const c_void) -> *const c_void {
+pub fn share_opaque_MutexFrostsnapWallet(ptr: *const c_void) -> *const c_void {
     unsafe {
-        Arc::<Mutex<crate::wallet::_Wallet>>::increment_strong_count(ptr as _);
+        Arc::<Mutex<FrostsnapWallet>>::increment_strong_count(ptr as _);
         ptr
     }
 }
@@ -678,6 +695,20 @@ impl Wire2Api<Vec<String>> for JsValue {
             .iter()
             .map(Wire2Api::wire2api)
             .collect()
+    }
+}
+impl Wire2Api<BitcoinContext> for JsValue {
+    fn wire2api(self) -> BitcoinContext {
+        let self_ = self.dyn_into::<JsArray>().unwrap();
+        assert_eq!(
+            self_.length(),
+            1,
+            "Expected 1 elements, got {}",
+            self_.length()
+        );
+        BitcoinContext {
+            network: self_.get(0).wire2api(),
+        }
     }
 }
 
@@ -804,7 +835,6 @@ impl Wire2Api<KeyId> for JsValue {
         KeyId(self_.get(0).wire2api())
     }
 }
-
 impl Wire2Api<Vec<Device>> for JsValue {
     fn wire2api(self) -> Vec<Device> {
         self.dyn_into::<JsArray>()
@@ -841,6 +871,7 @@ impl Wire2Api<Vec<PortDesc>> for JsValue {
             .collect()
     }
 }
+
 impl Wire2Api<Option<String>> for Option<String> {
     fn wire2api(self) -> Option<String> {
         self.map(Wire2Api::wire2api)
@@ -957,12 +988,13 @@ impl Wire2Api<SignedTx> for JsValue {
         let self_ = self.dyn_into::<JsArray>().unwrap();
         assert_eq!(
             self_.length(),
-            1,
-            "Expected 1 elements, got {}",
+            2,
+            "Expected 2 elements, got {}",
             self_.length()
         );
         SignedTx {
-            inner: self_.get(0).wire2api(),
+            signed_tx: self_.get(0).wire2api(),
+            unsigned_tx: self_.get(1).wire2api(),
         }
     }
 }
@@ -983,12 +1015,6 @@ impl Wire2Api<Transaction> for JsValue {
     }
 }
 
-impl Wire2Api<[u8; 32]> for Box<[u8]> {
-    fn wire2api(self) -> [u8; 32] {
-        let vec: Vec<u8> = self.wire2api();
-        support::from_vec_to_array(vec)
-    }
-}
 impl Wire2Api<[u8; 33]> for Box<[u8]> {
     fn wire2api(self) -> [u8; 33] {
         let vec: Vec<u8> = self.wire2api();
@@ -1016,7 +1042,7 @@ impl Wire2Api<UnsignedTx> for JsValue {
             self_.length()
         );
         UnsignedTx {
-            task: self_.get(0).wire2api(),
+            template_tx: self_.get(0).wire2api(),
         }
     }
 }
@@ -1049,6 +1075,26 @@ where
 }
 impl Wire2Api<RustOpaque<Arc<Mutex<Vec<PortDesc>>>>> for JsValue {
     fn wire2api(self) -> RustOpaque<Arc<Mutex<Vec<PortDesc>>>> {
+        #[cfg(target_pointer_width = "64")]
+        {
+            compile_error!("64-bit pointers are not supported.");
+        }
+
+        unsafe { support::opaque_from_dart((self.as_f64().unwrap() as usize) as _) }
+    }
+}
+impl Wire2Api<RustOpaque<Arc<RTransaction>>> for JsValue {
+    fn wire2api(self) -> RustOpaque<Arc<RTransaction>> {
+        #[cfg(target_pointer_width = "64")]
+        {
+            compile_error!("64-bit pointers are not supported.");
+        }
+
+        unsafe { support::opaque_from_dart((self.as_f64().unwrap() as usize) as _) }
+    }
+}
+impl Wire2Api<RustOpaque<bitcoin::Network>> for JsValue {
+    fn wire2api(self) -> RustOpaque<bitcoin::Network> {
         #[cfg(target_pointer_width = "64")]
         {
             compile_error!("64-bit pointers are not supported.");
@@ -1097,8 +1143,8 @@ impl Wire2Api<RustOpaque<FfiQrReader>> for JsValue {
         unsafe { support::opaque_from_dart((self.as_f64().unwrap() as usize) as _) }
     }
 }
-impl Wire2Api<RustOpaque<frostsnap_core::CoordinatorFrostKey>> for JsValue {
-    fn wire2api(self) -> RustOpaque<frostsnap_core::CoordinatorFrostKey> {
+impl Wire2Api<RustOpaque<frostsnap_core::bitcoin_transaction::TransactionTemplate>> for JsValue {
+    fn wire2api(self) -> RustOpaque<frostsnap_core::bitcoin_transaction::TransactionTemplate> {
         #[cfg(target_pointer_width = "64")]
         {
             compile_error!("64-bit pointers are not supported.");
@@ -1107,8 +1153,8 @@ impl Wire2Api<RustOpaque<frostsnap_core::CoordinatorFrostKey>> for JsValue {
         unsafe { support::opaque_from_dart((self.as_f64().unwrap() as usize) as _) }
     }
 }
-impl Wire2Api<RustOpaque<frostsnap_core::message::BitcoinTransactionSignTask>> for JsValue {
-    fn wire2api(self) -> RustOpaque<frostsnap_core::message::BitcoinTransactionSignTask> {
+impl Wire2Api<RustOpaque<frostsnap_core::CoordinatorFrostKey>> for JsValue {
+    fn wire2api(self) -> RustOpaque<frostsnap_core::CoordinatorFrostKey> {
         #[cfg(target_pointer_width = "64")]
         {
             compile_error!("64-bit pointers are not supported.");
@@ -1127,8 +1173,8 @@ impl Wire2Api<RustOpaque<Mutex<BTreeMap<KeyId, StreamSink<TxState>>>>> for JsVal
         unsafe { support::opaque_from_dart((self.as_f64().unwrap() as usize) as _) }
     }
 }
-impl Wire2Api<RustOpaque<Mutex<crate::wallet::_Wallet>>> for JsValue {
-    fn wire2api(self) -> RustOpaque<Mutex<crate::wallet::_Wallet>> {
+impl Wire2Api<RustOpaque<Mutex<FrostsnapWallet>>> for JsValue {
+    fn wire2api(self) -> RustOpaque<Mutex<FrostsnapWallet>> {
         #[cfg(target_pointer_width = "64")]
         {
             compile_error!("64-bit pointers are not supported.");
@@ -1207,8 +1253,8 @@ impl Wire2Api<i64> for JsValue {
         ::std::convert::TryInto::try_into(self.dyn_into::<js_sys::BigInt>().unwrap()).unwrap()
     }
 }
-impl Wire2Api<Level> for JsValue {
-    fn wire2api(self) -> Level {
+impl Wire2Api<LogLevel> for JsValue {
+    fn wire2api(self) -> LogLevel {
         (self.unchecked_into_f64() as i32).wire2api()
     }
 }
@@ -1230,12 +1276,6 @@ impl Wire2Api<u64> for JsValue {
 impl Wire2Api<u8> for JsValue {
     fn wire2api(self) -> u8 {
         self.unchecked_into_f64() as _
-    }
-}
-impl Wire2Api<[u8; 32]> for JsValue {
-    fn wire2api(self) -> [u8; 32] {
-        let vec: Vec<u8> = self.wire2api();
-        support::from_vec_to_array(vec)
     }
 }
 impl Wire2Api<[u8; 33]> for JsValue {

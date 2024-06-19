@@ -1,8 +1,7 @@
 use frostsnap_coordinator::{
     frostsnap_core::{
-        self,
-        message::{CoordinatorToStorageMessage, SignTask},
-        CoordinatorFrostKey, FrostCoordinator, KeyId,
+        self, message::CoordinatorToStorageMessage, CoordinatorFrostKey, FrostCoordinator, KeyId,
+        SignTask,
     },
     UiToStorageMessage,
 };
