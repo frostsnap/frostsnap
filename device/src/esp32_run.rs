@@ -63,8 +63,7 @@ where
         let ota_config = ota::OtaConfig::new(flash.flash_mut());
         let active_partition = ota_config.active_partition(flash.flash_mut());
         let active_firmware_digest = active_partition.digest(flash.flash_mut(), &mut sha256);
-
-        ui.set_workflow(ui::Workflow::BusyDoing(ui::BusyTask::Loading));
+        ui.set_busy_task(ui::BusyTask::Loading);
 
         let (mut signer, mut name) =
             match flash.read_header().expect("failed to read header from nvs") {
@@ -326,16 +325,10 @@ where
                                                     match &core_message {
                                                         CoordinatorToDeviceMessage::DoKeyGen {
                                                             ..
-                                                        } => {
-                                                            ui.set_workflow(ui::Workflow::BusyDoing(
-                                                                ui::BusyTask::KeyGen,
-                                                            ));
-                                                        }
+                                                        } => ui.set_busy_task(ui::BusyTask::KeyGen),
                                                         CoordinatorToDeviceMessage::FinishKeyGen {
                                                             ..
-                                                        } => ui.set_workflow(ui::Workflow::BusyDoing(
-                                                            ui::BusyTask::VerifyingShare,
-                                                        )),
+                                                        } => ui.set_busy_task(ui::BusyTask::VerifyingShare),
                                                         _ => { /* no workflow to trigger */ }
                                                     }
 
@@ -432,7 +425,7 @@ where
                             .expect("state changed while confirming keygen"),
                     ),
                     UiEvent::SigningConfirm => {
-                        switch_workflow = Some(ui::Workflow::BusyDoing(ui::BusyTask::Signing));
+                        ui.set_busy_task(ui::BusyTask::Signing);
                         outbox.extend(signer.sign_ack().expect("state changed while acking sign"));
                     }
                     UiEvent::NameConfirm(ref new_name) => {
@@ -456,6 +449,7 @@ where
                         if let Some(upgrade) = upgrade.as_mut() {
                             upgrade.upgrade_confirm();
                         }
+                        // special case where updrade will handle things from now on
                         switch_workflow = None;
                     }
                 }

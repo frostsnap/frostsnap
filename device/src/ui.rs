@@ -12,6 +12,12 @@ pub trait UserInteraction {
 
     fn set_workflow(&mut self, workflow: Workflow);
 
+    /// Use this when you want to redraw the UI right now
+    fn set_busy_task(&mut self, task: BusyTask) {
+        self.set_workflow(Workflow::BusyDoing(task));
+        assert!(self.poll().is_none(), "busy tasks cannot have ui events");
+    }
+
     fn take_workflow(&mut self) -> Workflow;
 
     fn poll(&mut self) -> Option<UiEvent>;
