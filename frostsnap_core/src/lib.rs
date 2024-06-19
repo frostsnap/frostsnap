@@ -11,6 +11,8 @@ pub mod nostr;
 pub mod tweak;
 
 pub use sha2;
+mod sign_task;
+pub use sign_task::*;
 
 pub use bincode;
 pub use key_id::*;
@@ -20,6 +22,7 @@ pub use coordinator::*;
 mod device;
 pub use device::*;
 pub use schnorr_fun;
+pub mod bitcoin_transaction;
 
 #[macro_use]
 extern crate alloc;

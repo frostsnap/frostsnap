@@ -18,10 +18,8 @@ tracing = { workspace = true, features = ["std"] }
 tracing-android = "0.2"
 llsdb.workspace = true
 bincode.workspace = true
-bdk_chain = {  version = "0.15", features = ["serde"] }
-bdk_electrum = {  version = "0.14" }
-bdk_coin_select = { version = "0.3" }
 bardecoder = "0.5.0"
+bitcoin.workspace = true
 image = "0.24"
 ur = { git = "https://github.com/nickfarrow/ur-rs", rev = "2e267e5e019b6c8129f66efba00327ff3d0ae5a4" }
 

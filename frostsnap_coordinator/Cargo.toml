@@ -12,3 +12,8 @@ frostsnap_core = { workspace = true, features = ["std"] }
 bincode = { workspace = true, features = ["std"] }
 tracing = { workspace = true }
 serialport = "4.2"
+llsdb.workspace = true
+
+bdk_chain = {  version = "0.15", features = ["serde"] }
+bdk_electrum = {  version = "0.14" }
+bdk_coin_select = { version = "0.3" }

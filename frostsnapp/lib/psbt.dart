@@ -124,19 +124,21 @@ Future<void> startSigningPsbt({
   required KeyId keyId,
 }) async {
   final Psbt psbt;
+  final unsignedTx;
   try {
     psbt = api.psbtBytesToPsbt(psbtBytes: psbtBytes);
+    unsignedTx = wallet.psbtToUnsignedTx(psbt: psbt, keyId: keyId);
   } catch (e) {
     showErrorSnackbar(context, "Error loading PSBT: $e");
     return;
   }
 
-  final unsignedTx = wallet.psbtToUnsignedTx(psbt: psbt, keyId: keyId);
   final signingStream = coord.startSigningTx(
       keyId: keyId, unsignedTx: unsignedTx, devices: selectedDevices);
 
   if (context.mounted) {
-    final effect = wallet.effectOfTx(keyId: keyId, tx: unsignedTx.tx());
+    final effect =
+        unsignedTx.effect(keyId: keyId, network: bitcoinContext.network);
 
     final signatures = await showSigningProgressDialog(
       context,
@@ -144,10 +146,9 @@ Future<void> startSigningPsbt({
       describeEffect(effect),
     );
     if (signatures != null) {
-      final signedPsbt =
-          wallet.completeUnsignedPsbt(psbt: psbt, signatures: signatures);
-      final signedTx = wallet.completeUnsignedTx(
-          unsignedTx: unsignedTx, signatures: signatures);
+      final signedPsbt = await unsignedTx.attachSignaturesToPsbt(
+          signatures: signatures, psbt: psbt);
+      final signedTx = await unsignedTx.complete(signatures: signatures);
 
       if (context.mounted) {
         await saveOrBroadcastSignedPsbtDialog(
@@ -164,51 +165,6 @@ Future<void> startSigningPsbt({
   }
 }
 
-Future<bool> showBroadcastPsbtConfirmDialog(
-    BuildContext context, KeyId keyId, SignedTx tx, Psbt psbt) async {
-  final wasBroadcast = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        final effect = wallet.effectOfPsbtTx(keyId: keyId, psbt: psbt);
-        final effectWidget = EffectTable(effect: effect);
-        return AlertDialog(
-            title: Text("Broadcast?"),
-            content: Container(
-                width: Platform.isAndroid ? double.maxFinite : 400.0,
-                child: Align(
-                  alignment: Alignment.center,
-                  child: effectWidget,
-                )),
-            actions: [
-              ElevatedButton(
-                  onPressed: () {
-                    if (dialogContext.mounted) {
-                      Navigator.pop(dialogContext, false);
-                    }
-                  },
-                  child: Text("Cancel")),
-              ElevatedButton(
-                  onPressed: () async {
-                    try {
-                      await wallet.broadcastTx(keyId: keyId, tx: tx);
-                      if (dialogContext.mounted) {
-                        Navigator.pop(context, true);
-                      }
-                    } catch (e) {
-                      if (dialogContext.mounted) {
-                        Navigator.pop(dialogContext, false);
-                        showErrorSnackbar(dialogContext, "Broadcast error: $e");
-                      }
-                    }
-                  },
-                  child: Text("Broadcast"))
-            ]);
-      });
-
-  return wasBroadcast ?? false;
-}
-
 Future<void> saveOrBroadcastSignedPsbtDialog(
   BuildContext context,
   KeyId keyId,
@@ -220,8 +176,8 @@ Future<void> saveOrBroadcastSignedPsbtDialog(
       builder: (context) {
         final broadcastButton = ElevatedButton(
             onPressed: () async {
-              final broadcasted = await showBroadcastPsbtConfirmDialog(
-                  context, keyId, tx, psbt);
+              final broadcasted =
+                  await showBroadcastConfirmDialog(context, keyId, tx);
               if (broadcasted && context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(

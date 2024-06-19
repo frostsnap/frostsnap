@@ -1,5 +1,6 @@
 use crate::{
-    gen_pop_message, message::*, ActionError, Error, FrostKeyExt, MessageResult, NONCE_BATCH_SIZE,
+    gen_pop_message, message::*, ActionError, CheckedSignTask, Error, FrostKeyExt, MessageResult,
+    NONCE_BATCH_SIZE,
 };
 use crate::{DeviceId, KeyId};
 use alloc::collections::BTreeSet;
@@ -11,13 +12,13 @@ use schnorr_fun::fun::poly;
 use schnorr_fun::{
     binonce::{Nonce, NonceKeyPair},
     frost::{self},
-    fun::{derive_nonce_rng, marker::*, KeyPair, Scalar, Tag},
+    fun::{derive_nonce_rng, marker::*, KeyPair, Point, Scalar, Tag},
     nonce, Message,
 };
 
 use sha2::Sha256;
 
-#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+#[derive(Clone, Debug)]
 pub struct FrostSigner {
     keypair: KeyPair,
     keys: BTreeMap<KeyId, FrostsnapSecretKey>,
@@ -99,7 +100,7 @@ impl FrostSigner {
         rng: &mut impl rand_core::RngCore,
     ) -> MessageResult<Vec<DeviceSend>> {
         use CoordinatorToDeviceMessage::*;
-        match (self.action_state.clone(), message.clone()) {
+        match (&self.action_state, message.clone()) {
             (_, RequestNonces) => {
                 let nonces = self
                     .generate_nonces(self.nonce_counter)
@@ -146,7 +147,9 @@ impl FrostSigner {
                     scalar_poly,
                     ..
                 }),
-                CoordinatorToDeviceMessage::FinishKeyGen { shares_provided },
+                CoordinatorToDeviceMessage::FinishKeyGen {
+                    ref shares_provided,
+                },
             ) => {
                 if let Some((device_id, _)) = device_to_share_index
                     .iter()
@@ -286,6 +289,10 @@ impl FrostSigner {
                     )
                 })?;
 
+                let checked_sign_task = sign_task
+                    .check(key.key_id())
+                    .map_err(|e| Error::signer_invalid_message(&message, e))?;
+
                 let key_id = key.key_id();
                 let my_nonces = nonces.get(&key.share_index).ok_or_else(|| {
                     Error::signer_invalid_message(
@@ -295,7 +302,7 @@ impl FrostSigner {
                     )
                 })?;
 
-                let n_signatures_requested = sign_task.sign_items().len();
+                let n_signatures_requested = checked_sign_task.sign_items().len();
                 if my_nonces.nonces.len() != n_signatures_requested {
                     return Err(Error::signer_invalid_message(&message, format!("Number of nonces ({}) was not the same as the number of signatures we were asked for {}", my_nonces.nonces.len(), n_signatures_requested)));
                 }
@@ -324,11 +331,14 @@ impl FrostSigner {
 
                 self.action_state = Some(SignerState::AwaitingSignAck {
                     key_id,
-                    sign_task: sign_task.clone(),
+                    sign_task: checked_sign_task.clone(),
                     session_nonces: nonces,
                 });
                 Ok(vec![DeviceSend::ToUser(
-                    DeviceToUserMessage::SignatureRequest { sign_task, key_id },
+                    DeviceToUserMessage::SignatureRequest {
+                        sign_task: checked_sign_task,
+                        key_id,
+                    },
                 )])
             }
             (None, CoordinatorToDeviceMessage::DisplayBackup { key_id }) => {
@@ -440,7 +450,7 @@ impl FrostSigner {
                         })
                         .collect();
 
-                    let derived_xonly_key = sign_item.derive_key(&frost_key);
+                    let derived_xonly_key = sign_item.app_tweak.derive_xonly_key(&frost_key);
                     let message = Message::raw(&sign_item.message[..]);
                     let sign_session =
                         frost.start_sign_session(&derived_xonly_key, nonces_at_index, message);
@@ -522,7 +532,7 @@ impl FrostSigner {
     }
 }
 
-#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+#[derive(Clone, Debug)]
 pub enum SignerState {
     KeyGen {
         scalar_poly: Vec<Scalar>,
@@ -534,7 +544,7 @@ pub enum SignerState {
     },
     AwaitingSignAck {
         key_id: KeyId,
-        sign_task: SignTask,
+        sign_task: CheckedSignTask,
         session_nonces: BTreeMap<Scalar<Public, NonZero>, SignRequestNonces>,
     },
     DisplayBackup {
@@ -567,5 +577,9 @@ pub struct FrostsnapSecretKey {
 impl FrostsnapSecretKey {
     pub fn key_id(&self) -> KeyId {
         self.encoded_frost_key.into_frost_key().key_id()
+    }
+
+    pub fn public_key(&self) -> Point {
+        self.encoded_frost_key.into_frost_key().public_key()
     }
 }

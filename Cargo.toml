@@ -28,6 +28,9 @@ tracing = { version = "0.1", default-features = false }
 llsdb = { git = "https://github.com/LLFourn/llsdb.git", rev = "b1540959897b098e7fea28799a377e210b365357" }
 rand_chacha = { version = "0.3", default-features = false }
 sha2 = { version = "0.10", default-features = false }
+bitcoin = { version = "0.31", features = ["no-std", "serde"], default-features = false }
+bdk_coin_select = { version = "0.3" }
+
 
 
 [patch.crates-io]
