@@ -7,6 +7,7 @@ import 'serialport.dart';
 late Wallet wallet;
 late Coordinator coord;
 late HostPortHandler globalHostPortHandler;
+late BitcoinContext bitcoinContext;
 
 /// Gets new updates from the device list
 Stream<DeviceListUpdate> deviceListUpdateStream =

@@ -4,11 +4,117 @@ use schnorr_fun::{
     fun::{g, marker::*, Point, Scalar, G},
 };
 
-#[derive(Clone, Debug, PartialEq, bincode::Encode, bincode::Decode)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, bincode::Encode, bincode::Decode, Eq, Hash, PartialOrd, Ord,
+)]
+pub enum Account {
+    Segwitv1 = 0,
+}
+
+impl Account {
+    pub fn derivation_path(&self) -> DerivationPath {
+        DerivationPath::master().child(ChildNumber::Normal {
+            index: *self as u32,
+        })
+    }
+}
+
+#[derive(
+    Clone, Copy, Debug, PartialEq, bincode::Encode, bincode::Decode, Eq, Hash, PartialOrd, Ord,
+)]
+pub enum Keychain {
+    External = 0,
+    Internal = 1,
+}
+
+#[derive(Clone, Debug, PartialEq, bincode::Encode, bincode::Decode, Eq, PartialOrd, Ord)]
 pub enum AppTweak {
     TestMessage,
-    Bitcoin { bip32_path: alloc::vec::Vec<u32> },
+    Bitcoin(AppBip32Path),
     Nostr,
+}
+
+#[derive(
+    Clone, Copy, Debug, PartialEq, bincode::Encode, bincode::Decode, Eq, Hash, PartialOrd, Ord,
+)]
+pub struct AppBip32Path {
+    pub account_keychain: AppAccountKeychain,
+    pub index: u32,
+}
+
+impl AppBip32Path {
+    pub fn external(index: u32) -> Self {
+        Self {
+            account_keychain: AppAccountKeychain::external(),
+            index,
+        }
+    }
+
+    pub fn internal(index: u32) -> Self {
+        Self {
+            account_keychain: AppAccountKeychain::internal(),
+            index,
+        }
+    }
+}
+
+#[derive(
+    Clone, Copy, Debug, PartialEq, bincode::Encode, bincode::Decode, Eq, Hash, PartialOrd, Ord,
+)]
+pub struct AppAccountKeychain {
+    pub account: Account,
+    pub keychain: Keychain,
+}
+
+impl AppAccountKeychain {
+    pub fn external() -> Self {
+        Self {
+            account: Account::Segwitv1,
+            keychain: Keychain::External,
+        }
+    }
+
+    pub fn internal() -> Self {
+        Self {
+            account: Account::Segwitv1,
+            keychain: Keychain::Internal,
+        }
+    }
+}
+
+impl AppBip32Path {
+    pub fn to_u32_array(&self) -> [u32; 3] {
+        [
+            self.account_keychain.account as u32,
+            self.account_keychain.keychain as u32,
+            self.index,
+        ]
+    }
+
+    pub fn from_u32_slice(path: &[u32]) -> Option<Self> {
+        if path.len() != 3 {
+            return None;
+        }
+
+        let account = match path[0] {
+            0 => Account::Segwitv1,
+            _ => return None,
+        };
+
+        let keychain = match path[1] {
+            0 => Keychain::External,
+            1 => Keychain::Internal,
+            _ => return None,
+        };
+
+        let _check_it = ChildNumber::from_normal_idx(path[2]).ok()?;
+        let index = path[2];
+
+        Some(AppBip32Path {
+            account_keychain: AppAccountKeychain { account, keychain },
+            index,
+        })
+    }
 }
 
 impl AppTweak {
@@ -17,6 +123,29 @@ impl AppTweak {
             AppTweak::Bitcoin { .. } => AppTweakKind::Bitcoin,
             AppTweak::Nostr => AppTweakKind::Nostr,
             AppTweak::TestMessage => AppTweakKind::TestMessage,
+        }
+    }
+
+    pub fn derive_xonly_key<K: TweakableKey>(&self, root_key: &K) -> K::XOnly {
+        let (app_key, extra) = root_key.app_tweak_and_expand(self.kind());
+        match &self {
+            AppTweak::Bitcoin(bip32_path) => {
+                let mut xpub = crate::tweak::Xpub::new(app_key, extra);
+                xpub.derive_bip32(&bip32_path.to_u32_array());
+                let derived_key = xpub.into_key();
+                let tweak = bitcoin::taproot::TapTweakHash::from_key_and_tweak(
+                    derived_key.to_libsecp_xonly(),
+                    None,
+                )
+                .to_scalar();
+                derived_key.into_xonly_with_tweak(
+                    Scalar::<Public, _>::from_bytes_mod_order(tweak.to_be_bytes())
+                        .non_zero()
+                        .expect("computationally unreachable"),
+                )
+            }
+            AppTweak::Nostr => app_key.into_xonly(),
+            AppTweak::TestMessage => app_key.into_xonly(),
         }
     }
 }
@@ -39,6 +168,7 @@ pub enum AppTweakKind {
 }
 
 /// Encapsulates bip32 derivations on a key
+#[derive(Clone)]
 pub struct Xpub<T> {
     key: T,
     xpub: bitcoin::bip32::Xpub,
@@ -207,6 +337,6 @@ mod test {
         let derived_xpub = xpub.derive_pub(&secp, &child_path).unwrap();
         app_xpub.derive_bip32(&path);
 
-        assert_eq!(app_xpub.xpub(bitcoin::Network::Bitcoin), &derived_xpub);
+        assert_eq!(app_xpub.xpub(bitcoin::Network::Bitcoin), derived_xpub);
     }
 }

@@ -41,7 +41,7 @@ use frostsnap_device::{
     io::SerialInterface,
     st7789,
     ui::{
-        BusyTask, FirmwareUpgradeStatus, Prompt, UiEvent, UserInteraction, WaitingFor,
+        BusyTask, FirmwareUpgradeStatus, Prompt, SignPrompt, UiEvent, UserInteraction, WaitingFor,
         WaitingResponse, Workflow,
     },
     DownstreamConnectionState, UpstreamConnection,
@@ -348,9 +348,30 @@ where
             },
             Workflow::UserPrompt(prompt) => {
                 match prompt {
-                    Prompt::Signing(task) => {
-                        self.display.print(format!("Sign {}", task));
-                    }
+                    Prompt::Signing(task) => match task {
+                        SignPrompt::Bitcoin {
+                            fee,
+                            foreign_recipients,
+                        } => {
+                            use core::fmt::Write;
+                            let mut string = String::new();
+                            if foreign_recipients.is_empty() {
+                                write!(&mut string, "internal transfer").unwrap();
+                            } else {
+                                for (address, value) in foreign_recipients {
+                                    write!(&mut string, "send {value} to {address}\n").unwrap();
+                                }
+                            }
+                            write!(&mut string, "fee: {fee}").unwrap();
+                            self.display.print(string);
+                        }
+                        SignPrompt::Plain(message) => {
+                            self.display.print(format!("Sign: {message}"))
+                        }
+                        SignPrompt::Nostr(message) => {
+                            self.display.print(format!("Sign nostr: {message}"))
+                        }
+                    },
                     Prompt::KeyGen(session_hash) => {
                         self.display
                             .print(format!("Ok {}", hex::encode(session_hash)));

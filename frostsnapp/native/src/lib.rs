@@ -7,11 +7,9 @@ pub use camera::*;
 mod coordinator;
 mod persist_core;
 pub use coordinator::*;
-mod chain_sync;
 mod device_list;
 use frostsnap_coordinator::FirmwareBin;
 mod ffi_serial_port;
-pub mod wallet;
 
 #[cfg(feature = "no_build_firmware")]
 pub const FIRMWARE: FirmwareBin = FirmwareBin::new(&[]);

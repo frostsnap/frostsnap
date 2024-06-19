@@ -12,7 +12,7 @@ part of 'bridge_definitions.dart';
 T _$identity<T>(T value) => value;
 
 final _privateConstructorUsedError = UnsupportedError(
-    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#custom-getters-and-methods');
+    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
 /// @nodoc
 mixin _$PortEvent {
@@ -131,7 +131,7 @@ class _$PortEvent_OpenImpl implements PortEvent_Open {
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$PortEvent_OpenImpl &&
@@ -279,7 +279,7 @@ class _$PortEvent_WriteImpl implements PortEvent_Write {
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$PortEvent_WriteImpl &&
@@ -427,7 +427,7 @@ class _$PortEvent_ReadImpl implements PortEvent_Read {
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$PortEvent_ReadImpl &&
@@ -576,7 +576,7 @@ class _$PortEvent_BytesToReadImpl implements PortEvent_BytesToRead {
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$PortEvent_BytesToReadImpl &&
@@ -793,7 +793,7 @@ class _$QrDecoderStatus_ProgressImpl implements QrDecoderStatus_Progress {
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$QrDecoderStatus_ProgressImpl &&
@@ -937,7 +937,7 @@ class _$QrDecoderStatus_DecodedImpl implements QrDecoderStatus_Decoded {
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$QrDecoderStatus_DecodedImpl &&
@@ -1082,7 +1082,7 @@ class _$QrDecoderStatus_FailedImpl implements QrDecoderStatus_Failed {
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$QrDecoderStatus_FailedImpl &&
@@ -1288,7 +1288,7 @@ class _$SignTaskDescription_PlainImpl implements SignTaskDescription_Plain {
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$SignTaskDescription_PlainImpl &&
@@ -1428,7 +1428,7 @@ class _$SignTaskDescription_TransactionImpl
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$SignTaskDescription_TransactionImpl &&

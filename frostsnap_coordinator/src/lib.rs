@@ -11,3 +11,5 @@ pub use frostsnap_core;
 pub use serial_port::*;
 pub use ui_protocol::*;
 pub use usb_serial_manager::*;
+pub mod bitcoin;
+pub use bdk_chain;

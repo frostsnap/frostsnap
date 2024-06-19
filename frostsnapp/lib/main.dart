@@ -22,25 +22,27 @@ void main() async {
   try {
     // set logging up first before doing anything else
     if (Platform.isAndroid) {
-      api.turnLogcatLoggingOn(level: Level.Debug);
+      api.turnLogcatLoggingOn(level: LogLevel.Debug);
     } else {
-      api.turnStderrLoggingOn(level: Level.Debug);
+      api.turnStderrLoggingOn(level: LogLevel.Debug);
     }
     final appDir = await getApplicationSupportDirectory();
     final dbFile = '${appDir.path}/frostsnap.db';
     if (Platform.isAndroid) {
-      final (coord_, ffiserial, wallet_) =
+      final (coord_, ffiserial, wallet_, bitcoinContext_) =
           await api.loadHostHandlesSerial(dbFile: dbFile);
       globalHostPortHandler = HostPortHandler(ffiserial);
       coord = coord_;
       wallet = wallet_;
+      bitcoinContext = bitcoinContext_;
       // check for devices that were plugged in before the app even started
       globalHostPortHandler.scanDevices();
     } else {
-      final (coord_, wallet_) = await api.load(dbFile: dbFile);
+      final (coord_, wallet_, bitcoinContext_) = await api.load(dbFile: dbFile);
       globalHostPortHandler = HostPortHandler(null);
       coord = coord_;
       wallet = wallet_;
+      bitcoinContext = bitcoinContext_;
     }
     coord.startThread();
   } catch (error, stacktrace) {

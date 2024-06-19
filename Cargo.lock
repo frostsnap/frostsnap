@@ -1013,9 +1013,13 @@ name = "frostsnap_coordinator"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bdk_chain",
+ "bdk_coin_select",
+ "bdk_electrum",
  "bincode",
  "frostsnap_comms",
  "frostsnap_core",
+ "llsdb",
  "serialport",
  "tracing",
 ]
@@ -1042,6 +1046,7 @@ name = "frostsnap_device"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "bitcoin",
  "crc",
  "cst816s",
  "display-interface",
@@ -1456,10 +1461,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bardecoder",
- "bdk_chain",
- "bdk_coin_select",
- "bdk_electrum",
  "bincode",
+ "bitcoin",
  "flutter_rust_bridge",
  "frostsnap_coordinator",
  "image",
