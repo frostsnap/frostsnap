@@ -13,8 +13,8 @@ gen:
 build TARGET="linux":
     flutter build -v {{TARGET}}
 
-run:
-    flutter run
+run +ARGS="":
+    flutter run {{ARGS}}
 
 lint:
     cd native && cargo fmt
@@ -33,7 +33,7 @@ install-rust-deps:
     #!/bin/sh
     flutter_rust_bridge_version=$(just flutter_rust_bridge_version)
     if test "$flutter_rust_bridge_version"; then
-        cargo install "flutter_rust_bridge_codegen@$flutter_rust_bridge_version" cargo-ndk
+        cargo install "flutter_rust_bridge_codegen@$flutter_rust_bridge_version" cargo-ndk espflash
     else
         echo "coudln't determine version for flutter_rust_bridge" >&2;
         exit 1

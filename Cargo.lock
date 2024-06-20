@@ -391,6 +391,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "crc"
+version = "3.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69e6e4d7b33a94f0991c26729976b10ebde1d34c3ee82408fb536164fa10d636"
+dependencies = [
+ "crc-catalog",
+]
+
+[[package]]
+name = "crc-catalog"
+version = "2.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19d374276b40fb8bbdee95aef7c7fa6b5316ec764510eb64b8dd0e2ed0d7e7f5"
+
+[[package]]
 name = "critical-section"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -773,6 +788,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "esp-partition-table"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c2f5b2accc551f643064854e8cbe82727ba6d15eeaae28cab18c8bc54ec411e4"
+dependencies = [
+ "embedded-storage",
+ "md5",
+]
+
+[[package]]
 name = "esp-riscv-rt"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -893,6 +918,7 @@ name = "frostsnap_device"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "crc",
  "cst816s",
  "display-interface",
  "display-interface-spi",
@@ -906,6 +932,7 @@ dependencies = [
  "embedded-text",
  "esp-alloc",
  "esp-hal",
+ "esp-partition-table",
  "esp-storage",
  "frostsnap_comms",
  "frostsnap_core",
@@ -1163,6 +1190,12 @@ checksum = "19b955cdeb2a02b9117f121ce63aa52d08ade45de53e48fe6a38b39c10f6f709"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "md5"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "490cc448043f947bae3cbee9c203358d62dbee0db12107a74be5c30ccfd09771"
 
 [[package]]
 name = "memchr"

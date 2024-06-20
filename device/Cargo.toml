@@ -22,7 +22,8 @@ nb = "1"
 embedded-hal-nb = "1"
 embedded-hal-bus = "0.1.0"
 embedded-storage = "0.3.1"
-esp-storage = { version = "0.3.0", features = ["esp32c3"] }
+esp-storage = { version = "0.3.0", features = ["esp32c3", "nor-flash"] }
+esp-partition-table = "0.1"
 bincode = { workspace = true }
 display-interface = { version = "0.5.0", optional = true }
 display-interface-spi = { version = "0.5.0", optional = true }
@@ -36,6 +37,7 @@ cst816s = { git = "https://github.com/fxweidinger/cst816s", rev = "82f88186e94a9
 embedded-hal = { version = "1.0" }
 embedded-iconoir = "0.2.3"
 fugit = "0.3.7"
+crc = "3"
 
 [[bin]]
 name = "v2"

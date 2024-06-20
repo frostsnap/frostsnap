@@ -12,7 +12,7 @@ use bincode::{de::read::Reader, enc::write::Writer, Decode, Encode};
 use core::marker::PhantomData;
 use frostsnap_core::{DeviceId, Gist};
 
-pub const BAUDRATE: u32 = 9600;
+pub const BAUDRATE: u32 = 14_400;
 /// Magic bytes are 7 bytes in length so when the bincode prefixes it with `00` it is 8 bytes long.
 /// A nice round number here is desirable (but not strictly necessary) because TX and TX buffers
 /// will be some multiple of 8 and so it should overflow the ring buffers neatly.
@@ -24,6 +24,21 @@ const MAGICBYTES_RECV_UPSTREAM: [u8; MAGIC_BYTES_LEN] = [0xff, 0x5d, 0xa3, 0x85,
 
 /// Write magic bytes once every 100ms
 pub const MAGIC_BYTES_PERIOD: u64 = 100;
+
+pub const FIRMWARE_UPGRADE_CHUNK_LEN: u32 = 4096;
+
+/// This value comes from partitions.csv
+pub const FIRMWARE_IMAGE_SIZE: u32 = 0x140_000;
+
+pub const FIRMWARE_NEXT_CHUNK_READY_SIGNAL: u8 = 0x11;
+
+const MAX_MESSAGE_SIZE: usize = 1 << 13;
+
+pub const BINCODE_CONFIG: bincode::config::Configuration<
+    bincode::config::LittleEndian,
+    bincode::config::Varint,
+    bincode::config::Limit<MAX_MESSAGE_SIZE>,
+> = bincode::config::standard().with_limit::<MAX_MESSAGE_SIZE>();
 
 #[derive(Encode, Decode, Debug, Clone)]
 #[bincode(bounds = "D: Direction")]
@@ -110,6 +125,16 @@ pub enum CoordinatorSendBody {
     Naming(NameCommand),
     AnnounceAck,
     Cancel,
+    Upgrade(CoordinatorUpgradeMessage),
+}
+
+#[derive(Encode, Decode, Debug, Clone)]
+pub enum CoordinatorUpgradeMessage {
+    PrepareUpgrade {
+        size: u32,
+        firmware_digest: FirmwareDigest,
+    },
+    EnterUpgradeMode,
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
@@ -194,7 +219,7 @@ impl<'de, O: Direction> bincode::BorrowDecode<'de> for MagicBytes<O> {
     }
 }
 
-/// Message sent from a device
+/// Message sent from a device to the coordinator
 #[derive(Encode, Decode, Debug, Clone)]
 pub struct DeviceSendMessage {
     pub from: DeviceId,
@@ -211,10 +236,11 @@ impl Gist for DeviceSendMessage {
 pub enum DeviceSendBody {
     Core(frostsnap_core::message::DeviceToCoordinatorMessage),
     Debug { message: String },
-    Announce,
+    Announce { firmware_digest: FirmwareDigest },
     SetName { name: String },
     DisconnectDownstream,
     NeedName,
+    AckUpgradeMode,
 }
 
 impl Gist for DeviceSendBody {
@@ -224,7 +250,8 @@ impl Gist for DeviceSendBody {
             DeviceSendBody::Debug { message } => format!("debug: {message}"),
             DeviceSendBody::DisconnectDownstream
             | DeviceSendBody::NeedName
-            | DeviceSendBody::Announce
+            | DeviceSendBody::Announce { .. }
+            | DeviceSendBody::AckUpgradeMode { .. }
             | DeviceSendBody::SetName { .. } => format!("{:?}", self),
         }
     }
@@ -275,6 +302,22 @@ fn _find_and_remove_magic_bytes(buff: &mut Vec<u8>, magic_bytes: &[u8]) -> bool 
     }
 
     found
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct FirmwareDigest(pub [u8; 32]);
+
+frostsnap_core::impl_display_debug_serialize! {
+    fn to_bytes(digest: &FirmwareDigest) -> [u8;32] {
+        digest.0
+    }
+}
+
+frostsnap_core::impl_fromstr_deserialize! {
+    name => "firmware digest",
+    fn from_bytes(bytes: [u8;32]) -> FirmwareDigest {
+        FirmwareDigest(bytes)
+    }
 }
 
 #[cfg(test)]

@@ -1,18 +1,21 @@
 pub use crate::chain_sync::ChainSync;
-pub use crate::coordinator::{
+use crate::device_list::DeviceList;
+pub use crate::ffi_serial_port::{
     PortBytesToReadSender, PortOpenSender, PortReadSender, PortWriteSender,
 };
-use crate::device_list::DeviceList;
 pub use crate::FfiCoordinator;
 use anyhow::{anyhow, Context, Result};
 pub use bdk_chain::bitcoin;
 pub use bitcoin::Transaction as RTransaction;
 use flutter_rust_bridge::{frb, RustOpaque, StreamSink, SyncReturn};
+pub use frostsnap_coordinator::firmware_upgrade::FirmwareUpgradeConfirmState;
 pub use frostsnap_coordinator::frostsnap_core;
 use frostsnap_coordinator::frostsnap_core::message::SignTask;
+pub use frostsnap_coordinator::{
+    keygen::KeyGenState, signing::SigningState, DeviceChange, PortDesc,
+};
 use frostsnap_coordinator::{DesktopSerial, UsbSerialManager};
-pub use frostsnap_coordinator::{DeviceChange, PortDesc};
-pub use frostsnap_core::message::{CoordinatorToUserKeyGenMessage, EncodedSignature};
+pub use frostsnap_core::message::EncodedSignature;
 pub use frostsnap_core::{DeviceId, FrostKeyExt, KeyId};
 use lazy_static::lazy_static;
 use llsdb::LlsDb;
@@ -100,10 +103,23 @@ pub struct ConfirmationTime {
     pub time: u64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Device {
     pub name: Option<String>,
+    // NOTE: digest should always be present in any device that is actually plugged in
+    pub firmware_digest: String,
+    pub latest_digest: String,
     pub id: DeviceId,
+}
+
+impl Device {
+    pub fn ready(&self) -> SyncReturn<bool> {
+        SyncReturn(self.name.is_some() && !self.needs_firmware_upgrade().0)
+    }
+
+    pub fn needs_firmware_upgrade(&self) -> SyncReturn<bool> {
+        SyncReturn(self.firmware_digest != self.latest_digest)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -268,38 +284,39 @@ pub fn device_list_state() -> SyncReturn<DeviceListState> {
 }
 
 pub fn get_device(id: DeviceId) -> SyncReturn<Device> {
-    let device = Device {
-        name: DEVICE_LIST.lock().unwrap().0.get_device_name(id).cloned(),
-        id,
-    };
+    let device = DEVICE_LIST.lock().unwrap().0.get_device(id);
     SyncReturn(device)
 }
 
-#[derive(Clone, Debug, Copy)]
 #[frb(mirror(EncodedSignature))]
 pub struct _EncodedSignature(pub [u8; 64]);
 
-#[derive(Clone, Debug)]
-pub struct SigningState {
+#[frb(mirror(SigningState))]
+pub struct _SigningState {
     pub got_shares: Vec<DeviceId>,
     pub needed_from: Vec<DeviceId>,
     // for some reason FRB woudln't allow Option here to empty vec implies not being finished
     pub finished_signatures: Vec<EncodedSignature>,
 }
 
-impl SigningState {
-    pub fn is_finished(&self) -> SyncReturn<bool> {
-        SyncReturn(!self.finished_signatures.is_empty())
-    }
+#[frb(mirror(KeyGenState))]
+pub struct _KeyGenState {
+    pub devices: Vec<DeviceId>, // not a set for frb compat
+    pub got_shares: Vec<DeviceId>,
+    pub session_acks: Vec<DeviceId>,
+    pub session_hash: Option<[u8; 32]>,
+    pub finished: Option<KeyId>,
+    pub aborted: Option<String>,
+    pub threshold: usize,
 }
 
-#[derive(Clone, Debug)]
-#[frb(mirror(CoordinatorToUserKeyGenMessage))]
-pub enum _CoordinatorToUserKeyGenMessage {
-    ReceivedShares { from: DeviceId },
-    CheckKeyGen { session_hash: [u8; 32] },
-    KeyGenAck { from: DeviceId },
-    FinishedKey { key_id: KeyId },
+#[frb(mirror(FirmwareUpgradeConfirmState))]
+pub struct _FirmwareUpgradeConfirmState {
+    pub confirmations: Vec<DeviceId>,
+    pub devices: Vec<DeviceId>,
+    pub need_upgrade: Vec<DeviceId>,
+    pub abort: bool,
+    pub upgrade_ready_to_start: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -329,25 +346,13 @@ pub struct DeviceListState {
 }
 
 impl DeviceListState {
-    pub fn named_devices(&self) -> SyncReturn<Vec<DeviceId>> {
-        SyncReturn(
-            self.devices
-                .iter()
-                .filter_map(|device| {
-                    let _name = device.name.as_ref()?;
-                    Some(device.id)
-                })
-                .collect(),
-        )
-    }
-
     pub fn get_device(&self, id: DeviceId) -> SyncReturn<Option<Device>> {
         SyncReturn(self.devices.iter().find(|device| device.id == id).cloned())
     }
 }
 
 pub fn load(db_file: String) -> anyhow::Result<(Coordinator, Wallet)> {
-    let usb_manager = UsbSerialManager::new(Box::new(DesktopSerial));
+    let usb_manager = UsbSerialManager::new(Box::new(DesktopSerial), crate::FIRMWARE);
     _load(db_file, usb_manager)
 }
 
@@ -355,7 +360,7 @@ pub fn load_host_handles_serial(
     db_file: String,
 ) -> anyhow::Result<(Coordinator, FfiSerial, Wallet)> {
     let ffi_serial = FfiSerial::default();
-    let usb_manager = UsbSerialManager::new(Box::new(ffi_serial.clone()));
+    let usb_manager = UsbSerialManager::new(Box::new(ffi_serial.clone()), crate::FIRMWARE);
     let (coord, wallet) = _load(db_file, usb_manager)?;
     Ok((coord, ffi_serial, wallet))
 }
@@ -517,10 +522,6 @@ impl Coordinator {
         Ok(())
     }
 
-    pub fn get_signing_state(&self) -> SyncReturn<Option<SigningState>> {
-        SyncReturn(self.0.get_signing_state())
-    }
-
     pub fn nonces_available(&self, id: DeviceId) -> SyncReturn<usize> {
         SyncReturn(self.0.nonces_left(id).unwrap_or(0))
     }
@@ -529,14 +530,10 @@ impl Coordinator {
         &self,
         threshold: usize,
         devices: Vec<DeviceId>,
-        event_stream: StreamSink<CoordinatorToUserKeyGenMessage>,
+        event_stream: StreamSink<KeyGenState>,
     ) -> anyhow::Result<()> {
         self.0
             .generate_new_key(devices.into_iter().collect(), threshold, event_stream)
-    }
-
-    pub fn can_restore_signing_session(&self, key_id: KeyId) -> SyncReturn<bool> {
-        SyncReturn(self.0.can_restore_signing_session(key_id))
     }
 
     pub fn persisted_sign_session_description(
@@ -554,6 +551,26 @@ impl Coordinator {
         stream: StreamSink<SigningState>,
     ) -> Result<()> {
         self.0.try_restore_signing_session(key_id, stream)
+    }
+
+    pub fn start_firmware_upgrade(
+        &self,
+        sink: StreamSink<FirmwareUpgradeConfirmState>,
+    ) -> Result<()> {
+        self.0.begin_upgrade_firmware(sink)?;
+        Ok(())
+    }
+
+    pub fn upgrade_firmware_digest(&self) -> SyncReturn<String> {
+        SyncReturn(self.0.upgrade_firmware_digest().to_string())
+    }
+
+    pub fn cancel_protocol(&self) {
+        self.0.cancel_protocol()
+    }
+
+    pub fn enter_firmware_upgrade_mode(&self, progress: StreamSink<f32>) -> Result<()> {
+        self.0.enter_firmware_upgrade_mode(progress)
     }
 }
 

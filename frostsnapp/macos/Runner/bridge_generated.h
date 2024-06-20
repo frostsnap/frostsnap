@@ -39,6 +39,13 @@ typedef struct wire_Transaction {
   struct wire_ConfirmationTime *confirmation_time;
 } wire_Transaction;
 
+typedef struct wire_Device {
+  struct wire_uint_8_list *name;
+  struct wire_uint_8_list *firmware_digest;
+  struct wire_uint_8_list *latest_digest;
+  struct wire_DeviceId id;
+} wire_Device;
+
 typedef struct wire_FrostsnapCoreCoordinatorFrostKey {
   const void *ptr;
 } wire_FrostsnapCoreCoordinatorFrostKey;
@@ -86,31 +93,6 @@ typedef struct wire_PortBytesToRead {
   struct wire_PortBytesToReadSender ready;
 } wire_PortBytesToRead;
 
-typedef struct wire_list_device_id {
-  struct wire_DeviceId *ptr;
-  int32_t len;
-} wire_list_device_id;
-
-typedef struct wire_EncodedSignature {
-  struct wire_uint_8_list *field0;
-} wire_EncodedSignature;
-
-typedef struct wire_list_encoded_signature {
-  struct wire_EncodedSignature *ptr;
-  int32_t len;
-} wire_list_encoded_signature;
-
-typedef struct wire_SigningState {
-  struct wire_list_device_id *got_shares;
-  struct wire_list_device_id *needed_from;
-  struct wire_list_encoded_signature *finished_signatures;
-} wire_SigningState;
-
-typedef struct wire_Device {
-  struct wire_uint_8_list *name;
-  struct wire_DeviceId id;
-} wire_Device;
-
 typedef struct wire_list_device {
   struct wire_Device *ptr;
   int32_t len;
@@ -148,6 +130,11 @@ typedef struct wire_Coordinator {
   struct wire_FfiCoordinator field0;
 } wire_Coordinator;
 
+typedef struct wire_list_device_id {
+  struct wire_DeviceId *ptr;
+  int32_t len;
+} wire_list_device_id;
+
 typedef struct wire_FrostsnapCoreMessageBitcoinTransactionSignTask {
   const void *ptr;
 } wire_FrostsnapCoreMessageBitcoinTransactionSignTask;
@@ -178,6 +165,15 @@ typedef struct wire_StringList {
   struct wire_uint_8_list **ptr;
   int32_t len;
 } wire_StringList;
+
+typedef struct wire_EncodedSignature {
+  struct wire_uint_8_list *field0;
+} wire_EncodedSignature;
+
+typedef struct wire_list_encoded_signature {
+  struct wire_EncodedSignature *ptr;
+  int32_t len;
+} wire_list_encoded_signature;
 
 typedef struct wire_SignedTx {
   struct wire_RTransaction inner;
@@ -215,6 +211,10 @@ void wire_echo_key_id(int64_t port_, struct wire_KeyId *key_id);
 
 WireSyncReturn wire_txid__method__Transaction(struct wire_Transaction *that);
 
+WireSyncReturn wire_ready__method__Device(struct wire_Device *that);
+
+WireSyncReturn wire_needs_firmware_upgrade__method__Device(struct wire_Device *that);
+
 WireSyncReturn wire_threshold__method__FrostKey(struct wire_FrostKey *that);
 
 WireSyncReturn wire_id__method__FrostKey(struct wire_FrostKey *that);
@@ -239,10 +239,6 @@ void wire_satisfy__method__PortWrite(int64_t port_,
 void wire_satisfy__method__PortBytesToRead(int64_t port_,
                                            struct wire_PortBytesToRead *that,
                                            uint32_t bytes_to_read);
-
-WireSyncReturn wire_is_finished__method__SigningState(struct wire_SigningState *that);
-
-WireSyncReturn wire_named_devices__method__DeviceListState(struct wire_DeviceListState *that);
 
 WireSyncReturn wire_get_device__method__DeviceListState(struct wire_DeviceListState *that,
                                                         struct wire_DeviceId *id);
@@ -296,8 +292,6 @@ void wire_start_signing_tx__method__Coordinator(int64_t port_,
                                                 struct wire_UnsignedTx *unsigned_tx,
                                                 struct wire_list_device_id *devices);
 
-WireSyncReturn wire_get_signing_state__method__Coordinator(struct wire_Coordinator *that);
-
 WireSyncReturn wire_nonces_available__method__Coordinator(struct wire_Coordinator *that,
                                                           struct wire_DeviceId *id);
 
@@ -306,15 +300,21 @@ void wire_generate_new_key__method__Coordinator(int64_t port_,
                                                 uintptr_t threshold,
                                                 struct wire_list_device_id *devices);
 
-WireSyncReturn wire_can_restore_signing_session__method__Coordinator(struct wire_Coordinator *that,
-                                                                     struct wire_KeyId *key_id);
-
 WireSyncReturn wire_persisted_sign_session_description__method__Coordinator(struct wire_Coordinator *that,
                                                                             struct wire_KeyId *key_id);
 
 void wire_try_restore_signing_session__method__Coordinator(int64_t port_,
                                                            struct wire_Coordinator *that,
                                                            struct wire_KeyId *key_id);
+
+void wire_start_firmware_upgrade__method__Coordinator(int64_t port_, struct wire_Coordinator *that);
+
+WireSyncReturn wire_upgrade_firmware_digest__method__Coordinator(struct wire_Coordinator *that);
+
+void wire_cancel_protocol__method__Coordinator(int64_t port_, struct wire_Coordinator *that);
+
+void wire_enter_firmware_upgrade_mode__method__Coordinator(int64_t port_,
+                                                           struct wire_Coordinator *that);
 
 void wire_sub_tx_state__method__Wallet(int64_t port_,
                                        struct wire_Wallet *that,
@@ -397,6 +397,8 @@ struct wire_ConfirmationTime *new_box_autoadd_confirmation_time_0(void);
 
 struct wire_Coordinator *new_box_autoadd_coordinator_0(void);
 
+struct wire_Device *new_box_autoadd_device_0(void);
+
 struct wire_DeviceId *new_box_autoadd_device_id_0(void);
 
 struct wire_DeviceListState *new_box_autoadd_device_list_state_0(void);
@@ -416,8 +418,6 @@ struct wire_PortRead *new_box_autoadd_port_read_0(void);
 struct wire_PortWrite *new_box_autoadd_port_write_0(void);
 
 struct wire_SignedTx *new_box_autoadd_signed_tx_0(void);
-
-struct wire_SigningState *new_box_autoadd_signing_state_0(void);
 
 struct wire_Transaction *new_box_autoadd_transaction_0(void);
 
@@ -498,6 +498,8 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_load_host_handles_serial);
     dummy_var ^= ((int64_t) (void*) wire_echo_key_id);
     dummy_var ^= ((int64_t) (void*) wire_txid__method__Transaction);
+    dummy_var ^= ((int64_t) (void*) wire_ready__method__Device);
+    dummy_var ^= ((int64_t) (void*) wire_needs_firmware_upgrade__method__Device);
     dummy_var ^= ((int64_t) (void*) wire_threshold__method__FrostKey);
     dummy_var ^= ((int64_t) (void*) wire_id__method__FrostKey);
     dummy_var ^= ((int64_t) (void*) wire_name__method__FrostKey);
@@ -506,8 +508,6 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortRead);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortWrite);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortBytesToRead);
-    dummy_var ^= ((int64_t) (void*) wire_is_finished__method__SigningState);
-    dummy_var ^= ((int64_t) (void*) wire_named_devices__method__DeviceListState);
     dummy_var ^= ((int64_t) (void*) wire_get_device__method__DeviceListState);
     dummy_var ^= ((int64_t) (void*) wire_set_available_ports__method__FfiSerial);
     dummy_var ^= ((int64_t) (void*) wire_start_thread__method__Coordinator);
@@ -522,12 +522,14 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_keys_for_device__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_start_signing__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_start_signing_tx__method__Coordinator);
-    dummy_var ^= ((int64_t) (void*) wire_get_signing_state__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_nonces_available__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_generate_new_key__method__Coordinator);
-    dummy_var ^= ((int64_t) (void*) wire_can_restore_signing_session__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_persisted_sign_session_description__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_try_restore_signing_session__method__Coordinator);
+    dummy_var ^= ((int64_t) (void*) wire_start_firmware_upgrade__method__Coordinator);
+    dummy_var ^= ((int64_t) (void*) wire_upgrade_firmware_digest__method__Coordinator);
+    dummy_var ^= ((int64_t) (void*) wire_cancel_protocol__method__Coordinator);
+    dummy_var ^= ((int64_t) (void*) wire_enter_firmware_upgrade_mode__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_sub_tx_state__method__Wallet);
     dummy_var ^= ((int64_t) (void*) wire_tx_state__method__Wallet);
     dummy_var ^= ((int64_t) (void*) wire_sync_txids__method__Wallet);
@@ -557,6 +559,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) new_StringList_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_confirmation_time_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_coordinator_0);
+    dummy_var ^= ((int64_t) (void*) new_box_autoadd_device_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_device_id_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_device_list_state_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_ffi_serial_0);
@@ -567,7 +570,6 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_port_read_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_port_write_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_signed_tx_0);
-    dummy_var ^= ((int64_t) (void*) new_box_autoadd_signing_state_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_transaction_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_unsigned_tx_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_wallet_0);

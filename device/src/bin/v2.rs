@@ -40,8 +40,11 @@ use frostsnap_device::{
     esp32_run,
     io::SerialInterface,
     st7789,
-    ui::{BusyTask, Prompt, UiEvent, UserInteraction, WaitingFor, WaitingResponse, Workflow},
-    DownstreamConnectionState, UpstreamConnectionState,
+    ui::{
+        BusyTask, FirmwareUpgradeStatus, Prompt, UiEvent, UserInteraction, WaitingFor,
+        WaitingResponse, Workflow,
+    },
+    DownstreamConnectionState, UpstreamConnection,
 };
 use fugit::{Duration, Instant};
 use mipidsi::{error::Error, models::ST7789, options::ColorInversion};
@@ -104,7 +107,7 @@ fn main() -> ! {
     channel0
         .configure(channel::config::Config {
             timer: &lstimer0,
-            duty_pct: 0,
+            duty_pct: 0, // Turn off backlight to hide artifacts as display initializes
             pin_config: channel::config::PinConfig::PushPull,
         })
         .unwrap();
@@ -155,19 +158,22 @@ fn main() -> ! {
         SerialInterface::new_uart(
             Uart::new_with_config(peripherals.UART1, serial_conf, Some(txrx1), &clocks, None),
             &timer0,
+            &clocks,
         )
     } else {
         SerialInterface::new_jtag(UsbSerialJtag::new(peripherals.USB_DEVICE, None), &timer0)
     };
-
-    let downstream_uart = {
+    let downstream_serial = {
         let serial_conf = uart::config::Config {
             baudrate: frostsnap_comms::BAUDRATE,
             ..Default::default()
         };
         let txrx0 = uart::TxRxPins::new_tx_rx(io.pins.gpio21, io.pins.gpio20);
-        Uart::new_with_config(peripherals.UART0, serial_conf, Some(txrx0), &clocks, None)
+        let uart =
+            Uart::new_with_config(peripherals.UART0, serial_conf, Some(txrx0), &clocks, None);
+        SerialInterface::new_uart(uart, &timer0, &clocks)
     };
+    let sha256 = esp_hal::sha::Sha::new(peripherals.SHA, esp_hal::sha::ShaMode::SHA256, None);
 
     let mut hal_rng = Rng::new(peripherals.RNG);
 
@@ -181,7 +187,7 @@ fn main() -> ! {
         display,
         capsense,
         downstream_connection_state: DownstreamConnectionState::Disconnected,
-        upstream_connection_state: UpstreamConnectionState::Disconnected,
+        upstream_connection_state: None,
         workflow: Default::default(),
         device_name: Default::default(),
         changes: false,
@@ -192,11 +198,12 @@ fn main() -> ! {
 
     let run = esp32_run::Run {
         upstream_serial,
-        downstream_uart,
+        downstream_serial,
         rng,
         ui,
         timer: &timer0,
         downstream_detect,
+        sha256,
     };
     run.run()
 }
@@ -223,7 +230,7 @@ pub struct FrostyUi<'t, T, DT, I2C, PINT, RST> {
     capsense: CST816S<I2C, PINT, RST>,
     last_touch: Option<Instant<u64, 1, 1_000_000>>,
     downstream_connection_state: DownstreamConnectionState,
-    upstream_connection_state: UpstreamConnectionState,
+    upstream_connection_state: Option<UpstreamConnection>,
     workflow: Workflow,
     device_name: Option<String>,
     changes: bool,
@@ -358,6 +365,11 @@ where
                     Prompt::DisplayBackupRequest(key_id) => self
                         .display
                         .print(format!("Display the backup for key {key_id}?")),
+                    Prompt::ConfirmFirmwareUpgrade {
+                        firmware_digest, ..
+                    } => self
+                        .display
+                        .print(format!("confirm firmware switch to: \n{firmware_digest}")),
                 }
                 self.display.button();
             }
@@ -366,36 +378,35 @@ where
                 BusyTask::Signing => self.display.print("Signing.."),
                 BusyTask::VerifyingShare => self.display.print("Verifying key.."),
                 BusyTask::Loading => self.display.print("loading.."),
+                BusyTask::FirmwareUpgrade(status) => match status {
+                    FirmwareUpgradeStatus::Passive => self.display.print("FORWARD MODE"),
+                    FirmwareUpgradeStatus::Erase { progress } => {
+                        self.display.print(if *progress == 1.0 {
+                            "Ready to upgrade"
+                        } else {
+                            "Preparing upgrade.."
+                        });
+                        self.display.progress_bar(*progress);
+                    }
+                    FirmwareUpgradeStatus::Download { progress } => {
+                        self.display.print("Downloading firmware..");
+                        self.display.progress_bar(*progress);
+                    }
+                },
             },
             Workflow::Debug(string) => {
-                self.display.print(string);
+                self.display
+                    .print(format!("{}: {}", self.timer.now(), string));
             }
             Workflow::DisplayBackup { backup } => self.display.print(format!("Backup: {}", backup)),
         }
 
-        match self.upstream_connection_state {
-            UpstreamConnectionState::Disconnected => {
-                self.display.upstream_state(Rgb565::RED, false);
-            }
-            UpstreamConnectionState::Connected { is_device } => {
-                self.display.upstream_state(Rgb565::YELLOW, is_device);
-            }
-            UpstreamConnectionState::Established { is_device } => {
-                self.display.upstream_state(Rgb565::GREEN, is_device);
-            }
+        if let Some(upstream_connection) = self.upstream_connection_state {
+            self.display.upstream_state(upstream_connection.state);
         }
 
-        match self.downstream_connection_state {
-            DownstreamConnectionState::Disconnected => {
-                self.display.downstream_state(None);
-            }
-            DownstreamConnectionState::Connected => {
-                self.display.downstream_state(Some(Rgb565::YELLOW));
-            }
-            DownstreamConnectionState::Established => {
-                self.display.downstream_state(Some(Rgb565::GREEN));
-            }
-        }
+        self.display
+            .downstream_state(self.downstream_connection_state);
 
         #[cfg(feature = "mem_debug")]
         self.display
@@ -423,10 +434,10 @@ where
         }
     }
 
-    fn set_upstream_connection_state(&mut self, state: frostsnap_device::UpstreamConnectionState) {
-        if state != self.upstream_connection_state {
+    fn set_upstream_connection_state(&mut self, state: frostsnap_device::UpstreamConnection) {
+        if Some(state) != self.upstream_connection_state {
             self.changes = true;
-            self.upstream_connection_state = state;
+            self.upstream_connection_state = Some(state);
         }
     }
 
@@ -444,7 +455,9 @@ where
     }
 
     fn set_workflow(&mut self, workflow: Workflow) {
-        if matches!(self.workflow, Workflow::Debug(_)) && !matches!(workflow, Workflow::Debug(_)) {
+        if matches!(self.workflow, Workflow::Debug(_))
+            && !matches!(workflow, Workflow::Debug(_) | Workflow::UserPrompt(_))
+        {
             return;
         }
         self.workflow = workflow;
@@ -486,6 +499,13 @@ where
                             Prompt::DisplayBackupRequest(key_id) => {
                                 UiEvent::BackupRequestConfirm(*key_id)
                             }
+                            Prompt::ConfirmFirmwareUpgrade {
+                                firmware_digest,
+                                size,
+                            } => UiEvent::UpgradeConfirm {
+                                firmware_digest: *firmware_digest,
+                                size: *size,
+                            },
                         };
                         event = Some(ui_event);
                     }

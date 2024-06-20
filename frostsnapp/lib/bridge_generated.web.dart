@@ -104,6 +104,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
+  List<dynamic> api2wire_box_autoadd_device(Device raw) {
+    return api2wire_device(raw);
+  }
+
+  @protected
   List<dynamic> api2wire_box_autoadd_device_id(DeviceId raw) {
     return api2wire_device_id(raw);
   }
@@ -154,11 +159,6 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
-  List<dynamic> api2wire_box_autoadd_signing_state(SigningState raw) {
-    return api2wire_signing_state(raw);
-  }
-
-  @protected
   List<dynamic> api2wire_box_autoadd_transaction(Transaction raw) {
     return api2wire_transaction(raw);
   }
@@ -185,7 +185,12 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
 
   @protected
   List<dynamic> api2wire_device(Device raw) {
-    return [api2wire_opt_String(raw.name), api2wire_device_id(raw.id)];
+    return [
+      api2wire_opt_String(raw.name),
+      api2wire_String(raw.firmwareDigest),
+      api2wire_String(raw.latestDigest),
+      api2wire_device_id(raw.id)
+    ];
   }
 
   @protected
@@ -298,15 +303,6 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   @protected
   List<dynamic> api2wire_signed_tx(SignedTx raw) {
     return [api2wire_RTransaction(raw.inner)];
-  }
-
-  @protected
-  List<dynamic> api2wire_signing_state(SigningState raw) {
-    return [
-      api2wire_list_device_id(raw.gotShares),
-      api2wire_list_device_id(raw.neededFrom),
-      api2wire_list_encoded_signature(raw.finishedSignatures)
-    ];
   }
 
   @protected
@@ -450,6 +446,11 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* String */ wire_txid__method__Transaction(
       List<dynamic> that);
 
+  external dynamic /* bool */ wire_ready__method__Device(List<dynamic> that);
+
+  external dynamic /* bool */ wire_needs_firmware_upgrade__method__Device(
+      List<dynamic> that);
+
   external dynamic /* int */ wire_threshold__method__FrostKey(
       List<dynamic> that);
 
@@ -472,12 +473,6 @@ class NativeWasmModule implements WasmModule {
 
   external dynamic /* void */ wire_satisfy__method__PortBytesToRead(
       NativePortType port_, List<dynamic> that, int bytes_to_read);
-
-  external dynamic /* bool */ wire_is_finished__method__SigningState(
-      List<dynamic> that);
-
-  external dynamic /* List<dynamic> */
-      wire_named_devices__method__DeviceListState(List<dynamic> that);
 
   external dynamic /* List<dynamic>? */
       wire_get_device__method__DeviceListState(
@@ -534,9 +529,6 @@ class NativeWasmModule implements WasmModule {
       List<dynamic> unsigned_tx,
       List<dynamic> devices);
 
-  external dynamic /* List<dynamic>? */
-      wire_get_signing_state__method__Coordinator(List<dynamic> that);
-
   external dynamic /* int */ wire_nonces_available__method__Coordinator(
       List<dynamic> that, List<dynamic> id);
 
@@ -546,10 +538,6 @@ class NativeWasmModule implements WasmModule {
       int threshold,
       List<dynamic> devices);
 
-  external dynamic /* bool */
-      wire_can_restore_signing_session__method__Coordinator(
-          List<dynamic> that, List<dynamic> key_id);
-
   external dynamic /* List<dynamic>? */
       wire_persisted_sign_session_description__method__Coordinator(
           List<dynamic> that, List<dynamic> key_id);
@@ -557,6 +545,19 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* void */
       wire_try_restore_signing_session__method__Coordinator(
           NativePortType port_, List<dynamic> that, List<dynamic> key_id);
+
+  external dynamic /* void */ wire_start_firmware_upgrade__method__Coordinator(
+      NativePortType port_, List<dynamic> that);
+
+  external dynamic /* String */
+      wire_upgrade_firmware_digest__method__Coordinator(List<dynamic> that);
+
+  external dynamic /* void */ wire_cancel_protocol__method__Coordinator(
+      NativePortType port_, List<dynamic> that);
+
+  external dynamic /* void */
+      wire_enter_firmware_upgrade_mode__method__Coordinator(
+          NativePortType port_, List<dynamic> that);
 
   external dynamic /* void */ wire_sub_tx_state__method__Wallet(
       NativePortType port_, List<dynamic> that, List<dynamic> key_id);
@@ -703,6 +704,13 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   dynamic /* String */ wire_txid__method__Transaction(List<dynamic> that) =>
       wasmModule.wire_txid__method__Transaction(that);
 
+  dynamic /* bool */ wire_ready__method__Device(List<dynamic> that) =>
+      wasmModule.wire_ready__method__Device(that);
+
+  dynamic /* bool */ wire_needs_firmware_upgrade__method__Device(
+          List<dynamic> that) =>
+      wasmModule.wire_needs_firmware_upgrade__method__Device(that);
+
   dynamic /* int */ wire_threshold__method__FrostKey(List<dynamic> that) =>
       wasmModule.wire_threshold__method__FrostKey(that);
 
@@ -732,14 +740,6 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
           NativePortType port_, List<dynamic> that, int bytes_to_read) =>
       wasmModule.wire_satisfy__method__PortBytesToRead(
           port_, that, bytes_to_read);
-
-  dynamic /* bool */ wire_is_finished__method__SigningState(
-          List<dynamic> that) =>
-      wasmModule.wire_is_finished__method__SigningState(that);
-
-  dynamic /* List<dynamic> */ wire_named_devices__method__DeviceListState(
-          List<dynamic> that) =>
-      wasmModule.wire_named_devices__method__DeviceListState(that);
 
   dynamic /* List<dynamic>? */ wire_get_device__method__DeviceListState(
           List<dynamic> that, List<dynamic> id) =>
@@ -810,10 +810,6 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
       wasmModule.wire_start_signing_tx__method__Coordinator(
           port_, that, key_id, unsigned_tx, devices);
 
-  dynamic /* List<dynamic>? */ wire_get_signing_state__method__Coordinator(
-          List<dynamic> that) =>
-      wasmModule.wire_get_signing_state__method__Coordinator(that);
-
   dynamic /* int */ wire_nonces_available__method__Coordinator(
           List<dynamic> that, List<dynamic> id) =>
       wasmModule.wire_nonces_available__method__Coordinator(that, id);
@@ -822,11 +818,6 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
           List<dynamic> that, int threshold, List<dynamic> devices) =>
       wasmModule.wire_generate_new_key__method__Coordinator(
           port_, that, threshold, devices);
-
-  dynamic /* bool */ wire_can_restore_signing_session__method__Coordinator(
-          List<dynamic> that, List<dynamic> key_id) =>
-      wasmModule.wire_can_restore_signing_session__method__Coordinator(
-          that, key_id);
 
   dynamic /* List<dynamic>? */
       wire_persisted_sign_session_description__method__Coordinator(
@@ -839,6 +830,23 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
           NativePortType port_, List<dynamic> that, List<dynamic> key_id) =>
       wasmModule.wire_try_restore_signing_session__method__Coordinator(
           port_, that, key_id);
+
+  void wire_start_firmware_upgrade__method__Coordinator(
+          NativePortType port_, List<dynamic> that) =>
+      wasmModule.wire_start_firmware_upgrade__method__Coordinator(port_, that);
+
+  dynamic /* String */ wire_upgrade_firmware_digest__method__Coordinator(
+          List<dynamic> that) =>
+      wasmModule.wire_upgrade_firmware_digest__method__Coordinator(that);
+
+  void wire_cancel_protocol__method__Coordinator(
+          NativePortType port_, List<dynamic> that) =>
+      wasmModule.wire_cancel_protocol__method__Coordinator(port_, that);
+
+  void wire_enter_firmware_upgrade_mode__method__Coordinator(
+          NativePortType port_, List<dynamic> that) =>
+      wasmModule.wire_enter_firmware_upgrade_mode__method__Coordinator(
+          port_, that);
 
   void wire_sub_tx_state__method__Wallet(
           NativePortType port_, List<dynamic> that, List<dynamic> key_id) =>

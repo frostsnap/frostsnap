@@ -96,7 +96,7 @@ class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
     final noDevices = StreamBuilder(
         stream: deviceListSubject,
         builder: (context, snapshot) {
-          if (snapshot.hasData && snapshot.data!.state.devices.isNotEmpty) {
+          if (!snapshot.hasData || snapshot.data!.state.devices.isNotEmpty) {
             return SizedBox();
           } else {
             return Center(
@@ -148,7 +148,10 @@ class DeviceBoxContainer extends StatelessWidget {
               child: Card(
                 color: Colors.white70,
                 child: Center(
-                  child: child,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 5.0),
+                    child: child,
+                  ),
                 ),
               ),
             )));
@@ -241,18 +244,27 @@ class MaybeExpandedVertical extends StatelessWidget {
 Widget buildInteractiveDevice(BuildContext context, Device device,
     Orientation orientation, Animation<double> animation) {
   Widget child;
+  final List<Widget> children = [];
+  final upToDate = device.firmwareDigest! == coord.upgradeFirmwareDigest();
+
   if (device.name == null) {
-    child = ElevatedButton(
-        onPressed: () async {
-          await Navigator.push(context, MaterialPageRoute(builder: (context) {
-            return DeviceSetup(id: device.id);
-          }));
-        },
-        child: const Text("NEW DEVICE"));
+    // children.add(Text("New Frostsnap Device"));
   } else {
-    child = Column(children: [
-      LabeledDeviceText(device.name!),
-      IconButton(
+    children.add(LabeledDeviceText(device.name!));
+  }
+
+  if (upToDate) {
+    if (device.name == null) {
+      children.add(IconButton.outlined(
+          onPressed: () async {
+            await Navigator.push(context, MaterialPageRoute(builder: (context) {
+              return DeviceSetup(id: device.id);
+            }));
+          },
+          color: Colors.blue,
+          icon: Icon(Icons.phonelink_setup)));
+    } else {
+      children.add(IconButton(
         icon: Icon(Icons.settings),
         onPressed: () {
           Navigator.push(
@@ -260,10 +272,24 @@ Widget buildInteractiveDevice(BuildContext context, Device device,
               MaterialPageRoute(
                   builder: (context) => DeviceSettings(id: device.id)));
         },
-      )
-    ]);
+      ));
+    }
+  } else {
+    children.add(Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+      IconButton.outlined(
+        onPressed: () {
+          FirmwareUpgradeDialog.show(context);
+        },
+        icon: Icon(Icons.upgrade),
+        color: Colors.orange,
+      ),
+      SizedBox(width: 5.0),
+      Text("Upgrade firmware"),
+    ]));
   }
 
   return DeviceBoxContainer(
-      orientation: orientation, animation: animation, child: child);
+      orientation: orientation,
+      animation: animation,
+      child: Column(children: children));
 }

@@ -1,18 +1,30 @@
-use alloc::string::String;
+use alloc::string::{String, ToString};
+use frostsnap_comms::FirmwareDigest;
 use frostsnap_core::{KeyId, SessionHash};
 
 pub trait UserInteraction {
     fn set_downstream_connection_state(&mut self, state: crate::DownstreamConnectionState);
-    fn set_upstream_connection_state(&mut self, state: crate::UpstreamConnectionState);
+    fn set_upstream_connection_state(&mut self, state: crate::UpstreamConnection);
 
     fn set_device_name(&mut self, name: String);
 
     fn get_device_label(&self) -> Option<&str>;
 
     fn set_workflow(&mut self, workflow: Workflow);
+
+    /// Use this when you want to redraw the UI right now
+    fn set_busy_task(&mut self, task: BusyTask) {
+        self.set_workflow(Workflow::BusyDoing(task));
+        assert!(self.poll().is_none(), "busy tasks cannot have ui events");
+    }
+
     fn take_workflow(&mut self) -> Workflow;
 
     fn poll(&mut self) -> Option<UiEvent>;
+
+    fn debug<S: ToString>(&mut self, debug: S) {
+        self.set_workflow(Workflow::Debug(debug.to_string()));
+    }
 
     fn cancel(&mut self) {
         let workflow = self.take_workflow();
@@ -37,7 +49,7 @@ pub trait UserInteraction {
 pub enum WaitingFor {
     /// Looking for upstream device
     LookingForUpstream { jtag: bool },
-    /// Waitinf for the announce ack
+    /// Waiting for the announce ack
     CoordinatorAnnounceAck,
     /// Waiting to be told to do something
     CoordinatorInstruction { completed_task: Option<UiEvent> },
@@ -73,6 +85,7 @@ impl Default for Workflow {
 }
 
 #[derive(Clone, Debug)]
+
 pub enum Prompt {
     KeyGen(SessionHash),
     Signing(String),
@@ -81,6 +94,10 @@ pub enum Prompt {
         new_name: String,
     },
     DisplayBackupRequest(KeyId),
+    ConfirmFirmwareUpgrade {
+        firmware_digest: FirmwareDigest,
+        size: u32,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -89,6 +106,14 @@ pub enum BusyTask {
     Signing,
     VerifyingShare,
     Loading,
+    FirmwareUpgrade(FirmwareUpgradeStatus),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum FirmwareUpgradeStatus {
+    Erase { progress: f32 },
+    Download { progress: f32 },
+    Passive,
 }
 
 #[derive(Clone, Debug)]
@@ -97,4 +122,8 @@ pub enum UiEvent {
     SigningConfirm,
     NameConfirm(String),
     BackupRequestConfirm(KeyId),
+    UpgradeConfirm {
+        size: u32,
+        firmware_digest: FirmwareDigest,
+    },
 }

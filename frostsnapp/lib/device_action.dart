@@ -26,20 +26,17 @@ Future<T?> showDeviceActionDialog<T>({
             }
           }
         });
-        final dialog = AlertDialog(
-            content: Container(
-                width: Platform.isAndroid ? double.maxFinite : 400.0,
-                // this align thing is necessary to stop the child from expanding beyond its BoxConstraints
-                child: Align(alignment: Alignment.center, child: content)),
-            actions: [
-              ElevatedButton(
-                  onPressed: () {
-                    canceled = true;
-                    onCancel?.call();
-                    Navigator.pop(dialogContext);
-                  },
-                  child: const Text("Cancel"))
-            ]);
+        final dialog =
+            AlertDialog(content: DialogContainer(child: content), actions: [
+          if (onCancel != null)
+            ElevatedButton(
+                onPressed: () {
+                  canceled = true;
+                  onCancel.call();
+                  Navigator.pop(dialogContext);
+                },
+                child: const Text("Cancel"))
+        ]);
         return dialog;
       });
 }
@@ -58,4 +55,18 @@ void showErrorSnackbar(BuildContext context, String errorMessage) {
   );
 
   ScaffoldMessenger.of(context).showSnackBar(snackBar);
+}
+
+class DialogContainer extends StatelessWidget {
+  final Widget child;
+
+  const DialogContainer({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+        width: Platform.isAndroid ? double.maxFinite : 400.0,
+        // this align thing is necessary to stop the child from expanding beyond its BoxConstraints
+        child: Align(alignment: Alignment.center, child: this.child));
+  }
 }

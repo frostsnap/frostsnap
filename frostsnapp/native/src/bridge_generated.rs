@@ -171,6 +171,36 @@ fn wire_txid__method__Transaction_impl(
         },
     )
 }
+fn wire_ready__method__Device_impl(
+    that: impl Wire2Api<Device> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "ready__method__Device",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            Result::<_, ()>::Ok(Device::ready(&api_that))
+        },
+    )
+}
+fn wire_needs_firmware_upgrade__method__Device_impl(
+    that: impl Wire2Api<Device> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "needs_firmware_upgrade__method__Device",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            Result::<_, ()>::Ok(Device::needs_firmware_upgrade(&api_that))
+        },
+    )
+}
 fn wire_threshold__method__FrostKey_impl(
     that: impl Wire2Api<FrostKey> + UnwindSafe,
 ) -> support::WireSyncReturn {
@@ -306,36 +336,6 @@ fn wire_satisfy__method__PortBytesToRead_impl(
             move |task_callback| {
                 Result::<_, ()>::Ok(PortBytesToRead::satisfy(&api_that, api_bytes_to_read))
             }
-        },
-    )
-}
-fn wire_is_finished__method__SigningState_impl(
-    that: impl Wire2Api<SigningState> + UnwindSafe,
-) -> support::WireSyncReturn {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
-        WrapInfo {
-            debug_name: "is_finished__method__SigningState",
-            port: None,
-            mode: FfiCallMode::Sync,
-        },
-        move || {
-            let api_that = that.wire2api();
-            Result::<_, ()>::Ok(SigningState::is_finished(&api_that))
-        },
-    )
-}
-fn wire_named_devices__method__DeviceListState_impl(
-    that: impl Wire2Api<DeviceListState> + UnwindSafe,
-) -> support::WireSyncReturn {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
-        WrapInfo {
-            debug_name: "named_devices__method__DeviceListState",
-            port: None,
-            mode: FfiCallMode::Sync,
-        },
-        move || {
-            let api_that = that.wire2api();
-            Result::<_, ()>::Ok(DeviceListState::named_devices(&api_that))
         },
     )
 }
@@ -590,7 +590,7 @@ fn wire_start_signing__method__Coordinator_impl(
                     api_key_id,
                     api_devices,
                     api_message,
-                    task_callback.stream_sink::<_, SigningState>(),
+                    task_callback.stream_sink::<_, mirror_SigningState>(),
                 )
             }
         },
@@ -620,24 +620,9 @@ fn wire_start_signing_tx__method__Coordinator_impl(
                     api_key_id,
                     api_unsigned_tx,
                     api_devices,
-                    task_callback.stream_sink::<_, SigningState>(),
+                    task_callback.stream_sink::<_, mirror_SigningState>(),
                 )
             }
-        },
-    )
-}
-fn wire_get_signing_state__method__Coordinator_impl(
-    that: impl Wire2Api<Coordinator> + UnwindSafe,
-) -> support::WireSyncReturn {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
-        WrapInfo {
-            debug_name: "get_signing_state__method__Coordinator",
-            port: None,
-            mode: FfiCallMode::Sync,
-        },
-        move || {
-            let api_that = that.wire2api();
-            Result::<_, ()>::Ok(Coordinator::get_signing_state(&api_that))
         },
     )
 }
@@ -679,28 +664,9 @@ fn wire_generate_new_key__method__Coordinator_impl(
                     &api_that,
                     api_threshold,
                     api_devices,
-                    task_callback.stream_sink::<_, mirror_CoordinatorToUserKeyGenMessage>(),
+                    task_callback.stream_sink::<_, mirror_KeyGenState>(),
                 )
             }
-        },
-    )
-}
-fn wire_can_restore_signing_session__method__Coordinator_impl(
-    that: impl Wire2Api<Coordinator> + UnwindSafe,
-    key_id: impl Wire2Api<KeyId> + UnwindSafe,
-) -> support::WireSyncReturn {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
-        WrapInfo {
-            debug_name: "can_restore_signing_session__method__Coordinator",
-            port: None,
-            mode: FfiCallMode::Sync,
-        },
-        move || {
-            let api_that = that.wire2api();
-            let api_key_id = key_id.wire2api();
-            Result::<_, ()>::Ok(Coordinator::can_restore_signing_session(
-                &api_that, api_key_id,
-            ))
         },
     )
 }
@@ -739,7 +705,80 @@ fn wire_try_restore_signing_session__method__Coordinator_impl(
                 Coordinator::try_restore_signing_session(
                     &api_that,
                     api_key_id,
-                    task_callback.stream_sink::<_, SigningState>(),
+                    task_callback.stream_sink::<_, mirror_SigningState>(),
+                )
+            }
+        },
+    )
+}
+fn wire_start_firmware_upgrade__method__Coordinator_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<Coordinator> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "start_firmware_upgrade__method__Coordinator",
+            port: Some(port_),
+            mode: FfiCallMode::Stream,
+        },
+        move || {
+            let api_that = that.wire2api();
+            move |task_callback| {
+                Coordinator::start_firmware_upgrade(
+                    &api_that,
+                    task_callback.stream_sink::<_, mirror_FirmwareUpgradeConfirmState>(),
+                )
+            }
+        },
+    )
+}
+fn wire_upgrade_firmware_digest__method__Coordinator_impl(
+    that: impl Wire2Api<Coordinator> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "upgrade_firmware_digest__method__Coordinator",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            Result::<_, ()>::Ok(Coordinator::upgrade_firmware_digest(&api_that))
+        },
+    )
+}
+fn wire_cancel_protocol__method__Coordinator_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<Coordinator> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "cancel_protocol__method__Coordinator",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_that = that.wire2api();
+            move |task_callback| Result::<_, ()>::Ok(Coordinator::cancel_protocol(&api_that))
+        },
+    )
+}
+fn wire_enter_firmware_upgrade_mode__method__Coordinator_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<Coordinator> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "enter_firmware_upgrade_mode__method__Coordinator",
+            port: Some(port_),
+            mode: FfiCallMode::Stream,
+        },
+        move || {
+            let api_that = that.wire2api();
+            move |task_callback| {
+                Coordinator::enter_firmware_upgrade_mode(
+                    &api_that,
+                    task_callback.stream_sink::<_, f32>(),
                 )
             }
         },
@@ -1027,34 +1066,26 @@ fn wire_tx__method__UnsignedTx_impl(
 // Section: wrapper structs
 
 #[derive(Clone)]
-pub struct mirror_CoordinatorToUserKeyGenMessage(CoordinatorToUserKeyGenMessage);
-
-#[derive(Clone)]
 pub struct mirror_DeviceId(DeviceId);
 
 #[derive(Clone)]
 pub struct mirror_EncodedSignature(EncodedSignature);
 
 #[derive(Clone)]
+pub struct mirror_FirmwareUpgradeConfirmState(FirmwareUpgradeConfirmState);
+
+#[derive(Clone)]
+pub struct mirror_KeyGenState(KeyGenState);
+
+#[derive(Clone)]
 pub struct mirror_KeyId(KeyId);
+
+#[derive(Clone)]
+pub struct mirror_SigningState(SigningState);
 
 // Section: static checks
 
 const _: fn() = || {
-    match None::<CoordinatorToUserKeyGenMessage>.unwrap() {
-        CoordinatorToUserKeyGenMessage::ReceivedShares { from } => {
-            let _: DeviceId = from;
-        }
-        CoordinatorToUserKeyGenMessage::CheckKeyGen { session_hash } => {
-            let _: [u8; 32] = session_hash;
-        }
-        CoordinatorToUserKeyGenMessage::KeyGenAck { from } => {
-            let _: DeviceId = from;
-        }
-        CoordinatorToUserKeyGenMessage::FinishedKey { key_id } => {
-            let _: KeyId = key_id;
-        }
-    }
     {
         let DeviceId_ = None::<DeviceId>.unwrap();
         let _: [u8; 33] = DeviceId_.0;
@@ -1064,8 +1095,32 @@ const _: fn() = || {
         let _: [u8; 64] = EncodedSignature_.0;
     }
     {
+        let FirmwareUpgradeConfirmState = None::<FirmwareUpgradeConfirmState>.unwrap();
+        let _: Vec<DeviceId> = FirmwareUpgradeConfirmState.confirmations;
+        let _: Vec<DeviceId> = FirmwareUpgradeConfirmState.devices;
+        let _: Vec<DeviceId> = FirmwareUpgradeConfirmState.need_upgrade;
+        let _: bool = FirmwareUpgradeConfirmState.abort;
+        let _: bool = FirmwareUpgradeConfirmState.upgrade_ready_to_start;
+    }
+    {
+        let KeyGenState = None::<KeyGenState>.unwrap();
+        let _: Vec<DeviceId> = KeyGenState.devices;
+        let _: Vec<DeviceId> = KeyGenState.got_shares;
+        let _: Vec<DeviceId> = KeyGenState.session_acks;
+        let _: Option<[u8; 32]> = KeyGenState.session_hash;
+        let _: Option<KeyId> = KeyGenState.finished;
+        let _: Option<String> = KeyGenState.aborted;
+        let _: usize = KeyGenState.threshold;
+    }
+    {
         let KeyId_ = None::<KeyId>.unwrap();
         let _: [u8; 32] = KeyId_.0;
+    }
+    {
+        let SigningState = None::<SigningState>.unwrap();
+        let _: Vec<DeviceId> = SigningState.got_shares;
+        let _: Vec<DeviceId> = SigningState.needed_from;
+        let _: Vec<EncodedSignature> = SigningState.finished_signatures;
     }
 };
 // Section: allocate functions
@@ -1188,37 +1243,15 @@ impl rust2dart::IntoIntoDart<Coordinator> for Coordinator {
     }
 }
 
-impl support::IntoDart for mirror_CoordinatorToUserKeyGenMessage {
-    fn into_dart(self) -> support::DartAbi {
-        match self.0 {
-            CoordinatorToUserKeyGenMessage::ReceivedShares { from } => {
-                vec![0.into_dart(), from.into_into_dart().into_dart()]
-            }
-            CoordinatorToUserKeyGenMessage::CheckKeyGen { session_hash } => {
-                vec![1.into_dart(), session_hash.into_into_dart().into_dart()]
-            }
-            CoordinatorToUserKeyGenMessage::KeyGenAck { from } => {
-                vec![2.into_dart(), from.into_into_dart().into_dart()]
-            }
-            CoordinatorToUserKeyGenMessage::FinishedKey { key_id } => {
-                vec![3.into_dart(), key_id.into_into_dart().into_dart()]
-            }
-        }
-        .into_dart()
-    }
-}
-impl support::IntoDartExceptPrimitive for mirror_CoordinatorToUserKeyGenMessage {}
-impl rust2dart::IntoIntoDart<mirror_CoordinatorToUserKeyGenMessage>
-    for CoordinatorToUserKeyGenMessage
-{
-    fn into_into_dart(self) -> mirror_CoordinatorToUserKeyGenMessage {
-        mirror_CoordinatorToUserKeyGenMessage(self)
-    }
-}
-
 impl support::IntoDart for Device {
     fn into_dart(self) -> support::DartAbi {
-        vec![self.name.into_dart(), self.id.into_into_dart().into_dart()].into_dart()
+        vec![
+            self.name.into_dart(),
+            self.firmware_digest.into_into_dart().into_dart(),
+            self.latest_digest.into_into_dart().into_dart(),
+            self.id.into_into_dart().into_dart(),
+        ]
+        .into_dart()
     }
 }
 impl support::IntoDartExceptPrimitive for Device {}
@@ -1350,6 +1383,25 @@ impl rust2dart::IntoIntoDart<FfiSerial> for FfiSerial {
     }
 }
 
+impl support::IntoDart for mirror_FirmwareUpgradeConfirmState {
+    fn into_dart(self) -> support::DartAbi {
+        vec![
+            self.0.confirmations.into_into_dart().into_dart(),
+            self.0.devices.into_into_dart().into_dart(),
+            self.0.need_upgrade.into_into_dart().into_dart(),
+            self.0.abort.into_into_dart().into_dart(),
+            self.0.upgrade_ready_to_start.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for mirror_FirmwareUpgradeConfirmState {}
+impl rust2dart::IntoIntoDart<mirror_FirmwareUpgradeConfirmState> for FirmwareUpgradeConfirmState {
+    fn into_into_dart(self) -> mirror_FirmwareUpgradeConfirmState {
+        mirror_FirmwareUpgradeConfirmState(self)
+    }
+}
+
 impl support::IntoDart for FrostKey {
     fn into_dart(self) -> support::DartAbi {
         vec![self.0.into_dart()].into_dart()
@@ -1359,6 +1411,27 @@ impl support::IntoDartExceptPrimitive for FrostKey {}
 impl rust2dart::IntoIntoDart<FrostKey> for FrostKey {
     fn into_into_dart(self) -> Self {
         self
+    }
+}
+
+impl support::IntoDart for mirror_KeyGenState {
+    fn into_dart(self) -> support::DartAbi {
+        vec![
+            self.0.devices.into_into_dart().into_dart(),
+            self.0.got_shares.into_into_dart().into_dart(),
+            self.0.session_acks.into_into_dart().into_dart(),
+            self.0.session_hash.into_dart(),
+            self.0.finished.map(|v| mirror_KeyId(v)).into_dart(),
+            self.0.aborted.into_dart(),
+            self.0.threshold.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for mirror_KeyGenState {}
+impl rust2dart::IntoIntoDart<mirror_KeyGenState> for KeyGenState {
+    fn into_into_dart(self) -> mirror_KeyGenState {
+        mirror_KeyGenState(self)
     }
 }
 
@@ -1499,20 +1572,20 @@ impl rust2dart::IntoIntoDart<SignedTx> for SignedTx {
     }
 }
 
-impl support::IntoDart for SigningState {
+impl support::IntoDart for mirror_SigningState {
     fn into_dart(self) -> support::DartAbi {
         vec![
-            self.got_shares.into_into_dart().into_dart(),
-            self.needed_from.into_into_dart().into_dart(),
-            self.finished_signatures.into_into_dart().into_dart(),
+            self.0.got_shares.into_into_dart().into_dart(),
+            self.0.needed_from.into_into_dart().into_dart(),
+            self.0.finished_signatures.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
 }
-impl support::IntoDartExceptPrimitive for SigningState {}
-impl rust2dart::IntoIntoDart<SigningState> for SigningState {
-    fn into_into_dart(self) -> Self {
-        self
+impl support::IntoDartExceptPrimitive for mirror_SigningState {}
+impl rust2dart::IntoIntoDart<mirror_SigningState> for SigningState {
+    fn into_into_dart(self) -> mirror_SigningState {
+        mirror_SigningState(self)
     }
 }
 

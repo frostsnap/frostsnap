@@ -21,3 +21,11 @@ bincode.workspace = true
 bdk_chain = {  version = "0.15", features = ["serde"] }
 bdk_electrum = {  version = "0.14" }
 bdk_coin_select = { version = "0.3" }
+
+# TODO: use espflash as a library to do the build
+# [build-dependencies]
+# espflash = "3"
+
+[features]
+default = []
+no_build_firmware = []

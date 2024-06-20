@@ -7,6 +7,13 @@ mod persist_core;
 pub use coordinator::*;
 mod chain_sync;
 mod device_list;
-mod signing_session;
-pub use signing_session::*;
+use frostsnap_coordinator::FirmwareBin;
+mod ffi_serial_port;
 pub mod wallet;
+
+#[cfg(feature = "no_build_firmware")]
+pub const FIRMWARE: FirmwareBin = FirmwareBin::new(&[]);
+
+#[cfg(not(feature = "no_build_firmware"))]
+pub const FIRMWARE: FirmwareBin =
+    FirmwareBin::new(include_bytes!(concat!(env!("OUT_DIR"), "/firmware.bin")));

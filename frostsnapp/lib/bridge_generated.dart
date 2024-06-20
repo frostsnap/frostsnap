@@ -219,6 +219,44 @@ class NativeImpl implements Native {
         argNames: ["that"],
       );
 
+  bool readyMethodDevice({required Device that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_device(that);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner.wire_ready__method__Device(arg0),
+      parseSuccessData: _wire2api_bool,
+      parseErrorData: null,
+      constMeta: kReadyMethodDeviceConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kReadyMethodDeviceConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "ready__method__Device",
+        argNames: ["that"],
+      );
+
+  bool needsFirmwareUpgradeMethodDevice({required Device that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_device(that);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () =>
+          _platform.inner.wire_needs_firmware_upgrade__method__Device(arg0),
+      parseSuccessData: _wire2api_bool,
+      parseErrorData: null,
+      constMeta: kNeedsFirmwareUpgradeMethodDeviceConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kNeedsFirmwareUpgradeMethodDeviceConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "needs_firmware_upgrade__method__Device",
+            argNames: ["that"],
+          );
+
   int thresholdMethodFrostKey({required FrostKey that, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_frost_key(that);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
@@ -378,47 +416,6 @@ class NativeImpl implements Native {
         debugName: "satisfy__method__PortBytesToRead",
         argNames: ["that", "bytesToRead"],
       );
-
-  bool isFinishedMethodSigningState(
-      {required SigningState that, dynamic hint}) {
-    var arg0 = _platform.api2wire_box_autoadd_signing_state(that);
-    return _platform.executeSync(FlutterRustBridgeSyncTask(
-      callFfi: () =>
-          _platform.inner.wire_is_finished__method__SigningState(arg0),
-      parseSuccessData: _wire2api_bool,
-      parseErrorData: null,
-      constMeta: kIsFinishedMethodSigningStateConstMeta,
-      argValues: [that],
-      hint: hint,
-    ));
-  }
-
-  FlutterRustBridgeTaskConstMeta get kIsFinishedMethodSigningStateConstMeta =>
-      const FlutterRustBridgeTaskConstMeta(
-        debugName: "is_finished__method__SigningState",
-        argNames: ["that"],
-      );
-
-  List<DeviceId> namedDevicesMethodDeviceListState(
-      {required DeviceListState that, dynamic hint}) {
-    var arg0 = _platform.api2wire_box_autoadd_device_list_state(that);
-    return _platform.executeSync(FlutterRustBridgeSyncTask(
-      callFfi: () =>
-          _platform.inner.wire_named_devices__method__DeviceListState(arg0),
-      parseSuccessData: _wire2api_list_device_id,
-      parseErrorData: null,
-      constMeta: kNamedDevicesMethodDeviceListStateConstMeta,
-      argValues: [that],
-      hint: hint,
-    ));
-  }
-
-  FlutterRustBridgeTaskConstMeta
-      get kNamedDevicesMethodDeviceListStateConstMeta =>
-          const FlutterRustBridgeTaskConstMeta(
-            debugName: "named_devices__method__DeviceListState",
-            argNames: ["that"],
-          );
 
   Device? getDeviceMethodDeviceListState(
       {required DeviceListState that, required DeviceId id, dynamic hint}) {
@@ -696,7 +693,7 @@ class NativeImpl implements Native {
       callFfi: (port_) => _platform.inner
           .wire_start_signing__method__Coordinator(
               port_, arg0, arg1, arg2, arg3),
-      parseSuccessData: (d) => _wire2api_signing_state(d),
+      parseSuccessData: _wire2api_signing_state,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kStartSigningMethodCoordinatorConstMeta,
       argValues: [that, keyId, devices, message],
@@ -724,7 +721,7 @@ class NativeImpl implements Native {
       callFfi: (port_) => _platform.inner
           .wire_start_signing_tx__method__Coordinator(
               port_, arg0, arg1, arg2, arg3),
-      parseSuccessData: (d) => _wire2api_signing_state(d),
+      parseSuccessData: _wire2api_signing_state,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kStartSigningTxMethodCoordinatorConstMeta,
       argValues: [that, keyId, unsignedTx, devices],
@@ -737,27 +734,6 @@ class NativeImpl implements Native {
           const FlutterRustBridgeTaskConstMeta(
             debugName: "start_signing_tx__method__Coordinator",
             argNames: ["that", "keyId", "unsignedTx", "devices"],
-          );
-
-  SigningState? getSigningStateMethodCoordinator(
-      {required Coordinator that, dynamic hint}) {
-    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
-    return _platform.executeSync(FlutterRustBridgeSyncTask(
-      callFfi: () =>
-          _platform.inner.wire_get_signing_state__method__Coordinator(arg0),
-      parseSuccessData: _wire2api_opt_box_autoadd_signing_state,
-      parseErrorData: null,
-      constMeta: kGetSigningStateMethodCoordinatorConstMeta,
-      argValues: [that],
-      hint: hint,
-    ));
-  }
-
-  FlutterRustBridgeTaskConstMeta
-      get kGetSigningStateMethodCoordinatorConstMeta =>
-          const FlutterRustBridgeTaskConstMeta(
-            debugName: "get_signing_state__method__Coordinator",
-            argNames: ["that"],
           );
 
   int noncesAvailableMethodCoordinator(
@@ -782,7 +758,7 @@ class NativeImpl implements Native {
             argNames: ["that", "id"],
           );
 
-  Stream<CoordinatorToUserKeyGenMessage> generateNewKeyMethodCoordinator(
+  Stream<KeyGenState> generateNewKeyMethodCoordinator(
       {required Coordinator that,
       required int threshold,
       required List<DeviceId> devices,
@@ -793,7 +769,7 @@ class NativeImpl implements Native {
     return _platform.executeStream(FlutterRustBridgeTask(
       callFfi: (port_) => _platform.inner
           .wire_generate_new_key__method__Coordinator(port_, arg0, arg1, arg2),
-      parseSuccessData: _wire2api_coordinator_to_user_key_gen_message,
+      parseSuccessData: _wire2api_key_gen_state,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kGenerateNewKeyMethodCoordinatorConstMeta,
       argValues: [that, threshold, devices],
@@ -806,28 +782,6 @@ class NativeImpl implements Native {
           const FlutterRustBridgeTaskConstMeta(
             debugName: "generate_new_key__method__Coordinator",
             argNames: ["that", "threshold", "devices"],
-          );
-
-  bool canRestoreSigningSessionMethodCoordinator(
-      {required Coordinator that, required KeyId keyId, dynamic hint}) {
-    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
-    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
-    return _platform.executeSync(FlutterRustBridgeSyncTask(
-      callFfi: () => _platform.inner
-          .wire_can_restore_signing_session__method__Coordinator(arg0, arg1),
-      parseSuccessData: _wire2api_bool,
-      parseErrorData: null,
-      constMeta: kCanRestoreSigningSessionMethodCoordinatorConstMeta,
-      argValues: [that, keyId],
-      hint: hint,
-    ));
-  }
-
-  FlutterRustBridgeTaskConstMeta
-      get kCanRestoreSigningSessionMethodCoordinatorConstMeta =>
-          const FlutterRustBridgeTaskConstMeta(
-            debugName: "can_restore_signing_session__method__Coordinator",
-            argNames: ["that", "keyId"],
           );
 
   SignTaskDescription? persistedSignSessionDescriptionMethodCoordinator(
@@ -862,7 +816,7 @@ class NativeImpl implements Native {
       callFfi: (port_) => _platform.inner
           .wire_try_restore_signing_session__method__Coordinator(
               port_, arg0, arg1),
-      parseSuccessData: (d) => _wire2api_signing_state(d),
+      parseSuccessData: _wire2api_signing_state,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kTryRestoreSigningSessionMethodCoordinatorConstMeta,
       argValues: [that, keyId],
@@ -875,6 +829,90 @@ class NativeImpl implements Native {
           const FlutterRustBridgeTaskConstMeta(
             debugName: "try_restore_signing_session__method__Coordinator",
             argNames: ["that", "keyId"],
+          );
+
+  Stream<FirmwareUpgradeConfirmState> startFirmwareUpgradeMethodCoordinator(
+      {required Coordinator that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
+    return _platform.executeStream(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner
+          .wire_start_firmware_upgrade__method__Coordinator(port_, arg0),
+      parseSuccessData: _wire2api_firmware_upgrade_confirm_state,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kStartFirmwareUpgradeMethodCoordinatorConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kStartFirmwareUpgradeMethodCoordinatorConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "start_firmware_upgrade__method__Coordinator",
+            argNames: ["that"],
+          );
+
+  String upgradeFirmwareDigestMethodCoordinator(
+      {required Coordinator that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner
+          .wire_upgrade_firmware_digest__method__Coordinator(arg0),
+      parseSuccessData: _wire2api_String,
+      parseErrorData: null,
+      constMeta: kUpgradeFirmwareDigestMethodCoordinatorConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kUpgradeFirmwareDigestMethodCoordinatorConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "upgrade_firmware_digest__method__Coordinator",
+            argNames: ["that"],
+          );
+
+  Future<void> cancelProtocolMethodCoordinator(
+      {required Coordinator that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner
+          .wire_cancel_protocol__method__Coordinator(port_, arg0),
+      parseSuccessData: _wire2api_unit,
+      parseErrorData: null,
+      constMeta: kCancelProtocolMethodCoordinatorConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kCancelProtocolMethodCoordinatorConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "cancel_protocol__method__Coordinator",
+            argNames: ["that"],
+          );
+
+  Stream<double> enterFirmwareUpgradeModeMethodCoordinator(
+      {required Coordinator that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
+    return _platform.executeStream(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner
+          .wire_enter_firmware_upgrade_mode__method__Coordinator(port_, arg0),
+      parseSuccessData: _wire2api_f32,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kEnterFirmwareUpgradeModeMethodCoordinatorConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kEnterFirmwareUpgradeModeMethodCoordinatorConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "enter_firmware_upgrade_mode__method__Coordinator",
+            argNames: ["that"],
           );
 
   Stream<TxState> subTxStateMethodWallet(
@@ -1401,10 +1439,6 @@ class NativeImpl implements Native {
     return _wire2api_device(raw);
   }
 
-  DeviceId _wire2api_box_autoadd_device_id(dynamic raw) {
-    return _wire2api_device_id(raw);
-  }
-
   FrostKey _wire2api_box_autoadd_frost_key(dynamic raw) {
     return _wire2api_frost_key(raw);
   }
@@ -1433,10 +1467,6 @@ class NativeImpl implements Native {
     return _wire2api_sign_task_description(raw);
   }
 
-  SigningState _wire2api_box_autoadd_signing_state(dynamic raw) {
-    return _wire2api_signing_state(raw);
-  }
-
   UnsignedTx _wire2api_box_autoadd_unsigned_tx(dynamic raw) {
     return _wire2api_unsigned_tx(raw);
   }
@@ -1461,37 +1491,16 @@ class NativeImpl implements Native {
     );
   }
 
-  CoordinatorToUserKeyGenMessage _wire2api_coordinator_to_user_key_gen_message(
-      dynamic raw) {
-    switch (raw[0]) {
-      case 0:
-        return CoordinatorToUserKeyGenMessage_ReceivedShares(
-          from: _wire2api_box_autoadd_device_id(raw[1]),
-        );
-      case 1:
-        return CoordinatorToUserKeyGenMessage_CheckKeyGen(
-          sessionHash: _wire2api_u8_array_32(raw[1]),
-        );
-      case 2:
-        return CoordinatorToUserKeyGenMessage_KeyGenAck(
-          from: _wire2api_box_autoadd_device_id(raw[1]),
-        );
-      case 3:
-        return CoordinatorToUserKeyGenMessage_FinishedKey(
-          keyId: _wire2api_box_autoadd_key_id(raw[1]),
-        );
-      default:
-        throw Exception("unreachable");
-    }
-  }
-
   Device _wire2api_device(dynamic raw) {
     final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return Device(
+      bridge: this,
       name: _wire2api_opt_String(arr[0]),
-      id: _wire2api_device_id(arr[1]),
+      firmwareDigest: _wire2api_String(arr[1]),
+      latestDigest: _wire2api_String(arr[2]),
+      id: _wire2api_device_id(arr[3]),
     );
   }
 
@@ -1561,6 +1570,10 @@ class NativeImpl implements Native {
     );
   }
 
+  double _wire2api_f32(dynamic raw) {
+    return raw as double;
+  }
+
   double _wire2api_f64(dynamic raw) {
     return raw as double;
   }
@@ -1572,6 +1585,20 @@ class NativeImpl implements Native {
     return FfiSerial(
       bridge: this,
       availablePorts: _wire2api_ArcMutexVecPortDesc(arr[0]),
+    );
+  }
+
+  FirmwareUpgradeConfirmState _wire2api_firmware_upgrade_confirm_state(
+      dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return FirmwareUpgradeConfirmState(
+      confirmations: _wire2api_list_device_id(arr[0]),
+      devices: _wire2api_list_device_id(arr[1]),
+      needUpgrade: _wire2api_list_device_id(arr[2]),
+      abort: _wire2api_bool(arr[3]),
+      upgradeReadyToStart: _wire2api_bool(arr[4]),
     );
   }
 
@@ -1591,6 +1618,21 @@ class NativeImpl implements Native {
 
   int _wire2api_i64(dynamic raw) {
     return castInt(raw);
+  }
+
+  KeyGenState _wire2api_key_gen_state(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    return KeyGenState(
+      devices: _wire2api_list_device_id(arr[0]),
+      gotShares: _wire2api_list_device_id(arr[1]),
+      sessionAcks: _wire2api_list_device_id(arr[2]),
+      sessionHash: _wire2api_opt_u8_array_32(arr[3]),
+      finished: _wire2api_opt_box_autoadd_key_id(arr[4]),
+      aborted: _wire2api_opt_String(arr[5]),
+      threshold: _wire2api_usize(arr[6]),
+    );
   }
 
   KeyId _wire2api_key_id(dynamic raw) {
@@ -1663,6 +1705,10 @@ class NativeImpl implements Native {
     return raw == null ? null : _wire2api_box_autoadd_frost_key(raw);
   }
 
+  KeyId? _wire2api_opt_box_autoadd_key_id(dynamic raw) {
+    return raw == null ? null : _wire2api_box_autoadd_key_id(raw);
+  }
+
   SignTaskDescription? _wire2api_opt_box_autoadd_sign_task_description(
       dynamic raw) {
     return raw == null
@@ -1670,8 +1716,8 @@ class NativeImpl implements Native {
         : _wire2api_box_autoadd_sign_task_description(raw);
   }
 
-  SigningState? _wire2api_opt_box_autoadd_signing_state(dynamic raw) {
-    return raw == null ? null : _wire2api_box_autoadd_signing_state(raw);
+  U8Array32? _wire2api_opt_u8_array_32(dynamic raw) {
+    return raw == null ? null : _wire2api_u8_array_32(raw);
   }
 
   PortBytesToRead _wire2api_port_bytes_to_read(dynamic raw) {
@@ -1774,7 +1820,6 @@ class NativeImpl implements Native {
     if (arr.length != 3)
       throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
     return SigningState(
-      bridge: this,
       gotShares: _wire2api_list_device_id(arr[0]),
       neededFrom: _wire2api_list_device_id(arr[1]),
       finishedSignatures: _wire2api_list_encoded_signature(arr[2]),
