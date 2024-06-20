@@ -871,6 +871,22 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _wire_echo_key_id = _wire_echo_key_idPtr
       .asFunction<void Function(int, ffi.Pointer<wire_KeyId>)>();
 
+  WireSyncReturn wire_get_share_compatibility_identifier(
+    ffi.Pointer<wire_FrostKey> frost_key,
+  ) {
+    return _wire_get_share_compatibility_identifier(
+      frost_key,
+    );
+  }
+
+  late final _wire_get_share_compatibility_identifierPtr = _lookup<
+          ffi
+          .NativeFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>>(
+      'wire_get_share_compatibility_identifier');
+  late final _wire_get_share_compatibility_identifier =
+      _wire_get_share_compatibility_identifierPtr
+          .asFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>();
+
   WireSyncReturn wire_txid__method__Transaction(
     ffi.Pointer<wire_Transaction> that,
   ) {
@@ -2620,6 +2636,14 @@ final class wire_KeyId extends ffi.Struct {
   external ffi.Pointer<wire_uint_8_list> field0;
 }
 
+final class wire_FrostsnapCoreCoordinatorFrostKey extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_FrostKey extends ffi.Struct {
+  external wire_FrostsnapCoreCoordinatorFrostKey field0;
+}
+
 final class wire_RTransaction extends ffi.Struct {
   external ffi.Pointer<ffi.Void> ptr;
 }
@@ -2649,14 +2673,6 @@ final class wire_Device extends ffi.Struct {
   external ffi.Pointer<wire_uint_8_list> latest_digest;
 
   external wire_DeviceId id;
-}
-
-final class wire_FrostsnapCoreCoordinatorFrostKey extends ffi.Struct {
-  external ffi.Pointer<ffi.Void> ptr;
-}
-
-final class wire_FrostKey extends ffi.Struct {
-  external wire_FrostsnapCoreCoordinatorFrostKey field0;
 }
 
 final class wire_PortOpenSender extends ffi.Struct {

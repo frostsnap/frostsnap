@@ -1,5 +1,7 @@
 // 1.69 inch 240x280 ST7789+CST816S
 
+use crate::alloc::string::ToString;
+use alloc::string::String;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::AnchorX,
@@ -281,6 +283,73 @@ where
         )
         .draw(&mut self.framebuf)
         .unwrap();
+    }
+
+    pub fn show_backup(&mut self, str: alloc::string::String) {
+        let y = 40;
+        let mut x_offset = 0;
+        let mut y_offset = 0;
+        let spacing_size = 20;
+        let body_area = Size::new(self.display.size().width, self.display.size().height - y);
+        Rectangle::new(Point::new(x_offset, y as i32), body_area)
+            .into_styled(
+                PrimitiveStyleBuilder::new()
+                    .fill_color(Rgb565::BLACK)
+                    .build(),
+            )
+            .draw(&mut self.framebuf)
+            .unwrap();
+
+        let (hrp, backup_chars) = str.split_at(str.find('1').expect("backup has a hrp") + 1);
+        let chunked_backup =
+            backup_chars
+                .chars()
+                .fold(vec![String::new()], |mut chunk_vec, char| {
+                    if chunk_vec.last().unwrap().len() < 4 {
+                        let last = chunk_vec.last_mut().unwrap();
+                        last.push(char);
+                    } else {
+                        chunk_vec.push(char.to_string());
+                    }
+                    chunk_vec
+                });
+
+        let _overflow = TextBox::with_textbox_style(
+            "Share backup:",
+            Rectangle::new(Point::new(x_offset, (y as i32) + y_offset), body_area),
+            U8g2TextStyle::new(fonts::u8g2_font_profont29_mf, Rgb565::WHITE),
+            self.textbox_style,
+        )
+        .draw(&mut self.framebuf)
+        .unwrap();
+        y_offset += spacing_size * 2;
+
+        let _overflow = TextBox::with_textbox_style(
+            hrp,
+            Rectangle::new(Point::new(x_offset, (y as i32) + y_offset), body_area),
+            U8g2TextStyle::new(fonts::u8g2_font_profont29_mf, Rgb565::CYAN),
+            self.textbox_style,
+        )
+        .draw(&mut self.framebuf)
+        .unwrap();
+        y_offset += spacing_size * 3 / 2;
+
+        for (i, chunk) in chunked_backup.into_iter().enumerate() {
+            let _overflow = TextBox::with_textbox_style(
+                chunk.as_ref(),
+                Rectangle::new(Point::new(x_offset, (y as i32) + y_offset), body_area),
+                U8g2TextStyle::new(fonts::u8g2_font_profont29_mf, Rgb565::WHITE),
+                self.textbox_style,
+            )
+            .draw(&mut self.framebuf)
+            .unwrap();
+            x_offset += spacing_size * 4;
+            // For rows of 3, we want a new line for the 4th, 7th, ... chunk
+            if (i + 1) % 3 == 0 {
+                y_offset += spacing_size * 3 / 2;
+                x_offset = 0;
+            }
+        }
     }
 }
 

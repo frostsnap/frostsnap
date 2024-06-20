@@ -895,3 +895,12 @@ pub enum SignTaskDescription {
     // }, // 1 nonce & sig
     Transaction { unsigned_tx: UnsignedTx },
 }
+
+pub fn get_share_compatibility_identifier(frost_key: FrostKey) -> SyncReturn<Vec<u8>> {
+    SyncReturn(
+        frostsnap_core::schnorr_fun::share_backup::polynomial_identifier::<sha2::Sha256>(
+            &frost_key.0.frost_key().point_polynomial(),
+        )
+        .to_vec(),
+    )
+}

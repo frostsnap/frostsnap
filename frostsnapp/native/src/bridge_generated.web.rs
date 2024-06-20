@@ -52,6 +52,11 @@ pub fn wire_echo_key_id(port_: MessagePort, key_id: JsValue) {
 }
 
 #[wasm_bindgen]
+pub fn wire_get_share_compatibility_identifier(frost_key: JsValue) -> support::WireSyncReturn {
+    wire_get_share_compatibility_identifier_impl(frost_key)
+}
+
+#[wasm_bindgen]
 pub fn wire_txid__method__Transaction(that: JsValue) -> support::WireSyncReturn {
     wire_txid__method__Transaction_impl(that)
 }
