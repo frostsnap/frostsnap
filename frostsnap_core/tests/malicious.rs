@@ -1,8 +1,8 @@
 //! Tests for a malicious actions. A malicious coordinator, a malicious device or both.
 use frostsnap_core::message::{
-    CoordinatorToDeviceMessage, DeviceToUserMessage, KeyGenResponse, SignRequest, SignTask,
+    CoordinatorToDeviceMessage, DeviceToUserMessage, KeyGenResponse, SignRequest,
 };
-use frostsnap_core::{DeviceId, FrostCoordinator, FrostSigner};
+use frostsnap_core::{DeviceId, FrostCoordinator, FrostSigner, SignTask};
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::frost;
@@ -108,7 +108,7 @@ fn nonce_reuse() {
     run.run_until_finished(&mut TestEnv, &mut test_rng);
     let key_id = run.coordinator.iter_keys().next().unwrap().key_id();
     let task1 = SignTask::Plain {
-        message: b"utxo.club!".to_vec(),
+        message: "utxo.club!".into(),
     };
     let sign_init = run
         .coordinator
@@ -134,8 +134,7 @@ fn nonce_reuse() {
         nonces: nonces.clone(),
         key_id,
         sign_task: SignTask::Plain {
-            message: b"we lost track of first FROST txn on bitcoin mainnet @ bushbash 2022"
-                .to_vec(),
+            message: "we lost track of first FROST txn on bitcoin mainnet @ bushbash 2022".into(),
         },
     });
     let sign_request_result = run

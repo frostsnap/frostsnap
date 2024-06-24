@@ -12,7 +12,7 @@ part of 'bridge_definitions.dart';
 T _$identity<T>(T value) => value;
 
 final _privateConstructorUsedError = UnsupportedError(
-    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#custom-getters-and-methods');
+    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
 /// @nodoc
 mixin _$PortEvent {
@@ -131,7 +131,7 @@ class _$PortEvent_OpenImpl implements PortEvent_Open {
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$PortEvent_OpenImpl &&
@@ -279,7 +279,7 @@ class _$PortEvent_WriteImpl implements PortEvent_Write {
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$PortEvent_WriteImpl &&
@@ -427,7 +427,7 @@ class _$PortEvent_ReadImpl implements PortEvent_Read {
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$PortEvent_ReadImpl &&
@@ -576,7 +576,7 @@ class _$PortEvent_BytesToReadImpl implements PortEvent_BytesToRead {
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$PortEvent_BytesToReadImpl &&
@@ -676,6 +676,506 @@ abstract class PortEvent_BytesToRead implements PortEvent {
   PortBytesToRead get request;
   @JsonKey(ignore: true)
   _$$PortEvent_BytesToReadImplCopyWith<_$PortEvent_BytesToReadImpl>
+      get copyWith => throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+mixin _$QrDecoderStatus {
+  Object get field0 => throw _privateConstructorUsedError;
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>({
+    required TResult Function(DecodingProgress field0) progress,
+    required TResult Function(Uint8List field0) decoded,
+    required TResult Function(String field0) failed,
+  }) =>
+      throw _privateConstructorUsedError;
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>({
+    TResult? Function(DecodingProgress field0)? progress,
+    TResult? Function(Uint8List field0)? decoded,
+    TResult? Function(String field0)? failed,
+  }) =>
+      throw _privateConstructorUsedError;
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>({
+    TResult Function(DecodingProgress field0)? progress,
+    TResult Function(Uint8List field0)? decoded,
+    TResult Function(String field0)? failed,
+    required TResult orElse(),
+  }) =>
+      throw _privateConstructorUsedError;
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>({
+    required TResult Function(QrDecoderStatus_Progress value) progress,
+    required TResult Function(QrDecoderStatus_Decoded value) decoded,
+    required TResult Function(QrDecoderStatus_Failed value) failed,
+  }) =>
+      throw _privateConstructorUsedError;
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>({
+    TResult? Function(QrDecoderStatus_Progress value)? progress,
+    TResult? Function(QrDecoderStatus_Decoded value)? decoded,
+    TResult? Function(QrDecoderStatus_Failed value)? failed,
+  }) =>
+      throw _privateConstructorUsedError;
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>({
+    TResult Function(QrDecoderStatus_Progress value)? progress,
+    TResult Function(QrDecoderStatus_Decoded value)? decoded,
+    TResult Function(QrDecoderStatus_Failed value)? failed,
+    required TResult orElse(),
+  }) =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $QrDecoderStatusCopyWith<$Res> {
+  factory $QrDecoderStatusCopyWith(
+          QrDecoderStatus value, $Res Function(QrDecoderStatus) then) =
+      _$QrDecoderStatusCopyWithImpl<$Res, QrDecoderStatus>;
+}
+
+/// @nodoc
+class _$QrDecoderStatusCopyWithImpl<$Res, $Val extends QrDecoderStatus>
+    implements $QrDecoderStatusCopyWith<$Res> {
+  _$QrDecoderStatusCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+}
+
+/// @nodoc
+abstract class _$$QrDecoderStatus_ProgressImplCopyWith<$Res> {
+  factory _$$QrDecoderStatus_ProgressImplCopyWith(
+          _$QrDecoderStatus_ProgressImpl value,
+          $Res Function(_$QrDecoderStatus_ProgressImpl) then) =
+      __$$QrDecoderStatus_ProgressImplCopyWithImpl<$Res>;
+  @useResult
+  $Res call({DecodingProgress field0});
+}
+
+/// @nodoc
+class __$$QrDecoderStatus_ProgressImplCopyWithImpl<$Res>
+    extends _$QrDecoderStatusCopyWithImpl<$Res, _$QrDecoderStatus_ProgressImpl>
+    implements _$$QrDecoderStatus_ProgressImplCopyWith<$Res> {
+  __$$QrDecoderStatus_ProgressImplCopyWithImpl(
+      _$QrDecoderStatus_ProgressImpl _value,
+      $Res Function(_$QrDecoderStatus_ProgressImpl) _then)
+      : super(_value, _then);
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? field0 = null,
+  }) {
+    return _then(_$QrDecoderStatus_ProgressImpl(
+      null == field0
+          ? _value.field0
+          : field0 // ignore: cast_nullable_to_non_nullable
+              as DecodingProgress,
+    ));
+  }
+}
+
+/// @nodoc
+
+class _$QrDecoderStatus_ProgressImpl implements QrDecoderStatus_Progress {
+  const _$QrDecoderStatus_ProgressImpl(this.field0);
+
+  @override
+  final DecodingProgress field0;
+
+  @override
+  String toString() {
+    return 'QrDecoderStatus.progress(field0: $field0)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$QrDecoderStatus_ProgressImpl &&
+            (identical(other.field0, field0) || other.field0 == field0));
+  }
+
+  @override
+  int get hashCode => Object.hash(runtimeType, field0);
+
+  @JsonKey(ignore: true)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$QrDecoderStatus_ProgressImplCopyWith<_$QrDecoderStatus_ProgressImpl>
+      get copyWith => __$$QrDecoderStatus_ProgressImplCopyWithImpl<
+          _$QrDecoderStatus_ProgressImpl>(this, _$identity);
+
+  @override
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>({
+    required TResult Function(DecodingProgress field0) progress,
+    required TResult Function(Uint8List field0) decoded,
+    required TResult Function(String field0) failed,
+  }) {
+    return progress(field0);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>({
+    TResult? Function(DecodingProgress field0)? progress,
+    TResult? Function(Uint8List field0)? decoded,
+    TResult? Function(String field0)? failed,
+  }) {
+    return progress?.call(field0);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>({
+    TResult Function(DecodingProgress field0)? progress,
+    TResult Function(Uint8List field0)? decoded,
+    TResult Function(String field0)? failed,
+    required TResult orElse(),
+  }) {
+    if (progress != null) {
+      return progress(field0);
+    }
+    return orElse();
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>({
+    required TResult Function(QrDecoderStatus_Progress value) progress,
+    required TResult Function(QrDecoderStatus_Decoded value) decoded,
+    required TResult Function(QrDecoderStatus_Failed value) failed,
+  }) {
+    return progress(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>({
+    TResult? Function(QrDecoderStatus_Progress value)? progress,
+    TResult? Function(QrDecoderStatus_Decoded value)? decoded,
+    TResult? Function(QrDecoderStatus_Failed value)? failed,
+  }) {
+    return progress?.call(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>({
+    TResult Function(QrDecoderStatus_Progress value)? progress,
+    TResult Function(QrDecoderStatus_Decoded value)? decoded,
+    TResult Function(QrDecoderStatus_Failed value)? failed,
+    required TResult orElse(),
+  }) {
+    if (progress != null) {
+      return progress(this);
+    }
+    return orElse();
+  }
+}
+
+abstract class QrDecoderStatus_Progress implements QrDecoderStatus {
+  const factory QrDecoderStatus_Progress(final DecodingProgress field0) =
+      _$QrDecoderStatus_ProgressImpl;
+
+  @override
+  DecodingProgress get field0;
+  @JsonKey(ignore: true)
+  _$$QrDecoderStatus_ProgressImplCopyWith<_$QrDecoderStatus_ProgressImpl>
+      get copyWith => throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class _$$QrDecoderStatus_DecodedImplCopyWith<$Res> {
+  factory _$$QrDecoderStatus_DecodedImplCopyWith(
+          _$QrDecoderStatus_DecodedImpl value,
+          $Res Function(_$QrDecoderStatus_DecodedImpl) then) =
+      __$$QrDecoderStatus_DecodedImplCopyWithImpl<$Res>;
+  @useResult
+  $Res call({Uint8List field0});
+}
+
+/// @nodoc
+class __$$QrDecoderStatus_DecodedImplCopyWithImpl<$Res>
+    extends _$QrDecoderStatusCopyWithImpl<$Res, _$QrDecoderStatus_DecodedImpl>
+    implements _$$QrDecoderStatus_DecodedImplCopyWith<$Res> {
+  __$$QrDecoderStatus_DecodedImplCopyWithImpl(
+      _$QrDecoderStatus_DecodedImpl _value,
+      $Res Function(_$QrDecoderStatus_DecodedImpl) _then)
+      : super(_value, _then);
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? field0 = null,
+  }) {
+    return _then(_$QrDecoderStatus_DecodedImpl(
+      null == field0
+          ? _value.field0
+          : field0 // ignore: cast_nullable_to_non_nullable
+              as Uint8List,
+    ));
+  }
+}
+
+/// @nodoc
+
+class _$QrDecoderStatus_DecodedImpl implements QrDecoderStatus_Decoded {
+  const _$QrDecoderStatus_DecodedImpl(this.field0);
+
+  @override
+  final Uint8List field0;
+
+  @override
+  String toString() {
+    return 'QrDecoderStatus.decoded(field0: $field0)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$QrDecoderStatus_DecodedImpl &&
+            const DeepCollectionEquality().equals(other.field0, field0));
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(runtimeType, const DeepCollectionEquality().hash(field0));
+
+  @JsonKey(ignore: true)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$QrDecoderStatus_DecodedImplCopyWith<_$QrDecoderStatus_DecodedImpl>
+      get copyWith => __$$QrDecoderStatus_DecodedImplCopyWithImpl<
+          _$QrDecoderStatus_DecodedImpl>(this, _$identity);
+
+  @override
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>({
+    required TResult Function(DecodingProgress field0) progress,
+    required TResult Function(Uint8List field0) decoded,
+    required TResult Function(String field0) failed,
+  }) {
+    return decoded(field0);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>({
+    TResult? Function(DecodingProgress field0)? progress,
+    TResult? Function(Uint8List field0)? decoded,
+    TResult? Function(String field0)? failed,
+  }) {
+    return decoded?.call(field0);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>({
+    TResult Function(DecodingProgress field0)? progress,
+    TResult Function(Uint8List field0)? decoded,
+    TResult Function(String field0)? failed,
+    required TResult orElse(),
+  }) {
+    if (decoded != null) {
+      return decoded(field0);
+    }
+    return orElse();
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>({
+    required TResult Function(QrDecoderStatus_Progress value) progress,
+    required TResult Function(QrDecoderStatus_Decoded value) decoded,
+    required TResult Function(QrDecoderStatus_Failed value) failed,
+  }) {
+    return decoded(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>({
+    TResult? Function(QrDecoderStatus_Progress value)? progress,
+    TResult? Function(QrDecoderStatus_Decoded value)? decoded,
+    TResult? Function(QrDecoderStatus_Failed value)? failed,
+  }) {
+    return decoded?.call(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>({
+    TResult Function(QrDecoderStatus_Progress value)? progress,
+    TResult Function(QrDecoderStatus_Decoded value)? decoded,
+    TResult Function(QrDecoderStatus_Failed value)? failed,
+    required TResult orElse(),
+  }) {
+    if (decoded != null) {
+      return decoded(this);
+    }
+    return orElse();
+  }
+}
+
+abstract class QrDecoderStatus_Decoded implements QrDecoderStatus {
+  const factory QrDecoderStatus_Decoded(final Uint8List field0) =
+      _$QrDecoderStatus_DecodedImpl;
+
+  @override
+  Uint8List get field0;
+  @JsonKey(ignore: true)
+  _$$QrDecoderStatus_DecodedImplCopyWith<_$QrDecoderStatus_DecodedImpl>
+      get copyWith => throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class _$$QrDecoderStatus_FailedImplCopyWith<$Res> {
+  factory _$$QrDecoderStatus_FailedImplCopyWith(
+          _$QrDecoderStatus_FailedImpl value,
+          $Res Function(_$QrDecoderStatus_FailedImpl) then) =
+      __$$QrDecoderStatus_FailedImplCopyWithImpl<$Res>;
+  @useResult
+  $Res call({String field0});
+}
+
+/// @nodoc
+class __$$QrDecoderStatus_FailedImplCopyWithImpl<$Res>
+    extends _$QrDecoderStatusCopyWithImpl<$Res, _$QrDecoderStatus_FailedImpl>
+    implements _$$QrDecoderStatus_FailedImplCopyWith<$Res> {
+  __$$QrDecoderStatus_FailedImplCopyWithImpl(
+      _$QrDecoderStatus_FailedImpl _value,
+      $Res Function(_$QrDecoderStatus_FailedImpl) _then)
+      : super(_value, _then);
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? field0 = null,
+  }) {
+    return _then(_$QrDecoderStatus_FailedImpl(
+      null == field0
+          ? _value.field0
+          : field0 // ignore: cast_nullable_to_non_nullable
+              as String,
+    ));
+  }
+}
+
+/// @nodoc
+
+class _$QrDecoderStatus_FailedImpl implements QrDecoderStatus_Failed {
+  const _$QrDecoderStatus_FailedImpl(this.field0);
+
+  @override
+  final String field0;
+
+  @override
+  String toString() {
+    return 'QrDecoderStatus.failed(field0: $field0)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$QrDecoderStatus_FailedImpl &&
+            (identical(other.field0, field0) || other.field0 == field0));
+  }
+
+  @override
+  int get hashCode => Object.hash(runtimeType, field0);
+
+  @JsonKey(ignore: true)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$QrDecoderStatus_FailedImplCopyWith<_$QrDecoderStatus_FailedImpl>
+      get copyWith => __$$QrDecoderStatus_FailedImplCopyWithImpl<
+          _$QrDecoderStatus_FailedImpl>(this, _$identity);
+
+  @override
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>({
+    required TResult Function(DecodingProgress field0) progress,
+    required TResult Function(Uint8List field0) decoded,
+    required TResult Function(String field0) failed,
+  }) {
+    return failed(field0);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>({
+    TResult? Function(DecodingProgress field0)? progress,
+    TResult? Function(Uint8List field0)? decoded,
+    TResult? Function(String field0)? failed,
+  }) {
+    return failed?.call(field0);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>({
+    TResult Function(DecodingProgress field0)? progress,
+    TResult Function(Uint8List field0)? decoded,
+    TResult Function(String field0)? failed,
+    required TResult orElse(),
+  }) {
+    if (failed != null) {
+      return failed(field0);
+    }
+    return orElse();
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>({
+    required TResult Function(QrDecoderStatus_Progress value) progress,
+    required TResult Function(QrDecoderStatus_Decoded value) decoded,
+    required TResult Function(QrDecoderStatus_Failed value) failed,
+  }) {
+    return failed(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>({
+    TResult? Function(QrDecoderStatus_Progress value)? progress,
+    TResult? Function(QrDecoderStatus_Decoded value)? decoded,
+    TResult? Function(QrDecoderStatus_Failed value)? failed,
+  }) {
+    return failed?.call(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>({
+    TResult Function(QrDecoderStatus_Progress value)? progress,
+    TResult Function(QrDecoderStatus_Decoded value)? decoded,
+    TResult Function(QrDecoderStatus_Failed value)? failed,
+    required TResult orElse(),
+  }) {
+    if (failed != null) {
+      return failed(this);
+    }
+    return orElse();
+  }
+}
+
+abstract class QrDecoderStatus_Failed implements QrDecoderStatus {
+  const factory QrDecoderStatus_Failed(final String field0) =
+      _$QrDecoderStatus_FailedImpl;
+
+  @override
+  String get field0;
+  @JsonKey(ignore: true)
+  _$$QrDecoderStatus_FailedImplCopyWith<_$QrDecoderStatus_FailedImpl>
       get copyWith => throw _privateConstructorUsedError;
 }
 
@@ -788,7 +1288,7 @@ class _$SignTaskDescription_PlainImpl implements SignTaskDescription_Plain {
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$SignTaskDescription_PlainImpl &&
@@ -928,7 +1428,7 @@ class _$SignTaskDescription_TransactionImpl
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$SignTaskDescription_TransactionImpl &&

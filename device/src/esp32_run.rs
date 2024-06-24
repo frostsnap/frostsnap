@@ -21,11 +21,12 @@ use frostsnap_core::{
     message::{
         CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, DeviceToUserMessage,
     },
-    schnorr_fun::fun::marker::Normal,
-    schnorr_fun::fun::{KeyPair, Scalar},
-    DeviceId, FrostSigner,
+    schnorr_fun::fun::{marker::Normal, KeyPair, Scalar},
+    DeviceId, FrostSigner, SignTask,
 };
 use rand_chacha::rand_core::RngCore;
+
+pub const BITCOIN_NETWORK: bitcoin::Network = bitcoin::Network::Signet;
 
 pub struct Run<'a, UpstreamUart, DownstreamUart, Rng, Ui, T, DownstreamDetectPin> {
     pub upstream_serial: SerialInterface<'a, T, UpstreamUart, Upstream>,
@@ -483,7 +484,31 @@ where
                             }
                             DeviceToUserMessage::SignatureRequest { sign_task, .. } => {
                                 ui.set_workflow(ui::Workflow::UserPrompt(ui::Prompt::Signing(
-                                    sign_task.to_string(),
+                                    match sign_task.into_inner() {
+                                        SignTask::Plain { message } => {
+                                            ui::SignPrompt::Plain(message)
+                                        }
+                                        SignTask::Nostr { event } => {
+                                            ui::SignPrompt::Nostr(event.content)
+                                        }
+                                        SignTask::BitcoinTransaction(transaction) => {
+                                            let fee = transaction.fee().expect("transaction validity should have already been checked");
+                                            let foreign_recipients = transaction
+                                                .foreign_recipients()
+                                                .map(|(spk, value)| {
+                                                    (
+                                                        bitcoin::Address::from_script(spk, BITCOIN_NETWORK)
+                                                            .expect("has address representation"),
+                                                        bitcoin::Amount::from_sat(value),
+                                                    )
+                                                })
+                                                .collect::<Vec<_>>();
+                                            ui::SignPrompt::Bitcoin {
+                                                foreign_recipients,
+                                                fee: bitcoin::Amount::from_sat(fee),
+                                            }
+                                        }
+                                    },
                                 )));
                             }
                             DeviceToUserMessage::DisplayBackupRequest { key_id } => ui
