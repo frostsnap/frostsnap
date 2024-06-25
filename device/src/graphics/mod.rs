@@ -45,7 +45,7 @@ type FrameBuffer<'d> = FrameBuf<Rgb565, &'d mut [Rgb565; 67200]>;
 
 pub struct Graphics<'d, DT> {
     display: DT,
-    framebuf: FrameBuffer<'d>,
+    pub framebuf: FrameBuffer<'d>,
 }
 
 impl<'d, DT> Graphics<'d, DT>
