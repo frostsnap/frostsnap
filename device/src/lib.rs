@@ -6,6 +6,7 @@ extern crate alloc;
 pub mod device_config;
 pub mod esp32_run;
 pub mod io;
+pub mod keyboard;
 pub mod ota;
 pub mod panic;
 #[cfg(feature = "v2")]
