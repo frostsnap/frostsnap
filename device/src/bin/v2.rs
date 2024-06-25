@@ -39,6 +39,7 @@ use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_device::{
     esp32_run,
     io::SerialInterface,
+    keyboard::Keyboard,
     st7789,
     ui::{
         BusyTask, FirmwareUpgradeStatus, Prompt, UiEvent, UserInteraction, WaitingFor,
@@ -190,6 +191,7 @@ fn main() -> ! {
         upstream_connection_state: None,
         workflow: Default::default(),
         device_name: Default::default(),
+        keyboard: Keyboard::new(),
         changes: false,
         confirm_state: AnimationState::new(&timer1, 600.millis()),
         last_touch: None,
@@ -233,6 +235,7 @@ pub struct FrostyUi<'t, T, DT, I2C, PINT, RST> {
     upstream_connection_state: Option<UpstreamConnection>,
     workflow: Workflow,
     device_name: Option<String>,
+    keyboard: Keyboard,
     changes: bool,
     confirm_state: AnimationState<'t, T>,
     timer: &'t Timer<T, Blocking>,
@@ -295,10 +298,13 @@ pub enum AnimationProgress {
     Done,
 }
 
-impl<'t, T, DT, I2C, PINT, RST> FrostyUi<'t, T, DT, I2C, PINT, RST>
+impl<'t, T, DT, I2C, PINT, RST, CommE, PinE> FrostyUi<'t, T, DT, I2C, PINT, RST>
 where
     T: timer::timg::Instance,
     DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
+    I2C: hal::i2c::I2c<Error = CommE>,
+    PINT: hal::digital::InputPin,
+    RST: hal::digital::StatefulOutputPin<Error = PinE>,
 {
     fn render(&mut self) {
         self.display
@@ -412,6 +418,8 @@ where
         self.display
             .set_mem_debug(ALLOCATOR.used(), ALLOCATOR.free());
 
+        self.keyboard
+            .show_keyboard(&mut self.display, &mut self.capsense, self.timer);
         self.display.flush().unwrap();
     }
 }

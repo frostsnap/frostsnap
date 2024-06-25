@@ -27,7 +27,7 @@ use crate::{DownstreamConnectionState, UpstreamConnectionState};
 pub struct Graphics<'d, DT> {
     display: DT,
     textbox_style: TextBoxStyle,
-    framebuf: FrameBuf<Rgb565, &'d mut [Rgb565; 67200]>,
+    pub framebuf: FrameBuf<Rgb565, &'d mut [Rgb565; 67200]>,
 }
 
 impl<'d, DT> Graphics<'d, DT>
