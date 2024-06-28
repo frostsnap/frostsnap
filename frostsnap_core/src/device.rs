@@ -6,8 +6,9 @@ use alloc::collections::BTreeSet;
 use alloc::{collections::BTreeMap, string::ToString, vec::Vec};
 use core::iter;
 use rand_chacha::ChaCha20Rng;
-use schnorr_fun::frost::EncodedFrostKey;
-use schnorr_fun::fun::poly;
+use schnorr_fun::frost::{EncodedFrostKey, PartyIndex};
+use schnorr_fun::fun::{g, poly, G};
+use schnorr_fun::share_backup::ShareBackup;
 use schnorr_fun::{
     binonce::{Nonce, NonceKeyPair},
     frost::{self},
@@ -56,6 +57,7 @@ impl FrostSigner {
             SignerState::KeyGen { .. } | SignerState::KeyGenAck { .. } => TaskKind::KeyGen,
             SignerState::AwaitingSignAck { .. } => TaskKind::Sign,
             SignerState::DisplayBackup { .. } => TaskKind::DisplayBackup,
+            SignerState::LoadingBackup { .. } => TaskKind::RestoreBackup,
         };
 
         Some(DeviceSend::ToUser(DeviceToUserMessage::Canceled { task }))
@@ -346,6 +348,12 @@ impl FrostSigner {
                     DeviceToUserMessage::DisplayBackupRequest { key_id },
                 )])
             }
+            (None, CoordinatorToDeviceMessage::LoadShareBackup) => {
+                self.action_state = Some(SignerState::LoadingBackup {
+                    pending_restoration: None,
+                });
+                Ok(vec![DeviceSend::ToUser(DeviceToUserMessage::RestoreBackup)])
+            }
             _ => Err(Error::signer_message_kind(&self.action_state, &message)),
         }
     }
@@ -529,6 +537,45 @@ impl FrostSigner {
         }
     }
 
+    pub fn restore_share(
+        &mut self,
+        share_backup: ShareBackup,
+    ) -> Result<Vec<DeviceSend>, ActionError> {
+        if !matches!(
+            self.action_state,
+            Some(SignerState::LoadingBackup {
+                pending_restoration: None
+            })
+        ) {
+            return Err(ActionError::WrongState {
+                in_state: self.action_state_name(),
+                action: "restore_share",
+            });
+        }
+
+        self.action_state = Some(SignerState::LoadingBackup {
+            pending_restoration: Some((share_backup.share_index, share_backup.secret_share)),
+        });
+
+        let share_image = g!(share_backup.secret_share * G)
+            .normalize()
+            .non_zero()
+            .expect("secret share can not be zero");
+
+        Ok(vec![DeviceSend::ToCoordinator(
+            DeviceToCoordinatorMessage::LoadedShareBackup {
+                share_index: share_backup.share_index,
+                share_image,
+            },
+        )])
+    }
+
+    pub fn restore_ack(&mut self, key_id: KeyId, secret_key: FrostsnapSecretKey) {
+        self.keys
+            .insert(key_id, secret_key)
+            .expect("we don't support multiple shares for the same key yet");
+    }
+
     pub fn action_state_name(&self) -> &'static str {
         self.action_state
             .as_ref()
@@ -556,6 +603,9 @@ pub enum SignerState {
         key_id: KeyId,
         awaiting_ack: bool,
     },
+    LoadingBackup {
+        pending_restoration: Option<(PartyIndex, Scalar<Secret, Zero>)>,
+    },
 }
 
 impl SignerState {
@@ -565,6 +615,7 @@ impl SignerState {
             SignerState::KeyGenAck { .. } => "KeyGenAck",
             SignerState::AwaitingSignAck { .. } => "AwaitingSignAck",
             SignerState::DisplayBackup { .. } => "DisplayBackup",
+            SignerState::LoadingBackup { .. } => "LoadingBackup",
         }
     }
 }

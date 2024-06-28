@@ -21,8 +21,7 @@ use frostsnap_core::{
     message::{
         CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, DeviceToUserMessage,
     },
-    schnorr_fun::fun::marker::Normal,
-    schnorr_fun::fun::{KeyPair, Scalar},
+    schnorr_fun::fun::{marker::Normal, KeyPair, Scalar},
     DeviceId, FrostSigner,
 };
 use rand_chacha::rand_core::RngCore;
@@ -370,7 +369,7 @@ where
 
                                                         },
                                                     }
-                                                }
+                                                },
                                             }
                                         }
 
@@ -452,6 +451,11 @@ where
                         // special case where updrade will handle things from now on
                         switch_workflow = None;
                     }
+                    UiEvent::EnteredShareBackup(backup_str) => outbox.extend(
+                        signer
+                            .restore_share(backup_str)
+                            .expect("invalid state to restore share"),
+                    ),
                 }
 
                 if let Some(switch_workflow) = switch_workflow {
@@ -495,6 +499,9 @@ where
                             }
                             DeviceToUserMessage::DisplayBackup { key_id: _, backup } => {
                                 ui.set_workflow(ui::Workflow::DisplayBackup { backup });
+                            }
+                            DeviceToUserMessage::RestoreBackup => {
+                                ui.set_workflow(ui::Workflow::RestoringShare);
                             }
                         };
                     }

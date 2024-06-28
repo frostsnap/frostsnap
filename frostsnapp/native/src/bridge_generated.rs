@@ -799,6 +799,33 @@ fn wire_enter_firmware_upgrade_mode__method__Coordinator_impl(
         },
     )
 }
+fn wire_restore_share_on_device__method__Coordinator_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<Coordinator> + UnwindSafe,
+    device_id: impl Wire2Api<DeviceId> + UnwindSafe,
+    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "restore_share_on_device__method__Coordinator",
+            port: Some(port_),
+            mode: FfiCallMode::Stream,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_device_id = device_id.wire2api();
+            let api_key_id = key_id.wire2api();
+            move |task_callback| {
+                Coordinator::restore_share_on_device(
+                    &api_that,
+                    api_device_id,
+                    api_key_id,
+                    task_callback.stream_sink::<_, ()>(),
+                )
+            }
+        },
+    )
+}
 fn wire_sub_tx_state__method__Wallet_impl(
     port_: MessagePort,
     that: impl Wire2Api<Wallet> + UnwindSafe,

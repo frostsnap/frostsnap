@@ -562,6 +562,12 @@ class NativeWasmModule implements WasmModule {
       wire_enter_firmware_upgrade_mode__method__Coordinator(
           NativePortType port_, List<dynamic> that);
 
+  external dynamic /* void */ wire_restore_share_on_device__method__Coordinator(
+      NativePortType port_,
+      List<dynamic> that,
+      List<dynamic> device_id,
+      List<dynamic> key_id);
+
   external dynamic /* void */ wire_sub_tx_state__method__Wallet(
       NativePortType port_, List<dynamic> that, List<dynamic> key_id);
 
@@ -854,6 +860,11 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
           NativePortType port_, List<dynamic> that) =>
       wasmModule.wire_enter_firmware_upgrade_mode__method__Coordinator(
           port_, that);
+
+  void wire_restore_share_on_device__method__Coordinator(NativePortType port_,
+          List<dynamic> that, List<dynamic> device_id, List<dynamic> key_id) =>
+      wasmModule.wire_restore_share_on_device__method__Coordinator(
+          port_, that, device_id, key_id);
 
   void wire_sub_tx_state__method__Wallet(
           NativePortType port_, List<dynamic> that, List<dynamic> key_id) =>

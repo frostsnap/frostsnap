@@ -35,7 +35,7 @@ use esp_hal::{
     usb_serial_jtag::UsbSerialJtag,
     Blocking,
 };
-use frostsnap_core::schnorr_fun::fun::hex;
+use frostsnap_core::schnorr_fun::{fun::hex, share_backup};
 use frostsnap_device::{
     esp32_run,
     io::SerialInterface,
@@ -405,6 +405,7 @@ where
                     .print(format!("{}: {}", self.timer.now(), string));
             }
             Workflow::DisplayBackup { backup } => self.display.show_backup(backup.clone()),
+            Workflow::RestoringShare => {}
         }
 
         if let Some(upstream_connection) = self.upstream_connection_state {
@@ -418,8 +419,6 @@ where
         self.display
             .set_mem_debug(ALLOCATOR.used(), ALLOCATOR.free());
 
-        self.keyboard
-            .show_keyboard(&mut self.display, &mut self.capsense, self.timer);
         self.display.flush().unwrap();
     }
 }
@@ -478,54 +477,61 @@ where
 
         let mut event = None;
 
-        if let Workflow::UserPrompt(prompt) = &self.workflow {
-            let is_pressed = match self.capsense.read_one_touch_event(true) {
-                None => match self.last_touch {
-                    None => false,
-                    Some(last_touch) => {
-                        now.checked_duration_since(last_touch).unwrap().to_millis() < 20
+        match &self.workflow {
+            Workflow::UserPrompt(prompt) => {
+                let is_pressed = match self.capsense.read_one_touch_event(true) {
+                    None => match self.last_touch {
+                        None => false,
+                        Some(last_touch) => {
+                            now.checked_duration_since(last_touch).unwrap().to_millis() < 20
+                        }
+                    },
+                    Some(_touch) => {
+                        self.last_touch = Some(now);
+                        true
                     }
-                },
-                Some(_touch) => {
-                    self.last_touch = Some(now);
-                    true
-                }
-            };
+                };
 
-            if is_pressed {
-                match self.confirm_state.poll() {
-                    AnimationProgress::Progress(progress) => {
-                        self.display.confirm_bar(progress);
+                if is_pressed {
+                    match self.confirm_state.poll() {
+                        AnimationProgress::Progress(progress) => {
+                            self.display.confirm_bar(progress);
+                        }
+                        AnimationProgress::FinalTick => {
+                            let ui_event = match prompt {
+                                Prompt::KeyGen(_) => UiEvent::KeyGenConfirm,
+                                Prompt::Signing(_) => UiEvent::SigningConfirm,
+                                Prompt::NewName { new_name, .. } => {
+                                    UiEvent::NameConfirm(new_name.clone())
+                                }
+                                Prompt::DisplayBackupRequest(key_id) => {
+                                    UiEvent::BackupRequestConfirm(*key_id)
+                                }
+                                Prompt::ConfirmFirmwareUpgrade {
+                                    firmware_digest,
+                                    size,
+                                } => UiEvent::UpgradeConfirm {
+                                    firmware_digest: *firmware_digest,
+                                    size: *size,
+                                },
+                            };
+                            event = Some(ui_event);
+                        }
+                        AnimationProgress::Done => {}
                     }
-                    AnimationProgress::FinalTick => {
-                        let ui_event = match prompt {
-                            Prompt::KeyGen(_) => UiEvent::KeyGenConfirm,
-                            Prompt::Signing(_) => UiEvent::SigningConfirm,
-                            Prompt::NewName { new_name, .. } => {
-                                UiEvent::NameConfirm(new_name.clone())
-                            }
-                            Prompt::DisplayBackupRequest(key_id) => {
-                                UiEvent::BackupRequestConfirm(*key_id)
-                            }
-                            Prompt::ConfirmFirmwareUpgrade {
-                                firmware_digest,
-                                size,
-                            } => UiEvent::UpgradeConfirm {
-                                firmware_digest: *firmware_digest,
-                                size: *size,
-                            },
-                        };
-                        event = Some(ui_event);
+                } else {
+                    // deal with button released before confirming
+                    if self.confirm_state.start.is_some() {
+                        self.confirm_state.reset();
+                        self.changes = true;
                     }
-                    AnimationProgress::Done => {}
-                }
-            } else {
-                // deal with button released before confirming
-                if self.confirm_state.start.is_some() {
-                    self.confirm_state.reset();
-                    self.changes = true;
                 }
             }
+            Workflow::RestoringShare => {
+                let share_backup = self.enter_backup();
+                event = Some(UiEvent::EnteredShareBackup(share_backup));
+            }
+            _ => { /* no user actions to poll */ }
         }
 
         if self.changes {
@@ -534,6 +540,11 @@ where
         }
 
         event
+    }
+
+    fn enter_backup(&mut self) -> share_backup::ShareBackup {
+        self.keyboard
+            .enter_backup(&mut self.display, &mut self.capsense, self.timer)
     }
 }
 

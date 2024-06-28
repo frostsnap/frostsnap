@@ -324,6 +324,16 @@ pub extern "C" fn wire_enter_firmware_upgrade_mode__method__Coordinator(
 }
 
 #[no_mangle]
+pub extern "C" fn wire_restore_share_on_device__method__Coordinator(
+    port_: i64,
+    that: *mut wire_Coordinator,
+    device_id: *mut wire_DeviceId,
+    key_id: *mut wire_KeyId,
+) {
+    wire_restore_share_on_device__method__Coordinator_impl(port_, that, device_id, key_id)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_sub_tx_state__method__Wallet(
     port_: i64,
     that: *mut wire_Wallet,

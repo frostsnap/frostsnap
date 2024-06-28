@@ -936,6 +936,33 @@ class NativeImpl implements Native {
             argNames: ["that"],
           );
 
+  Stream<void> restoreShareOnDeviceMethodCoordinator(
+      {required Coordinator that,
+      required DeviceId deviceId,
+      required KeyId keyId,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
+    var arg1 = _platform.api2wire_box_autoadd_device_id(deviceId);
+    var arg2 = _platform.api2wire_box_autoadd_key_id(keyId);
+    return _platform.executeStream(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner
+          .wire_restore_share_on_device__method__Coordinator(
+              port_, arg0, arg1, arg2),
+      parseSuccessData: _wire2api_unit,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kRestoreShareOnDeviceMethodCoordinatorConstMeta,
+      argValues: [that, deviceId, keyId],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kRestoreShareOnDeviceMethodCoordinatorConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "restore_share_on_device__method__Coordinator",
+            argNames: ["that", "deviceId", "keyId"],
+          );
+
   Stream<TxState> subTxStateMethodWallet(
       {required Wallet that, required KeyId keyId, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_wallet(that);
