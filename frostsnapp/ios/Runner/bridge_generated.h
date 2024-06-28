@@ -318,6 +318,11 @@ void wire_cancel_protocol__method__Coordinator(int64_t port_, struct wire_Coordi
 void wire_enter_firmware_upgrade_mode__method__Coordinator(int64_t port_,
                                                            struct wire_Coordinator *that);
 
+void wire_restore_share_on_device__method__Coordinator(int64_t port_,
+                                                       struct wire_Coordinator *that,
+                                                       struct wire_DeviceId *device_id,
+                                                       struct wire_KeyId *key_id);
+
 void wire_sub_tx_state__method__Wallet(int64_t port_,
                                        struct wire_Wallet *that,
                                        struct wire_KeyId *key_id);
@@ -533,6 +538,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_upgrade_firmware_digest__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_cancel_protocol__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_enter_firmware_upgrade_mode__method__Coordinator);
+    dummy_var ^= ((int64_t) (void*) wire_restore_share_on_device__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_sub_tx_state__method__Wallet);
     dummy_var ^= ((int64_t) (void*) wire_tx_state__method__Wallet);
     dummy_var ^= ((int64_t) (void*) wire_sync_txids__method__Wallet);

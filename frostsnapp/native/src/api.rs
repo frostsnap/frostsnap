@@ -572,6 +572,16 @@ impl Coordinator {
     pub fn enter_firmware_upgrade_mode(&self, progress: StreamSink<f32>) -> Result<()> {
         self.0.enter_firmware_upgrade_mode(progress)
     }
+
+    pub fn restore_share_on_device(
+        &self,
+        device_id: DeviceId,
+        key_id: KeyId,
+        sink: StreamSink<()>,
+    ) -> Result<()> {
+        self.0.restore_share_on_device(device_id, key_id, sink)?;
+        Ok(())
+    }
 }
 
 pub struct Wallet {

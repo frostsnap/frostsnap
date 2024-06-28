@@ -1,6 +1,6 @@
 use alloc::string::{String, ToString};
 use frostsnap_comms::FirmwareDigest;
-use frostsnap_core::{KeyId, SessionHash};
+use frostsnap_core::{schnorr_fun::share_backup::ShareBackup, KeyId, SessionHash};
 
 pub trait UserInteraction {
     fn set_downstream_connection_state(&mut self, state: crate::DownstreamConnectionState);
@@ -36,6 +36,7 @@ pub trait UserInteraction {
             | Workflow::DisplayBackup { .. }
             | Workflow::UserPrompt(_)
             | Workflow::BusyDoing(_)
+            | Workflow::RestoringShare { .. }
             | Workflow::WaitingFor(_) => Workflow::WaitingFor(WaitingFor::CoordinatorInstruction {
                 completed_task: None,
             }),
@@ -43,6 +44,8 @@ pub trait UserInteraction {
         };
         self.set_workflow(new_workflow);
     }
+
+    fn enter_backup(&mut self) -> ShareBackup;
 }
 
 #[derive(Clone, Debug)]
@@ -76,6 +79,7 @@ pub enum Workflow {
     DisplayBackup {
         backup: String,
     },
+    RestoringShare,
 }
 
 impl Default for Workflow {
@@ -126,4 +130,5 @@ pub enum UiEvent {
         size: u32,
         firmware_digest: FirmwareDigest,
     },
+    EnteredShareBackup(ShareBackup),
 }

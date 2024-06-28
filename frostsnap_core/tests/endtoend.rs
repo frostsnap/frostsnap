@@ -93,6 +93,7 @@ impl common::Env for TestEnv {
                 );
             }
             StoreSigningState(_) => { /*  */ }
+            UpdatedKey(_) => todo!(),
         }
     }
 
@@ -154,6 +155,9 @@ impl common::Env for TestEnv {
             CoordinatorToUserMessage::DisplayBackupConfirmed { device_id } => {
                 self.backup_confirmed_on_coordinator.insert(device_id);
             }
+            CoordinatorToUserMessage::LoadedShareBackup { .. } => {
+                todo!()
+            }
         }
     }
 
@@ -186,6 +190,9 @@ impl common::Env for TestEnv {
             }
             DeviceToUserMessage::Canceled { .. } => {
                 panic!("no cancelling done");
+            }
+            DeviceToUserMessage::RestoreBackup => {
+                panic!("restoring backups untested")
             }
         }
     }

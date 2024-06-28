@@ -247,6 +247,15 @@ abstract class Native {
   FlutterRustBridgeTaskConstMeta
       get kEnterFirmwareUpgradeModeMethodCoordinatorConstMeta;
 
+  Stream<void> restoreShareOnDeviceMethodCoordinator(
+      {required Coordinator that,
+      required DeviceId deviceId,
+      required KeyId keyId,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta
+      get kRestoreShareOnDeviceMethodCoordinatorConstMeta;
+
   Stream<TxState> subTxStateMethodWallet(
       {required Wallet that, required KeyId keyId, dynamic hint});
 
@@ -738,6 +747,14 @@ class Coordinator {
   Stream<double> enterFirmwareUpgradeMode({dynamic hint}) =>
       bridge.enterFirmwareUpgradeModeMethodCoordinator(
         that: this,
+      );
+
+  Stream<void> restoreShareOnDevice(
+          {required DeviceId deviceId, required KeyId keyId, dynamic hint}) =>
+      bridge.restoreShareOnDeviceMethodCoordinator(
+        that: this,
+        deviceId: deviceId,
+        keyId: keyId,
       );
 }
 

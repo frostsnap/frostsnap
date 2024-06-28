@@ -286,6 +286,16 @@ pub fn wire_enter_firmware_upgrade_mode__method__Coordinator(port_: MessagePort,
 }
 
 #[wasm_bindgen]
+pub fn wire_restore_share_on_device__method__Coordinator(
+    port_: MessagePort,
+    that: JsValue,
+    device_id: JsValue,
+    key_id: JsValue,
+) {
+    wire_restore_share_on_device__method__Coordinator_impl(port_, that, device_id, key_id)
+}
+
+#[wasm_bindgen]
 pub fn wire_sub_tx_state__method__Wallet(port_: MessagePort, that: JsValue, key_id: JsValue) {
     wire_sub_tx_state__method__Wallet_impl(port_, that, key_id)
 }

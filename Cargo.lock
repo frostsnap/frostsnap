@@ -192,7 +192,7 @@ checksum = "6c85783c2fe40083ea54a33aa2f0ba58831d90fcd190f5bdc47e74e84d2a96ae"
 dependencies = [
  "bech32 0.10.0-beta",
  "bitcoin-internals",
- "bitcoin_hashes 0.13.0",
+ "bitcoin_hashes",
  "core2",
  "hex-conservative",
  "hex_lit",
@@ -207,21 +207,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9425c3bf7089c983facbae04de54513cce73b41c7f9ff8c845b54e7bc64ebbfb"
 dependencies = [
  "serde",
-]
-
-[[package]]
-name = "bitcoin-private"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73290177011694f38ec25e165d0387ab7ea749a4b81cd4c80dae5988229f7a57"
-
-[[package]]
-name = "bitcoin_hashes"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d7066118b13d4b20b23645932dfb3a81ce7e29f95726c2036fa33cd7b092501"
-dependencies = [
- "bitcoin-private",
 ]
 
 [[package]]
@@ -1039,9 +1024,9 @@ checksum = "379dada1584ad501b383485dd706b8afb7a70fcbc7f4da7d780638a5a6124a60"
 
 [[package]]
 name = "hex-conservative"
-version = "0.1.2"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "212ab92002354b4819390025006c897e8140934349e8635c9b077f47b4dcbd20"
+checksum = "30ed443af458ccb6d81c1e7e661545f94d3176752fb1df2f543b902a1e0f51e2"
 dependencies = [
  "core2",
 ]
@@ -1634,7 +1619,7 @@ checksum = "e86697c916019a8588c99b5fac3cead74ec0b4b819707a682fd4d23fa0ce1ba1"
 [[package]]
 name = "schnorr_fun"
 version = "0.10.0"
-source = "git+https://github.com/nickfarrow/secp256kfun?rev=b8d560aaae3e7ab57c8fc9a3829ad4420bce675f#b8d560aaae3e7ab57c8fc9a3829ad4420bce675f"
+source = "git+https://github.com/nickfarrow/secp256kfun?rev=eb3f00a8acc08d1fb0b1b201f4d9bba3d70447c4#eb3f00a8acc08d1fb0b1b201f4d9bba3d70447c4"
 dependencies = [
  "bech32 0.9.1",
  "secp256kfun",
@@ -1672,7 +1657,7 @@ version = "0.28.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d24b59d129cdadea20aea4fb2352fa053712e5d713eee47d700cd4b2bc002f10"
 dependencies = [
- "bitcoin_hashes 0.12.0",
+ "bitcoin_hashes",
  "secp256k1-sys 0.9.2",
  "serde",
 ]
@@ -1698,7 +1683,7 @@ dependencies = [
 [[package]]
 name = "secp256kfun"
 version = "0.10.0"
-source = "git+https://github.com/nickfarrow/secp256kfun?rev=b8d560aaae3e7ab57c8fc9a3829ad4420bce675f#b8d560aaae3e7ab57c8fc9a3829ad4420bce675f"
+source = "git+https://github.com/nickfarrow/secp256kfun?rev=eb3f00a8acc08d1fb0b1b201f4d9bba3d70447c4#eb3f00a8acc08d1fb0b1b201f4d9bba3d70447c4"
 dependencies = [
  "bincode",
  "digest",
@@ -1713,7 +1698,7 @@ dependencies = [
 [[package]]
 name = "secp256kfun_arithmetic_macros"
 version = "0.1.0"
-source = "git+https://github.com/nickfarrow/secp256kfun?rev=b8d560aaae3e7ab57c8fc9a3829ad4420bce675f#b8d560aaae3e7ab57c8fc9a3829ad4420bce675f"
+source = "git+https://github.com/nickfarrow/secp256kfun?rev=eb3f00a8acc08d1fb0b1b201f4d9bba3d70447c4#eb3f00a8acc08d1fb0b1b201f4d9bba3d70447c4"
 dependencies = [
  "proc-macro2",
  "quote",
