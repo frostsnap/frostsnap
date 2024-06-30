@@ -51,7 +51,8 @@ typedef struct wire_FrostsnapCoreCoordinatorFrostKey {
 } wire_FrostsnapCoreCoordinatorFrostKey;
 
 typedef struct wire_FrostKey {
-  struct wire_FrostsnapCoreCoordinatorFrostKey field0;
+  struct wire_FrostsnapCoreCoordinatorFrostKey frost_key;
+  struct wire_uint_8_list *key_name;
 } wire_FrostKey;
 
 typedef struct wire_PortOpenSender {
@@ -298,7 +299,8 @@ WireSyncReturn wire_nonces_available__method__Coordinator(struct wire_Coordinato
 void wire_generate_new_key__method__Coordinator(int64_t port_,
                                                 struct wire_Coordinator *that,
                                                 uintptr_t threshold,
-                                                struct wire_list_device_id *devices);
+                                                struct wire_list_device_id *devices,
+                                                struct wire_uint_8_list *key_name);
 
 WireSyncReturn wire_persisted_sign_session_description__method__Coordinator(struct wire_Coordinator *that,
                                                                             struct wire_KeyId *key_id);
@@ -315,6 +317,9 @@ void wire_cancel_protocol__method__Coordinator(int64_t port_, struct wire_Coordi
 
 void wire_enter_firmware_upgrade_mode__method__Coordinator(int64_t port_,
                                                            struct wire_Coordinator *that);
+
+WireSyncReturn wire_get_key_name__method__Coordinator(struct wire_Coordinator *that,
+                                                      struct wire_KeyId *key_id);
 
 void wire_sub_tx_state__method__Wallet(int64_t port_,
                                        struct wire_Wallet *that,
@@ -530,6 +535,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_upgrade_firmware_digest__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_cancel_protocol__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_enter_firmware_upgrade_mode__method__Coordinator);
+    dummy_var ^= ((int64_t) (void*) wire_get_key_name__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_sub_tx_state__method__Wallet);
     dummy_var ^= ((int64_t) (void*) wire_tx_state__method__Wallet);
     dummy_var ^= ((int64_t) (void*) wire_sync_txids__method__Wallet);

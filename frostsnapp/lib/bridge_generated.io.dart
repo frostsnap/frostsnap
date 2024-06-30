@@ -562,7 +562,9 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   }
 
   void _api_fill_to_wire_frost_key(FrostKey apiObj, wire_FrostKey wireObj) {
-    wireObj.field0 = api2wire_FrostsnapCoreCoordinatorFrostKey(apiObj.field0);
+    wireObj.frost_key =
+        api2wire_FrostsnapCoreCoordinatorFrostKey(apiObj.frostKey);
+    wireObj.key_name = api2wire_String(apiObj.keyName);
   }
 
   void _api_fill_to_wire_key_id(KeyId apiObj, wire_KeyId wireObj) {
@@ -1409,24 +1411,34 @@ class NativeWire implements FlutterRustBridgeWireBase {
     ffi.Pointer<wire_Coordinator> that,
     int threshold,
     ffi.Pointer<wire_list_device_id> devices,
+    ffi.Pointer<wire_uint_8_list> key_name,
   ) {
     return _wire_generate_new_key__method__Coordinator(
       port_,
       that,
       threshold,
       devices,
+      key_name,
     );
   }
 
   late final _wire_generate_new_key__method__CoordinatorPtr = _lookup<
           ffi.NativeFunction<
-              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Coordinator>,
-                  ffi.UintPtr, ffi.Pointer<wire_list_device_id>)>>(
+              ffi.Void Function(
+                  ffi.Int64,
+                  ffi.Pointer<wire_Coordinator>,
+                  ffi.UintPtr,
+                  ffi.Pointer<wire_list_device_id>,
+                  ffi.Pointer<wire_uint_8_list>)>>(
       'wire_generate_new_key__method__Coordinator');
   late final _wire_generate_new_key__method__Coordinator =
       _wire_generate_new_key__method__CoordinatorPtr.asFunction<
-          void Function(int, ffi.Pointer<wire_Coordinator>, int,
-              ffi.Pointer<wire_list_device_id>)>();
+          void Function(
+              int,
+              ffi.Pointer<wire_Coordinator>,
+              int,
+              ffi.Pointer<wire_list_device_id>,
+              ffi.Pointer<wire_uint_8_list>)>();
 
   WireSyncReturn wire_persisted_sign_session_description__method__Coordinator(
     ffi.Pointer<wire_Coordinator> that,
@@ -1543,6 +1555,26 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _wire_enter_firmware_upgrade_mode__method__Coordinator =
       _wire_enter_firmware_upgrade_mode__method__CoordinatorPtr
           .asFunction<void Function(int, ffi.Pointer<wire_Coordinator>)>();
+
+  WireSyncReturn wire_get_key_name__method__Coordinator(
+    ffi.Pointer<wire_Coordinator> that,
+    ffi.Pointer<wire_KeyId> key_id,
+  ) {
+    return _wire_get_key_name__method__Coordinator(
+      that,
+      key_id,
+    );
+  }
+
+  late final _wire_get_key_name__method__CoordinatorPtr = _lookup<
+          ffi.NativeFunction<
+              WireSyncReturn Function(
+                  ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_KeyId>)>>(
+      'wire_get_key_name__method__Coordinator');
+  late final _wire_get_key_name__method__Coordinator =
+      _wire_get_key_name__method__CoordinatorPtr.asFunction<
+          WireSyncReturn Function(
+              ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_KeyId>)>();
 
   void wire_sub_tx_state__method__Wallet(
     int port_,
@@ -2656,7 +2688,9 @@ final class wire_FrostsnapCoreCoordinatorFrostKey extends ffi.Struct {
 }
 
 final class wire_FrostKey extends ffi.Struct {
-  external wire_FrostsnapCoreCoordinatorFrostKey field0;
+  external wire_FrostsnapCoreCoordinatorFrostKey frost_key;
+
+  external ffi.Pointer<wire_uint_8_list> key_name;
 }
 
 final class wire_PortOpenSender extends ffi.Struct {

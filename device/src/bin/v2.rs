@@ -351,9 +351,15 @@ where
                     Prompt::Signing(task) => {
                         self.display.print(format!("Sign {}", task));
                     }
-                    Prompt::KeyGen(session_hash) => {
-                        self.display
-                            .print(format!("Ok {}", hex::encode(session_hash)));
+                    Prompt::KeyGen {
+                        session_hash,
+                        key_name,
+                        ..
+                    } => {
+                        self.display.print(format!(
+                            "Key:{key_name}\nVerify:\n{}",
+                            hex::encode(session_hash)
+                        ));
                     }
                     Prompt::NewName { old_name, new_name } => match old_name {
                         Some(old_name) => self.display.print(format!(
@@ -362,9 +368,9 @@ where
                         )),
                         None => self.display.print(format!("Confirm name '{}'?", new_name)),
                     },
-                    Prompt::DisplayBackupRequest(key_id) => self
+                    Prompt::DisplayBackupRequest((key_name, _key_id)) => self
                         .display
-                        .print(format!("Display the backup for key {key_id}?")),
+                        .print(format!("Display the backup for key '{key_name}'?")),
                     Prompt::ConfirmFirmwareUpgrade {
                         firmware_digest, ..
                     } => self
@@ -491,12 +497,17 @@ where
                     }
                     AnimationProgress::FinalTick => {
                         let ui_event = match prompt {
-                            Prompt::KeyGen(_) => UiEvent::KeyGenConfirm,
+                            Prompt::KeyGen {
+                                key_name, key_id, ..
+                            } => UiEvent::KeyGenConfirm {
+                                key_name: key_name.clone(),
+                                key_id: *key_id,
+                            },
                             Prompt::Signing(_) => UiEvent::SigningConfirm,
                             Prompt::NewName { new_name, .. } => {
                                 UiEvent::NameConfirm(new_name.clone())
                             }
-                            Prompt::DisplayBackupRequest(key_id) => {
+                            Prompt::DisplayBackupRequest((_key_name, key_id)) => {
                                 UiEvent::BackupRequestConfirm(*key_id)
                             }
                             Prompt::ConfirmFirmwareUpgrade {

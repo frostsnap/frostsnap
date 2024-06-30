@@ -124,6 +124,7 @@ pub enum CoordinatorSendBody {
     Core(frostsnap_core::message::CoordinatorToDeviceMessage),
     Naming(NameCommand),
     AnnounceAck,
+    KeyName(String),
     Cancel,
     Upgrade(CoordinatorUpgradeMessage),
 }

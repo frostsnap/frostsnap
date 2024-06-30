@@ -125,26 +125,35 @@ impl Device {
 #[derive(Clone, Debug)]
 pub struct KeyState {
     pub keys: Vec<FrostKey>,
+    // pub key_names: BTreeMap<KeyId, String>,
 }
 
 #[derive(Clone, Debug)]
-pub struct FrostKey(pub(crate) RustOpaque<frostsnap_core::CoordinatorFrostKey>);
+pub struct FrostKey {
+    pub(crate) frost_key: RustOpaque<frostsnap_core::CoordinatorFrostKey>,
+    pub(crate) key_name: String,
+}
 
 impl FrostKey {
     pub fn threshold(&self) -> SyncReturn<usize> {
-        SyncReturn(self.0.frost_key().threshold())
+        SyncReturn(self.frost_key.frost_key().threshold())
     }
 
     pub fn id(&self) -> SyncReturn<KeyId> {
-        SyncReturn(self.0.frost_key().key_id())
+        SyncReturn(self.frost_key.frost_key().key_id())
     }
 
     pub fn name(&self) -> SyncReturn<String> {
-        SyncReturn("KEY NAMES NOT IMPLEMENTED".into())
+        SyncReturn(self.key_name.clone())
     }
 
     pub fn devices(&self) -> SyncReturn<Vec<Device>> {
-        SyncReturn(self.0.devices().map(|id| get_device(id).0).collect())
+        SyncReturn(
+            self.frost_key
+                .devices()
+                .map(|id| get_device(id).0)
+                .collect(),
+        )
     }
 }
 
@@ -530,10 +539,15 @@ impl Coordinator {
         &self,
         threshold: usize,
         devices: Vec<DeviceId>,
+        key_name: String,
         event_stream: StreamSink<KeyGenState>,
     ) -> anyhow::Result<()> {
-        self.0
-            .generate_new_key(devices.into_iter().collect(), threshold, event_stream)
+        self.0.generate_new_key(
+            devices.into_iter().collect(),
+            threshold,
+            key_name,
+            event_stream,
+        )
     }
 
     pub fn persisted_sign_session_description(
@@ -571,6 +585,10 @@ impl Coordinator {
 
     pub fn enter_firmware_upgrade_mode(&self, progress: StreamSink<f32>) -> Result<()> {
         self.0.enter_firmware_upgrade_mode(progress)
+    }
+
+    pub fn get_key_name(&self, key_id: KeyId) -> SyncReturn<Option<String>> {
+        SyncReturn(self.0.get_key_name(&key_id))
     }
 }
 

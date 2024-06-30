@@ -203,6 +203,7 @@ abstract class Native {
       {required Coordinator that,
       required int threshold,
       required List<DeviceId> devices,
+      required String keyName,
       dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kGenerateNewKeyMethodCoordinatorConstMeta;
@@ -241,6 +242,11 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta
       get kEnterFirmwareUpgradeModeMethodCoordinatorConstMeta;
+
+  String? getKeyNameMethodCoordinator(
+      {required Coordinator that, required KeyId keyId, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kGetKeyNameMethodCoordinatorConstMeta;
 
   Stream<TxState> subTxStateMethodWallet(
       {required Wallet that, required KeyId keyId, dynamic hint});
@@ -694,11 +700,13 @@ class Coordinator {
   Stream<KeyGenState> generateNewKey(
           {required int threshold,
           required List<DeviceId> devices,
+          required String keyName,
           dynamic hint}) =>
       bridge.generateNewKeyMethodCoordinator(
         that: this,
         threshold: threshold,
         devices: devices,
+        keyName: keyName,
       );
 
   SignTaskDescription? persistedSignSessionDescription(
@@ -733,6 +741,12 @@ class Coordinator {
   Stream<double> enterFirmwareUpgradeMode({dynamic hint}) =>
       bridge.enterFirmwareUpgradeModeMethodCoordinator(
         that: this,
+      );
+
+  String? getKeyName({required KeyId keyId, dynamic hint}) =>
+      bridge.getKeyNameMethodCoordinator(
+        that: this,
+        keyId: keyId,
       );
 }
 
@@ -872,11 +886,13 @@ class FirmwareUpgradeConfirmState {
 
 class FrostKey {
   final Native bridge;
-  final FrostsnapCoreCoordinatorFrostKey field0;
+  final FrostsnapCoreCoordinatorFrostKey frostKey;
+  final String keyName;
 
   const FrostKey({
     required this.bridge,
-    required this.field0,
+    required this.frostKey,
+    required this.keyName,
   });
 
   int threshold({dynamic hint}) => bridge.thresholdMethodFrostKey(

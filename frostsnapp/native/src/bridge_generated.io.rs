@@ -264,8 +264,9 @@ pub extern "C" fn wire_generate_new_key__method__Coordinator(
     that: *mut wire_Coordinator,
     threshold: usize,
     devices: *mut wire_list_device_id,
+    key_name: *mut wire_uint_8_list,
 ) {
-    wire_generate_new_key__method__Coordinator_impl(port_, that, threshold, devices)
+    wire_generate_new_key__method__Coordinator_impl(port_, that, threshold, devices, key_name)
 }
 
 #[no_mangle]
@@ -314,6 +315,14 @@ pub extern "C" fn wire_enter_firmware_upgrade_mode__method__Coordinator(
     that: *mut wire_Coordinator,
 ) {
     wire_enter_firmware_upgrade_mode__method__Coordinator_impl(port_, that)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_get_key_name__method__Coordinator(
+    that: *mut wire_Coordinator,
+    key_id: *mut wire_KeyId,
+) -> support::WireSyncReturn {
+    wire_get_key_name__method__Coordinator_impl(that, key_id)
 }
 
 #[no_mangle]
@@ -1058,7 +1067,10 @@ impl Wire2Api<FfiSerial> for wire_FfiSerial {
 }
 impl Wire2Api<FrostKey> for wire_FrostKey {
     fn wire2api(self) -> FrostKey {
-        FrostKey(self.field0.wire2api())
+        FrostKey {
+            frost_key: self.frost_key.wire2api(),
+            key_name: self.key_name.wire2api(),
+        }
     }
 }
 
@@ -1340,7 +1352,8 @@ pub struct wire_FfiSerial {
 #[repr(C)]
 #[derive(Clone)]
 pub struct wire_FrostKey {
-    field0: wire_FrostsnapCoreCoordinatorFrostKey,
+    frost_key: wire_FrostsnapCoreCoordinatorFrostKey,
+    key_name: *mut wire_uint_8_list,
 }
 
 #[repr(C)]
@@ -1654,7 +1667,8 @@ impl Default for wire_FfiSerial {
 impl NewWithNullPtr for wire_FrostKey {
     fn new_with_null_ptr() -> Self {
         Self {
-            field0: wire_FrostsnapCoreCoordinatorFrostKey::new_with_null_ptr(),
+            frost_key: wire_FrostsnapCoreCoordinatorFrostKey::new_with_null_ptr(),
+            key_name: core::ptr::null_mut(),
         }
     }
 }
