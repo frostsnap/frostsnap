@@ -14,6 +14,7 @@ use embedded_graphics::{
 };
 use embedded_graphics_framebuf::FrameBuf;
 use embedded_hal as hal;
+use embedded_iconoir::size24px::editor::TextSize;
 use embedded_text::{style::TextBoxStyleBuilder, TextBox};
 use esp_hal::timer::{self, timg::Timer};
 use esp_hal::Blocking;
@@ -124,15 +125,14 @@ impl Keyboard {
     }
 
     pub fn print_text_input(&mut self, framebuf: &mut FrameBuf<Rgb565, &mut [Rgb565; 67200]>) {
-        let mut x_offset = 0;
         let mut y_offset = 0;
         let spacing_size = 20;
 
+        // clear area
         let rect = Rectangle::new(
-            Point::new(x_offset, HEADER_BUFFER as i32),
+            Point::new(0, HEADER_BUFFER as i32),
             Size::new(240, SCREEN_HEIGHT - HEADER_BUFFER - 2 * KEY_HEIGHT),
         );
-
         rect.into_styled(
             PrimitiveStyleBuilder::new()
                 .fill_color(Rgb565::BLACK)
@@ -155,15 +155,13 @@ impl Keyboard {
                     chunk_vec
                 });
 
-        let textbox_style = TextBoxStyleBuilder::new().build();
-
         // Don't show the top line once the backup gets to a certain length, "pan" down
         if chunked_backup.len() <= 9 {
-            let _overflow = TextBox::with_textbox_style(
+            Text::with_baseline(
                 "frost1",
-                rect,
-                U8g2TextStyle::new(fonts::u8g2_font_profont22_mf, Rgb565::CYAN),
-                textbox_style,
+                Point::new(0, HEADER_BUFFER as i32),
+                U8g2TextStyle::new(fonts::u8g2_font_profont29_mf, Rgb565::CYAN),
+                embedded_graphics::text::Baseline::Top,
             )
             .draw(framebuf)
             .unwrap();
@@ -177,27 +175,22 @@ impl Keyboard {
             (chunked_backup.len() - 1) / 3 - 3
         };
 
-        for (i, chunk) in chunked_backup[(rows_to_skip * 3)..].into_iter().enumerate() {
-            let _overflow = TextBox::with_textbox_style(
-                chunk.as_ref(),
-                Rectangle::new(
-                    Point::new(x_offset, (HEADER_BUFFER as i32) + y_offset),
-                    Size::new(
-                        280,
-                        SCREEN_HEIGHT - HEADER_BUFFER - 2 * KEY_HEIGHT - (y_offset as u32),
-                    ),
-                ),
+        let text_style = TextStyleBuilder::new()
+            .baseline(embedded_graphics::text::Baseline::Top)
+            .alignment(Alignment::Center)
+            .build();
+
+        for row_chunks in chunked_backup[(rows_to_skip * 3)..].chunks(3).into_iter() {
+            Text::with_text_style(
+                row_chunks.join("  ").as_ref(),
+                Point::new(120, (HEADER_BUFFER as i32) + y_offset),
                 U8g2TextStyle::new(fonts::u8g2_font_profont22_mf, Rgb565::WHITE),
-                textbox_style,
+                text_style,
             )
             .draw(framebuf)
             .unwrap();
-            x_offset += spacing_size * 4;
-            // For rows of 3, we want a new line for the 4th, 7th, ... chunk
-            if (i + 1) % 3 == 0 {
-                y_offset += spacing_size * 3 / 2;
-                x_offset = 0;
-            }
+
+            y_offset += spacing_size * 3 / 2;
         }
     }
 
