@@ -52,6 +52,11 @@ pub fn wire_echo_key_id(port_: MessagePort, key_id: JsValue) {
 }
 
 #[wasm_bindgen]
+pub fn wire_get_share_compatibility_identifier(frost_key: JsValue) -> support::WireSyncReturn {
+    wire_get_share_compatibility_identifier_impl(frost_key)
+}
+
+#[wasm_bindgen]
 pub fn wire_txid__method__Transaction(that: JsValue) -> support::WireSyncReturn {
     wire_txid__method__Transaction_impl(that)
 }
@@ -278,6 +283,16 @@ pub fn wire_cancel_protocol__method__Coordinator(port_: MessagePort, that: JsVal
 #[wasm_bindgen]
 pub fn wire_enter_firmware_upgrade_mode__method__Coordinator(port_: MessagePort, that: JsValue) {
     wire_enter_firmware_upgrade_mode__method__Coordinator_impl(port_, that)
+}
+
+#[wasm_bindgen]
+pub fn wire_restore_share_on_device__method__Coordinator(
+    port_: MessagePort,
+    that: JsValue,
+    device_id: JsValue,
+    key_id: JsValue,
+) {
+    wire_restore_share_on_device__method__Coordinator_impl(port_, that, device_id, key_id)
 }
 
 #[wasm_bindgen]

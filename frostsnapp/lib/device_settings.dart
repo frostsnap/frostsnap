@@ -158,6 +158,27 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                   },
                   child: Text("Backup"),
                 ),
+                SizedBox(height: 10),
+                ElevatedButton(
+                    onPressed: () async {
+                      final shareRestoreStream = coord.restoreShareOnDevice(
+                          deviceId: widget.id, keyId: keyId);
+
+                      shareRestoreStream.listen((event) {}).onDone(() {});
+
+                      // shareRestoreStream.listen((progress_) {
+                      //   setState(() => progress = progress_);
+                      // }).onDone(() {
+                      //   if (progress != 1.0) {
+                      //     showErrorSnackbar(context, "Firmware upgrade failed");
+                      //   }
+                      //   if (mounted) {
+                      //     Navigator.pop(context);
+                      //   }
+                      //   widget.onUpgradeFinished?.call();
+                      // });
+                    },
+                    child: Text("Restore")),
               ],
             ),
           );

@@ -572,6 +572,16 @@ impl Coordinator {
     pub fn enter_firmware_upgrade_mode(&self, progress: StreamSink<f32>) -> Result<()> {
         self.0.enter_firmware_upgrade_mode(progress)
     }
+
+    pub fn restore_share_on_device(
+        &self,
+        device_id: DeviceId,
+        key_id: KeyId,
+        sink: StreamSink<()>,
+    ) -> Result<()> {
+        self.0.restore_share_on_device(device_id, key_id, sink)?;
+        Ok(())
+    }
 }
 
 pub struct Wallet {
@@ -894,4 +904,13 @@ pub enum SignTaskDescription {
     //     key_id: KeyId,
     // }, // 1 nonce & sig
     Transaction { unsigned_tx: UnsignedTx },
+}
+
+pub fn get_share_compatibility_identifier(frost_key: FrostKey) -> SyncReturn<Vec<u8>> {
+    SyncReturn(
+        frostsnap_core::schnorr_fun::share_backup::polynomial_identifier::<sha2::Sha256>(
+            &frost_key.0.frost_key().point_polynomial(),
+        )
+        .to_vec(),
+    )
 }

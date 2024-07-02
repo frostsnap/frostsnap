@@ -13,6 +13,7 @@ use frostsnap_coordinator::frostsnap_core::message::{
     CoordinatorSend, CoordinatorToStorageMessage, SignTask,
 };
 use frostsnap_coordinator::keygen::KeyGenState;
+use frostsnap_coordinator::restore_share::RestoreShareProtocol;
 use frostsnap_coordinator::signing::SigningState;
 use frostsnap_coordinator::{
     frostsnap_core, AppMessageBody, FirmwareBin, UiProtocol, UsbSender, UsbSerialManager,
@@ -553,6 +554,23 @@ impl FfiCoordinator {
             }
             progress => *progress = Some(sink),
         }
+        Ok(())
+    }
+
+    pub fn restore_share_on_device(
+        &self,
+        device_id: DeviceId,
+        key_id: KeyId,
+        stream: StreamSink<()>,
+    ) -> anyhow::Result<()> {
+        let mut frost_coordinator = self.coordinator.lock().unwrap();
+
+        let messages = frost_coordinator.restore_device(device_id, key_id)?;
+        self.pending_for_outbox.lock().unwrap().extend(messages);
+
+        let restore_protocol = RestoreShareProtocol::new(device_id, SinkWrap(stream));
+        self.start_protocol(restore_protocol);
+
         Ok(())
     }
 }

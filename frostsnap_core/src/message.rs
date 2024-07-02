@@ -8,6 +8,7 @@ use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
+use schnorr_fun::frost::PartyIndex;
 use schnorr_fun::fun::marker::*;
 use schnorr_fun::fun::Point;
 use schnorr_fun::fun::Scalar;
@@ -51,6 +52,7 @@ pub enum CoordinatorToDeviceMessage {
     DisplayBackup {
         key_id: KeyId,
     },
+    LoadShareBackup,
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
@@ -94,6 +96,7 @@ impl CoordinatorToDeviceMessage {
             CoordinatorToDeviceMessage::FinishKeyGen { .. } => "FinishKeyGen",
             CoordinatorToDeviceMessage::RequestSign { .. } => "RequestSign",
             CoordinatorToDeviceMessage::DisplayBackup { .. } => "DisplayBackup",
+            CoordinatorToDeviceMessage::LoadShareBackup => "LoadShareBackup",
         }
     }
 }
@@ -101,6 +104,7 @@ impl CoordinatorToDeviceMessage {
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub enum CoordinatorToStorageMessage {
     NewKey(CoordinatorFrostKey),
+    UpdatedKey(CoordinatorFrostKey),
     NoncesUsed {
         device_id: DeviceId,
         /// if nonce_counter = x, then the coordinator expects x to be the next nonce used.
@@ -127,6 +131,7 @@ impl Gist for CoordinatorToStorageMessage {
             ResetNonces { .. } => "ResetNonces",
             NewNonces { .. } => "NewNonces",
             NewKey(_) => "NewKey",
+            UpdatedKey(_) => "UpdatedKey",
         }
         .into()
     }
@@ -142,6 +147,10 @@ pub enum DeviceToCoordinatorMessage {
         new_nonces: DeviceNonces,
     },
     DisplayBackupConfirmed,
+    LoadedShareBackup {
+        share_index: PartyIndex,
+        share_image: Point,
+    },
 }
 
 #[derive(
@@ -174,6 +183,7 @@ impl DeviceToCoordinatorMessage {
             KeyGenAck(_) => "KeyGenAck",
             SignatureShare { .. } => "SignatureShare",
             DisplayBackupConfirmed => "DisplayBackupConfirmed",
+            LoadedShareBackup { .. } => "LoadedShareBackup",
         }
     }
 }
@@ -189,7 +199,14 @@ pub struct KeyGenResponse {
 pub enum CoordinatorToUserMessage {
     KeyGen(CoordinatorToUserKeyGenMessage),
     Signing(CoordinatorToUserSigningMessage),
-    DisplayBackupConfirmed { device_id: DeviceId },
+    DisplayBackupConfirmed {
+        device_id: DeviceId,
+    },
+    LoadedShareBackup {
+        device_id: DeviceId,
+        share_index: PartyIndex,
+        share_image: Point,
+    },
 }
 
 #[derive(Clone, Debug, Copy)]
@@ -227,6 +244,7 @@ pub enum DeviceToUserMessage {
     Canceled { task: TaskKind },
     DisplayBackupRequest { key_id: KeyId },
     DisplayBackup { key_id: KeyId, backup: String },
+    RestoreBackup,
 }
 
 #[derive(Clone, Debug)]
@@ -234,6 +252,7 @@ pub enum TaskKind {
     KeyGen,
     Sign,
     DisplayBackup,
+    RestoreBackup,
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]

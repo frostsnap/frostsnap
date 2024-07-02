@@ -1,6 +1,7 @@
 pub mod backup;
 pub mod firmware_upgrade;
 pub mod keygen;
+pub mod restore_share;
 mod serial_port;
 pub mod signing;
 mod ui_protocol;

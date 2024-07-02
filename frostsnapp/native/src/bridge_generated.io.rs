@@ -52,6 +52,13 @@ pub extern "C" fn wire_echo_key_id(port_: i64, key_id: *mut wire_KeyId) {
 }
 
 #[no_mangle]
+pub extern "C" fn wire_get_share_compatibility_identifier(
+    frost_key: *mut wire_FrostKey,
+) -> support::WireSyncReturn {
+    wire_get_share_compatibility_identifier_impl(frost_key)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_txid__method__Transaction(
     that: *mut wire_Transaction,
 ) -> support::WireSyncReturn {
@@ -314,6 +321,16 @@ pub extern "C" fn wire_enter_firmware_upgrade_mode__method__Coordinator(
     that: *mut wire_Coordinator,
 ) {
     wire_enter_firmware_upgrade_mode__method__Coordinator_impl(port_, that)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_restore_share_on_device__method__Coordinator(
+    port_: i64,
+    that: *mut wire_Coordinator,
+    device_id: *mut wire_DeviceId,
+    key_id: *mut wire_KeyId,
+) {
+    wire_restore_share_on_device__method__Coordinator_impl(port_, that, device_id, key_id)
 }
 
 #[no_mangle]

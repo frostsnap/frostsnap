@@ -871,6 +871,22 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _wire_echo_key_id = _wire_echo_key_idPtr
       .asFunction<void Function(int, ffi.Pointer<wire_KeyId>)>();
 
+  WireSyncReturn wire_get_share_compatibility_identifier(
+    ffi.Pointer<wire_FrostKey> frost_key,
+  ) {
+    return _wire_get_share_compatibility_identifier(
+      frost_key,
+    );
+  }
+
+  late final _wire_get_share_compatibility_identifierPtr = _lookup<
+          ffi
+          .NativeFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>>(
+      'wire_get_share_compatibility_identifier');
+  late final _wire_get_share_compatibility_identifier =
+      _wire_get_share_compatibility_identifierPtr
+          .asFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>();
+
   WireSyncReturn wire_txid__method__Transaction(
     ffi.Pointer<wire_Transaction> that,
   ) {
@@ -1543,6 +1559,30 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _wire_enter_firmware_upgrade_mode__method__Coordinator =
       _wire_enter_firmware_upgrade_mode__method__CoordinatorPtr
           .asFunction<void Function(int, ffi.Pointer<wire_Coordinator>)>();
+
+  void wire_restore_share_on_device__method__Coordinator(
+    int port_,
+    ffi.Pointer<wire_Coordinator> that,
+    ffi.Pointer<wire_DeviceId> device_id,
+    ffi.Pointer<wire_KeyId> key_id,
+  ) {
+    return _wire_restore_share_on_device__method__Coordinator(
+      port_,
+      that,
+      device_id,
+      key_id,
+    );
+  }
+
+  late final _wire_restore_share_on_device__method__CoordinatorPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Coordinator>,
+                  ffi.Pointer<wire_DeviceId>, ffi.Pointer<wire_KeyId>)>>(
+      'wire_restore_share_on_device__method__Coordinator');
+  late final _wire_restore_share_on_device__method__Coordinator =
+      _wire_restore_share_on_device__method__CoordinatorPtr.asFunction<
+          void Function(int, ffi.Pointer<wire_Coordinator>,
+              ffi.Pointer<wire_DeviceId>, ffi.Pointer<wire_KeyId>)>();
 
   void wire_sub_tx_state__method__Wallet(
     int port_,
@@ -2620,6 +2660,14 @@ final class wire_KeyId extends ffi.Struct {
   external ffi.Pointer<wire_uint_8_list> field0;
 }
 
+final class wire_FrostsnapCoreCoordinatorFrostKey extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_FrostKey extends ffi.Struct {
+  external wire_FrostsnapCoreCoordinatorFrostKey field0;
+}
+
 final class wire_RTransaction extends ffi.Struct {
   external ffi.Pointer<ffi.Void> ptr;
 }
@@ -2649,14 +2697,6 @@ final class wire_Device extends ffi.Struct {
   external ffi.Pointer<wire_uint_8_list> latest_digest;
 
   external wire_DeviceId id;
-}
-
-final class wire_FrostsnapCoreCoordinatorFrostKey extends ffi.Struct {
-  external ffi.Pointer<ffi.Void> ptr;
-}
-
-final class wire_FrostKey extends ffi.Struct {
-  external wire_FrostsnapCoreCoordinatorFrostKey field0;
 }
 
 final class wire_PortOpenSender extends ffi.Struct {

@@ -201,6 +201,27 @@ class NativeImpl implements Native {
         argNames: ["keyId"],
       );
 
+  Uint8List getShareCompatibilityIdentifier(
+      {required FrostKey frostKey, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_frost_key(frostKey);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () =>
+          _platform.inner.wire_get_share_compatibility_identifier(arg0),
+      parseSuccessData: _wire2api_uint_8_list,
+      parseErrorData: null,
+      constMeta: kGetShareCompatibilityIdentifierConstMeta,
+      argValues: [frostKey],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kGetShareCompatibilityIdentifierConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "get_share_compatibility_identifier",
+            argNames: ["frostKey"],
+          );
+
   String txidMethodTransaction({required Transaction that, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_transaction(that);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
@@ -913,6 +934,33 @@ class NativeImpl implements Native {
           const FlutterRustBridgeTaskConstMeta(
             debugName: "enter_firmware_upgrade_mode__method__Coordinator",
             argNames: ["that"],
+          );
+
+  Stream<void> restoreShareOnDeviceMethodCoordinator(
+      {required Coordinator that,
+      required DeviceId deviceId,
+      required KeyId keyId,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
+    var arg1 = _platform.api2wire_box_autoadd_device_id(deviceId);
+    var arg2 = _platform.api2wire_box_autoadd_key_id(keyId);
+    return _platform.executeStream(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner
+          .wire_restore_share_on_device__method__Coordinator(
+              port_, arg0, arg1, arg2),
+      parseSuccessData: _wire2api_unit,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kRestoreShareOnDeviceMethodCoordinatorConstMeta,
+      argValues: [that, deviceId, keyId],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kRestoreShareOnDeviceMethodCoordinatorConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "restore_share_on_device__method__Coordinator",
+            argNames: ["that", "deviceId", "keyId"],
           );
 
   Stream<TxState> subTxStateMethodWallet(

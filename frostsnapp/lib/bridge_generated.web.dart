@@ -443,6 +443,9 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* void */ wire_echo_key_id(
       NativePortType port_, List<dynamic> key_id);
 
+  external dynamic /* Uint8List */ wire_get_share_compatibility_identifier(
+      List<dynamic> frost_key);
+
   external dynamic /* String */ wire_txid__method__Transaction(
       List<dynamic> that);
 
@@ -558,6 +561,12 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* void */
       wire_enter_firmware_upgrade_mode__method__Coordinator(
           NativePortType port_, List<dynamic> that);
+
+  external dynamic /* void */ wire_restore_share_on_device__method__Coordinator(
+      NativePortType port_,
+      List<dynamic> that,
+      List<dynamic> device_id,
+      List<dynamic> key_id);
 
   external dynamic /* void */ wire_sub_tx_state__method__Wallet(
       NativePortType port_, List<dynamic> that, List<dynamic> key_id);
@@ -700,6 +709,10 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
 
   void wire_echo_key_id(NativePortType port_, List<dynamic> key_id) =>
       wasmModule.wire_echo_key_id(port_, key_id);
+
+  dynamic /* Uint8List */ wire_get_share_compatibility_identifier(
+          List<dynamic> frost_key) =>
+      wasmModule.wire_get_share_compatibility_identifier(frost_key);
 
   dynamic /* String */ wire_txid__method__Transaction(List<dynamic> that) =>
       wasmModule.wire_txid__method__Transaction(that);
@@ -847,6 +860,11 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
           NativePortType port_, List<dynamic> that) =>
       wasmModule.wire_enter_firmware_upgrade_mode__method__Coordinator(
           port_, that);
+
+  void wire_restore_share_on_device__method__Coordinator(NativePortType port_,
+          List<dynamic> that, List<dynamic> device_id, List<dynamic> key_id) =>
+      wasmModule.wire_restore_share_on_device__method__Coordinator(
+          port_, that, device_id, key_id);
 
   void wire_sub_tx_state__method__Wallet(
           NativePortType port_, List<dynamic> that, List<dynamic> key_id) =>
