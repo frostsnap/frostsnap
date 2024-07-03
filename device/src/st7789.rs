@@ -10,7 +10,7 @@ use embedded_graphics::{
     pixelcolor::Rgb565,
     prelude::*,
     primitives::*,
-    text::Alignment,
+    text::{Alignment, Text},
 };
 use embedded_graphics_framebuf::FrameBuf;
 use embedded_iconoir::{icons::size24px::gestures::OpenSelectHandGesture, prelude::IconoirNewIcon};
@@ -23,6 +23,13 @@ use mipidsi::error::Error;
 use u8g2_fonts::{fonts, U8g2TextStyle};
 
 use crate::{DownstreamConnectionState, UpstreamConnectionState};
+
+const HEADER_COLOR: Rgb565 = Rgb565::new(4, 8, 17);
+const HEADER_BUFFER: u32 = 40;
+const PADDING_LEFT_TEXT: u32 = 10;
+const FONT_LARGE: fonts::u8g2_font_profont29_mf = fonts::u8g2_font_profont29_mf;
+const FONT_MED: fonts::u8g2_font_profont22_mf = fonts::u8g2_font_profont22_mf;
+const FONT_SMALL: fonts::u8g2_font_profont17_mf = fonts::u8g2_font_profont17_mf;
 
 pub struct Graphics<'d, DT> {
     display: DT,
@@ -38,13 +45,7 @@ where
         display: DT,
         framebuf: FrameBuf<Rgb565, &'d mut [Rgb565; 67200]>,
     ) -> Result<Self, Error> {
-        // println!("graphics init");
-
-        let textbox_style = TextBoxStyleBuilder::new()
-            // .alignment(HorizontalAlignment::Center)
-            // .vertical_alignment(VerticalAlignment::Middle)
-            // .line_height(LineHeight::Pixels(16))
-            .build();
+        let textbox_style = TextBoxStyleBuilder::new().build();
 
         let mut _self = Self {
             display,
@@ -56,9 +57,7 @@ where
     }
 
     pub fn flush(&mut self) -> Result<(), Error> {
-        self.display
-            // .fill_contiguous(&area, self.framebuf.data)
-            .draw_iter(&self.framebuf)
+        self.display.draw_iter(&self.framebuf)
     }
 
     pub fn clear(&mut self, c: Rgb565) {
@@ -69,23 +68,28 @@ where
     }
 
     pub fn print(&mut self, str: impl AsRef<str>) {
-        let y = 40;
-        let x_offset = 0;
-        let body_area = Size::new(self.display.size().width, self.display.size().height - y);
-        Rectangle::new(Point::new(x_offset, y as i32), body_area)
-            .into_styled(
-                PrimitiveStyleBuilder::new()
-                    .fill_color(Rgb565::BLACK)
-                    .build(),
-            )
-            .draw(&mut self.framebuf)
-            .unwrap();
+        let body_area = Size::new(
+            self.display.size().width,
+            self.display.size().height - HEADER_BUFFER,
+        );
+        Rectangle::new(
+            Point::new(PADDING_LEFT_TEXT as i32, HEADER_BUFFER as i32),
+            body_area,
+        )
+        .into_styled(
+            PrimitiveStyleBuilder::new()
+                .fill_color(Rgb565::BLACK)
+                .build(),
+        )
+        .draw(&mut self.framebuf)
+        .unwrap();
         let _overflow = TextBox::with_textbox_style(
             str.as_ref(),
-            Rectangle::new(Point::new(x_offset, y as i32), body_area),
-            U8g2TextStyle::new(fonts::u8g2_font_profont22_mf, Rgb565::WHITE),
-            // U8g2TextStyle::new(fonts::u8g2_font_helvR14_tf, Rgb565::WHITE),
-            // U8g2TextStyle::new(fonts::u8g2_font_spleen12x24_mf, Rgb565::WHITE),
+            Rectangle::new(
+                Point::new(PADDING_LEFT_TEXT as i32, HEADER_BUFFER as i32),
+                body_area,
+            ),
+            U8g2TextStyle::new(FONT_MED, Rgb565::WHITE),
             self.textbox_style,
         )
         .draw(&mut self.framebuf)
@@ -93,15 +97,18 @@ where
     }
 
     pub fn header(&mut self, device_label: impl AsRef<str>) {
-        let y = 25;
-        Rectangle::new(Point::zero(), Size::new(self.display.size().width, y))
-            .into_styled(
-                PrimitiveStyleBuilder::new()
-                    .fill_color(Rgb565::new(4, 8, 17))
-                    .build(),
-            )
-            .draw(&mut self.framebuf)
-            .unwrap();
+        let header_height = 25;
+        Rectangle::new(
+            Point::zero(),
+            Size::new(self.display.size().width, header_height),
+        )
+        .into_styled(
+            PrimitiveStyleBuilder::new()
+                .fill_color(HEADER_COLOR)
+                .build(),
+        )
+        .draw(&mut self.framebuf)
+        .unwrap();
 
         let textbox_style = TextBoxStyleBuilder::new()
             .alignment(HorizontalAlignment::Center)
@@ -110,19 +117,17 @@ where
             device_label.as_ref(),
             Rectangle::new(
                 Point::new(10, 7),
-                Size::new(self.display.size().width - 20, y),
+                Size::new(self.display.size().width - 20, header_height),
             ),
-            U8g2TextStyle::new(fonts::u8g2_font_profont17_mf, Rgb565::WHITE),
-            // U8g2TextStyle::new(fonts::u8g2_font_helvR08_tf, Rgb565::WHITE),
-            // U8g2TextStyle::new(fonts::u8g2_font_spleen5x8_mf, Rgb565::WHITE),
+            U8g2TextStyle::new(FONT_SMALL, Rgb565::WHITE),
             textbox_style,
         )
         .draw(&mut self.framebuf)
         .unwrap();
 
         Line::new(
-            Point::new(0, (y - 1) as i32),
-            Point::new(self.display.size().width as i32, (y - 1) as i32),
+            Point::new(0, (header_height - 1) as i32),
+            Point::new(self.display.size().width as i32, (header_height - 1) as i32),
         )
         .into_styled(PrimitiveStyle::with_stroke(Rgb565::CSS_DARK_GRAY, 1))
         .draw(&mut self.framebuf)
@@ -179,7 +184,7 @@ where
                 (self.display.size().width / 2) as i32,
                 (bar_y as u32 + bar_height + 10) as i32,
             ),
-            U8g2TextStyle::new(fonts::u8g2_font_profont22_mf, Rgb565::WHITE),
+            U8g2TextStyle::new(FONT_MED, Rgb565::WHITE),
             Alignment::Center,
         )
         .draw(&mut self.framebuf)
@@ -286,19 +291,23 @@ where
     }
 
     pub fn show_backup(&mut self, str: alloc::string::String) {
-        let y = 40;
-        let mut x_offset = 0;
         let mut y_offset = 0;
         let spacing_size = 20;
-        let body_area = Size::new(self.display.size().width, self.display.size().height - y);
-        Rectangle::new(Point::new(x_offset, y as i32), body_area)
-            .into_styled(
-                PrimitiveStyleBuilder::new()
-                    .fill_color(Rgb565::BLACK)
-                    .build(),
-            )
-            .draw(&mut self.framebuf)
-            .unwrap();
+        let body_area = Size::new(
+            self.display.size().width,
+            self.display.size().height - HEADER_BUFFER,
+        );
+        Rectangle::new(
+            Point::new(PADDING_LEFT_TEXT as i32, HEADER_BUFFER as i32),
+            body_area,
+        )
+        .into_styled(
+            PrimitiveStyleBuilder::new()
+                .fill_color(Rgb565::BLACK)
+                .build(),
+        )
+        .draw(&mut self.framebuf)
+        .unwrap();
 
         let (hrp, backup_chars) = str.split_at(str.find('1').expect("backup has a hrp") + 1);
         let chunked_backup =
@@ -314,11 +323,11 @@ where
                     chunk_vec
                 });
 
-        let _overflow = TextBox::with_textbox_style(
+        Text::with_baseline(
             "Share backup:",
-            Rectangle::new(Point::new(x_offset, (y as i32) + y_offset), body_area),
-            U8g2TextStyle::new(fonts::u8g2_font_profont29_mf, Rgb565::WHITE),
-            self.textbox_style,
+            Point::new(PADDING_LEFT_TEXT as i32, (HEADER_BUFFER as i32) + y_offset),
+            U8g2TextStyle::new(FONT_MED, Rgb565::CYAN),
+            embedded_graphics::text::Baseline::Top,
         )
         .draw(&mut self.framebuf)
         .unwrap();
@@ -326,29 +335,27 @@ where
 
         let _overflow = TextBox::with_textbox_style(
             hrp,
-            Rectangle::new(Point::new(x_offset, (y as i32) + y_offset), body_area),
-            U8g2TextStyle::new(fonts::u8g2_font_profont29_mf, Rgb565::CYAN),
+            Rectangle::new(
+                Point::new(PADDING_LEFT_TEXT as i32, (HEADER_BUFFER as i32) + y_offset),
+                body_area,
+            ),
+            U8g2TextStyle::new(FONT_LARGE, Rgb565::CYAN),
             self.textbox_style,
         )
         .draw(&mut self.framebuf)
         .unwrap();
         y_offset += spacing_size * 3 / 2;
 
-        for (i, chunk) in chunked_backup.into_iter().enumerate() {
-            let _overflow = TextBox::with_textbox_style(
-                chunk.as_ref(),
-                Rectangle::new(Point::new(x_offset, (y as i32) + y_offset), body_area),
-                U8g2TextStyle::new(fonts::u8g2_font_profont29_mf, Rgb565::WHITE),
-                self.textbox_style,
+        for row_chunks in chunked_backup.chunks(3) {
+            Text::with_baseline(
+                row_chunks.join("  ").as_ref(),
+                Point::new(PADDING_LEFT_TEXT as i32, (HEADER_BUFFER as i32) + y_offset),
+                U8g2TextStyle::new(FONT_MED, Rgb565::WHITE),
+                embedded_graphics::text::Baseline::Top,
             )
             .draw(&mut self.framebuf)
             .unwrap();
-            x_offset += spacing_size * 4;
-            // For rows of 3, we want a new line for the 4th, 7th, ... chunk
-            if (i + 1) % 3 == 0 {
-                y_offset += spacing_size * 3 / 2;
-                x_offset = 0;
-            }
+            y_offset += spacing_size * 3 / 2;
         }
     }
 }
