@@ -601,8 +601,8 @@ impl FrostsnapWallet {
                     "PSBT input {i} missing witness and non-witness utxo"
                 ))?;
 
-            let input_push = PushInput::spend_outpoint(&txout, txin.previous_output)
-                .with_sequence(txin.sequence);
+            let input_push =
+                PushInput::spend_outpoint(txout, txin.previous_output).with_sequence(txin.sequence);
 
             macro_rules! bail {
                 ($($reason:tt)*) => {{

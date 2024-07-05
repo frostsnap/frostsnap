@@ -180,7 +180,7 @@ impl FrostSigner {
                 if point_polys
                     .get(my_index)
                     .expect("we have a point poly in this finish keygen")
-                    != &poly::scalar::to_point_poly(&scalar_poly)
+                    != &poly::scalar::to_point_poly(scalar_poly)
                 {
                     return Err(Error::signer_invalid_message(
                         &message,

@@ -359,7 +359,7 @@ where
                                 write!(&mut string, "internal transfer").unwrap();
                             } else {
                                 for (address, value) in foreign_recipients {
-                                    write!(&mut string, "send {value} to {address}\n").unwrap();
+                                    writeln!(&mut string, "send {value} to {address}").unwrap();
                                 }
                             }
                             write!(&mut string, "fee: {fee}").unwrap();

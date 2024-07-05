@@ -527,7 +527,7 @@ impl Wallet {
     }
 
     pub fn broadcast_tx(&self, key_id: KeyId, tx: SignedTx) -> Result<()> {
-        match self.chain_sync.broadcast(&*tx.signed_tx) {
+        match self.chain_sync.broadcast(&tx.signed_tx) {
             Ok(_) => {
                 event!(
                     Level::INFO,
@@ -566,7 +566,7 @@ impl Wallet {
             .inner
             .lock()
             .unwrap()
-            .psbt_to_tx_template(&*psbt.inner, key_id.to_root_pubkey().expect("valid key id"))?;
+            .psbt_to_tx_template(&psbt.inner, key_id.to_root_pubkey().expect("valid key id"))?;
 
         Ok(SyncReturn(UnsignedTx {
             template_tx: RustOpaque::new(template),

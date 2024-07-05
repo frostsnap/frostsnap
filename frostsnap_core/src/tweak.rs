@@ -307,7 +307,7 @@ impl<T: TweakableKey> Xpub<T> {
     }
 
     pub fn xpub(&self, network: bitcoin::Network) -> bitcoin::bip32::Xpub {
-        let mut xpub = self.xpub.clone();
+        let mut xpub = self.xpub;
         xpub.network = network;
         xpub
     }
