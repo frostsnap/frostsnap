@@ -355,6 +355,14 @@ pub extern "C" fn wire_nonces_available__method__Coordinator(
 }
 
 #[no_mangle]
+pub extern "C" fn wire_current_nonce__method__Coordinator(
+    that: *mut wire_Coordinator,
+    id: *mut wire_DeviceId,
+) -> support::WireSyncReturn {
+    wire_current_nonce__method__Coordinator_impl(that, id)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_generate_new_key__method__Coordinator(
     port_: i64,
     that: *mut wire_Coordinator,

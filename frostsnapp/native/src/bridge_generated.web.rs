@@ -313,6 +313,14 @@ pub fn wire_nonces_available__method__Coordinator(
 }
 
 #[wasm_bindgen]
+pub fn wire_current_nonce__method__Coordinator(
+    that: JsValue,
+    id: JsValue,
+) -> support::WireSyncReturn {
+    wire_current_nonce__method__Coordinator_impl(that, id)
+}
+
+#[wasm_bindgen]
 pub fn wire_generate_new_key__method__Coordinator(
     port_: MessagePort,
     that: JsValue,

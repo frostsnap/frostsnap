@@ -872,6 +872,23 @@ fn wire_nonces_available__method__Coordinator_impl(
         },
     )
 }
+fn wire_current_nonce__method__Coordinator_impl(
+    that: impl Wire2Api<Coordinator> + UnwindSafe,
+    id: impl Wire2Api<DeviceId> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "current_nonce__method__Coordinator",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_id = id.wire2api();
+            Result::<_, ()>::Ok(Coordinator::current_nonce(&api_that, api_id))
+        },
+    )
+}
 fn wire_generate_new_key__method__Coordinator_impl(
     port_: MessagePort,
     that: impl Wire2Api<Coordinator> + UnwindSafe,

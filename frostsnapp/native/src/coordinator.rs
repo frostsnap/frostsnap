@@ -408,6 +408,15 @@ impl FfiCoordinator {
             .map(|nonces| nonces.nonces.len())
     }
 
+    pub fn current_nonce(&self, id: DeviceId) -> Option<u64> {
+        self.coordinator
+            .lock()
+            .unwrap()
+            .device_nonces()
+            .get(&id)
+            .map(|nonces| nonces.start_index)
+    }
+
     pub fn start_signing(
         &self,
         key_id: KeyId,

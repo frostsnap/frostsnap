@@ -753,6 +753,10 @@ impl Coordinator {
         SyncReturn(self.0.nonces_left(id).unwrap_or(0))
     }
 
+    pub fn current_nonce(&self, id: DeviceId) -> SyncReturn<u64> {
+        SyncReturn(self.0.current_nonce(id).unwrap_or(0))
+    }
+
     pub fn generate_new_key(
         &self,
         threshold: usize,

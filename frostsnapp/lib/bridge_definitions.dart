@@ -267,6 +267,11 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kNoncesAvailableMethodCoordinatorConstMeta;
 
+  int currentNonceMethodCoordinator(
+      {required Coordinator that, required DeviceId id, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kCurrentNonceMethodCoordinatorConstMeta;
+
   Stream<KeyGenState> generateNewKeyMethodCoordinator(
       {required Coordinator that,
       required int threshold,
@@ -834,6 +839,12 @@ class Coordinator {
 
   int noncesAvailable({required DeviceId id, dynamic hint}) =>
       bridge.noncesAvailableMethodCoordinator(
+        that: this,
+        id: id,
+      );
+
+  int currentNonce({required DeviceId id, dynamic hint}) =>
+      bridge.currentNonceMethodCoordinator(
         that: this,
         id: id,
       );

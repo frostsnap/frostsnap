@@ -364,6 +364,9 @@ void wire_start_signing_tx__method__Coordinator(int64_t port_,
 WireSyncReturn wire_nonces_available__method__Coordinator(struct wire_Coordinator *that,
                                                           struct wire_DeviceId *id);
 
+WireSyncReturn wire_current_nonce__method__Coordinator(struct wire_Coordinator *that,
+                                                       struct wire_DeviceId *id);
+
 void wire_generate_new_key__method__Coordinator(int64_t port_,
                                                 struct wire_Coordinator *that,
                                                 uintptr_t threshold,
@@ -615,6 +618,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_start_signing__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_start_signing_tx__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_nonces_available__method__Coordinator);
+    dummy_var ^= ((int64_t) (void*) wire_current_nonce__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_generate_new_key__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_persisted_sign_session_description__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_try_restore_signing_session__method__Coordinator);

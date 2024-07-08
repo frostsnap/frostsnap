@@ -1003,6 +1003,27 @@ class NativeImpl implements Native {
             argNames: ["that", "id"],
           );
 
+  int currentNonceMethodCoordinator(
+      {required Coordinator that, required DeviceId id, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
+    var arg1 = _platform.api2wire_box_autoadd_device_id(id);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () =>
+          _platform.inner.wire_current_nonce__method__Coordinator(arg0, arg1),
+      parseSuccessData: _wire2api_usize,
+      parseErrorData: null,
+      constMeta: kCurrentNonceMethodCoordinatorConstMeta,
+      argValues: [that, id],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kCurrentNonceMethodCoordinatorConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "current_nonce__method__Coordinator",
+        argNames: ["that", "id"],
+      );
+
   Stream<KeyGenState> generateNewKeyMethodCoordinator(
       {required Coordinator that,
       required int threshold,

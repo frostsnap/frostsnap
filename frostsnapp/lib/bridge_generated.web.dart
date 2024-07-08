@@ -640,6 +640,9 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* int */ wire_nonces_available__method__Coordinator(
       List<dynamic> that, List<dynamic> id);
 
+  external dynamic /* int */ wire_current_nonce__method__Coordinator(
+      List<dynamic> that, List<dynamic> id);
+
   external dynamic /* void */ wire_generate_new_key__method__Coordinator(
       NativePortType port_,
       List<dynamic> that,
@@ -961,6 +964,10 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   dynamic /* int */ wire_nonces_available__method__Coordinator(
           List<dynamic> that, List<dynamic> id) =>
       wasmModule.wire_nonces_available__method__Coordinator(that, id);
+
+  dynamic /* int */ wire_current_nonce__method__Coordinator(
+          List<dynamic> that, List<dynamic> id) =>
+      wasmModule.wire_current_nonce__method__Coordinator(that, id);
 
   void wire_generate_new_key__method__Coordinator(NativePortType port_,
           List<dynamic> that, int threshold, List<dynamic> devices) =>

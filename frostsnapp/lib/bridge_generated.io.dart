@@ -1743,6 +1743,26 @@ class NativeWire implements FlutterRustBridgeWireBase {
           WireSyncReturn Function(
               ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_DeviceId>)>();
 
+  WireSyncReturn wire_current_nonce__method__Coordinator(
+    ffi.Pointer<wire_Coordinator> that,
+    ffi.Pointer<wire_DeviceId> id,
+  ) {
+    return _wire_current_nonce__method__Coordinator(
+      that,
+      id,
+    );
+  }
+
+  late final _wire_current_nonce__method__CoordinatorPtr = _lookup<
+          ffi.NativeFunction<
+              WireSyncReturn Function(
+                  ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_DeviceId>)>>(
+      'wire_current_nonce__method__Coordinator');
+  late final _wire_current_nonce__method__Coordinator =
+      _wire_current_nonce__method__CoordinatorPtr.asFunction<
+          WireSyncReturn Function(
+              ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_DeviceId>)>();
+
   void wire_generate_new_key__method__Coordinator(
     int port_,
     ffi.Pointer<wire_Coordinator> that,
