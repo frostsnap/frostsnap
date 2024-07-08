@@ -42,20 +42,23 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
                   : () async {
                       WidgetsFlutterBinding.ensureInitialized();
                       final cameras = await availableCameras();
-
                       if (context.mounted) {
-                        Navigator.push(context,
+                        final psbtBytes = await Navigator.push(context,
                             MaterialPageRoute(builder: (context) {
                           return PsbtCameraReader(
-                              cameras: cameras,
-                              onPSBTDecoded: (psbtBytes) async {
-                                await startSigningPsbt(
-                                    context: context,
-                                    psbtBytes: psbtBytes,
-                                    selectedDevices: selectedDevices.toList(),
-                                    keyId: widget.keyId);
-                              });
+                            cameras: cameras,
+                          );
                         }));
+                        if (context.mounted) {
+                          await runPsbtSigningWorkflow(
+                              context: context,
+                              psbtBytes: psbtBytes,
+                              selectedDevices: selectedDevices.toList(),
+                              keyId: widget.keyId);
+                        }
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                        }
                       }
                     },
               child: Text("Scan 📷")));
@@ -74,7 +77,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
                   if (fileResult != null) {
                     File file = File(fileResult.files.single.path!);
                     Uint8List psbtBytes = await file.readAsBytes();
-                    await startSigningPsbt(
+                    await runPsbtSigningWorkflow(
                         context: context,
                         psbtBytes: psbtBytes,
                         selectedDevices: selectedDevices.toList(),
@@ -117,7 +120,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
   }
 }
 
-Future<void> startSigningPsbt({
+Future<void> runPsbtSigningWorkflow({
   required BuildContext context,
   required Uint8List psbtBytes,
   required List<DeviceId> selectedDevices,
@@ -136,31 +139,26 @@ Future<void> startSigningPsbt({
   final signingStream = coord.startSigningTx(
       keyId: keyId, unsignedTx: unsignedTx, devices: selectedDevices);
 
-  if (context.mounted) {
-    final effect =
-        unsignedTx.effect(keyId: keyId, network: bitcoinContext.network);
+  final effect =
+      unsignedTx.effect(keyId: keyId, network: bitcoinContext.network);
 
-    final signatures = await showSigningProgressDialog(
-      context,
-      signingStream,
-      describeEffect(effect),
-    );
-    if (signatures != null) {
-      final signedPsbt = await unsignedTx.attachSignaturesToPsbt(
-          signatures: signatures, psbt: psbt);
-      final signedTx = await unsignedTx.complete(signatures: signatures);
+  final signatures = await showSigningProgressDialog(
+    context,
+    signingStream,
+    describeEffect(effect),
+  );
+  if (signatures != null) {
+    final signedPsbt = await unsignedTx.attachSignaturesToPsbt(
+        signatures: signatures, psbt: psbt);
+    final signedTx = await unsignedTx.complete(signatures: signatures);
 
-      if (context.mounted) {
-        await saveOrBroadcastSignedPsbtDialog(
-          context,
-          keyId,
-          signedTx,
-          signedPsbt,
-        );
-      }
-      if (context.mounted) {
-        Navigator.pop(context);
-      }
+    if (context.mounted) {
+      await saveOrBroadcastSignedPsbtDialog(
+        context,
+        keyId,
+        signedTx,
+        signedPsbt,
+      );
     }
   }
 }

@@ -8,10 +8,8 @@ import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/image_converter.dart';
 
 class PsbtCameraReader extends StatefulWidget {
-  const PsbtCameraReader(
-      {required this.cameras, required this.onPSBTDecoded, super.key});
+  const PsbtCameraReader({required this.cameras, super.key});
   final List<CameraDescription> cameras;
-  final Function(Uint8List) onPSBTDecoded;
 
   @override
   State<PsbtCameraReader> createState() => _PsbtCameraReaderState();
@@ -58,9 +56,9 @@ class _PsbtCameraReaderState extends State<PsbtCameraReader> {
               setState(() {
                 progress = 1;
               });
-              await widget.onPSBTDecoded(field0);
-              if (mounted) {
-                Navigator.pop(context);
+
+              if (context.mounted) {
+                Navigator.pop(context, field0);
               }
             }
             break;
