@@ -20,7 +20,6 @@ use frostsnap_coordinator::{DesktopSerial, UsbSerialManager};
 pub use frostsnap_core::message::EncodedSignature;
 pub use frostsnap_core::{DeviceId, FrostKeyExt, KeyId, SignTask};
 use lazy_static::lazy_static;
-use llsdb::LlsDb;
 pub use std::collections::{BTreeMap, HashMap};
 use std::fs::OpenOptions;
 use std::ops::Deref;

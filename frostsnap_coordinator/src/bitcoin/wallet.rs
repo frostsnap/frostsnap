@@ -1,12 +1,14 @@
+use crate::persist::{Db, Persisted};
+
 use super::chain_sync::SyncRequest;
 use anyhow::{anyhow, Context, Result};
 use bdk_chain::{
     bitcoin::{self, bip32, Amount, SignedAmount, TxOut},
     indexed_tx_graph::{self, Indexer},
     keychain::{self, KeychainTxOutIndex},
-    local_chain::{self, LocalChain},
+    local_chain,
     miniscript::{Descriptor, DescriptorPublicKey},
-    spk_client, tx_graph, Append, ChainPosition, ConfirmationTimeHeightAnchor,
+    spk_client, Append, ChainPosition, ConfirmationTimeHeightAnchor,
 };
 use frostsnap_core::{
     bitcoin_transaction::{self, LocalSpk},
@@ -18,150 +20,50 @@ use frostsnap_core::{
     schnorr_fun::fun::Point,
     tweak::TweakableKey,
 };
-use llsdb::{LinkedList, LlsDb};
 use std::{
-    collections::{BTreeMap, VecDeque},
-    fs::File,
     ops::RangeBounds,
     sync::{Arc, Mutex},
 };
 use tracing::{event, Level};
 
-type TxGraphChangeSet = tx_graph::ChangeSet<ConfirmationTimeHeightAnchor>;
-type ChainChangeSet = local_chain::ChangeSet;
-type WalletIndexedTxGraph = indexed_tx_graph::IndexedTxGraph<
+pub type WalletIndexedTxGraph = indexed_tx_graph::IndexedTxGraph<
     ConfirmationTimeHeightAnchor,
     KeychainTxOutIndex<(KeyId, AppAccountKeychain)>,
 >;
-type WalletIndexedTxGraphChangeSet = indexed_tx_graph::ChangeSet<
+pub type WalletIndexedTxGraphChangeSet = indexed_tx_graph::ChangeSet<
     ConfirmationTimeHeightAnchor,
     keychain::ChangeSet<(KeyId, AppAccountKeychain)>,
 >;
 
 /// Pretty much a generic bitcoin wallet that indexes everything by key id
 pub struct FrostsnapWallet {
-    graph: WalletIndexedTxGraph,
-    chain: LocalChain,
+    tx_graph: Persisted<WalletIndexedTxGraph>,
+    chain: Persisted<local_chain::LocalChain>,
     pub network: bitcoin::Network,
-    db: Arc<Mutex<LlsDb<File>>>,
-    chain_list_handle: LinkedList<bincode::serde::Compat<ChainChangeSet>>,
-    tx_graph_list_handle: LinkedList<bincode::serde::Compat<TxGraphChangeSet>>,
-    /// Which spks have been revealed for which descriptors
-    spk_revelation_list_handle:
-        LinkedList<bincode::serde::Compat<BTreeMap<bdk_chain::DescriptorId, u32>>>,
+    db: Arc<Mutex<Db<rusqlite::Connection>>>,
 }
 
 impl FrostsnapWallet {
     pub fn load_or_init(
-        db: Arc<Mutex<LlsDb<File>>>,
+        db: Arc<Mutex<Db<rusqlite::Connection>>>,
         network: bitcoin::Network,
     ) -> anyhow::Result<Self> {
         event!(Level::INFO, "initializing wallet");
         let mut db_ = db.lock().unwrap();
-        let (
-            chain,
-            graph,
-            network,
-            tx_graph_list_handle,
-            chain_list_handle,
-            spk_revelation_list_handle,
-        ) = db_
-            .execute(|tx| {
-                // store the graph and chain data in differnet lists so they're easier to work with e.g.
-                // can delete all tx data without deleting chain data and vis versa
-                let chain_list_handle = tx
-                    .take_list::<bincode::serde::Compat<ChainChangeSet>>("wallet/chain")
-                    .context("loading chain list")?;
-                let tx_graph_list_handle = tx
-                    .take_list::<bincode::serde::Compat<TxGraphChangeSet>>("wallet/tx_graph")
-                    .context("loading tx data list")?;
 
-                let spk_revelation_list_handle = tx
-                    .take_list::<bincode::serde::Compat<BTreeMap<bdk_chain::DescriptorId, u32>>>(
-                        "wallet/keychain",
-                    )
-                    .context("loading keychain list")?;
-                let chain_list = chain_list_handle.api(&tx);
-                let tx_list = tx_graph_list_handle.api(&tx);
-                let spk_revelation = spk_revelation_list_handle.api(&tx);
-                let (chain, graph) = if chain_list.is_empty() {
-                    event!(
-                        Level::INFO,
-                        "seting up wallet for the first time -- writing to disk"
-                    );
-                    let genesis_hash = bitcoin::constants::genesis_block(network).block_hash();
-                    let (chain, chain_changeset) = LocalChain::from_genesis_hash(genesis_hash);
-
-                    let graph = Default::default();
-                    chain_list.push(&bincode::serde::Compat(chain_changeset))?;
-                    (chain, graph)
-                } else {
-                    event!(Level::INFO, "loading existing wallet from disk");
-                    event!(Level::INFO, "loading chain data");
-                    let chain_data = {
-                        // unfortunately, local_chain::ChangeSet is not monotone so the order matters,
-                        // so we have to reverse the iterator
-                        let mut changes = VecDeque::new();
-                        for changeset in chain_list.iter() {
-                            changes.push_front(changeset?)
-                        }
-                        let mut full_changeset = ChainChangeSet::default();
-                        for mut changeset in changes {
-                            full_changeset.append(&mut changeset.0);
-                        }
-                        full_changeset
-                    };
-
-                    event!(Level::INFO, "loading transaction data");
-                    let tx_data = tx_list.iter().try_fold(
-                        TxGraphChangeSet::default(),
-                        |mut acc, next| -> anyhow::Result<_> {
-                            acc.append(next?.0);
-                            Ok(acc)
-                        },
-                    )?;
-
-                    let mut graph = WalletIndexedTxGraph::default();
-
-                    let revelation_changes = spk_revelation.iter().try_fold(
-                        keychain::ChangeSet::default(),
-                        |mut acc, next| -> anyhow::Result<_> {
-                            acc.append(keychain::ChangeSet {
-                                last_revealed: next?.0,
-                                ..Default::default()
-                            });
-                            Ok(acc)
-                        },
-                    )?;
-                    graph.apply_changeset(indexed_tx_graph::ChangeSet {
-                        graph: tx_data,
-                        indexer: revelation_changes,
-                    });
-                    let chain = LocalChain::from_changeset(chain_data)?;
-                    (chain, graph)
-                };
-                Ok((
-                    chain,
-                    graph,
-                    network,
-                    tx_graph_list_handle,
-                    chain_list_handle,
-                    spk_revelation_list_handle,
-                ))
-            })
-            .context("Initializing wallet")?;
-
-        event!(Level::INFO, "wallet initialization finished");
+        let tx_graph = db_
+            .init(())
+            .context("loading transaction from the database")?;
+        let chain = db_
+            .init(bitcoin::constants::genesis_block(network).block_hash())
+            .context("loading chain from database")?;
 
         drop(db_);
         Ok(Self {
-            db,
+            tx_graph,
             chain,
-            graph,
+            db,
             network,
-            tx_graph_list_handle,
-            chain_list_handle,
-            spk_revelation_list_handle,
         })
     }
 
@@ -185,7 +87,7 @@ impl FrostsnapWallet {
 
     fn lazily_initialize_key(&mut self, key_id: KeyId) {
         if self
-            .graph
+            .tx_graph
             .index
             .get_descriptor(&(key_id, AppAccountKeychain::external()))
             .is_none()
@@ -195,26 +97,27 @@ impl FrostsnapWallet {
                 self.network,
             ) {
                 let _intentionally_ignore_saving_descriptors = self
-                    .graph
+                    .tx_graph
+                    .MUTATE_NO_PERSIST()
                     .index
                     .insert_descriptor((key_id, account_keychain), descriptor);
             }
             let all_txs = self
-                .graph
+                .tx_graph
                 .graph()
                 .full_txs()
                 .map(|tx| tx.tx.clone())
                 .collect::<Vec<_>>();
             // FIXME: This should be done by BDK automatically in a version soon
             for tx in &all_txs {
-                let _ = self.graph.index.index_tx(tx);
+                let _ = self.tx_graph.MUTATE_NO_PERSIST().index.index_tx(tx);
             }
         }
     }
 
     pub fn list_addresses(&mut self, key_id: KeyId) -> Vec<AddressInfo> {
         self.lazily_initialize_key(key_id);
-        self.graph
+        self.tx_graph
             .index
             .revealed_keychain_spks(&(key_id, AppAccountKeychain::external()))
             .rev()
@@ -223,7 +126,7 @@ impl FrostsnapWallet {
                 address: bitcoin::Address::from_script(spk, self.network)
                     .expect("has address form"),
                 used: self
-                    .graph
+                    .tx_graph
                     .index
                     .is_used((key_id, AppAccountKeychain::external()), i),
             })
@@ -233,54 +136,30 @@ impl FrostsnapWallet {
     pub fn next_address(&mut self, key_id: KeyId) -> Result<AddressInfo> {
         self.lazily_initialize_key(key_id);
 
-        if let Some(((index, spk), changeset)) = self
-            .graph
-            .index
-            .reveal_next_spk(&(key_id, AppAccountKeychain::external()))
-        {
-            let spk = spk.to_owned();
-            self.db.lock().unwrap().execute(|tx| {
-                self.consume_spk_revelation_change(tx, changeset)?;
-                Ok(())
-            })?;
-            // TODO: There should be a way of unrevealing index if we fail to persist:
-            // https://github.com/bitcoindevkit/bdk/issues/1322
-            Ok(AddressInfo {
-                index,
-                address: bitcoin::Address::from_script(&spk, self.network)
-                    .expect("has address form"),
-                used: self
-                    .graph
-                    .index
-                    .is_used((key_id, AppAccountKeychain::external()), index),
-            })
-        } else {
-            Err(anyhow!("no more addresess on this keychain"))?
-        }
-    }
+        let mut db = self.db.lock().unwrap();
+        let (index, spk) = self.tx_graph.mutate(&mut *db, |tx_graph| {
+            tx_graph
+                .index
+                .reveal_next_spk(&(key_id, AppAccountKeychain::external()))
+                .ok_or(anyhow!("no more addresses on this keychain"))
+        })?;
 
-    fn consume_spk_revelation_change<K>(
-        &self,
-        tx: &mut llsdb::Transaction<impl llsdb::Backend>,
-        changeset: keychain::ChangeSet<K>,
-    ) -> Result<()> {
-        let list = self.spk_revelation_list_handle.api(tx);
-
-        if !changeset.last_revealed.is_empty() {
-            // note carefully that we ignore the changeset's added descriptor changes since we don't
-            // want to store these for BDK since we cand derive them from our frost keys
-            list.push(&bincode::serde::Compat(changeset.last_revealed))?;
-        }
-
-        Ok(())
+        Ok(AddressInfo {
+            index,
+            address: bitcoin::Address::from_script(&spk, self.network).expect("has address form"),
+            used: self
+                .tx_graph
+                .index
+                .is_used((key_id, AppAccountKeychain::external()), index),
+        })
     }
 
     pub fn list_transactions(&mut self, key_id: KeyId) -> Vec<Transaction> {
         self.lazily_initialize_key(key_id);
         let mut txs = self
-            .graph
+            .tx_graph
             .graph()
-            .list_chain_txs(&self.chain, self.chain.tip().block_id())
+            .list_canonical_txs(self.chain.as_ref(), self.chain.tip().block_id())
             .collect::<Vec<_>>();
 
         txs.sort_unstable_by_key(|tx| core::cmp::Reverse(tx.chain_position));
@@ -294,7 +173,7 @@ impl FrostsnapWallet {
                     _ => None,
                 };
                 let net_value = self
-                    .graph
+                    .tx_graph
                     .index
                     .net_value(&canonical_tx.tx_node.tx, Self::key_index_range(key_id));
 
@@ -317,7 +196,7 @@ impl FrostsnapWallet {
     pub fn start_sync(&self, key_id: KeyId) -> SyncRequest {
         // We want to sync all spks for now!
         let interesting_spks = self
-            .graph
+            .tx_graph
             .index
             .revealed_spks(Self::key_index_range(key_id))
             .map(|(_, spk)| spk.to_owned())
@@ -330,37 +209,21 @@ impl FrostsnapWallet {
         &mut self,
         update: spk_client::SyncResult<ConfirmationTimeHeightAnchor>,
     ) -> Result<bool> {
-        let indexed_tx_graph_changeset = self.graph.apply_update(update.graph_update);
-        let chain_changeset = self.chain.apply_update(update.chain_update)?;
-        self.db.lock().unwrap().execute(|tx| {
-            let chain_list = self.chain_list_handle.api(&tx);
-            let changed = !chain_changeset.is_empty() || !indexed_tx_graph_changeset.is_empty();
+        let mut db = self.db.lock().unwrap();
 
-            if !chain_changeset.is_empty() {
-                chain_list.push(&bincode::serde::Compat(chain_changeset))?;
-            }
+        let changed =
+            self.tx_graph
+                .multi(&mut self.chain)
+                .mutate(&mut *db, |tx_graph, chain| {
+                    let changeset_tx = tx_graph.apply_update(update.graph_update);
+                    let changeset_chain = chain.apply_update(update.chain_update)?;
+                    Ok((
+                        changeset_tx.is_empty() && changeset_chain.is_empty(),
+                        (changeset_tx, changeset_chain),
+                    ))
+                })?;
 
-            self.consume_indexed_tx_graph_changeset(tx, indexed_tx_graph_changeset)?;
-
-            Ok(changed)
-        })
-    }
-
-    fn consume_indexed_tx_graph_changeset(
-        &self,
-        tx: &mut llsdb::Transaction<impl llsdb::Backend>,
-        mut changeset: WalletIndexedTxGraphChangeSet,
-    ) -> Result<()> {
-        // We never want to add keychain descriptors to the database. We derive them from the keys.
-        changeset.indexer.keychains_added.clear();
-        if !changeset.graph.is_empty() {
-            let tx_graph_list = self.tx_graph_list_handle.api(&tx);
-            tx_graph_list.push(&bincode::serde::Compat(changeset.graph))?;
-        }
-
-        self.consume_spk_revelation_change(tx, changeset.indexer)?;
-
-        Ok(())
+        Ok(changed)
     }
 
     pub fn send_to(
@@ -377,12 +240,12 @@ impl FrostsnapWallet {
         };
 
         let utxos: Vec<(_, bdk_chain::FullTxOut<_>)> = self
-            .graph
+            .tx_graph
             .graph()
             .filter_chain_unspents(
-                &self.chain,
+                self.chain.as_ref(),
                 self.chain.tip().block_id(),
-                self.graph
+                self.tx_graph
                     .index
                     .keychain_outpoints_in_range(Self::key_index_range(key_id)),
             )
@@ -415,12 +278,12 @@ impl FrostsnapWallet {
         // not a great heuristic since it doesn't focus on transactions the user has sent recently.
         let long_term_feerate_guess = {
             let feerates = self
-                .graph
+                .tx_graph
                 .graph()
                 .full_txs()
                 .filter_map(|tx| {
                     Some(
-                        self.graph.graph().calculate_fee(&tx).ok()?.to_sat() as f32
+                        self.tx_graph.graph().calculate_fee(&tx).ok()?.to_sat() as f32
                             / tx.weight().to_wu() as f32,
                     )
                 })
@@ -469,7 +332,7 @@ impl FrostsnapWallet {
 
         for (((_key_id, account_keychain), index), selected_utxo) in selected_utxos {
             let prev_tx = self
-                .graph
+                .tx_graph
                 .graph()
                 .get_tx(selected_utxo.outpoint.txid)
                 .expect("must exist");
@@ -478,7 +341,7 @@ impl FrostsnapWallet {
                 index: *index,
             };
             template_tx.push_owned_input(
-                PushInput::spend_tx_output(&prev_tx, selected_utxo.outpoint.vout),
+                PushInput::spend_tx_output(prev_tx.as_ref(), selected_utxo.outpoint.vout),
                 LocalSpk {
                     root_key,
                     bip32_path,
@@ -487,21 +350,18 @@ impl FrostsnapWallet {
         }
 
         if let Some(value) = cs.drain_value(target, change_policy) {
-            let ((i, change_spk), changeset) = self
-                .graph
-                .index
-                .next_unused_spk(&(key_id, AppAccountKeychain::internal()))
-                .expect("this should have been initialzed by now since we are spending from it");
-            let change_spk = change_spk.to_owned();
-            self.db
-                .lock()
-                .unwrap()
-                .execute(|tx| {
-                    self.consume_spk_revelation_change(tx, changeset)?;
-                    Ok(())
-                })
-                .context("trying to persist change derivation increment")?;
-            self.graph
+            let mut db = self.db.lock().unwrap();
+            let (i, change_spk) = self.tx_graph.mutate(&mut *db, |tx_graph| {
+                Ok(tx_graph
+                    .index
+                    .next_unused_spk(&(key_id, AppAccountKeychain::internal()))
+                    .expect(
+                        "this should have been initialzed by now since we are spending from it",
+                    ))
+            })?;
+
+            self.tx_graph
+                .MUTATE_NO_PERSIST()
                 .index
                 .mark_used((key_id, AppAccountKeychain::internal()), i);
             template_tx.push_foreign_output(TxOut {
@@ -531,28 +391,28 @@ impl FrostsnapWallet {
     }
 
     pub fn fee(&self, tx: &bitcoin::Transaction) -> Result<u64> {
-        let fee = self.graph.graph().calculate_fee(tx)?;
+        let fee = self.tx_graph.graph().calculate_fee(tx)?;
         Ok(fee.to_sat())
     }
 
     pub fn broadcast_success(&mut self, tx: bitcoin::Transaction) {
-        let mut changes = WalletIndexedTxGraphChangeSet::default();
-        changes.append(
-            self.graph.insert_seen_at(
-                tx.txid(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs(),
-            ),
-        );
-        changes.append(self.graph.insert_tx(tx));
-
         // We do our best here, if it fails to persist we should recover from this eventually
-        let res = self.db.lock().unwrap().execute(|tx| {
-            self.consume_indexed_tx_graph_changeset(tx, changes)?;
-            Ok(())
-        });
+        let res = self
+            .tx_graph
+            .mutate(&mut *self.db.lock().unwrap(), |tx_graph| {
+                let mut changeset = WalletIndexedTxGraphChangeSet::default();
+                changeset.append(
+                    tx_graph.insert_seen_at(
+                        tx.compute_txid(),
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs(),
+                    ),
+                );
+                changeset.append(tx_graph.insert_tx(tx));
+                Ok(((), changeset))
+            });
 
         if let Err(e) = res {
             event!(
@@ -653,7 +513,7 @@ impl FrostsnapWallet {
 
         for (i, _) in psbt.outputs.iter().enumerate() {
             let txout = &rust_bitcoin_tx.output[i];
-            match self.graph.index.index_of_spk(&txout.script_pubkey) {
+            match self.tx_graph.index.index_of_spk(&txout.script_pubkey) {
                 Some(&((_, account_keychain), index)) => template.push_owned_output(
                     txout.value,
                     LocalSpk {

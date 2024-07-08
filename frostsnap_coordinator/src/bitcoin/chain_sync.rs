@@ -54,7 +54,7 @@ impl ChainSync {
     pub fn broadcast(&self, tx: &bitcoin::Transaction) -> Result<()> {
         event!(
             Level::INFO,
-            txid = tx.txid().to_string(),
+            txid = tx.compute_txid().to_string(),
             "broadcasting transaction"
         );
         self.client.transaction_broadcast(tx)?;

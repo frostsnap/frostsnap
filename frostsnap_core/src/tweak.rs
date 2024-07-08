@@ -264,7 +264,7 @@ impl<T: TweakableKey> Xpub<T> {
     pub fn new(key: T, chaincode: [u8; 32]) -> Self {
         Xpub {
             xpub: bitcoin::bip32::Xpub {
-                network: Network::Bitcoin,
+                network: Network::Bitcoin.into(),
                 depth: 0,
                 child_number: ChildNumber::from(0u32),
                 parent_fingerprint: Fingerprint::default(),
@@ -307,8 +307,8 @@ impl<T: TweakableKey> Xpub<T> {
     }
 
     pub fn xpub(&self, network: bitcoin::Network) -> bitcoin::bip32::Xpub {
-        let mut xpub = self.xpub.clone();
-        xpub.network = network;
+        let mut xpub = self.xpub;
+        xpub.network = network.into();
         xpub
     }
 }

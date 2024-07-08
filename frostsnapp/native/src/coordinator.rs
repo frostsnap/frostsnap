@@ -1,4 +1,5 @@
 use crate::api::{self, KeyState};
+use crate::persist::DeviceNames;
 use crate::persist_core::PersistCore;
 use anyhow::{anyhow, Context, Result};
 use flutter_rust_bridge::{RustOpaque, StreamSink};
@@ -13,6 +14,7 @@ use frostsnap_coordinator::frostsnap_core::message::{
     CoordinatorSend, CoordinatorToStorageMessage,
 };
 use frostsnap_coordinator::keygen::KeyGenState;
+use frostsnap_coordinator::persist::Persisted;
 use frostsnap_coordinator::signing::SigningState;
 use frostsnap_coordinator::{
     frostsnap_core, AppMessageBody, FirmwareBin, UiProtocol, UsbSender, UsbSerialManager,
@@ -28,15 +30,14 @@ use std::time::Duration;
 use tracing::{event, Level};
 
 pub struct FfiCoordinator {
-    coordinator: Arc<Mutex<FrostCoordinator>>,
+    coordinator: Arc<Mutex<Persisted<FrostCoordinator>>>,
     usb_manager: Mutex<Option<UsbSerialManager>>,
     pending_for_outbox: Arc<Mutex<VecDeque<CoordinatorSend>>>,
     key_event_stream: Arc<Mutex<Option<StreamSink<KeyState>>>>,
     thread_handle: Mutex<Option<JoinHandle<()>>>,
     ui_protocol: Arc<Mutex<Option<Box<dyn UiProtocol>>>>,
-    db: Arc<Mutex<LlsDb<File>>>,
-    persist_core: IndexHandle<PersistCore>,
-    device_names: IndexHandle<llsdb::index::BTreeMap<DeviceId, String>>,
+    db: Arc<Mutex<Db<rusqlite::Connection>>>,
+    device_names: DeviceNames,
     usb_sender: UsbSender,
     firmware_bin: FirmwareBin,
     firmware_upgrade_progress: Arc<Mutex<Option<StreamSink<f32>>>>,

@@ -76,11 +76,17 @@ impl<'a> PrevTxOut<'a> {
     pub fn outpoint(&self) -> OutPoint {
         match self {
             PrevTxOut::Full { transaction, vout } => OutPoint {
-                txid: transaction.txid(),
+                txid: transaction.compute_txid(),
                 vout: *vout,
             },
             PrevTxOut::Partial { outpoint, .. } => *outpoint,
         }
+    }
+}
+
+impl Default for TransactionTemplate {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -103,7 +109,7 @@ impl TransactionTemplate {
     }
 
     pub fn txid(&self) -> Txid {
-        self.to_rust_bitcoin_tx().txid()
+        self.to_rust_bitcoin_tx().compute_txid()
     }
 
     pub fn push_foreign_input(&mut self, input: PushInput) {
@@ -116,9 +122,9 @@ impl TransactionTemplate {
             sequence: input.sequence,
         })
     }
-    pub fn push_owned_input<'a>(
+    pub fn push_owned_input(
         &mut self,
-        input: PushInput<'a>,
+        input: PushInput<'_>,
         owner: LocalSpk,
     ) -> Result<(), SpkDoesntMatchPathError> {
         let txout = input.prev_txout.txout();
@@ -340,10 +346,10 @@ impl LocalSpk {
     pub fn spk(&self) -> ScriptBuf {
         let expected_external_xonly =
             AppTweak::Bitcoin(self.bip32_path).derive_xonly_key(&self.root_key);
-        let owner_spk = ScriptBuf::new_p2tr_tweaked(TweakedPublicKey::dangerous_assume_tweaked(
+
+        ScriptBuf::new_p2tr_tweaked(TweakedPublicKey::dangerous_assume_tweaked(
             expected_external_xonly.into(),
-        ));
-        owner_spk
+        ))
     }
 }
 
