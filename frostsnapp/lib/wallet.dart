@@ -8,6 +8,7 @@ import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/psbt.dart';
 import 'package:frostsnapp/sign_message.dart';
 import 'package:frostsnapp/stream_ext.dart';
+import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
@@ -61,12 +62,74 @@ class _WalletHomeState extends State<WalletHome> {
     });
   }
 
+  void _copyToClipboard(BuildContext context, String walletDescriptor) {
+    Clipboard.setData(ClipboardData(text: walletDescriptor)).then((_) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Wallet descriptor copied to clipboard')),
+      );
+    });
+  }
+
+  void _showQRCodeDialog(BuildContext context, String walletDescriptor) {
+    final qrCode = QrCode(8, QrErrorCorrectLevel.L);
+    qrCode.addData(walletDescriptor);
+    final qrImage = QrImage(qrCode);
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Center(child: Text('Export Descriptor')),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              PrettyQrView(
+                qrImage: qrImage,
+                decoration: const PrettyQrDecoration(
+                  shape: PrettyQrSmoothSymbol(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              iconSize: 30.0,
+              onPressed: () => _copyToClipboard(context, walletDescriptor),
+              icon: Icon(Icons.copy),
+            ),
+            SizedBox(width: 30.0),
+            IconButton(
+              iconSize: 30.0,
+              icon: Icon(Icons.close),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            )
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Bitcoin Wallet'),
-      ),
+      appBar: AppBar(title: Text('Bitcoin Wallet'), actions: [
+        PopupMenuButton<String>(
+          onSelected: (String result) {
+            if (result == 'export_descriptor') {
+              _showQRCodeDialog(context,
+                  bitcoinContext.descriptorForKey(keyId: widget.keyId));
+            }
+          },
+          itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+            const PopupMenuItem<String>(
+              value: 'export_descriptor',
+              child: Text('Export Descriptor'),
+            ),
+          ],
+        )
+      ]),
       body: Center(
           // Display the widget based on the current index
           child: _getSelectedWidget()),
@@ -428,26 +491,6 @@ class _WalletReceiveState extends State<WalletReceive> {
             },
           ),
         ),
-        Text(
-          "Wallet Descriptor",
-          textAlign: TextAlign.left,
-          style: TextStyle(fontSize: 20.0),
-        ),
-        ListTile(
-          title: Text(
-            keyXpub,
-            style: TextStyle(fontFamily: 'Monospace'),
-          ),
-          trailing: IconButton(
-            icon: Icon(Icons.copy),
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: keyXpub));
-              ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Descriptor copied to clipboard!')));
-            },
-          ),
-        ),
-        const SizedBox(width: 15),
       ]),
     ));
   }
@@ -763,7 +806,7 @@ Widget describeEffect(EffectOfTx effect) {
   } else if (effect.foreignReceivingAddresses.isEmpty) {
     description = Text("Internal transfer");
   } else {
-    description = Text("can't describe this yet");
+    description = Text("cannot describe this yet");
   }
 
   return description;
