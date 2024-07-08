@@ -307,6 +307,16 @@ impl FrostSigner {
                     return Err(Error::signer_invalid_message(&message, format!("Number of nonces ({}) was not the same as the number of signatures we were asked for {}", my_nonces.nonces.len(), n_signatures_requested)));
                 }
 
+                if self.nonce_counter > my_nonces.start {
+                    return Err(Error::signer_invalid_message(
+                        &message,
+                        format!(
+                            "Attempt to reuse nonces! Expected nonce >= {} but got {}",
+                            self.nonce_counter, my_nonces.start
+                        ),
+                    ));
+                }
+
                 let expected_nonces = self
                     .generate_nonces(my_nonces.start)
                     .take(my_nonces.nonces.len())
@@ -316,16 +326,6 @@ impl FrostSigner {
                     return Err(Error::signer_invalid_message(
                         &message,
                         "Signing request nonces do not match expected",
-                    ));
-                }
-
-                if self.nonce_counter > my_nonces.start {
-                    return Err(Error::signer_invalid_message(
-                        &message,
-                        format!(
-                            "Attempt to reuse nonces! Expected nonce >= {} but got {}",
-                            self.nonce_counter, my_nonces.start
-                        ),
                     ));
                 }
 
