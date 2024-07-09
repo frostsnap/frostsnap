@@ -156,6 +156,21 @@ fn wire_echo_key_id_impl(port_: MessagePort, key_id: impl Wire2Api<KeyId> + Unwi
         },
     )
 }
+fn wire_get_share_compatibility_identifier_impl(
+    frost_key: impl Wire2Api<FrostKey> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "get_share_compatibility_identifier",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_frost_key = frost_key.wire2api();
+            Result::<_, ()>::Ok(get_share_compatibility_identifier(api_frost_key))
+        },
+    )
+}
 fn wire_txid__method__Transaction_impl(
     that: impl Wire2Api<Transaction> + UnwindSafe,
 ) -> support::WireSyncReturn {
@@ -779,6 +794,33 @@ fn wire_enter_firmware_upgrade_mode__method__Coordinator_impl(
                 Coordinator::enter_firmware_upgrade_mode(
                     &api_that,
                     task_callback.stream_sink::<_, f32>(),
+                )
+            }
+        },
+    )
+}
+fn wire_restore_share_on_device__method__Coordinator_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<Coordinator> + UnwindSafe,
+    device_id: impl Wire2Api<DeviceId> + UnwindSafe,
+    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "restore_share_on_device__method__Coordinator",
+            port: Some(port_),
+            mode: FfiCallMode::Stream,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_device_id = device_id.wire2api();
+            let api_key_id = key_id.wire2api();
+            move |task_callback| {
+                Coordinator::restore_share_on_device(
+                    &api_that,
+                    api_device_id,
+                    api_key_id,
+                    task_callback.stream_sink::<_, ()>(),
                 )
             }
         },

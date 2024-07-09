@@ -104,7 +104,7 @@ where
         message: <D::Opposite as Direction>::RecvType,
     ) -> Result<(), bincode::error::EncodeError> {
         bincode::encode_into_writer(
-            &ReceiveSerial::<D::Opposite>::Message(message),
+            ReceiveSerial::<D::Opposite>::Message(message),
             &mut *self,
             BINCODE_CONFIG,
         )?;
@@ -123,7 +123,7 @@ where
 
     pub fn write_magic_bytes(&mut self) -> Result<(), bincode::error::EncodeError> {
         bincode::encode_into_writer(
-            &ReceiveSerial::<D::Opposite>::MagicBytes(MagicBytes::default()),
+            ReceiveSerial::<D::Opposite>::MagicBytes(MagicBytes::default()),
             &mut *self,
             BINCODE_CONFIG,
         )?;

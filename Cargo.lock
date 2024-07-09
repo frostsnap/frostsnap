@@ -1265,6 +1265,7 @@ dependencies = [
  "frostsnap_coordinator",
  "lazy_static",
  "llsdb",
+ "sha2",
  "tracing",
  "tracing-android",
  "tracing-subscriber",
@@ -1618,8 +1619,7 @@ checksum = "e86697c916019a8588c99b5fac3cead74ec0b4b819707a682fd4d23fa0ce1ba1"
 [[package]]
 name = "schnorr_fun"
 version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56f8fbe78e3698a49208f5dd1a1d602908493ec800dd49147b1570b4eae84a1e"
+source = "git+https://github.com/nickfarrow/secp256kfun?rev=eb3f00a8acc08d1fb0b1b201f4d9bba3d70447c4#eb3f00a8acc08d1fb0b1b201f4d9bba3d70447c4"
 dependencies = [
  "bech32 0.9.1",
  "secp256kfun",
@@ -1683,8 +1683,7 @@ dependencies = [
 [[package]]
 name = "secp256kfun"
 version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ecc2adce3ef929c5dc7dacdd612d65ab98002ee18119215ce25d8054ed53c1a"
+source = "git+https://github.com/nickfarrow/secp256kfun?rev=eb3f00a8acc08d1fb0b1b201f4d9bba3d70447c4#eb3f00a8acc08d1fb0b1b201f4d9bba3d70447c4"
 dependencies = [
  "bincode",
  "digest",
@@ -1699,8 +1698,7 @@ dependencies = [
 [[package]]
 name = "secp256kfun_arithmetic_macros"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91b7c385a72530ebfe6010ff476ad9e235743fb33408a360052bb706f1481e1e"
+source = "git+https://github.com/nickfarrow/secp256kfun?rev=eb3f00a8acc08d1fb0b1b201f4d9bba3d70447c4#eb3f00a8acc08d1fb0b1b201f4d9bba3d70447c4"
 dependencies = [
  "proc-macro2",
  "quote",
