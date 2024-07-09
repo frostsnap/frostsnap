@@ -93,10 +93,7 @@ class MyApp extends StatelessWidget {
             ),
           ),
           outlinedButtonTheme: OutlinedButtonThemeData(
-            style: OutlinedButton.styleFrom(
-              backgroundColor: Colors.blue,
-              side: BorderSide(color: Colors.blue),
-            ),
+            style: OutlinedButton.styleFrom(),
           ),
         ),
         home: startupError == null

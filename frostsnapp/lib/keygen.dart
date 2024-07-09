@@ -196,19 +196,29 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
   }) {
     final hexBox = toHexBox(Uint8List.fromList(sessionHash));
 
-    return showDialog(
+    return showDeviceActionDialog(
         context: context,
+        onCancel: () {
+          coord.cancelProtocol();
+        },
         builder: (context) {
-          aborted.then((_) {
-            if (context.mounted) {
-              debugPrint("ABORT");
-              Navigator.pop(context);
-            }
-          });
-          return AlertDialog(
-              actions: [
-                ElevatedButton(
-                  child: Text("Yes"),
+          return Column(mainAxisSize: MainAxisSize.min, children: [
+            Text("Do all the devices show:"),
+            Divider(),
+            hexBox,
+            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              IconButton.outlined(
+                onPressed: () async {
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                  }
+                },
+                iconSize: 35,
+                icon: Icon(Icons.cancel),
+                color: Colors.red,
+              ),
+              SizedBox(width: 50),
+              IconButton.outlined(
                   onPressed: () async {
                     final keyId = await showDeviceConfirmDialog(
                         sessionHash: sessionHash, stream: stream);
@@ -216,83 +226,102 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                       Navigator.pop(context, keyId);
                     }
                   },
-                ),
-                SizedBox(width: 20),
-                ElevatedButton(
-                    child: Text("No/Cancel"),
-                    onPressed: () {
-                      Navigator.pop(context);
-                      coord.cancelProtocol();
-                    }),
-              ],
-              content: SizedBox(
-                  width: Platform.isAndroid ? double.maxFinite : 400.0,
-                  height: double.maxFinite,
-                  child: Align(
-                    alignment: Alignment.center,
-                    child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      Text("Do all the devices show:"),
-                      Divider(),
-                      hexBox,
-                    ]),
-                  )));
+                  iconSize: 35,
+                  icon: Icon(Icons.check),
+                  color: Colors.green)
+            ])
+          ]);
         });
+
+    // return showDialog(
+    //     context: context,
+    //     builder: (context) {
+    //       aborted.then((_) {
+    //         if (context.mounted) {
+    //           debugPrint("ABORT");
+    //           Navigator.pop(context);
+    //         }
+    //       });
+    //       return AlertDialog(
+    //           actions: [
+    //             ElevatedButton(
+    //               child: Text("Yes"),
+    //               onPressed: ,
+    //             ),
+    //             SizedBox(width: 20),
+    //             ElevatedButton(
+    //                 child: Text("No/Cancel"),
+    //                 onPressed: () {
+    //                   Navigator.pop(context);
+    //                   coord.cancelProtocol();
+    //                 }),
+    //           ],
+    //           content: SizedBox(
+    //               width: Platform.isAndroid ? double.maxFinite : 400.0,
+    //               height: double.maxFinite,
+    //               child: Align(
+    //                 alignment: Alignment.center,
+    //                 child: ,
+    //               )));
+    //     });
   }
 
   Future<KeyId?> showDeviceConfirmDialog({
     required U8Array32 sessionHash,
     required Stream<KeyGenState> stream,
   }) {
-    final content = StreamBuilder(
-        stream: stream,
-        builder: (context, snap) {
-          if (!snap.hasData) {
-            return CircularProgressIndicator();
-          }
-          final state = snap.data!;
-          final devices = deviceIdSet(state.devices);
-          final acks = deviceIdSet(state.sessionAcks);
-
-          final deviceList = DeviceListContainer(
-              child: DeviceListWithIcons(
-                  key: const Key("dialog-device-list"),
-                  iconAssigner: (context, id) {
-                    if (devices.contains(id)) {
-                      final Widget icon;
-                      if (acks.contains(id)) {
-                        icon = AnimatedCheckCircle();
-                      } else {
-                        icon = const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.touch_app, color: Colors.orange),
-                              SizedBox(width: 4),
-                              Text("Confirm"),
-                            ]);
-                      }
-                      return (null, icon);
-                    } else {
-                      return (null, null);
-                    }
-                  }));
-
-          return Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Text("Confirm on each device"),
-            Divider(),
-            MaybeExpandedVertical(child: deviceList),
-          ]);
-        });
-
     return showDeviceActionDialog<KeyId>(
         context: context,
-        content: content,
         onCancel: () {
           coord.cancelProtocol();
         },
         complete: stream
             .firstWhere(
                 (state) => state.aborted != null || state.finished != null)
-            .then((state) => state.finished));
+            .then((state) => state.finished),
+        builder: (context) {
+          return StreamBuilder(
+              stream: stream,
+              builder: (context, snap) {
+                if (!snap.hasData) {
+                  return CircularProgressIndicator();
+                }
+                final state = snap.data!;
+                final devices = deviceIdSet(state.devices);
+                final acks = deviceIdSet(state.sessionAcks);
+
+                final deviceList = DeviceListContainer(
+                    child: DeviceListWithIcons(
+                        key: const Key("dialog-device-list"),
+                        iconAssigner: (context, id) {
+                          if (devices.contains(id)) {
+                            final Widget icon;
+                            if (acks.contains(id)) {
+                              icon = AnimatedCheckCircle();
+                            } else {
+                              icon = const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.touch_app, color: Colors.orange),
+                                    SizedBox(width: 4),
+                                    Text("Confirm"),
+                                  ]);
+                            }
+                            return (null, icon);
+                          } else {
+                            return (null, null);
+                          }
+                        }));
+
+                return Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text("Confirm on each device"),
+                      Divider(),
+                      MaybeExpandedVertical(child: deviceList),
+                    ]);
+              });
+        });
   }
 }
 
