@@ -309,7 +309,7 @@ where
         .draw(&mut self.framebuf)
         .unwrap();
 
-        let (hrp, backup_chars) = str.split_at(str.find('1').expect("backup has a hrp") + 1);
+        let (hrp, backup_chars) = str.split_at(str.find(']').expect("backup has a hrp") + 1);
         let chunked_backup =
             backup_chars
                 .chars()
@@ -346,9 +346,9 @@ where
         .unwrap();
         y_offset += spacing_size * 3 / 2;
 
-        for row_chunks in chunked_backup.chunks(3) {
+        for row_chunks in chunked_backup.chunks(4) {
             Text::with_baseline(
-                row_chunks.join("  ").as_ref(),
+                row_chunks.join(" ").as_ref(),
                 Point::new(PADDING_LEFT_TEXT as i32, (HEADER_BUFFER as i32) + y_offset),
                 U8g2TextStyle::new(FONT_MED, Rgb565::WHITE),
                 embedded_graphics::text::Baseline::Top,
