@@ -295,28 +295,29 @@ impl Keyboard {
                                 display.flush().unwrap();
                                 return false;
                             }
-                            _ => {}
-                        }
-
-                        // Find the key being touched
-                        let touch_point = Point::new(touch.x, touch.y);
-                        if let Some(k) = kbkeys[key_set_index % 4]
-                            .iter()
-                            .find(|k| k.rectangle().contains(touch_point))
-                        {
-                            if touched_key.is_none() {
-                                if let KeyboardKeyType::Character(c) = k.label() {
-                                    self.buffer.push(*c);
+                            (TouchGesture::SingleClick, _) => {
+                                // Find the key being touched
+                                let touch_point = Point::new(touch.x, touch.y);
+                                if let Some(k) = kbkeys[key_set_index % 4]
+                                    .iter()
+                                    .find(|k| k.rectangle().contains(touch_point))
+                                {
+                                    if touched_key.is_none() {
+                                        if let KeyboardKeyType::Character(c) = k.label() {
+                                            self.buffer.push(*c);
+                                        }
+                                        // highlight touched key
+                                        self.render_character_key(&mut display.framebuf, k, true);
+                                        display.flush().unwrap();
+                                        touched_key = Some(k);
+                                    }
+                                    last_touch = Some(now);
+                                    true
+                                } else {
+                                    false
                                 }
-                                // highlight touched key
-                                self.render_character_key(&mut display.framebuf, k, true);
-                                display.flush().unwrap();
-                                touched_key = Some(k);
                             }
-                            last_touch = Some(now);
-                            true
-                        } else {
-                            false
+                            _ => false
                         }
                     }
                 }
