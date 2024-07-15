@@ -280,7 +280,7 @@ impl FrostsnapWallet {
         let mut txs = self
             .graph
             .graph()
-            .list_chain_txs(&self.chain, self.chain.tip().block_id())
+            .list_canonical_txs(&self.chain, self.chain.tip().block_id())
             .collect::<Vec<_>>();
 
         txs.sort_unstable_by_key(|tx| core::cmp::Reverse(tx.chain_position));
@@ -546,7 +546,7 @@ impl FrostsnapWallet {
         let mut changes = WalletIndexedTxGraphChangeSet::default();
         changes.append(
             self.graph.insert_seen_at(
-                tx.txid(),
+                tx.compute_txid(),
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()

@@ -76,7 +76,7 @@ impl<'a> PrevTxOut<'a> {
     pub fn outpoint(&self) -> OutPoint {
         match self {
             PrevTxOut::Full { transaction, vout } => OutPoint {
-                txid: transaction.txid(),
+                txid: transaction.compute_txid(),
                 vout: *vout,
             },
             PrevTxOut::Partial { outpoint, .. } => *outpoint,
@@ -109,7 +109,7 @@ impl TransactionTemplate {
     }
 
     pub fn txid(&self) -> Txid {
-        self.to_rust_bitcoin_tx().txid()
+        self.to_rust_bitcoin_tx().compute_txid()
     }
 
     pub fn push_foreign_input(&mut self, input: PushInput) {

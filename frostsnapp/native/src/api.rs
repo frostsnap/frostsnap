@@ -105,7 +105,7 @@ impl From<frostsnap_coordinator::bitcoin::wallet::Transaction> for Transaction {
 
 impl Transaction {
     pub fn txid(&self) -> SyncReturn<String> {
-        SyncReturn(self.inner.txid().to_string())
+        SyncReturn(self.inner.compute_txid().to_string())
     }
 }
 
@@ -530,7 +530,7 @@ impl Wallet {
             Ok(_) => {
                 event!(
                     Level::INFO,
-                    tx = tx.signed_tx.txid().to_string(),
+                    tx = tx.signed_tx.compute_txid().to_string(),
                     "transaction successfully broadcast"
                 );
                 let mut inner = self.inner.lock().unwrap();
@@ -550,7 +550,7 @@ impl Wallet {
                 let hex_tx = hex::encode(&buf);
                 event!(
                     Level::ERROR,
-                    tx = tx.signed_tx.txid().to_string(),
+                    tx = tx.signed_tx.compute_txid().to_string(),
                     hex = hex_tx,
                     error = e.to_string(),
                     "unable to broadcast"
@@ -824,7 +824,7 @@ impl BitcoinContext {
         SyncReturn(match bitcoin::Address::from_str(&address) {
             Ok(address) => match address.require_network(*self.network) {
                 Ok(address) => {
-                    let dust_value = address.script_pubkey().dust_value().to_sat();
+                    let dust_value = address.script_pubkey().minimal_non_dust().to_sat();
                     if value < dust_value {
                         event!(
                             Level::DEBUG,
@@ -883,9 +883,11 @@ impl UnsignedTx {
             // we are assuming the signatures are correct here.
             let input = &mut signed_psbt.inputs[i];
             let schnorr_sig = bitcoin::taproot::Signature {
-                sig: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.unwrap().0)
-                    .unwrap(),
-                hash_ty: bitcoin::sighash::TapSighashType::Default,
+                signature: bitcoin::secp256k1::schnorr::Signature::from_slice(
+                    &signature.unwrap().0,
+                )
+                .unwrap(),
+                sighash_type: bitcoin::sighash::TapSighashType::Default,
             };
             input.tap_key_sig = Some(schnorr_sig);
         }
@@ -899,8 +901,9 @@ impl UnsignedTx {
         let mut tx = self.template_tx.to_rust_bitcoin_tx();
         for (txin, signature) in tx.input.iter_mut().zip(signatures) {
             let schnorr_sig = bitcoin::taproot::Signature {
-                sig: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.0).unwrap(),
-                hash_ty: bitcoin::sighash::TapSighashType::Default,
+                signature: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.0)
+                    .unwrap(),
+                sighash_type: bitcoin::sighash::TapSighashType::Default,
             };
             let witness = bitcoin::Witness::from_slice(&[schnorr_sig.to_vec()]);
             txin.witness = witness;

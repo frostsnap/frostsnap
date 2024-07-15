@@ -343,25 +343,18 @@ fn test_display_backup() {
         .values()
         .map(|(bu_key_id, backup)| {
             assert_eq!(*bu_key_id, key_id);
-            let decoded =
-                schnorr_fun::share_backup::decode_backup(backup.clone()).expect("valid backup");
-            (decoded.share_index, decoded.secret_share)
+
+            schnorr_fun::frost::SecretShare::from_bech32_backup(backup).expect("valid backup")
         })
         .collect::<Vec<_>>();
 
-    let threshold_interpolated_joint_secret =
-        schnorr_fun::fun::poly::scalar::interpolate_and_eval_poly_at_0(
-            decoded_backups
-                .choose_multiple(&mut test_rng, 2)
-                .cloned()
-                .collect(),
-        );
-    let interpolated_joint_secret =
-        schnorr_fun::fun::poly::scalar::interpolate_and_eval_poly_at_0(decoded_backups);
-    assert_eq!(
-        threshold_interpolated_joint_secret,
-        interpolated_joint_secret
+    let interpolated_joint_secret = schnorr_fun::frost::SecretShare::recover_secret(
+        &decoded_backups
+            .choose_multiple(&mut test_rng, 2)
+            .cloned()
+            .collect::<Vec<_>>(),
     );
+
     assert_eq!(
         g!(interpolated_joint_secret * G),
         coord_frost_key.frost_key().public_key()
