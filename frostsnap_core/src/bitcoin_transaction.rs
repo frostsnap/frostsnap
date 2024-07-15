@@ -177,8 +177,8 @@ impl TransactionTemplate {
 
     pub fn to_rust_bitcoin_tx(&self) -> bitcoin::Transaction {
         bitcoin::Transaction {
-            version: bitcoin::blockdata::transaction::Version::TWO,
-            lock_time: bitcoin::absolute::LockTime::ZERO,
+            version: self.version,
+            lock_time: self.lock_time,
             input: self
                 .inputs
                 .iter()
