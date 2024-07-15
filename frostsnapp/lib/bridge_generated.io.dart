@@ -61,6 +61,13 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   }
 
   @protected
+  wire_FfiQrEncoder api2wire_FfiQrEncoder(FfiQrEncoder raw) {
+    final ptr = inner.new_FfiQrEncoder();
+    _api_fill_to_wire_FfiQrEncoder(raw, ptr);
+    return ptr;
+  }
+
+  @protected
   wire_FfiQrReader api2wire_FfiQrReader(FfiQrReader raw) {
     final ptr = inner.new_FfiQrReader();
     _api_fill_to_wire_FfiQrReader(raw, ptr);
@@ -257,6 +264,13 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   }
 
   @protected
+  ffi.Pointer<wire_QrEncoder> api2wire_box_autoadd_qr_encoder(QrEncoder raw) {
+    final ptr = inner.new_box_autoadd_qr_encoder_0();
+    _api_fill_to_wire_qr_encoder(raw, ptr.ref);
+    return ptr;
+  }
+
+  @protected
   ffi.Pointer<wire_QrReader> api2wire_box_autoadd_qr_reader(QrReader raw) {
     final ptr = inner.new_box_autoadd_qr_reader_0();
     _api_fill_to_wire_qr_reader(raw, ptr.ref);
@@ -395,6 +409,9 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   late final OpaqueTypeFinalizer _FfiCoordinatorFinalizer =
       OpaqueTypeFinalizer(inner._drop_opaque_FfiCoordinatorPtr);
   OpaqueTypeFinalizer get FfiCoordinatorFinalizer => _FfiCoordinatorFinalizer;
+  late final OpaqueTypeFinalizer _FfiQrEncoderFinalizer =
+      OpaqueTypeFinalizer(inner._drop_opaque_FfiQrEncoderPtr);
+  OpaqueTypeFinalizer get FfiQrEncoderFinalizer => _FfiQrEncoderFinalizer;
   late final OpaqueTypeFinalizer _FfiQrReaderFinalizer =
       OpaqueTypeFinalizer(inner._drop_opaque_FfiQrReaderPtr);
   OpaqueTypeFinalizer get FfiQrReaderFinalizer => _FfiQrReaderFinalizer;
@@ -463,6 +480,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
 
   void _api_fill_to_wire_FfiCoordinator(
       FfiCoordinator apiObj, wire_FfiCoordinator wireObj) {
+    wireObj.ptr = apiObj.shareOrMove();
+  }
+
+  void _api_fill_to_wire_FfiQrEncoder(
+      FfiQrEncoder apiObj, wire_FfiQrEncoder wireObj) {
     wireObj.ptr = apiObj.shareOrMove();
   }
 
@@ -594,6 +616,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
     _api_fill_to_wire_psbt(apiObj, wireObj.ref);
   }
 
+  void _api_fill_to_wire_box_autoadd_qr_encoder(
+      QrEncoder apiObj, ffi.Pointer<wire_QrEncoder> wireObj) {
+    _api_fill_to_wire_qr_encoder(apiObj, wireObj.ref);
+  }
+
   void _api_fill_to_wire_box_autoadd_qr_reader(
       QrReader apiObj, ffi.Pointer<wire_QrReader> wireObj) {
     _api_fill_to_wire_qr_reader(apiObj, wireObj.ref);
@@ -697,6 +724,10 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
 
   void _api_fill_to_wire_psbt(Psbt apiObj, wire_Psbt wireObj) {
     wireObj.inner = api2wire_BitcoinPsbt(apiObj.inner);
+  }
+
+  void _api_fill_to_wire_qr_encoder(QrEncoder apiObj, wire_QrEncoder wireObj) {
+    wireObj.field0 = api2wire_FfiQrEncoder(apiObj.field0);
   }
 
   void _api_fill_to_wire_qr_reader(QrReader apiObj, wire_QrReader wireObj) {
@@ -1005,6 +1036,23 @@ class NativeWire implements FlutterRustBridgeWireBase {
           'wire_new_qr_reader');
   late final _wire_new_qr_reader =
       _wire_new_qr_readerPtr.asFunction<void Function(int)>();
+
+  void wire_new_qr_encoder(
+    int port_,
+    ffi.Pointer<wire_uint_8_list> bytes,
+  ) {
+    return _wire_new_qr_encoder(
+      port_,
+      bytes,
+    );
+  }
+
+  late final _wire_new_qr_encoderPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Void Function(ffi.Int64,
+              ffi.Pointer<wire_uint_8_list>)>>('wire_new_qr_encoder');
+  late final _wire_new_qr_encoder = _wire_new_qr_encoderPtr
+      .asFunction<void Function(int, ffi.Pointer<wire_uint_8_list>)>();
 
   WireSyncReturn wire_txid__method__Transaction(
     ffi.Pointer<wire_Transaction> that,
@@ -2101,6 +2149,21 @@ class NativeWire implements FlutterRustBridgeWireBase {
           void Function(int, ffi.Pointer<wire_QrReader>,
               ffi.Pointer<wire_uint_8_list>)>();
 
+  WireSyncReturn wire_next__method__QrEncoder(
+    ffi.Pointer<wire_QrEncoder> that,
+  ) {
+    return _wire_next__method__QrEncoder(
+      that,
+    );
+  }
+
+  late final _wire_next__method__QrEncoderPtr = _lookup<
+      ffi.NativeFunction<
+          WireSyncReturn Function(
+              ffi.Pointer<wire_QrEncoder>)>>('wire_next__method__QrEncoder');
+  late final _wire_next__method__QrEncoder = _wire_next__method__QrEncoderPtr
+      .asFunction<WireSyncReturn Function(ffi.Pointer<wire_QrEncoder>)>();
+
   wire_ArcMutexVecPortDesc new_ArcMutexVecPortDesc() {
     return _new_ArcMutexVecPortDesc();
   }
@@ -2159,6 +2222,16 @@ class NativeWire implements FlutterRustBridgeWireBase {
           'new_FfiCoordinator');
   late final _new_FfiCoordinator =
       _new_FfiCoordinatorPtr.asFunction<wire_FfiCoordinator Function()>();
+
+  wire_FfiQrEncoder new_FfiQrEncoder() {
+    return _new_FfiQrEncoder();
+  }
+
+  late final _new_FfiQrEncoderPtr =
+      _lookup<ffi.NativeFunction<wire_FfiQrEncoder Function()>>(
+          'new_FfiQrEncoder');
+  late final _new_FfiQrEncoder =
+      _new_FfiQrEncoderPtr.asFunction<wire_FfiQrEncoder Function()>();
 
   wire_FfiQrReader new_FfiQrReader() {
     return _new_FfiQrReader();
@@ -2426,6 +2499,16 @@ class NativeWire implements FlutterRustBridgeWireBase {
           'new_box_autoadd_psbt_0');
   late final _new_box_autoadd_psbt_0 = _new_box_autoadd_psbt_0Ptr
       .asFunction<ffi.Pointer<wire_Psbt> Function()>();
+
+  ffi.Pointer<wire_QrEncoder> new_box_autoadd_qr_encoder_0() {
+    return _new_box_autoadd_qr_encoder_0();
+  }
+
+  late final _new_box_autoadd_qr_encoder_0Ptr =
+      _lookup<ffi.NativeFunction<ffi.Pointer<wire_QrEncoder> Function()>>(
+          'new_box_autoadd_qr_encoder_0');
+  late final _new_box_autoadd_qr_encoder_0 = _new_box_autoadd_qr_encoder_0Ptr
+      .asFunction<ffi.Pointer<wire_QrEncoder> Function()>();
 
   ffi.Pointer<wire_QrReader> new_box_autoadd_qr_reader_0() {
     return _new_box_autoadd_qr_reader_0();
@@ -2726,6 +2809,35 @@ class NativeWire implements FlutterRustBridgeWireBase {
           ffi.Pointer<ffi.Void> Function(
               ffi.Pointer<ffi.Void>)>>('share_opaque_FfiCoordinator');
   late final _share_opaque_FfiCoordinator = _share_opaque_FfiCoordinatorPtr
+      .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
+
+  void drop_opaque_FfiQrEncoder(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _drop_opaque_FfiQrEncoder(
+      ptr,
+    );
+  }
+
+  late final _drop_opaque_FfiQrEncoderPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+          'drop_opaque_FfiQrEncoder');
+  late final _drop_opaque_FfiQrEncoder = _drop_opaque_FfiQrEncoderPtr
+      .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  ffi.Pointer<ffi.Void> share_opaque_FfiQrEncoder(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _share_opaque_FfiQrEncoder(
+      ptr,
+    );
+  }
+
+  late final _share_opaque_FfiQrEncoderPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Void> Function(
+              ffi.Pointer<ffi.Void>)>>('share_opaque_FfiQrEncoder');
+  late final _share_opaque_FfiQrEncoder = _share_opaque_FfiQrEncoderPtr
       .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
 
   void drop_opaque_FfiQrReader(
@@ -3282,6 +3394,14 @@ final class wire_FfiQrReader extends ffi.Struct {
 
 final class wire_QrReader extends ffi.Struct {
   external wire_FfiQrReader field0;
+}
+
+final class wire_FfiQrEncoder extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_QrEncoder extends ffi.Struct {
+  external wire_FfiQrEncoder field0;
 }
 
 typedef DartPostCObjectFnType = ffi.Pointer<

@@ -3,8 +3,7 @@ pub use crate::ffi_serial_port::{
     PortBytesToReadSender, PortOpenSender, PortReadSender, PortWriteSender,
 };
 pub use crate::FfiCoordinator;
-pub use crate::FfiQrReader;
-use crate::QrDecoderStatus;
+pub use crate::{FfiQrEncoder, FfiQrReader, QrDecoderStatus};
 use anyhow::{anyhow, Context, Result};
 pub use bitcoin::psbt::Psbt as BitcoinPsbt;
 pub use bitcoin::Transaction as RTransaction;
@@ -888,10 +887,7 @@ impl UnsignedTx {
                     .unwrap(),
                 hash_ty: bitcoin::sighash::TapSighashType::Default,
             };
-            let witness = bitcoin::Witness::from_slice(&[schnorr_sig.to_vec()]);
-            // FIXME: we probably shouldn't be setting the final_script_witness here since that's the job of the PSBT finalizer
-            // Instead, it should just set the tap_key_sig and then the finalizer can extract it and set the final_script_witness
-            input.final_script_witness = Some(witness);
+            input.tap_key_sig = Some(schnorr_sig);
         }
 
         Psbt {
@@ -909,6 +905,7 @@ impl UnsignedTx {
             let witness = bitcoin::Witness::from_slice(&[schnorr_sig.to_vec()]);
             txin.witness = witness;
         }
+
         SignedTx {
             signed_tx: RustOpaque::new(tx),
             unsigned_tx: self.clone(),
@@ -1051,5 +1048,30 @@ impl QrReader {
         let decoded_qr = crate::camera::read_qr_code_bytes(&bytes)?;
         let decoded_ur = self.0.ingest_ur_strings(decoded_qr)?;
         Ok(decoded_ur)
+    }
+}
+
+pub struct QrEncoder(pub RustOpaque<FfiQrEncoder>);
+
+pub fn new_qr_encoder(bytes: Vec<u8>) -> QrEncoder {
+    let mut length_bytes = bytes.len().to_be_bytes().to_vec();
+    while length_bytes.len() > 1 && length_bytes[0] == 0 {
+        length_bytes.remove(0);
+    }
+
+    // prepending OP_PUSHDATA1 and length for CBOR
+    let mut encode_bytes = Vec::new();
+    encode_bytes.extend_from_slice(&[0x59]);
+    encode_bytes.extend_from_slice(&length_bytes);
+    encode_bytes.extend_from_slice(&bytes);
+
+    QrEncoder(RustOpaque::new(FfiQrEncoder(Arc::new(Mutex::new(
+        ur::Encoder::new(&encode_bytes, 400, "crypto-psbt").unwrap(),
+    )))))
+}
+
+impl QrEncoder {
+    pub fn next(&self) -> SyncReturn<String> {
+        SyncReturn(self.0.next().to_uppercase())
     }
 }

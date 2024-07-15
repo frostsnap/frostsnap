@@ -51,6 +51,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
+  Object api2wire_FfiQrEncoder(FfiQrEncoder raw) {
+    return raw.shareOrMove();
+  }
+
+  @protected
   Object api2wire_FfiQrReader(FfiQrReader raw) {
     return raw.shareOrMove();
   }
@@ -186,6 +191,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   @protected
   List<dynamic> api2wire_box_autoadd_psbt(Psbt raw) {
     return api2wire_psbt(raw);
+  }
+
+  @protected
+  List<dynamic> api2wire_box_autoadd_qr_encoder(QrEncoder raw) {
+    return api2wire_qr_encoder(raw);
   }
 
   @protected
@@ -346,6 +356,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
+  List<dynamic> api2wire_qr_encoder(QrEncoder raw) {
+    return [api2wire_FfiQrEncoder(raw.field0)];
+  }
+
+  @protected
   List<dynamic> api2wire_qr_reader(QrReader raw) {
     return [api2wire_FfiQrReader(raw.field0)];
   }
@@ -427,6 +442,10 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
       Finalizer<PlatformPointer>(inner.drop_opaque_FfiCoordinator);
   Finalizer<PlatformPointer> get FfiCoordinatorFinalizer =>
       _FfiCoordinatorFinalizer;
+  late final Finalizer<PlatformPointer> _FfiQrEncoderFinalizer =
+      Finalizer<PlatformPointer>(inner.drop_opaque_FfiQrEncoder);
+  Finalizer<PlatformPointer> get FfiQrEncoderFinalizer =>
+      _FfiQrEncoderFinalizer;
   late final Finalizer<PlatformPointer> _FfiQrReaderFinalizer =
       Finalizer<PlatformPointer>(inner.drop_opaque_FfiQrReader);
   Finalizer<PlatformPointer> get FfiQrReaderFinalizer => _FfiQrReaderFinalizer;
@@ -512,6 +531,9 @@ class NativeWasmModule implements WasmModule {
       Uint8List psbt_bytes);
 
   external dynamic /* void */ wire_new_qr_reader(NativePortType port_);
+
+  external dynamic /* void */ wire_new_qr_encoder(
+      NativePortType port_, Uint8List bytes);
 
   external dynamic /* String */ wire_txid__method__Transaction(
       List<dynamic> that);
@@ -640,7 +662,7 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* int */ wire_nonces_available__method__Coordinator(
       List<dynamic> that, List<dynamic> id);
 
-  external dynamic /* int */ wire_current_nonce__method__Coordinator(
+  external dynamic /* Object */ wire_current_nonce__method__Coordinator(
       List<dynamic> that, List<dynamic> id);
 
   external dynamic /* void */ wire_generate_new_key__method__Coordinator(
@@ -699,6 +721,9 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* void */ wire_decode_from_bytes__method__QrReader(
       NativePortType port_, List<dynamic> that, Uint8List bytes);
 
+  external dynamic /* String */ wire_next__method__QrEncoder(
+      List<dynamic> that);
+
   external dynamic /*  */ drop_opaque_ArcMutexVecPortDesc(ptr);
 
   external int /* *const c_void */ share_opaque_ArcMutexVecPortDesc(ptr);
@@ -722,6 +747,10 @@ class NativeWasmModule implements WasmModule {
   external dynamic /*  */ drop_opaque_FfiCoordinator(ptr);
 
   external int /* *const c_void */ share_opaque_FfiCoordinator(ptr);
+
+  external dynamic /*  */ drop_opaque_FfiQrEncoder(ptr);
+
+  external int /* *const c_void */ share_opaque_FfiQrEncoder(ptr);
 
   external dynamic /*  */ drop_opaque_FfiQrReader(ptr);
 
@@ -809,6 +838,9 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
 
   void wire_new_qr_reader(NativePortType port_) =>
       wasmModule.wire_new_qr_reader(port_);
+
+  void wire_new_qr_encoder(NativePortType port_, Uint8List bytes) =>
+      wasmModule.wire_new_qr_encoder(port_, bytes);
 
   dynamic /* String */ wire_txid__method__Transaction(List<dynamic> that) =>
       wasmModule.wire_txid__method__Transaction(that);
@@ -965,7 +997,7 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
           List<dynamic> that, List<dynamic> id) =>
       wasmModule.wire_nonces_available__method__Coordinator(that, id);
 
-  dynamic /* int */ wire_current_nonce__method__Coordinator(
+  dynamic /* Object */ wire_current_nonce__method__Coordinator(
           List<dynamic> that, List<dynamic> id) =>
       wasmModule.wire_current_nonce__method__Coordinator(that, id);
 
@@ -1042,6 +1074,9 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
           NativePortType port_, List<dynamic> that, Uint8List bytes) =>
       wasmModule.wire_decode_from_bytes__method__QrReader(port_, that, bytes);
 
+  dynamic /* String */ wire_next__method__QrEncoder(List<dynamic> that) =>
+      wasmModule.wire_next__method__QrEncoder(that);
+
   dynamic /*  */ drop_opaque_ArcMutexVecPortDesc(ptr) =>
       wasmModule.drop_opaque_ArcMutexVecPortDesc(ptr);
 
@@ -1077,6 +1112,12 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
 
   int /* *const c_void */ share_opaque_FfiCoordinator(ptr) =>
       wasmModule.share_opaque_FfiCoordinator(ptr);
+
+  dynamic /*  */ drop_opaque_FfiQrEncoder(ptr) =>
+      wasmModule.drop_opaque_FfiQrEncoder(ptr);
+
+  int /* *const c_void */ share_opaque_FfiQrEncoder(ptr) =>
+      wasmModule.share_opaque_FfiQrEncoder(ptr);
 
   dynamic /*  */ drop_opaque_FfiQrReader(ptr) =>
       wasmModule.drop_opaque_FfiQrReader(ptr);

@@ -64,6 +64,11 @@ pub extern "C" fn wire_new_qr_reader(port_: i64) {
 }
 
 #[no_mangle]
+pub extern "C" fn wire_new_qr_encoder(port_: i64, bytes: *mut wire_uint_8_list) {
+    wire_new_qr_encoder_impl(port_, bytes)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_txid__method__Transaction(
     that: *mut wire_Transaction,
 ) -> support::WireSyncReturn {
@@ -496,6 +501,13 @@ pub extern "C" fn wire_decode_from_bytes__method__QrReader(
     wire_decode_from_bytes__method__QrReader_impl(port_, that, bytes)
 }
 
+#[no_mangle]
+pub extern "C" fn wire_next__method__QrEncoder(
+    that: *mut wire_QrEncoder,
+) -> support::WireSyncReturn {
+    wire_next__method__QrEncoder_impl(that)
+}
+
 // Section: allocate functions
 
 #[no_mangle]
@@ -526,6 +538,11 @@ pub extern "C" fn new_ChainSync() -> wire_ChainSync {
 #[no_mangle]
 pub extern "C" fn new_FfiCoordinator() -> wire_FfiCoordinator {
     wire_FfiCoordinator::new_with_null_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn new_FfiQrEncoder() -> wire_FfiQrEncoder {
+    wire_FfiQrEncoder::new_with_null_ptr()
 }
 
 #[no_mangle]
@@ -657,6 +674,11 @@ pub extern "C" fn new_box_autoadd_port_write_0() -> *mut wire_PortWrite {
 #[no_mangle]
 pub extern "C" fn new_box_autoadd_psbt_0() -> *mut wire_Psbt {
     support::new_leak_box_ptr(wire_Psbt::new_with_null_ptr())
+}
+
+#[no_mangle]
+pub extern "C" fn new_box_autoadd_qr_encoder_0() -> *mut wire_QrEncoder {
+    support::new_leak_box_ptr(wire_QrEncoder::new_with_null_ptr())
 }
 
 #[no_mangle]
@@ -817,6 +839,21 @@ pub extern "C" fn drop_opaque_FfiCoordinator(ptr: *const c_void) {
 pub extern "C" fn share_opaque_FfiCoordinator(ptr: *const c_void) -> *const c_void {
     unsafe {
         Arc::<FfiCoordinator>::increment_strong_count(ptr as _);
+        ptr
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn drop_opaque_FfiQrEncoder(ptr: *const c_void) {
+    unsafe {
+        Arc::<FfiQrEncoder>::decrement_strong_count(ptr as _);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn share_opaque_FfiQrEncoder(ptr: *const c_void) -> *const c_void {
+    unsafe {
+        Arc::<FfiQrEncoder>::increment_strong_count(ptr as _);
         ptr
     }
 }
@@ -1015,6 +1052,11 @@ impl Wire2Api<RustOpaque<FfiCoordinator>> for wire_FfiCoordinator {
         unsafe { support::opaque_from_dart(self.ptr as _) }
     }
 }
+impl Wire2Api<RustOpaque<FfiQrEncoder>> for wire_FfiQrEncoder {
+    fn wire2api(self) -> RustOpaque<FfiQrEncoder> {
+        unsafe { support::opaque_from_dart(self.ptr as _) }
+    }
+}
 impl Wire2Api<RustOpaque<FfiQrReader>> for wire_FfiQrReader {
     fn wire2api(self) -> RustOpaque<FfiQrReader> {
         unsafe { support::opaque_from_dart(self.ptr as _) }
@@ -1175,6 +1217,12 @@ impl Wire2Api<Psbt> for *mut wire_Psbt {
     fn wire2api(self) -> Psbt {
         let wrap = unsafe { support::box_from_leak_ptr(self) };
         Wire2Api::<Psbt>::wire2api(*wrap).into()
+    }
+}
+impl Wire2Api<QrEncoder> for *mut wire_QrEncoder {
+    fn wire2api(self) -> QrEncoder {
+        let wrap = unsafe { support::box_from_leak_ptr(self) };
+        Wire2Api::<QrEncoder>::wire2api(*wrap).into()
     }
 }
 impl Wire2Api<QrReader> for *mut wire_QrReader {
@@ -1355,6 +1403,11 @@ impl Wire2Api<Psbt> for wire_Psbt {
         }
     }
 }
+impl Wire2Api<QrEncoder> for wire_QrEncoder {
+    fn wire2api(self) -> QrEncoder {
+        QrEncoder(self.field0.wire2api())
+    }
+}
 impl Wire2Api<QrReader> for wire_QrReader {
     fn wire2api(self) -> QrReader {
         QrReader(self.field0.wire2api())
@@ -1450,6 +1503,12 @@ pub struct wire_ChainSync {
 #[repr(C)]
 #[derive(Clone)]
 pub struct wire_FfiCoordinator {
+    ptr: *const core::ffi::c_void,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_FfiQrEncoder {
     ptr: *const core::ffi::c_void,
 }
 
@@ -1660,6 +1719,12 @@ pub struct wire_Psbt {
 
 #[repr(C)]
 #[derive(Clone)]
+pub struct wire_QrEncoder {
+    field0: wire_FfiQrEncoder,
+}
+
+#[repr(C)]
+#[derive(Clone)]
 pub struct wire_QrReader {
     field0: wire_FfiQrReader,
 }
@@ -1748,6 +1813,13 @@ impl NewWithNullPtr for wire_ChainSync {
     }
 }
 impl NewWithNullPtr for wire_FfiCoordinator {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            ptr: core::ptr::null(),
+        }
+    }
+}
+impl NewWithNullPtr for wire_FfiQrEncoder {
     fn new_with_null_ptr() -> Self {
         Self {
             ptr: core::ptr::null(),
@@ -2058,6 +2130,20 @@ impl NewWithNullPtr for wire_Psbt {
 }
 
 impl Default for wire_Psbt {
+    fn default() -> Self {
+        Self::new_with_null_ptr()
+    }
+}
+
+impl NewWithNullPtr for wire_QrEncoder {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            field0: wire_FfiQrEncoder::new_with_null_ptr(),
+        }
+    }
+}
+
+impl Default for wire_QrEncoder {
     fn default() -> Self {
         Self::new_with_null_ptr()
     }

@@ -65,6 +65,10 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kNewQrReaderConstMeta;
 
+  Future<QrEncoder> newQrEncoder({required Uint8List bytes, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kNewQrEncoderConstMeta;
+
   String txidMethodTransaction({required Transaction that, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kTxidMethodTransactionConstMeta;
@@ -377,6 +381,10 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kDecodeFromBytesMethodQrReaderConstMeta;
 
+  String nextMethodQrEncoder({required QrEncoder that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kNextMethodQrEncoderConstMeta;
+
   DropFnType get dropOpaqueArcMutexVecPortDesc;
   ShareFnType get shareOpaqueArcMutexVecPortDesc;
   OpaqueTypeFinalizer get ArcMutexVecPortDescFinalizer;
@@ -400,6 +408,10 @@ abstract class Native {
   DropFnType get dropOpaqueFfiCoordinator;
   ShareFnType get shareOpaqueFfiCoordinator;
   OpaqueTypeFinalizer get FfiCoordinatorFinalizer;
+
+  DropFnType get dropOpaqueFfiQrEncoder;
+  ShareFnType get shareOpaqueFfiQrEncoder;
+  OpaqueTypeFinalizer get FfiQrEncoderFinalizer;
 
   DropFnType get dropOpaqueFfiQrReader;
   ShareFnType get shareOpaqueFfiQrReader;
@@ -530,6 +542,21 @@ class FfiCoordinator extends FrbOpaque {
 
   @override
   OpaqueTypeFinalizer get staticFinalizer => bridge.FfiCoordinatorFinalizer;
+}
+
+@sealed
+class FfiQrEncoder extends FrbOpaque {
+  final Native bridge;
+  FfiQrEncoder.fromRaw(int ptr, int size, this.bridge)
+      : super.unsafe(ptr, size);
+  @override
+  DropFnType get dropFn => bridge.dropOpaqueFfiQrEncoder;
+
+  @override
+  ShareFnType get shareFn => bridge.shareOpaqueFfiQrEncoder;
+
+  @override
+  OpaqueTypeFinalizer get staticFinalizer => bridge.FfiQrEncoderFinalizer;
 }
 
 @sealed
@@ -1237,6 +1264,20 @@ sealed class QrDecoderStatus with _$QrDecoderStatus {
   const factory QrDecoderStatus.failed(
     String field0,
   ) = QrDecoderStatus_Failed;
+}
+
+class QrEncoder {
+  final Native bridge;
+  final FfiQrEncoder field0;
+
+  const QrEncoder({
+    required this.bridge,
+    required this.field0,
+  });
+
+  String next({dynamic hint}) => bridge.nextMethodQrEncoder(
+        that: this,
+      );
 }
 
 class QrReader {

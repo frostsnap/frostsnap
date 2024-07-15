@@ -157,3 +157,12 @@ impl FfiQrReader {
         Ok(QrDecoderStatus::Progress(decoding_progress.clone()))
     }
 }
+
+pub struct FfiQrEncoder(pub Arc<Mutex<ur::Encoder<'static>>>);
+
+impl FfiQrEncoder {
+    pub fn next(&self) -> String {
+        let mut encoder = self.0.lock().unwrap();
+        encoder.next_part().unwrap()
+    }
+}

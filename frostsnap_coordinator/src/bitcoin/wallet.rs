@@ -1,7 +1,7 @@
 use super::chain_sync::SyncRequest;
 use anyhow::{anyhow, Context, Result};
 use bdk_chain::{
-    bitcoin::{self, bip32, Amount, SignedAmount, TxOut},
+    bitcoin::{self, bip32, Amount, SignedAmount},
     indexed_tx_graph::{self, Indexer},
     keychain::{self, KeychainTxOutIndex},
     local_chain::{self, LocalChain},

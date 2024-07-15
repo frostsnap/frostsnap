@@ -62,6 +62,11 @@ pub fn wire_new_qr_reader(port_: MessagePort) {
 }
 
 #[wasm_bindgen]
+pub fn wire_new_qr_encoder(port_: MessagePort, bytes: Box<[u8]>) {
+    wire_new_qr_encoder_impl(port_, bytes)
+}
+
+#[wasm_bindgen]
 pub fn wire_txid__method__Transaction(that: JsValue) -> support::WireSyncReturn {
     wire_txid__method__Transaction_impl(that)
 }
@@ -439,6 +444,11 @@ pub fn wire_decode_from_bytes__method__QrReader(
     wire_decode_from_bytes__method__QrReader_impl(port_, that, bytes)
 }
 
+#[wasm_bindgen]
+pub fn wire_next__method__QrEncoder(that: JsValue) -> support::WireSyncReturn {
+    wire_next__method__QrEncoder_impl(that)
+}
+
 // Section: allocate functions
 
 // Section: related functions
@@ -529,6 +539,21 @@ pub fn drop_opaque_FfiCoordinator(ptr: *const c_void) {
 pub fn share_opaque_FfiCoordinator(ptr: *const c_void) -> *const c_void {
     unsafe {
         Arc::<FfiCoordinator>::increment_strong_count(ptr as _);
+        ptr
+    }
+}
+
+#[wasm_bindgen]
+pub fn drop_opaque_FfiQrEncoder(ptr: *const c_void) {
+    unsafe {
+        Arc::<FfiQrEncoder>::decrement_strong_count(ptr as _);
+    }
+}
+
+#[wasm_bindgen]
+pub fn share_opaque_FfiQrEncoder(ptr: *const c_void) -> *const c_void {
+    unsafe {
+        Arc::<FfiQrEncoder>::increment_strong_count(ptr as _);
         ptr
     }
 }
@@ -979,6 +1004,18 @@ impl Wire2Api<Psbt> for JsValue {
         }
     }
 }
+impl Wire2Api<QrEncoder> for JsValue {
+    fn wire2api(self) -> QrEncoder {
+        let self_ = self.dyn_into::<JsArray>().unwrap();
+        assert_eq!(
+            self_.length(),
+            1,
+            "Expected 1 elements, got {}",
+            self_.length()
+        );
+        QrEncoder(self_.get(0).wire2api())
+    }
+}
 impl Wire2Api<QrReader> for JsValue {
     fn wire2api(self) -> QrReader {
         let self_ = self.dyn_into::<JsArray>().unwrap();
@@ -1133,6 +1170,16 @@ impl Wire2Api<RustOpaque<ChainSync>> for JsValue {
 }
 impl Wire2Api<RustOpaque<FfiCoordinator>> for JsValue {
     fn wire2api(self) -> RustOpaque<FfiCoordinator> {
+        #[cfg(target_pointer_width = "64")]
+        {
+            compile_error!("64-bit pointers are not supported.");
+        }
+
+        unsafe { support::opaque_from_dart((self.as_f64().unwrap() as usize) as _) }
+    }
+}
+impl Wire2Api<RustOpaque<FfiQrEncoder>> for JsValue {
+    fn wire2api(self) -> RustOpaque<FfiQrEncoder> {
         #[cfg(target_pointer_width = "64")]
         {
             compile_error!("64-bit pointers are not supported.");

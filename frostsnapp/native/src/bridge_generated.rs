@@ -191,6 +191,19 @@ fn wire_new_qr_reader_impl(port_: MessagePort) {
         move || move |task_callback| Result::<_, ()>::Ok(new_qr_reader()),
     )
 }
+fn wire_new_qr_encoder_impl(port_: MessagePort, bytes: impl Wire2Api<Vec<u8>> + UnwindSafe) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, QrEncoder, _>(
+        WrapInfo {
+            debug_name: "new_qr_encoder",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_bytes = bytes.wire2api();
+            move |task_callback| Result::<_, ()>::Ok(new_qr_encoder(api_bytes))
+        },
+    )
+}
 fn wire_txid__method__Transaction_impl(
     that: impl Wire2Api<Transaction> + UnwindSafe,
 ) -> support::WireSyncReturn {
@@ -1207,6 +1220,21 @@ fn wire_decode_from_bytes__method__QrReader_impl(
         },
     )
 }
+fn wire_next__method__QrEncoder_impl(
+    that: impl Wire2Api<QrEncoder> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "next__method__QrEncoder",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            Result::<_, ()>::Ok(QrEncoder::next(&api_that))
+        },
+    )
+}
 // Section: wrapper structs
 
 #[derive(Clone)]
@@ -1746,6 +1774,18 @@ impl support::IntoDart for QrDecoderStatus {
 }
 impl support::IntoDartExceptPrimitive for QrDecoderStatus {}
 impl rust2dart::IntoIntoDart<QrDecoderStatus> for QrDecoderStatus {
+    fn into_into_dart(self) -> Self {
+        self
+    }
+}
+
+impl support::IntoDart for QrEncoder {
+    fn into_dart(self) -> support::DartAbi {
+        vec![self.0.into_dart()].into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for QrEncoder {}
+impl rust2dart::IntoIntoDart<QrEncoder> for QrEncoder {
     fn into_into_dart(self) -> Self {
         self
     }

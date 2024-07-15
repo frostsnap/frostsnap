@@ -238,6 +238,24 @@ class NativeImpl implements Native {
         argNames: [],
       );
 
+  Future<QrEncoder> newQrEncoder({required Uint8List bytes, dynamic hint}) {
+    var arg0 = _platform.api2wire_uint_8_list(bytes);
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner.wire_new_qr_encoder(port_, arg0),
+      parseSuccessData: (d) => _wire2api_qr_encoder(d),
+      parseErrorData: null,
+      constMeta: kNewQrEncoderConstMeta,
+      argValues: [bytes],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kNewQrEncoderConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "new_qr_encoder",
+        argNames: ["bytes"],
+      );
+
   String txidMethodTransaction({required Transaction that, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_transaction(that);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
@@ -1010,7 +1028,7 @@ class NativeImpl implements Native {
     return _platform.executeSync(FlutterRustBridgeSyncTask(
       callFfi: () =>
           _platform.inner.wire_current_nonce__method__Coordinator(arg0, arg1),
-      parseSuccessData: _wire2api_usize,
+      parseSuccessData: _wire2api_u64,
       parseErrorData: null,
       constMeta: kCurrentNonceMethodCoordinatorConstMeta,
       argValues: [that, id],
@@ -1391,6 +1409,24 @@ class NativeImpl implements Native {
         argNames: ["that", "bytes"],
       );
 
+  String nextMethodQrEncoder({required QrEncoder that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_qr_encoder(that);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner.wire_next__method__QrEncoder(arg0),
+      parseSuccessData: _wire2api_String,
+      parseErrorData: null,
+      constMeta: kNextMethodQrEncoderConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kNextMethodQrEncoderConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "next__method__QrEncoder",
+        argNames: ["that"],
+      );
+
   DropFnType get dropOpaqueArcMutexVecPortDesc =>
       _platform.inner.drop_opaque_ArcMutexVecPortDesc;
   ShareFnType get shareOpaqueArcMutexVecPortDesc =>
@@ -1430,6 +1466,13 @@ class NativeImpl implements Native {
       _platform.inner.share_opaque_FfiCoordinator;
   OpaqueTypeFinalizer get FfiCoordinatorFinalizer =>
       _platform.FfiCoordinatorFinalizer;
+
+  DropFnType get dropOpaqueFfiQrEncoder =>
+      _platform.inner.drop_opaque_FfiQrEncoder;
+  ShareFnType get shareOpaqueFfiQrEncoder =>
+      _platform.inner.share_opaque_FfiQrEncoder;
+  OpaqueTypeFinalizer get FfiQrEncoderFinalizer =>
+      _platform.FfiQrEncoderFinalizer;
 
   DropFnType get dropOpaqueFfiQrReader =>
       _platform.inner.drop_opaque_FfiQrReader;
@@ -1532,6 +1575,10 @@ class NativeImpl implements Native {
 
   FfiCoordinator _wire2api_FfiCoordinator(dynamic raw) {
     return FfiCoordinator.fromRaw(raw[0], raw[1], this);
+  }
+
+  FfiQrEncoder _wire2api_FfiQrEncoder(dynamic raw) {
+    return FfiQrEncoder.fromRaw(raw[0], raw[1], this);
   }
 
   FfiQrReader _wire2api_FfiQrReader(dynamic raw) {
@@ -2059,6 +2106,16 @@ class NativeImpl implements Native {
       default:
         throw Exception("unreachable");
     }
+  }
+
+  QrEncoder _wire2api_qr_encoder(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return QrEncoder(
+      bridge: this,
+      field0: _wire2api_FfiQrEncoder(arr[0]),
+    );
   }
 
   QrReader _wire2api_qr_reader(dynamic raw) {
