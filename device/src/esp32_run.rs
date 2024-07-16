@@ -113,7 +113,7 @@ where
         // We wouldn't need this if announce ack was guaranteed to be sent right away (but instead
         // it waits until we've named it). Announcing and labeling has been sorted out this counter
         // thingy will go away naturally.
-        let mut upstream_first_message_timeout_counter = 0;
+        let mut magic_bytes_timeout_counter = 0;
 
         ui.set_workflow(ui::Workflow::WaitingFor(
             ui::WaitingFor::LookingForUpstream {
@@ -132,6 +132,7 @@ where
         loop {
             if soft_reset {
                 soft_reset = false;
+                magic_bytes_timeout_counter = 0;
                 sends_upstream.messages.clear();
                 let _ = signer.cancel_action();
                 sends_user.clear();
@@ -243,29 +244,19 @@ where
                     }
                 }
                 upstream_state => {
+                    let mut last_message_was_magic_bytes = false;
                     while let Some(received_message) = upstream_serial.receive() {
                         match received_message {
                             Ok(received_message) => {
                                 match received_message {
                                     ReceiveSerial::MagicBytes(_) => {
-                                        if matches!(
-                                            upstream_state,
-                                            UpstreamConnectionState::EstablishedAndCoordAck
-                                        ) {
-                                            soft_reset = true;
-                                        } else if upstream_first_message_timeout_counter > 1 {
-                                            // We keep receving magic bytes so we reset the
-                                            // connection and try announce again
-                                            upstream_connection.state =
-                                                UpstreamConnectionState::Connected;
-                                            ui.set_upstream_connection_state(upstream_connection);
-                                            upstream_first_message_timeout_counter = 0;
-                                        } else {
-                                            upstream_first_message_timeout_counter += 1;
-                                        }
-                                        continue;
+                                        // We don't want to react to magic bytes right away because
+                                        // there might be many magic bytes in the buffer so we
+                                        // should let the loop keep pulling them out.
+                                        last_message_was_magic_bytes = true;
                                     }
                                     ReceiveSerial::Message(mut message) => {
+                                        last_message_was_magic_bytes = false;
                                         // We have recieved a first message (if this is not a magic bytes message)
                                         let for_me = message
                                             .target_destinations
@@ -391,6 +382,25 @@ where
                                 panic!("upstream read fail:\n{}", e);
                             }
                         };
+                    }
+
+                    if last_message_was_magic_bytes {
+                        if matches!(
+                            upstream_state,
+                            UpstreamConnectionState::EstablishedAndCoordAck
+                        ) {
+                            // We get unexpected magic bytes after receiving normal messages.
+                            // Upstream must have reset so we should reset.
+                            soft_reset = true;
+                        } else if magic_bytes_timeout_counter > 1 {
+                            // We keep receving magic bytes so we reset the
+                            // connection and try announce again.
+                            upstream_connection.state = UpstreamConnectionState::Connected;
+                            ui.set_upstream_connection_state(upstream_connection);
+                            magic_bytes_timeout_counter = 0;
+                        } else {
+                            magic_bytes_timeout_counter += 1;
+                        }
                     }
 
                     if let Some(upgrade_) = &mut upgrade {
