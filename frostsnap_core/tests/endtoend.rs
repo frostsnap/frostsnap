@@ -5,8 +5,8 @@ use frostsnap_core::message::{
 };
 use frostsnap_core::tweak::AppBip32Path;
 use frostsnap_core::{
-    CheckedSignTask, DeviceId, FrostCoordinator, FrostKeyExt, FrostSigner, KeyId, SessionHash,
-    SignTask,
+    coordinator::FrostCoordinator, CheckedSignTask, DeviceId, FrostKeyExt, FrostSigner, KeyId,
+    SessionHash, SignTask,
 };
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
@@ -41,13 +41,13 @@ struct TestEnv {
 }
 
 impl common::Env for TestEnv {
-    fn storage_react_to_coordinator(
+    fn storage_react_to_coordinator_mutation(
         &mut self,
         _run: &mut Run,
-        message: frostsnap_core::message::CoordinatorToStorageMessage,
+        mutation: frostsnap_core::coordinator::Mutation,
     ) {
-        use frostsnap_core::message::CoordinatorToStorageMessage::*;
-        match message {
+        use frostsnap_core::coordinator::Mutation::*;
+        match mutation {
             NewKey(_) => { /*  */ }
             NoncesUsed {
                 device_id,
@@ -96,7 +96,6 @@ impl common::Env for TestEnv {
                         .map(|(i, nonce)| ((device_id, start + i as u64), nonce)),
                 );
             }
-            StoreSigningState(_) => { /*  */ }
         }
     }
 

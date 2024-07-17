@@ -8,10 +8,13 @@ import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'global.dart';
 
 typedef RemovedDeviceBuilder = Widget Function(
-    BuildContext context, Device device, Animation<double> animation);
+    BuildContext context, ConnectedDevice device, Animation<double> animation);
 
-typedef DeviceBuilder = Widget Function(BuildContext context, Device device,
-    Orientation orientation, Animation<double> animation);
+typedef DeviceBuilder = Widget Function(
+    BuildContext context,
+    ConnectedDevice device,
+    Orientation orientation,
+    Animation<double> animation);
 
 const double iconSize = 20.0;
 
@@ -207,8 +210,8 @@ class DeviceListWithIcons extends StatelessWidget {
     );
   }
 
-  Widget _builder(BuildContext context, Device device, Orientation orientation,
-      Animation<double> animation) {
+  Widget _builder(BuildContext context, ConnectedDevice device,
+      Orientation orientation, Animation<double> animation) {
     final (overrideLabel, icon) = iconAssigner.call(context, device.id);
     final label = overrideLabel ?? LabeledDeviceText(device.name ?? '-');
     return DeviceBoxContainer(
@@ -241,7 +244,7 @@ class MaybeExpandedVertical extends StatelessWidget {
   }
 }
 
-Widget buildInteractiveDevice(BuildContext context, Device device,
+Widget buildInteractiveDevice(BuildContext context, ConnectedDevice device,
     Orientation orientation, Animation<double> animation) {
   Widget child;
   final List<Widget> children = [];

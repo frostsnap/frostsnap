@@ -1,14 +1,13 @@
 use crate::encrypted_share::EncryptedShare;
-use crate::{
-    CheckedSignTask, CoordinatorFrostKey, FrostsnapSecretKey, Gist, KeyId, SessionHash,
-    SigningSessionState, Vec,
-};
+use crate::{coordinator, CheckedSignTask, FrostsnapSecretKey, Gist, KeyId, SessionHash, Vec};
 use crate::{DeviceId, SignTask};
 use alloc::collections::VecDeque;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 use schnorr_fun::fun::{marker::*, Point, Scalar};
 use schnorr_fun::{binonce::Nonce, Signature};
+use sha2::digest::Update;
+use sha2::Digest;
 
 #[derive(Clone, Debug)]
 #[must_use]
@@ -26,7 +25,7 @@ pub enum CoordinatorSend {
         destinations: BTreeSet<DeviceId>,
     },
     ToUser(CoordinatorToUserMessage),
-    ToStorage(CoordinatorToStorageMessage),
+    SigningSessionStore(coordinator::SigningSessionState),
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
@@ -50,6 +49,13 @@ pub struct SignRequest {
     pub nonces: BTreeMap<Scalar<Public, NonZero>, SignRequestNonces>,
     pub sign_task: SignTask,
     pub key_id: KeyId,
+}
+
+impl SignRequest {
+    pub fn session_id(&self) -> [u8; 32] {
+        let bytes = bincode::encode_to_vec(self, bincode::config::standard()).unwrap();
+        sha2::Sha256::new().chain(bytes).finalize().into()
+    }
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
@@ -87,40 +93,6 @@ impl CoordinatorToDeviceMessage {
             CoordinatorToDeviceMessage::RequestSign { .. } => "RequestSign",
             CoordinatorToDeviceMessage::DisplayBackup { .. } => "DisplayBackup",
         }
-    }
-}
-
-#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
-pub enum CoordinatorToStorageMessage {
-    NewKey(CoordinatorFrostKey),
-    NoncesUsed {
-        device_id: DeviceId,
-        /// if nonce_counter = x, then the coordinator expects x to be the next nonce used.
-        /// (anything < x has been used)
-        nonce_counter: u64,
-    },
-    ResetNonces {
-        device_id: DeviceId,
-        nonces: DeviceNonces,
-    },
-    NewNonces {
-        device_id: DeviceId,
-        new_nonces: Vec<Nonce>,
-    },
-    StoreSigningState(SigningSessionState),
-}
-
-impl Gist for CoordinatorToStorageMessage {
-    fn gist(&self) -> String {
-        use CoordinatorToStorageMessage::*;
-        match self {
-            NoncesUsed { .. } => "NoncesUsed",
-            StoreSigningState(_) => "StoreSigningState",
-            ResetNonces { .. } => "ResetNonces",
-            NewNonces { .. } => "NewNonces",
-            NewKey(_) => "NewKey",
-        }
-        .into()
     }
 }
 

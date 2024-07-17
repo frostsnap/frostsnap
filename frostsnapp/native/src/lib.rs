@@ -5,7 +5,6 @@ mod bridge_generated;
 mod camera;
 pub use camera::*;
 mod coordinator;
-mod persist_core;
 pub use coordinator::*;
 mod device_list;
 use frostsnap_coordinator::FirmwareBin;

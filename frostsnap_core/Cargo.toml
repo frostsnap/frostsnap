@@ -16,10 +16,12 @@ bitcoin = { workspace = true }
 bincode = { workspace = true }
 serde_json = { version = "1", optional = true }
 tracing = { workspace = true, default-features = false, optional = true }
+rusqlite = { workspace = true, optional = true }
 
 [dev-dependencies]
 rand = "0.8"
 
 [features]
-std = ["tracing?/std"]
+std = ["tracing?/std", "schnorr_fun/std"]
 default = ["std", "serde_json"]
+rusqlite = [ "dep:rusqlite", "std"]

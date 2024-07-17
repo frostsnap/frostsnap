@@ -15,12 +15,12 @@ pub struct KeyGen {
 
 impl KeyGen {
     pub fn new(
-        sink: impl Sink<KeyGenState> + 'static,
+        keygen_sink: impl Sink<KeyGenState> + 'static,
         devices: BTreeSet<DeviceId>,
         threshold: usize,
     ) -> Self {
         Self {
-            sink: Box::new(sink),
+            sink: Box::new(keygen_sink),
             state: KeyGenState {
                 devices: devices.into_iter().collect(),
                 threshold,
@@ -91,6 +91,10 @@ impl UiProtocol for KeyGen {
                 Some("Key generation failed because a device was disconnected".into());
             self.emit_state();
         }
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

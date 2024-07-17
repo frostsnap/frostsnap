@@ -16,12 +16,12 @@ lazy_static = "1.4"
 tracing-subscriber = "0.3"
 tracing = { workspace = true, features = ["std"] }
 tracing-android = "0.2"
-llsdb.workspace = true
 bincode.workspace = true
 bardecoder = "0.5.0"
 bitcoin.workspace = true
 image = "0.24"
 ur = { git = "https://github.com/nickfarrow/ur-rs", rev = "2e267e5e019b6c8129f66efba00327ff3d0ae5a4" }
+rusqlite = "0.31.0"
 
 # TODO: use espflash as a library to do the build
 # [build-dependencies]

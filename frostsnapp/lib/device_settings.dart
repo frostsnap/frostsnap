@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/animated_check.dart';
+import 'package:frostsnapp/bridge_definitions.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_id_ext.dart';
 import 'package:frostsnapp/device_list.dart';
@@ -40,7 +41,7 @@ class DeviceSettings extends StatefulWidget {
 class _DeviceSettingsState extends State<DeviceSettings> {
   late StreamSubscription _subscription;
   late Completer<void> _deviceRemoved;
-  Device? device;
+  ConnectedDevice? device;
 
   @override
   void initState() {

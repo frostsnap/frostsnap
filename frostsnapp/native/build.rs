@@ -20,12 +20,12 @@ fn main() {
         );
     }
     // println!("cargo:rerun-if-changed=../crate_a/src/*");
-    let status = dbg!(Command::new("espflash")
+    let status = Command::new("espflash")
         .args(["save-image", "--chip=esp32c3"])
         .arg(target_binary_path)
-        .arg(&output_path))
-    .status()
-    .expect("Failed to create binary firmware file from elf file");
+        .arg(&output_path)
+        .status()
+        .expect("Failed to create binary firmware file from elf file");
 
     assert!(
         status.success(),

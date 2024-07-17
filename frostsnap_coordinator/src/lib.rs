@@ -13,3 +13,5 @@ pub use ui_protocol::*;
 pub use usb_serial_manager::*;
 pub mod bitcoin;
 pub use bdk_chain;
+pub mod frostsnap_persist;
+pub mod persist;

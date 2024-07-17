@@ -48,7 +48,15 @@ impl ChainSync {
         sync_request: SyncRequest,
     ) -> Result<spk_client::SyncResult<ConfirmationTimeHeightAnchor>> {
         let electrum_update = self.client.sync(sync_request, 10, true)?;
-        Ok(electrum_update.with_confirmation_time_height_anchor(self.client.as_ref())?)
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("valid duration")
+            .as_secs();
+
+        let mut sync_result =
+            electrum_update.with_confirmation_time_height_anchor(self.client.as_ref())?;
+        let _ = sync_result.graph_update.update_last_seen_unconfirmed(now);
+        Ok(sync_result)
     }
 
     pub fn broadcast(&self, tx: &bitcoin::Transaction) -> Result<()> {

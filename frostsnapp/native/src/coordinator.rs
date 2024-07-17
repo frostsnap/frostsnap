@@ -1,6 +1,5 @@
 use crate::api::{self, KeyState};
-use crate::persist_core::PersistCore;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use flutter_rust_bridge::{RustOpaque, StreamSink};
 use frostsnap_coordinator::backup::BackupProtocol;
 use frostsnap_coordinator::firmware_upgrade::{
@@ -9,95 +8,79 @@ use frostsnap_coordinator::firmware_upgrade::{
 use frostsnap_coordinator::frostsnap_comms::{
     CoordinatorSendBody, CoordinatorSendMessage, Destination, FirmwareDigest,
 };
-use frostsnap_coordinator::frostsnap_core::message::{
-    CoordinatorSend, CoordinatorToStorageMessage,
-};
+use frostsnap_coordinator::frostsnap_core::message::CoordinatorSend;
+use frostsnap_coordinator::frostsnap_persist::DeviceNames;
 use frostsnap_coordinator::keygen::KeyGenState;
+use frostsnap_coordinator::persist::Persisted;
 use frostsnap_coordinator::signing::SigningState;
 use frostsnap_coordinator::{
     frostsnap_core, AppMessageBody, FirmwareBin, UiProtocol, UsbSender, UsbSerialManager,
 };
 use frostsnap_coordinator::{Completion, DeviceChange};
-use frostsnap_core::{DeviceId, FrostCoordinator, Gist, KeyId, SignTask};
-use llsdb::{IndexHandle, LlsDb};
+use frostsnap_core::{
+    coordinator::{FrostCoordinator, SigningSessionState},
+    DeviceId, KeyId, SignTask,
+};
 use std::collections::{BTreeSet, VecDeque};
-use std::fs::File;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 use tracing::{event, Level};
 
 pub struct FfiCoordinator {
-    coordinator: Arc<Mutex<FrostCoordinator>>,
     usb_manager: Mutex<Option<UsbSerialManager>>,
     pending_for_outbox: Arc<Mutex<VecDeque<CoordinatorSend>>>,
     key_event_stream: Arc<Mutex<Option<StreamSink<KeyState>>>>,
     thread_handle: Mutex<Option<JoinHandle<()>>>,
     ui_protocol: Arc<Mutex<Option<Box<dyn UiProtocol>>>>,
-    db: Arc<Mutex<LlsDb<File>>>,
-    persist_core: IndexHandle<PersistCore>,
-    device_names: IndexHandle<llsdb::index::BTreeMap<DeviceId, String>>,
     usb_sender: UsbSender,
     firmware_bin: FirmwareBin,
     firmware_upgrade_progress: Arc<Mutex<Option<StreamSink<f32>>>>,
+
+    // persisted things
+    db: Arc<Mutex<rusqlite::Connection>>,
+    device_names: Arc<Mutex<Persisted<DeviceNames>>>,
+    coordinator: Arc<Mutex<Persisted<FrostCoordinator>>>,
+    signing_session: Arc<Mutex<Persisted<Option<SigningSessionState>>>>,
 }
 
 impl FfiCoordinator {
     pub fn new(
-        db: Arc<Mutex<LlsDb<File>>>,
-        mut usb_manager: UsbSerialManager,
+        db: Arc<Mutex<rusqlite::Connection>>,
+        usb_manager: UsbSerialManager,
     ) -> anyhow::Result<Self> {
         let pending_for_outbox = Arc::new(Mutex::new(VecDeque::new()));
 
-        let (persist_core, device_names_handle, coordinator) = db
-            .lock()
-            .unwrap()
-            .execute(|tx| {
-                let persist = PersistCore::new(tx)?;
-                let handle = tx.store_index(persist);
-                let device_names_list = tx.take_list("device_names")?;
-                let device_names_index = llsdb::index::BTreeMap::new(device_names_list, &tx)?;
-                let device_names_handle = tx.store_index(device_names_index);
-                let core_api = tx.take_index(handle);
-                let coordinator = core_api.core_coordinator()?;
-                let device_names = tx.take_index(device_names_handle);
-                *usb_manager.device_labels_mut() = device_names
-                    .iter()
-                    .collect::<Result<_>>()
-                    .context("reading in device names from disk")?;
+        let mut db_ = db.lock().unwrap();
 
-                Ok((handle, device_names_handle, coordinator))
-            })
-            .context("initializing db")?;
+        let coordinator = Persisted::<FrostCoordinator>::new(&mut db_, ())?;
+        let device_names = Persisted::<DeviceNames>::new(&mut db_, ())?;
+        let signing_session = Persisted::<Option<SigningSessionState>>::new(&mut db_, ())?;
 
         let usb_sender = usb_manager.usb_sender();
 
         // HACK: if the global device list depends on db state then it shouldn't be global! The
         // reason it needs these names is for convenience. There are too many places that have
         // copies of the device names -- we need a central location.
-        crate::api::init_device_names(usb_manager.device_labels().clone());
         let firmware_bin = usb_manager.upgrade_bin();
 
         let usb_manager = Mutex::new(Some(usb_manager));
+        drop(db_);
 
         Ok(Self {
-            coordinator: Arc::new(Mutex::new(coordinator)),
             usb_manager,
             pending_for_outbox,
             thread_handle: Default::default(),
             key_event_stream: Default::default(),
             ui_protocol: Default::default(),
             firmware_upgrade_progress: Default::default(),
-            db,
-            persist_core,
-            device_names: device_names_handle,
             usb_sender,
             firmware_bin,
+            db,
+            coordinator: Arc::new(Mutex::new(coordinator)),
+            device_names: Arc::new(Mutex::new(device_names)),
+            signing_session: Arc::new(Mutex::new(signing_session)),
         })
-    }
-
-    pub fn persist_core_handle(&self) -> IndexHandle<PersistCore> {
-        self.persist_core
     }
 
     pub fn start(&self) -> anyhow::Result<()> {
@@ -117,10 +100,10 @@ impl FfiCoordinator {
         let ui_protocol = self.ui_protocol.clone();
         let key_event_stream_loop = self.key_event_stream.clone();
         let db_loop = self.db.clone();
-        let core_persist = self.persist_core;
-        let device_names = self.device_names;
+        let device_names = self.device_names.clone();
         let usb_sender = self.usb_sender.clone();
         let firmware_upgrade_progress = self.firmware_upgrade_progress.clone();
+        let signing_session = self.signing_session.clone();
 
         let handle = std::thread::spawn(move || {
             loop {
@@ -170,6 +153,7 @@ impl FfiCoordinator {
                 let mut ui_protocol_loop = ui_protocol.lock().unwrap();
                 let mut coordinator_outbox = pending_loop.lock().unwrap();
                 let mut messages_from_devices = vec![];
+                let mut db = db_loop.lock().unwrap();
 
                 // process new messages from devices
                 {
@@ -187,18 +171,27 @@ impl FfiCoordinator {
                                     protocol.disconnected(*id);
                                 }
                             }
-                            DeviceChange::NewUnknownDevice { id, name } => {
-                                // TODO: We should be asking the user to accept the new device before writing anything to disk.
-                                let res = db_loop
-                                    .lock()
-                                    .unwrap()
-                                    .execute(|tx| tx.take_index(device_names).insert(*id, name));
-                                if let Err(e) = res {
-                                    event!(
-                                        Level::ERROR,
-                                        error = e.to_string(),
-                                        "unable to save device name"
-                                    );
+                            DeviceChange::NameChange { id, name } => {
+                                let mut device_names = device_names.lock().unwrap();
+                                // TODO: Detect name change and prompt user to accept
+                                let result = device_names.staged_mutate(&mut *db, |names| {
+                                    names.insert(*id, name.clone());
+                                    Ok(())
+                                });
+
+                                match result {
+                                    Err(e) => {
+                                        event!(
+                                            Level::ERROR,
+                                            id = id.to_string(),
+                                            name = name,
+                                            error = e.to_string(),
+                                            "failed to persist device name change"
+                                        );
+                                    }
+                                    Ok(_) => {
+                                        usb_manager.accept_device_name(*id, name.clone());
+                                    }
                                 }
                             }
                             DeviceChange::AppMessage(message) => {
@@ -213,24 +206,44 @@ impl FfiCoordinator {
                         for message in to_device {
                             usb_sender.send(message);
                         }
-                        if !to_storage.is_empty() {
-                            let res = db_loop.lock().unwrap().execute(|tx| {
-                                let mut persist = tx.take_index(core_persist);
-                                for message in to_storage {
-                                    persist.consume_ui_message(message)?;
-                                }
-                                Ok(())
-                            });
 
-                            if let Err(e) = res {
-                                event!(
-                                    Level::ERROR,
-                                    "persitence failed to consume ui message: {e}"
-                                );
+                        for message in to_storage {
+                            match message {
+                                frostsnap_coordinator::UiToStorageMessage::ClearSigningSession => {
+                                    let result = signing_session.lock().unwrap().mutate(
+                                        &mut *db,
+                                        |session| {
+                                            *session = None;
+                                            Ok(((), session.clone()))
+                                        },
+                                    );
+
+                                    if let Err(e) = result {
+                                        event!(
+                                            Level::ERROR,
+                                            error = e.to_string(),
+                                            "failed to clear signing session on disk"
+                                        );
+                                    }
+                                }
                             }
                         }
 
                         if let Some(completion) = ui_protocol.is_complete() {
+                            // HACK: we check if the protocol just completed was a keygen and
+                            // trigger an update of the keylist if so. The alternative to this is
+                            // making the keygen protocol do this directly but this would mean
+                            // giving it the whole state of the key list which seemed a bit heavy.
+                            if ui_protocol
+                                .as_any()
+                                .is::<frostsnap_coordinator::keygen::KeyGen>()
+                            {
+                                if let Some(stream) = &*key_event_stream_loop.lock().unwrap() {
+                                    stream.add(KeyState {
+                                        keys: frost_keys(&coordinator),
+                                    });
+                                }
+                            }
                             event!(
                                 Level::INFO,
                                 "UI Protocol {} completed with {:?}",
@@ -240,7 +253,7 @@ impl FfiCoordinator {
                             *ui_protocol_loop = None;
                             if let Completion::Abort = completion {
                                 event!(Level::DEBUG, "canceling protocol due to abort");
-                                coordinator.cancel();
+                                coordinator.MUTATE_NO_PERSIST().cancel();
                                 usb_sender.send_cancel_all();
                             }
                         }
@@ -257,19 +270,33 @@ impl FfiCoordinator {
                 for app_message in messages_from_devices {
                     match app_message.body {
                         AppMessageBody::Core(core_message) => {
-                            match coordinator.recv_device_message(app_message.from, core_message) {
-                                Ok(messages) => {
-                                    coordinator_outbox.extend(messages);
+                            let result = coordinator.staged_mutate(&mut *db, |coordinator| {
+                                match coordinator
+                                    .recv_device_message(app_message.from, core_message)
+                                {
+                                    Ok(messages) => {
+                                        coordinator_outbox.extend(messages);
+                                    }
+                                    Err(e) => {
+                                        event!(
+                                            Level::ERROR,
+                                            from = app_message.from.to_string(),
+                                            "Failed to process message: {}",
+                                            e
+                                        );
+                                    }
                                 }
-                                Err(e) => {
-                                    event!(
-                                        Level::ERROR,
-                                        from = app_message.from.to_string(),
-                                        "Failed to process message: {}",
-                                        e
-                                    );
-                                }
-                            };
+
+                                Ok(())
+                            });
+
+                            if let Err(e) = result {
+                                event!(
+                                    Level::ERROR,
+                                    error = e.to_string(),
+                                    "failed to persist changes from device message"
+                                );
+                            }
                         }
                         AppMessageBody::AckUpgradeMode => {
                             if let Some(ui_protocol) = &mut *ui_protocol_loop {
@@ -299,39 +326,21 @@ impl FfiCoordinator {
                                 ui_protocol.process_to_user_message(msg);
                             }
                         }
-                        CoordinatorSend::ToStorage(to_storage) => {
-                            let update_kind = to_storage.gist();
-                            let mut db = db_loop.lock().unwrap();
-                            let res = db.execute(|tx| {
-                                let mut persist = tx.take_index(core_persist);
-                                persist.consume_core_message(to_storage.clone())?;
-                                if let CoordinatorToStorageMessage::NewKey(_) = &to_storage {
-                                    // Note we do this here rather than in the ToUserMessage
-                                    // because the key list is persisted and so its better to
-                                    // nofify the app after the on disk state is written.
-                                    if let Some(stream) = &*key_event_stream_loop.lock().unwrap() {
-                                        stream.add(KeyState {
-                                            keys: frost_keys(&coordinator_loop.lock().unwrap()),
-                                        });
-                                    }
-                                }
-                                Ok(())
-                            });
+                        CoordinatorSend::SigningSessionStore(state) => {
+                            let result = signing_session.lock().unwrap().staged_mutate(
+                                &mut *db,
+                                |signing_session| {
+                                    *signing_session = Some(state);
+                                    Ok(())
+                                },
+                            );
 
-                            match res {
-                                Ok(_) => {
-                                    event!(
-                                        Level::INFO,
-                                        kind = update_kind,
-                                        "Updated core persistence"
-                                    )
-                                }
-                                Err(e) => event!(
+                            if let Err(e) = result {
+                                event!(
                                     Level::ERROR,
                                     error = e.to_string(),
-                                    kind = update_kind,
-                                    "Failed to repsond to storage update"
-                                ),
+                                    "failed to sign session progress"
+                                );
                             }
                         }
                     }
@@ -344,10 +353,10 @@ impl FfiCoordinator {
     }
 
     pub fn sub_key_events(&self, stream: StreamSink<KeyState>) {
-        let mut key_event_stream = self.key_event_stream.lock().unwrap();
         stream.add(KeyState {
             keys: self.frost_keys(),
         });
+        let mut key_event_stream = self.key_event_stream.lock().unwrap();
         if let Some(existing) = key_event_stream.replace(stream) {
             existing.close();
         }
@@ -366,7 +375,11 @@ impl FfiCoordinator {
     }
 
     pub fn cancel_all(&self) {
-        self.coordinator.lock().unwrap().cancel();
+        self.coordinator
+            .lock()
+            .unwrap()
+            .MUTATE_NO_PERSIST()
+            .cancel();
         self.usb_sender.send_cancel_all()
     }
 
@@ -381,7 +394,9 @@ impl FfiCoordinator {
 
         let keygen_messages = {
             let mut coordinator = self.coordinator.lock().unwrap();
-            coordinator.do_keygen(&devices, threshold as u16)?
+            coordinator.staged_mutate(&mut *self.db.lock().unwrap(), |coordinator| {
+                Ok(coordinator.do_keygen(&devices, threshold as u16)?)
+            })?
         };
 
         self.pending_for_outbox
@@ -425,7 +440,10 @@ impl FfiCoordinator {
         sink: StreamSink<api::SigningState>,
     ) -> anyhow::Result<()> {
         let mut coordinator = self.coordinator.lock().unwrap();
-        let mut messages = coordinator.start_sign(key_id, task, devices.clone())?;
+        let mut messages = coordinator
+            .staged_mutate(&mut self.db.lock().unwrap(), |coordinator| {
+                Ok(coordinator.start_sign(key_id, task, devices.clone())?)
+            })?;
         let mut ui_protocol =
             frostsnap_coordinator::signing::SigningDispatcher::from_filter_out_start_sign(
                 &mut messages,
@@ -444,16 +462,14 @@ impl FfiCoordinator {
         #[allow(unused)] /* we only have one key for now */ key_id: KeyId,
         sink: StreamSink<api::SigningState>,
     ) -> anyhow::Result<()> {
-        let signing_session_state = self
-            .db
-            .lock()
-            .unwrap()
-            .execute(|tx| tx.take_index(self.persist_core).persisted_signing())?;
-
-        let signing_session_state =
-            signing_session_state.ok_or(anyhow!("no signing session to restore"))?;
+        let signing_session_state = self.signing_session.lock().unwrap();
+        let signing_session_state = signing_session_state
+            .clone()
+            .ok_or(anyhow!("no signing session to restore"))?;
         let mut coordinator = self.coordinator.lock().unwrap();
-        coordinator.restore_sign_session(signing_session_state.clone());
+        coordinator
+            .MUTATE_NO_PERSIST()
+            .restore_sign_session(signing_session_state.clone());
 
         let mut dispatcher = frostsnap_coordinator::signing::SigningDispatcher::new_from_request(
             signing_session_state.request.clone(),
@@ -474,20 +490,19 @@ impl FfiCoordinator {
     pub fn persisted_sign_session_description(
         &self,
         key_id: KeyId,
-    ) -> Result<Option<api::SignTaskDescription>> {
-        self.db.lock().unwrap().execute(|tx| {
-            Ok(tx
-                .take_index(self.persist_core)
-                .persisted_sign_session_task(key_id)?
-                .map(|task| match task {
-                    SignTask::Plain { message, .. } => api::SignTaskDescription::Plain { message },
-                    SignTask::Nostr { .. } => todo!("nostr restoring not yet implemented"),
-                    SignTask::BitcoinTransaction(task) => api::SignTaskDescription::Transaction {
-                        unsigned_tx: api::UnsignedTx {
-                            template_tx: RustOpaque::new(task),
-                        },
-                    },
-                }))
+    ) -> Option<api::SignTaskDescription> {
+        let session = self.signing_session.lock().unwrap().clone()?;
+        if session.request.key_id != key_id {
+            return None;
+        }
+        Some(match session.request.sign_task {
+            SignTask::Plain { message, .. } => api::SignTaskDescription::Plain { message },
+            SignTask::Nostr { .. } => todo!("nostr restoring not yet implemented"),
+            SignTask::BitcoinTransaction(task) => api::SignTaskDescription::Transaction {
+                unsigned_tx: api::UnsignedTx {
+                    template_tx: RustOpaque::new(task),
+                },
+            },
         })
     }
 
@@ -506,6 +521,7 @@ impl FfiCoordinator {
             .coordinator
             .lock()
             .unwrap()
+            .MUTATE_NO_PERSIST()
             .request_device_display_backup(device_id, key_id)?;
         self.pending_for_outbox.lock().unwrap().extend(messages);
 
@@ -575,6 +591,10 @@ impl FfiCoordinator {
             progress => *progress = Some(sink),
         }
         Ok(())
+    }
+
+    pub fn get_device_name(&self, id: DeviceId) -> Option<String> {
+        self.device_names.lock().unwrap().get(id)
     }
 }
 

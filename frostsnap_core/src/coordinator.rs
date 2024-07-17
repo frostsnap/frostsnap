@@ -1,13 +1,14 @@
 use crate::{
-    gen_pop_message, message::*, ActionError, Error, FrostKeyExt, KeyId, MessageResult,
+    gen_pop_message, message::*, ActionError, Error, FrostKeyExt, Gist, KeyId, MessageResult,
     SessionHash, SignItem, SignTask, SignTaskError,
 };
 use alloc::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    string::String,
     vec::Vec,
 };
 use schnorr_fun::{
-    frost::{self, EncodedFrostKey, Frost, FrostKey, SignSession},
+    frost::{self, EncodedFrostKey, Frost, FrostKey, Nonce, SignSession},
     fun::{marker::*, Scalar},
     Message, Schnorr, Signature,
 };
@@ -23,6 +24,7 @@ pub struct FrostCoordinator {
     key_order: Vec<KeyId>,
     action_state: Option<CoordinatorState>,
     device_nonces: BTreeMap<DeviceId, DeviceNonces>,
+    mutations: VecDeque<Mutation>,
 }
 
 impl FrostCoordinator {
@@ -32,15 +34,21 @@ impl FrostCoordinator {
             key_order: Default::default(),
             action_state: None,
             device_nonces: Default::default(),
+            mutations: Default::default(),
         }
     }
 
-    pub fn apply_change(&mut self, change: CoordinatorToStorageMessage) {
-        use CoordinatorToStorageMessage::*;
-        match change {
+    pub fn mutate(&mut self, mutation: Mutation) {
+        self.apply_mutation(&mutation);
+        self.mutations.push_back(mutation);
+    }
+
+    pub fn apply_mutation(&mut self, mutation: &Mutation) {
+        use Mutation::*;
+        match mutation {
             NewKey(key) => {
                 let key_id = key.frost_key().key_id();
-                let actually_new = self.keys.insert(key_id, key).is_none();
+                let actually_new = self.keys.insert(key_id, key.clone()).is_none();
                 if actually_new {
                     self.key_order.push(key_id);
                 }
@@ -49,31 +57,37 @@ impl FrostCoordinator {
                 device_id,
                 nonce_counter,
             } => {
-                let device_nonces = self.device_nonces.entry(device_id).or_default();
-                let _nonce = device_nonces
-                    .nonces
-                    .pop_front()
-                    .expect("we need to have had a nonce to apply a NonceUsed change");
-                device_nonces.start_index = device_nonces.start_index.max(nonce_counter);
+                let device_nonces = self.device_nonces.entry(*device_id).or_default();
+                debug_assert!(
+                    *nonce_counter > device_nonces.start_index,
+                    "NoncesUsed should use nonces"
+                );
+
+                let new_start_index = device_nonces.start_index.max(*nonce_counter);
+
+                while device_nonces.start_index < new_start_index {
+                    device_nonces
+                        .nonces
+                        .pop_front()
+                        .expect("NoncesUsed is invalid");
+                    device_nonces.start_index += 1;
+                }
             }
             ResetNonces { device_id, nonces } => {
-                self.device_nonces.insert(device_id, nonces);
+                self.device_nonces.insert(*device_id, nonces.clone());
             }
             NewNonces {
                 device_id,
                 new_nonces,
             } => {
-                let device_nonces = self.device_nonces.entry(device_id).or_default();
+                let device_nonces = self.device_nonces.entry(*device_id).or_default();
                 device_nonces.nonces.extend(new_nonces);
             }
-            StoreSigningState(sign_state) => {
-                let key = self
-                    .frost_key_state(sign_state.request.key_id)
-                    .expect("cannot restore in coordinator without state")
-                    .clone();
-                self.action_state = Some(CoordinatorState::Signing { sign_state, key });
-            }
         }
+    }
+
+    pub fn take_staged_mutations(&mut self) -> VecDeque<Mutation> {
+        core::mem::take(&mut self.mutations)
     }
 
     pub fn restore_sign_session(&mut self, sign_state: SigningSessionState) {
@@ -98,13 +112,11 @@ impl FrostCoordinator {
         let message_kind = message.kind();
         match (&mut self.action_state, message) {
             (_, DeviceToCoordinatorMessage::NonceResponse(device_nonces)) => {
-                self.device_nonces.insert(from, device_nonces.clone());
-                Ok(vec![CoordinatorSend::ToStorage(
-                    CoordinatorToStorageMessage::ResetNonces {
-                        device_id: from,
-                        nonces: device_nonces,
-                    },
-                )])
+                self.mutate(Mutation::ResetNonces {
+                    device_id: from,
+                    nonces: device_nonces,
+                });
+                Ok(vec![])
             }
             (
                 Some(CoordinatorState::KeyGen(KeyGenState::WaitingForResponses {
@@ -246,14 +258,11 @@ impl FrostCoordinator {
                     let key_id = key.encoded_frost_key.into_frost_key().key_id();
                     self.action_state = None;
 
-                    let change = CoordinatorToStorageMessage::NewKey(key);
-                    self.apply_change(change.clone());
-                    outgoing.extend([
-                        CoordinatorSend::ToStorage(change),
-                        CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen(
-                            CoordinatorToUserKeyGenMessage::FinishedKey { key_id },
-                        )),
-                    ]);
+                    self.mutate(Mutation::NewKey(key));
+
+                    outgoing.extend([CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen(
+                        CoordinatorToUserKeyGenMessage::FinishedKey { key_id },
+                    ))]);
                 }
                 Ok(outgoing)
             }
@@ -276,7 +285,7 @@ impl FrostCoordinator {
 
                 let nonce_for_device =
                     self.device_nonces
-                        .get_mut(&from)
+                        .get(&from)
                         .ok_or(Error::coordinator_invalid_message(
                             message_kind,
                             "Signer is unknown",
@@ -347,9 +356,7 @@ impl FrostCoordinator {
                 });
 
                 // the coordinator may want to persist this so a signing session can be restored
-                outgoing.push(CoordinatorSend::ToStorage(
-                    CoordinatorToStorageMessage::StoreSigningState(sign_state.clone()),
-                ));
+                outgoing.push(CoordinatorSend::SigningSessionStore(sign_state.clone()));
 
                 if all_finished {
                     let sessions = &sign_state.sessions;
@@ -387,14 +394,12 @@ impl FrostCoordinator {
                 }
 
                 if new_nonces.start_index == nonce_for_device.replenish_start() {
-                    outgoing.push(CoordinatorSend::ToStorage(
-                        CoordinatorToStorageMessage::NewNonces {
-                            new_nonces: new_nonces.nonces.iter().cloned().collect(),
-                            device_id: from,
-                        },
-                    ));
-                    nonce_for_device.nonces.append(&mut new_nonces.nonces);
+                    self.mutate(Mutation::NewNonces {
+                        new_nonces: new_nonces.nonces.iter().cloned().collect(),
+                        device_id: from,
+                    });
                 } else {
+                    debug_assert!(false, "we shouldn't hit this branch");
                     #[cfg(feature = "tracing")]
                     tracing::event!(
                         tracing::Level::ERROR,
@@ -487,7 +492,8 @@ impl FrostCoordinator {
         let key = self
             .keys
             .get(&key_id)
-            .ok_or(StartSignError::UnknownKey { key_id })?;
+            .ok_or(StartSignError::UnknownKey { key_id })?
+            .clone();
         let frost_key = key.encoded_frost_key.into_frost_key();
         let selected = signing_parties.len();
         if selected < frost_key.threshold() {
@@ -506,16 +512,26 @@ impl FrostCoordinator {
 
         // For the ToDevice message
         let mut signing_nonces = BTreeMap::default();
-        // ToStorage messages so we persist which nonces we're usign
-        let mut used_nonces = vec![];
+        let mut mutations = vec![];
 
         for &device_id in &signing_parties {
-            let share_index = *key
+            let share_index = key
                 .device_to_share_index
                 .get(&device_id)
                 .ok_or(StartSignError::DeviceNotPartOfKey { device_id })?;
-            let nonces_for_device = self.device_nonces.entry(device_id).or_default();
+            let nonces_for_device = match self.device_nonces.get(&device_id) {
+                Some(nonces_for_device) => nonces_for_device,
+                None => {
+                    return Err(StartSignError::NotEnoughNoncesForDevice {
+                        device_id,
+                        have: 0,
+                        need: n_signatures,
+                    })
+                }
+            };
+
             let index_of_first_nonce = nonces_for_device.start_index;
+
             if nonces_for_device.nonces.len() < n_signatures {
                 return Err(StartSignError::NotEnoughNoncesForDevice {
                     device_id,
@@ -523,26 +539,30 @@ impl FrostCoordinator {
                     need: n_signatures,
                 });
             }
-            let nonces = core::iter::from_fn(|| {
-                let nonce = nonces_for_device.nonces.pop_front()?;
-                nonces_for_device.start_index += 1;
-                Some(nonce)
-            })
-            .take(n_signatures)
-            .collect();
+
+            let nonces_remaining = (nonces_for_device.nonces.len() - n_signatures) as u64;
+
+            let nonces = (0..n_signatures)
+                .map(|i| nonces_for_device.nonces[i])
+                .collect();
+
+            let new_nonce_counter = index_of_first_nonce
+                .checked_add(n_signatures as u64)
+                .expect("TODO: guarantee malicious device can't overflow this");
+
+            mutations.push(Mutation::NoncesUsed {
+                device_id,
+                nonce_counter: new_nonce_counter,
+            });
 
             signing_nonces.insert(
-                share_index,
+                *share_index,
                 SignRequestNonces {
                     nonces,
                     start: index_of_first_nonce,
-                    nonces_remaining: nonces_for_device.nonces.len() as u64,
+                    nonces_remaining,
                 },
             );
-            used_nonces.push(CoordinatorToStorageMessage::NoncesUsed {
-                device_id,
-                nonce_counter: nonces_for_device.start_index,
-            });
         }
 
         let frost = frost::new_without_nonce_generation::<Sha256>();
@@ -565,15 +585,19 @@ impl FrostCoordinator {
             })
             .collect();
 
-        let key = key.clone();
         let sign_request = SignRequest {
             sign_task: checked_sign_task.into_inner(),
             nonces: signing_nonces.clone(),
             key_id,
         };
 
+        // Finally apply the mutations which will extinguish the nonces for the devices
+        for mutation in mutations {
+            self.mutate(mutation);
+        }
+
         self.action_state = Some(CoordinatorState::Signing {
-            key: key.clone(),
+            key,
             sign_state: SigningSessionState {
                 targets: signing_parties.clone(),
                 sessions,
@@ -581,15 +605,10 @@ impl FrostCoordinator {
             },
         });
 
-        let mut outgoing = vec![];
-
-        outgoing.extend(used_nonces.into_iter().map(CoordinatorSend::ToStorage));
-        outgoing.push(CoordinatorSend::ToDevice {
+        Ok(vec![CoordinatorSend::ToDevice {
             destinations: signing_parties,
             message: CoordinatorToDeviceMessage::RequestSign(sign_request),
-        });
-
-        Ok(outgoing)
+        }])
     }
 
     pub fn maybe_request_nonce_replenishment(
@@ -739,6 +758,10 @@ impl SigningSessionState {
         // all sessions make progress at the same time
         self.sessions[0].received_from()
     }
+
+    pub fn session_id(&self) -> [u8; 32] {
+        self.request.session_id()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -850,3 +873,36 @@ impl core::fmt::Display for StartSignError {
 
 #[cfg(feature = "std")]
 impl std::error::Error for StartSignError {}
+
+/// Mutations to the coordinator state
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+pub enum Mutation {
+    NewKey(CoordinatorFrostKey),
+    NoncesUsed {
+        device_id: DeviceId,
+        /// if nonce_counter = x, then the coordinator expects x to be the next nonce used.
+        /// (anything < x has been used)
+        nonce_counter: u64,
+    },
+    ResetNonces {
+        device_id: DeviceId,
+        nonces: DeviceNonces,
+    },
+    NewNonces {
+        device_id: DeviceId,
+        new_nonces: Vec<Nonce>,
+    },
+}
+
+impl Gist for Mutation {
+    fn gist(&self) -> String {
+        use Mutation::*;
+        match self {
+            NoncesUsed { .. } => "NoncesUsed",
+            ResetNonces { .. } => "ResetNonces",
+            NewNonces { .. } => "NewNonces",
+            NewKey(_) => "NewKey",
+        }
+        .into()
+    }
+}

@@ -27,7 +27,7 @@ void main() async {
       api.turnStderrLoggingOn(level: LogLevel.Debug);
     }
     final appDir = await getApplicationSupportDirectory();
-    final dbFile = '${appDir.path}/frostsnap.db';
+    final dbFile = '${appDir.path}/frostsnap.sqlite';
     if (Platform.isAndroid) {
       final (coord_, ffiserial, wallet_, bitcoinContext_) =
           await api.loadHostHandlesSerial(dbFile: dbFile);

@@ -17,8 +17,8 @@ struct DeviceData {
 }
 
 impl DeviceData {
-    pub fn into_device(self, id: DeviceId) -> api::Device {
-        api::Device {
+    pub fn into_device(self, id: DeviceId) -> api::ConnectedDevice {
+        api::ConnectedDevice {
             id,
             latest_digest: self.latest_digest,
             firmware_digest: self.firmware_digest.clone(),
@@ -48,7 +48,7 @@ impl DeviceList {
         }
     }
 
-    pub fn device_at_index(&self, index: usize) -> Option<api::Device> {
+    pub fn device_at_index(&self, index: usize) -> Option<api::ConnectedDevice> {
         self.devices.get(index).map(|id| {
             self.metadata
                 .get(id)
@@ -82,27 +82,8 @@ impl DeviceList {
                             ..Default::default()
                         });
                 }
-                DeviceChange::Renamed {
-                    id,
-                    old_name: _old_name,
-                    new_name,
-                } => {
-                    if let Some(index) = self.index_of(id) {
-                        // NOTE: ignoring old name for now
-                        let device_data = self
-                            .metadata
-                            .entry(id)
-                            .and_modify(|device| device.name = Some(new_name.clone()))
-                            .or_insert(DeviceData {
-                                name: Some(new_name),
-                                ..Default::default()
-                            });
-                        output.push(api::DeviceListChange {
-                            kind: api::DeviceListChangeKind::Named,
-                            index,
-                            device: device_data.clone().into_device(id),
-                        });
-                    }
+                DeviceChange::NameChange { id: _, name: _ } => {
+                    /* this is not imporant. It should become registered which will display it */
                 }
                 DeviceChange::NeedsName { id } => {
                     output.extend(self.append(id));
@@ -150,9 +131,6 @@ impl DeviceList {
                     }
                 }
                 DeviceChange::AppMessage(_) => { /* not relevant */ }
-                DeviceChange::NewUnknownDevice { .. } => {
-                    /* TODO: a new device should prompt the user to sync or something */
-                }
             }
         }
 
@@ -162,29 +140,13 @@ impl DeviceList {
         output
     }
 
-    pub fn get_device(&self, id: DeviceId) -> api::Device {
+    pub fn get_device(&self, id: DeviceId) -> api::ConnectedDevice {
         self.metadata
             .get(&id)
             .cloned()
             .unwrap_or_default()
             .into_device(id)
     }
-
-    pub fn init_names(&mut self, names: HashMap<DeviceId, String>) {
-        self.metadata = names
-            .into_iter()
-            .map(|(id, name)| {
-                (
-                    id,
-                    DeviceData {
-                        name: Some(name),
-                        ..Default::default()
-                    },
-                )
-            })
-            .collect();
-    }
-
     fn index_of(&self, id: DeviceId) -> Option<usize> {
         self.devices
             .iter()

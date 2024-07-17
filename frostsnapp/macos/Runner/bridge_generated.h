@@ -39,19 +39,19 @@ typedef struct wire_Transaction {
   struct wire_ConfirmationTime *confirmation_time;
 } wire_Transaction;
 
-typedef struct wire_Device {
+typedef struct wire_ConnectedDevice {
   struct wire_uint_8_list *name;
   struct wire_uint_8_list *firmware_digest;
   struct wire_uint_8_list *latest_digest;
   struct wire_DeviceId id;
-} wire_Device;
+} wire_ConnectedDevice;
 
-typedef struct wire_FrostsnapCoreCoordinatorFrostKey {
+typedef struct wire_FrostsnapCoreCoordinatorCoordinatorFrostKey {
   const void *ptr;
-} wire_FrostsnapCoreCoordinatorFrostKey;
+} wire_FrostsnapCoreCoordinatorCoordinatorFrostKey;
 
 typedef struct wire_FrostKey {
-  struct wire_FrostsnapCoreCoordinatorFrostKey field0;
+  struct wire_FrostsnapCoreCoordinatorCoordinatorFrostKey field0;
 } wire_FrostKey;
 
 typedef struct wire_PortOpenSender {
@@ -93,13 +93,13 @@ typedef struct wire_PortBytesToRead {
   struct wire_PortBytesToReadSender ready;
 } wire_PortBytesToRead;
 
-typedef struct wire_list_device {
-  struct wire_Device *ptr;
+typedef struct wire_list_connected_device {
+  struct wire_ConnectedDevice *ptr;
   int32_t len;
-} wire_list_device;
+} wire_list_connected_device;
 
 typedef struct wire_DeviceListState {
-  struct wire_list_device *devices;
+  struct wire_list_connected_device *devices;
   uintptr_t state_id;
 } wire_DeviceListState;
 
@@ -238,7 +238,7 @@ WireSyncReturn wire_device_at_index(uintptr_t index);
 
 WireSyncReturn wire_device_list_state(void);
 
-WireSyncReturn wire_get_device(struct wire_DeviceId *id);
+WireSyncReturn wire_get_connected_device(struct wire_DeviceId *id);
 
 void wire_load(int64_t port_, struct wire_uint_8_list *db_file);
 
@@ -254,9 +254,9 @@ void wire_new_qr_encoder(int64_t port_, struct wire_uint_8_list *bytes);
 
 WireSyncReturn wire_txid__method__Transaction(struct wire_Transaction *that);
 
-WireSyncReturn wire_ready__method__Device(struct wire_Device *that);
+WireSyncReturn wire_ready__method__ConnectedDevice(struct wire_ConnectedDevice *that);
 
-WireSyncReturn wire_needs_firmware_upgrade__method__Device(struct wire_Device *that);
+WireSyncReturn wire_needs_firmware_upgrade__method__ConnectedDevice(struct wire_ConnectedDevice *that);
 
 WireSyncReturn wire_threshold__method__FrostKey(struct wire_FrostKey *that);
 
@@ -398,6 +398,9 @@ void wire_cancel_protocol__method__Coordinator(int64_t port_, struct wire_Coordi
 void wire_enter_firmware_upgrade_mode__method__Coordinator(int64_t port_,
                                                            struct wire_Coordinator *that);
 
+WireSyncReturn wire_get_device_name__method__Coordinator(struct wire_Coordinator *that,
+                                                         struct wire_DeviceId *id);
+
 WireSyncReturn wire_descriptor_for_key__method__BitcoinContext(struct wire_BitcoinContext *that,
                                                                struct wire_KeyId *key_id);
 
@@ -451,7 +454,7 @@ struct wire_FfiQrReader new_FfiQrReader(void);
 
 struct wire_FrostsnapCoreBitcoinTransactionTransactionTemplate new_FrostsnapCoreBitcoinTransactionTransactionTemplate(void);
 
-struct wire_FrostsnapCoreCoordinatorFrostKey new_FrostsnapCoreCoordinatorFrostKey(void);
+struct wire_FrostsnapCoreCoordinatorCoordinatorFrostKey new_FrostsnapCoreCoordinatorCoordinatorFrostKey(void);
 
 struct wire_MutexBTreeMapKeyIdStreamSinkTxState new_MutexBTreeMapKeyIdStreamSinkTxState(void);
 
@@ -473,9 +476,9 @@ struct wire_BitcoinContext *new_box_autoadd_bitcoin_context_0(void);
 
 struct wire_ConfirmationTime *new_box_autoadd_confirmation_time_0(void);
 
-struct wire_Coordinator *new_box_autoadd_coordinator_0(void);
+struct wire_ConnectedDevice *new_box_autoadd_connected_device_0(void);
 
-struct wire_Device *new_box_autoadd_device_0(void);
+struct wire_Coordinator *new_box_autoadd_coordinator_0(void);
 
 struct wire_DeviceId *new_box_autoadd_device_id_0(void);
 
@@ -509,7 +512,7 @@ struct wire_UnsignedTx *new_box_autoadd_unsigned_tx_0(void);
 
 struct wire_Wallet *new_box_autoadd_wallet_0(void);
 
-struct wire_list_device *new_list_device_0(int32_t len);
+struct wire_list_connected_device *new_list_connected_device_0(int32_t len);
 
 struct wire_list_device_id *new_list_device_id_0(int32_t len);
 
@@ -555,9 +558,9 @@ void drop_opaque_FrostsnapCoreBitcoinTransactionTransactionTemplate(const void *
 
 const void *share_opaque_FrostsnapCoreBitcoinTransactionTransactionTemplate(const void *ptr);
 
-void drop_opaque_FrostsnapCoreCoordinatorFrostKey(const void *ptr);
+void drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(const void *ptr);
 
-const void *share_opaque_FrostsnapCoreCoordinatorFrostKey(const void *ptr);
+const void *share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(const void *ptr);
 
 void drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(const void *ptr);
 
@@ -597,7 +600,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_turn_logcat_logging_on);
     dummy_var ^= ((int64_t) (void*) wire_device_at_index);
     dummy_var ^= ((int64_t) (void*) wire_device_list_state);
-    dummy_var ^= ((int64_t) (void*) wire_get_device);
+    dummy_var ^= ((int64_t) (void*) wire_get_connected_device);
     dummy_var ^= ((int64_t) (void*) wire_load);
     dummy_var ^= ((int64_t) (void*) wire_load_host_handles_serial);
     dummy_var ^= ((int64_t) (void*) wire_echo_key_id);
@@ -605,8 +608,8 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_new_qr_reader);
     dummy_var ^= ((int64_t) (void*) wire_new_qr_encoder);
     dummy_var ^= ((int64_t) (void*) wire_txid__method__Transaction);
-    dummy_var ^= ((int64_t) (void*) wire_ready__method__Device);
-    dummy_var ^= ((int64_t) (void*) wire_needs_firmware_upgrade__method__Device);
+    dummy_var ^= ((int64_t) (void*) wire_ready__method__ConnectedDevice);
+    dummy_var ^= ((int64_t) (void*) wire_needs_firmware_upgrade__method__ConnectedDevice);
     dummy_var ^= ((int64_t) (void*) wire_threshold__method__FrostKey);
     dummy_var ^= ((int64_t) (void*) wire_id__method__FrostKey);
     dummy_var ^= ((int64_t) (void*) wire_name__method__FrostKey);
@@ -647,6 +650,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_upgrade_firmware_digest__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_cancel_protocol__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_enter_firmware_upgrade_mode__method__Coordinator);
+    dummy_var ^= ((int64_t) (void*) wire_get_device_name__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_descriptor_for_key__method__BitcoinContext);
     dummy_var ^= ((int64_t) (void*) wire_validate_amount__method__BitcoinContext);
     dummy_var ^= ((int64_t) (void*) wire_validate_destination_address__method__BitcoinContext);
@@ -666,7 +670,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) new_FfiQrEncoder);
     dummy_var ^= ((int64_t) (void*) new_FfiQrReader);
     dummy_var ^= ((int64_t) (void*) new_FrostsnapCoreBitcoinTransactionTransactionTemplate);
-    dummy_var ^= ((int64_t) (void*) new_FrostsnapCoreCoordinatorFrostKey);
+    dummy_var ^= ((int64_t) (void*) new_FrostsnapCoreCoordinatorCoordinatorFrostKey);
     dummy_var ^= ((int64_t) (void*) new_MutexBTreeMapKeyIdStreamSinkTxState);
     dummy_var ^= ((int64_t) (void*) new_MutexFrostsnapWallet);
     dummy_var ^= ((int64_t) (void*) new_PortBytesToReadSender);
@@ -677,8 +681,8 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) new_StringList_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_bitcoin_context_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_confirmation_time_0);
+    dummy_var ^= ((int64_t) (void*) new_box_autoadd_connected_device_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_coordinator_0);
-    dummy_var ^= ((int64_t) (void*) new_box_autoadd_device_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_device_id_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_device_list_state_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_ffi_serial_0);
@@ -695,7 +699,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_transaction_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_unsigned_tx_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_wallet_0);
-    dummy_var ^= ((int64_t) (void*) new_list_device_0);
+    dummy_var ^= ((int64_t) (void*) new_list_connected_device_0);
     dummy_var ^= ((int64_t) (void*) new_list_device_id_0);
     dummy_var ^= ((int64_t) (void*) new_list_encoded_signature_0);
     dummy_var ^= ((int64_t) (void*) new_list_port_desc_0);
@@ -718,8 +722,8 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) share_opaque_FfiQrReader);
     dummy_var ^= ((int64_t) (void*) drop_opaque_FrostsnapCoreBitcoinTransactionTransactionTemplate);
     dummy_var ^= ((int64_t) (void*) share_opaque_FrostsnapCoreBitcoinTransactionTransactionTemplate);
-    dummy_var ^= ((int64_t) (void*) drop_opaque_FrostsnapCoreCoordinatorFrostKey);
-    dummy_var ^= ((int64_t) (void*) share_opaque_FrostsnapCoreCoordinatorFrostKey);
+    dummy_var ^= ((int64_t) (void*) drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey);
+    dummy_var ^= ((int64_t) (void*) share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey);
     dummy_var ^= ((int64_t) (void*) drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState);
     dummy_var ^= ((int64_t) (void*) share_opaque_MutexBTreeMapKeyIdStreamSinkTxState);
     dummy_var ^= ((int64_t) (void*) drop_opaque_MutexFrostsnapWallet);

@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use frostsnap_comms::CoordinatorSendMessage;
 use frostsnap_core::{message::CoordinatorToUserMessage, DeviceId};
 
@@ -8,7 +10,7 @@ use frostsnap_core::{message::CoordinatorToUserMessage, DeviceId};
 /// a `Sink` into the constructor.
 ///
 /// With the `poll` method it can communicate to the devices or the coordinator's storage.
-pub trait UiProtocol: Send {
+pub trait UiProtocol: Send + Any + 'static {
     fn name(&self) -> &'static str {
         core::any::type_name_of_val(self)
     }
@@ -24,6 +26,8 @@ pub trait UiProtocol: Send {
     /// connections and disconnections on the protocol so it is able to violate boundries here a bit
     /// and send out core messages.
     fn poll(&mut self) -> (Vec<CoordinatorSendMessage>, Vec<UiToStorageMessage>);
+
+    fn as_any(&self) -> &dyn Any;
 }
 
 pub trait Sink<M>: Send {
