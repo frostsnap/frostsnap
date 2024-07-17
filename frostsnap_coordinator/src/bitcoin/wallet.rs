@@ -1,14 +1,13 @@
-use crate::persist::Persisted;
-
 use super::chain_sync::SyncRequest;
+use crate::persist::Persisted;
 use anyhow::{anyhow, Context, Result};
 use bdk_chain::{
     bitcoin::{self, bip32, Amount, SignedAmount},
-    indexed_tx_graph::{self, Indexer},
-    keychain::{self, KeychainTxOutIndex},
+    indexed_tx_graph,
+    indexer::keychain_txout::{self, KeychainTxOutIndex},
     local_chain,
     miniscript::{Descriptor, DescriptorPublicKey},
-    spk_client, Append, ChainPosition, ConfirmationTimeHeightAnchor,
+    spk_client, ChainPosition, ConfirmationBlockTime, Indexer, Merge,
 };
 use frostsnap_core::{
     bitcoin_transaction::{self, LocalSpk},
@@ -27,12 +26,12 @@ use std::{
 use tracing::{event, Level};
 
 pub type WalletIndexedTxGraph = indexed_tx_graph::IndexedTxGraph<
-    ConfirmationTimeHeightAnchor,
+    ConfirmationBlockTime,
     KeychainTxOutIndex<(KeyId, AppAccountKeychain)>,
 >;
 pub type WalletIndexedTxGraphChangeSet = indexed_tx_graph::ChangeSet<
-    ConfirmationTimeHeightAnchor,
-    keychain::ChangeSet<(KeyId, AppAccountKeychain)>,
+    ConfirmationBlockTime,
+    keychain_txout::ChangeSet<(KeyId, AppAccountKeychain)>,
 >;
 
 /// Pretty much a generic bitcoin wallet that indexes everything by key id
@@ -168,7 +167,7 @@ impl FrostsnapWallet {
             .filter_map(|canonical_tx| {
                 let confirmation_time = match canonical_tx.chain_position {
                     ChainPosition::Confirmed(conf_time) => Some(ConfirmationTime {
-                        height: conf_time.confirmation_height,
+                        height: conf_time.block_id.height,
                         time: conf_time.confirmation_time,
                     }),
                     _ => None,
@@ -208,7 +207,7 @@ impl FrostsnapWallet {
 
     pub fn finish_sync(
         &mut self,
-        update: spk_client::SyncResult<ConfirmationTimeHeightAnchor>,
+        update: spk_client::SyncResult<ConfirmationBlockTime>,
     ) -> Result<bool> {
         let mut db = self.db.lock().unwrap();
 
@@ -409,7 +408,7 @@ impl FrostsnapWallet {
             .tx_graph
             .mutate(&mut *self.db.lock().unwrap(), |tx_graph| {
                 let mut changeset = WalletIndexedTxGraphChangeSet::default();
-                changeset.append(
+                changeset.merge(
                     tx_graph.insert_seen_at(
                         tx.compute_txid(),
                         std::time::SystemTime::now()
@@ -418,7 +417,7 @@ impl FrostsnapWallet {
                             .as_secs(),
                     ),
                 );
-                changeset.append(tx_graph.insert_tx(tx));
+                changeset.merge(tx_graph.insert_tx(tx));
                 Ok(((), changeset))
             });
 

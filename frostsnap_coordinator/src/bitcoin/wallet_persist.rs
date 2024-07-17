@@ -1,7 +1,9 @@
 use super::wallet::{WalletIndexedTxGraph, WalletIndexedTxGraphChangeSet};
 use crate::persist::{Persist, SqlBitcoinTransaction, SqlBlockHash, SqlDescriptorId, SqlTxid};
 use anyhow::{anyhow, Result};
-use bdk_chain::{bitcoin::BlockHash, local_chain, BlockId, ConfirmationTimeHeightAnchor};
+use bdk_chain::{
+    bitcoin::BlockHash, indexer::keychain_txout, local_chain, BlockId, ConfirmationBlockTime,
+};
 use rusqlite::params;
 
 impl Persist<rusqlite::Connection> for WalletIndexedTxGraph {
@@ -13,7 +15,7 @@ impl Persist<rusqlite::Connection> for WalletIndexedTxGraph {
 
         // index
         {
-            let mut changeset = bdk_chain::keychain::ChangeSet::default();
+            let mut changeset = keychain_txout::ChangeSet::default();
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS bdk_keychain (
                     descriptor_id TEXT PRIMARY KEY,
@@ -71,40 +73,33 @@ impl Persist<rusqlite::Connection> for WalletIndexedTxGraph {
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS bdk_anchors (
                  txid TEXT NOT NULL,
-                 anchor_height INTEGER NOT NULL,
-                 anchor_blockhash TEXT NOT NULL,
                  height INTEGER NOT NULL,
+                 blockhash TEXT NOT NULL,
                  timestamp INTEGER NOT NULL,
-                 PRIMARY KEY (txid, anchor_height, anchor_blockhash)
+                 PRIMARY KEY (txid, height, blockhash)
             )",
                 [],
             )?;
 
-            let mut stmt = conn.prepare(
-                "SELECT txid,anchor_height,anchor_blockhash,height,timestamp FROM bdk_anchors",
-            )?;
+            let mut stmt =
+                conn.prepare("SELECT txid,height,blockhash,height,timestamp FROM bdk_anchors")?;
 
             let row_iter = stmt.query_map([], |row| {
                 Ok((
                     row.get::<_, SqlTxid>(0)?.0,
                     row.get::<_, u32>(1)?,
                     row.get::<_, SqlBlockHash>(2)?.0,
-                    row.get::<_, u32>(3)?,
                     row.get::<_, u64>(4)?,
                 ))
             })?;
 
             for row in row_iter {
-                let (txid, anchor_height, anchor_hash, height, timestamp) = row?;
+                let (txid, height, hash, confirmation_time) = row?;
                 let _ = txs.insert_anchor(
                     txid,
-                    ConfirmationTimeHeightAnchor {
-                        confirmation_height: height,
-                        confirmation_time: timestamp,
-                        anchor_block: BlockId {
-                            height: anchor_height,
-                            hash: anchor_hash,
-                        },
+                    ConfirmationBlockTime {
+                        block_id: BlockId { height, hash },
+                        confirmation_time,
                     },
                 );
             }
@@ -137,8 +132,8 @@ impl Persist<rusqlite::Connection> for WalletIndexedTxGraph {
 
         for (anchor, txid) in &update.graph.anchors {
             conn.execute(
-                "INSERT OR REPLACE INTO bdk_anchors (txid, anchor_height, anchor_blockhash, height, timestamp) VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![SqlTxid(*txid), anchor.anchor_block.height, SqlBlockHash(anchor.anchor_block.hash), anchor.confirmation_height, anchor.confirmation_time])?;
+                "INSERT OR REPLACE INTO bdk_anchors (txid, height, blockhash, timestamp) VALUES (?1, ?2, ?3, ?4)",
+                params![SqlTxid(*txid), anchor.block_id.height, SqlBlockHash(anchor.block_id.hash), anchor.confirmation_time])?;
         }
 
         for (descriptor_id, last_revealed) in &update.indexer.last_revealed {

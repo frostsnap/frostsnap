@@ -193,7 +193,7 @@ dependencies = [
 [[package]]
 name = "bdk_chain"
 version = "0.16.0"
-source = "git+https://github.com/bitcoindevkit/bdk.git?rev=a112b4d97c02c3acb9728c55c6c150560b5cc0b7#a112b4d97c02c3acb9728c55c6c150560b5cc0b7"
+source = "git+https://github.com/bitcoindevkit/bdk.git?rev=d99b3ef4b449a5c7b8facf04db3cb9be829a0ac1#d99b3ef4b449a5c7b8facf04db3cb9be829a0ac1"
 dependencies = [
  "bitcoin",
  "miniscript",
@@ -209,7 +209,7 @@ checksum = "3c084bf76f0f67546fc814ffa82044144be1bb4618183a15016c162f8b087ad4"
 [[package]]
 name = "bdk_electrum"
 version = "0.15.0"
-source = "git+https://github.com/bitcoindevkit/bdk.git?rev=a112b4d97c02c3acb9728c55c6c150560b5cc0b7#a112b4d97c02c3acb9728c55c6c150560b5cc0b7"
+source = "git+https://github.com/bitcoindevkit/bdk.git?rev=d99b3ef4b449a5c7b8facf04db3cb9be829a0ac1#d99b3ef4b449a5c7b8facf04db3cb9be829a0ac1"
 dependencies = [
  "bdk_chain",
  "electrum-client",
