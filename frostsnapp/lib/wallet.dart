@@ -1,12 +1,16 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_id_ext.dart';
 import 'package:frostsnapp/global.dart';
+import 'package:frostsnapp/psbt.dart';
 import 'package:frostsnapp/sign_message.dart';
 import 'package:frostsnapp/stream_ext.dart';
+import 'package:pretty_qr_code/pretty_qr_code.dart';
+
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
-import 'dart:io';
 
 class WalletHome extends StatefulWidget {
   final KeyId keyId;
@@ -58,12 +62,74 @@ class _WalletHomeState extends State<WalletHome> {
     });
   }
 
+  void _copyToClipboard(BuildContext context, String walletDescriptor) {
+    Clipboard.setData(ClipboardData(text: walletDescriptor)).then((_) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Wallet descriptor copied to clipboard')),
+      );
+    });
+  }
+
+  void _showQRCodeDialog(BuildContext context, String walletDescriptor) {
+    final qrCode = QrCode(8, QrErrorCorrectLevel.L);
+    qrCode.addData(walletDescriptor);
+    final qrImage = QrImage(qrCode);
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Center(child: Text('Export Descriptor')),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              PrettyQrView(
+                qrImage: qrImage,
+                decoration: const PrettyQrDecoration(
+                  shape: PrettyQrSmoothSymbol(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              iconSize: 30.0,
+              onPressed: () => _copyToClipboard(context, walletDescriptor),
+              icon: Icon(Icons.copy),
+            ),
+            SizedBox(width: 30.0),
+            IconButton(
+              iconSize: 30.0,
+              icon: Icon(Icons.close),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            )
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Bitcoin Wallet'),
-      ),
+      appBar: AppBar(title: Text('Bitcoin Wallet'), actions: [
+        PopupMenuButton<String>(
+          onSelected: (String result) {
+            if (result == 'export_descriptor') {
+              _showQRCodeDialog(context,
+                  bitcoinContext.descriptorForKey(keyId: widget.keyId));
+            }
+          },
+          itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+            const PopupMenuItem<String>(
+              value: 'export_descriptor',
+              child: Text('Export Descriptor'),
+            ),
+          ],
+        )
+      ]),
       body: Center(
           // Display the widget based on the current index
           child: _getSelectedWidget()),
@@ -256,10 +322,9 @@ class _FloatingProgress extends State<FloatingProgress>
       setState(() {
         progress = event;
       });
-    })
-      ..onDone(() {
-        _progressFadeController.forward();
-      });
+    }).onDone(() {
+      _progressFadeController.forward();
+    });
   }
 
   @override
@@ -405,28 +470,29 @@ class _WalletReceiveState extends State<WalletReceive> {
 
   @override
   Widget build(BuildContext context) {
+    final keyXpub = bitcoinContext.descriptorForKey(keyId: widget.keyId);
     return Scaffold(
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(10.0),
-            child: ElevatedButton(
-              onPressed: _addAddress,
-              child: Text('Get New Address'),
-            ),
+        body: Padding(
+      padding: const EdgeInsets.all(10.0),
+      child: Column(children: [
+        Padding(
+          padding: const EdgeInsets.all(10.0),
+          child: ElevatedButton(
+            onPressed: _addAddress,
+            child: Text('Get New Address'),
           ),
-          Expanded(
-            child: AnimatedList(
-              key: _listKey,
-              initialItemCount: _addresses.length,
-              itemBuilder: (context, index, animation) {
-                return _buildAddressItem(_addresses[index], animation);
-              },
-            ),
+        ),
+        Expanded(
+          child: AnimatedList(
+            key: _listKey,
+            initialItemCount: _addresses.length,
+            itemBuilder: (context, index, animation) {
+              return _buildAddressItem(_addresses[index], animation);
+            },
           ),
-        ],
-      ),
-    );
+        ),
+      ]),
+    ));
   }
 
   Widget _buildAddressItem(Address address, Animation<double> animation) {
@@ -458,7 +524,7 @@ class WalletSend extends StatefulWidget {
   final KeyId keyId;
   final Function()? onBroadcastNewTx;
 
-  WalletSend({
+  const WalletSend({
     Key? key,
     required this.txStream,
     required this.keyId,
@@ -494,125 +560,139 @@ class _WalletSendState extends State<WalletSend> {
   Widget build(BuildContext context) {
     final frostKey = coord.getKey(keyId: widget.keyId)!;
     final enoughSelected = selectedDevices.length == frostKey.threshold();
+
+    final Widget signPsbtButton = ElevatedButton(
+        onPressed: () {
+          Navigator.push(context, MaterialPageRoute(builder: (context) {
+            return LoadPsbtPage(
+              keyId: widget.keyId,
+            );
+          }));
+        },
+        child: Text(
+          "Load PSBT",
+        ));
+
     return Scaffold(
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Balance(txStream: widget.txStream),
-              TextFormField(
-                decoration: InputDecoration(labelText: 'Address'),
-                validator: (value) {
-                  // Use the provided predicate for address validation
-                  return wallet.validateDestinationAddress(
-                      address: value ?? '');
-                },
-                onSaved: (value) => _address = value ?? '',
-              ),
-              TextFormField(
-                decoration: InputDecoration(labelText: 'Amount (sats)'),
-                keyboardType: TextInputType.numberWithOptions(decimal: false),
-                validator: (value) {
-                  // Convert value to int and use the provided predicate for amount validation
-                  final amount = int.tryParse(value ?? '') ?? 0;
-                  return wallet.validateAmount(
-                      address: _address, value: amount);
-                },
-                onSaved: (value) => _amount = int.tryParse(value ?? '') ?? 0,
-              ),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      decoration:
-                          InputDecoration(labelText: 'Fee Rate (sats/vByte)'),
-                      keyboardType:
-                          TextInputType.numberWithOptions(decimal: true),
-                      initialValue: _feerate.toString(),
-                      onChanged: (value) {
+      body: Container(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(children: [
+            Expanded(
+                child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Balance(txStream: widget.txStream),
+                  TextFormField(
+                    decoration: InputDecoration(labelText: 'Address'),
+                    validator: (value) {
+                      // Use the provided predicate for address validation
+                      return bitcoinContext.validateDestinationAddress(
+                          address: value ?? '');
+                    },
+                    onSaved: (value) => _address = value ?? '',
+                  ),
+                  TextFormField(
+                    decoration: InputDecoration(labelText: 'Amount (sats)'),
+                    keyboardType:
+                        TextInputType.numberWithOptions(decimal: false),
+                    validator: (value) {
+                      // Convert value to int and use the provided predicate for amount validation
+                      final amount = int.tryParse(value ?? '') ?? 0;
+                      return bitcoinContext.validateAmount(
+                          address: _address, value: amount);
+                    },
+                    onSaved: (value) =>
+                        _amount = int.tryParse(value ?? '') ?? 0,
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          decoration: InputDecoration(
+                              labelText: 'Fee Rate (sats/vByte)'),
+                          keyboardType:
+                              TextInputType.numberWithOptions(decimal: true),
+                          initialValue: _feerate.toString(),
+                          onChanged: (value) {
+                            setState(() {
+                              _feerate = double.tryParse(value) ?? _feerate;
+                              _updateETA();
+                            });
+                          },
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 10),
+                        child: Text(
+                          "ETA $_eta",
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                    ],
+                  ),
+                  Divider(height: 20.0, thickness: 2.0, color: Colors.grey),
+                  Text(
+                    'Select ${frostKey.threshold()} device${frostKey.threshold() > 1 ? "s" : ""} to sign with:',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 20.0),
+                  ),
+                  SigningDeviceSelector(
+                      frostKey: frostKey,
+                      onChanged: (selected) {
                         setState(() {
-                          _feerate = double.tryParse(value) ?? _feerate;
-                          _updateETA();
+                          selectedDevices = selected;
                         });
-                      },
-                    ),
-                  ),
+                      }),
                   Padding(
-                    padding: const EdgeInsets.only(left: 10),
-                    child: Text(
-                      "ETA $_eta",
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  ),
+                      padding: const EdgeInsets.symmetric(vertical: 16.0),
+                      child: ElevatedButton(
+                        onPressed: !enoughSelected
+                            ? null
+                            : () async {
+                                if (_formKey.currentState!.validate()) {
+                                  _formKey.currentState!.save();
+                                  final unsignedTx = await wallet.sendTo(
+                                      keyId: widget.keyId,
+                                      toAddress: _address,
+                                      value: _amount,
+                                      feerate: _feerate);
+                                  final signingStream = coord.startSigningTx(
+                                      keyId: widget.keyId,
+                                      unsignedTx: unsignedTx,
+                                      devices: selectedDevices.toList());
+                                  if (context.mounted) {
+                                    await signAndBroadcastWorkflowDialog(
+                                        context: context,
+                                        signingStream: signingStream,
+                                        unsignedTx: unsignedTx,
+                                        keyId: widget.keyId,
+                                        onBroadcastNewTx:
+                                            widget.onBroadcastNewTx);
+                                  }
+                                }
+                              },
+                        child: Text('Submit Transaction'),
+                      )),
                 ],
               ),
-              Divider(height: 20.0, thickness: 2.0, color: Colors.grey),
-              Text(
-                'Select ${frostKey.threshold()} device${frostKey.threshold() > 1 ? "s" : ""} to sign with:',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 20.0),
-              ),
-              SigningDeviceSelector(
-                  frostKey: frostKey,
-                  onChanged: (selected) {
-                    setState(() {
-                      selectedDevices = selected;
-                    });
-                  }),
-              Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 16.0),
-                  child: ElevatedButton(
-                    onPressed: !enoughSelected
-                        ? null
-                        : () async {
-                            if (_formKey.currentState!.validate()) {
-                              _formKey.currentState!.save();
-                              try {
-                                final unsignedTx = await wallet.sendTo(
-                                    keyId: widget.keyId,
-                                    toAddress: _address,
-                                    value: _amount,
-                                    feerate: _feerate);
-                                final signingStream = coord.startSigningTx(
-                                    keyId: widget.keyId,
-                                    unsignedTx: unsignedTx,
-                                    devices: selectedDevices.toList());
-                                if (context.mounted) {
-                                  await signTransactionWorkflowDialog(
-                                      context: context,
-                                      signingStream: signingStream,
-                                      unsignedTx: unsignedTx,
-                                      keyId: widget.keyId,
-                                      onBroadcastNewTx:
-                                          widget.onBroadcastNewTx);
-                                }
-                              } catch (e) {
-                                if (context.mounted) {
-                                  showErrorSnackbar(context, e.toString());
-                                }
-                              }
-                            }
-                          },
-                    child: Text('Submit Transaction'),
-                  )),
-            ],
-          ),
-        ),
-      ),
+            )),
+            // const SizedBox(height: 15),
+            signPsbtButton,
+          ])),
     );
   }
 }
 
-Future<void> signTransactionWorkflowDialog(
+Future<void> signAndBroadcastWorkflowDialog(
     {required BuildContext context,
     required Stream<SigningState> signingStream,
     required UnsignedTx unsignedTx,
     required KeyId keyId,
     Function()? onBroadcastNewTx}) async {
-  final effect = wallet.effectOfTx(keyId: keyId, tx: unsignedTx.tx());
+  final effect =
+      unsignedTx.effect(keyId: keyId, network: bitcoinContext.network);
 
   final signatures = await showSigningProgressDialog(
     context,
@@ -620,15 +700,87 @@ Future<void> signTransactionWorkflowDialog(
     describeEffect(effect),
   );
   if (signatures != null) {
-    final tx = wallet.completeUnsignedTx(
-        unsignedTx: unsignedTx, signatures: signatures);
+    final signedTx = await unsignedTx.complete(signatures: signatures);
     if (context.mounted) {
       final wasBroadcast =
-          await _showBroadcastConfirmDialog(context, keyId, tx);
+          await showBroadcastConfirmDialog(context, keyId, signedTx);
       if (wasBroadcast) {
         onBroadcastNewTx?.call();
       }
     }
+  }
+}
+
+class EffectTable extends StatelessWidget {
+  final EffectOfTx effect;
+  const EffectTable({super.key, required this.effect});
+
+  @override
+  Widget build(BuildContext context) {
+    List<TableRow> transactionRows =
+        effect.foreignReceivingAddresses.map((entry) {
+      final (address, value) = entry;
+      return TableRow(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Text('Send to $address'),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: NetValue(-value),
+          ),
+        ],
+      );
+    }).toList();
+
+    transactionRows.add(
+      TableRow(
+        children: [
+          Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: effect.feerate != null
+                  ? Text("${effect.feerate!.toStringAsFixed(1)} (sats/vb))")
+                  : Text("unknown")),
+          Padding(
+              padding: const EdgeInsets.all(8.0), child: NetValue(-effect.fee)),
+        ],
+      ),
+    );
+
+    transactionRows.add(
+      TableRow(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Text('Net value'),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: NetValue(effect.netValue),
+          ),
+        ],
+      ),
+    );
+
+    final effectTable = Table(
+      columnWidths: const {
+        0: FlexColumnWidth(4),
+        1: FlexColumnWidth(2),
+      },
+      border: TableBorder.all(),
+      children: transactionRows,
+    );
+
+    final effectWidget = Column(
+      children: [
+        describeEffect(effect),
+        Divider(),
+        effectTable,
+      ],
+    );
+
+    return effectWidget;
   }
 }
 
@@ -654,87 +806,23 @@ Widget describeEffect(EffectOfTx effect) {
   } else if (effect.foreignReceivingAddresses.isEmpty) {
     description = Text("Internal transfer");
   } else {
-    description = Text("can't describe this yet");
+    description = Text("cannot describe this yet");
   }
 
   return description;
 }
 
-Future<bool> _showBroadcastConfirmDialog(
+Future<bool> showBroadcastConfirmDialog(
     BuildContext context, KeyId keyId, SignedTx tx) async {
   final wasBroadcast = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
-        final effect = wallet.effectOfTx(keyId: keyId, tx: tx.tx());
-
-        List<TableRow> transactionRows =
-            effect.foreignReceivingAddresses.map((entry) {
-          final (address, value) = entry;
-          return TableRow(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Text('Send to $address'),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: NetValue(-value),
-              ),
-            ],
-          );
-        }).toList();
-
-        transactionRows.add(
-          TableRow(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Text(
-                    'Fee (${effect.feerate.toStringAsFixed(1)} sats/vByte)'),
-              ),
-              Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: NetValue(-effect.fee)),
-            ],
-          ),
-        );
-
-        transactionRows.add(
-          TableRow(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Text('Net value'),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: NetValue(effect.netValue),
-              ),
-            ],
-          ),
-        );
-
-        final effectTable = Table(
-          columnWidths: const {
-            0: FlexColumnWidth(4),
-            1: FlexColumnWidth(2),
-          },
-          border: TableBorder.all(),
-          children: transactionRows,
-        );
-
-        final effectWidget = Column(
-          children: [
-            describeEffect(effect),
-            Divider(),
-            effectTable,
-          ],
-        );
-
+        final effect = tx.effect(keyId: keyId, network: bitcoinContext.network);
+        final effectWidget = EffectTable(effect: effect);
         return AlertDialog(
             title: Text("Broadcast?"),
-            content: Container(
+            content: SizedBox(
                 width: Platform.isAndroid ? double.maxFinite : 400.0,
                 child: Align(
                   alignment: Alignment.center,
@@ -789,7 +877,7 @@ class Balance extends StatelessWidget {
         return Padding(
           padding: const EdgeInsets.all(20.0),
           child: Text(
-            '$balanceInBTC', // Unicode for Bitcoin symbol
+            balanceInBTC, // Unicode for Bitcoin symbol
             style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold),
           ),
         );
@@ -824,12 +912,9 @@ String formatSatoshi(int satoshis) {
   var parts = btcString.split('.');
 
   // Format the fractional part into segments
-  String fractionalPart = parts[1].substring(0, 2) +
-      " " +
-      parts[1].substring(2, 5) +
-      " " +
-      parts[1].substring(5);
+  String fractionalPart =
+      "${parts[1].substring(0, 2)} ${parts[1].substring(2, 5)} ${parts[1].substring(5)}";
 
   // Combine the whole number part with the formatted fractional part
-  return '${parts[0]}.${fractionalPart}\u20BF';
+  return '${parts[0]}.$fractionalPart\u20BF';
 }

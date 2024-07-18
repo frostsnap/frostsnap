@@ -133,7 +133,7 @@ class _KeyCard extends State<KeyCard> {
                 }
               case SignTaskDescription_Transaction(:final unsignedTx):
                 {
-                  await signTransactionWorkflowDialog(
+                  await signAndBroadcastWorkflowDialog(
                       context: context,
                       signingStream: signingStream,
                       unsignedTx: unsignedTx,

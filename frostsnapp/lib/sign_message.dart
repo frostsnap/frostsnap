@@ -188,9 +188,9 @@ Future<List<EncodedSignature>?> showSigningProgressDialog(
 ) {
   final stream = signingStream.toBehaviorSubject();
 
-  final finishedSigning = stream
-      .asyncMap((event) => event.finishedSignatures)
-      .firstWhere((signatures) => signatures.isNotEmpty);
+  final finishedSigning = stream.asyncMap((event) {
+    return event.finishedSignatures;
+  }).firstWhere((signatures) => signatures.isNotEmpty);
 
   return showDeviceActionDialog(
       context: context,

@@ -16,6 +16,7 @@ mem_debug = []
 [dependencies]
 frostsnap_core = { workspace = true }
 frostsnap_comms = { workspace = true }
+bitcoin.workspace = true
 esp-hal = { package = "esp-hal", version = "0.18.0", features = ["esp32c3"] }
 esp-alloc = "0.3.0"
 nb = "1"

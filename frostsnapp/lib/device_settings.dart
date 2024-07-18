@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -11,7 +10,6 @@ import 'package:frostsnapp/device_setup.dart';
 import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/hex.dart';
-import 'dart:typed_data';
 
 class DeviceSettingsPage extends StatelessWidget {
   const DeviceSettingsPage({
@@ -72,7 +70,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
     final deviceKeys = coord.keysForDevice(deviceId: widget.id);
     if (device == null) {
       body = Center(
-          child: Column(children: [
+          child: Column(children: const [
         Text(
           'Waiting for device to reconnect',
           style: TextStyle(color: Colors.grey, fontSize: 24.0),
@@ -222,6 +220,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
       final settings = SettingsSection(settings: [
         ("Name", DeviceNameField(id: device_.id, existingName: device_.name)),
         ("Keys", keyList),
+        ("Nonces", NonceCounterDisplay(id: device_.id)),
         ("Update Firmware", firmwareSettings)
       ]);
 
@@ -249,6 +248,19 @@ class _DeviceSettingsState extends State<DeviceSettings> {
             child: body,
           ),
         ));
+  }
+}
+
+class NonceCounterDisplay extends StatelessWidget {
+  final DeviceId id;
+  const NonceCounterDisplay({super.key, required this.id});
+
+  @override
+  Widget build(BuildContext context) {
+    return KeyValueListWidget(data: {
+      'Current nonce': coord.currentNonce(id: id).toString(),
+      'Nonces left': coord.noncesAvailable(id: id).toString(),
+    });
   }
 }
 
@@ -291,6 +303,8 @@ class SettingsSection extends StatelessWidget {
 
 class FirmwareUpgradeDialog extends StatefulWidget {
   Function()? onUpgradeFinished;
+
+  FirmwareUpgradeDialog({super.key});
 
   @override
   State<FirmwareUpgradeDialog> createState() => _FirmwareUpgradeDialogState();
@@ -410,5 +424,36 @@ class _FirmwareUpgradeDialogState extends State<FirmwareUpgradeDialog> {
             return (null, icon);
           }))),
         ])));
+  }
+}
+
+class KeyValueListWidget extends StatelessWidget {
+  final Map<String, String> data;
+
+  KeyValueListWidget({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: data.entries.map((entry) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  entry.key,
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(entry.value),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
   }
 }
