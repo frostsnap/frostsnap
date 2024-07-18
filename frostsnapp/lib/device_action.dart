@@ -4,41 +4,93 @@ import 'dart:async';
 
 Future<T?> showDeviceActionDialog<T>({
   required BuildContext context,
-  required Widget content,
+  required Widget Function(BuildContext) builder,
   Future<T?>? complete,
   Function()? onCancel,
 }) async {
   var canceled = false;
+  BuildContext? dialogContext;
 
-  return showDialog<T>(
-      barrierDismissible: false,
-      context: context,
-      builder: (dialogContext) {
-        complete?.then((result) {
-          if (dialogContext.mounted) {
-            Navigator.pop(dialogContext, result);
-          }
-        }).catchError((error) {
-          if (!canceled) {
-            showErrorSnackbar(context, "ERROR: $error");
-            if (dialogContext.mounted) {
-              Navigator.pop(dialogContext);
-            }
-          }
-        });
-        final dialog =
-            AlertDialog(content: DialogContainer(child: content), actions: [
-          if (onCancel != null)
-            ElevatedButton(
-                onPressed: () {
-                  canceled = true;
-                  onCancel.call();
-                  Navigator.pop(dialogContext);
-                },
-                child: const Text("Cancel"))
-        ]);
-        return dialog;
-      });
+  complete?.then((result) {
+    if (dialogContext != null && dialogContext!.mounted) {
+      Navigator.pop(dialogContext!, result);
+    }
+  }).catchError((error) {
+    if (!canceled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("ERROR: $error")),
+      );
+      if (dialogContext != null && dialogContext!.mounted) {
+        Navigator.pop(dialogContext!);
+      }
+    }
+  });
+
+  final result = showModalBottomSheet<T>(
+    context: context,
+    isScrollControlled: true,
+    isDismissible: false,
+    backgroundColor: Colors.transparent,
+    builder: (BuildContext dialogContext_) {
+      dialogContext = dialogContext_;
+      return DraggableScrollableSheet(
+        initialChildSize: 0.9,
+        minChildSize: 0.9,
+        maxChildSize: 0.9,
+        builder: (BuildContext context, ScrollController scrollController) {
+          return Center(
+              child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: 400.0,
+                  ),
+                  child: Stack(children: [
+                    Container(
+                      margin: EdgeInsets.only(
+                          top: 50), // Adjust this for the small space above
+                      padding: EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.only(
+                          topLeft: Radius.circular(20),
+                          topRight: Radius.circular(20),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black26,
+                            blurRadius: 10,
+                            offset: Offset(0, -2),
+                          ),
+                        ],
+                      ),
+                      child: Align(
+                          alignment: Alignment.center,
+                          child: builder(dialogContext_)),
+                    ),
+                    Positioned(
+                      top: 55,
+                      right: 10,
+                      child: IconButton.outlined(
+                        icon: Icon(Icons.close),
+                        onPressed: () {
+                          canceled = true;
+                          Navigator.pop(context);
+                        },
+                      ),
+                    ),
+                  ])));
+        },
+      );
+    },
+  );
+
+  result.then((value) {
+    if (value == null) {
+      canceled = true;
+      onCancel?.call();
+    }
+  });
+
+  return result;
 }
 
 void showErrorSnackbar(BuildContext context, String errorMessage) {
@@ -55,18 +107,4 @@ void showErrorSnackbar(BuildContext context, String errorMessage) {
   );
 
   ScaffoldMessenger.of(context).showSnackBar(snackBar);
-}
-
-class DialogContainer extends StatelessWidget {
-  final Widget child;
-
-  const DialogContainer({super.key, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-        width: Platform.isAndroid ? double.maxFinite : 400.0,
-        // this align thing is necessary to stop the child from expanding beyond its BoxConstraints
-        child: Align(alignment: Alignment.center, child: this.child));
-  }
 }

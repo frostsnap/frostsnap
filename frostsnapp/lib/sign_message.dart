@@ -198,12 +198,14 @@ Future<List<EncodedSignature>?> showSigningProgressDialog(
         coord.cancelProtocol();
       },
       complete: finishedSigning,
-      content: Column(children: [
-        description,
-        Divider(),
-        Text("Plug in each device"),
-        Expanded(child: DeviceSigningProgress(stream: stream)),
-      ]));
+      builder: (context) {
+        return Column(children: [
+          description,
+          Divider(),
+          Text("Plug in each device"),
+          Expanded(child: DeviceSigningProgress(stream: stream)),
+        ]);
+      });
 }
 
 Future<void> _showSignatureDialog(

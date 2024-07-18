@@ -43,7 +43,7 @@ Widget toHexBox(Uint8List bytes, {int chunkSize = 2}) {
   // Widget to dynamically layout the chunks
   return LayoutBuilder(
     builder: (BuildContext context, BoxConstraints constraints) {
-      int maxChunksPerRow = (constraints.maxWidth / (chunkSize * 30)).floor();
+      int maxChunksPerRow = (constraints.maxWidth / (chunkSize * 40)).floor();
       maxChunksPerRow =
           math.max(1, maxChunksPerRow); // Ensure at least one chunk per row
 

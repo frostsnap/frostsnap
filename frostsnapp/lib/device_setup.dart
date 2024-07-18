@@ -77,27 +77,30 @@ class _DeviceNameField extends State<DeviceNameField> {
           coord.finishNaming(id: widget.id, name: name);
           await showDeviceActionDialog(
               context: context,
-              content: Column(children: [
-                Text("Confirm name '$name' on device"),
-                Divider(),
-                MaybeExpandedVertical(child: DeviceListContainer(child:
-                    DeviceListWithIcons(iconAssigner: (context, deviceId) {
-                  if (deviceIdEquals(deviceId, widget.id)) {
-                    final label = LabeledDeviceText("'$name'?");
-                    const icon = Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.visibility, color: Colors.orange),
-                      SizedBox(width: 4),
-                      Text("Confirm"),
-                    ]);
-                    return (label, icon);
-                  } else {
-                    return (null, null);
-                  }
-                })))
-              ]),
               complete: completeWhen,
               onCancel: () async {
                 await coord.sendCancel(id: widget.id);
+              },
+              builder: (context) {
+                return Column(children: [
+                  Text("Confirm name '$name' on device"),
+                  Divider(),
+                  MaybeExpandedVertical(child: DeviceListContainer(child:
+                      DeviceListWithIcons(iconAssigner: (context, deviceId) {
+                    if (deviceIdEquals(deviceId, widget.id)) {
+                      final label = LabeledDeviceText("'$name'?");
+                      const icon =
+                          Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.visibility, color: Colors.orange),
+                        SizedBox(width: 4),
+                        Text("Confirm"),
+                      ]);
+                      return (label, icon);
+                    } else {
+                      return (null, null);
+                    }
+                  })))
+                ]);
               });
         },
         onChanged: (value) async {
