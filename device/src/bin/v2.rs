@@ -154,9 +154,16 @@ fn main() -> ! {
             baudrate: frostsnap_comms::BAUDRATE,
             ..Default::default()
         };
-        let txrx1 = uart::TxRxPins::new_tx_rx(io.pins.gpio18, io.pins.gpio19);
         SerialInterface::new_uart(
-            Uart::new_with_config(peripherals.UART1, serial_conf, Some(txrx1), &clocks, None),
+            Uart::new_with_config(
+                peripherals.UART1,
+                serial_conf,
+                &clocks,
+                None,
+                io.pins.gpio18,
+                io.pins.gpio19,
+            )
+            .unwrap(),
             &timer0,
             &clocks,
         )
@@ -168,9 +175,15 @@ fn main() -> ! {
             baudrate: frostsnap_comms::BAUDRATE,
             ..Default::default()
         };
-        let txrx0 = uart::TxRxPins::new_tx_rx(io.pins.gpio21, io.pins.gpio20);
-        let uart =
-            Uart::new_with_config(peripherals.UART0, serial_conf, Some(txrx0), &clocks, None);
+        let uart = Uart::new_with_config(
+            peripherals.UART0,
+            serial_conf,
+            &clocks,
+            None,
+            io.pins.gpio21,
+            io.pins.gpio20,
+        )
+        .unwrap();
         SerialInterface::new_uart(uart, &timer0, &clocks)
     };
     let sha256 = esp_hal::sha::Sha::new(peripherals.SHA, esp_hal::sha::ShaMode::SHA256, None);
