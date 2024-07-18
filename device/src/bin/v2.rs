@@ -24,7 +24,7 @@ use esp_hal::{
     },
     peripherals::Peripherals,
     prelude::*,
-    rng::Rng,
+    rng::Trng,
     spi::{master::Spi, SpiMode},
     system::SystemControl,
     timer::{
@@ -188,7 +188,8 @@ fn main() -> ! {
     };
     let sha256 = esp_hal::sha::Sha::new(peripherals.SHA, esp_hal::sha::ShaMode::SHA256, None);
 
-    let mut hal_rng = Rng::new(peripherals.RNG);
+    let mut adc = peripherals.ADC1;
+    let mut hal_rng = Trng::new(peripherals.RNG, &mut adc);
 
     let rng = {
         let mut chacha_seed = [0u8; 32];
