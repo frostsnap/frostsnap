@@ -35,8 +35,8 @@ bdk_coin_select = { version = "0.3" }
 
 [patch.crates-io]
 # bdk_chain = { path = "../bdk/crates/chain" }
-bdk_chain = { git = "https://github.com/bitcoindevkit/bdk.git", rev = "d99b3ef4b449a5c7b8facf04db3cb9be829a0ac1" }
-bdk_electrum = { git = "https://github.com/bitcoindevkit/bdk.git", rev = "d99b3ef4b449a5c7b8facf04db3cb9be829a0ac1" }
+bdk_chain = { git = "https://github.com/LLFourn/bdk.git", rev = "0dcb8f6c8c4d338b0dd13f7c20dc9ec34377ee32" }
+bdk_electrum = { git = "https://github.com/LLFourn/bdk.git", rev = "0dcb8f6c8c4d338b0dd13f7c20dc9ec34377ee32" }
 schnorr_fun = { git = "https://github.com/LLFourn/secp256kfun.git", rev = "b14977213c800ab4e4d5e194d082f329bb972a53" }
 
 [profile.dev]
