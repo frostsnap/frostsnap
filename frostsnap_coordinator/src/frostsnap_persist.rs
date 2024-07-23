@@ -142,8 +142,9 @@ pub struct DeviceNames {
 
 impl DeviceNames {
     pub fn insert(&mut self, device_id: DeviceId, name: String) {
-        self.names.insert(device_id, name.clone());
-        self.mutations.push_back((device_id, name));
+        if self.names.insert(device_id, name.clone()).as_ref() != Some(&name) {
+            self.mutations.push_back((device_id, name));
+        }
     }
 
     pub fn get(&self, device_id: DeviceId) -> Option<String> {
