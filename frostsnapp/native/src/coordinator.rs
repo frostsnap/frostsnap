@@ -58,10 +58,6 @@ impl FfiCoordinator {
         let signing_session = Persisted::<Option<SigningSessionState>>::new(&mut db_, ())?;
 
         let usb_sender = usb_manager.usb_sender();
-
-        // HACK: if the global device list depends on db state then it shouldn't be global! The
-        // reason it needs these names is for convenience. There are too many places that have
-        // copies of the device names -- we need a central location.
         let firmware_bin = usb_manager.upgrade_bin();
 
         let usb_manager = Mutex::new(Some(usb_manager));
