@@ -262,7 +262,6 @@ impl FrostSigner {
                     key: FrostsnapSecretKey {
                         encoded_frost_key: frost_key.into(),
                         secret_share,
-                        share_index: *my_index,
                     },
                 });
 
@@ -294,7 +293,7 @@ impl FrostSigner {
                     .map_err(|e| Error::signer_invalid_message(&message, e))?;
 
                 let key_id = key.key_id();
-                let my_nonces = nonces.get(&key.share_index).ok_or_else(|| {
+                let my_nonces = nonces.get(&key.secret_share.index).ok_or_else(|| {
                     Error::signer_invalid_message(
                         &message,
                         "this device was asked to sign but no nonces
@@ -397,7 +396,7 @@ impl FrostSigner {
                     )))?;
                 let secret_share = &key.secret_share;
                 let my_session_nonces = session_nonces
-                    .get(&key.share_index)
+                    .get(&key.secret_share.index)
                     .expect("already checked");
 
                 let sign_items = sign_task.sign_items();
@@ -436,7 +435,7 @@ impl FrostSigner {
                     .take(my_session_nonces.nonces.len());
 
                 let frost = frost::new_without_nonce_generation::<Sha256>();
-                let share_index = key.share_index;
+                let share_index = key.secret_share.index;
                 let frost_key = key.encoded_frost_key.into_frost_key();
                 let mut signature_shares = vec![];
 
@@ -458,7 +457,6 @@ impl FrostSigner {
                     let sig_share = frost.sign(
                         &derived_xonly_key,
                         &sign_session,
-                        share_index,
                         secret_share,
                         secret_nonce,
                     );
@@ -499,13 +497,7 @@ impl FrostSigner {
                 awaiting_ack: true,
             }) => {
                 let key = self.keys.get(&key_id).expect("key must exist");
-                let frost_key = key.encoded_frost_key.into_frost_key();
-                let backup = schnorr_fun::share_backup::ShareBackup::new::<sha2::Sha256>(
-                    &frost_key.point_polynomial(),
-                    key.secret_share.mark_zero(),
-                    key.share_index,
-                )
-                .to_string();
+                let backup = key.secret_share.to_bech32_backup();
 
                 self.action_state = Some(SignerState::DisplayBackup {
                     key_id,
@@ -569,9 +561,7 @@ pub struct FrostsnapSecretKey {
     /// The joint key
     pub encoded_frost_key: EncodedFrostKey,
     /// Our secret share of it
-    pub secret_share: Scalar,
-    /// Our secret share index
-    pub share_index: Scalar<Public, NonZero>,
+    pub secret_share: frost::SecretShare,
 }
 
 impl FrostsnapSecretKey {

@@ -2,7 +2,7 @@
 use frostsnap_core::message::{
     CoordinatorToDeviceMessage, DeviceToUserMessage, KeyGenResponse, SignRequest,
 };
-use frostsnap_core::{DeviceId, FrostCoordinator, FrostSigner, SignTask};
+use frostsnap_core::{coordinator::FrostCoordinator, DeviceId, FrostSigner, SignTask};
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::frost;

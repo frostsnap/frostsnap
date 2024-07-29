@@ -5,8 +5,8 @@ use frostsnap_core::message::{
 };
 use frostsnap_core::tweak::AppBip32Path;
 use frostsnap_core::{
-    CheckedSignTask, DeviceId, FrostCoordinator, FrostKeyExt, FrostSigner, KeyId, SessionHash,
-    SignTask,
+    coordinator::FrostCoordinator, CheckedSignTask, DeviceId, FrostKeyExt, FrostSigner, KeyId,
+    SessionHash, SignTask,
 };
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
@@ -41,13 +41,13 @@ struct TestEnv {
 }
 
 impl common::Env for TestEnv {
-    fn storage_react_to_coordinator(
+    fn storage_react_to_coordinator_mutation(
         &mut self,
         _run: &mut Run,
-        message: frostsnap_core::message::CoordinatorToStorageMessage,
+        mutation: frostsnap_core::coordinator::Mutation,
     ) {
-        use frostsnap_core::message::CoordinatorToStorageMessage::*;
-        match message {
+        use frostsnap_core::coordinator::Mutation::*;
+        match mutation {
             NewKey(_) => { /*  */ }
             NoncesUsed {
                 device_id,
@@ -96,7 +96,6 @@ impl common::Env for TestEnv {
                         .map(|(i, nonce)| ((device_id, start + i as u64), nonce)),
                 );
             }
-            StoreSigningState(_) => { /*  */ }
         }
     }
 
@@ -343,25 +342,18 @@ fn test_display_backup() {
         .values()
         .map(|(bu_key_id, backup)| {
             assert_eq!(*bu_key_id, key_id);
-            let decoded =
-                schnorr_fun::share_backup::decode_backup(backup.clone()).expect("valid backup");
-            (decoded.share_index, decoded.secret_share)
+
+            schnorr_fun::frost::SecretShare::from_bech32_backup(backup).expect("valid backup")
         })
         .collect::<Vec<_>>();
 
-    let threshold_interpolated_joint_secret =
-        schnorr_fun::fun::poly::scalar::interpolate_and_eval_poly_at_0(
-            decoded_backups
-                .choose_multiple(&mut test_rng, 2)
-                .cloned()
-                .collect(),
-        );
-    let interpolated_joint_secret =
-        schnorr_fun::fun::poly::scalar::interpolate_and_eval_poly_at_0(decoded_backups);
-    assert_eq!(
-        threshold_interpolated_joint_secret,
-        interpolated_joint_secret
+    let interpolated_joint_secret = schnorr_fun::frost::SecretShare::recover_secret(
+        &decoded_backups
+            .choose_multiple(&mut test_rng, 2)
+            .cloned()
+            .collect::<Vec<_>>(),
     );
+
     assert_eq!(
         g!(interpolated_joint_secret * G),
         coord_frost_key.frost_key().public_key()

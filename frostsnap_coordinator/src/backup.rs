@@ -54,4 +54,8 @@ impl UiProtocol for BackupProtocol {
     fn poll(&mut self) -> (Vec<CoordinatorSendMessage>, Vec<UiToStorageMessage>) {
         (vec![], vec![])
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }

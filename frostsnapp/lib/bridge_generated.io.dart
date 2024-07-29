@@ -85,11 +85,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   }
 
   @protected
-  wire_FrostsnapCoreCoordinatorFrostKey
-      api2wire_FrostsnapCoreCoordinatorFrostKey(
-          FrostsnapCoreCoordinatorFrostKey raw) {
-    final ptr = inner.new_FrostsnapCoreCoordinatorFrostKey();
-    _api_fill_to_wire_FrostsnapCoreCoordinatorFrostKey(raw, ptr);
+  wire_FrostsnapCoreCoordinatorCoordinatorFrostKey
+      api2wire_FrostsnapCoreCoordinatorCoordinatorFrostKey(
+          FrostsnapCoreCoordinatorCoordinatorFrostKey raw) {
+    final ptr = inner.new_FrostsnapCoreCoordinatorCoordinatorFrostKey();
+    _api_fill_to_wire_FrostsnapCoreCoordinatorCoordinatorFrostKey(raw, ptr);
     return ptr;
   }
 
@@ -177,17 +177,18 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   }
 
   @protected
-  ffi.Pointer<wire_Coordinator> api2wire_box_autoadd_coordinator(
-      Coordinator raw) {
-    final ptr = inner.new_box_autoadd_coordinator_0();
-    _api_fill_to_wire_coordinator(raw, ptr.ref);
+  ffi.Pointer<wire_ConnectedDevice> api2wire_box_autoadd_connected_device(
+      ConnectedDevice raw) {
+    final ptr = inner.new_box_autoadd_connected_device_0();
+    _api_fill_to_wire_connected_device(raw, ptr.ref);
     return ptr;
   }
 
   @protected
-  ffi.Pointer<wire_Device> api2wire_box_autoadd_device(Device raw) {
-    final ptr = inner.new_box_autoadd_device_0();
-    _api_fill_to_wire_device(raw, ptr.ref);
+  ffi.Pointer<wire_Coordinator> api2wire_box_autoadd_coordinator(
+      Coordinator raw) {
+    final ptr = inner.new_box_autoadd_coordinator_0();
+    _api_fill_to_wire_coordinator(raw, ptr.ref);
     return ptr;
   }
 
@@ -313,10 +314,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   }
 
   @protected
-  ffi.Pointer<wire_list_device> api2wire_list_device(List<Device> raw) {
-    final ans = inner.new_list_device_0(raw.length);
+  ffi.Pointer<wire_list_connected_device> api2wire_list_connected_device(
+      List<ConnectedDevice> raw) {
+    final ans = inner.new_list_connected_device_0(raw.length);
     for (var i = 0; i < raw.length; ++i) {
-      _api_fill_to_wire_device(raw[i], ans.ref.ptr[i]);
+      _api_fill_to_wire_connected_device(raw[i], ans.ref.ptr[i]);
     }
     return ans;
   }
@@ -422,11 +424,13 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   OpaqueTypeFinalizer
       get FrostsnapCoreBitcoinTransactionTransactionTemplateFinalizer =>
           _FrostsnapCoreBitcoinTransactionTransactionTemplateFinalizer;
-  late final OpaqueTypeFinalizer _FrostsnapCoreCoordinatorFrostKeyFinalizer =
+  late final OpaqueTypeFinalizer
+      _FrostsnapCoreCoordinatorCoordinatorFrostKeyFinalizer =
       OpaqueTypeFinalizer(
-          inner._drop_opaque_FrostsnapCoreCoordinatorFrostKeyPtr);
-  OpaqueTypeFinalizer get FrostsnapCoreCoordinatorFrostKeyFinalizer =>
-      _FrostsnapCoreCoordinatorFrostKeyFinalizer;
+          inner._drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKeyPtr);
+  OpaqueTypeFinalizer
+      get FrostsnapCoreCoordinatorCoordinatorFrostKeyFinalizer =>
+          _FrostsnapCoreCoordinatorCoordinatorFrostKeyFinalizer;
   late final OpaqueTypeFinalizer _MutexBTreeMapKeyIdStreamSinkTxStateFinalizer =
       OpaqueTypeFinalizer(
           inner._drop_opaque_MutexBTreeMapKeyIdStreamSinkTxStatePtr);
@@ -499,9 +503,9 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
     wireObj.ptr = apiObj.shareOrMove();
   }
 
-  void _api_fill_to_wire_FrostsnapCoreCoordinatorFrostKey(
-      FrostsnapCoreCoordinatorFrostKey apiObj,
-      wire_FrostsnapCoreCoordinatorFrostKey wireObj) {
+  void _api_fill_to_wire_FrostsnapCoreCoordinatorCoordinatorFrostKey(
+      FrostsnapCoreCoordinatorCoordinatorFrostKey apiObj,
+      wire_FrostsnapCoreCoordinatorCoordinatorFrostKey wireObj) {
     wireObj.ptr = apiObj.shareOrMove();
   }
 
@@ -556,14 +560,14 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
     _api_fill_to_wire_confirmation_time(apiObj, wireObj.ref);
   }
 
+  void _api_fill_to_wire_box_autoadd_connected_device(
+      ConnectedDevice apiObj, ffi.Pointer<wire_ConnectedDevice> wireObj) {
+    _api_fill_to_wire_connected_device(apiObj, wireObj.ref);
+  }
+
   void _api_fill_to_wire_box_autoadd_coordinator(
       Coordinator apiObj, ffi.Pointer<wire_Coordinator> wireObj) {
     _api_fill_to_wire_coordinator(apiObj, wireObj.ref);
-  }
-
-  void _api_fill_to_wire_box_autoadd_device(
-      Device apiObj, ffi.Pointer<wire_Device> wireObj) {
-    _api_fill_to_wire_device(apiObj, wireObj.ref);
   }
 
   void _api_fill_to_wire_box_autoadd_device_id(
@@ -652,16 +656,17 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
     wireObj.time = api2wire_u64(apiObj.time);
   }
 
-  void _api_fill_to_wire_coordinator(
-      Coordinator apiObj, wire_Coordinator wireObj) {
-    wireObj.field0 = api2wire_FfiCoordinator(apiObj.field0);
-  }
-
-  void _api_fill_to_wire_device(Device apiObj, wire_Device wireObj) {
+  void _api_fill_to_wire_connected_device(
+      ConnectedDevice apiObj, wire_ConnectedDevice wireObj) {
     wireObj.name = api2wire_opt_String(apiObj.name);
     wireObj.firmware_digest = api2wire_String(apiObj.firmwareDigest);
     wireObj.latest_digest = api2wire_String(apiObj.latestDigest);
     _api_fill_to_wire_device_id(apiObj.id, wireObj.id);
+  }
+
+  void _api_fill_to_wire_coordinator(
+      Coordinator apiObj, wire_Coordinator wireObj) {
+    wireObj.field0 = api2wire_FfiCoordinator(apiObj.field0);
   }
 
   void _api_fill_to_wire_device_id(DeviceId apiObj, wire_DeviceId wireObj) {
@@ -670,7 +675,7 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
 
   void _api_fill_to_wire_device_list_state(
       DeviceListState apiObj, wire_DeviceListState wireObj) {
-    wireObj.devices = api2wire_list_device(apiObj.devices);
+    wireObj.devices = api2wire_list_connected_device(apiObj.devices);
     wireObj.state_id = api2wire_usize(apiObj.stateId);
   }
 
@@ -685,7 +690,8 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   }
 
   void _api_fill_to_wire_frost_key(FrostKey apiObj, wire_FrostKey wireObj) {
-    wireObj.field0 = api2wire_FrostsnapCoreCoordinatorFrostKey(apiObj.field0);
+    wireObj.field0 =
+        api2wire_FrostsnapCoreCoordinatorCoordinatorFrostKey(apiObj.field0);
   }
 
   void _api_fill_to_wire_key_id(KeyId apiObj, wire_KeyId wireObj) {
@@ -942,19 +948,19 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _wire_device_list_state =
       _wire_device_list_statePtr.asFunction<WireSyncReturn Function()>();
 
-  WireSyncReturn wire_get_device(
+  WireSyncReturn wire_get_connected_device(
     ffi.Pointer<wire_DeviceId> id,
   ) {
-    return _wire_get_device(
+    return _wire_get_connected_device(
       id,
     );
   }
 
-  late final _wire_get_devicePtr = _lookup<
+  late final _wire_get_connected_devicePtr = _lookup<
           ffi
           .NativeFunction<WireSyncReturn Function(ffi.Pointer<wire_DeviceId>)>>(
-      'wire_get_device');
-  late final _wire_get_device = _wire_get_devicePtr
+      'wire_get_connected_device');
+  late final _wire_get_connected_device = _wire_get_connected_devicePtr
       .asFunction<WireSyncReturn Function(ffi.Pointer<wire_DeviceId>)>();
 
   void wire_load(
@@ -1070,36 +1076,37 @@ class NativeWire implements FlutterRustBridgeWireBase {
       _wire_txid__method__TransactionPtr
           .asFunction<WireSyncReturn Function(ffi.Pointer<wire_Transaction>)>();
 
-  WireSyncReturn wire_ready__method__Device(
-    ffi.Pointer<wire_Device> that,
+  WireSyncReturn wire_ready__method__ConnectedDevice(
+    ffi.Pointer<wire_ConnectedDevice> that,
   ) {
-    return _wire_ready__method__Device(
+    return _wire_ready__method__ConnectedDevice(
       that,
     );
   }
 
-  late final _wire_ready__method__DevicePtr = _lookup<
-          ffi
-          .NativeFunction<WireSyncReturn Function(ffi.Pointer<wire_Device>)>>(
-      'wire_ready__method__Device');
-  late final _wire_ready__method__Device = _wire_ready__method__DevicePtr
-      .asFunction<WireSyncReturn Function(ffi.Pointer<wire_Device>)>();
+  late final _wire_ready__method__ConnectedDevicePtr = _lookup<
+          ffi.NativeFunction<
+              WireSyncReturn Function(ffi.Pointer<wire_ConnectedDevice>)>>(
+      'wire_ready__method__ConnectedDevice');
+  late final _wire_ready__method__ConnectedDevice =
+      _wire_ready__method__ConnectedDevicePtr.asFunction<
+          WireSyncReturn Function(ffi.Pointer<wire_ConnectedDevice>)>();
 
-  WireSyncReturn wire_needs_firmware_upgrade__method__Device(
-    ffi.Pointer<wire_Device> that,
+  WireSyncReturn wire_needs_firmware_upgrade__method__ConnectedDevice(
+    ffi.Pointer<wire_ConnectedDevice> that,
   ) {
-    return _wire_needs_firmware_upgrade__method__Device(
+    return _wire_needs_firmware_upgrade__method__ConnectedDevice(
       that,
     );
   }
 
-  late final _wire_needs_firmware_upgrade__method__DevicePtr = _lookup<
-          ffi
-          .NativeFunction<WireSyncReturn Function(ffi.Pointer<wire_Device>)>>(
-      'wire_needs_firmware_upgrade__method__Device');
-  late final _wire_needs_firmware_upgrade__method__Device =
-      _wire_needs_firmware_upgrade__method__DevicePtr
-          .asFunction<WireSyncReturn Function(ffi.Pointer<wire_Device>)>();
+  late final _wire_needs_firmware_upgrade__method__ConnectedDevicePtr = _lookup<
+          ffi.NativeFunction<
+              WireSyncReturn Function(ffi.Pointer<wire_ConnectedDevice>)>>(
+      'wire_needs_firmware_upgrade__method__ConnectedDevice');
+  late final _wire_needs_firmware_upgrade__method__ConnectedDevice =
+      _wire_needs_firmware_upgrade__method__ConnectedDevicePtr.asFunction<
+          WireSyncReturn Function(ffi.Pointer<wire_ConnectedDevice>)>();
 
   WireSyncReturn wire_threshold__method__FrostKey(
     ffi.Pointer<wire_FrostKey> that,
@@ -1951,6 +1958,26 @@ class NativeWire implements FlutterRustBridgeWireBase {
       _wire_enter_firmware_upgrade_mode__method__CoordinatorPtr
           .asFunction<void Function(int, ffi.Pointer<wire_Coordinator>)>();
 
+  WireSyncReturn wire_get_device_name__method__Coordinator(
+    ffi.Pointer<wire_Coordinator> that,
+    ffi.Pointer<wire_DeviceId> id,
+  ) {
+    return _wire_get_device_name__method__Coordinator(
+      that,
+      id,
+    );
+  }
+
+  late final _wire_get_device_name__method__CoordinatorPtr = _lookup<
+          ffi.NativeFunction<
+              WireSyncReturn Function(
+                  ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_DeviceId>)>>(
+      'wire_get_device_name__method__Coordinator');
+  late final _wire_get_device_name__method__Coordinator =
+      _wire_get_device_name__method__CoordinatorPtr.asFunction<
+          WireSyncReturn Function(
+              ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_DeviceId>)>();
+
   WireSyncReturn wire_descriptor_for_key__method__BitcoinContext(
     ffi.Pointer<wire_BitcoinContext> that,
     ffi.Pointer<wire_KeyId> key_id,
@@ -2258,16 +2285,18 @@ class NativeWire implements FlutterRustBridgeWireBase {
       _new_FrostsnapCoreBitcoinTransactionTransactionTemplatePtr.asFunction<
           wire_FrostsnapCoreBitcoinTransactionTransactionTemplate Function()>();
 
-  wire_FrostsnapCoreCoordinatorFrostKey new_FrostsnapCoreCoordinatorFrostKey() {
-    return _new_FrostsnapCoreCoordinatorFrostKey();
+  wire_FrostsnapCoreCoordinatorCoordinatorFrostKey
+      new_FrostsnapCoreCoordinatorCoordinatorFrostKey() {
+    return _new_FrostsnapCoreCoordinatorCoordinatorFrostKey();
   }
 
-  late final _new_FrostsnapCoreCoordinatorFrostKeyPtr = _lookup<
-          ffi.NativeFunction<wire_FrostsnapCoreCoordinatorFrostKey Function()>>(
-      'new_FrostsnapCoreCoordinatorFrostKey');
-  late final _new_FrostsnapCoreCoordinatorFrostKey =
-      _new_FrostsnapCoreCoordinatorFrostKeyPtr
-          .asFunction<wire_FrostsnapCoreCoordinatorFrostKey Function()>();
+  late final _new_FrostsnapCoreCoordinatorCoordinatorFrostKeyPtr = _lookup<
+      ffi.NativeFunction<
+          wire_FrostsnapCoreCoordinatorCoordinatorFrostKey
+              Function()>>('new_FrostsnapCoreCoordinatorCoordinatorFrostKey');
+  late final _new_FrostsnapCoreCoordinatorCoordinatorFrostKey =
+      _new_FrostsnapCoreCoordinatorCoordinatorFrostKeyPtr.asFunction<
+          wire_FrostsnapCoreCoordinatorCoordinatorFrostKey Function()>();
 
   wire_MutexBTreeMapKeyIdStreamSinkTxState
       new_MutexBTreeMapKeyIdStreamSinkTxState() {
@@ -2378,6 +2407,17 @@ class NativeWire implements FlutterRustBridgeWireBase {
       _new_box_autoadd_confirmation_time_0Ptr
           .asFunction<ffi.Pointer<wire_ConfirmationTime> Function()>();
 
+  ffi.Pointer<wire_ConnectedDevice> new_box_autoadd_connected_device_0() {
+    return _new_box_autoadd_connected_device_0();
+  }
+
+  late final _new_box_autoadd_connected_device_0Ptr =
+      _lookup<ffi.NativeFunction<ffi.Pointer<wire_ConnectedDevice> Function()>>(
+          'new_box_autoadd_connected_device_0');
+  late final _new_box_autoadd_connected_device_0 =
+      _new_box_autoadd_connected_device_0Ptr
+          .asFunction<ffi.Pointer<wire_ConnectedDevice> Function()>();
+
   ffi.Pointer<wire_Coordinator> new_box_autoadd_coordinator_0() {
     return _new_box_autoadd_coordinator_0();
   }
@@ -2387,16 +2427,6 @@ class NativeWire implements FlutterRustBridgeWireBase {
           'new_box_autoadd_coordinator_0');
   late final _new_box_autoadd_coordinator_0 = _new_box_autoadd_coordinator_0Ptr
       .asFunction<ffi.Pointer<wire_Coordinator> Function()>();
-
-  ffi.Pointer<wire_Device> new_box_autoadd_device_0() {
-    return _new_box_autoadd_device_0();
-  }
-
-  late final _new_box_autoadd_device_0Ptr =
-      _lookup<ffi.NativeFunction<ffi.Pointer<wire_Device> Function()>>(
-          'new_box_autoadd_device_0');
-  late final _new_box_autoadd_device_0 = _new_box_autoadd_device_0Ptr
-      .asFunction<ffi.Pointer<wire_Device> Function()>();
 
   ffi.Pointer<wire_DeviceId> new_box_autoadd_device_id_0() {
     return _new_box_autoadd_device_id_0();
@@ -2560,20 +2590,20 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _new_box_autoadd_wallet_0 = _new_box_autoadd_wallet_0Ptr
       .asFunction<ffi.Pointer<wire_Wallet> Function()>();
 
-  ffi.Pointer<wire_list_device> new_list_device_0(
+  ffi.Pointer<wire_list_connected_device> new_list_connected_device_0(
     int len,
   ) {
-    return _new_list_device_0(
+    return _new_list_connected_device_0(
       len,
     );
   }
 
-  late final _new_list_device_0Ptr = _lookup<
-          ffi
-          .NativeFunction<ffi.Pointer<wire_list_device> Function(ffi.Int32)>>(
-      'new_list_device_0');
-  late final _new_list_device_0 = _new_list_device_0Ptr
-      .asFunction<ffi.Pointer<wire_list_device> Function(int)>();
+  late final _new_list_connected_device_0Ptr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<wire_list_connected_device> Function(
+              ffi.Int32)>>('new_list_connected_device_0');
+  late final _new_list_connected_device_0 = _new_list_connected_device_0Ptr
+      .asFunction<ffi.Pointer<wire_list_connected_device> Function(int)>();
 
   ffi.Pointer<wire_list_device_id> new_list_device_id_0(
     int len,
@@ -2902,35 +2932,37 @@ class NativeWire implements FlutterRustBridgeWireBase {
       _share_opaque_FrostsnapCoreBitcoinTransactionTransactionTemplatePtr
           .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
 
-  void drop_opaque_FrostsnapCoreCoordinatorFrostKey(
+  void drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(
     ffi.Pointer<ffi.Void> ptr,
   ) {
-    return _drop_opaque_FrostsnapCoreCoordinatorFrostKey(
+    return _drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(
       ptr,
     );
   }
 
-  late final _drop_opaque_FrostsnapCoreCoordinatorFrostKeyPtr =
+  late final _drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKeyPtr =
       _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
-          'drop_opaque_FrostsnapCoreCoordinatorFrostKey');
-  late final _drop_opaque_FrostsnapCoreCoordinatorFrostKey =
-      _drop_opaque_FrostsnapCoreCoordinatorFrostKeyPtr
+          'drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey');
+  late final _drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey =
+      _drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKeyPtr
           .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
 
-  ffi.Pointer<ffi.Void> share_opaque_FrostsnapCoreCoordinatorFrostKey(
+  ffi.Pointer<ffi.Void>
+      share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(
     ffi.Pointer<ffi.Void> ptr,
   ) {
-    return _share_opaque_FrostsnapCoreCoordinatorFrostKey(
+    return _share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(
       ptr,
     );
   }
 
-  late final _share_opaque_FrostsnapCoreCoordinatorFrostKeyPtr = _lookup<
-          ffi.NativeFunction<
-              ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>>(
-      'share_opaque_FrostsnapCoreCoordinatorFrostKey');
-  late final _share_opaque_FrostsnapCoreCoordinatorFrostKey =
-      _share_opaque_FrostsnapCoreCoordinatorFrostKeyPtr
+  late final _share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKeyPtr =
+      _lookup<
+              ffi.NativeFunction<
+                  ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>>(
+          'share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey');
+  late final _share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey =
+      _share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKeyPtr
           .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
 
   void drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(
@@ -3195,7 +3227,7 @@ final class wire_Transaction extends ffi.Struct {
   external ffi.Pointer<wire_ConfirmationTime> confirmation_time;
 }
 
-final class wire_Device extends ffi.Struct {
+final class wire_ConnectedDevice extends ffi.Struct {
   external ffi.Pointer<wire_uint_8_list> name;
 
   external ffi.Pointer<wire_uint_8_list> firmware_digest;
@@ -3205,12 +3237,13 @@ final class wire_Device extends ffi.Struct {
   external wire_DeviceId id;
 }
 
-final class wire_FrostsnapCoreCoordinatorFrostKey extends ffi.Struct {
+final class wire_FrostsnapCoreCoordinatorCoordinatorFrostKey
+    extends ffi.Struct {
   external ffi.Pointer<ffi.Void> ptr;
 }
 
 final class wire_FrostKey extends ffi.Struct {
-  external wire_FrostsnapCoreCoordinatorFrostKey field0;
+  external wire_FrostsnapCoreCoordinatorCoordinatorFrostKey field0;
 }
 
 final class wire_PortOpenSender extends ffi.Struct {
@@ -3261,15 +3294,15 @@ final class wire_PortBytesToRead extends ffi.Struct {
   external wire_PortBytesToReadSender ready;
 }
 
-final class wire_list_device extends ffi.Struct {
-  external ffi.Pointer<wire_Device> ptr;
+final class wire_list_connected_device extends ffi.Struct {
+  external ffi.Pointer<wire_ConnectedDevice> ptr;
 
   @ffi.Int32()
   external int len;
 }
 
 final class wire_DeviceListState extends ffi.Struct {
-  external ffi.Pointer<wire_list_device> devices;
+  external ffi.Pointer<wire_list_connected_device> devices;
 
   @ffi.UintPtr()
   external int state_id;

@@ -32,8 +32,8 @@ pub extern "C" fn wire_device_list_state() -> support::WireSyncReturn {
 }
 
 #[no_mangle]
-pub extern "C" fn wire_get_device(id: *mut wire_DeviceId) -> support::WireSyncReturn {
-    wire_get_device_impl(id)
+pub extern "C" fn wire_get_connected_device(id: *mut wire_DeviceId) -> support::WireSyncReturn {
+    wire_get_connected_device_impl(id)
 }
 
 #[no_mangle]
@@ -76,15 +76,17 @@ pub extern "C" fn wire_txid__method__Transaction(
 }
 
 #[no_mangle]
-pub extern "C" fn wire_ready__method__Device(that: *mut wire_Device) -> support::WireSyncReturn {
-    wire_ready__method__Device_impl(that)
+pub extern "C" fn wire_ready__method__ConnectedDevice(
+    that: *mut wire_ConnectedDevice,
+) -> support::WireSyncReturn {
+    wire_ready__method__ConnectedDevice_impl(that)
 }
 
 #[no_mangle]
-pub extern "C" fn wire_needs_firmware_upgrade__method__Device(
-    that: *mut wire_Device,
+pub extern "C" fn wire_needs_firmware_upgrade__method__ConnectedDevice(
+    that: *mut wire_ConnectedDevice,
 ) -> support::WireSyncReturn {
-    wire_needs_firmware_upgrade__method__Device_impl(that)
+    wire_needs_firmware_upgrade__method__ConnectedDevice_impl(that)
 }
 
 #[no_mangle]
@@ -426,6 +428,14 @@ pub extern "C" fn wire_enter_firmware_upgrade_mode__method__Coordinator(
 }
 
 #[no_mangle]
+pub extern "C" fn wire_get_device_name__method__Coordinator(
+    that: *mut wire_Coordinator,
+    id: *mut wire_DeviceId,
+) -> support::WireSyncReturn {
+    wire_get_device_name__method__Coordinator_impl(that, id)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_descriptor_for_key__method__BitcoinContext(
     that: *mut wire_BitcoinContext,
     key_id: *mut wire_KeyId,
@@ -557,8 +567,9 @@ pub extern "C" fn new_FrostsnapCoreBitcoinTransactionTransactionTemplate(
 }
 
 #[no_mangle]
-pub extern "C" fn new_FrostsnapCoreCoordinatorFrostKey() -> wire_FrostsnapCoreCoordinatorFrostKey {
-    wire_FrostsnapCoreCoordinatorFrostKey::new_with_null_ptr()
+pub extern "C" fn new_FrostsnapCoreCoordinatorCoordinatorFrostKey(
+) -> wire_FrostsnapCoreCoordinatorCoordinatorFrostKey {
+    wire_FrostsnapCoreCoordinatorCoordinatorFrostKey::new_with_null_ptr()
 }
 
 #[no_mangle]
@@ -617,13 +628,13 @@ pub extern "C" fn new_box_autoadd_confirmation_time_0() -> *mut wire_Confirmatio
 }
 
 #[no_mangle]
-pub extern "C" fn new_box_autoadd_coordinator_0() -> *mut wire_Coordinator {
-    support::new_leak_box_ptr(wire_Coordinator::new_with_null_ptr())
+pub extern "C" fn new_box_autoadd_connected_device_0() -> *mut wire_ConnectedDevice {
+    support::new_leak_box_ptr(wire_ConnectedDevice::new_with_null_ptr())
 }
 
 #[no_mangle]
-pub extern "C" fn new_box_autoadd_device_0() -> *mut wire_Device {
-    support::new_leak_box_ptr(wire_Device::new_with_null_ptr())
+pub extern "C" fn new_box_autoadd_coordinator_0() -> *mut wire_Coordinator {
+    support::new_leak_box_ptr(wire_Coordinator::new_with_null_ptr())
 }
 
 #[no_mangle]
@@ -707,9 +718,9 @@ pub extern "C" fn new_box_autoadd_wallet_0() -> *mut wire_Wallet {
 }
 
 #[no_mangle]
-pub extern "C" fn new_list_device_0(len: i32) -> *mut wire_list_device {
-    let wrap = wire_list_device {
-        ptr: support::new_leak_vec_ptr(<wire_Device>::new_with_null_ptr(), len),
+pub extern "C" fn new_list_connected_device_0(len: i32) -> *mut wire_list_connected_device {
+    let wrap = wire_list_connected_device {
+        ptr: support::new_leak_vec_ptr(<wire_ConnectedDevice>::new_with_null_ptr(), len),
         len,
     };
     support::new_leak_box_ptr(wrap)
@@ -897,18 +908,18 @@ pub extern "C" fn share_opaque_FrostsnapCoreBitcoinTransactionTransactionTemplat
 }
 
 #[no_mangle]
-pub extern "C" fn drop_opaque_FrostsnapCoreCoordinatorFrostKey(ptr: *const c_void) {
+pub extern "C" fn drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(ptr: *const c_void) {
     unsafe {
-        Arc::<frostsnap_core::CoordinatorFrostKey>::decrement_strong_count(ptr as _);
+        Arc::<frostsnap_core::coordinator::CoordinatorFrostKey>::decrement_strong_count(ptr as _);
     }
 }
 
 #[no_mangle]
-pub extern "C" fn share_opaque_FrostsnapCoreCoordinatorFrostKey(
+pub extern "C" fn share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(
     ptr: *const c_void,
 ) -> *const c_void {
     unsafe {
-        Arc::<frostsnap_core::CoordinatorFrostKey>::increment_strong_count(ptr as _);
+        Arc::<frostsnap_core::coordinator::CoordinatorFrostKey>::increment_strong_count(ptr as _);
         ptr
     }
 }
@@ -1069,10 +1080,10 @@ impl Wire2Api<RustOpaque<frostsnap_core::bitcoin_transaction::TransactionTemplat
         unsafe { support::opaque_from_dart(self.ptr as _) }
     }
 }
-impl Wire2Api<RustOpaque<frostsnap_core::CoordinatorFrostKey>>
-    for wire_FrostsnapCoreCoordinatorFrostKey
+impl Wire2Api<RustOpaque<frostsnap_core::coordinator::CoordinatorFrostKey>>
+    for wire_FrostsnapCoreCoordinatorCoordinatorFrostKey
 {
-    fn wire2api(self) -> RustOpaque<frostsnap_core::CoordinatorFrostKey> {
+    fn wire2api(self) -> RustOpaque<frostsnap_core::coordinator::CoordinatorFrostKey> {
         unsafe { support::opaque_from_dart(self.ptr as _) }
     }
 }
@@ -1147,16 +1158,16 @@ impl Wire2Api<ConfirmationTime> for *mut wire_ConfirmationTime {
         Wire2Api::<ConfirmationTime>::wire2api(*wrap).into()
     }
 }
+impl Wire2Api<ConnectedDevice> for *mut wire_ConnectedDevice {
+    fn wire2api(self) -> ConnectedDevice {
+        let wrap = unsafe { support::box_from_leak_ptr(self) };
+        Wire2Api::<ConnectedDevice>::wire2api(*wrap).into()
+    }
+}
 impl Wire2Api<Coordinator> for *mut wire_Coordinator {
     fn wire2api(self) -> Coordinator {
         let wrap = unsafe { support::box_from_leak_ptr(self) };
         Wire2Api::<Coordinator>::wire2api(*wrap).into()
-    }
-}
-impl Wire2Api<Device> for *mut wire_Device {
-    fn wire2api(self) -> Device {
-        let wrap = unsafe { support::box_from_leak_ptr(self) };
-        Wire2Api::<Device>::wire2api(*wrap).into()
     }
 }
 impl Wire2Api<DeviceId> for *mut wire_DeviceId {
@@ -1263,19 +1274,19 @@ impl Wire2Api<ConfirmationTime> for wire_ConfirmationTime {
         }
     }
 }
-impl Wire2Api<Coordinator> for wire_Coordinator {
-    fn wire2api(self) -> Coordinator {
-        Coordinator(self.field0.wire2api())
-    }
-}
-impl Wire2Api<Device> for wire_Device {
-    fn wire2api(self) -> Device {
-        Device {
+impl Wire2Api<ConnectedDevice> for wire_ConnectedDevice {
+    fn wire2api(self) -> ConnectedDevice {
+        ConnectedDevice {
             name: self.name.wire2api(),
             firmware_digest: self.firmware_digest.wire2api(),
             latest_digest: self.latest_digest.wire2api(),
             id: self.id.wire2api(),
         }
+    }
+}
+impl Wire2Api<Coordinator> for wire_Coordinator {
+    fn wire2api(self) -> Coordinator {
+        Coordinator(self.field0.wire2api())
     }
 }
 impl Wire2Api<DeviceId> for wire_DeviceId {
@@ -1315,8 +1326,8 @@ impl Wire2Api<KeyId> for wire_KeyId {
         KeyId(self.field0.wire2api())
     }
 }
-impl Wire2Api<Vec<Device>> for *mut wire_list_device {
-    fn wire2api(self) -> Vec<Device> {
+impl Wire2Api<Vec<ConnectedDevice>> for *mut wire_list_connected_device {
+    fn wire2api(self) -> Vec<ConnectedDevice> {
         let vec = unsafe {
             let wrap = support::box_from_leak_ptr(self);
             support::vec_from_leak_ptr(wrap.ptr, wrap.len)
@@ -1526,7 +1537,7 @@ pub struct wire_FrostsnapCoreBitcoinTransactionTransactionTemplate {
 
 #[repr(C)]
 #[derive(Clone)]
-pub struct wire_FrostsnapCoreCoordinatorFrostKey {
+pub struct wire_FrostsnapCoreCoordinatorCoordinatorFrostKey {
     ptr: *const core::ffi::c_void,
 }
 
@@ -1594,17 +1605,17 @@ pub struct wire_ConfirmationTime {
 
 #[repr(C)]
 #[derive(Clone)]
-pub struct wire_Coordinator {
-    field0: wire_FfiCoordinator,
-}
-
-#[repr(C)]
-#[derive(Clone)]
-pub struct wire_Device {
+pub struct wire_ConnectedDevice {
     name: *mut wire_uint_8_list,
     firmware_digest: *mut wire_uint_8_list,
     latest_digest: *mut wire_uint_8_list,
     id: wire_DeviceId,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_Coordinator {
+    field0: wire_FfiCoordinator,
 }
 
 #[repr(C)]
@@ -1616,7 +1627,7 @@ pub struct wire_DeviceId {
 #[repr(C)]
 #[derive(Clone)]
 pub struct wire_DeviceListState {
-    devices: *mut wire_list_device,
+    devices: *mut wire_list_connected_device,
     state_id: usize,
 }
 
@@ -1635,7 +1646,7 @@ pub struct wire_FfiSerial {
 #[repr(C)]
 #[derive(Clone)]
 pub struct wire_FrostKey {
-    field0: wire_FrostsnapCoreCoordinatorFrostKey,
+    field0: wire_FrostsnapCoreCoordinatorCoordinatorFrostKey,
 }
 
 #[repr(C)]
@@ -1646,8 +1657,8 @@ pub struct wire_KeyId {
 
 #[repr(C)]
 #[derive(Clone)]
-pub struct wire_list_device {
-    ptr: *mut wire_Device,
+pub struct wire_list_connected_device {
+    ptr: *mut wire_ConnectedDevice,
     len: i32,
 }
 
@@ -1840,7 +1851,7 @@ impl NewWithNullPtr for wire_FrostsnapCoreBitcoinTransactionTransactionTemplate 
         }
     }
 }
-impl NewWithNullPtr for wire_FrostsnapCoreCoordinatorFrostKey {
+impl NewWithNullPtr for wire_FrostsnapCoreCoordinatorCoordinatorFrostKey {
     fn new_with_null_ptr() -> Self {
         Self {
             ptr: core::ptr::null(),
@@ -1926,21 +1937,7 @@ impl Default for wire_ConfirmationTime {
     }
 }
 
-impl NewWithNullPtr for wire_Coordinator {
-    fn new_with_null_ptr() -> Self {
-        Self {
-            field0: wire_FfiCoordinator::new_with_null_ptr(),
-        }
-    }
-}
-
-impl Default for wire_Coordinator {
-    fn default() -> Self {
-        Self::new_with_null_ptr()
-    }
-}
-
-impl NewWithNullPtr for wire_Device {
+impl NewWithNullPtr for wire_ConnectedDevice {
     fn new_with_null_ptr() -> Self {
         Self {
             name: core::ptr::null_mut(),
@@ -1951,7 +1948,21 @@ impl NewWithNullPtr for wire_Device {
     }
 }
 
-impl Default for wire_Device {
+impl Default for wire_ConnectedDevice {
+    fn default() -> Self {
+        Self::new_with_null_ptr()
+    }
+}
+
+impl NewWithNullPtr for wire_Coordinator {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            field0: wire_FfiCoordinator::new_with_null_ptr(),
+        }
+    }
+}
+
+impl Default for wire_Coordinator {
     fn default() -> Self {
         Self::new_with_null_ptr()
     }
@@ -2017,7 +2028,7 @@ impl Default for wire_FfiSerial {
 impl NewWithNullPtr for wire_FrostKey {
     fn new_with_null_ptr() -> Self {
         Self {
-            field0: wire_FrostsnapCoreCoordinatorFrostKey::new_with_null_ptr(),
+            field0: wire_FrostsnapCoreCoordinatorCoordinatorFrostKey::new_with_null_ptr(),
         }
     }
 }

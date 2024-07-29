@@ -93,6 +93,10 @@ impl UiProtocol for FirmwareUpgradeProtocol {
 
         (to_devices, vec![])
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 #[derive(Clone, Debug)]

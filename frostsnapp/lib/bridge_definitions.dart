@@ -31,7 +31,7 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kTurnLogcatLoggingOnConstMeta;
 
-  Device? deviceAtIndex({required int index, dynamic hint});
+  ConnectedDevice? deviceAtIndex({required int index, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kDeviceAtIndexConstMeta;
 
@@ -39,9 +39,9 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kDeviceListStateConstMeta;
 
-  Device getDevice({required DeviceId id, dynamic hint});
+  ConnectedDevice? getConnectedDevice({required DeviceId id, dynamic hint});
 
-  FlutterRustBridgeTaskConstMeta get kGetDeviceConstMeta;
+  FlutterRustBridgeTaskConstMeta get kGetConnectedDeviceConstMeta;
 
   Future<(Coordinator, Wallet, BitcoinContext)> load(
       {required String dbFile, dynamic hint});
@@ -73,13 +73,16 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kTxidMethodTransactionConstMeta;
 
-  bool readyMethodDevice({required Device that, dynamic hint});
+  bool readyMethodConnectedDevice(
+      {required ConnectedDevice that, dynamic hint});
 
-  FlutterRustBridgeTaskConstMeta get kReadyMethodDeviceConstMeta;
+  FlutterRustBridgeTaskConstMeta get kReadyMethodConnectedDeviceConstMeta;
 
-  bool needsFirmwareUpgradeMethodDevice({required Device that, dynamic hint});
+  bool needsFirmwareUpgradeMethodConnectedDevice(
+      {required ConnectedDevice that, dynamic hint});
 
-  FlutterRustBridgeTaskConstMeta get kNeedsFirmwareUpgradeMethodDeviceConstMeta;
+  FlutterRustBridgeTaskConstMeta
+      get kNeedsFirmwareUpgradeMethodConnectedDeviceConstMeta;
 
   int thresholdMethodFrostKey({required FrostKey that, dynamic hint});
 
@@ -93,7 +96,7 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kNameMethodFrostKeyConstMeta;
 
-  List<Device> devicesMethodFrostKey({required FrostKey that, dynamic hint});
+  List<DeviceId> devicesMethodFrostKey({required FrostKey that, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kDevicesMethodFrostKeyConstMeta;
 
@@ -120,7 +123,7 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kSatisfyMethodPortBytesToReadConstMeta;
 
-  Device? getDeviceMethodDeviceListState(
+  ConnectedDevice? getDeviceMethodDeviceListState(
       {required DeviceListState that, required DeviceId id, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kGetDeviceMethodDeviceListStateConstMeta;
@@ -319,6 +322,11 @@ abstract class Native {
   FlutterRustBridgeTaskConstMeta
       get kEnterFirmwareUpgradeModeMethodCoordinatorConstMeta;
 
+  String? getDeviceNameMethodCoordinator(
+      {required Coordinator that, required DeviceId id, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kGetDeviceNameMethodCoordinatorConstMeta;
+
   String descriptorForKeyMethodBitcoinContext(
       {required BitcoinContext that, required KeyId keyId, dynamic hint});
 
@@ -422,9 +430,9 @@ abstract class Native {
   OpaqueTypeFinalizer
       get FrostsnapCoreBitcoinTransactionTransactionTemplateFinalizer;
 
-  DropFnType get dropOpaqueFrostsnapCoreCoordinatorFrostKey;
-  ShareFnType get shareOpaqueFrostsnapCoreCoordinatorFrostKey;
-  OpaqueTypeFinalizer get FrostsnapCoreCoordinatorFrostKeyFinalizer;
+  DropFnType get dropOpaqueFrostsnapCoreCoordinatorCoordinatorFrostKey;
+  ShareFnType get shareOpaqueFrostsnapCoreCoordinatorCoordinatorFrostKey;
+  OpaqueTypeFinalizer get FrostsnapCoreCoordinatorCoordinatorFrostKeyFinalizer;
 
   DropFnType get dropOpaqueMutexBTreeMapKeyIdStreamSinkTxState;
   ShareFnType get shareOpaqueMutexBTreeMapKeyIdStreamSinkTxState;
@@ -593,19 +601,22 @@ class FrostsnapCoreBitcoinTransactionTransactionTemplate extends FrbOpaque {
 }
 
 @sealed
-class FrostsnapCoreCoordinatorFrostKey extends FrbOpaque {
+class FrostsnapCoreCoordinatorCoordinatorFrostKey extends FrbOpaque {
   final Native bridge;
-  FrostsnapCoreCoordinatorFrostKey.fromRaw(int ptr, int size, this.bridge)
+  FrostsnapCoreCoordinatorCoordinatorFrostKey.fromRaw(
+      int ptr, int size, this.bridge)
       : super.unsafe(ptr, size);
   @override
-  DropFnType get dropFn => bridge.dropOpaqueFrostsnapCoreCoordinatorFrostKey;
+  DropFnType get dropFn =>
+      bridge.dropOpaqueFrostsnapCoreCoordinatorCoordinatorFrostKey;
 
   @override
-  ShareFnType get shareFn => bridge.shareOpaqueFrostsnapCoreCoordinatorFrostKey;
+  ShareFnType get shareFn =>
+      bridge.shareOpaqueFrostsnapCoreCoordinatorCoordinatorFrostKey;
 
   @override
   OpaqueTypeFinalizer get staticFinalizer =>
-      bridge.FrostsnapCoreCoordinatorFrostKeyFinalizer;
+      bridge.FrostsnapCoreCoordinatorCoordinatorFrostKeyFinalizer;
 }
 
 @sealed
@@ -771,6 +782,31 @@ class ConfirmationTime {
   });
 }
 
+class ConnectedDevice {
+  final Native bridge;
+  final String? name;
+  final String firmwareDigest;
+  final String latestDigest;
+  final DeviceId id;
+
+  const ConnectedDevice({
+    required this.bridge,
+    this.name,
+    required this.firmwareDigest,
+    required this.latestDigest,
+    required this.id,
+  });
+
+  bool ready({dynamic hint}) => bridge.readyMethodConnectedDevice(
+        that: this,
+      );
+
+  bool needsFirmwareUpgrade({dynamic hint}) =>
+      bridge.needsFirmwareUpgradeMethodConnectedDevice(
+        that: this,
+      );
+}
+
 class Coordinator {
   final Native bridge;
   final FfiCoordinator field0;
@@ -919,6 +955,12 @@ class Coordinator {
       bridge.enterFirmwareUpgradeModeMethodCoordinator(
         that: this,
       );
+
+  String? getDeviceName({required DeviceId id, dynamic hint}) =>
+      bridge.getDeviceNameMethodCoordinator(
+        that: this,
+        id: id,
+      );
 }
 
 class DecodingProgress {
@@ -929,31 +971,6 @@ class DecodingProgress {
     required this.decodedFrames,
     required this.sequenceCount,
   });
-}
-
-class Device {
-  final Native bridge;
-  final String? name;
-  final String firmwareDigest;
-  final String latestDigest;
-  final DeviceId id;
-
-  const Device({
-    required this.bridge,
-    this.name,
-    required this.firmwareDigest,
-    required this.latestDigest,
-    required this.id,
-  });
-
-  bool ready({dynamic hint}) => bridge.readyMethodDevice(
-        that: this,
-      );
-
-  bool needsFirmwareUpgrade({dynamic hint}) =>
-      bridge.needsFirmwareUpgradeMethodDevice(
-        that: this,
-      );
 }
 
 class DeviceId {
@@ -967,7 +984,7 @@ class DeviceId {
 class DeviceListChange {
   final DeviceListChangeKind kind;
   final int index;
-  final Device device;
+  final ConnectedDevice device;
 
   const DeviceListChange({
     required this.kind,
@@ -984,7 +1001,7 @@ enum DeviceListChangeKind {
 
 class DeviceListState {
   final Native bridge;
-  final List<Device> devices;
+  final List<ConnectedDevice> devices;
   final int stateId;
 
   const DeviceListState({
@@ -993,7 +1010,7 @@ class DeviceListState {
     required this.stateId,
   });
 
-  Device? getDevice({required DeviceId id, dynamic hint}) =>
+  ConnectedDevice? getDevice({required DeviceId id, dynamic hint}) =>
       bridge.getDeviceMethodDeviceListState(
         that: this,
         id: id,
@@ -1067,7 +1084,7 @@ class FirmwareUpgradeConfirmState {
 
 class FrostKey {
   final Native bridge;
-  final FrostsnapCoreCoordinatorFrostKey field0;
+  final FrostsnapCoreCoordinatorCoordinatorFrostKey field0;
 
   const FrostKey({
     required this.bridge,
@@ -1086,7 +1103,7 @@ class FrostKey {
         that: this,
       );
 
-  List<Device> devices({dynamic hint}) => bridge.devicesMethodFrostKey(
+  List<DeviceId> devices({dynamic hint}) => bridge.devicesMethodFrostKey(
         that: this,
       );
 }

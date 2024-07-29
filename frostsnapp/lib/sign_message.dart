@@ -148,22 +148,23 @@ class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
       shrinkWrap: true,
       physics: NeverScrollableScrollPhysics(),
       itemBuilder: (context, index) {
-        final device = devices[index];
+        final id = devices[index];
+        final name = coord.getDeviceName(id: id);
         final onChanged = (bool? value) {
           setState(() {
             if (value == true) {
-              selected.add(device.id);
+              selected.add(id);
             } else {
-              selected.remove(device.id);
+              selected.remove(id);
             }
           });
           widget.onChanged?.call(selected);
         };
-        final enoughNonces = coord.noncesAvailable(id: device.id) >= 1;
+        final enoughNonces = coord.noncesAvailable(id: id) >= 1;
         return CheckboxListTile(
           title: Text(
-              "${device.name ?? '<unknown>'}${enoughNonces ? '' : ' (not enough nonces)'}"),
-          value: selected.contains(device.id),
+              "${name ?? '<unknown>'}${enoughNonces ? '' : ' (not enough nonces)'}"),
+          value: selected.contains(id),
           onChanged: enoughNonces ? onChanged : null,
         );
       },
@@ -258,10 +259,10 @@ class DeviceSigningProgress extends StatelessWidget {
                     itemBuilder: (context, index) {
                       final Widget icon;
                       final id = state.neededFrom[index];
-                      final device = api.getDevice(id: id);
-                      if (gotShares.contains(device.id)) {
+                      final name = coord.getDeviceName(id: id);
+                      if (gotShares.contains(id)) {
                         icon = AnimatedCheckCircle();
-                      } else if (devicesPluggedIn.contains(device.id)) {
+                      } else if (devicesPluggedIn.contains(id)) {
                         icon = Icon(Icons.touch_app,
                             color: Colors.orange, size: iconSize);
                       } else {
@@ -269,7 +270,7 @@ class DeviceSigningProgress extends StatelessWidget {
                             color: Colors.blue, size: iconSize);
                       }
                       return ListTile(
-                        title: Text(device.name ?? "<unknown>"),
+                        title: Text(name ?? "<unknown>"),
                         trailing: Container(height: iconSize, child: icon),
                       );
                     });

@@ -1,9 +1,12 @@
+use frostsnap_core::coordinator;
 use frostsnap_core::message::{
-    CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToStorageMessage,
-    CoordinatorToUserMessage, DeviceSend, DeviceToCoordinatorMessage, DeviceToStorageMessage,
-    DeviceToUserMessage,
+    CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToUserMessage, DeviceSend,
+    DeviceToCoordinatorMessage, DeviceToStorageMessage, DeviceToUserMessage,
 };
-use frostsnap_core::{DeviceId, FrostCoordinator, FrostSigner};
+use frostsnap_core::{
+    coordinator::{FrostCoordinator, SigningSessionState},
+    DeviceId, FrostSigner,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
@@ -21,7 +24,7 @@ pub enum Send {
         destinations: BTreeSet<DeviceId>,
         message: CoordinatorToDeviceMessage,
     },
-    CoordinatorToStorage(CoordinatorToStorageMessage),
+    CoordinatorSigningSession(SigningSessionState),
     DeviceToStorage {
         from: DeviceId,
         message: DeviceToStorageMessage,
@@ -39,7 +42,9 @@ impl From<CoordinatorSend> for Send {
                 message,
             },
             CoordinatorSend::ToUser(v) => v.into(),
-            CoordinatorSend::ToStorage(v) => Send::CoordinatorToStorage(v),
+            CoordinatorSend::SigningSessionStore(session_state) => {
+                Send::CoordinatorSigningSession(session_state)
+            }
         }
     }
 }
@@ -86,10 +91,16 @@ pub trait Env {
         message: DeviceToStorageMessage,
     ) {
     }
-    fn storage_react_to_coordinator(
+    fn storage_react_to_coordinator_mutation(
         &mut self,
         run: &mut Run,
-        message: CoordinatorToStorageMessage,
+        message: coordinator::Mutation,
+    ) {
+    }
+    fn sign_session_state_react_to_coordinator(
+        &mut self,
+        run: &mut Run,
+        message: SigningSessionState,
     ) {
     }
 }
@@ -182,9 +193,13 @@ impl Run {
                 Send::DeviceToStorage { from, message } => {
                     env.storage_react_to_device(self, from, message);
                 }
-                Send::CoordinatorToStorage(message) => {
-                    env.storage_react_to_coordinator(self, message);
+                Send::CoordinatorSigningSession(signing_session_state) => {
+                    env.sign_session_state_react_to_coordinator(self, signing_session_state);
                 }
+            }
+
+            for mutation in self.coordinator.take_staged_mutations() {
+                env.storage_react_to_coordinator_mutation(self, mutation);
             }
         }
     }

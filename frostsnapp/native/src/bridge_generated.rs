@@ -110,16 +110,18 @@ fn wire_device_list_state_impl() -> support::WireSyncReturn {
         move || Result::<_, ()>::Ok(device_list_state()),
     )
 }
-fn wire_get_device_impl(id: impl Wire2Api<DeviceId> + UnwindSafe) -> support::WireSyncReturn {
+fn wire_get_connected_device_impl(
+    id: impl Wire2Api<DeviceId> + UnwindSafe,
+) -> support::WireSyncReturn {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
         WrapInfo {
-            debug_name: "get_device",
+            debug_name: "get_connected_device",
             port: None,
             mode: FfiCallMode::Sync,
         },
         move || {
             let api_id = id.wire2api();
-            Result::<_, ()>::Ok(get_device(api_id))
+            Result::<_, ()>::Ok(get_connected_device(api_id))
         },
     )
 }
@@ -219,33 +221,33 @@ fn wire_txid__method__Transaction_impl(
         },
     )
 }
-fn wire_ready__method__Device_impl(
-    that: impl Wire2Api<Device> + UnwindSafe,
+fn wire_ready__method__ConnectedDevice_impl(
+    that: impl Wire2Api<ConnectedDevice> + UnwindSafe,
 ) -> support::WireSyncReturn {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
         WrapInfo {
-            debug_name: "ready__method__Device",
+            debug_name: "ready__method__ConnectedDevice",
             port: None,
             mode: FfiCallMode::Sync,
         },
         move || {
             let api_that = that.wire2api();
-            Result::<_, ()>::Ok(Device::ready(&api_that))
+            Result::<_, ()>::Ok(ConnectedDevice::ready(&api_that))
         },
     )
 }
-fn wire_needs_firmware_upgrade__method__Device_impl(
-    that: impl Wire2Api<Device> + UnwindSafe,
+fn wire_needs_firmware_upgrade__method__ConnectedDevice_impl(
+    that: impl Wire2Api<ConnectedDevice> + UnwindSafe,
 ) -> support::WireSyncReturn {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
         WrapInfo {
-            debug_name: "needs_firmware_upgrade__method__Device",
+            debug_name: "needs_firmware_upgrade__method__ConnectedDevice",
             port: None,
             mode: FfiCallMode::Sync,
         },
         move || {
             let api_that = that.wire2api();
-            Result::<_, ()>::Ok(Device::needs_firmware_upgrade(&api_that))
+            Result::<_, ()>::Ok(ConnectedDevice::needs_firmware_upgrade(&api_that))
         },
     )
 }
@@ -942,7 +944,9 @@ fn wire_persisted_sign_session_description__method__Coordinator_impl(
         move || {
             let api_that = that.wire2api();
             let api_key_id = key_id.wire2api();
-            Coordinator::persisted_sign_session_description(&api_that, api_key_id)
+            Result::<_, ()>::Ok(Coordinator::persisted_sign_session_description(
+                &api_that, api_key_id,
+            ))
         },
     )
 }
@@ -1040,6 +1044,23 @@ fn wire_enter_firmware_upgrade_mode__method__Coordinator_impl(
                     task_callback.stream_sink::<_, f32>(),
                 )
             }
+        },
+    )
+}
+fn wire_get_device_name__method__Coordinator_impl(
+    that: impl Wire2Api<Coordinator> + UnwindSafe,
+    id: impl Wire2Api<DeviceId> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "get_device_name__method__Coordinator",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_id = id.wire2api();
+            Result::<_, ()>::Ok(Coordinator::get_device_name(&api_that, api_id))
         },
     )
 }
@@ -1423,6 +1444,24 @@ impl rust2dart::IntoIntoDart<mirror_ConfirmationTime> for ConfirmationTime {
     }
 }
 
+impl support::IntoDart for ConnectedDevice {
+    fn into_dart(self) -> support::DartAbi {
+        vec![
+            self.name.into_dart(),
+            self.firmware_digest.into_into_dart().into_dart(),
+            self.latest_digest.into_into_dart().into_dart(),
+            self.id.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for ConnectedDevice {}
+impl rust2dart::IntoIntoDart<ConnectedDevice> for ConnectedDevice {
+    fn into_into_dart(self) -> Self {
+        self
+    }
+}
+
 impl support::IntoDart for Coordinator {
     fn into_dart(self) -> support::DartAbi {
         vec![self.0.into_dart()].into_dart()
@@ -1446,24 +1485,6 @@ impl support::IntoDart for DecodingProgress {
 }
 impl support::IntoDartExceptPrimitive for DecodingProgress {}
 impl rust2dart::IntoIntoDart<DecodingProgress> for DecodingProgress {
-    fn into_into_dart(self) -> Self {
-        self
-    }
-}
-
-impl support::IntoDart for Device {
-    fn into_dart(self) -> support::DartAbi {
-        vec![
-            self.name.into_dart(),
-            self.firmware_digest.into_into_dart().into_dart(),
-            self.latest_digest.into_into_dart().into_dart(),
-            self.id.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl support::IntoDartExceptPrimitive for Device {}
-impl rust2dart::IntoIntoDart<Device> for Device {
     fn into_into_dart(self) -> Self {
         self
     }

@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 pub use bdk_chain::spk_client::SyncRequest;
-use bdk_chain::{bitcoin, spk_client, ConfirmationTimeHeightAnchor};
+use bdk_chain::{bitcoin, spk_client, ConfirmationBlockTime};
 use bdk_electrum::{electrum_client, BdkElectrumClient};
 use std::sync::Arc;
 use tracing::{event, Level};
@@ -46,15 +46,21 @@ impl ChainSync {
     pub fn sync(
         &self,
         sync_request: SyncRequest,
-    ) -> Result<spk_client::SyncResult<ConfirmationTimeHeightAnchor>> {
-        let electrum_update = self.client.sync(sync_request, 10, true)?;
-        Ok(electrum_update.with_confirmation_time_height_anchor(self.client.as_ref())?)
+    ) -> Result<spk_client::SyncResult<ConfirmationBlockTime>> {
+        let mut sync_result = self.client.sync(sync_request, 10, true)?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("valid duration")
+            .as_secs();
+
+        let _ = sync_result.graph_update.update_last_seen_unconfirmed(now);
+        Ok(sync_result)
     }
 
     pub fn broadcast(&self, tx: &bitcoin::Transaction) -> Result<()> {
         event!(
             Level::INFO,
-            txid = tx.txid().to_string(),
+            txid = tx.compute_txid().to_string(),
             "broadcasting transaction"
         );
         self.client.transaction_broadcast(tx)?;

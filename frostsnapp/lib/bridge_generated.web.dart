@@ -67,8 +67,8 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
-  Object api2wire_FrostsnapCoreCoordinatorFrostKey(
-      FrostsnapCoreCoordinatorFrostKey raw) {
+  Object api2wire_FrostsnapCoreCoordinatorCoordinatorFrostKey(
+      FrostsnapCoreCoordinatorCoordinatorFrostKey raw) {
     return raw.shareOrMove();
   }
 
@@ -134,13 +134,13 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
-  List<dynamic> api2wire_box_autoadd_coordinator(Coordinator raw) {
-    return api2wire_coordinator(raw);
+  List<dynamic> api2wire_box_autoadd_connected_device(ConnectedDevice raw) {
+    return api2wire_connected_device(raw);
   }
 
   @protected
-  List<dynamic> api2wire_box_autoadd_device(Device raw) {
-    return api2wire_device(raw);
+  List<dynamic> api2wire_box_autoadd_coordinator(Coordinator raw) {
+    return api2wire_coordinator(raw);
   }
 
   @protected
@@ -229,12 +229,7 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
-  List<dynamic> api2wire_coordinator(Coordinator raw) {
-    return [api2wire_FfiCoordinator(raw.field0)];
-  }
-
-  @protected
-  List<dynamic> api2wire_device(Device raw) {
+  List<dynamic> api2wire_connected_device(ConnectedDevice raw) {
     return [
       api2wire_opt_String(raw.name),
       api2wire_String(raw.firmwareDigest),
@@ -244,13 +239,21 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
+  List<dynamic> api2wire_coordinator(Coordinator raw) {
+    return [api2wire_FfiCoordinator(raw.field0)];
+  }
+
+  @protected
   List<dynamic> api2wire_device_id(DeviceId raw) {
     return [api2wire_u8_array_33(raw.field0)];
   }
 
   @protected
   List<dynamic> api2wire_device_list_state(DeviceListState raw) {
-    return [api2wire_list_device(raw.devices), api2wire_usize(raw.stateId)];
+    return [
+      api2wire_list_connected_device(raw.devices),
+      api2wire_usize(raw.stateId)
+    ];
   }
 
   @protected
@@ -265,7 +268,7 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
 
   @protected
   List<dynamic> api2wire_frost_key(FrostKey raw) {
-    return [api2wire_FrostsnapCoreCoordinatorFrostKey(raw.field0)];
+    return [api2wire_FrostsnapCoreCoordinatorCoordinatorFrostKey(raw.field0)];
   }
 
   @protected
@@ -279,8 +282,8 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
-  List<dynamic> api2wire_list_device(List<Device> raw) {
-    return raw.map(api2wire_device).toList();
+  List<dynamic> api2wire_list_connected_device(List<ConnectedDevice> raw) {
+    return raw.map(api2wire_connected_device).toList();
   }
 
   @protected
@@ -457,10 +460,12 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
       get FrostsnapCoreBitcoinTransactionTransactionTemplateFinalizer =>
           _FrostsnapCoreBitcoinTransactionTransactionTemplateFinalizer;
   late final Finalizer<PlatformPointer>
-      _FrostsnapCoreCoordinatorFrostKeyFinalizer = Finalizer<PlatformPointer>(
-          inner.drop_opaque_FrostsnapCoreCoordinatorFrostKey);
-  Finalizer<PlatformPointer> get FrostsnapCoreCoordinatorFrostKeyFinalizer =>
-      _FrostsnapCoreCoordinatorFrostKeyFinalizer;
+      _FrostsnapCoreCoordinatorCoordinatorFrostKeyFinalizer =
+      Finalizer<PlatformPointer>(
+          inner.drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey);
+  Finalizer<PlatformPointer>
+      get FrostsnapCoreCoordinatorCoordinatorFrostKeyFinalizer =>
+          _FrostsnapCoreCoordinatorCoordinatorFrostKeyFinalizer;
   late final Finalizer<PlatformPointer>
       _MutexBTreeMapKeyIdStreamSinkTxStateFinalizer =
       Finalizer<PlatformPointer>(
@@ -517,7 +522,8 @@ class NativeWasmModule implements WasmModule {
 
   external dynamic /* List<dynamic> */ wire_device_list_state();
 
-  external dynamic /* List<dynamic> */ wire_get_device(List<dynamic> id);
+  external dynamic /* List<dynamic>? */ wire_get_connected_device(
+      List<dynamic> id);
 
   external dynamic /* void */ wire_load(NativePortType port_, String db_file);
 
@@ -538,10 +544,11 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* String */ wire_txid__method__Transaction(
       List<dynamic> that);
 
-  external dynamic /* bool */ wire_ready__method__Device(List<dynamic> that);
-
-  external dynamic /* bool */ wire_needs_firmware_upgrade__method__Device(
+  external dynamic /* bool */ wire_ready__method__ConnectedDevice(
       List<dynamic> that);
+
+  external dynamic /* bool */
+      wire_needs_firmware_upgrade__method__ConnectedDevice(List<dynamic> that);
 
   external dynamic /* int */ wire_threshold__method__FrostKey(
       List<dynamic> that);
@@ -692,6 +699,9 @@ class NativeWasmModule implements WasmModule {
       wire_enter_firmware_upgrade_mode__method__Coordinator(
           NativePortType port_, List<dynamic> that);
 
+  external dynamic /* String? */ wire_get_device_name__method__Coordinator(
+      List<dynamic> that, List<dynamic> id);
+
   external dynamic /* String */ wire_descriptor_for_key__method__BitcoinContext(
       List<dynamic> that, List<dynamic> key_id);
 
@@ -762,10 +772,11 @@ class NativeWasmModule implements WasmModule {
   external int /* *const c_void */
       share_opaque_FrostsnapCoreBitcoinTransactionTransactionTemplate(ptr);
 
-  external dynamic /*  */ drop_opaque_FrostsnapCoreCoordinatorFrostKey(ptr);
+  external dynamic /*  */
+      drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(ptr);
 
   external int /* *const c_void */
-      share_opaque_FrostsnapCoreCoordinatorFrostKey(ptr);
+      share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(ptr);
 
   external dynamic /*  */ drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(ptr);
 
@@ -821,8 +832,8 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   dynamic /* List<dynamic> */ wire_device_list_state() =>
       wasmModule.wire_device_list_state();
 
-  dynamic /* List<dynamic> */ wire_get_device(List<dynamic> id) =>
-      wasmModule.wire_get_device(id);
+  dynamic /* List<dynamic>? */ wire_get_connected_device(List<dynamic> id) =>
+      wasmModule.wire_get_connected_device(id);
 
   void wire_load(NativePortType port_, String db_file) =>
       wasmModule.wire_load(port_, db_file);
@@ -845,12 +856,12 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   dynamic /* String */ wire_txid__method__Transaction(List<dynamic> that) =>
       wasmModule.wire_txid__method__Transaction(that);
 
-  dynamic /* bool */ wire_ready__method__Device(List<dynamic> that) =>
-      wasmModule.wire_ready__method__Device(that);
+  dynamic /* bool */ wire_ready__method__ConnectedDevice(List<dynamic> that) =>
+      wasmModule.wire_ready__method__ConnectedDevice(that);
 
-  dynamic /* bool */ wire_needs_firmware_upgrade__method__Device(
+  dynamic /* bool */ wire_needs_firmware_upgrade__method__ConnectedDevice(
           List<dynamic> that) =>
-      wasmModule.wire_needs_firmware_upgrade__method__Device(that);
+      wasmModule.wire_needs_firmware_upgrade__method__ConnectedDevice(that);
 
   dynamic /* int */ wire_threshold__method__FrostKey(List<dynamic> that) =>
       wasmModule.wire_threshold__method__FrostKey(that);
@@ -1035,6 +1046,10 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
       wasmModule.wire_enter_firmware_upgrade_mode__method__Coordinator(
           port_, that);
 
+  dynamic /* String? */ wire_get_device_name__method__Coordinator(
+          List<dynamic> that, List<dynamic> id) =>
+      wasmModule.wire_get_device_name__method__Coordinator(that, id);
+
   dynamic /* String */ wire_descriptor_for_key__method__BitcoinContext(
           List<dynamic> that, List<dynamic> key_id) =>
       wasmModule.wire_descriptor_for_key__method__BitcoinContext(that, key_id);
@@ -1136,11 +1151,13 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
               .share_opaque_FrostsnapCoreBitcoinTransactionTransactionTemplate(
                   ptr);
 
-  dynamic /*  */ drop_opaque_FrostsnapCoreCoordinatorFrostKey(ptr) =>
-      wasmModule.drop_opaque_FrostsnapCoreCoordinatorFrostKey(ptr);
+  dynamic /*  */ drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(ptr) =>
+      wasmModule.drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(ptr);
 
-  int /* *const c_void */ share_opaque_FrostsnapCoreCoordinatorFrostKey(ptr) =>
-      wasmModule.share_opaque_FrostsnapCoreCoordinatorFrostKey(ptr);
+  int /* *const c_void */
+      share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(ptr) =>
+          wasmModule
+              .share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(ptr);
 
   dynamic /*  */ drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(ptr) =>
       wasmModule.drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(ptr);

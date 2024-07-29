@@ -10,6 +10,7 @@ pub mod message;
 pub mod nostr;
 pub mod tweak;
 
+use coordinator::CoordinatorState;
 pub use sha2;
 mod sign_task;
 pub use sign_task::*;
@@ -17,12 +18,14 @@ pub use sign_task::*;
 pub use bincode;
 pub use key_id::*;
 pub use serde;
-mod coordinator;
-pub use coordinator::*;
+pub mod coordinator;
 mod device;
 pub use device::*;
 pub use schnorr_fun;
 pub mod bitcoin_transaction;
+
+#[cfg(feature = "rusqlite")]
+mod sqlite;
 
 #[macro_use]
 extern crate alloc;

@@ -12,7 +12,6 @@ use frostsnap_comms::{CoordinatorSendMessage, MAGIC_BYTES_PERIOD};
 use frostsnap_comms::{ReceiveSerial, Upstream};
 use frostsnap_core::message::DeviceToCoordinatorMessage;
 use frostsnap_core::{sha2, DeviceId, Gist};
-use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -40,7 +39,7 @@ pub struct UsbSerialManager {
     /// Devices we sent registration ACK to
     registered_devices: BTreeSet<DeviceId>,
     /// Device labels
-    device_labels: HashMap<DeviceId, String>,
+    device_names: HashMap<DeviceId, String>,
     /// Messages to devices waiting to be sent
     port_outbox: std::sync::mpsc::Receiver<CoordinatorSendMessage>,
     /// sometimes we need to put things in the outbox internally
@@ -76,7 +75,7 @@ impl UsbSerialManager {
             device_ports: Default::default(),
             reverse_device_ports: Default::default(),
             registered_devices: Default::default(),
-            device_labels: Default::default(),
+            device_names: Default::default(),
             port_outbox: receiver,
             outbox_sender: sender,
             firmware_bin,
@@ -141,7 +140,7 @@ impl UsbSerialManager {
             .cloned()
             .collect::<Vec<_>>();
         for port in newly_connected_ports {
-            event!(Level::INFO, port = port.to_string(), "USB port connected");
+            event!(Level::INFO, port = port, "USB port connected");
             self.connected.insert(port.clone());
             self.pending.insert(port.clone());
         }
@@ -305,25 +304,13 @@ impl UsbSerialManager {
                         }
                     }
                     DeviceSendBody::SetName { name } => {
-                        // FIXME: we are currently trusting the devices to tell us their name even
-                        // when we've just named them oursleves.
-                        if let Some(existing_name) = self.device_labels.get(&message.from) {
-                            if existing_name != &name {
-                                device_changes.push(DeviceChange::Renamed {
-                                    id: message.from,
-                                    old_name: existing_name.into(),
-                                    new_name: name.clone(),
-                                });
-                            }
-                        } else {
-                            device_changes.push(DeviceChange::NewUnknownDevice {
+                        let existing_name = self.device_names.get(&message.from);
+                        if existing_name != Some(&name) {
+                            device_changes.push(DeviceChange::NameChange {
                                 id: message.from,
-                                name: name.clone(),
+                                name,
                             });
                         }
-                        // TODO: we shouldn't blindly accept names but rather ask the user to "set up" the
-                        // relationship between this device and the coordinator if this is a new name
-                        self.device_labels.insert(message.from, name);
                     }
                     DeviceSendBody::Announce { firmware_digest } => {
                         match self.device_ports.insert(
@@ -373,7 +360,7 @@ impl UsbSerialManager {
                             port = serial_number,
                             from = message.from.to_string(),
                             name = self
-                                .device_labels
+                                .device_names
                                 .get(&message.from)
                                 .cloned()
                                 .unwrap_or("<unknown>".into()),
@@ -401,7 +388,7 @@ impl UsbSerialManager {
                 continue;
             }
 
-            if let Some(device_label) = self.device_labels.get(device_id) {
+            if let Some(device_label) = self.device_names.get(device_id) {
                 event!(
                     Level::INFO,
                     device_id = device_id.to_string(),
@@ -504,43 +491,12 @@ impl UsbSerialManager {
         device_changes
     }
 
-    pub fn device_labels_mut(&mut self) -> &mut HashMap<DeviceId, String> {
-        &mut self.device_labels
-    }
-
-    pub fn unnamed_devices(&self) -> impl Iterator<Item = DeviceId> + '_ {
-        self.announced_devices()
-            .filter(|(_, label)| label.is_none())
-            .map(|(device, _)| device)
-    }
-    pub fn device_labels(&self) -> &HashMap<DeviceId, String> {
-        &self.device_labels
-    }
-
-    pub fn announced_devices(&self) -> impl Iterator<Item = (DeviceId, Option<String>)> + '_ {
-        self.device_ports
-            .keys()
-            .map(|device| (*device, self.device_labels.get(device).cloned()))
-    }
-
     pub fn registered_devices(&self) -> &BTreeSet<DeviceId> {
         &self.registered_devices
     }
 
-    pub fn connected_device_labels(&self) -> BTreeMap<DeviceId, String> {
-        self.registered_devices
-            .clone()
-            .into_iter()
-            .map(|device_id| {
-                (
-                    device_id,
-                    self.device_labels
-                        .get(&device_id)
-                        .expect("registered device has label")
-                        .clone(),
-                )
-            })
-            .collect()
+    pub fn accept_device_name(&mut self, id: DeviceId, name: String) {
+        self.device_names.insert(id, name);
     }
 
     pub fn serial_impl(&self) -> &dyn Serial {
@@ -706,15 +662,10 @@ pub enum DeviceChange {
         firmware_digest: FirmwareDigest,
         latest_firmware_digest: FirmwareDigest,
     },
-    Renamed {
-        id: DeviceId,
-        old_name: String,
-        new_name: String,
-    },
     NeedsName {
         id: DeviceId,
     },
-    NewUnknownDevice {
+    NameChange {
         id: DeviceId,
         name: String,
     },

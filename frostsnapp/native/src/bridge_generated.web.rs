@@ -32,8 +32,8 @@ pub fn wire_device_list_state() -> support::WireSyncReturn {
 }
 
 #[wasm_bindgen]
-pub fn wire_get_device(id: JsValue) -> support::WireSyncReturn {
-    wire_get_device_impl(id)
+pub fn wire_get_connected_device(id: JsValue) -> support::WireSyncReturn {
+    wire_get_connected_device_impl(id)
 }
 
 #[wasm_bindgen]
@@ -72,13 +72,15 @@ pub fn wire_txid__method__Transaction(that: JsValue) -> support::WireSyncReturn 
 }
 
 #[wasm_bindgen]
-pub fn wire_ready__method__Device(that: JsValue) -> support::WireSyncReturn {
-    wire_ready__method__Device_impl(that)
+pub fn wire_ready__method__ConnectedDevice(that: JsValue) -> support::WireSyncReturn {
+    wire_ready__method__ConnectedDevice_impl(that)
 }
 
 #[wasm_bindgen]
-pub fn wire_needs_firmware_upgrade__method__Device(that: JsValue) -> support::WireSyncReturn {
-    wire_needs_firmware_upgrade__method__Device_impl(that)
+pub fn wire_needs_firmware_upgrade__method__ConnectedDevice(
+    that: JsValue,
+) -> support::WireSyncReturn {
+    wire_needs_firmware_upgrade__method__ConnectedDevice_impl(that)
 }
 
 #[wasm_bindgen]
@@ -373,6 +375,14 @@ pub fn wire_enter_firmware_upgrade_mode__method__Coordinator(port_: MessagePort,
 }
 
 #[wasm_bindgen]
+pub fn wire_get_device_name__method__Coordinator(
+    that: JsValue,
+    id: JsValue,
+) -> support::WireSyncReturn {
+    wire_get_device_name__method__Coordinator_impl(that, id)
+}
+
+#[wasm_bindgen]
 pub fn wire_descriptor_for_key__method__BitcoinContext(
     that: JsValue,
     key_id: JsValue,
@@ -595,16 +605,18 @@ pub fn share_opaque_FrostsnapCoreBitcoinTransactionTransactionTemplate(
 }
 
 #[wasm_bindgen]
-pub fn drop_opaque_FrostsnapCoreCoordinatorFrostKey(ptr: *const c_void) {
+pub fn drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(ptr: *const c_void) {
     unsafe {
-        Arc::<frostsnap_core::CoordinatorFrostKey>::decrement_strong_count(ptr as _);
+        Arc::<frostsnap_core::coordinator::CoordinatorFrostKey>::decrement_strong_count(ptr as _);
     }
 }
 
 #[wasm_bindgen]
-pub fn share_opaque_FrostsnapCoreCoordinatorFrostKey(ptr: *const c_void) -> *const c_void {
+pub fn share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(
+    ptr: *const c_void,
+) -> *const c_void {
     unsafe {
-        Arc::<frostsnap_core::CoordinatorFrostKey>::increment_strong_count(ptr as _);
+        Arc::<frostsnap_core::coordinator::CoordinatorFrostKey>::increment_strong_count(ptr as _);
         ptr
     }
 }
@@ -760,6 +772,23 @@ impl Wire2Api<ConfirmationTime> for JsValue {
         }
     }
 }
+impl Wire2Api<ConnectedDevice> for JsValue {
+    fn wire2api(self) -> ConnectedDevice {
+        let self_ = self.dyn_into::<JsArray>().unwrap();
+        assert_eq!(
+            self_.length(),
+            4,
+            "Expected 4 elements, got {}",
+            self_.length()
+        );
+        ConnectedDevice {
+            name: self_.get(0).wire2api(),
+            firmware_digest: self_.get(1).wire2api(),
+            latest_digest: self_.get(2).wire2api(),
+            id: self_.get(3).wire2api(),
+        }
+    }
+}
 impl Wire2Api<Coordinator> for JsValue {
     fn wire2api(self) -> Coordinator {
         let self_ = self.dyn_into::<JsArray>().unwrap();
@@ -770,23 +799,6 @@ impl Wire2Api<Coordinator> for JsValue {
             self_.length()
         );
         Coordinator(self_.get(0).wire2api())
-    }
-}
-impl Wire2Api<Device> for JsValue {
-    fn wire2api(self) -> Device {
-        let self_ = self.dyn_into::<JsArray>().unwrap();
-        assert_eq!(
-            self_.length(),
-            4,
-            "Expected 4 elements, got {}",
-            self_.length()
-        );
-        Device {
-            name: self_.get(0).wire2api(),
-            firmware_digest: self_.get(1).wire2api(),
-            latest_digest: self_.get(2).wire2api(),
-            id: self_.get(3).wire2api(),
-        }
     }
 }
 impl Wire2Api<DeviceId> for JsValue {
@@ -868,8 +880,8 @@ impl Wire2Api<KeyId> for JsValue {
         KeyId(self_.get(0).wire2api())
     }
 }
-impl Wire2Api<Vec<Device>> for JsValue {
-    fn wire2api(self) -> Vec<Device> {
+impl Wire2Api<Vec<ConnectedDevice>> for JsValue {
+    fn wire2api(self) -> Vec<ConnectedDevice> {
         self.dyn_into::<JsArray>()
             .unwrap()
             .iter()
@@ -1208,8 +1220,8 @@ impl Wire2Api<RustOpaque<frostsnap_core::bitcoin_transaction::TransactionTemplat
         unsafe { support::opaque_from_dart((self.as_f64().unwrap() as usize) as _) }
     }
 }
-impl Wire2Api<RustOpaque<frostsnap_core::CoordinatorFrostKey>> for JsValue {
-    fn wire2api(self) -> RustOpaque<frostsnap_core::CoordinatorFrostKey> {
+impl Wire2Api<RustOpaque<frostsnap_core::coordinator::CoordinatorFrostKey>> for JsValue {
+    fn wire2api(self) -> RustOpaque<frostsnap_core::coordinator::CoordinatorFrostKey> {
         #[cfg(target_pointer_width = "64")]
         {
             compile_error!("64-bit pointers are not supported.");

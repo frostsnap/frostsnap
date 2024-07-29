@@ -140,6 +140,10 @@ impl UiProtocol for SigningDispatcher {
         self.aborted = Some("Signing canceled".into());
         self.emit_state()
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 #[derive(Clone, Debug)]

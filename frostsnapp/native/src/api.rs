@@ -19,9 +19,7 @@ use frostsnap_coordinator::{DesktopSerial, UsbSerialManager};
 pub use frostsnap_core::message::EncodedSignature;
 pub use frostsnap_core::{DeviceId, FrostKeyExt, KeyId, SignTask};
 use lazy_static::lazy_static;
-use llsdb::LlsDb;
-pub use std::collections::{BTreeMap, HashMap};
-use std::fs::OpenOptions;
+pub use std::collections::BTreeMap;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -82,11 +80,6 @@ pub(crate) fn emit_device_events(new_events: Vec<DeviceChange>) {
     }
 }
 
-pub(crate) fn init_device_names(device_names: HashMap<DeviceId, String>) {
-    let mut device_list_and_stream = DEVICE_LIST.lock().unwrap();
-    device_list_and_stream.0.init_names(device_names);
-}
-
 pub struct Transaction {
     pub net_value: i64,
     pub inner: RustOpaque<Arc<RTransaction>>,
@@ -105,7 +98,7 @@ impl From<frostsnap_coordinator::bitcoin::wallet::Transaction> for Transaction {
 
 impl Transaction {
     pub fn txid(&self) -> SyncReturn<String> {
-        SyncReturn(self.inner.txid().to_string())
+        SyncReturn(self.inner.compute_txid().to_string())
     }
 }
 
@@ -115,8 +108,8 @@ pub struct _ConfirmationTime {
     pub time: u64,
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct Device {
+#[derive(Clone, Debug)]
+pub struct ConnectedDevice {
     pub name: Option<String>,
     // NOTE: digest should always be present in any device that is actually plugged in
     pub firmware_digest: String,
@@ -124,7 +117,7 @@ pub struct Device {
     pub id: DeviceId,
 }
 
-impl Device {
+impl ConnectedDevice {
     pub fn ready(&self) -> SyncReturn<bool> {
         SyncReturn(self.name.is_some() && !self.needs_firmware_upgrade().0)
     }
@@ -140,7 +133,7 @@ pub struct KeyState {
 }
 
 #[derive(Clone, Debug)]
-pub struct FrostKey(pub(crate) RustOpaque<frostsnap_core::CoordinatorFrostKey>);
+pub struct FrostKey(pub(crate) RustOpaque<frostsnap_core::coordinator::CoordinatorFrostKey>);
 
 impl FrostKey {
     pub fn threshold(&self) -> SyncReturn<usize> {
@@ -155,8 +148,8 @@ impl FrostKey {
         SyncReturn("KEY NAMES NOT IMPLEMENTED".into())
     }
 
-    pub fn devices(&self) -> SyncReturn<Vec<Device>> {
-        SyncReturn(self.0.devices().map(|id| get_device(id).0).collect())
+    pub fn devices(&self) -> SyncReturn<Vec<DeviceId>> {
+        SyncReturn(self.0.devices().collect())
     }
 }
 
@@ -287,7 +280,7 @@ pub fn turn_logcat_logging_on(_level: LogLevel) {
     panic!("Do not call turn_logcat_logging_on outside of android");
 }
 
-pub fn device_at_index(index: usize) -> SyncReturn<Option<Device>> {
+pub fn device_at_index(index: usize) -> SyncReturn<Option<ConnectedDevice>> {
     SyncReturn(DEVICE_LIST.lock().unwrap().0.device_at_index(index))
 }
 
@@ -295,7 +288,7 @@ pub fn device_list_state() -> SyncReturn<DeviceListState> {
     SyncReturn(DEVICE_LIST.lock().unwrap().0.state())
 }
 
-pub fn get_device(id: DeviceId) -> SyncReturn<Device> {
+pub fn get_connected_device(id: DeviceId) -> SyncReturn<Option<ConnectedDevice>> {
     let device = DEVICE_LIST.lock().unwrap().0.get_device(id);
     SyncReturn(device)
 }
@@ -342,7 +335,7 @@ pub enum DeviceListChangeKind {
 pub struct DeviceListChange {
     pub kind: DeviceListChangeKind,
     pub index: usize,
-    pub device: Device,
+    pub device: ConnectedDevice,
 }
 
 #[derive(Clone, Debug)]
@@ -353,12 +346,12 @@ pub struct DeviceListUpdate {
 
 #[derive(Clone, Debug)]
 pub struct DeviceListState {
-    pub devices: Vec<Device>,
+    pub devices: Vec<ConnectedDevice>,
     pub state_id: usize,
 }
 
 impl DeviceListState {
-    pub fn get_device(&self, id: DeviceId) -> SyncReturn<Option<Device>> {
+    pub fn get_device(&self, id: DeviceId) -> SyncReturn<Option<ConnectedDevice>> {
         SyncReturn(self.devices.iter().find(|device| device.id == id).cloned())
     }
 }
@@ -470,15 +463,14 @@ impl Wallet {
             if let Some(wallet_stream) = self.wallet_streams.lock().unwrap().get(&key_id) {
                 wallet_stream.add(txs.into());
             }
-
-            event!(Level::INFO, "finished with changes");
-        } else {
-            event!(
-                Level::INFO,
-                elapsed = start.elapsed().as_millis(),
-                "finished without changes"
-            );
         }
+
+        event!(
+            Level::INFO,
+            elapsed = start.elapsed().as_millis(),
+            changes = something_changed.to_string(),
+            "finished syncing"
+        );
 
         stream.add(100.0);
         stream.close();
@@ -530,7 +522,7 @@ impl Wallet {
             Ok(_) => {
                 event!(
                     Level::INFO,
-                    tx = tx.signed_tx.txid().to_string(),
+                    tx = tx.signed_tx.compute_txid().to_string(),
                     "transaction successfully broadcast"
                 );
                 let mut inner = self.inner.lock().unwrap();
@@ -550,7 +542,7 @@ impl Wallet {
                 let hex_tx = hex::encode(&buf);
                 event!(
                     Level::ERROR,
-                    tx = tx.signed_tx.txid().to_string(),
+                    tx = tx.signed_tx.compute_txid().to_string(),
                     hex = hex_tx,
                     error = e.to_string(),
                     "unable to broadcast"
@@ -591,17 +583,10 @@ fn _load(
     db_file: String,
     usb_serial_manager: UsbSerialManager,
 ) -> Result<(Coordinator, Wallet, BitcoinContext)> {
-    let file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true) // Creates the file if it does not exist
-        .truncate(false)
-        .open(db_file.clone())?;
-
     event!(Level::INFO, path = db_file, "initializing database");
 
-    let db =
-        LlsDb::load_or_init(file).context(format!("failed to load database from {db_file}"))?;
+    let db = rusqlite::Connection::open(&db_file)
+        .context(format!("failed to load database from {db_file}"))?;
 
     let db = Arc::new(Mutex::new(db));
 
@@ -701,12 +686,7 @@ impl Coordinator {
                 .frost_keys()
                 .into_iter()
                 .filter_map(|frost_key| {
-                    if frost_key
-                        .devices()
-                        .0
-                        .into_iter()
-                        .any(|device| device.id == device_id)
-                    {
+                    if frost_key.devices().0.into_iter().any(|id| id == device_id) {
                         Some(frost_key.id().0)
                     } else {
                         None
@@ -769,10 +749,8 @@ impl Coordinator {
     pub fn persisted_sign_session_description(
         &self,
         key_id: KeyId,
-    ) -> Result<SyncReturn<Option<SignTaskDescription>>> {
-        self.0
-            .persisted_sign_session_description(key_id)
-            .map(SyncReturn)
+    ) -> SyncReturn<Option<SignTaskDescription>> {
+        SyncReturn(self.0.persisted_sign_session_description(key_id))
     }
 
     pub fn try_restore_signing_session(
@@ -802,6 +780,10 @@ impl Coordinator {
     pub fn enter_firmware_upgrade_mode(&self, progress: StreamSink<f32>) -> Result<()> {
         self.0.enter_firmware_upgrade_mode(progress)
     }
+
+    pub fn get_device_name(&self, id: DeviceId) -> SyncReturn<Option<String>> {
+        SyncReturn(self.0.get_device_name(id))
+    }
 }
 
 /// The point of this is to keep bitcoin API functionalities that don't require the wallet separate
@@ -824,7 +806,7 @@ impl BitcoinContext {
         SyncReturn(match bitcoin::Address::from_str(&address) {
             Ok(address) => match address.require_network(*self.network) {
                 Ok(address) => {
-                    let dust_value = address.script_pubkey().dust_value().to_sat();
+                    let dust_value = address.script_pubkey().minimal_non_dust().to_sat();
                     if value < dust_value {
                         event!(
                             Level::DEBUG,
@@ -883,9 +865,11 @@ impl UnsignedTx {
             // we are assuming the signatures are correct here.
             let input = &mut signed_psbt.inputs[i];
             let schnorr_sig = bitcoin::taproot::Signature {
-                sig: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.unwrap().0)
-                    .unwrap(),
-                hash_ty: bitcoin::sighash::TapSighashType::Default,
+                signature: bitcoin::secp256k1::schnorr::Signature::from_slice(
+                    &signature.unwrap().0,
+                )
+                .unwrap(),
+                sighash_type: bitcoin::sighash::TapSighashType::Default,
             };
             input.tap_key_sig = Some(schnorr_sig);
         }
@@ -899,8 +883,9 @@ impl UnsignedTx {
         let mut tx = self.template_tx.to_rust_bitcoin_tx();
         for (txin, signature) in tx.input.iter_mut().zip(signatures) {
             let schnorr_sig = bitcoin::taproot::Signature {
-                sig: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.0).unwrap(),
-                hash_ty: bitcoin::sighash::TapSighashType::Default,
+                signature: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.0)
+                    .unwrap(),
+                sighash_type: bitcoin::sighash::TapSighashType::Default,
             };
             let witness = bitcoin::Witness::from_slice(&[schnorr_sig.to_vec()]);
             txin.witness = witness;

@@ -92,11 +92,11 @@ class NativeImpl implements Native {
         argNames: ["level"],
       );
 
-  Device? deviceAtIndex({required int index, dynamic hint}) {
+  ConnectedDevice? deviceAtIndex({required int index, dynamic hint}) {
     var arg0 = api2wire_usize(index);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
       callFfi: () => _platform.inner.wire_device_at_index(arg0),
-      parseSuccessData: _wire2api_opt_box_autoadd_device,
+      parseSuccessData: _wire2api_opt_box_autoadd_connected_device,
       parseErrorData: null,
       constMeta: kDeviceAtIndexConstMeta,
       argValues: [index],
@@ -127,21 +127,21 @@ class NativeImpl implements Native {
         argNames: [],
       );
 
-  Device getDevice({required DeviceId id, dynamic hint}) {
+  ConnectedDevice? getConnectedDevice({required DeviceId id, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_device_id(id);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
-      callFfi: () => _platform.inner.wire_get_device(arg0),
-      parseSuccessData: _wire2api_device,
+      callFfi: () => _platform.inner.wire_get_connected_device(arg0),
+      parseSuccessData: _wire2api_opt_box_autoadd_connected_device,
       parseErrorData: null,
-      constMeta: kGetDeviceConstMeta,
+      constMeta: kGetConnectedDeviceConstMeta,
       argValues: [id],
       hint: hint,
     ));
   }
 
-  FlutterRustBridgeTaskConstMeta get kGetDeviceConstMeta =>
+  FlutterRustBridgeTaskConstMeta get kGetConnectedDeviceConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
-        debugName: "get_device",
+        debugName: "get_connected_device",
         argNames: ["id"],
       );
 
@@ -274,41 +274,43 @@ class NativeImpl implements Native {
         argNames: ["that"],
       );
 
-  bool readyMethodDevice({required Device that, dynamic hint}) {
-    var arg0 = _platform.api2wire_box_autoadd_device(that);
+  bool readyMethodConnectedDevice(
+      {required ConnectedDevice that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_connected_device(that);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
-      callFfi: () => _platform.inner.wire_ready__method__Device(arg0),
+      callFfi: () => _platform.inner.wire_ready__method__ConnectedDevice(arg0),
       parseSuccessData: _wire2api_bool,
       parseErrorData: null,
-      constMeta: kReadyMethodDeviceConstMeta,
+      constMeta: kReadyMethodConnectedDeviceConstMeta,
       argValues: [that],
       hint: hint,
     ));
   }
 
-  FlutterRustBridgeTaskConstMeta get kReadyMethodDeviceConstMeta =>
+  FlutterRustBridgeTaskConstMeta get kReadyMethodConnectedDeviceConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
-        debugName: "ready__method__Device",
+        debugName: "ready__method__ConnectedDevice",
         argNames: ["that"],
       );
 
-  bool needsFirmwareUpgradeMethodDevice({required Device that, dynamic hint}) {
-    var arg0 = _platform.api2wire_box_autoadd_device(that);
+  bool needsFirmwareUpgradeMethodConnectedDevice(
+      {required ConnectedDevice that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_connected_device(that);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
-      callFfi: () =>
-          _platform.inner.wire_needs_firmware_upgrade__method__Device(arg0),
+      callFfi: () => _platform.inner
+          .wire_needs_firmware_upgrade__method__ConnectedDevice(arg0),
       parseSuccessData: _wire2api_bool,
       parseErrorData: null,
-      constMeta: kNeedsFirmwareUpgradeMethodDeviceConstMeta,
+      constMeta: kNeedsFirmwareUpgradeMethodConnectedDeviceConstMeta,
       argValues: [that],
       hint: hint,
     ));
   }
 
   FlutterRustBridgeTaskConstMeta
-      get kNeedsFirmwareUpgradeMethodDeviceConstMeta =>
+      get kNeedsFirmwareUpgradeMethodConnectedDeviceConstMeta =>
           const FlutterRustBridgeTaskConstMeta(
-            debugName: "needs_firmware_upgrade__method__Device",
+            debugName: "needs_firmware_upgrade__method__ConnectedDevice",
             argNames: ["that"],
           );
 
@@ -366,11 +368,11 @@ class NativeImpl implements Native {
         argNames: ["that"],
       );
 
-  List<Device> devicesMethodFrostKey({required FrostKey that, dynamic hint}) {
+  List<DeviceId> devicesMethodFrostKey({required FrostKey that, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_frost_key(that);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
       callFfi: () => _platform.inner.wire_devices__method__FrostKey(arg0),
-      parseSuccessData: _wire2api_list_device,
+      parseSuccessData: _wire2api_list_device_id,
       parseErrorData: null,
       constMeta: kDevicesMethodFrostKeyConstMeta,
       argValues: [that],
@@ -472,14 +474,14 @@ class NativeImpl implements Native {
         argNames: ["that", "bytesToRead"],
       );
 
-  Device? getDeviceMethodDeviceListState(
+  ConnectedDevice? getDeviceMethodDeviceListState(
       {required DeviceListState that, required DeviceId id, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_device_list_state(that);
     var arg1 = _platform.api2wire_box_autoadd_device_id(id);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
       callFfi: () =>
           _platform.inner.wire_get_device__method__DeviceListState(arg0, arg1),
-      parseSuccessData: _wire2api_opt_box_autoadd_device,
+      parseSuccessData: _wire2api_opt_box_autoadd_connected_device,
       parseErrorData: null,
       constMeta: kGetDeviceMethodDeviceListStateConstMeta,
       argValues: [that, id],
@@ -1077,7 +1079,7 @@ class NativeImpl implements Native {
           .wire_persisted_sign_session_description__method__Coordinator(
               arg0, arg1),
       parseSuccessData: _wire2api_opt_box_autoadd_sign_task_description,
-      parseErrorData: _wire2api_FrbAnyhowException,
+      parseErrorData: null,
       constMeta: kPersistedSignSessionDescriptionMethodCoordinatorConstMeta,
       argValues: [that, keyId],
       hint: hint,
@@ -1198,6 +1200,27 @@ class NativeImpl implements Native {
             debugName: "enter_firmware_upgrade_mode__method__Coordinator",
             argNames: ["that"],
           );
+
+  String? getDeviceNameMethodCoordinator(
+      {required Coordinator that, required DeviceId id, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
+    var arg1 = _platform.api2wire_box_autoadd_device_id(id);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () =>
+          _platform.inner.wire_get_device_name__method__Coordinator(arg0, arg1),
+      parseSuccessData: _wire2api_opt_String,
+      parseErrorData: null,
+      constMeta: kGetDeviceNameMethodCoordinatorConstMeta,
+      argValues: [that, id],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kGetDeviceNameMethodCoordinatorConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "get_device_name__method__Coordinator",
+        argNames: ["that", "id"],
+      );
 
   String descriptorForKeyMethodBitcoinContext(
       {required BitcoinContext that, required KeyId keyId, dynamic hint}) {
@@ -1492,12 +1515,13 @@ class NativeImpl implements Native {
       get FrostsnapCoreBitcoinTransactionTransactionTemplateFinalizer =>
           _platform.FrostsnapCoreBitcoinTransactionTransactionTemplateFinalizer;
 
-  DropFnType get dropOpaqueFrostsnapCoreCoordinatorFrostKey =>
-      _platform.inner.drop_opaque_FrostsnapCoreCoordinatorFrostKey;
-  ShareFnType get shareOpaqueFrostsnapCoreCoordinatorFrostKey =>
-      _platform.inner.share_opaque_FrostsnapCoreCoordinatorFrostKey;
-  OpaqueTypeFinalizer get FrostsnapCoreCoordinatorFrostKeyFinalizer =>
-      _platform.FrostsnapCoreCoordinatorFrostKeyFinalizer;
+  DropFnType get dropOpaqueFrostsnapCoreCoordinatorCoordinatorFrostKey =>
+      _platform.inner.drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey;
+  ShareFnType get shareOpaqueFrostsnapCoreCoordinatorCoordinatorFrostKey =>
+      _platform.inner.share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey;
+  OpaqueTypeFinalizer
+      get FrostsnapCoreCoordinatorCoordinatorFrostKeyFinalizer =>
+          _platform.FrostsnapCoreCoordinatorCoordinatorFrostKeyFinalizer;
 
   DropFnType get dropOpaqueMutexBTreeMapKeyIdStreamSinkTxState =>
       _platform.inner.drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState;
@@ -1596,9 +1620,10 @@ class NativeImpl implements Native {
         raw[0], raw[1], this);
   }
 
-  FrostsnapCoreCoordinatorFrostKey _wire2api_FrostsnapCoreCoordinatorFrostKey(
-      dynamic raw) {
-    return FrostsnapCoreCoordinatorFrostKey.fromRaw(raw[0], raw[1], this);
+  FrostsnapCoreCoordinatorCoordinatorFrostKey
+      _wire2api_FrostsnapCoreCoordinatorCoordinatorFrostKey(dynamic raw) {
+    return FrostsnapCoreCoordinatorCoordinatorFrostKey.fromRaw(
+        raw[0], raw[1], this);
   }
 
   MutexBTreeMapKeyIdStreamSinkTxState
@@ -1702,12 +1727,12 @@ class NativeImpl implements Native {
     return _wire2api_confirmation_time(raw);
   }
 
-  DecodingProgress _wire2api_box_autoadd_decoding_progress(dynamic raw) {
-    return _wire2api_decoding_progress(raw);
+  ConnectedDevice _wire2api_box_autoadd_connected_device(dynamic raw) {
+    return _wire2api_connected_device(raw);
   }
 
-  Device _wire2api_box_autoadd_device(dynamic raw) {
-    return _wire2api_device(raw);
+  DecodingProgress _wire2api_box_autoadd_decoding_progress(dynamic raw) {
+    return _wire2api_decoding_progress(raw);
   }
 
   double _wire2api_box_autoadd_f64(dynamic raw) {
@@ -1756,6 +1781,19 @@ class NativeImpl implements Native {
     );
   }
 
+  ConnectedDevice _wire2api_connected_device(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return ConnectedDevice(
+      bridge: this,
+      name: _wire2api_opt_String(arr[0]),
+      firmwareDigest: _wire2api_String(arr[1]),
+      latestDigest: _wire2api_String(arr[2]),
+      id: _wire2api_device_id(arr[3]),
+    );
+  }
+
   Coordinator _wire2api_coordinator(dynamic raw) {
     final arr = raw as List<dynamic>;
     if (arr.length != 1)
@@ -1776,19 +1814,6 @@ class NativeImpl implements Native {
     );
   }
 
-  Device _wire2api_device(dynamic raw) {
-    final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
-    return Device(
-      bridge: this,
-      name: _wire2api_opt_String(arr[0]),
-      firmwareDigest: _wire2api_String(arr[1]),
-      latestDigest: _wire2api_String(arr[2]),
-      id: _wire2api_device_id(arr[3]),
-    );
-  }
-
   DeviceId _wire2api_device_id(dynamic raw) {
     final arr = raw as List<dynamic>;
     if (arr.length != 1)
@@ -1805,7 +1830,7 @@ class NativeImpl implements Native {
     return DeviceListChange(
       kind: _wire2api_device_list_change_kind(arr[0]),
       index: _wire2api_usize(arr[1]),
-      device: _wire2api_device(arr[2]),
+      device: _wire2api_connected_device(arr[2]),
     );
   }
 
@@ -1819,7 +1844,7 @@ class NativeImpl implements Native {
       throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
     return DeviceListState(
       bridge: this,
-      devices: _wire2api_list_device(arr[0]),
+      devices: _wire2api_list_connected_device(arr[0]),
       stateId: _wire2api_usize(arr[1]),
     );
   }
@@ -1893,7 +1918,7 @@ class NativeImpl implements Native {
       throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
     return FrostKey(
       bridge: this,
-      field0: _wire2api_FrostsnapCoreCoordinatorFrostKey(arr[0]),
+      field0: _wire2api_FrostsnapCoreCoordinatorCoordinatorFrostKey(arr[0]),
     );
   }
 
@@ -1946,8 +1971,8 @@ class NativeImpl implements Native {
     return (raw as List<dynamic>).map(_wire2api_address).toList();
   }
 
-  List<Device> _wire2api_list_device(dynamic raw) {
-    return (raw as List<dynamic>).map(_wire2api_device).toList();
+  List<ConnectedDevice> _wire2api_list_connected_device(dynamic raw) {
+    return (raw as List<dynamic>).map(_wire2api_connected_device).toList();
   }
 
   List<DeviceId> _wire2api_list_device_id(dynamic raw) {
@@ -1982,8 +2007,8 @@ class NativeImpl implements Native {
     return raw == null ? null : _wire2api_box_autoadd_confirmation_time(raw);
   }
 
-  Device? _wire2api_opt_box_autoadd_device(dynamic raw) {
-    return raw == null ? null : _wire2api_box_autoadd_device(raw);
+  ConnectedDevice? _wire2api_opt_box_autoadd_connected_device(dynamic raw) {
+    return raw == null ? null : _wire2api_box_autoadd_connected_device(raw);
   }
 
   double? _wire2api_opt_box_autoadd_f64(dynamic raw) {
