@@ -127,11 +127,11 @@ class NativeImpl implements Native {
         argNames: [],
       );
 
-  ConnectedDevice getConnectedDevice({required DeviceId id, dynamic hint}) {
+  ConnectedDevice? getConnectedDevice({required DeviceId id, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_device_id(id);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
       callFfi: () => _platform.inner.wire_get_connected_device(arg0),
-      parseSuccessData: _wire2api_connected_device,
+      parseSuccessData: _wire2api_opt_box_autoadd_connected_device,
       parseErrorData: null,
       constMeta: kGetConnectedDeviceConstMeta,
       argValues: [id],

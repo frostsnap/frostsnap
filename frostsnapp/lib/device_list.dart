@@ -65,7 +65,7 @@ class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
               }
             case DeviceListChangeKind.Named:
               {
-                /* do nothing*/
+                /* nothing needs to be done to the list. The name will be updated with setState*/
               }
           }
         }

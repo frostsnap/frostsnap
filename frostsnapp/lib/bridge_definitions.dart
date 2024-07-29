@@ -39,7 +39,7 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kDeviceListStateConstMeta;
 
-  ConnectedDevice getConnectedDevice({required DeviceId id, dynamic hint});
+  ConnectedDevice? getConnectedDevice({required DeviceId id, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kGetConnectedDeviceConstMeta;
 

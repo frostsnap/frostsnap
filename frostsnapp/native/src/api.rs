@@ -108,7 +108,7 @@ pub struct _ConfirmationTime {
     pub time: u64,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct ConnectedDevice {
     pub name: Option<String>,
     // NOTE: digest should always be present in any device that is actually plugged in
@@ -288,7 +288,7 @@ pub fn device_list_state() -> SyncReturn<DeviceListState> {
     SyncReturn(DEVICE_LIST.lock().unwrap().0.state())
 }
 
-pub fn get_connected_device(id: DeviceId) -> SyncReturn<ConnectedDevice> {
+pub fn get_connected_device(id: DeviceId) -> SyncReturn<Option<ConnectedDevice>> {
     let device = DEVICE_LIST.lock().unwrap().0.get_device(id);
     SyncReturn(device)
 }
