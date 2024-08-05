@@ -92,10 +92,11 @@ where
 
     pub fn header(&mut self, device_label: impl AsRef<str>) {
         let y = 25;
+
         Rectangle::new(Point::zero(), Size::new(self.display.size().width, y))
             .into_styled(
                 PrimitiveStyleBuilder::new()
-                    .fill_color(Rgb565::new(4, 8, 17))
+                    .fill_color(Rgb565::BLACK)
                     .build(),
             )
             .draw(&mut self.framebuf)
@@ -117,27 +118,16 @@ where
         )
         .draw(&mut self.framebuf)
         .unwrap();
-
-        Line::new(
-            Point::new(0, (y - 1) as i32),
-            Point::new(self.display.size().width as i32, (y - 1) as i32),
-        )
-        .into_styled(PrimitiveStyle::with_stroke(Rgb565::CSS_DARK_GRAY, 1))
-        .draw(&mut self.framebuf)
-        .unwrap();
     }
 
     pub fn confirm_bar(&mut self, percent: f32) {
         let stroke = 3;
-        let y = self.display.size().height - stroke - 32;
+        let y = 27;
 
-        Line::new(
-            Point::new(71, y as i32),
-            Point::new((100_f32 * percent) as i32 + 70, y as i32),
-        )
-        .into_styled(PrimitiveStyle::with_stroke(Rgb565::GREEN, stroke))
-        .draw(&mut self.display)
-        .unwrap();
+        Line::new(Point::new(0, y), Point::new((240_f32 * percent) as i32, y))
+            .into_styled(PrimitiveStyle::with_stroke(Rgb565::GREEN, stroke))
+            .draw(&mut self.display)
+            .unwrap();
     }
 
     pub fn progress_bar(&mut self, percent: f32) {
@@ -185,20 +175,6 @@ where
     }
 
     pub fn button(&mut self) {
-        Rectangle::new(
-            Point::new(70, self.display.size().height as i32 - 37),
-            Size::new(100, 4),
-        )
-        .into_styled(
-            PrimitiveStyleBuilder::new()
-                .stroke_width(1)
-                .stroke_color(Rgb565::CSS_DARK_GRAY)
-                .fill_color(Rgb565::new(7, 14, 7))
-                .build(),
-        )
-        .draw(&mut self.framebuf)
-        .unwrap();
-
         Rectangle::new(
             Point::new(70, self.display.size().height as i32 - 34),
             Size::new(100, 34),
