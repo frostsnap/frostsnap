@@ -1,6 +1,6 @@
 use schnorr_fun::{
-    frost::FrostKey,
-    fun::{marker::Normal, Point},
+    frost::{PairedSecretShare, SharedKey},
+    fun::prelude::*,
 };
 
 use crate::{impl_display_debug_serialize, impl_fromstr_deserialize};
@@ -35,7 +35,13 @@ pub trait FrostKeyExt {
     fn key_id(&self) -> KeyId;
 }
 
-impl FrostKeyExt for FrostKey<Normal> {
+impl FrostKeyExt for SharedKey {
+    fn key_id(&self) -> KeyId {
+        KeyId::from_root_pubkey(self.public_key())
+    }
+}
+
+impl FrostKeyExt for PairedSecretShare {
     fn key_id(&self) -> KeyId {
         KeyId::from_root_pubkey(self.public_key())
     }

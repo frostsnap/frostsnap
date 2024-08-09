@@ -1,6 +1,6 @@
 use bitcoin::{bip32::*, secp256k1, Network};
 use schnorr_fun::{
-    frost::FrostKey,
+    frost::{PairedSecretShare, SharedKey},
     fun::{g, marker::*, Point, Scalar, G},
 };
 
@@ -200,21 +200,25 @@ pub trait TweakableKey: Clone {
     }
 }
 
-impl TweakableKey for FrostKey<Normal> {
-    type XOnly = FrostKey<EvenY>;
+impl TweakableKey for SharedKey<Normal> {
+    type XOnly = SharedKey<EvenY>;
 
     fn to_libsecp_key(&self) -> secp256k1::PublicKey {
         self.public_key().to_libsecp_key()
     }
 
     fn tweak(self, tweak: Scalar<Public, Zero>) -> Self {
-        FrostKey::<Normal>::tweak(self, tweak).expect("computationally unreachable")
+        self.homomorphic_add(tweak)
+            .non_zero()
+            .expect("computationally unreachable")
     }
 
     fn into_xonly_with_tweak(self, tweak: Scalar<Public>) -> Self::XOnly {
-        self.into_xonly_key()
-            .tweak(tweak)
-            .expect("if tweak is a hash this should be unreachable")
+        self.into_xonly()
+            .homomorphic_add(tweak)
+            .non_zero()
+            .expect("computationally unreachable")
+            .into_xonly()
     }
 
     fn to_libsecp_xonly(&self) -> secp256k1::XOnlyPublicKey {
@@ -222,7 +226,37 @@ impl TweakableKey for FrostKey<Normal> {
     }
 
     fn into_xonly(self) -> Self::XOnly {
-        self.into_xonly_key()
+        self.into_xonly()
+    }
+}
+
+impl TweakableKey for PairedSecretShare {
+    type XOnly = PairedSecretShare<EvenY>;
+
+    fn to_libsecp_key(&self) -> secp256k1::PublicKey {
+        self.public_key().to_libsecp_key()
+    }
+
+    fn to_libsecp_xonly(&self) -> secp256k1::XOnlyPublicKey {
+        self.public_key().to_libsecp_xonly()
+    }
+
+    fn tweak(self, tweak: Scalar<Public, Zero>) -> Self {
+        self.homomorphic_add(tweak)
+            .non_zero()
+            .expect("computationally unreachable")
+    }
+
+    fn into_xonly_with_tweak(self, tweak: Scalar<Public>) -> Self::XOnly {
+        self.into_xonly()
+            .homomorphic_add(tweak)
+            .non_zero()
+            .expect("computationally unreachable")
+            .into_xonly()
+    }
+
+    fn into_xonly(self) -> Self::XOnly {
+        self.into_xonly()
     }
 }
 

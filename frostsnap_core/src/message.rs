@@ -1,11 +1,13 @@
 use crate::encrypted_share::EncryptedShare;
-use crate::{coordinator, CheckedSignTask, FrostsnapSecretKey, Gist, KeyId, SessionHash, Vec};
+use crate::{coordinator, CheckedSignTask, Gist, KeyId, SessionHash, Vec};
 use crate::{DeviceId, SignTask};
 use alloc::collections::VecDeque;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
-use schnorr_fun::fun::{marker::*, Point, Scalar};
-use schnorr_fun::{binonce::Nonce, Signature};
+use schnorr_fun::binonce;
+use schnorr_fun::frost::PartyIndex;
+use schnorr_fun::fun::prelude::*;
+use schnorr_fun::{binonce::Nonce, frost::PairedSecretShare, Signature};
 use sha2::digest::Update;
 use sha2::Digest;
 
@@ -47,7 +49,7 @@ pub enum CoordinatorToDeviceMessage {
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub struct SignRequest {
-    pub nonces: BTreeMap<Scalar<Public, NonZero>, SignRequestNonces>,
+    pub nonces: BTreeMap<PartyIndex, SignRequestNonces>,
     pub sign_task: SignTask,
     pub key_id: KeyId,
 }
@@ -56,6 +58,20 @@ impl SignRequest {
     pub fn session_id(&self) -> [u8; 32] {
         let bytes = bincode::encode_to_vec(self, bincode::config::standard()).unwrap();
         sha2::Sha256::new().chain(bytes).finalize().into()
+    }
+
+    pub fn agg_nonce(&self, index: usize) -> binonce::Nonce<Zero> {
+        let nonces_at_index = self
+            .nonces
+            .values()
+            // NOTE: filter_map because don't care about other parties not having a nonce given for
+            // them. It's not a security issue.
+            .filter_map(|nonces| nonces.nonces.get(index).cloned());
+        binonce::Nonce::aggregate(nonces_at_index)
+    }
+
+    pub fn parties(&self) -> impl Iterator<Item = PartyIndex> + '_ {
+        self.nonces.keys().cloned()
     }
 }
 
@@ -217,6 +233,6 @@ pub enum TaskKind {
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub enum DeviceToStorageMessage {
-    SaveKey(FrostsnapSecretKey),
+    SaveKey(PairedSecretShare),
     ExpendNonce { nonce_counter: u64 },
 }
