@@ -383,6 +383,7 @@ impl FfiCoordinator {
         &self,
         devices: BTreeSet<DeviceId>,
         threshold: usize,
+        key_name: String,
         sink: StreamSink<frostsnap_coordinator::keygen::KeyGenState>,
     ) -> anyhow::Result<()> {
         let ui_protocol =
@@ -391,7 +392,7 @@ impl FfiCoordinator {
         let keygen_messages = {
             let mut coordinator = self.coordinator.lock().unwrap();
             coordinator.staged_mutate(&mut *self.db.lock().unwrap(), |coordinator| {
-                Ok(coordinator.do_keygen(&devices, threshold as u16)?)
+                Ok(coordinator.do_keygen(&devices, threshold as u16, key_name.clone())?)
             })?
         };
 
@@ -399,6 +400,13 @@ impl FfiCoordinator {
             .lock()
             .unwrap()
             .extend(keygen_messages);
+
+        // Send device pending key name
+        let send_message = CoordinatorSendMessage {
+            target_destinations: Destination::from(devices),
+            message_body: CoordinatorSendBody::KeyName(key_name),
+        };
+        self.usb_sender.send(send_message);
 
         ui_protocol.emit_state();
         self.start_protocol(ui_protocol);
@@ -591,6 +599,13 @@ impl FfiCoordinator {
 
     pub fn get_device_name(&self, id: DeviceId) -> Option<String> {
         self.device_names.lock().unwrap().get(id)
+    }
+
+    pub fn get_key_name(&self, key_id: KeyId) -> Option<String> {
+        self.frost_keys()
+            .iter()
+            .find(|key| key.0.key_id() == key_id)
+            .map(|frost_key| frost_key.0.key_name())
     }
 }
 

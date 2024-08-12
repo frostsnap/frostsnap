@@ -264,7 +264,7 @@ WireSyncReturn wire_threshold__method__FrostKey(struct wire_FrostKey *that);
 
 WireSyncReturn wire_id__method__FrostKey(struct wire_FrostKey *that);
 
-WireSyncReturn wire_name__method__FrostKey(struct wire_FrostKey *that);
+WireSyncReturn wire_key_name__method__FrostKey(struct wire_FrostKey *that);
 
 WireSyncReturn wire_devices__method__FrostKey(struct wire_FrostKey *that);
 
@@ -358,6 +358,9 @@ void wire_sub_key_events__method__Coordinator(int64_t port_, struct wire_Coordin
 WireSyncReturn wire_get_key__method__Coordinator(struct wire_Coordinator *that,
                                                  struct wire_KeyId *key_id);
 
+WireSyncReturn wire_get_key_name__method__Coordinator(struct wire_Coordinator *that,
+                                                      struct wire_KeyId *key_id);
+
 WireSyncReturn wire_keys_for_device__method__Coordinator(struct wire_Coordinator *that,
                                                          struct wire_DeviceId *device_id);
 
@@ -382,7 +385,8 @@ WireSyncReturn wire_current_nonce__method__Coordinator(struct wire_Coordinator *
 void wire_generate_new_key__method__Coordinator(int64_t port_,
                                                 struct wire_Coordinator *that,
                                                 uintptr_t threshold,
-                                                struct wire_list_device_id *devices);
+                                                struct wire_list_device_id *devices,
+                                                struct wire_uint_8_list *key_name);
 
 WireSyncReturn wire_persisted_sign_session_description__method__Coordinator(struct wire_Coordinator *that,
                                                                             struct wire_KeyId *key_id);
@@ -615,7 +619,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_needs_firmware_upgrade__method__ConnectedDevice);
     dummy_var ^= ((int64_t) (void*) wire_threshold__method__FrostKey);
     dummy_var ^= ((int64_t) (void*) wire_id__method__FrostKey);
-    dummy_var ^= ((int64_t) (void*) wire_name__method__FrostKey);
+    dummy_var ^= ((int64_t) (void*) wire_key_name__method__FrostKey);
     dummy_var ^= ((int64_t) (void*) wire_devices__method__FrostKey);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortOpen);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortRead);
@@ -641,6 +645,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_key_state__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_sub_key_events__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_get_key__method__Coordinator);
+    dummy_var ^= ((int64_t) (void*) wire_get_key_name__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_keys_for_device__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_start_signing__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_start_signing_tx__method__Coordinator);

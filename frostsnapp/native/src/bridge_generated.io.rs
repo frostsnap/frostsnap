@@ -109,8 +109,10 @@ pub extern "C" fn wire_id__method__FrostKey(that: *mut wire_FrostKey) -> support
 }
 
 #[no_mangle]
-pub extern "C" fn wire_name__method__FrostKey(that: *mut wire_FrostKey) -> support::WireSyncReturn {
-    wire_name__method__FrostKey_impl(that)
+pub extern "C" fn wire_key_name__method__FrostKey(
+    that: *mut wire_FrostKey,
+) -> support::WireSyncReturn {
+    wire_key_name__method__FrostKey_impl(that)
 }
 
 #[no_mangle]
@@ -331,6 +333,14 @@ pub extern "C" fn wire_get_key__method__Coordinator(
 }
 
 #[no_mangle]
+pub extern "C" fn wire_get_key_name__method__Coordinator(
+    that: *mut wire_Coordinator,
+    key_id: *mut wire_KeyId,
+) -> support::WireSyncReturn {
+    wire_get_key_name__method__Coordinator_impl(that, key_id)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_keys_for_device__method__Coordinator(
     that: *mut wire_Coordinator,
     device_id: *mut wire_DeviceId,
@@ -382,8 +392,9 @@ pub extern "C" fn wire_generate_new_key__method__Coordinator(
     that: *mut wire_Coordinator,
     threshold: usize,
     devices: *mut wire_list_device_id,
+    key_name: *mut wire_uint_8_list,
 ) {
-    wire_generate_new_key__method__Coordinator_impl(port_, that, threshold, devices)
+    wire_generate_new_key__method__Coordinator_impl(port_, that, threshold, devices, key_name)
 }
 
 #[no_mangle]

@@ -85,19 +85,26 @@ class _DeviceSettingsState extends State<DeviceSettings> {
         itemCount: deviceKeys.length,
         itemBuilder: (context, index) {
           final keyId = deviceKeys[index];
+          final keyName = coord.getKeyName(keyId: keyId)!;
           return ListTile(
             title: Row(
               mainAxisAlignment: MainAxisAlignment.start,
               children: [
-                Text(
-                  toHex(Uint8List.fromList(keyId.field0)),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontFamily: 'Monospace',
+                Column(children: [
+                  Text(
+                    keyName,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
-                ),
+                  Text(
+                    toHex(Uint8List.fromList(keyId.field0)),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontFamily: 'Monospace',
+                    ),
+                  )
+                ]),
                 SizedBox(width: 10),
                 ElevatedButton(
                   onPressed: () async {

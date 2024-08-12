@@ -559,7 +559,8 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* List<dynamic> */ wire_id__method__FrostKey(
       List<dynamic> that);
 
-  external dynamic /* String */ wire_name__method__FrostKey(List<dynamic> that);
+  external dynamic /* String */ wire_key_name__method__FrostKey(
+      List<dynamic> that);
 
   external dynamic /* List<dynamic> */ wire_devices__method__FrostKey(
       List<dynamic> that);
@@ -651,6 +652,9 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* List<dynamic>? */ wire_get_key__method__Coordinator(
       List<dynamic> that, List<dynamic> key_id);
 
+  external dynamic /* String? */ wire_get_key_name__method__Coordinator(
+      List<dynamic> that, List<dynamic> key_id);
+
   external dynamic /* List<dynamic> */
       wire_keys_for_device__method__Coordinator(
           List<dynamic> that, List<dynamic> device_id);
@@ -679,7 +683,8 @@ class NativeWasmModule implements WasmModule {
       NativePortType port_,
       List<dynamic> that,
       int threshold,
-      List<dynamic> devices);
+      List<dynamic> devices,
+      String key_name);
 
   external dynamic /* List<dynamic>? */
       wire_persisted_sign_session_description__method__Coordinator(
@@ -875,8 +880,8 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   dynamic /* List<dynamic> */ wire_id__method__FrostKey(List<dynamic> that) =>
       wasmModule.wire_id__method__FrostKey(that);
 
-  dynamic /* String */ wire_name__method__FrostKey(List<dynamic> that) =>
-      wasmModule.wire_name__method__FrostKey(that);
+  dynamic /* String */ wire_key_name__method__FrostKey(List<dynamic> that) =>
+      wasmModule.wire_key_name__method__FrostKey(that);
 
   dynamic /* List<dynamic> */ wire_devices__method__FrostKey(
           List<dynamic> that) =>
@@ -988,6 +993,10 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
           List<dynamic> that, List<dynamic> key_id) =>
       wasmModule.wire_get_key__method__Coordinator(that, key_id);
 
+  dynamic /* String? */ wire_get_key_name__method__Coordinator(
+          List<dynamic> that, List<dynamic> key_id) =>
+      wasmModule.wire_get_key_name__method__Coordinator(that, key_id);
+
   dynamic /* List<dynamic> */ wire_keys_for_device__method__Coordinator(
           List<dynamic> that, List<dynamic> device_id) =>
       wasmModule.wire_keys_for_device__method__Coordinator(that, device_id);
@@ -1018,10 +1027,14 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
           List<dynamic> that, List<dynamic> id) =>
       wasmModule.wire_current_nonce__method__Coordinator(that, id);
 
-  void wire_generate_new_key__method__Coordinator(NativePortType port_,
-          List<dynamic> that, int threshold, List<dynamic> devices) =>
+  void wire_generate_new_key__method__Coordinator(
+          NativePortType port_,
+          List<dynamic> that,
+          int threshold,
+          List<dynamic> devices,
+          String key_name) =>
       wasmModule.wire_generate_new_key__method__Coordinator(
-          port_, that, threshold, devices);
+          port_, that, threshold, devices, key_name);
 
   dynamic /* List<dynamic>? */
       wire_persisted_sign_session_description__method__Coordinator(

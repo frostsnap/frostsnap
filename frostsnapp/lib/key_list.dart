@@ -158,7 +158,7 @@ class _KeyCard extends State<KeyCard> {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text(
-              toHex(Uint8List.fromList(widget.frostKey.id().field0)),
+              widget.frostKey.keyName(),
               textAlign: TextAlign.center,
               style: const TextStyle(
                   fontSize: 18,

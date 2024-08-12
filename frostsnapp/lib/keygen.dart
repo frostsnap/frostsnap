@@ -40,6 +40,7 @@ class DoKeyGenButton extends StatefulWidget {
 
 class _DoKeyGenButtonState extends State<DoKeyGenButton> {
   int? thresholdSlider;
+  final _messageController = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
@@ -62,6 +63,16 @@ class _DoKeyGenButtonState extends State<DoKeyGenButton> {
     }
 
     return Column(children: [
+      SizedBox(
+          width: MediaQuery.of(context).size.width * 0.5,
+          child: TextField(
+            controller: _messageController,
+            onChanged: (_) {
+              setState(() {});
+            },
+            decoration: InputDecoration(labelText: 'Key Name'),
+          )),
+      SizedBox(height: 8),
       Text(
         prompt,
         style: const TextStyle(fontSize: 18.0),
@@ -84,7 +95,7 @@ class _DoKeyGenButtonState extends State<DoKeyGenButton> {
             max: max(readyDevices.length.toDouble(), 1)),
       ),
       ElevatedButton(
-          onPressed: readyDevices.isEmpty
+          onPressed: (readyDevices.isEmpty || _messageController.text.isEmpty)
               ? null
               : () async {
                   final keyId = await Navigator.push(context,
@@ -92,10 +103,12 @@ class _DoKeyGenButtonState extends State<DoKeyGenButton> {
                     final stream = coord
                         .generateNewKey(
                             threshold: selectedThreshold,
-                            devices: readyDevices.map((e) => e.id).toList())
+                            devices: readyDevices.map((e) => e.id).toList(),
+                            keyName: _messageController.text)
                         .toBehaviorSubject();
                     return DoKeyGenScreen(
                       stream: stream,
+                      keyName: _messageController.text,
                     );
                   }));
                   if (keyId != null) {
@@ -115,7 +128,9 @@ typedef OnSuccess = Function(KeyId);
 
 class DoKeyGenScreen extends StatefulWidget {
   final Stream<KeyGenState> stream;
-  const DoKeyGenScreen({super.key, required this.stream});
+  final String keyName;
+  const DoKeyGenScreen(
+      {super.key, required this.stream, required this.keyName});
 
   @override
   State<DoKeyGenScreen> createState() => _DoKeyGenScreenState();

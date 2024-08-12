@@ -1154,20 +1154,21 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _wire_id__method__FrostKey = _wire_id__method__FrostKeyPtr
       .asFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>();
 
-  WireSyncReturn wire_name__method__FrostKey(
+  WireSyncReturn wire_key_name__method__FrostKey(
     ffi.Pointer<wire_FrostKey> that,
   ) {
-    return _wire_name__method__FrostKey(
+    return _wire_key_name__method__FrostKey(
       that,
     );
   }
 
-  late final _wire_name__method__FrostKeyPtr = _lookup<
+  late final _wire_key_name__method__FrostKeyPtr = _lookup<
           ffi
           .NativeFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>>(
-      'wire_name__method__FrostKey');
-  late final _wire_name__method__FrostKey = _wire_name__method__FrostKeyPtr
-      .asFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>();
+      'wire_key_name__method__FrostKey');
+  late final _wire_key_name__method__FrostKey =
+      _wire_key_name__method__FrostKeyPtr
+          .asFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>();
 
   WireSyncReturn wire_devices__method__FrostKey(
     ffi.Pointer<wire_FrostKey> that,
@@ -1705,6 +1706,26 @@ class NativeWire implements FlutterRustBridgeWireBase {
           WireSyncReturn Function(
               ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_KeyId>)>();
 
+  WireSyncReturn wire_get_key_name__method__Coordinator(
+    ffi.Pointer<wire_Coordinator> that,
+    ffi.Pointer<wire_KeyId> key_id,
+  ) {
+    return _wire_get_key_name__method__Coordinator(
+      that,
+      key_id,
+    );
+  }
+
+  late final _wire_get_key_name__method__CoordinatorPtr = _lookup<
+          ffi.NativeFunction<
+              WireSyncReturn Function(
+                  ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_KeyId>)>>(
+      'wire_get_key_name__method__Coordinator');
+  late final _wire_get_key_name__method__Coordinator =
+      _wire_get_key_name__method__CoordinatorPtr.asFunction<
+          WireSyncReturn Function(
+              ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_KeyId>)>();
+
   WireSyncReturn wire_keys_for_device__method__Coordinator(
     ffi.Pointer<wire_Coordinator> that,
     ffi.Pointer<wire_DeviceId> device_id,
@@ -1838,24 +1859,34 @@ class NativeWire implements FlutterRustBridgeWireBase {
     ffi.Pointer<wire_Coordinator> that,
     int threshold,
     ffi.Pointer<wire_list_device_id> devices,
+    ffi.Pointer<wire_uint_8_list> key_name,
   ) {
     return _wire_generate_new_key__method__Coordinator(
       port_,
       that,
       threshold,
       devices,
+      key_name,
     );
   }
 
   late final _wire_generate_new_key__method__CoordinatorPtr = _lookup<
           ffi.NativeFunction<
-              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Coordinator>,
-                  ffi.UintPtr, ffi.Pointer<wire_list_device_id>)>>(
+              ffi.Void Function(
+                  ffi.Int64,
+                  ffi.Pointer<wire_Coordinator>,
+                  ffi.UintPtr,
+                  ffi.Pointer<wire_list_device_id>,
+                  ffi.Pointer<wire_uint_8_list>)>>(
       'wire_generate_new_key__method__Coordinator');
   late final _wire_generate_new_key__method__Coordinator =
       _wire_generate_new_key__method__CoordinatorPtr.asFunction<
-          void Function(int, ffi.Pointer<wire_Coordinator>, int,
-              ffi.Pointer<wire_list_device_id>)>();
+          void Function(
+              int,
+              ffi.Pointer<wire_Coordinator>,
+              int,
+              ffi.Pointer<wire_list_device_id>,
+              ffi.Pointer<wire_uint_8_list>)>();
 
   WireSyncReturn wire_persisted_sign_session_description__method__Coordinator(
     ffi.Pointer<wire_Coordinator> that,

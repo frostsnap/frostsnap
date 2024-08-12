@@ -99,9 +99,9 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kIdMethodFrostKeyConstMeta;
 
-  String nameMethodFrostKey({required FrostKey that, dynamic hint});
+  String keyNameMethodFrostKey({required FrostKey that, dynamic hint});
 
-  FlutterRustBridgeTaskConstMeta get kNameMethodFrostKeyConstMeta;
+  FlutterRustBridgeTaskConstMeta get kKeyNameMethodFrostKeyConstMeta;
 
   List<DeviceId> devicesMethodFrostKey({required FrostKey that, dynamic hint});
 
@@ -253,6 +253,11 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kGetKeyMethodCoordinatorConstMeta;
 
+  String? getKeyNameMethodCoordinator(
+      {required Coordinator that, required KeyId keyId, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kGetKeyNameMethodCoordinatorConstMeta;
+
   List<KeyId> keysForDeviceMethodCoordinator(
       {required Coordinator that, required DeviceId deviceId, dynamic hint});
 
@@ -290,6 +295,7 @@ abstract class Native {
       {required Coordinator that,
       required int threshold,
       required List<DeviceId> devices,
+      required String keyName,
       dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kGenerateNewKeyMethodCoordinatorConstMeta;
@@ -877,6 +883,12 @@ class Coordinator {
         keyId: keyId,
       );
 
+  String? getKeyName({required KeyId keyId, dynamic hint}) =>
+      bridge.getKeyNameMethodCoordinator(
+        that: this,
+        keyId: keyId,
+      );
+
   List<KeyId> keysForDevice({required DeviceId deviceId, dynamic hint}) =>
       bridge.keysForDeviceMethodCoordinator(
         that: this,
@@ -922,11 +934,13 @@ class Coordinator {
   Stream<KeyGenState> generateNewKey(
           {required int threshold,
           required List<DeviceId> devices,
+          required String keyName,
           dynamic hint}) =>
       bridge.generateNewKeyMethodCoordinator(
         that: this,
         threshold: threshold,
         devices: devices,
+        keyName: keyName,
       );
 
   SignTaskDescription? persistedSignSessionDescription(
@@ -1106,7 +1120,7 @@ class FrostKey {
         that: this,
       );
 
-  String name({dynamic hint}) => bridge.nameMethodFrostKey(
+  String keyName({dynamic hint}) => bridge.keyNameMethodFrostKey(
         that: this,
       );
 
