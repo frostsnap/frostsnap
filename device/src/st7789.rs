@@ -63,7 +63,7 @@ where
     pub fn clear(&mut self, c: Rgb565) {
         Rectangle::new(Point::new(0, 0), self.display.size())
             .into_styled(PrimitiveStyleBuilder::new().fill_color(c).build())
-            .draw(&mut self.display)
+            .draw(&mut self.framebuf)
             .unwrap();
     }
 
@@ -291,8 +291,9 @@ where
     }
 
     pub fn show_backup(&mut self, str: alloc::string::String) {
-        let mut y_offset = 0;
-        let spacing_size = 20;
+        let mut y_offset = HEADER_BUFFER as i32 + 10;
+        let vertical_spacing = 35;
+        let horizontal_spacing = 80; // Separate variable for horizontal spacing
         let body_area = Size::new(
             self.display.size().width,
             self.display.size().height - HEADER_BUFFER,
@@ -323,39 +324,43 @@ where
                     chunk_vec
                 });
 
-        Text::with_baseline(
+        Text::with_alignment(
             "Share backup:",
-            Point::new(PADDING_LEFT_TEXT as i32, (HEADER_BUFFER as i32) + y_offset),
+            Point::new((self.display.size().width / 2) as i32, y_offset),
             U8g2TextStyle::new(FONT_MED, Rgb565::CYAN),
-            embedded_graphics::text::Baseline::Top,
+            Alignment::Center,
         )
         .draw(&mut self.framebuf)
         .unwrap();
-        y_offset += spacing_size * 2;
 
-        let _overflow = TextBox::with_textbox_style(
+        y_offset += vertical_spacing;
+
+        Text::with_alignment(
             hrp,
-            Rectangle::new(
-                Point::new(PADDING_LEFT_TEXT as i32, (HEADER_BUFFER as i32) + y_offset),
-                body_area,
-            ),
-            U8g2TextStyle::new(FONT_LARGE, Rgb565::CYAN),
-            self.textbox_style,
+            Point::new((self.display.size().width / 2) as i32, y_offset),
+            U8g2TextStyle::new(FONT_LARGE, Rgb565::WHITE),
+            Alignment::Center,
         )
         .draw(&mut self.framebuf)
         .unwrap();
-        y_offset += spacing_size * 3 / 2;
 
-        for row_chunks in chunked_backup.chunks(4) {
-            Text::with_baseline(
-                row_chunks.join(" ").as_ref(),
-                Point::new(PADDING_LEFT_TEXT as i32, (HEADER_BUFFER as i32) + y_offset),
-                U8g2TextStyle::new(FONT_MED, Rgb565::WHITE),
-                embedded_graphics::text::Baseline::Top,
-            )
-            .draw(&mut self.framebuf)
-            .unwrap();
-            y_offset += spacing_size * 3 / 2;
+        y_offset += vertical_spacing;
+
+        for row_chunks in chunked_backup.chunks(3) {
+            let mut x_offset = PADDING_LEFT_TEXT as i32;
+
+            for chunk in row_chunks {
+                Text::new(
+                    chunk,
+                    Point::new(x_offset, y_offset),
+                    U8g2TextStyle::new(FONT_LARGE, Rgb565::WHITE),
+                )
+                .draw(&mut self.framebuf)
+                .unwrap();
+                x_offset += horizontal_spacing; // Use horizontal spacing variable
+            }
+
+            y_offset += vertical_spacing;
         }
     }
 }

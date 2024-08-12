@@ -353,19 +353,43 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                        "Write down each device's backup for this key onto separate pieces of paper:"),
+                        "Write down each device's backup for this key onto separate pieces of paper. Each piece of paper should look like:"),
                     SizedBox(height: 8),
                     Divider(),
                     Center(
+                      child: Text.rich(TextSpan(
+                        text: 'frost[',
+                        children: <TextSpan>[
+                          TextSpan(
+                            text: 'X',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black),
+                          ),
+                          TextSpan(
+                            text: ']',
+                          ),
+                        ],
+                        style: TextStyle(
+                            fontFamily: 'Courier',
+                            color: Colors.grey,
+                            fontSize: 20), // Base style for the whole text
+                      )),
+                    ),
+                    Center(
                       child: Text(
-                        "frost[${frostKey.threshold()}]\n xxxx xxxx xxxx \n xxxx xxxx xxxx \n xxxx xxxx xxxx \n xxxx xxxx xxxx \n xxxx xxxx xxx \n",
-                        style: TextStyle(fontFamily: 'Courier', fontSize: 20),
+                        "xxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xxx",
+                        style: TextStyle(
+                            fontFamily: 'Courier',
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold),
                       ),
                     ),
-                    Text(
+                    Center(
+                        child: Text(
                       "Identifier: ${toSpacedHex(polynomialIdentifier)}",
                       style: TextStyle(fontFamily: 'Courier', fontSize: 18),
-                    ),
+                    )),
                     Divider(),
                     SizedBox(height: 16),
                     Text(
