@@ -102,7 +102,10 @@ fn nonce_reuse() {
     }
     run.run_until_finished(&mut TestEnv, &mut test_rng);
 
-    let keygen_init = run.coordinator.do_keygen(&device_set, threshold).unwrap();
+    let keygen_init = run
+        .coordinator
+        .do_keygen(&device_set, threshold, "my key".to_string())
+        .unwrap();
     run.extend(keygen_init);
 
     run.run_until_finished(&mut TestEnv, &mut test_rng);

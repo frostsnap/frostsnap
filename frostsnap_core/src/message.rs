@@ -187,6 +187,7 @@ pub enum CoordinatorToUserKeyGenMessage {
 #[derive(Clone, Debug)]
 pub enum DeviceToUserMessage {
     CheckKeyGen {
+        key_id: KeyId,
         session_hash: SessionHash,
     },
     SignatureRequest {

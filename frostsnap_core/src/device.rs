@@ -260,12 +260,13 @@ impl FrostSigner {
 
                 self.action_state = Some(SignerState::KeyGenAck {
                     key: FrostsnapSecretKey {
-                        encoded_frost_key: frost_key.into(),
+                        encoded_frost_key: frost_key.clone().into(),
                         secret_share,
                     },
                 });
 
                 Ok(vec![DeviceSend::ToUser(DeviceToUserMessage::CheckKeyGen {
+                    key_id: frost_key.key_id(),
                     session_hash,
                 })])
             }
