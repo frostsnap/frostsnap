@@ -4,7 +4,9 @@ use crate::{
     ui::{self, UiEvent, UserInteraction},
     DownstreamConnectionState, UpstreamConnection, UpstreamConnectionState,
 };
-use alloc::{collections::VecDeque, string::ToString, vec::Vec};
+use alloc::{
+    collections::BTreeMap, collections::VecDeque, string::String, string::ToString, vec::Vec,
+};
 use esp_hal::{
     gpio,
     sha::Sha,
@@ -22,7 +24,7 @@ use frostsnap_core::{
         CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, DeviceToUserMessage,
     },
     schnorr_fun::fun::{marker::Normal, KeyPair, Scalar},
-    DeviceId, FrostSigner, SignTask,
+    DeviceId, FrostSigner, KeyId, SignTask,
 };
 use rand_chacha::rand_core::RngCore;
 
@@ -66,11 +68,12 @@ where
         let active_firmware_digest = active_partition.digest(flash.flash_mut(), &mut sha256);
         ui.set_busy_task(ui::BusyTask::Loading);
 
-        let (mut signer, mut name) =
+        let (mut signer, mut name, mut key_names) =
             match flash.read_header().expect("failed to read header from nvs") {
                 Some(header) => {
                     let mut signer = FrostSigner::new(KeyPair::<Normal>::new(header.secret_key));
                     let mut name: Option<alloc::string::String> = None;
+                    let mut key_names: BTreeMap<KeyId, String> = BTreeMap::new();
 
                     for change in flash.iter() {
                         match change {
@@ -80,9 +83,12 @@ where
                             storage::Change::Name(name_update) => {
                                 name = Some(name_update);
                             }
+                            storage::Change::KeyNamed((key_id, key_name)) => {
+                                key_names.insert(key_id, key_name);
+                            }
                         }
                     }
-                    (signer, name)
+                    (signer, name, key_names)
                 }
                 None => {
                     let secret_key = Scalar::random(&mut rng);
@@ -91,7 +97,7 @@ where
                         .write_header(crate::storage::Header { secret_key })
                         .unwrap();
                     let signer = FrostSigner::new(keypair);
-                    (signer, None)
+                    (signer, None, Default::default())
                 }
             };
         let device_id = signer.device_id();
@@ -114,6 +120,7 @@ where
         // it waits until we've named it). Announcing and labeling has been sorted out this counter
         // thingy will go away naturally.
         let mut magic_bytes_timeout_counter = 0;
+        let mut pending_key_name = None;
 
         ui.set_workflow(ui::Workflow::WaitingFor(
             ui::WaitingFor::LookingForUpstream {
@@ -141,6 +148,7 @@ where
                 upstream_connection.state = UpstreamConnectionState::Connected;
                 next_write_magic_bytes_downstream = 0;
                 upgrade = None;
+                pending_key_name = None;
                 outbox.clear();
                 ui.cancel();
             }
@@ -363,6 +371,9 @@ where
                                                         },
                                                     }
                                                 }
+                                                CoordinatorSendBody::KeyName(ref key_name) => {
+                                                    pending_key_name = Some(key_name.clone());
+                                                }
                                             }
                                         }
 
@@ -430,11 +441,24 @@ where
                     },
                 )); // this is just the default
                 match ui_event {
-                    UiEvent::KeyGenConfirm => outbox.extend(
-                        signer
-                            .keygen_ack()
-                            .expect("state changed while confirming keygen"),
-                    ),
+                    UiEvent::KeyGenConfirm {
+                        ref key_name,
+                        ref key_id,
+                    } => {
+                        outbox.extend(
+                            signer
+                                .keygen_ack()
+                                .expect("state changed while confirming keygen"),
+                        );
+
+                        if key_names.contains_key(key_id) {
+                            panic!("Renaming keys is not yet supported.");
+                        }
+                        flash
+                            .push(storage::Change::KeyNamed((*key_id, key_name.clone())))
+                            .expect("flash write fail");
+                        key_names.insert(*key_id, key_name.clone());
+                    }
                     UiEvent::SigningConfirm => {
                         ui.set_busy_task(ui::BusyTask::Signing);
                         outbox.extend(signer.sign_ack().expect("state changed while acking sign"));
@@ -487,10 +511,15 @@ where
                     }
                     DeviceSend::ToUser(user_send) => {
                         match user_send {
-                            DeviceToUserMessage::CheckKeyGen { session_hash } => {
-                                ui.set_workflow(ui::Workflow::UserPrompt(ui::Prompt::KeyGen(
+                            DeviceToUserMessage::CheckKeyGen {
+                                key_id,
+                                session_hash,
+                            } => {
+                                ui.set_workflow(ui::Workflow::UserPrompt(ui::Prompt::KeyGen {
+                                    key_id,
                                     session_hash,
-                                )));
+                                    key_name: pending_key_name.clone().unwrap(),
+                                }));
                             }
                             DeviceToUserMessage::SignatureRequest { sign_task, .. } => {
                                 ui.set_workflow(ui::Workflow::UserPrompt(ui::Prompt::Signing(
@@ -521,10 +550,16 @@ where
                                     },
                                 )));
                             }
-                            DeviceToUserMessage::DisplayBackupRequest { key_id } => ui
-                                .set_workflow(ui::Workflow::UserPrompt(
-                                    ui::Prompt::DisplayBackupRequest(key_id),
-                                )),
+                            DeviceToUserMessage::DisplayBackupRequest { key_id } => {
+                                // keys should have names after keygen
+                                let key_name = key_names
+                                    .get(&key_id)
+                                    .cloned()
+                                    .unwrap_or(key_id.to_string());
+                                ui.set_workflow(ui::Workflow::UserPrompt(
+                                    ui::Prompt::DisplayBackupRequest((key_name.clone(), key_id)),
+                                ))
+                            }
                             DeviceToUserMessage::Canceled { .. } => {
                                 ui.cancel();
                             }

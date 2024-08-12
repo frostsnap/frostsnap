@@ -345,11 +345,11 @@ where
         }
     }
 
-    pub fn show_keygen_check(&mut self, check: &str) {
+    pub fn show_keygen_check(&mut self, name: &str, check: &str) {
         let mut body = self.body();
-        let mut y_offset = 10;
+        let mut y_offset = 15;
         Text::with_alignment(
-            "Keygen check",
+            name,
             Point::new((body.size().width / 2) as i32, y_offset),
             U8g2TextStyle::new(FONT_MED, Rgb565::CYAN),
             Alignment::Center,

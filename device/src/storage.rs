@@ -7,7 +7,7 @@ use bincode::{
 };
 use embedded_storage::{ReadStorage, Storage};
 use esp_storage::{FlashStorage, FlashStorageError};
-use frostsnap_core::{message::DeviceToStorageMessage, schnorr_fun::fun::Scalar};
+use frostsnap_core::{message::DeviceToStorageMessage, schnorr_fun::fun::Scalar, KeyId};
 
 const NVS_PARTITION_START: u32 = 0x3D0000;
 const _NVS_PARTITION_SIZE: usize = 0x30000;
@@ -25,6 +25,7 @@ pub struct DeviceStorage {
 pub enum Change {
     Core(DeviceToStorageMessage),
     Name(String),
+    KeyNamed((KeyId, String)),
 }
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]

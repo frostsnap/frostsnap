@@ -87,13 +87,17 @@ impl Default for Workflow {
 #[derive(Clone, Debug)]
 
 pub enum Prompt {
-    KeyGen(SessionHash),
+    KeyGen {
+        session_hash: SessionHash,
+        key_name: String,
+        key_id: KeyId,
+    },
     Signing(SignPrompt),
     NewName {
         old_name: Option<String>,
         new_name: String,
     },
-    DisplayBackupRequest(KeyId),
+    DisplayBackupRequest((String, KeyId)),
     ConfirmFirmwareUpgrade {
         firmware_digest: FirmwareDigest,
         size: u32,
@@ -128,7 +132,10 @@ pub enum FirmwareUpgradeStatus {
 
 #[derive(Clone, Debug)]
 pub enum UiEvent {
-    KeyGenConfirm,
+    KeyGenConfirm {
+        key_name: String,
+        key_id: KeyId,
+    },
     SigningConfirm,
     NameConfirm(String),
     BackupRequestConfirm(KeyId),
