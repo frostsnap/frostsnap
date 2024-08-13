@@ -24,6 +24,14 @@ typedef struct wire_KeyId {
   struct wire_uint_8_list *field0;
 } wire_KeyId;
 
+typedef struct wire_FrostsnapCoreCoordinatorCoordinatorFrostKey {
+  const void *ptr;
+} wire_FrostsnapCoreCoordinatorCoordinatorFrostKey;
+
+typedef struct wire_FrostKey {
+  struct wire_FrostsnapCoreCoordinatorCoordinatorFrostKey field0;
+} wire_FrostKey;
+
 typedef struct wire_ArcRTransaction {
   const void *ptr;
 } wire_ArcRTransaction;
@@ -45,14 +53,6 @@ typedef struct wire_ConnectedDevice {
   struct wire_uint_8_list *latest_digest;
   struct wire_DeviceId id;
 } wire_ConnectedDevice;
-
-typedef struct wire_FrostsnapCoreCoordinatorCoordinatorFrostKey {
-  const void *ptr;
-} wire_FrostsnapCoreCoordinatorCoordinatorFrostKey;
-
-typedef struct wire_FrostKey {
-  struct wire_FrostsnapCoreCoordinatorCoordinatorFrostKey field0;
-} wire_FrostKey;
 
 typedef struct wire_PortOpenSender {
   const void *ptr;
@@ -251,6 +251,8 @@ WireSyncReturn wire_psbt_bytes_to_psbt(struct wire_uint_8_list *psbt_bytes);
 void wire_new_qr_reader(int64_t port_);
 
 void wire_new_qr_encoder(int64_t port_, struct wire_uint_8_list *bytes);
+
+WireSyncReturn wire_polynomial_identifier(struct wire_FrostKey *frost_key);
 
 WireSyncReturn wire_txid__method__Transaction(struct wire_Transaction *that);
 
@@ -607,6 +609,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_psbt_bytes_to_psbt);
     dummy_var ^= ((int64_t) (void*) wire_new_qr_reader);
     dummy_var ^= ((int64_t) (void*) wire_new_qr_encoder);
+    dummy_var ^= ((int64_t) (void*) wire_polynomial_identifier);
     dummy_var ^= ((int64_t) (void*) wire_txid__method__Transaction);
     dummy_var ^= ((int64_t) (void*) wire_ready__method__ConnectedDevice);
     dummy_var ^= ((int64_t) (void*) wire_needs_firmware_upgrade__method__ConnectedDevice);

@@ -69,6 +69,13 @@ pub extern "C" fn wire_new_qr_encoder(port_: i64, bytes: *mut wire_uint_8_list) 
 }
 
 #[no_mangle]
+pub extern "C" fn wire_polynomial_identifier(
+    frost_key: *mut wire_FrostKey,
+) -> support::WireSyncReturn {
+    wire_polynomial_identifier_impl(frost_key)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_txid__method__Transaction(
     that: *mut wire_Transaction,
 ) -> support::WireSyncReturn {

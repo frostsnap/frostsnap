@@ -363,12 +363,22 @@ impl FrostSigner {
         match self.action_state.take() {
             Some(SignerState::KeyGenAck { key }) => {
                 let frost_key = key.encoded_frost_key.into_frost_key();
-                let session_hash = frost_key.into_xonly_key().public_key().to_xonly_bytes();
+                let session_hash = frost_key
+                    .clone()
+                    .into_xonly_key()
+                    .public_key()
+                    .to_xonly_bytes();
 
                 self.keys.insert(key.key_id(), key.clone());
+                let backup = key.secret_share.to_bech32_backup();
+
                 Ok(vec![
                     DeviceSend::ToCoordinator(DeviceToCoordinatorMessage::KeyGenAck(session_hash)),
                     DeviceSend::ToStorage(DeviceToStorageMessage::SaveKey(key.clone())),
+                    DeviceSend::ToUser(DeviceToUserMessage::DisplayBackup {
+                        key_id: frost_key.key_id(),
+                        backup,
+                    }),
                 ])
             }
             action_state => {

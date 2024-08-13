@@ -315,6 +315,7 @@ where
     DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
 {
     fn render(&mut self) {
+        self.display.clear(Rgb565::BLACK);
         self.display
             .header(self.device_name.as_deref().unwrap_or("New Device"));
 
@@ -433,7 +434,7 @@ where
                 self.display
                     .print(format!("{}: {}", self.timer.now(), string));
             }
-            Workflow::DisplayBackup { backup } => self.display.print(format!("Backup: {}", backup)),
+            Workflow::DisplayBackup { backup } => self.display.show_backup(backup.clone()),
         }
 
         if let Some(upstream_connection) = self.upstream_connection_state {

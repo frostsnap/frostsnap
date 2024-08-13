@@ -12,6 +12,7 @@ pub use frostsnap_coordinator::bitcoin::wallet::ConfirmationTime;
 pub use frostsnap_coordinator::bitcoin::{chain_sync::ChainSync, wallet::FrostsnapWallet};
 pub use frostsnap_coordinator::firmware_upgrade::FirmwareUpgradeConfirmState;
 pub use frostsnap_coordinator::frostsnap_core;
+use frostsnap_coordinator::frostsnap_core::schnorr_fun::fun::hash::HashAdd;
 pub use frostsnap_coordinator::{
     keygen::KeyGenState, signing::SigningState, DeviceChange, PortDesc,
 };
@@ -19,6 +20,7 @@ use frostsnap_coordinator::{DesktopSerial, UsbSerialManager};
 pub use frostsnap_core::message::EncodedSignature;
 pub use frostsnap_core::{DeviceId, FrostKeyExt, KeyId, SignTask};
 use lazy_static::lazy_static;
+use sha2::Digest;
 pub use std::collections::BTreeMap;
 use std::ops::Deref;
 use std::str::FromStr;
@@ -1059,4 +1061,13 @@ impl QrEncoder {
     pub fn next(&self) -> SyncReturn<String> {
         SyncReturn(self.0.next().to_uppercase())
     }
+}
+
+/// Create an identifier that's used to determine compatibility of shamir secret shares.
+/// The first 4 bech32 chars from a hash of the polynomial coefficients.
+/// Collision expected once in (32)^4 = 2^20.
+pub fn polynomial_identifier(frost_key: FrostKey) -> SyncReturn<Vec<u8>> {
+    let poly = frost_key.0.frost_key().point_polynomial();
+    let hash = sha2::Sha256::default();
+    SyncReturn(hash.add(&poly[..]).finalize()[0..4].to_vec())
 }
