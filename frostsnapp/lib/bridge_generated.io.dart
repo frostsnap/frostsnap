@@ -1060,21 +1060,6 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _wire_new_qr_encoder = _wire_new_qr_encoderPtr
       .asFunction<void Function(int, ffi.Pointer<wire_uint_8_list>)>();
 
-  WireSyncReturn wire_polynomial_identifier(
-    ffi.Pointer<wire_FrostKey> frost_key,
-  ) {
-    return _wire_polynomial_identifier(
-      frost_key,
-    );
-  }
-
-  late final _wire_polynomial_identifierPtr = _lookup<
-          ffi
-          .NativeFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>>(
-      'wire_polynomial_identifier');
-  late final _wire_polynomial_identifier = _wire_polynomial_identifierPtr
-      .asFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>();
-
   WireSyncReturn wire_txid__method__Transaction(
     ffi.Pointer<wire_Transaction> that,
   ) {
@@ -1184,6 +1169,22 @@ class NativeWire implements FlutterRustBridgeWireBase {
       'wire_devices__method__FrostKey');
   late final _wire_devices__method__FrostKey =
       _wire_devices__method__FrostKeyPtr
+          .asFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>();
+
+  WireSyncReturn wire_polynomial_identifier__method__FrostKey(
+    ffi.Pointer<wire_FrostKey> that,
+  ) {
+    return _wire_polynomial_identifier__method__FrostKey(
+      that,
+    );
+  }
+
+  late final _wire_polynomial_identifier__method__FrostKeyPtr = _lookup<
+          ffi
+          .NativeFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>>(
+      'wire_polynomial_identifier__method__FrostKey');
+  late final _wire_polynomial_identifier__method__FrostKey =
+      _wire_polynomial_identifier__method__FrostKeyPtr
           .asFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>();
 
   void wire_satisfy__method__PortOpen(
@@ -3252,15 +3253,6 @@ final class wire_KeyId extends ffi.Struct {
   external ffi.Pointer<wire_uint_8_list> field0;
 }
 
-final class wire_FrostsnapCoreCoordinatorCoordinatorFrostKey
-    extends ffi.Struct {
-  external ffi.Pointer<ffi.Void> ptr;
-}
-
-final class wire_FrostKey extends ffi.Struct {
-  external wire_FrostsnapCoreCoordinatorCoordinatorFrostKey field0;
-}
-
 final class wire_ArcRTransaction extends ffi.Struct {
   external ffi.Pointer<ffi.Void> ptr;
 }
@@ -3290,6 +3282,15 @@ final class wire_ConnectedDevice extends ffi.Struct {
   external ffi.Pointer<wire_uint_8_list> latest_digest;
 
   external wire_DeviceId id;
+}
+
+final class wire_FrostsnapCoreCoordinatorCoordinatorFrostKey
+    extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_FrostKey extends ffi.Struct {
+  external wire_FrostsnapCoreCoordinatorCoordinatorFrostKey field0;
 }
 
 final class wire_PortOpenSender extends ffi.Struct {

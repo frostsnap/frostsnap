@@ -8,6 +8,7 @@ use frostsnap_core::{
     coordinator::FrostCoordinator, CheckedSignTask, DeviceId, FrostKeyExt, FrostSigner, KeyId,
     SessionHash, SignTask,
 };
+use rand::seq::IteratorRandom;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::binonce::Nonce;
@@ -222,15 +223,20 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
     for &device_id in &device_set {
         run.extend(run.coordinator.maybe_request_nonce_replenishment(device_id));
     }
-    run.run_until_finished(&mut env, &mut test_rng);
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
 
     let keygen_init = run
         .coordinator
-        .do_keygen(&device_set, threshold, "my new key".to_string())
+        .do_keygen(
+            &device_set,
+            threshold,
+            "my new key".to_string(),
+            &mut test_rng,
+        )
         .unwrap();
     run.extend(keygen_init);
 
-    run.run_until_finished(&mut env, &mut test_rng);
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
     let session_hash = env
         .coordinator_check
         .expect("coordinator should have seen session_hash");
@@ -264,7 +270,7 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
             .start_sign(key_id, task.clone(), set.clone())
             .unwrap();
         run.extend(sign_init);
-        run.run_until_finished(&mut env, &mut test_rng);
+        run.run_until_finished(&mut env, &mut test_rng).unwrap();
         assert_eq!(env.sign_tasks.keys().cloned().collect::<BTreeSet<_>>(), set);
         assert!(env.sign_tasks.values().all(|v| *v == checked_task));
         assert_eq!(env.received_signing_shares, set);
@@ -314,11 +320,11 @@ fn test_display_backup() {
 
     let keygen_init = run
         .coordinator
-        .do_keygen(&device_set, threshold, "my key".to_string())
+        .do_keygen(&device_set, threshold, "my key".to_string(), &mut test_rng)
         .unwrap();
     run.extend(keygen_init);
 
-    run.run_until_finished(&mut env, &mut test_rng);
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
     let coord_frost_key = run.coordinator.iter_keys().next().unwrap().clone();
     let key_id = coord_frost_key.key_id();
     assert_eq!(env.backups.len(), n_parties);
@@ -329,7 +335,7 @@ fn test_display_backup() {
         .request_device_display_backup(device_list[0], key_id)
         .unwrap();
     run.extend(display_backup);
-    run.run_until_finished(&mut env, &mut test_rng);
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
 
     assert_eq!(env.backups.len(), 1);
     assert_eq!(env.backup_confirmed_on_coordinator.len(), 1);
@@ -344,7 +350,7 @@ fn test_display_backup() {
             .unwrap(),
     );
     run.extend(display_backup);
-    run.run_until_finished(&mut env, &mut test_rng);
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
 
     assert_eq!(env.backups.len(), 3);
     assert_eq!(env.backup_confirmed_on_coordinator.len(), 3);
@@ -376,29 +382,26 @@ fn test_display_backup() {
 #[test]
 fn when_we_abandon_a_sign_request_we_should_be_able_to_start_a_new_one() {
     let threshold = 1;
-    let coordinator = FrostCoordinator::new();
     let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
 
-    let device = FrostSigner::new_random(&mut test_rng);
-    let devices = BTreeMap::from_iter(std::iter::once((device.device_id(), device.clone())));
-
-    let device_set = devices.keys().cloned().collect::<BTreeSet<_>>();
     let mut env = TestEnv::default();
-    let mut run = Run::new(coordinator, devices);
+    let mut run = Run::generate(1, &mut test_rng);
+    let device_set = run.device_set();
+    let device_id = *device_set.iter().next().unwrap();
 
     let keygen_init = run
         .coordinator
-        .do_keygen(&device_set, threshold, "my key".to_string())
+        .do_keygen(&device_set, threshold, "my key".to_string(), &mut test_rng)
         .unwrap();
     run.extend(keygen_init);
 
     let request_nonces = run
         .coordinator
-        .maybe_request_nonce_replenishment(device.device_id())
+        .maybe_request_nonce_replenishment(device_id)
         .unwrap();
     run.extend(std::iter::once(request_nonces));
 
-    run.run_until_finished(&mut env, &mut test_rng);
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
     let coord_frost_key = run.coordinator.iter_keys().next().unwrap().clone();
     let key_id = coord_frost_key.key_id();
 
@@ -409,7 +412,7 @@ fn when_we_abandon_a_sign_request_we_should_be_able_to_start_a_new_one() {
     let initial_nonces_on_coordinator = run
         .coordinator
         .device_nonces()
-        .get(&device.device_id())
+        .get(&device_id)
         .unwrap()
         .clone();
 
@@ -421,7 +424,7 @@ fn when_we_abandon_a_sign_request_we_should_be_able_to_start_a_new_one() {
     let fewer_nonces_on_coordinator = run
         .coordinator
         .device_nonces()
-        .get(&device.device_id())
+        .get(&device_id)
         .unwrap()
         .clone();
 
@@ -450,13 +453,9 @@ fn when_we_abandon_a_sign_request_we_should_be_able_to_start_a_new_one() {
 
     run.extend(used_sign_request);
     // Test that this run completes without erroring, fully replenishing the nonces
-    run.run_until_finished(&mut env, &mut test_rng);
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
 
-    let final_nonces_on_coordinator = run
-        .coordinator
-        .device_nonces()
-        .get(&device.device_id())
-        .unwrap();
+    let final_nonces_on_coordinator = run.coordinator.device_nonces().get(&device_id).unwrap();
 
     assert_eq!(
         final_nonces_on_coordinator.start_index,
@@ -477,20 +476,10 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
     let n_parties = 3;
     let threshold = 2;
     let schnorr = Schnorr::<sha2::Sha256>::verify_only();
-    let coordinator = FrostCoordinator::new();
     let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
-
-    let devices = (0..n_parties)
-        .map(|_| FrostSigner::new_random(&mut test_rng))
-        .map(|device| (device.device_id(), device))
-        .collect::<BTreeMap<_, _>>();
-
-    let device_set = devices.keys().cloned().collect::<BTreeSet<_>>();
-    let device_list = devices.keys().cloned().collect::<Vec<_>>();
+    let mut run = Run::generate(n_parties, &mut test_rng);
     let mut env = TestEnv::default();
-    let mut test_rng = ChaCha20Rng::from_seed([123u8; 32]);
-
-    let mut run = Run::new(coordinator, devices);
+    let device_set = run.device_set();
 
     // set up nonces for devices first
     for &device_id in &device_set {
@@ -499,11 +488,11 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
 
     let keygen_init = run
         .coordinator
-        .do_keygen(&device_set, threshold, "my key".to_string())
+        .do_keygen(&device_set, threshold, "my key".into(), &mut test_rng)
         .unwrap();
     run.extend(keygen_init);
 
-    run.run_until_finished(&mut env, &mut test_rng);
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
 
     let coord_frost_key = run.coordinator.iter_keys().next().unwrap();
     let root_public_key = coord_frost_key.frost_key().public_key();
@@ -528,14 +517,19 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
     let task = SignTask::BitcoinTransaction(tx_template);
     let checked_task = task.clone().check(root_public_key.key_id()).unwrap();
 
-    let set = [device_list[0], device_list[1]].into_iter().collect();
+    let set = device_set
+        .iter()
+        .choose_multiple(&mut test_rng, 2)
+        .into_iter()
+        .cloned()
+        .collect();
     let key_id = coord_frost_key.key_id();
     let sign_init = run
         .coordinator
         .start_sign(key_id, task.clone(), set)
         .unwrap();
     run.extend(sign_init);
-    run.run_until_finished(&mut env, &mut test_rng);
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
     assert!(checked_task.verify_final_signatures(&schnorr, &env.signatures));
     // TODO: test actual transaction validity
 }

@@ -67,11 +67,6 @@ pub fn wire_new_qr_encoder(port_: MessagePort, bytes: Box<[u8]>) {
 }
 
 #[wasm_bindgen]
-pub fn wire_polynomial_identifier(frost_key: JsValue) -> support::WireSyncReturn {
-    wire_polynomial_identifier_impl(frost_key)
-}
-
-#[wasm_bindgen]
 pub fn wire_txid__method__Transaction(that: JsValue) -> support::WireSyncReturn {
     wire_txid__method__Transaction_impl(that)
 }
@@ -106,6 +101,11 @@ pub fn wire_key_name__method__FrostKey(that: JsValue) -> support::WireSyncReturn
 #[wasm_bindgen]
 pub fn wire_devices__method__FrostKey(that: JsValue) -> support::WireSyncReturn {
     wire_devices__method__FrostKey_impl(that)
+}
+
+#[wasm_bindgen]
+pub fn wire_polynomial_identifier__method__FrostKey(that: JsValue) -> support::WireSyncReturn {
+    wire_polynomial_identifier__method__FrostKey_impl(that)
 }
 
 #[wasm_bindgen]

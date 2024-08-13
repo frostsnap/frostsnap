@@ -1,11 +1,11 @@
-use crate::encrypted_share::EncryptedShare;
 use crate::{coordinator, CheckedSignTask, Gist, KeyId, SessionHash, Vec};
 use crate::{DeviceId, SignTask};
 use alloc::collections::VecDeque;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
+use core::num::NonZeroU32;
 use schnorr_fun::binonce;
-use schnorr_fun::frost::PartyIndex;
+use schnorr_fun::frost::{chilli_dkg::encpedpop, PartyIndex};
 use schnorr_fun::fun::prelude::*;
 use schnorr_fun::{binonce::Nonce, frost::PairedSecretShare, Signature};
 use sha2::digest::Update;
@@ -33,12 +33,12 @@ pub enum CoordinatorSend {
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub enum CoordinatorToDeviceMessage {
     DoKeyGen {
-        device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
+        device_to_share_index: BTreeMap<DeviceId, NonZeroU32>,
         threshold: u16,
         key_name: String,
     },
     FinishKeyGen {
-        shares_provided: BTreeMap<DeviceId, KeyGenResponse>,
+        agg_input: encpedpop::AggKeygenInput,
     },
     RequestSign(SignRequest),
     RequestNonces,
@@ -125,6 +125,8 @@ pub enum DeviceToCoordinatorMessage {
     DisplayBackupConfirmed,
 }
 
+pub type KeyGenResponse = encpedpop::KeygenInput;
+
 #[derive(
     Debug, Clone, bincode::Encode, bincode::Decode, serde::Serialize, serde::Deserialize, Default,
 )]
@@ -157,13 +159,6 @@ impl DeviceToCoordinatorMessage {
             DisplayBackupConfirmed => "DisplayBackupConfirmed",
         }
     }
-}
-
-#[derive(Clone, Debug, bincode::Encode, bincode::Decode, Eq, PartialEq)]
-pub struct KeyGenResponse {
-    pub my_poly: Vec<Point>,
-    pub encrypted_shares: BTreeMap<DeviceId, EncryptedShare>,
-    pub proof_of_possession: Signature,
 }
 
 #[derive(Clone, Debug)]

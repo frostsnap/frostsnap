@@ -69,13 +69,6 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kNewQrEncoderConstMeta;
 
-  /// Create an identifier that's used to determine compatibility of shamir secret shares.
-  /// The first 4 bech32 chars from a hash of the polynomial coefficients.
-  /// Collision expected once in (32)^4 = 2^20.
-  Uint8List polynomialIdentifier({required FrostKey frostKey, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kPolynomialIdentifierConstMeta;
-
   String txidMethodTransaction({required Transaction that, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kTxidMethodTransactionConstMeta;
@@ -106,6 +99,15 @@ abstract class Native {
   List<DeviceId> devicesMethodFrostKey({required FrostKey that, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kDevicesMethodFrostKeyConstMeta;
+
+  /// Create an identifier that's used to determine compatibility of shamir secret shares.
+  /// The first 4 bech32 chars from a hash of the polynomial coefficients.
+  /// Collision expected once in (32)^4 = 2^20.
+  Uint8List polynomialIdentifierMethodFrostKey(
+      {required FrostKey that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta
+      get kPolynomialIdentifierMethodFrostKeyConstMeta;
 
   Future<void> satisfyMethodPortOpen(
       {required PortOpen that, String? err, dynamic hint});
@@ -1125,6 +1127,14 @@ class FrostKey {
       );
 
   List<DeviceId> devices({dynamic hint}) => bridge.devicesMethodFrostKey(
+        that: this,
+      );
+
+  /// Create an identifier that's used to determine compatibility of shamir secret shares.
+  /// The first 4 bech32 chars from a hash of the polynomial coefficients.
+  /// Collision expected once in (32)^4 = 2^20.
+  Uint8List polynomialIdentifier({dynamic hint}) =>
+      bridge.polynomialIdentifierMethodFrostKey(
         that: this,
       );
 }

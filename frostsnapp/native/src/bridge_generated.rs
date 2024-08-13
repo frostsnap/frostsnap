@@ -206,21 +206,6 @@ fn wire_new_qr_encoder_impl(port_: MessagePort, bytes: impl Wire2Api<Vec<u8>> + 
         },
     )
 }
-fn wire_polynomial_identifier_impl(
-    frost_key: impl Wire2Api<FrostKey> + UnwindSafe,
-) -> support::WireSyncReturn {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
-        WrapInfo {
-            debug_name: "polynomial_identifier",
-            port: None,
-            mode: FfiCallMode::Sync,
-        },
-        move || {
-            let api_frost_key = frost_key.wire2api();
-            Result::<_, ()>::Ok(polynomial_identifier(api_frost_key))
-        },
-    )
-}
 fn wire_txid__method__Transaction_impl(
     that: impl Wire2Api<Transaction> + UnwindSafe,
 ) -> support::WireSyncReturn {
@@ -323,6 +308,21 @@ fn wire_devices__method__FrostKey_impl(
         move || {
             let api_that = that.wire2api();
             Result::<_, ()>::Ok(FrostKey::devices(&api_that))
+        },
+    )
+}
+fn wire_polynomial_identifier__method__FrostKey_impl(
+    that: impl Wire2Api<FrostKey> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "polynomial_identifier__method__FrostKey",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            Result::<_, ()>::Ok(FrostKey::polynomial_identifier(&api_that))
         },
     )
 }

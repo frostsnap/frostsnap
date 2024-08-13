@@ -1061,6 +1061,7 @@ dependencies = [
  "bincode",
  "frostsnap_comms",
  "frostsnap_core",
+ "rand_core",
  "rusqlite",
  "serialport",
  "tracing",
@@ -1529,6 +1530,7 @@ dependencies = [
  "frostsnap_coordinator",
  "image",
  "lazy_static",
+ "rand",
  "rusqlite",
  "sha2",
  "tracing",
@@ -2020,6 +2022,7 @@ checksum = "e86697c916019a8588c99b5fac3cead74ec0b4b819707a682fd4d23fa0ce1ba1"
 [[package]]
 name = "schnorr_fun"
 version = "0.10.0"
+source = "git+https://github.com/LLFourn/secp256kfun.git?rev=fc6dd09ccff39d9b49de1ab72a2ecddec35e984d#fc6dd09ccff39d9b49de1ab72a2ecddec35e984d"
 dependencies = [
  "bech32",
  "secp256kfun",
@@ -2092,6 +2095,7 @@ dependencies = [
 [[package]]
 name = "secp256kfun"
 version = "0.10.0"
+source = "git+https://github.com/LLFourn/secp256kfun.git?rev=fc6dd09ccff39d9b49de1ab72a2ecddec35e984d#fc6dd09ccff39d9b49de1ab72a2ecddec35e984d"
 dependencies = [
  "bincode",
  "digest",
@@ -2107,6 +2111,7 @@ dependencies = [
 [[package]]
 name = "secp256kfun_arithmetic_macros"
 version = "0.1.0"
+source = "git+https://github.com/LLFourn/secp256kfun.git?rev=fc6dd09ccff39d9b49de1ab72a2ecddec35e984d#fc6dd09ccff39d9b49de1ab72a2ecddec35e984d"
 dependencies = [
  "proc-macro2",
  "quote",

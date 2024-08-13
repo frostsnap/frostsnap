@@ -1,27 +1,27 @@
+use core::num::NonZeroU32;
+
 use crate::{
-    gen_pop_message, message::*, ActionError, CheckedSignTask, Error, FrostKeyExt, MessageResult,
-    SessionHash, NONCE_BATCH_SIZE,
+    message::*, ActionError, CheckedSignTask, Error, FrostKeyExt, MessageResult, SessionHash,
+    NONCE_BATCH_SIZE,
 };
 use crate::{DeviceId, KeyId};
-use alloc::collections::BTreeSet;
 use alloc::{
-    collections::BTreeMap,
-    string::{String, ToString},
+    collections::{BTreeMap, BTreeSet},
+    string::String,
     vec::Vec,
 };
-use core::iter;
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::binonce;
+use schnorr_fun::frost::chilli_dkg::encpedpop;
 use schnorr_fun::frost::{PairedSecretShare, PartyIndex};
-use schnorr_fun::fun::hash::HashAdd;
-use schnorr_fun::fun::{poly, KeyPair};
+use schnorr_fun::fun::KeyPair;
 use schnorr_fun::{
     binonce::{Nonce, NonceKeyPair},
     frost::{self},
     fun::{derive_nonce_rng, prelude::*, Tag},
     nonce, Message,
 };
-use sha2::digest::FixedOutput;
+use sha2::digest::{FixedOutput, Update};
 
 use sha2::Sha256;
 
@@ -133,138 +133,75 @@ impl FrostSigner {
                 if !device_to_share_index.contains_key(&self.device_id()) {
                     return Ok(vec![]);
                 }
-                let frost = frost::new_with_deterministic_nonces::<Sha256>();
-                let scalar_poly = poly::scalar::generate(threshold as usize, rng);
+                let schnorr = schnorr_fun::new_with_deterministic_nonces::<Sha256>();
 
-                let encrypted_shares =
-                    KeyGenResponse::generate(&frost, &scalar_poly, &device_to_share_index, rng);
+                let share_receivers_enckeys = device_to_share_index
+                    .iter()
+                    .map(|(device, share_index)| (PartyIndex::from(*share_index), device.pubkey()))
+                    .collect::<BTreeMap<_, _>>();
+                let my_index = device_to_share_index
+                    .get(&self.device_id())
+                    .ok_or_else(|| {
+                        Error::signer_invalid_message(
+                            &message,
+                            format!(
+                                "my device id {} was not party of the keygen",
+                                self.device_id()
+                            ),
+                        )
+                    })?;
+
+                let (input_state, keygen_input) = encpedpop::KeygenInputParty::gen_keygen_input(
+                    &schnorr,
+                    threshold as u32,
+                    &share_receivers_enckeys,
+                    (*my_index).into(),
+                    rng,
+                );
 
                 self.action_state = Some(SignerState::KeyGen {
-                    scalar_poly,
+                    input_state,
                     device_to_share_index,
                     threshold,
                     key_name,
                 });
 
                 Ok(vec![DeviceSend::ToCoordinator(
-                    DeviceToCoordinatorMessage::KeyGenResponse(encrypted_shares),
+                    DeviceToCoordinatorMessage::KeyGenResponse(keygen_input),
                 )])
             }
             (
                 Some(SignerState::KeyGen {
                     device_to_share_index,
-                    scalar_poly,
+                    input_state,
                     key_name,
                     ..
                 }),
-                CoordinatorToDeviceMessage::FinishKeyGen {
-                    ref shares_provided,
-                },
+                CoordinatorToDeviceMessage::FinishKeyGen { agg_input },
             ) => {
                 let key_name = key_name.clone();
-                if let Some((device_id, _)) = device_to_share_index
-                    .iter()
-                    .find(|(device_id, _)| !shares_provided.contains_key(device_id))
-                {
-                    return Err(Error::signer_invalid_message(
-                        &message,
-                        format!("Missing shares from {}", device_id),
-                    ));
-                }
-                let frost = frost::new_with_deterministic_nonces::<Sha256>();
+                input_state
+                    .clone()
+                    .verify_agg_input(&agg_input)
+                    .map_err(|e| Error::signer_invalid_message(&message, e))?;
 
-                let point_polys: BTreeMap<_, _> = shares_provided
-                    .iter()
-                    .map(|(device_id, share)| {
-                        (
-                            *device_to_share_index
-                                .get(device_id)
-                                .expect("we checked we have shares"),
-                            share.my_poly.clone(),
-                        )
-                    })
-                    .collect();
-                // Confirm our point poly matches what we expect
+                let schnorr = schnorr_fun::new_with_deterministic_nonces::<Sha256>();
+                // Note we could just store my_index in our state. But we want to keep aroudn the
+                // keys of other devices for when we move to a certification based keygen.
                 let my_index = device_to_share_index
                     .get(&self.device_id())
-                    .expect("we must exist");
-                if point_polys
-                    .get(my_index)
-                    .expect("we have a point poly in this finish keygen")
-                    != &poly::scalar::to_point_poly(scalar_poly)
-                {
-                    return Err(Error::signer_invalid_message(
-                        &message,
-                        "Coordinator told us we are using a different point poly than we expected"
-                            .to_string(),
-                    ));
-                }
+                    .expect("already checked");
 
-                let transpose_shares = shares_provided
-                    .keys()
-                    .map(|device_id_receiver| {
-                        Ok((
-                            device_id_receiver,
-                            shares_provided
-                                .iter()
-                                .map(|(provider_id, share)| {
-                                    Ok((
-                                        *provider_id,
-                                        (
-                                            share
-                                                .encrypted_shares
-                                                .get(device_id_receiver)
-                                                .cloned()
-                                                .ok_or(Error::signer_invalid_message(
-                                                    &message,
-                                                    format!(
-                                                        "Missing shares for {}",
-                                                        device_id_receiver
-                                                    ),
-                                                ))?,
-                                            share.proof_of_possession.clone(),
-                                        ),
-                                    ))
-                                })
-                                .collect::<Result<BTreeMap<_, _>, _>>()?,
-                        ))
-                    })
-                    .collect::<Result<BTreeMap<_, _>, _>>()?;
+                let secret_share = encpedpop::receive_share(
+                    &schnorr,
+                    (*my_index).into(),
+                    &self.keypair,
+                    &agg_input,
+                )
+                .map_err(|e| Error::signer_invalid_message(&message, e))?;
 
-                let my_shares = transpose_shares
-                    .get(&self.device_id())
-                    .expect("this device is part of the keygen")
-                    .iter()
-                    .map(|(provider_id, (encrypted_secret_share, pop))| {
-                        (
-                            *device_to_share_index
-                                .get(provider_id)
-                                .expect("just checked shares exist"),
-                            (
-                                encrypted_secret_share.decrypt(self.keypair().secret_key()),
-                                pop.clone(),
-                            ),
-                        )
-                    })
-                    .collect::<BTreeMap<_, _>>();
-
-                let pop_message = gen_pop_message(device_to_share_index.keys().cloned());
-                let local_polys: BTreeMap<_, _> = iter::once((*my_index, scalar_poly)).collect();
-                let keygen = frost
-                    .new_keygen(point_polys, &local_polys)
-                    .map_err(|e| Error::signer_message_error(&message, e))?;
-
-                let (secret_share, shared_key) = frost
-                    .finish_keygen(
-                        keygen.clone(),
-                        *my_index,
-                        my_shares,
-                        Message::raw(&pop_message),
-                    )
-                    .map_err(|e| Error::signer_message_error(&message, e))?;
-
-                let session_hash = sha2::Sha256::default()
-                    .add(shared_key.point_polynomial())
+                let session_hash = Sha256::default()
+                    .chain(agg_input.cert_bytes())
                     .finalize_fixed()
                     .into();
 
@@ -274,7 +211,7 @@ impl FrostSigner {
                 });
 
                 Ok(vec![DeviceSend::ToUser(DeviceToUserMessage::CheckKeyGen {
-                    key_id: frost_key.key_id(),
+                    key_id: secret_share.public_key().key_id(),
                     session_hash,
                     key_name,
                 })])
@@ -383,7 +320,7 @@ impl FrostSigner {
                     .insert(secret_share.key_id(), secret_share);
                 Ok(vec![
                     DeviceSend::ToCoordinator(DeviceToCoordinatorMessage::KeyGenAck(session_hash)),
-                    DeviceSend::ToStorage(DeviceToStorageMessage::SaveKey(secret_share.clone())),
+                    DeviceSend::ToStorage(DeviceToStorageMessage::SaveKey(secret_share)),
                     DeviceSend::ToUser(DeviceToUserMessage::DisplayBackup {
                         key_id: secret_share.key_id(),
                         backup: secret_share.secret_share().to_bech32_backup(),
@@ -524,8 +461,8 @@ impl FrostSigner {
 #[derive(Clone, Debug)]
 pub enum SignerState {
     KeyGen {
-        scalar_poly: Vec<Scalar>,
-        device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
+        device_to_share_index: BTreeMap<DeviceId, NonZeroU32>,
+        input_state: encpedpop::KeygenInputParty,
         threshold: u16,
         key_name: String,
     },
