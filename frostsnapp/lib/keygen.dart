@@ -197,82 +197,6 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
     required U8Array32 sessionHash,
     required Stream<KeyGenState> stream,
   }) {
-    final hexBox = toHexBox(Uint8List.fromList(sessionHash));
-
-    return showDeviceActionDialog(
-        context: context,
-        onCancel: () {
-          coord.cancelProtocol();
-        },
-        builder: (context) {
-          return Column(mainAxisSize: MainAxisSize.min, children: [
-            Text("Do all the devices show:"),
-            Divider(),
-            hexBox,
-            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              IconButton.outlined(
-                onPressed: () async {
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                  }
-                },
-                iconSize: 35,
-                icon: Icon(Icons.cancel),
-                color: Colors.red,
-              ),
-              SizedBox(width: 50),
-              IconButton.outlined(
-                  onPressed: () async {
-                    final keyId = await showDeviceConfirmDialog(
-                        sessionHash: sessionHash, stream: stream);
-                    if (context.mounted && keyId != null) {
-                      Navigator.pop(context, keyId);
-                    }
-                  },
-                  iconSize: 35,
-                  icon: Icon(Icons.check),
-                  color: Colors.green)
-            ])
-          ]);
-        });
-
-    // return showDialog(
-    //     context: context,
-    //     builder: (context) {
-    //       aborted.then((_) {
-    //         if (context.mounted) {
-    //           debugPrint("ABORT");
-    //           Navigator.pop(context);
-    //         }
-    //       });
-    //       return AlertDialog(
-    //           actions: [
-    //             ElevatedButton(
-    //               child: Text("Yes"),
-    //               onPressed: ,
-    //             ),
-    //             SizedBox(width: 20),
-    //             ElevatedButton(
-    //                 child: Text("No/Cancel"),
-    //                 onPressed: () {
-    //                   Navigator.pop(context);
-    //                   coord.cancelProtocol();
-    //                 }),
-    //           ],
-    //           content: SizedBox(
-    //               width: Platform.isAndroid ? double.maxFinite : 400.0,
-    //               height: double.maxFinite,
-    //               child: Align(
-    //                 alignment: Alignment.center,
-    //                 child: ,
-    //               )));
-    //     });
-  }
-
-  Future<KeyId?> showDeviceConfirmDialog({
-    required U8Array32 sessionHash,
-    required Stream<KeyGenState> stream,
-  }) {
     return showDeviceActionDialog<KeyId>(
         context: context,
         onCancel: () {
@@ -319,7 +243,16 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                 return Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text("Confirm on each device"),
+                      Text("Do all devices show:"),
+                      Text(
+                        toSpacedHex(
+                            Uint8List.fromList(sessionHash.sublist(0, 4))),
+                        style: TextStyle(
+                          fontFamily: 'Courier',
+                          fontWeight: FontWeight.bold,
+                          fontSize: 25,
+                        ),
+                      ),
                       Divider(),
                       MaybeExpandedVertical(child: deviceList),
                     ]);
