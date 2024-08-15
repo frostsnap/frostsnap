@@ -2,6 +2,7 @@ extern crate alloc;
 use core::fmt::Display;
 
 use crate::graphics::Graphics;
+use crate::graphics::{FONT_LARGE, FONT_MED};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use cst816s::TouchGesture;
@@ -16,10 +17,16 @@ use embedded_graphics_framebuf::FrameBuf;
 use embedded_hal as hal;
 use esp_hal::timer::{self, timg::Timer};
 use esp_hal::Blocking;
-use frostsnap_core::schnorr_fun::share_backup::{self, ShareBackup};
+use frostsnap_core::schnorr_fun::frost::SecretShare;
 use fugit::Instant;
 use mipidsi::error::Error;
-use u8g2_fonts::{fonts, U8g2TextStyle};
+use u8g2_fonts::U8g2TextStyle;
+
+const SCREEN_HEIGHT: u32 = 280;
+const SCREEN_WIDTH: u32 = 240;
+const HEADER_BUFFER: u32 = 20; // small padding since we don't show the header on the keyboard screen
+const KEY_HEIGHT: u32 = 50;
+const BACKUP_LEFT_PADDING: u32 = 5;
 
 pub struct KeyboardKey {
     label: KeyboardKeyType,
@@ -59,11 +66,6 @@ impl Display for KeyboardKeyType {
 pub struct Keyboard {
     buffer: Vec<char>,
 }
-
-const SCREEN_HEIGHT: u32 = 280;
-const HEADER_BUFFER: u32 = 40;
-const KEY_HEIGHT: u32 = 50;
-const BACKUP_LEFT_PADDING: u32 = 15;
 
 impl Keyboard {
     pub fn new() -> Self {
@@ -111,7 +113,7 @@ impl Keyboard {
             .draw(framebuf)
             .unwrap();
 
-            let font = U8g2TextStyle::new(fonts::u8g2_font_profont22_mf, Rgb565::WHITE);
+            let font = U8g2TextStyle::new(FONT_MED, Rgb565::WHITE);
             Text::with_text_style(
                 key.label().to_string().as_str(),
                 rect.center(),
@@ -140,11 +142,21 @@ impl Keyboard {
         .draw(framebuf)
         .unwrap();
 
+        let (hrp, backup_chars) = {
+            let index = self
+                .buffer
+                .iter()
+                .position(|&c| c == ']')
+                .expect("we put this here");
+            let hrp: String = self.buffer[..=index].iter().collect();
+            let backup_chars: Vec<char> = self.buffer[index + 1..].to_vec();
+            (hrp, backup_chars)
+        };
+
         let chunked_backup =
-            self.buffer
-                .clone()
+            backup_chars
                 .into_iter()
-                .fold(vec![String::new()], |mut chunk_vec, char| {
+                .fold(vec!["".to_string()], |mut chunk_vec, char| {
                     if chunk_vec.last().unwrap().len() < 4 {
                         let last = chunk_vec.last_mut().unwrap();
                         last.push(char);
@@ -155,15 +167,19 @@ impl Keyboard {
                 });
 
         // Don't show the top line once the backup gets to a certain length, "pan" down
-        if chunked_backup.len() <= 9 {
-            Text::with_baseline(
-                "frost1",
-                Point::new(0, HEADER_BUFFER as i32),
-                U8g2TextStyle::new(fonts::u8g2_font_profont29_tf, Rgb565::CYAN),
-                embedded_graphics::text::Baseline::Top,
+        if chunked_backup.len() <= 4 * 3 {
+            Text::with_text_style(
+                &hrp,
+                Point::new((SCREEN_WIDTH / 2) as i32, HEADER_BUFFER as i32),
+                U8g2TextStyle::new(FONT_LARGE, Rgb565::WHITE),
+                TextStyleBuilder::new()
+                    .alignment(Alignment::Center)
+                    .baseline(embedded_graphics::text::Baseline::Top)
+                    .build(),
             )
             .draw(framebuf)
             .unwrap();
+
             y_offset += spacing_size * 3 / 2;
         }
 
@@ -174,14 +190,14 @@ impl Keyboard {
             (chunked_backup.len() - 1) / 3 - 3
         };
 
-        for row_chunks in chunked_backup[(rows_to_skip * 3)..].chunks(3).into_iter() {
+        for row_chunks in chunked_backup[(rows_to_skip * 3)..].chunks(3) {
             Text::with_baseline(
-                row_chunks.join("  ").as_ref(),
+                row_chunks.join(" ").as_ref(),
                 Point::new(
                     BACKUP_LEFT_PADDING as i32,
                     (HEADER_BUFFER as i32) + y_offset,
                 ),
-                U8g2TextStyle::new(fonts::u8g2_font_profont22_tf, Rgb565::WHITE),
+                U8g2TextStyle::new(FONT_LARGE, Rgb565::WHITE),
                 embedded_graphics::text::Baseline::Top,
             )
             .draw(framebuf)
@@ -205,7 +221,14 @@ impl Keyboard {
         display: &mut Graphics<'d, DT>,
         capsense: &mut CST816S<I2C, PINT, RST>,
         timer: &'d Timer<T, Blocking>,
-    ) -> ShareBackup {
+    ) -> SecretShare {
+        let hrp_display_string = format!(
+            "frost[{}]1",
+            None.map(|index| index.to_string())
+                .unwrap_or("_".to_string())
+        );
+        self.buffer.extend(hrp_display_string.chars().into_iter());
+
         display.clear();
         display.flush().unwrap();
         self.print_text_input(&mut display.framebuf);
@@ -242,15 +265,11 @@ impl Keyboard {
 
         let mut last_touch: Option<Instant<u64, 1, 1_000_000>> = None;
         let mut touched_key: Option<&KeyboardKey> = None;
-        loop {
-            let pending_share_backup = format!(
-                "frost1{}",
-                self.buffer.clone().into_iter().collect::<String>()
-            );
 
-            match share_backup::decode_backup(pending_share_backup) {
-                Ok(share_backup) => return share_backup,
-                Err(_) => {}
+        loop {
+            let pending_share_backup = self.buffer.clone().into_iter().collect::<String>();
+            if let Ok(share_backup) = SecretShare::from_bech32_backup(&pending_share_backup) {
+                return share_backup;
             }
 
             let now = timer::Timer::now(timer);
@@ -270,7 +289,7 @@ impl Keyboard {
                                 self.buffer.pop();
                                 self.print_text_input(&mut display.framebuf);
                                 display.flush().unwrap();
-                                return false;
+                                false
                             }
 
                             // Slide up/down to jog through 8-key groups
@@ -281,7 +300,7 @@ impl Keyboard {
                                     self.render_character_key(&mut display.framebuf, k, false);
                                 });
                                 display.flush().unwrap();
-                                return false;
+                                false
                             }
 
                             (TouchGesture::SlideUp, 1) => {
@@ -291,7 +310,7 @@ impl Keyboard {
                                     self.render_character_key(&mut display.framebuf, k, false);
                                 });
                                 display.flush().unwrap();
-                                return false;
+                                false
                             }
                             (TouchGesture::SingleClick, _) => {
                                 // Find the key being touched

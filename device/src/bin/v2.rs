@@ -459,8 +459,6 @@ where
         self.display
             .set_mem_debug(ALLOCATOR.used(), ALLOCATOR.free());
 
-        self.keyboard
-            .show_keyboard(&mut self.display, &mut self.capsense, self.timer);
         self.display.flush().unwrap();
     }
 }

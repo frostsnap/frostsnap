@@ -27,9 +27,9 @@ use u8g2_fonts::{fonts, U8g2TextStyle};
 
 const PADDING_TOP: u32 = 40;
 const PADDING_LEFT: u32 = 10;
-const FONT_LARGE: fonts::u8g2_font_profont29_mf = fonts::u8g2_font_profont29_mf;
-const FONT_MED: fonts::u8g2_font_profont22_mf = fonts::u8g2_font_profont22_mf;
-const FONT_SMALL: fonts::u8g2_font_profont17_mf = fonts::u8g2_font_profont17_mf;
+pub const FONT_LARGE: fonts::u8g2_font_profont29_mf = fonts::u8g2_font_profont29_mf;
+pub const FONT_MED: fonts::u8g2_font_profont22_mf = fonts::u8g2_font_profont22_mf;
+pub const FONT_SMALL: fonts::u8g2_font_profont17_mf = fonts::u8g2_font_profont17_mf;
 const TEXTBOX_STYLE: TextBoxStyle = TextBoxStyleBuilder::new().build();
 const BODY_RECT: Rectangle = Rectangle::new(
     Point::new(PADDING_LEFT as i32, PADDING_TOP as i32),
