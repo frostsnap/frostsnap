@@ -12,6 +12,7 @@ use frostsnap_coordinator::frostsnap_core::message::CoordinatorSend;
 use frostsnap_coordinator::frostsnap_persist::DeviceNames;
 use frostsnap_coordinator::keygen::KeyGenState;
 use frostsnap_coordinator::persist::Persisted;
+use frostsnap_coordinator::restore_share::{RestoreShareProtocol, RestoreShareState};
 use frostsnap_coordinator::signing::SigningState;
 use frostsnap_coordinator::{
     frostsnap_core, AppMessageBody, FirmwareBin, UiProtocol, UsbSender, UsbSerialManager,
@@ -634,6 +635,30 @@ impl FfiCoordinator {
             .final_keygen_ack(key_id);
         Ok(key_id)
     }
+
+    pub fn restore_share_on_device(
+        &self,
+        device_id: DeviceId,
+        key_id: KeyId,
+        proposed_share_index: Option<u32>,
+        stream: StreamSink<api::RestoreShareState>,
+    ) -> anyhow::Result<()> {
+        let restore_messages = {
+            let mut coordinator = self.coordinator.lock().unwrap();
+            coordinator.staged_mutate(&mut *self.db.lock().unwrap(), |coordinator| {
+                Ok(coordinator.restore_device(device_id, key_id, proposed_share_index)?)
+            })?
+        };
+        self.pending_for_outbox
+            .lock()
+            .unwrap()
+            .extend(restore_messages);
+
+        let restore_protocol = RestoreShareProtocol::new(device_id, SinkWrap(stream));
+        self.start_protocol(restore_protocol);
+
+        Ok(())
+    }
 }
 
 fn frost_keys(coordinator: &FrostCoordinator) -> Vec<crate::api::FrostKey> {
@@ -664,4 +689,5 @@ macro_rules! bridge_sink {
 bridge_sink!(KeyGenState);
 bridge_sink!(FirmwareUpgradeConfirmState);
 bridge_sink!(SigningState);
+bridge_sink!(RestoreShareState);
 bridge_sink!(());

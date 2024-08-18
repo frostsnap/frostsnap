@@ -221,10 +221,12 @@ impl Keyboard {
         display: &mut Graphics<'d, DT>,
         capsense: &mut CST816S<I2C, PINT, RST>,
         timer: &'d Timer<T, Blocking>,
+        proposed_share_index: Option<u32>,
     ) -> SecretShare {
         let hrp_display_string = format!(
             "frost[{}]1",
-            None.map(|index| index.to_string())
+            proposed_share_index
+                .map(|index| index.to_string())
                 .unwrap_or("_".to_string())
         );
         self.buffer.extend(hrp_display_string.chars().into_iter());

@@ -402,6 +402,16 @@ pub fn wire_final_keygen_ack__method__Coordinator(port_: MessagePort, that: JsVa
 }
 
 #[wasm_bindgen]
+pub fn wire_restore_share_on_device__method__Coordinator(
+    port_: MessagePort,
+    that: JsValue,
+    device_id: JsValue,
+    key_id: JsValue,
+) {
+    wire_restore_share_on_device__method__Coordinator_impl(port_, that, device_id, key_id)
+}
+
+#[wasm_bindgen]
 pub fn wire_descriptor_for_key__method__BitcoinContext(
     that: JsValue,
     key_id: JsValue,

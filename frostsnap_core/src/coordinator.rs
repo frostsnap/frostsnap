@@ -12,7 +12,7 @@ use schnorr_fun::{
     frost::{
         self, chilldkg::encpedpop, CoordinatorSignSession, Frost, Nonce, PartyIndex, SharedKey,
     },
-    fun::prelude::*,
+    fun::{poly, prelude::*},
     Schnorr, Signature,
 };
 use sha2::{digest::FixedOutput, Digest, Sha256};
@@ -85,6 +85,11 @@ impl FrostCoordinator {
             } => {
                 let device_nonces = self.device_nonces.entry(*device_id).or_default();
                 device_nonces.nonces.extend(new_nonces);
+            }
+            UpdatedKey(updated_key) => {
+                self.keys
+                    .insert(updated_key.key_id(), updated_key.clone())
+                    .expect("key must have existed");
             }
         }
     }
@@ -376,6 +381,62 @@ impl FrostCoordinator {
                     Ok(vec![])
                 }
             }
+            (
+                Some(CoordinatorState::RestoringDeviceShare { key, device }),
+                DeviceToCoordinatorMessage::LoadedShareBackup {
+                    share_index,
+                    share_image,
+                },
+            ) => {
+                assert_eq!(from, *device, "unexpected device responded with backup");
+
+                let frost_key = key.frost_key();
+                let polynomial = frost_key.point_polynomial();
+                let expected = poly::point::eval(polynomial, share_index);
+
+                if expected != share_image {
+                    return Ok(vec![CoordinatorSend::ToUser(
+                        CoordinatorToUserMessage::EnteredShareBackup {
+                            device_id: from,
+                            share_index,
+                            outcome: EnteredShareBackupOutcome::DoesntBelongToKey,
+                        },
+                    )]);
+                }
+
+                if key
+                    .device_to_share_indicies()
+                    .values()
+                    .any(|&idx| idx == share_index)
+                {
+                    /* A share we already know about, let them test their backup but don't save */
+                    /* In the future we could prompt some replacement page */
+                } else {
+                    /* */
+                    let mut updated_device_to_share_index = key.device_to_share_indicies().clone();
+                    if updated_device_to_share_index
+                        .insert(from, share_index)
+                        .is_some()
+                    {
+                        panic!("devices can not yet hold multiple shares");
+                    }
+
+                    let updated_key = CoordinatorFrostKey::new(
+                        key.frost_key().into(),
+                        updated_device_to_share_index,
+                        key.key_name(),
+                    );
+                    self.mutate(Mutation::UpdatedKey(updated_key));
+                }
+
+                Ok(vec![CoordinatorSend::ToUser(
+                    CoordinatorToUserMessage::EnteredShareBackup {
+                        device_id: from,
+                        share_index,
+                        outcome: EnteredShareBackupOutcome::ValidAtIndex,
+                    },
+                )])
+            }
             _ => Err(Error::coordinator_message_kind(
                 &self.action_state,
                 message_kind,
@@ -666,6 +727,28 @@ impl FrostCoordinator {
         }])
     }
 
+    pub fn restore_device(
+        &mut self,
+        device_id: DeviceId,
+        key_id: KeyId,
+        proposed_share_index: Option<u32>,
+    ) -> Result<Vec<CoordinatorSend>, ActionError> {
+        let key = self
+            .keys
+            .get(&key_id)
+            .ok_or(ActionError::StateInconsistent("no such key".into()))?;
+        self.action_state = Some(CoordinatorState::RestoringDeviceShare {
+            key: key.clone(),
+            device: device_id,
+        });
+        Ok(vec![CoordinatorSend::ToDevice {
+            message: CoordinatorToDeviceMessage::LoadShareBackup {
+                proposed_share_index,
+            },
+            destinations: BTreeSet::from_iter([device_id]),
+        }])
+    }
+
     pub fn state_name(&self) -> &'static str {
         self.action_state
             .as_ref()
@@ -695,6 +778,7 @@ impl CoordinatorState {
             },
             CoordinatorState::Signing { .. } => "Signing",
             CoordinatorState::DisplayBackup => "DisplayBackup",
+            CoordinatorState::RestoringDeviceShare { .. } => "RestoringShare",
         }
     }
 }
@@ -751,6 +835,10 @@ pub enum CoordinatorState {
         key: CoordinatorFrostKey,
     },
     DisplayBackup,
+    RestoringDeviceShare {
+        key: CoordinatorFrostKey,
+        device: DeviceId,
+    },
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
@@ -794,6 +882,18 @@ pub struct CoordinatorFrostKey {
 }
 
 impl CoordinatorFrostKey {
+    pub fn new(
+        frost_key: SharedKey,
+        device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
+        key_name: String,
+    ) -> Self {
+        Self {
+            frost_key,
+            device_to_share_index,
+            key_name,
+        }
+    }
+
     pub fn threshold(&self) -> usize {
         self.frost_key.threshold()
     }
@@ -812,6 +912,10 @@ impl CoordinatorFrostKey {
 
     pub fn key_name(&self) -> String {
         self.key_name.clone()
+    }
+
+    pub fn device_to_share_indicies(&self) -> BTreeMap<DeviceId, Scalar<Public, NonZero>> {
+        self.device_to_share_index.clone()
     }
 }
 
@@ -904,6 +1008,7 @@ pub enum Mutation {
         device_id: DeviceId,
         new_nonces: Vec<Nonce>,
     },
+    UpdatedKey(CoordinatorFrostKey),
 }
 
 impl Gist for Mutation {
@@ -914,6 +1019,7 @@ impl Gist for Mutation {
             ResetNonces { .. } => "ResetNonces",
             NewNonces { .. } => "NewNonces",
             NewKey(_) => "NewKey",
+            UpdatedKey(_) => "UpdatedKey",
         }
         .into()
     }

@@ -1115,6 +1115,33 @@ fn wire_final_keygen_ack__method__Coordinator_impl(
         },
     )
 }
+fn wire_restore_share_on_device__method__Coordinator_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<Coordinator> + UnwindSafe,
+    device_id: impl Wire2Api<DeviceId> + UnwindSafe,
+    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "restore_share_on_device__method__Coordinator",
+            port: Some(port_),
+            mode: FfiCallMode::Stream,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_device_id = device_id.wire2api();
+            let api_key_id = key_id.wire2api();
+            move |task_callback| {
+                Coordinator::restore_share_on_device(
+                    &api_that,
+                    api_device_id,
+                    api_key_id,
+                    task_callback.stream_sink::<_, mirror_RestoreShareState>(),
+                )
+            }
+        },
+    )
+}
 fn wire_descriptor_for_key__method__BitcoinContext_impl(
     that: impl Wire2Api<BitcoinContext> + UnwindSafe,
     key_id: impl Wire2Api<KeyId> + UnwindSafe,
@@ -1328,6 +1355,9 @@ pub struct mirror_KeyGenState(KeyGenState);
 pub struct mirror_KeyId(KeyId);
 
 #[derive(Clone)]
+pub struct mirror_RestoreShareState(RestoreShareState);
+
+#[derive(Clone)]
 pub struct mirror_SigningState(SigningState);
 
 // Section: static checks
@@ -1367,6 +1397,11 @@ const _: fn() = || {
     {
         let KeyId_ = None::<KeyId>.unwrap();
         let _: [u8; 33] = KeyId_.0;
+    }
+    {
+        let RestoreShareState = None::<RestoreShareState>.unwrap();
+        let _: Option<String> = RestoreShareState.outcome;
+        let _: bool = RestoreShareState.abort;
     }
     {
         let SigningState = None::<SigningState>.unwrap();
@@ -1872,6 +1907,22 @@ impl support::IntoDartExceptPrimitive for QrReader {}
 impl rust2dart::IntoIntoDart<QrReader> for QrReader {
     fn into_into_dart(self) -> Self {
         self
+    }
+}
+
+impl support::IntoDart for mirror_RestoreShareState {
+    fn into_dart(self) -> support::DartAbi {
+        vec![
+            self.0.outcome.into_dart(),
+            self.0.abort.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for mirror_RestoreShareState {}
+impl rust2dart::IntoIntoDart<mirror_RestoreShareState> for RestoreShareState {
+    fn into_into_dart(self) -> mirror_RestoreShareState {
+        mirror_RestoreShareState(self)
     }
 }
 

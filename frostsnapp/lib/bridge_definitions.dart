@@ -347,6 +347,15 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kFinalKeygenAckMethodCoordinatorConstMeta;
 
+  Stream<RestoreShareState> restoreShareOnDeviceMethodCoordinator(
+      {required Coordinator that,
+      required DeviceId deviceId,
+      required KeyId keyId,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta
+      get kRestoreShareOnDeviceMethodCoordinatorConstMeta;
+
   String descriptorForKeyMethodBitcoinContext(
       {required BitcoinContext that, required KeyId keyId, dynamic hint});
 
@@ -994,6 +1003,14 @@ class Coordinator {
       bridge.finalKeygenAckMethodCoordinator(
         that: this,
       );
+
+  Stream<RestoreShareState> restoreShareOnDevice(
+          {required DeviceId deviceId, required KeyId keyId, dynamic hint}) =>
+      bridge.restoreShareOnDeviceMethodCoordinator(
+        that: this,
+        deviceId: deviceId,
+        keyId: keyId,
+      );
 }
 
 class DecodingProgress {
@@ -1353,6 +1370,16 @@ class QrReader {
         that: this,
         bytes: bytes,
       );
+}
+
+class RestoreShareState {
+  final String? outcome;
+  final bool abort;
+
+  const RestoreShareState({
+    this.outcome,
+    required this.abort,
+  });
 }
 
 @freezed

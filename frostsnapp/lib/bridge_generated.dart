@@ -1288,6 +1288,33 @@ class NativeImpl implements Native {
             argNames: ["that"],
           );
 
+  Stream<RestoreShareState> restoreShareOnDeviceMethodCoordinator(
+      {required Coordinator that,
+      required DeviceId deviceId,
+      required KeyId keyId,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
+    var arg1 = _platform.api2wire_box_autoadd_device_id(deviceId);
+    var arg2 = _platform.api2wire_box_autoadd_key_id(keyId);
+    return _platform.executeStream(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner
+          .wire_restore_share_on_device__method__Coordinator(
+              port_, arg0, arg1, arg2),
+      parseSuccessData: _wire2api_restore_share_state,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kRestoreShareOnDeviceMethodCoordinatorConstMeta,
+      argValues: [that, deviceId, keyId],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kRestoreShareOnDeviceMethodCoordinatorConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "restore_share_on_device__method__Coordinator",
+            argNames: ["that", "deviceId", "keyId"],
+          );
+
   String descriptorForKeyMethodBitcoinContext(
       {required BitcoinContext that, required KeyId keyId, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_bitcoin_context(that);
@@ -2216,6 +2243,16 @@ class NativeImpl implements Native {
     return QrReader(
       bridge: this,
       field0: _wire2api_FfiQrReader(arr[0]),
+    );
+  }
+
+  RestoreShareState _wire2api_restore_share_state(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return RestoreShareState(
+      outcome: _wire2api_opt_String(arr[0]),
+      abort: _wire2api_bool(arr[1]),
     );
   }
 

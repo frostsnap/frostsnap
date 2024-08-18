@@ -14,8 +14,10 @@ pub use frostsnap_coordinator::firmware_upgrade::FirmwareUpgradeConfirmState;
 pub use frostsnap_coordinator::frostsnap_core;
 use frostsnap_coordinator::frostsnap_core::schnorr_fun::fun::hash::HashAdd;
 pub use frostsnap_coordinator::{
-    keygen::KeyGenState, signing::SigningState, DeviceChange, PortDesc,
+    keygen::KeyGenState, restore_share::RestoreShareState, signing::SigningState, DeviceChange,
+    PortDesc,
 };
+
 use frostsnap_coordinator::{DesktopSerial, UsbSerialManager};
 pub use frostsnap_core::message::EncodedSignature;
 pub use frostsnap_core::{DeviceId, FrostKeyExt, KeyId, SignTask};
@@ -333,6 +335,12 @@ pub struct _FirmwareUpgradeConfirmState {
     pub need_upgrade: Vec<DeviceId>,
     pub abort: bool,
     pub upgrade_ready_to_start: bool,
+}
+
+#[frb(mirror(RestoreShareState))]
+pub struct _RestoreShareState {
+    outcome: Option<String>,
+    abort: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -813,6 +821,35 @@ impl Coordinator {
 
     pub fn final_keygen_ack(&self) -> Result<KeyId> {
         self.0.final_keygen_ack()
+    }
+
+    pub fn restore_share_on_device(
+        &self,
+        device_id: DeviceId,
+        key_id: KeyId,
+        sink: StreamSink<RestoreShareState>,
+    ) -> Result<()> {
+        let key = self
+            .0
+            .frost_keys()
+            .into_iter()
+            .find(|frost_key| frost_key.id().0 == key_id);
+
+        if let Some(key) = key {
+            let proposed_share_index =
+                key.0
+                    .device_to_share_indicies()
+                    .get(&device_id)
+                    .map(|scalar_index| {
+                        let mut u32_index_bytes = [0u8; 4];
+                        u32_index_bytes.copy_from_slice(&scalar_index.to_bytes()[28..]);
+                        u32::from_be_bytes(u32_index_bytes)
+                    });
+            assert!(proposed_share_index.is_some());
+            self.0
+                .restore_share_on_device(device_id, key_id, proposed_share_index, sink)?;
+        }
+        Ok(())
     }
 }
 

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/animated_check.dart';
@@ -82,70 +83,27 @@ class _DeviceSettingsState extends State<DeviceSettings> {
         itemBuilder: (context, index) {
           final keyId = deviceKeys[index];
           final keyName = coord.getKeyName(keyId: keyId)!;
-          return Padding(
-              padding: const EdgeInsets.only(
-                  bottom: 4.0), // Adjust the padding/margin here
-              child: ListTile(
-                  title: Row(
-                      mainAxisAlignment: MainAxisAlignment.start,
-                      children: [
-                    Column(children: [
-                      Text(
-                        keyName,
-                        style: const TextStyle(fontSize: 20.0),
-                      ),
-                    ]),
-                    SizedBox(width: 10),
-                    ElevatedButton(
-                      onPressed: () async {
-                        final confirmed = coord
-                            .displayBackup(id: widget.id, keyId: keyId)
-                            .first;
-
-                        final result = await showDeviceActionDialog(
-                          context: context,
-                          complete: _deviceRemoved.future,
-                          builder: (context) {
-                            return FutureBuilder(
-                                future: confirmed,
-                                builder: (context, snapshot) {
-                                  return Column(children: [
-                                    DialogHeader(
-                                        child: Text(snapshot.connectionState ==
-                                                ConnectionState.waiting
-                                            ? "Confirm on device to show backup"
-                                            : "Record backup displayed on device screen. Press cancel when finished.")),
-                                    Expanded(child: DeviceListWithIcons(
-                                        iconAssigner: (context, deviceId) {
-                                      if (deviceIdEquals(deviceId, widget.id)) {
-                                        final label = LabeledDeviceText(
-                                            device_.name ?? "<unamed>");
-                                        final Widget icon;
-                                        if (snapshot.connectionState ==
-                                            ConnectionState.waiting) {
-                                          icon = ConfirmPrompt();
-                                        } else {
-                                          icon = DevicePrompt(
-                                              icon: Icon(Icons.edit_document,
-                                                  color: successColor),
-                                              text: "Record");
-                                        }
-                                        return (label, icon);
-                                      } else {
-                                        return (null, null);
-                                      }
-                                    }))
-                                  ]);
-                                });
-                          },
-                        );
-                        if (result == null) {
-                          coord.cancelProtocol();
-                        }
-                      },
-                      child: Text("Backup"),
-                    ),
-                  ])));
+          return ListTile(
+            title: Row(mainAxisAlignment: MainAxisAlignment.start, children: [
+              Text(
+                keyName,
+                style: const TextStyle(fontSize: 20.0),
+              ),
+              SizedBox(width: 10),
+              ElevatedButton(
+                onPressed: () async {
+                  await showDialog(
+                    context: context,
+                    builder: (BuildContext context) {
+                      return backupOptions(context, device_.id,
+                          device_.name ?? "unamed", keyId, keyName);
+                    },
+                  );
+                },
+                child: Text("Display Backup"),
+              )
+            ]),
+          );
         },
       );
 
@@ -221,6 +179,123 @@ class _DeviceSettingsState extends State<DeviceSettings> {
         child: body,
       ),
     );
+  }
+
+  Widget backupOptions(BuildContext context, DeviceId id, String deviceName,
+      KeyId keyId, String keyName) {
+    return AlertDialog(
+        title: Text("Backup"),
+        content: Container(
+            width: Platform.isAndroid ? double.maxFinite : 400.0,
+            child: Align(
+                alignment: Alignment.center,
+                child: Column(children: [
+                  ElevatedButton(
+                      onPressed: () async {
+                        Navigator.of(context).pop();
+                        final confirmed =
+                            coord.displayBackup(id: id, keyId: keyId).first;
+
+                        final result = await showDeviceActionDialog(
+                          context: context,
+                          complete: _deviceRemoved.future,
+                          builder: (context) {
+                            return FutureBuilder(
+                                future: confirmed,
+                                builder: (context, snapshot) {
+                                  return Column(children: [
+                                    Text(snapshot.connectionState ==
+                                            ConnectionState.waiting
+                                        ? "Confirm on device to show backup"
+                                        : "Record backup displayed on device screen. Press cancel when finished."),
+                                    Divider(),
+                                    DeviceListWithIcons(
+                                        iconAssigner: (context, deviceId) {
+                                      if (deviceIdEquals(deviceId, widget.id)) {
+                                        final label =
+                                            LabeledDeviceText(deviceName);
+                                        final Widget icon;
+                                        if (snapshot.connectionState ==
+                                            ConnectionState.waiting) {
+                                          icon = ConfirmPrompt();
+                                        } else {
+                                          icon = DevicePrompt(
+                                              icon: Icon(Icons.edit_document,
+                                                  color: Colors.green),
+                                              text: "Record");
+                                        }
+                                        return (label, icon);
+                                      } else {
+                                        return (null, null);
+                                      }
+                                    })
+                                  ]);
+                                });
+                          },
+                        );
+                        if (result == null) {
+                          coord.cancelProtocol();
+                        }
+                      },
+                      child: Text("Backup")),
+                  SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () async {
+                      Navigator.of(context).pop();
+                      final shareRestoreStream = coord.restoreShareOnDevice(
+                          deviceId: id, keyId: keyId);
+
+                      final result = await showDeviceActionDialog(
+                        context: context,
+                        builder: (BuildContext context) {
+                          return StreamBuilder(
+                            stream: shareRestoreStream,
+                            builder: (context, snapshot) {
+                              return Column(
+                                children: [
+                                  Text("Enter the backup on the device"),
+                                  Divider(),
+                                  DeviceListWithIcons(
+                                    iconAssigner: (context, deviceId) {
+                                      if (deviceIdEquals(deviceId, id)) {
+                                        final label =
+                                            LabeledDeviceText(deviceName);
+                                        final Widget icon;
+                                        icon = Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: const [
+                                            Icon(Icons.edit_document,
+                                                color: successColor),
+                                            SizedBox(width: 4),
+                                          ],
+                                        );
+                                        return (label, icon);
+                                      } else {
+                                        return (null, null);
+                                      }
+                                    },
+                                  ),
+                                  SizedBox(height: 24),
+                                  TextButton(
+                                    onPressed: () {
+                                      coord.cancelProtocol();
+                                      Navigator.of(context).pop();
+                                    },
+                                    child: Text('Cancel'),
+                                  ),
+                                ],
+                              );
+                            },
+                          );
+                        },
+                      );
+                      if (result == null) {
+                        coord.cancelProtocol();
+                      }
+                    },
+                    child: Text('Check Backup'),
+                  )
+                ]))));
   }
 }
 
