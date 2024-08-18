@@ -125,7 +125,11 @@ impl Keyboard {
         }
     }
 
-    pub fn print_text_input(&mut self, framebuf: &mut FrameBuf<Rgb565, &mut [Rgb565; 67200]>) {
+    pub fn render_backup_input(
+        &mut self,
+        framebuf: &mut FrameBuf<Rgb565, &mut [Rgb565; 67200]>,
+        hrp: &str,
+    ) {
         let mut y_offset = 0;
         let spacing_size = 20;
 
@@ -142,19 +146,9 @@ impl Keyboard {
         .draw(framebuf)
         .unwrap();
 
-        let (hrp, backup_chars) = {
-            let index = self
-                .buffer
-                .iter()
-                .position(|&c| c == ']')
-                .expect("we put this here");
-            let hrp: String = self.buffer[..=index].iter().collect();
-            let backup_chars: Vec<char> = self.buffer[index + 1..].to_vec();
-            (hrp, backup_chars)
-        };
-
         let chunked_backup =
-            backup_chars
+            self.buffer
+                .clone()
                 .into_iter()
                 .fold(vec!["".to_string()], |mut chunk_vec, char| {
                     if chunk_vec.last().unwrap().len() < 4 {
@@ -169,7 +163,7 @@ impl Keyboard {
         // Don't show the top line once the backup gets to a certain length, "pan" down
         if chunked_backup.len() <= 4 * 3 {
             Text::with_text_style(
-                &hrp,
+                hrp,
                 Point::new((SCREEN_WIDTH / 2) as i32, HEADER_BUFFER as i32),
                 U8g2TextStyle::new(FONT_LARGE, Rgb565::WHITE),
                 TextStyleBuilder::new()
@@ -224,16 +218,16 @@ impl Keyboard {
         proposed_share_index: Option<u32>,
     ) -> SecretShare {
         let hrp_display_string = format!(
-            "frost[{}]1",
+            "frost[{}]",
             proposed_share_index
                 .map(|index| index.to_string())
                 .unwrap_or("_".to_string())
         );
-        self.buffer.extend(hrp_display_string.chars().into_iter());
+        self.buffer.push('1');
 
         display.clear();
         display.flush().unwrap();
-        self.print_text_input(&mut display.framebuf);
+        self.render_backup_input(&mut display.framebuf, &hrp_display_string);
 
         // Keyboard setup
         let keyboard_keys = [
@@ -288,9 +282,14 @@ impl Keyboard {
                         match (&touch.gesture, touch.action) {
                             // Backspace
                             (TouchGesture::SlideLeft, 1) => {
-                                self.buffer.pop();
-                                self.print_text_input(&mut display.framebuf);
-                                display.flush().unwrap();
+                                if self.buffer.len() > 1 {
+                                    self.buffer.pop();
+                                    self.render_backup_input(
+                                        &mut display.framebuf,
+                                        &hrp_display_string,
+                                    );
+                                    display.flush().unwrap();
+                                }
                                 false
                             }
 
@@ -346,7 +345,7 @@ impl Keyboard {
                 if let Some(k) = touched_key {
                     // finger lifted, un-highlight touched key border
                     self.render_character_key(&mut display.framebuf, k, false);
-                    self.print_text_input(&mut display.framebuf);
+                    self.render_backup_input(&mut display.framebuf, &hrp_display_string);
                     touched_key = None;
                     display.flush().unwrap();
                 }

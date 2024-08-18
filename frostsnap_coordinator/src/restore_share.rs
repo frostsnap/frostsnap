@@ -39,7 +39,7 @@ impl UiProtocol for RestoreShareProtocol {
     }
 
     fn is_complete(&self) -> Option<Completion> {
-        if let Some(_) = self.state.outcome {
+        if self.state.outcome.is_some() {
             Some(Completion::Success)
         } else {
             None
