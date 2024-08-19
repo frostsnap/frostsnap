@@ -3,8 +3,8 @@
 use crate::alloc::string::ToString;
 use alloc::string::String;
 use embedded_graphics::{
-    draw_target::DrawTarget,
-    geometry::AnchorX,
+    draw_target::{Cropped, DrawTarget},
+    geometry::{AnchorX, AnchorY},
     image::Image,
     mono_font::{ascii::FONT_7X14, MonoTextStyle},
     pixelcolor::Rgb565,
@@ -25,33 +25,35 @@ use u8g2_fonts::{fonts, U8g2TextStyle};
 use crate::{DownstreamConnectionState, UpstreamConnectionState};
 
 const HEADER_COLOR: Rgb565 = Rgb565::new(4, 8, 17);
-const HEADER_BUFFER: u32 = 40;
-const PADDING_LEFT_TEXT: u32 = 10;
+const PADDING_TOP: u32 = 40;
+const PADDING_LEFT: u32 = 10;
 const FONT_LARGE: fonts::u8g2_font_profont29_mf = fonts::u8g2_font_profont29_mf;
 const FONT_MED: fonts::u8g2_font_profont22_mf = fonts::u8g2_font_profont22_mf;
 const FONT_SMALL: fonts::u8g2_font_profont17_mf = fonts::u8g2_font_profont17_mf;
+const TEXTBOX_STYLE: TextBoxStyle = TextBoxStyleBuilder::new().build();
+const BODY_RECT: Rectangle = Rectangle::new(
+    Point::new(PADDING_LEFT as i32, PADDING_TOP as i32),
+    Size::new(240 - PADDING_LEFT * 2, 280 - PADDING_TOP),
+);
+/// for when you want to write outside the margins
+const BODY_RECT_NO_HORIZONTAL_PADDING: Rectangle = Rectangle::new(
+    Point::new(0, PADDING_TOP as i32),
+    Size::new(240, 280 - PADDING_TOP),
+);
+
+type FrameBuffer<'d> = FrameBuf<Rgb565, &'d mut [Rgb565; 67200]>;
 
 pub struct Graphics<'d, DT> {
     display: DT,
-    textbox_style: TextBoxStyle,
-    framebuf: FrameBuf<Rgb565, &'d mut [Rgb565; 67200]>,
+    framebuf: FrameBuffer<'d>,
 }
 
 impl<'d, DT> Graphics<'d, DT>
 where
     DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
 {
-    pub fn new(
-        display: DT,
-        framebuf: FrameBuf<Rgb565, &'d mut [Rgb565; 67200]>,
-    ) -> Result<Self, Error> {
-        let textbox_style = TextBoxStyleBuilder::new().build();
-
-        let mut _self = Self {
-            display,
-            textbox_style,
-            framebuf,
-        };
+    pub fn new(display: DT, framebuf: FrameBuffer<'d>) -> Result<Self, Error> {
+        let mut _self = Self { framebuf, display };
 
         Ok(_self)
     }
@@ -67,32 +69,26 @@ where
             .unwrap();
     }
 
+    fn body_no_horizontal_padding(&mut self) -> Cropped<'_, FrameBuffer<'d>> {
+        self.framebuf.cropped(&BODY_RECT_NO_HORIZONTAL_PADDING)
+    }
+    fn body(&mut self) -> Cropped<'_, FrameBuffer<'d>> {
+        self.framebuf.cropped(&BODY_RECT)
+    }
+
+    fn raw_body(&mut self) -> Cropped<'_, DT> {
+        self.display.cropped(&BODY_RECT)
+    }
+
     pub fn print(&mut self, str: impl AsRef<str>) {
-        let body_area = Size::new(
-            self.display.size().width,
-            self.display.size().height - HEADER_BUFFER,
-        );
-        Rectangle::new(
-            Point::new(PADDING_LEFT_TEXT as i32, HEADER_BUFFER as i32),
-            body_area,
-        )
-        .into_styled(
-            PrimitiveStyleBuilder::new()
-                .fill_color(Rgb565::BLACK)
-                .build(),
-        )
-        .draw(&mut self.framebuf)
-        .unwrap();
+        let mut body = self.body();
         let _overflow = TextBox::with_textbox_style(
             str.as_ref(),
-            Rectangle::new(
-                Point::new(PADDING_LEFT_TEXT as i32, HEADER_BUFFER as i32),
-                body_area,
-            ),
+            body.bounding_box(),
             U8g2TextStyle::new(FONT_MED, Rgb565::WHITE),
-            self.textbox_style,
+            TEXTBOX_STYLE,
         )
-        .draw(&mut self.framebuf)
+        .draw(&mut body)
         .unwrap();
     }
 
@@ -136,21 +132,23 @@ where
 
     pub fn confirm_bar(&mut self, percent: f32) {
         let stroke = 3;
-        let y = self.display.size().height - stroke - 32;
+        let mut body = self.raw_body();
+        let y = body.size().height - stroke - 32;
 
         Line::new(
             Point::new(71, y as i32),
             Point::new((100_f32 * percent) as i32 + 70, y as i32),
         )
         .into_styled(PrimitiveStyle::with_stroke(Rgb565::GREEN, stroke))
-        .draw(&mut self.display)
+        .draw(&mut body)
         .unwrap();
     }
 
     pub fn progress_bar(&mut self, percent: f32) {
-        let bar_y = self.display.size().height as f32 * 0.8;
-        let bar_x = self.display.size().width as f32 * 0.5;
-        let bar_width = self.display.size().width as f32 * 0.8;
+        let mut body = self.body();
+        let bar_y = body.size().height as f32 * 0.8;
+        let bar_x = body.size().width as f32 * 0.5;
+        let bar_width = body.size().width as f32 * 0.8;
         let bar_height = 20;
 
         let border = Rectangle::with_center(
@@ -164,7 +162,7 @@ where
                     .fill_color(Rgb565::CSS_DARK_GRAY)
                     .build(),
             )
-            .draw(&mut self.framebuf)
+            .draw(&mut body)
             .unwrap();
 
         let progress = border.resized_width((bar_width * percent) as u32, AnchorX::Left);
@@ -175,25 +173,26 @@ where
                     .fill_color(Rgb565::CSS_REBECCAPURPLE)
                     .build(),
             )
-            .draw(&mut self.framebuf)
+            .draw(&mut body)
             .unwrap();
 
         embedded_graphics::text::Text::with_alignment(
             &format!("{}%", (percent * 100.0) as u32),
             Point::new(
-                (self.display.size().width / 2) as i32,
+                (body.size().width / 2) as i32,
                 (bar_y as u32 + bar_height + 10) as i32,
             ),
             U8g2TextStyle::new(FONT_MED, Rgb565::WHITE),
             Alignment::Center,
         )
-        .draw(&mut self.framebuf)
+        .draw(&mut body)
         .unwrap();
     }
 
     pub fn button(&mut self) {
+        let mut body = self.body();
         Rectangle::new(
-            Point::new(70, self.display.size().height as i32 - 37),
+            Point::new(70, body.size().height as i32 - 37),
             Size::new(100, 4),
         )
         .into_styled(
@@ -203,11 +202,11 @@ where
                 .fill_color(Rgb565::new(7, 14, 7))
                 .build(),
         )
-        .draw(&mut self.framebuf)
+        .draw(&mut body)
         .unwrap();
 
         Rectangle::new(
-            Point::new(70, self.display.size().height as i32 - 34),
+            Point::new(70, body.size().height as i32 - 34),
             Size::new(100, 34),
         )
         .into_styled(
@@ -216,16 +215,13 @@ where
                 .stroke_color(Rgb565::CSS_DARK_GRAY)
                 .build(),
         )
-        .draw(&mut self.framebuf)
+        .draw(&mut body)
         .unwrap();
 
         let icon = OpenSelectHandGesture::new(Rgb565::GREEN);
-        Image::new(
-            &icon,
-            Point::new(108, self.display.size().height as i32 - 29),
-        )
-        .draw(&mut self.framebuf)
-        .unwrap();
+        Image::new(&icon, Point::new(108, body.size().height as i32 - 29))
+            .draw(&mut body)
+            .unwrap();
     }
 
     pub fn upstream_state(&mut self, connection_state: UpstreamConnectionState) {
@@ -291,25 +287,10 @@ where
     }
 
     pub fn show_backup(&mut self, str: alloc::string::String) {
-        let mut y_offset = HEADER_BUFFER as i32 + 10;
+        let mut body = self.body_no_horizontal_padding();
+        let mut y_offset = 0;
         let vertical_spacing = 35;
         let horizontal_spacing = 80; // Separate variable for horizontal spacing
-        let body_area = Size::new(
-            self.display.size().width,
-            self.display.size().height - HEADER_BUFFER,
-        );
-        Rectangle::new(
-            Point::new(PADDING_LEFT_TEXT as i32, HEADER_BUFFER as i32),
-            body_area,
-        )
-        .into_styled(
-            PrimitiveStyleBuilder::new()
-                .fill_color(Rgb565::BLACK)
-                .build(),
-        )
-        .draw(&mut self.framebuf)
-        .unwrap();
-
         let (hrp, backup_chars) = str.split_at(str.find(']').expect("backup has a hrp") + 1);
         let chunked_backup =
             backup_chars
@@ -326,28 +307,28 @@ where
 
         Text::with_alignment(
             "Share backup:",
-            Point::new((self.display.size().width / 2) as i32, y_offset),
+            Point::new((body.size().width / 2) as i32, y_offset),
             U8g2TextStyle::new(FONT_MED, Rgb565::CYAN),
             Alignment::Center,
         )
-        .draw(&mut self.framebuf)
+        .draw(&mut body)
         .unwrap();
 
         y_offset += vertical_spacing;
 
         Text::with_alignment(
             hrp,
-            Point::new((self.display.size().width / 2) as i32, y_offset),
+            Point::new((body.size().width / 2) as i32, y_offset),
             U8g2TextStyle::new(FONT_LARGE, Rgb565::WHITE),
             Alignment::Center,
         )
-        .draw(&mut self.framebuf)
+        .draw(&mut body)
         .unwrap();
 
         y_offset += vertical_spacing;
 
         for row_chunks in chunked_backup.chunks(3) {
-            let mut x_offset = PADDING_LEFT_TEXT as i32;
+            let mut x_offset = PADDING_LEFT as i32;
 
             for chunk in row_chunks {
                 Text::new(
@@ -355,13 +336,49 @@ where
                     Point::new(x_offset, y_offset),
                     U8g2TextStyle::new(FONT_LARGE, Rgb565::WHITE),
                 )
-                .draw(&mut self.framebuf)
+                .draw(&mut body)
                 .unwrap();
                 x_offset += horizontal_spacing; // Use horizontal spacing variable
             }
 
             y_offset += vertical_spacing;
         }
+    }
+
+    pub fn show_keygen_check(&mut self, check: &str) {
+        let mut body = self.body();
+        let mut y_offset = 10;
+        Text::with_alignment(
+            "Keygen check",
+            Point::new((body.size().width / 2) as i32, y_offset),
+            U8g2TextStyle::new(FONT_MED, Rgb565::CYAN),
+            Alignment::Center,
+        )
+        .draw(&mut body)
+        .unwrap();
+
+        y_offset += 35;
+
+        TextBox::with_textbox_style(
+            "This must show on all other devices:",
+            body.bounding_box()
+                .resized_height(body.size().height - y_offset as u32, AnchorY::Bottom),
+            U8g2TextStyle::new(FONT_MED, Rgb565::WHITE),
+            TEXTBOX_STYLE,
+        )
+        .draw(&mut body)
+        .unwrap();
+
+        y_offset += 85;
+
+        Text::with_alignment(
+            check,
+            Point::new((body.size().width / 2) as i32, y_offset),
+            U8g2TextStyle::new(FONT_LARGE, Rgb565::WHITE),
+            Alignment::Center,
+        )
+        .draw(&mut body)
+        .unwrap();
     }
 }
 
@@ -407,13 +424,12 @@ where
     .draw(display);
 
     let character_style = MonoTextStyle::new(&FONT_7X14, Rgb565::WHITE);
-    let textbox_style = TextBoxStyleBuilder::new().build();
 
     let _ = TextBox::with_textbox_style(
         error.as_ref(),
         Rectangle::new(Point::new(1, (y + 1) as i32), display.size()),
         character_style,
-        textbox_style,
+        TEXTBOX_STYLE,
     )
     .draw(display);
 }

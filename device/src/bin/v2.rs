@@ -387,10 +387,11 @@ where
                             self.display.print(format!("Sign nostr: {message}"))
                         }
                     },
-                    Prompt::KeyGen(session_hash) => {
-                        self.display
-                            .print(format!("Ok {}", hex::encode(session_hash)));
-                    }
+                    Prompt::KeyGen(session_hash) => self.display.show_keygen_check(&format!(
+                        "{} {}",
+                        hex::encode(&session_hash[0..2]),
+                        hex::encode(&session_hash[2..4])
+                    )),
                     Prompt::NewName { old_name, new_name } => match old_name {
                         Some(old_name) => self.display.print(format!(
                             "Rename this device from '{}' to '{}'?",
