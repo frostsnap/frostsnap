@@ -26,10 +26,7 @@ impl UiProtocol for BackupProtocol {
 
     fn is_complete(&self) -> Option<Completion> {
         if self.complete {
-            Some(Completion::Abort {
-                // get the devices to stop showing backup
-                send_cancel_to_all_devices: true,
-            })
+            Some(Completion::Success)
         } else {
             None
         }
