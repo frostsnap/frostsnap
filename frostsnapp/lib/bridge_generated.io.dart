@@ -1875,7 +1875,7 @@ class NativeWire implements FlutterRustBridgeWireBase {
               ffi.Void Function(
                   ffi.Int64,
                   ffi.Pointer<wire_Coordinator>,
-                  ffi.UintPtr,
+                  ffi.Uint16,
                   ffi.Pointer<wire_list_device_id>,
                   ffi.Pointer<wire_uint_8_list>)>>(
       'wire_generate_new_key__method__Coordinator');

@@ -93,17 +93,8 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                 Column(children: [
                   Text(
                     keyName,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                    style: const TextStyle(fontSize: 20.0),
                   ),
-                  Text(
-                    toHex(Uint8List.fromList(keyId.field0)),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontFamily: 'Monospace',
-                    ),
-                  )
                 ]),
                 SizedBox(width: 10),
                 ElevatedButton(
@@ -161,7 +152,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                               });
                         },
                         onCancel: () {
-                          coord.cancelAll();
+                          coord.cancelProtocol();
                         });
                   },
                   child: Text("Backup"),

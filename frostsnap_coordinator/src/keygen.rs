@@ -1,9 +1,10 @@
 use std::collections::BTreeSet;
 
 use crate::{Completion, Sink, UiProtocol, UiToStorageMessage};
-use frostsnap_comms::CoordinatorSendMessage;
+use frostsnap_comms::{CoordinatorSendBody, CoordinatorSendMessage, Destination};
 use frostsnap_core::{
-    message::{CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage},
+    coordinator::FrostCoordinator,
+    message::{CoordinatorSend, CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage},
     DeviceId, KeyId,
 };
 use tracing::{event, Level};
@@ -11,40 +12,82 @@ use tracing::{event, Level};
 pub struct KeyGen {
     sink: Box<dyn Sink<KeyGenState>>,
     state: KeyGenState,
+    keygen_messages: Vec<CoordinatorSendMessage>,
+    send_cancel_to_all: bool,
 }
 
 impl KeyGen {
     pub fn new(
         keygen_sink: impl Sink<KeyGenState> + 'static,
+        coordinator: &mut FrostCoordinator,
         devices: BTreeSet<DeviceId>,
-        threshold: usize,
+        currently_connected: BTreeSet<DeviceId>,
+        threshold: u16,
+        key_name: String,
     ) -> Self {
-        Self {
+        let mut self_ = Self {
             sink: Box::new(keygen_sink),
             state: KeyGenState {
-                devices: devices.into_iter().collect(),
-                threshold,
+                devices: devices.clone().into_iter().collect(),
+                threshold: threshold.into(),
                 ..Default::default()
             },
+            keygen_messages: vec![],
+            send_cancel_to_all: false,
+        };
+
+        if !currently_connected.is_superset(&devices) {
+            self_.abort("A selected device was disconnected".into(), false);
         }
+
+        match coordinator.do_keygen(&devices, threshold, key_name) {
+            Ok(messages) => {
+                for message in messages {
+                    match message {
+                        CoordinatorSend::ToDevice {
+                            message,
+                            destinations,
+                        } => {
+                            let keygen_message = CoordinatorSendMessage {
+                                target_destinations: Destination::Particular(destinations),
+                                message_body: CoordinatorSendBody::Core(message),
+                            };
+                            self_.keygen_messages.push(keygen_message);
+                        }
+                        CoordinatorSend::ToUser(_) => todo!("handle these if they ever exist"),
+                        CoordinatorSend::SigningSessionStore(_) => unreachable!("not signing"),
+                    }
+                }
+            }
+            Err(e) => self_.abort(format!("couldn't start keygen: {e}"), false),
+        }
+
+        self_
     }
 
     pub fn emit_state(&self) {
         self.sink.send(self.state.clone());
     }
+
+    fn abort(&mut self, reason: String, send_cancel_to_all: bool) {
+        self.state.aborted = Some(reason);
+        self.send_cancel_to_all = send_cancel_to_all;
+        self.emit_state();
+    }
 }
 
 impl UiProtocol for KeyGen {
     fn cancel(&mut self) {
-        self.state.aborted = Some("Key generation canceled".into());
-        self.emit_state();
+        self.abort("Key generation canceled".into(), true);
     }
 
     fn is_complete(&self) -> Option<Completion> {
         if self.state.finished.is_some() {
             Some(Completion::Success)
         } else if self.state.aborted.is_some() {
-            Some(Completion::Abort)
+            Some(Completion::Abort {
+                send_cancel_to_all_devices: true,
+            })
         } else {
             None
         }
@@ -73,7 +116,11 @@ impl UiProtocol for KeyGen {
     }
 
     fn poll(&mut self) -> (Vec<CoordinatorSendMessage>, Vec<UiToStorageMessage>) {
-        (vec![], vec![])
+        if self.is_complete().is_some() {
+            return (vec![], vec![]);
+        }
+
+        (core::mem::take(&mut self.keygen_messages), vec![])
     }
 
     fn connected(&mut self, _id: frostsnap_core::DeviceId) {
@@ -87,8 +134,10 @@ impl UiProtocol for KeyGen {
                 id = id.to_string(),
                 "Device disconnected during keygen"
             );
-            self.state.aborted =
-                Some("Key generation failed because a device was disconnected".into());
+            self.abort(
+                "Key generation failed because a device was disconnected".into(),
+                true,
+            );
             self.emit_state();
         }
     }

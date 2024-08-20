@@ -33,6 +33,7 @@ pub enum CoordinatorToDeviceMessage {
     DoKeyGen {
         device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
         threshold: u16,
+        key_name: String,
     },
     FinishKeyGen {
         shares_provided: BTreeMap<DeviceId, KeyGenResponse>,
@@ -189,6 +190,7 @@ pub enum DeviceToUserMessage {
     CheckKeyGen {
         key_id: KeyId,
         session_hash: SessionHash,
+        key_name: String,
     },
     SignatureRequest {
         sign_task: CheckedSignTask,

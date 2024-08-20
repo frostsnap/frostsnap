@@ -344,7 +344,7 @@ pub fn wire_current_nonce__method__Coordinator(
 pub fn wire_generate_new_key__method__Coordinator(
     port_: MessagePort,
     that: JsValue,
-    threshold: usize,
+    threshold: u16,
     devices: JsValue,
     key_name: String,
 ) {

@@ -247,10 +247,15 @@ impl FfiCoordinator {
                                 completion
                             );
                             *ui_protocol_loop = None;
-                            if let Completion::Abort = completion {
-                                event!(Level::DEBUG, "canceling protocol due to abort");
+                            if let Completion::Abort {
+                                send_cancel_to_all_devices,
+                            } = completion
+                            {
                                 coordinator.MUTATE_NO_PERSIST().cancel();
-                                usb_sender.send_cancel_all();
+                                event!(Level::DEBUG, "canceling protocol due to abort");
+                                if send_cancel_to_all_devices {
+                                    usb_sender.send_cancel_all();
+                                }
                             }
                         }
                     }
@@ -376,37 +381,30 @@ impl FfiCoordinator {
             .unwrap()
             .MUTATE_NO_PERSIST()
             .cancel();
-        self.usb_sender.send_cancel_all()
+        self.usb_sender.send_cancel_all();
     }
 
     pub fn generate_new_key(
         &self,
         devices: BTreeSet<DeviceId>,
-        threshold: usize,
+        threshold: u16,
         key_name: String,
         sink: StreamSink<frostsnap_coordinator::keygen::KeyGenState>,
     ) -> anyhow::Result<()> {
-        let ui_protocol =
-            frostsnap_coordinator::keygen::KeyGen::new(SinkWrap(sink), devices.clone(), threshold);
-
-        let keygen_messages = {
-            let mut coordinator = self.coordinator.lock().unwrap();
-            coordinator.staged_mutate(&mut *self.db.lock().unwrap(), |coordinator| {
-                Ok(coordinator.do_keygen(&devices, threshold as u16, key_name.clone())?)
-            })?
-        };
-
-        self.pending_for_outbox
-            .lock()
-            .unwrap()
-            .extend(keygen_messages);
-
-        // Send device pending key name
-        let send_message = CoordinatorSendMessage {
-            target_destinations: Destination::from(devices),
-            message_body: CoordinatorSendBody::KeyName(key_name),
-        };
-        self.usb_sender.send(send_message);
+        let currently_connected = api::device_list_state()
+            .0
+            .devices
+            .into_iter()
+            .map(|device| device.id)
+            .collect();
+        let ui_protocol = frostsnap_coordinator::keygen::KeyGen::new(
+            SinkWrap(sink),
+            self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
+            devices.clone(),
+            currently_connected,
+            threshold,
+            key_name,
+        );
 
         ui_protocol.emit_state();
         self.start_protocol(ui_protocol);
@@ -570,7 +568,14 @@ impl FfiCoordinator {
         for device in api::device_list_state().0.devices {
             protocol.connected(device.id);
         }
+        let new_name = protocol.name();
         if let Some(mut prev) = self.ui_protocol.lock().unwrap().replace(Box::new(protocol)) {
+            event!(
+                Level::WARN,
+                prev = prev.name(),
+                new = new_name,
+                "previous protocol wasn't shut down cleanly"
+            );
             prev.cancel();
         }
     }

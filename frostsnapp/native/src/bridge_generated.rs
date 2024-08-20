@@ -939,7 +939,7 @@ fn wire_current_nonce__method__Coordinator_impl(
 fn wire_generate_new_key__method__Coordinator_impl(
     port_: MessagePort,
     that: impl Wire2Api<Coordinator> + UnwindSafe,
-    threshold: impl Wire2Api<usize> + UnwindSafe,
+    threshold: impl Wire2Api<u16> + UnwindSafe,
     devices: impl Wire2Api<Vec<DeviceId>> + UnwindSafe,
     key_name: impl Wire2Api<String> + UnwindSafe,
 ) {

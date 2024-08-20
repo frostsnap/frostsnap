@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:frostsnapp/animated_check.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_id_ext.dart';
@@ -10,121 +11,309 @@ import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/hex.dart';
 import 'package:frostsnapp/stream_ext.dart';
-import 'dart:math';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
-class KeyGenPage extends StatelessWidget {
-  const KeyGenPage({super.key});
+class KeyNamePage extends StatefulWidget {
+  @override
+  _KeyNamePageState createState() => _KeyNamePageState();
+}
+
+class _KeyNamePageState extends State<KeyNamePage> {
+  final TextEditingController _keyNameController = TextEditingController();
+  final FocusNode _keyNameFocusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      FocusScope.of(context).requestFocus(_keyNameFocusNode);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final deviceList = KeyGenDeviceList(onSuccess: (keyId) {
-      Navigator.pop(context, keyId);
-    });
+    final _nextPage = _keyNameController.text.isNotEmpty
+        ? () async {
+            final keyId = await Navigator.push(
+              context,
+              createRoute(DevicesPage(
+                keyName: _keyNameController.text,
+              )),
+            );
+            if (context.mounted && keyId != null) {
+              Navigator.pop(context, keyId);
+            }
+          }
+        : null;
+
     return Scaffold(
-        appBar: AppBar(title: const Text("Choose threshold")),
-        body: Center(child: deviceList));
+      appBar: AppBar(title: Text('Key Name')),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(
+              "This is the human readable name the device and app will use to refer to the key. The name can never be changed.",
+              style: TextStyle(fontSize: 18),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 20),
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 200, // Set the maximum width for the text box
+              ),
+              child: TextField(
+                  controller: _keyNameController,
+                  focusNode: _keyNameFocusNode,
+                  textAlign: TextAlign.center,
+                  maxLength: 20, // Limit the number of characters
+                  decoration: InputDecoration(
+                    labelText: 'Key name',
+                  ),
+                  onChanged: (value) {
+                    setState(() {}); // Update the UI when the text changes
+                  },
+                  onSubmitted: (name) {
+                    if (name.isNotEmpty) {
+                      _nextPage?.call();
+                    }
+                  }),
+            ),
+            SizedBox(height: 20),
+            Align(
+              alignment: Alignment.center,
+              child: ElevatedButton.icon(
+                onPressed: _nextPage,
+                icon: Icon(Icons.arrow_forward),
+                label: Text('Next'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
-class DoKeyGenButton extends StatefulWidget {
-  final DeviceListState deviceListState;
-  final OnSuccess? onSuccess;
+class DevicesPage extends StatelessWidget {
+  final String keyName;
 
-  const DoKeyGenButton(
-      {super.key, required this.deviceListState, this.onSuccess});
-
-  @override
-  _DoKeyGenButtonState createState() => _DoKeyGenButtonState();
-}
-
-class _DoKeyGenButtonState extends State<DoKeyGenButton> {
-  int? thresholdSlider;
-  final _messageController = TextEditingController();
+  DevicesPage({required this.keyName});
 
   @override
   Widget build(BuildContext context) {
-    final readyDevices =
-        widget.deviceListState.devices.where((device) => device.ready());
-    final anyNeedUpgrade = widget.deviceListState.devices
-        .any((device) => device.needsFirmwareUpgrade());
-    final int selectedThreshold =
-        thresholdSlider ?? (readyDevices.length / 2 + 1).toInt();
+    return Scaffold(
+      appBar: AppBar(title: Text('Devices')),
+      body: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: StreamBuilder(
+              stream: deviceListSubject,
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return CircularProgressIndicator();
+                }
+                final devices = snapshot.data!.state.devices;
+                final Widget prompt;
 
-    String prompt =
-        'Threshold: ${selectedThreshold.toInt()}-of-${readyDevices.length}';
+                final anyNeedUpgrade =
+                    devices.any((device) => device.needsFirmwareUpgrade());
 
-    if (anyNeedUpgrade) {
-      prompt = "Upgrade firmware of all devices first";
-    } else if (widget.deviceListState.devices.isEmpty) {
-      prompt = "Plug in devices to generate a key";
-    } else if (readyDevices.isEmpty) {
-      prompt = "Set up devices first in order to generate a key";
-    }
+                final anyNeedsName =
+                    devices.any((device) => device.name == null);
 
-    return Column(children: [
-      SizedBox(
-          width: MediaQuery.of(context).size.width * 0.5,
-          child: TextField(
-            controller: _messageController,
-            onChanged: (_) {
-              setState(() {});
-            },
-            decoration: InputDecoration(labelText: 'Key Name'),
-          )),
-      SizedBox(height: 8),
-      Text(
-        prompt,
-        style: const TextStyle(fontSize: 18.0),
-        textAlign: TextAlign.center,
-      ),
-      SizedBox(
-        width: MediaQuery.of(context).size.width * 0.5,
-        child: Slider(
-            // Force 1 <= threshold <= devicecount
-            value: selectedThreshold.toDouble(),
-            onChanged: readyDevices.length <= 1
-                ? null
-                : (newValue) {
+                final allDevicesReady = !(anyNeedsName || anyNeedUpgrade);
+                final style = TextStyle(fontSize: 18);
+
+                if (anyNeedUpgrade) {
+                  prompt = Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.warning, color: Colors.orange),
+                        SizedBox(width: 5.0),
+                        Text(
+                          "Some devices need their firmware upgraded before they can be used to generated a key",
+                          style: style,
+                          textAlign: TextAlign.center,
+                        )
+                      ]);
+                } else if (anyNeedsName) {
+                  prompt = Text("Set up each device before generating a key");
+                } else if (devices.isEmpty) {
+                  prompt = Text(
+                    "Insert the devices that will be part of ‘${keyName}’",
+                    style: style,
+                    textAlign: TextAlign.center,
+                  );
+                } else {
+                  prompt = Text(
+                    "These devices will be part of ‘${keyName}’",
+                    style: style,
+                    textAlign: TextAlign.center,
+                  );
+                }
+
+                return Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    prompt,
+                    SizedBox(height: 20),
+                    MaybeExpandedVertical(
+                        child: DeviceListContainer(child: DeviceList())),
+                    SizedBox(height: 20),
+                    Align(
+                        alignment: Alignment.center,
+                        child: ElevatedButton.icon(
+                          onPressed: allDevicesReady
+                              ? () async {
+                                  final keyId = await Navigator.push(
+                                    context,
+                                    createRoute(ThresholdPage(
+                                      keyName: keyName,
+                                      selectedDevices: devices,
+                                    )),
+                                  );
+                                  if (context.mounted && keyId != null) {
+                                    Navigator.pop(context, keyId);
+                                  }
+                                }
+                              : null,
+                          icon: Icon(Icons.arrow_forward),
+                          label: Text('Next'),
+                        )),
+                  ],
+                );
+              })),
+    );
+  }
+}
+
+class ThresholdPage extends StatefulWidget {
+  final String keyName;
+  final List<ConnectedDevice> selectedDevices;
+
+  ThresholdPage({required this.keyName, required this.selectedDevices});
+
+  @override
+  _ThresholdPageState createState() => _ThresholdPageState();
+}
+
+class _ThresholdPageState extends State<ThresholdPage> {
+  int _selectedThreshold = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedThreshold = (widget.selectedDevices.length + 1) ~/ 2;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Threshold')),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(
+              "How many devices will be needed to sign under this key?",
+              style: TextStyle(fontSize: 18),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                DropdownButton<int>(
+                  value: _selectedThreshold,
+                  onChanged: (int? newValue) {
                     setState(() {
-                      thresholdSlider = newValue.round();
+                      _selectedThreshold = newValue!;
                     });
                   },
-            divisions: max(readyDevices.length - 1, 1),
-            min: 1,
-            max: max(readyDevices.length.toDouble(), 1)),
-      ),
-      ElevatedButton(
-          onPressed: (readyDevices.isEmpty || _messageController.text.isEmpty)
-              ? null
-              : () async {
+                  items: List.generate(
+                          widget.selectedDevices.length, (index) => index + 1)
+                      .map<DropdownMenuItem<int>>((int value) {
+                    return DropdownMenuItem<int>(
+                      value: value,
+                      child: Container(
+                        width: 70,
+                        alignment: Alignment.center,
+                        child: Text(value.toString()),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 8.0),
+                  child: Text(
+                    'of ${widget.selectedDevices.length} devices will be needed to sign',
+                    style: TextStyle(fontSize: 18),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 20),
+            Align(
+              alignment: Alignment.center,
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  // Handle the completion of the process here
                   final keyId = await Navigator.push(context,
                       MaterialPageRoute(builder: (context) {
                     final stream = coord
                         .generateNewKey(
-                            threshold: selectedThreshold,
-                            devices: readyDevices.map((e) => e.id).toList(),
-                            keyName: _messageController.text)
+                            threshold: _selectedThreshold,
+                            devices: widget.selectedDevices
+                                .map((device) => device.id)
+                                .toList(),
+                            keyName: widget.keyName)
                         .toBehaviorSubject();
                     return DoKeyGenScreen(
                       stream: stream,
-                      keyName: _messageController.text,
+                      keyName: widget.keyName,
                     );
                   }));
-                  if (keyId != null) {
-                    widget.onSuccess?.call(keyId);
+
+                  if (context.mounted) {
+                    Navigator.pop(context, keyId);
                   }
                 },
-          child: const Text('Generate Key',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16.0,
-              )))
-    ]);
+                icon: Icon(Icons.check),
+                label: Text('Start'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
-typedef OnSuccess = Function(KeyId);
+// Utility function for creating the page transition
+Route createRoute(Widget page) {
+  return PageRouteBuilder(
+    pageBuilder: (context, animation, secondaryAnimation) => page,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      const begin = Offset(1.0, 0.0);
+      const end = Offset.zero;
+      const curve = Curves.easeInOut;
+
+      final tween =
+          Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+
+      return SlideTransition(
+        position: animation.drive(tween),
+        child: child,
+      );
+    },
+  );
+}
 
 class DoKeyGenScreen extends StatefulWidget {
   final Stream<KeyGenState> stream;
@@ -157,9 +346,9 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
           sessionHash: state.sessionHash!, stream: widget.stream);
       if (keyId != null) {
         await showBackupDialogue(keyId: keyId);
-      }
-      if (mounted) {
-        Navigator.pop(context, keyId);
+        if (mounted) {
+          Navigator.pop(context, keyId);
+        }
       }
     });
   }
@@ -185,6 +374,8 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                   child: Column(
                       mainAxisAlignment: MainAxisAlignment.start,
                       children: [
+                    const Text("Waiting for devices to generate key",
+                        style: TextStyle(fontSize: 20)),
                     MaybeExpandedVertical(child: DeviceListContainer(
                         child: DeviceListWithIcons(iconAssigner: (context, id) {
                       if (devices.contains(id)) {
@@ -201,9 +392,6 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                       }
                       return (null, null);
                     }))),
-                    const SizedBox(height: 20),
-                    const Text("Waiting for devices to generate key",
-                        style: TextStyle(fontSize: 20))
                   ]));
             }));
   }
@@ -258,7 +446,8 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                 return Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text("Do all devices show:"),
+                      Text("Confirm all devices show:"),
+                      SizedBox(height: 10),
                       Text(
                         toSpacedHex(
                             Uint8List.fromList(sessionHash.sublist(0, 4))),
@@ -268,6 +457,30 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                           fontSize: 25,
                         ),
                       ),
+                      Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text('If they do not then '),
+                            TextButton(
+                              onPressed: () {
+                                coord.cancelProtocol();
+                              },
+                              style: TextButton.styleFrom(
+                                  tapTargetSize: MaterialTapTargetSize
+                                      .shrinkWrap, // Reduce button tap target size
+                                  backgroundColor: Colors.red),
+                              child: Text(
+                                'cancel',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white),
+                              ),
+                            ),
+                            Text("."),
+                          ]),
+                      Text("Otherwise your securiy is at risk",
+                          style:
+                              TextStyle(decoration: TextDecoration.underline)),
                       Divider(),
                       MaybeExpandedVertical(child: deviceList),
                     ]);
@@ -300,8 +513,21 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                        "Write down each device's backup for this key onto separate pieces of paper. Each piece of paper should look like:"),
+                    Text.rich(TextSpan(
+                        text:
+                            "Write down each device's backup for this key onto separate pieces of paper. Each piece of paper should look like this with every ",
+                        children: [
+                          TextSpan(
+                            text: 'X',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black),
+                          ),
+                          TextSpan(
+                            text:
+                                ' replaced with the character shown on screen.',
+                          )
+                        ])),
                     SizedBox(height: 8),
                     Divider(),
                     Center(
@@ -357,33 +583,5 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
             ));
       },
     );
-  }
-}
-
-class KeyGenDeviceList extends StatelessWidget {
-  final OnSuccess? onSuccess;
-
-  const KeyGenDeviceList({super.key, this.onSuccess});
-
-  @override
-  Widget build(BuildContext context) {
-    final button = StreamBuilder(
-        stream: deviceListSubject.map((update) => update.state),
-        builder: (context, snapshot) {
-          if (snapshot.hasData) {
-            final deviceListState = snapshot.data!;
-            return DoKeyGenButton(
-                deviceListState: deviceListState, onSuccess: onSuccess);
-          } else if (snapshot.hasError) {
-            return Text('Error: ${snapshot.error}');
-          } else {
-            return Text('Unreachable: this is a behavior subject');
-          }
-        });
-
-    return Column(children: [
-      MaybeExpandedVertical(child: DeviceListContainer(child: DeviceList())),
-      button,
-    ]);
   }
 }

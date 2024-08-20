@@ -1090,7 +1090,7 @@ class NativeImpl implements Native {
       required String keyName,
       dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
-    var arg1 = api2wire_usize(threshold);
+    var arg1 = api2wire_u16(threshold);
     var arg2 = _platform.api2wire_list_device_id(devices);
     var arg3 = _platform.api2wire_String(keyName);
     return _platform.executeStream(FlutterRustBridgeTask(

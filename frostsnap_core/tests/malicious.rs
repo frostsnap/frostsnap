@@ -30,6 +30,7 @@ fn keygen_maliciously_replace_public_poly() {
             CoordinatorToDeviceMessage::DoKeyGen {
                 device_to_share_index: device_to_share_index.clone(),
                 threshold: 1,
+                key_name: "test".into(),
             },
             &mut test_rng,
         )

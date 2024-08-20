@@ -258,14 +258,15 @@ Widget buildInteractiveDevice(BuildContext context, ConnectedDevice device,
 
   if (upToDate) {
     if (device.name == null) {
-      children.add(IconButton.outlined(
-          onPressed: () async {
-            await Navigator.push(context, MaterialPageRoute(builder: (context) {
-              return DeviceSetup(id: device.id);
-            }));
-          },
-          color: Colors.blue,
-          icon: Icon(Icons.phonelink_setup)));
+      children.add(ElevatedButton.icon(
+        onPressed: () async {
+          await Navigator.push(context, MaterialPageRoute(builder: (context) {
+            return DeviceSetup(id: device.id);
+          }));
+        },
+        icon: Icon(Icons.phonelink_setup),
+        label: Text('New device'),
+      ));
     } else {
       children.add(IconButton(
         icon: Icon(Icons.settings),

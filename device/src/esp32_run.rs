@@ -120,7 +120,6 @@ where
         // it waits until we've named it). Announcing and labeling has been sorted out this counter
         // thingy will go away naturally.
         let mut magic_bytes_timeout_counter = 0;
-        let mut pending_key_name = None;
 
         ui.set_workflow(ui::Workflow::WaitingFor(
             ui::WaitingFor::LookingForUpstream {
@@ -148,7 +147,6 @@ where
                 upstream_connection.state = UpstreamConnectionState::Connected;
                 next_write_magic_bytes_downstream = 0;
                 upgrade = None;
-                pending_key_name = None;
                 outbox.clear();
                 ui.cancel();
             }
@@ -181,6 +179,7 @@ where
                 ) => {
                     downstream_connection_state = DownstreamConnectionState::Disconnected;
                     ui.set_downstream_connection_state(downstream_connection_state);
+                    sends_downstream.clear();
                     if state == DownstreamConnectionState::Established {
                         sends_upstream.push(DeviceSendBody::DisconnectDownstream);
                     }
@@ -371,9 +370,6 @@ where
                                                         },
                                                     }
                                                 }
-                                                CoordinatorSendBody::KeyName(ref key_name) => {
-                                                    pending_key_name = Some(key_name.clone());
-                                                }
                                             }
                                         }
 
@@ -514,11 +510,12 @@ where
                             DeviceToUserMessage::CheckKeyGen {
                                 key_id,
                                 session_hash,
+                                key_name,
                             } => {
                                 ui.set_workflow(ui::Workflow::UserPrompt(ui::Prompt::KeyGen {
                                     key_id,
                                     session_hash,
-                                    key_name: pending_key_name.clone().unwrap(),
+                                    key_name,
                                 }));
                             }
                             DeviceToUserMessage::SignatureRequest { sign_task, .. } => {

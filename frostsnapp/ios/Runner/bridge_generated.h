@@ -384,7 +384,7 @@ WireSyncReturn wire_current_nonce__method__Coordinator(struct wire_Coordinator *
 
 void wire_generate_new_key__method__Coordinator(int64_t port_,
                                                 struct wire_Coordinator *that,
-                                                uintptr_t threshold,
+                                                uint16_t threshold,
                                                 struct wire_list_device_id *devices,
                                                 struct wire_uint_8_list *key_name);
 

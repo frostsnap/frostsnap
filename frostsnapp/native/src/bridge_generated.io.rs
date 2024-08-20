@@ -390,7 +390,7 @@ pub extern "C" fn wire_current_nonce__method__Coordinator(
 pub extern "C" fn wire_generate_new_key__method__Coordinator(
     port_: i64,
     that: *mut wire_Coordinator,
-    threshold: usize,
+    threshold: u16,
     devices: *mut wire_list_device_id,
     key_name: *mut wire_uint_8_list,
 ) {

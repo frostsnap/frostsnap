@@ -464,13 +464,14 @@ impl FrostCoordinator {
                         device_to_share_index: device_to_share_index.clone(),
                         responses: devices.iter().map(|&device_id| (device_id, None)).collect(),
                         threshold,
-                        pending_key_name: key_name,
+                        pending_key_name: key_name.clone(),
                     }));
 
                 Ok(vec![CoordinatorSend::ToDevice {
                     message: CoordinatorToDeviceMessage::DoKeyGen {
                         device_to_share_index,
                         threshold,
+                        key_name,
                     },
                     destinations: devices.clone(),
                 }])

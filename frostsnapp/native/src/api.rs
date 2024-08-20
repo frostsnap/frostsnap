@@ -751,7 +751,7 @@ impl Coordinator {
 
     pub fn generate_new_key(
         &self,
-        threshold: usize,
+        threshold: u16,
         devices: Vec<DeviceId>,
         key_name: String,
         event_stream: StreamSink<KeyGenState>,
