@@ -1,6 +1,9 @@
 // 1.69 inch 240x280 ST7789+CST816S
 
+mod palette;
+
 use crate::alloc::string::ToString;
+use crate::{DownstreamConnectionState, UpstreamConnectionState};
 use alloc::string::String;
 use embedded_graphics::{
     draw_target::{Cropped, DrawTarget},
@@ -20,11 +23,9 @@ use embedded_text::{
     TextBox,
 };
 use mipidsi::error::Error;
+use palette::COLORS;
 use u8g2_fonts::{fonts, U8g2TextStyle};
 
-use crate::{DownstreamConnectionState, UpstreamConnectionState};
-
-const HEADER_COLOR: Rgb565 = Rgb565::new(4, 8, 17);
 const PADDING_TOP: u32 = 40;
 const PADDING_LEFT: u32 = 10;
 const FONT_LARGE: fonts::u8g2_font_profont29_mf = fonts::u8g2_font_profont29_mf;
@@ -62,9 +63,13 @@ where
         self.display.draw_iter(&self.framebuf)
     }
 
-    pub fn clear(&mut self, c: Rgb565) {
+    pub fn clear(&mut self) {
         Rectangle::new(Point::new(0, 0), self.display.size())
-            .into_styled(PrimitiveStyleBuilder::new().fill_color(c).build())
+            .into_styled(
+                PrimitiveStyleBuilder::new()
+                    .fill_color(COLORS.background)
+                    .build(),
+            )
             .draw(&mut self.framebuf)
             .unwrap();
     }
@@ -76,16 +81,12 @@ where
         self.framebuf.cropped(&BODY_RECT)
     }
 
-    fn raw_body(&mut self) -> Cropped<'_, DT> {
-        self.display.cropped(&BODY_RECT)
-    }
-
     pub fn print(&mut self, str: impl AsRef<str>) {
         let mut body = self.body();
         let _overflow = TextBox::with_textbox_style(
             str.as_ref(),
             body.bounding_box(),
-            U8g2TextStyle::new(FONT_MED, Rgb565::WHITE),
+            U8g2TextStyle::new(FONT_MED, COLORS.primary),
             TEXTBOX_STYLE,
         )
         .draw(&mut body)
@@ -94,17 +95,6 @@ where
 
     pub fn header(&mut self, device_label: impl AsRef<str>) {
         let header_height = 25;
-        Rectangle::new(
-            Point::zero(),
-            Size::new(self.display.size().width, header_height),
-        )
-        .into_styled(
-            PrimitiveStyleBuilder::new()
-                .fill_color(HEADER_COLOR)
-                .build(),
-        )
-        .draw(&mut self.framebuf)
-        .unwrap();
 
         let textbox_style = TextBoxStyleBuilder::new()
             .alignment(HorizontalAlignment::Center)
@@ -115,33 +105,21 @@ where
                 Point::new(10, 7),
                 Size::new(self.display.size().width - 20, header_height),
             ),
-            U8g2TextStyle::new(FONT_SMALL, Rgb565::WHITE),
+            U8g2TextStyle::new(FONT_SMALL, COLORS.secondary),
             textbox_style,
         )
-        .draw(&mut self.framebuf)
-        .unwrap();
-
-        Line::new(
-            Point::new(0, (header_height - 1) as i32),
-            Point::new(self.display.size().width as i32, (header_height - 1) as i32),
-        )
-        .into_styled(PrimitiveStyle::with_stroke(Rgb565::CSS_DARK_GRAY, 1))
         .draw(&mut self.framebuf)
         .unwrap();
     }
 
     pub fn confirm_bar(&mut self, percent: f32) {
         let stroke = 3;
-        let mut body = self.raw_body();
-        let y = body.size().height - stroke - 32;
+        let y = 27;
 
-        Line::new(
-            Point::new(71, y as i32),
-            Point::new((100_f32 * percent) as i32 + 70, y as i32),
-        )
-        .into_styled(PrimitiveStyle::with_stroke(Rgb565::GREEN, stroke))
-        .draw(&mut body)
-        .unwrap();
+        Line::new(Point::new(0, y), Point::new((240_f32 * percent) as i32, y))
+            .into_styled(PrimitiveStyle::with_stroke(COLORS.success, stroke))
+            .draw(&mut self.display)
+            .unwrap();
     }
 
     pub fn progress_bar(&mut self, percent: f32) {
@@ -182,7 +160,7 @@ where
                 (body.size().width / 2) as i32,
                 (bar_y as u32 + bar_height + 10) as i32,
             ),
-            U8g2TextStyle::new(FONT_MED, Rgb565::WHITE),
+            U8g2TextStyle::new(FONT_MED, COLORS.primary),
             Alignment::Center,
         )
         .draw(&mut body)
@@ -191,44 +169,30 @@ where
 
     pub fn button(&mut self) {
         let mut body = self.body();
-        Rectangle::new(
-            Point::new(70, body.size().height as i32 - 37),
-            Size::new(100, 4),
-        )
-        .into_styled(
-            PrimitiveStyleBuilder::new()
-                .stroke_width(1)
-                .stroke_color(Rgb565::CSS_DARK_GRAY)
-                .fill_color(Rgb565::new(7, 14, 7))
-                .build(),
-        )
-        .draw(&mut body)
-        .unwrap();
+        let y = 20;
+        let p = Point::new(body.size().width as i32 / 2, body.size().height as i32 - y);
+        let rect = Rectangle::with_center(p, Size::new_equal(40));
 
-        Rectangle::new(
-            Point::new(70, body.size().height as i32 - 34),
-            Size::new(100, 34),
-        )
-        .into_styled(
-            PrimitiveStyleBuilder::new()
-                .stroke_width(1)
-                .stroke_color(Rgb565::CSS_DARK_GRAY)
-                .build(),
-        )
-        .draw(&mut body)
-        .unwrap();
+        // rect.into_styled(
+        //     PrimitiveStyleBuilder::new()
+        //         .stroke_width(1)
+        //         .stroke_color(Rgb565::CSS_DARK_GRAY)
+        //         .build(),
+        // )
+        // .draw(&mut self.framebuf)
+        // .unwrap();
 
-        let icon = OpenSelectHandGesture::new(Rgb565::GREEN);
-        Image::new(&icon, Point::new(108, body.size().height as i32 - 29))
+        let icon = OpenSelectHandGesture::new(COLORS.primary);
+        Image::with_center(&icon, rect.center())
             .draw(&mut body)
             .unwrap();
     }
 
     pub fn upstream_state(&mut self, connection_state: UpstreamConnectionState) {
         let color = match connection_state {
-            UpstreamConnectionState::Connected => Rgb565::CSS_DIM_GRAY,
+            UpstreamConnectionState::Connected => COLORS.secondary,
             UpstreamConnectionState::Established
-            | UpstreamConnectionState::EstablishedAndCoordAck => Rgb565::GREEN,
+            | UpstreamConnectionState::EstablishedAndCoordAck => COLORS.success,
         };
         let arrow = Triangle::new(Point::new(20, 20), Point::new(30, 20), Point::new(25, 7));
         arrow
@@ -238,9 +202,9 @@ where
 
         let circle = Circle::with_center(Point::new(50, 13), 10);
         let color = match connection_state {
-            UpstreamConnectionState::Connected => Rgb565::CSS_DIM_GRAY,
-            UpstreamConnectionState::Established => Rgb565::CSS_ORANGE,
-            UpstreamConnectionState::EstablishedAndCoordAck => Rgb565::GREEN,
+            UpstreamConnectionState::Connected => COLORS.secondary,
+            UpstreamConnectionState::Established => COLORS.warning,
+            UpstreamConnectionState::EstablishedAndCoordAck => COLORS.success,
         };
         circle
             .into_styled(PrimitiveStyleBuilder::new().fill_color(color).build())
@@ -250,9 +214,9 @@ where
 
     pub fn downstream_state(&mut self, connection_state: DownstreamConnectionState) {
         let color = match connection_state {
-            DownstreamConnectionState::Disconnected => Rgb565::CSS_DIM_GRAY,
-            DownstreamConnectionState::Connected => Rgb565::CSS_ORANGE,
-            DownstreamConnectionState::Established => Rgb565::GREEN,
+            DownstreamConnectionState::Disconnected => COLORS.secondary,
+            DownstreamConnectionState::Connected => COLORS.warning,
+            DownstreamConnectionState::Established => COLORS.success,
         };
         Triangle::new(Point::new(32, 7), Point::new(42, 7), Point::new(37, 20))
             .into_styled(PrimitiveStyleBuilder::new().fill_color(color).build())
@@ -268,7 +232,7 @@ where
         Rectangle::new(point, size)
             .into_styled(
                 PrimitiveStyleBuilder::new()
-                    .fill_color(Rgb565::BLACK)
+                    .fill_color(COLORS.background)
                     .build(),
             )
             .draw(&mut self.framebuf)
@@ -277,7 +241,7 @@ where
         TextBox::with_textbox_style(
             &format!("{}/{}", used, free),
             Rectangle::new(point, size),
-            MonoTextStyle::new(&FONT_7X14, Rgb565::GREEN),
+            MonoTextStyle::new(&FONT_7X14, COLORS.success),
             TextBoxStyleBuilder::new()
                 .alignment(HorizontalAlignment::Left)
                 .build(),
@@ -308,7 +272,7 @@ where
         Text::with_alignment(
             "Share backup:",
             Point::new((body.size().width / 2) as i32, y_offset),
-            U8g2TextStyle::new(FONT_MED, Rgb565::CYAN),
+            U8g2TextStyle::new(FONT_MED, COLORS.info),
             Alignment::Center,
         )
         .draw(&mut body)
@@ -319,7 +283,7 @@ where
         Text::with_alignment(
             hrp,
             Point::new((body.size().width / 2) as i32, y_offset),
-            U8g2TextStyle::new(FONT_LARGE, Rgb565::WHITE),
+            U8g2TextStyle::new(FONT_LARGE, COLORS.primary),
             Alignment::Center,
         )
         .draw(&mut body)
@@ -334,7 +298,7 @@ where
                 Text::new(
                     chunk,
                     Point::new(x_offset, y_offset),
-                    U8g2TextStyle::new(FONT_LARGE, Rgb565::WHITE),
+                    U8g2TextStyle::new(FONT_LARGE, COLORS.primary),
                 )
                 .draw(&mut body)
                 .unwrap();
@@ -351,7 +315,7 @@ where
         Text::with_alignment(
             name,
             Point::new((body.size().width / 2) as i32, y_offset),
-            U8g2TextStyle::new(FONT_MED, Rgb565::CYAN),
+            U8g2TextStyle::new(FONT_MED, COLORS.info),
             Alignment::Center,
         )
         .draw(&mut body)
@@ -363,7 +327,7 @@ where
             "This must show on all other devices:",
             body.bounding_box()
                 .resized_height(body.size().height - y_offset as u32, AnchorY::Bottom),
-            U8g2TextStyle::new(FONT_MED, Rgb565::WHITE),
+            U8g2TextStyle::new(FONT_MED, COLORS.primary),
             TEXTBOX_STYLE,
         )
         .draw(&mut body)
@@ -374,7 +338,7 @@ where
         Text::with_alignment(
             check,
             Point::new((body.size().width / 2) as i32, y_offset),
-            U8g2TextStyle::new(FONT_LARGE, Rgb565::WHITE),
+            U8g2TextStyle::new(FONT_LARGE, COLORS.primary),
             Alignment::Center,
         )
         .draw(&mut body)
@@ -389,10 +353,14 @@ where
     let y = 25;
     let header_area = Rectangle::new(Point::zero(), Size::new(display.size().width, y));
     let _ = header_area
-        .into_styled(PrimitiveStyleBuilder::new().fill_color(Rgb565::RED).build())
+        .into_styled(
+            PrimitiveStyleBuilder::new()
+                .fill_color(COLORS.error)
+                .build(),
+        )
         .draw(display);
 
-    let header_charstyle = MonoTextStyle::new(&FONT_7X14, Rgb565::WHITE);
+    let header_charstyle = MonoTextStyle::new(&FONT_7X14, COLORS.primary);
     let textbox_style = TextBoxStyleBuilder::new()
         .alignment(HorizontalAlignment::Center)
         .build();
@@ -418,12 +386,12 @@ where
     )
     .into_styled(
         PrimitiveStyleBuilder::new()
-            .fill_color(Rgb565::BLACK)
+            .fill_color(COLORS.background)
             .build(),
     )
     .draw(display);
 
-    let character_style = MonoTextStyle::new(&FONT_7X14, Rgb565::WHITE);
+    let character_style = MonoTextStyle::new(&FONT_7X14, COLORS.primary);
 
     let _ = TextBox::with_textbox_style(
         error.as_ref(),

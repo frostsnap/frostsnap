@@ -143,7 +143,7 @@ fn main() -> ! {
     );
     capsense.setup(&mut delay).unwrap();
 
-    display.clear(Rgb565::BLACK);
+    display.clear();
     display.header("Frostsnap");
     display.flush().unwrap();
     channel0.start_duty_fade(0, 30, 500).unwrap();
@@ -315,7 +315,7 @@ where
     DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
 {
     fn render(&mut self) {
-        self.display.clear(Rgb565::BLACK);
+        self.display.clear();
         self.display
             .header(self.device_name.as_deref().unwrap_or("New Device"));
 
