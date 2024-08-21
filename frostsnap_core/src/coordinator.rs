@@ -123,6 +123,7 @@ impl FrostCoordinator {
                     device_to_share_index,
                     responses,
                     threshold,
+                    pending_key_name,
                 })),
                 DeviceToCoordinatorMessage::KeyGenResponse(new_shares),
             ) => {
@@ -200,6 +201,7 @@ impl FrostCoordinator {
                                     .map(|id| (id, false))
                                     .collect(),
                                 session_hash,
+                                pending_key_name: pending_key_name.clone(),
                             }));
 
                         // TODO: check order
@@ -223,6 +225,7 @@ impl FrostCoordinator {
                     frost_key,
                     acks,
                     session_hash,
+                    pending_key_name,
                 })),
                 DeviceToCoordinatorMessage::KeyGenAck(acked_session_hash),
             ) => {
@@ -254,6 +257,7 @@ impl FrostCoordinator {
                     let key = CoordinatorFrostKey {
                         encoded_frost_key: frost_key.clone(),
                         device_to_share_index: device_to_share_index.clone(),
+                        key_name: pending_key_name.clone(),
                     };
                     let key_id = key.encoded_frost_key.into_frost_key().key_id();
                     self.action_state = None;
@@ -433,6 +437,7 @@ impl FrostCoordinator {
         &mut self,
         devices: &BTreeSet<DeviceId>,
         threshold: u16,
+        key_name: String,
     ) -> Result<Vec<CoordinatorSend>, ActionError> {
         if devices.len() < threshold as usize {
             panic!(
@@ -459,12 +464,14 @@ impl FrostCoordinator {
                         device_to_share_index: device_to_share_index.clone(),
                         responses: devices.iter().map(|&device_id| (device_id, None)).collect(),
                         threshold,
+                        pending_key_name: key_name.clone(),
                     }));
 
                 Ok(vec![CoordinatorSend::ToDevice {
                     message: CoordinatorToDeviceMessage::DoKeyGen {
                         device_to_share_index,
                         threshold,
+                        key_name,
                     },
                     destinations: devices.clone(),
                 }])
@@ -770,12 +777,14 @@ pub enum KeyGenState {
         device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
         responses: BTreeMap<DeviceId, Option<KeyGenResponse>>,
         threshold: u16,
+        pending_key_name: String,
     },
     WaitingForAcks {
         frost_key: EncodedFrostKey,
         device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
         acks: BTreeMap<DeviceId, bool>,
         session_hash: SessionHash,
+        pending_key_name: String,
     },
 }
 
@@ -783,6 +792,7 @@ pub enum KeyGenState {
 pub struct CoordinatorFrostKey {
     encoded_frost_key: EncodedFrostKey,
     device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
+    key_name: String,
 }
 
 impl CoordinatorFrostKey {
@@ -800,6 +810,10 @@ impl CoordinatorFrostKey {
 
     pub fn devices(&self) -> impl Iterator<Item = DeviceId> + '_ {
         self.device_to_share_index.keys().cloned()
+    }
+
+    pub fn key_name(&self) -> String {
+        self.key_name.clone()
     }
 }
 

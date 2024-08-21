@@ -296,18 +296,18 @@ fn wire_id__method__FrostKey_impl(
         },
     )
 }
-fn wire_name__method__FrostKey_impl(
+fn wire_key_name__method__FrostKey_impl(
     that: impl Wire2Api<FrostKey> + UnwindSafe,
 ) -> support::WireSyncReturn {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
         WrapInfo {
-            debug_name: "name__method__FrostKey",
+            debug_name: "key_name__method__FrostKey",
             port: None,
             mode: FfiCallMode::Sync,
         },
         move || {
             let api_that = that.wire2api();
-            Result::<_, ()>::Ok(FrostKey::name(&api_that))
+            Result::<_, ()>::Ok(FrostKey::key_name(&api_that))
         },
     )
 }
@@ -808,6 +808,23 @@ fn wire_get_key__method__Coordinator_impl(
         },
     )
 }
+fn wire_get_key_name__method__Coordinator_impl(
+    that: impl Wire2Api<Coordinator> + UnwindSafe,
+    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "get_key_name__method__Coordinator",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_key_id = key_id.wire2api();
+            Result::<_, ()>::Ok(Coordinator::get_key_name(&api_that, api_key_id))
+        },
+    )
+}
 fn wire_keys_for_device__method__Coordinator_impl(
     that: impl Wire2Api<Coordinator> + UnwindSafe,
     device_id: impl Wire2Api<DeviceId> + UnwindSafe,
@@ -922,8 +939,9 @@ fn wire_current_nonce__method__Coordinator_impl(
 fn wire_generate_new_key__method__Coordinator_impl(
     port_: MessagePort,
     that: impl Wire2Api<Coordinator> + UnwindSafe,
-    threshold: impl Wire2Api<usize> + UnwindSafe,
+    threshold: impl Wire2Api<u16> + UnwindSafe,
     devices: impl Wire2Api<Vec<DeviceId>> + UnwindSafe,
+    key_name: impl Wire2Api<String> + UnwindSafe,
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
         WrapInfo {
@@ -935,11 +953,13 @@ fn wire_generate_new_key__method__Coordinator_impl(
             let api_that = that.wire2api();
             let api_threshold = threshold.wire2api();
             let api_devices = devices.wire2api();
+            let api_key_name = key_name.wire2api();
             move |task_callback| {
                 Coordinator::generate_new_key(
                     &api_that,
                     api_threshold,
                     api_devices,
+                    api_key_name,
                     task_callback.stream_sink::<_, mirror_KeyGenState>(),
                 )
             }

@@ -132,6 +132,7 @@ impl ConnectedDevice {
 #[derive(Clone, Debug)]
 pub struct KeyState {
     pub keys: Vec<FrostKey>,
+    // pub key_names: BTreeMap<KeyId, String>,
 }
 
 #[derive(Clone, Debug)]
@@ -146,8 +147,8 @@ impl FrostKey {
         SyncReturn(self.0.frost_key().key_id())
     }
 
-    pub fn name(&self) -> SyncReturn<String> {
-        SyncReturn("KEY NAMES NOT IMPLEMENTED".into())
+    pub fn key_name(&self) -> SyncReturn<String> {
+        SyncReturn(self.0.key_name())
     }
 
     pub fn devices(&self) -> SyncReturn<Vec<DeviceId>> {
@@ -682,6 +683,16 @@ impl Coordinator {
         )
     }
 
+    pub fn get_key_name(&self, key_id: KeyId) -> SyncReturn<Option<String>> {
+        SyncReturn(
+            self.0
+                .frost_keys()
+                .into_iter()
+                .find(|frost_key| frost_key.id().0 == key_id)
+                .map(|frost_key| frost_key.0.key_name()),
+        )
+    }
+
     pub fn keys_for_device(&self, device_id: DeviceId) -> SyncReturn<Vec<KeyId>> {
         SyncReturn(
             self.0
@@ -740,12 +751,17 @@ impl Coordinator {
 
     pub fn generate_new_key(
         &self,
-        threshold: usize,
+        threshold: u16,
         devices: Vec<DeviceId>,
+        key_name: String,
         event_stream: StreamSink<KeyGenState>,
     ) -> anyhow::Result<()> {
-        self.0
-            .generate_new_key(devices.into_iter().collect(), threshold, event_stream)
+        self.0.generate_new_key(
+            devices.into_iter().collect(),
+            threshold,
+            key_name,
+            event_stream,
+        )
     }
 
     pub fn persisted_sign_session_description(

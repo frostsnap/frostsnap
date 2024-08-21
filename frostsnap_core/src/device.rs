@@ -4,7 +4,11 @@ use crate::{
 };
 use crate::{DeviceId, KeyId};
 use alloc::collections::BTreeSet;
-use alloc::{collections::BTreeMap, string::ToString, vec::Vec};
+use alloc::{
+    collections::BTreeMap,
+    string::{String, ToString},
+    vec::Vec,
+};
 use core::iter;
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::frost::EncodedFrostKey;
@@ -120,6 +124,7 @@ impl FrostSigner {
                 DoKeyGen {
                     device_to_share_index,
                     threshold,
+                    key_name,
                 },
             ) => {
                 if !device_to_share_index.contains_key(&self.device_id()) {
@@ -135,6 +140,7 @@ impl FrostSigner {
                     scalar_poly,
                     device_to_share_index,
                     threshold,
+                    key_name,
                 });
 
                 Ok(vec![DeviceSend::ToCoordinator(
@@ -145,12 +151,14 @@ impl FrostSigner {
                 Some(SignerState::KeyGen {
                     device_to_share_index,
                     scalar_poly,
+                    key_name,
                     ..
                 }),
                 CoordinatorToDeviceMessage::FinishKeyGen {
                     ref shares_provided,
                 },
             ) => {
+                let key_name = key_name.clone();
                 if let Some((device_id, _)) = device_to_share_index
                     .iter()
                     .find(|(device_id, _)| !shares_provided.contains_key(device_id))
@@ -260,13 +268,15 @@ impl FrostSigner {
 
                 self.action_state = Some(SignerState::KeyGenAck {
                     key: FrostsnapSecretKey {
-                        encoded_frost_key: frost_key.into(),
+                        encoded_frost_key: frost_key.clone().into(),
                         secret_share,
                     },
                 });
 
                 Ok(vec![DeviceSend::ToUser(DeviceToUserMessage::CheckKeyGen {
+                    key_id: frost_key.key_id(),
                     session_hash,
+                    key_name,
                 })])
             }
             (
@@ -296,8 +306,7 @@ impl FrostSigner {
                 let my_nonces = nonces.get(&key.secret_share.index).ok_or_else(|| {
                     Error::signer_invalid_message(
                         &message,
-                        "this device was asked to sign but no nonces
-                were provided",
+                        "this device was asked to sign but no nonces were provided",
                     )
                 })?;
 
@@ -540,6 +549,7 @@ pub enum SignerState {
         scalar_poly: Vec<Scalar>,
         device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
         threshold: u16,
+        key_name: String,
     },
     KeyGenAck {
         key: FrostsnapSecretKey,

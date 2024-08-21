@@ -167,7 +167,11 @@ impl common::Env for TestEnv {
         message: DeviceToUserMessage,
     ) {
         match message {
-            DeviceToUserMessage::CheckKeyGen { session_hash } => {
+            DeviceToUserMessage::CheckKeyGen {
+                session_hash,
+                key_id: _,
+                ..
+            } => {
                 self.keygen_checks.insert(from, session_hash);
                 let ack = run.device(from).keygen_ack().unwrap();
                 run.extend_from_device(from, ack);
@@ -220,7 +224,10 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
     }
     run.run_until_finished(&mut env, &mut test_rng);
 
-    let keygen_init = run.coordinator.do_keygen(&device_set, threshold).unwrap();
+    let keygen_init = run
+        .coordinator
+        .do_keygen(&device_set, threshold, "my new key".to_string())
+        .unwrap();
     run.extend(keygen_init);
 
     run.run_until_finished(&mut env, &mut test_rng);
@@ -305,7 +312,10 @@ fn test_display_backup() {
 
     let mut run = Run::new(coordinator, devices);
 
-    let keygen_init = run.coordinator.do_keygen(&device_set, threshold).unwrap();
+    let keygen_init = run
+        .coordinator
+        .do_keygen(&device_set, threshold, "my key".to_string())
+        .unwrap();
     run.extend(keygen_init);
 
     run.run_until_finished(&mut env, &mut test_rng);
@@ -376,7 +386,10 @@ fn when_we_abandon_a_sign_request_we_should_be_able_to_start_a_new_one() {
     let mut env = TestEnv::default();
     let mut run = Run::new(coordinator, devices);
 
-    let keygen_init = run.coordinator.do_keygen(&device_set, threshold).unwrap();
+    let keygen_init = run
+        .coordinator
+        .do_keygen(&device_set, threshold, "my key".to_string())
+        .unwrap();
     run.extend(keygen_init);
 
     let request_nonces = run
@@ -484,7 +497,10 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
         run.extend(run.coordinator.maybe_request_nonce_replenishment(device_id));
     }
 
-    let keygen_init = run.coordinator.do_keygen(&device_set, threshold).unwrap();
+    let keygen_init = run
+        .coordinator
+        .do_keygen(&device_set, threshold, "my key".to_string())
+        .unwrap();
     run.extend(keygen_init);
 
     run.run_until_finished(&mut env, &mut test_rng);

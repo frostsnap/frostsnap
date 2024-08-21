@@ -48,7 +48,9 @@ impl UiProtocol for FirmwareUpgradeProtocol {
         {
             Some(Completion::Success)
         } else if self.state.abort {
-            Some(Completion::Abort)
+            Some(Completion::Abort {
+                send_cancel_to_all_devices: true,
+            })
         } else {
             None
         }

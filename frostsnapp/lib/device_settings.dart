@@ -85,19 +85,17 @@ class _DeviceSettingsState extends State<DeviceSettings> {
         itemCount: deviceKeys.length,
         itemBuilder: (context, index) {
           final keyId = deviceKeys[index];
+          final keyName = coord.getKeyName(keyId: keyId)!;
           return ListTile(
             title: Row(
               mainAxisAlignment: MainAxisAlignment.start,
               children: [
-                Text(
-                  toHex(Uint8List.fromList(keyId.field0)),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontFamily: 'Monospace',
+                Column(children: [
+                  Text(
+                    keyName,
+                    style: const TextStyle(fontSize: 20.0),
                   ),
-                ),
+                ]),
                 SizedBox(width: 10),
                 ElevatedButton(
                   onPressed: () async {
@@ -154,7 +152,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                               });
                         },
                         onCancel: () {
-                          coord.cancelAll();
+                          coord.cancelProtocol();
                         });
                   },
                   child: Text("Backup"),

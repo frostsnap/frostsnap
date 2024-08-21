@@ -30,6 +30,7 @@ fn keygen_maliciously_replace_public_poly() {
             CoordinatorToDeviceMessage::DoKeyGen {
                 device_to_share_index: device_to_share_index.clone(),
                 threshold: 1,
+                key_name: "test".into(),
             },
             &mut test_rng,
         )
@@ -102,7 +103,10 @@ fn nonce_reuse() {
     }
     run.run_until_finished(&mut TestEnv, &mut test_rng);
 
-    let keygen_init = run.coordinator.do_keygen(&device_set, threshold).unwrap();
+    let keygen_init = run
+        .coordinator
+        .do_keygen(&device_set, threshold, "my key".to_string())
+        .unwrap();
     run.extend(keygen_init);
 
     run.run_until_finished(&mut TestEnv, &mut test_rng);

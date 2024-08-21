@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/keygen.dart';
@@ -7,7 +6,6 @@ import 'package:frostsnapp/wallet.dart';
 
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/hex.dart';
 import 'package:confetti/confetti.dart';
 
 import 'sign_message.dart';
@@ -60,7 +58,7 @@ class KeyList extends StatelessWidget {
                       onPressed: () async {
                         final newId = await Navigator.push(context,
                             MaterialPageRoute(builder: (context) {
-                          return const KeyGenPage();
+                          return KeyNamePage();
                         }));
                         if (newId != null) {
                           onNewKey?.call(newId);
@@ -158,7 +156,7 @@ class _KeyCard extends State<KeyCard> {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text(
-              toHex(Uint8List.fromList(widget.frostKey.id().field0)),
+              widget.frostKey.keyName(),
               textAlign: TextAlign.center,
               style: const TextStyle(
                   fontSize: 18,

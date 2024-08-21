@@ -1,15 +1,13 @@
 extern crate alloc;
-use core::convert::Infallible;
-use core::marker::PhantomData;
-
 use alloc::collections::VecDeque;
 use alloc::format;
 use alloc::vec::Vec;
-
 use bincode::de::read::Reader;
 use bincode::enc::write::Writer;
 use bincode::error::DecodeError;
 use bincode::error::EncodeError;
+use core::convert::Infallible;
+use core::marker::PhantomData;
 use embedded_hal_nb::serial::{Read, Write};
 use esp_hal::clock::Clocks;
 use esp_hal::Blocking;

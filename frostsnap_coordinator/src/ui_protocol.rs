@@ -38,7 +38,7 @@ pub trait Sink<M>: Send {
 #[derive(Clone, Debug)]
 pub enum Completion {
     Success,
-    Abort,
+    Abort { send_cancel_to_all_devices: bool },
 }
 
 #[derive(Clone, Debug)]

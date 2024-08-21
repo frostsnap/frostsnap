@@ -17,17 +17,19 @@ class DeviceSetup extends StatelessWidget {
         appBar: AppBar(
           title: const Text('Device Setup'),
         ),
-        body: Column(
-          children: [
-            DeviceNameField(
-                id: id,
-                onNamed: (_) {
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                  }
-                }),
-          ],
-        ));
+        body: Padding(
+            padding: EdgeInsets.all(10.0),
+            child: Column(
+              children: [
+                DeviceNameField(
+                    id: id,
+                    onNamed: (_) {
+                      if (context.mounted) {
+                        Navigator.pop(context);
+                      }
+                    }),
+              ],
+            )));
   }
 }
 
@@ -54,60 +56,66 @@ class _DeviceNameField extends State<DeviceNameField> {
           coord.sendCancel(id: widget.id);
         }
       },
-      child: TextField(
-        decoration: InputDecoration(
-          icon: Icon(Icons.drive_file_rename_outline),
-          hintText: widget.existingName == null
-              ? 'What do you want name this device?'
-              : "What should the new name be",
-          labelText: widget.existingName == null
-              ? 'Name'
-              : "Rename “${widget.existingName}”",
-        ),
-        onSubmitted: (name) async {
-          final completeWhen = deviceListChangeStream
-              .firstWhere((change) =>
-                  change.kind == DeviceListChangeKind.Named &&
-                  deviceIdEquals(widget.id, change.device.id))
-              .then((change) {
-            widget.onNamed?.call(change.device.name!);
-            changed = false;
-            return;
-          });
-          coord.finishNaming(id: widget.id, name: name);
-          await showDeviceActionDialog(
-              context: context,
-              complete: completeWhen,
-              onCancel: () async {
-                await coord.sendCancel(id: widget.id);
-              },
-              builder: (context) {
-                return Column(children: [
-                  Text("Confirm name '$name' on device"),
-                  Divider(),
-                  MaybeExpandedVertical(child: DeviceListContainer(child:
-                      DeviceListWithIcons(iconAssigner: (context, deviceId) {
-                    if (deviceIdEquals(deviceId, widget.id)) {
-                      final label = LabeledDeviceText("'$name'?");
-                      const icon =
-                          Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(Icons.visibility, color: Colors.orange),
-                        SizedBox(width: 4),
-                        Text("Confirm"),
-                      ]);
-                      return (label, icon);
-                    } else {
-                      return (null, null);
-                    }
-                  })))
-                ]);
+      child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 300, // Set the maximum width for the text box
+          ),
+          child: TextField(
+            maxLength: 20,
+            decoration: InputDecoration(
+              icon: Icon(Icons.drive_file_rename_outline),
+              hintText: widget.existingName == null
+                  ? 'What do you want name this device?'
+                  : "What should the new name be",
+              labelText: widget.existingName == null
+                  ? 'Name'
+                  : "Rename “${widget.existingName}”",
+            ),
+            onSubmitted: (name) async {
+              final completeWhen = deviceListChangeStream
+                  .firstWhere((change) =>
+                      change.kind == DeviceListChangeKind.Named &&
+                      deviceIdEquals(widget.id, change.device.id))
+                  .then((change) {
+                widget.onNamed?.call(change.device.name!);
+                changed = false;
+                return;
               });
-        },
-        onChanged: (value) async {
-          changed = true;
-          await coord.updateNamePreview(id: widget.id, name: value);
-        },
-      ),
+              coord.finishNaming(id: widget.id, name: name);
+              await showDeviceActionDialog(
+                  context: context,
+                  complete: completeWhen,
+                  onCancel: () async {
+                    await coord.sendCancel(id: widget.id);
+                  },
+                  builder: (context) {
+                    return Column(children: [
+                      Text("Confirm name '$name' on device"),
+                      Divider(),
+                      MaybeExpandedVertical(child: DeviceListContainer(child:
+                          DeviceListWithIcons(
+                              iconAssigner: (context, deviceId) {
+                        if (deviceIdEquals(deviceId, widget.id)) {
+                          final label = LabeledDeviceText("'$name'?");
+                          const icon =
+                              Row(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(Icons.visibility, color: Colors.orange),
+                            SizedBox(width: 4),
+                            Text("Confirm"),
+                          ]);
+                          return (label, icon);
+                        } else {
+                          return (null, null);
+                        }
+                      })))
+                    ]);
+                  });
+            },
+            onChanged: (value) async {
+              changed = true;
+              await coord.updateNamePreview(id: widget.id, name: value);
+            },
+          )),
     );
   }
 }

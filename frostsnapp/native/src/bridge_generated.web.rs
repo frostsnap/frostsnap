@@ -99,8 +99,8 @@ pub fn wire_id__method__FrostKey(that: JsValue) -> support::WireSyncReturn {
 }
 
 #[wasm_bindgen]
-pub fn wire_name__method__FrostKey(that: JsValue) -> support::WireSyncReturn {
-    wire_name__method__FrostKey_impl(that)
+pub fn wire_key_name__method__FrostKey(that: JsValue) -> support::WireSyncReturn {
+    wire_key_name__method__FrostKey_impl(that)
 }
 
 #[wasm_bindgen]
@@ -287,6 +287,14 @@ pub fn wire_get_key__method__Coordinator(
 }
 
 #[wasm_bindgen]
+pub fn wire_get_key_name__method__Coordinator(
+    that: JsValue,
+    key_id: JsValue,
+) -> support::WireSyncReturn {
+    wire_get_key_name__method__Coordinator_impl(that, key_id)
+}
+
+#[wasm_bindgen]
 pub fn wire_keys_for_device__method__Coordinator(
     that: JsValue,
     device_id: JsValue,
@@ -336,10 +344,11 @@ pub fn wire_current_nonce__method__Coordinator(
 pub fn wire_generate_new_key__method__Coordinator(
     port_: MessagePort,
     that: JsValue,
-    threshold: usize,
+    threshold: u16,
     devices: JsValue,
+    key_name: String,
 ) {
-    wire_generate_new_key__method__Coordinator_impl(port_, that, threshold, devices)
+    wire_generate_new_key__method__Coordinator_impl(port_, that, threshold, devices, key_name)
 }
 
 #[wasm_bindgen]

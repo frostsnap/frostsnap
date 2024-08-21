@@ -76,26 +76,33 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
         title: 'Frostsnapp',
         theme: ThemeData(
-          colorScheme: ColorScheme.fromSwatch(
-            primarySwatch: Colors.blue,
-            backgroundColor: Colors.white,
-            errorColor: Colors.red,
-          ).copyWith(
-            secondary: Colors.blueAccent,
-          ),
-          textButtonTheme: TextButtonThemeData(
-            style: TextButton.styleFrom(backgroundColor: Colors.blueAccent),
-          ),
-          elevatedButtonTheme: ElevatedButtonThemeData(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
-              foregroundColor: Colors.white,
+            colorScheme: ColorScheme.fromSwatch(
+              primarySwatch: Colors.blue,
+              backgroundColor: Colors.white,
+              errorColor: Colors.red,
+            ).copyWith(
+              secondary: Colors.blueAccent,
             ),
-          ),
-          outlinedButtonTheme: OutlinedButtonThemeData(
-            style: OutlinedButton.styleFrom(),
-          ),
-        ),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                  backgroundColor: Colors.blueAccent,
+                  foregroundColor: Colors.white),
+            ),
+            elevatedButtonTheme: ElevatedButtonThemeData(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+              ),
+            ),
+            inputDecorationTheme: InputDecorationTheme(
+              border: OutlineInputBorder(), // Apply border globally
+              enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.grey),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.blue),
+              ),
+            )),
         home: startupError == null
             ? const MyHomePage(title: 'Frostsnapp')
             : StartupErrorWidget(error: startupError!));

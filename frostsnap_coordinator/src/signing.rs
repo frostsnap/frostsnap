@@ -112,7 +112,9 @@ impl UiProtocol for SigningDispatcher {
         if self.finished_signatures.is_some() {
             Some(Completion::Success)
         } else if self.aborted.is_some() {
-            Some(Completion::Abort)
+            Some(Completion::Abort {
+                send_cancel_to_all_devices: true,
+            })
         } else {
             None
         }
