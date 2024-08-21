@@ -60,7 +60,10 @@ where
     }
 
     pub fn flush(&mut self) -> Result<(), Error> {
-        self.display.draw_iter(&self.framebuf)
+        self.display.fill_contiguous(
+            &Rectangle::new(Point::new(0, 0), self.display.size()),
+            self.framebuf.into_iter().map(|p| p.1),
+        )
     }
 
     pub fn clear(&mut self) {
