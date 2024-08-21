@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:frostsnapp/device.dart';
 import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/device_setup.dart';
-import 'package:frostsnapp/serialport.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'global.dart';
 
@@ -20,8 +20,12 @@ const double iconSize = 20.0;
 
 class DeviceList extends StatefulWidget {
   final DeviceBuilder deviceBuilder;
+  final bool scrollable;
 
-  DeviceList({Key? key, this.deviceBuilder = buildInteractiveDevice})
+  DeviceList(
+      {Key? key,
+      this.deviceBuilder = buildInteractiveDevice,
+      this.scrollable = false})
       : super(key: key);
 
   @override
@@ -102,15 +106,17 @@ class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
           if (!snapshot.hasData || snapshot.data!.state.devices.isNotEmpty) {
             return SizedBox();
           } else {
-            return Center(
-              child: Text(
-                'No devices connected',
-                style: TextStyle(color: Colors.grey, fontSize: 24.0),
-              ),
+            return Text(
+              'No devices connected',
+              style: TextStyle(color: Colors.grey, fontSize: 24.0),
             );
           }
         });
     final list = AnimatedList(
+        physics: widget.scrollable
+            ? AlwaysScrollableScrollPhysics()
+            : NeverScrollableScrollPhysics(),
+        shrinkWrap: true,
         key: deviceListKey,
         itemBuilder: (context, index, animation) {
           final device = currentListState.devices[index];
@@ -121,7 +127,14 @@ class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
             ? Axis.horizontal
             : Axis.vertical);
 
-    return Stack(children: [noDevices, list]);
+    return Stack(
+      children: [
+        Center(
+          child: noDevices,
+        ),
+        Align(alignment: Alignment.topCenter, child: list)
+      ],
+    );
   }
 }
 
@@ -144,20 +157,7 @@ class DeviceBoxContainer extends StatelessWidget {
     return SlideTransition(
         position: animation
             .drive(Tween(begin: animationBegin, end: const Offset(0.0, 0.0))),
-        child: Padding(
-            padding: const EdgeInsets.all(3.0),
-            child: Container(
-              constraints: BoxConstraints(minHeight: 90.0, minWidth: 150.0),
-              child: Card(
-                color: Colors.white70,
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 5.0),
-                    child: child,
-                  ),
-                ),
-              ),
-            )));
+        child: Center(child: DeviceWidget(child: child)));
   }
 }
 
@@ -168,27 +168,15 @@ class LabeledDeviceText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(name, style: const TextStyle(fontSize: 30));
+    return FittedBox(
+      fit: BoxFit.contain,
+      child: Text(name, style: TextStyle(fontWeight: FontWeight.bold)),
+    );
   }
 }
 
-class DeviceListContainer extends StatelessWidget {
-  final Widget child;
-
-  const DeviceListContainer({super.key, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    final isPortrait = effectiveOrientation(context) == Orientation.portrait;
-    return Container(
-        constraints: BoxConstraints(
-            maxHeight: isPortrait ? double.maxFinite : 90.0,
-            maxWidth: isPortrait ? 300.0 : double.maxFinite),
-        // decoration: BoxDecoration(border: Border.all(color: Colors.black, width: 2.0)),
-        child: Align(alignment: Alignment.center, child: child));
-  }
-}
-
+// XXX: The orientation stuff has no effect at the moment it's just here in case
+// we want to come back to it
 Orientation effectiveOrientation(BuildContext context) {
   // return Orientation.landscape;
   return Platform.isAndroid
@@ -200,13 +188,16 @@ Orientation effectiveOrientation(BuildContext context) {
 typedef IconAssigner = (Widget?, Widget?) Function(BuildContext, DeviceId);
 
 class DeviceListWithIcons extends StatelessWidget {
-  const DeviceListWithIcons({super.key, required this.iconAssigner});
+  const DeviceListWithIcons(
+      {super.key, required this.iconAssigner, this.scrollable = false});
   final IconAssigner iconAssigner;
+  final bool scrollable;
 
   @override
   Widget build(BuildContext context) {
     return DeviceList(
       deviceBuilder: _builder,
+      scrollable: scrollable,
     );
   }
 
@@ -232,18 +223,6 @@ class DeviceListWithIcons extends StatelessWidget {
   }
 }
 
-class MaybeExpandedVertical extends StatelessWidget {
-  final Widget child;
-  MaybeExpandedVertical({super.key, required this.child});
-
-  @override
-  Widget build(BuildContext ctx) {
-    return effectiveOrientation(ctx) == Orientation.portrait
-        ? Expanded(child: child)
-        : child;
-  }
-}
-
 Widget buildInteractiveDevice(BuildContext context, ConnectedDevice device,
     Orientation orientation, Animation<double> animation) {
   Widget child;
@@ -251,24 +230,31 @@ Widget buildInteractiveDevice(BuildContext context, ConnectedDevice device,
   final upToDate = device.firmwareDigest! == coord.upgradeFirmwareDigest();
 
   if (device.name == null) {
-    // children.add(Text("New Frostsnap Device"));
+    children.add(Spacer(flex: 6));
   } else {
     children.add(LabeledDeviceText(device.name!));
   }
 
+  children.add(Spacer(flex: 3));
+
+  final Widget interaction;
+
   if (upToDate) {
     if (device.name == null) {
-      children.add(ElevatedButton.icon(
+      interaction = TextButton(
+        style: TextButton.styleFrom(
+            shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(4.0), // Rectangular shape
+        )),
         onPressed: () async {
           await Navigator.push(context, MaterialPageRoute(builder: (context) {
             return DeviceSetup(id: device.id);
           }));
         },
-        icon: Icon(Icons.phonelink_setup),
-        label: Text('New device'),
-      ));
+        child: Text('New device'),
+      );
     } else {
-      children.add(IconButton(
+      interaction = IconButton(
         icon: Icon(Icons.settings),
         onPressed: () {
           Navigator.push(
@@ -276,24 +262,31 @@ Widget buildInteractiveDevice(BuildContext context, ConnectedDevice device,
               MaterialPageRoute(
                   builder: (context) => DeviceSettings(id: device.id)));
         },
-      ));
+      );
     }
   } else {
-    children.add(Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-      IconButton.outlined(
-        onPressed: () {
-          FirmwareUpgradeDialog.show(context);
-        },
-        icon: Icon(Icons.upgrade),
-        color: Colors.orange,
-      ),
-      SizedBox(width: 5.0),
-      Text("Upgrade firmware"),
-    ]));
+    interaction = Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.max,
+        children: [
+          IconButton.outlined(
+            onPressed: () {
+              FirmwareUpgradeDialog.show(context);
+            },
+            icon: Icon(Icons.upgrade),
+            color: Colors.orange,
+          ),
+          SizedBox(height: 5.0),
+          Text("Upgrade firmware",
+              style: TextStyle(color: Colors.black, fontSize: 12.0)),
+        ]);
   }
+
+  children.add(interaction);
+  children.add(Spacer(flex: 10));
 
   return DeviceBoxContainer(
       orientation: orientation,
       animation: animation,
-      child: Column(children: children));
+      child: Column(children: children, mainAxisSize: MainAxisSize.max));
 }

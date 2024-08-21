@@ -39,45 +39,45 @@ Future<T?> showDeviceActionDialog<T>({
         maxChildSize: 0.9,
         builder: (BuildContext context, ScrollController scrollController) {
           return Center(
-              child: ConstrainedBox(
+              child: Stack(
+            children: [
+              Container(
+                padding: EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 10,
+                      offset: Offset(0, -2),
+                    ),
+                  ],
+                ),
+                child: ConstrainedBox(
                   constraints: BoxConstraints(
-                    maxWidth: 400.0,
+                      maxWidth: 400.0,
+                      // you've got to make even an empty content have some
+                      // height otherwise WEIRD things happen.
+                      minHeight: MediaQuery.of(context).size.height * 0.9),
+                  child: SingleChildScrollView(
+                    controller: scrollController,
+                    child: builder(dialogContext_),
                   ),
-                  child: Stack(children: [
-                    Container(
-                      margin: EdgeInsets.only(
-                          top: 50), // Adjust this for the small space above
-                      padding: EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.only(
-                          topLeft: Radius.circular(20),
-                          topRight: Radius.circular(20),
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black26,
-                            blurRadius: 10,
-                            offset: Offset(0, -2),
-                          ),
-                        ],
-                      ),
-                      child: Align(
-                          alignment: Alignment.center,
-                          child: builder(dialogContext_)),
-                    ),
-                    Positioned(
-                      top: 55,
-                      right: 10,
-                      child: IconButton.outlined(
-                        icon: Icon(Icons.close),
-                        onPressed: () {
-                          canceled = true;
-                          Navigator.pop(context);
-                        },
-                      ),
-                    ),
-                  ])));
+                ),
+              ),
+              Positioned(
+                top: 10,
+                right: 10,
+                child: IconButton(
+                  icon: Icon(Icons.close),
+                  onPressed: () {
+                    Navigator.pop(context);
+                  },
+                ),
+              ),
+            ],
+          ));
         },
       );
     },
