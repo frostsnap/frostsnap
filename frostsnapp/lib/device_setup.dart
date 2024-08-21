@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:frostsnapp/device.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_id_ext.dart';
 import 'package:frostsnapp/device_list.dart';
@@ -92,22 +93,15 @@ class _DeviceNameField extends State<DeviceNameField> {
                     return Column(children: [
                       Text("Confirm name '$name' on device"),
                       Divider(),
-                      MaybeExpandedVertical(child: DeviceListContainer(child:
-                          DeviceListWithIcons(
-                              iconAssigner: (context, deviceId) {
+                      DeviceListWithIcons(iconAssigner: (context, deviceId) {
                         if (deviceIdEquals(deviceId, widget.id)) {
                           final label = LabeledDeviceText("'$name'?");
-                          const icon =
-                              Row(mainAxisSize: MainAxisSize.min, children: [
-                            Icon(Icons.visibility, color: Colors.orange),
-                            SizedBox(width: 4),
-                            Text("Confirm"),
-                          ]);
+                          final icon = ConfirmPrompt();
                           return (label, icon);
                         } else {
                           return (null, null);
                         }
-                      })))
+                      })
                     ]);
                   });
             },

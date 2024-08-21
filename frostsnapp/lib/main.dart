@@ -51,6 +51,12 @@ void main() async {
     startupError = "$error\n$stacktrace";
   }
 
+  // Lock orientation to portrait mode only
+  SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
+
   // we want to stop the app from sleeping on mobile if there's a device plugged in.
   deviceListSubject.forEach((update) {
     if (Platform.isLinux) {
