@@ -24,15 +24,17 @@ use u8g2_fonts::U8g2TextStyle;
 
 const SCREEN_HEIGHT: u32 = 280;
 const SCREEN_WIDTH: u32 = 240;
-const HEADER_BUFFER: u32 = 20; // small padding since we don't show the header on the keyboard screen
+const HEADER_BUFFER: u32 = 40; // small padding since we don't show the header on the keyboard screen
 const KEY_HEIGHT: u32 = 50;
 const BACKUP_LEFT_PADDING: u32 = 5;
 
+#[derive(Debug, Clone)]
 pub struct KeyboardKey {
     label: KeyboardKeyType,
     rectangle: Rectangle,
 }
 
+#[derive(Debug, Clone)]
 pub enum KeyboardKeyType {
     Character(char),
     String(String),
@@ -65,11 +67,73 @@ impl Display for KeyboardKeyType {
 #[derive(Default)]
 pub struct Keyboard {
     buffer: Vec<char>,
+    hrp: Option<String>,
+    last_touch: Option<Instant<u64, 1, 1_000_000>>,
+    touched_key: Option<KeyboardKey>,
+    keyboard_keys: Vec<Vec<KeyboardKey>>,
+    key_set_index: usize,
+    init_rendered: bool,
 }
 
 impl Keyboard {
     pub fn new() -> Self {
-        Self { buffer: vec![] }
+        let buffer = vec!['1'];
+
+        // Keyboard setup
+        let keyboard_layout = [
+            ["acde", "fghj"],
+            ["klmn", "pqrs"],
+            ["tuvw", "xyz0"],
+            ["2345", "6789"],
+        ];
+        let mut keyboard_keys = Vec::new();
+
+        keyboard_layout.iter().for_each(|key_set| {
+            let mut keysvec = Vec::new();
+            key_set.iter().enumerate().for_each(|(i, row)| {
+                row.chars().enumerate().for_each(|(j, c)| {
+                    let key = KeyboardKey::new(
+                        Point::new(j as i32 * 60, (130 + (i as u32 + 1) * KEY_HEIGHT) as i32),
+                        Size::new(60, KEY_HEIGHT),
+                        KeyboardKeyType::Character(c),
+                    );
+                    keysvec.push(key);
+                })
+            });
+            keyboard_keys.push(keysvec);
+        });
+
+        Self {
+            buffer,
+            hrp: None,
+            last_touch: None,
+            touched_key: None,
+            keyboard_keys,
+            key_set_index: 0,
+            init_rendered: false,
+        }
+    }
+
+    pub fn get_entered_backup(&mut self) -> Option<SecretShare> {
+        match &self.hrp {
+            None => return None,
+            Some(hrp) => {
+                let mut backup_string = hrp.clone();
+                backup_string.push_str(&self.buffer.clone().into_iter().collect::<String>());
+                // TODO handle specific decode errors
+                match SecretShare::from_bech32_backup(&backup_string) {
+                    Ok(share_backup) => {
+                        self.reset_keyboard();
+                        Some(share_backup)
+                    }
+                    Err(_) => None,
+                }
+            }
+        }
+    }
+
+    pub fn reset_keyboard(&mut self) {
+        *self = Self::new();
     }
 
     pub fn clear_keyboard(&mut self, framebuf: &mut FrameBuf<Rgb565, &mut [Rgb565; 67200]>) {
@@ -125,11 +189,7 @@ impl Keyboard {
         }
     }
 
-    pub fn render_backup_input(
-        &mut self,
-        framebuf: &mut FrameBuf<Rgb565, &mut [Rgb565; 67200]>,
-        hrp: &str,
-    ) {
+    pub fn render_backup_input(&mut self, framebuf: &mut FrameBuf<Rgb565, &mut [Rgb565; 67200]>) {
         let mut y_offset = 0;
         let spacing_size = 20;
 
@@ -161,9 +221,9 @@ impl Keyboard {
                 });
 
         // Don't show the top line once the backup gets to a certain length, "pan" down
-        if chunked_backup.len() <= 4 * 3 {
+        if chunked_backup.len() <= 3 * 3 {
             Text::with_text_style(
-                hrp,
+                &self.hrp.clone().unwrap_or_default(),
                 Point::new((SCREEN_WIDTH / 2) as i32, HEADER_BUFFER as i32),
                 U8g2TextStyle::new(FONT_LARGE, Rgb565::WHITE),
                 TextStyleBuilder::new()
@@ -178,7 +238,7 @@ impl Keyboard {
         }
 
         // skip the first rows to only show the end 12 chunks
-        let rows_to_skip = if chunked_backup.len() <= 12 {
+        let rows_to_skip = if chunked_backup.len() <= 3 * 4 {
             0
         } else {
             (chunked_backup.len() - 1) / 3 - 3
@@ -201,10 +261,38 @@ impl Keyboard {
         }
     }
 
-    pub fn enter_backup<
-        'd,
-        T: timer::timg::Instance,
+    pub fn render_backup_keyboard<
         DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
+    >(
+        &mut self,
+        display: &mut Graphics<'_, DT>,
+        proposed_share_index: Option<u32>,
+    ) {
+        if self.hrp.is_none() {
+            self.hrp = Some(format!(
+                "frost[{}]",
+                proposed_share_index
+                    .map(|index| index.to_string())
+                    .unwrap_or("_".to_string())
+            ));
+        }
+
+        self.render_backup_input(&mut display.framebuf);
+        self.clear_keyboard(&mut display.framebuf);
+        self.keyboard_keys[self.key_set_index]
+            .clone()
+            .iter()
+            .for_each(|k| {
+                self.render_character_key(&mut display.framebuf, k, false);
+            });
+
+        if let Some(key) = &self.touched_key {
+            self.render_character_key(&mut display.framebuf, &key.clone(), true);
+        }
+    }
+
+    pub fn poll_input<
+        T: timer::timg::Instance,
         CommE,
         PinE,
         I2C: hal::i2c::I2c<Error = CommE>,
@@ -212,144 +300,86 @@ impl Keyboard {
         RST: hal::digital::StatefulOutputPin<Error = PinE>,
     >(
         &mut self,
-        display: &mut Graphics<'d, DT>,
         capsense: &mut CST816S<I2C, PINT, RST>,
-        timer: &'d Timer<T, Blocking>,
-        proposed_share_index: Option<u32>,
-    ) -> SecretShare {
-        let hrp_display_string = format!(
-            "frost[{}]",
-            proposed_share_index
-                .map(|index| index.to_string())
-                .unwrap_or("_".to_string())
-        );
-        self.buffer.push('1');
-
-        display.clear();
-        display.flush().unwrap();
-        self.render_backup_input(&mut display.framebuf, &hrp_display_string);
-
-        // Keyboard setup
-        let keyboard_keys = [
-            ["acde", "fghj"],
-            ["klmn", "pqrs"],
-            ["tuvw", "xyz0"],
-            ["2345", "6789"],
-        ];
-        let mut key_set_index = 0;
-        let mut kbkeys = Vec::new();
-
-        keyboard_keys.iter().for_each(|key_set| {
-            let mut keysvec = Vec::new();
-            key_set.iter().enumerate().for_each(|(i, row)| {
-                row.chars().enumerate().for_each(|(j, c)| {
-                    let key = KeyboardKey::new(
-                        Point::new(j as i32 * 60, (130 + (i as u32 + 1) * KEY_HEIGHT) as i32),
-                        Size::new(60, KEY_HEIGHT),
-                        KeyboardKeyType::Character(c),
-                    );
-                    keysvec.push(key);
-                })
-            });
-            kbkeys.push(keysvec);
-        });
-
-        kbkeys[key_set_index].iter().for_each(|k| {
-            self.render_character_key(&mut display.framebuf, k, false);
-        });
-        display.flush().unwrap();
-
-        let mut last_touch: Option<Instant<u64, 1, 1_000_000>> = None;
-        let mut touched_key: Option<&KeyboardKey> = None;
-
-        loop {
-            let pending_share_backup = self.buffer.clone().into_iter().collect::<String>();
-            if let Ok(share_backup) = SecretShare::from_bech32_backup(&pending_share_backup) {
-                return share_backup;
-            }
-
-            let now = timer::Timer::now(timer);
-            let mut is_pressed = || {
-                match capsense.read_one_touch_event(true) {
-                    None => match last_touch {
-                        None => false,
-                        Some(last_touch) => {
-                            now.checked_duration_since(last_touch).unwrap().to_millis() < 25
-                        }
-                    },
-                    Some(touch) => {
-                        // Gestures
-                        match (&touch.gesture, touch.action) {
-                            // Backspace
-                            (TouchGesture::SlideLeft, 1) => {
-                                if self.buffer.len() > 1 {
-                                    self.buffer.pop();
-                                    self.render_backup_input(
-                                        &mut display.framebuf,
-                                        &hrp_display_string,
-                                    );
-                                    display.flush().unwrap();
-                                }
-                                false
-                            }
-
-                            // Slide up/down to jog through 8-key groups
-                            (TouchGesture::SlideDown, 1) => {
-                                key_set_index = key_set_index.wrapping_sub(1);
-                                self.clear_keyboard(&mut display.framebuf);
-                                kbkeys[key_set_index % 4].iter().for_each(|k| {
-                                    self.render_character_key(&mut display.framebuf, k, false);
-                                });
-                                display.flush().unwrap();
-                                false
-                            }
-
-                            (TouchGesture::SlideUp, 1) => {
-                                key_set_index = key_set_index.wrapping_add(1);
-                                self.clear_keyboard(&mut display.framebuf);
-                                kbkeys[key_set_index % 4].iter().for_each(|k| {
-                                    self.render_character_key(&mut display.framebuf, k, false);
-                                });
-                                display.flush().unwrap();
-                                false
-                            }
-                            (TouchGesture::SingleClick, _) => {
-                                // Find the key being touched
-                                let touch_point = Point::new(touch.x, touch.y);
-                                if let Some(k) = kbkeys[key_set_index % 4]
-                                    .iter()
-                                    .find(|k| k.rectangle().contains(touch_point))
-                                {
-                                    if touched_key.is_none() {
-                                        if let KeyboardKeyType::Character(c) = k.label() {
-                                            self.buffer.push(*c);
-                                        }
-                                        // highlight touched key
-                                        self.render_character_key(&mut display.framebuf, k, true);
-                                        display.flush().unwrap();
-                                        touched_key = Some(k);
-                                    }
-                                    last_touch = Some(now);
-                                    true
-                                } else {
-                                    false
-                                }
-                            }
-                            _ => false,
+        timer: &'_ Timer<T, Blocking>,
+    ) -> bool {
+        let now = timer::Timer::now(timer);
+        let mut is_changes = {
+            match capsense.read_one_touch_event(true) {
+                None => match self.last_touch {
+                    None => false,
+                    Some(last_touch) => {
+                        if now.checked_duration_since(last_touch).unwrap().to_millis() < 25 {
+                            true
+                        } else {
+                            self.touched_key = None;
+                            self.last_touch = None;
+                            true
                         }
                     }
-                }
-            };
+                },
+                Some(touch) => {
+                    // Gestures
+                    match (&touch.gesture, touch.action) {
+                        // Backspace
+                        (TouchGesture::SlideLeft, 1) => {
+                            if self.buffer.len() > 1 {
+                                self.buffer.pop();
+                            }
+                            true
+                        }
+                        // Slide up/down to jog through 8-key groups
+                        (TouchGesture::SlideDown, 1) => {
+                            self.key_set_index = (self.key_set_index
+                                + (self.keyboard_keys.len() - 1))
+                                % self.keyboard_keys.len();
+                            true
+                        }
+                        (TouchGesture::SlideRight, 1) => {
+                            self.buffer =
+                                "162zh846g3zp67zh3mqvq7kfcahefpdpw2v09rjegtrakrw0hynyqfgwk2"
+                                    .chars()
+                                    .into_iter()
+                                    .collect();
+                            true
+                        }
 
-            if !is_pressed() {
-                if let Some(k) = touched_key {
-                    // finger lifted, un-highlight touched key border
-                    self.render_character_key(&mut display.framebuf, k, false);
-                    self.render_backup_input(&mut display.framebuf, &hrp_display_string);
-                    touched_key = None;
-                    display.flush().unwrap();
+                        (TouchGesture::SlideUp, 1) => {
+                            self.key_set_index =
+                                (self.key_set_index + 1) % self.keyboard_keys.len();
+                            true
+                        }
+                        (TouchGesture::SingleClick, _) => {
+                            // Find the key being touched
+                            let touch_point = Point::new(touch.x, touch.y);
+                            if let Some(k) = self.keyboard_keys[self.key_set_index]
+                                .clone()
+                                .iter()
+                                .find(|k| k.rectangle().contains(touch_point))
+                            {
+                                if self.touched_key.is_none() {
+                                    if let KeyboardKeyType::Character(c) = k.label() {
+                                        self.buffer.push(*c);
+                                    }
+                                }
+                                self.touched_key = Some(k.clone());
+                                self.last_touch = Some(now);
+                                true
+                            } else {
+                                true
+                            }
+                        }
+                        _ => false,
+                    }
                 }
             }
+        };
+
+        if !self.init_rendered {
+            is_changes = true;
+            self.init_rendered = true;
         }
+
+        is_changes
     }
 }

@@ -507,54 +507,69 @@ class BackupSettingsPage extends StatelessWidget {
                             context: context,
                             builder: (BuildContext context) {
                               return StreamBuilder(
-                                stream: shareRestoreStream,
-                                builder: (context, snapshot) {
-                                  return Column(
-                                    children: [
-                                      Text("Enter the backup on the device:"),
-                                      Divider(),
-                                      DeviceListWithIcons(
-                                        iconAssigner: (context, deviceId) {
-                                          if (deviceIdEquals(deviceId, id)) {
-                                            final label =
-                                                LabeledDeviceText(deviceName);
-                                            final Widget icon;
-                                            icon = Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: const [
-                                                Icon(Icons.edit_document,
-                                                    color: successColor),
-                                                SizedBox(width: 4),
-                                              ],
-                                            );
-                                            return (label, icon);
-                                          } else {
-                                            return (null, null);
-                                          }
-                                        },
-                                      ),
-                                      SizedBox(height: 24),
-                                      TextButton(
-                                        onPressed: () {
-                                          coord.cancelAll();
-                                          Navigator.of(context).pop();
-                                        },
-                                        child: Text(
-                                          'Cancel',
-                                          style: TextStyle(
-                                            color: Colors
-                                                .white, // Change this color to whatever your app uses
+                                  stream: shareRestoreStream,
+                                  builder: (context, snapshot) {
+                                    if (snapshot.hasData &&
+                                        snapshot.data?.outcome != null) {
+                                      return AlertDialog(
+                                          title: Text("Backup Check"),
+                                          content: Container(
+                                              width: Platform.isAndroid
+                                                  ? double.maxFinite
+                                                  : 400.0,
+                                              child: Align(
+                                                  alignment: Alignment.center,
+                                                  child: Column(
+                                                    children: [
+                                                      SizedBox(height: 20),
+                                                      Text(snapshot
+                                                          .data!.outcome!),
+                                                    ],
+                                                  ))));
+                                    } else {
+                                      return Column(children: [
+                                        Text("Enter the backup on the device"),
+                                        Divider(),
+                                        DeviceListWithIcons(
+                                          iconAssigner: (context, deviceId) {
+                                            if (deviceIdEquals(deviceId, id)) {
+                                              final label =
+                                                  LabeledDeviceText(deviceName);
+                                              final Widget icon = Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: const [
+                                                  Icon(Icons.edit,
+                                                      color: successColor),
+                                                  SizedBox(width: 4),
+                                                ],
+                                              );
+                                              return (label, icon);
+                                            } else {
+                                              return (null, null);
+                                            }
+                                          },
+                                        ),
+                                        SizedBox(height: 16),
+                                        TextButton(
+                                          onPressed: () {
+                                            coord.cancelAll();
+                                            Navigator.of(context).pop();
+                                          },
+                                          child: Text(
+                                            'Cancel',
+                                            style: TextStyle(
+                                              color:
+                                                  textColor, // Change this color to whatever your app uses
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                    ],
-                                  );
-                                },
-                              );
+                                      ]);
+                                    }
+                                  });
                             },
                           );
                           if (result == null) {
-                            coord.cancelProtocol();
+                            coord.cancelAll();
                           }
                         },
                         child: Text('Check Backup'),

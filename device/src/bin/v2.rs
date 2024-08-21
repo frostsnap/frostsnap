@@ -320,7 +320,9 @@ where
     RST: hal::digital::StatefulOutputPin<Error = PinE>,
 {
     fn render(&mut self) {
-        self.display.clear();
+        if !matches!(self.workflow, Workflow::RestoringShare { .. }) {
+            self.display.clear();
+        }
         self.display
             .header(self.device_name.as_deref().unwrap_or("New Device"));
 
@@ -446,7 +448,13 @@ where
                     .print(format!("{}: {}", self.timer.now(), string));
             }
             Workflow::DisplayBackup { backup } => self.display.show_backup(backup.clone()),
-            Workflow::RestoringShare { .. } => { /* keyboard takes over rendering  */ }
+            Workflow::RestoringShare {
+                proposed_share_index,
+                ..
+            } => {
+                self.keyboard
+                    .render_backup_keyboard(&mut self.display, *proposed_share_index);
+            }
         }
 
         if let Some(upstream_connection) = self.upstream_connection_state {
@@ -499,6 +507,10 @@ where
     }
 
     fn take_workflow(&mut self) -> Workflow {
+        // reset keyboard upon FrostyUi::cancel
+        if matches!(self.workflow, Workflow::RestoringShare { .. }) {
+            self.keyboard.reset_keyboard();
+        }
         core::mem::take(&mut self.workflow)
     }
 
@@ -573,16 +585,11 @@ where
                     }
                 }
             }
-            Workflow::RestoringShare {
-                proposed_share_index,
-            } => {
-                let share_backup = self.keyboard.enter_backup(
-                    &mut self.display,
-                    &mut self.capsense,
-                    self.timer,
-                    *proposed_share_index,
-                );
-                event = Some(UiEvent::EnteredShareBackup(share_backup));
+            Workflow::RestoringShare { .. } => {
+                self.changes = self.keyboard.poll_input(&mut self.capsense, self.timer);
+                if let Some(share_backup) = self.keyboard.get_entered_backup() {
+                    event = Some(UiEvent::EnteredShareBackup(share_backup));
+                };
             }
             _ => { /* no user actions to poll */ }
         }

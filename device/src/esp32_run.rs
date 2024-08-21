@@ -483,11 +483,13 @@ where
                         // special case where updrade will handle things from now on
                         switch_workflow = None;
                     }
-                    UiEvent::EnteredShareBackup(backup_str) => outbox.extend(
-                        signer
-                            .restore_share(backup_str)
-                            .expect("invalid state to restore share"),
-                    ),
+                    UiEvent::EnteredShareBackup(backup_str) => {
+                        outbox.extend(
+                            signer
+                                .restore_share(backup_str)
+                                .expect("invalid state to restore share"),
+                        );
+                    }
                 }
 
                 if let Some(switch_workflow) = switch_workflow {
