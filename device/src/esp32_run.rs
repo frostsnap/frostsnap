@@ -483,10 +483,13 @@ where
                         // special case where updrade will handle things from now on
                         switch_workflow = None;
                     }
-                    UiEvent::EnteredShareBackup(backup_str) => {
+                    UiEvent::EnteredShareBackup(share_backup) => outbox.push_back(
+                        DeviceSend::ToUser(DeviceToUserMessage::RestoringShareBackup(share_backup)),
+                    ),
+                    UiEvent::EnteredShareBackupConfirm(share_backup) => {
                         outbox.extend(
                             signer
-                                .restore_share(backup_str)
+                                .restore_share(share_backup)
                                 .expect("invalid state to restore share"),
                         );
                     }
@@ -576,6 +579,11 @@ where
                                 ui.set_workflow(ui::Workflow::RestoringShare {
                                     proposed_share_index,
                                 });
+                            }
+                            DeviceToUserMessage::RestoringShareBackup(share_backup) => {
+                                ui.set_workflow(ui::Workflow::UserPrompt(
+                                    ui::Prompt::ConfirmLoadBackup(share_backup),
+                                ));
                             }
                         };
                     }

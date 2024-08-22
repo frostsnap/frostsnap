@@ -62,20 +62,15 @@ impl UiProtocol for RestoreShareProtocol {
         &mut self,
         message: frostsnap_core::message::CoordinatorToUserMessage,
     ) {
-        if let CoordinatorToUserMessage::EnteredShareBackup {
-            device_id,
-            share_index: _share_index,
-            outcome,
-        } = message
-        {
+        if let CoordinatorToUserMessage::EnteredShareBackup { device_id, outcome } = message {
             if self.device_id == device_id {
                 self.sink.send(RestoreShareState {
                     outcome: Some(match outcome {
                         frostsnap_core::message::EnteredShareBackupOutcome::DoesntBelongToKey => {
-                            "DoesntBelongToKey".to_string()
+                            "Share backup does not belong to this key.".to_string()
                         }
                         frostsnap_core::message::EnteredShareBackupOutcome::ValidAtIndex => {
-                            "ValidAtIndex".to_string()
+                            "Share backup is valid and belongs to this key.".to_string()
                         }
                     }),
                     abort: false,

@@ -211,6 +211,9 @@ impl common::Env for TestEnv {
             DeviceToUserMessage::RestoreBackup { .. } => {
                 panic!("restoring backups untested")
             }
+            DeviceToUserMessage::RestoringShareBackup(_) => {
+                panic!("restoring backups untested")
+            }
         }
     }
 }

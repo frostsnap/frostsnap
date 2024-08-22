@@ -499,7 +499,7 @@ impl FrostSigner {
             .expect("secret share can not be zero");
 
         Ok(vec![DeviceSend::ToCoordinator(
-            DeviceToCoordinatorMessage::LoadedShareBackup {
+            DeviceToCoordinatorMessage::LoadingShareBackup {
                 share_index: share_backup.index,
                 share_image,
             },

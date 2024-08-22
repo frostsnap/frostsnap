@@ -24,7 +24,7 @@ use u8g2_fonts::U8g2TextStyle;
 
 const SCREEN_HEIGHT: u32 = 280;
 const SCREEN_WIDTH: u32 = 240;
-const HEADER_BUFFER: u32 = 40; // small padding since we don't show the header on the keyboard screen
+const HEADER_BUFFER: u32 = 40;
 const KEY_HEIGHT: u32 = 50;
 const BACKUP_LEFT_PADDING: u32 = 5;
 
@@ -75,6 +75,12 @@ pub struct Keyboard {
     init_rendered: bool,
 }
 
+#[derive(Debug, Clone)]
+pub enum EnteredBackupStatus {
+    Valid(SecretShare),
+    Invalid(String),
+}
+
 impl Keyboard {
     pub fn new() -> Self {
         let buffer = vec!['1'];
@@ -114,19 +120,23 @@ impl Keyboard {
         }
     }
 
-    pub fn get_entered_backup(&mut self) -> Option<SecretShare> {
+    pub fn entered_backup_validity(&mut self) -> Option<EnteredBackupStatus> {
+        let backup_input = self.buffer.clone().into_iter().collect::<String>();
+        if backup_input.len() < 59 {
+            return None;
+        }
+
         match &self.hrp {
             None => return None,
             Some(hrp) => {
                 let mut backup_string = hrp.clone();
-                backup_string.push_str(&self.buffer.clone().into_iter().collect::<String>());
-                // TODO handle specific decode errors
+                backup_string.push_str(&backup_input);
                 match SecretShare::from_bech32_backup(&backup_string) {
                     Ok(share_backup) => {
                         self.reset_keyboard();
-                        Some(share_backup)
+                        return Some(EnteredBackupStatus::Valid(share_backup));
                     }
-                    Err(_) => None,
+                    Err(_) => return Some(EnteredBackupStatus::Invalid(backup_string)),
                 }
             }
         }
@@ -193,6 +203,14 @@ impl Keyboard {
         let mut y_offset = 0;
         let spacing_size = 20;
 
+        let text_color = match self.entered_backup_validity() {
+            Some(validity) => match validity {
+                EnteredBackupStatus::Valid(_) => Rgb565::WHITE,
+                EnteredBackupStatus::Invalid(_) => Rgb565::RED,
+            },
+            None => Rgb565::WHITE,
+        };
+
         // clear area
         let rect = Rectangle::new(
             Point::new(0, HEADER_BUFFER as i32),
@@ -225,7 +243,7 @@ impl Keyboard {
             Text::with_text_style(
                 &self.hrp.clone().unwrap_or_default(),
                 Point::new((SCREEN_WIDTH / 2) as i32, HEADER_BUFFER as i32),
-                U8g2TextStyle::new(FONT_LARGE, Rgb565::WHITE),
+                U8g2TextStyle::new(FONT_LARGE, text_color),
                 TextStyleBuilder::new()
                     .alignment(Alignment::Center)
                     .baseline(embedded_graphics::text::Baseline::Top)
@@ -251,7 +269,7 @@ impl Keyboard {
                     BACKUP_LEFT_PADDING as i32,
                     (HEADER_BUFFER as i32) + y_offset,
                 ),
-                U8g2TextStyle::new(FONT_LARGE, Rgb565::WHITE),
+                U8g2TextStyle::new(FONT_LARGE, text_color),
                 embedded_graphics::text::Baseline::Top,
             )
             .draw(framebuf)
@@ -279,6 +297,7 @@ impl Keyboard {
 
         self.render_backup_input(&mut display.framebuf);
         self.clear_keyboard(&mut display.framebuf);
+
         self.keyboard_keys[self.key_set_index]
             .clone()
             .iter()
@@ -335,15 +354,15 @@ impl Keyboard {
                                 % self.keyboard_keys.len();
                             true
                         }
-                        (TouchGesture::SlideRight, 1) => {
-                            self.buffer =
-                                "162zh846g3zp67zh3mqvq7kfcahefpdpw2v09rjegtrakrw0hynyqfgwk2"
-                                    .chars()
-                                    .into_iter()
-                                    .collect();
-                            true
-                        }
-
+                        /* Useful for quick testing */
+                        // (TouchGesture::SlideRight, 1) => {
+                        //     self.buffer =
+                        //         "162zh846g3zp67zh3mqvq7kfcahefpdpw2v09rjegtrakrw0hynyqfgwk2"
+                        //             .chars()
+                        //             .into_iter()
+                        //             .collect();
+                        //     true
+                        // }
                         (TouchGesture::SlideUp, 1) => {
                             self.key_set_index =
                                 (self.key_set_index + 1) % self.keyboard_keys.len();

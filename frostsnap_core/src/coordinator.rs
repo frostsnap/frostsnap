@@ -383,7 +383,7 @@ impl FrostCoordinator {
             }
             (
                 Some(CoordinatorState::RestoringDeviceShare { key, device }),
-                DeviceToCoordinatorMessage::LoadedShareBackup {
+                DeviceToCoordinatorMessage::LoadingShareBackup {
                     share_index,
                     share_image,
                 },
@@ -398,7 +398,6 @@ impl FrostCoordinator {
                     return Ok(vec![CoordinatorSend::ToUser(
                         CoordinatorToUserMessage::EnteredShareBackup {
                             device_id: from,
-                            share_index,
                             outcome: EnteredShareBackupOutcome::DoesntBelongToKey,
                         },
                     )]);
@@ -432,7 +431,6 @@ impl FrostCoordinator {
                 Ok(vec![CoordinatorSend::ToUser(
                     CoordinatorToUserMessage::EnteredShareBackup {
                         device_id: from,
-                        share_index,
                         outcome: EnteredShareBackupOutcome::ValidAtIndex,
                     },
                 )])

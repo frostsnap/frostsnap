@@ -106,6 +106,7 @@ pub enum Prompt {
         firmware_digest: FirmwareDigest,
         size: u32,
     },
+    ConfirmLoadBackup(SecretShare),
 }
 
 #[derive(Clone, Debug)]
@@ -148,4 +149,5 @@ pub enum UiEvent {
         firmware_digest: FirmwareDigest,
     },
     EnteredShareBackup(SecretShare),
+    EnteredShareBackupConfirm(SecretShare),
 }

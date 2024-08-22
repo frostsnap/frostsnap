@@ -419,6 +419,9 @@ where
                     } => self
                         .display
                         .print(format!("confirm firmware switch to: \n{firmware_digest}")),
+                    Prompt::ConfirmLoadBackup(share_backup) => self
+                        .display
+                        .show_backup(share_backup.to_bech32_backup(), false),
                 }
                 self.display.button();
             }
@@ -447,14 +450,12 @@ where
                 self.display
                     .print(format!("{}: {}", self.timer.now(), string));
             }
-            Workflow::DisplayBackup { backup } => self.display.show_backup(backup.clone()),
+            Workflow::DisplayBackup { backup } => self.display.show_backup(backup.clone(), true),
             Workflow::RestoringShare {
                 proposed_share_index,
-                ..
-            } => {
-                self.keyboard
-                    .render_backup_keyboard(&mut self.display, *proposed_share_index);
-            }
+            } => self
+                .keyboard
+                .render_backup_keyboard(&mut self.display, *proposed_share_index),
         }
 
         if let Some(upstream_connection) = self.upstream_connection_state {
@@ -572,6 +573,9 @@ where
                                     firmware_digest: *firmware_digest,
                                     size: *size,
                                 },
+                                Prompt::ConfirmLoadBackup(secret_share) => {
+                                    UiEvent::EnteredShareBackupConfirm(secret_share.clone())
+                                }
                             };
                             event = Some(ui_event);
                         }
@@ -587,9 +591,13 @@ where
             }
             Workflow::RestoringShare { .. } => {
                 self.changes = self.keyboard.poll_input(&mut self.capsense, self.timer);
-                if let Some(share_backup) = self.keyboard.get_entered_backup() {
-                    event = Some(UiEvent::EnteredShareBackup(share_backup));
-                };
+                if let Some(backup_status) = self.keyboard.entered_backup_validity() {
+                    if let frostsnap_device::keyboard::EnteredBackupStatus::Valid(secret_share) =
+                        backup_status
+                    {
+                        event = Some(UiEvent::EnteredShareBackup(secret_share))
+                    }
+                }
             }
             _ => { /* no user actions to poll */ }
         }

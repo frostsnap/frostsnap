@@ -5,6 +5,7 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 use core::num::NonZeroU32;
 use schnorr_fun::binonce;
+use schnorr_fun::frost::SecretShare;
 use schnorr_fun::frost::{chilldkg::encpedpop, PartyIndex};
 use schnorr_fun::fun::prelude::*;
 use schnorr_fun::fun::{Point, Scalar};
@@ -128,7 +129,7 @@ pub enum DeviceToCoordinatorMessage {
         new_nonces: DeviceNonces,
     },
     DisplayBackupConfirmed,
-    LoadedShareBackup {
+    LoadingShareBackup {
         share_index: PartyIndex,
         share_image: Point,
     },
@@ -166,7 +167,7 @@ impl DeviceToCoordinatorMessage {
             KeyGenAck(_) => "KeyGenAck",
             SignatureShare { .. } => "SignatureShare",
             DisplayBackupConfirmed => "DisplayBackupConfirmed",
-            LoadedShareBackup { .. } => "LoadedShareBackup",
+            LoadingShareBackup { .. } => "LoadingShareBackup",
         }
     }
 }
@@ -180,7 +181,6 @@ pub enum CoordinatorToUserMessage {
     },
     EnteredShareBackup {
         device_id: DeviceId,
-        share_index: PartyIndex,
         outcome: EnteredShareBackupOutcome,
     },
 }
@@ -249,6 +249,7 @@ pub enum DeviceToUserMessage {
     RestoreBackup {
         proposed_share_index: Option<u32>,
     },
+    RestoringShareBackup(SecretShare),
 }
 
 #[derive(Clone, Debug)]

@@ -252,7 +252,7 @@ where
         .unwrap();
     }
 
-    pub fn show_backup(&mut self, str: alloc::string::String) {
+    pub fn show_backup(&mut self, str: alloc::string::String, show_hint: bool) {
         let mut body = self.body_no_horizontal_padding();
         let mut y_offset = 0;
         let vertical_spacing = 35;
@@ -271,16 +271,19 @@ where
                     chunk_vec
                 });
 
-        Text::with_alignment(
-            "Share backup:",
-            Point::new((body.size().width / 2) as i32, y_offset),
-            U8g2TextStyle::new(FONT_MED, COLORS.info),
-            Alignment::Center,
-        )
-        .draw(&mut body)
-        .unwrap();
-
-        y_offset += vertical_spacing;
+        if show_hint {
+            Text::with_alignment(
+                "Share backup:",
+                Point::new((body.size().width / 2) as i32, y_offset),
+                U8g2TextStyle::new(FONT_MED, COLORS.info),
+                Alignment::Center,
+            )
+            .draw(&mut body)
+            .unwrap();
+            y_offset += vertical_spacing;
+        } else {
+            y_offset += vertical_spacing / 2;
+        }
 
         Text::with_alignment(
             hrp,

@@ -507,27 +507,41 @@ class BackupSettingsPage extends StatelessWidget {
                             context: context,
                             builder: (BuildContext context) {
                               return StreamBuilder(
-                                  stream: shareRestoreStream,
-                                  builder: (context, snapshot) {
-                                    if (snapshot.hasData &&
-                                        snapshot.data?.outcome != null) {
-                                      return AlertDialog(
-                                          title: Text("Backup Check"),
-                                          content: Container(
-                                              width: Platform.isAndroid
-                                                  ? double.maxFinite
-                                                  : 400.0,
-                                              child: Align(
-                                                  alignment: Alignment.center,
-                                                  child: Column(
-                                                    children: [
-                                                      SizedBox(height: 20),
-                                                      Text(snapshot
-                                                          .data!.outcome!),
-                                                    ],
-                                                  ))));
-                                    } else {
-                                      return Column(children: [
+                                stream: shareRestoreStream,
+                                builder: (context, snapshot) {
+                                  if (snapshot.hasData &&
+                                      snapshot.data?.outcome != null) {
+                                    return AlertDialog(
+                                      title: Text("Backup Check"),
+                                      content: Container(
+                                          width: Platform.isAndroid
+                                              ? double.maxFinite
+                                              : 400.0,
+                                          child: Align(
+                                              alignment: Alignment.center,
+                                              child: Column(
+                                                children: [
+                                                  SizedBox(height: 20),
+                                                  Text(snapshot.data!.outcome!),
+                                                ],
+                                              ))),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () {
+                                            Navigator.of(context).pop();
+                                          },
+                                          child: Text(
+                                            'Done',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  } else {
+                                    return Column(
+                                      children: [
                                         Text("Enter the backup on the device"),
                                         Divider(),
                                         DeviceListWithIcons(
@@ -563,9 +577,11 @@ class BackupSettingsPage extends StatelessWidget {
                                             ),
                                           ),
                                         ),
-                                      ]);
-                                    }
-                                  });
+                                      ],
+                                    );
+                                  }
+                                },
+                              );
                             },
                           );
                           if (result == null) {
