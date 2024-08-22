@@ -204,7 +204,7 @@ Future<List<EncodedSignature>?> showSigningProgressDialog(
           description,
           Divider(),
           Text("Plug in each device"),
-          Expanded(child: DeviceSigningProgress(stream: stream)),
+          DeviceSigningProgress(stream: stream)
         ]);
       });
 }
@@ -255,6 +255,8 @@ class DeviceSigningProgress extends StatelessWidget {
                 final state = snapshot.data!;
                 final gotShares = deviceIdSet(state.gotShares);
                 return ListView.builder(
+                    physics: NeverScrollableScrollPhysics(),
+                    shrinkWrap: true,
                     itemCount: state.neededFrom.length,
                     itemBuilder: (context, index) {
                       final Widget icon;

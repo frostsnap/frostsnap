@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/animated_check.dart';
 import 'package:frostsnapp/bridge_definitions.dart';
+import 'package:frostsnapp/device.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_id_ext.dart';
 import 'package:frostsnapp/device_list.dart';
@@ -21,10 +22,9 @@ class DeviceSettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Device Settings')),
-      body: Center(
-        child: Padding(
-            padding: EdgeInsets.all(8.0),
-            child: DeviceListContainer(child: DeviceList())),
+      body: Padding(
+        padding: EdgeInsets.all(8.0),
+        child: DeviceList(scrollable: true),
       ),
     );
   }
@@ -115,39 +115,26 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                                       ? "Confirm on device to show backup"
                                       : "Record backup displayed on device screen. Press cancel when finished."),
                                   Divider(),
-                                  MaybeExpandedVertical(child:
-                                      DeviceListContainer(child:
-                                          DeviceListWithIcons(iconAssigner:
-                                              (context, deviceId) {
+                                  DeviceListWithIcons(
+                                      iconAssigner: (context, deviceId) {
                                     if (deviceIdEquals(deviceId, widget.id)) {
                                       final label = LabeledDeviceText(
                                           device_.name ?? "<unamed>");
                                       final Widget icon;
                                       if (snapshot.connectionState ==
                                           ConnectionState.waiting) {
-                                        icon = Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: const [
-                                              Icon(Icons.visibility,
-                                                  color: Colors.orange),
-                                              SizedBox(width: 4),
-                                              Text("Confirm"),
-                                            ]);
+                                        icon = ConfirmPrompt();
                                       } else {
-                                        icon = Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: const [
-                                              Icon(Icons.edit_document,
-                                                  color: Colors.green),
-                                              SizedBox(width: 4),
-                                              Text("Record backup"),
-                                            ]);
+                                        icon = DevicePrompt(
+                                            icon: Icon(Icons.edit_document,
+                                                color: Colors.green),
+                                            text: "Record");
                                       }
                                       return (label, icon);
                                     } else {
                                       return (null, null);
                                     }
-                                  })))
+                                  })
                                 ]);
                               });
                         },
@@ -367,8 +354,7 @@ class _FirmwareUpgradeDialogState extends State<FirmwareUpgradeDialog> {
           : Text(
               "Wait for upgrade to complete.\nDevices will restart once finished."),
       Divider(),
-      MaybeExpandedVertical(child: DeviceListContainer(
-          child: DeviceListWithIcons(iconAssigner: (context, deviceId) {
+      DeviceListWithIcons(iconAssigner: (context, deviceId) {
         Widget? icon;
 
         if (needUpgrade.contains(deviceId)) {
@@ -376,11 +362,7 @@ class _FirmwareUpgradeDialogState extends State<FirmwareUpgradeDialog> {
             if (confirmations.contains(deviceId)) {
               icon = AnimatedCheckCircle();
             } else {
-              icon = Row(mainAxisSize: MainAxisSize.min, children: const [
-                Icon(Icons.touch_app, color: Colors.orange),
-                SizedBox(width: 4),
-                Text("Confirm"),
-              ]);
+              icon = ConfirmPrompt();
             }
           } else {
             icon = Container(
@@ -395,7 +377,7 @@ class _FirmwareUpgradeDialogState extends State<FirmwareUpgradeDialog> {
         }
 
         return (null, icon);
-      }))),
+      })
     ]);
   }
 }

@@ -160,8 +160,7 @@ class DevicesPage extends StatelessWidget {
                   children: [
                     prompt,
                     SizedBox(height: 20),
-                    MaybeExpandedVertical(
-                        child: DeviceListContainer(child: DeviceList())),
+                    DeviceList(scrollable: true),
                     SizedBox(height: 20),
                     Align(
                         alignment: Alignment.center,
@@ -376,22 +375,23 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                       children: [
                     const Text("Waiting for devices to generate key",
                         style: TextStyle(fontSize: 20)),
-                    MaybeExpandedVertical(child: DeviceListContainer(
-                        child: DeviceListWithIcons(iconAssigner: (context, id) {
-                      if (devices.contains(id)) {
-                        final Widget icon;
-                        if (gotShares.contains(id)) {
-                          icon = AnimatedCheckCircle();
-                        } else {
-                          // the aspect ratio stops the circular progress indicator from stretching itself
-                          icon = const AspectRatio(
-                              aspectRatio: 1,
-                              child: CircularProgressIndicator());
-                        }
-                        return (null, icon);
-                      }
-                      return (null, null);
-                    }))),
+                    DeviceListWithIcons(
+                        scrollable: true,
+                        iconAssigner: (context, id) {
+                          if (devices.contains(id)) {
+                            final Widget icon;
+                            if (gotShares.contains(id)) {
+                              icon = AnimatedCheckCircle();
+                            } else {
+                              // the aspect ratio stops the circular progress indicator from stretching itself
+                              icon = const AspectRatio(
+                                  aspectRatio: 1,
+                                  child: CircularProgressIndicator());
+                            }
+                            return (null, icon);
+                          }
+                          return (null, null);
+                        })
                   ]));
             }));
   }
@@ -420,28 +420,27 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                 final devices = deviceIdSet(state.devices);
                 final acks = deviceIdSet(state.sessionAcks);
 
-                final deviceList = DeviceListContainer(
-                    child: DeviceListWithIcons(
-                        key: const Key("dialog-device-list"),
-                        iconAssigner: (context, id) {
-                          if (devices.contains(id)) {
-                            final Widget icon;
-                            if (acks.contains(id)) {
-                              icon = AnimatedCheckCircle();
-                            } else {
-                              icon = const Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.touch_app, color: Colors.orange),
-                                    SizedBox(width: 4),
-                                    Text("Confirm"),
-                                  ]);
-                            }
-                            return (null, icon);
-                          } else {
-                            return (null, null);
-                          }
-                        }));
+                final deviceList = DeviceListWithIcons(
+                    key: const Key("dialog-device-list"),
+                    iconAssigner: (context, id) {
+                      if (devices.contains(id)) {
+                        final Widget icon;
+                        if (acks.contains(id)) {
+                          icon = AnimatedCheckCircle();
+                        } else {
+                          icon = const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.touch_app, color: Colors.orange),
+                                SizedBox(width: 4),
+                                Text("Confirm"),
+                              ]);
+                        }
+                        return (null, icon);
+                      } else {
+                        return (null, null);
+                      }
+                    });
 
                 return Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -482,7 +481,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                           style:
                               TextStyle(decoration: TextDecoration.underline)),
                       Divider(),
-                      MaybeExpandedVertical(child: deviceList),
+                      deviceList
                     ]);
               });
         });
