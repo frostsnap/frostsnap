@@ -1355,7 +1355,7 @@ pub struct mirror_KeyGenState(KeyGenState);
 pub struct mirror_KeyId(KeyId);
 
 #[derive(Clone)]
-pub struct mirror_RestoreShareState(RestoreShareState);
+pub struct mirror_RestoreShareState(LoadShareState);
 
 #[derive(Clone)]
 pub struct mirror_SigningState(SigningState);
@@ -1399,7 +1399,7 @@ const _: fn() = || {
         let _: [u8; 33] = KeyId_.0;
     }
     {
-        let RestoreShareState = None::<RestoreShareState>.unwrap();
+        let RestoreShareState = None::<LoadShareState>.unwrap();
         let _: Option<String> = RestoreShareState.outcome;
         let _: bool = RestoreShareState.abort;
     }
@@ -1920,7 +1920,7 @@ impl support::IntoDart for mirror_RestoreShareState {
     }
 }
 impl support::IntoDartExceptPrimitive for mirror_RestoreShareState {}
-impl rust2dart::IntoIntoDart<mirror_RestoreShareState> for RestoreShareState {
+impl rust2dart::IntoIntoDart<mirror_RestoreShareState> for LoadShareState {
     fn into_into_dart(self) -> mirror_RestoreShareState {
         mirror_RestoreShareState(self)
     }

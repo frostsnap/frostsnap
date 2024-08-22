@@ -2,7 +2,7 @@ extern crate alloc;
 use core::fmt::Display;
 
 use crate::graphics::Graphics;
-use crate::graphics::{FONT_LARGE, FONT_MED};
+use crate::graphics::{FONT_LARGE, FONT_MED, PADDING_TOP};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use cst816s::TouchGesture;
@@ -22,9 +22,6 @@ use fugit::Instant;
 use mipidsi::error::Error;
 use u8g2_fonts::U8g2TextStyle;
 
-const SCREEN_HEIGHT: u32 = 280;
-const SCREEN_WIDTH: u32 = 240;
-const HEADER_BUFFER: u32 = 40;
 const KEY_HEIGHT: u32 = 50;
 const BACKUP_LEFT_PADDING: u32 = 5;
 
@@ -120,6 +117,10 @@ impl Keyboard {
         }
     }
 
+    pub fn reset_keyboard(&mut self) {
+        *self = Self::new();
+    }
+
     pub fn entered_backup_validity(&mut self) -> Option<EnteredBackupStatus> {
         let backup_input = self.buffer.clone().into_iter().collect::<String>();
         if backup_input.len() < 59 {
@@ -127,29 +128,25 @@ impl Keyboard {
         }
 
         match &self.hrp {
-            None => return None,
+            None => None,
             Some(hrp) => {
                 let mut backup_string = hrp.clone();
                 backup_string.push_str(&backup_input);
                 match SecretShare::from_bech32_backup(&backup_string) {
                     Ok(share_backup) => {
                         self.reset_keyboard();
-                        return Some(EnteredBackupStatus::Valid(share_backup));
+                        Some(EnteredBackupStatus::Valid(share_backup))
                     }
-                    Err(_) => return Some(EnteredBackupStatus::Invalid(backup_string)),
+                    Err(_) => Some(EnteredBackupStatus::Invalid(backup_string)),
                 }
             }
         }
     }
 
-    pub fn reset_keyboard(&mut self) {
-        *self = Self::new();
-    }
-
-    pub fn clear_keyboard(&mut self, framebuf: &mut FrameBuf<Rgb565, &mut [Rgb565; 67200]>) {
+    fn clear_keyboard(&mut self, framebuf: &mut FrameBuf<Rgb565, &mut [Rgb565; 67200]>) {
         Rectangle::new(
-            Point::new(0, (SCREEN_HEIGHT - 2 * KEY_HEIGHT) as i32),
-            Size::new(240, 2 * KEY_HEIGHT),
+            Point::new(0, (framebuf.height() as u32 - 2 * KEY_HEIGHT) as i32),
+            Size::new(framebuf.width() as u32, 2 * KEY_HEIGHT),
         )
         .into_styled(
             PrimitiveStyleBuilder::new()
@@ -160,7 +157,7 @@ impl Keyboard {
         .unwrap();
     }
 
-    pub fn render_character_key(
+    fn render_character_key(
         &mut self,
         framebuf: &mut FrameBuf<Rgb565, &mut [Rgb565; 67200]>,
         key: &KeyboardKey,
@@ -199,7 +196,7 @@ impl Keyboard {
         }
     }
 
-    pub fn render_backup_input(&mut self, framebuf: &mut FrameBuf<Rgb565, &mut [Rgb565; 67200]>) {
+    fn render_backup_input(&mut self, framebuf: &mut FrameBuf<Rgb565, &mut [Rgb565; 67200]>) {
         let mut y_offset = 0;
         let spacing_size = 20;
 
@@ -213,8 +210,11 @@ impl Keyboard {
 
         // clear area
         let rect = Rectangle::new(
-            Point::new(0, HEADER_BUFFER as i32),
-            Size::new(240, SCREEN_HEIGHT - HEADER_BUFFER - 2 * KEY_HEIGHT),
+            Point::new(0, PADDING_TOP as i32),
+            Size::new(
+                framebuf.width() as u32,
+                framebuf.height() as u32 - PADDING_TOP - 2 * KEY_HEIGHT,
+            ),
         );
         rect.into_styled(
             PrimitiveStyleBuilder::new()
@@ -242,7 +242,7 @@ impl Keyboard {
         if chunked_backup.len() <= 3 * 3 {
             Text::with_text_style(
                 &self.hrp.clone().unwrap_or_default(),
-                Point::new((SCREEN_WIDTH / 2) as i32, HEADER_BUFFER as i32),
+                Point::new((framebuf.width() / 2) as i32, PADDING_TOP as i32),
                 U8g2TextStyle::new(FONT_LARGE, text_color),
                 TextStyleBuilder::new()
                     .alignment(Alignment::Center)
@@ -265,10 +265,7 @@ impl Keyboard {
         for row_chunks in chunked_backup[(rows_to_skip * 3)..].chunks(3) {
             Text::with_baseline(
                 row_chunks.join(" ").as_ref(),
-                Point::new(
-                    BACKUP_LEFT_PADDING as i32,
-                    (HEADER_BUFFER as i32) + y_offset,
-                ),
+                Point::new(BACKUP_LEFT_PADDING as i32, (PADDING_TOP as i32) + y_offset),
                 U8g2TextStyle::new(FONT_LARGE, text_color),
                 embedded_graphics::text::Baseline::Top,
             )
@@ -354,12 +351,11 @@ impl Keyboard {
                                 % self.keyboard_keys.len();
                             true
                         }
-                        /* Useful for quick testing */
+                        // /* Useful for quick testing */
                         // (TouchGesture::SlideRight, 1) => {
                         //     self.buffer =
                         //         "162zh846g3zp67zh3mqvq7kfcahefpdpw2v09rjegtrakrw0hynyqfgwk2"
                         //             .chars()
-                        //             .into_iter()
                         //             .collect();
                         //     true
                         // }

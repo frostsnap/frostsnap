@@ -65,7 +65,7 @@ impl FrostSigner {
             SignerState::KeyGen { .. } | SignerState::KeyGenAck { .. } => TaskKind::KeyGen,
             SignerState::AwaitingSignAck { .. } => TaskKind::Sign,
             SignerState::DisplayBackup { .. } => TaskKind::DisplayBackup,
-            SignerState::LoadingBackup { .. } => TaskKind::RestoreBackup,
+            SignerState::LoadingBackup { .. } => TaskKind::LoadBackup,
         };
 
         Some(DeviceSend::ToUser(DeviceToUserMessage::Canceled { task }))
@@ -320,14 +320,10 @@ impl FrostSigner {
                     proposed_share_index,
                 },
             ) => {
-                self.action_state = Some(SignerState::LoadingBackup {
-                    pending_restoration: None,
-                });
-                Ok(vec![DeviceSend::ToUser(
-                    DeviceToUserMessage::RestoreBackup {
-                        proposed_share_index,
-                    },
-                )])
+                self.action_state = Some(SignerState::LoadingBackup);
+                Ok(vec![DeviceSend::ToUser(DeviceToUserMessage::EnterBackup {
+                    proposed_share_index,
+                })])
             }
             _ => Err(Error::signer_message_kind(&self.action_state, &message)),
         }
@@ -473,25 +469,18 @@ impl FrostSigner {
         }
     }
 
-    pub fn restore_share(
+    pub fn loaded_share_backup(
         &mut self,
         share_backup: SecretShare,
     ) -> Result<Vec<DeviceSend>, ActionError> {
-        if !matches!(
-            self.action_state,
-            Some(SignerState::LoadingBackup {
-                pending_restoration: None
-            })
-        ) {
+        if !matches!(self.action_state, Some(SignerState::LoadingBackup)) {
             return Err(ActionError::WrongState {
                 in_state: self.action_state_name(),
-                action: "restore_share",
+                action: "loaded_share_backup",
             });
         }
 
-        self.action_state = Some(SignerState::LoadingBackup {
-            pending_restoration: Some(share_backup),
-        });
+        self.action_state = None;
 
         let share_image = g!(share_backup.share * G)
             .normalize()
@@ -499,7 +488,7 @@ impl FrostSigner {
             .expect("secret share can not be zero");
 
         Ok(vec![DeviceSend::ToCoordinator(
-            DeviceToCoordinatorMessage::LoadingShareBackup {
+            DeviceToCoordinatorMessage::LoadedShareBackup {
                 share_index: share_backup.index,
                 share_image,
             },
@@ -544,9 +533,7 @@ pub enum SignerState {
         key_id: KeyId,
         awaiting_ack: bool,
     },
-    LoadingBackup {
-        pending_restoration: Option<SecretShare>,
-    },
+    LoadingBackup,
 }
 
 impl SignerState {

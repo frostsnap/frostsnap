@@ -129,7 +129,7 @@ pub enum DeviceToCoordinatorMessage {
         new_nonces: DeviceNonces,
     },
     DisplayBackupConfirmed,
-    LoadingShareBackup {
+    LoadedShareBackup {
         share_index: PartyIndex,
         share_image: Point,
     },
@@ -167,7 +167,7 @@ impl DeviceToCoordinatorMessage {
             KeyGenAck(_) => "KeyGenAck",
             SignatureShare { .. } => "SignatureShare",
             DisplayBackupConfirmed => "DisplayBackupConfirmed",
-            LoadingShareBackup { .. } => "LoadingShareBackup",
+            LoadedShareBackup { .. } => "LoadingShareBackup",
         }
     }
 }
@@ -179,14 +179,14 @@ pub enum CoordinatorToUserMessage {
     DisplayBackupConfirmed {
         device_id: DeviceId,
     },
-    EnteredShareBackup {
+    EnteredBackup {
         device_id: DeviceId,
-        outcome: EnteredShareBackupOutcome,
+        outcome: EnteredBackupOutcome,
     },
 }
 
 #[derive(Clone, Debug)]
-pub enum EnteredShareBackupOutcome {
+pub enum EnteredBackupOutcome {
     DoesntBelongToKey,
     ValidAtIndex,
 }
@@ -246,10 +246,10 @@ pub enum DeviceToUserMessage {
         key_id: KeyId,
         backup: String,
     },
-    RestoreBackup {
+    EnterBackup {
         proposed_share_index: Option<u32>,
     },
-    RestoringShareBackup(SecretShare),
+    EnteredBackup(SecretShare),
 }
 
 #[derive(Clone, Debug)]
@@ -257,7 +257,7 @@ pub enum TaskKind {
     KeyGen,
     Sign,
     DisplayBackup,
-    RestoreBackup,
+    LoadBackup,
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]

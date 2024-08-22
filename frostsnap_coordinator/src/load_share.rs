@@ -5,22 +5,22 @@ use frostsnap_core::{message::CoordinatorToUserMessage, DeviceId};
 
 use crate::{Completion, Sink, UiProtocol, UiToStorageMessage};
 
-pub struct RestoreShareProtocol {
-    state: RestoreShareState,
+pub struct LoadShareProtocol {
+    state: LoadShareState,
     device_id: DeviceId,
-    sink: Box<dyn Sink<RestoreShareState>>,
+    sink: Box<dyn Sink<LoadShareState>>,
 }
 
 #[derive(Clone, Debug)]
-pub struct RestoreShareState {
+pub struct LoadShareState {
     pub outcome: Option<String>,
     pub abort: bool,
 }
 
-impl RestoreShareProtocol {
-    pub fn new(device_id: DeviceId, sink: impl Sink<RestoreShareState> + 'static) -> Self {
+impl LoadShareProtocol {
+    pub fn new(device_id: DeviceId, sink: impl Sink<LoadShareState> + 'static) -> Self {
         Self {
-            state: RestoreShareState {
+            state: LoadShareState {
                 outcome: None,
                 abort: false,
             },
@@ -30,9 +30,9 @@ impl RestoreShareProtocol {
     }
 }
 
-impl UiProtocol for RestoreShareProtocol {
+impl UiProtocol for LoadShareProtocol {
     fn cancel(&mut self) {
-        self.sink.send(RestoreShareState {
+        self.sink.send(LoadShareState {
             outcome: None,
             abort: true,
         })
@@ -50,7 +50,7 @@ impl UiProtocol for RestoreShareProtocol {
 
     fn disconnected(&mut self, id: frostsnap_core::DeviceId) {
         if self.device_id == id {
-            self.state = RestoreShareState {
+            self.state = LoadShareState {
                 outcome: None,
                 abort: true,
             };
@@ -62,14 +62,14 @@ impl UiProtocol for RestoreShareProtocol {
         &mut self,
         message: frostsnap_core::message::CoordinatorToUserMessage,
     ) {
-        if let CoordinatorToUserMessage::EnteredShareBackup { device_id, outcome } = message {
+        if let CoordinatorToUserMessage::EnteredBackup { device_id, outcome } = message {
             if self.device_id == device_id {
-                self.sink.send(RestoreShareState {
+                self.sink.send(LoadShareState {
                     outcome: Some(match outcome {
-                        frostsnap_core::message::EnteredShareBackupOutcome::DoesntBelongToKey => {
+                        frostsnap_core::message::EnteredBackupOutcome::DoesntBelongToKey => {
                             "Share backup does not belong to this key.".to_string()
                         }
-                        frostsnap_core::message::EnteredShareBackupOutcome::ValidAtIndex => {
+                        frostsnap_core::message::EnteredBackupOutcome::ValidAtIndex => {
                             "Share backup is valid and belongs to this key.".to_string()
                         }
                     }),

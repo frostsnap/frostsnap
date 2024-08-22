@@ -320,7 +320,7 @@ where
     RST: hal::digital::StatefulOutputPin<Error = PinE>,
 {
     fn render(&mut self) {
-        if !matches!(self.workflow, Workflow::RestoringShare { .. }) {
+        if !matches!(self.workflow, Workflow::EnteringBackup { .. }) {
             self.display.clear();
         }
         self.display
@@ -451,7 +451,7 @@ where
                     .print(format!("{}: {}", self.timer.now(), string));
             }
             Workflow::DisplayBackup { backup } => self.display.show_backup(backup.clone(), true),
-            Workflow::RestoringShare {
+            Workflow::EnteringBackup {
                 proposed_share_index,
             } => self
                 .keyboard
@@ -509,7 +509,7 @@ where
 
     fn take_workflow(&mut self) -> Workflow {
         // reset keyboard upon FrostyUi::cancel
-        if matches!(self.workflow, Workflow::RestoringShare { .. }) {
+        if matches!(self.workflow, Workflow::EnteringBackup { .. }) {
             self.keyboard.reset_keyboard();
         }
         core::mem::take(&mut self.workflow)
@@ -574,7 +574,7 @@ where
                                     size: *size,
                                 },
                                 Prompt::ConfirmLoadBackup(secret_share) => {
-                                    UiEvent::EnteredShareBackupConfirm(secret_share.clone())
+                                    UiEvent::EnteredShareBackupConfirm(*secret_share)
                                 }
                             };
                             event = Some(ui_event);
@@ -589,14 +589,12 @@ where
                     }
                 }
             }
-            Workflow::RestoringShare { .. } => {
+            Workflow::EnteringBackup { .. } => {
                 self.changes = self.keyboard.poll_input(&mut self.capsense, self.timer);
-                if let Some(backup_status) = self.keyboard.entered_backup_validity() {
-                    if let frostsnap_device::keyboard::EnteredBackupStatus::Valid(secret_share) =
-                        backup_status
-                    {
-                        event = Some(UiEvent::EnteredShareBackup(secret_share))
-                    }
+                if let Some(frostsnap_device::keyboard::EnteredBackupStatus::Valid(secret_share)) =
+                    self.keyboard.entered_backup_validity()
+                {
+                    event = Some(UiEvent::EnteredShareBackup(secret_share))
                 }
             }
             _ => { /* no user actions to poll */ }

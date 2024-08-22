@@ -25,8 +25,8 @@ use mipidsi::error::Error;
 use palette::COLORS;
 use u8g2_fonts::{fonts, U8g2TextStyle};
 
-const PADDING_TOP: u32 = 40;
-const PADDING_LEFT: u32 = 10;
+pub const PADDING_TOP: u32 = 40;
+pub const PADDING_LEFT: u32 = 10;
 pub const FONT_LARGE: fonts::u8g2_font_profont29_mf = fonts::u8g2_font_profont29_mf;
 pub const FONT_MED: fonts::u8g2_font_profont22_mf = fonts::u8g2_font_profont22_mf;
 pub const FONT_SMALL: fonts::u8g2_font_profont17_mf = fonts::u8g2_font_profont17_mf;

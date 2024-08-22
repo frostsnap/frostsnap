@@ -484,12 +484,12 @@ where
                         switch_workflow = None;
                     }
                     UiEvent::EnteredShareBackup(share_backup) => outbox.push_back(
-                        DeviceSend::ToUser(DeviceToUserMessage::RestoringShareBackup(share_backup)),
+                        DeviceSend::ToUser(DeviceToUserMessage::EnteredBackup(share_backup)),
                     ),
                     UiEvent::EnteredShareBackupConfirm(share_backup) => {
                         outbox.extend(
                             signer
-                                .restore_share(share_backup)
+                                .loaded_share_backup(share_backup)
                                 .expect("invalid state to restore share"),
                         );
                     }
@@ -573,14 +573,14 @@ where
                             DeviceToUserMessage::DisplayBackup { key_id: _, backup } => {
                                 ui.set_workflow(ui::Workflow::DisplayBackup { backup });
                             }
-                            DeviceToUserMessage::RestoreBackup {
+                            DeviceToUserMessage::EnterBackup {
                                 proposed_share_index,
                             } => {
-                                ui.set_workflow(ui::Workflow::RestoringShare {
+                                ui.set_workflow(ui::Workflow::EnteringBackup {
                                     proposed_share_index,
                                 });
                             }
-                            DeviceToUserMessage::RestoringShareBackup(share_backup) => {
+                            DeviceToUserMessage::EnteredBackup(share_backup) => {
                                 ui.set_workflow(ui::Workflow::UserPrompt(
                                     ui::Prompt::ConfirmLoadBackup(share_backup),
                                 ));

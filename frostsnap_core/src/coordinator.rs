@@ -86,11 +86,6 @@ impl FrostCoordinator {
                 let device_nonces = self.device_nonces.entry(*device_id).or_default();
                 device_nonces.nonces.extend(new_nonces);
             }
-            UpdatedKey(updated_key) => {
-                self.keys
-                    .insert(updated_key.key_id(), updated_key.clone())
-                    .expect("key must have existed");
-            }
         }
     }
 
@@ -383,7 +378,7 @@ impl FrostCoordinator {
             }
             (
                 Some(CoordinatorState::RestoringDeviceShare { key, device }),
-                DeviceToCoordinatorMessage::LoadingShareBackup {
+                DeviceToCoordinatorMessage::LoadedShareBackup {
                     share_index,
                     share_image,
                 },
@@ -396,42 +391,17 @@ impl FrostCoordinator {
 
                 if expected != share_image {
                     return Ok(vec![CoordinatorSend::ToUser(
-                        CoordinatorToUserMessage::EnteredShareBackup {
+                        CoordinatorToUserMessage::EnteredBackup {
                             device_id: from,
-                            outcome: EnteredShareBackupOutcome::DoesntBelongToKey,
+                            outcome: EnteredBackupOutcome::DoesntBelongToKey,
                         },
                     )]);
                 }
 
-                if key
-                    .device_to_share_indicies()
-                    .values()
-                    .any(|&idx| idx == share_index)
-                {
-                    /* A share we already know about, let them test their backup but don't save */
-                    /* In the future we could prompt some replacement page */
-                } else {
-                    /* */
-                    let mut updated_device_to_share_index = key.device_to_share_indicies().clone();
-                    if updated_device_to_share_index
-                        .insert(from, share_index)
-                        .is_some()
-                    {
-                        panic!("devices can not yet hold multiple shares");
-                    }
-
-                    let updated_key = CoordinatorFrostKey::new(
-                        key.frost_key().into(),
-                        updated_device_to_share_index,
-                        key.key_name(),
-                    );
-                    self.mutate(Mutation::UpdatedKey(updated_key));
-                }
-
                 Ok(vec![CoordinatorSend::ToUser(
-                    CoordinatorToUserMessage::EnteredShareBackup {
+                    CoordinatorToUserMessage::EnteredBackup {
                         device_id: from,
-                        outcome: EnteredShareBackupOutcome::ValidAtIndex,
+                        outcome: EnteredBackupOutcome::ValidAtIndex,
                     },
                 )])
             }
@@ -725,7 +695,7 @@ impl FrostCoordinator {
         }])
     }
 
-    pub fn restore_device(
+    pub fn restore_share(
         &mut self,
         device_id: DeviceId,
         key_id: KeyId,
@@ -776,7 +746,7 @@ impl CoordinatorState {
             },
             CoordinatorState::Signing { .. } => "Signing",
             CoordinatorState::DisplayBackup => "DisplayBackup",
-            CoordinatorState::RestoringDeviceShare { .. } => "RestoringShare",
+            CoordinatorState::RestoringDeviceShare { .. } => "RestoringDeviceShare",
         }
     }
 }
@@ -1006,7 +976,6 @@ pub enum Mutation {
         device_id: DeviceId,
         new_nonces: Vec<Nonce>,
     },
-    UpdatedKey(CoordinatorFrostKey),
 }
 
 impl Gist for Mutation {
@@ -1017,7 +986,6 @@ impl Gist for Mutation {
             ResetNonces { .. } => "ResetNonces",
             NewNonces { .. } => "NewNonces",
             NewKey(_) => "NewKey",
-            UpdatedKey(_) => "UpdatedKey",
         }
         .into()
     }

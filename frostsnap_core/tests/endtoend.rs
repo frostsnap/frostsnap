@@ -97,7 +97,6 @@ impl common::Env for TestEnv {
                         .map(|(i, nonce)| ((device_id, start + i as u64), nonce)),
                 );
             }
-            UpdatedKey(_) => todo!(),
         }
     }
 
@@ -168,7 +167,7 @@ impl common::Env for TestEnv {
             CoordinatorToUserMessage::DisplayBackupConfirmed { device_id } => {
                 self.backup_confirmed_on_coordinator.insert(device_id);
             }
-            CoordinatorToUserMessage::EnteredShareBackup { .. } => {
+            CoordinatorToUserMessage::EnteredBackup { .. } => {
                 todo!()
             }
         }
@@ -208,10 +207,10 @@ impl common::Env for TestEnv {
             DeviceToUserMessage::Canceled { .. } => {
                 panic!("no cancelling done");
             }
-            DeviceToUserMessage::RestoreBackup { .. } => {
+            DeviceToUserMessage::EnterBackup { .. } => {
                 panic!("restoring backups untested")
             }
-            DeviceToUserMessage::RestoringShareBackup(_) => {
+            DeviceToUserMessage::EnteredBackup(_) => {
                 panic!("restoring backups untested")
             }
         }

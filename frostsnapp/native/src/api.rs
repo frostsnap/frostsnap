@@ -14,8 +14,7 @@ pub use frostsnap_coordinator::firmware_upgrade::FirmwareUpgradeConfirmState;
 pub use frostsnap_coordinator::frostsnap_core;
 use frostsnap_coordinator::frostsnap_core::schnorr_fun::fun::hash::HashAdd;
 pub use frostsnap_coordinator::{
-    keygen::KeyGenState, restore_share::RestoreShareState, signing::SigningState, DeviceChange,
-    PortDesc,
+    keygen::KeyGenState, load_share::LoadShareState, signing::SigningState, DeviceChange, PortDesc,
 };
 
 use frostsnap_coordinator::{DesktopSerial, UsbSerialManager};
@@ -827,7 +826,7 @@ impl Coordinator {
         &self,
         device_id: DeviceId,
         key_id: KeyId,
-        sink: StreamSink<RestoreShareState>,
+        sink: StreamSink<LoadShareState>,
     ) -> Result<()> {
         let key = self
             .0

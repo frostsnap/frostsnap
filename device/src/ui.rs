@@ -36,7 +36,7 @@ pub trait UserInteraction {
             | Workflow::DisplayBackup { .. }
             | Workflow::UserPrompt(_)
             | Workflow::BusyDoing(_)
-            | Workflow::RestoringShare { .. }
+            | Workflow::EnteringBackup { .. }
             | Workflow::WaitingFor(_) => Workflow::WaitingFor(WaitingFor::CoordinatorInstruction {
                 completed_task: None,
             }),
@@ -77,7 +77,7 @@ pub enum Workflow {
     DisplayBackup {
         backup: String,
     },
-    RestoringShare {
+    EnteringBackup {
         proposed_share_index: Option<u32>,
     },
 }
