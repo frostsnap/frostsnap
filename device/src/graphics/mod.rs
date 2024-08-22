@@ -1,4 +1,4 @@
-// 1.69 inch 240x280 ST7789+CST816S
+// For use with 1.69 inch 240x280 ST7789+CST816S
 
 mod palette;
 
