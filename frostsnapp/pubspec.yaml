@@ -51,6 +51,7 @@ dependencies:
   zxing2: ^0.2.3
   image: ^4.1.7
   pretty_qr_code: ^3.3.0
+  shared_preferences: ^2.0.8
 
 dev_dependencies:
   flutter_test:
@@ -105,3 +106,5 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/custom-fonts/#from-packages
+  assets:
+    - assets/frostsnap-logo-boxed.png

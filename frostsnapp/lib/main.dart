@@ -8,6 +8,7 @@ import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'dart:io';
 import 'package:flutter/rendering.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() async {
   // enable this if you're trying to figure out why things are displaying in
@@ -115,14 +116,87 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class MyHomePage extends StatelessWidget {
+class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key, required this.title});
   final String title;
 
   @override
+  _MyHomePageState createState() => _MyHomePageState();
+}
+
+class _MyHomePageState extends State<MyHomePage> {
+  @override
+  void initState() {
+    super.initState();
+    _checkFirstLoad();
+  }
+
+  Future<void> _checkFirstLoad() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    bool isFirstLoad = prefs.getBool('isFirstLoad') ?? true;
+
+    if (isFirstLoad) {
+      _showWelcomeDialog();
+      prefs.setBool('isFirstLoad', false);
+    }
+  }
+
+  void _showWelcomeDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        final screenWidth = MediaQuery.of(context).size.width;
+        const double maxLogoWidth = 300;
+        final double logoWidth =
+            screenWidth > 600 ? maxLogoWidth * 1.5 : maxLogoWidth;
+
+        return AlertDialog(
+          title: Text("Welcome"),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Image.asset(
+                  'assets/frostsnap-logo-boxed.png',
+                  width: logoWidth,
+                  fit: BoxFit.contain,
+                ),
+                SizedBox(height: 20),
+                Text(
+                  "Thanks for taking part in the future of Bitcoin self-custody.",
+                ),
+                SizedBox(height: 10),
+                Text(
+                  "You might like to run with Frostsnap as your daily onchain hot-wallet and see how you find it!",
+                ),
+                SizedBox(height: 10),
+                Text(
+                  "We'll be reaching out occasionally to learn of any pain-points you experience, features you desire, or ideas you have.",
+                ),
+                SizedBox(height: 10),
+                Text(
+                  "We encourage you to submit any feedback via the app, or feel free to contact us directly.",
+                ),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: Text("Close"),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(title: Text("Key List")),
+        appBar: AppBar(title: Text(widget.title)),
         body: Center(child: KeyListWithConfetti()));
   }
 }
