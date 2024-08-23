@@ -1529,6 +1529,7 @@ dependencies = [
  "frostsnap_coordinator",
  "image",
  "lazy_static",
+ "rand",
  "rusqlite",
  "sha2",
  "tracing",

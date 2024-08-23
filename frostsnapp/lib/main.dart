@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:frostsnapp/feedback.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/key_list.dart';
 import 'package:flutter/services.dart';
@@ -196,7 +197,23 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(title: Text(widget.title)),
+        appBar: AppBar(title: Text(widget.title), actions: [
+          PopupMenuButton<String>(
+            onSelected: (String result) {
+              if (result == 'feedback') {
+                Navigator.push(context, MaterialPageRoute(builder: (context) {
+                  return FeedbackPage();
+                }));
+              }
+            },
+            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+              const PopupMenuItem<String>(
+                value: 'feedback',
+                child: Text('Give Feedback'),
+              ),
+            ],
+          )
+        ]),
         body: Center(child: KeyListWithConfetti()));
   }
 }

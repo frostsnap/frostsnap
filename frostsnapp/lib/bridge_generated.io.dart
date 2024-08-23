@@ -1075,6 +1075,17 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _wire_polynomial_identifier = _wire_polynomial_identifierPtr
       .asFunction<WireSyncReturn Function(ffi.Pointer<wire_FrostKey>)>();
 
+  WireSyncReturn wire_random_secp_point_for_token() {
+    return _wire_random_secp_point_for_token();
+  }
+
+  late final _wire_random_secp_point_for_tokenPtr =
+      _lookup<ffi.NativeFunction<WireSyncReturn Function()>>(
+          'wire_random_secp_point_for_token');
+  late final _wire_random_secp_point_for_token =
+      _wire_random_secp_point_for_tokenPtr
+          .asFunction<WireSyncReturn Function()>();
+
   WireSyncReturn wire_txid__method__Transaction(
     ffi.Pointer<wire_Transaction> that,
   ) {

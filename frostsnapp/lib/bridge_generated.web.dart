@@ -544,6 +544,8 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* Uint8List */ wire_polynomial_identifier(
       List<dynamic> frost_key);
 
+  external dynamic /* String */ wire_random_secp_point_for_token();
+
   external dynamic /* String */ wire_txid__method__Transaction(
       List<dynamic> that);
 
@@ -863,6 +865,9 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
 
   dynamic /* Uint8List */ wire_polynomial_identifier(List<dynamic> frost_key) =>
       wasmModule.wire_polynomial_identifier(frost_key);
+
+  dynamic /* String */ wire_random_secp_point_for_token() =>
+      wasmModule.wire_random_secp_point_for_token();
 
   dynamic /* String */ wire_txid__method__Transaction(List<dynamic> that) =>
       wasmModule.wire_txid__method__Transaction(that);
