@@ -5,11 +5,11 @@ extern crate alloc;
 
 pub mod device_config;
 pub mod esp32_run;
+#[cfg(feature = "v2")]
+pub mod graphics;
 pub mod io;
 pub mod ota;
 pub mod panic;
-#[cfg(feature = "v2")]
-pub mod st7789;
 pub mod storage;
 pub mod ui;
 
