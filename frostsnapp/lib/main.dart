@@ -82,12 +82,16 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
         title: 'Frostsnapp',
         theme: ThemeData(
+            dividerTheme: const DividerThemeData(color: Colors.black12),
+            appBarTheme: AppBarTheme(
+                shadowColor: Colors.black,
+                elevation: 6.0,
+                surfaceTintColor: Colors.white),
             colorScheme: ColorScheme.fromSwatch(
               primarySwatch: Colors.blue,
               backgroundColor: Colors.white,
+              accentColor: Colors.blueAccent,
               errorColor: Colors.red,
-            ).copyWith(
-              secondary: Colors.blueAccent,
             ),
             textButtonTheme: TextButtonThemeData(
               style: TextButton.styleFrom(
