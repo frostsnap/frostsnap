@@ -343,14 +343,10 @@ where
                 WaitingFor::CoordinatorInstruction { completed_task: _ } => {
                     match &self.device_name {
                         Some(label) => {
-                            let mut body = String::new();
-                            body.push_str(&format!("NAME: {}\n", label));
-
-                            body.push_str("Ready..");
-                            self.display.print(body);
+                            self.display.ready_screen(label);
                         }
                         None => {
-                            self.display.print("Press 'New Device'");
+                            self.display.new_device();
                         }
                     };
                 }

@@ -1,7 +1,6 @@
 // For use with 1.69 inch 240x280 ST7789+CST816S
 
 mod palette;
-
 use crate::alloc::string::ToString;
 use crate::{DownstreamConnectionState, UpstreamConnectionState};
 use alloc::string::String;
@@ -9,7 +8,7 @@ use embedded_graphics::{
     draw_target::{Cropped, DrawTarget},
     geometry::{AnchorX, AnchorY},
     image::Image,
-    mono_font::{ascii::FONT_7X14, MonoTextStyle},
+    mono_font::{ascii, MonoTextStyle},
     pixelcolor::Rgb565,
     prelude::*,
     primitives::*,
@@ -244,7 +243,7 @@ where
         TextBox::with_textbox_style(
             &format!("{}/{}", used, free),
             Rectangle::new(point, size),
-            MonoTextStyle::new(&FONT_7X14, COLORS.success),
+            MonoTextStyle::new(&ascii::FONT_7X14, COLORS.success),
             TextBoxStyleBuilder::new()
                 .alignment(HorizontalAlignment::Left)
                 .build(),
@@ -347,6 +346,98 @@ where
         .draw(&mut body)
         .unwrap();
     }
+
+    pub fn new_device(&mut self) {
+        // Define the button's properties
+        let button_width = 140;
+        let button_height = 50i32;
+        let corner_radius = 5;
+        let button_color = Rgb565::new(0x04, 0x10, 0x0A);
+        let text_color = Rgb565::WHITE;
+
+        // Create a drawing target (like a display buffer)
+        let mut body = self.body();
+
+        // Draw the button background as a rounded rectangle
+        let button_background = RoundedRectangle::with_equal_corners(
+            Rectangle::with_center(
+                body.bounding_box().center(),
+                Size::new(button_width, button_height as u32),
+            ),
+            Size::new(corner_radius, corner_radius),
+        )
+        .into_styled(
+            PrimitiveStyleBuilder::new()
+                .fill_color(button_color)
+                .build(),
+        );
+
+        // Draw the button background on the display
+        button_background.draw(&mut body).unwrap();
+
+        // Define the text style
+        let text_style = MonoTextStyle::new(&ascii::FONT_10X20, text_color);
+
+        let mut text_pos = body.bounding_box().center();
+        text_pos.y += 5;
+        // Draw the centered text on the button
+        Text::with_alignment(
+            "New device",
+            text_pos, // Center point for the text
+            text_style,
+            Alignment::Center,
+        )
+        .draw(&mut body)
+        .unwrap();
+
+        // Draw instruction text above the button
+        let instruction_text = "Press in the app";
+        let instruction_text_style = U8g2TextStyle::new(FONT_MED, COLORS.primary);
+        let instruction_position = Point::new(body.bounding_box().center().x, text_pos.y - 90);
+        Text::with_alignment(
+            instruction_text,
+            instruction_position,
+            instruction_text_style,
+            Alignment::Center,
+        )
+        .draw(&mut body)
+        .unwrap();
+
+        // Draw an arrow pointing from the instruction text to the button
+        let arrow_start = instruction_position + Point::new(0, 15); // Start below the text
+        let arrow_end = body.bounding_box().center() - Point::new(0, button_height / 2 + 10); // End just above the button
+        Line::new(arrow_start, arrow_end)
+            .into_styled(PrimitiveStyle::with_stroke(Rgb565::WHITE, 4))
+            .draw(&mut body)
+            .unwrap();
+
+        // Draw the arrowhead pointing down
+        let arrow_head_left = arrow_end - Point::new(5, 5);
+        let arrow_head_right = arrow_end + Point::new(5, -5);
+        Line::new(arrow_end, arrow_head_left)
+            .into_styled(PrimitiveStyle::with_stroke(Rgb565::WHITE, 4))
+            .draw(&mut body)
+            .unwrap();
+        Line::new(arrow_end, arrow_head_right)
+            .into_styled(PrimitiveStyle::with_stroke(Rgb565::WHITE, 4))
+            .draw(&mut body)
+            .unwrap();
+    }
+
+    pub fn ready_screen(&mut self, name: &str) {
+        let mut body = self.body();
+        Text::with_alignment(
+            name,
+            Point::new(
+                (body.size().width / 2) as i32,
+                (body.size().height / 2) as i32,
+            ),
+            U8g2TextStyle::new(FONT_LARGE, COLORS.primary),
+            Alignment::Center,
+        )
+        .draw(&mut body)
+        .unwrap();
+    }
 }
 
 pub fn error_print<DT>(display: &mut DT, error: impl AsRef<str>)
@@ -363,7 +454,7 @@ where
         )
         .draw(display);
 
-    let header_charstyle = MonoTextStyle::new(&FONT_7X14, COLORS.primary);
+    let header_charstyle = MonoTextStyle::new(&ascii::FONT_7X14, COLORS.primary);
     let textbox_style = TextBoxStyleBuilder::new()
         .alignment(HorizontalAlignment::Center)
         .build();
@@ -394,7 +485,7 @@ where
     )
     .draw(display);
 
-    let character_style = MonoTextStyle::new(&FONT_7X14, COLORS.primary);
+    let character_style = MonoTextStyle::new(&ascii::FONT_7X14, COLORS.primary);
 
     let _ = TextBox::with_textbox_style(
         error.as_ref(),
