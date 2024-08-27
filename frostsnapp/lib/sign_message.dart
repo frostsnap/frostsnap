@@ -204,9 +204,12 @@ Future<List<EncodedSignature>?> showSigningProgressDialog(
       complete: finishedSigning,
       builder: (context) {
         return Column(children: [
-          description,
-          Divider(),
-          Text("Plug in each device"),
+          DialogHeader(
+              child: Column(children: [
+            description,
+            SizedBox(height: 10),
+            Text("plug in each device")
+          ])),
           DeviceSigningProgress(stream: stream)
         ]);
       });

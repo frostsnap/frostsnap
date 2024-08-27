@@ -35,52 +35,43 @@ Future<T?> showDeviceActionDialog<T>({
     backgroundColor: Colors.transparent,
     builder: (BuildContext dialogContext_) {
       dialogContext = dialogContext_;
-      return DraggableScrollableSheet(
-        initialChildSize: 0.9,
-        minChildSize: 0.9,
-        maxChildSize: 0.9,
-        builder: (BuildContext context, ScrollController scrollController) {
-          return Center(
-              child: Stack(
-            children: [
-              Container(
-                padding: EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: backgroundPrimaryColor,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: backgroundSecondaryColor,
-                      blurRadius: 10,
-                      offset: Offset(0, -2),
-                    ),
-                  ],
-                ),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                      maxWidth: 400.0,
-                      // you've got to make even an empty content have some
-                      // height otherwise WEIRD things happen.
-                      minHeight: MediaQuery.of(context).size.height * 0.9),
-                  child: SingleChildScrollView(
-                    controller: scrollController,
-                    child: builder(dialogContext_),
+      return Align(
+        alignment: Alignment.bottomCenter,
+        child: Stack(
+          children: [
+            Container(
+              padding: EdgeInsets.only(right: 24, left: 24, top: 3),
+              decoration: BoxDecoration(
+                color: backgroundPrimaryColor,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                boxShadow: [
+                  BoxShadow(
+                    color: backgroundSecondaryColor,
+                    blurRadius: 10,
+                    offset: Offset(0, -2),
                   ),
-                ),
+                ],
               ),
-              Positioned(
-                top: 10,
-                right: 10,
-                child: IconButton(
-                  icon: Icon(Icons.close),
-                  onPressed: () {
-                    Navigator.pop(context);
-                  },
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: 400.0,
+                  maxHeight: MediaQuery.of(context).size.height * 0.95,
                 ),
+                child: builder(dialogContext_),
               ),
-            ],
-          ));
-        },
+            ),
+            Positioned(
+              top: 10,
+              right: 10,
+              child: IconButton(
+                icon: Icon(Icons.close),
+                onPressed: () {
+                  Navigator.pop(context);
+                },
+              ),
+            ),
+          ],
+        ),
       );
     },
   );
@@ -109,4 +100,37 @@ void showErrorSnackbar(BuildContext context, String errorMessage) {
   );
 
   ScaffoldMessenger.of(context).showSnackBar(snackBar);
+}
+
+class DialogHeader extends StatelessWidget {
+  final Widget child; // Content of the header
+
+  const DialogHeader({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: Colors.white, // Background color of the header
+          border: Border(
+            bottom: BorderSide(
+              color: Colors.grey, // Color of the divider
+              width: 1.0, // Thickness of the divider
+            ),
+          ),
+        ),
+        padding: EdgeInsets.only(
+            top: 15.0,
+            bottom: 10.0,
+            left: 25.0,
+            right: 25.0), // Padding for the header
+        child: DefaultTextStyle(
+            style: TextStyle(
+              fontSize: 18.0, // Default text size
+              fontWeight: FontWeight.normal, // Default text weight
+              color: Colors.black, // Default text color
+            ), // The content passed to the header
+            child: Align(alignment: Alignment.topCenter, child: child)));
+  }
 }

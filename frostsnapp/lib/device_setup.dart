@@ -90,19 +90,23 @@ class _DeviceNameField extends State<DeviceNameField> {
                     await coord.sendCancel(id: widget.id);
                   },
                   builder: (context) {
-                    return Column(children: [
-                      Text("Confirm name '$name' on device"),
-                      Divider(),
-                      DeviceListWithIcons(iconAssigner: (context, deviceId) {
-                        if (deviceIdEquals(deviceId, widget.id)) {
-                          final label = LabeledDeviceText("'$name'?");
-                          final icon = ConfirmPrompt();
-                          return (label, icon);
-                        } else {
-                          return (null, null);
-                        }
-                      })
-                    ]);
+                    return Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          DialogHeader(
+                            child: Text("Confirm name '$name' on device"),
+                          ),
+                          Expanded(child: DeviceListWithIcons(
+                              iconAssigner: (context, deviceId) {
+                            if (deviceIdEquals(deviceId, widget.id)) {
+                              final label = LabeledDeviceText("'$name'?");
+                              final icon = ConfirmPrompt();
+                              return (label, icon);
+                            } else {
+                              return (null, null);
+                            }
+                          }))
+                        ]);
                   });
             },
             onChanged: (value) async {

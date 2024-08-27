@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:frostsnapp/animated_check.dart';
+import 'package:frostsnapp/device.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_id_ext.dart';
 import 'package:frostsnapp/device_list.dart';
@@ -107,63 +108,77 @@ class DevicesPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('Devices')),
-      body: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: StreamBuilder(
-              stream: deviceListSubject,
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) {
-                  return CircularProgressIndicator();
-                }
-                final devices = snapshot.data!.state.devices;
-                final Widget prompt;
+      body: StreamBuilder(
+          stream: deviceListSubject,
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return CircularProgressIndicator();
+            }
+            final devices = snapshot.data!.state.devices;
+            final Widget prompt;
 
-                final anyNeedUpgrade =
-                    devices.any((device) => device.needsFirmwareUpgrade());
+            final anyNeedUpgrade =
+                devices.any((device) => device.needsFirmwareUpgrade());
 
-                final anyNeedsName =
-                    devices.any((device) => device.name == null);
+            final anyNeedsName = devices.any((device) => device.name == null);
 
-                final allDevicesReady = !(anyNeedsName || anyNeedUpgrade);
-                final style = TextStyle(fontSize: 18);
+            final allDevicesReady = !(anyNeedsName || anyNeedUpgrade);
+            final style = TextStyle(fontSize: 16);
 
-                if (anyNeedUpgrade) {
-                  prompt = Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.warning, color: awaitingColor),
-                        SizedBox(width: 5.0),
-                        Text(
-                          "Some devices need their firmware upgraded before they can be used to generated a key",
-                          style: style,
-                          textAlign: TextAlign.center,
-                        )
-                      ]);
-                } else if (anyNeedsName) {
-                  prompt = Text("Set up each device before generating a key");
-                } else if (devices.isEmpty) {
-                  prompt = Text(
-                    "Insert the devices that will be part of ‘${keyName}’",
-                    style: style,
-                    textAlign: TextAlign.center,
-                  );
-                } else {
-                  prompt = Text(
-                    "These devices will be part of ‘${keyName}’",
-                    style: style,
-                    textAlign: TextAlign.center,
-                  );
-                }
+            if (anyNeedUpgrade) {
+              prompt =
+                  Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Icon(Icons.warning, color: awaitingColor),
+                SizedBox(width: 5.0),
+                Text(
+                  "Some devices need their firmware upgraded before they can be used to generated a key",
+                  style: style,
+                  softWrap: true,
+                  textAlign: TextAlign.center,
+                )
+              ]);
+            } else if (anyNeedsName) {
+              prompt = Text("Set up each device before generating a key",
+                  style: style);
+            } else if (devices.isEmpty) {
+              prompt = Text(
+                "Insert the devices that will be part of ‘${keyName}’",
+                style: style,
+                textAlign: TextAlign.center,
+              );
+            } else {
+              prompt = Text(
+                "These ${devices.length} devices will be part of ‘${keyName}’",
+                style: style,
+                textAlign: TextAlign.center,
+              );
+            }
 
-                return Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    prompt,
-                    SizedBox(height: 20),
-                    DeviceList(scrollable: true),
-                    SizedBox(height: 20),
-                    Align(
+            return Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(child: DeviceList()),
+                Container(
+                  // Wrap the bottom section in a Container with BoxDecoration
+                  decoration: BoxDecoration(
+                    color:
+                        Colors.white, // Background color for the bottom section
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2), // Shadow color
+                        spreadRadius: 1,
+                        blurRadius: 8,
+                        offset: Offset(0, 4), // Position of the shadow
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      SizedBox(height: 20),
+                      prompt,
+                      SizedBox(height: 20),
+                      Align(
                         alignment: Alignment.center,
                         child: ElevatedButton.icon(
                           onPressed: allDevicesReady
@@ -182,10 +197,15 @@ class DevicesPage extends StatelessWidget {
                               : null,
                           icon: Icon(Icons.arrow_forward),
                           label: Text('Next'),
-                        )),
-                  ],
-                );
-              })),
+                        ),
+                      ),
+                      SizedBox(height: 20),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          }),
     );
   }
 }
@@ -222,6 +242,7 @@ class _ThresholdPageState extends State<ThresholdPage> {
             Text(
               "How many devices will be needed to sign under this key?",
               style: TextStyle(fontSize: 18),
+              softWrap: true,
               textAlign: TextAlign.center,
             ),
             SizedBox(height: 20),
@@ -252,6 +273,7 @@ class _ThresholdPageState extends State<ThresholdPage> {
                   padding: const EdgeInsets.only(left: 8.0),
                   child: Text(
                     'of ${widget.selectedDevices.length} devices will be needed to sign',
+                    softWrap: true,
                     style: TextStyle(fontSize: 18),
                     textAlign: TextAlign.center,
                   ),
@@ -374,25 +396,25 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                   child: Column(
                       mainAxisAlignment: MainAxisAlignment.start,
                       children: [
+                    SizedBox(height: 20),
                     const Text("Waiting for devices to generate key",
                         style: TextStyle(fontSize: 20)),
-                    DeviceListWithIcons(
-                        scrollable: true,
-                        iconAssigner: (context, id) {
-                          if (devices.contains(id)) {
-                            final Widget icon;
-                            if (gotShares.contains(id)) {
-                              icon = AnimatedCheckCircle();
-                            } else {
-                              // the aspect ratio stops the circular progress indicator from stretching itself
-                              icon = const AspectRatio(
-                                  aspectRatio: 1,
-                                  child: CircularProgressIndicator());
-                            }
-                            return (null, icon);
-                          }
-                          return (null, null);
-                        })
+                    Expanded(
+                        child: DeviceListWithIcons(iconAssigner: (context, id) {
+                      if (devices.contains(id)) {
+                        final Widget icon;
+                        if (gotShares.contains(id)) {
+                          icon = AnimatedCheckCircle();
+                        } else {
+                          // the aspect ratio stops the circular progress indicator from stretching itself
+                          icon = const AspectRatio(
+                              aspectRatio: 1,
+                              child: CircularProgressIndicator());
+                        }
+                        return (null, icon);
+                      }
+                      return (null, null);
+                    }))
                   ]));
             }));
   }
@@ -429,13 +451,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                         if (acks.contains(id)) {
                           icon = AnimatedCheckCircle();
                         } else {
-                          icon = const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.touch_app, color: awaitingColor),
-                                SizedBox(width: 4),
-                                Text("Confirm"),
-                              ]);
+                          icon = ConfirmPrompt();
                         }
                         return (null, icon);
                       } else {
@@ -446,43 +462,45 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                 return Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text("Confirm all devices show:"),
-                      SizedBox(height: 10),
-                      Text(
-                        toSpacedHex(
-                            Uint8List.fromList(sessionHash.sublist(0, 4))),
-                        style: TextStyle(
-                          fontFamily: 'Courier',
-                          fontWeight: FontWeight.bold,
-                          fontSize: 25,
+                      DialogHeader(
+                          child: Column(children: [
+                        Text("Confirm all devices show:"),
+                        SizedBox(height: 10),
+                        Text(
+                          toSpacedHex(
+                              Uint8List.fromList(sessionHash.sublist(0, 4))),
+                          style: TextStyle(
+                            fontFamily: 'Courier',
+                            fontWeight: FontWeight.bold,
+                            fontSize: 25,
+                          ),
                         ),
-                      ),
-                      Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text('If they do not then '),
-                            TextButton(
-                              onPressed: () {
-                                coord.cancelProtocol();
-                              },
-                              style: TextButton.styleFrom(
-                                  tapTargetSize: MaterialTapTargetSize
-                                      .shrinkWrap, // Reduce button tap target size
-                                  backgroundColor: errorColor),
-                              child: Text(
-                                'cancel',
-                                style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: textColor),
+                        Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text('If they do not then '),
+                              TextButton(
+                                onPressed: () {
+                                  coord.cancelProtocol();
+                                },
+                                style: TextButton.styleFrom(
+                                    tapTargetSize: MaterialTapTargetSize
+                                        .shrinkWrap, // Reduce button tap target size
+                                    backgroundColor: errorColor),
+                                child: Text(
+                                  'cancel',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: textColor),
+                                ),
                               ),
-                            ),
-                            Text("."),
-                          ]),
-                      Text("Otherwise your securiy is at risk",
-                          style:
-                              TextStyle(decoration: TextDecoration.underline)),
-                      Divider(),
-                      deviceList
+                              Text("."),
+                            ]),
+                        Text("Otherwise your securiy is at risk",
+                            style: TextStyle(
+                                decoration: TextDecoration.underline)),
+                      ])),
+                      Expanded(child: deviceList)
                     ]);
               });
         });

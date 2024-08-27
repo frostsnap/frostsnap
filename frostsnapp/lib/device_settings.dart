@@ -22,10 +22,7 @@ class DeviceSettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Device Settings')),
-      body: Padding(
-        padding: EdgeInsets.all(8.0),
-        child: DeviceList(scrollable: true),
-      ),
+      body: DeviceList(),
     );
   }
 }
@@ -90,9 +87,9 @@ class _DeviceSettingsState extends State<DeviceSettings> {
               padding: const EdgeInsets.only(
                   bottom: 4.0), // Adjust the padding/margin here
               child: ListTile(
-                title: Row(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: [
+                  title: Row(
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      children: [
                     Column(children: [
                       Text(
                         keyName,
@@ -114,12 +111,13 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                                   future: confirmed,
                                   builder: (context, snapshot) {
                                     return Column(children: [
-                                      Text(snapshot.connectionState ==
-                                              ConnectionState.waiting
-                                          ? "Confirm on device to show backup"
-                                          : "Record backup displayed on device screen. Press cancel when finished."),
-                                      Divider(),
-                                      DeviceListWithIcons(
+                                      DialogHeader(
+                                          child: Text(snapshot
+                                                      .connectionState ==
+                                                  ConnectionState.waiting
+                                              ? "Confirm on device to show backup"
+                                              : "Record backup displayed on device screen. Press cancel when finished.")),
+                                      Expanded(child: DeviceListWithIcons(
                                           iconAssigner: (context, deviceId) {
                                         if (deviceIdEquals(
                                             deviceId, widget.id)) {
@@ -139,7 +137,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                                         } else {
                                           return (null, null);
                                         }
-                                      })
+                                      }))
                                     ]);
                                   });
                             },
@@ -149,9 +147,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                       },
                       child: Text("Backup"),
                     ),
-                  ],
-                ),
-              ));
+                  ])));
         },
       );
 
@@ -289,6 +285,9 @@ class FirmwareUpgradeDialog extends StatefulWidget {
   static void show(BuildContext context) {
     showDeviceActionDialog(
         context: context,
+        onCancel: () {
+          coord.cancelProtocol();
+        },
         builder: (context) {
           return FirmwareUpgradeDialog();
         });
@@ -350,14 +349,13 @@ class _FirmwareUpgradeDialogState extends State<FirmwareUpgradeDialog> {
     }
     final confirmations = deviceIdSet(state!.confirmations);
     final needUpgrade = deviceIdSet(state!.needUpgrade);
+    final text = progress == null
+        ? "Confirm upgrade on devices"
+        : "Wait for upgrade to complete";
 
     return Column(children: [
-      progress == null
-          ? Text("Confirm upgrade on devices")
-          : Text(
-              "Wait for upgrade to complete.\nDevices will restart once finished."),
-      Divider(),
-      DeviceListWithIcons(iconAssigner: (context, deviceId) {
+      DialogHeader(child: Text(text)),
+      Expanded(child: DeviceListWithIcons(iconAssigner: (context, deviceId) {
         Widget? icon;
 
         if (needUpgrade.contains(deviceId)) {
@@ -369,7 +367,7 @@ class _FirmwareUpgradeDialogState extends State<FirmwareUpgradeDialog> {
             }
           } else {
             icon = Container(
-                padding: EdgeInsets.symmetric(vertical: 5.0, horizontal: 30.0),
+                padding: EdgeInsets.symmetric(vertical: 5.0, horizontal: 5.0),
                 child: LinearProgressIndicator(
                   value: progress!,
                   backgroundColor: backgroundSecondaryColor,
@@ -380,7 +378,7 @@ class _FirmwareUpgradeDialogState extends State<FirmwareUpgradeDialog> {
         }
 
         return (null, icon);
-      })
+      }))
     ]);
   }
 }
