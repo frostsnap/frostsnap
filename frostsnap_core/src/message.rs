@@ -5,7 +5,7 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 use core::num::NonZeroU32;
 use schnorr_fun::binonce;
-use schnorr_fun::frost::{chilli_dkg::encpedpop, PartyIndex};
+use schnorr_fun::frost::{chilldkg::encpedpop, PartyIndex};
 use schnorr_fun::fun::prelude::*;
 use schnorr_fun::{binonce::Nonce, frost::PairedSecretShare, Signature};
 use sha2::digest::Update;

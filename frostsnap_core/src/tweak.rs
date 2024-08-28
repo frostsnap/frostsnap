@@ -352,12 +352,17 @@ mod test {
     use super::*;
     use alloc::vec::Vec;
     use bitcoin::secp256k1::Secp256k1;
-    use schnorr_fun::frost;
+    use schnorr_fun::frost::chilldkg::encpedpop;
 
     #[test]
     pub fn bip32_derivation_matches_rust_bitcoin() {
-        let frost = frost::new_with_deterministic_nonces::<sha2::Sha256>();
-        let (frost_key, _) = frost.simulate_keygen(3, 5, &mut rand::thread_rng());
+        let (frost_key, _) = encpedpop::simulate_keygen(
+            &schnorr_fun::new_with_deterministic_nonces::<sha2::Sha256>(),
+            3,
+            5,
+            5,
+            &mut rand::thread_rng(),
+        );
         let (app_key, chaincode) = frost_key.app_tweak_and_expand(AppTweakKind::Bitcoin);
 
         let mut app_xpub = Xpub::new(app_key, chaincode);

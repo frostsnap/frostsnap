@@ -12,7 +12,7 @@ use alloc::{
 };
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::binonce;
-use schnorr_fun::frost::chilli_dkg::encpedpop;
+use schnorr_fun::frost::chilldkg::encpedpop;
 use schnorr_fun::frost::{PairedSecretShare, PartyIndex};
 use schnorr_fun::fun::KeyPair;
 use schnorr_fun::{
@@ -151,7 +151,7 @@ impl FrostSigner {
                         )
                     })?;
 
-                let (input_state, keygen_input) = encpedpop::KeygenInputParty::gen_keygen_input(
+                let (input_state, keygen_input) = encpedpop::Contributor::gen_keygen_input(
                     &schnorr,
                     threshold as u32,
                     &share_receivers_enckeys,
@@ -198,7 +198,13 @@ impl FrostSigner {
                     &self.keypair,
                     &agg_input,
                 )
-                .map_err(|e| Error::signer_invalid_message(&message, e))?;
+                .map_err(|e| Error::signer_invalid_message(&message, e))
+                .and_then(|secret_share| {
+                    secret_share.non_zero().ok_or(Error::signer_invalid_message(
+                        &message,
+                        "keygen produced a zero shared key",
+                    ))
+                })?;
 
                 let session_hash = Sha256::default()
                     .chain(agg_input.cert_bytes())
@@ -462,7 +468,7 @@ impl FrostSigner {
 pub enum SignerState {
     KeyGen {
         device_to_share_index: BTreeMap<DeviceId, NonZeroU32>,
-        input_state: encpedpop::KeygenInputParty,
+        input_state: encpedpop::Contributor,
         threshold: u16,
         key_name: String,
     },

@@ -10,9 +10,7 @@ use alloc::{
 use core::num::NonZeroU32;
 use schnorr_fun::{
     frost::{
-        self,
-        chilli_dkg::encpedpop::{self, InputAggregator, KeygenInputParty},
-        CoordinatorSignSession, Frost, Nonce, PartyIndex, SharedKey,
+        self, chilldkg::encpedpop, CoordinatorSignSession, Frost, Nonce, PartyIndex, SharedKey,
     },
     fun::prelude::*,
     Schnorr, Signature,
@@ -427,14 +425,14 @@ impl FrostCoordinator {
                     .map(|(device, share_index)| (PartyIndex::from(*share_index), device.pubkey()))
                     .collect::<BTreeMap<_, _>>();
                 let schnorr = schnorr_fun::new_with_deterministic_nonces::<Sha256>();
-                let mut input_aggregator = InputAggregator::new(
+                let mut input_aggregator = encpedpop::Coordinator::new(
                     threshold.into(),
                     (devices.len() + 1) as u32,
                     &share_receivers_enckeys,
                 );
                 // We don't need to keep the _coordinator_inputter state since we are the one forming agg_input
                 //
-                let (_coordinator_inputter, input) = KeygenInputParty::gen_keygen_input(
+                let (_coordinator_inputter, input) = encpedpop::Contributor::gen_keygen_input(
                     &schnorr,
                     threshold.into(),
                     &share_receivers_enckeys,
@@ -752,7 +750,7 @@ impl SigningSessionState {
 #[derive(Clone, Debug)]
 pub enum KeyGenState {
     WaitingForResponses {
-        input_aggregator: encpedpop::InputAggregator,
+        input_aggregator: encpedpop::Coordinator,
         device_to_share_index: BTreeMap<DeviceId, core::num::NonZeroU32>,
         pending_key_name: String,
     },
