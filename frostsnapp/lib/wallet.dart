@@ -8,6 +8,7 @@ import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/psbt.dart';
 import 'package:frostsnapp/sign_message.dart';
 import 'package:frostsnapp/stream_ext.dart';
+import 'package:frostsnapp/theme.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
@@ -346,8 +347,8 @@ class _FloatingProgress extends State<FloatingProgress>
           duration: _progressFadeController.duration!,
           child: LinearProgressIndicator(
             value: progress,
-            backgroundColor: Colors.grey[200],
-            valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+            backgroundColor: backgroundSecondaryColor,
+            valueColor: AlwaysStoppedAnimation<Color>(textColor),
           ),
         ),
       ),
@@ -395,7 +396,7 @@ class TxList extends StatelessWidget {
                   transaction.netValue > 0
                       ? Icons.arrow_downward
                       : Icons.arrow_upward,
-                  color: transaction.netValue > 0 ? Colors.green : Colors.red,
+                  color: transaction.netValue > 0 ? successColor : errorColor,
                 ),
                 title: Row(
                   children: <Widget>[
@@ -497,25 +498,28 @@ class _WalletReceiveState extends State<WalletReceive> {
 
   Widget _buildAddressItem(Address address, Animation<double> animation) {
     return SizeTransition(
-      sizeFactor: animation,
-      child: Card(
-        color: address.used ? Colors.grey.shade300 : Colors.white,
-        child: ListTile(
-          title: Text(
-            '${address.index}: ${address.addressString}',
-            style: TextStyle(fontFamily: 'Monospace'),
+        sizeFactor: animation,
+        child: Padding(
+          padding: const EdgeInsets.only(
+              bottom: 4.0), // Adjust the padding/margin here
+          child: Card(
+            color: address.used ? textSecondaryColor : textColor,
+            child: ListTile(
+              title: Text(
+                '${address.index}: ${address.addressString}',
+                style: TextStyle(fontFamily: 'Monospace'),
+              ),
+              trailing: IconButton(
+                icon: Icon(Icons.copy),
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: address.addressString));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Address copied to clipboard')));
+                },
+              ),
+            ),
           ),
-          trailing: IconButton(
-            icon: Icon(Icons.copy),
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: address.addressString));
-              ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Address copied to clipboard')));
-            },
-          ),
-        ),
-      ),
-    );
+        ));
   }
 }
 
@@ -627,12 +631,15 @@ class _WalletSendState extends State<WalletSend> {
                         padding: const EdgeInsets.only(left: 10),
                         child: Text(
                           "ETA $_eta",
-                          style: TextStyle(color: Colors.grey),
+                          style: TextStyle(color: textSecondaryColor),
                         ),
                       ),
                     ],
                   ),
-                  Divider(height: 20.0, thickness: 2.0, color: Colors.grey),
+                  Divider(
+                      height: 20.0,
+                      thickness: 2.0,
+                      color: backgroundSecondaryColor),
                   Text(
                     'Select ${frostKey.threshold()} device${frostKey.threshold() > 1 ? "s" : ""} to sign with:',
                     textAlign: TextAlign.center,
@@ -791,8 +798,7 @@ Widget describeEffect(EffectOfTx effect) {
     final (dest, amount) = effect.foreignReceivingAddresses[0];
     description = RichText(
       text: TextSpan(
-        style:
-            TextStyle(color: Colors.black, fontSize: 16), // Default text style
+        style: TextStyle(color: textColor, fontSize: 16), // Default text style
         children: <TextSpan>[
           TextSpan(text: 'Sending '),
           TextSpan(
@@ -895,7 +901,7 @@ class NetValue extends StatelessWidget {
     return Text(
       formatSatoshi(netValue), // Display net value in BTC
       style: TextStyle(
-        color: netValue > 0 ? Colors.green : Colors.red,
+        color: netValue > 0 ? successColor : errorColor,
       ),
     );
   }

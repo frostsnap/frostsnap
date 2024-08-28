@@ -8,6 +8,7 @@ import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'dart:io';
 import 'package:flutter/rendering.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'theme.dart';
 
 void main() async {
   // enable this if you're trying to figure out why things are displaying in
@@ -81,38 +82,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
         title: 'Frostsnapp',
-        theme: ThemeData(
-            dividerTheme: const DividerThemeData(color: Colors.black12),
-            appBarTheme: AppBarTheme(
-                shadowColor: Colors.black,
-                elevation: 6.0,
-                surfaceTintColor: Colors.white),
-            colorScheme: ColorScheme.fromSwatch(
-              primarySwatch: Colors.blue,
-              backgroundColor: Colors.white,
-              accentColor: Colors.blueAccent,
-              errorColor: Colors.red,
-            ),
-            textButtonTheme: TextButtonThemeData(
-              style: TextButton.styleFrom(
-                  backgroundColor: Colors.blueAccent,
-                  foregroundColor: Colors.white),
-            ),
-            elevatedButtonTheme: ElevatedButtonThemeData(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
-                foregroundColor: Colors.white,
-              ),
-            ),
-            inputDecorationTheme: InputDecorationTheme(
-              border: OutlineInputBorder(), // Apply border globally
-              enabledBorder: OutlineInputBorder(
-                borderSide: BorderSide(color: Colors.grey),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderSide: BorderSide(color: Colors.blue),
-              ),
-            )),
+        theme: frostsnappTheme,
         home: startupError == null
             ? const MyHomePage(title: 'Frostsnapp')
             : StartupErrorWidget(error: startupError!),
@@ -155,7 +125,7 @@ class StartupErrorWidget extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 24.0,
                   fontWeight: FontWeight.bold,
-                  color: Colors.red,
+                  color: errorColor,
                 ),
               ),
               SizedBox(height: 8),
@@ -163,22 +133,22 @@ class StartupErrorWidget extends StatelessWidget {
                 'Please report this to the frostsnap team',
                 style: TextStyle(
                   fontSize: 16.0,
-                  color: Colors.black54,
+                  color: textColor,
                 ),
               ),
               SizedBox(height: 20),
               Container(
                 padding: EdgeInsets.all(8.0),
                 decoration: BoxDecoration(
-                  color: Colors.grey[200],
+                  color: textSecondaryColor,
                   borderRadius: BorderRadius.circular(4.0),
-                  border: Border.all(color: Colors.grey[400]!),
+                  border: Border.all(color: textSecondaryColor),
                 ),
                 child: SelectableText(
                   error,
                   style: TextStyle(
                     fontFamily: 'Courier', // Monospaced font
-                    color: Colors.black,
+                    color: textColor,
                   ),
                 ),
               ),

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'dart:io';
 import 'dart:async';
 
+import 'package:frostsnapp/theme.dart';
+
 Future<T?> showDeviceActionDialog<T>({
   required BuildContext context,
   required Widget Function(BuildContext) builder,
@@ -44,11 +46,11 @@ Future<T?> showDeviceActionDialog<T>({
               Container(
                 padding: EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: backgroundPrimaryColor,
                   borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black26,
+                      color: backgroundSecondaryColor,
                       blurRadius: 10,
                       offset: Offset(0, -2),
                     ),
@@ -98,11 +100,11 @@ void showErrorSnackbar(BuildContext context, String errorMessage) {
     content: Text(
       errorMessage,
       style: TextStyle(
-        color: Colors.white, // White text color
+        color: textColor,
         fontSize: 16.0,
       ),
     ),
-    backgroundColor: Colors.red, // Red background color
+    backgroundColor: errorColor,
     duration: Duration(seconds: 3), // Adjust the duration as needed
   );
 

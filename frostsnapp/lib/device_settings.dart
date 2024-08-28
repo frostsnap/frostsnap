@@ -11,7 +11,7 @@ import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/device_setup.dart';
 import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/hex.dart';
+import 'package:frostsnapp/theme.dart';
 
 class DeviceSettingsPage extends StatelessWidget {
   const DeviceSettingsPage({
@@ -74,7 +74,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
           child: Column(children: const [
         Text(
           'Waiting for device to reconnect',
-          style: TextStyle(color: Colors.grey, fontSize: 24.0),
+          style: TextStyle(color: uninterestedColor, fontSize: 24.0),
         ),
         CircularProgressIndicator(),
       ]));
@@ -86,74 +86,79 @@ class _DeviceSettingsState extends State<DeviceSettings> {
         itemBuilder: (context, index) {
           final keyId = deviceKeys[index];
           final keyName = coord.getKeyName(keyId: keyId)!;
-          return ListTile(
-            title: Row(
-              mainAxisAlignment: MainAxisAlignment.start,
-              children: [
-                Column(children: [
-                  Text(
-                    keyName,
-                    style: const TextStyle(fontSize: 20.0),
-                  ),
-                ]),
-                SizedBox(width: 10),
-                ElevatedButton(
-                  onPressed: () async {
-                    final confirmed =
-                        coord.displayBackup(id: widget.id, keyId: keyId).first;
+          return Padding(
+              padding: const EdgeInsets.only(
+                  bottom: 4.0), // Adjust the padding/margin here
+              child: ListTile(
+                title: Row(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  children: [
+                    Column(children: [
+                      Text(
+                        keyName,
+                        style: const TextStyle(fontSize: 20.0),
+                      ),
+                    ]),
+                    SizedBox(width: 10),
+                    ElevatedButton(
+                      onPressed: () async {
+                        final confirmed = coord
+                            .displayBackup(id: widget.id, keyId: keyId)
+                            .first;
 
-                    await showDeviceActionDialog(
-                        context: context,
-                        complete: _deviceRemoved.future,
-                        builder: (context) {
-                          return FutureBuilder(
-                              future: confirmed,
-                              builder: (context, snapshot) {
-                                return Column(children: [
-                                  Text(snapshot.connectionState ==
-                                          ConnectionState.waiting
-                                      ? "Confirm on device to show backup"
-                                      : "Record backup displayed on device screen. Press cancel when finished."),
-                                  Divider(),
-                                  DeviceListWithIcons(
-                                      iconAssigner: (context, deviceId) {
-                                    if (deviceIdEquals(deviceId, widget.id)) {
-                                      final label = LabeledDeviceText(
-                                          device_.name ?? "<unamed>");
-                                      final Widget icon;
-                                      if (snapshot.connectionState ==
-                                          ConnectionState.waiting) {
-                                        icon = ConfirmPrompt();
-                                      } else {
-                                        icon = DevicePrompt(
-                                            icon: Icon(Icons.edit_document,
-                                                color: Colors.green),
-                                            text: "Record");
-                                      }
-                                      return (label, icon);
-                                    } else {
-                                      return (null, null);
-                                    }
-                                  })
-                                ]);
-                              });
-                        },
-                        onCancel: () {
-                          coord.cancelProtocol();
-                        });
-                  },
-                  child: Text("Backup"),
+                        await showDeviceActionDialog(
+                            context: context,
+                            complete: _deviceRemoved.future,
+                            builder: (context) {
+                              return FutureBuilder(
+                                  future: confirmed,
+                                  builder: (context, snapshot) {
+                                    return Column(children: [
+                                      Text(snapshot.connectionState ==
+                                              ConnectionState.waiting
+                                          ? "Confirm on device to show backup"
+                                          : "Record backup displayed on device screen. Press cancel when finished."),
+                                      Divider(),
+                                      DeviceListWithIcons(
+                                          iconAssigner: (context, deviceId) {
+                                        if (deviceIdEquals(
+                                            deviceId, widget.id)) {
+                                          final label = LabeledDeviceText(
+                                              device_.name ?? "<unamed>");
+                                          final Widget icon;
+                                          if (snapshot.connectionState ==
+                                              ConnectionState.waiting) {
+                                            icon = ConfirmPrompt();
+                                          } else {
+                                            icon = DevicePrompt(
+                                                icon: Icon(Icons.edit_document,
+                                                    color: successColor),
+                                                text: "Record");
+                                          }
+                                          return (label, icon);
+                                        } else {
+                                          return (null, null);
+                                        }
+                                      })
+                                    ]);
+                                  });
+                            },
+                            onCancel: () {
+                              coord.cancelProtocol();
+                            });
+                      },
+                      child: Text("Backup"),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          );
+              ));
         },
       );
 
       if (deviceKeys.isEmpty) {
         keyList = Text(
           'No keys on this device',
-          style: TextStyle(color: Colors.grey, fontSize: 20.0),
+          style: TextStyle(color: uninterestedColor, fontSize: 20.0),
         );
       }
       final deviceFirmwareDigest = device_.firmwareDigest;
@@ -262,9 +267,7 @@ class SettingsSection extends StatelessWidget {
                   fontSize: 32,
                 ),
               ),
-              Divider(
-                  thickness: 2,
-                  color: Colors.black), // Adding a divider under the heading
+              Divider(thickness: 2, color: backgroundSecondaryColor),
               Padding(
                 padding: const EdgeInsets.only(top: 8.0, bottom: 16.0),
                 child: settings[index].$2,
@@ -369,9 +372,9 @@ class _FirmwareUpgradeDialogState extends State<FirmwareUpgradeDialog> {
                 padding: EdgeInsets.symmetric(vertical: 5.0, horizontal: 30.0),
                 child: LinearProgressIndicator(
                   value: progress!,
-                  backgroundColor: Colors.grey[200],
+                  backgroundColor: backgroundSecondaryColor,
                   minHeight: 10.0,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                  valueColor: AlwaysStoppedAnimation<Color>(textColor),
                 ));
           }
         }
