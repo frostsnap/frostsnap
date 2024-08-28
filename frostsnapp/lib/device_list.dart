@@ -168,10 +168,13 @@ class LabeledDeviceText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FittedBox(
-      fit: BoxFit.contain,
-      child: Text(name, style: TextStyle(fontWeight: FontWeight.bold)),
-    );
+    // put a SizedBox to keep the same height even if the FittedBox shrinks the width
+    return SizedBox(
+        height: 25.0,
+        child: FittedBox(
+          fit: BoxFit.contain,
+          child: Text(name, style: TextStyle(fontWeight: FontWeight.bold)),
+        ));
   }
 }
 
@@ -251,7 +254,7 @@ Widget buildInteractiveDevice(BuildContext context, ConnectedDevice device,
             return DeviceSetup(id: device.id);
           }));
         },
-        child: Text('New device'),
+        child: Text('New device', style: TextStyle(fontSize: 12.0)),
       );
     } else {
       interaction = IconButton(
@@ -277,8 +280,10 @@ Widget buildInteractiveDevice(BuildContext context, ConnectedDevice device,
             color: Colors.orange,
           ),
           SizedBox(height: 5.0),
-          Text("Upgrade firmware",
-              style: TextStyle(color: Colors.black, fontSize: 12.0)),
+          Text("Upgrade",
+              style: TextStyle(color: Colors.black, fontSize: 13.0)),
+          Text("Firmware",
+              style: TextStyle(color: Colors.black, fontSize: 13.0))
         ]);
   }
 
