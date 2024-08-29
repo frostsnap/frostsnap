@@ -3,7 +3,6 @@
 #[cfg(feature = "std")]
 #[macro_use]
 extern crate std;
-pub mod encrypted_share;
 mod key_id;
 mod macros;
 pub mod message;
@@ -11,6 +10,7 @@ pub mod nostr;
 pub mod tweak;
 
 use coordinator::CoordinatorState;
+use schnorr_fun::fun::Point;
 pub use sha2;
 mod sign_task;
 pub use sign_task::*;
@@ -32,11 +32,8 @@ extern crate alloc;
 
 use crate::message::*;
 use alloc::{string::String, string::ToString, vec::Vec};
-use schnorr_fun::fun::{Point, Tag};
 // rexport hex module so serialization impl macros work outside this crate
 pub use schnorr_fun::fun::hex;
-use sha2::digest::Digest;
-use sha2::Sha256;
 
 const NONCE_BATCH_SIZE: u64 = 10;
 
@@ -69,21 +66,17 @@ impl DeviceId {
         Self(point.to_bytes())
     }
 
-    pub fn pubkey(&self) -> Option<Point> {
-        Point::from_bytes(self.0)
+    pub fn pubkey(&self) -> Point {
+        // ⚠ if the device id is invalid we give it nullish public key.
+        // Honest device ids will never suffer this problem
+        let point = Point::from_bytes(self.0);
+        debug_assert!(point.is_some());
+        point.unwrap_or(schnorr_fun::fun::G.normalize())
     }
 
     pub fn as_bytes(&self) -> &[u8; 33] {
         &self.0
     }
-}
-
-pub fn gen_pop_message(device_ids: impl IntoIterator<Item = DeviceId>) -> [u8; 32] {
-    let mut hasher = Sha256::default().tag(b"frostsnap/pop");
-    for id in device_ids {
-        hasher.update(id.as_bytes());
-    }
-    hasher.finalize().into()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -1,15 +1,14 @@
 //! Tests for a malicious actions. A malicious coordinator, a malicious device or both.
+use common::DefaultTestEnv;
 use frostsnap_core::message::{
-    CoordinatorToDeviceMessage, DeviceToUserMessage, KeyGenResponse, SignRequest,
+    CoordinatorSend, CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage,
+    SignRequest,
 };
-use frostsnap_core::{coordinator::FrostCoordinator, DeviceId, FrostSigner, SignTask};
+use frostsnap_core::SignTask;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-use schnorr_fun::frost;
-use schnorr_fun::fun::{poly, Scalar};
-use std::collections::{BTreeMap, BTreeSet};
 
-use crate::common::{Env, Run, Send};
+use crate::common::{Run, Send};
 mod common;
 
 /// Models a coordinator maliciously replacing a public polynomial contribution and providing a
@@ -18,98 +17,82 @@ mod common;
 #[test]
 fn keygen_maliciously_replace_public_poly() {
     let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
-    let mut device = FrostSigner::new_random(&mut test_rng);
-    let devices = BTreeSet::from_iter([device.device_id()]);
-    let device_to_share_index: BTreeMap<_, _> = devices
+    let mut other_rng = ChaCha20Rng::from_seed([21u8; 32]);
+    let mut run = Run::generate(1, &mut test_rng);
+    let device_set = run.device_set();
+    let mut shadow_device = run.devices.values().next().unwrap().clone();
+
+    let keygen_init = run
+        .coordinator
+        .do_keygen(&device_set, 1, "test".into(), &mut test_rng)
+        .unwrap();
+    let do_keygen = keygen_init
+        .clone()
         .into_iter()
-        .enumerate()
-        .map(|(index, id)| (id, Scalar::from((index + 1) as u32).non_zero().unwrap()))
-        .collect();
-    let _ = device
-        .recv_coordinator_message(
-            CoordinatorToDeviceMessage::DoKeyGen {
-                device_to_share_index: device_to_share_index.clone(),
-                threshold: 1,
-                key_name: "test".into(),
-            },
-            &mut test_rng,
-        )
+        .find_map(|msg| match msg {
+            CoordinatorSend::ToDevice {
+                message: dokeygen @ CoordinatorToDeviceMessage::DoKeyGen { .. },
+                ..
+            } => Some(dokeygen),
+            _ => None,
+        })
         .unwrap();
 
-    let frost = frost::new_with_deterministic_nonces::<sha2::Sha256>();
-    let malicious_poly = poly::scalar::generate(1, &mut rand::thread_rng());
-    let provide_shares = KeyGenResponse::generate(
-        &frost,
-        &malicious_poly,
-        &device_to_share_index,
-        &mut rand::thread_rng(),
-    );
+    run.extend(keygen_init.clone());
 
-    let result = device.recv_coordinator_message(
-        CoordinatorToDeviceMessage::FinishKeyGen {
-            shares_provided: FromIterator::from_iter([(device.device_id(), provide_shares)]),
-        },
-        &mut test_rng,
-    );
-    assert!(matches!(
-        result,
-        Err(frostsnap_core::Error::InvalidMessage { .. })
-    ))
+    let result = run.run_until(&mut DefaultTestEnv, &mut test_rng, move |run| {
+        for send in run.message_stack.iter_mut() {
+            if let Send::DeviceToCoordinator {
+                from: _,
+                message: DeviceToCoordinatorMessage::KeyGenResponse(input),
+            } = send
+            {
+                // We replace the polynomial the coordinator actually receives with a different
+                // one generated with different randomness.
+                let wrong_messages = shadow_device
+                    .recv_coordinator_message(do_keygen.clone(), &mut other_rng)
+                    .unwrap();
+                let response = wrong_messages
+                    .into_iter()
+                    .find_map(|send| match send {
+                        DeviceSend::ToCoordinator(DeviceToCoordinatorMessage::KeyGenResponse(
+                            response,
+                        )) => Some(response),
+                        _ => None,
+                    })
+                    .unwrap();
+                *input = response;
+            }
+        }
+        run.message_stack.is_empty()
+    });
+
+    assert!(result.is_err());
 }
 
 /// Send different signing requests with the same nonces twice.
 /// The device should reject signing the second request.
 #[test]
 fn nonce_reuse() {
-    // just does enough to make progress
-    struct TestEnv;
-    impl Env for TestEnv {
-        fn user_react_to_device(
-            &mut self,
-            run: &mut Run,
-            from: DeviceId,
-            message: DeviceToUserMessage,
-        ) {
-            match message {
-                DeviceToUserMessage::CheckKeyGen { .. } => {
-                    let ack = run.device(from).keygen_ack().unwrap();
-                    run.extend_from_device(from, ack);
-                }
-                DeviceToUserMessage::SignatureRequest { .. } => {
-                    let sign_ack = run.device(from).sign_ack().unwrap();
-                    run.extend_from_device(from, sign_ack);
-                }
-                DeviceToUserMessage::DisplayBackupRequest { .. } => {}
-                DeviceToUserMessage::Canceled { .. } => {
-                    panic!("no cancelling done");
-                }
-                _ => { /* do nothing */ }
-            }
-        }
-    }
     let threshold = 1;
-    let coordinator = FrostCoordinator::new();
     let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
-
-    let device = FrostSigner::new_random(&mut test_rng);
-    let device_id = device.device_id();
-    let devices = FromIterator::from_iter([(device_id, device)]);
-    let device_set = BTreeSet::from_iter([device_id]);
-    let mut run = Run::new(coordinator, devices);
-
+    let mut run = Run::generate(1, &mut test_rng);
+    let device_set = run.device_set();
     // set up nonces for devices first
     for &device_id in &device_set {
         run.extend(run.coordinator.maybe_request_nonce_replenishment(device_id));
     }
-    run.run_until_finished(&mut TestEnv, &mut test_rng);
+    run.run_until_finished(&mut DefaultTestEnv, &mut test_rng)
+        .unwrap();
 
     let keygen_init = run
         .coordinator
-        .do_keygen(&device_set, threshold, "my key".to_string())
+        .do_keygen(&device_set, threshold, "my key".to_string(), &mut test_rng)
         .unwrap();
     run.extend(keygen_init);
 
-    run.run_until_finished(&mut TestEnv, &mut test_rng);
+    run.run_until_finished(&mut DefaultTestEnv, &mut test_rng)
+        .unwrap();
     let key_id = run.coordinator.iter_keys().next().unwrap().key_id();
     let task1 = SignTask::Plain {
         message: "utxo.club!".into(),
@@ -119,7 +102,8 @@ fn nonce_reuse() {
         .start_sign(key_id, task1, device_set)
         .unwrap();
     run.extend(sign_init);
-    run.run_until_finished(&mut TestEnv, &mut test_rng);
+    run.run_until_finished(&mut DefaultTestEnv, &mut test_rng)
+        .unwrap();
 
     let nonces = run
         .transcript
@@ -142,7 +126,10 @@ fn nonce_reuse() {
         },
     });
     let sign_request_result = run
-        .device(device_id)
+        .devices
+        .values_mut()
+        .next()
+        .unwrap()
         .recv_coordinator_message(new_sign_request, &mut test_rng);
 
     assert!(matches!(

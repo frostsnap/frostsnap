@@ -256,24 +256,6 @@ class NativeImpl implements Native {
         argNames: ["bytes"],
       );
 
-  Uint8List polynomialIdentifier({required FrostKey frostKey, dynamic hint}) {
-    var arg0 = _platform.api2wire_box_autoadd_frost_key(frostKey);
-    return _platform.executeSync(FlutterRustBridgeSyncTask(
-      callFfi: () => _platform.inner.wire_polynomial_identifier(arg0),
-      parseSuccessData: _wire2api_uint_8_list,
-      parseErrorData: null,
-      constMeta: kPolynomialIdentifierConstMeta,
-      argValues: [frostKey],
-      hint: hint,
-    ));
-  }
-
-  FlutterRustBridgeTaskConstMeta get kPolynomialIdentifierConstMeta =>
-      const FlutterRustBridgeTaskConstMeta(
-        debugName: "polynomial_identifier",
-        argNames: ["frostKey"],
-      );
-
   String txidMethodTransaction({required Transaction that, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_transaction(that);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
@@ -403,6 +385,27 @@ class NativeImpl implements Native {
         debugName: "devices__method__FrostKey",
         argNames: ["that"],
       );
+
+  Uint8List polynomialIdentifierMethodFrostKey(
+      {required FrostKey that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_frost_key(that);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () =>
+          _platform.inner.wire_polynomial_identifier__method__FrostKey(arg0),
+      parseSuccessData: _wire2api_uint_8_list,
+      parseErrorData: null,
+      constMeta: kPolynomialIdentifierMethodFrostKeyConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kPolynomialIdentifierMethodFrostKeyConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "polynomial_identifier__method__FrostKey",
+            argNames: ["that"],
+          );
 
   Future<void> satisfyMethodPortOpen(
       {required PortOpen that, String? err, dynamic hint}) {

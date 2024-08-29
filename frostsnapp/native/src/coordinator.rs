@@ -404,6 +404,7 @@ impl FfiCoordinator {
             currently_connected,
             threshold,
             key_name,
+            &mut rand::thread_rng(),
         );
 
         ui_protocol.emit_state();

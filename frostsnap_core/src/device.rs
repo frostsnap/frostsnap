@@ -1,31 +1,34 @@
+use core::num::NonZeroU32;
+
 use crate::{
-    gen_pop_message, message::*, ActionError, CheckedSignTask, Error, FrostKeyExt, MessageResult,
+    message::*, ActionError, CheckedSignTask, Error, FrostKeyExt, MessageResult, SessionHash,
     NONCE_BATCH_SIZE,
 };
 use crate::{DeviceId, KeyId};
-use alloc::collections::BTreeSet;
 use alloc::{
-    collections::BTreeMap,
-    string::{String, ToString},
+    collections::{BTreeMap, BTreeSet},
+    string::String,
     vec::Vec,
 };
-use core::iter;
 use rand_chacha::ChaCha20Rng;
-use schnorr_fun::frost::EncodedFrostKey;
-use schnorr_fun::fun::poly;
+use schnorr_fun::binonce;
+use schnorr_fun::frost::chilldkg::encpedpop;
+use schnorr_fun::frost::{PairedSecretShare, PartyIndex};
+use schnorr_fun::fun::KeyPair;
 use schnorr_fun::{
     binonce::{Nonce, NonceKeyPair},
     frost::{self},
-    fun::{derive_nonce_rng, marker::*, KeyPair, Point, Scalar, Tag},
+    fun::{derive_nonce_rng, prelude::*, Tag},
     nonce, Message,
 };
+use sha2::digest::{FixedOutput, Update};
 
 use sha2::Sha256;
 
 #[derive(Clone, Debug)]
 pub struct FrostSigner {
     keypair: KeyPair,
-    keys: BTreeMap<KeyId, FrostsnapSecretKey>,
+    secret_shares: BTreeMap<KeyId, PairedSecretShare>,
     action_state: Option<SignerState>,
     nonce_counter: u64,
 }
@@ -38,7 +41,7 @@ impl FrostSigner {
     pub fn new(keypair: KeyPair) -> Self {
         Self {
             keypair,
-            keys: Default::default(),
+            secret_shares: Default::default(),
             action_state: None,
             nonce_counter: 0,
         }
@@ -47,7 +50,7 @@ impl FrostSigner {
     pub fn apply_change(&mut self, change: DeviceToStorageMessage) {
         match change {
             DeviceToStorageMessage::SaveKey(key) => {
-                self.keys.insert(key.key_id(), key);
+                self.secret_shares.insert(key.key_id(), key);
             }
             DeviceToStorageMessage::ExpendNonce { nonce_counter } => {
                 self.nonce_counter = self.nonce_counter.max(nonce_counter);
@@ -75,7 +78,7 @@ impl FrostSigner {
     }
 
     pub fn keys(&self) -> BTreeSet<KeyId> {
-        self.keys.keys().cloned().collect()
+        self.secret_shares.keys().cloned().collect()
     }
 
     fn generate_nonces(
@@ -130,164 +133,99 @@ impl FrostSigner {
                 if !device_to_share_index.contains_key(&self.device_id()) {
                     return Ok(vec![]);
                 }
-                let frost = frost::new_with_deterministic_nonces::<Sha256>();
-                let scalar_poly = poly::scalar::generate(threshold as usize, rng);
+                let schnorr = schnorr_fun::new_with_deterministic_nonces::<Sha256>();
 
-                let encrypted_shares =
-                    KeyGenResponse::generate(&frost, &scalar_poly, &device_to_share_index, rng);
+                let share_receivers_enckeys = device_to_share_index
+                    .iter()
+                    .map(|(device, share_index)| (PartyIndex::from(*share_index), device.pubkey()))
+                    .collect::<BTreeMap<_, _>>();
+                let my_index = device_to_share_index
+                    .get(&self.device_id())
+                    .ok_or_else(|| {
+                        Error::signer_invalid_message(
+                            &message,
+                            format!(
+                                "my device id {} was not party of the keygen",
+                                self.device_id()
+                            ),
+                        )
+                    })?;
+
+                let (input_state, keygen_input) = encpedpop::Contributor::gen_keygen_input(
+                    &schnorr,
+                    threshold as u32,
+                    &share_receivers_enckeys,
+                    (*my_index).into(),
+                    rng,
+                );
 
                 self.action_state = Some(SignerState::KeyGen {
-                    scalar_poly,
+                    input_state,
                     device_to_share_index,
                     threshold,
                     key_name,
                 });
 
                 Ok(vec![DeviceSend::ToCoordinator(
-                    DeviceToCoordinatorMessage::KeyGenResponse(encrypted_shares),
+                    DeviceToCoordinatorMessage::KeyGenResponse(keygen_input),
                 )])
             }
             (
                 Some(SignerState::KeyGen {
                     device_to_share_index,
-                    scalar_poly,
+                    input_state,
                     key_name,
                     ..
                 }),
-                CoordinatorToDeviceMessage::FinishKeyGen {
-                    ref shares_provided,
-                },
+                CoordinatorToDeviceMessage::FinishKeyGen { agg_input },
             ) => {
                 let key_name = key_name.clone();
-                if let Some((device_id, _)) = device_to_share_index
-                    .iter()
-                    .find(|(device_id, _)| !shares_provided.contains_key(device_id))
-                {
-                    return Err(Error::signer_invalid_message(
-                        &message,
-                        format!("Missing shares from {}", device_id),
-                    ));
-                }
-                let frost = frost::new_with_deterministic_nonces::<Sha256>();
+                input_state
+                    .clone()
+                    .verify_agg_input(&agg_input)
+                    .map_err(|e| Error::signer_invalid_message(&message, e))?;
 
-                let point_polys: BTreeMap<_, _> = shares_provided
-                    .iter()
-                    .map(|(device_id, share)| {
-                        (
-                            *device_to_share_index
-                                .get(device_id)
-                                .expect("we checked we have shares"),
-                            share.my_poly.clone(),
-                        )
-                    })
-                    .collect();
-                // Confirm our point poly matches what we expect
+                let schnorr = schnorr_fun::new_with_deterministic_nonces::<Sha256>();
+                // Note we could just store my_index in our state. But we want to keep aroudn the
+                // keys of other devices for when we move to a certification based keygen.
                 let my_index = device_to_share_index
                     .get(&self.device_id())
-                    .expect("we must exist");
-                if point_polys
-                    .get(my_index)
-                    .expect("we have a point poly in this finish keygen")
-                    != &poly::scalar::to_point_poly(scalar_poly)
-                {
-                    return Err(Error::signer_invalid_message(
+                    .expect("already checked");
+
+                let secret_share = encpedpop::receive_share(
+                    &schnorr,
+                    (*my_index).into(),
+                    &self.keypair,
+                    &agg_input,
+                )
+                .map_err(|e| Error::signer_invalid_message(&message, e))
+                .and_then(|secret_share| {
+                    secret_share.non_zero().ok_or(Error::signer_invalid_message(
                         &message,
-                        "Coordinator told us we are using a different point poly than we expected"
-                            .to_string(),
-                    ));
-                }
+                        "keygen produced a zero shared key",
+                    ))
+                })?;
 
-                let transpose_shares = shares_provided
-                    .keys()
-                    .map(|device_id_receiver| {
-                        Ok((
-                            device_id_receiver,
-                            shares_provided
-                                .iter()
-                                .map(|(provider_id, share)| {
-                                    Ok((
-                                        *provider_id,
-                                        (
-                                            share
-                                                .encrypted_shares
-                                                .get(device_id_receiver)
-                                                .cloned()
-                                                .ok_or(Error::signer_invalid_message(
-                                                    &message,
-                                                    format!(
-                                                        "Missing shares for {}",
-                                                        device_id_receiver
-                                                    ),
-                                                ))?,
-                                            share.proof_of_possession.clone(),
-                                        ),
-                                    ))
-                                })
-                                .collect::<Result<BTreeMap<_, _>, _>>()?,
-                        ))
-                    })
-                    .collect::<Result<BTreeMap<_, _>, _>>()?;
-
-                let my_shares = transpose_shares
-                    .get(&self.device_id())
-                    .expect("this device is part of the keygen")
-                    .iter()
-                    .map(|(provider_id, (encrypted_secret_share, pop))| {
-                        (
-                            *device_to_share_index
-                                .get(provider_id)
-                                .expect("just checked shares exist"),
-                            (
-                                encrypted_secret_share.decrypt(self.keypair().secret_key()),
-                                pop.clone(),
-                            ),
-                        )
-                    })
-                    .collect::<BTreeMap<_, _>>();
-
-                let pop_message = gen_pop_message(device_to_share_index.keys().cloned());
-                let local_polys: BTreeMap<_, _> = iter::once((*my_index, scalar_poly)).collect();
-                let keygen = frost
-                    .new_keygen(point_polys, &local_polys)
-                    .map_err(|e| Error::signer_message_error(&message, e))?;
-
-                let (secret_share, frost_key) = frost
-                    .finish_keygen(
-                        keygen.clone(),
-                        *my_index,
-                        my_shares,
-                        Message::raw(&pop_message),
-                    )
-                    .map_err(|e| Error::signer_message_error(&message, e))?;
-
-                let session_hash = frost_key
-                    .clone()
-                    .into_xonly_key()
-                    .public_key()
-                    .to_xonly_bytes();
+                let session_hash = Sha256::default()
+                    .chain(agg_input.cert_bytes())
+                    .finalize_fixed()
+                    .into();
 
                 self.action_state = Some(SignerState::KeyGenAck {
-                    key: FrostsnapSecretKey {
-                        encoded_frost_key: frost_key.clone().into(),
-                        secret_share,
-                    },
+                    secret_share,
+                    session_hash,
                 });
 
                 Ok(vec![DeviceSend::ToUser(DeviceToUserMessage::CheckKeyGen {
-                    key_id: frost_key.key_id(),
+                    key_id: secret_share.public_key().key_id(),
                     session_hash,
                     key_name,
                 })])
             }
-            (
-                None,
-                CoordinatorToDeviceMessage::RequestSign(SignRequest {
-                    nonces,
-                    sign_task,
-                    key_id,
-                }),
-            ) => {
-                let key = self.keys.get(&key_id).ok_or_else(|| {
+            (None, CoordinatorToDeviceMessage::RequestSign(sign_req)) => {
+                let key_id = sign_req.key_id;
+                let nonces = sign_req.nonces.clone();
+                let key = self.secret_shares.get(&key_id).ok_or_else(|| {
                     Error::signer_invalid_message(
                         &message,
                         // we could instead send back a message saying we don't have this key but I
@@ -298,12 +236,14 @@ impl FrostSigner {
                     )
                 })?;
 
-                let checked_sign_task = sign_task
+                let checked_sign_task = sign_req
+                    .sign_task
+                    .clone()
                     .check(key.key_id())
                     .map_err(|e| Error::signer_invalid_message(&message, e))?;
 
                 let key_id = key.key_id();
-                let my_nonces = nonces.get(&key.secret_share.index).ok_or_else(|| {
+                let my_nonces = nonces.get(&key.index()).ok_or_else(|| {
                     Error::signer_invalid_message(
                         &message,
                         "this device was asked to sign but no nonces were provided",
@@ -337,10 +277,15 @@ impl FrostSigner {
                     ));
                 }
 
+                let agg_nonces = (0..n_signatures_requested).map(|i| sign_req.agg_nonce(i));
+
                 self.action_state = Some(SignerState::AwaitingSignAck {
                     key_id,
                     sign_task: checked_sign_task.clone(),
-                    session_nonces: nonces,
+                    agg_nonces: agg_nonces.collect(),
+                    parties: sign_req.parties().collect(),
+                    nonce_start_index: my_nonces.start,
+                    nonces_remaining: my_nonces.nonces_remaining,
                 });
                 Ok(vec![DeviceSend::ToUser(
                     DeviceToUserMessage::SignatureRequest {
@@ -350,10 +295,13 @@ impl FrostSigner {
                 )])
             }
             (None, CoordinatorToDeviceMessage::DisplayBackup { key_id }) => {
-                let _key = self.keys.get(&key_id).ok_or(Error::signer_invalid_message(
-                    &message,
-                    "signer doesn't have a share for this key",
-                ))?;
+                let _key = self
+                    .secret_shares
+                    .get(&key_id)
+                    .ok_or(Error::signer_invalid_message(
+                        &message,
+                        "signer doesn't have a share for this key",
+                    ))?;
 
                 self.action_state = Some(SignerState::DisplayBackup {
                     key_id,
@@ -370,23 +318,18 @@ impl FrostSigner {
 
     pub fn keygen_ack(&mut self) -> Result<Vec<DeviceSend>, ActionError> {
         match self.action_state.take() {
-            Some(SignerState::KeyGenAck { key }) => {
-                let frost_key = key.encoded_frost_key.into_frost_key();
-                let session_hash = frost_key
-                    .clone()
-                    .into_xonly_key()
-                    .public_key()
-                    .to_xonly_bytes();
-
-                self.keys.insert(key.key_id(), key.clone());
-                let backup = key.secret_share.to_bech32_backup();
-
+            Some(SignerState::KeyGenAck {
+                session_hash,
+                secret_share,
+            }) => {
+                self.secret_shares
+                    .insert(secret_share.key_id(), secret_share);
                 Ok(vec![
                     DeviceSend::ToCoordinator(DeviceToCoordinatorMessage::KeyGenAck(session_hash)),
-                    DeviceSend::ToStorage(DeviceToStorageMessage::SaveKey(key.clone())),
+                    DeviceSend::ToStorage(DeviceToStorageMessage::SaveKey(secret_share)),
                     DeviceSend::ToUser(DeviceToUserMessage::DisplayBackup {
-                        key_id: frost_key.key_id(),
-                        backup,
+                        key_id: secret_share.key_id(),
+                        backup: secret_share.secret_share().to_bech32_backup(),
                     }),
                 ])
             }
@@ -405,18 +348,17 @@ impl FrostSigner {
             Some(SignerState::AwaitingSignAck {
                 key_id,
                 sign_task,
-                session_nonces,
+                agg_nonces,
+                parties,
+                nonce_start_index,
+                nonces_remaining,
             }) => {
-                let key = self
-                    .keys
-                    .get(key_id)
-                    .ok_or(ActionError::StateInconsistent(format!(
-                        "key {key_id} no longer exists so can't sign"
-                    )))?;
-                let secret_share = &key.secret_share;
-                let my_session_nonces = session_nonces
-                    .get(&key.secret_share.index)
-                    .expect("already checked");
+                let secret_share =
+                    self.secret_shares
+                        .get(key_id)
+                        .ok_or(ActionError::StateInconsistent(format!(
+                            "key {key_id} no longer exists so can't sign"
+                        )))?;
 
                 let sign_items = sign_task.sign_items();
 
@@ -424,18 +366,15 @@ impl FrostSigner {
                     // ⚠ Update nonce counter. Overflow would allow nonce reuse.
                     //
                     // hacktuallly this doesn't prevent nonce reuse. You can still re-use the nonce at
-                    // u64::MAX.
+                    // u64::MAX. Leaving this bug in here intentionally to build test against later on.
                     //
-                    self.nonce_counter = my_session_nonces
-                        .start
-                        .saturating_add(sign_items.len() as u64);
+                    self.nonce_counter = nonce_start_index.saturating_add(sign_items.len() as u64);
 
                     // This calculates the index after the last nonce the coordinator had. This is
                     // where we want to start providing new nonces.
-                    let replenish_start = self.nonce_counter + my_session_nonces.nonces_remaining;
+                    let replenish_start = self.nonce_counter + *nonces_remaining;
                     // How many nonces we should give them from that point
-                    let replenish_amount =
-                        NONCE_BATCH_SIZE.saturating_sub(my_session_nonces.nonces_remaining);
+                    let replenish_amount = NONCE_BATCH_SIZE.saturating_sub(*nonces_remaining);
 
                     let replenish_nonces = self
                         .generate_nonces(replenish_start)
@@ -450,42 +389,24 @@ impl FrostSigner {
                 };
 
                 let secret_nonces = self
-                    .generate_nonces(my_session_nonces.start)
-                    .take(my_session_nonces.nonces.len());
+                    .generate_nonces(*nonce_start_index)
+                    .take(sign_items.len());
 
                 let frost = frost::new_without_nonce_generation::<Sha256>();
-                let share_index = key.secret_share.index;
-                let frost_key = key.encoded_frost_key.into_frost_key();
                 let mut signature_shares = vec![];
 
                 for (signature_index, (sign_item, secret_nonce)) in
                     sign_items.iter().zip(secret_nonces).enumerate()
                 {
-                    let nonces_at_index = session_nonces
-                        .iter()
-                        .map(|(signer_index, sign_req_nonces)| {
-                            (*signer_index, sign_req_nonces.nonces[signature_index])
-                        })
-                        .collect();
-
-                    let derived_xonly_key = sign_item.app_tweak.derive_xonly_key(&frost_key);
+                    let derived_xonly_key = sign_item.app_tweak.derive_xonly_key(secret_share);
                     let message = Message::raw(&sign_item.message[..]);
-                    let sign_session =
-                        frost.start_sign_session(&derived_xonly_key, nonces_at_index, message);
-
-                    let sig_share = frost.sign(
-                        &derived_xonly_key,
-                        &sign_session,
-                        secret_share,
-                        secret_nonce,
+                    let sign_session = frost.party_sign_session(
+                        derived_xonly_key.public_key(),
+                        parties.clone(),
+                        agg_nonces[signature_index],
+                        message,
                     );
-
-                    assert!(frost.verify_signature_share(
-                        &derived_xonly_key,
-                        &sign_session,
-                        share_index,
-                        sig_share,
-                    ));
+                    let sig_share = sign_session.sign(&derived_xonly_key, secret_nonce);
 
                     signature_shares.push(sig_share);
                 }
@@ -515,8 +436,8 @@ impl FrostSigner {
                 key_id,
                 awaiting_ack: true,
             }) => {
-                let key = self.keys.get(&key_id).expect("key must exist");
-                let backup = key.secret_share.to_bech32_backup();
+                let secret_share = self.secret_shares.get(&key_id).expect("key must exist");
+                let backup = secret_share.secret_share().to_bech32_backup();
 
                 self.action_state = Some(SignerState::DisplayBackup {
                     key_id,
@@ -546,18 +467,22 @@ impl FrostSigner {
 #[derive(Clone, Debug)]
 pub enum SignerState {
     KeyGen {
-        scalar_poly: Vec<Scalar>,
-        device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
+        device_to_share_index: BTreeMap<DeviceId, NonZeroU32>,
+        input_state: encpedpop::Contributor,
         threshold: u16,
         key_name: String,
     },
     KeyGenAck {
-        key: FrostsnapSecretKey,
+        secret_share: PairedSecretShare,
+        session_hash: SessionHash,
     },
     AwaitingSignAck {
         key_id: KeyId,
         sign_task: CheckedSignTask,
-        session_nonces: BTreeMap<Scalar<Public, NonZero>, SignRequestNonces>,
+        agg_nonces: Vec<binonce::Nonce<Zero>>,
+        parties: BTreeSet<PartyIndex>,
+        nonce_start_index: u64,
+        nonces_remaining: u64,
     },
     DisplayBackup {
         key_id: KeyId,
@@ -573,23 +498,5 @@ impl SignerState {
             SignerState::AwaitingSignAck { .. } => "AwaitingSignAck",
             SignerState::DisplayBackup { .. } => "DisplayBackup",
         }
-    }
-}
-
-#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
-pub struct FrostsnapSecretKey {
-    /// The joint key
-    pub encoded_frost_key: EncodedFrostKey,
-    /// Our secret share of it
-    pub secret_share: frost::SecretShare,
-}
-
-impl FrostsnapSecretKey {
-    pub fn key_id(&self) -> KeyId {
-        self.encoded_frost_key.into_frost_key().key_id()
-    }
-
-    pub fn public_key(&self) -> Point {
-        self.encoded_frost_key.into_frost_key().public_key()
     }
 }

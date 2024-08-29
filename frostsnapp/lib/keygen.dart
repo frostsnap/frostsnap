@@ -489,7 +489,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
 
   Future<void> showBackupDialogue({required KeyId keyId}) async {
     final frostKey = coord.getKey(keyId: keyId)!;
-    final polynomialIdentifier = api.polynomialIdentifier(frostKey: frostKey);
+    final polynomialIdentifier = frostKey.polynomialIdentifier();
 
     return showDialog(
       context: context,

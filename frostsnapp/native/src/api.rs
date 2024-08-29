@@ -154,6 +154,14 @@ impl FrostKey {
     pub fn devices(&self) -> SyncReturn<Vec<DeviceId>> {
         SyncReturn(self.0.devices().collect())
     }
+
+    /// Create an identifier that's used to determine compatibility of shamir secret shares.
+    /// The first 4 bech32 chars from a hash of the polynomial coefficients.
+    /// Collision expected once in (32)^4 = 2^20.
+    pub fn polynomial_identifier(&self) -> SyncReturn<Vec<u8>> {
+        let hash = sha2::Sha256::default().add(self.0.frost_key().point_polynomial());
+        SyncReturn(hash.finalize()[0..4].to_vec())
+    }
 }
 
 #[frb(mirror(PortDesc))]
@@ -1077,13 +1085,4 @@ impl QrEncoder {
     pub fn next(&self) -> SyncReturn<String> {
         SyncReturn(self.0.next().to_uppercase())
     }
-}
-
-/// Create an identifier that's used to determine compatibility of shamir secret shares.
-/// The first 4 bech32 chars from a hash of the polynomial coefficients.
-/// Collision expected once in (32)^4 = 2^20.
-pub fn polynomial_identifier(frost_key: FrostKey) -> SyncReturn<Vec<u8>> {
-    let poly = frost_key.0.frost_key().point_polynomial();
-    let hash = sha2::Sha256::default();
-    SyncReturn(hash.add(&poly[..]).finalize()[0..4].to_vec())
 }

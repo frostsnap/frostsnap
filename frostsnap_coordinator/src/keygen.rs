@@ -24,6 +24,7 @@ impl KeyGen {
         currently_connected: BTreeSet<DeviceId>,
         threshold: u16,
         key_name: String,
+        rng: &mut impl rand_core::RngCore,
     ) -> Self {
         let mut self_ = Self {
             sink: Box::new(keygen_sink),
@@ -40,7 +41,7 @@ impl KeyGen {
             self_.abort("A selected device was disconnected".into(), false);
         }
 
-        match coordinator.do_keygen(&devices, threshold, key_name) {
+        match coordinator.do_keygen(&devices, threshold, key_name, rng) {
             Ok(messages) => {
                 for message in messages {
                     match message {

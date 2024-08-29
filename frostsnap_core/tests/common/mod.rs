@@ -1,8 +1,8 @@
-use frostsnap_core::coordinator;
 use frostsnap_core::message::{
     CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToUserMessage, DeviceSend,
     DeviceToCoordinatorMessage, DeviceToStorageMessage, DeviceToUserMessage,
 };
+use frostsnap_core::{coordinator, MessageResult};
 use frostsnap_core::{
     coordinator::{FrostCoordinator, SigningSessionState},
     DeviceId, FrostSigner,
@@ -83,6 +83,24 @@ pub trait Env {
         from: DeviceId,
         message: DeviceToUserMessage,
     ) {
+        match message {
+            DeviceToUserMessage::CheckKeyGen { .. } => {
+                let ack = run.device(from).keygen_ack().unwrap();
+                run.extend_from_device(from, ack);
+            }
+            DeviceToUserMessage::SignatureRequest { .. } => {
+                let sign_ack = run.device(from).sign_ack().unwrap();
+                run.extend_from_device(from, sign_ack);
+            }
+            DeviceToUserMessage::DisplayBackupRequest { .. } => {
+                let backup_ack = run.device(from).display_backup_ack().unwrap();
+                run.extend_from_device(from, backup_ack);
+            }
+            DeviceToUserMessage::Canceled { .. } => {
+                panic!("no cancelling done");
+            }
+            _ => { /* do nothing */ }
+        }
     }
     fn storage_react_to_device(
         &mut self,
@@ -105,6 +123,10 @@ pub trait Env {
     }
 }
 
+pub struct DefaultTestEnv;
+
+impl Env for DefaultTestEnv {}
+
 pub struct Run {
     pub coordinator: FrostCoordinator,
     pub devices: BTreeMap<DeviceId, FrostSigner>,
@@ -113,6 +135,17 @@ pub struct Run {
 }
 
 impl Run {
+    pub fn generate(n_devices: usize, rng: &mut impl rand_core::RngCore) -> Self {
+        Self::new(
+            FrostCoordinator::new(),
+            (0..n_devices)
+                .map(|_| {
+                    let signer = FrostSigner::new_random(rng);
+                    (signer.device_id(), signer)
+                })
+                .collect(),
+        )
+    }
     pub fn new(coordinator: FrostCoordinator, devices: BTreeMap<DeviceId, FrostSigner>) -> Self {
         Self {
             coordinator,
@@ -122,7 +155,15 @@ impl Run {
         }
     }
 
-    pub fn run_until_finished<E: Env>(&mut self, env: &mut E, rng: &mut impl rand_core::RngCore) {
+    pub fn device_set(&self) -> BTreeSet<DeviceId> {
+        self.devices.keys().cloned().collect()
+    }
+
+    pub fn run_until_finished<E: Env>(
+        &mut self,
+        env: &mut E,
+        rng: &mut impl rand_core::RngCore,
+    ) -> MessageResult<()> {
         self.run_until(env, rng, |_| false)
     }
 
@@ -149,7 +190,7 @@ impl Run {
         env: &mut E,
         rng: &mut impl rand_core::RngCore,
         mut until: impl FnMut(&mut Run) -> bool,
-    ) {
+    ) -> MessageResult<()> {
         while !until(self) {
             let to_send = match self.message_stack.pop() {
                 Some(message) => message,
@@ -168,8 +209,7 @@ impl Run {
                 Send::DeviceToCoordinator { from, message } => {
                     self.message_stack.extend(
                         self.coordinator
-                            .recv_device_message(from, message)
-                            .unwrap()
+                            .recv_device_message(from, message)?
                             .into_iter()
                             .map(Send::from),
                     );
@@ -183,8 +223,7 @@ impl Run {
                             self.devices
                                 .get_mut(&destination)
                                 .unwrap()
-                                .recv_coordinator_message(message.clone(), rng)
-                                .unwrap()
+                                .recv_coordinator_message(message.clone(), rng)?
                                 .into_iter()
                                 .map(|v| Send::device_send(destination, v)),
                         );
@@ -202,5 +241,7 @@ impl Run {
                 env.storage_react_to_coordinator_mutation(self, mutation);
             }
         }
+
+        Ok(())
     }
 }

@@ -1,18 +1,21 @@
 use crate::{
-    gen_pop_message, message::*, ActionError, Error, FrostKeyExt, Gist, KeyId, MessageResult,
-    SessionHash, SignItem, SignTask, SignTaskError,
+    message::*, ActionError, Error, FrostKeyExt, Gist, KeyId, MessageResult, SignItem, SignTask,
+    SignTaskError,
 };
 use alloc::{
     collections::{BTreeMap, BTreeSet, VecDeque},
-    string::String,
+    string::{String, ToString},
     vec::Vec,
 };
+use core::num::NonZeroU32;
 use schnorr_fun::{
-    frost::{self, EncodedFrostKey, Frost, FrostKey, Nonce, SignSession},
-    fun::{marker::*, Scalar},
-    Message, Schnorr, Signature,
+    frost::{
+        self, chilldkg::encpedpop, CoordinatorSignSession, Frost, Nonce, PartyIndex, SharedKey,
+    },
+    fun::prelude::*,
+    Schnorr, Signature,
 };
-use sha2::Sha256;
+use sha2::{digest::FixedOutput, Digest, Sha256};
 
 use crate::DeviceId;
 
@@ -120,146 +123,111 @@ impl FrostCoordinator {
             }
             (
                 Some(CoordinatorState::KeyGen(KeyGenState::WaitingForResponses {
+                    input_aggregator,
                     device_to_share_index,
-                    responses,
-                    threshold,
                     pending_key_name,
                 })),
                 DeviceToCoordinatorMessage::KeyGenResponse(new_shares),
             ) => {
-                if let Some(existing) = responses.insert(from, Some(new_shares.clone())) {
-                    debug_assert!(existing.is_none(), "Device sent keygen response twice");
-                }
+                let share_index =
+                    device_to_share_index
+                        .get(&from)
+                        .ok_or(Error::coordinator_invalid_message(
+                            message_kind,
+                            "got share from device that was not part of keygen",
+                        ))?;
 
-                if new_shares.my_poly.len() != *threshold as usize {
-                    return Err(Error::coordinator_invalid_message(
-                        message_kind,
-                        "Device sent polynomial with incorrect threshold",
-                    ));
-                }
+                input_aggregator
+                    .add_input(
+                        &schnorr_fun::new_with_deterministic_nonces::<Sha256>(),
+                        // we use the share index as the input generator index. The input
+                        // generator at index 0 is the coordinator itself.
+                        (*share_index).into(),
+                        new_shares,
+                    )
+                    .map_err(|e| Error::coordinator_invalid_message(message_kind, e))?;
 
                 let mut outgoing = vec![CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen(
                     CoordinatorToUserKeyGenMessage::ReceivedShares { from },
                 ))];
 
-                let all_responded = responses
-                    .clone()
-                    .into_iter()
-                    .map(|(device_id, shares)| Some((device_id, shares?)))
-                    .collect::<Option<BTreeMap<_, _>>>();
+                if input_aggregator.is_finished() {
+                    let agg_input = input_aggregator.clone().finish().unwrap();
+                    let session_hash = Sha256::default()
+                        .chain_update(agg_input.cert_bytes())
+                        .finalize_fixed()
+                        .into();
+                    outgoing.push(CoordinatorSend::ToDevice {
+                        destinations: device_to_share_index.keys().cloned().collect(),
+                        message: CoordinatorToDeviceMessage::FinishKeyGen {
+                            agg_input: agg_input.clone(),
+                        },
+                    });
 
-                match all_responded {
-                    Some(responses) => {
-                        let point_polys = responses
-                            .iter()
-                            .map(|(device_id, response)| {
-                                (
-                                    *device_to_share_index
-                                        .get(device_id)
-                                        .expect("this device is a part of keygen"),
-                                    response.my_poly.clone(),
-                                )
-                            })
-                            .collect();
-                        let proofs_of_possession = responses
-                            .iter()
-                            .map(|(device_id, response)| {
-                                (
-                                    *device_to_share_index
-                                        .get(device_id)
-                                        .expect("this device is a part of keygen"),
-                                    response.proof_of_possession.clone(),
-                                )
-                            })
-                            .collect();
-                        let frost = frost::new_without_nonce_generation::<Sha256>();
-                        let keygen = frost
-                            .new_keygen::<&[Scalar]>(point_polys, &BTreeMap::new())
-                            .unwrap();
-                        // let keygen_id = frost.keygen_id(&keygen);
-                        let pop_message = gen_pop_message(responses.keys().cloned());
+                    outgoing.push(CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen(
+                        CoordinatorToUserKeyGenMessage::CheckKeyGen { session_hash },
+                    )));
 
-                        let frost_key = match frost.finish_keygen_coordinator(keygen, proofs_of_possession, Message::raw(&pop_message)) {
-                            Ok(frost_key) => frost_key,
-                            Err(_) => todo!("should notify user somehow that everything was fucked and we're canceling it"),
-                        };
+                    self.action_state =
+                        Some(CoordinatorState::KeyGen(KeyGenState::WaitingForAcks {
+                            agg_input: agg_input.clone(),
+                            device_to_share_index: device_to_share_index
+                                .clone()
+                                .into_iter()
+                                .map(|(device, share_index)| {
+                                    (device, PartyIndex::from(share_index))
+                                })
+                                .collect(),
+                            acks: Default::default(),
+                            pending_key_name: pending_key_name.clone(),
+                        }));
+                }
 
-                        // TODO: This is definitely insufficient
-                        let session_hash = frost_key
-                            .clone()
-                            .into_xonly_key()
-                            .public_key()
-                            .to_xonly_bytes();
-
-                        self.action_state =
-                            Some(CoordinatorState::KeyGen(KeyGenState::WaitingForAcks {
-                                device_to_share_index: device_to_share_index.clone(),
-                                frost_key: frost_key.into(),
-                                acks: responses
-                                    .clone()
-                                    .into_keys()
-                                    .map(|id| (id, false))
-                                    .collect(),
-                                session_hash,
-                                pending_key_name: pending_key_name.clone(),
-                            }));
-
-                        // TODO: check order
-                        outgoing.push(CoordinatorSend::ToDevice {
-                            destinations: responses.keys().cloned().collect(),
-                            message: CoordinatorToDeviceMessage::FinishKeyGen {
-                                shares_provided: responses,
-                            },
-                        });
-                        outgoing.push(CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen(
-                            CoordinatorToUserKeyGenMessage::CheckKeyGen { session_hash },
-                        )));
-                    }
-                    None => { /* not finished yet  */ }
-                };
                 Ok(outgoing)
             }
             (
                 Some(CoordinatorState::KeyGen(KeyGenState::WaitingForAcks {
                     device_to_share_index,
-                    frost_key,
+                    agg_input,
                     acks,
-                    session_hash,
                     pending_key_name,
                 })),
                 DeviceToCoordinatorMessage::KeyGenAck(acked_session_hash),
             ) => {
                 let mut outgoing = vec![];
-                if acked_session_hash != *session_hash {
+                let session_hash: [u8; 32] = Sha256::default()
+                    .chain_update(agg_input.cert_bytes())
+                    .finalize_fixed()
+                    .into();
+
+                if acked_session_hash != session_hash {
                     return Err(Error::coordinator_invalid_message(
                         message_kind,
                         "Device acked wrong keygen session hash",
                     ));
                 }
 
-                match acks.get_mut(&from) {
-                    None => {
-                        return Err(Error::coordinator_invalid_message(
-                            message_kind,
-                            "Received ack from device not a member of keygen",
-                        ));
-                    }
-                    Some(ack) => {
-                        outgoing.push(CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen(
-                            CoordinatorToUserKeyGenMessage::KeyGenAck { from },
-                        )));
-                        *ack = true;
-                    }
+                if !device_to_share_index.contains_key(&from) {
+                    return Err(Error::coordinator_invalid_message(
+                        message_kind,
+                        "Received ack from device not a member of keygen",
+                    ));
                 }
 
-                let all_acks = acks.values().all(|ack| *ack);
+                if acks.insert(from) {
+                    outgoing.push(CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen(
+                        CoordinatorToUserKeyGenMessage::KeyGenAck { from },
+                    )));
+                }
+
+                let all_acks = acks.len() == device_to_share_index.len();
                 if all_acks {
                     let key = CoordinatorFrostKey {
-                        encoded_frost_key: frost_key.clone(),
+                        frost_key: agg_input.shared_key().non_zero().expect("invariant"),
                         device_to_share_index: device_to_share_index.clone(),
                         key_name: pending_key_name.clone(),
                     };
-                    let key_id = key.encoded_frost_key.into_frost_key().key_id();
+                    let key_id = key.frost_key.key_id();
                     self.action_state = None;
 
                     self.mutate(Mutation::NewKey(key));
@@ -282,7 +250,7 @@ impl FrostCoordinator {
                 let frost = frost::new_without_nonce_generation::<Sha256>();
                 let mut outgoing = vec![];
 
-                let from_share_index = key
+                let signer_index = key
                     .device_to_share_index
                     .get(&from)
                     .expect("we don't know this device");
@@ -317,22 +285,20 @@ impl FrostCoordinator {
                 for (session_progress, signature_share) in sessions.iter().zip(signature_shares) {
                     let session = &session_progress.sign_session;
                     let xonly_frost_key = &session_progress.tweaked_frost_key();
-                    if !session
-                        .participants()
-                        .any(|x_coord| x_coord == *from_share_index)
-                    {
+                    if !session.parties().contains(signer_index) {
                         return Err(Error::coordinator_invalid_message(
                             message_kind,
                             "Signer was not a particpant for this session",
                         ));
                     }
 
-                    if !frost.verify_signature_share(
-                        xonly_frost_key,
-                        session,
-                        *from_share_index,
-                        *signature_share,
-                    ) {
+                    if session
+                        .verify_signature_share(
+                            xonly_frost_key.verification_share(*signer_index),
+                            *signature_share,
+                        )
+                        .is_err()
+                    {
                         return Err(Error::coordinator_invalid_message(
                             message_kind,
                             format!(
@@ -354,10 +320,9 @@ impl FrostCoordinator {
                         .insert(from, *signature_share);
                 }
 
-                let all_finished = sessions.iter().all(|session| {
-                    session.signature_shares.len()
-                        == key.encoded_frost_key.into_frost_key().threshold()
-                });
+                let all_finished = sessions
+                    .iter()
+                    .all(|session| session.signature_shares.len() == key.frost_key.threshold());
 
                 // the coordinator may want to persist this so a signing session can be restored
                 outgoing.push(CoordinatorSend::SigningSessionStore(sign_state.clone()));
@@ -368,16 +333,12 @@ impl FrostCoordinator {
                     let signatures = sessions
                         .iter()
                         .map(|session_progress| {
-                            let xonly_frost_key = session_progress.tweaked_frost_key();
-
-                            let sig = frost.combine_signature_shares(
-                                &xonly_frost_key,
-                                &session_progress.sign_session,
+                            let sig = session_progress.sign_session.combine_signature_shares(
+                                session_progress.sign_session.final_nonce(),
                                 session_progress
                                     .signature_shares
                                     .iter()
                                     .map(|(_, &share)| share)
-                                    .collect(),
                             );
 
                             assert!(session_progress.verify_final_signature(
@@ -438,6 +399,7 @@ impl FrostCoordinator {
         devices: &BTreeSet<DeviceId>,
         threshold: u16,
         key_name: String,
+        rng: &mut impl rand_core::RngCore,
     ) -> Result<Vec<CoordinatorSend>, ActionError> {
         if devices.len() < threshold as usize {
             panic!(
@@ -454,17 +416,38 @@ impl FrostCoordinator {
                     .map(|(index, device_id)| {
                         (
                             *device_id,
-                            Scalar::from((index + 1) as u32).non_zero().unwrap(),
+                            NonZeroU32::new(index as u32 + 1).expect("we added one"),
                         )
                     })
                     .collect();
+                let share_receivers_enckeys = device_to_share_index
+                    .iter()
+                    .map(|(device, share_index)| (PartyIndex::from(*share_index), device.pubkey()))
+                    .collect::<BTreeMap<_, _>>();
+                let schnorr = schnorr_fun::new_with_deterministic_nonces::<Sha256>();
+                let mut input_aggregator = encpedpop::Coordinator::new(
+                    threshold.into(),
+                    (devices.len() + 1) as u32,
+                    &share_receivers_enckeys,
+                );
+                // We don't need to keep the _coordinator_inputter state since we are the one forming agg_input
+                //
+                let (_coordinator_inputter, input) = encpedpop::Contributor::gen_keygen_input(
+                    &schnorr,
+                    threshold.into(),
+                    &share_receivers_enckeys,
+                    0,
+                    rng,
+                );
+                input_aggregator
+                    .add_input(&schnorr, 0, input)
+                    .expect("we just generated the input");
 
                 self.action_state =
                     Some(CoordinatorState::KeyGen(KeyGenState::WaitingForResponses {
+                        input_aggregator,
                         device_to_share_index: device_to_share_index.clone(),
-                        responses: devices.iter().map(|&device_id| (device_id, None)).collect(),
-                        threshold,
-                        pending_key_name: key_name.clone(),
+                        pending_key_name: key_name.to_string(),
                     }));
 
                 Ok(vec![CoordinatorSend::ToDevice {
@@ -501,7 +484,7 @@ impl FrostCoordinator {
             .get(&key_id)
             .ok_or(StartSignError::UnknownKey { key_id })?
             .clone();
-        let frost_key = key.encoded_frost_key.into_frost_key();
+        let frost_key = key.frost_key.clone();
         let selected = signing_parties.len();
         if selected < frost_key.threshold() {
             return Err(StartSignError::NotEnoughDevicesSelected {
@@ -585,7 +568,7 @@ impl FrostCoordinator {
 
                 SignSessionProgress::new(
                     &frost,
-                    key.encoded_frost_key.clone(),
+                    key.frost_key.clone(),
                     sign_item.clone(),
                     indexed_nonces,
                 )
@@ -695,23 +678,21 @@ impl CoordinatorState {
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub struct SignSessionProgress {
     sign_item: SignItem,
-    sign_session: SignSession,
+    sign_session: CoordinatorSignSession,
     signature_shares: BTreeMap<DeviceId, Scalar<Public, Zero>>,
-    root_key: EncodedFrostKey,
+    root_key: SharedKey,
 }
 
 impl SignSessionProgress {
     pub fn new<NG>(
         frost: &Frost<sha2::Sha256, NG>,
-        root_key: EncodedFrostKey,
+        root_key: SharedKey,
         sign_item: SignItem,
         nonces: BTreeMap<frost::PartyIndex, frost::Nonce>,
     ) -> Self {
-        let tweaked_key = sign_item
-            .app_tweak
-            .derive_xonly_key(&root_key.into_frost_key());
+        let tweaked_key = sign_item.app_tweak.derive_xonly_key(&root_key);
         let sign_session =
-            frost.start_sign_session(&tweaked_key, nonces, sign_item.schnorr_fun_message());
+            frost.coordinator_sign_session(&tweaked_key, nonces, sign_item.schnorr_fun_message());
         Self {
             sign_item,
             sign_session,
@@ -724,10 +705,8 @@ impl SignSessionProgress {
         self.signature_shares.keys().cloned()
     }
 
-    pub fn tweaked_frost_key(&self) -> FrostKey<EvenY> {
-        self.sign_item
-            .app_tweak
-            .derive_xonly_key(&self.root_key.into_frost_key())
+    pub fn tweaked_frost_key(&self) -> SharedKey<EvenY> {
+        self.sign_item.app_tweak.derive_xonly_key(&self.root_key)
     }
 
     pub fn verify_final_signature<NG>(
@@ -735,11 +714,8 @@ impl SignSessionProgress {
         schnorr: &Schnorr<sha2::Sha256, NG>,
         signature: &Signature,
     ) -> bool {
-        self.sign_item.verify_final_signature(
-            schnorr,
-            self.root_key.into_frost_key().key_id(),
-            signature,
-        )
+        self.sign_item
+            .verify_final_signature(schnorr, self.root_key.key_id(), signature)
     }
 }
 
@@ -774,38 +750,36 @@ impl SigningSessionState {
 #[derive(Clone, Debug)]
 pub enum KeyGenState {
     WaitingForResponses {
-        device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
-        responses: BTreeMap<DeviceId, Option<KeyGenResponse>>,
-        threshold: u16,
+        input_aggregator: encpedpop::Coordinator,
+        device_to_share_index: BTreeMap<DeviceId, core::num::NonZeroU32>,
         pending_key_name: String,
     },
     WaitingForAcks {
-        frost_key: EncodedFrostKey,
+        agg_input: encpedpop::AggKeygenInput,
         device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
-        acks: BTreeMap<DeviceId, bool>,
-        session_hash: SessionHash,
+        acks: BTreeSet<DeviceId>,
         pending_key_name: String,
     },
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, serde::Serialize, serde::Deserialize)]
 pub struct CoordinatorFrostKey {
-    encoded_frost_key: EncodedFrostKey,
+    frost_key: SharedKey,
     device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
     key_name: String,
 }
 
 impl CoordinatorFrostKey {
     pub fn threshold(&self) -> usize {
-        self.encoded_frost_key.threshold()
+        self.frost_key.threshold()
     }
 
-    pub fn frost_key(&self) -> FrostKey<Normal> {
-        self.encoded_frost_key.clone().into()
+    pub fn frost_key(&self) -> SharedKey<Normal> {
+        self.frost_key.clone()
     }
 
     pub fn key_id(&self) -> KeyId {
-        self.encoded_frost_key.into_frost_key().key_id()
+        self.frost_key.key_id()
     }
 
     pub fn devices(&self) -> impl Iterator<Item = DeviceId> + '_ {

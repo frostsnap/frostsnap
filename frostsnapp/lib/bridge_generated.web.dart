@@ -541,9 +541,6 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* void */ wire_new_qr_encoder(
       NativePortType port_, Uint8List bytes);
 
-  external dynamic /* Uint8List */ wire_polynomial_identifier(
-      List<dynamic> frost_key);
-
   external dynamic /* String */ wire_txid__method__Transaction(
       List<dynamic> that);
 
@@ -563,6 +560,9 @@ class NativeWasmModule implements WasmModule {
       List<dynamic> that);
 
   external dynamic /* List<dynamic> */ wire_devices__method__FrostKey(
+      List<dynamic> that);
+
+  external dynamic /* Uint8List */ wire_polynomial_identifier__method__FrostKey(
       List<dynamic> that);
 
   external dynamic /* void */ wire_satisfy__method__PortOpen(
@@ -861,9 +861,6 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   void wire_new_qr_encoder(NativePortType port_, Uint8List bytes) =>
       wasmModule.wire_new_qr_encoder(port_, bytes);
 
-  dynamic /* Uint8List */ wire_polynomial_identifier(List<dynamic> frost_key) =>
-      wasmModule.wire_polynomial_identifier(frost_key);
-
   dynamic /* String */ wire_txid__method__Transaction(List<dynamic> that) =>
       wasmModule.wire_txid__method__Transaction(that);
 
@@ -886,6 +883,10 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   dynamic /* List<dynamic> */ wire_devices__method__FrostKey(
           List<dynamic> that) =>
       wasmModule.wire_devices__method__FrostKey(that);
+
+  dynamic /* Uint8List */ wire_polynomial_identifier__method__FrostKey(
+          List<dynamic> that) =>
+      wasmModule.wire_polynomial_identifier__method__FrostKey(that);
 
   void wire_satisfy__method__PortOpen(
           NativePortType port_, List<dynamic> that, String? err) =>
