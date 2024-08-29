@@ -1,5 +1,6 @@
 use crate::{
     io::SerialInterface,
+    keyboard::Keyboard,
     ota, storage,
     ui::{self, UiEvent, UserInteraction},
     DownstreamConnectionState, UpstreamConnection, UpstreamConnectionState,
@@ -578,6 +579,7 @@ where
                             } => {
                                 ui.set_workflow(ui::Workflow::EnteringBackup {
                                     proposed_share_index,
+                                    keyboard: Keyboard::new(),
                                 });
                             }
                             DeviceToUserMessage::EnteredBackup(share_backup) => {

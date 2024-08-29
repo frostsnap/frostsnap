@@ -61,7 +61,7 @@ impl Display for KeyboardKeyType {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug, Clone)]
 pub struct Keyboard {
     buffer: Vec<char>,
     hrp: Option<String>,

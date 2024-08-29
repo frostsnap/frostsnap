@@ -6,7 +6,7 @@
 #[macro_use]
 extern crate alloc;
 use alloc::string::String;
-use core::mem::MaybeUninit;
+use core::{borrow::BorrowMut, mem::MaybeUninit};
 use cst816s::CST816S;
 use display_interface_spi::SPIInterface;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
@@ -39,7 +39,6 @@ use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_device::{
     esp32_run, graphics,
     io::SerialInterface,
-    keyboard::Keyboard,
     ui::{
         BusyTask, FirmwareUpgradeStatus, Prompt, SignPrompt, UiEvent, UserInteraction, WaitingFor,
         WaitingResponse, Workflow,
@@ -204,7 +203,6 @@ fn main() -> ! {
         upstream_connection_state: None,
         workflow: Default::default(),
         device_name: Default::default(),
-        keyboard: Keyboard::new(),
         changes: false,
         confirm_state: AnimationState::new(&timer1, 600.millis()),
         last_touch: None,
@@ -248,7 +246,6 @@ pub struct FrostyUi<'t, T, DT, I2C, PINT, RST> {
     upstream_connection_state: Option<UpstreamConnection>,
     workflow: Workflow,
     device_name: Option<String>,
-    keyboard: Keyboard,
     changes: bool,
     confirm_state: AnimationState<'t, T>,
     timer: &'t Timer<T, Blocking>,
@@ -326,7 +323,7 @@ where
         self.display
             .header(self.device_name.as_deref().unwrap_or("New Device"));
 
-        match &self.workflow {
+        match self.workflow.borrow_mut() {
             Workflow::None => {}
             Workflow::NamingDevice {
                 old_name: existing_name,
@@ -452,10 +449,9 @@ where
             }
             Workflow::DisplayBackup { backup } => self.display.show_backup(backup.clone(), true),
             Workflow::EnteringBackup {
+                keyboard,
                 proposed_share_index,
-            } => self
-                .keyboard
-                .render_backup_keyboard(&mut self.display, *proposed_share_index),
+            } => keyboard.render_backup_keyboard(&mut self.display, *proposed_share_index),
         }
 
         if let Some(upstream_connection) = self.upstream_connection_state {
@@ -508,10 +504,6 @@ where
     }
 
     fn take_workflow(&mut self) -> Workflow {
-        // reset keyboard upon FrostyUi::cancel
-        if matches!(self.workflow, Workflow::EnteringBackup { .. }) {
-            self.keyboard.reset_keyboard();
-        }
         core::mem::take(&mut self.workflow)
     }
 
@@ -531,7 +523,7 @@ where
 
         let mut event = None;
 
-        match &self.workflow {
+        match self.workflow.borrow_mut() {
             Workflow::UserPrompt(prompt) => {
                 let is_pressed = match self.capsense.read_one_touch_event(true) {
                     None => match self.last_touch {
@@ -589,10 +581,10 @@ where
                     }
                 }
             }
-            Workflow::EnteringBackup { .. } => {
-                self.changes = self.keyboard.poll_input(&mut self.capsense, self.timer);
+            Workflow::EnteringBackup { keyboard, .. } => {
+                self.changes = keyboard.poll_input(&mut self.capsense, self.timer);
                 if let Some(frostsnap_device::keyboard::EnteredBackupStatus::Valid(secret_share)) =
-                    self.keyboard.entered_backup_validity()
+                    keyboard.entered_backup_validity()
                 {
                     event = Some(UiEvent::EnteredShareBackup(secret_share))
                 }

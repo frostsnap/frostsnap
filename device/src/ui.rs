@@ -1,3 +1,4 @@
+use crate::keyboard::Keyboard;
 use alloc::string::{String, ToString};
 use frostsnap_comms::FirmwareDigest;
 use frostsnap_core::{schnorr_fun::frost::SecretShare, KeyId, SessionHash};
@@ -78,6 +79,7 @@ pub enum Workflow {
         backup: String,
     },
     EnteringBackup {
+        keyboard: Keyboard,
         proposed_share_index: Option<u32>,
     },
 }
