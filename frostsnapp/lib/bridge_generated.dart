@@ -274,6 +274,23 @@ class NativeImpl implements Native {
         argNames: ["frostKey"],
       );
 
+  String randomSecpPointForToken({dynamic hint}) {
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner.wire_random_secp_point_for_token(),
+      parseSuccessData: _wire2api_String,
+      parseErrorData: null,
+      constMeta: kRandomSecpPointForTokenConstMeta,
+      argValues: [],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kRandomSecpPointForTokenConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "random_secp_point_for_token",
+        argNames: [],
+      );
+
   String txidMethodTransaction({required Transaction that, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_transaction(that);
     return _platform.executeSync(FlutterRustBridgeSyncTask(

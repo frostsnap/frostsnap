@@ -72,6 +72,11 @@ pub fn wire_polynomial_identifier(frost_key: JsValue) -> support::WireSyncReturn
 }
 
 #[wasm_bindgen]
+pub fn wire_random_secp_point_for_token() -> support::WireSyncReturn {
+    wire_random_secp_point_for_token_impl()
+}
+
+#[wasm_bindgen]
 pub fn wire_txid__method__Transaction(that: JsValue) -> support::WireSyncReturn {
     wire_txid__method__Transaction_impl(that)
 }

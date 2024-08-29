@@ -1087,3 +1087,9 @@ pub fn polynomial_identifier(frost_key: FrostKey) -> SyncReturn<Vec<u8>> {
     let hash = sha2::Sha256::default();
     SyncReturn(hash.add(&poly[..]).finalize()[0..4].to_vec())
 }
+
+pub fn random_secp_point_for_token() -> SyncReturn<String> {
+    let mut rng = rand::thread_rng();
+    let point = frostsnap_coordinator::frostsnap_core::schnorr_fun::fun::Point::random(&mut rng);
+    SyncReturn(point.to_string())
+}

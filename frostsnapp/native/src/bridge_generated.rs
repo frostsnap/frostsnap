@@ -221,6 +221,16 @@ fn wire_polynomial_identifier_impl(
         },
     )
 }
+fn wire_random_secp_point_for_token_impl() -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "random_secp_point_for_token",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || Result::<_, ()>::Ok(random_secp_point_for_token()),
+    )
+}
 fn wire_txid__method__Transaction_impl(
     that: impl Wire2Api<Transaction> + UnwindSafe,
 ) -> support::WireSyncReturn {

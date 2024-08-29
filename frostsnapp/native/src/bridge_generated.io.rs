@@ -76,6 +76,11 @@ pub extern "C" fn wire_polynomial_identifier(
 }
 
 #[no_mangle]
+pub extern "C" fn wire_random_secp_point_for_token() -> support::WireSyncReturn {
+    wire_random_secp_point_for_token_impl()
+}
+
+#[no_mangle]
 pub extern "C" fn wire_txid__method__Transaction(
     that: *mut wire_Transaction,
 ) -> support::WireSyncReturn {

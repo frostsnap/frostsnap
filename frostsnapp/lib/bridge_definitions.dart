@@ -76,6 +76,10 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kPolynomialIdentifierConstMeta;
 
+  String randomSecpPointForToken({dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kRandomSecpPointForTokenConstMeta;
+
   String txidMethodTransaction({required Transaction that, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kTxidMethodTransactionConstMeta;

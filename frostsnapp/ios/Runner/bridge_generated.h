@@ -254,6 +254,8 @@ void wire_new_qr_encoder(int64_t port_, struct wire_uint_8_list *bytes);
 
 WireSyncReturn wire_polynomial_identifier(struct wire_FrostKey *frost_key);
 
+WireSyncReturn wire_random_secp_point_for_token(void);
+
 WireSyncReturn wire_txid__method__Transaction(struct wire_Transaction *that);
 
 WireSyncReturn wire_ready__method__ConnectedDevice(struct wire_ConnectedDevice *that);
@@ -614,6 +616,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_new_qr_reader);
     dummy_var ^= ((int64_t) (void*) wire_new_qr_encoder);
     dummy_var ^= ((int64_t) (void*) wire_polynomial_identifier);
+    dummy_var ^= ((int64_t) (void*) wire_random_secp_point_for_token);
     dummy_var ^= ((int64_t) (void*) wire_txid__method__Transaction);
     dummy_var ^= ((int64_t) (void*) wire_ready__method__ConnectedDevice);
     dummy_var ^= ((int64_t) (void*) wire_needs_firmware_upgrade__method__ConnectedDevice);
