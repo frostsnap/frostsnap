@@ -1,5 +1,4 @@
 extern crate alloc;
-use core::fmt::Display;
 
 use crate::graphics::Graphics;
 use crate::graphics::{FONT_LARGE, FONT_MED, PADDING_TOP};
@@ -22,53 +21,28 @@ use fugit::Instant;
 use mipidsi::error::Error;
 use u8g2_fonts::U8g2TextStyle;
 
+const KEY_WIDTH: u32 = 60;
 const KEY_HEIGHT: u32 = 50;
 const BACKUP_LEFT_PADDING: u32 = 5;
 
-#[derive(Debug, Clone)]
-pub struct KeyboardKey {
-    label: KeyboardKeyType,
-    rectangle: Rectangle,
-}
-
-#[derive(Debug, Clone)]
-pub enum KeyboardKeyType {
-    Character(char),
-    String(String),
-}
-
-impl KeyboardKey {
-    pub fn new(point: Point, size: Size, label: KeyboardKeyType) -> Self {
-        let rectangle = Rectangle::new(point, size);
-        Self { label, rectangle }
-    }
-
-    pub fn rectangle(&self) -> Rectangle {
-        self.rectangle
-    }
-
-    pub fn label(&self) -> &KeyboardKeyType {
-        &self.label
-    }
-}
-
-impl Display for KeyboardKeyType {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            KeyboardKeyType::Character(c) => write!(f, "{}", c),
-            KeyboardKeyType::String(s) => write!(f, "{}", s),
-        }
-    }
-}
+const KEYBOARD_KEYS: [[char; 4]; 8] = [
+    ['a', 'c', 'd', 'e'],
+    ['f', 'g', 'h', 'j'],
+    ['k', 'l', 'm', 'n'],
+    ['p', 'q', 'r', 's'],
+    ['t', 'u', 'v', 'w'],
+    ['x', 'y', 'z', '0'],
+    ['2', '3', '4', '5'],
+    ['6', '7', '8', '9'],
+];
 
 #[derive(Default, Debug, Clone)]
 pub struct Keyboard {
     buffer: Vec<char>,
     hrp: Option<String>,
     last_touch: Option<Instant<u64, 1, 1_000_000>>,
-    touched_key: Option<KeyboardKey>,
-    keyboard_keys: Vec<Vec<KeyboardKey>>,
-    key_set_index: usize,
+    touched_key: Option<(usize, usize)>,
+    top_row_index: usize,
     init_rendered: bool,
 }
 
@@ -79,40 +53,50 @@ pub enum EnteredBackupStatus {
 }
 
 impl Keyboard {
+    fn get_key_from_indicies(&self, (y, x): (usize, usize)) -> (Option<Rectangle>, char) {
+        let positional_y = (y + KEYBOARD_KEYS.len() - self.top_row_index) % KEYBOARD_KEYS.len();
+        let rect = if positional_y < 2 {
+            Some(Rectangle::new(
+                Point::new(
+                    x as i32 * KEY_WIDTH as i32,
+                    (130 + (positional_y as u32 + 1) * KEY_HEIGHT) as i32,
+                ),
+                Size::new(KEY_WIDTH, KEY_HEIGHT),
+            ))
+        } else {
+            None
+        };
+
+        debug_assert!(y < KEYBOARD_KEYS.len());
+        debug_assert!(x < KEYBOARD_KEYS[y].len());
+        let char = KEYBOARD_KEYS[y][x];
+
+        (rect, char)
+    }
+
+    fn get_key_from_touch(&self, (y, x): (i32, i32)) -> Option<(usize, usize)> {
+        if y < (130 + KEY_HEIGHT) as i32 {
+            return None;
+        }
+        let row = ((y as u32 - (130 + KEY_HEIGHT)) / KEY_HEIGHT) as usize;
+        let col = ((x as u32 - 0) / KEY_WIDTH) as usize;
+
+        if row < 2 && col < KEYBOARD_KEYS[row].len() {
+            Some(((row + self.top_row_index) % KEYBOARD_KEYS.len(), col))
+        } else {
+            None
+        }
+    }
+
     pub fn new() -> Self {
         let buffer = vec!['1'];
-
-        // Keyboard setup
-        let keyboard_layout = [
-            ["acde", "fghj"],
-            ["klmn", "pqrs"],
-            ["tuvw", "xyz0"],
-            ["2345", "6789"],
-        ];
-        let mut keyboard_keys = Vec::new();
-
-        keyboard_layout.iter().for_each(|key_set| {
-            let mut keysvec = Vec::new();
-            key_set.iter().enumerate().for_each(|(i, row)| {
-                row.chars().enumerate().for_each(|(j, c)| {
-                    let key = KeyboardKey::new(
-                        Point::new(j as i32 * 60, (130 + (i as u32 + 1) * KEY_HEIGHT) as i32),
-                        Size::new(60, KEY_HEIGHT),
-                        KeyboardKeyType::Character(c),
-                    );
-                    keysvec.push(key);
-                })
-            });
-            keyboard_keys.push(keysvec);
-        });
 
         Self {
             buffer,
             hrp: None,
             last_touch: None,
             touched_key: None,
-            keyboard_keys,
-            key_set_index: 0,
+            top_row_index: 0,
             init_rendered: false,
         }
     }
@@ -160,10 +144,14 @@ impl Keyboard {
     fn render_character_key(
         &mut self,
         framebuf: &mut FrameBuf<Rgb565, &mut [Rgb565; 67200]>,
-        key: &KeyboardKey,
+        key_position: (usize, usize),
         is_active: bool,
     ) {
-        let rect = key.rectangle;
+        let (rect, char) = self.get_key_from_indicies(key_position);
+        let rect = rect.expect(&format!(
+            "should be on screen if we are rendering it.. {}",
+            char
+        ));
 
         if is_active {
             rect.into_styled(
@@ -186,7 +174,7 @@ impl Keyboard {
 
             let font = U8g2TextStyle::new(FONT_MED, Rgb565::WHITE);
             Text::with_text_style(
-                key.label().to_string().as_str(),
+                char.to_string().as_str(),
                 rect.center(),
                 font,
                 TextStyleBuilder::new().alignment(Alignment::Center).build(),
@@ -295,15 +283,19 @@ impl Keyboard {
         self.render_backup_input(&mut display.framebuf);
         self.clear_keyboard(&mut display.framebuf);
 
-        self.keyboard_keys[self.key_set_index]
-            .clone()
-            .iter()
-            .for_each(|k| {
-                self.render_character_key(&mut display.framebuf, k, false);
-            });
+        for y_row in [
+            self.top_row_index,
+            (self.top_row_index + 1) % KEYBOARD_KEYS.len(),
+        ]
+        .into_iter()
+        {
+            for x_pos in 0..KEYBOARD_KEYS[y_row].len() {
+                self.render_character_key(&mut display.framebuf, (y_row, x_pos), false);
+            }
+        }
 
         if let Some(key) = &self.touched_key {
-            self.render_character_key(&mut display.framebuf, &key.clone(), true);
+            self.render_character_key(&mut display.framebuf, key.clone(), true);
         }
     }
 
@@ -346,9 +338,8 @@ impl Keyboard {
                         }
                         // Slide up/down to jog through 8-key groups
                         (TouchGesture::SlideDown, 1) => {
-                            self.key_set_index = (self.key_set_index
-                                + (self.keyboard_keys.len() - 1))
-                                % self.keyboard_keys.len();
+                            self.top_row_index = (self.top_row_index + (KEYBOARD_KEYS.len() - 1))
+                                % KEYBOARD_KEYS.len();
                             true
                         }
                         // /* Useful for quick testing */
@@ -360,28 +351,23 @@ impl Keyboard {
                         //     true
                         // }
                         (TouchGesture::SlideUp, 1) => {
-                            self.key_set_index =
-                                (self.key_set_index + 1) % self.keyboard_keys.len();
+                            self.top_row_index = (self.top_row_index + 1) % KEYBOARD_KEYS.len();
                             true
                         }
                         (TouchGesture::SingleClick, _) => {
                             // Find the key being touched
-                            let touch_point = Point::new(touch.x, touch.y);
-                            if let Some(k) = self.keyboard_keys[self.key_set_index]
-                                .clone()
-                                .iter()
-                                .find(|k| k.rectangle().contains(touch_point))
+                            if let Some(key_position) = self.get_key_from_touch((touch.y, touch.x))
                             {
+                                let (_rect, c) = self.get_key_from_indicies(key_position);
+                                _rect.expect("should be on screen if we touched it...");
                                 if self.touched_key.is_none() {
-                                    if let KeyboardKeyType::Character(c) = k.label() {
-                                        self.buffer.push(*c);
-                                    }
+                                    self.buffer.push(c);
                                 }
-                                self.touched_key = Some(k.clone());
+                                self.touched_key = Some(key_position);
                                 self.last_touch = Some(now);
                                 true
                             } else {
-                                true
+                                false
                             }
                         }
                         _ => false,
