@@ -378,7 +378,6 @@ fn test_display_backup() {
         .values()
         .map(|(bu_key_id, backup)| {
             assert_eq!(*bu_key_id, key_id);
-
             schnorr_fun::frost::SecretShare::from_bech32_backup(backup).expect("valid backup")
         })
         .collect::<Vec<_>>();

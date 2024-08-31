@@ -258,18 +258,17 @@ where
         let vertical_spacing = 35;
         let horizontal_spacing = 80; // Separate variable for horizontal spacing
         let (hrp, backup_chars) = str.split_at(str.find(']').expect("backup has a hrp") + 1);
-        let chunked_backup =
-            backup_chars
-                .chars()
-                .fold(vec![String::new()], |mut chunk_vec, char| {
-                    if chunk_vec.last().unwrap().len() < 4 {
-                        let last = chunk_vec.last_mut().unwrap();
-                        last.push(char);
-                    } else {
-                        chunk_vec.push(char.to_string());
-                    }
-                    chunk_vec
-                });
+        let chunked_backup = backup_chars[1..] // skip 1
+            .chars()
+            .fold(vec![String::new()], |mut chunk_vec, char| {
+                if chunk_vec.last().unwrap().len() < 4 {
+                    let last = chunk_vec.last_mut().unwrap();
+                    last.push(char);
+                } else {
+                    chunk_vec.push(char.to_string());
+                }
+                chunk_vec
+            });
 
         if show_hint {
             Text::with_alignment(
