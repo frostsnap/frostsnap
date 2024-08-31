@@ -6,12 +6,15 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use cst816s::TouchGesture;
 use cst816s::CST816S;
+use embedded_graphics::image::Image;
 use embedded_graphics::{
     pixelcolor::Rgb565,
     prelude::*,
     primitives::*,
     text::{Alignment, Text, TextStyleBuilder},
 };
+use embedded_iconoir::{icons::size24px::actions::Check, prelude::IconoirNewIcon};
+
 use embedded_graphics_framebuf::FrameBuf;
 use embedded_hal as hal;
 use esp_hal::timer::{self, timg::Timer};
@@ -23,26 +26,33 @@ use u8g2_fonts::U8g2TextStyle;
 
 const KEY_WIDTH: u32 = 60;
 const KEY_HEIGHT: u32 = 50;
+const KEYROWS_SHOWN: usize = 4;
 const BACKUP_LEFT_PADDING: u32 = 5;
 
 // for convenience: framebuffer.height() - 2 * KEY_HEIGHT;
-const KEYBOARD_START_HEIGHT: u32 = 130;
+const KEYBOARD_START_HEIGHT: u32 = 280 - PADDING_TOP - (KEYROWS_SHOWN as u32) * (KEY_HEIGHT as u32);
 
 const KEYBOARD_KEYS: [[char; 4]; 8] = [
-    ['a', 'c', 'd', 'e'],
-    ['f', 'g', 'h', 'j'],
-    ['k', 'l', 'm', 'n'],
-    ['p', 'q', 'r', 's'],
-    ['t', 'u', 'v', 'w'],
-    ['x', 'y', 'z', '0'],
     ['2', '3', '4', '5'],
     ['6', '7', '8', '9'],
+    ['0', 'A', 'C', 'D'],
+    ['E', 'F', 'G', 'H'],
+    ['J', 'K', 'L', 'M'],
+    ['N', 'P', 'Q', 'R'],
+    ['S', 'T', 'U', 'V'],
+    ['W', 'X', 'Y', 'Z'],
+];
+
+const KEYBOARD_KEYS_NUMBERS: [[char; 4]; 3] = [
+    ['1', '2', '3', '4'],
+    ['5', '6', '7', '8'],
+    ['9', '0', '✓', '✓'],
 ];
 
 #[derive(Default, Debug, Clone)]
 pub struct Keyboard {
     buffer: Vec<char>,
-    hrp: Option<String>,
+    entered_hrp_index: Option<String>,
     last_touch: Option<Instant<u64, 1, 1_000_000>>,
     touched_key: Option<(usize, usize)>,
     top_row_index: usize,
@@ -57,12 +67,16 @@ pub enum EnteredBackupStatus {
 
 impl Keyboard {
     fn get_key_from_indicies(&self, (y, x): (usize, usize)) -> (Option<Rectangle>, char) {
-        let positional_y = (y + KEYBOARD_KEYS.len() - self.top_row_index) % KEYBOARD_KEYS.len();
-        let rect = if positional_y < 2 {
+        let wrapped_keyboard_y = if self.entered_hrp_index.is_some() {
+            (y + KEYBOARD_KEYS.len() - self.top_row_index) % KEYBOARD_KEYS.len()
+        } else {
+            y
+        };
+        let rect = if wrapped_keyboard_y < KEYROWS_SHOWN {
             Some(Rectangle::new(
                 Point::new(
                     x as i32 * KEY_WIDTH as i32,
-                    (KEYBOARD_START_HEIGHT + (positional_y as u32 + 1) * KEY_HEIGHT) as i32,
+                    (KEYBOARD_START_HEIGHT + (wrapped_keyboard_y as u32 + 1) * KEY_HEIGHT) as i32,
                 ),
                 Size::new(KEY_WIDTH, KEY_HEIGHT),
             ))
@@ -70,9 +84,13 @@ impl Keyboard {
             None
         };
 
-        debug_assert!(y < KEYBOARD_KEYS.len());
-        debug_assert!(x < KEYBOARD_KEYS[y].len());
-        let char = KEYBOARD_KEYS[y][x];
+        let char = if self.entered_hrp_index.is_some() {
+            debug_assert!(y < KEYBOARD_KEYS.len());
+            debug_assert!(x < KEYBOARD_KEYS[y].len());
+            KEYBOARD_KEYS[y][x]
+        } else {
+            KEYBOARD_KEYS_NUMBERS[y][x]
+        };
 
         (rect, char)
     }
@@ -81,22 +99,31 @@ impl Keyboard {
         if y < (KEYBOARD_START_HEIGHT + KEY_HEIGHT) as i32 {
             return None;
         }
-        let row = ((y as u32 - (KEYBOARD_START_HEIGHT + KEY_HEIGHT)) / KEY_HEIGHT) as usize;
+
+        let mut row =
+            (((y as u32).saturating_sub(KEYBOARD_START_HEIGHT + KEY_HEIGHT)) / KEY_HEIGHT) as usize;
+        if self.entered_hrp_index.is_some() {
+            row = row + self.top_row_index % KEYBOARD_KEYS.len();
+        }
         let col = ((x as u32 - 0) / KEY_WIDTH) as usize;
 
-        if row < 2 && col < KEYBOARD_KEYS[row].len() {
-            Some(((row + self.top_row_index) % KEYBOARD_KEYS.len(), col))
+        let keyboard_bounds = if self.entered_hrp_index.is_some() {
+            (KEYBOARD_KEYS.len(), KEYBOARD_KEYS[0].len())
+        } else {
+            (KEYBOARD_KEYS_NUMBERS.len(), KEYBOARD_KEYS_NUMBERS[0].len())
+        };
+
+        if row < keyboard_bounds.0 && col < keyboard_bounds.1 {
+            Some((row, col))
         } else {
             None
         }
     }
 
     pub fn new() -> Self {
-        let buffer = vec!['1'];
-
         Self {
-            buffer,
-            hrp: None,
+            buffer: vec![],
+            entered_hrp_index: None,
             last_touch: None,
             touched_key: None,
             top_row_index: 0,
@@ -114,7 +141,7 @@ impl Keyboard {
             return None;
         }
 
-        match &self.hrp {
+        match &self.entered_hrp_index {
             None => None,
             Some(hrp) => {
                 let mut backup_string = hrp.clone();
@@ -176,14 +203,22 @@ impl Keyboard {
             .unwrap();
 
             let font = U8g2TextStyle::new(FONT_MED, Rgb565::WHITE);
-            Text::with_text_style(
-                char.to_string().as_str(),
-                rect.center(),
-                font,
-                TextStyleBuilder::new().alignment(Alignment::Center).build(),
-            )
-            .draw(framebuf)
-            .unwrap();
+
+            if char == '✓' {
+                let icon = Check::new(Rgb565::GREEN);
+                Image::with_center(&icon, rect.center())
+                    .draw(framebuf)
+                    .unwrap();
+            } else {
+                Text::with_text_style(
+                    &char.to_string(),
+                    rect.center(),
+                    font,
+                    TextStyleBuilder::new().alignment(Alignment::Center).build(),
+                )
+                .draw(framebuf)
+                .unwrap();
+            };
         }
     }
 
@@ -215,24 +250,13 @@ impl Keyboard {
         .draw(framebuf)
         .unwrap();
 
-        let chunked_backup =
-            self.buffer
-                .clone()
-                .into_iter()
-                .fold(vec!["".to_string()], |mut chunk_vec, char| {
-                    if chunk_vec.last().unwrap().len() < 4 {
-                        let last = chunk_vec.last_mut().unwrap();
-                        last.push(char);
-                    } else {
-                        chunk_vec.push(char.to_string());
-                    }
-                    chunk_vec
-                });
-
-        // Don't show the top line once the backup gets to a certain length, "pan" down
-        if chunked_backup.len() <= 3 * 3 {
+        if self.entered_hrp_index.is_none() {
+            let pending_hrp = format!(
+                "frost[{}]",
+                self.buffer.clone().into_iter().collect::<String>()
+            );
             Text::with_text_style(
-                &self.hrp.clone().unwrap_or_default(),
+                &pending_hrp,
                 Point::new((framebuf.width() / 2) as i32, PADDING_TOP as i32),
                 U8g2TextStyle::new(FONT_LARGE, text_color),
                 TextStyleBuilder::new()
@@ -242,28 +266,30 @@ impl Keyboard {
             )
             .draw(framebuf)
             .unwrap();
-
-            y_offset += spacing_size * 3 / 2;
-        }
-
-        // skip the first rows to only show the end 12 chunks
-        let rows_to_skip = if chunked_backup.len() <= 3 * 4 {
-            0
         } else {
-            (chunked_backup.len() - 1) / 3 - 3
-        };
+            let chunked_backup = self.buffer.clone().into_iter().fold(
+                vec!["".to_string()],
+                |mut chunk_vec, char| {
+                    if chunk_vec.last().unwrap().len() < 4 {
+                        let last = chunk_vec.last_mut().unwrap();
+                        last.push(char);
+                    } else {
+                        chunk_vec.push(char.to_string());
+                    }
+                    chunk_vec
+                },
+            );
 
-        for row_chunks in chunked_backup[(rows_to_skip * 3)..].chunks(3) {
             Text::with_baseline(
-                row_chunks.join(" ").as_ref(),
+                chunked_backup[chunked_backup.len().saturating_sub(3)..]
+                    .join(" ")
+                    .as_ref(),
                 Point::new(BACKUP_LEFT_PADDING as i32, (PADDING_TOP as i32) + y_offset),
                 U8g2TextStyle::new(FONT_LARGE, text_color),
                 embedded_graphics::text::Baseline::Top,
             )
             .draw(framebuf)
             .unwrap();
-
-            y_offset += spacing_size * 3 / 2;
         }
     }
 
@@ -274,26 +300,24 @@ impl Keyboard {
         display: &mut Graphics<'_, DT>,
         proposed_share_index: Option<u32>,
     ) {
-        if self.hrp.is_none() {
-            self.hrp = Some(format!(
-                "frost[{}]",
-                proposed_share_index
-                    .map(|index| index.to_string())
-                    .unwrap_or("_".to_string())
-            ));
-        }
-
         self.render_backup_input(&mut display.framebuf);
         self.clear_keyboard(&mut display.framebuf);
 
-        for y_row in [
-            self.top_row_index,
-            (self.top_row_index + 1) % KEYBOARD_KEYS.len(),
-        ]
-        .into_iter()
-        {
-            for x_pos in 0..KEYBOARD_KEYS[y_row].len() {
-                self.render_character_key(&mut display.framebuf, (y_row, x_pos), false);
+        if self.entered_hrp_index.is_none() {
+            for y_row in 0..KEYBOARD_KEYS_NUMBERS.len() {
+                for x_pos in 0..KEYBOARD_KEYS_NUMBERS[y_row].len() {
+                    self.render_character_key(&mut display.framebuf, (y_row, x_pos), false);
+                }
+            }
+        } else {
+            let top_index = self.top_row_index;
+            for y_row in (0..KEYROWS_SHOWN).map(|i| {
+                let row = (top_index + i) % KEYBOARD_KEYS.len();
+                row
+            }) {
+                for x_pos in 0..KEYBOARD_KEYS[y_row].len() {
+                    self.render_character_key(&mut display.framebuf, (y_row, x_pos), false);
+                }
             }
         }
 
@@ -334,14 +358,20 @@ impl Keyboard {
                     match (&touch.gesture, touch.action) {
                         // Backspace
                         (TouchGesture::SlideLeft, 1) => {
-                            if self.buffer.len() > 1 {
+                            if self.buffer.len() > 0 {
                                 self.buffer.pop();
+                            } else {
+                                if let Some(hrp) = &self.entered_hrp_index {
+                                    self.buffer = hrp.chars().collect();
+                                    self.entered_hrp_index = None;
+                                }
                             }
                             true
                         }
                         // Slide up/down to jog through 8-key groups
                         (TouchGesture::SlideDown, 1) => {
-                            self.top_row_index = (self.top_row_index + (KEYBOARD_KEYS.len() - 1))
+                            self.top_row_index = (self.top_row_index
+                                + (KEYBOARD_KEYS.len() - KEYROWS_SHOWN))
                                 % KEYBOARD_KEYS.len();
                             true
                         }
@@ -354,7 +384,8 @@ impl Keyboard {
                         //     true
                         // }
                         (TouchGesture::SlideUp, 1) => {
-                            self.top_row_index = (self.top_row_index + 1) % KEYBOARD_KEYS.len();
+                            self.top_row_index =
+                                (self.top_row_index + KEYROWS_SHOWN) % KEYBOARD_KEYS.len();
                             true
                         }
                         (TouchGesture::SingleClick, _) => {
@@ -364,10 +395,23 @@ impl Keyboard {
                                 let (_rect, c) = self.get_key_from_indicies(key_position);
                                 _rect.expect("should be on screen if we touched it...");
                                 if self.touched_key.is_none() {
-                                    self.buffer.push(c);
+                                    if c == '✓' {
+                                        // special case where we finish entering hrp
+                                        self.entered_hrp_index = Some(format!(
+                                            "{}",
+                                            self.buffer.clone().into_iter().collect::<String>()
+                                        ));
+                                        self.touched_key = None;
+                                        self.buffer.clear();
+                                    } else {
+                                        self.touched_key = Some(key_position);
+                                        self.last_touch = Some(now);
+                                        self.buffer.push(c);
+                                    }
+                                } else {
+                                    self.touched_key = Some(key_position);
+                                    self.last_touch = Some(now);
                                 }
-                                self.touched_key = Some(key_position);
-                                self.last_touch = Some(now);
                                 true
                             } else {
                                 false
