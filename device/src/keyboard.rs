@@ -25,6 +25,9 @@ const KEY_WIDTH: u32 = 60;
 const KEY_HEIGHT: u32 = 50;
 const BACKUP_LEFT_PADDING: u32 = 5;
 
+// for convenience: framebuffer.height() - 2 * KEY_HEIGHT;
+const KEYBOARD_START_HEIGHT: u32 = 130;
+
 const KEYBOARD_KEYS: [[char; 4]; 8] = [
     ['a', 'c', 'd', 'e'],
     ['f', 'g', 'h', 'j'],
@@ -59,7 +62,7 @@ impl Keyboard {
             Some(Rectangle::new(
                 Point::new(
                     x as i32 * KEY_WIDTH as i32,
-                    (130 + (positional_y as u32 + 1) * KEY_HEIGHT) as i32,
+                    (KEYBOARD_START_HEIGHT + (positional_y as u32 + 1) * KEY_HEIGHT) as i32,
                 ),
                 Size::new(KEY_WIDTH, KEY_HEIGHT),
             ))
@@ -75,10 +78,10 @@ impl Keyboard {
     }
 
     fn get_key_from_touch(&self, (y, x): (i32, i32)) -> Option<(usize, usize)> {
-        if y < (130 + KEY_HEIGHT) as i32 {
+        if y < (KEYBOARD_START_HEIGHT + KEY_HEIGHT) as i32 {
             return None;
         }
-        let row = ((y as u32 - (130 + KEY_HEIGHT)) / KEY_HEIGHT) as usize;
+        let row = ((y as u32 - (KEYBOARD_START_HEIGHT + KEY_HEIGHT)) / KEY_HEIGHT) as usize;
         let col = ((x as u32 - 0) / KEY_WIDTH) as usize;
 
         if row < 2 && col < KEYBOARD_KEYS[row].len() {
