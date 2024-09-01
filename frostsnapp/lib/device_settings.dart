@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/animated_check.dart';
 import 'package:frostsnapp/bridge_definitions.dart';
@@ -87,9 +86,9 @@ class _DeviceSettingsState extends State<DeviceSettings> {
               padding: const EdgeInsets.only(
                   bottom: 4.0), // Adjust the padding/margin here
               child: ListTile(
-                  title: Row(
-                      mainAxisAlignment: MainAxisAlignment.start,
-                      children: [
+                title: Row(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  children: [
                     Column(children: [
                       Text(
                         keyName,
@@ -103,51 +102,52 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                             .displayBackup(id: widget.id, keyId: keyId)
                             .first;
 
-                        await showDeviceActionDialog(
-                            context: context,
-                            complete: _deviceRemoved.future,
-                            builder: (context) {
-                              return FutureBuilder(
-                                  future: confirmed,
-                                  builder: (context, snapshot) {
-                                    return Column(children: [
-                                      DialogHeader(
-                                          child: Text(snapshot
-                                                      .connectionState ==
-                                                  ConnectionState.waiting
-                                              ? "Confirm on device to show backup"
-                                              : "Record backup displayed on device screen. Press cancel when finished.")),
-                                      Expanded(child: DeviceListWithIcons(
-                                          iconAssigner: (context, deviceId) {
-                                        if (deviceIdEquals(
-                                            deviceId, widget.id)) {
-                                          final label = LabeledDeviceText(
-                                              device_.name ?? "<unamed>");
-                                          final Widget icon;
-                                          if (snapshot.connectionState ==
-                                              ConnectionState.waiting) {
-                                            icon = ConfirmPrompt();
-                                          } else {
-                                            icon = DevicePrompt(
-                                                icon: Icon(Icons.edit_document,
-                                                    color: successColor),
-                                                text: "Record");
-                                          }
-                                          return (label, icon);
+                        final result = await showDeviceActionDialog(
+                          context: context,
+                          complete: _deviceRemoved.future,
+                          builder: (context) {
+                            return FutureBuilder(
+                                future: confirmed,
+                                builder: (context, snapshot) {
+                                  return Column(children: [
+                                    DialogHeader(
+                                        child: Text(snapshot.connectionState ==
+                                                ConnectionState.waiting
+                                            ? "Confirm on device to show backup"
+                                            : "Record backup displayed on device screen. Press cancel when finished.")),
+                                    Expanded(child: DeviceListWithIcons(
+                                        iconAssigner: (context, deviceId) {
+                                      if (deviceIdEquals(deviceId, widget.id)) {
+                                        final label = LabeledDeviceText(
+                                            device_.name ?? "<unamed>");
+                                        final Widget icon;
+                                        if (snapshot.connectionState ==
+                                            ConnectionState.waiting) {
+                                          icon = ConfirmPrompt();
                                         } else {
-                                          return (null, null);
+                                          icon = DevicePrompt(
+                                              icon: Icon(Icons.edit_document,
+                                                  color: successColor),
+                                              text: "Record");
                                         }
-                                      }))
-                                    ]);
-                                  });
-                            },
-                            onCancel: () {
-                              coord.cancelProtocol();
-                            });
+                                        return (label, icon);
+                                      } else {
+                                        return (null, null);
+                                      }
+                                    }))
+                                  ]);
+                                });
+                          },
+                        );
+                        if (result == null) {
+                          coord.cancelProtocol();
+                        }
                       },
                       child: Text("Backup"),
                     ),
-                  ])));
+                  ],
+                ),
+              ));
         },
       );
 
@@ -277,7 +277,7 @@ class SettingsSection extends StatelessWidget {
 }
 
 class FirmwareUpgradeDialog extends StatefulWidget {
-  FirmwareUpgradeDialog({super.key});
+  const FirmwareUpgradeDialog({super.key});
 
   @override
   State<FirmwareUpgradeDialog> createState() => _FirmwareUpgradeDialogState();
@@ -285,12 +285,13 @@ class FirmwareUpgradeDialog extends StatefulWidget {
   static void show(BuildContext context) {
     showDeviceActionDialog(
         context: context,
-        onCancel: () {
-          coord.cancelProtocol();
-        },
         builder: (context) {
           return FirmwareUpgradeDialog();
-        });
+        }).then((result) {
+      if (result == null) {
+        coord.cancelProtocol();
+      }
+    });
   }
 }
 

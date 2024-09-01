@@ -8,9 +8,8 @@ Future<T?> showDeviceActionDialog<T>({
   required BuildContext context,
   required Widget Function(BuildContext) builder,
   Future<T?>? complete,
-  Function()? onCancel,
 }) async {
-  var canceled = false;
+  var failed = false;
   BuildContext? dialogContext;
 
   complete?.then((result) {
@@ -18,7 +17,7 @@ Future<T?> showDeviceActionDialog<T>({
       Navigator.pop(dialogContext!, result);
     }
   }).catchError((error) {
-    if (!canceled) {
+    if (!failed) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("ERROR: $error")),
       );
@@ -28,7 +27,7 @@ Future<T?> showDeviceActionDialog<T>({
     }
   });
 
-  final result = showModalBottomSheet<T>(
+  final result = await showModalBottomSheet<T>(
     context: context,
     isScrollControlled: true,
     isDismissible: false,
@@ -55,7 +54,7 @@ Future<T?> showDeviceActionDialog<T>({
               child: ConstrainedBox(
                 constraints: BoxConstraints(
                   maxWidth: 400.0,
-                  maxHeight: MediaQuery.of(context).size.height * 0.95,
+                  maxHeight: MediaQuery.of(dialogContext_).size.height * 0.95,
                 ),
                 child: builder(dialogContext_),
               ),
@@ -66,7 +65,9 @@ Future<T?> showDeviceActionDialog<T>({
               child: IconButton(
                 icon: Icon(Icons.close),
                 onPressed: () {
-                  Navigator.pop(context);
+                  if (dialogContext_.mounted) {
+                    Navigator.pop(dialogContext_);
+                  }
                 },
               ),
             ),
@@ -76,12 +77,10 @@ Future<T?> showDeviceActionDialog<T>({
     },
   );
 
-  result.then((value) {
-    if (value == null) {
-      canceled = true;
-      onCancel?.call();
-    }
-  });
+  dialogContext = null;
+  if (result == null) {
+    failed = true;
+  }
 
   return result;
 }
@@ -119,11 +118,11 @@ class DialogHeader extends StatelessWidget {
     return Container(
         width: double.infinity,
         decoration: BoxDecoration(
-          color: Colors.white, // Background color of the header
+          color: Colors.white,
           border: Border(
             bottom: BorderSide(
-              color: Colors.grey, // Color of the divider
-              width: 1.0, // Thickness of the divider
+              color: Colors.grey,
+              width: 1.0,
             ),
           ),
         ),

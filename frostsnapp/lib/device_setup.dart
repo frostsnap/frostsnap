@@ -83,12 +83,9 @@ class _DeviceNameField extends State<DeviceNameField> {
                 return;
               });
               coord.finishNaming(id: widget.id, name: name);
-              await showDeviceActionDialog(
+              final result = await showDeviceActionDialog(
                   context: context,
                   complete: completeWhen,
-                  onCancel: () async {
-                    await coord.sendCancel(id: widget.id);
-                  },
                   builder: (context) {
                     return Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -108,6 +105,10 @@ class _DeviceNameField extends State<DeviceNameField> {
                           }))
                         ]);
                   });
+
+              if (result == null) {
+                await coord.sendCancel(id: widget.id);
+              }
             },
             onChanged: (value) async {
               changed = true;
