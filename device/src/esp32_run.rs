@@ -574,11 +574,8 @@ where
                             DeviceToUserMessage::DisplayBackup { key_id: _, backup } => {
                                 ui.set_workflow(ui::Workflow::DisplayBackup { backup });
                             }
-                            DeviceToUserMessage::EnterBackup {
-                                proposed_share_index,
-                            } => {
+                            DeviceToUserMessage::EnterBackup => {
                                 ui.set_workflow(ui::Workflow::EnteringBackup {
-                                    proposed_share_index,
                                     keyboard: Keyboard::new(),
                                 });
                             }

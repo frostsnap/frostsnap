@@ -448,10 +448,9 @@ where
                     .print(format!("{}: {}", self.timer.now(), string));
             }
             Workflow::DisplayBackup { backup } => self.display.show_backup(backup.clone(), true),
-            Workflow::EnteringBackup {
-                keyboard,
-                proposed_share_index,
-            } => keyboard.render_backup_keyboard(&mut self.display, *proposed_share_index),
+            Workflow::EnteringBackup { keyboard } => {
+                keyboard.render_backup_keyboard(&mut self.display)
+            }
         }
 
         if let Some(upstream_connection) = self.upstream_connection_state {

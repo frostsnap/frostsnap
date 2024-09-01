@@ -30,7 +30,7 @@ const KEY_HEIGHT: u32 = 50;
 const KEYROWS_SHOWN: usize = 4;
 const BACKUP_LEFT_PADDING: u32 = 5;
 
-const KEYBOARD_START_HEIGHT: u32 = 280 - PADDING_TOP - (KEYROWS_SHOWN as u32) * (KEY_HEIGHT as u32);
+const KEYBOARD_START_HEIGHT: u32 = 280 - 10 - PADDING_TOP - (KEYROWS_SHOWN as u32) * (KEY_HEIGHT);
 
 const KEYBOARD_KEYS: [[char; 4]; 8] = [
     ['A', 'C', 'D', 'E'],
@@ -107,9 +107,9 @@ impl Keyboard {
         let mut row =
             (((y as u32).saturating_sub(KEYBOARD_START_HEIGHT + KEY_HEIGHT)) / KEY_HEIGHT) as usize;
         if self.entered_hrp_index.is_some() {
-            row = row + self.top_row_index % KEYBOARD_KEYS.len();
+            row += self.top_row_index % KEYBOARD_KEYS.len();
         }
-        let col = ((x as u32 - 0) / KEY_WIDTH) as usize;
+        let col = (x as u32 / KEY_WIDTH) as usize;
 
         let keyboard_bounds = if self.entered_hrp_index.is_some() {
             (KEYBOARD_KEYS.len(), KEYBOARD_KEYS[0].len())
@@ -140,8 +140,7 @@ impl Keyboard {
     }
 
     pub fn entered_backup_validity(&mut self) -> Option<EnteredBackupStatus> {
-        let backup_input = self.buffer.clone().into_iter().collect::<String>();
-        if backup_input.len() < 58 {
+        if self.buffer.len() < 58 {
             return None;
         }
 
@@ -189,10 +188,7 @@ impl Keyboard {
         is_active: bool,
     ) {
         let (rect, char) = self.get_key_from_indicies(key_position);
-        let rect = rect.expect(&format!(
-            "should be on screen if we are rendering it.. {}",
-            char
-        ));
+        let rect = rect.expect("character must be on screen if we are rendering it");
 
         if is_active {
             rect.into_styled(
@@ -306,23 +302,19 @@ impl Keyboard {
     >(
         &mut self,
         display: &mut Graphics<'_, DT>,
-        proposed_share_index: Option<u32>,
     ) {
         self.render_backup_input(&mut display.framebuf);
         self.clear_keyboard(&mut display.framebuf);
 
         if self.entered_hrp_index.is_none() {
-            for y_row in 0..KEYBOARD_KEYS_NUMBERS.len() {
-                for x_pos in 0..KEYBOARD_KEYS_NUMBERS[y_row].len() {
+            for (y_row, row) in KEYBOARD_KEYS_NUMBERS.iter().enumerate() {
+                for x_pos in 0..row.len() {
                     self.render_character_key(&mut display.framebuf, (y_row, x_pos), false);
                 }
             }
         } else {
             let top_index = self.top_row_index;
-            for y_row in (0..KEYROWS_SHOWN).map(|i| {
-                let row = (top_index + i) % KEYBOARD_KEYS.len();
-                row
-            }) {
+            for y_row in (0..KEYROWS_SHOWN).map(|i| (top_index + i) % KEYBOARD_KEYS.len()) {
                 for x_pos in 0..KEYBOARD_KEYS[y_row].len() {
                     self.render_character_key(&mut display.framebuf, (y_row, x_pos), false);
                 }
@@ -330,7 +322,7 @@ impl Keyboard {
         }
 
         if let Some(key) = &self.touched_key {
-            self.render_character_key(&mut display.framebuf, key.clone(), true);
+            self.render_character_key(&mut display.framebuf, *key, true);
         }
     }
 
@@ -366,13 +358,11 @@ impl Keyboard {
                     match (&touch.gesture, touch.action) {
                         // Backspace
                         (TouchGesture::SlideLeft, 1) => {
-                            if self.buffer.len() > 0 {
+                            if !self.buffer.is_empty() {
                                 self.buffer.pop();
-                            } else {
-                                if let Some(hrp) = &self.entered_hrp_index {
-                                    self.buffer = hrp.chars().collect();
-                                    self.entered_hrp_index = None;
-                                }
+                            } else if let Some(hrp) = &self.entered_hrp_index {
+                                self.buffer = hrp.chars().collect();
+                                self.entered_hrp_index = None;
                             }
                             true
                         }
@@ -384,13 +374,13 @@ impl Keyboard {
                             true
                         }
                         // /* Useful for quick testing */
-                        (TouchGesture::SlideRight, 1) => {
-                            self.buffer =
-                                "62ZH846G3ZP67ZH3MQVQ7KFCAHEFPDPW2V09RJEGTRAKRW0HYNYQFGWK2"
-                                    .chars()
-                                    .collect();
-                            true
-                        }
+                        // (TouchGesture::SlideRight, 1) => {
+                        //     self.buffer =
+                        //         "62ZH846G3ZP67ZH3MQVQ7KFCAHEFPDPW2V09RJEGTRAKRW0HYNYQFGWK2"
+                        //             .chars()
+                        //             .collect();
+                        //     true
+                        // }
                         (TouchGesture::SlideUp, 1) => {
                             self.top_row_index =
                                 (self.top_row_index + KEYROWS_SHOWN) % KEYBOARD_KEYS.len();
@@ -405,10 +395,9 @@ impl Keyboard {
                                 if self.touched_key.is_none() {
                                     if c == '✓' {
                                         // special case where we finish entering hrp
-                                        self.entered_hrp_index = Some(format!(
-                                            "{}",
-                                            self.buffer.clone().into_iter().collect::<String>()
-                                        ));
+                                        self.entered_hrp_index = Some(
+                                            self.buffer.clone().into_iter().collect::<String>(),
+                                        );
                                         self.touched_key = None;
                                         self.buffer.clear();
                                     } else if c == '_' {

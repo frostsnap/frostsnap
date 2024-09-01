@@ -80,7 +80,6 @@ pub enum Workflow {
     },
     EnteringBackup {
         keyboard: Keyboard,
-        proposed_share_index: Option<u32>,
     },
 }
 

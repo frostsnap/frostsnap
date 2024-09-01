@@ -314,16 +314,9 @@ impl FrostSigner {
                     DeviceToUserMessage::DisplayBackupRequest { key_id },
                 )])
             }
-            (
-                None,
-                CoordinatorToDeviceMessage::LoadShareBackup {
-                    proposed_share_index,
-                },
-            ) => {
+            (None, CoordinatorToDeviceMessage::LoadShareBackup) => {
                 self.action_state = Some(SignerState::LoadingBackup);
-                Ok(vec![DeviceSend::ToUser(DeviceToUserMessage::EnterBackup {
-                    proposed_share_index,
-                })])
+                Ok(vec![DeviceSend::ToUser(DeviceToUserMessage::EnterBackup)])
             }
             _ => Err(Error::signer_message_kind(&self.action_state, &message)),
         }

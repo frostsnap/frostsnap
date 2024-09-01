@@ -699,7 +699,6 @@ impl FrostCoordinator {
         &mut self,
         device_id: DeviceId,
         key_id: KeyId,
-        proposed_share_index: Option<u32>,
     ) -> Result<Vec<CoordinatorSend>, ActionError> {
         let key = self
             .keys
@@ -710,9 +709,7 @@ impl FrostCoordinator {
             device: device_id,
         });
         Ok(vec![CoordinatorSend::ToDevice {
-            message: CoordinatorToDeviceMessage::LoadShareBackup {
-                proposed_share_index,
-            },
+            message: CoordinatorToDeviceMessage::LoadShareBackup,
             destinations: BTreeSet::from_iter([device_id]),
         }])
     }

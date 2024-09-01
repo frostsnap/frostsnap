@@ -640,13 +640,12 @@ impl FfiCoordinator {
         &self,
         device_id: DeviceId,
         key_id: KeyId,
-        proposed_share_index: Option<u32>,
         stream: StreamSink<api::LoadShareState>,
     ) -> anyhow::Result<()> {
         let restore_messages = {
             let mut coordinator = self.coordinator.lock().unwrap();
             coordinator.staged_mutate(&mut *self.db.lock().unwrap(), |coordinator| {
-                Ok(coordinator.restore_share(device_id, key_id, proposed_share_index)?)
+                Ok(coordinator.restore_share(device_id, key_id)?)
             })?
         };
         self.pending_for_outbox

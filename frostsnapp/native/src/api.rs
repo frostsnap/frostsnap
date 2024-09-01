@@ -828,26 +828,7 @@ impl Coordinator {
         key_id: KeyId,
         sink: StreamSink<LoadShareState>,
     ) -> Result<()> {
-        let key = self
-            .0
-            .frost_keys()
-            .into_iter()
-            .find(|frost_key| frost_key.id().0 == key_id);
-
-        if let Some(key) = key {
-            let proposed_share_index =
-                key.0
-                    .device_to_share_indicies()
-                    .get(&device_id)
-                    .map(|scalar_index| {
-                        let mut u32_index_bytes = [0u8; 4];
-                        u32_index_bytes.copy_from_slice(&scalar_index.to_bytes()[28..]);
-                        u32::from_be_bytes(u32_index_bytes)
-                    });
-            assert!(proposed_share_index.is_some());
-            self.0
-                .restore_share_on_device(device_id, key_id, proposed_share_index, sink)?;
-        }
+        self.0.restore_share_on_device(device_id, key_id, sink)?;
         Ok(())
     }
 }

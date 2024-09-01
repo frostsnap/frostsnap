@@ -47,9 +47,7 @@ pub enum CoordinatorToDeviceMessage {
     DisplayBackup {
         key_id: KeyId,
     },
-    LoadShareBackup {
-        proposed_share_index: Option<u32>,
-    },
+    LoadShareBackup,
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
@@ -246,9 +244,7 @@ pub enum DeviceToUserMessage {
         key_id: KeyId,
         backup: String,
     },
-    EnterBackup {
-        proposed_share_index: Option<u32>,
-    },
+    EnterBackup,
     EnteredBackup(SecretShare),
 }
 
