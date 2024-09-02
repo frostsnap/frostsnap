@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:frostsnapp/device.dart';
 import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/device_setup.dart';
+import 'package:frostsnapp/theme.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'global.dart';
 
@@ -108,7 +109,7 @@ class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
           } else {
             return Text(
               'No devices connected',
-              style: TextStyle(color: Colors.grey, fontSize: 24.0),
+              style: TextStyle(color: uninterestedColor, fontSize: 24.0),
             );
           }
         });
@@ -277,13 +278,11 @@ Widget buildInteractiveDevice(BuildContext context, ConnectedDevice device,
               FirmwareUpgradeDialog.show(context);
             },
             icon: Icon(Icons.upgrade),
-            color: Colors.orange,
+            color: awaitingColor,
           ),
           SizedBox(height: 5.0),
-          Text("Upgrade",
-              style: TextStyle(color: Colors.black, fontSize: 13.0)),
-          Text("Firmware",
-              style: TextStyle(color: Colors.black, fontSize: 13.0))
+          Text("Upgrade", style: TextStyle(color: textColor, fontSize: 13.0)),
+          Text("Firmware", style: TextStyle(color: textColor, fontSize: 13.0))
         ]);
   }
 

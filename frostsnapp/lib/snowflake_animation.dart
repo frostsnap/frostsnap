@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 
+import 'package:frostsnapp/theme.dart';
+
 Offset midpoint(Offset p1, Offset p2) {
   return Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
 }
@@ -13,7 +15,7 @@ class SnowflakePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.blue
+      ..color = textColor
       ..strokeWidth = 3
       ..style = PaintingStyle.stroke;
 

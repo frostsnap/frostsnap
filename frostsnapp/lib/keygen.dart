@@ -11,6 +11,7 @@ import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/hex.dart';
 import 'package:frostsnapp/stream_ext.dart';
+import 'package:frostsnapp/theme.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class KeyNamePage extends StatefulWidget {
@@ -130,7 +131,7 @@ class DevicesPage extends StatelessWidget {
                   prompt = Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.warning, color: Colors.orange),
+                        Icon(Icons.warning, color: awaitingColor),
                         SizedBox(width: 5.0),
                         Text(
                           "Some devices need their firmware upgraded before they can be used to generated a key",
@@ -431,7 +432,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                           icon = const Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.touch_app, color: Colors.orange),
+                                Icon(Icons.touch_app, color: awaitingColor),
                                 SizedBox(width: 4),
                                 Text("Confirm"),
                               ]);
@@ -467,12 +468,12 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                               style: TextButton.styleFrom(
                                   tapTargetSize: MaterialTapTargetSize
                                       .shrinkWrap, // Reduce button tap target size
-                                  backgroundColor: Colors.red),
+                                  backgroundColor: errorColor),
                               child: Text(
                                 'cancel',
                                 style: TextStyle(
                                     fontWeight: FontWeight.bold,
-                                    color: Colors.white),
+                                    color: textColor),
                               ),
                             ),
                             Text("."),
@@ -519,8 +520,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                           TextSpan(
                             text: 'X',
                             style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black),
+                                fontWeight: FontWeight.bold, color: textColor),
                           ),
                           TextSpan(
                             text:
@@ -536,8 +536,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                           TextSpan(
                             text: 'X',
                             style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black),
+                                fontWeight: FontWeight.bold, color: textColor),
                           ),
                           TextSpan(
                             text: ']',
@@ -545,7 +544,7 @@ class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
                         ],
                         style: TextStyle(
                             fontFamily: 'Courier',
-                            color: Colors.grey,
+                            color: textSecondaryColor,
                             fontSize: 20), // Base style for the whole text
                       )),
                     ),

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/image_converter.dart';
+import 'package:frostsnapp/theme.dart';
 
 class PsbtCameraReader extends StatefulWidget {
   const PsbtCameraReader({required this.cameras, super.key});
@@ -98,8 +99,8 @@ class _PsbtCameraReaderState extends State<PsbtCameraReader> {
                   padding: EdgeInsets.all(4.0),
                   child: LinearProgressIndicator(
                     value: progress,
-                    backgroundColor: Colors.grey,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                    backgroundColor: backgroundSecondaryColor,
+                    valueColor: AlwaysStoppedAnimation<Color>(awaitingColor),
                     minHeight: 8,
                   )),
               SizedBox(height: 8),

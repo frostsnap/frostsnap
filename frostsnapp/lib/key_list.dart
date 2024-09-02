@@ -2,6 +2,7 @@ import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/keygen.dart';
 import 'package:frostsnapp/stream_ext.dart';
+import 'package:frostsnapp/theme.dart';
 import 'package:frostsnapp/wallet.dart';
 
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
@@ -150,6 +151,7 @@ class _KeyCard extends State<KeyCard> {
     }
 
     return Card(
+      color: backgroundSecondaryColor,
       child: Padding(
         padding: const EdgeInsets.all(8.0),
         child: Column(
@@ -164,7 +166,8 @@ class _KeyCard extends State<KeyCard> {
                   fontFamily: 'Monospace'),
             ),
             const SizedBox(height: 8),
-            Text("Threshold: ${widget.frostKey.threshold()}"),
+            Text("Threshold: ${widget.frostKey.threshold()}",
+                style: TextStyle(color: textSecondaryColor)),
             Row(mainAxisAlignment: MainAxisAlignment.center, children: [
               signButton,
               const SizedBox(width: 5),
