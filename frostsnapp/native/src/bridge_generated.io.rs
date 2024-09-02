@@ -454,6 +454,14 @@ pub extern "C" fn wire_get_device_name__method__Coordinator(
 }
 
 #[no_mangle]
+pub extern "C" fn wire_final_keygen_ack__method__Coordinator(
+    port_: i64,
+    that: *mut wire_Coordinator,
+) {
+    wire_final_keygen_ack__method__Coordinator_impl(port_, that)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_descriptor_for_key__method__BitcoinContext(
     that: *mut wire_BitcoinContext,
     key_id: *mut wire_KeyId,

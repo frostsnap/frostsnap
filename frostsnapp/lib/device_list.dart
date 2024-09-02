@@ -114,7 +114,7 @@ class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
     final list = AnimatedList(
         primary:
             true, // I dunno but the scrollbar doesn't work unless you set this
-        padding: EdgeInsets.symmetric(vertical: 10),
+        padding: EdgeInsets.symmetric(vertical: 5),
         shrinkWrap: true,
         key: deviceListKey,
         itemBuilder: (context, index, animation) {

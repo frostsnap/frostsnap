@@ -190,7 +190,7 @@ impl FrostCoordinator {
                     device_to_share_index,
                     agg_input,
                     acks,
-                    pending_key_name,
+                    ..
                 })),
                 DeviceToCoordinatorMessage::KeyGenAck(acked_session_hash),
             ) => {
@@ -215,27 +215,16 @@ impl FrostCoordinator {
                 }
 
                 if acks.insert(from) {
+                    let all_acks_received = acks.len() == device_to_share_index.len();
+
                     outgoing.push(CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen(
-                        CoordinatorToUserKeyGenMessage::KeyGenAck { from },
+                        CoordinatorToUserKeyGenMessage::KeyGenAck {
+                            from,
+                            all_acks_received,
+                        },
                     )));
                 }
 
-                let all_acks = acks.len() == device_to_share_index.len();
-                if all_acks {
-                    let key = CoordinatorFrostKey {
-                        frost_key: agg_input.shared_key().non_zero().expect("invariant"),
-                        device_to_share_index: device_to_share_index.clone(),
-                        key_name: pending_key_name.clone(),
-                    };
-                    let key_id = key.frost_key.key_id();
-                    self.action_state = None;
-
-                    self.mutate(Mutation::NewKey(key));
-
-                    outgoing.extend([CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen(
-                        CoordinatorToUserKeyGenMessage::FinishedKey { key_id },
-                    ))]);
-                }
                 Ok(outgoing)
             }
             (
@@ -462,6 +451,41 @@ impl FrostCoordinator {
             Some(action_state) => Err(ActionError::WrongState {
                 in_state: action_state.name(),
                 action: "do_keygen",
+            }),
+        }
+    }
+
+    /// This is called when the user has checked every device agrees and finally confirms this with
+    /// the coordinator.
+    pub fn final_keygen_ack(&mut self) -> Result<KeyId, ActionError> {
+        match &self.action_state {
+            Some(CoordinatorState::KeyGen(KeyGenState::WaitingForAcks {
+                device_to_share_index,
+                agg_input,
+                acks,
+                pending_key_name,
+            })) => {
+                let all_acks = acks.len() == device_to_share_index.len();
+                if all_acks {
+                    let key = CoordinatorFrostKey {
+                        frost_key: agg_input.shared_key().non_zero().expect("invariant"),
+                        device_to_share_index: device_to_share_index.clone(),
+                        key_name: pending_key_name.clone(),
+                    };
+                    let key_id = key.frost_key.key_id();
+                    self.action_state = None;
+
+                    self.mutate(Mutation::NewKey(key));
+                    Ok(key_id)
+                } else {
+                    Err(ActionError::StateInconsistent(
+                        "all device acks have not been received yet".into(),
+                    ))
+                }
+            }
+            _ => Err(ActionError::WrongState {
+                in_state: self.state_name(),
+                action: "final_keygen_ack",
             }),
         }
     }

@@ -342,6 +342,11 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kGetDeviceNameMethodCoordinatorConstMeta;
 
+  Future<KeyId> finalKeygenAckMethodCoordinator(
+      {required Coordinator that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kFinalKeygenAckMethodCoordinatorConstMeta;
+
   String descriptorForKeyMethodBitcoinContext(
       {required BitcoinContext that, required KeyId keyId, dynamic hint});
 
@@ -983,6 +988,11 @@ class Coordinator {
       bridge.getDeviceNameMethodCoordinator(
         that: this,
         id: id,
+      );
+
+  Future<KeyId> finalKeygenAck({dynamic hint}) =>
+      bridge.finalKeygenAckMethodCoordinator(
+        that: this,
       );
 }
 

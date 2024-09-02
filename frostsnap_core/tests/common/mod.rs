@@ -1,13 +1,14 @@
 use frostsnap_core::message::{
-    CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToUserMessage, DeviceSend,
-    DeviceToCoordinatorMessage, DeviceToStorageMessage, DeviceToUserMessage,
+    CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToUserKeyGenMessage,
+    CoordinatorToUserMessage, DeviceSend, DeviceToCoordinatorMessage, DeviceToStorageMessage,
+    DeviceToUserMessage,
 };
 use frostsnap_core::{coordinator, MessageResult};
 use frostsnap_core::{
     coordinator::{FrostCoordinator, SigningSessionState},
     DeviceId, FrostSigner,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 #[derive(Debug, Clone)]
 pub enum Send {
@@ -76,7 +77,17 @@ impl Send {
 
 #[allow(unused)]
 pub trait Env {
-    fn user_react_to_coordinator(&mut self, run: &mut Run, message: CoordinatorToUserMessage) {}
+    fn user_react_to_coordinator(&mut self, run: &mut Run, message: CoordinatorToUserMessage) {
+        match message {
+            CoordinatorToUserMessage::KeyGen(CoordinatorToUserKeyGenMessage::KeyGenAck {
+                all_acks_received: true,
+                ..
+            }) => {
+                run.coordinator.final_keygen_ack();
+            }
+            _ => { /* nothing needs doing */ }
+        }
+    }
     fn user_react_to_device(
         &mut self,
         run: &mut Run,
@@ -130,7 +141,7 @@ impl Env for DefaultTestEnv {}
 pub struct Run {
     pub coordinator: FrostCoordinator,
     pub devices: BTreeMap<DeviceId, FrostSigner>,
-    pub message_stack: Vec<Send>,
+    pub message_queue: VecDeque<Send>,
     pub transcript: Vec<Send>,
 }
 
@@ -150,7 +161,7 @@ impl Run {
         Self {
             coordinator,
             devices,
-            message_stack: Default::default(),
+            message_queue: Default::default(),
             transcript: Default::default(),
         }
     }
@@ -168,7 +179,7 @@ impl Run {
     }
 
     pub fn extend(&mut self, iter: impl IntoIterator<Item = impl Into<Send>>) {
-        self.message_stack
+        self.message_queue
             .extend(iter.into_iter().map(|v| v.into()));
     }
 
@@ -177,7 +188,7 @@ impl Run {
         from: DeviceId,
         iter: impl IntoIterator<Item = DeviceSend>,
     ) {
-        self.message_stack
+        self.message_queue
             .extend(iter.into_iter().map(|v| Send::device_send(from, v)))
     }
 
@@ -192,7 +203,7 @@ impl Run {
         mut until: impl FnMut(&mut Run) -> bool,
     ) -> MessageResult<()> {
         while !until(self) {
-            let to_send = match self.message_stack.pop() {
+            let to_send = match self.message_queue.pop_front() {
                 Some(message) => message,
                 None => break,
             };
@@ -207,7 +218,7 @@ impl Run {
                     env.user_react_to_coordinator(self, message);
                 }
                 Send::DeviceToCoordinator { from, message } => {
-                    self.message_stack.extend(
+                    self.message_queue.extend(
                         self.coordinator
                             .recv_device_message(from, message)?
                             .into_iter()
@@ -219,7 +230,7 @@ impl Run {
                     message,
                 } => {
                     for destination in destinations {
-                        self.message_stack.extend(
+                        self.message_queue.extend(
                             self.devices
                                 .get_mut(&destination)
                                 .unwrap()

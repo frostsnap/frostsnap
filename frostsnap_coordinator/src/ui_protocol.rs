@@ -28,6 +28,7 @@ pub trait UiProtocol: Send + Any + 'static {
     fn poll(&mut self) -> (Vec<CoordinatorSendMessage>, Vec<UiToStorageMessage>);
 
     fn as_any(&self) -> &dyn Any;
+    fn as_mut_any(&mut self) -> &mut dyn Any;
 }
 
 pub trait Sink<M>: Send {

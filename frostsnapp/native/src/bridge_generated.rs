@@ -1099,6 +1099,22 @@ fn wire_get_device_name__method__Coordinator_impl(
         },
     )
 }
+fn wire_final_keygen_ack__method__Coordinator_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<Coordinator> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, mirror_KeyId, _>(
+        WrapInfo {
+            debug_name: "final_keygen_ack__method__Coordinator",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_that = that.wire2api();
+            move |task_callback| Coordinator::final_keygen_ack(&api_that)
+        },
+    )
+}
 fn wire_descriptor_for_key__method__BitcoinContext_impl(
     that: impl Wire2Api<BitcoinContext> + UnwindSafe,
     key_id: impl Wire2Api<KeyId> + UnwindSafe,

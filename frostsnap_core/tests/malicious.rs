@@ -41,7 +41,7 @@ fn keygen_maliciously_replace_public_poly() {
     run.extend(keygen_init.clone());
 
     let result = run.run_until(&mut DefaultTestEnv, &mut test_rng, move |run| {
-        for send in run.message_stack.iter_mut() {
+        for send in run.message_queue.iter_mut() {
             if let Send::DeviceToCoordinator {
                 from: _,
                 message: DeviceToCoordinatorMessage::KeyGenResponse(input),
@@ -64,7 +64,7 @@ fn keygen_maliciously_replace_public_poly() {
                 *input = response;
             }
         }
-        run.message_stack.is_empty()
+        run.message_queue.is_empty()
     });
 
     assert!(result.is_err());

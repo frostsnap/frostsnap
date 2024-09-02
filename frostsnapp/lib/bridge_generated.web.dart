@@ -710,6 +710,9 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* String? */ wire_get_device_name__method__Coordinator(
       List<dynamic> that, List<dynamic> id);
 
+  external dynamic /* void */ wire_final_keygen_ack__method__Coordinator(
+      NativePortType port_, List<dynamic> that);
+
   external dynamic /* String */ wire_descriptor_for_key__method__BitcoinContext(
       List<dynamic> that, List<dynamic> key_id);
 
@@ -1069,6 +1072,10 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   dynamic /* String? */ wire_get_device_name__method__Coordinator(
           List<dynamic> that, List<dynamic> id) =>
       wasmModule.wire_get_device_name__method__Coordinator(that, id);
+
+  void wire_final_keygen_ack__method__Coordinator(
+          NativePortType port_, List<dynamic> that) =>
+      wasmModule.wire_final_keygen_ack__method__Coordinator(port_, that);
 
   dynamic /* String */ wire_descriptor_for_key__method__BitcoinContext(
           List<dynamic> that, List<dynamic> key_id) =>

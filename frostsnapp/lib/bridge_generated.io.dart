@@ -2025,6 +2025,24 @@ class NativeWire implements FlutterRustBridgeWireBase {
           WireSyncReturn Function(
               ffi.Pointer<wire_Coordinator>, ffi.Pointer<wire_DeviceId>)>();
 
+  void wire_final_keygen_ack__method__Coordinator(
+    int port_,
+    ffi.Pointer<wire_Coordinator> that,
+  ) {
+    return _wire_final_keygen_ack__method__Coordinator(
+      port_,
+      that,
+    );
+  }
+
+  late final _wire_final_keygen_ack__method__CoordinatorPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Coordinator>)>>(
+      'wire_final_keygen_ack__method__Coordinator');
+  late final _wire_final_keygen_ack__method__Coordinator =
+      _wire_final_keygen_ack__method__CoordinatorPtr
+          .asFunction<void Function(int, ffi.Pointer<wire_Coordinator>)>();
+
   WireSyncReturn wire_descriptor_for_key__method__BitcoinContext(
     ffi.Pointer<wire_BitcoinContext> that,
     ffi.Pointer<wire_KeyId> key_id,
