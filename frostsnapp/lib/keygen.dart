@@ -164,7 +164,7 @@ class DevicesPage extends StatelessWidget {
                     color: backgroundPrimaryColor,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.2), // Shadow color
+                        color: shadowColor,
                         spreadRadius: 1,
                         blurRadius: 8,
                         offset: Offset(0, 4), // Position of the shadow

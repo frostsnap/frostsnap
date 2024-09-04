@@ -214,17 +214,16 @@ class _DeviceSettingsState extends State<DeviceSettings> {
     }
 
     return Scaffold(
-        appBar: AppBar(
-          title: Text(
-            "Device Settings",
-          ),
+      appBar: AppBar(
+        title: Text(
+          "Device Settings",
         ),
-        body: Material(
-          child: Padding(
-            padding: EdgeInsets.only(left: 16, bottom: 16),
-            child: body,
-          ),
-        ));
+      ),
+      body: Padding(
+        padding: EdgeInsets.only(left: 16, bottom: 16),
+        child: body,
+      ),
+    );
   }
 }
 

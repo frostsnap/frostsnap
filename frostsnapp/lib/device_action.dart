@@ -45,7 +45,7 @@ Future<T?> showDeviceActionDialog<T>({
                 borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
                 boxShadow: [
                   BoxShadow(
-                    color: backgroundSecondaryColor,
+                    color: shadowColor,
                     blurRadius: 10,
                     offset: Offset(0, -2),
                   ),
@@ -109,7 +109,7 @@ void showErrorSnackbar(BuildContext context, String errorMessage) {
 }
 
 class DialogHeader extends StatelessWidget {
-  final Widget child; // Content of the header
+  final Widget child;
 
   const DialogHeader({super.key, required this.child});
 
@@ -118,25 +118,22 @@ class DialogHeader extends StatelessWidget {
     return Container(
         width: double.infinity,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: backgroundPrimaryColor,
           border: Border(
             bottom: BorderSide(
-              color: Colors.grey,
+              color: backgroundSecondaryColor,
               width: 1.0,
             ),
           ),
         ),
-        padding: EdgeInsets.only(
-            top: 15.0,
-            bottom: 10.0,
-            left: 25.0,
-            right: 25.0), // Padding for the header
+        padding:
+            EdgeInsets.only(top: 15.0, bottom: 10.0, left: 25.0, right: 25.0),
         child: DefaultTextStyle(
             style: TextStyle(
-              fontSize: 18.0, // Default text size
-              fontWeight: FontWeight.normal, // Default text weight
-              color: Colors.black, // Default text color
-            ), // The content passed to the header
+              fontSize: 18.0,
+              fontWeight: FontWeight.normal,
+              color: textColor,
+            ),
             child: Align(alignment: Alignment.topCenter, child: child)));
   }
 }
