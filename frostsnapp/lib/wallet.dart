@@ -367,7 +367,7 @@ class TxList extends StatelessWidget {
       stream: txStream,
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
-          return Center(child: CircularProgressIndicator());
+          return Center(child: FsProgressIndicator());
         }
         final transactions = snapshot.data!.txs;
         return ListView.builder(

@@ -21,13 +21,11 @@ const double iconSize = 20.0;
 
 class DeviceList extends StatefulWidget {
   final DeviceBuilder deviceBuilder;
-  final bool scrollable;
 
-  DeviceList(
-      {Key? key,
-      this.deviceBuilder = buildInteractiveDevice,
-      this.scrollable = false})
-      : super(key: key);
+  DeviceList({
+    Key? key,
+    this.deviceBuilder = buildInteractiveDevice,
+  }) : super(key: key);
 
   @override
   State<StatefulWidget> createState() => _DeviceListState();
@@ -114,9 +112,9 @@ class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
           }
         });
     final list = AnimatedList(
-        physics: widget.scrollable
-            ? AlwaysScrollableScrollPhysics()
-            : NeverScrollableScrollPhysics(),
+        primary:
+            true, // I dunno but the scrollbar doesn't work unless you set this
+        padding: EdgeInsets.symmetric(vertical: 10),
         shrinkWrap: true,
         key: deviceListKey,
         itemBuilder: (context, index, animation) {
@@ -133,7 +131,9 @@ class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
         Center(
           child: noDevices,
         ),
-        Align(alignment: Alignment.topCenter, child: list)
+        Align(
+            alignment: Alignment.topCenter,
+            child: Scrollbar(thumbVisibility: true, child: list))
       ],
     );
   }
@@ -192,16 +192,13 @@ Orientation effectiveOrientation(BuildContext context) {
 typedef IconAssigner = (Widget?, Widget?) Function(BuildContext, DeviceId);
 
 class DeviceListWithIcons extends StatelessWidget {
-  const DeviceListWithIcons(
-      {super.key, required this.iconAssigner, this.scrollable = false});
+  const DeviceListWithIcons({super.key, required this.iconAssigner});
   final IconAssigner iconAssigner;
-  final bool scrollable;
 
   @override
   Widget build(BuildContext context) {
     return DeviceList(
       deviceBuilder: _builder,
-      scrollable: scrollable,
     );
   }
 

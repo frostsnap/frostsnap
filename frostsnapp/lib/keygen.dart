@@ -1,10 +1,10 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:frostsnapp/animated_check.dart';
+import 'package:frostsnapp/device.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_id_ext.dart';
 import 'package:frostsnapp/device_list.dart';
@@ -107,63 +107,76 @@ class DevicesPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('Devices')),
-      body: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: StreamBuilder(
-              stream: deviceListSubject,
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) {
-                  return CircularProgressIndicator();
-                }
-                final devices = snapshot.data!.state.devices;
-                final Widget prompt;
+      body: StreamBuilder(
+          stream: deviceListSubject,
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return FsProgressIndicator();
+            }
+            final devices = snapshot.data!.state.devices;
+            final Widget prompt;
 
-                final anyNeedUpgrade =
-                    devices.any((device) => device.needsFirmwareUpgrade());
+            final anyNeedUpgrade =
+                devices.any((device) => device.needsFirmwareUpgrade());
 
-                final anyNeedsName =
-                    devices.any((device) => device.name == null);
+            final anyNeedsName = devices.any((device) => device.name == null);
 
-                final allDevicesReady = !(anyNeedsName || anyNeedUpgrade);
-                final style = TextStyle(fontSize: 18);
+            final allDevicesReady = !(anyNeedsName || anyNeedUpgrade);
+            final style = TextStyle(fontSize: 16);
 
-                if (anyNeedUpgrade) {
-                  prompt = Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.warning, color: awaitingColor),
-                        SizedBox(width: 5.0),
-                        Text(
-                          "Some devices need their firmware upgraded before they can be used to generated a key",
-                          style: style,
-                          textAlign: TextAlign.center,
-                        )
-                      ]);
-                } else if (anyNeedsName) {
-                  prompt = Text("Set up each device before generating a key");
-                } else if (devices.isEmpty) {
-                  prompt = Text(
-                    "Insert the devices that will be part of ‘${keyName}’",
-                    style: style,
-                    textAlign: TextAlign.center,
-                  );
-                } else {
-                  prompt = Text(
-                    "These devices will be part of ‘${keyName}’",
-                    style: style,
-                    textAlign: TextAlign.center,
-                  );
-                }
+            if (anyNeedUpgrade) {
+              prompt =
+                  Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Icon(Icons.warning, color: awaitingColor),
+                SizedBox(width: 5.0),
+                Text(
+                  "Some devices need their firmware upgraded before they can be used to generated a key",
+                  style: style,
+                  softWrap: true,
+                  textAlign: TextAlign.center,
+                )
+              ]);
+            } else if (anyNeedsName) {
+              prompt = Text("Set up each device before generating a key",
+                  style: style);
+            } else if (devices.isEmpty) {
+              prompt = Text(
+                "Insert the devices that will be part of ‘${keyName}’",
+                style: style,
+                textAlign: TextAlign.center,
+              );
+            } else {
+              prompt = Text(
+                "These ${devices.length} devices will be part of ‘${keyName}’",
+                style: style,
+                textAlign: TextAlign.center,
+              );
+            }
 
-                return Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    prompt,
-                    SizedBox(height: 20),
-                    DeviceList(scrollable: true),
-                    SizedBox(height: 20),
-                    Align(
+            return Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(child: DeviceList()),
+                Container(
+                  // Wrap the bottom section in a Container with BoxDecoration
+                  decoration: BoxDecoration(
+                    color: backgroundPrimaryColor,
+                    boxShadow: [
+                      BoxShadow(
+                        color: shadowColor,
+                        spreadRadius: 1,
+                        blurRadius: 8,
+                        offset: Offset(0, 4), // Position of the shadow
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      SizedBox(height: 20),
+                      prompt,
+                      SizedBox(height: 20),
+                      Align(
                         alignment: Alignment.center,
                         child: ElevatedButton.icon(
                           onPressed: allDevicesReady
@@ -182,10 +195,15 @@ class DevicesPage extends StatelessWidget {
                               : null,
                           icon: Icon(Icons.arrow_forward),
                           label: Text('Next'),
-                        )),
-                  ],
-                );
-              })),
+                        ),
+                      ),
+                      SizedBox(height: 20),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          }),
     );
   }
 }
@@ -222,6 +240,7 @@ class _ThresholdPageState extends State<ThresholdPage> {
             Text(
               "How many devices will be needed to sign under this key?",
               style: TextStyle(fontSize: 18),
+              softWrap: true,
               textAlign: TextAlign.center,
             ),
             SizedBox(height: 20),
@@ -252,6 +271,7 @@ class _ThresholdPageState extends State<ThresholdPage> {
                   padding: const EdgeInsets.only(left: 8.0),
                   child: Text(
                     'of ${widget.selectedDevices.length} devices will be needed to sign',
+                    softWrap: true,
                     style: TextStyle(fontSize: 18),
                     textAlign: TextAlign.center,
                   ),
@@ -263,24 +283,25 @@ class _ThresholdPageState extends State<ThresholdPage> {
               alignment: Alignment.center,
               child: ElevatedButton.icon(
                 onPressed: () async {
-                  // Handle the completion of the process here
-                  final keyId = await Navigator.push(context,
-                      MaterialPageRoute(builder: (context) {
-                    final stream = coord
-                        .generateNewKey(
-                            threshold: _selectedThreshold,
-                            devices: widget.selectedDevices
-                                .map((device) => device.id)
-                                .toList(),
-                            keyName: widget.keyName)
-                        .toBehaviorSubject();
-                    return DoKeyGenScreen(
-                      stream: stream,
-                      keyName: widget.keyName,
-                    );
-                  }));
+                  final stream = coord
+                      .generateNewKey(
+                          threshold: _selectedThreshold,
+                          devices: widget.selectedDevices
+                              .map((device) => device.id)
+                              .toList(),
+                          keyName: widget.keyName)
+                      .toBehaviorSubject();
+                  final keyId = await showCheckKeyGenDialog(
+                    context: context,
+                    stream: stream,
+                  );
 
-                  if (context.mounted) {
+                  if (keyId == null && context.mounted) {
+                    coord.cancelProtocol();
+                    Navigator.popUntil(context, (route) {
+                      return route.settings.name == "DevicesPage";
+                    });
+                  } else if (context.mounted) {
                     Navigator.pop(context, keyId);
                   }
                 },
@@ -298,6 +319,8 @@ class _ThresholdPageState extends State<ThresholdPage> {
 // Utility function for creating the page transition
 Route createRoute(Widget page) {
   return PageRouteBuilder(
+    // So that we can use popUntil to find the route later on.
+    settings: RouteSettings(name: page.runtimeType.toString()),
     pageBuilder: (context, animation, secondaryAnimation) => page,
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
       const begin = Offset(1.0, 0.0);
@@ -315,271 +338,207 @@ Route createRoute(Widget page) {
   );
 }
 
-class DoKeyGenScreen extends StatefulWidget {
-  final Stream<KeyGenState> stream;
-  final String keyName;
-  const DoKeyGenScreen(
-      {super.key, required this.stream, required this.keyName});
-
-  @override
-  State<DoKeyGenScreen> createState() => _DoKeyGenScreenState();
-}
-
-class _DoKeyGenScreenState extends State<DoKeyGenScreen> {
-  late Future aborted;
-
-  @override
-  void initState() {
-    super.initState();
-    aborted = widget.stream.firstWhere((state) => state.aborted != null);
-    aborted.then((state) {
-      if (mounted) {
-        Navigator.pop(context);
-        showErrorSnackbar(context, state.aborted!);
-      }
-    });
-
-    widget.stream
-        .firstWhere((state) => state.sessionHash != null)
-        .then((state) async {
-      final keyId = await showCheckKeyGenDialog(
-          sessionHash: state.sessionHash!, stream: widget.stream);
-      if (keyId != null) {
-        await showBackupDialogue(keyId: keyId);
-        if (mounted) {
-          Navigator.pop(context, keyId);
-        }
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-        appBar: AppBar(
-          title: const Text('Key Generation'),
-        ),
-        body: StreamBuilder(
-            stream: widget.stream,
+Future<KeyId?> showCheckKeyGenDialog({
+  required Stream<KeyGenState> stream,
+  required BuildContext context,
+}) async {
+  final result = await showDeviceActionDialog<KeyId>(
+      context: context,
+      complete: stream
+          .firstWhere(
+              (state) => state.aborted != null || state.finished != null)
+          .then((state) => state.finished),
+      builder: (context) {
+        return StreamBuilder(
+            stream: stream,
             builder: (context, snap) {
               if (!snap.hasData) {
-                return CircularProgressIndicator();
+                return FsProgressIndicator();
               }
-
               final state = snap.data!;
-              final gotShares = deviceIdSet(state.gotShares);
               final devices = deviceIdSet(state.devices);
+              final acks = deviceIdSet(state.sessionAcks);
+              final gotShares = deviceIdSet(state.gotShares);
+              final gotAllShares = setEquals(gotShares, devices);
 
-              return Center(
-                  child: Column(
-                      mainAxisAlignment: MainAxisAlignment.start,
-                      children: [
-                    const Text("Waiting for devices to generate key",
-                        style: TextStyle(fontSize: 20)),
-                    DeviceListWithIcons(
-                        scrollable: true,
-                        iconAssigner: (context, id) {
-                          if (devices.contains(id)) {
-                            final Widget icon;
-                            if (gotShares.contains(id)) {
-                              icon = AnimatedCheckCircle();
-                            } else {
-                              // the aspect ratio stops the circular progress indicator from stretching itself
-                              icon = const AspectRatio(
-                                  aspectRatio: 1,
-                                  child: CircularProgressIndicator());
-                            }
-                            return (null, icon);
-                          }
-                          return (null, null);
-                        })
-                  ]));
-            }));
-  }
-
-  Future<KeyId?> showCheckKeyGenDialog({
-    required U8Array32 sessionHash,
-    required Stream<KeyGenState> stream,
-  }) {
-    return showDeviceActionDialog<KeyId>(
-        context: context,
-        onCancel: () {
-          coord.cancelProtocol();
-        },
-        complete: stream
-            .firstWhere(
-                (state) => state.aborted != null || state.finished != null)
-            .then((state) => state.finished),
-        builder: (context) {
-          return StreamBuilder(
-              stream: stream,
-              builder: (context, snap) {
-                if (!snap.hasData) {
-                  return CircularProgressIndicator();
-                }
-                final state = snap.data!;
-                final devices = deviceIdSet(state.devices);
-                final acks = deviceIdSet(state.sessionAcks);
-
-                final deviceList = DeviceListWithIcons(
-                    key: const Key("dialog-device-list"),
-                    iconAssigner: (context, id) {
-                      if (devices.contains(id)) {
-                        final Widget icon;
+              final deviceList = DeviceListWithIcons(
+                  key: const Key("dialog-device-list"),
+                  iconAssigner: (context, id) {
+                    if (devices.contains(id)) {
+                      final Widget icon;
+                      if (!gotAllShares) {
+                        if (gotShares.contains(id)) {
+                          icon = AnimatedCheckCircle();
+                        } else {
+                          icon = FsProgressIndicator();
+                        }
+                      } else {
                         if (acks.contains(id)) {
                           icon = AnimatedCheckCircle();
                         } else {
-                          icon = const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.touch_app, color: awaitingColor),
-                                SizedBox(width: 4),
-                                Text("Confirm"),
-                              ]);
+                          icon = ConfirmPrompt();
                         }
-                        return (null, icon);
-                      } else {
-                        return (null, null);
                       }
-                    });
 
-                return Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text("Confirm all devices show:"),
-                      SizedBox(height: 10),
-                      Text(
-                        toSpacedHex(
-                            Uint8List.fromList(sessionHash.sublist(0, 4))),
-                        style: TextStyle(
-                          fontFamily: 'Courier',
-                          fontWeight: FontWeight.bold,
-                          fontSize: 25,
-                        ),
-                      ),
-                      Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text('If they do not then '),
-                            TextButton(
-                              onPressed: () {
-                                coord.cancelProtocol();
-                              },
-                              style: TextButton.styleFrom(
-                                  tapTargetSize: MaterialTapTargetSize
-                                      .shrinkWrap, // Reduce button tap target size
-                                  backgroundColor: errorColor),
-                              child: Text(
-                                'cancel',
-                                style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: textColor),
-                              ),
-                            ),
-                            Text("."),
-                          ]),
-                      Text("Otherwise your securiy is at risk",
-                          style:
-                              TextStyle(decoration: TextDecoration.underline)),
-                      Divider(),
-                      deviceList
-                    ]);
-              });
-        });
-  }
+                      return (null, icon);
+                    } else {
+                      return (null, null);
+                    }
+                  });
 
-  Future<void> showBackupDialogue({required KeyId keyId}) async {
-    final frostKey = coord.getKey(keyId: keyId)!;
-    final polynomialIdentifier = frostKey.polynomialIdentifier();
-
-    return showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-            actions: [
-              ElevatedButton(
-                child: Text("I have written down my backups"),
-                onPressed: () {
-                  coord.cancelAll();
-                  Navigator.pop(context);
-                },
-              ),
-            ],
-            content: SizedBox(
-              width: Platform.isAndroid ? double.maxFinite : 400.0,
-              child: Align(
-                alignment: Alignment.center,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text.rich(TextSpan(
-                        text:
-                            "Write down each device's backup for this key onto separate pieces of paper. Each piece of paper should look like this with every ",
-                        children: [
-                          TextSpan(
-                            text: 'X',
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold, color: textColor),
-                          ),
-                          TextSpan(
-                            text:
-                                ' replaced with the character shown on screen.',
-                          )
-                        ])),
-                    SizedBox(height: 8),
-                    Divider(),
-                    Center(
-                      child: Text.rich(TextSpan(
-                        text: 'frost[',
-                        children: <TextSpan>[
-                          TextSpan(
-                            text: 'X',
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold, color: textColor),
-                          ),
-                          TextSpan(
-                            text: ']',
-                          ),
-                        ],
-                        style: TextStyle(
-                            fontFamily: 'Courier',
-                            color: textSecondaryColor,
-                            fontSize: 20), // Base style for the whole text
-                      )),
-                    ),
-                    Center(
-                      child: Text(
-                        "xxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xxx",
-                        style: TextStyle(
-                            fontFamily: 'Courier',
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    Center(
-                        child: Text(
-                      "Identifier: ${toSpacedHex(polynomialIdentifier)}",
-                      style: TextStyle(fontFamily: 'Courier', fontSize: 18),
-                    )),
-                    Divider(),
-                    SizedBox(height: 16),
-                    Text(
-                        "Alongside each backup, also record the identifier above."),
-                    SizedBox(height: 8),
-                    Text(
-                        "This identifier is useful for knowing that these share backups belong to the same key and are compatibile."),
-                    SizedBox(height: 24),
-                    Text(
-                        "Any ${frostKey.threshold()} of these backups will provide complete control over this key."),
-                    SizedBox(height: 8),
-                    Text(
-                        "You should store these backups securely in separate locations."),
-                  ],
+              final waitingText = Text("waiting for devices to generation key");
+              final checkPrompt = Column(children: [
+                Text("Confirm all devices show:"),
+                SizedBox(height: 10),
+                Text(
+                  state.sessionHash == null
+                      ? ""
+                      : toSpacedHex(
+                          Uint8List.fromList(state.sessionHash!.sublist(0, 4))),
+                  style: TextStyle(
+                    fontFamily: 'Courier',
+                    fontWeight: FontWeight.bold,
+                    fontSize: 25,
+                  ),
                 ),
-              ),
-            ));
-      },
-    );
+                Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Text('If they do not then '),
+                  TextButton(
+                    onPressed: () {
+                      coord.cancelProtocol();
+                    },
+                    style: TextButton.styleFrom(
+                        tapTargetSize: MaterialTapTargetSize
+                            .shrinkWrap, // Reduce button tap target size
+                        backgroundColor: errorColor),
+                    child: Text(
+                      'cancel',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  Text("."),
+                ]),
+                Text("Otherwise your securiy is at risk",
+                    style: TextStyle(decoration: TextDecoration.underline)),
+              ]);
+
+              return Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    DialogHeader(
+                        child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Visibility.maintain(
+                          visible: state.sessionHash == null,
+                          child: waitingText,
+                        ),
+                        Visibility.maintain(
+                          visible: state.sessionHash != null,
+                          child: checkPrompt,
+                        ),
+                      ],
+                    )),
+                    Expanded(child: deviceList)
+                  ]);
+            });
+      });
+
+  if (result == null) {
+    coord.cancelProtocol();
   }
+  return result;
+}
+
+Future<void> showBackupDialogue(
+    {required KeyId keyId, required BuildContext context}) async {
+  final frostKey = coord.getKey(keyId: keyId)!;
+  final polynomialIdentifier = frostKey.polynomialIdentifier();
+
+  return showDialog(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+          actions: [
+            ElevatedButton(
+              child: Text("I have written down my backups"),
+              onPressed: () {
+                coord.cancelAll();
+                Navigator.pop(context);
+              },
+            ),
+          ],
+          content: SizedBox(
+            width: Platform.isAndroid ? double.maxFinite : 400.0,
+            child: Align(
+              alignment: Alignment.center,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text.rich(TextSpan(
+                      text:
+                          "Write down each device's backup for this key onto separate pieces of paper. Each piece of paper should look like this with every ",
+                      children: [
+                        TextSpan(
+                          text: 'X',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        TextSpan(
+                          text: ' replaced with the character shown on screen.',
+                        )
+                      ])),
+                  SizedBox(height: 8),
+                  Divider(),
+                  Center(
+                    child: Text.rich(TextSpan(
+                      text: 'frost[',
+                      children: <TextSpan>[
+                        TextSpan(
+                          text: 'X',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        TextSpan(
+                          text: ']',
+                        ),
+                      ],
+                      style: TextStyle(
+                          fontFamily: 'Courier',
+                          color: textSecondaryColor,
+                          fontSize: 20),
+                    )),
+                  ),
+                  Center(
+                    child: Text(
+                      "xxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xxx",
+                      style: TextStyle(
+                          fontFamily: 'Courier',
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  Center(
+                      child: Text(
+                    "Identifier: ${toSpacedHex(polynomialIdentifier)}",
+                    style: TextStyle(fontFamily: 'Courier', fontSize: 18),
+                  )),
+                  Divider(),
+                  SizedBox(height: 16),
+                  Text(
+                      "Alongside each backup, also record the identifier above."),
+                  SizedBox(height: 8),
+                  Text(
+                      "This identifier is useful for knowing that these share backups belong to the same key and are compatibile."),
+                  SizedBox(height: 24),
+                  Text(
+                      "Any ${frostKey.threshold()} of these backups will provide complete control over this key."),
+                  SizedBox(height: 8),
+                  Text(
+                      "You should store these backups securely in separate locations."),
+                ],
+              ),
+            ),
+          ));
+    },
+  );
 }

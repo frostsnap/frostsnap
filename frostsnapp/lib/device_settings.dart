@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/animated_check.dart';
 import 'package:frostsnapp/bridge_definitions.dart';
@@ -22,10 +21,7 @@ class DeviceSettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Device Settings')),
-      body: Padding(
-        padding: EdgeInsets.all(8.0),
-        child: DeviceList(scrollable: true),
-      ),
+      body: DeviceList(),
     );
   }
 }
@@ -76,7 +72,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
           'Waiting for device to reconnect',
           style: TextStyle(color: uninterestedColor, fontSize: 24.0),
         ),
-        CircularProgressIndicator(),
+        FsProgressIndicator(),
       ]));
     } else {
       final device_ = device!;
@@ -90,9 +86,9 @@ class _DeviceSettingsState extends State<DeviceSettings> {
               padding: const EdgeInsets.only(
                   bottom: 4.0), // Adjust the padding/margin here
               child: ListTile(
-                title: Row(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: [
+                  title: Row(
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      children: [
                     Column(children: [
                       Text(
                         keyName,
@@ -106,52 +102,50 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                             .displayBackup(id: widget.id, keyId: keyId)
                             .first;
 
-                        await showDeviceActionDialog(
-                            context: context,
-                            complete: _deviceRemoved.future,
-                            builder: (context) {
-                              return FutureBuilder(
-                                  future: confirmed,
-                                  builder: (context, snapshot) {
-                                    return Column(children: [
-                                      Text(snapshot.connectionState ==
-                                              ConnectionState.waiting
-                                          ? "Confirm on device to show backup"
-                                          : "Record backup displayed on device screen. Press cancel when finished."),
-                                      Divider(),
-                                      DeviceListWithIcons(
-                                          iconAssigner: (context, deviceId) {
-                                        if (deviceIdEquals(
-                                            deviceId, widget.id)) {
-                                          final label = LabeledDeviceText(
-                                              device_.name ?? "<unamed>");
-                                          final Widget icon;
-                                          if (snapshot.connectionState ==
-                                              ConnectionState.waiting) {
-                                            icon = ConfirmPrompt();
-                                          } else {
-                                            icon = DevicePrompt(
-                                                icon: Icon(Icons.edit_document,
-                                                    color: successColor),
-                                                text: "Record");
-                                          }
-                                          return (label, icon);
+                        final result = await showDeviceActionDialog(
+                          context: context,
+                          complete: _deviceRemoved.future,
+                          builder: (context) {
+                            return FutureBuilder(
+                                future: confirmed,
+                                builder: (context, snapshot) {
+                                  return Column(children: [
+                                    DialogHeader(
+                                        child: Text(snapshot.connectionState ==
+                                                ConnectionState.waiting
+                                            ? "Confirm on device to show backup"
+                                            : "Record backup displayed on device screen. Press cancel when finished.")),
+                                    Expanded(child: DeviceListWithIcons(
+                                        iconAssigner: (context, deviceId) {
+                                      if (deviceIdEquals(deviceId, widget.id)) {
+                                        final label = LabeledDeviceText(
+                                            device_.name ?? "<unamed>");
+                                        final Widget icon;
+                                        if (snapshot.connectionState ==
+                                            ConnectionState.waiting) {
+                                          icon = ConfirmPrompt();
                                         } else {
-                                          return (null, null);
+                                          icon = DevicePrompt(
+                                              icon: Icon(Icons.edit_document,
+                                                  color: successColor),
+                                              text: "Record");
                                         }
-                                      })
-                                    ]);
-                                  });
-                            },
-                            onCancel: () {
-                              coord.cancelProtocol();
-                            });
+                                        return (label, icon);
+                                      } else {
+                                        return (null, null);
+                                      }
+                                    }))
+                                  ]);
+                                });
+                          },
+                        );
+                        if (result == null) {
+                          coord.cancelProtocol();
+                        }
                       },
                       child: Text("Backup"),
                     ),
-                  ],
-                ),
-              ));
+                  ])));
         },
       );
 
@@ -162,7 +156,6 @@ class _DeviceSettingsState extends State<DeviceSettings> {
         );
       }
       final deviceFirmwareDigest = device_.firmwareDigest;
-      final canUpdate = coord.upgradeFirmwareDigest() != deviceFirmwareDigest;
 
       final firmwareSettings = Column(children: [
         Row(children: <Widget>[
@@ -281,7 +274,7 @@ class SettingsSection extends StatelessWidget {
 }
 
 class FirmwareUpgradeDialog extends StatefulWidget {
-  FirmwareUpgradeDialog({super.key});
+  const FirmwareUpgradeDialog({super.key});
 
   @override
   State<FirmwareUpgradeDialog> createState() => _FirmwareUpgradeDialogState();
@@ -291,7 +284,11 @@ class FirmwareUpgradeDialog extends StatefulWidget {
         context: context,
         builder: (context) {
           return FirmwareUpgradeDialog();
-        });
+        }).then((result) {
+      if (result == null) {
+        coord.cancelProtocol();
+      }
+    });
   }
 }
 
@@ -346,18 +343,17 @@ class _FirmwareUpgradeDialogState extends State<FirmwareUpgradeDialog> {
   @override
   Widget build(BuildContext context) {
     if (state == null) {
-      return CircularProgressIndicator.adaptive();
+      return FsProgressIndicator();
     }
     final confirmations = deviceIdSet(state!.confirmations);
     final needUpgrade = deviceIdSet(state!.needUpgrade);
+    final text = progress == null
+        ? "Confirm upgrade on devices"
+        : "Wait for upgrade to complete";
 
     return Column(children: [
-      progress == null
-          ? Text("Confirm upgrade on devices")
-          : Text(
-              "Wait for upgrade to complete.\nDevices will restart once finished."),
-      Divider(),
-      DeviceListWithIcons(iconAssigner: (context, deviceId) {
+      DialogHeader(child: Text(text)),
+      Expanded(child: DeviceListWithIcons(iconAssigner: (context, deviceId) {
         Widget? icon;
 
         if (needUpgrade.contains(deviceId)) {
@@ -369,7 +365,7 @@ class _FirmwareUpgradeDialogState extends State<FirmwareUpgradeDialog> {
             }
           } else {
             icon = Container(
-                padding: EdgeInsets.symmetric(vertical: 5.0, horizontal: 30.0),
+                padding: EdgeInsets.symmetric(vertical: 5.0, horizontal: 5.0),
                 child: LinearProgressIndicator(
                   value: progress!,
                   backgroundColor: backgroundSecondaryColor,
@@ -380,7 +376,7 @@ class _FirmwareUpgradeDialogState extends State<FirmwareUpgradeDialog> {
         }
 
         return (null, icon);
-      })
+      }))
     ]);
   }
 }

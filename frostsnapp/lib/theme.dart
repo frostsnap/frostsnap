@@ -6,6 +6,7 @@ const Color successColor = Color.fromARGB(255, 21, 255, 0);
 const Color awaitingColor = Color.fromARGB(255, 207, 124, 15);
 const Color uninterestedColor = Color.fromARGB(255, 167, 160, 160);
 const Color errorColor = Color.fromARGB(255, 172, 23, 23);
+const Color shadowColor = Colors.black26;
 const Color backgroundPrimaryColor = Color.fromARGB(255, 60, 107, 134);
 const Color backgroundSecondaryColor = Color.fromARGB(255, 35, 66, 83);
 const Color backgroundTertiaryColor = Color.fromARGB(255, 1, 60, 87);
@@ -23,6 +24,7 @@ const TextStyle defaultTextStyle = TextStyle(
 );
 
 final ThemeData frostsnappTheme = ThemeData(
+  scaffoldBackgroundColor: backgroundPrimaryColor,
   inputDecorationTheme: InputDecorationTheme(
       border: OutlineInputBorder(),
       enabledBorder: OutlineInputBorder(
@@ -56,7 +58,7 @@ final ThemeData frostsnappTheme = ThemeData(
   appBarTheme: AppBarTheme(
       backgroundColor: backgroundSecondaryColor,
       foregroundColor: textColor,
-      shadowColor: Colors.black,
+      shadowColor: shadowColor,
       elevation: 6.0,
       surfaceTintColor: Colors.white),
   snackBarTheme: SnackBarThemeData(contentTextStyle: defaultTextStyle),
@@ -77,8 +79,7 @@ final ThemeData frostsnappTheme = ThemeData(
   ),
   textButtonTheme: TextButtonThemeData(
     style: TextButton.styleFrom(
-        backgroundColor: backgroundTertiaryColor,
-        foregroundColor: textSecondaryColor),
+        backgroundColor: backgroundTertiaryColor, foregroundColor: textColor),
   ),
   elevatedButtonTheme: ElevatedButtonThemeData(
     style: ElevatedButton.styleFrom(
@@ -113,3 +114,16 @@ final ThemeData frostsnappTheme = ThemeData(
       DropdownMenuThemeData(textStyle: TextStyle(color: textColor)),
   dividerTheme: const DividerThemeData(color: Colors.black12),
 );
+
+class FsProgressIndicator extends StatelessWidget {
+  const FsProgressIndicator({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return AspectRatio(
+        aspectRatio: 1,
+        child: CircularProgressIndicator.adaptive(
+          valueColor: AlwaysStoppedAnimation<Color>(textSecondaryColor),
+        ));
+  }
+}

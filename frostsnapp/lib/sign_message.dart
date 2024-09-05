@@ -189,27 +189,32 @@ Future<List<EncodedSignature>?> showSigningProgressDialog(
   BuildContext context,
   Stream<SigningState> signingStream,
   Widget description,
-) {
+) async {
   final stream = signingStream.toBehaviorSubject();
 
   final finishedSigning = stream.asyncMap((event) {
     return event.finishedSignatures;
   }).firstWhere((signatures) => signatures.isNotEmpty);
 
-  return showDeviceActionDialog(
+  final result = await showDeviceActionDialog(
       context: context,
-      onCancel: () {
-        coord.cancelProtocol();
-      },
       complete: finishedSigning,
       builder: (context) {
         return Column(children: [
-          description,
-          Divider(),
-          Text("Plug in each device"),
+          DialogHeader(
+              child: Column(children: [
+            description,
+            SizedBox(height: 10),
+            Text("plug in each device")
+          ])),
           DeviceSigningProgress(stream: stream)
         ]);
       });
+
+  if (result == null) {
+    coord.cancelProtocol();
+  }
+  return result;
 }
 
 Future<void> _showSignatureDialog(
