@@ -411,6 +411,7 @@ where
                     } => self
                         .display
                         .print(format!("confirm firmware switch to: \n{firmware_digest}")),
+                    Prompt::VerifyAddress { address } => self.display.verify_address(address),
                 }
                 self.display.button();
             }
@@ -552,6 +553,7 @@ where
                                 firmware_digest: *firmware_digest,
                                 size: *size,
                             },
+                            Prompt::VerifyAddress { .. } => UiEvent::AddressVerified,
                         };
                         event = Some(ui_event);
                     }

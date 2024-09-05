@@ -4,6 +4,7 @@ mod palette;
 use crate::alloc::string::ToString;
 use crate::{DownstreamConnectionState, UpstreamConnectionState};
 use alloc::string::String;
+use alloc::vec::Vec;
 use embedded_graphics::{
     draw_target::{Cropped, DrawTarget},
     geometry::{AnchorX, AnchorY},
@@ -258,18 +259,7 @@ where
         let vertical_spacing = 35;
         let horizontal_spacing = 80; // Separate variable for horizontal spacing
         let (hrp, backup_chars) = str.split_at(str.find(']').expect("backup has a hrp") + 1);
-        let chunked_backup =
-            backup_chars
-                .chars()
-                .fold(vec![String::new()], |mut chunk_vec, char| {
-                    if chunk_vec.last().unwrap().len() < 4 {
-                        let last = chunk_vec.last_mut().unwrap();
-                        last.push(char);
-                    } else {
-                        chunk_vec.push(char.to_string());
-                    }
-                    chunk_vec
-                });
+        let chunked_backup = chunk_string(backup_chars.to_string(), 4);
 
         Text::with_alignment(
             "Share backup:",
@@ -438,6 +428,27 @@ where
         .draw(&mut body)
         .unwrap();
     }
+
+    pub fn verify_address(&mut self, address: &str) {
+        let mut body = self.body();
+        let mut y_offset = 15;
+        let vertical_spacing = 35;
+        let horizontal_spacing = (body.size().width / 2) as i32;
+
+        let chunked_address = chunk_string(address.to_string(), 4);
+        for row_chunks in chunked_address.chunks(3) {
+            Text::with_alignment(
+                &row_chunks.join(" "),
+                Point::new(horizontal_spacing, y_offset),
+                U8g2TextStyle::new(FONT_LARGE, COLORS.primary),
+                Alignment::Center,
+            )
+            .draw(&mut body)
+            .unwrap();
+
+            y_offset += vertical_spacing;
+        }
+    }
 }
 
 pub fn error_print<DT>(display: &mut DT, error: impl AsRef<str>)
@@ -494,4 +505,17 @@ where
         TEXTBOX_STYLE,
     )
     .draw(display);
+}
+
+fn chunk_string(str: String, chunk_size: usize) -> Vec<String> {
+    str.chars()
+        .fold(vec![String::new()], |mut chunk_vec, char| {
+            if chunk_vec.last().unwrap().len() < chunk_size {
+                let last = chunk_vec.last_mut().unwrap();
+                last.push(char);
+            } else {
+                chunk_vec.push(char.to_string());
+            }
+            chunk_vec
+        })
 }

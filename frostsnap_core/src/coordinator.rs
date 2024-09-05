@@ -376,6 +376,33 @@ impl FrostCoordinator {
                     Ok(vec![])
                 }
             }
+            (state, DeviceToCoordinatorMessage::VerifyAddressConfirmed) => {
+                let mut outgoing = vec![];
+
+                if let Some(CoordinatorState::VerifyAddress { targets, acks }) = state {
+                    if targets.contains(&from) {
+                        acks.insert(from);
+                        outgoing.push(CoordinatorSend::ToUser(
+                            CoordinatorToUserMessage::VerifyAddress(
+                                CoordinatorToUserVerifyingAddressMessage::DeviceAck { from },
+                            ),
+                        ));
+                    }
+
+                    // Consider verification complete after a single device verification.
+                    if !acks.is_empty() {
+                        outgoing.push(CoordinatorSend::ToUser(
+                            CoordinatorToUserMessage::VerifyAddress(
+                                CoordinatorToUserVerifyingAddressMessage::Confirmed,
+                            ),
+                        ));
+                        self.action_state = None;
+                    }
+                } else {
+                    // it's ok if a device acks an address if we skip/cancel it on the coordinator
+                }
+                Ok(outgoing)
+            }
             _ => Err(Error::coordinator_message_kind(
                 &self.action_state,
                 message_kind,
@@ -666,6 +693,32 @@ impl FrostCoordinator {
         }])
     }
 
+    pub fn verify_address(
+        &mut self,
+        key_id: KeyId,
+        derivation_index: u32,
+    ) -> Result<Vec<CoordinatorSend>, ActionError> {
+        let key = self
+            .keys
+            .get(&key_id)
+            .ok_or(ActionError::StateInconsistent("no such key".into()))?;
+
+        // verify on any device that knows about this key
+        let target_devices: BTreeSet<_> = key.device_to_share_index.keys().cloned().collect();
+
+        self.action_state = Some(CoordinatorState::VerifyAddress {
+            targets: target_devices.clone(),
+            acks: Default::default(),
+        });
+        Ok(vec![CoordinatorSend::ToDevice {
+            message: CoordinatorToDeviceMessage::VerifyAddress {
+                key_id,
+                derivation_index,
+            },
+            destinations: target_devices.clone(),
+        }])
+    }
+
     pub fn state_name(&self) -> &'static str {
         self.action_state
             .as_ref()
@@ -695,6 +748,7 @@ impl CoordinatorState {
             },
             CoordinatorState::Signing { .. } => "Signing",
             CoordinatorState::DisplayBackup => "DisplayBackup",
+            CoordinatorState::VerifyAddress { .. } => "VerifyAddress",
         }
     }
 }
@@ -751,6 +805,10 @@ pub enum CoordinatorState {
         key: CoordinatorFrostKey,
     },
     DisplayBackup,
+    VerifyAddress {
+        targets: BTreeSet<DeviceId>,
+        acks: BTreeSet<DeviceId>,
+    },
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]

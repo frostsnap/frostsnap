@@ -64,6 +64,7 @@ impl FrostSigner {
             SignerState::KeyGen { .. } | SignerState::KeyGenAck { .. } => TaskKind::KeyGen,
             SignerState::AwaitingSignAck { .. } => TaskKind::Sign,
             SignerState::DisplayBackup { .. } => TaskKind::DisplayBackup,
+            SignerState::VerifyAddress { .. } => TaskKind::VerifyAddress,
         };
 
         Some(DeviceSend::ToUser(DeviceToUserMessage::Canceled { task }))
@@ -312,6 +313,24 @@ impl FrostSigner {
                     DeviceToUserMessage::DisplayBackupRequest { key_id },
                 )])
             }
+            (
+                None,
+                CoordinatorToDeviceMessage::VerifyAddress {
+                    key_id,
+                    derivation_index,
+                },
+            ) => {
+                self.action_state = Some(SignerState::VerifyAddress {
+                    key_id,
+                    derivation_index,
+                });
+                Ok(vec![DeviceSend::ToUser(
+                    DeviceToUserMessage::VerifyAddress {
+                        key_id,
+                        derivation_index,
+                    },
+                )])
+            }
             _ => Err(Error::signer_message_kind(&self.action_state, &message)),
         }
     }
@@ -456,6 +475,21 @@ impl FrostSigner {
         }
     }
 
+    pub fn verify_address_ack(&mut self) -> Result<Vec<DeviceSend>, ActionError> {
+        match self.action_state.take() {
+            Some(SignerState::VerifyAddress { .. }) => Ok(vec![DeviceSend::ToCoordinator(
+                DeviceToCoordinatorMessage::VerifyAddressConfirmed,
+            )]),
+            action_state => {
+                self.action_state = action_state;
+                Err(ActionError::WrongState {
+                    in_state: self.action_state_name(),
+                    action: "verify_address_ack",
+                })
+            }
+        }
+    }
+
     pub fn action_state_name(&self) -> &'static str {
         self.action_state
             .as_ref()
@@ -488,6 +522,10 @@ pub enum SignerState {
         key_id: KeyId,
         awaiting_ack: bool,
     },
+    VerifyAddress {
+        key_id: KeyId,
+        derivation_index: u32,
+    },
 }
 
 impl SignerState {
@@ -497,6 +535,7 @@ impl SignerState {
             SignerState::KeyGenAck { .. } => "KeyGenAck",
             SignerState::AwaitingSignAck { .. } => "AwaitingSignAck",
             SignerState::DisplayBackup { .. } => "DisplayBackup",
+            SignerState::VerifyAddress { .. } => "VerifyAddress",
         }
     }
 }
