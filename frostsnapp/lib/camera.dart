@@ -83,7 +83,7 @@ class _PsbtCameraReaderState extends State<PsbtCameraReader> {
     if (!controller.value.isInitialized) {
       return Scaffold(
         body: Center(
-          child: CircularProgressIndicator(),
+          child: FsProgressIndicator(),
         ),
       );
     }

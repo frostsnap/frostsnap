@@ -111,7 +111,7 @@ class DevicesPage extends StatelessWidget {
           stream: deviceListSubject,
           builder: (context, snapshot) {
             if (!snapshot.hasData) {
-              return CircularProgressIndicator();
+              return FsProgressIndicator();
             }
             final devices = snapshot.data!.state.devices;
             final Widget prompt;
@@ -353,7 +353,7 @@ Future<KeyId?> showCheckKeyGenDialog({
             stream: stream,
             builder: (context, snap) {
               if (!snap.hasData) {
-                return CircularProgressIndicator();
+                return FsProgressIndicator();
               }
               final state = snap.data!;
               final devices = deviceIdSet(state.devices);
@@ -370,9 +370,7 @@ Future<KeyId?> showCheckKeyGenDialog({
                         if (gotShares.contains(id)) {
                           icon = AnimatedCheckCircle();
                         } else {
-                          icon = const AspectRatio(
-                              aspectRatio: 1,
-                              child: CircularProgressIndicator());
+                          icon = FsProgressIndicator();
                         }
                       } else {
                         if (acks.contains(id)) {
@@ -415,8 +413,7 @@ Future<KeyId?> showCheckKeyGenDialog({
                         backgroundColor: errorColor),
                     child: Text(
                       'cancel',
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold, color: textColor),
+                      style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
                   Text("."),
@@ -485,8 +482,7 @@ Future<void> showBackupDialogue(
                       children: [
                         TextSpan(
                           text: 'X',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold, color: textColor),
+                          style: TextStyle(fontWeight: FontWeight.bold),
                         ),
                         TextSpan(
                           text: ' replaced with the character shown on screen.',
@@ -500,8 +496,7 @@ Future<void> showBackupDialogue(
                       children: <TextSpan>[
                         TextSpan(
                           text: 'X',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold, color: textColor),
+                          style: TextStyle(fontWeight: FontWeight.bold),
                         ),
                         TextSpan(
                           text: ']',

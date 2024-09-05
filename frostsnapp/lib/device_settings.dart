@@ -72,7 +72,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
           'Waiting for device to reconnect',
           style: TextStyle(color: uninterestedColor, fontSize: 24.0),
         ),
-        CircularProgressIndicator(),
+        FsProgressIndicator(),
       ]));
     } else {
       final device_ = device!;
@@ -86,9 +86,9 @@ class _DeviceSettingsState extends State<DeviceSettings> {
               padding: const EdgeInsets.only(
                   bottom: 4.0), // Adjust the padding/margin here
               child: ListTile(
-                title: Row(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: [
+                  title: Row(
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      children: [
                     Column(children: [
                       Text(
                         keyName,
@@ -145,9 +145,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                       },
                       child: Text("Backup"),
                     ),
-                  ],
-                ),
-              ));
+                  ])));
         },
       );
 
@@ -158,7 +156,6 @@ class _DeviceSettingsState extends State<DeviceSettings> {
         );
       }
       final deviceFirmwareDigest = device_.firmwareDigest;
-      final canUpdate = coord.upgradeFirmwareDigest() != deviceFirmwareDigest;
 
       final firmwareSettings = Column(children: [
         Row(children: <Widget>[
@@ -214,16 +211,17 @@ class _DeviceSettingsState extends State<DeviceSettings> {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          "Device Settings",
+        appBar: AppBar(
+          title: Text(
+            "Device Settings",
+          ),
         ),
-      ),
-      body: Padding(
-        padding: EdgeInsets.only(left: 16, bottom: 16),
-        child: body,
-      ),
-    );
+        body: Material(
+          child: Padding(
+            padding: EdgeInsets.only(left: 16, bottom: 16),
+            child: body,
+          ),
+        ));
   }
 }
 
@@ -345,7 +343,7 @@ class _FirmwareUpgradeDialogState extends State<FirmwareUpgradeDialog> {
   @override
   Widget build(BuildContext context) {
     if (state == null) {
-      return CircularProgressIndicator.adaptive();
+      return FsProgressIndicator();
     }
     final confirmations = deviceIdSet(state!.confirmations);
     final needUpgrade = deviceIdSet(state!.needUpgrade);

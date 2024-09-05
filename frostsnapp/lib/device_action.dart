@@ -121,8 +121,8 @@ class DialogHeader extends StatelessWidget {
           color: backgroundPrimaryColor,
           border: Border(
             bottom: BorderSide(
-              color: backgroundSecondaryColor,
-              width: 1.0,
+              color: Theme.of(context).dividerColor, // Color of the divider
+              width: 1.0, // Thickness of the divider
             ),
           ),
         ),

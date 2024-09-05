@@ -79,8 +79,7 @@ final ThemeData frostsnappTheme = ThemeData(
   ),
   textButtonTheme: TextButtonThemeData(
     style: TextButton.styleFrom(
-        backgroundColor: backgroundTertiaryColor,
-        foregroundColor: textSecondaryColor),
+        backgroundColor: backgroundTertiaryColor, foregroundColor: textColor),
   ),
   elevatedButtonTheme: ElevatedButtonThemeData(
     style: ElevatedButton.styleFrom(
@@ -115,3 +114,16 @@ final ThemeData frostsnappTheme = ThemeData(
       DropdownMenuThemeData(textStyle: TextStyle(color: textColor)),
   dividerTheme: const DividerThemeData(color: Colors.black12),
 );
+
+class FsProgressIndicator extends StatelessWidget {
+  const FsProgressIndicator({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return AspectRatio(
+        aspectRatio: 1,
+        child: CircularProgressIndicator.adaptive(
+          valueColor: AlwaysStoppedAnimation<Color>(textSecondaryColor),
+        ));
+  }
+}
