@@ -326,7 +326,7 @@ where
             } => match existing_name {
                 Some(existing_name) => self
                     .display
-                    .print(&format!("Renaming {}:\n> {}", existing_name, current_name)),
+                    .print(format!("Renaming {}:\n> {}", existing_name, current_name)),
                 None => self.display.print(format!("Naming:\n> {}", current_name)),
             },
             Workflow::WaitingFor(waiting_for) => match waiting_for {
