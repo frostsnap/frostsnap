@@ -517,7 +517,8 @@ Future<void> showBackupDialogue(
                       style: TextStyle(
                           fontFamily: 'Courier',
                           fontSize: 20,
-                          fontWeight: FontWeight.bold),
+                          fontWeight: FontWeight.bold,
+                          color: textSecondaryColor),
                     ),
                   ),
                   Center(

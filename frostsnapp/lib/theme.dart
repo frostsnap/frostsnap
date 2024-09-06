@@ -41,15 +41,15 @@ final ThemeData frostsnappTheme = ThemeData(
   iconTheme: IconThemeData(color: textSecondaryColor),
   checkboxTheme: CheckboxThemeData(
     checkColor:
-        MaterialStateProperty.resolveWith<Color>((Set<MaterialState> states) {
-      if (states.contains(MaterialState.selected)) {
+        WidgetStateProperty.resolveWith<Color>((Set<WidgetState> states) {
+      if (states.contains(WidgetState.selected)) {
         return textColor;
       }
       return textColor;
     }),
     fillColor:
-        MaterialStateProperty.resolveWith<Color>((Set<MaterialState> states) {
-      if (states.contains(MaterialState.selected)) {
+        WidgetStateProperty.resolveWith<Color>((Set<WidgetState> states) {
+      if (states.contains(WidgetState.selected)) {
         return backgroundTertiaryColor;
       }
       return backgroundTertiaryColor;
@@ -101,7 +101,9 @@ final ThemeData frostsnappTheme = ThemeData(
     ),
   ),
   bottomNavigationBarTheme: BottomNavigationBarThemeData(
-      selectedItemColor: textColor, unselectedItemColor: textSecondaryColor),
+      selectedItemColor: textColor,
+      unselectedItemColor: textSecondaryColor,
+      backgroundColor: backgroundPrimaryColor),
   listTileTheme: ListTileThemeData(
     tileColor: backgroundSecondaryColor,
     textColor: textColor,
@@ -113,6 +115,11 @@ final ThemeData frostsnappTheme = ThemeData(
   dropdownMenuTheme:
       DropdownMenuThemeData(textStyle: TextStyle(color: textColor)),
   dividerTheme: const DividerThemeData(color: Colors.black12),
+  dialogTheme: DialogTheme(
+    backgroundColor: backgroundSecondaryColor,
+    iconColor: backgroundTertiaryColor,
+    shadowColor: shadowColor,
+  ),
 );
 
 class FsProgressIndicator extends StatelessWidget {
