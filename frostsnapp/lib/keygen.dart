@@ -295,6 +295,9 @@ class _ThresholdPageState extends State<ThresholdPage> {
                     context: context,
                     stream: stream,
                   );
+                  if (keyId != null && context.mounted) {
+                    await showBackupDialogue(context: context, keyId: keyId);
+                  }
 
                   if (keyId == null && context.mounted) {
                     coord.cancelProtocol();
