@@ -347,14 +347,14 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kFinalKeygenAckMethodCoordinatorConstMeta;
 
-  Stream<RestoreShareState> restoreShareOnDeviceMethodCoordinator(
+  Stream<LoadShareState> checkShareOnDeviceMethodCoordinator(
       {required Coordinator that,
       required DeviceId deviceId,
       required KeyId keyId,
       dynamic hint});
 
   FlutterRustBridgeTaskConstMeta
-      get kRestoreShareOnDeviceMethodCoordinatorConstMeta;
+      get kCheckShareOnDeviceMethodCoordinatorConstMeta;
 
   String descriptorForKeyMethodBitcoinContext(
       {required BitcoinContext that, required KeyId keyId, dynamic hint});
@@ -1004,9 +1004,9 @@ class Coordinator {
         that: this,
       );
 
-  Stream<RestoreShareState> restoreShareOnDevice(
+  Stream<LoadShareState> checkShareOnDevice(
           {required DeviceId deviceId, required KeyId keyId, dynamic hint}) =>
-      bridge.restoreShareOnDeviceMethodCoordinator(
+      bridge.checkShareOnDeviceMethodCoordinator(
         that: this,
         deviceId: deviceId,
         keyId: keyId,
@@ -1202,6 +1202,16 @@ class KeyState {
   });
 }
 
+class LoadShareState {
+  final String? outcome;
+  final bool abort;
+
+  const LoadShareState({
+    this.outcome,
+    required this.abort,
+  });
+}
+
 enum LogLevel {
   Debug,
   Info,
@@ -1370,16 +1380,6 @@ class QrReader {
         that: this,
         bytes: bytes,
       );
-}
-
-class RestoreShareState {
-  final String? outcome;
-  final bool abort;
-
-  const RestoreShareState({
-    this.outcome,
-    required this.abort,
-  });
 }
 
 @freezed

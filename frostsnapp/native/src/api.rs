@@ -336,8 +336,8 @@ pub struct _FirmwareUpgradeConfirmState {
     pub upgrade_ready_to_start: bool,
 }
 
-#[frb(mirror(RestoreShareState))]
-pub struct _RestoreShareState {
+#[frb(mirror(LoadShareState))]
+pub struct _LoadShareState {
     outcome: Option<String>,
     abort: bool,
 }
@@ -822,13 +822,13 @@ impl Coordinator {
         self.0.final_keygen_ack()
     }
 
-    pub fn restore_share_on_device(
+    pub fn check_share_on_device(
         &self,
         device_id: DeviceId,
         key_id: KeyId,
         sink: StreamSink<LoadShareState>,
     ) -> Result<()> {
-        self.0.restore_share_on_device(device_id, key_id, sink)?;
+        self.0.check_share_on_device(device_id, key_id, sink)?;
         Ok(())
     }
 }

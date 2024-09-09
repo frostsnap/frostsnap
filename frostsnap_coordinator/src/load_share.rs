@@ -40,7 +40,7 @@ impl LoadShareProtocol {
             load_share_messages: vec![],
         };
 
-        match coordinator.restore_share(device_id, key_id) {
+        match coordinator.check_share(device_id, key_id) {
             Ok(messages) => {
                 for message in messages {
                     match message {

@@ -1288,7 +1288,7 @@ class NativeImpl implements Native {
             argNames: ["that"],
           );
 
-  Stream<RestoreShareState> restoreShareOnDeviceMethodCoordinator(
+  Stream<LoadShareState> checkShareOnDeviceMethodCoordinator(
       {required Coordinator that,
       required DeviceId deviceId,
       required KeyId keyId,
@@ -1298,20 +1298,20 @@ class NativeImpl implements Native {
     var arg2 = _platform.api2wire_box_autoadd_key_id(keyId);
     return _platform.executeStream(FlutterRustBridgeTask(
       callFfi: (port_) => _platform.inner
-          .wire_restore_share_on_device__method__Coordinator(
+          .wire_check_share_on_device__method__Coordinator(
               port_, arg0, arg1, arg2),
-      parseSuccessData: _wire2api_restore_share_state,
+      parseSuccessData: _wire2api_load_share_state,
       parseErrorData: _wire2api_FrbAnyhowException,
-      constMeta: kRestoreShareOnDeviceMethodCoordinatorConstMeta,
+      constMeta: kCheckShareOnDeviceMethodCoordinatorConstMeta,
       argValues: [that, deviceId, keyId],
       hint: hint,
     ));
   }
 
   FlutterRustBridgeTaskConstMeta
-      get kRestoreShareOnDeviceMethodCoordinatorConstMeta =>
+      get kCheckShareOnDeviceMethodCoordinatorConstMeta =>
           const FlutterRustBridgeTaskConstMeta(
-            debugName: "restore_share_on_device__method__Coordinator",
+            debugName: "check_share_on_device__method__Coordinator",
             argNames: ["that", "deviceId", "keyId"],
           );
 
@@ -2092,6 +2092,16 @@ class NativeImpl implements Native {
     return (raw as List<dynamic>).map(_wire2api_transaction).toList();
   }
 
+  LoadShareState _wire2api_load_share_state(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return LoadShareState(
+      outcome: _wire2api_opt_String(arr[0]),
+      abort: _wire2api_bool(arr[1]),
+    );
+  }
+
   String? _wire2api_opt_String(dynamic raw) {
     return raw == null ? null : _wire2api_String(raw);
   }
@@ -2243,16 +2253,6 @@ class NativeImpl implements Native {
     return QrReader(
       bridge: this,
       field0: _wire2api_FfiQrReader(arr[0]),
-    );
-  }
-
-  RestoreShareState _wire2api_restore_share_state(dynamic raw) {
-    final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
-    return RestoreShareState(
-      outcome: _wire2api_opt_String(arr[0]),
-      abort: _wire2api_bool(arr[1]),
     );
   }
 

@@ -377,7 +377,7 @@ impl FrostCoordinator {
                 }
             }
             (
-                Some(CoordinatorState::RestoringDeviceShare { key, device }),
+                Some(CoordinatorState::LoadingDeviceShare { key, device }),
                 DeviceToCoordinatorMessage::LoadedShareBackup {
                     share_index,
                     share_image,
@@ -695,7 +695,7 @@ impl FrostCoordinator {
         }])
     }
 
-    pub fn restore_share(
+    pub fn check_share(
         &mut self,
         device_id: DeviceId,
         key_id: KeyId,
@@ -704,7 +704,7 @@ impl FrostCoordinator {
             .keys
             .get(&key_id)
             .ok_or(ActionError::StateInconsistent("no such key".into()))?;
-        self.action_state = Some(CoordinatorState::RestoringDeviceShare {
+        self.action_state = Some(CoordinatorState::LoadingDeviceShare {
             key: key.clone(),
             device: device_id,
         });
@@ -743,7 +743,7 @@ impl CoordinatorState {
             },
             CoordinatorState::Signing { .. } => "Signing",
             CoordinatorState::DisplayBackup => "DisplayBackup",
-            CoordinatorState::RestoringDeviceShare { .. } => "RestoringDeviceShare",
+            CoordinatorState::LoadingDeviceShare { .. } => "RestoringDeviceShare",
         }
     }
 }
@@ -800,7 +800,7 @@ pub enum CoordinatorState {
         key: CoordinatorFrostKey,
     },
     DisplayBackup,
-    RestoringDeviceShare {
+    LoadingDeviceShare {
         key: CoordinatorFrostKey,
         device: DeviceId,
     },

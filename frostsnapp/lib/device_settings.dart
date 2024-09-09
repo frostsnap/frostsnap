@@ -500,7 +500,7 @@ class BackupSettingsPage extends StatelessWidget {
                       SizedBox(height: 8),
                       ElevatedButton(
                         onPressed: () async {
-                          final shareRestoreStream = coord.restoreShareOnDevice(
+                          final shareRestoreStream = coord.checkShareOnDevice(
                               deviceId: id, keyId: keyId);
 
                           final result = await showDeviceActionDialog(

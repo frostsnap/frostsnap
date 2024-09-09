@@ -2043,13 +2043,13 @@ class NativeWire implements FlutterRustBridgeWireBase {
       _wire_final_keygen_ack__method__CoordinatorPtr
           .asFunction<void Function(int, ffi.Pointer<wire_Coordinator>)>();
 
-  void wire_restore_share_on_device__method__Coordinator(
+  void wire_check_share_on_device__method__Coordinator(
     int port_,
     ffi.Pointer<wire_Coordinator> that,
     ffi.Pointer<wire_DeviceId> device_id,
     ffi.Pointer<wire_KeyId> key_id,
   ) {
-    return _wire_restore_share_on_device__method__Coordinator(
+    return _wire_check_share_on_device__method__Coordinator(
       port_,
       that,
       device_id,
@@ -2057,13 +2057,13 @@ class NativeWire implements FlutterRustBridgeWireBase {
     );
   }
 
-  late final _wire_restore_share_on_device__method__CoordinatorPtr = _lookup<
+  late final _wire_check_share_on_device__method__CoordinatorPtr = _lookup<
           ffi.NativeFunction<
               ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Coordinator>,
                   ffi.Pointer<wire_DeviceId>, ffi.Pointer<wire_KeyId>)>>(
-      'wire_restore_share_on_device__method__Coordinator');
-  late final _wire_restore_share_on_device__method__Coordinator =
-      _wire_restore_share_on_device__method__CoordinatorPtr.asFunction<
+      'wire_check_share_on_device__method__Coordinator');
+  late final _wire_check_share_on_device__method__Coordinator =
+      _wire_check_share_on_device__method__CoordinatorPtr.asFunction<
           void Function(int, ffi.Pointer<wire_Coordinator>,
               ffi.Pointer<wire_DeviceId>, ffi.Pointer<wire_KeyId>)>();
 
