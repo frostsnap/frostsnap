@@ -485,7 +485,7 @@ class BackupSettingsPage extends StatelessWidget {
                           );
 
                           if (result == null && !isConfirmed) {
-                            await coord.cancelAll();
+                            await coord.cancelProtocol();
                           }
                           if (isConfirmed && context.mounted) {
                             await showBackupDialogue(

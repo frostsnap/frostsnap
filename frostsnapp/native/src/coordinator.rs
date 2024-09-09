@@ -642,20 +642,14 @@ impl FfiCoordinator {
         key_id: KeyId,
         stream: StreamSink<api::LoadShareState>,
     ) -> anyhow::Result<()> {
-        let restore_messages = {
-            let mut coordinator = self.coordinator.lock().unwrap();
-            coordinator.staged_mutate(&mut *self.db.lock().unwrap(), |coordinator| {
-                Ok(coordinator.restore_share(device_id, key_id)?)
-            })?
-        };
-        self.pending_for_outbox
-            .lock()
-            .unwrap()
-            .extend(restore_messages);
-
-        let restore_protocol = LoadShareProtocol::new(device_id, SinkWrap(stream));
+        let restore_protocol = LoadShareProtocol::new(
+            self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
+            device_id,
+            key_id,
+            SinkWrap(stream),
+        );
+        restore_protocol.emit_state();
         self.start_protocol(restore_protocol);
-
         Ok(())
     }
 }
