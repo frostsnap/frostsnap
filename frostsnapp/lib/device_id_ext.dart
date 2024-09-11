@@ -6,7 +6,7 @@ import 'package:frostsnapp/bridge_definitions.dart';
 
 HashSet<DeviceId> deviceIdSet(List<DeviceId> devices) {
   final set = HashSet<DeviceId>(
-      equals: (a, b) => listEquals(a.field0, b.field0),
+      equals: (a, b) => deviceIdEquals(a, b),
       hashCode: (a) => Object.hashAll(a.field0));
 
   set.addAll(devices);

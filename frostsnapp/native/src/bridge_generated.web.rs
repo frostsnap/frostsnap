@@ -397,6 +397,11 @@ pub fn wire_get_device_name__method__Coordinator(
 }
 
 #[wasm_bindgen]
+pub fn wire_final_keygen_ack__method__Coordinator(port_: MessagePort, that: JsValue) {
+    wire_final_keygen_ack__method__Coordinator_impl(port_, that)
+}
+
+#[wasm_bindgen]
 pub fn wire_descriptor_for_key__method__BitcoinContext(
     that: JsValue,
     key_id: JsValue,

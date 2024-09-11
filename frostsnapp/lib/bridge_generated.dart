@@ -1267,6 +1267,27 @@ class NativeImpl implements Native {
         argNames: ["that", "id"],
       );
 
+  Future<KeyId> finalKeygenAckMethodCoordinator(
+      {required Coordinator that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner
+          .wire_final_keygen_ack__method__Coordinator(port_, arg0),
+      parseSuccessData: _wire2api_key_id,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kFinalKeygenAckMethodCoordinatorConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kFinalKeygenAckMethodCoordinatorConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "final_keygen_ack__method__Coordinator",
+            argNames: ["that"],
+          );
+
   String descriptorForKeyMethodBitcoinContext(
       {required BitcoinContext that, required KeyId keyId, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_bitcoin_context(that);

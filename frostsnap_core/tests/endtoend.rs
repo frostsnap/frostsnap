@@ -115,7 +115,7 @@ impl common::Env for TestEnv {
         }
     }
 
-    fn user_react_to_coordinator(&mut self, _run: &mut Run, message: CoordinatorToUserMessage) {
+    fn user_react_to_coordinator(&mut self, run: &mut Run, message: CoordinatorToUserMessage) {
         match message {
             CoordinatorToUserMessage::KeyGen(keygen_message) => match keygen_message {
                 CoordinatorToUserKeyGenMessage::ReceivedShares { from } => {
@@ -130,14 +130,23 @@ impl common::Env for TestEnv {
                         "should not have already set this"
                     );
                 }
-                CoordinatorToUserKeyGenMessage::KeyGenAck { from } => {
+                CoordinatorToUserKeyGenMessage::KeyGenAck {
+                    from,
+                    all_acks_received,
+                } => {
                     assert!(
                         self.coordinator_got_keygen_acks.insert(from),
                         "should only receive this once"
                     );
-                }
-                CoordinatorToUserKeyGenMessage::FinishedKey { key_id } => {
-                    assert!(self.key_ids.insert(key_id), "should only receive this once");
+
+                    if all_acks_received {
+                        assert_eq!(
+                            self.coordinator_got_keygen_acks.len(),
+                            self.received_keygen_shares.len()
+                        );
+                        let key_id = run.coordinator.final_keygen_ack().unwrap();
+                        self.key_ids.insert(key_id);
+                    }
                 }
             },
             CoordinatorToUserMessage::Signing(signing_message) => match signing_message {

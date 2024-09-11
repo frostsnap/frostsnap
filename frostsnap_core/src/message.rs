@@ -190,10 +190,16 @@ pub enum CoordinatorToUserSigningMessage {
 
 #[derive(Clone, Debug)]
 pub enum CoordinatorToUserKeyGenMessage {
-    ReceivedShares { from: DeviceId },
-    CheckKeyGen { session_hash: SessionHash },
-    KeyGenAck { from: DeviceId },
-    FinishedKey { key_id: KeyId },
+    ReceivedShares {
+        from: DeviceId,
+    },
+    CheckKeyGen {
+        session_hash: SessionHash,
+    },
+    KeyGenAck {
+        from: DeviceId,
+        all_acks_received: bool,
+    },
 }
 
 #[derive(Clone, Debug)]

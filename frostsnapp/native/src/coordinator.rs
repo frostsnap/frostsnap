@@ -613,6 +613,27 @@ impl FfiCoordinator {
             .find(|key| key.0.key_id() == key_id)
             .map(|frost_key| frost_key.0.key_name())
     }
+
+    pub fn final_keygen_ack(&self) -> Result<KeyId> {
+        let mut db = self.db.lock().unwrap();
+        let key_id = self
+            .coordinator
+            .lock()
+            .unwrap()
+            .staged_mutate(&mut db, |coordinator| Ok(coordinator.final_keygen_ack()?))?;
+
+        // need to tell the UI protocol that it's finished so it cleans itself up later.
+        self.ui_protocol
+            .lock()
+            .unwrap()
+            .as_mut()
+            .ok_or(anyhow!("No UI protocol running"))?
+            .as_mut_any()
+            .downcast_mut::<frostsnap_coordinator::keygen::KeyGen>()
+            .ok_or(anyhow!("somehow UI was not in KeyGen state"))?
+            .final_keygen_ack(key_id);
+        Ok(key_id)
+    }
 }
 
 fn frost_keys(coordinator: &FrostCoordinator) -> Vec<crate::api::FrostKey> {

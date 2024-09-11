@@ -137,3 +137,35 @@ class DialogHeader extends StatelessWidget {
             child: Align(alignment: Alignment.topCenter, child: child)));
   }
 }
+
+class DialogFooter extends StatelessWidget {
+  final Widget child; // Content of the header
+
+  const DialogFooter({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: backgroundPrimaryColor, // Background color of the header
+          border: Border(
+            top: BorderSide(
+              color: Theme.of(context).dividerColor, // Color of the divider
+              width: 1.0, // Thickness of the divider
+            ),
+          ),
+        ),
+        padding: EdgeInsets.only(
+            top: 15.0,
+            bottom: 10.0,
+            left: 25.0,
+            right: 25.0), // Padding for the header
+        child: DefaultTextStyle(
+            style: TextStyle(
+              fontSize: 18.0, // Default text size
+              fontWeight: FontWeight.normal, // Default text weight
+            ), // The content passed to the header
+            child: Align(alignment: Alignment.topCenter, child: child)));
+  }
+}

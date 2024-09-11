@@ -363,6 +363,7 @@ Future<KeyId?> showCheckKeyGenDialog({
               final acks = deviceIdSet(state.sessionAcks);
               final gotShares = deviceIdSet(state.gotShares);
               final gotAllShares = setEquals(gotShares, devices);
+              final finished = setEquals(acks, devices);
 
               final deviceList = DeviceListWithIcons(
                   key: const Key("dialog-device-list"),
@@ -442,7 +443,27 @@ Future<KeyId?> showCheckKeyGenDialog({
                         ),
                       ],
                     )),
-                    Expanded(child: deviceList)
+                    Expanded(child: deviceList),
+                    DialogFooter(
+                        child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                          Text(
+                            '${acks.length}/${devices.length} confirmed',
+                            style: TextStyle(
+                              fontSize: 14,
+                            ),
+                          ),
+                          SizedBox(height: 10),
+                          ElevatedButton(
+                              onPressed: finished
+                                  ? () async {
+                                      await coord.finalKeygenAck();
+                                    }
+                                  : null,
+                              child: Text("Confirm"))
+                        ]))
                   ]);
             });
       });

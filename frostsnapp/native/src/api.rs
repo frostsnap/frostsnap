@@ -810,6 +810,10 @@ impl Coordinator {
     pub fn get_device_name(&self, id: DeviceId) -> SyncReturn<Option<String>> {
         SyncReturn(self.0.get_device_name(id))
     }
+
+    pub fn final_keygen_ack(&self) -> Result<KeyId> {
+        self.0.final_keygen_ack()
+    }
 }
 
 /// The point of this is to keep bitcoin API functionalities that don't require the wallet separate

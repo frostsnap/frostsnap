@@ -75,6 +75,11 @@ impl KeyGen {
         self.send_cancel_to_all = send_cancel_to_all;
         self.emit_state();
     }
+
+    pub fn final_keygen_ack(&mut self, key_id: KeyId) {
+        self.state.finished = Some(key_id);
+        self.emit_state()
+    }
 }
 
 impl UiProtocol for KeyGen {
@@ -103,11 +108,8 @@ impl UiProtocol for KeyGen {
                 CoordinatorToUserKeyGenMessage::CheckKeyGen { session_hash } => {
                     self.state.session_hash = Some(session_hash);
                 }
-                CoordinatorToUserKeyGenMessage::KeyGenAck { from } => {
+                CoordinatorToUserKeyGenMessage::KeyGenAck { from, .. } => {
                     self.state.session_acks.push(from);
-                }
-                CoordinatorToUserKeyGenMessage::FinishedKey { key_id } => {
-                    self.state.finished = Some(key_id);
                 }
             }
             self.emit_state();
@@ -146,6 +148,10 @@ impl UiProtocol for KeyGen {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
+
+    fn as_mut_any(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -154,6 +160,7 @@ pub struct KeyGenState {
     pub devices: Vec<DeviceId>, // not a set for frb compat
     pub got_shares: Vec<DeviceId>,
     pub session_acks: Vec<DeviceId>,
+    pub all_acks: bool,
     pub session_hash: Option<[u8; 32]>,
     pub finished: Option<KeyId>,
     pub aborted: Option<String>,

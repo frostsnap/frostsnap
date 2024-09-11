@@ -407,6 +407,8 @@ void wire_enter_firmware_upgrade_mode__method__Coordinator(int64_t port_,
 WireSyncReturn wire_get_device_name__method__Coordinator(struct wire_Coordinator *that,
                                                          struct wire_DeviceId *id);
 
+void wire_final_keygen_ack__method__Coordinator(int64_t port_, struct wire_Coordinator *that);
+
 WireSyncReturn wire_descriptor_for_key__method__BitcoinContext(struct wire_BitcoinContext *that,
                                                                struct wire_KeyId *key_id);
 
@@ -659,6 +661,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_cancel_protocol__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_enter_firmware_upgrade_mode__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_get_device_name__method__Coordinator);
+    dummy_var ^= ((int64_t) (void*) wire_final_keygen_ack__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_descriptor_for_key__method__BitcoinContext);
     dummy_var ^= ((int64_t) (void*) wire_validate_amount__method__BitcoinContext);
     dummy_var ^= ((int64_t) (void*) wire_validate_destination_address__method__BitcoinContext);
