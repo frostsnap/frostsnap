@@ -514,7 +514,7 @@ fn wire_next_address__method__Wallet_impl(
     that: impl Wire2Api<Wallet> + UnwindSafe,
     key_id: impl Wire2Api<KeyId> + UnwindSafe,
 ) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, Address, _>(
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (u32, Address), _>(
         WrapInfo {
             debug_name: "next_address__method__Wallet",
             port: Some(port_),
@@ -1030,6 +1030,33 @@ fn wire_start_firmware_upgrade__method__Coordinator_impl(
         },
     )
 }
+fn wire_verify_address__method__Coordinator_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<Coordinator> + UnwindSafe,
+    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    address_index: impl Wire2Api<u32> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "verify_address__method__Coordinator",
+            port: Some(port_),
+            mode: FfiCallMode::Stream,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_key_id = key_id.wire2api();
+            let api_address_index = address_index.wire2api();
+            move |task_callback| {
+                Coordinator::verify_address(
+                    &api_that,
+                    api_key_id,
+                    api_address_index,
+                    task_callback.stream_sink::<_, mirror_VerifyAddressProtocolState>(),
+                )
+            }
+        },
+    )
+}
 fn wire_upgrade_firmware_digest__method__Coordinator_impl(
     that: impl Wire2Api<Coordinator> + UnwindSafe,
 ) -> support::WireSyncReturn {
@@ -1330,6 +1357,9 @@ pub struct mirror_KeyId(KeyId);
 #[derive(Clone)]
 pub struct mirror_SigningState(SigningState);
 
+#[derive(Clone)]
+pub struct mirror_VerifyAddressProtocolState(VerifyAddressProtocolState);
+
 // Section: static checks
 
 const _: fn() = || {
@@ -1373,6 +1403,13 @@ const _: fn() = || {
         let _: Vec<DeviceId> = SigningState.got_shares;
         let _: Vec<DeviceId> = SigningState.needed_from;
         let _: Vec<EncodedSignature> = SigningState.finished_signatures;
+    }
+    {
+        let VerifyAddressProtocolState = None::<VerifyAddressProtocolState>.unwrap();
+        let _: bool = VerifyAddressProtocolState.finished;
+        let _: Vec<DeviceId> = VerifyAddressProtocolState.target_devices;
+        let _: Vec<DeviceId> = VerifyAddressProtocolState.acks;
+        let _: Option<String> = VerifyAddressProtocolState.aborted;
     }
 };
 // Section: allocate functions
@@ -1966,6 +2003,24 @@ impl support::IntoDartExceptPrimitive for UnsignedTx {}
 impl rust2dart::IntoIntoDart<UnsignedTx> for UnsignedTx {
     fn into_into_dart(self) -> Self {
         self
+    }
+}
+
+impl support::IntoDart for mirror_VerifyAddressProtocolState {
+    fn into_dart(self) -> support::DartAbi {
+        vec![
+            self.0.finished.into_into_dart().into_dart(),
+            self.0.target_devices.into_into_dart().into_dart(),
+            self.0.acks.into_into_dart().into_dart(),
+            self.0.aborted.into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for mirror_VerifyAddressProtocolState {}
+impl rust2dart::IntoIntoDart<mirror_VerifyAddressProtocolState> for VerifyAddressProtocolState {
+    fn into_into_dart(self) -> mirror_VerifyAddressProtocolState {
+        mirror_VerifyAddressProtocolState(self)
     }
 }
 

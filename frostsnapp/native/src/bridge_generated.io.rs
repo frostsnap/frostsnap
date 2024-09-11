@@ -423,6 +423,16 @@ pub extern "C" fn wire_start_firmware_upgrade__method__Coordinator(
 }
 
 #[no_mangle]
+pub extern "C" fn wire_verify_address__method__Coordinator(
+    port_: i64,
+    that: *mut wire_Coordinator,
+    key_id: *mut wire_KeyId,
+    address_index: u32,
+) {
+    wire_verify_address__method__Coordinator_impl(port_, that, key_id, address_index)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_upgrade_firmware_digest__method__Coordinator(
     that: *mut wire_Coordinator,
 ) -> support::WireSyncReturn {

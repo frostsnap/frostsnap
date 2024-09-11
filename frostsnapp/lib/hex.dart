@@ -42,16 +42,14 @@ List<String> splitIntoChunks(String str, int chunkSize) {
   return chunks;
 }
 
-Widget toHexBox(Uint8List bytes, {int chunkSize = 2}) {
-  String hexString =
-      bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
-
-  List<String> chunks = splitIntoChunks(hexString, chunkSize * 2);
+Widget chunkedAddressFormat(String string, {int chunkSize = 4}) {
+  List<String> chunks = splitIntoChunks(string, chunkSize);
 
   // Widget to dynamically layout the chunks
   return LayoutBuilder(
     builder: (BuildContext context, BoxConstraints constraints) {
-      int maxChunksPerRow = (constraints.maxWidth / (chunkSize * 40)).floor();
+      // int maxChunksPerRow = (constraints.maxWidth / (chunkSize * 20)).floor();
+      int maxChunksPerRow = 3; // hard code to match device
       maxChunksPerRow =
           math.max(1, maxChunksPerRow); // Ensure at least one chunk per row
 

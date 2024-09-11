@@ -160,7 +160,7 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kSyncMethodWalletConstMeta;
 
-  Future<Address> nextAddressMethodWallet(
+  Future<(int, Address)> nextAddressMethodWallet(
       {required Wallet that, required KeyId keyId, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kNextAddressMethodWalletConstMeta;
@@ -319,6 +319,14 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta
       get kStartFirmwareUpgradeMethodCoordinatorConstMeta;
+
+  Stream<VerifyAddressProtocolState> verifyAddressMethodCoordinator(
+      {required Coordinator that,
+      required KeyId keyId,
+      required int addressIndex,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kVerifyAddressMethodCoordinatorConstMeta;
 
   String upgradeFirmwareDigestMethodCoordinator(
       {required Coordinator that, dynamic hint});
@@ -969,6 +977,14 @@ class Coordinator {
         that: this,
       );
 
+  Stream<VerifyAddressProtocolState> verifyAddress(
+          {required KeyId keyId, required int addressIndex, dynamic hint}) =>
+      bridge.verifyAddressMethodCoordinator(
+        that: this,
+        keyId: keyId,
+        addressIndex: addressIndex,
+      );
+
   String upgradeFirmwareDigest({dynamic hint}) =>
       bridge.upgradeFirmwareDigestMethodCoordinator(
         that: this,
@@ -1489,6 +1505,20 @@ class UnsignedTx {
       );
 }
 
+class VerifyAddressProtocolState {
+  final bool finished;
+  final List<DeviceId> targetDevices;
+  final List<DeviceId> acks;
+  final String? aborted;
+
+  const VerifyAddressProtocolState({
+    required this.finished,
+    required this.targetDevices,
+    required this.acks,
+    this.aborted,
+  });
+}
+
 class Wallet {
   final Native bridge;
   final MutexFrostsnapWallet inner;
@@ -1528,7 +1558,7 @@ class Wallet {
         keyId: keyId,
       );
 
-  Future<Address> nextAddress({required KeyId keyId, dynamic hint}) =>
+  Future<(int, Address)> nextAddress({required KeyId keyId, dynamic hint}) =>
       bridge.nextAddressMethodWallet(
         that: this,
         keyId: keyId,

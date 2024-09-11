@@ -2,9 +2,12 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:frostsnapp/animated_check.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_id_ext.dart';
+import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/global.dart';
+import 'package:frostsnapp/hex.dart';
 import 'package:frostsnapp/psbt.dart';
 import 'package:frostsnapp/sign_message.dart';
 import 'package:frostsnapp/stream_ext.dart';
@@ -63,14 +66,6 @@ class _WalletHomeState extends State<WalletHome> {
     });
   }
 
-  void _copyToClipboard(BuildContext context, String walletDescriptor) {
-    Clipboard.setData(ClipboardData(text: walletDescriptor)).then((_) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Wallet descriptor copied to clipboard')),
-      );
-    });
-  }
-
   void _showQRCodeDialog(BuildContext context, String walletDescriptor) {
     final qrCode = QrCode(8, QrErrorCorrectLevel.L);
     qrCode.addData(walletDescriptor);
@@ -95,7 +90,7 @@ class _WalletHomeState extends State<WalletHome> {
           actions: [
             IconButton(
               iconSize: 30.0,
-              onPressed: () => _copyToClipboard(context, walletDescriptor),
+              onPressed: () => copyToClipboard(context, walletDescriptor),
               icon: Icon(Icons.copy),
             ),
             SizedBox(width: 30.0),
@@ -146,6 +141,14 @@ class _WalletHomeState extends State<WalletHome> {
       ),
     );
   }
+}
+
+void copyToClipboard(BuildContext context, String copyText) {
+  Clipboard.setData(ClipboardData(text: copyText)).then((_) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Copied to clipboard!')),
+    );
+  });
 }
 
 // Renaming WalletHomePage to WalletActivity
@@ -463,10 +466,64 @@ class _WalletReceiveState extends State<WalletReceive> {
     _addresses = wallet.addressesState(keyId: widget.keyId);
   }
 
-  void _addAddress() async {
-    Address newAddress = await wallet.nextAddress(keyId: widget.keyId);
-    _addresses.insert(0, newAddress);
-    _listKey.currentState?.insertItem(0);
+  void _addAddress(BuildContext context) async {
+    final nextAddressInfo = await wallet.nextAddress(keyId: widget.keyId);
+    final int index = nextAddressInfo.$1;
+    final Address newAddress = nextAddressInfo.$2;
+
+    if (context.mounted) {
+      final verifyAddressStream = coord
+          .verifyAddress(
+            keyId: widget.keyId,
+            addressIndex: index,
+          )
+          .toBehaviorSubject();
+
+      final finishedVerifying = verifyAddressStream
+          .firstWhere((event) => event.finished || event.aborted != null)
+          .then((event) {
+        return event.acks.isNotEmpty;
+      });
+
+      final verified = await showDeviceActionDialog(
+          context: context,
+          complete: finishedVerifying,
+          builder: (context) {
+            return Column(children: [
+              DialogHeader(
+                  child: Column(
+                children: const [
+                  Text("Verify address on a device"),
+                ],
+              )),
+              SizedBox(height: 16),
+              VerifyAddressProgress(
+                  stream: verifyAddressStream,
+                  addressIndex: index,
+                  address: newAddress.addressString),
+              SizedBox(height: 35),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).pop(true);
+                },
+                child: Text('Skip'),
+              ),
+            ]);
+          });
+
+      /* If there are multiple devices, we need to cancel others. */
+      /* FIXME: since this occures after the protocol has completed, we can't CancelProtocol*/
+      coord.cancelAll();
+
+      if (verified != null && verified) {
+        if (context.mounted) {
+          await showAddressDialog(context, newAddress.addressString);
+        }
+
+        _addresses.insert(0, newAddress);
+        _listKey.currentState?.insertItem(0);
+      }
+    }
   }
 
   @override
@@ -479,7 +536,9 @@ class _WalletReceiveState extends State<WalletReceive> {
         Padding(
           padding: const EdgeInsets.all(10.0),
           child: ElevatedButton(
-            onPressed: _addAddress,
+            onPressed: () {
+              _addAddress(context);
+            },
             child: Text('Get New Address'),
           ),
         ),
@@ -923,4 +982,119 @@ String formatSatoshi(int satoshis) {
 
   // Combine the whole number part with the formatted fractional part
   return '${parts[0]}.$fractionalPart\u20BF';
+}
+
+Future<void> showAddressDialog(BuildContext context, String address) {
+  copyToClipboard(context, address);
+
+  return showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+            title: Text("Verified Address"),
+            content: SizedBox(
+                width: Platform.isAndroid ? double.maxFinite : 400.0,
+                child: Align(
+                    alignment: Alignment.center,
+                    child: Column(
+                      children: [
+                        chunkedAddressFormat(address),
+                        SizedBox(height: 16),
+                        IconButton(
+                          iconSize: 30.0,
+                          onPressed: () => copyToClipboard(context, address),
+                          icon: Icon(Icons.copy),
+                        ),
+                      ],
+                    ))),
+            actions: [
+              IconButton(
+                iconSize: 30.0,
+                icon: Icon(Icons.close),
+                onPressed: () {
+                  Navigator.of(context).pop();
+                },
+              )
+            ]);
+      });
+}
+
+class VerifyAddressProgress extends StatelessWidget {
+  final Stream<VerifyAddressProtocolState> stream;
+  final String address;
+  final int addressIndex;
+
+  VerifyAddressProgress(
+      {super.key,
+      required this.stream,
+      required this.address,
+      required this.addressIndex});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder(
+      stream: deviceListSubject.map((update) => update.state),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return FsProgressIndicator();
+        }
+        final devicesPluggedIn = deviceIdSet(
+            snapshot.data!.devices.map((device) => device.id).toList());
+
+        return StreamBuilder(
+            stream: stream,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return FsProgressIndicator();
+              }
+
+              final state = snapshot.data!;
+              final acks = deviceIdSet(state.acks);
+              final deviceProgress = ListView.builder(
+                  physics: NeverScrollableScrollPhysics(),
+                  shrinkWrap: true,
+                  itemCount: state.targetDevices.length,
+                  itemBuilder: (context, index) {
+                    final Widget icon;
+                    final id = state.targetDevices[index];
+                    final name = coord.getDeviceName(id: id);
+                    if (acks.contains(id)) {
+                      icon = AnimatedCheckCircle();
+                    } else if (devicesPluggedIn.contains(id)) {
+                      icon = Icon(Icons.touch_app,
+                          color: awaitingColor, size: iconSize);
+                    } else {
+                      icon = Icon(Icons.circle_outlined,
+                          color: textColor, size: iconSize);
+                    }
+                    return ListTile(
+                      title: Text(name ?? "<unknown>"),
+                      trailing: Container(height: iconSize, child: icon),
+                    );
+                  });
+
+              return Column(children: [
+                Visibility(
+                    visible: devicesPluggedIn.isNotEmpty,
+                    child: Column(children: [
+                      chunkedAddressFormat(address),
+                      Container(
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            border: Border(
+                              bottom: BorderSide(
+                                color: Theme.of(context).dividerColor,
+                                width: 1.0,
+                              ),
+                            ),
+                          ),
+                          child: Column()),
+                    ])),
+                SizedBox(height: 8),
+                deviceProgress
+              ]);
+            });
+      },
+    );
+  }
 }

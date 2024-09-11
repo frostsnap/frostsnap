@@ -24,103 +24,96 @@ const TextStyle defaultTextStyle = TextStyle(
 );
 
 final ThemeData frostsnappTheme = ThemeData(
-  scaffoldBackgroundColor: backgroundPrimaryColor,
-  inputDecorationTheme: InputDecorationTheme(
-      border: OutlineInputBorder(),
-      enabledBorder: OutlineInputBorder(
-        borderSide: BorderSide(color: backgroundSecondaryColor),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderSide: BorderSide(color: backgroundTertiaryColor),
-      ),
-      iconColor: backgroundTertiaryColor,
-      labelStyle: defaultTextStyle,
-      hintStyle: TextStyle(
-        color: textSecondaryColor,
-      )),
-  iconTheme: IconThemeData(color: textSecondaryColor),
-  checkboxTheme: CheckboxThemeData(
-    checkColor:
+    scaffoldBackgroundColor: backgroundPrimaryColor,
+    inputDecorationTheme: InputDecorationTheme(
+        border: OutlineInputBorder(),
+        enabledBorder: OutlineInputBorder(
+          borderSide: BorderSide(color: backgroundSecondaryColor),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderSide: BorderSide(color: backgroundTertiaryColor),
+        ),
+        iconColor: backgroundTertiaryColor,
+        labelStyle: defaultTextStyle,
+        hintStyle: TextStyle(
+          color: textSecondaryColor,
+        )),
+    iconTheme: IconThemeData(color: textSecondaryColor),
+    checkboxTheme: CheckboxThemeData(checkColor:
         WidgetStateProperty.resolveWith<Color>((Set<WidgetState> states) {
       if (states.contains(WidgetState.selected)) {
         return textColor;
       }
       return textColor;
-    }),
-    fillColor:
+    }), fillColor:
         WidgetStateProperty.resolveWith<Color>((Set<WidgetState> states) {
       if (states.contains(WidgetState.selected)) {
         return backgroundTertiaryColor;
       }
       return backgroundTertiaryColor;
-    }),
-  ),
-  appBarTheme: AppBarTheme(
-      backgroundColor: backgroundSecondaryColor,
-      foregroundColor: textColor,
-      shadowColor: shadowColor,
-      elevation: 6.0,
-      surfaceTintColor: Colors.white),
-  snackBarTheme: SnackBarThemeData(contentTextStyle: defaultTextStyle),
-  textTheme: TextTheme(
-    bodyLarge: defaultTextStyle,
-    bodyMedium: defaultTextStyle,
-    bodySmall: defaultTextStyle,
-    labelLarge: defaultTextStyle,
-    labelMedium: defaultTextStyle,
-    labelSmall: defaultTextStyle,
-  ),
-  colorScheme: ColorScheme.fromSwatch(
-    primarySwatch: primarySwatch,
-    backgroundColor: backgroundPrimaryColor,
-    errorColor: errorColor,
-  ).copyWith(
-    secondary: backgroundSecondaryColor,
-  ),
-  textButtonTheme: TextButtonThemeData(
-    style: TextButton.styleFrom(
-        backgroundColor: backgroundTertiaryColor, foregroundColor: textColor),
-  ),
-  elevatedButtonTheme: ElevatedButtonThemeData(
-    style: ElevatedButton.styleFrom(
-      backgroundColor: backgroundTertiaryColor,
-      foregroundColor: textSecondaryColor,
-      disabledBackgroundColor: uninterestedColor,
-      // disabledForegroundColor: uninterestedColor
+    })),
+    appBarTheme: AppBarTheme(
+        backgroundColor: backgroundSecondaryColor,
+        foregroundColor: textColor,
+        shadowColor: shadowColor,
+        elevation: 6.0,
+        surfaceTintColor: Colors.white),
+    snackBarTheme: SnackBarThemeData(contentTextStyle: defaultTextStyle),
+    textTheme: TextTheme(
+      bodyLarge: defaultTextStyle,
+      bodyMedium: defaultTextStyle,
+      bodySmall: defaultTextStyle,
+      labelLarge: defaultTextStyle,
+      labelMedium: defaultTextStyle,
+      labelSmall: defaultTextStyle,
     ),
-  ),
-  sliderTheme: SliderThemeData(
-      activeTrackColor: backgroundTertiaryColor,
-      inactiveTrackColor: backgroundTertiaryColor,
-      disabledActiveTrackColor: backgroundSecondaryColor,
-      disabledInactiveTrackColor: backgroundSecondaryColor),
-  outlinedButtonTheme: OutlinedButtonThemeData(
-    style: OutlinedButton.styleFrom(
-      backgroundColor: backgroundTertiaryColor,
-      side: BorderSide(color: backgroundSecondaryColor),
+    colorScheme: ColorScheme.fromSwatch(
+      primarySwatch: primarySwatch,
+      backgroundColor: backgroundPrimaryColor,
+      errorColor: errorColor,
+    ).copyWith(
+      secondary: backgroundSecondaryColor,
     ),
-  ),
-  bottomNavigationBarTheme: BottomNavigationBarThemeData(
-      selectedItemColor: textColor,
-      unselectedItemColor: textSecondaryColor,
-      backgroundColor: backgroundPrimaryColor),
-  listTileTheme: ListTileThemeData(
-    tileColor: backgroundSecondaryColor,
-    textColor: textColor,
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(8.0), // Adjust the radius as needed
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+          backgroundColor: backgroundTertiaryColor, foregroundColor: textColor),
     ),
-    minVerticalPadding: 5,
-  ),
-  dropdownMenuTheme:
-      DropdownMenuThemeData(textStyle: TextStyle(color: textColor)),
-  dividerTheme: const DividerThemeData(color: Colors.black12),
-  dialogTheme: DialogTheme(
-    backgroundColor: backgroundSecondaryColor,
-    iconColor: backgroundTertiaryColor,
-    shadowColor: shadowColor,
-  ),
-);
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: backgroundTertiaryColor,
+        foregroundColor: textSecondaryColor,
+        disabledBackgroundColor: uninterestedColor,
+        // disabledForegroundColor: uninterestedColor
+      ),
+    ),
+    sliderTheme: SliderThemeData(
+        activeTrackColor: backgroundTertiaryColor,
+        inactiveTrackColor: backgroundTertiaryColor,
+        disabledActiveTrackColor: backgroundSecondaryColor,
+        disabledInactiveTrackColor: backgroundSecondaryColor),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        backgroundColor: backgroundTertiaryColor,
+        side: BorderSide(color: backgroundSecondaryColor),
+      ),
+    ),
+    bottomNavigationBarTheme: BottomNavigationBarThemeData(
+        selectedItemColor: textColor,
+        unselectedItemColor: textSecondaryColor,
+        backgroundColor: backgroundPrimaryColor),
+    listTileTheme: ListTileThemeData(
+      tileColor: backgroundSecondaryColor,
+      textColor: textColor,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8.0), // Adjust the radius as needed
+      ),
+      minVerticalPadding: 5,
+    ),
+    dropdownMenuTheme:
+        DropdownMenuThemeData(textStyle: TextStyle(color: textColor)),
+    dividerTheme: const DividerThemeData(color: Colors.black12),
+    dialogTheme: const DialogTheme(
+        iconColor: textColor, backgroundColor: backgroundPrimaryColor));
 
 class FsProgressIndicator extends StatelessWidget {
   const FsProgressIndicator({super.key});

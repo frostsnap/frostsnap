@@ -603,14 +603,14 @@ class NativeImpl implements Native {
         argNames: ["that", "keyId"],
       );
 
-  Future<Address> nextAddressMethodWallet(
+  Future<(int, Address)> nextAddressMethodWallet(
       {required Wallet that, required KeyId keyId, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_wallet(that);
     var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
     return _platform.executeNormal(FlutterRustBridgeTask(
       callFfi: (port_) =>
           _platform.inner.wire_next_address__method__Wallet(port_, arg0, arg1),
-      parseSuccessData: _wire2api_address,
+      parseSuccessData: _wire2api___record__u32_address,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kNextAddressMethodWalletConstMeta,
       argValues: [that, keyId],
@@ -1182,6 +1182,31 @@ class NativeImpl implements Native {
             debugName: "start_firmware_upgrade__method__Coordinator",
             argNames: ["that"],
           );
+
+  Stream<VerifyAddressProtocolState> verifyAddressMethodCoordinator(
+      {required Coordinator that,
+      required KeyId keyId,
+      required int addressIndex,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
+    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg2 = api2wire_u32(addressIndex);
+    return _platform.executeStream(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner
+          .wire_verify_address__method__Coordinator(port_, arg0, arg1, arg2),
+      parseSuccessData: _wire2api_verify_address_protocol_state,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kVerifyAddressMethodCoordinatorConstMeta,
+      argValues: [that, keyId, addressIndex],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kVerifyAddressMethodCoordinatorConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "verify_address__method__Coordinator",
+        argNames: ["that", "keyId", "addressIndex"],
+      );
 
   String upgradeFirmwareDigestMethodCoordinator(
       {required Coordinator that, dynamic hint}) {
@@ -1764,6 +1789,17 @@ class NativeImpl implements Native {
     );
   }
 
+  (int, Address) _wire2api___record__u32_address(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2) {
+      throw Exception('Expected 2 elements, got ${arr.length}');
+    }
+    return (
+      _wire2api_u32(arr[0]),
+      _wire2api_address(arr[1]),
+    );
+  }
+
   Address _wire2api_address(dynamic raw) {
     final arr = raw as List<dynamic>;
     if (arr.length != 3)
@@ -2322,6 +2358,19 @@ class NativeImpl implements Native {
 
   int _wire2api_usize(dynamic raw) {
     return castInt(raw);
+  }
+
+  VerifyAddressProtocolState _wire2api_verify_address_protocol_state(
+      dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return VerifyAddressProtocolState(
+      finished: _wire2api_bool(arr[0]),
+      targetDevices: _wire2api_list_device_id(arr[1]),
+      acks: _wire2api_list_device_id(arr[2]),
+      aborted: _wire2api_opt_String(arr[3]),
+    );
   }
 
   Wallet _wire2api_wallet(dynamic raw) {
