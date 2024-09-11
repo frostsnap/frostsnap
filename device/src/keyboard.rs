@@ -33,14 +33,14 @@ const BACKUP_LEFT_PADDING: u32 = 5;
 const KEYBOARD_START_HEIGHT: u32 = 280 - 10 - PADDING_TOP - (KEYROWS_SHOWN as u32) * (KEY_HEIGHT);
 
 const KEYBOARD_KEYS: [[char; 4]; 8] = [
-    ['A', 'C', 'D', 'E'],
-    ['F', 'G', 'H', 'J'],
-    ['K', 'L', 'M', 'N'],
-    ['P', 'Q', 'R', 'S'],
-    ['T', 'U', 'V', 'W'],
-    ['X', 'Y', 'Z', '2'],
-    ['3', '4', '5', '6'],
-    ['7', '8', '9', '0'],
+    ['0', '2', '3', '4'],
+    ['5', '6', '7', '8'],
+    ['9', 'A', 'C', 'D'],
+    ['E', 'F', 'G', 'H'],
+    ['J', 'K', 'L', 'M'],
+    ['N', 'P', 'Q', 'R'],
+    ['S', 'T', 'U', 'V'],
+    ['W', 'X', 'Y', 'Z'],
 ];
 
 const KEYBOARD_KEYS_NUMBERS: [[char; 3]; 4] = [
