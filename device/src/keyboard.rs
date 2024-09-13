@@ -252,7 +252,7 @@ impl Keyboard {
 
         if self.entered_hrp_index.is_none() {
             let pending_hrp = format!(
-                "frost[{}]",
+                "FROST[{}]",
                 self.buffer.clone().into_iter().collect::<String>()
             );
             Text::with_text_style(

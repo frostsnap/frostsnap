@@ -253,6 +253,7 @@ where
     }
 
     pub fn show_backup(&mut self, str: alloc::string::String, show_hint: bool) {
+        let str = str.to_uppercase();
         let mut body = self.body_no_horizontal_padding();
         let mut y_offset = 0;
         let vertical_spacing = 35;
