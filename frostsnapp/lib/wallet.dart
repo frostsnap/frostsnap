@@ -472,56 +472,15 @@ class _WalletReceiveState extends State<WalletReceive> {
     final Address newAddress = nextAddressInfo.$2;
 
     if (context.mounted) {
-      final verifyAddressStream = coord
-          .verifyAddress(
-            keyId: widget.keyId,
-            addressIndex: index,
-          )
-          .toBehaviorSubject();
-
-      final finishedVerifying = verifyAddressStream
-          .firstWhere((event) => event.finished || event.aborted != null)
-          .then((event) {
-        return event.acks.isNotEmpty;
-      });
-
-      final verified = await showDeviceActionDialog(
-          context: context,
-          complete: finishedVerifying,
-          builder: (context) {
-            return Column(children: [
-              DialogHeader(
-                  child: Column(
-                children: const [
-                  Text("Verify address on a device"),
-                ],
-              )),
-              SizedBox(height: 16),
-              VerifyAddressProgress(
-                  stream: verifyAddressStream,
-                  addressIndex: index,
-                  address: newAddress.addressString),
-              SizedBox(height: 35),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.of(context).pop(true);
-                },
-                child: Text('Skip'),
-              ),
-            ]);
-          });
-
-      /* If there are multiple devices, we need to cancel others. */
-      /* FIXME: since this occures after the protocol has completed, we can't CancelProtocol*/
-      coord.cancelAll();
-
-      if (verified != null && verified) {
+      final bool verified =
+          await showAddressDialog(context, newAddress.addressString, index);
+      if (verified) {
         if (context.mounted) {
-          await showAddressDialog(context, newAddress.addressString);
+          setState(() {
+            _addresses.insert(0, newAddress);
+            _listKey.currentState?.insertItem(0);
+          });
         }
-
-        _addresses.insert(0, newAddress);
-        _listKey.currentState?.insertItem(0);
       }
     }
   }
@@ -570,15 +529,139 @@ class _WalletReceiveState extends State<WalletReceive> {
               ),
               trailing: IconButton(
                 icon: Icon(Icons.copy),
-                onPressed: () {
+                onPressed: () async {
                   Clipboard.setData(ClipboardData(text: address.addressString));
                   ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('Address copied to clipboard')));
+                  await showAddressDialog(
+                      context, address.addressString, address.index);
                 },
               ),
             ),
           ),
         ));
+  }
+
+  Future<bool> showAddressDialog(
+      BuildContext context, String address, int index) async {
+    copyToClipboard(context, address);
+    bool? isVerified;
+
+    // Start verification process immediately
+    final verifyAddressStream = coord
+        .verifyAddress(
+          keyId: widget.keyId,
+          addressIndex: index,
+        )
+        .toBehaviorSubject();
+    final finishedVerifying = verifyAddressStream
+        .firstWhere((event) => event.finished || event.aborted != null)
+        .then((event) {
+      return event.acks.isNotEmpty;
+    });
+
+    // Show verification dialog
+    isVerified = await showDeviceActionDialog(
+      context: context,
+      complete: finishedVerifying,
+      builder: (context) {
+        return Column(children: [
+          DialogHeader(
+              child: Column(
+            children: const [
+              Text("Address copied to clipboard"),
+            ],
+          )),
+          SizedBox(height: 16),
+          VerifyAddressProgress(
+              stream: verifyAddressStream,
+              addressIndex: index,
+              address: address),
+          SizedBox(height: 16),
+          Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                    color: Theme.of(context).dividerColor,
+                    width: 1.0,
+                  ),
+                ),
+              ),
+              child: Column()),
+          SizedBox(height: 16),
+          IconButton(
+            iconSize: 30.0,
+            onPressed: () => copyToClipboard(context, address),
+            icon: Icon(Icons.copy),
+          ),
+          SizedBox(height: 16),
+          const Text("Verify Address"),
+          SizedBox(height: 8),
+          Text("Securely send the address to the payer."),
+          SizedBox(height: 8),
+          Text(
+              "You can verify this address by plugging in a device and confirming it matches the address displayed onscreen."),
+          SizedBox(height: 32),
+          ElevatedButton(
+            onPressed: () {
+              coord.cancelAll();
+              Navigator.of(context).pop(false);
+            },
+            child: Text('Skip'),
+          ),
+        ]);
+      },
+    );
+
+    coord.cancelAll();
+
+    if (context.mounted) {
+      await showDialog(
+        context: context,
+        builder: (context) {
+          return StatefulBuilder(builder: (context, setState) {
+            return AlertDialog(
+              title: Text("Receive Bitcoin"),
+              content: SizedBox(
+                width: Platform.isAndroid ? double.maxFinite : 400.0,
+                child: Align(
+                  alignment: Alignment.center,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      GestureDetector(
+                          child: chunkedAddressFormat(address),
+                          onTap: () {
+                            copyToClipboard(context, address);
+                          }),
+                      SizedBox(height: 16),
+                      IconButton(
+                        iconSize: 30.0,
+                        onPressed: () => copyToClipboard(context, address),
+                        icon: Icon(Icons.copy),
+                      ),
+                      Text(isVerified == true ? "Address verified." : "")
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                IconButton(
+                  iconSize: 30.0,
+                  icon: Icon(Icons.close),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                )
+              ],
+            );
+          });
+        },
+      );
+    }
+
+    return isVerified != null;
   }
 }
 
@@ -984,41 +1067,6 @@ String formatSatoshi(int satoshis) {
   return '${parts[0]}.$fractionalPart\u20BF';
 }
 
-Future<void> showAddressDialog(BuildContext context, String address) {
-  copyToClipboard(context, address);
-
-  return showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-            title: Text("Verified Address"),
-            content: SizedBox(
-                width: Platform.isAndroid ? double.maxFinite : 400.0,
-                child: Align(
-                    alignment: Alignment.center,
-                    child: Column(
-                      children: [
-                        chunkedAddressFormat(address),
-                        SizedBox(height: 16),
-                        IconButton(
-                          iconSize: 30.0,
-                          onPressed: () => copyToClipboard(context, address),
-                          icon: Icon(Icons.copy),
-                        ),
-                      ],
-                    ))),
-            actions: [
-              IconButton(
-                iconSize: 30.0,
-                icon: Icon(Icons.close),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-              )
-            ]);
-      });
-}
-
 class VerifyAddressProgress extends StatelessWidget {
   final Stream<VerifyAddressProtocolState> stream;
   final String address;
@@ -1076,20 +1124,7 @@ class VerifyAddressProgress extends StatelessWidget {
               return Column(children: [
                 Visibility(
                     visible: devicesPluggedIn.isNotEmpty,
-                    child: Column(children: [
-                      chunkedAddressFormat(address),
-                      Container(
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            border: Border(
-                              bottom: BorderSide(
-                                color: Theme.of(context).dividerColor,
-                                width: 1.0,
-                              ),
-                            ),
-                          ),
-                          child: Column()),
-                    ])),
+                    child: Column(children: [])),
                 SizedBox(height: 8),
                 deviceProgress
               ]);
