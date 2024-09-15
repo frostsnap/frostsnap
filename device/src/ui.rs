@@ -102,6 +102,9 @@ pub enum Prompt {
         firmware_digest: FirmwareDigest,
         size: u32,
     },
+    VerifyAddress {
+        address: String,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -143,4 +146,5 @@ pub enum UiEvent {
         size: u32,
         firmware_digest: FirmwareDigest,
     },
+    AddressVerified,
 }

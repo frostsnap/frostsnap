@@ -1952,6 +1952,32 @@ class NativeWire implements FlutterRustBridgeWireBase {
       _wire_start_firmware_upgrade__method__CoordinatorPtr
           .asFunction<void Function(int, ffi.Pointer<wire_Coordinator>)>();
 
+  void wire_verify_address__method__Coordinator(
+    int port_,
+    ffi.Pointer<wire_Coordinator> that,
+    ffi.Pointer<wire_KeyId> key_id,
+    int address_index,
+  ) {
+    return _wire_verify_address__method__Coordinator(
+      port_,
+      that,
+      key_id,
+      address_index,
+    );
+  }
+
+  late final _wire_verify_address__method__CoordinatorPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Void Function(
+              ffi.Int64,
+              ffi.Pointer<wire_Coordinator>,
+              ffi.Pointer<wire_KeyId>,
+              ffi.Uint32)>>('wire_verify_address__method__Coordinator');
+  late final _wire_verify_address__method__Coordinator =
+      _wire_verify_address__method__CoordinatorPtr.asFunction<
+          void Function(int, ffi.Pointer<wire_Coordinator>,
+              ffi.Pointer<wire_KeyId>, int)>();
+
   WireSyncReturn wire_upgrade_firmware_digest__method__Coordinator(
     ffi.Pointer<wire_Coordinator> that,
   ) {

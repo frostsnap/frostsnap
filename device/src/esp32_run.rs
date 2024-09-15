@@ -483,6 +483,11 @@ where
                         // special case where updrade will handle things from now on
                         switch_workflow = None;
                     }
+                    UiEvent::AddressVerified => outbox.extend(
+                        signer
+                            .verify_address_ack()
+                            .expect("state changed while verifying address"),
+                    ),
                 }
 
                 if let Some(switch_workflow) = switch_workflow {
@@ -562,6 +567,32 @@ where
                             }
                             DeviceToUserMessage::DisplayBackup { key_id: _, backup } => {
                                 ui.set_workflow(ui::Workflow::DisplayBackup { backup });
+                            }
+                            DeviceToUserMessage::VerifyAddress {
+                                key_id,
+                                derivation_index,
+                            } => {
+                                let root_key =
+                                    key_id.to_root_pubkey().expect("should be valid public key");
+                                let spk = frostsnap_core::bitcoin_transaction::LocalSpk {
+                                    root_key,
+                                    bip32_path: frostsnap_core::tweak::AppBip32Path {
+                                        account_keychain:
+                                            frostsnap_core::tweak::AppAccountKeychain::external(),
+                                        index: derivation_index,
+                                    },
+                                };
+                                let address = bitcoin::Address::from_script(
+                                    &spk.spk(),
+                                    bitcoin::Network::Signet,
+                                )
+                                .expect("has address form");
+
+                                ui.set_workflow(ui::Workflow::UserPrompt(
+                                    ui::Prompt::VerifyAddress {
+                                        address: address.to_string(),
+                                    },
+                                ))
                             }
                         };
                     }

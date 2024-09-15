@@ -1,7 +1,7 @@
 use frostsnap_core::bitcoin_transaction::{LocalSpk, TransactionTemplate};
 use frostsnap_core::message::{
     CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, CoordinatorToUserSigningMessage,
-    DeviceToUserMessage, EncodedSignature,
+    CoordinatorToUserVerifyingAddressMessage, DeviceToUserMessage, EncodedSignature,
 };
 use frostsnap_core::tweak::AppBip32Path;
 use frostsnap_core::{
@@ -39,6 +39,10 @@ struct TestEnv {
 
     pub backups: BTreeMap<DeviceId, (KeyId, String)>,
     pub backup_confirmed_on_coordinator: BTreeSet<DeviceId>,
+
+    pub verification_requests: BTreeMap<DeviceId, u32>,
+    pub verify_address_acks: BTreeSet<DeviceId>,
+    pub verified_address: bool,
 }
 
 impl common::Env for TestEnv {
@@ -167,6 +171,20 @@ impl common::Env for TestEnv {
             CoordinatorToUserMessage::DisplayBackupConfirmed { device_id } => {
                 self.backup_confirmed_on_coordinator.insert(device_id);
             }
+            CoordinatorToUserMessage::VerifyAddress(verify_address_message) => {
+                match verify_address_message {
+                    CoordinatorToUserVerifyingAddressMessage::DeviceAck { from } => {
+                        eprintln!("HERE DAWG");
+                        self.verify_address_acks.insert(from);
+                    }
+                    CoordinatorToUserVerifyingAddressMessage::Confirmed => {
+                        if self.verified_address {
+                            panic!("verifying address confirmed already");
+                        }
+                        self.verified_address = true;
+                    }
+                }
+            }
         }
     }
 
@@ -203,6 +221,14 @@ impl common::Env for TestEnv {
             }
             DeviceToUserMessage::Canceled { .. } => {
                 panic!("no cancelling done");
+            }
+            DeviceToUserMessage::VerifyAddress {
+                key_id: _,
+                derivation_index,
+            } => {
+                self.verification_requests.insert(from, derivation_index);
+                let verify_ack = run.device(from).verify_address_ack().unwrap();
+                run.extend_from_device(from, verify_ack);
             }
         }
     }
@@ -385,6 +411,47 @@ fn test_display_backup() {
         g!(interpolated_joint_secret * G),
         coord_frost_key.frost_key().public_key()
     );
+}
+
+#[test]
+fn test_verify_address() {
+    let n_parties = 3;
+    let threshold = 2;
+    let coordinator = FrostCoordinator::new();
+    let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
+
+    let devices = (0..n_parties)
+        .map(|_| FrostSigner::new_random(&mut test_rng))
+        .map(|device| (device.device_id(), device))
+        .collect::<BTreeMap<_, _>>();
+
+    let device_set = devices.keys().cloned().collect::<BTreeSet<_>>();
+    let mut env = TestEnv::default();
+    let mut test_rng = ChaCha20Rng::from_seed([123u8; 32]);
+
+    let mut run = Run::new(coordinator, devices);
+
+    let keygen_init = run
+        .coordinator
+        .do_keygen(&device_set, threshold, "my key".to_string(), &mut test_rng)
+        .unwrap();
+    run.extend(keygen_init);
+
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
+    let coord_frost_key = run.coordinator.iter_keys().next().unwrap().clone();
+    let key_id = coord_frost_key.key_id();
+
+    let verify_request = run.coordinator.verify_address(key_id, 0).unwrap();
+    run.extend(verify_request);
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
+
+    assert_eq!(env.verification_requests.len(), 3);
+    assert_eq!(
+        env.verify_address_acks.len(),
+        1,
+        "we stop accumulating acks after the first one"
+    );
+    assert!(env.verified_address);
 }
 
 // this test needs a better name and to properly explain what it's doing

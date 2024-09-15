@@ -13,6 +13,7 @@ pub use frostsnap_coordinator::bitcoin::{chain_sync::ChainSync, wallet::Frostsna
 pub use frostsnap_coordinator::firmware_upgrade::FirmwareUpgradeConfirmState;
 pub use frostsnap_coordinator::frostsnap_core;
 use frostsnap_coordinator::frostsnap_core::schnorr_fun::fun::hash::HashAdd;
+pub use frostsnap_coordinator::verify_address::VerifyAddressProtocolState;
 pub use frostsnap_coordinator::{
     keygen::KeyGenState, signing::SigningState, DeviceChange, PortDesc,
 };
@@ -335,6 +336,14 @@ pub struct _FirmwareUpgradeConfirmState {
     pub upgrade_ready_to_start: bool,
 }
 
+#[frb(mirror(VerifyAddressProtocolState))]
+pub struct _VerifyAddressProtocolState {
+    pub finished: bool,
+    pub target_devices: Vec<DeviceId>,
+    pub acks: Vec<DeviceId>,
+    pub aborted: Option<String>,
+}
+
 #[derive(Clone, Debug)]
 pub enum DeviceListChangeKind {
     Added,
@@ -489,12 +498,12 @@ impl Wallet {
         Ok(())
     }
 
-    pub fn next_address(&self, key_id: KeyId) -> Result<Address> {
+    pub fn next_address(&self, key_id: KeyId) -> Result<(u32, Address)> {
         self.inner
             .lock()
             .unwrap()
             .next_address(key_id)
-            .map(Into::into)
+            .map(|address_info| (address_info.index, address_info.into()))
     }
 
     pub fn addresses_state(&self, key_id: KeyId) -> SyncReturn<Vec<Address>> {
@@ -792,6 +801,16 @@ impl Coordinator {
         sink: StreamSink<FirmwareUpgradeConfirmState>,
     ) -> Result<()> {
         self.0.begin_upgrade_firmware(sink)?;
+        Ok(())
+    }
+
+    pub fn verify_address(
+        &self,
+        key_id: KeyId,
+        address_index: u32,
+        sink: StreamSink<VerifyAddressProtocolState>,
+    ) -> Result<()> {
+        self.0.verify_address(key_id, address_index, sink)?;
         Ok(())
     }
 

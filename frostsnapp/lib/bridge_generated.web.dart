@@ -697,6 +697,12 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* void */ wire_start_firmware_upgrade__method__Coordinator(
       NativePortType port_, List<dynamic> that);
 
+  external dynamic /* void */ wire_verify_address__method__Coordinator(
+      NativePortType port_,
+      List<dynamic> that,
+      List<dynamic> key_id,
+      int address_index);
+
   external dynamic /* String */
       wire_upgrade_firmware_digest__method__Coordinator(List<dynamic> that);
 
@@ -1055,6 +1061,11 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   void wire_start_firmware_upgrade__method__Coordinator(
           NativePortType port_, List<dynamic> that) =>
       wasmModule.wire_start_firmware_upgrade__method__Coordinator(port_, that);
+
+  void wire_verify_address__method__Coordinator(NativePortType port_,
+          List<dynamic> that, List<dynamic> key_id, int address_index) =>
+      wasmModule.wire_verify_address__method__Coordinator(
+          port_, that, key_id, address_index);
 
   dynamic /* String */ wire_upgrade_firmware_digest__method__Coordinator(
           List<dynamic> that) =>

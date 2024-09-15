@@ -110,6 +110,12 @@ pub trait Env {
             DeviceToUserMessage::Canceled { .. } => {
                 panic!("no cancelling done");
             }
+            DeviceToUserMessage::VerifyAddress { .. } => {
+                let verify_ack = run.device(from).verify_address_ack().unwrap();
+                dbg!(&verify_ack);
+                panic!();
+                run.extend_from_device(from, verify_ack);
+            }
             _ => { /* do nothing */ }
         }
     }

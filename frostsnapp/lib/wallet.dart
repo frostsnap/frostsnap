@@ -2,9 +2,12 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:frostsnapp/animated_check.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_id_ext.dart';
+import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/global.dart';
+import 'package:frostsnapp/hex.dart';
 import 'package:frostsnapp/psbt.dart';
 import 'package:frostsnapp/sign_message.dart';
 import 'package:frostsnapp/stream_ext.dart';
@@ -63,14 +66,6 @@ class _WalletHomeState extends State<WalletHome> {
     });
   }
 
-  void _copyToClipboard(BuildContext context, String walletDescriptor) {
-    Clipboard.setData(ClipboardData(text: walletDescriptor)).then((_) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Wallet descriptor copied to clipboard')),
-      );
-    });
-  }
-
   void _showQRCodeDialog(BuildContext context, String walletDescriptor) {
     final qrCode = QrCode(8, QrErrorCorrectLevel.L);
     qrCode.addData(walletDescriptor);
@@ -95,7 +90,7 @@ class _WalletHomeState extends State<WalletHome> {
           actions: [
             IconButton(
               iconSize: 30.0,
-              onPressed: () => _copyToClipboard(context, walletDescriptor),
+              onPressed: () => copyToClipboard(context, walletDescriptor),
               icon: Icon(Icons.copy),
             ),
             SizedBox(width: 30.0),
@@ -146,6 +141,14 @@ class _WalletHomeState extends State<WalletHome> {
       ),
     );
   }
+}
+
+void copyToClipboard(BuildContext context, String copyText) {
+  Clipboard.setData(ClipboardData(text: copyText)).then((_) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Copied to clipboard!')),
+    );
+  });
 }
 
 // Renaming WalletHomePage to WalletActivity
@@ -463,10 +466,23 @@ class _WalletReceiveState extends State<WalletReceive> {
     _addresses = wallet.addressesState(keyId: widget.keyId);
   }
 
-  void _addAddress() async {
-    Address newAddress = await wallet.nextAddress(keyId: widget.keyId);
-    _addresses.insert(0, newAddress);
-    _listKey.currentState?.insertItem(0);
+  void _addAddress(BuildContext context) async {
+    final nextAddressInfo = await wallet.nextAddress(keyId: widget.keyId);
+    final int index = nextAddressInfo.$1;
+    final Address newAddress = nextAddressInfo.$2;
+
+    if (context.mounted) {
+      final bool verified =
+          await showAddressDialog(context, newAddress.addressString, index);
+      if (verified) {
+        if (context.mounted) {
+          setState(() {
+            _addresses.insert(0, newAddress);
+            _listKey.currentState?.insertItem(0);
+          });
+        }
+      }
+    }
   }
 
   @override
@@ -479,7 +495,9 @@ class _WalletReceiveState extends State<WalletReceive> {
         Padding(
           padding: const EdgeInsets.all(10.0),
           child: ElevatedButton(
-            onPressed: _addAddress,
+            onPressed: () {
+              _addAddress(context);
+            },
             child: Text('Get New Address'),
           ),
         ),
@@ -511,15 +529,160 @@ class _WalletReceiveState extends State<WalletReceive> {
               ),
               trailing: IconButton(
                 icon: Icon(Icons.copy),
-                onPressed: () {
+                onPressed: () async {
                   Clipboard.setData(ClipboardData(text: address.addressString));
                   ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('Address copied to clipboard')));
+                  await showAddressDialog(
+                      context, address.addressString, address.index);
                 },
               ),
             ),
           ),
         ));
+  }
+
+  Future<bool> showAddressDialog(
+      BuildContext context, String address, int index) async {
+    copyToClipboard(context, address);
+    bool? isVerified;
+
+    // Start verification process immediately
+    final verifyAddressStream = coord
+        .verifyAddress(
+          keyId: widget.keyId,
+          addressIndex: index,
+        )
+        .toBehaviorSubject();
+    final finishedVerifying = verifyAddressStream
+        .firstWhere((event) => event.finished || event.aborted != null)
+        .then((event) {
+      return event.acks.isNotEmpty;
+    });
+
+    final qrCode = QrCode(8, QrErrorCorrectLevel.L);
+    qrCode.addData(address);
+    final qrImage = QrImage(qrCode);
+
+    // Show verification dialog
+    isVerified = await showDeviceActionDialog(
+        context: context,
+        complete: finishedVerifying,
+        builder: (context) {
+          return Column(
+            children: [
+              DialogHeader(
+                child: Column(
+                  children: const [
+                    Text("Address copied to clipboard"),
+                  ],
+                ),
+              ),
+              SizedBox(height: 16),
+              Flexible(
+                  child: PrettyQrView(
+                qrImage: qrImage,
+                decoration: const PrettyQrDecoration(
+                  shape: PrettyQrSmoothSymbol(),
+                ),
+              )),
+              SizedBox(height: 4),
+              IconButton(
+                iconSize: 30.0,
+                onPressed: () => copyToClipboard(context, address),
+                icon: Icon(Icons.copy),
+              ),
+              SizedBox(height: 8),
+              const Text(
+                "Verify Address",
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              Text("Securely send this address to the payer."),
+              SizedBox(height: 4),
+              VerifyAddressProgress(
+                stream: verifyAddressStream,
+                addressIndex: index,
+                address: address,
+              ),
+              SizedBox(height: 4),
+              ElevatedButton(
+                onPressed: () {
+                  coord.cancelAll();
+                  Navigator.of(context).pop(false);
+                },
+                child: Text('Skip'),
+              ),
+            ],
+          );
+        });
+
+    coord.cancelAll();
+
+    if (context.mounted) {
+      await showDialog(
+        context: context,
+        builder: (context) {
+          return StatefulBuilder(builder: (context, setState) {
+            return AlertDialog(
+              content: SizedBox(
+                width: Platform.isAndroid ? double.maxFinite : 400.0,
+                child: Align(
+                  alignment: Alignment.center,
+                  child: Column(
+                    children: [
+                      DialogHeader(
+                          child: Column(
+                        children: const [
+                          Text("Receive Bitcoin"),
+                        ],
+                      )),
+                      SizedBox(height: 16),
+                      PrettyQrView(
+                        qrImage: qrImage,
+                        decoration: const PrettyQrDecoration(
+                          shape: PrettyQrSmoothSymbol(),
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      IconButton(
+                        iconSize: 30.0,
+                        onPressed: () => copyToClipboard(context, address),
+                        icon: Icon(Icons.copy),
+                      ),
+                      SizedBox(height: 8),
+                      const Text(
+                        "Address",
+                        style: TextStyle(
+                            fontSize: 24, fontWeight: FontWeight.bold),
+                      ),
+                      SizedBox(height: 4),
+                      GestureDetector(
+                          child: chunkedAddressFormat(address),
+                          onTap: () {
+                            copyToClipboard(context, address);
+                          }),
+                      SizedBox(height: 4),
+                      Text(isVerified == true ? "Address verified." : "")
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                IconButton(
+                  iconSize: 30.0,
+                  icon: Icon(Icons.close),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                )
+              ],
+            );
+          });
+        },
+      );
+    }
+
+    return isVerified != null;
   }
 }
 
@@ -923,4 +1086,118 @@ String formatSatoshi(int satoshis) {
 
   // Combine the whole number part with the formatted fractional part
   return '${parts[0]}.$fractionalPart\u20BF';
+}
+
+class VerifyAddressProgress extends StatelessWidget {
+  final Stream<VerifyAddressProtocolState> stream;
+  final String address;
+  final int addressIndex;
+
+  const VerifyAddressProgress({
+    Key? key,
+    required this.stream,
+    required this.address,
+    required this.addressIndex,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DeviceListState>(
+      stream: deviceListSubject.map((update) => update.state),
+      builder: (context, deviceListSnapshot) {
+        if (!deviceListSnapshot.hasData) {
+          return FsProgressIndicator();
+        }
+        final devicesPluggedIn = deviceIdSet(deviceListSnapshot.data!.devices
+            .map((device) => device.id)
+            .toList());
+
+        return StreamBuilder<VerifyAddressProtocolState>(
+          stream: stream,
+          builder: (context, verifyAddressSnapshot) {
+            if (!verifyAddressSnapshot.hasData) {
+              return FsProgressIndicator();
+            }
+            final state = verifyAddressSnapshot.data!;
+            final acks = deviceIdSet(state.acks);
+
+            bool targetConnected =
+                state.targetDevices.any((id) => devicesPluggedIn.contains(id));
+
+            final deviceProgress = ListView.builder(
+              physics: NeverScrollableScrollPhysics(),
+              shrinkWrap: true,
+              itemCount: state.targetDevices.length,
+              itemBuilder: (context, index) {
+                final id = state.targetDevices[index];
+                final name = coord.getDeviceName(id: id);
+
+                Widget icon;
+                if (acks.contains(id)) {
+                  icon = AnimatedCheckCircle();
+                } else if (devicesPluggedIn.contains(id)) {
+                  icon = Icon(Icons.touch_app,
+                      color: awaitingColor, size: iconSize);
+                } else {
+                  icon = Icon(Icons.circle_outlined,
+                      color: textColor, size: iconSize);
+                }
+
+                return ListTile(
+                  title: Text(name ?? "<unknown>"),
+                  trailing: SizedBox(height: iconSize, child: icon),
+                );
+              },
+            );
+
+            return Column(
+              children: [
+                Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                      "Plug in one of these devices to verify this address."),
+                ),
+                SizedBox(
+                  height: 8,
+                ),
+                Container(
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          color: Theme.of(context).dividerColor,
+                          width: 1.0,
+                        ),
+                      ),
+                    ),
+                    child: Column()),
+                SizedBox(height: 8),
+                deviceProgress,
+                Container(
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          color: Theme.of(context).dividerColor,
+                          width: 1.0,
+                        ),
+                      ),
+                    ),
+                    child: Column()),
+                SizedBox(
+                  height: 8,
+                ),
+                if (targetConnected)
+                  Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                        "Confirm the payer sees the same address characters as displayed on the device."),
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
 }

@@ -397,6 +397,11 @@ void wire_try_restore_signing_session__method__Coordinator(int64_t port_,
 
 void wire_start_firmware_upgrade__method__Coordinator(int64_t port_, struct wire_Coordinator *that);
 
+void wire_verify_address__method__Coordinator(int64_t port_,
+                                              struct wire_Coordinator *that,
+                                              struct wire_KeyId *key_id,
+                                              uint32_t address_index);
+
 WireSyncReturn wire_upgrade_firmware_digest__method__Coordinator(struct wire_Coordinator *that);
 
 void wire_cancel_protocol__method__Coordinator(int64_t port_, struct wire_Coordinator *that);
@@ -657,6 +662,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_persisted_sign_session_description__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_try_restore_signing_session__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_start_firmware_upgrade__method__Coordinator);
+    dummy_var ^= ((int64_t) (void*) wire_verify_address__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_upgrade_firmware_digest__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_cancel_protocol__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_enter_firmware_upgrade_mode__method__Coordinator);

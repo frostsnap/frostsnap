@@ -13,6 +13,7 @@ use frostsnap_coordinator::frostsnap_persist::DeviceNames;
 use frostsnap_coordinator::keygen::KeyGenState;
 use frostsnap_coordinator::persist::Persisted;
 use frostsnap_coordinator::signing::SigningState;
+use frostsnap_coordinator::verify_address::{VerifyAddressProtocol, VerifyAddressProtocolState};
 use frostsnap_coordinator::{
     frostsnap_core, AppMessageBody, FirmwareBin, UiProtocol, UsbSender, UsbSerialManager,
 };
@@ -634,6 +635,26 @@ impl FfiCoordinator {
             .final_keygen_ack(key_id);
         Ok(key_id)
     }
+
+    pub fn verify_address(
+        &self,
+        key_id: KeyId,
+        address_index: u32,
+        stream: StreamSink<api::VerifyAddressProtocolState>,
+    ) -> anyhow::Result<()> {
+        let mut coordinator = self.coordinator.lock().unwrap();
+        let mut messages = coordinator
+            .staged_mutate(&mut self.db.lock().unwrap(), |coordinator| {
+                Ok(coordinator.verify_address(key_id, address_index)?)
+            })?;
+        let ui_protocol = VerifyAddressProtocol::new(&mut messages, SinkWrap(stream));
+
+        self.pending_for_outbox.lock().unwrap().extend(messages);
+        ui_protocol.emit_state();
+        self.start_protocol(ui_protocol);
+
+        Ok(())
+    }
 }
 
 fn frost_keys(coordinator: &FrostCoordinator) -> Vec<crate::api::FrostKey> {
@@ -662,6 +683,7 @@ macro_rules! bridge_sink {
 }
 
 bridge_sink!(KeyGenState);
+bridge_sink!(VerifyAddressProtocolState);
 bridge_sink!(FirmwareUpgradeConfirmState);
 bridge_sink!(SigningState);
 bridge_sink!(());

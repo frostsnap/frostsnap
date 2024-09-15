@@ -45,6 +45,10 @@ pub enum CoordinatorToDeviceMessage {
     DisplayBackup {
         key_id: KeyId,
     },
+    VerifyAddress {
+        key_id: KeyId,
+        derivation_index: u32,
+    },
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
@@ -109,6 +113,7 @@ impl CoordinatorToDeviceMessage {
             CoordinatorToDeviceMessage::FinishKeyGen { .. } => "FinishKeyGen",
             CoordinatorToDeviceMessage::RequestSign { .. } => "RequestSign",
             CoordinatorToDeviceMessage::DisplayBackup { .. } => "DisplayBackup",
+            CoordinatorToDeviceMessage::VerifyAddress { .. } => "VerifyAddress",
         }
     }
 }
@@ -123,6 +128,7 @@ pub enum DeviceToCoordinatorMessage {
         new_nonces: DeviceNonces,
     },
     DisplayBackupConfirmed,
+    VerifyAddressConfirmed,
 }
 
 pub type KeyGenResponse = encpedpop::KeygenInput;
@@ -157,6 +163,7 @@ impl DeviceToCoordinatorMessage {
             KeyGenAck(_) => "KeyGenAck",
             SignatureShare { .. } => "SignatureShare",
             DisplayBackupConfirmed => "DisplayBackupConfirmed",
+            VerifyAddressConfirmed => "VerifyAddressConfirmed",
         }
     }
 }
@@ -166,6 +173,7 @@ pub enum CoordinatorToUserMessage {
     KeyGen(CoordinatorToUserKeyGenMessage),
     Signing(CoordinatorToUserSigningMessage),
     DisplayBackupConfirmed { device_id: DeviceId },
+    VerifyAddress(CoordinatorToUserVerifyingAddressMessage),
 }
 
 #[derive(Clone, Debug, Copy)]
@@ -203,6 +211,12 @@ pub enum CoordinatorToUserKeyGenMessage {
 }
 
 #[derive(Clone, Debug)]
+pub enum CoordinatorToUserVerifyingAddressMessage {
+    DeviceAck { from: DeviceId },
+    Confirmed,
+}
+
+#[derive(Clone, Debug)]
 pub enum DeviceToUserMessage {
     CheckKeyGen {
         key_id: KeyId,
@@ -223,6 +237,10 @@ pub enum DeviceToUserMessage {
         key_id: KeyId,
         backup: String,
     },
+    VerifyAddress {
+        key_id: KeyId,
+        derivation_index: u32,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -230,6 +248,7 @@ pub enum TaskKind {
     KeyGen,
     Sign,
     DisplayBackup,
+    VerifyAddress,
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]

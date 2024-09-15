@@ -5,6 +5,7 @@ mod serial_port;
 pub mod signing;
 mod ui_protocol;
 mod usb_serial_manager;
+pub mod verify_address;
 
 pub use frostsnap_comms;
 pub use frostsnap_core;

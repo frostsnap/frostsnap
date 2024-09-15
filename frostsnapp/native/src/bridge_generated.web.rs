@@ -374,6 +374,16 @@ pub fn wire_start_firmware_upgrade__method__Coordinator(port_: MessagePort, that
 }
 
 #[wasm_bindgen]
+pub fn wire_verify_address__method__Coordinator(
+    port_: MessagePort,
+    that: JsValue,
+    key_id: JsValue,
+    address_index: u32,
+) {
+    wire_verify_address__method__Coordinator_impl(port_, that, key_id, address_index)
+}
+
+#[wasm_bindgen]
 pub fn wire_upgrade_firmware_digest__method__Coordinator(that: JsValue) -> support::WireSyncReturn {
     wire_upgrade_firmware_digest__method__Coordinator_impl(that)
 }
