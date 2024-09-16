@@ -10,8 +10,8 @@ gen:
         --dart-decl-output lib/bridge_definitions.dart \
         --wasm
 
-build TARGET="linux":
-    flutter build -v {{TARGET}}
+build TARGET="linux" +ARGS="":
+    flutter build -v {{TARGET}} {{ARGS}}
 
 run +ARGS="":
     flutter run {{ARGS}}

@@ -1,0 +1,70 @@
+# icon, executable, bare machine, build in release
+
+# appimage-builder recipe see https://appimage-builder.readthedocs.io for details
+version: 1
+script:
+- which mksquashfs || apt install squashfs-tools
+- mkdir -p AppDir
+- cp -r frostsnapp/build/linux/x64/release/bundle/* AppDir
+AppDir:
+  path: AppDir
+  after_bundle:
+    - cp frostsnapp/build/linux/x64/release/bundle/Frostsnapp AppDir
+    - cp -r frostsnapp/build/linux/x64/release/bundle/lib/. AppDir/lib
+    - cp -r frostsnapp/build/linux/x64/release/bundle/data AppDir
+    - mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+    - cp frostsnapp/Frostsnapp.png AppDir/usr/share/icons/
+    - cp frostsnapp/Frostsnapp.png AppDir/usr/share/icons/hicolor/256x256/apps/Frostsnapp.png
+  app_info:
+    id: com.frostsnapp.app
+    name: Frostsnapp
+    icon: Frostsnapp
+    version: latest
+    exec: Frostsnapp
+    exec_args: $@
+  apt:
+    arch: amd64
+    sources:
+      - sourceline: 'deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ bionic main restricted universe multiverse'
+        key_url: 'http://keyserver.ubuntu.com/pks/lookup?op=get&search=0x3b4fe6acc0b21f32'
+    include:
+      # Some of these are from flutter docs, but most are from trial and error on ubuntu-latest.
+      # https://docs.flutter.dev/platform-integration/linux/building
+      - libgtk-3-0
+      - libblkid1
+      - liblzma5
+      - libx11-6
+      - libwayland-egl1
+      - libwayland-client0
+      - libxcb-shm0
+      - libxcb-render0
+      - libxcb1
+      - libwayland-cursor0
+      - qtwayland5
+  files:
+    include: []
+    exclude:
+    - usr/share/man
+    - usr/share/doc/*/README.*
+    - usr/share/doc/*/changelog.*
+    - usr/share/doc/*/NEWS.*
+    - usr/share/doc/*/TODO.*
+  test:
+    fedora-30:
+      image: appimagecrafters/tests-env:fedora-30
+      command: ./AppRun
+    debian-stable:
+      image: appimagecrafters/tests-env:debian-stable
+      command: ./AppRun
+    archlinux-latest:
+      image: appimagecrafters/tests-env:archlinux-latest
+      command: ./AppRun
+    centos-7:
+      image: appimagecrafters/tests-env:centos-7
+      command: ./AppRun
+    ubuntu-xenial:
+      image: appimagecrafters/tests-env:ubuntu-xenial
+      command: ./AppRun
+AppImage:
+  arch: x86_64 
+  update-information: guess
