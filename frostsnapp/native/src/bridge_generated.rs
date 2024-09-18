@@ -55,6 +55,30 @@ fn wire_sub_device_events_impl(port_: MessagePort) {
         },
     )
 }
+fn wire_log_welcome_impl(port_: MessagePort) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "log_welcome",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || move |task_callback| Result::<_, ()>::Ok(log_welcome()),
+    )
+}
+fn wire_sub_log_events_impl(port_: MessagePort) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "sub_log_events",
+            port: Some(port_),
+            mode: FfiCallMode::Stream,
+        },
+        move || {
+            move |task_callback| {
+                Result::<_, ()>::Ok(sub_log_events(task_callback.stream_sink::<_, LogEntry>()))
+            }
+        },
+    )
+}
 fn wire_turn_stderr_logging_on_impl(
     port_: MessagePort,
     level: impl Wire2Api<LogLevel> + UnwindSafe,
@@ -1734,6 +1758,23 @@ impl support::IntoDart for KeyState {
 }
 impl support::IntoDartExceptPrimitive for KeyState {}
 impl rust2dart::IntoIntoDart<KeyState> for KeyState {
+    fn into_into_dart(self) -> Self {
+        self
+    }
+}
+
+impl support::IntoDart for LogEntry {
+    fn into_dart(self) -> support::DartAbi {
+        vec![
+            self.time_millis.into_into_dart().into_dart(),
+            self.level.into_into_dart().into_dart(),
+            self.content.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for LogEntry {}
+impl rust2dart::IntoIntoDart<LogEntry> for LogEntry {
     fn into_into_dart(self) -> Self {
         self
     }

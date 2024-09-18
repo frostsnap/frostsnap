@@ -512,6 +512,10 @@ class NativeWasmModule implements WasmModule {
 
   external dynamic /* void */ wire_sub_device_events(NativePortType port_);
 
+  external dynamic /* void */ wire_log_welcome(NativePortType port_);
+
+  external dynamic /* void */ wire_sub_log_events(NativePortType port_);
+
   external dynamic /* void */ wire_turn_stderr_logging_on(
       NativePortType port_, int level);
 
@@ -830,6 +834,12 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
 
   void wire_sub_device_events(NativePortType port_) =>
       wasmModule.wire_sub_device_events(port_);
+
+  void wire_log_welcome(NativePortType port_) =>
+      wasmModule.wire_log_welcome(port_);
+
+  void wire_sub_log_events(NativePortType port_) =>
+      wasmModule.wire_sub_log_events(port_);
 
   void wire_turn_stderr_logging_on(NativePortType port_, int level) =>
       wasmModule.wire_turn_stderr_logging_on(port_, level);

@@ -2,6 +2,7 @@ use crate::device_list::DeviceList;
 pub use crate::ffi_serial_port::{
     PortBytesToReadSender, PortOpenSender, PortReadSender, PortWriteSender,
 };
+use crate::logger::StreamLogsToDart;
 pub use crate::FfiCoordinator;
 pub use crate::{FfiQrEncoder, FfiQrReader, QrDecoderStatus};
 use anyhow::{anyhow, Context, Result};
@@ -29,12 +30,14 @@ pub use std::sync::{Mutex, RwLock};
 use std::time::Instant;
 #[allow(unused)]
 use tracing::{event, span, Level};
+use tracing_subscriber::layer::SubscriberExt;
 
 lazy_static! {
     static ref PORT_EVENT_STREAM: RwLock<Option<StreamSink<PortEvent>>> = RwLock::default();
     static ref DEVICE_LIST: Mutex<(DeviceList, Option<StreamSink<DeviceListUpdate>>)> =
         Default::default();
     static ref KEY_EVENT_STREAM: Mutex<Option<StreamSink<KeyState>>> = Default::default();
+    pub static ref LOG_EVENT_STREAM: RwLock<Option<StreamSink<LogEntry>>> = RwLock::default();
 }
 
 pub fn sub_port_events(event_stream: StreamSink<PortEvent>) {
@@ -251,6 +254,30 @@ impl PortBytesToRead {
     }
 }
 
+pub struct LogEntry {
+    pub time_millis: i64,
+    pub level: String,
+    pub content: String,
+}
+
+pub fn log_welcome() {
+    event!(
+        Level::INFO,
+        r"
+    __________  ____  ________________ _   _____    ____
+   / ____/ __ \/ __ \/ ___/_  __/ ___// | / /   |  / __ \
+  / /_  / /_/ / / / /\__ \ / /  \__ \/  |/ / /| | / /_/ /
+ / __/ / _, _/ /_/ /___/ // /  ___/ / /|  / ___ |/ ____/
+/_/   /_/ |_|\____//____//_/  /____/_/ |_/_/  |_/_/
+"
+    );
+}
+
+pub fn sub_log_events(log_stream: StreamSink<LogEntry>) {
+    let mut v = LOG_EVENT_STREAM.write().expect("lock must not be poisoned");
+    *v = Some(log_stream);
+}
+
 pub enum LogLevel {
     Debug,
     Info,
@@ -264,9 +291,11 @@ pub fn turn_stderr_logging_on(level: LogLevel) {
         })
         .without_time()
         .pretty()
-        .finish();
+        .finish()
+        .with(StreamLogsToDart);
+
     let _ = tracing::subscriber::set_global_default(subscriber);
-    event!(Level::INFO, "logging to stderr");
+    event!(Level::INFO, "logging to stderr and Dart logger");
 }
 
 pub fn turn_logcat_logging_on(_level: LogLevel) {
@@ -278,15 +307,20 @@ pub fn turn_logcat_logging_on(_level: LogLevel) {
                 LogLevel::Debug => tracing::Level::DEBUG,
             })
             .without_time()
+            .pretty()
             .finish();
 
         let subscriber = {
             use tracing_subscriber::layer::SubscriberExt;
-            subscriber.with(tracing_android::layer("rust-frostsnapp").unwrap())
+            subscriber
+                .with(tracing_android::layer("rust-frostsnapp").unwrap())
+                .with(StreamLogsToDart)
         };
+
         let _ = tracing::subscriber::set_global_default(subscriber);
-        event!(Level::INFO, "frostsnap logging to logcat");
+        event!(Level::INFO, "frostsnap logging to logcat and Dart logger");
     }
+
     #[cfg(not(target_os = "android"))]
     panic!("Do not call turn_logcat_logging_on outside of android");
 }

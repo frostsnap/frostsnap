@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/key_list.dart';
 import 'package:flutter/services.dart';
+import 'package:frostsnapp/logs.dart';
 import 'package:frostsnapp/serialport.dart';
 import 'package:path_provider/path_provider.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
@@ -22,11 +25,13 @@ void main() async {
 
   try {
     // set logging up first before doing anything else
+    LogManager();
     if (Platform.isAndroid) {
-      api.turnLogcatLoggingOn(level: LogLevel.Debug);
+      await api.turnLogcatLoggingOn(level: LogLevel.Debug);
     } else {
-      api.turnStderrLoggingOn(level: LogLevel.Debug);
+      await api.turnStderrLoggingOn(level: LogLevel.Debug);
     }
+    await api.logWelcome();
     final appDir = await getApplicationSupportDirectory();
     final dbFile = '${appDir.path}/frostsnap.sqlite';
     if (Platform.isAndroid) {
@@ -97,7 +102,22 @@ class MyHomePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(title: Text("Key List")),
+        appBar: AppBar(title: Text("Key List"), actions: [
+          PopupMenuButton<String>(
+              onSelected: (String result) {
+                if (result == 'logs') {
+                  Navigator.push(context, MaterialPageRoute(builder: (context) {
+                    return LogScreen();
+                  }));
+                }
+              },
+              itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                    const PopupMenuItem<String>(
+                      value: 'logs',
+                      child: Text('Logs'),
+                    )
+                  ])
+        ]),
         body: Center(child: KeyListWithConfetti()));
   }
 }

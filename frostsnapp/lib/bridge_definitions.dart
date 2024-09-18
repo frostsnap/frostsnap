@@ -23,6 +23,14 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kSubDeviceEventsConstMeta;
 
+  Future<void> logWelcome({dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kLogWelcomeConstMeta;
+
+  Stream<LogEntry> subLogEvents({dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kSubLogEventsConstMeta;
+
   Future<void> turnStderrLoggingOn({required LogLevel level, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kTurnStderrLoggingOnConstMeta;
@@ -1182,6 +1190,18 @@ class KeyState {
 
   const KeyState({
     required this.keys,
+  });
+}
+
+class LogEntry {
+  final int timeMillis;
+  final String level;
+  final String content;
+
+  const LogEntry({
+    required this.timeMillis,
+    required this.level,
+    required this.content,
   });
 }
 

@@ -12,6 +12,16 @@ pub extern "C" fn wire_sub_device_events(port_: i64) {
 }
 
 #[no_mangle]
+pub extern "C" fn wire_log_welcome(port_: i64) {
+    wire_log_welcome_impl(port_)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_sub_log_events(port_: i64) {
+    wire_sub_log_events_impl(port_)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_turn_stderr_logging_on(port_: i64, level: i32) {
     wire_turn_stderr_logging_on_impl(port_, level)
 }
