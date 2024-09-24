@@ -1126,6 +1126,7 @@ dependencies = [
  "frostsnap_comms",
  "frostsnap_core",
  "fugit",
+ "micromath",
  "mipidsi",
  "nb 1.1.0",
  "rand_chacha",
