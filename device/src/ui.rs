@@ -1,4 +1,4 @@
-use crate::keyboard::Keyboard;
+use crate::graphics::widgets::{EnterShareIndexScreen, EnterShareScreen};
 use alloc::string::{String, ToString};
 use frostsnap_comms::FirmwareDigest;
 use frostsnap_core::{schnorr_fun::frost::SecretShare, KeyId, SessionHash};
@@ -64,7 +64,7 @@ pub enum WaitingResponse {
     KeyGen,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum Workflow {
     None,
     WaitingFor(WaitingFor),
@@ -78,8 +78,16 @@ pub enum Workflow {
     DisplayBackup {
         backup: String,
     },
-    EnteringBackup {
-        keyboard: Keyboard,
+    EnteringBackup(EnteringBackupStage),
+}
+
+#[derive(Debug)]
+pub enum EnteringBackupStage {
+    Init, // So the creator of the workflow doesn't have to construct the
+    ShareIndex(EnterShareIndexScreen),
+    Share {
+        share_index: u16,
+        screen: EnterShareScreen,
     },
 }
 

@@ -7,10 +7,9 @@
 extern crate alloc;
 use alloc::string::String;
 use core::{borrow::BorrowMut, mem::MaybeUninit};
-use cst816s::CST816S;
+use cst816s::{TouchGesture, CST816S};
 use display_interface_spi::SPIInterface;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
-use embedded_graphics_framebuf::FrameBuf;
 use embedded_hal as hal;
 use esp_hal::{
     clock::ClockControl,
@@ -35,17 +34,23 @@ use esp_hal::{
     usb_serial_jtag::UsbSerialJtag,
     Blocking,
 };
+use frostsnap_comms::Downstream;
 use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_device::{
-    esp32_run, graphics,
+    esp32_run,
+    graphics::{
+        self,
+        widgets::{EnterShareIndexScreen, EnterShareScreen},
+    },
     io::SerialInterface,
     ui::{
-        BusyTask, FirmwareUpgradeStatus, Prompt, SignPrompt, UiEvent, UserInteraction, WaitingFor,
-        WaitingResponse, Workflow,
+        BusyTask, EnteringBackupStage, FirmwareUpgradeStatus, Prompt, SignPrompt, UiEvent,
+        UserInteraction, WaitingFor, WaitingResponse, Workflow,
     },
     DownstreamConnectionState, UpstreamConnection,
 };
 use fugit::{Duration, Instant};
+use micromath::F32Ext;
 use mipidsi::{error::Error, models::ST7789, options::ColorInversion};
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
@@ -53,7 +58,7 @@ use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
 
 fn init_heap() {
-    const HEAP_SIZE: usize = 128 * 1024;
+    const HEAP_SIZE: usize = 256 * 1024;
     static mut HEAP: MaybeUninit<[u8; HEAP_SIZE]> = MaybeUninit::uninit();
 
     unsafe {
@@ -123,9 +128,7 @@ fn main() -> ! {
         .reset_pin(Output::new(io.pins.gpio6, Level::Low))
         .init(&mut delay)
         .unwrap();
-    let mut framearray = [Rgb565::BLACK; 240 * 280];
-    let framebuf = FrameBuf::new(&mut framearray, 240, 280);
-    let mut display = graphics::Graphics::new(display, framebuf).unwrap();
+    let mut display = graphics::Graphics::new(display).unwrap();
 
     let i2c = I2C::new(
         peripherals.I2C0,
@@ -144,7 +147,7 @@ fn main() -> ! {
 
     display.clear();
     display.header("Frostsnap");
-    display.flush().unwrap();
+    display.flush();
     channel0.start_duty_fade(0, 30, 500).unwrap();
 
     let detect_device_upstream = upstream_detect.is_low();
@@ -169,7 +172,7 @@ fn main() -> ! {
     } else {
         SerialInterface::new_jtag(UsbSerialJtag::new(peripherals.USB_DEVICE, None), &timer0)
     };
-    let downstream_serial = {
+    let downstream_serial: SerialInterface<_, _, Downstream> = {
         let serial_conf = uart::config::Config {
             baudrate: frostsnap_comms::BAUDRATE,
             ..Default::default()
@@ -239,9 +242,9 @@ impl embedded_hal::digital::ErrorType for NoCs {
 }
 
 pub struct FrostyUi<'t, T, DT, I2C, PINT, RST> {
-    display: graphics::Graphics<'t, DT>,
+    display: graphics::Graphics<DT>,
     capsense: CST816S<I2C, PINT, RST>,
-    last_touch: Option<Instant<u64, 1, 1_000_000>>,
+    last_touch: Option<(Point, Instant<u64, 1, 1_000_000>)>,
     downstream_connection_state: DownstreamConnectionState,
     upstream_connection_state: Option<UpstreamConnection>,
     workflow: Workflow,
@@ -448,8 +451,8 @@ where
                     .print(format!("{}: {}", self.timer.now(), string));
             }
             Workflow::DisplayBackup { backup } => self.display.show_backup(backup.clone(), true),
-            Workflow::EnteringBackup { keyboard } => {
-                keyboard.render_backup_keyboard(&mut self.display)
+            Workflow::EnteringBackup(..) => {
+                // this is drawn during poll
             }
         }
 
@@ -464,7 +467,7 @@ where
         self.display
             .set_mem_debug(ALLOCATOR.used(), ALLOCATOR.free());
 
-        self.display.flush().unwrap();
+        self.display.flush();
     }
 }
 
@@ -522,22 +525,35 @@ where
 
         let mut event = None;
 
+        let (current_touch, last_touch) = match self.capsense.read_one_touch_event(true) {
+            Some(touch) => {
+                let corrected_y =
+                    touch.y + x_based_adjustment(touch.x) + y_based_adjustment(touch.y);
+                let corrected_point = Point::new(touch.x, corrected_y);
+
+                let lift_up = touch.action == 1;
+                let last_touch = self.last_touch.take();
+                if !lift_up {
+                    self.last_touch = Some((corrected_point, now));
+                }
+
+                (Some((corrected_point, touch.gesture, lift_up)), last_touch)
+            }
+            None => (None, None),
+        };
+
         match self.workflow.borrow_mut() {
             Workflow::UserPrompt(prompt) => {
-                let is_pressed = match self.capsense.read_one_touch_event(true) {
-                    None => match self.last_touch {
-                        None => false,
-                        Some(last_touch) => {
-                            now.checked_duration_since(last_touch).unwrap().to_millis() < 20
-                        }
-                    },
-                    Some(_touch) => {
-                        self.last_touch = Some(now);
-                        true
-                    }
+                let lift_up = if let Some((_, _, lift_up)) = current_touch {
+                    lift_up
+                } else {
+                    false
                 };
 
-                if is_pressed {
+                if lift_up {
+                    self.confirm_state.reset();
+                    self.changes = true;
+                } else if current_touch.is_some() {
                     match self.confirm_state.poll() {
                         AnimationProgress::Progress(progress) => {
                             self.display.confirm_bar(progress);
@@ -572,22 +588,62 @@ where
                         }
                         AnimationProgress::Done => {}
                     }
-                } else {
-                    // deal with button released before confirming
-                    if self.confirm_state.start.is_some() {
-                        self.confirm_state.reset();
-                        self.changes = true;
+                }
+            }
+            Workflow::EnteringBackup(stage) => match stage {
+                EnteringBackupStage::Init => {
+                    *stage = EnteringBackupStage::ShareIndex(EnterShareIndexScreen::new(
+                        self.display.display.bounding_box().size,
+                    ));
+                }
+                EnteringBackupStage::ShareIndex(screen) => {
+                    let mut next_screen = None;
+                    if let Some((point, _, lift_up)) = current_touch {
+                        if let Some(share_index) = screen.handle_touch(point, now, lift_up) {
+                            next_screen = Some(EnteringBackupStage::Share {
+                                share_index,
+                                screen: EnterShareScreen::new(
+                                    self.display.display.bounding_box().size,
+                                ),
+                            });
+                        }
+                    }
+                    screen.draw(&mut self.display.display, now);
+                    if let Some(next_screen) = next_screen {
+                        *stage = next_screen;
                     }
                 }
-            }
-            Workflow::EnteringBackup { keyboard, .. } => {
-                self.changes = keyboard.poll_input(&mut self.capsense, self.timer);
-                if let Some(frostsnap_device::keyboard::EnteredBackupStatus::Valid(secret_share)) =
-                    keyboard.entered_backup_validity()
-                {
-                    event = Some(UiEvent::EnteredShareBackup(secret_share))
+                EnteringBackupStage::Share {
+                    screen,
+                    share_index,
+                } => {
+                    if let Some((point, gesture, lift_up)) = current_touch {
+                        match gesture {
+                            TouchGesture::SlideUp | TouchGesture::SlideDown => {
+                                screen.handle_vertical_drag(
+                                    last_touch.map(|(point, _)| point.y as u32),
+                                    point.y as u32,
+                                );
+                            }
+                            _ => {
+                                screen.handle_touch(point, now, lift_up);
+                                if screen.is_finished() {
+                                    match screen.try_create_share(*share_index) {
+                                        Ok(secret_share) => {
+                                            event = Some(UiEvent::EnteredShareBackup(secret_share));
+                                        }
+                                        Err(_e) => {
+                                            // for now we just make user keep going until they make it right
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    screen.draw(&mut self.display.display, now)
                 }
-            }
+            },
             _ => { /* no user actions to poll */ }
         }
 
@@ -598,6 +654,28 @@ where
 
         event
     }
+}
+
+fn x_based_adjustment(x: i32) -> i32 {
+    let x = x as f32;
+    let corrected = 1.3189e-14 * x.powi(7) - 2.1879e-12 * x.powi(6) - 7.6483e-10 * x.powi(5)
+        + 3.2578e-8 * x.powi(4)
+        + 6.4233e-5 * x.powi(3)
+        - 1.2229e-2 * x.powi(2)
+        + 0.8356 * x
+        - 20.0;
+    (-corrected) as i32
+}
+
+fn y_based_adjustment(y: i32) -> i32 {
+    if y > 170 {
+        return 0;
+    }
+    let y = y as f32;
+    let corrected =
+        -5.5439e-07 * y.powi(4) + 1.7576e-04 * y.powi(3) - 1.5104e-02 * y.powi(2) - 2.3443e-02 * y
+            + 40.0;
+    (-corrected) as i32
 }
 
 #[panic_handler]

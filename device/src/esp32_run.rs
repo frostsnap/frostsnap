@@ -1,6 +1,5 @@
 use crate::{
     io::SerialInterface,
-    keyboard::Keyboard,
     ota, storage,
     ui::{self, UiEvent, UserInteraction},
     DownstreamConnectionState, UpstreamConnection, UpstreamConnectionState,
@@ -575,9 +574,9 @@ where
                                 ui.set_workflow(ui::Workflow::DisplayBackup { backup });
                             }
                             DeviceToUserMessage::EnterBackup => {
-                                ui.set_workflow(ui::Workflow::EnteringBackup {
-                                    keyboard: Keyboard::new(),
-                                });
+                                ui.set_workflow(ui::Workflow::EnteringBackup(
+                                    ui::EnteringBackupStage::Init,
+                                ));
                             }
                             DeviceToUserMessage::EnteredBackup(share_backup) => {
                                 ui.set_workflow(ui::Workflow::UserPrompt(

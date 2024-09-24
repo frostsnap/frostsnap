@@ -543,9 +543,6 @@ class BackupSettingsPage extends StatelessWidget {
                                     return Column(children: [
                                       Text("Enter the backup on the device."),
                                       SizedBox(height: 8),
-                                      Text(
-                                          "Swipe up & down to scroll through the keyboard."),
-                                      Text("Swipe left to backspace."),
                                       Divider(),
                                       DeviceListWithIcons(
                                         iconAssigner: (context, deviceId) {

@@ -1,20 +1,23 @@
 // For use with 1.69 inch 240x280 ST7789+CST816S
 
-mod palette;
+pub mod palette;
 use crate::alloc::string::ToString;
 use crate::{DownstreamConnectionState, UpstreamConnectionState};
+use alloc::boxed::Box;
 use alloc::string::String;
+use embedded_graphics::framebuffer::{buffer_size, Framebuffer};
+use embedded_graphics::pixelcolor::raw::{LittleEndian, RawU16};
 use embedded_graphics::{
     draw_target::{Cropped, DrawTarget},
     geometry::{AnchorX, AnchorY},
     image::Image,
+    image::ImageDrawable,
     mono_font::{ascii, MonoTextStyle},
     pixelcolor::Rgb565,
     prelude::*,
     primitives::*,
     text::{Alignment, Text},
 };
-use embedded_graphics_framebuf::FrameBuf;
 use embedded_iconoir::{icons::size24px::gestures::OpenSelectHandGesture, prelude::IconoirNewIcon};
 use embedded_text::{
     alignment::HorizontalAlignment,
@@ -24,6 +27,7 @@ use embedded_text::{
 use mipidsi::error::Error;
 use palette::COLORS;
 use u8g2_fonts::{fonts, U8g2TextStyle};
+pub mod widgets;
 
 pub const PADDING_TOP: u32 = 40;
 pub const PADDING_LEFT: u32 = 10;
@@ -41,28 +45,29 @@ const BODY_RECT_NO_HORIZONTAL_PADDING: Rectangle = Rectangle::new(
     Size::new(240, 280 - PADDING_TOP),
 );
 
-type FrameBuffer<'d> = FrameBuf<Rgb565, &'d mut [Rgb565; 67200]>;
+pub type Fb =
+    Framebuffer<Rgb565, RawU16, LittleEndian, 240, 280, { buffer_size::<Rgb565>(240, 280) }>;
 
-pub struct Graphics<'d, DT> {
-    display: DT,
-    pub framebuf: FrameBuffer<'d>,
+pub struct Graphics<DT> {
+    pub display: DT,
+    pub framebuf: Box<Fb>,
 }
 
-impl<'d, DT> Graphics<'d, DT>
+impl<DT> Graphics<DT>
 where
     DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
 {
-    pub fn new(display: DT, framebuf: FrameBuffer<'d>) -> Result<Self, Error> {
-        let mut _self = Self { framebuf, display };
+    pub fn new(display: DT) -> Result<Self, Error> {
+        let mut _self = Self {
+            framebuf: Box::new(Fb::new()),
+            display,
+        };
 
         Ok(_self)
     }
 
-    pub fn flush(&mut self) -> Result<(), Error> {
-        self.display.fill_contiguous(
-            &Rectangle::new(Point::new(0, 0), self.display.size()),
-            self.framebuf.into_iter().map(|p| p.1),
-        )
+    pub fn flush(&mut self) {
+        self.framebuf.as_image().draw(&mut self.display).unwrap()
     }
 
     pub fn clear(&mut self) {
@@ -72,15 +77,17 @@ where
                     .fill_color(COLORS.background)
                     .build(),
             )
-            .draw(&mut self.framebuf)
+            .draw(&mut *self.framebuf)
             .unwrap();
     }
 
-    fn body_no_horizontal_padding(&mut self) -> Cropped<'_, FrameBuffer<'d>> {
-        self.framebuf.cropped(&BODY_RECT_NO_HORIZONTAL_PADDING)
+    fn body_no_horizontal_padding(&mut self) -> Cropped<'_, Fb> {
+        self.framebuf
+            .as_mut()
+            .cropped(&BODY_RECT_NO_HORIZONTAL_PADDING)
     }
-    fn body(&mut self) -> Cropped<'_, FrameBuffer<'d>> {
-        self.framebuf.cropped(&BODY_RECT)
+    fn body(&mut self) -> Cropped<'_, Fb> {
+        self.framebuf.as_mut().cropped(&BODY_RECT)
     }
 
     pub fn print(&mut self, str: impl AsRef<str>) {
@@ -110,7 +117,7 @@ where
             U8g2TextStyle::new(FONT_SMALL, COLORS.secondary),
             textbox_style,
         )
-        .draw(&mut self.framebuf)
+        .draw(&mut *self.framebuf)
         .unwrap();
     }
 
@@ -199,7 +206,7 @@ where
         let arrow = Triangle::new(Point::new(20, 20), Point::new(30, 20), Point::new(25, 7));
         arrow
             .into_styled(PrimitiveStyleBuilder::new().fill_color(color).build())
-            .draw(&mut self.framebuf)
+            .draw(&mut *self.framebuf)
             .unwrap();
 
         let circle = Circle::with_center(Point::new(50, 13), 10);
@@ -210,7 +217,7 @@ where
         };
         circle
             .into_styled(PrimitiveStyleBuilder::new().fill_color(color).build())
-            .draw(&mut self.framebuf)
+            .draw(&mut *self.framebuf)
             .unwrap();
     }
 
@@ -222,7 +229,7 @@ where
         };
         Triangle::new(Point::new(32, 7), Point::new(42, 7), Point::new(37, 20))
             .into_styled(PrimitiveStyleBuilder::new().fill_color(color).build())
-            .draw(&mut self.framebuf)
+            .draw(&mut *self.framebuf)
             .unwrap();
     }
 
@@ -237,7 +244,7 @@ where
                     .fill_color(COLORS.background)
                     .build(),
             )
-            .draw(&mut self.framebuf)
+            .draw(&mut *self.framebuf)
             .unwrap();
 
         TextBox::with_textbox_style(
@@ -248,7 +255,7 @@ where
                 .alignment(HorizontalAlignment::Left)
                 .build(),
         )
-        .draw(&mut self.framebuf)
+        .draw(&mut *self.framebuf)
         .unwrap();
     }
 

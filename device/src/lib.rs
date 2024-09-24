@@ -8,7 +8,6 @@ pub mod esp32_run;
 #[cfg(feature = "v2")]
 pub mod graphics;
 pub mod io;
-pub mod keyboard;
 pub mod ota;
 pub mod panic;
 pub mod storage;

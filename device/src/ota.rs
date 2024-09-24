@@ -2,6 +2,7 @@ use crate::{
     io::SerialIo,
     ui::{self, UserInteraction},
 };
+use alloc::boxed::Box;
 use embedded_storage::{nor_flash, ReadStorage, Storage};
 use esp_hal::{sha::Sha, uart, Blocking};
 use esp_storage::FlashStorage;
@@ -88,7 +89,7 @@ impl Partition {
         &self,
         flash: &mut FlashStorage,
         sector: u32,
-        bytes: [u8; SECTOR_SIZE as usize],
+        bytes: &[u8; SECTOR_SIZE as usize],
     ) -> Result<(), &'static str> {
         if sector >= SECTORS_PER_IMAGE {
             return Err("can't write sector out of bounds");
@@ -434,7 +435,8 @@ impl FirmwareUpgradeMode {
             downstream_io.change_baud(OTA_UPDATE_BAUD);
         }
 
-        let mut in_buf = [0xffu8; SECTOR_SIZE as usize];
+        // allocate it on heap with Box to avoid enlarging stack
+        let mut in_buf = Box::new([0xffu8; SECTOR_SIZE as usize]);
         let mut i = 0;
         let mut byte_count = 0;
         let mut sector = 0;
@@ -470,7 +472,7 @@ impl FirmwareUpgradeMode {
                         } = &self
                         {
                             let partition = ota.ota_partitions[*ota_slot as usize];
-                            partition.write_sector(flash, sector, in_buf).unwrap();
+                            partition.write_sector(flash, sector, &in_buf).unwrap();
                             ui.set_workflow(ui::Workflow::BusyDoing(
                                 ui::BusyTask::FirmwareUpgrade(
                                     ui::FirmwareUpgradeStatus::Download {
