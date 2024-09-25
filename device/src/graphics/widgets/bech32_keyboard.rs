@@ -24,6 +24,7 @@ const KEY_HEIGHT: u32 = 50;
 const TOTAL_ROWS: usize = 8;
 const BAR_HEIGHT: u32 = 2;
 const FRAMEBUFFER_HEIGHT: u32 = (TOTAL_ROWS as u32 * KEY_HEIGHT) + 2 * BAR_HEIGHT;
+const KEYBOARD_COLOR: Rgb565 = Rgb565::new(25, 52, 26);
 
 const KEYBOARD_KEYS: [[char; 4]; 8] = [
     ['0', '2', '3', '4'],
@@ -123,7 +124,8 @@ impl Bech32Keyboard {
         }
 
         let bar_style = PrimitiveStyleBuilder::new()
-            .fill_color(BinaryColor::On)
+            //NOTE: Disable bar for now
+            .fill_color(BinaryColor::Off)
             .build();
         let bar_size = Size::new(FRAMEBUFFER_WIDTH, BAR_HEIGHT);
         let _ = Rectangle::new(Point::zero(), bar_size)
@@ -157,7 +159,7 @@ impl Bech32Keyboard {
                     .take(FRAMEBUFFER_WIDTH as usize * visible_height)
                     .map(|r| match BinaryColor::from(r) {
                         BinaryColor::Off => COLORS.background,
-                        BinaryColor::On => Rgb565::CSS_LIGHT_GRAY,
+                        BinaryColor::On => KEYBOARD_COLOR,
                     }),
             );
 
