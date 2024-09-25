@@ -487,7 +487,6 @@ Future<void> showBackupDialogue(
             ElevatedButton(
               child: Text("I have written down my backups"),
               onPressed: () {
-                coord.cancelAll();
                 Navigator.pop(context);
               },
             ),
@@ -534,7 +533,7 @@ Future<void> showBackupDialogue(
                   ),
                   Center(
                     child: Text(
-                      "xxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xxx",
+                      "xxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xx",
                       style: TextStyle(
                           fontFamily: 'Courier',
                           fontSize: 20,

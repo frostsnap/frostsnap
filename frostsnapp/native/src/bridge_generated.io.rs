@@ -295,11 +295,6 @@ pub extern "C" fn wire_send_cancel__method__Coordinator(
 }
 
 #[no_mangle]
-pub extern "C" fn wire_cancel_all__method__Coordinator(port_: i64, that: *mut wire_Coordinator) {
-    wire_cancel_all__method__Coordinator_impl(port_, that)
-}
-
-#[no_mangle]
 pub extern "C" fn wire_display_backup__method__Coordinator(
     port_: i64,
     that: *mut wire_Coordinator,

@@ -314,7 +314,7 @@ impl FrostSigner {
                     DeviceToUserMessage::DisplayBackupRequest { key_id },
                 )])
             }
-            (None, CoordinatorToDeviceMessage::LoadShareBackup) => {
+            (None, CoordinatorToDeviceMessage::CheckShareBackup) => {
                 self.action_state = Some(SignerState::LoadingBackup);
                 Ok(vec![DeviceSend::ToUser(DeviceToUserMessage::EnterBackup)])
             }
@@ -481,7 +481,7 @@ impl FrostSigner {
             .expect("secret share can not be zero");
 
         Ok(vec![DeviceSend::ToCoordinator(
-            DeviceToCoordinatorMessage::LoadedShareBackup {
+            DeviceToCoordinatorMessage::CheckShareBackup {
                 share_index: share_backup.index,
                 share_image,
             },

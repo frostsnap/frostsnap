@@ -715,22 +715,6 @@ fn wire_send_cancel__method__Coordinator_impl(
         },
     )
 }
-fn wire_cancel_all__method__Coordinator_impl(
-    port_: MessagePort,
-    that: impl Wire2Api<Coordinator> + UnwindSafe,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
-        WrapInfo {
-            debug_name: "cancel_all__method__Coordinator",
-            port: Some(port_),
-            mode: FfiCallMode::Normal,
-        },
-        move || {
-            let api_that = that.wire2api();
-            move |task_callback| Result::<_, ()>::Ok(Coordinator::cancel_all(&api_that))
-        },
-    )
-}
 fn wire_display_backup__method__Coordinator_impl(
     port_: MessagePort,
     that: impl Wire2Api<Coordinator> + UnwindSafe,
@@ -752,7 +736,7 @@ fn wire_display_backup__method__Coordinator_impl(
                     &api_that,
                     api_id,
                     api_key_id,
-                    task_callback.stream_sink::<_, ()>(),
+                    task_callback.stream_sink::<_, bool>(),
                 )
             }
         },
@@ -1136,7 +1120,7 @@ fn wire_check_share_on_device__method__Coordinator_impl(
                     &api_that,
                     api_device_id,
                     api_key_id,
-                    task_callback.stream_sink::<_, mirror_LoadShareState>(),
+                    task_callback.stream_sink::<_, mirror_CheckShareState>(),
                 )
             }
         },
@@ -1337,6 +1321,9 @@ fn wire_next__method__QrEncoder_impl(
 // Section: wrapper structs
 
 #[derive(Clone)]
+pub struct mirror_CheckShareState(CheckShareState);
+
+#[derive(Clone)]
 pub struct mirror_ConfirmationTime(ConfirmationTime);
 
 #[derive(Clone)]
@@ -1355,14 +1342,16 @@ pub struct mirror_KeyGenState(KeyGenState);
 pub struct mirror_KeyId(KeyId);
 
 #[derive(Clone)]
-pub struct mirror_LoadShareState(LoadShareState);
-
-#[derive(Clone)]
 pub struct mirror_SigningState(SigningState);
 
 // Section: static checks
 
 const _: fn() = || {
+    {
+        let CheckShareState = None::<CheckShareState>.unwrap();
+        let _: Option<bool> = CheckShareState.outcome;
+        let _: Option<String> = CheckShareState.abort;
+    }
     {
         let ConfirmationTime = None::<ConfirmationTime>.unwrap();
         let _: u32 = ConfirmationTime.height;
@@ -1397,11 +1386,6 @@ const _: fn() = || {
     {
         let KeyId_ = None::<KeyId>.unwrap();
         let _: [u8; 33] = KeyId_.0;
-    }
-    {
-        let LoadShareState = None::<LoadShareState>.unwrap();
-        let _: Option<String> = LoadShareState.outcome;
-        let _: bool = LoadShareState.abort;
     }
     {
         let SigningState = None::<SigningState>.unwrap();
@@ -1511,6 +1495,18 @@ impl support::IntoDartExceptPrimitive for BitcoinContext {}
 impl rust2dart::IntoIntoDart<BitcoinContext> for BitcoinContext {
     fn into_into_dart(self) -> Self {
         self
+    }
+}
+
+impl support::IntoDart for mirror_CheckShareState {
+    fn into_dart(self) -> support::DartAbi {
+        vec![self.0.outcome.into_dart(), self.0.abort.into_dart()].into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for mirror_CheckShareState {}
+impl rust2dart::IntoIntoDart<mirror_CheckShareState> for CheckShareState {
+    fn into_into_dart(self) -> mirror_CheckShareState {
+        mirror_CheckShareState(self)
     }
 }
 
@@ -1771,22 +1767,6 @@ impl support::IntoDartExceptPrimitive for KeyState {}
 impl rust2dart::IntoIntoDart<KeyState> for KeyState {
     fn into_into_dart(self) -> Self {
         self
-    }
-}
-
-impl support::IntoDart for mirror_LoadShareState {
-    fn into_dart(self) -> support::DartAbi {
-        vec![
-            self.0.outcome.into_dart(),
-            self.0.abort.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl support::IntoDartExceptPrimitive for mirror_LoadShareState {}
-impl rust2dart::IntoIntoDart<mirror_LoadShareState> for LoadShareState {
-    fn into_into_dart(self) -> mirror_LoadShareState {
-        mirror_LoadShareState(self)
     }
 }
 

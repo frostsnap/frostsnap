@@ -378,30 +378,26 @@ impl FrostCoordinator {
             }
             (
                 Some(CoordinatorState::LoadingDeviceShare { key, device }),
-                DeviceToCoordinatorMessage::LoadedShareBackup {
+                DeviceToCoordinatorMessage::CheckShareBackup {
                     share_index,
                     share_image,
                 },
             ) => {
-                assert_eq!(from, *device, "unexpected device responded with backup");
+                if from != *device {
+                    return Err(Error::coordinator_invalid_message(
+                        message_kind,
+                        "unexpected device responded with backup",
+                    ));
+                }
 
                 let frost_key = key.frost_key();
                 let polynomial = frost_key.point_polynomial();
                 let expected = poly::point::eval(polynomial, share_index);
 
-                if expected != share_image {
-                    return Ok(vec![CoordinatorSend::ToUser(
-                        CoordinatorToUserMessage::EnteredBackup {
-                            device_id: from,
-                            outcome: EnteredBackupOutcome::DoesntBelongToKey,
-                        },
-                    )]);
-                }
-
                 Ok(vec![CoordinatorSend::ToUser(
                     CoordinatorToUserMessage::EnteredBackup {
                         device_id: from,
-                        outcome: EnteredBackupOutcome::ValidAtIndex,
+                        valid: expected == share_image,
                     },
                 )])
             }
@@ -709,7 +705,7 @@ impl FrostCoordinator {
             device: device_id,
         });
         Ok(vec![CoordinatorSend::ToDevice {
-            message: CoordinatorToDeviceMessage::LoadShareBackup,
+            message: CoordinatorToDeviceMessage::CheckShareBackup,
             destinations: BTreeSet::from_iter([device_id]),
         }])
     }

@@ -69,7 +69,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
     final deviceKeys = coord.keysForDevice(deviceId: widget.id);
     if (device == null) {
       body = Center(
-          child: Column(children: const [
+          child: Column(mainAxisSize: MainAxisSize.min, children: const [
         Text(
           'Waiting for device to reconnect',
           style: TextStyle(color: uninterestedColor, fontSize: 24.0),
@@ -100,7 +100,6 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                       deviceName: device_.name ?? "unamed",
                       keyId: keyId,
                       keyName: keyName,
-                      deviceRemoved: _deviceRemoved,
                     );
                   }));
                 },
@@ -378,16 +377,15 @@ class BackupSettingsPage extends StatelessWidget {
   final String deviceName;
   final KeyId keyId;
   final String keyName;
-  final Completer<void> deviceRemoved;
 
-  const BackupSettingsPage(
-      {super.key,
-      required BuildContext context,
-      required this.id,
-      required this.deviceName,
-      required this.keyId,
-      required this.keyName,
-      required this.deviceRemoved});
+  const BackupSettingsPage({
+    super.key,
+    required BuildContext context,
+    required this.id,
+    required this.deviceName,
+    required this.keyId,
+    required this.keyName,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -432,64 +430,39 @@ class BackupSettingsPage extends StatelessWidget {
                       SizedBox(height: 8),
                       ElevatedButton(
                         onPressed: () async {
-                          final confirmedFuture =
-                              coord.displayBackup(id: id, keyId: keyId).first;
-                          bool isConfirmed = false;
-                          final result = await showDeviceActionDialog(
+                          final success = await showDeviceActionDialog<bool>(
                             context: context,
-                            complete: deviceRemoved.future,
+                            complete:
+                                coord.displayBackup(id: id, keyId: keyId).first,
                             builder: (context) {
-                              return FutureBuilder(
-                                future: confirmedFuture,
-                                builder: (context, snapshot) {
-                                  if (snapshot.connectionState ==
-                                      ConnectionState.waiting) {
-                                    return Column(children: [
-                                      Text("Confirm on device to show backup"),
-                                      Divider(),
-                                      DeviceListWithIcons(
-                                        iconAssigner: (context, deviceId) {
-                                          if (deviceIdEquals(deviceId, id)) {
-                                            final label =
-                                                LabeledDeviceText(deviceName);
-                                            final Widget icon = Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: const [
-                                                Icon(Icons.visibility,
-                                                    color: awaitingColor),
-                                                SizedBox(width: 4),
-                                                Text("Confirm"),
-                                              ],
-                                            );
-                                            return (label, icon);
-                                          } else {
-                                            return (null, null);
-                                          }
-                                        },
-                                      ),
-                                    ]);
-                                  } else {
-                                    // Device confirmation success.
-                                    isConfirmed = true;
-                                    Future.microtask(() {
-                                      // Ensure UI updates outside build method.
-                                      if (context.mounted) {
-                                        Navigator.of(context).pop();
-                                      }
-                                    });
-                                    return Column();
-                                  }
-                                },
-                              );
+                              return Column(children: [
+                                DialogHeader(
+                                    child: Text(
+                                        "Confirm on device to show backup")),
+                                DeviceListWithIcons(
+                                  iconAssigner: (context, deviceId) {
+                                    if (deviceIdEquals(deviceId, id)) {
+                                      final label =
+                                          LabeledDeviceText(deviceName);
+                                      final Widget icon = ConfirmPrompt();
+                                      return (label, icon);
+                                    } else {
+                                      return (null, null);
+                                    }
+                                  },
+                                ),
+                              ]);
                             },
                           );
 
-                          if (result == null && !isConfirmed) {
-                            await coord.cancelProtocol();
-                          }
-                          if (isConfirmed && context.mounted) {
-                            await showBackupDialogue(
-                                context: context, keyId: keyId);
+                          if (success != null && success) {
+                            if (context.mounted) {
+                              Navigator.pop(context);
+                              await showBackupDialogue(
+                                  context: context, keyId: keyId);
+                            }
+                          } else {
+                            coord.cancelProtocol();
                           }
                         },
                         child: Text("Show Backup"),
@@ -500,91 +473,70 @@ class BackupSettingsPage extends StatelessWidget {
                       SizedBox(height: 8),
                       ElevatedButton(
                         onPressed: () async {
-                          final shareRestoreStream = coord.checkShareOnDevice(
-                              deviceId: id, keyId: keyId);
+                          final shareRestoreStream = coord
+                              .checkShareOnDevice(deviceId: id, keyId: keyId)
+                              .asBroadcastStream();
+
+                          final aborted = shareRestoreStream
+                              .firstWhere((state) => state.abort != null)
+                              .then((state) {
+                            if (context.mounted) {
+                              showErrorSnackbar(context, state.abort!);
+                            }
+                            return null;
+                          });
 
                           final result = await showDeviceActionDialog(
                             context: context,
+                            complete: aborted,
                             builder: (BuildContext context) {
                               return StreamBuilder(
-                                stream: shareRestoreStream,
-                                builder: (context, snapshot) {
-                                  if (snapshot.hasData &&
-                                      snapshot.data?.outcome != null) {
-                                    return AlertDialog(
-                                        title: Text("Backup Check"),
-                                        content: Container(
-                                            width: Platform.isAndroid
-                                                ? double.maxFinite
-                                                : 400.0,
-                                            child: Align(
-                                                alignment: Alignment.center,
-                                                child: Column(
-                                                  children: [
-                                                    SizedBox(height: 20),
-                                                    Text(snapshot
-                                                        .data!.outcome!),
-                                                  ],
-                                                ))),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () {
-                                              Navigator.of(context).pop();
-                                            },
-                                            child: Text(
-                                              'Done',
-                                              style: TextStyle(
-                                                color: textColor,
-                                              ),
-                                            ),
-                                          )
-                                        ]);
-                                  } else {
+                                  stream: shareRestoreStream,
+                                  builder: (context, snapshot) {
+                                    final outcome = snapshot.data?.outcome;
                                     return Column(children: [
-                                      Text("Enter the backup on the device."),
-                                      SizedBox(height: 8),
-                                      Divider(),
-                                      DeviceListWithIcons(
-                                        iconAssigner: (context, deviceId) {
-                                          if (deviceIdEquals(deviceId, id)) {
-                                            final label =
-                                                LabeledDeviceText(deviceName);
-                                            final Widget icon = Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: const [
-                                                Icon(Icons.edit,
-                                                    color: successColor),
-                                                SizedBox(width: 4),
-                                              ],
-                                            );
-                                            return (label, icon);
-                                          } else {
-                                            return (null, null);
-                                          }
-                                        },
-                                      ),
-                                      SizedBox(height: 16),
-                                      TextButton(
-                                        onPressed: () {
-                                          coord.cancelAll();
-                                          Navigator.of(context).pop();
-                                        },
-                                        child: Text(
-                                          'Cancel',
-                                          style: TextStyle(
-                                            color: Colors
-                                                .white, // Change this color to whatever your app uses
-                                          ),
+                                      DialogHeader(
+                                          child: Text(
+                                              "Enter the backup on the device.")),
+                                      Expanded(
+                                        child: DeviceListWithIcons(
+                                          iconAssigner: (context, deviceId) {
+                                            if (deviceIdEquals(deviceId, id)) {
+                                              final label =
+                                                  LabeledDeviceText(deviceName);
+                                              final Widget icon = DevicePrompt(
+                                                  icon: Icon(Icons.keyboard),
+                                                  text: "");
+                                              return (label, icon);
+                                            } else {
+                                              return (null, null);
+                                            }
+                                          },
                                         ),
                                       ),
+                                      DialogFooter(
+                                          child: ElevatedButton(
+                                        onPressed: () {
+                                          Navigator.pop(context, outcome);
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                            backgroundColor: switch (outcome) {
+                                          true => Colors.green,
+                                          false => Colors.red,
+                                          null => null,
+                                        }),
+                                        child: Text(switch (outcome) {
+                                          true => "Your backup is valid",
+                                          false => "Your backup is invalid",
+                                          null => "Cancel"
+                                        }),
+                                      ))
                                     ]);
-                                  }
-                                },
-                              );
+                                  });
                             },
                           );
                           if (result == null) {
-                            coord.cancelAll();
+                            coord.cancelProtocol();
                           }
                         },
                         child: Text('Check Backup'),

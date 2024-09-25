@@ -254,11 +254,6 @@ pub fn wire_send_cancel__method__Coordinator(port_: MessagePort, that: JsValue, 
 }
 
 #[wasm_bindgen]
-pub fn wire_cancel_all__method__Coordinator(port_: MessagePort, that: JsValue) {
-    wire_cancel_all__method__Coordinator_impl(port_, that)
-}
-
-#[wasm_bindgen]
 pub fn wire_display_backup__method__Coordinator(
     port_: MessagePort,
     that: JsValue,

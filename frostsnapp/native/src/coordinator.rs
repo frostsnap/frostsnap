@@ -1,7 +1,8 @@
 use crate::api::{self, KeyState};
 use anyhow::{anyhow, Result};
 use flutter_rust_bridge::{RustOpaque, StreamSink};
-use frostsnap_coordinator::backup::BackupProtocol;
+use frostsnap_coordinator::check_share::{CheckShareProtocol, CheckShareState};
+use frostsnap_coordinator::display_backup::DisplayBackupProtocol;
 use frostsnap_coordinator::firmware_upgrade::{
     FirmwareUpgradeConfirmState, FirmwareUpgradeProtocol,
 };
@@ -11,7 +12,6 @@ use frostsnap_coordinator::frostsnap_comms::{
 use frostsnap_coordinator::frostsnap_core::message::CoordinatorSend;
 use frostsnap_coordinator::frostsnap_persist::DeviceNames;
 use frostsnap_coordinator::keygen::KeyGenState;
-use frostsnap_coordinator::load_share::{LoadShareProtocol, LoadShareState};
 use frostsnap_coordinator::persist::Persisted;
 use frostsnap_coordinator::signing::SigningState;
 use frostsnap_coordinator::{
@@ -376,15 +376,6 @@ impl FfiCoordinator {
         self.usb_sender.send_cancel(id)
     }
 
-    pub fn cancel_all(&self) {
-        self.coordinator
-            .lock()
-            .unwrap()
-            .MUTATE_NO_PERSIST()
-            .cancel();
-        self.usb_sender.send_cancel_all();
-    }
-
     pub fn generate_new_key(
         &self,
         devices: BTreeSet<DeviceId>,
@@ -514,20 +505,14 @@ impl FfiCoordinator {
         &self,
         device_id: DeviceId,
         key_id: KeyId,
-        stream: StreamSink<()>,
+        stream: StreamSink<bool>,
     ) -> anyhow::Result<()> {
-        // XXX: We should be storing the id to make sure the device that sends the backup ack is
-        // from the one we expected. In practice it doesn't matter that much and flutter rust bridge
-        // was giving me extreme grief. Can try again with frb v2.
-        let backup_protocol = BackupProtocol::new(device_id, SinkWrap(stream));
-
-        let messages = self
-            .coordinator
-            .lock()
-            .unwrap()
-            .MUTATE_NO_PERSIST()
-            .request_device_display_backup(device_id, key_id)?;
-        self.pending_for_outbox.lock().unwrap().extend(messages);
+        let backup_protocol = DisplayBackupProtocol::new(
+            self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
+            device_id,
+            key_id,
+            SinkWrap(stream),
+        )?;
 
         self.start_protocol(backup_protocol);
 
@@ -640,16 +625,16 @@ impl FfiCoordinator {
         &self,
         device_id: DeviceId,
         key_id: KeyId,
-        stream: StreamSink<api::LoadShareState>,
+        stream: StreamSink<api::CheckShareState>,
     ) -> anyhow::Result<()> {
-        let load_share_protocol = LoadShareProtocol::new(
+        let check_share_protocol = CheckShareProtocol::new(
             self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
             device_id,
             key_id,
             SinkWrap(stream),
         );
-        load_share_protocol.emit_state();
-        self.start_protocol(load_share_protocol);
+        check_share_protocol.emit_state();
+        self.start_protocol(check_share_protocol);
         Ok(())
     }
 }
@@ -682,5 +667,5 @@ macro_rules! bridge_sink {
 bridge_sink!(KeyGenState);
 bridge_sink!(FirmwareUpgradeConfirmState);
 bridge_sink!(SigningState);
-bridge_sink!(LoadShareState);
-bridge_sink!(());
+bridge_sink!(CheckShareState);
+bridge_sink!(bool);

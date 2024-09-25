@@ -47,7 +47,7 @@ pub enum CoordinatorToDeviceMessage {
     DisplayBackup {
         key_id: KeyId,
     },
-    LoadShareBackup,
+    CheckShareBackup,
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
@@ -112,7 +112,7 @@ impl CoordinatorToDeviceMessage {
             CoordinatorToDeviceMessage::FinishKeyGen { .. } => "FinishKeyGen",
             CoordinatorToDeviceMessage::RequestSign { .. } => "RequestSign",
             CoordinatorToDeviceMessage::DisplayBackup { .. } => "DisplayBackup",
-            CoordinatorToDeviceMessage::LoadShareBackup { .. } => "LoadShareBackup",
+            CoordinatorToDeviceMessage::CheckShareBackup { .. } => "CheckShareBackup",
         }
     }
 }
@@ -127,7 +127,7 @@ pub enum DeviceToCoordinatorMessage {
         new_nonces: DeviceNonces,
     },
     DisplayBackupConfirmed,
-    LoadedShareBackup {
+    CheckShareBackup {
         share_index: PartyIndex,
         share_image: Point,
     },
@@ -165,7 +165,7 @@ impl DeviceToCoordinatorMessage {
             KeyGenAck(_) => "KeyGenAck",
             SignatureShare { .. } => "SignatureShare",
             DisplayBackupConfirmed => "DisplayBackupConfirmed",
-            LoadedShareBackup { .. } => "LoadingShareBackup",
+            CheckShareBackup { .. } => "LoadingShareBackup",
         }
     }
 }
@@ -179,14 +179,9 @@ pub enum CoordinatorToUserMessage {
     },
     EnteredBackup {
         device_id: DeviceId,
-        outcome: EnteredBackupOutcome,
+        /// whether it was a valid backup for this key
+        valid: bool,
     },
-}
-
-#[derive(Clone, Debug)]
-pub enum EnteredBackupOutcome {
-    DoesntBelongToKey,
-    ValidAtIndex,
 }
 
 #[derive(Clone, Debug, Copy)]
