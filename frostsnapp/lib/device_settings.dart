@@ -461,9 +461,8 @@ class BackupSettingsPage extends StatelessWidget {
                               await showBackupDialogue(
                                   context: context, keyId: keyId);
                             }
-                          } else {
-                            coord.cancelProtocol();
                           }
+                          coord.cancelProtocol();
                         },
                         child: Text("Show Backup"),
                       ),

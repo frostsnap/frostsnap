@@ -7,7 +7,6 @@ use crate::{Completion, Sink, UiProtocol, UiToStorageMessage};
 
 pub struct DisplayBackupProtocol {
     device_id: DeviceId,
-    complete: bool,
     abort: bool,
     messages: Vec<CoordinatorSendMessage>,
     // bool indicates whether it compelted successfully.
@@ -34,7 +33,6 @@ impl DisplayBackupProtocol {
 
         Ok(Self {
             device_id,
-            complete: false,
             sink: Box::new(sink),
             abort: false,
             messages,
@@ -58,8 +56,6 @@ impl UiProtocol for DisplayBackupProtocol {
                 // get the devices to stop showing backup
                 send_cancel_to_all_devices: true,
             })
-        } else if self.complete {
-            Some(Completion::Success)
         } else {
             None
         }
@@ -79,7 +75,6 @@ impl UiProtocol for DisplayBackupProtocol {
     ) {
         if let CoordinatorToUserMessage::DisplayBackupConfirmed { device_id } = message {
             if self.device_id == device_id {
-                self.complete = true;
                 self.sink.send(true);
             }
         }
