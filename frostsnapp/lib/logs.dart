@@ -3,43 +3,11 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnapp/ffi.dart';
-import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/theme.dart';
-import 'package:rxdart/rxdart.dart';
-
-class LogManager {
-  static final LogManager _singleton = LogManager._internal();
-  final List<LogEntry> _logs = [];
-
-  final BehaviorSubject<List<LogEntry>> _logStreamController =
-      BehaviorSubject<List<LogEntry>>();
-
-  late StreamSubscription<LogEntry> _subscription;
-
-  Stream<List<LogEntry>> get stream => _logStreamController.stream;
-
-  factory LogManager() {
-    return _singleton;
-  }
-
-  LogManager._internal() {
-    final stream = api.subLogEvents().toBehaviorSubject();
-    _subscription = stream.listen((log) {
-      _logs.add(log);
-      _logStreamController.add(List.unmodifiable(_logs));
-    });
-  }
-
-  List<LogEntry> get logs => _logs;
-
-  void dispose() {
-    _subscription.cancel();
-    _logStreamController.close();
-  }
-}
 
 class LogScreen extends StatefulWidget {
-  const LogScreen({super.key});
+  final Stream<LogEntry> logStream;
+  const LogScreen({super.key, required this.logStream});
 
   @override
   _LogScreenState createState() => _LogScreenState();
@@ -47,15 +15,19 @@ class LogScreen extends StatefulWidget {
 
 class _LogScreenState extends State<LogScreen> {
   List<LogEntry> _logs = [];
-  late StreamSubscription<List<LogEntry>> _subscription;
+  late StreamSubscription<LogEntry> _subscription;
   final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
-    _subscription = LogManager().stream.listen((logs) {
+    _subscription = widget.logStream.listen((log) {
       setState(() {
-        _logs = logs;
+        _logs.add(log);
+      });
+      // scroll to the bottom of the scrollable view
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
       });
       // scroll to the bottom of the scrollable view
       WidgetsBinding.instance.addPostFrameCallback((_) {

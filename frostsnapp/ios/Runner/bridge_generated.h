@@ -230,13 +230,11 @@ void wire_sub_port_events(int64_t port_);
 
 void wire_sub_device_events(int64_t port_);
 
-void wire_log_welcome(int64_t port_);
-
-void wire_sub_log_events(int64_t port_);
+WireSyncReturn wire_log(int32_t level, struct wire_uint_8_list *message);
 
 void wire_turn_stderr_logging_on(int64_t port_, int32_t level);
 
-void wire_turn_logcat_logging_on(int64_t port_, int32_t _level);
+void wire_turn_logcat_logging_on(int64_t port_, int32_t level);
 
 WireSyncReturn wire_device_at_index(uintptr_t index);
 
@@ -608,8 +606,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     int64_t dummy_var = 0;
     dummy_var ^= ((int64_t) (void*) wire_sub_port_events);
     dummy_var ^= ((int64_t) (void*) wire_sub_device_events);
-    dummy_var ^= ((int64_t) (void*) wire_log_welcome);
-    dummy_var ^= ((int64_t) (void*) wire_sub_log_events);
+    dummy_var ^= ((int64_t) (void*) wire_log);
     dummy_var ^= ((int64_t) (void*) wire_turn_stderr_logging_on);
     dummy_var ^= ((int64_t) (void*) wire_turn_logcat_logging_on);
     dummy_var ^= ((int64_t) (void*) wire_device_at_index);

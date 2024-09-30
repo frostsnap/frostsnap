@@ -6,6 +6,8 @@ import 'package:frostsnapp/key_list.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnapp/logs.dart';
 import 'package:frostsnapp/serialport.dart';
+import 'package:frostsnapp/sign_message.dart';
+import 'package:frostsnapp/stream_ext.dart';
 import 'package:path_provider/path_provider.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'dart:io';
@@ -22,16 +24,21 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   String? startupError;
+  Stream<LogEntry> logStream;
+
+  // set logging up first before doing anything else
+  if (Platform.isAndroid) {
+    logStream =
+        api.turnLogcatLoggingOn(level: LogLevel.Debug).toReplaySubject();
+  } else {
+    logStream =
+        api.turnStderrLoggingOn(level: LogLevel.Debug).toReplaySubject();
+  }
+
+  // wait for first message to appear so that logging is working before we carry on
+  await logStream.first;
 
   try {
-    // set logging up first before doing anything else
-    LogManager();
-    if (Platform.isAndroid) {
-      await api.turnLogcatLoggingOn(level: LogLevel.Debug);
-    } else {
-      await api.turnStderrLoggingOn(level: LogLevel.Debug);
-    }
-    await api.logWelcome();
     final appDir = await getApplicationSupportDirectory();
     final dbFile = '${appDir.path}/frostsnap.sqlite';
     if (Platform.isAndroid) {
@@ -50,6 +57,7 @@ void main() async {
       wallet = wallet_;
       bitcoinContext = bitcoinContext_;
     }
+    api.log(level: LogLevel.Info, message: "Starting coordinator thread");
     coord.startThread();
   } catch (error, stacktrace) {
     print("$error");
@@ -74,7 +82,9 @@ void main() async {
       WakelockPlus.disable();
     }
   });
-  runApp(MyApp(startupError: startupError));
+  api.log(level: LogLevel.Info, message: "starting app");
+  runApp(FrostsnapContext(
+      logStream: logStream, child: MyApp(startupError: startupError)));
 }
 
 class MyApp extends StatelessWidget {
@@ -101,21 +111,24 @@ class MyHomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final logStream = FrostsnapContext.of(context)?.logStream;
+
     return Scaffold(
         appBar: AppBar(title: Text("Key List"), actions: [
           PopupMenuButton<String>(
               onSelected: (String result) {
                 if (result == 'logs') {
                   Navigator.push(context, MaterialPageRoute(builder: (context) {
-                    return LogScreen();
+                    return LogScreen(logStream: logStream!);
                   }));
                 }
               },
               itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                    const PopupMenuItem<String>(
-                      value: 'logs',
-                      child: Text('Logs'),
-                    )
+                    if (logStream != null)
+                      const PopupMenuItem<String>(
+                        value: 'logs',
+                        child: Text('Logs'),
+                      )
                   ])
         ]),
         body: Center(child: KeyListWithConfetti()));
@@ -190,5 +203,26 @@ class StartupErrorWidget extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class FrostsnapContext extends InheritedWidget {
+  final Stream<LogEntry> logStream;
+
+  const FrostsnapContext({
+    Key? key,
+    required this.logStream,
+    required Widget child,
+  }) : super(key: key, child: child);
+
+  // Static method to allow easy access to the Foo instance
+  static FrostsnapContext? of(BuildContext context) {
+    return context.dependOnInheritedWidgetOfExactType<FrostsnapContext>();
+  }
+
+  @override
+  bool updateShouldNotify(FrostsnapContext oldWidget) {
+    // we never change the log stream
+    return false;
   }
 }

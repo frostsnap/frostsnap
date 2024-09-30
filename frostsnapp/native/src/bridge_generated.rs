@@ -55,27 +55,20 @@ fn wire_sub_device_events_impl(port_: MessagePort) {
         },
     )
 }
-fn wire_log_welcome_impl(port_: MessagePort) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+fn wire_log_impl(
+    level: impl Wire2Api<LogLevel> + UnwindSafe,
+    message: impl Wire2Api<String> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
         WrapInfo {
-            debug_name: "log_welcome",
-            port: Some(port_),
-            mode: FfiCallMode::Normal,
-        },
-        move || move |task_callback| Result::<_, ()>::Ok(log_welcome()),
-    )
-}
-fn wire_sub_log_events_impl(port_: MessagePort) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
-        WrapInfo {
-            debug_name: "sub_log_events",
-            port: Some(port_),
-            mode: FfiCallMode::Stream,
+            debug_name: "log",
+            port: None,
+            mode: FfiCallMode::Sync,
         },
         move || {
-            move |task_callback| {
-                Result::<_, ()>::Ok(sub_log_events(task_callback.stream_sink::<_, LogEntry>()))
-            }
+            let api_level = level.wire2api();
+            let api_message = message.wire2api();
+            Result::<_, ()>::Ok(log(api_level, api_message))
         },
     )
 }
@@ -87,27 +80,31 @@ fn wire_turn_stderr_logging_on_impl(
         WrapInfo {
             debug_name: "turn_stderr_logging_on",
             port: Some(port_),
-            mode: FfiCallMode::Normal,
+            mode: FfiCallMode::Stream,
         },
         move || {
             let api_level = level.wire2api();
-            move |task_callback| Result::<_, ()>::Ok(turn_stderr_logging_on(api_level))
+            move |task_callback| {
+                turn_stderr_logging_on(api_level, task_callback.stream_sink::<_, LogEntry>())
+            }
         },
     )
 }
 fn wire_turn_logcat_logging_on_impl(
     port_: MessagePort,
-    _level: impl Wire2Api<LogLevel> + UnwindSafe,
+    level: impl Wire2Api<LogLevel> + UnwindSafe,
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
         WrapInfo {
             debug_name: "turn_logcat_logging_on",
             port: Some(port_),
-            mode: FfiCallMode::Normal,
+            mode: FfiCallMode::Stream,
         },
         move || {
-            let api__level = _level.wire2api();
-            move |task_callback| Result::<_, ()>::Ok(turn_logcat_logging_on(api__level))
+            let api_level = level.wire2api();
+            move |task_callback| {
+                turn_logcat_logging_on(api_level, task_callback.stream_sink::<_, LogEntry>())
+            }
         },
     )
 }

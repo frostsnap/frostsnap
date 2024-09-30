@@ -37,7 +37,6 @@ lazy_static! {
     static ref DEVICE_LIST: Mutex<(DeviceList, Option<StreamSink<DeviceListUpdate>>)> =
         Default::default();
     static ref KEY_EVENT_STREAM: Mutex<Option<StreamSink<KeyState>>> = Default::default();
-    pub static ref LOG_EVENT_STREAM: RwLock<Option<StreamSink<LogEntry>>> = RwLock::default();
 }
 
 pub fn sub_port_events(event_stream: StreamSink<PortEvent>) {
@@ -260,22 +259,14 @@ pub struct LogEntry {
     pub content: String,
 }
 
-pub fn log_welcome() {
-    event!(
-        Level::INFO,
-        r"
-    __________  ____  ________________ _   _____    ____
-   / ____/ __ \/ __ \/ ___/_  __/ ___// | / /   |  / __ \
-  / /_  / /_/ / / / /\__ \ / /  \__ \/  |/ / /| | / /_/ /
- / __/ / _, _/ /_/ /___/ // /  ___/ / /|  / ___ |/ ____/
-/_/   /_/ |_|\____//____//_/  /____/_/ |_/_/  |_/_/
-"
-    );
-}
+pub fn log(level: LogLevel, message: String) -> SyncReturn<()> {
+    // dunno why I can't use runtime log levels here but event! hates it
+    match level {
+        LogLevel::Debug => event!(Level::DEBUG, dart = true, "{}", message),
+        LogLevel::Info => event!(Level::INFO, dart = true, "{}", message),
+    }
 
-pub fn sub_log_events(log_stream: StreamSink<LogEntry>) {
-    let mut v = LOG_EVENT_STREAM.write().expect("lock must not be poisoned");
-    *v = Some(log_stream);
+    SyncReturn(())
 }
 
 pub enum LogLevel {
@@ -283,26 +274,44 @@ pub enum LogLevel {
     Info,
 }
 
-pub fn turn_stderr_logging_on(level: LogLevel) {
+impl From<LogLevel> for tracing::Level {
+    fn from(value: LogLevel) -> Self {
+        match value {
+            LogLevel::Info => tracing::Level::INFO,
+            LogLevel::Debug => tracing::Level::DEBUG,
+        }
+    }
+}
+
+pub fn turn_stderr_logging_on(
+    level: LogLevel,
+    log_stream: StreamSink<LogEntry>,
+) -> anyhow::Result<()> {
     let subscriber = tracing_subscriber::fmt()
-        .with_max_level(match level {
-            LogLevel::Info => Level::INFO,
-            LogLevel::Debug => Level::DEBUG,
-        })
+        .with_max_level(tracing::Level::from(level))
         .without_time()
         .pretty()
         .finish()
-        .with(StreamLogsToDart);
+        .with(StreamLogsToDart { sink: log_stream });
 
     let _ = tracing::subscriber::set_global_default(subscriber);
     event!(Level::INFO, "logging to stderr and Dart logger");
+
+    Ok(())
 }
 
-pub fn turn_logcat_logging_on(_level: LogLevel) {
+#[allow(unused_variables)]
+pub fn turn_logcat_logging_on(
+    level: LogLevel,
+    log_stream: StreamSink<LogEntry>,
+) -> anyhow::Result<()> {
+    #[cfg(not(target_os = "android"))]
+    panic!("Do not call turn_logcat_logging_on outside of android");
+
     #[cfg(target_os = "android")]
     {
         let subscriber = tracing_subscriber::fmt()
-            .with_max_level(match _level {
+            .with_max_level(match level {
                 LogLevel::Info => tracing::Level::INFO,
                 LogLevel::Debug => tracing::Level::DEBUG,
             })
@@ -314,15 +323,15 @@ pub fn turn_logcat_logging_on(_level: LogLevel) {
             use tracing_subscriber::layer::SubscriberExt;
             subscriber
                 .with(tracing_android::layer("rust-frostsnapp").unwrap())
-                .with(StreamLogsToDart)
+                .with(StreamLogsToDart { sink: log_stream })
         };
 
-        let _ = tracing::subscriber::set_global_default(subscriber);
+        tracing::subscriber::set_global_default(subscriber)?;
         event!(Level::INFO, "frostsnap logging to logcat and Dart logger");
     }
 
-    #[cfg(not(target_os = "android"))]
-    panic!("Do not call turn_logcat_logging_on outside of android");
+    #[allow(unreachable_code)]
+    Ok(())
 }
 
 pub fn device_at_index(index: usize) -> SyncReturn<Option<ConnectedDevice>> {

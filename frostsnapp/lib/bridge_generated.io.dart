@@ -892,33 +892,22 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _wire_sub_device_events =
       _wire_sub_device_eventsPtr.asFunction<void Function(int)>();
 
-  void wire_log_welcome(
-    int port_,
+  WireSyncReturn wire_log(
+    int level,
+    ffi.Pointer<wire_uint_8_list> message,
   ) {
-    return _wire_log_welcome(
-      port_,
+    return _wire_log(
+      level,
+      message,
     );
   }
 
-  late final _wire_log_welcomePtr =
-      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Int64)>>(
-          'wire_log_welcome');
-  late final _wire_log_welcome =
-      _wire_log_welcomePtr.asFunction<void Function(int)>();
-
-  void wire_sub_log_events(
-    int port_,
-  ) {
-    return _wire_sub_log_events(
-      port_,
-    );
-  }
-
-  late final _wire_sub_log_eventsPtr =
-      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Int64)>>(
-          'wire_sub_log_events');
-  late final _wire_sub_log_events =
-      _wire_sub_log_eventsPtr.asFunction<void Function(int)>();
+  late final _wire_logPtr = _lookup<
+      ffi.NativeFunction<
+          WireSyncReturn Function(
+              ffi.Int32, ffi.Pointer<wire_uint_8_list>)>>('wire_log');
+  late final _wire_log = _wire_logPtr.asFunction<
+      WireSyncReturn Function(int, ffi.Pointer<wire_uint_8_list>)>();
 
   void wire_turn_stderr_logging_on(
     int port_,
@@ -938,11 +927,11 @@ class NativeWire implements FlutterRustBridgeWireBase {
 
   void wire_turn_logcat_logging_on(
     int port_,
-    int _level,
+    int level,
   ) {
     return _wire_turn_logcat_logging_on(
       port_,
-      _level,
+      level,
     );
   }
 

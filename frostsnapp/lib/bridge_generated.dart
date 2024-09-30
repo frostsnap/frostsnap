@@ -54,47 +54,33 @@ class NativeImpl implements Native {
         argNames: [],
       );
 
-  Future<void> logWelcome({dynamic hint}) {
-    return _platform.executeNormal(FlutterRustBridgeTask(
-      callFfi: (port_) => _platform.inner.wire_log_welcome(port_),
+  void log({required LogLevel level, required String message, dynamic hint}) {
+    var arg0 = api2wire_log_level(level);
+    var arg1 = _platform.api2wire_String(message);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner.wire_log(arg0, arg1),
       parseSuccessData: _wire2api_unit,
       parseErrorData: null,
-      constMeta: kLogWelcomeConstMeta,
-      argValues: [],
+      constMeta: kLogConstMeta,
+      argValues: [level, message],
       hint: hint,
     ));
   }
 
-  FlutterRustBridgeTaskConstMeta get kLogWelcomeConstMeta =>
+  FlutterRustBridgeTaskConstMeta get kLogConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
-        debugName: "log_welcome",
-        argNames: [],
+        debugName: "log",
+        argNames: ["level", "message"],
       );
 
-  Stream<LogEntry> subLogEvents({dynamic hint}) {
-    return _platform.executeStream(FlutterRustBridgeTask(
-      callFfi: (port_) => _platform.inner.wire_sub_log_events(port_),
-      parseSuccessData: _wire2api_log_entry,
-      parseErrorData: null,
-      constMeta: kSubLogEventsConstMeta,
-      argValues: [],
-      hint: hint,
-    ));
-  }
-
-  FlutterRustBridgeTaskConstMeta get kSubLogEventsConstMeta =>
-      const FlutterRustBridgeTaskConstMeta(
-        debugName: "sub_log_events",
-        argNames: [],
-      );
-
-  Future<void> turnStderrLoggingOn({required LogLevel level, dynamic hint}) {
+  Stream<LogEntry> turnStderrLoggingOn(
+      {required LogLevel level, dynamic hint}) {
     var arg0 = api2wire_log_level(level);
-    return _platform.executeNormal(FlutterRustBridgeTask(
+    return _platform.executeStream(FlutterRustBridgeTask(
       callFfi: (port_) =>
           _platform.inner.wire_turn_stderr_logging_on(port_, arg0),
-      parseSuccessData: _wire2api_unit,
-      parseErrorData: null,
+      parseSuccessData: _wire2api_log_entry,
+      parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kTurnStderrLoggingOnConstMeta,
       argValues: [level],
       hint: hint,
@@ -107,13 +93,14 @@ class NativeImpl implements Native {
         argNames: ["level"],
       );
 
-  Future<void> turnLogcatLoggingOn({required LogLevel level, dynamic hint}) {
+  Stream<LogEntry> turnLogcatLoggingOn(
+      {required LogLevel level, dynamic hint}) {
     var arg0 = api2wire_log_level(level);
-    return _platform.executeNormal(FlutterRustBridgeTask(
+    return _platform.executeStream(FlutterRustBridgeTask(
       callFfi: (port_) =>
           _platform.inner.wire_turn_logcat_logging_on(port_, arg0),
-      parseSuccessData: _wire2api_unit,
-      parseErrorData: null,
+      parseSuccessData: _wire2api_log_entry,
+      parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kTurnLogcatLoggingOnConstMeta,
       argValues: [level],
       hint: hint,

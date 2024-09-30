@@ -12,13 +12,8 @@ pub extern "C" fn wire_sub_device_events(port_: i64) {
 }
 
 #[no_mangle]
-pub extern "C" fn wire_log_welcome(port_: i64) {
-    wire_log_welcome_impl(port_)
-}
-
-#[no_mangle]
-pub extern "C" fn wire_sub_log_events(port_: i64) {
-    wire_sub_log_events_impl(port_)
+pub extern "C" fn wire_log(level: i32, message: *mut wire_uint_8_list) -> support::WireSyncReturn {
+    wire_log_impl(level, message)
 }
 
 #[no_mangle]
@@ -27,8 +22,8 @@ pub extern "C" fn wire_turn_stderr_logging_on(port_: i64, level: i32) {
 }
 
 #[no_mangle]
-pub extern "C" fn wire_turn_logcat_logging_on(port_: i64, _level: i32) {
-    wire_turn_logcat_logging_on_impl(port_, _level)
+pub extern "C" fn wire_turn_logcat_logging_on(port_: i64, level: i32) {
+    wire_turn_logcat_logging_on_impl(port_, level)
 }
 
 #[no_mangle]

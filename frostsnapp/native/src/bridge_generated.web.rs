@@ -12,13 +12,8 @@ pub fn wire_sub_device_events(port_: MessagePort) {
 }
 
 #[wasm_bindgen]
-pub fn wire_log_welcome(port_: MessagePort) {
-    wire_log_welcome_impl(port_)
-}
-
-#[wasm_bindgen]
-pub fn wire_sub_log_events(port_: MessagePort) {
-    wire_sub_log_events_impl(port_)
+pub fn wire_log(level: i32, message: String) -> support::WireSyncReturn {
+    wire_log_impl(level, message)
 }
 
 #[wasm_bindgen]
@@ -27,8 +22,8 @@ pub fn wire_turn_stderr_logging_on(port_: MessagePort, level: i32) {
 }
 
 #[wasm_bindgen]
-pub fn wire_turn_logcat_logging_on(port_: MessagePort, _level: i32) {
-    wire_turn_logcat_logging_on_impl(port_, _level)
+pub fn wire_turn_logcat_logging_on(port_: MessagePort, level: i32) {
+    wire_turn_logcat_logging_on_impl(port_, level)
 }
 
 #[wasm_bindgen]
