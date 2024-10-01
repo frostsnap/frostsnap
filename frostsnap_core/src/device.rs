@@ -333,10 +333,6 @@ impl FrostSigner {
                 Ok(vec![
                     DeviceSend::ToCoordinator(DeviceToCoordinatorMessage::KeyGenAck(session_hash)),
                     DeviceSend::ToStorage(DeviceToStorageMessage::SaveKey(secret_share)),
-                    DeviceSend::ToUser(DeviceToUserMessage::DisplayBackup {
-                        key_id: secret_share.key_id(),
-                        backup: secret_share.secret_share().to_bech32_backup(),
-                    }),
                 ])
             }
             action_state => {

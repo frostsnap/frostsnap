@@ -12,6 +12,7 @@ import 'package:frostsnapp/device_setup.dart';
 import 'package:frostsnapp/keygen.dart';
 import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/global.dart';
+import 'package:frostsnapp/show_backup.dart';
 import 'package:frostsnapp/theme.dart';
 
 class DeviceSettingsPage extends StatelessWidget {
@@ -430,39 +431,8 @@ class BackupSettingsPage extends StatelessWidget {
                       SizedBox(height: 8),
                       ElevatedButton(
                         onPressed: () async {
-                          final success = await showDeviceActionDialog<bool>(
-                            context: context,
-                            complete:
-                                coord.displayBackup(id: id, keyId: keyId).first,
-                            builder: (context) {
-                              return Column(children: [
-                                DialogHeader(
-                                    child: Text(
-                                        "Confirm on device to show backup")),
-                                DeviceListWithIcons(
-                                  iconAssigner: (context, deviceId) {
-                                    if (deviceIdEquals(deviceId, id)) {
-                                      final label =
-                                          LabeledDeviceText(deviceName);
-                                      final Widget icon = ConfirmPrompt();
-                                      return (label, icon);
-                                    } else {
-                                      return (null, null);
-                                    }
-                                  },
-                                ),
-                              ]);
-                            },
-                          );
-
-                          if (success != null && success) {
-                            if (context.mounted) {
-                              Navigator.pop(context);
-                              await showBackupDialogue(
-                                  context: context, keyId: keyId);
-                            }
-                          }
-                          coord.cancelProtocol();
+                          await doBackupWorkflow(context,
+                              devices: [id], keyId: keyId);
                         },
                         child: Text("Show Backup"),
                       ),
@@ -501,12 +471,10 @@ class BackupSettingsPage extends StatelessWidget {
                                         child: DeviceListWithIcons(
                                           iconAssigner: (context, deviceId) {
                                             if (deviceIdEquals(deviceId, id)) {
-                                              final label =
-                                                  LabeledDeviceText(deviceName);
                                               final Widget icon = DevicePrompt(
                                                   icon: Icon(Icons.keyboard),
                                                   text: "");
-                                              return (label, icon);
+                                              return (null, icon);
                                             } else {
                                               return (null, null);
                                             }

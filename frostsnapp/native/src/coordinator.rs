@@ -23,6 +23,7 @@ use frostsnap_core::{
     DeviceId, KeyId, SignTask,
 };
 use std::collections::{BTreeSet, VecDeque};
+use std::sync::mpsc::{self, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -43,6 +44,7 @@ pub struct FfiCoordinator {
     device_names: Arc<Mutex<Persisted<DeviceNames>>>,
     coordinator: Arc<Mutex<Persisted<FrostCoordinator>>>,
     signing_session: Arc<Mutex<Persisted<Option<SigningSessionState>>>>,
+    waiting_for_protocol_finish: Arc<Mutex<Vec<SyncSender<()>>>>,
 }
 
 impl FfiCoordinator {
@@ -77,6 +79,7 @@ impl FfiCoordinator {
             coordinator: Arc::new(Mutex::new(coordinator)),
             device_names: Arc::new(Mutex::new(device_names)),
             signing_session: Arc::new(Mutex::new(signing_session)),
+            waiting_for_protocol_finish: Default::default(),
         })
     }
 
@@ -101,6 +104,7 @@ impl FfiCoordinator {
         let usb_sender = self.usb_sender.clone();
         let firmware_upgrade_progress = self.firmware_upgrade_progress.clone();
         let signing_session = self.signing_session.clone();
+        let waiting_for_protocol_finish = self.waiting_for_protocol_finish.clone();
 
         let handle = std::thread::spawn(move || {
             loop {
@@ -258,6 +262,12 @@ impl FfiCoordinator {
                                     usb_sender.send_cancel_all();
                                 }
                             }
+                        }
+
+                        let mut waiting_for_protocol_finish =
+                            waiting_for_protocol_finish.lock().unwrap();
+                        for waiter in waiting_for_protocol_finish.drain(..) {
+                            let _ = waiter.send(());
                         }
                     }
 
@@ -571,6 +581,17 @@ impl FfiCoordinator {
         if let Some(proto) = &mut *self.ui_protocol.lock().unwrap() {
             proto.cancel();
         }
+
+        self.wait_for_protocol_finish();
+    }
+
+    pub fn wait_for_protocol_finish(&self) {
+        let (sender, receiver) = mpsc::sync_channel(0);
+        {
+            let mut waiting = self.waiting_for_protocol_finish.lock().unwrap();
+            waiting.push(sender);
+        }
+        let _ = receiver.recv();
     }
 
     pub fn enter_firmware_upgrade_mode(&self, sink: StreamSink<f32>) -> Result<()> {

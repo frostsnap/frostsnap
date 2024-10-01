@@ -345,7 +345,11 @@ fn test_display_backup() {
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
     let coord_frost_key = run.coordinator.iter_keys().next().unwrap().clone();
     let key_id = coord_frost_key.key_id();
-    assert_eq!(env.backups.len(), n_parties);
+    assert_eq!(
+        env.backups.len(),
+        0,
+        "no backups should have been displayed automatically"
+    );
 
     env.backups = BTreeMap::new(); // clear backups so we can request one again for a party
     let display_backup = run
