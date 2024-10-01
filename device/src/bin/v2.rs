@@ -293,7 +293,7 @@ where
                     )
                 } else {
                     self.finished = true;
-                    AnimationProgress::FinalTick
+                    AnimationProgress::Done
                 }
             }
             None => {
@@ -307,7 +307,6 @@ where
 #[derive(Clone, Copy, Debug)]
 pub enum AnimationProgress {
     Progress(f32),
-    FinalTick,
     Done,
 }
 
@@ -534,12 +533,14 @@ where
                 let lift_up = touch.action == 1;
                 let last_touch = self.last_touch.take();
                 if !lift_up {
+                    // lift up is not really a "touch" it's the lack of a touch so it doesn't count here.
                     self.last_touch = Some((corrected_point, now));
                 }
 
                 (Some((corrected_point, touch.gesture, lift_up)), last_touch)
             }
-            None => (None, None),
+            // we can still make progress even if there's not a touch right now
+            None => (None, self.last_touch),
         };
 
         match self.workflow.borrow_mut() {
@@ -553,12 +554,12 @@ where
                 if lift_up {
                     self.confirm_state.reset();
                     self.changes = true;
-                } else if current_touch.is_some() {
+                } else if current_touch.is_some() || last_touch.is_some() {
                     match self.confirm_state.poll() {
                         AnimationProgress::Progress(progress) => {
                             self.display.confirm_bar(progress);
                         }
-                        AnimationProgress::FinalTick => {
+                        AnimationProgress::Done => {
                             let ui_event = match prompt {
                                 Prompt::KeyGen {
                                     key_name, key_id, ..
@@ -585,8 +586,8 @@ where
                                 }
                             };
                             event = Some(ui_event);
+                            self.confirm_state.reset();
                         }
-                        AnimationProgress::Done => {}
                     }
                 }
             }
