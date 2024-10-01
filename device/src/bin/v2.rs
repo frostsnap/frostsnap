@@ -542,18 +542,20 @@ where
             }
             Workflow::EnteringBackup(stage) => match stage {
                 EnteringBackupStage::Init => {
-                    *stage = EnteringBackupStage::ShareIndex(EnterShareIndexScreen::new(
-                        self.display.display.bounding_box().size,
-                    ));
+                    *stage = EnteringBackupStage::ShareIndex {
+                        screen: EnterShareIndexScreen::new(
+                            self.display.display.bounding_box().size,
+                        ),
+                    };
                 }
-                EnteringBackupStage::ShareIndex(screen) => {
+                EnteringBackupStage::ShareIndex { screen } => {
                     let mut next_screen = None;
                     if let Some((point, _, lift_up)) = current_touch {
                         if let Some(share_index) = screen.handle_touch(point, now, lift_up) {
                             next_screen = Some(EnteringBackupStage::Share {
-                                share_index,
                                 screen: EnterShareScreen::new(
                                     self.display.display.bounding_box().size,
+                                    share_index,
                                 ),
                             });
                         }
@@ -563,10 +565,7 @@ where
                         *stage = next_screen;
                     }
                 }
-                EnteringBackupStage::Share {
-                    screen,
-                    share_index,
-                } => {
+                EnteringBackupStage::Share { screen } => {
                     if let Some((point, gesture, lift_up)) = current_touch {
                         match gesture {
                             TouchGesture::SlideUp | TouchGesture::SlideDown => {
@@ -578,7 +577,7 @@ where
                             _ => {
                                 screen.handle_touch(point, now, lift_up);
                                 if screen.is_finished() {
-                                    match screen.try_create_share(*share_index) {
+                                    match screen.try_create_share() {
                                         Ok(secret_share) => {
                                             event = Some(UiEvent::EnteredShareBackup(secret_share));
                                         }

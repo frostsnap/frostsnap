@@ -101,12 +101,10 @@ impl Workflow {
 
 #[derive(Debug)]
 pub enum EnteringBackupStage {
-    Init, // So the creator of the workflow doesn't have to construct the
-    ShareIndex(EnterShareIndexScreen),
-    Share {
-        share_index: u16,
-        screen: EnterShareScreen,
-    },
+    //HACK So the creator of the workflow doesn't have to construct the screen
+    Init,
+    ShareIndex { screen: EnterShareIndexScreen },
+    Share { screen: EnterShareScreen },
 }
 
 impl Default for Workflow {
@@ -116,7 +114,6 @@ impl Default for Workflow {
 }
 
 #[derive(Clone, Debug)]
-
 pub enum Prompt {
     KeyGen {
         session_hash: SessionHash,

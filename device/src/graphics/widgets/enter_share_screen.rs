@@ -12,10 +12,11 @@ pub struct EnterShareScreen {
     touches: Vec<KeyTouch>,
     keyboard_rect: Rectangle,
     input_display_rect: Rectangle,
+    share_index: u16,
 }
 
 impl EnterShareScreen {
-    pub fn new(area: Size) -> Self {
+    pub fn new(area: Size, share_index: u16) -> Self {
         let preview_height = 60;
         let keyboard_rect = Rectangle::new(
             Point::new(0, preview_height),
@@ -33,6 +34,7 @@ impl EnterShareScreen {
             touches: vec![],
             keyboard_rect,
             input_display_rect,
+            share_index,
         }
     }
 
@@ -94,10 +96,10 @@ impl EnterShareScreen {
         self.backup_input_preview.is_finished()
     }
 
-    pub fn try_create_share(&self, share_index: u16) -> Result<SecretShare, String> {
+    pub fn try_create_share(&self) -> Result<SecretShare, String> {
         assert!(self.is_finished(), "must be finished to take share");
         let characters = self.backup_input_preview.get_input();
-        let backup_string = format!("frost[{}]1{}", share_index, characters.to_lowercase());
+        let backup_string = format!("frost[{}]1{}", self.share_index, characters.to_lowercase());
 
         SecretShare::from_bech32_backup(&backup_string).map_err(|_e| backup_string)
     }
@@ -106,8 +108,8 @@ impl EnterShareScreen {
         if !self.is_finished() {
             return false;
         }
-        self.try_create_share(42 /* XXX: doesn't matter to check */)
-            .is_ok()
+
+        self.try_create_share().is_ok()
     }
 
     pub fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32) {
