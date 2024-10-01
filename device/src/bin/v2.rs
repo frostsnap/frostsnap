@@ -47,9 +47,8 @@ use frostsnap_device::{
         BusyTask, EnteringBackupStage, FirmwareUpgradeStatus, Prompt, SignPrompt, UiEvent,
         UserInteraction, WaitingFor, WaitingResponse, Workflow,
     },
-    DownstreamConnectionState, UpstreamConnection,
+    DownstreamConnectionState, Duration, Instant, UpstreamConnection,
 };
-use fugit::{Duration, Instant};
 use micromath::F32Ext;
 use mipidsi::{error::Error, models::ST7789, options::ColorInversion};
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
@@ -244,7 +243,7 @@ impl embedded_hal::digital::ErrorType for NoCs {
 pub struct FrostyUi<'t, T, DT, I2C, PINT, RST> {
     display: graphics::Graphics<DT>,
     capsense: CST816S<I2C, PINT, RST>,
-    last_touch: Option<(Point, Instant<u64, 1, 1_000_000>)>,
+    last_touch: Option<(Point, Instant)>,
     downstream_connection_state: DownstreamConnectionState,
     upstream_connection_state: Option<UpstreamConnection>,
     workflow: Workflow,
@@ -256,8 +255,8 @@ pub struct FrostyUi<'t, T, DT, I2C, PINT, RST> {
 
 struct AnimationState<'t, T> {
     timer: &'t Timer<T, Blocking>,
-    start: Option<Instant<u64, 1, 1_000_000>>,
-    bar_duration: Duration<u64, 1, 1_000_000>,
+    start: Option<Instant>,
+    bar_duration: Duration,
     finished: bool,
 }
 
@@ -265,7 +264,7 @@ impl<'t, T> AnimationState<'t, T>
 where
     T: timer::timg::Instance,
 {
-    pub fn new(timer: &'t Timer<T, Blocking>, bar_duration: Duration<u64, 1, 1_000_000>) -> Self {
+    pub fn new(timer: &'t Timer<T, Blocking>, bar_duration: crate::Duration) -> Self {
         Self {
             timer,
             bar_duration,
@@ -514,6 +513,7 @@ where
         {
             return;
         }
+
         self.workflow = workflow;
         self.changes = true;
     }
@@ -586,7 +586,6 @@ where
                                 }
                             };
                             event = Some(ui_event);
-                            self.confirm_state.reset();
                         }
                     }
                 }

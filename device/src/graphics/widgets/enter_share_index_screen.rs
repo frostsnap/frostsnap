@@ -3,7 +3,6 @@ use alloc::vec::Vec;
 use embedded_graphics::{
     geometry::AnchorPoint, pixelcolor::Rgb565, prelude::*, primitives::Rectangle,
 };
-use fugit::Instant;
 
 #[derive(Debug)]
 pub struct EnterShareIndexScreen {
@@ -46,7 +45,7 @@ impl EnterShareIndexScreen {
     pub fn draw(
         &mut self,
         target: &mut impl DrawTarget<Color = Rgb565>,
-        current_time: Instant<u64, 1, 1_000_000>,
+        current_time: crate::Instant,
     ) {
         let keyboard_size = self.numeric_keyboard.size();
         let mut input_size = target.bounding_box().size;
@@ -68,7 +67,7 @@ impl EnterShareIndexScreen {
     pub fn handle_touch(
         &mut self,
         point: Point,
-        current_time: Instant<u64, 1, 1_000_000>,
+        current_time: crate::Instant,
         lift_up: bool,
     ) -> Option<u16> {
         if lift_up {

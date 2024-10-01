@@ -4,7 +4,6 @@ use super::{Bech32InputPreview, Bech32Keyboard, KeyTouch};
 use alloc::{string::String, vec::Vec};
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
 use frostsnap_core::schnorr_fun::frost::SecretShare;
-use fugit::Instant;
 
 #[derive(Debug)]
 pub struct EnterShareScreen {
@@ -40,7 +39,7 @@ impl EnterShareScreen {
     pub fn draw<D: DrawTarget<Color = Rgb565>>(
         &mut self,
         target: &mut D,
-        current_time: Instant<u64, 1, 1_000_000>,
+        current_time: crate::Instant,
     ) {
         self.bech32_keyboard
             .draw(&mut target.cropped(&self.keyboard_rect));
@@ -53,12 +52,7 @@ impl EnterShareScreen {
         });
     }
 
-    pub fn handle_touch(
-        &mut self,
-        point: Point,
-        current_time: Instant<u64, 1, 1_000_000>,
-        lift_up: bool,
-    ) {
+    pub fn handle_touch(&mut self, point: Point, current_time: crate::Instant, lift_up: bool) {
         if lift_up {
             if let Some(active_touch) = self.touches.last_mut() {
                 if let Some(key) = active_touch.let_go(current_time) {

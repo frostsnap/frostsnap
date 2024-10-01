@@ -11,7 +11,6 @@ use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::PrimitiveStyle;
 use embedded_graphics::text::{Alignment, Baseline, Text, TextStyleBuilder};
 use embedded_graphics::{image::GetPixel, pixelcolor::Rgb565, primitives::Rectangle};
-use fugit::Instant;
 use micromath::F32Ext;
 use u8g2_fonts::U8g2TextStyle;
 
@@ -97,7 +96,7 @@ impl Bech32InputPreview {
     pub fn draw<D: DrawTarget<Color = Rgb565>>(
         &mut self,
         target: &mut D,
-        current_time: Instant<u64, 1, 1_000_000>,
+        current_time: crate::Instant,
     ) {
         if !self.init_draw {
             let _ = target.clear(COLORS.background);
@@ -157,7 +156,7 @@ pub struct Bech32Framebuf {
     framebuffer: Box<Fb>,
     characters: String,
     current_position: u32,
-    current_time: Option<Instant<u64, 1, 1_000_000>>,
+    current_time: Option<crate::Instant>,
     target_position: u32,
     color: Rgb565,
     redraw: bool,
@@ -196,7 +195,7 @@ impl Bech32Framebuf {
     pub fn draw(
         &mut self,
         target: &mut impl DrawTarget<Color = Rgb565>,
-        current_time: Instant<u64, 1, 1_000_000>,
+        current_time: crate::Instant,
     ) {
         let last_draw_time = self.current_time.get_or_insert(current_time);
         if self.current_position == self.target_position && !self.redraw {

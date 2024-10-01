@@ -3,13 +3,13 @@ use embedded_graphics::{
     prelude::*,
     primitives::{PrimitiveStyleBuilder, Rectangle, StrokeAlignment},
 };
-use fugit::{Duration, Instant};
+use fugit::Duration;
 
 #[derive(Debug)]
 pub struct KeyTouch {
     pub key: char,
     rect: Rectangle,
-    let_go: Option<Instant<u64, 1, 1_000_000>>,
+    let_go: Option<crate::Instant>,
     last_draw: Option<u8>,
     finished: bool,
     cancel: bool,
@@ -30,7 +30,7 @@ impl KeyTouch {
             cancel: false,
         }
     }
-    pub fn let_go(&mut self, current_time: Instant<u64, 1, 1_000_000>) -> Option<char> {
+    pub fn let_go(&mut self, current_time: crate::Instant) -> Option<char> {
         if self.cancel || self.let_go.is_some() {
             return None;
         }
@@ -50,7 +50,7 @@ impl KeyTouch {
     pub fn draw<D: DrawTarget<Color = Rgb565>>(
         &mut self,
         target: &mut D,
-        current_time: Instant<u64, 1, 1_000_000>,
+        current_time: crate::Instant,
     ) {
         if self.finished {
             return;
