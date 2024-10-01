@@ -309,7 +309,7 @@ where
                                                     frostsnap_comms::NameCommand::Finish(
                                                         new_name,
                                                     ) => {
-                                                        ui.set_workflow(ui::Workflow::UserPrompt(
+                                                        ui.set_workflow(ui::Workflow::prompt(
                                                             ui::Prompt::NewName {
                                                                 old_name: name.clone(),
                                                                 new_name: new_name.clone(),
@@ -522,14 +522,14 @@ where
                                 session_hash,
                                 key_name,
                             } => {
-                                ui.set_workflow(ui::Workflow::UserPrompt(ui::Prompt::KeyGen {
+                                ui.set_workflow(ui::Workflow::prompt(ui::Prompt::KeyGen {
                                     key_id,
                                     session_hash,
                                     key_name,
                                 }));
                             }
                             DeviceToUserMessage::SignatureRequest { sign_task, .. } => {
-                                ui.set_workflow(ui::Workflow::UserPrompt(ui::Prompt::Signing(
+                                ui.set_workflow(ui::Workflow::prompt(ui::Prompt::Signing(
                                     match sign_task.into_inner() {
                                         SignTask::Plain { message } => {
                                             ui::SignPrompt::Plain(message)
@@ -563,7 +563,7 @@ where
                                     .get(&key_id)
                                     .cloned()
                                     .unwrap_or(key_id.to_string());
-                                ui.set_workflow(ui::Workflow::UserPrompt(
+                                ui.set_workflow(ui::Workflow::prompt(
                                     ui::Prompt::DisplayBackupRequest((key_name.clone(), key_id)),
                                 ))
                             }
@@ -579,7 +579,7 @@ where
                                 ));
                             }
                             DeviceToUserMessage::EnteredBackup(share_backup) => {
-                                ui.set_workflow(ui::Workflow::UserPrompt(
+                                ui.set_workflow(ui::Workflow::prompt(
                                     ui::Prompt::ConfirmLoadBackup(share_backup),
                                 ));
                             }

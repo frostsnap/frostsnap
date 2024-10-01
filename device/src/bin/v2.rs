@@ -40,6 +40,7 @@ use frostsnap_device::{
     esp32_run,
     graphics::{
         self,
+        animation::AnimationProgress,
         widgets::{EnterShareIndexScreen, EnterShareScreen},
     },
     io::SerialInterface,
@@ -47,7 +48,7 @@ use frostsnap_device::{
         BusyTask, EnteringBackupStage, FirmwareUpgradeStatus, Prompt, SignPrompt, UiEvent,
         UserInteraction, WaitingFor, WaitingResponse, Workflow,
     },
-    DownstreamConnectionState, Duration, Instant, UpstreamConnection,
+    DownstreamConnectionState, Instant, UpstreamConnection,
 };
 use micromath::F32Ext;
 use mipidsi::{error::Error, models::ST7789, options::ColorInversion};
@@ -206,7 +207,6 @@ fn main() -> ! {
         workflow: Default::default(),
         device_name: Default::default(),
         changes: false,
-        confirm_state: AnimationState::new(&timer1, 600.millis()),
         last_touch: None,
         timer: &timer1,
     };
@@ -249,64 +249,7 @@ pub struct FrostyUi<'t, T, DT, I2C, PINT, RST> {
     workflow: Workflow,
     device_name: Option<String>,
     changes: bool,
-    confirm_state: AnimationState<'t, T>,
     timer: &'t Timer<T, Blocking>,
-}
-
-struct AnimationState<'t, T> {
-    timer: &'t Timer<T, Blocking>,
-    start: Option<Instant>,
-    bar_duration: Duration,
-    finished: bool,
-}
-
-impl<'t, T> AnimationState<'t, T>
-where
-    T: timer::timg::Instance,
-{
-    pub fn new(timer: &'t Timer<T, Blocking>, bar_duration: crate::Duration) -> Self {
-        Self {
-            timer,
-            bar_duration,
-            start: None,
-            finished: false,
-        }
-    }
-
-    pub fn reset(&mut self) {
-        self.start = None;
-        self.finished = false;
-    }
-
-    pub fn poll(&mut self) -> AnimationProgress {
-        if self.finished {
-            return AnimationProgress::Done;
-        }
-        let now = self.timer.now();
-        match self.start {
-            Some(start) => {
-                let duration = now.checked_duration_since(start).unwrap();
-                if duration < self.bar_duration {
-                    AnimationProgress::Progress(
-                        duration.to_millis() as f32 / self.bar_duration.to_millis() as f32,
-                    )
-                } else {
-                    self.finished = true;
-                    AnimationProgress::Done
-                }
-            }
-            None => {
-                self.start = Some(now);
-                self.poll()
-            }
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum AnimationProgress {
-    Progress(f32),
-    Done,
 }
 
 impl<'t, T, DT, I2C, PINT, RST, CommE, PinE> FrostyUi<'t, T, DT, I2C, PINT, RST>
@@ -362,7 +305,7 @@ where
                     }
                 },
             },
-            Workflow::UserPrompt(prompt) => {
+            Workflow::UserPrompt { prompt, animation } => {
                 match prompt {
                     Prompt::Signing(task) => match task {
                         SignPrompt::Bitcoin {
@@ -420,6 +363,9 @@ where
                     Prompt::ConfirmLoadBackup(share_backup) => self
                         .display
                         .show_backup(share_backup.to_bech32_backup(), false),
+                }
+                if let Some(completion) = animation.completion() {
+                    self.display.confirm_bar(completion);
                 }
                 self.display.button();
             }
@@ -509,7 +455,7 @@ where
 
     fn set_workflow(&mut self, workflow: Workflow) {
         if matches!(self.workflow, Workflow::Debug(_))
-            && !matches!(workflow, Workflow::Debug(_) | Workflow::UserPrompt(_))
+            && !matches!(workflow, Workflow::Debug(_) | Workflow::UserPrompt { .. })
         {
             return;
         }
@@ -539,12 +485,16 @@ where
 
                 (Some((corrected_point, touch.gesture, lift_up)), last_touch)
             }
-            // we can still make progress even if there's not a touch right now
-            None => (None, self.last_touch),
+            // XXX: We're not interested in last_touch unless there's been a touch because
+            // last_touch might be *stuck* because We might miss the "lift_up" event due to screen
+            // rendering. So we only make progress on confirm if there is actually a touch right now
+            // and we only use last_touch for dragging where these stuck last_touchs don't do any
+            // noticible damage.
+            None => (None, None),
         };
 
         match self.workflow.borrow_mut() {
-            Workflow::UserPrompt(prompt) => {
+            Workflow::UserPrompt { prompt, animation } => {
                 let lift_up = if let Some((_, _, lift_up)) = current_touch {
                     lift_up
                 } else {
@@ -552,10 +502,10 @@ where
                 };
 
                 if lift_up {
-                    self.confirm_state.reset();
+                    animation.reset();
                     self.changes = true;
-                } else if current_touch.is_some() || last_touch.is_some() {
-                    match self.confirm_state.poll() {
+                } else if current_touch.is_some() {
+                    match animation.poll(now) {
                         AnimationProgress::Progress(progress) => {
                             self.display.confirm_bar(progress);
                         }

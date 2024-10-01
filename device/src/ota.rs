@@ -326,12 +326,10 @@ impl FirmwareUpgradeMode {
                         *sent_prompt = true;
                         (
                             None,
-                            Some(ui::Workflow::UserPrompt(
-                                ui::Prompt::ConfirmFirmwareUpgrade {
-                                    firmware_digest: *expected_digest,
-                                    size: *size,
-                                },
-                            )),
+                            Some(ui::Workflow::prompt(ui::Prompt::ConfirmFirmwareUpgrade {
+                                firmware_digest: *expected_digest,
+                                size: *size,
+                            })),
                         )
                     }
                     State::Erase { seq } => {

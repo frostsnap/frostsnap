@@ -27,6 +27,7 @@ use embedded_text::{
 use mipidsi::error::Error;
 use palette::COLORS;
 use u8g2_fonts::{fonts, U8g2TextStyle};
+pub mod animation;
 pub mod widgets;
 
 pub const PADDING_TOP: u32 = 40;
