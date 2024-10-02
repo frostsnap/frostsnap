@@ -1,62 +1,33 @@
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
 use flutter_rust_bridge::StreamSink;
-use tracing::{Event, Level, Subscriber};
-// use tracing_subscriber::field::VisitFmt;
-use tracing_subscriber::fmt::format::{PrettyVisitor, Writer};
-use tracing_subscriber::layer::Context;
+use std::io;
 use tracing_subscriber::registry::LookupSpan;
-use tracing_subscriber::Layer;
 
-use crate::api::LogEntry;
-
-pub struct StreamLogsToDart {
-    pub sink: StreamSink<crate::api::LogEntry>,
+#[derive(Clone)]
+pub struct DartLogWriter {
+    sink: StreamSink<String>,
 }
 
-impl<S: Subscriber> Layer<S> for StreamLogsToDart
+impl io::Write for DartLogWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let string = String::from_utf8_lossy(buf);
+        let newline_stripped = string.trim_end_matches('\n');
+        self.sink.add(newline_stripped.to_string());
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+pub fn dart_logger<S>(sink: StreamSink<String>) -> impl tracing_subscriber::layer::Layer<S>
 where
-    S: Subscriber + for<'span> LookupSpan<'span>,
+    S: tracing::Subscriber + for<'a> LookupSpan<'a>,
 {
-    fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
-        let metadata = event.metadata();
-
-        let mut text = String::new();
-        {
-            let writer = Writer::new(&mut text);
-            let mut visitor = PrettyVisitor::new(writer, true);
-            // write!(visitor.writer(), "{}: ", module_path).unwrap();
-            event.record(&mut visitor);
-
-            /* File and line trace */
-
-            // write!(visitor.writer(), "\n    at {}:{}", file, line).unwrap();
-        }
-
-        /* Extended scope trace */
-
-        // Stream the formatted log message to Dart.
-        self.log(*metadata.level(), &text);
-    }
-}
-
-impl StreamLogsToDart {
-    pub fn log(&self, level: Level, content: &str) {
-        let entry = {
-            let time_millis = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_else(|_| Duration::from_secs(0))
-                .as_millis() as i64;
-
-            let level = level.to_string();
-
-            LogEntry {
-                time_millis,
-                level,
-                content: content.to_owned(),
-            }
-        };
-
-        self.sink.add(entry);
-    }
+    tracing_subscriber::fmt::layer()
+        .with_ansi(false)
+        .with_file(false)
+        .with_line_number(false)
+        .with_target(false)
+        .with_writer(move || io::LineWriter::new(DartLogWriter { sink: sink.clone() }))
 }

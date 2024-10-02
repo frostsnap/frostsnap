@@ -6,7 +6,7 @@ import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/theme.dart';
 
 class LogScreen extends StatefulWidget {
-  final Stream<LogEntry> logStream;
+  final Stream<String> logStream;
   const LogScreen({super.key, required this.logStream});
 
   @override
@@ -14,8 +14,8 @@ class LogScreen extends StatefulWidget {
 }
 
 class _LogScreenState extends State<LogScreen> {
-  List<LogEntry> _logs = [];
-  late StreamSubscription<LogEntry> _subscription;
+  List<String> _logs = [];
+  late StreamSubscription<String> _subscription;
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -46,25 +46,29 @@ class _LogScreenState extends State<LogScreen> {
   @override
   Widget build(BuildContext context) {
     final List<TextSpan> logSpans = _logs.map((log) {
-      return TextSpan(
-        children: [
-          TextSpan(
-            text: '[${log.level}] ',
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: _getLevelColor(log.level),
+      try {
+        if (!log.startsWith("20")) {
+          throw Exception("not this millenium or not a date");
+        }
+        final sections = log.split(RegExp(r' +'));
+        return TextSpan(
+          children: [
+            TextSpan(
+              text: sections.sublist(0, 2).join(" "),
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: _getLevelColor(sections[1]),
+              ),
             ),
-          ),
-          TextSpan(
-            text: log.content,
-            style: TextStyle(
-              fontFamily: 'Courier',
-              color: textColor,
+            TextSpan(
+              text: ' ${sections.sublist(2).join(" ")}',
             ),
-          ),
-          TextSpan(text: '\n'),
-        ],
-      );
+            TextSpan(text: '\n'),
+          ],
+        );
+      } catch (e) {
+        return TextSpan(text: log);
+      }
     }).toList();
 
     return Scaffold(
@@ -105,9 +109,8 @@ class _LogScreenState extends State<LogScreen> {
                   IconButton(
                     icon: const Icon(Icons.content_copy),
                     onPressed: () {
-                      final String combinedLogs = _logs
-                          .map((log) => '[${log.level}] ${log.content}')
-                          .join('\n');
+                      final String combinedLogs =
+                          _logs.map((log) => '$log').join('\n');
                       Clipboard.setData(ClipboardData(text: combinedLogs));
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(

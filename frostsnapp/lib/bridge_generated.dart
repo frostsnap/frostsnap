@@ -73,13 +73,12 @@ class NativeImpl implements Native {
         argNames: ["level", "message"],
       );
 
-  Stream<LogEntry> turnStderrLoggingOn(
-      {required LogLevel level, dynamic hint}) {
+  Stream<String> turnStderrLoggingOn({required LogLevel level, dynamic hint}) {
     var arg0 = api2wire_log_level(level);
     return _platform.executeStream(FlutterRustBridgeTask(
       callFfi: (port_) =>
           _platform.inner.wire_turn_stderr_logging_on(port_, arg0),
-      parseSuccessData: _wire2api_log_entry,
+      parseSuccessData: _wire2api_String,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kTurnStderrLoggingOnConstMeta,
       argValues: [level],
@@ -93,13 +92,12 @@ class NativeImpl implements Native {
         argNames: ["level"],
       );
 
-  Stream<LogEntry> turnLogcatLoggingOn(
-      {required LogLevel level, dynamic hint}) {
+  Stream<String> turnLogcatLoggingOn({required LogLevel level, dynamic hint}) {
     var arg0 = api2wire_log_level(level);
     return _platform.executeStream(FlutterRustBridgeTask(
       callFfi: (port_) =>
           _platform.inner.wire_turn_logcat_logging_on(port_, arg0),
-      parseSuccessData: _wire2api_log_entry,
+      parseSuccessData: _wire2api_String,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kTurnLogcatLoggingOnConstMeta,
       argValues: [level],
@@ -2084,17 +2082,6 @@ class NativeImpl implements Native {
 
   List<Transaction> _wire2api_list_transaction(dynamic raw) {
     return (raw as List<dynamic>).map(_wire2api_transaction).toList();
-  }
-
-  LogEntry _wire2api_log_entry(dynamic raw) {
-    final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
-    return LogEntry(
-      timeMillis: _wire2api_i64(arr[0]),
-      level: _wire2api_String(arr[1]),
-      content: _wire2api_String(arr[2]),
-    );
   }
 
   String? _wire2api_opt_String(dynamic raw) {

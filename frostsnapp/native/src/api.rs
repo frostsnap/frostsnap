@@ -2,7 +2,6 @@ use crate::device_list::DeviceList;
 pub use crate::ffi_serial_port::{
     PortBytesToReadSender, PortOpenSender, PortReadSender, PortWriteSender,
 };
-use crate::logger::StreamLogsToDart;
 pub use crate::FfiCoordinator;
 pub use crate::{FfiQrEncoder, FfiQrReader, QrDecoderStatus};
 use anyhow::{anyhow, Context, Result};
@@ -253,17 +252,11 @@ impl PortBytesToRead {
     }
 }
 
-pub struct LogEntry {
-    pub time_millis: i64,
-    pub level: String,
-    pub content: String,
-}
-
 pub fn log(level: LogLevel, message: String) -> SyncReturn<()> {
     // dunno why I can't use runtime log levels here but event! hates it
     match level {
-        LogLevel::Debug => event!(Level::DEBUG, dart = true, "{}", message),
-        LogLevel::Info => event!(Level::INFO, dart = true, "{}", message),
+        LogLevel::Debug => event!(Level::DEBUG, "[dart] {}", message),
+        LogLevel::Info => event!(Level::INFO, "[dart] {}", message),
     }
 
     SyncReturn(())
@@ -285,14 +278,14 @@ impl From<LogLevel> for tracing::Level {
 
 pub fn turn_stderr_logging_on(
     level: LogLevel,
-    log_stream: StreamSink<LogEntry>,
+    log_stream: StreamSink<String>,
 ) -> anyhow::Result<()> {
     let subscriber = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::from(level))
         .without_time()
         .pretty()
         .finish()
-        .with(StreamLogsToDart { sink: log_stream });
+        .with(crate::logger::dart_logger(log_stream));
 
     let _ = tracing::subscriber::set_global_default(subscriber);
     event!(Level::INFO, "logging to stderr and Dart logger");
@@ -303,7 +296,7 @@ pub fn turn_stderr_logging_on(
 #[allow(unused_variables)]
 pub fn turn_logcat_logging_on(
     level: LogLevel,
-    log_stream: StreamSink<LogEntry>,
+    log_stream: StreamSink<String>,
 ) -> anyhow::Result<()> {
     #[cfg(not(target_os = "android"))]
     panic!("Do not call turn_logcat_logging_on outside of android");
@@ -323,7 +316,7 @@ pub fn turn_logcat_logging_on(
             use tracing_subscriber::layer::SubscriberExt;
             subscriber
                 .with(tracing_android::layer("rust-frostsnapp").unwrap())
-                .with(StreamLogsToDart { sink: log_stream })
+                .with(crate::logger::dart_logger(log_stream))
         };
 
         tracing::subscriber::set_global_default(subscriber)?;

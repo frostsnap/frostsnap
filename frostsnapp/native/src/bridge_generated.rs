@@ -85,7 +85,7 @@ fn wire_turn_stderr_logging_on_impl(
         move || {
             let api_level = level.wire2api();
             move |task_callback| {
-                turn_stderr_logging_on(api_level, task_callback.stream_sink::<_, LogEntry>())
+                turn_stderr_logging_on(api_level, task_callback.stream_sink::<_, String>())
             }
         },
     )
@@ -103,7 +103,7 @@ fn wire_turn_logcat_logging_on_impl(
         move || {
             let api_level = level.wire2api();
             move |task_callback| {
-                turn_logcat_logging_on(api_level, task_callback.stream_sink::<_, LogEntry>())
+                turn_logcat_logging_on(api_level, task_callback.stream_sink::<_, String>())
             }
         },
     )
@@ -1755,23 +1755,6 @@ impl support::IntoDart for KeyState {
 }
 impl support::IntoDartExceptPrimitive for KeyState {}
 impl rust2dart::IntoIntoDart<KeyState> for KeyState {
-    fn into_into_dart(self) -> Self {
-        self
-    }
-}
-
-impl support::IntoDart for LogEntry {
-    fn into_dart(self) -> support::DartAbi {
-        vec![
-            self.time_millis.into_into_dart().into_dart(),
-            self.level.into_into_dart().into_dart(),
-            self.content.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl support::IntoDartExceptPrimitive for LogEntry {}
-impl rust2dart::IntoIntoDart<LogEntry> for LogEntry {
     fn into_into_dart(self) -> Self {
         self
     }
