@@ -35,14 +35,14 @@ class _KeyNamePageState extends State<KeyNamePage> {
   Widget build(BuildContext context) {
     final _nextPage = _keyNameController.text.isNotEmpty
         ? () async {
-            final keyId = await Navigator.push(
+            final appkey = await Navigator.push(
               context,
               createRoute(DevicesPage(
                 keyName: _keyNameController.text,
               )),
             );
-            if (context.mounted && keyId != null) {
-              Navigator.pop(context, keyId);
+            if (context.mounted && appkey != null) {
+              Navigator.pop(context, appkey);
             }
           }
         : null;
@@ -181,15 +181,15 @@ class DevicesPage extends StatelessWidget {
                         child: ElevatedButton.icon(
                           onPressed: allDevicesReady
                               ? () async {
-                                  final keyId = await Navigator.push(
+                                  final appkey = await Navigator.push(
                                     context,
                                     createRoute(ThresholdPage(
                                       keyName: keyName,
                                       selectedDevices: devices,
                                     )),
                                   );
-                                  if (context.mounted && keyId != null) {
-                                    Navigator.pop(context, keyId);
+                                  if (context.mounted && appkey != null) {
+                                    Navigator.pop(context, appkey);
                                   }
                                 }
                               : null,
@@ -291,21 +291,26 @@ class _ThresholdPageState extends State<ThresholdPage> {
                               .toList(),
                           keyName: widget.keyName)
                       .toBehaviorSubject();
-                  final keyId = await showCheckKeyGenDialog(
+                  final accessStructureRef = await showCheckKeyGenDialog(
                     context: context,
                     stream: stream,
                   );
-                  if (keyId != null && context.mounted) {
-                    await showBackupDialogue(context: context, keyId: keyId);
-                  }
-
-                  if (keyId == null && context.mounted) {
+                  if (accessStructureRef != null) {
+                    final as =
+                        coord.getAccessStructure(asRef: accessStructureRef)!;
+                    if (context.mounted) {
+                      await showBackupDialogue(as: as, context: context);
+                      if (context.mounted) {
+                        Navigator.pop(context, accessStructureRef);
+                      }
+                    }
+                  } else if (accessStructureRef == null) {
                     coord.cancelProtocol();
-                    Navigator.popUntil(context, (route) {
-                      return route.settings.name == "DevicesPage";
-                    });
-                  } else if (context.mounted) {
-                    Navigator.pop(context, keyId);
+                    if (context.mounted) {
+                      Navigator.popUntil(context, (route) {
+                        return route.settings.name == "DevicesPage";
+                      });
+                    }
                   }
                 },
                 icon: Icon(Icons.check),
@@ -341,15 +346,14 @@ Route createRoute(Widget page) {
   );
 }
 
-Future<KeyId?> showCheckKeyGenDialog({
+Future<AccessStructureRef?> showCheckKeyGenDialog({
   required Stream<KeyGenState> stream,
   required BuildContext context,
 }) async {
-  final result = await showDeviceActionDialog<KeyId>(
+  final accessStructureRef = await showDeviceActionDialog<AccessStructureRef>(
       context: context,
       complete: stream
-          .firstWhere(
-              (state) => state.aborted != null || state.finished != null)
+          .firstWhere((state) => state.aborted != null)
           .then((state) => state.finished),
       builder: (context) {
         return StreamBuilder(
@@ -397,8 +401,8 @@ Future<KeyId?> showCheckKeyGenDialog({
                 Text(
                   state.sessionHash == null
                       ? ""
-                      : toSpacedHex(
-                          Uint8List.fromList(state.sessionHash!.sublist(0, 4))),
+                      : toSpacedHex(Uint8List.fromList(
+                          state.sessionHash!.field0.sublist(0, 4))),
                   style: TextStyle(
                     fontFamily: 'Courier',
                     fontWeight: FontWeight.bold,
@@ -459,7 +463,12 @@ Future<KeyId?> showCheckKeyGenDialog({
                           ElevatedButton(
                               onPressed: finished
                                   ? () async {
-                                      await coord.finalKeygenAck();
+                                      final accessStructureRef =
+                                          await coord.finalKeygenAck();
+                                      if (context.mounted) {
+                                        Navigator.pop(
+                                            context, accessStructureRef);
+                                      }
                                     }
                                   : null,
                               child: Text("Confirm"))
@@ -468,17 +477,20 @@ Future<KeyId?> showCheckKeyGenDialog({
             });
       });
 
-  if (result == null) {
+  if (accessStructureRef == null) {
     coord.cancelProtocol();
+  } else {
+    final accessStructure =
+        coord.getAccessStructure(asRef: accessStructureRef)!;
+    if (context.mounted) {
+      await showBackupDialogue(as: accessStructure, context: context);
+    }
   }
-  return result;
+  return accessStructureRef;
 }
 
 Future<void> showBackupDialogue(
-    {required KeyId keyId, required BuildContext context}) async {
-  final frostKey = coord.getKey(keyId: keyId)!;
-  final polynomialIdentifier = frostKey.polynomialIdentifier();
-
+    {required AccessStructure as, required BuildContext context}) async {
   return showDialog(
     context: context,
     builder: (context) {
@@ -504,11 +516,11 @@ Future<void> showBackupDialogue(
                       text:
                           "Write down each device's backup for this key onto separate pieces of paper. Each piece of paper should look like this with every ",
                       children: [
-                        TextSpan(
+                        const TextSpan(
                           text: 'X',
                           style: TextStyle(fontWeight: FontWeight.bold),
                         ),
-                        TextSpan(
+                        const TextSpan(
                           text: ' replaced with the character shown on screen.',
                         )
                       ])),
@@ -544,7 +556,7 @@ Future<void> showBackupDialogue(
                   ),
                   Center(
                       child: Text(
-                    "Identifier: ${toSpacedHex(polynomialIdentifier)}",
+                    "Identifier: ${toSpacedHex(Uint8List.fromList(as.id().field0.sublist(0, 4)))}",
                     style: TextStyle(fontFamily: 'Courier', fontSize: 18),
                   )),
                   Divider(),
@@ -556,7 +568,7 @@ Future<void> showBackupDialogue(
                       "This identifier is useful for knowing that these share backups belong to the same key and are compatibile."),
                   SizedBox(height: 24),
                   Text(
-                      "Any ${frostKey.threshold()} of these backups will provide complete control over this key."),
+                      "Any ${as.threshold()} of these backups will provide complete control over this key."),
                   SizedBox(height: 8),
                   Text(
                       "You should store these backups securely in separate locations."),

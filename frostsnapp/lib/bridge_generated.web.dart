@@ -67,14 +67,20 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
-  Object api2wire_FrostsnapCoreCoordinatorCoordinatorFrostKey(
-      FrostsnapCoreCoordinatorCoordinatorFrostKey raw) {
+  Object api2wire_FrostsnapCoreCoordinatorCoordAccessStructure(
+      FrostsnapCoreCoordinatorCoordAccessStructure raw) {
     return raw.shareOrMove();
   }
 
   @protected
-  Object api2wire_MutexBTreeMapKeyIdStreamSinkTxState(
-      MutexBTreeMapKeyIdStreamSinkTxState raw) {
+  Object api2wire_FrostsnapCoreCoordinatorCoordFrostKey(
+      FrostsnapCoreCoordinatorCoordFrostKey raw) {
+    return raw.shareOrMove();
+  }
+
+  @protected
+  Object api2wire_MutexBTreeMapAppkeyStreamSinkTxState(
+      MutexBTreeMapAppkeyStreamSinkTxState raw) {
     return raw.shareOrMove();
   }
 
@@ -119,8 +125,53 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
+  List<dynamic> api2wire_access_structure(AccessStructure raw) {
+    return [api2wire_FrostsnapCoreCoordinatorCoordAccessStructure(raw.field0)];
+  }
+
+  @protected
+  List<dynamic> api2wire_access_structure_id(AccessStructureId raw) {
+    return [api2wire_u8_array_32(raw.field0)];
+  }
+
+  @protected
+  List<dynamic> api2wire_access_structure_ref(AccessStructureRef raw) {
+    return [
+      api2wire_appkey(raw.appkey),
+      api2wire_access_structure_id(raw.accessStructureId)
+    ];
+  }
+
+  @protected
+  List<dynamic> api2wire_appkey(Appkey raw) {
+    return [api2wire_u8_array_65(raw.field0)];
+  }
+
+  @protected
   List<dynamic> api2wire_bitcoin_context(BitcoinContext raw) {
     return [api2wire_BitcoinNetwork(raw.network)];
+  }
+
+  @protected
+  List<dynamic> api2wire_box_autoadd_access_structure(AccessStructure raw) {
+    return api2wire_access_structure(raw);
+  }
+
+  @protected
+  List<dynamic> api2wire_box_autoadd_access_structure_id(
+      AccessStructureId raw) {
+    return api2wire_access_structure_id(raw);
+  }
+
+  @protected
+  List<dynamic> api2wire_box_autoadd_access_structure_ref(
+      AccessStructureRef raw) {
+    return api2wire_access_structure_ref(raw);
+  }
+
+  @protected
+  List<dynamic> api2wire_box_autoadd_appkey(Appkey raw) {
+    return api2wire_appkey(raw);
   }
 
   @protected
@@ -161,11 +212,6 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   @protected
   List<dynamic> api2wire_box_autoadd_frost_key(FrostKey raw) {
     return api2wire_frost_key(raw);
-  }
-
-  @protected
-  List<dynamic> api2wire_box_autoadd_key_id(KeyId raw) {
-    return api2wire_key_id(raw);
   }
 
   @protected
@@ -268,17 +314,12 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
 
   @protected
   List<dynamic> api2wire_frost_key(FrostKey raw) {
-    return [api2wire_FrostsnapCoreCoordinatorCoordinatorFrostKey(raw.field0)];
+    return [api2wire_FrostsnapCoreCoordinatorCoordFrostKey(raw.field0)];
   }
 
   @protected
   Object api2wire_i64(int raw) {
     return castNativeBigInt(raw);
-  }
-
-  @protected
-  List<dynamic> api2wire_key_id(KeyId raw) {
-    return [api2wire_u8_array_33(raw.field0)];
   }
 
   @protected
@@ -391,12 +432,22 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   }
 
   @protected
+  Uint8List api2wire_u8_array_32(U8Array32 raw) {
+    return Uint8List.fromList(raw);
+  }
+
+  @protected
   Uint8List api2wire_u8_array_33(U8Array33 raw) {
     return Uint8List.fromList(raw);
   }
 
   @protected
   Uint8List api2wire_u8_array_64(U8Array64 raw) {
+    return Uint8List.fromList(raw);
+  }
+
+  @protected
+  Uint8List api2wire_u8_array_65(U8Array65 raw) {
     return Uint8List.fromList(raw);
   }
 
@@ -417,7 +468,7 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
   List<dynamic> api2wire_wallet(Wallet raw) {
     return [
       api2wire_MutexFrostsnapWallet(raw.inner),
-      api2wire_MutexBTreeMapKeyIdStreamSinkTxState(raw.walletStreams),
+      api2wire_MutexBTreeMapAppkeyStreamSinkTxState(raw.walletStreams),
       api2wire_ChainSync(raw.chainSync)
     ];
   }
@@ -460,18 +511,26 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire>
       get FrostsnapCoreBitcoinTransactionTransactionTemplateFinalizer =>
           _FrostsnapCoreBitcoinTransactionTransactionTemplateFinalizer;
   late final Finalizer<PlatformPointer>
-      _FrostsnapCoreCoordinatorCoordinatorFrostKeyFinalizer =
+      _FrostsnapCoreCoordinatorCoordAccessStructureFinalizer =
       Finalizer<PlatformPointer>(
-          inner.drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey);
+          inner.drop_opaque_FrostsnapCoreCoordinatorCoordAccessStructure);
   Finalizer<PlatformPointer>
-      get FrostsnapCoreCoordinatorCoordinatorFrostKeyFinalizer =>
-          _FrostsnapCoreCoordinatorCoordinatorFrostKeyFinalizer;
+      get FrostsnapCoreCoordinatorCoordAccessStructureFinalizer =>
+          _FrostsnapCoreCoordinatorCoordAccessStructureFinalizer;
   late final Finalizer<PlatformPointer>
-      _MutexBTreeMapKeyIdStreamSinkTxStateFinalizer =
+      _FrostsnapCoreCoordinatorCoordFrostKeyFinalizer =
       Finalizer<PlatformPointer>(
-          inner.drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState);
-  Finalizer<PlatformPointer> get MutexBTreeMapKeyIdStreamSinkTxStateFinalizer =>
-      _MutexBTreeMapKeyIdStreamSinkTxStateFinalizer;
+          inner.drop_opaque_FrostsnapCoreCoordinatorCoordFrostKey);
+  Finalizer<PlatformPointer>
+      get FrostsnapCoreCoordinatorCoordFrostKeyFinalizer =>
+          _FrostsnapCoreCoordinatorCoordFrostKeyFinalizer;
+  late final Finalizer<PlatformPointer>
+      _MutexBTreeMapAppkeyStreamSinkTxStateFinalizer =
+      Finalizer<PlatformPointer>(
+          inner.drop_opaque_MutexBTreeMapAppkeyStreamSinkTxState);
+  Finalizer<PlatformPointer>
+      get MutexBTreeMapAppkeyStreamSinkTxStateFinalizer =>
+          _MutexBTreeMapAppkeyStreamSinkTxStateFinalizer;
   late final Finalizer<PlatformPointer> _MutexFrostsnapWalletFinalizer =
       Finalizer<PlatformPointer>(inner.drop_opaque_MutexFrostsnapWallet);
   Finalizer<PlatformPointer> get MutexFrostsnapWalletFinalizer =>
@@ -530,9 +589,6 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* void */ wire_load_host_handles_serial(
       NativePortType port_, String db_file);
 
-  external dynamic /* void */ wire_echo_key_id(
-      NativePortType port_, List<dynamic> key_id);
-
   external dynamic /* List<dynamic> */ wire_psbt_bytes_to_psbt(
       Uint8List psbt_bytes);
 
@@ -540,6 +596,15 @@ class NativeWasmModule implements WasmModule {
 
   external dynamic /* void */ wire_new_qr_encoder(
       NativePortType port_, Uint8List bytes);
+
+  external dynamic /* void */ wire_echo_appkey(
+      NativePortType port_, List<dynamic> appkey);
+
+  external dynamic /* void */ wire_echo_asid(
+      NativePortType port_, List<dynamic> value);
+
+  external dynamic /* void */ wire_echo_asr(
+      NativePortType port_, List<dynamic> value);
 
   external dynamic /* String */ wire_txid__method__Transaction(
       List<dynamic> that);
@@ -550,19 +615,31 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* bool */
       wire_needs_firmware_upgrade__method__ConnectedDevice(List<dynamic> that);
 
-  external dynamic /* int */ wire_threshold__method__FrostKey(
-      List<dynamic> that);
-
-  external dynamic /* List<dynamic> */ wire_id__method__FrostKey(
+  external dynamic /* List<dynamic> */ wire_appkey__method__FrostKey(
       List<dynamic> that);
 
   external dynamic /* String */ wire_key_name__method__FrostKey(
       List<dynamic> that);
 
-  external dynamic /* List<dynamic> */ wire_devices__method__FrostKey(
+  external dynamic /* List<dynamic> */ wire_access_structures__method__FrostKey(
       List<dynamic> that);
 
-  external dynamic /* Uint8List */ wire_polynomial_identifier__method__FrostKey(
+  external dynamic /* int */ wire_threshold__method__AccessStructure(
+      List<dynamic> that);
+
+  external dynamic /* List<dynamic> */
+      wire_access_structure_ref__method__AccessStructure(List<dynamic> that);
+
+  external dynamic /* List<dynamic> */ wire_devices__method__AccessStructure(
+      List<dynamic> that);
+
+  external dynamic /* List<dynamic> */ wire_id__method__AccessStructure(
+      List<dynamic> that);
+
+  external dynamic /* String */ wire_short_id__method__AccessStructure(
+      List<dynamic> that);
+
+  external dynamic /* List<dynamic> */ wire_appkey__method__AccessStructure(
       List<dynamic> that);
 
   external dynamic /* void */ wire_satisfy__method__PortOpen(
@@ -582,30 +659,30 @@ class NativeWasmModule implements WasmModule {
           List<dynamic> that, List<dynamic> id);
 
   external dynamic /* void */ wire_sub_tx_state__method__Wallet(
-      NativePortType port_, List<dynamic> that, List<dynamic> key_id);
+      NativePortType port_, List<dynamic> that, List<dynamic> appkey);
 
   external dynamic /* List<dynamic> */ wire_tx_state__method__Wallet(
-      List<dynamic> that, List<dynamic> key_id);
+      List<dynamic> that, List<dynamic> appkey);
 
   external dynamic /* void */ wire_sync_txids__method__Wallet(
       NativePortType port_,
       List<dynamic> that,
-      List<dynamic> key_id,
+      List<dynamic> appkey,
       List<String> txids);
 
   external dynamic /* void */ wire_sync__method__Wallet(
-      NativePortType port_, List<dynamic> that, List<dynamic> key_id);
+      NativePortType port_, List<dynamic> that, List<dynamic> appkey);
 
   external dynamic /* void */ wire_next_address__method__Wallet(
-      NativePortType port_, List<dynamic> that, List<dynamic> key_id);
+      NativePortType port_, List<dynamic> that, List<dynamic> appkey);
 
   external dynamic /* List<dynamic> */ wire_addresses_state__method__Wallet(
-      List<dynamic> that, List<dynamic> key_id);
+      List<dynamic> that, List<dynamic> appkey);
 
   external dynamic /* void */ wire_send_to__method__Wallet(
       NativePortType port_,
       List<dynamic> that,
-      List<dynamic> key_id,
+      List<dynamic> appkey,
       String to_address,
       Object value,
       double feerate);
@@ -613,11 +690,11 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* void */ wire_broadcast_tx__method__Wallet(
       NativePortType port_,
       List<dynamic> that,
-      List<dynamic> key_id,
+      List<dynamic> appkey,
       List<dynamic> tx);
 
   external dynamic /* List<dynamic> */ wire_psbt_to_unsigned_tx__method__Wallet(
-      List<dynamic> that, List<dynamic> psbt, List<dynamic> key_id);
+      List<dynamic> that, List<dynamic> psbt, List<dynamic> appkey);
 
   external dynamic /* void */ wire_set_available_ports__method__FfiSerial(
       NativePortType port_, List<dynamic> that, List<dynamic> ports);
@@ -641,7 +718,7 @@ class NativeWasmModule implements WasmModule {
       NativePortType port_,
       List<dynamic> that,
       List<dynamic> id,
-      List<dynamic> key_id);
+      List<dynamic> access_structure_ref);
 
   external dynamic /* List<dynamic> */ wire_key_state__method__Coordinator(
       List<dynamic> that);
@@ -650,26 +727,26 @@ class NativeWasmModule implements WasmModule {
       NativePortType port_, List<dynamic> that);
 
   external dynamic /* List<dynamic>? */ wire_get_key__method__Coordinator(
-      List<dynamic> that, List<dynamic> key_id);
+      List<dynamic> that, List<dynamic> appkey);
 
   external dynamic /* String? */ wire_get_key_name__method__Coordinator(
-      List<dynamic> that, List<dynamic> key_id);
+      List<dynamic> that, List<dynamic> appkey);
 
   external dynamic /* List<dynamic> */
-      wire_keys_for_device__method__Coordinator(
+      wire_access_structures_involving_device__method__Coordinator(
           List<dynamic> that, List<dynamic> device_id);
 
   external dynamic /* void */ wire_start_signing__method__Coordinator(
       NativePortType port_,
       List<dynamic> that,
-      List<dynamic> key_id,
+      List<dynamic> access_structure_ref,
       List<dynamic> devices,
       String message);
 
   external dynamic /* void */ wire_start_signing_tx__method__Coordinator(
       NativePortType port_,
       List<dynamic> that,
-      List<dynamic> key_id,
+      List<dynamic> access_structure_ref,
       List<dynamic> unsigned_tx,
       List<dynamic> devices);
 
@@ -688,11 +765,11 @@ class NativeWasmModule implements WasmModule {
 
   external dynamic /* List<dynamic>? */
       wire_persisted_sign_session_description__method__Coordinator(
-          List<dynamic> that, List<dynamic> key_id);
+          List<dynamic> that, List<dynamic> appkey);
 
   external dynamic /* void */
       wire_try_restore_signing_session__method__Coordinator(
-          NativePortType port_, List<dynamic> that, List<dynamic> key_id);
+          NativePortType port_, List<dynamic> that, List<dynamic> appkey);
 
   external dynamic /* void */ wire_start_firmware_upgrade__method__Coordinator(
       NativePortType port_, List<dynamic> that);
@@ -713,8 +790,12 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* void */ wire_final_keygen_ack__method__Coordinator(
       NativePortType port_, List<dynamic> that);
 
+  external dynamic /* List<dynamic>? */
+      wire_get_access_structure__method__Coordinator(
+          List<dynamic> that, List<dynamic> as_ref);
+
   external dynamic /* String */ wire_descriptor_for_key__method__BitcoinContext(
-      List<dynamic> that, List<dynamic> key_id);
+      List<dynamic> that, List<dynamic> appkey);
 
   external dynamic /* String? */ wire_validate_amount__method__BitcoinContext(
       List<dynamic> that, String address, Object value);
@@ -724,7 +805,7 @@ class NativeWasmModule implements WasmModule {
           List<dynamic> that, String address);
 
   external dynamic /* List<dynamic> */ wire_effect__method__SignedTx(
-      List<dynamic> that, List<dynamic> key_id, Object network);
+      List<dynamic> that, List<dynamic> appkey, Object network);
 
   external dynamic /* void */
       wire_attach_signatures_to_psbt__method__UnsignedTx(NativePortType port_,
@@ -734,7 +815,7 @@ class NativeWasmModule implements WasmModule {
       NativePortType port_, List<dynamic> that, List<dynamic> signatures);
 
   external dynamic /* List<dynamic> */ wire_effect__method__UnsignedTx(
-      List<dynamic> that, List<dynamic> key_id, Object network);
+      List<dynamic> that, List<dynamic> appkey, Object network);
 
   external dynamic /* Uint8List */ wire_to_bytes__method__Psbt(
       List<dynamic> that);
@@ -784,15 +865,21 @@ class NativeWasmModule implements WasmModule {
       share_opaque_FrostsnapCoreBitcoinTransactionTransactionTemplate(ptr);
 
   external dynamic /*  */
-      drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(ptr);
+      drop_opaque_FrostsnapCoreCoordinatorCoordAccessStructure(ptr);
 
   external int /* *const c_void */
-      share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(ptr);
+      share_opaque_FrostsnapCoreCoordinatorCoordAccessStructure(ptr);
 
-  external dynamic /*  */ drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(ptr);
+  external dynamic /*  */ drop_opaque_FrostsnapCoreCoordinatorCoordFrostKey(
+      ptr);
 
   external int /* *const c_void */
-      share_opaque_MutexBTreeMapKeyIdStreamSinkTxState(ptr);
+      share_opaque_FrostsnapCoreCoordinatorCoordFrostKey(ptr);
+
+  external dynamic /*  */ drop_opaque_MutexBTreeMapAppkeyStreamSinkTxState(ptr);
+
+  external int /* *const c_void */
+      share_opaque_MutexBTreeMapAppkeyStreamSinkTxState(ptr);
 
   external dynamic /*  */ drop_opaque_MutexFrostsnapWallet(ptr);
 
@@ -852,9 +939,6 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   void wire_load_host_handles_serial(NativePortType port_, String db_file) =>
       wasmModule.wire_load_host_handles_serial(port_, db_file);
 
-  void wire_echo_key_id(NativePortType port_, List<dynamic> key_id) =>
-      wasmModule.wire_echo_key_id(port_, key_id);
-
   dynamic /* List<dynamic> */ wire_psbt_bytes_to_psbt(Uint8List psbt_bytes) =>
       wasmModule.wire_psbt_bytes_to_psbt(psbt_bytes);
 
@@ -863,6 +947,15 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
 
   void wire_new_qr_encoder(NativePortType port_, Uint8List bytes) =>
       wasmModule.wire_new_qr_encoder(port_, bytes);
+
+  void wire_echo_appkey(NativePortType port_, List<dynamic> appkey) =>
+      wasmModule.wire_echo_appkey(port_, appkey);
+
+  void wire_echo_asid(NativePortType port_, List<dynamic> value) =>
+      wasmModule.wire_echo_asid(port_, value);
+
+  void wire_echo_asr(NativePortType port_, List<dynamic> value) =>
+      wasmModule.wire_echo_asr(port_, value);
 
   dynamic /* String */ wire_txid__method__Transaction(List<dynamic> that) =>
       wasmModule.wire_txid__method__Transaction(that);
@@ -874,22 +967,40 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
           List<dynamic> that) =>
       wasmModule.wire_needs_firmware_upgrade__method__ConnectedDevice(that);
 
-  dynamic /* int */ wire_threshold__method__FrostKey(List<dynamic> that) =>
-      wasmModule.wire_threshold__method__FrostKey(that);
-
-  dynamic /* List<dynamic> */ wire_id__method__FrostKey(List<dynamic> that) =>
-      wasmModule.wire_id__method__FrostKey(that);
+  dynamic /* List<dynamic> */ wire_appkey__method__FrostKey(
+          List<dynamic> that) =>
+      wasmModule.wire_appkey__method__FrostKey(that);
 
   dynamic /* String */ wire_key_name__method__FrostKey(List<dynamic> that) =>
       wasmModule.wire_key_name__method__FrostKey(that);
 
-  dynamic /* List<dynamic> */ wire_devices__method__FrostKey(
+  dynamic /* List<dynamic> */ wire_access_structures__method__FrostKey(
           List<dynamic> that) =>
-      wasmModule.wire_devices__method__FrostKey(that);
+      wasmModule.wire_access_structures__method__FrostKey(that);
 
-  dynamic /* Uint8List */ wire_polynomial_identifier__method__FrostKey(
+  dynamic /* int */ wire_threshold__method__AccessStructure(
           List<dynamic> that) =>
-      wasmModule.wire_polynomial_identifier__method__FrostKey(that);
+      wasmModule.wire_threshold__method__AccessStructure(that);
+
+  dynamic /* List<dynamic> */
+      wire_access_structure_ref__method__AccessStructure(List<dynamic> that) =>
+          wasmModule.wire_access_structure_ref__method__AccessStructure(that);
+
+  dynamic /* List<dynamic> */ wire_devices__method__AccessStructure(
+          List<dynamic> that) =>
+      wasmModule.wire_devices__method__AccessStructure(that);
+
+  dynamic /* List<dynamic> */ wire_id__method__AccessStructure(
+          List<dynamic> that) =>
+      wasmModule.wire_id__method__AccessStructure(that);
+
+  dynamic /* String */ wire_short_id__method__AccessStructure(
+          List<dynamic> that) =>
+      wasmModule.wire_short_id__method__AccessStructure(that);
+
+  dynamic /* List<dynamic> */ wire_appkey__method__AccessStructure(
+          List<dynamic> that) =>
+      wasmModule.wire_appkey__method__AccessStructure(that);
 
   void wire_satisfy__method__PortOpen(
           NativePortType port_, List<dynamic> that, String? err) =>
@@ -913,46 +1024,46 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
       wasmModule.wire_get_device__method__DeviceListState(that, id);
 
   void wire_sub_tx_state__method__Wallet(
-          NativePortType port_, List<dynamic> that, List<dynamic> key_id) =>
-      wasmModule.wire_sub_tx_state__method__Wallet(port_, that, key_id);
+          NativePortType port_, List<dynamic> that, List<dynamic> appkey) =>
+      wasmModule.wire_sub_tx_state__method__Wallet(port_, that, appkey);
 
   dynamic /* List<dynamic> */ wire_tx_state__method__Wallet(
-          List<dynamic> that, List<dynamic> key_id) =>
-      wasmModule.wire_tx_state__method__Wallet(that, key_id);
+          List<dynamic> that, List<dynamic> appkey) =>
+      wasmModule.wire_tx_state__method__Wallet(that, appkey);
 
   void wire_sync_txids__method__Wallet(NativePortType port_, List<dynamic> that,
-          List<dynamic> key_id, List<String> txids) =>
-      wasmModule.wire_sync_txids__method__Wallet(port_, that, key_id, txids);
+          List<dynamic> appkey, List<String> txids) =>
+      wasmModule.wire_sync_txids__method__Wallet(port_, that, appkey, txids);
 
   void wire_sync__method__Wallet(
-          NativePortType port_, List<dynamic> that, List<dynamic> key_id) =>
-      wasmModule.wire_sync__method__Wallet(port_, that, key_id);
+          NativePortType port_, List<dynamic> that, List<dynamic> appkey) =>
+      wasmModule.wire_sync__method__Wallet(port_, that, appkey);
 
   void wire_next_address__method__Wallet(
-          NativePortType port_, List<dynamic> that, List<dynamic> key_id) =>
-      wasmModule.wire_next_address__method__Wallet(port_, that, key_id);
+          NativePortType port_, List<dynamic> that, List<dynamic> appkey) =>
+      wasmModule.wire_next_address__method__Wallet(port_, that, appkey);
 
   dynamic /* List<dynamic> */ wire_addresses_state__method__Wallet(
-          List<dynamic> that, List<dynamic> key_id) =>
-      wasmModule.wire_addresses_state__method__Wallet(that, key_id);
+          List<dynamic> that, List<dynamic> appkey) =>
+      wasmModule.wire_addresses_state__method__Wallet(that, appkey);
 
   void wire_send_to__method__Wallet(
           NativePortType port_,
           List<dynamic> that,
-          List<dynamic> key_id,
+          List<dynamic> appkey,
           String to_address,
           Object value,
           double feerate) =>
       wasmModule.wire_send_to__method__Wallet(
-          port_, that, key_id, to_address, value, feerate);
+          port_, that, appkey, to_address, value, feerate);
 
   void wire_broadcast_tx__method__Wallet(NativePortType port_,
-          List<dynamic> that, List<dynamic> key_id, List<dynamic> tx) =>
-      wasmModule.wire_broadcast_tx__method__Wallet(port_, that, key_id, tx);
+          List<dynamic> that, List<dynamic> appkey, List<dynamic> tx) =>
+      wasmModule.wire_broadcast_tx__method__Wallet(port_, that, appkey, tx);
 
   dynamic /* List<dynamic> */ wire_psbt_to_unsigned_tx__method__Wallet(
-          List<dynamic> that, List<dynamic> psbt, List<dynamic> key_id) =>
-      wasmModule.wire_psbt_to_unsigned_tx__method__Wallet(that, psbt, key_id);
+          List<dynamic> that, List<dynamic> psbt, List<dynamic> appkey) =>
+      wasmModule.wire_psbt_to_unsigned_tx__method__Wallet(that, psbt, appkey);
 
   void wire_set_available_ports__method__FfiSerial(
           NativePortType port_, List<dynamic> that, List<dynamic> ports) =>
@@ -980,10 +1091,13 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
           NativePortType port_, List<dynamic> that) =>
       wasmModule.wire_cancel_all__method__Coordinator(port_, that);
 
-  void wire_display_backup__method__Coordinator(NativePortType port_,
-          List<dynamic> that, List<dynamic> id, List<dynamic> key_id) =>
+  void wire_display_backup__method__Coordinator(
+          NativePortType port_,
+          List<dynamic> that,
+          List<dynamic> id,
+          List<dynamic> access_structure_ref) =>
       wasmModule.wire_display_backup__method__Coordinator(
-          port_, that, id, key_id);
+          port_, that, id, access_structure_ref);
 
   dynamic /* List<dynamic> */ wire_key_state__method__Coordinator(
           List<dynamic> that) =>
@@ -994,34 +1108,37 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
       wasmModule.wire_sub_key_events__method__Coordinator(port_, that);
 
   dynamic /* List<dynamic>? */ wire_get_key__method__Coordinator(
-          List<dynamic> that, List<dynamic> key_id) =>
-      wasmModule.wire_get_key__method__Coordinator(that, key_id);
+          List<dynamic> that, List<dynamic> appkey) =>
+      wasmModule.wire_get_key__method__Coordinator(that, appkey);
 
   dynamic /* String? */ wire_get_key_name__method__Coordinator(
-          List<dynamic> that, List<dynamic> key_id) =>
-      wasmModule.wire_get_key_name__method__Coordinator(that, key_id);
+          List<dynamic> that, List<dynamic> appkey) =>
+      wasmModule.wire_get_key_name__method__Coordinator(that, appkey);
 
-  dynamic /* List<dynamic> */ wire_keys_for_device__method__Coordinator(
-          List<dynamic> that, List<dynamic> device_id) =>
-      wasmModule.wire_keys_for_device__method__Coordinator(that, device_id);
+  dynamic /* List<dynamic> */
+      wire_access_structures_involving_device__method__Coordinator(
+              List<dynamic> that, List<dynamic> device_id) =>
+          wasmModule
+              .wire_access_structures_involving_device__method__Coordinator(
+                  that, device_id);
 
   void wire_start_signing__method__Coordinator(
           NativePortType port_,
           List<dynamic> that,
-          List<dynamic> key_id,
+          List<dynamic> access_structure_ref,
           List<dynamic> devices,
           String message) =>
       wasmModule.wire_start_signing__method__Coordinator(
-          port_, that, key_id, devices, message);
+          port_, that, access_structure_ref, devices, message);
 
   void wire_start_signing_tx__method__Coordinator(
           NativePortType port_,
           List<dynamic> that,
-          List<dynamic> key_id,
+          List<dynamic> access_structure_ref,
           List<dynamic> unsigned_tx,
           List<dynamic> devices) =>
       wasmModule.wire_start_signing_tx__method__Coordinator(
-          port_, that, key_id, unsigned_tx, devices);
+          port_, that, access_structure_ref, unsigned_tx, devices);
 
   dynamic /* int */ wire_nonces_available__method__Coordinator(
           List<dynamic> that, List<dynamic> id) =>
@@ -1042,15 +1159,15 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
 
   dynamic /* List<dynamic>? */
       wire_persisted_sign_session_description__method__Coordinator(
-              List<dynamic> that, List<dynamic> key_id) =>
+              List<dynamic> that, List<dynamic> appkey) =>
           wasmModule
               .wire_persisted_sign_session_description__method__Coordinator(
-                  that, key_id);
+                  that, appkey);
 
   void wire_try_restore_signing_session__method__Coordinator(
-          NativePortType port_, List<dynamic> that, List<dynamic> key_id) =>
+          NativePortType port_, List<dynamic> that, List<dynamic> appkey) =>
       wasmModule.wire_try_restore_signing_session__method__Coordinator(
-          port_, that, key_id);
+          port_, that, appkey);
 
   void wire_start_firmware_upgrade__method__Coordinator(
           NativePortType port_, List<dynamic> that) =>
@@ -1077,9 +1194,13 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
           NativePortType port_, List<dynamic> that) =>
       wasmModule.wire_final_keygen_ack__method__Coordinator(port_, that);
 
+  dynamic /* List<dynamic>? */ wire_get_access_structure__method__Coordinator(
+          List<dynamic> that, List<dynamic> as_ref) =>
+      wasmModule.wire_get_access_structure__method__Coordinator(that, as_ref);
+
   dynamic /* String */ wire_descriptor_for_key__method__BitcoinContext(
-          List<dynamic> that, List<dynamic> key_id) =>
-      wasmModule.wire_descriptor_for_key__method__BitcoinContext(that, key_id);
+          List<dynamic> that, List<dynamic> appkey) =>
+      wasmModule.wire_descriptor_for_key__method__BitcoinContext(that, appkey);
 
   dynamic /* String? */ wire_validate_amount__method__BitcoinContext(
           List<dynamic> that, String address, Object value) =>
@@ -1093,8 +1214,8 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
               that, address);
 
   dynamic /* List<dynamic> */ wire_effect__method__SignedTx(
-          List<dynamic> that, List<dynamic> key_id, Object network) =>
-      wasmModule.wire_effect__method__SignedTx(that, key_id, network);
+          List<dynamic> that, List<dynamic> appkey, Object network) =>
+      wasmModule.wire_effect__method__SignedTx(that, appkey, network);
 
   void wire_attach_signatures_to_psbt__method__UnsignedTx(NativePortType port_,
           List<dynamic> that, List<dynamic> signatures, List<dynamic> psbt) =>
@@ -1106,8 +1227,8 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
       wasmModule.wire_complete__method__UnsignedTx(port_, that, signatures);
 
   dynamic /* List<dynamic> */ wire_effect__method__UnsignedTx(
-          List<dynamic> that, List<dynamic> key_id, Object network) =>
-      wasmModule.wire_effect__method__UnsignedTx(that, key_id, network);
+          List<dynamic> that, List<dynamic> appkey, Object network) =>
+      wasmModule.wire_effect__method__UnsignedTx(that, appkey, network);
 
   dynamic /* Uint8List */ wire_to_bytes__method__Psbt(List<dynamic> that) =>
       wasmModule.wire_to_bytes__method__Psbt(that);
@@ -1178,20 +1299,28 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
               .share_opaque_FrostsnapCoreBitcoinTransactionTransactionTemplate(
                   ptr);
 
-  dynamic /*  */ drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(ptr) =>
-      wasmModule.drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(ptr);
+  dynamic /*  */ drop_opaque_FrostsnapCoreCoordinatorCoordAccessStructure(
+          ptr) =>
+      wasmModule.drop_opaque_FrostsnapCoreCoordinatorCoordAccessStructure(ptr);
 
   int /* *const c_void */
-      share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(ptr) =>
+      share_opaque_FrostsnapCoreCoordinatorCoordAccessStructure(ptr) =>
           wasmModule
-              .share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(ptr);
+              .share_opaque_FrostsnapCoreCoordinatorCoordAccessStructure(ptr);
 
-  dynamic /*  */ drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(ptr) =>
-      wasmModule.drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(ptr);
+  dynamic /*  */ drop_opaque_FrostsnapCoreCoordinatorCoordFrostKey(ptr) =>
+      wasmModule.drop_opaque_FrostsnapCoreCoordinatorCoordFrostKey(ptr);
 
-  int /* *const c_void */ share_opaque_MutexBTreeMapKeyIdStreamSinkTxState(
+  int /* *const c_void */ share_opaque_FrostsnapCoreCoordinatorCoordFrostKey(
           ptr) =>
-      wasmModule.share_opaque_MutexBTreeMapKeyIdStreamSinkTxState(ptr);
+      wasmModule.share_opaque_FrostsnapCoreCoordinatorCoordFrostKey(ptr);
+
+  dynamic /*  */ drop_opaque_MutexBTreeMapAppkeyStreamSinkTxState(ptr) =>
+      wasmModule.drop_opaque_MutexBTreeMapAppkeyStreamSinkTxState(ptr);
+
+  int /* *const c_void */ share_opaque_MutexBTreeMapAppkeyStreamSinkTxState(
+          ptr) =>
+      wasmModule.share_opaque_MutexBTreeMapAppkeyStreamSinkTxState(ptr);
 
   dynamic /*  */ drop_opaque_MutexFrostsnapWallet(ptr) =>
       wasmModule.drop_opaque_MutexFrostsnapWallet(ptr);

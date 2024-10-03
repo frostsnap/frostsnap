@@ -47,11 +47,6 @@ pub fn wire_load_host_handles_serial(port_: MessagePort, db_file: String) {
 }
 
 #[wasm_bindgen]
-pub fn wire_echo_key_id(port_: MessagePort, key_id: JsValue) {
-    wire_echo_key_id_impl(port_, key_id)
-}
-
-#[wasm_bindgen]
 pub fn wire_psbt_bytes_to_psbt(psbt_bytes: Box<[u8]>) -> support::WireSyncReturn {
     wire_psbt_bytes_to_psbt_impl(psbt_bytes)
 }
@@ -64,6 +59,21 @@ pub fn wire_new_qr_reader(port_: MessagePort) {
 #[wasm_bindgen]
 pub fn wire_new_qr_encoder(port_: MessagePort, bytes: Box<[u8]>) {
     wire_new_qr_encoder_impl(port_, bytes)
+}
+
+#[wasm_bindgen]
+pub fn wire_echo_appkey(port_: MessagePort, appkey: JsValue) {
+    wire_echo_appkey_impl(port_, appkey)
+}
+
+#[wasm_bindgen]
+pub fn wire_echo_asid(port_: MessagePort, value: JsValue) {
+    wire_echo_asid_impl(port_, value)
+}
+
+#[wasm_bindgen]
+pub fn wire_echo_asr(port_: MessagePort, value: JsValue) {
+    wire_echo_asr_impl(port_, value)
 }
 
 #[wasm_bindgen]
@@ -84,13 +94,8 @@ pub fn wire_needs_firmware_upgrade__method__ConnectedDevice(
 }
 
 #[wasm_bindgen]
-pub fn wire_threshold__method__FrostKey(that: JsValue) -> support::WireSyncReturn {
-    wire_threshold__method__FrostKey_impl(that)
-}
-
-#[wasm_bindgen]
-pub fn wire_id__method__FrostKey(that: JsValue) -> support::WireSyncReturn {
-    wire_id__method__FrostKey_impl(that)
+pub fn wire_appkey__method__FrostKey(that: JsValue) -> support::WireSyncReturn {
+    wire_appkey__method__FrostKey_impl(that)
 }
 
 #[wasm_bindgen]
@@ -99,13 +104,40 @@ pub fn wire_key_name__method__FrostKey(that: JsValue) -> support::WireSyncReturn
 }
 
 #[wasm_bindgen]
-pub fn wire_devices__method__FrostKey(that: JsValue) -> support::WireSyncReturn {
-    wire_devices__method__FrostKey_impl(that)
+pub fn wire_access_structures__method__FrostKey(that: JsValue) -> support::WireSyncReturn {
+    wire_access_structures__method__FrostKey_impl(that)
 }
 
 #[wasm_bindgen]
-pub fn wire_polynomial_identifier__method__FrostKey(that: JsValue) -> support::WireSyncReturn {
-    wire_polynomial_identifier__method__FrostKey_impl(that)
+pub fn wire_threshold__method__AccessStructure(that: JsValue) -> support::WireSyncReturn {
+    wire_threshold__method__AccessStructure_impl(that)
+}
+
+#[wasm_bindgen]
+pub fn wire_access_structure_ref__method__AccessStructure(
+    that: JsValue,
+) -> support::WireSyncReturn {
+    wire_access_structure_ref__method__AccessStructure_impl(that)
+}
+
+#[wasm_bindgen]
+pub fn wire_devices__method__AccessStructure(that: JsValue) -> support::WireSyncReturn {
+    wire_devices__method__AccessStructure_impl(that)
+}
+
+#[wasm_bindgen]
+pub fn wire_id__method__AccessStructure(that: JsValue) -> support::WireSyncReturn {
+    wire_id__method__AccessStructure_impl(that)
+}
+
+#[wasm_bindgen]
+pub fn wire_short_id__method__AccessStructure(that: JsValue) -> support::WireSyncReturn {
+    wire_short_id__method__AccessStructure_impl(that)
+}
+
+#[wasm_bindgen]
+pub fn wire_appkey__method__AccessStructure(that: JsValue) -> support::WireSyncReturn {
+    wire_appkey__method__AccessStructure_impl(that)
 }
 
 #[wasm_bindgen]
@@ -146,72 +178,72 @@ pub fn wire_get_device__method__DeviceListState(
 }
 
 #[wasm_bindgen]
-pub fn wire_sub_tx_state__method__Wallet(port_: MessagePort, that: JsValue, key_id: JsValue) {
-    wire_sub_tx_state__method__Wallet_impl(port_, that, key_id)
+pub fn wire_sub_tx_state__method__Wallet(port_: MessagePort, that: JsValue, appkey: JsValue) {
+    wire_sub_tx_state__method__Wallet_impl(port_, that, appkey)
 }
 
 #[wasm_bindgen]
-pub fn wire_tx_state__method__Wallet(that: JsValue, key_id: JsValue) -> support::WireSyncReturn {
-    wire_tx_state__method__Wallet_impl(that, key_id)
+pub fn wire_tx_state__method__Wallet(that: JsValue, appkey: JsValue) -> support::WireSyncReturn {
+    wire_tx_state__method__Wallet_impl(that, appkey)
 }
 
 #[wasm_bindgen]
 pub fn wire_sync_txids__method__Wallet(
     port_: MessagePort,
     that: JsValue,
-    key_id: JsValue,
+    appkey: JsValue,
     txids: JsValue,
 ) {
-    wire_sync_txids__method__Wallet_impl(port_, that, key_id, txids)
+    wire_sync_txids__method__Wallet_impl(port_, that, appkey, txids)
 }
 
 #[wasm_bindgen]
-pub fn wire_sync__method__Wallet(port_: MessagePort, that: JsValue, key_id: JsValue) {
-    wire_sync__method__Wallet_impl(port_, that, key_id)
+pub fn wire_sync__method__Wallet(port_: MessagePort, that: JsValue, appkey: JsValue) {
+    wire_sync__method__Wallet_impl(port_, that, appkey)
 }
 
 #[wasm_bindgen]
-pub fn wire_next_address__method__Wallet(port_: MessagePort, that: JsValue, key_id: JsValue) {
-    wire_next_address__method__Wallet_impl(port_, that, key_id)
+pub fn wire_next_address__method__Wallet(port_: MessagePort, that: JsValue, appkey: JsValue) {
+    wire_next_address__method__Wallet_impl(port_, that, appkey)
 }
 
 #[wasm_bindgen]
 pub fn wire_addresses_state__method__Wallet(
     that: JsValue,
-    key_id: JsValue,
+    appkey: JsValue,
 ) -> support::WireSyncReturn {
-    wire_addresses_state__method__Wallet_impl(that, key_id)
+    wire_addresses_state__method__Wallet_impl(that, appkey)
 }
 
 #[wasm_bindgen]
 pub fn wire_send_to__method__Wallet(
     port_: MessagePort,
     that: JsValue,
-    key_id: JsValue,
+    appkey: JsValue,
     to_address: String,
     value: u64,
     feerate: f64,
 ) {
-    wire_send_to__method__Wallet_impl(port_, that, key_id, to_address, value, feerate)
+    wire_send_to__method__Wallet_impl(port_, that, appkey, to_address, value, feerate)
 }
 
 #[wasm_bindgen]
 pub fn wire_broadcast_tx__method__Wallet(
     port_: MessagePort,
     that: JsValue,
-    key_id: JsValue,
+    appkey: JsValue,
     tx: JsValue,
 ) {
-    wire_broadcast_tx__method__Wallet_impl(port_, that, key_id, tx)
+    wire_broadcast_tx__method__Wallet_impl(port_, that, appkey, tx)
 }
 
 #[wasm_bindgen]
 pub fn wire_psbt_to_unsigned_tx__method__Wallet(
     that: JsValue,
     psbt: JsValue,
-    key_id: JsValue,
+    appkey: JsValue,
 ) -> support::WireSyncReturn {
-    wire_psbt_to_unsigned_tx__method__Wallet_impl(that, psbt, key_id)
+    wire_psbt_to_unsigned_tx__method__Wallet_impl(that, psbt, appkey)
 }
 
 #[wasm_bindgen]
@@ -263,9 +295,9 @@ pub fn wire_display_backup__method__Coordinator(
     port_: MessagePort,
     that: JsValue,
     id: JsValue,
-    key_id: JsValue,
+    access_structure_ref: JsValue,
 ) {
-    wire_display_backup__method__Coordinator_impl(port_, that, id, key_id)
+    wire_display_backup__method__Coordinator_impl(port_, that, id, access_structure_ref)
 }
 
 #[wasm_bindgen]
@@ -281,47 +313,59 @@ pub fn wire_sub_key_events__method__Coordinator(port_: MessagePort, that: JsValu
 #[wasm_bindgen]
 pub fn wire_get_key__method__Coordinator(
     that: JsValue,
-    key_id: JsValue,
+    appkey: JsValue,
 ) -> support::WireSyncReturn {
-    wire_get_key__method__Coordinator_impl(that, key_id)
+    wire_get_key__method__Coordinator_impl(that, appkey)
 }
 
 #[wasm_bindgen]
 pub fn wire_get_key_name__method__Coordinator(
     that: JsValue,
-    key_id: JsValue,
+    appkey: JsValue,
 ) -> support::WireSyncReturn {
-    wire_get_key_name__method__Coordinator_impl(that, key_id)
+    wire_get_key_name__method__Coordinator_impl(that, appkey)
 }
 
 #[wasm_bindgen]
-pub fn wire_keys_for_device__method__Coordinator(
+pub fn wire_access_structures_involving_device__method__Coordinator(
     that: JsValue,
     device_id: JsValue,
 ) -> support::WireSyncReturn {
-    wire_keys_for_device__method__Coordinator_impl(that, device_id)
+    wire_access_structures_involving_device__method__Coordinator_impl(that, device_id)
 }
 
 #[wasm_bindgen]
 pub fn wire_start_signing__method__Coordinator(
     port_: MessagePort,
     that: JsValue,
-    key_id: JsValue,
+    access_structure_ref: JsValue,
     devices: JsValue,
     message: String,
 ) {
-    wire_start_signing__method__Coordinator_impl(port_, that, key_id, devices, message)
+    wire_start_signing__method__Coordinator_impl(
+        port_,
+        that,
+        access_structure_ref,
+        devices,
+        message,
+    )
 }
 
 #[wasm_bindgen]
 pub fn wire_start_signing_tx__method__Coordinator(
     port_: MessagePort,
     that: JsValue,
-    key_id: JsValue,
+    access_structure_ref: JsValue,
     unsigned_tx: JsValue,
     devices: JsValue,
 ) {
-    wire_start_signing_tx__method__Coordinator_impl(port_, that, key_id, unsigned_tx, devices)
+    wire_start_signing_tx__method__Coordinator_impl(
+        port_,
+        that,
+        access_structure_ref,
+        unsigned_tx,
+        devices,
+    )
 }
 
 #[wasm_bindgen]
@@ -354,18 +398,18 @@ pub fn wire_generate_new_key__method__Coordinator(
 #[wasm_bindgen]
 pub fn wire_persisted_sign_session_description__method__Coordinator(
     that: JsValue,
-    key_id: JsValue,
+    appkey: JsValue,
 ) -> support::WireSyncReturn {
-    wire_persisted_sign_session_description__method__Coordinator_impl(that, key_id)
+    wire_persisted_sign_session_description__method__Coordinator_impl(that, appkey)
 }
 
 #[wasm_bindgen]
 pub fn wire_try_restore_signing_session__method__Coordinator(
     port_: MessagePort,
     that: JsValue,
-    key_id: JsValue,
+    appkey: JsValue,
 ) {
-    wire_try_restore_signing_session__method__Coordinator_impl(port_, that, key_id)
+    wire_try_restore_signing_session__method__Coordinator_impl(port_, that, appkey)
 }
 
 #[wasm_bindgen]
@@ -402,11 +446,19 @@ pub fn wire_final_keygen_ack__method__Coordinator(port_: MessagePort, that: JsVa
 }
 
 #[wasm_bindgen]
+pub fn wire_get_access_structure__method__Coordinator(
+    that: JsValue,
+    as_ref: JsValue,
+) -> support::WireSyncReturn {
+    wire_get_access_structure__method__Coordinator_impl(that, as_ref)
+}
+
+#[wasm_bindgen]
 pub fn wire_descriptor_for_key__method__BitcoinContext(
     that: JsValue,
-    key_id: JsValue,
+    appkey: JsValue,
 ) -> support::WireSyncReturn {
-    wire_descriptor_for_key__method__BitcoinContext_impl(that, key_id)
+    wire_descriptor_for_key__method__BitcoinContext_impl(that, appkey)
 }
 
 #[wasm_bindgen]
@@ -429,10 +481,10 @@ pub fn wire_validate_destination_address__method__BitcoinContext(
 #[wasm_bindgen]
 pub fn wire_effect__method__SignedTx(
     that: JsValue,
-    key_id: JsValue,
+    appkey: JsValue,
     network: JsValue,
 ) -> support::WireSyncReturn {
-    wire_effect__method__SignedTx_impl(that, key_id, network)
+    wire_effect__method__SignedTx_impl(that, appkey, network)
 }
 
 #[wasm_bindgen]
@@ -453,10 +505,10 @@ pub fn wire_complete__method__UnsignedTx(port_: MessagePort, that: JsValue, sign
 #[wasm_bindgen]
 pub fn wire_effect__method__UnsignedTx(
     that: JsValue,
-    key_id: JsValue,
+    appkey: JsValue,
     network: JsValue,
 ) -> support::WireSyncReturn {
-    wire_effect__method__UnsignedTx_impl(that, key_id, network)
+    wire_effect__method__UnsignedTx_impl(that, appkey, network)
 }
 
 #[wasm_bindgen]
@@ -624,33 +676,48 @@ pub fn share_opaque_FrostsnapCoreBitcoinTransactionTransactionTemplate(
 }
 
 #[wasm_bindgen]
-pub fn drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(ptr: *const c_void) {
+pub fn drop_opaque_FrostsnapCoreCoordinatorCoordAccessStructure(ptr: *const c_void) {
     unsafe {
-        Arc::<frostsnap_core::coordinator::CoordinatorFrostKey>::decrement_strong_count(ptr as _);
+        Arc::<frostsnap_core::coordinator::CoordAccessStructure>::decrement_strong_count(ptr as _);
     }
 }
 
 #[wasm_bindgen]
-pub fn share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(
+pub fn share_opaque_FrostsnapCoreCoordinatorCoordAccessStructure(
     ptr: *const c_void,
 ) -> *const c_void {
     unsafe {
-        Arc::<frostsnap_core::coordinator::CoordinatorFrostKey>::increment_strong_count(ptr as _);
+        Arc::<frostsnap_core::coordinator::CoordAccessStructure>::increment_strong_count(ptr as _);
         ptr
     }
 }
 
 #[wasm_bindgen]
-pub fn drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(ptr: *const c_void) {
+pub fn drop_opaque_FrostsnapCoreCoordinatorCoordFrostKey(ptr: *const c_void) {
     unsafe {
-        Arc::<Mutex<BTreeMap<KeyId, StreamSink<TxState>>>>::decrement_strong_count(ptr as _);
+        Arc::<frostsnap_core::coordinator::CoordFrostKey>::decrement_strong_count(ptr as _);
     }
 }
 
 #[wasm_bindgen]
-pub fn share_opaque_MutexBTreeMapKeyIdStreamSinkTxState(ptr: *const c_void) -> *const c_void {
+pub fn share_opaque_FrostsnapCoreCoordinatorCoordFrostKey(ptr: *const c_void) -> *const c_void {
     unsafe {
-        Arc::<Mutex<BTreeMap<KeyId, StreamSink<TxState>>>>::increment_strong_count(ptr as _);
+        Arc::<frostsnap_core::coordinator::CoordFrostKey>::increment_strong_count(ptr as _);
+        ptr
+    }
+}
+
+#[wasm_bindgen]
+pub fn drop_opaque_MutexBTreeMapAppkeyStreamSinkTxState(ptr: *const c_void) {
+    unsafe {
+        Arc::<Mutex<BTreeMap<Appkey, StreamSink<TxState>>>>::decrement_strong_count(ptr as _);
+    }
+}
+
+#[wasm_bindgen]
+pub fn share_opaque_MutexBTreeMapAppkeyStreamSinkTxState(ptr: *const c_void) -> *const c_void {
+    unsafe {
+        Arc::<Mutex<BTreeMap<Appkey, StreamSink<TxState>>>>::increment_strong_count(ptr as _);
         ptr
     }
 }
@@ -759,6 +826,57 @@ impl Wire2Api<Vec<String>> for JsValue {
             .iter()
             .map(Wire2Api::wire2api)
             .collect()
+    }
+}
+impl Wire2Api<AccessStructure> for JsValue {
+    fn wire2api(self) -> AccessStructure {
+        let self_ = self.dyn_into::<JsArray>().unwrap();
+        assert_eq!(
+            self_.length(),
+            1,
+            "Expected 1 elements, got {}",
+            self_.length()
+        );
+        AccessStructure(self_.get(0).wire2api())
+    }
+}
+impl Wire2Api<AccessStructureId> for JsValue {
+    fn wire2api(self) -> AccessStructureId {
+        let self_ = self.dyn_into::<JsArray>().unwrap();
+        assert_eq!(
+            self_.length(),
+            1,
+            "Expected 1 elements, got {}",
+            self_.length()
+        );
+        AccessStructureId(self_.get(0).wire2api())
+    }
+}
+impl Wire2Api<AccessStructureRef> for JsValue {
+    fn wire2api(self) -> AccessStructureRef {
+        let self_ = self.dyn_into::<JsArray>().unwrap();
+        assert_eq!(
+            self_.length(),
+            2,
+            "Expected 2 elements, got {}",
+            self_.length()
+        );
+        AccessStructureRef {
+            appkey: self_.get(0).wire2api(),
+            access_structure_id: self_.get(1).wire2api(),
+        }
+    }
+}
+impl Wire2Api<Appkey> for JsValue {
+    fn wire2api(self) -> Appkey {
+        let self_ = self.dyn_into::<JsArray>().unwrap();
+        assert_eq!(
+            self_.length(),
+            1,
+            "Expected 1 elements, got {}",
+            self_.length()
+        );
+        Appkey(self_.get(0).wire2api())
     }
 }
 impl Wire2Api<BitcoinContext> for JsValue {
@@ -887,18 +1005,6 @@ impl Wire2Api<FrostKey> for JsValue {
     }
 }
 
-impl Wire2Api<KeyId> for JsValue {
-    fn wire2api(self) -> KeyId {
-        let self_ = self.dyn_into::<JsArray>().unwrap();
-        assert_eq!(
-            self_.length(),
-            1,
-            "Expected 1 elements, got {}",
-            self_.length()
-        );
-        KeyId(self_.get(0).wire2api())
-    }
-}
 impl Wire2Api<Vec<ConnectedDevice>> for JsValue {
     fn wire2api(self) -> Vec<ConnectedDevice> {
         self.dyn_into::<JsArray>()
@@ -1091,6 +1197,12 @@ impl Wire2Api<Transaction> for JsValue {
     }
 }
 
+impl Wire2Api<[u8; 32]> for Box<[u8]> {
+    fn wire2api(self) -> [u8; 32] {
+        let vec: Vec<u8> = self.wire2api();
+        support::from_vec_to_array(vec)
+    }
+}
 impl Wire2Api<[u8; 33]> for Box<[u8]> {
     fn wire2api(self) -> [u8; 33] {
         let vec: Vec<u8> = self.wire2api();
@@ -1099,6 +1211,12 @@ impl Wire2Api<[u8; 33]> for Box<[u8]> {
 }
 impl Wire2Api<[u8; 64]> for Box<[u8]> {
     fn wire2api(self) -> [u8; 64] {
+        let vec: Vec<u8> = self.wire2api();
+        support::from_vec_to_array(vec)
+    }
+}
+impl Wire2Api<[u8; 65]> for Box<[u8]> {
+    fn wire2api(self) -> [u8; 65] {
         let vec: Vec<u8> = self.wire2api();
         support::from_vec_to_array(vec)
     }
@@ -1239,8 +1357,8 @@ impl Wire2Api<RustOpaque<frostsnap_core::bitcoin_transaction::TransactionTemplat
         unsafe { support::opaque_from_dart((self.as_f64().unwrap() as usize) as _) }
     }
 }
-impl Wire2Api<RustOpaque<frostsnap_core::coordinator::CoordinatorFrostKey>> for JsValue {
-    fn wire2api(self) -> RustOpaque<frostsnap_core::coordinator::CoordinatorFrostKey> {
+impl Wire2Api<RustOpaque<frostsnap_core::coordinator::CoordAccessStructure>> for JsValue {
+    fn wire2api(self) -> RustOpaque<frostsnap_core::coordinator::CoordAccessStructure> {
         #[cfg(target_pointer_width = "64")]
         {
             compile_error!("64-bit pointers are not supported.");
@@ -1249,8 +1367,18 @@ impl Wire2Api<RustOpaque<frostsnap_core::coordinator::CoordinatorFrostKey>> for 
         unsafe { support::opaque_from_dart((self.as_f64().unwrap() as usize) as _) }
     }
 }
-impl Wire2Api<RustOpaque<Mutex<BTreeMap<KeyId, StreamSink<TxState>>>>> for JsValue {
-    fn wire2api(self) -> RustOpaque<Mutex<BTreeMap<KeyId, StreamSink<TxState>>>> {
+impl Wire2Api<RustOpaque<frostsnap_core::coordinator::CoordFrostKey>> for JsValue {
+    fn wire2api(self) -> RustOpaque<frostsnap_core::coordinator::CoordFrostKey> {
+        #[cfg(target_pointer_width = "64")]
+        {
+            compile_error!("64-bit pointers are not supported.");
+        }
+
+        unsafe { support::opaque_from_dart((self.as_f64().unwrap() as usize) as _) }
+    }
+}
+impl Wire2Api<RustOpaque<Mutex<BTreeMap<Appkey, StreamSink<TxState>>>>> for JsValue {
+    fn wire2api(self) -> RustOpaque<Mutex<BTreeMap<Appkey, StreamSink<TxState>>>> {
         #[cfg(target_pointer_width = "64")]
         {
             compile_error!("64-bit pointers are not supported.");
@@ -1364,6 +1492,12 @@ impl Wire2Api<u8> for JsValue {
         self.unchecked_into_f64() as _
     }
 }
+impl Wire2Api<[u8; 32]> for JsValue {
+    fn wire2api(self) -> [u8; 32] {
+        let vec: Vec<u8> = self.wire2api();
+        support::from_vec_to_array(vec)
+    }
+}
 impl Wire2Api<[u8; 33]> for JsValue {
     fn wire2api(self) -> [u8; 33] {
         let vec: Vec<u8> = self.wire2api();
@@ -1372,6 +1506,12 @@ impl Wire2Api<[u8; 33]> for JsValue {
 }
 impl Wire2Api<[u8; 64]> for JsValue {
     fn wire2api(self) -> [u8; 64] {
+        let vec: Vec<u8> = self.wire2api();
+        support::from_vec_to_array(vec)
+    }
+}
+impl Wire2Api<[u8; 65]> for JsValue {
+    fn wire2api(self) -> [u8; 65] {
         let vec: Vec<u8> = self.wire2api();
         support::from_vec_to_array(vec)
     }

@@ -13,23 +13,21 @@ use bdk_chain::{
         Descriptor, DescriptorPublicKey,
     },
 };
-use frostsnap_core::{
-    schnorr_fun::fun::Point,
-    tweak::{Account, TweakableKey},
-};
+use frostsnap_core::{tweak::Account, Appkey};
 
 pub fn multi_x_descriptor_for_account(
-    root_key: Point,
+    approot: Appkey,
     account: Account,
-    network: bitcoin::Network,
+    network: bitcoin::NetworkKind,
 ) -> Descriptor<DescriptorPublicKey> {
-    let root_bitcoin_xpub = root_key.bitcoin_app_xpub().xpub(network);
-    let account_xpub = root_bitcoin_xpub
+    let app_xpub = approot.to_xpub().to_bitcoin_xpub_with_lies(network);
+
+    let account_xpub = app_xpub
         .derive_pub(&Secp256k1::verification_only(), &account.derivation_path())
         .unwrap();
 
     let multi_xpub = DescriptorPublicKey::MultiXPub(DescriptorMultiXKey {
-        origin: Some((root_bitcoin_xpub.fingerprint(), account.derivation_path())),
+        origin: Some((app_xpub.fingerprint(), account.derivation_path())),
         xkey: account_xpub,
         derivation_paths: DerivPaths::new(
             [0, 1]

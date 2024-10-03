@@ -1,4 +1,8 @@
-use bitcoin::{bip32::*, secp256k1, Network};
+use bitcoin::{
+    bip32::*,
+    hashes::{sha512, Hash, HashEngine, Hmac, HmacEngine},
+    secp256k1,
+};
 use schnorr_fun::{
     frost::{PairedSecretShare, SharedKey},
     fun::{g, marker::*, Point, Scalar, G},
@@ -126,13 +130,14 @@ impl AppTweak {
         }
     }
 
-    pub fn derive_xonly_key<K: TweakableKey>(&self, root_key: &K) -> K::XOnly {
-        let (app_key, extra) = root_key.app_tweak_and_expand(self.kind());
+    pub fn derive_xonly_key<K: TweakableKey>(&self, approot: &Xpub<K>) -> K::XOnly {
+        let mut xpub_for_app = approot.clone();
+        xpub_for_app.derive_bip32(&[self.kind() as u32]);
+
         match &self {
             AppTweak::Bitcoin(bip32_path) => {
-                let mut xpub = crate::tweak::Xpub::new(app_key, extra);
-                xpub.derive_bip32(&bip32_path.to_u32_array());
-                let derived_key = xpub.into_key();
+                xpub_for_app.derive_bip32(&bip32_path.to_u32_array());
+                let derived_key = xpub_for_app.into_key();
                 let tweak = bitcoin::taproot::TapTweakHash::from_key_and_tweak(
                     derived_key.to_libsecp_xonly(),
                     None,
@@ -144,67 +149,38 @@ impl AppTweak {
                         .expect("computationally unreachable"),
                 )
             }
-            AppTweak::Nostr => app_key.into_xonly(),
-            AppTweak::TestMessage => app_key.into_xonly(),
-        }
-    }
-}
-
-impl AppTweakKind {
-    pub fn app_string(&self) -> &'static str {
-        match self {
-            AppTweakKind::Bitcoin { .. } => "frostsnap/bitcoin",
-            AppTweakKind::TestMessage => "frostsnap/test-message",
-            AppTweakKind::Nostr => "frostsnap/nostr",
+            AppTweak::Nostr => xpub_for_app.into_key().into_xonly(),
+            AppTweak::TestMessage => xpub_for_app.into_key().into_xonly(),
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum AppTweakKind {
-    Bitcoin,
-    Nostr,
-    TestMessage,
-}
-
-/// Encapsulates bip32 derivations on a key
-#[derive(Clone)]
-pub struct Xpub<T> {
-    key: T,
-    xpub: bitcoin::bip32::Xpub,
+    TestMessage = 0,
+    Bitcoin = 1,
+    Nostr = 2,
 }
 
 pub trait TweakableKey: Clone {
     type XOnly;
-    fn to_libsecp_key(&self) -> secp256k1::PublicKey;
-    fn to_libsecp_xonly(&self) -> secp256k1::XOnlyPublicKey;
+    fn to_key(&self) -> Point;
+    fn to_libsecp_key(&self) -> secp256k1::PublicKey {
+        self.to_key().into()
+    }
+    fn to_libsecp_xonly(&self) -> secp256k1::XOnlyPublicKey {
+        self.to_key().to_libsecp_xonly()
+    }
     fn tweak(self, tweak: Scalar<Public, Zero>) -> Self;
     fn into_xonly_with_tweak(self, tweak: Scalar<Public>) -> Self::XOnly;
     fn into_xonly(self) -> Self::XOnly;
-    fn app_tweak_and_expand(&self, app: AppTweakKind) -> (Self, [u8; 32]) {
-        use bitcoin::hashes::*;
-        let mut hmac_engine = HmacEngine::<sha512::Hash>::new(app.app_string().as_bytes());
-        hmac_engine.input(self.to_libsecp_key().serialize().as_ref());
-        let result = Hmac::from_engine(hmac_engine);
-        let app_key = self
-            .clone()
-            .tweak(Scalar::from_slice_mod_order(&result[0..32]).expect("is 32 bytes long"));
-        let mut extra = [0u8; 32];
-        extra.copy_from_slice(&result[32..64]);
-
-        (app_key, extra)
-    }
-    fn bitcoin_app_xpub(&self) -> Xpub<Self> {
-        let (app_key, chaincode) = self.app_tweak_and_expand(AppTweakKind::Bitcoin);
-        Xpub::new(app_key, chaincode)
-    }
 }
 
 impl TweakableKey for SharedKey<Normal> {
     type XOnly = SharedKey<EvenY>;
 
-    fn to_libsecp_key(&self) -> secp256k1::PublicKey {
-        self.public_key().to_libsecp_key()
+    fn to_key(&self) -> Point {
+        self.public_key()
     }
 
     fn tweak(self, tweak: Scalar<Public, Zero>) -> Self {
@@ -221,24 +197,16 @@ impl TweakableKey for SharedKey<Normal> {
             .into_xonly()
     }
 
-    fn to_libsecp_xonly(&self) -> secp256k1::XOnlyPublicKey {
-        self.public_key().to_libsecp_xonly()
-    }
-
     fn into_xonly(self) -> Self::XOnly {
-        self.into_xonly()
+        SharedKey::into_xonly(self)
     }
 }
 
 impl TweakableKey for PairedSecretShare {
     type XOnly = PairedSecretShare<EvenY>;
 
-    fn to_libsecp_key(&self) -> secp256k1::PublicKey {
-        self.public_key().to_libsecp_key()
-    }
-
-    fn to_libsecp_xonly(&self) -> secp256k1::XOnlyPublicKey {
-        self.public_key().to_libsecp_xonly()
+    fn to_key(&self) -> Point {
+        self.public_key().to_key()
     }
 
     fn tweak(self, tweak: Scalar<Public, Zero>) -> Self {
@@ -256,15 +224,15 @@ impl TweakableKey for PairedSecretShare {
     }
 
     fn into_xonly(self) -> Self::XOnly {
-        self.into_xonly()
+        PairedSecretShare::into_xonly(self)
     }
 }
 
 impl TweakableKey for Point {
     type XOnly = Point<EvenY>;
 
-    fn to_libsecp_key(&self) -> secp256k1::PublicKey {
-        secp256k1::PublicKey::from_slice(self.to_bytes().as_ref()).unwrap()
+    fn to_key(&self) -> Point {
+        *self
     }
 
     fn tweak(self, tweak: Scalar<Public, Zero>) -> Self {
@@ -295,40 +263,35 @@ impl TweakableKey for Point {
 }
 
 impl<T: TweakableKey> Xpub<T> {
-    pub fn new(key: T, chaincode: [u8; 32]) -> Self {
+    pub fn from_root_key(root_key: T) -> Self {
         Xpub {
-            xpub: bitcoin::bip32::Xpub {
-                network: Network::Bitcoin.into(),
-                depth: 0,
-                child_number: ChildNumber::from(0u32),
-                parent_fingerprint: Fingerprint::default(),
-                public_key: key.to_libsecp_key(),
-                chain_code: ChainCode::from(chaincode),
-            },
-            key,
+            chaincode: [0u8; 32],
+            key: root_key,
         }
+    }
+
+    pub fn root_key_to_appkey(&self) -> Xpub<T> {
+        let mut appkey = self.clone();
+        appkey.derive_bip32(&[0]);
+        appkey
+    }
+
+    pub fn new(key: T, chaincode: [u8; 32]) -> Self {
+        Xpub { chaincode, key }
     }
 
     /// Does non-hardended derivation
     pub fn derive_bip32(&mut self, segments: &[u32]) {
         for child in segments {
-            let child_number = ChildNumber::Normal { index: *child };
-            let (tweak, chain_code) = self
-                .xpub
-                .ckd_pub_tweak(child_number)
-                .expect("can only fail if you do non-hardended derivation");
-            self.key = self
-                .key
-                .clone()
-                .tweak(Scalar::<Public, _>::from_slice_mod_order(&tweak[..]).expect("32 bytes"));
-            self.xpub = bitcoin::bip32::Xpub {
-                network: self.xpub.network,
-                depth: self.xpub.depth + 1,
-                parent_fingerprint: self.xpub.fingerprint(),
-                child_number,
-                public_key: self.key.to_libsecp_key(),
-                chain_code,
-            }
+            let mut hmac_engine: HmacEngine<sha512::Hash> = HmacEngine::new(&self.chaincode[..]);
+            hmac_engine.input(&self.key().to_key().to_bytes());
+            hmac_engine.input(&child.to_be_bytes());
+            let hmac_result: Hmac<sha512::Hash> = Hmac::from_engine(hmac_engine);
+
+            self.key = self.key.clone().tweak(
+                Scalar::<Public, _>::from_slice_mod_order(&hmac_result[..32]).expect("32 bytes"),
+            );
+            self.chaincode.copy_from_slice(&hmac_result[32..]);
         }
     }
 
@@ -339,11 +302,42 @@ impl<T: TweakableKey> Xpub<T> {
     pub fn into_key(self) -> T {
         self.key
     }
+}
 
-    pub fn xpub(&self, network: bitcoin::Network) -> bitcoin::bip32::Xpub {
-        let mut xpub = self.xpub;
-        xpub.network = network.into();
-        xpub
+/// Xpub to do bip32 deriviation without all the nonsense.
+#[derive(
+    Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Hash, bincode::Encode, bincode::Decode, Debug,
+)]
+pub struct Xpub<T> {
+    pub key: T,
+    pub chaincode: [u8; 32],
+}
+
+impl Xpub<SharedKey> {
+    pub fn public_key(&self) -> Xpub<Point> {
+        Xpub {
+            key: self.key.public_key(),
+            chaincode: self.chaincode,
+        }
+    }
+}
+
+impl<T: TweakableKey> Xpub<T> {
+    /// Create a rust bitcoin xpub lying about the fields we don't care about
+    pub fn to_bitcoin_xpub_with_lies(
+        &self,
+        network_kind: bitcoin::NetworkKind,
+    ) -> bitcoin::bip32::Xpub {
+        bitcoin::bip32::Xpub {
+            network: network_kind,
+            // note below this is a lie and shouldn't matter VVV
+            depth: 0,
+            parent_fingerprint: Fingerprint::default(),
+            child_number: ChildNumber::from_normal_idx(0).unwrap(),
+            // ^^^ above is a lie and shouldn't matter
+            public_key: self.key.to_libsecp_key(),
+            chain_code: ChainCode::from(self.chaincode),
+        }
     }
 }
 
@@ -363,11 +357,17 @@ mod test {
             5,
             &mut rand::thread_rng(),
         );
-        let (app_key, chaincode) = frost_key.app_tweak_and_expand(AppTweakKind::Bitcoin);
 
-        let mut app_xpub = Xpub::new(app_key, chaincode);
+        let mut app_xpub = Xpub::from_root_key(frost_key);
         let secp = Secp256k1::verification_only();
-        let xpub = app_xpub.xpub(bitcoin::Network::Bitcoin);
+        let xpub = bitcoin::bip32::Xpub {
+            network: bitcoin::Network::Bitcoin.into(),
+            depth: 0,
+            parent_fingerprint: Fingerprint::default(),
+            child_number: ChildNumber::from_normal_idx(0).unwrap(),
+            public_key: app_xpub.key.public_key().into(),
+            chain_code: ChainCode::from(app_xpub.chaincode),
+        };
         let path = [1337u32, 42, 0];
         let child_path = path
             .iter()
@@ -376,6 +376,7 @@ mod test {
         let derived_xpub = xpub.derive_pub(&secp, &child_path).unwrap();
         app_xpub.derive_bip32(&path);
 
-        assert_eq!(app_xpub.xpub(bitcoin::Network::Bitcoin), derived_xpub);
+        assert_eq!(app_xpub.chaincode, *derived_xpub.chain_code.as_bytes());
+        assert_eq!(app_xpub.key.public_key(), derived_xpub.public_key.into());
     }
 }

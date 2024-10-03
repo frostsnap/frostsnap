@@ -12,15 +12,15 @@ pub use frostsnap_coordinator::bitcoin::wallet::ConfirmationTime;
 pub use frostsnap_coordinator::bitcoin::{chain_sync::ChainSync, wallet::FrostsnapWallet};
 pub use frostsnap_coordinator::firmware_upgrade::FirmwareUpgradeConfirmState;
 pub use frostsnap_coordinator::frostsnap_core;
-use frostsnap_coordinator::frostsnap_core::schnorr_fun::fun::hash::HashAdd;
 pub use frostsnap_coordinator::{
     keygen::KeyGenState, signing::SigningState, DeviceChange, PortDesc,
 };
 use frostsnap_coordinator::{DesktopSerial, UsbSerialManager};
 pub use frostsnap_core::message::EncodedSignature;
-pub use frostsnap_core::{DeviceId, FrostKeyExt, KeyId, SignTask};
+pub use frostsnap_core::{
+    coordinator::AccessStructureRef, AccessStructureId, Appkey, DeviceId, SessionHash, SignTask,
+};
 use lazy_static::lazy_static;
-use sha2::Digest;
 pub use std::collections::BTreeMap;
 use std::ops::Deref;
 use std::str::FromStr;
@@ -132,23 +132,49 @@ impl ConnectedDevice {
 #[derive(Clone, Debug)]
 pub struct KeyState {
     pub keys: Vec<FrostKey>,
-    // pub key_names: BTreeMap<KeyId, String>,
+    // pub key_names: BTreeMap<Appkey, String>,
 }
 
 #[derive(Clone, Debug)]
-pub struct FrostKey(pub(crate) RustOpaque<frostsnap_core::coordinator::CoordinatorFrostKey>);
+pub struct FrostKey(pub(crate) RustOpaque<frostsnap_core::coordinator::CoordFrostKey>);
 
 impl FrostKey {
-    pub fn threshold(&self) -> SyncReturn<usize> {
-        SyncReturn(self.0.frost_key().threshold())
-    }
-
-    pub fn id(&self) -> SyncReturn<KeyId> {
-        SyncReturn(self.0.frost_key().key_id())
+    pub fn appkey(&self) -> SyncReturn<Appkey> {
+        SyncReturn(self.0.appkey)
     }
 
     pub fn key_name(&self) -> SyncReturn<String> {
-        SyncReturn(self.0.key_name())
+        SyncReturn(self.0.key_name.clone())
+    }
+
+    pub fn access_structures(&self) -> SyncReturn<Vec<AccessStructure>> {
+        SyncReturn(
+            self.0
+                .access_structures
+                .iter()
+                .cloned()
+                .map(From::from)
+                .collect(),
+        )
+    }
+}
+
+pub struct AccessStructure(
+    pub(crate) RustOpaque<frostsnap_core::coordinator::CoordAccessStructure>,
+);
+
+impl From<frostsnap_core::coordinator::CoordAccessStructure> for AccessStructure {
+    fn from(value: frostsnap_core::coordinator::CoordAccessStructure) -> Self {
+        Self(RustOpaque::new(value))
+    }
+}
+impl AccessStructure {
+    pub fn threshold(&self) -> SyncReturn<usize> {
+        SyncReturn(self.0.threshold())
+    }
+
+    pub fn access_structure_ref(&self) -> SyncReturn<AccessStructureRef> {
+        SyncReturn(self.0.access_structure_ref())
     }
 
     pub fn devices(&self) -> SyncReturn<Vec<DeviceId>> {
@@ -156,11 +182,17 @@ impl FrostKey {
     }
 
     /// Create an identifier that's used to determine compatibility of shamir secret shares.
-    /// The first 4 bech32 chars from a hash of the polynomial coefficients.
-    /// Collision expected once in (32)^4 = 2^20.
-    pub fn polynomial_identifier(&self) -> SyncReturn<Vec<u8>> {
-        let hash = sha2::Sha256::default().add(self.0.frost_key().point_polynomial());
-        SyncReturn(hash.finalize()[0..4].to_vec())
+    /// The first 4
+    pub fn id(&self) -> SyncReturn<AccessStructureId> {
+        SyncReturn(self.0.access_structure_id())
+    }
+
+    pub fn short_id(&self) -> SyncReturn<String> {
+        SyncReturn(self.0.access_structure_id().to_string().split_off(8))
+    }
+
+    pub fn appkey(&self) -> SyncReturn<Appkey> {
+        SyncReturn(self.0.appkey())
     }
 }
 
@@ -170,12 +202,6 @@ pub struct _PortDesc {
     pub vid: u16,
     pub pid: u16,
 }
-
-#[frb(mirror(DeviceId))]
-pub struct _DeviceId(pub [u8; 33]);
-
-#[frb(mirror(KeyId))]
-pub struct _KeyId(pub [u8; 33]);
 
 #[derive(Debug)]
 pub enum PortEvent {
@@ -304,37 +330,6 @@ pub fn get_connected_device(id: DeviceId) -> SyncReturn<Option<ConnectedDevice>>
     SyncReturn(device)
 }
 
-#[frb(mirror(EncodedSignature))]
-pub struct _EncodedSignature(pub [u8; 64]);
-
-#[frb(mirror(SigningState))]
-pub struct _SigningState {
-    pub got_shares: Vec<DeviceId>,
-    pub needed_from: Vec<DeviceId>,
-    // for some reason FRB woudln't allow Option here to empty vec implies not being finished
-    pub finished_signatures: Vec<EncodedSignature>,
-}
-
-#[frb(mirror(KeyGenState))]
-pub struct _KeyGenState {
-    pub devices: Vec<DeviceId>, // not a set for frb compat
-    pub got_shares: Vec<DeviceId>,
-    pub session_acks: Vec<DeviceId>,
-    pub session_hash: Option<[u8; 32]>,
-    pub finished: Option<KeyId>,
-    pub aborted: Option<String>,
-    pub threshold: usize,
-}
-
-#[frb(mirror(FirmwareUpgradeConfirmState))]
-pub struct _FirmwareUpgradeConfirmState {
-    pub confirmations: Vec<DeviceId>,
-    pub devices: Vec<DeviceId>,
-    pub need_upgrade: Vec<DeviceId>,
-    pub abort: bool,
-    pub upgrade_ready_to_start: bool,
-}
-
 #[derive(Clone, Debug)]
 pub enum DeviceListChangeKind {
     Added,
@@ -369,28 +364,28 @@ impl DeviceListState {
 
 pub struct Wallet {
     pub inner: RustOpaque<Mutex<FrostsnapWallet>>,
-    pub wallet_streams: RustOpaque<Mutex<BTreeMap<KeyId, StreamSink<TxState>>>>,
+    pub wallet_streams: RustOpaque<Mutex<BTreeMap<Appkey, StreamSink<TxState>>>>,
     pub chain_sync: RustOpaque<ChainSync>,
 }
 
 impl Wallet {
-    pub fn sub_tx_state(&self, key_id: KeyId, stream: StreamSink<TxState>) -> Result<()> {
-        stream.add(self.tx_state(key_id).0);
-        if let Some(existing) = self.wallet_streams.lock().unwrap().insert(key_id, stream) {
+    pub fn sub_tx_state(&self, appkey: Appkey, stream: StreamSink<TxState>) -> Result<()> {
+        stream.add(self.tx_state(appkey).0);
+        if let Some(existing) = self.wallet_streams.lock().unwrap().insert(appkey, stream) {
             existing.close();
         }
 
         Ok(())
     }
 
-    pub fn tx_state(&self, key_id: KeyId) -> SyncReturn<TxState> {
-        let txs = self.inner.lock().unwrap().list_transactions(key_id);
+    pub fn tx_state(&self, appkey: Appkey) -> SyncReturn<TxState> {
+        let txs = self.inner.lock().unwrap().list_transactions(appkey);
         SyncReturn(txs.into())
     }
 
     pub fn sync_txids(
         &self,
-        key_id: KeyId,
+        appkey: Appkey,
         txids: Vec<String>,
         stream: StreamSink<f64>,
     ) -> Result<()> {
@@ -421,9 +416,9 @@ impl Wallet {
         let something_changed = wallet.finish_sync(update)?;
 
         if something_changed {
-            let txs = wallet.list_transactions(key_id);
+            let txs = wallet.list_transactions(appkey);
             drop(wallet);
-            if let Some(wallet_stream) = self.wallet_streams.lock().unwrap().get(&key_id) {
+            if let Some(wallet_stream) = self.wallet_streams.lock().unwrap().get(&appkey) {
                 wallet_stream.add(txs.into());
             }
 
@@ -446,15 +441,15 @@ impl Wallet {
         Ok(())
     }
 
-    pub fn sync(&self, key_id: KeyId, stream: StreamSink<f64>) -> Result<()> {
-        let span = span!(Level::DEBUG, "syncing", key_id = key_id.to_string());
+    pub fn sync(&self, appkey: Appkey, stream: StreamSink<f64>) -> Result<()> {
+        let span = span!(Level::DEBUG, "syncing", appkey = appkey.to_string());
         let _enter = span.enter();
         let start = Instant::now();
         event!(Level::INFO, "starting sync");
         let sync_request = {
             let inspect_stream = stream.clone();
             let wallet = self.inner.lock().unwrap();
-            let sync_req = wallet.start_sync(key_id);
+            let sync_req = wallet.start_sync(appkey);
             let total = sync_req.spks.len();
             let mut i = 0;
             sync_req.inspect_spks(move |_spk| {
@@ -469,9 +464,9 @@ impl Wallet {
         let something_changed = wallet.finish_sync(update)?;
 
         if something_changed {
-            let txs = wallet.list_transactions(key_id);
+            let txs = wallet.list_transactions(appkey);
             drop(wallet);
-            if let Some(wallet_stream) = self.wallet_streams.lock().unwrap().get(&key_id) {
+            if let Some(wallet_stream) = self.wallet_streams.lock().unwrap().get(&appkey) {
                 wallet_stream.add(txs.into());
             }
         }
@@ -489,20 +484,20 @@ impl Wallet {
         Ok(())
     }
 
-    pub fn next_address(&self, key_id: KeyId) -> Result<Address> {
+    pub fn next_address(&self, appkey: Appkey) -> Result<Address> {
         self.inner
             .lock()
             .unwrap()
-            .next_address(key_id)
+            .next_address(appkey)
             .map(Into::into)
     }
 
-    pub fn addresses_state(&self, key_id: KeyId) -> SyncReturn<Vec<Address>> {
+    pub fn addresses_state(&self, appkey: Appkey) -> SyncReturn<Vec<Address>> {
         SyncReturn(
             self.inner
                 .lock()
                 .unwrap()
-                .list_addresses(key_id)
+                .list_addresses(appkey)
                 .into_iter()
                 .map(Into::into)
                 .collect(),
@@ -511,7 +506,7 @@ impl Wallet {
 
     pub fn send_to(
         &self,
-        key_id: KeyId,
+        appkey: Appkey,
         to_address: String,
         value: u64,
         feerate: f64,
@@ -521,14 +516,14 @@ impl Wallet {
             .expect("validation should have checked")
             .require_network(wallet.network)
             .expect("validation should have checked");
-        let signing_task = wallet.send_to(key_id, to_address, value, feerate as f32)?;
+        let signing_task = wallet.send_to(appkey, to_address, value, feerate as f32)?;
         let unsigned_tx = UnsignedTx {
             template_tx: RustOpaque::new(signing_task),
         };
         Ok(unsigned_tx)
     }
 
-    pub fn broadcast_tx(&self, key_id: KeyId, tx: SignedTx) -> Result<()> {
+    pub fn broadcast_tx(&self, appkey: Appkey, tx: SignedTx) -> Result<()> {
         match self.chain_sync.broadcast(&tx.signed_tx) {
             Ok(_) => {
                 event!(
@@ -539,8 +534,8 @@ impl Wallet {
                 let mut inner = self.inner.lock().unwrap();
                 inner.broadcast_success(tx.signed_tx.deref().to_owned());
                 let wallet_streams = self.wallet_streams.lock().unwrap();
-                if let Some(stream) = wallet_streams.get(&key_id) {
-                    let txs = inner.list_transactions(key_id);
+                if let Some(stream) = wallet_streams.get(&appkey) {
+                    let txs = inner.list_transactions(appkey);
                     stream.add(txs.into());
                 }
                 Ok(())
@@ -563,12 +558,16 @@ impl Wallet {
         }
     }
 
-    pub fn psbt_to_unsigned_tx(&self, psbt: Psbt, key_id: KeyId) -> Result<SyncReturn<UnsignedTx>> {
+    pub fn psbt_to_unsigned_tx(
+        &self,
+        psbt: Psbt,
+        appkey: Appkey,
+    ) -> Result<SyncReturn<UnsignedTx>> {
         let template = self
             .inner
             .lock()
             .unwrap()
-            .psbt_to_tx_template(&psbt.inner, key_id.to_root_pubkey().expect("valid key id"))?;
+            .psbt_to_tx_template(&psbt.inner, appkey)?;
 
         Ok(SyncReturn(UnsignedTx {
             template_tx: RustOpaque::new(template),
@@ -664,10 +663,11 @@ impl Coordinator {
     pub fn display_backup(
         &self,
         id: DeviceId,
-        key_id: KeyId,
+        access_structure_ref: AccessStructureRef,
         stream: StreamSink<()>,
     ) -> Result<()> {
-        self.0.request_display_backup(id, key_id, stream)?;
+        self.0
+            .request_display_backup(id, access_structure_ref, stream, crate::TEMP_KEY)?;
         Ok(())
     }
 
@@ -682,36 +682,46 @@ impl Coordinator {
         Ok(())
     }
 
-    pub fn get_key(&self, key_id: KeyId) -> SyncReturn<Option<FrostKey>> {
+    pub fn get_key(&self, appkey: Appkey) -> SyncReturn<Option<FrostKey>> {
         SyncReturn(
             self.0
                 .frost_keys()
                 .into_iter()
-                .find(|frost_key| frost_key.id().0 == key_id),
+                .find(|frost_key| frost_key.appkey().0 == appkey),
         )
     }
 
-    pub fn get_key_name(&self, key_id: KeyId) -> SyncReturn<Option<String>> {
+    pub fn get_key_name(&self, appkey: Appkey) -> SyncReturn<Option<String>> {
         SyncReturn(
             self.0
                 .frost_keys()
                 .into_iter()
-                .find(|frost_key| frost_key.id().0 == key_id)
-                .map(|frost_key| frost_key.0.key_name()),
+                .find(|frost_key| frost_key.appkey().0 == appkey)
+                .map(|frost_key| frost_key.key_name().0),
         )
     }
 
-    pub fn keys_for_device(&self, device_id: DeviceId) -> SyncReturn<Vec<KeyId>> {
+    pub fn access_structures_involving_device(
+        &self,
+        device_id: DeviceId,
+    ) -> SyncReturn<Vec<AccessStructureRef>> {
         SyncReturn(
             self.0
                 .frost_keys()
                 .into_iter()
-                .filter_map(|frost_key| {
-                    if frost_key.devices().0.into_iter().any(|id| id == device_id) {
-                        Some(frost_key.id().0)
-                    } else {
-                        None
-                    }
+                .flat_map(|frost_key| {
+                    let appkey: Appkey = frost_key.appkey().0;
+                    frost_key
+                        .0
+                        .access_structures
+                        .iter()
+                        .filter(|access_structure| access_structure.contains_device(device_id))
+                        .map(|access_structure| access_structure.access_structure_id())
+                        .map(|access_structure_id| AccessStructureRef {
+                            appkey,
+                            access_structure_id,
+                        })
+                        .collect::<Vec<_>>()
                 })
                 .collect(),
         )
@@ -719,32 +729,34 @@ impl Coordinator {
 
     pub fn start_signing(
         &self,
-        key_id: KeyId,
+        access_structure_ref: AccessStructureRef,
         devices: Vec<DeviceId>,
         message: String,
         stream: StreamSink<SigningState>,
     ) -> Result<()> {
         self.0.start_signing(
-            key_id,
+            access_structure_ref,
             devices.into_iter().collect(),
             SignTask::Plain { message },
             stream,
+            crate::TEMP_KEY,
         )?;
         Ok(())
     }
 
     pub fn start_signing_tx(
         &self,
-        key_id: KeyId,
+        access_structure_ref: AccessStructureRef,
         unsigned_tx: UnsignedTx,
         devices: Vec<DeviceId>,
         stream: StreamSink<SigningState>,
     ) -> Result<()> {
         self.0.start_signing(
-            key_id,
+            access_structure_ref,
             devices.into_iter().collect(),
             SignTask::BitcoinTransaction(unsigned_tx.template_tx.deref().clone()),
             stream,
+            crate::TEMP_KEY,
         )?;
         Ok(())
     }
@@ -774,17 +786,17 @@ impl Coordinator {
 
     pub fn persisted_sign_session_description(
         &self,
-        key_id: KeyId,
+        appkey: Appkey,
     ) -> SyncReturn<Option<SignTaskDescription>> {
-        SyncReturn(self.0.persisted_sign_session_description(key_id))
+        SyncReturn(self.0.persisted_sign_session_description(appkey))
     }
 
     pub fn try_restore_signing_session(
         &self,
-        key_id: KeyId,
+        appkey: Appkey,
         stream: StreamSink<SigningState>,
     ) -> Result<()> {
-        self.0.try_restore_signing_session(key_id, stream)
+        self.0.try_restore_signing_session(appkey, stream)
     }
 
     pub fn start_firmware_upgrade(
@@ -811,8 +823,19 @@ impl Coordinator {
         SyncReturn(self.0.get_device_name(id))
     }
 
-    pub fn final_keygen_ack(&self) -> Result<KeyId> {
+    pub fn final_keygen_ack(&self) -> Result<AccessStructureRef> {
         self.0.final_keygen_ack()
+    }
+
+    pub fn get_access_structure(
+        &self,
+        as_ref: AccessStructureRef,
+    ) -> SyncReturn<Option<AccessStructure>> {
+        SyncReturn(
+            self.0
+                .get_access_structure(as_ref)
+                .map(|access_structure| AccessStructure(RustOpaque::new(access_structure))),
+        )
     }
 }
 
@@ -823,11 +846,11 @@ pub struct BitcoinContext {
 }
 
 impl BitcoinContext {
-    pub fn descriptor_for_key(&self, key_id: KeyId) -> SyncReturn<String> {
+    pub fn descriptor_for_key(&self, appkey: Appkey) -> SyncReturn<String> {
         let descriptor = frostsnap_coordinator::bitcoin::multi_x_descriptor_for_account(
-            key_id.to_root_pubkey().expect("valid key id"),
+            appkey,
             frostsnap_core::tweak::Account::Segwitv1,
-            *self.network,
+            (*self.network).into(),
         );
         SyncReturn(descriptor.to_string())
     }
@@ -879,10 +902,10 @@ pub struct SignedTx {
 impl SignedTx {
     pub fn effect(
         &self,
-        key_id: KeyId,
+        appkey: Appkey,
         network: RustOpaque<bitcoin::Network>,
     ) -> Result<SyncReturn<EffectOfTx>> {
-        self.unsigned_tx.effect(key_id, network)
+        self.unsigned_tx.effect(appkey, network)
     }
 }
 
@@ -929,7 +952,7 @@ impl UnsignedTx {
 
     pub fn effect(
         &self,
-        key_id: KeyId,
+        appkey: Appkey,
         network: RustOpaque<bitcoin::Network>,
     ) -> Result<SyncReturn<EffectOfTx>> {
         use frostsnap_core::bitcoin_transaction::RootOwner;
@@ -939,7 +962,7 @@ impl UnsignedTx {
             .ok_or(anyhow!("invalid transaction"))?;
         let mut net_value = self.template_tx.net_value();
         let value_for_this_key = net_value
-            .remove(&RootOwner::Local(key_id))
+            .remove(&RootOwner::Local(appkey))
             .ok_or(anyhow!("this transaction has no effect on this key"))?;
 
         let foreign_receiving_addresses = net_value
@@ -1009,17 +1032,12 @@ pub struct EffectOfTx {
     pub foreign_receiving_addresses: Vec<(String, u64)>,
 }
 
-// TODO: remove me?
-pub fn echo_key_id(key_id: KeyId) -> KeyId {
-    key_id
-}
-
 pub enum SignTaskDescription {
     Plain { message: String },
     // Nostr {
     //     #[bincode(with_serde)]
     //     event: Box<crate::nostr::UnsignedEvent>,
-    //     key_id: KeyId,
+    //     appkey: Appkey,
     // }, // 1 nonce & sig
     Transaction { unsigned_tx: UnsignedTx },
 }
@@ -1089,4 +1107,68 @@ impl QrEncoder {
     pub fn next(&self) -> SyncReturn<String> {
         SyncReturn(self.0.next().to_uppercase())
     }
+}
+
+#[frb(mirror(AccessStructureId))]
+pub struct _AccessStructureId(pub [u8; 32]);
+
+#[frb(mirror(DeviceId))]
+pub struct _DeviceId(pub [u8; 33]);
+
+#[frb(mirror(Appkey))]
+pub struct _Appkey(pub [u8; 65]);
+
+#[frb(mirror(SessionHash))]
+pub struct _SessionHash(pub [u8; 32]);
+
+#[frb(mirror(EncodedSignature))]
+pub struct _EncodedSignature(pub [u8; 64]);
+
+#[frb(mirror(SigningState))]
+pub struct _SigningState {
+    pub got_shares: Vec<DeviceId>,
+    pub needed_from: Vec<DeviceId>,
+    // for some reason FRB woudln't allow Option here to empty vec implies not being finished
+    pub finished_signatures: Vec<EncodedSignature>,
+}
+
+#[frb(mirror(KeyGenState))]
+pub struct _KeyGenState {
+    pub threshold: usize,
+    pub devices: Vec<DeviceId>, // not a set for frb compat
+    pub got_shares: Vec<DeviceId>,
+    pub session_acks: Vec<DeviceId>,
+    pub all_acks: bool,
+    pub session_hash: Option<SessionHash>,
+    pub finished: Option<AccessStructureRef>,
+    pub aborted: Option<String>,
+}
+
+#[frb(mirror(FirmwareUpgradeConfirmState))]
+pub struct _FirmwareUpgradeConfirmState {
+    pub confirmations: Vec<DeviceId>,
+    pub devices: Vec<DeviceId>,
+    pub need_upgrade: Vec<DeviceId>,
+    pub abort: bool,
+    pub upgrade_ready_to_start: bool,
+}
+
+#[frb(mirror(AccessStructureRef))]
+pub struct _AccessStructureRef {
+    pub appkey: Appkey,
+    pub access_structure_id: AccessStructureId,
+}
+
+// XXX: bugs in flutter_rust_bridge mean that sometimes the right code doesn't get emitted unless
+// you use it as an argument.
+pub fn echo_appkey(appkey: Appkey) -> Appkey {
+    appkey
+}
+
+pub fn echo_asid(value: AccessStructureId) -> AccessStructureId {
+    value
+}
+
+pub fn echo_asr(value: AccessStructureRef) -> AccessStructureRef {
+    value
 }

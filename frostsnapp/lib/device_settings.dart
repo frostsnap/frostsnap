@@ -64,7 +64,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
   @override
   Widget build(BuildContext context) {
     final Widget body;
-    final deviceKeys = coord.keysForDevice(deviceId: widget.id);
+    final keys = coord.keyState().keys;
     if (device == null) {
       body = Center(
           child: Column(children: const [
@@ -78,10 +78,11 @@ class _DeviceSettingsState extends State<DeviceSettings> {
       final device_ = device!;
       Widget keyList = ListView.builder(
         shrinkWrap: true,
-        itemCount: deviceKeys.length,
+        itemCount: keys.length,
         itemBuilder: (context, index) {
-          final keyId = deviceKeys[index];
-          final keyName = coord.getKeyName(keyId: keyId)!;
+          final key = keys[index];
+          final accessStructure = key.accessStructures()[0];
+          final keyName = key.keyName();
           return Padding(
               padding: const EdgeInsets.only(
                   bottom: 4.0), // Adjust the padding/margin here
@@ -99,7 +100,10 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                     ElevatedButton(
                       onPressed: () async {
                         final confirmed = coord
-                            .displayBackup(id: widget.id, keyId: keyId)
+                            .displayBackup(
+                                id: widget.id,
+                                accessStructureRef:
+                                    accessStructure.accessStructureRef())
                             .first;
 
                         final result = await showDeviceActionDialog(
@@ -149,7 +153,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
         },
       );
 
-      if (deviceKeys.isEmpty) {
+      if (keys.isEmpty) {
         keyList = Text(
           'No keys on this device',
           style: TextStyle(color: uninterestedColor, fontSize: 20.0),

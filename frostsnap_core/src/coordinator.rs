@@ -1,6 +1,9 @@
 use crate::{
-    message::*, ActionError, Error, FrostKeyExt, Gist, KeyId, MessageResult, SignItem, SignTask,
-    SignTaskError,
+    message::*,
+    symmetric_encryption::{Ciphertext, SymmetricKey},
+    tweak::Xpub,
+    AccessStructureId, ActionError, Appkey, CoordShareDecryptionContrib, Error, Gist, KeyId,
+    MessageResult, SessionHash, SignItem, SignTask, SignTaskError,
 };
 use alloc::{
     collections::{BTreeMap, BTreeSet, VecDeque},
@@ -15,7 +18,7 @@ use schnorr_fun::{
     fun::prelude::*,
     Schnorr, Signature,
 };
-use sha2::{digest::FixedOutput, Digest, Sha256};
+use sha2::Sha256;
 
 use crate::DeviceId;
 
@@ -23,11 +26,59 @@ pub const MIN_NONCES_BEFORE_REQUEST: usize = 5;
 
 #[derive(Debug, Clone, Default)]
 pub struct FrostCoordinator {
-    keys: BTreeMap<KeyId, CoordinatorFrostKey>,
-    key_order: Vec<KeyId>,
+    keys: BTreeMap<Appkey, CoordFrostKey>,
+    key_order: Vec<Appkey>,
     action_state: Option<CoordinatorState>,
     device_nonces: BTreeMap<DeviceId, DeviceNonces>,
     mutations: VecDeque<Mutation>,
+}
+
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq)]
+pub struct CoordFrostKey {
+    pub appkey: Appkey,
+    pub key_name: String,
+    pub access_structures: Vec<CoordAccessStructure>,
+    pub encrypted_root_key: Ciphertext<33, Point>,
+}
+
+impl CoordFrostKey {
+    pub fn get_access_structure(
+        &self,
+        access_structure_id: AccessStructureId,
+    ) -> Option<CoordAccessStructure> {
+        self.access_structures
+            .iter()
+            .find(|access_structure| access_structure.access_structure_id() == access_structure_id)
+            .cloned()
+    }
+
+    pub fn coord_share_decryption_contrib(
+        &self,
+        access_structure_id: AccessStructureId,
+        encryption_key: SymmetricKey,
+    ) -> Option<CoordShareDecryptionContrib> {
+        let root_shared_key = self.root_shared_key(access_structure_id, encryption_key)?;
+        Some(CoordShareDecryptionContrib::from_root_shared_key(
+            &root_shared_key,
+        ))
+    }
+
+    pub fn root_shared_key(
+        &self,
+        access_structure_id: AccessStructureId,
+        encryption_key: SymmetricKey,
+    ) -> Option<SharedKey> {
+        let access_strcuture = self.get_access_structure(access_structure_id)?;
+        let root_key = self.encrypted_root_key.decrypt(encryption_key)?;
+        let mut poly = access_strcuture
+            .app_shared_key
+            .key
+            .point_polynomial()
+            .to_vec();
+        poly[0] = root_key.mark_zero();
+        debug_assert!(Appkey::derive_from_root_key(root_key) == access_strcuture.appkey());
+        Some(SharedKey::from_poly(poly).non_zero().expect("invariant"))
+    }
 }
 
 impl FrostCoordinator {
@@ -49,11 +100,25 @@ impl FrostCoordinator {
     pub fn apply_mutation(&mut self, mutation: &Mutation) {
         use Mutation::*;
         match mutation {
-            NewKey(key) => {
-                let key_id = key.frost_key().key_id();
-                let actually_new = self.keys.insert(key_id, key.clone()).is_none();
-                if actually_new {
-                    self.key_order.push(key_id);
+            NewKey {
+                appkey,
+                key_name: name,
+                encrypted_root_key,
+            } => {
+                let existing = self
+                    .keys
+                    .insert(
+                        *appkey,
+                        CoordFrostKey {
+                            appkey: *appkey,
+                            key_name: name.clone(),
+                            access_structures: vec![],
+                            encrypted_root_key: *encrypted_root_key,
+                        },
+                    )
+                    .is_some();
+                if !existing {
+                    self.key_order.push(*appkey);
                 }
             }
             NoncesUsed {
@@ -86,6 +151,21 @@ impl FrostCoordinator {
                 let device_nonces = self.device_nonces.entry(*device_id).or_default();
                 device_nonces.nonces.extend(new_nonces);
             }
+            NewAccessStructure(access_structure) => {
+                match self.keys.get_mut(&access_structure.appkey()) {
+                    Some(key_data) => {
+                        key_data.access_structures.push(access_structure.clone());
+                    }
+                    None => {
+                        #[cfg(feature = "tracing")]
+                        tracing::event!(
+                            tracing::Level::ERROR,
+                            "access structure added to non-existent key"
+                        );
+                        debug_assert!(false, "access structure added to non-existent key");
+                    }
+                }
+            }
         }
     }
 
@@ -94,17 +174,13 @@ impl FrostCoordinator {
     }
 
     pub fn restore_sign_session(&mut self, sign_state: SigningSessionState) {
-        let key = self
-            .frost_key_state(sign_state.request.key_id)
-            .expect("cannot restore in coordinator without state")
-            .clone();
-        self.action_state = Some(CoordinatorState::Signing { sign_state, key });
+        self.action_state = Some(CoordinatorState::Signing { sign_state });
     }
 
-    pub fn iter_keys(&self) -> impl Iterator<Item = &CoordinatorFrostKey> + '_ {
+    pub fn iter_keys(&self) -> impl Iterator<Item = &CoordFrostKey> + '_ {
         self.key_order
             .iter()
-            .map(|key_id| self.keys.get(key_id).expect("invariant"))
+            .map(|appkey| self.keys.get(appkey).expect("invariant"))
     }
 
     pub fn recv_device_message(
@@ -153,10 +229,7 @@ impl FrostCoordinator {
 
                 if input_aggregator.is_finished() {
                     let agg_input = input_aggregator.clone().finish().unwrap();
-                    let session_hash = Sha256::default()
-                        .chain_update(agg_input.cert_bytes())
-                        .finalize_fixed()
-                        .into();
+                    let session_hash = SessionHash::from_agg_input(&agg_input);
                     outgoing.push(CoordinatorSend::ToDevice {
                         destinations: device_to_share_index.keys().cloned().collect(),
                         message: CoordinatorToDeviceMessage::FinishKeyGen {
@@ -195,10 +268,7 @@ impl FrostCoordinator {
                 DeviceToCoordinatorMessage::KeyGenAck(acked_session_hash),
             ) => {
                 let mut outgoing = vec![];
-                let session_hash: [u8; 32] = Sha256::default()
-                    .chain_update(agg_input.cert_bytes())
-                    .finalize_fixed()
-                    .into();
+                let session_hash = SessionHash::from_agg_input(agg_input);
 
                 if acked_session_hash != session_hash {
                     return Err(Error::coordinator_invalid_message(
@@ -228,7 +298,7 @@ impl FrostCoordinator {
                 Ok(outgoing)
             }
             (
-                Some(CoordinatorState::Signing { key, sign_state }),
+                Some(CoordinatorState::Signing { sign_state }),
                 DeviceToCoordinatorMessage::SignatureShare {
                     ref signature_shares,
                     ref mut new_nonces,
@@ -239,7 +309,8 @@ impl FrostCoordinator {
                 let frost = frost::new_without_nonce_generation::<Sha256>();
                 let mut outgoing = vec![];
 
-                let signer_index = key
+                let signer_index = sign_state
+                    .access_structure
                     .device_to_share_index
                     .get(&from)
                     .expect("we don't know this device");
@@ -309,9 +380,9 @@ impl FrostCoordinator {
                         .insert(from, *signature_share);
                 }
 
-                let all_finished = sessions
-                    .iter()
-                    .all(|session| session.signature_shares.len() == key.frost_key.threshold());
+                let all_finished = sessions.iter().all(|session| {
+                    session.signature_shares.len() == sign_state.access_structure.threshold()
+                });
 
                 // the coordinator may want to persist this so a signing session can be restored
                 outgoing.push(CoordinatorSend::SigningSessionStore(sign_state.clone()));
@@ -457,7 +528,11 @@ impl FrostCoordinator {
 
     /// This is called when the user has checked every device agrees and finally confirms this with
     /// the coordinator.
-    pub fn final_keygen_ack(&mut self) -> Result<KeyId, ActionError> {
+    pub fn final_keygen_ack(
+        &mut self,
+        encryption_key: SymmetricKey,
+        rng: &mut impl rand_core::RngCore,
+    ) -> Result<AccessStructureRef, ActionError> {
         match &self.action_state {
             Some(CoordinatorState::KeyGen(KeyGenState::WaitingForAcks {
                 device_to_share_index,
@@ -466,17 +541,31 @@ impl FrostCoordinator {
                 pending_key_name,
             })) => {
                 let all_acks = acks.len() == device_to_share_index.len();
+                let root_shared_key = agg_input
+                    .shared_key()
+                    .non_zero()
+                    .expect("this should have already been checked");
+                let root_key = root_shared_key.public_key();
+                let root_shared_key = Xpub::from_root_key(root_shared_key);
+                let app_shared_key = root_shared_key.root_key_to_appkey();
+                let encrypted_root_key = Ciphertext::encrypt(encryption_key, &root_key, rng);
+                let appkey = Appkey::derive_from_root_key(root_key);
+                let name = pending_key_name.clone();
                 if all_acks {
-                    let key = CoordinatorFrostKey {
-                        frost_key: agg_input.shared_key().non_zero().expect("invariant"),
+                    let access_structure = CoordAccessStructure {
+                        app_shared_key,
                         device_to_share_index: device_to_share_index.clone(),
-                        key_name: pending_key_name.clone(),
                     };
-                    let key_id = key.frost_key.key_id();
+                    let access_structure_ref = access_structure.access_structure_ref();
                     self.action_state = None;
+                    self.mutate(Mutation::NewKey {
+                        key_name: name,
+                        appkey,
+                        encrypted_root_key,
+                    });
+                    self.mutate(Mutation::NewAccessStructure(access_structure));
 
-                    self.mutate(Mutation::NewKey(key));
-                    Ok(key_id)
+                    Ok(access_structure_ref)
                 } else {
                     Err(ActionError::StateInconsistent(
                         "all device acks have not been received yet".into(),
@@ -492,10 +581,15 @@ impl FrostCoordinator {
 
     pub fn start_sign(
         &mut self,
-        key_id: KeyId,
+        access_structure_ref: AccessStructureRef,
         sign_task: SignTask,
         signing_parties: BTreeSet<DeviceId>,
+        encryption_key: SymmetricKey,
     ) -> Result<Vec<CoordinatorSend>, StartSignError> {
+        let AccessStructureRef {
+            appkey,
+            access_structure_id,
+        } = access_structure_ref;
         if self.action_state.is_some() {
             // we're doing something else so it's an error to call this
             return Err(StartSignError::CantSignInState {
@@ -503,23 +597,30 @@ impl FrostCoordinator {
             });
         }
 
-        let key = self
+        let key_data = self
             .keys
-            .get(&key_id)
-            .ok_or(StartSignError::UnknownKey { key_id })?
+            .get(&appkey)
+            .ok_or(StartSignError::UnknownKey { appkey })?
             .clone();
-        let frost_key = key.frost_key.clone();
+
+        let access_structure = key_data
+            .get_access_structure(access_structure_id)
+            .ok_or(StartSignError::NoSuchAccessStructure)?;
+        let app_shared_key = access_structure.app_shared_key().clone();
+
+        let root_shared_key = key_data
+            .root_shared_key(access_structure_id, encryption_key)
+            .ok_or(StartSignError::CouldntDecryptRootKey)?;
+
         let selected = signing_parties.len();
-        if selected < frost_key.threshold() {
+        if selected < access_structure.threshold() {
             return Err(StartSignError::NotEnoughDevicesSelected {
                 selected,
-                threshold: frost_key.threshold(),
+                threshold: access_structure.threshold(),
             });
         }
 
-        let checked_sign_task = sign_task
-            .check(frost_key.key_id())
-            .map_err(StartSignError::SignTask)?;
+        let checked_sign_task = sign_task.check(appkey).map_err(StartSignError::SignTask)?;
 
         let sign_items = checked_sign_task.sign_items();
         let n_signatures = sign_items.len();
@@ -529,7 +630,7 @@ impl FrostCoordinator {
         let mut mutations = vec![];
 
         for &device_id in &signing_parties {
-            let share_index = key
+            let share_index = access_structure
                 .device_to_share_index
                 .get(&device_id)
                 .ok_or(StartSignError::DeviceNotPartOfKey { device_id })?;
@@ -592,7 +693,7 @@ impl FrostCoordinator {
 
                 SignSessionProgress::new(
                     &frost,
-                    key.frost_key.clone(),
+                    app_shared_key.clone(),
                     sign_item.clone(),
                     indexed_nonces,
                 )
@@ -602,7 +703,11 @@ impl FrostCoordinator {
         let sign_request = SignRequest {
             sign_task: checked_sign_task.into_inner(),
             nonces: signing_nonces.clone(),
-            key_id,
+            access_structure_id,
+            root_key: root_shared_key.public_key(),
+            coord_share_decryption_contrib: CoordShareDecryptionContrib::from_root_shared_key(
+                &root_shared_key,
+            ),
         };
 
         // Finally apply the mutations which will extinguish the nonces for the devices
@@ -611,11 +716,11 @@ impl FrostCoordinator {
         }
 
         self.action_state = Some(CoordinatorState::Signing {
-            key,
             sign_state: SigningSessionState {
                 targets: signing_parties.clone(),
                 sessions,
                 request: sign_request.clone(),
+                access_structure: access_structure.clone(),
             },
         });
 
@@ -647,21 +752,42 @@ impl FrostCoordinator {
     pub fn request_device_display_backup(
         &mut self,
         device_id: DeviceId,
-        key_id: KeyId,
+        access_structure_ref: AccessStructureRef,
+        encryption_key: SymmetricKey,
     ) -> Result<Vec<CoordinatorSend>, ActionError> {
-        let key = self
+        let AccessStructureRef {
+            appkey,
+            access_structure_id,
+        } = access_structure_ref;
+        let key_data = self
             .keys
-            .get(&key_id)
+            .get(&appkey)
             .ok_or(ActionError::StateInconsistent("no such key".into()))?;
-        let _ = key
+        let access_structure = key_data.get_access_structure(access_structure_id).ok_or(
+            ActionError::StateInconsistent("no such access structure".into()),
+        )?;
+        let party_index = *access_structure
             .device_to_share_index
             .get(&device_id)
             .ok_or(ActionError::StateInconsistent(
                 "device does not have share in key".into(),
             ))?;
         self.action_state = Some(CoordinatorState::DisplayBackup);
+        let root_key = key_data.encrypted_root_key.decrypt(encryption_key).ok_or(
+            ActionError::StateInconsistent("couldn't decrypt root key".into()),
+        )?;
+        let coord_share_decryption_contrib = key_data
+            .coord_share_decryption_contrib(access_structure_id, encryption_key)
+            .ok_or(ActionError::StateInconsistent(
+                "couldn't decrypt root key".into(),
+            ))?;
         Ok(vec![CoordinatorSend::ToDevice {
-            message: CoordinatorToDeviceMessage::DisplayBackup { key_id },
+            message: CoordinatorToDeviceMessage::DisplayBackup {
+                key_id: KeyId::from_root_key(root_key),
+                access_structure_id,
+                coord_share_decryption_contrib,
+                party_index,
+            },
             destinations: BTreeSet::from_iter([device_id]),
         }])
     }
@@ -673,16 +799,22 @@ impl FrostCoordinator {
             .unwrap_or("None")
     }
 
-    pub fn frost_key_state(&self, key_id: KeyId) -> Option<&CoordinatorFrostKey> {
-        self.keys.get(&key_id)
-    }
-
     pub fn cancel(&mut self) {
         let _state = self.action_state.take();
     }
 
     pub fn device_nonces(&self) -> &BTreeMap<DeviceId, DeviceNonces> {
         &self.device_nonces
+    }
+
+    pub fn get_access_structure(
+        &self,
+        access_structure_ref: AccessStructureRef,
+    ) -> Option<CoordAccessStructure> {
+        let key = self.keys.get(&access_structure_ref.appkey)?;
+        let access_strcuture =
+            key.get_access_structure(access_structure_ref.access_structure_id)?;
+        Some(access_strcuture)
     }
 }
 
@@ -704,24 +836,24 @@ pub struct SignSessionProgress {
     sign_item: SignItem,
     sign_session: CoordinatorSignSession,
     signature_shares: BTreeMap<DeviceId, Scalar<Public, Zero>>,
-    root_key: SharedKey,
+    app_shared_key: Xpub<SharedKey>,
 }
 
 impl SignSessionProgress {
     pub fn new<NG>(
         frost: &Frost<sha2::Sha256, NG>,
-        root_key: SharedKey,
+        app_shared_key: Xpub<SharedKey>,
         sign_item: SignItem,
         nonces: BTreeMap<frost::PartyIndex, frost::Nonce>,
     ) -> Self {
-        let tweaked_key = sign_item.app_tweak.derive_xonly_key(&root_key);
+        let tweaked_key = sign_item.app_tweak.derive_xonly_key(&app_shared_key);
         let sign_session =
             frost.coordinator_sign_session(&tweaked_key, nonces, sign_item.schnorr_fun_message());
         Self {
             sign_item,
             sign_session,
             signature_shares: Default::default(),
-            root_key,
+            app_shared_key,
         }
     }
 
@@ -730,7 +862,9 @@ impl SignSessionProgress {
     }
 
     pub fn tweaked_frost_key(&self) -> SharedKey<EvenY> {
-        self.sign_item.app_tweak.derive_xonly_key(&self.root_key)
+        self.sign_item
+            .app_tweak
+            .derive_xonly_key(&self.app_shared_key)
     }
 
     pub fn verify_final_signature<NG>(
@@ -738,18 +872,16 @@ impl SignSessionProgress {
         schnorr: &Schnorr<sha2::Sha256, NG>,
         signature: &Signature,
     ) -> bool {
+        let appkey = Appkey::from_xpub_unchecked(&self.app_shared_key);
         self.sign_item
-            .verify_final_signature(schnorr, self.root_key.key_id(), signature)
+            .verify_final_signature(schnorr, appkey, signature)
     }
 }
 
 #[derive(Clone, Debug)]
 pub enum CoordinatorState {
     KeyGen(KeyGenState),
-    Signing {
-        sign_state: SigningSessionState,
-        key: CoordinatorFrostKey,
-    },
+    Signing { sign_state: SigningSessionState },
     DisplayBackup,
 }
 
@@ -758,6 +890,7 @@ pub struct SigningSessionState {
     pub targets: BTreeSet<DeviceId>,
     pub sessions: Vec<SignSessionProgress>,
     pub request: SignRequest,
+    pub access_structure: CoordAccessStructure,
 }
 
 impl SigningSessionState {
@@ -786,39 +919,49 @@ pub enum KeyGenState {
     },
 }
 
-#[derive(Clone, Debug, bincode::Encode, bincode::Decode, serde::Serialize, serde::Deserialize)]
-pub struct CoordinatorFrostKey {
-    frost_key: SharedKey,
-    device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
-    key_name: String,
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
+pub struct CoordAccessStructure {
+    app_shared_key: Xpub<SharedKey>,
+    device_to_share_index: BTreeMap<DeviceId, PartyIndex>,
 }
 
-impl CoordinatorFrostKey {
+impl CoordAccessStructure {
     pub fn threshold(&self) -> usize {
-        self.frost_key.threshold()
+        self.app_shared_key.key.threshold()
     }
 
-    pub fn frost_key(&self) -> SharedKey<Normal> {
-        self.frost_key.clone()
+    pub fn access_structure_ref(&self) -> AccessStructureRef {
+        AccessStructureRef {
+            appkey: self.appkey(),
+            access_structure_id: self.access_structure_id(),
+        }
     }
 
-    pub fn key_id(&self) -> KeyId {
-        self.frost_key.key_id()
+    pub fn app_shared_key(&self) -> Xpub<SharedKey> {
+        self.app_shared_key.clone()
+    }
+
+    pub fn appkey(&self) -> Appkey {
+        Appkey::from_xpub_unchecked(&self.app_shared_key)
     }
 
     pub fn devices(&self) -> impl Iterator<Item = DeviceId> + '_ {
         self.device_to_share_index.keys().cloned()
     }
 
-    pub fn key_name(&self) -> String {
-        self.key_name.clone()
+    pub fn contains_device(&self, id: DeviceId) -> bool {
+        self.device_to_share_index.contains_key(&id)
+    }
+
+    pub fn access_structure_id(&self) -> AccessStructureId {
+        AccessStructureId::from_app_poly(self.app_shared_key.key.point_polynomial())
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum StartSignError {
     UnknownKey {
-        key_id: KeyId,
+        appkey: Appkey,
     },
     DeviceNotPartOfKey {
         device_id: DeviceId,
@@ -836,6 +979,8 @@ pub enum StartSignError {
         need: usize,
     },
     SignTask(SignTaskError),
+    NoSuchAccessStructure,
+    CouldntDecryptRootKey,
 }
 
 impl core::fmt::Display for StartSignError {
@@ -872,13 +1017,18 @@ impl core::fmt::Display for StartSignError {
                     device_id
                 )
             }
-            StartSignError::UnknownKey { key_id } => write!(
+            StartSignError::UnknownKey { appkey } => write!(
                 f,
-                "device does not have key is was asked to sign with, id: {key_id}"
+                "device does not have key is was asked to sign with, id: {appkey}"
             ),
             StartSignError::SignTask(error) => {
                 write!(f, "{error}")
             }
+            StartSignError::NoSuchAccessStructure => write!(
+                f,
+                "the access structure you wanted to sign with did not exist"
+            ),
+            StartSignError::CouldntDecryptRootKey => write!(f, "the decryption key did not"),
         }
     }
 }
@@ -889,7 +1039,12 @@ impl std::error::Error for StartSignError {}
 /// Mutations to the coordinator state
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub enum Mutation {
-    NewKey(CoordinatorFrostKey),
+    NewKey {
+        appkey: Appkey,
+        key_name: String,
+        encrypted_root_key: Ciphertext<33, Point>,
+    },
+    NewAccessStructure(CoordAccessStructure),
     NoncesUsed {
         device_id: DeviceId,
         /// if nonce_counter = x, then the coordinator expects x to be the next nonce used.
@@ -913,8 +1068,16 @@ impl Gist for Mutation {
             NoncesUsed { .. } => "NoncesUsed",
             ResetNonces { .. } => "ResetNonces",
             NewNonces { .. } => "NewNonces",
-            NewKey(_) => "NewKey",
+            NewAccessStructure { .. } => "NewAccessStructure",
+            NewKey { .. } => "NewKey",
         }
         .into()
     }
+}
+
+// Uniquely identifies an access structure for a particular `appkey`.
+#[derive(Debug, Clone, Copy)]
+pub struct AccessStructureRef {
+    pub appkey: Appkey,
+    pub access_structure_id: AccessStructureId,
 }
