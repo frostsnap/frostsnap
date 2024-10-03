@@ -61,8 +61,14 @@ impl From<CoordinatorToUserMessage> for Send {
 impl Send {
     pub fn device_send(from: DeviceId, device_send: DeviceSend) -> Self {
         match device_send {
-            DeviceSend::ToCoordinator(message) => Send::DeviceToCoordinator { from, message },
-            DeviceSend::ToUser(message) => Send::DeviceToUser { message, from },
+            DeviceSend::ToCoordinator(message) => Send::DeviceToCoordinator {
+                from,
+                message: *message,
+            },
+            DeviceSend::ToUser(message) => Send::DeviceToUser {
+                message: *message,
+                from,
+            },
         }
     }
 }

@@ -124,7 +124,7 @@ impl common::Env for TestEnv {
         use frostsnap_core::device::Mutation::*;
         match mutation {
             NewKey { .. } => { /*  */ }
-            SaveShare { .. } => { /*  */ }
+            SaveShare(_) => { /*  */ }
             NewAccessStructure { .. } => { /*  */ }
             ExpendNonce { nonce_counter } => {
                 self.device_nonces.insert(from, nonce_counter);

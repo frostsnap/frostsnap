@@ -7,6 +7,7 @@ use crate::{
     Error, KeyId, MessageResult, SessionHash, NONCE_BATCH_SIZE,
 };
 use crate::{Appkey, DeviceId};
+use alloc::boxed::Box;
 use alloc::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     string::String,
@@ -136,12 +137,13 @@ impl FrostSigner {
                     );
                 });
             }
-            SaveShare {
-                key_id,
-                access_structure_id,
-                party_index,
-                encrypted_secret_share,
-            } => {
+            SaveShare(boxed) => {
+                let SaveShareMutation {
+                    key_id,
+                    access_structure_id,
+                    party_index,
+                    encrypted_secret_share,
+                } = boxed.as_ref();
                 self.keys.entry(*key_id).and_modify(|key_data| {
                     key_data
                         .access_structures
@@ -167,11 +169,13 @@ impl FrostSigner {
     pub fn cancel_action(&mut self) -> Option<DeviceSend> {
         let task = match self.action_state.take()? {
             SignerState::KeyGen { .. } | SignerState::KeyGenAck { .. } => TaskKind::KeyGen,
-            SignerState::AwaitingSignAck { .. } => TaskKind::Sign,
+            SignerState::AwaitingSignAck(_) => TaskKind::Sign,
             SignerState::AwaitingDsiplayBackupAck { .. } => TaskKind::DisplayBackup,
         };
 
-        Some(DeviceSend::ToUser(DeviceToUserMessage::Canceled { task }))
+        Some(DeviceSend::ToUser(Box::new(
+            DeviceToUserMessage::Canceled { task },
+        )))
     }
 
     pub fn keypair(&self) -> &KeyPair {
@@ -216,12 +220,12 @@ impl FrostSigner {
                     .map(|nonce| nonce.public())
                     .collect();
 
-                Ok(vec![DeviceSend::ToCoordinator(
+                Ok(vec![DeviceSend::ToCoordinator(Box::new(
                     DeviceToCoordinatorMessage::NonceResponse(DeviceNonces {
                         start_index: self.nonce_counter,
                         nonces,
                     }),
-                )])
+                ))])
             }
             (
                 None,
@@ -267,9 +271,9 @@ impl FrostSigner {
                     key_name,
                 });
 
-                Ok(vec![DeviceSend::ToCoordinator(
+                Ok(vec![DeviceSend::ToCoordinator(Box::new(
                     DeviceToCoordinatorMessage::KeyGenResponse(keygen_input),
-                )])
+                ))])
             }
             (
                 Some(SignerState::KeyGen {
@@ -317,11 +321,13 @@ impl FrostSigner {
                     key_name: key_name.clone(),
                 });
 
-                Ok(vec![DeviceSend::ToUser(DeviceToUserMessage::CheckKeyGen {
-                    key_id,
-                    session_hash,
-                    key_name,
-                })])
+                Ok(vec![DeviceSend::ToUser(Box::new(
+                    DeviceToUserMessage::CheckKeyGen {
+                        key_id,
+                        session_hash,
+                        key_name,
+                    },
+                ))])
             }
             (None, CoordinatorToDeviceMessage::RequestSign(sign_req)) => {
                 let root_key = sign_req.root_key;
@@ -406,7 +412,7 @@ impl FrostSigner {
 
                 let agg_nonces = (0..n_signatures_requested).map(|i| sign_req.agg_nonce(i));
 
-                self.action_state = Some(SignerState::AwaitingSignAck {
+                self.action_state = Some(SignerState::AwaitingSignAck(Box::new(AwaitingSignAck {
                     root_key,
                     access_structure_id,
                     encrypted_secret_share: encrypted_secret_share.ciphertext,
@@ -417,13 +423,13 @@ impl FrostSigner {
                     nonce_start_index: my_nonces.start,
                     nonces_remaining: my_nonces.nonces_remaining,
                     coord_share_decryption_contrib: sign_req.coord_share_decryption_contrib,
-                });
-                Ok(vec![DeviceSend::ToUser(
+                })));
+                Ok(vec![DeviceSend::ToUser(Box::new(
                     DeviceToUserMessage::SignatureRequest {
                         sign_task: checked_sign_task,
                         appkey,
                     },
-                )])
+                ))])
             }
             (
                 None,
@@ -468,12 +474,12 @@ impl FrostSigner {
                     coord_share_decryption_contrib,
                 });
 
-                Ok(vec![DeviceSend::ToUser(
+                Ok(vec![DeviceSend::ToUser(Box::new(
                     DeviceToUserMessage::DisplayBackupRequest {
                         key_name: key_data.key_name.clone(),
                         key_id,
                     },
-                )])
+                ))])
             }
             _ => Err(Error::signer_message_kind(&self.action_state, &message)),
         }
@@ -527,7 +533,7 @@ impl FrostSigner {
                         .expect("threshold was too large"),
                     kind: AccessStructureKind::Master,
                 });
-                self.mutate(Mutation::SaveShare {
+                self.mutate(Mutation::SaveShare(Box::new(SaveShareMutation {
                     key_id,
                     party_index: secret_share.index(),
                     access_structure_id,
@@ -535,13 +541,15 @@ impl FrostSigner {
                         image: secret_share.secret_share().share_image().normalize(),
                         ciphertext: encrypted_secret,
                     },
-                });
+                })));
                 Ok(vec![
-                    DeviceSend::ToCoordinator(DeviceToCoordinatorMessage::KeyGenAck(session_hash)),
-                    DeviceSend::ToUser(DeviceToUserMessage::DisplayBackup {
+                    DeviceSend::ToCoordinator(Box::new(DeviceToCoordinatorMessage::KeyGenAck(
+                        session_hash,
+                    ))),
+                    DeviceSend::ToUser(Box::new(DeviceToUserMessage::DisplayBackup {
                         key_name,
                         backup: secret_share.secret_share().to_bech32_backup(),
-                    }),
+                    })),
                 ])
             }
             action_state => {
@@ -559,18 +567,19 @@ impl FrostSigner {
         symm_key_gen: &mut impl DeviceSymmetricKeyGen,
     ) -> Result<Vec<DeviceSend>, ActionError> {
         match self.action_state.take() {
-            Some(SignerState::AwaitingSignAck {
-                root_key,
-                access_structure_id,
-                encrypted_secret_share,
-                my_party_index,
-                sign_task,
-                agg_nonces,
-                parties,
-                nonce_start_index,
-                nonces_remaining,
-                coord_share_decryption_contrib,
-            }) => {
+            Some(SignerState::AwaitingSignAck(boxed)) => {
+                let AwaitingSignAck {
+                    root_key,
+                    access_structure_id,
+                    encrypted_secret_share,
+                    my_party_index,
+                    sign_task,
+                    agg_nonces,
+                    parties,
+                    nonce_start_index,
+                    nonces_remaining,
+                    coord_share_decryption_contrib,
+                } = *boxed;
                 let sign_items = sign_task.sign_items();
 
                 let new_nonces = {
@@ -651,12 +660,12 @@ impl FrostSigner {
 
                 self.action_state = None;
 
-                Ok(vec![DeviceSend::ToCoordinator(
+                Ok(vec![DeviceSend::ToCoordinator(Box::new(
                     DeviceToCoordinatorMessage::SignatureShare {
                         signature_shares,
                         new_nonces,
                     },
-                )])
+                ))])
             }
             _ => Err(ActionError::WrongState {
                 in_state: self.action_state_name(),
@@ -696,11 +705,13 @@ impl FrostSigner {
                 .to_bech32_backup();
 
                 Ok(vec![
-                    DeviceSend::ToCoordinator(DeviceToCoordinatorMessage::DisplayBackupConfirmed),
-                    DeviceSend::ToUser(DeviceToUserMessage::DisplayBackup {
+                    DeviceSend::ToCoordinator(Box::new(
+                        DeviceToCoordinatorMessage::DisplayBackupConfirmed,
+                    )),
+                    DeviceSend::ToUser(Box::new(DeviceToUserMessage::DisplayBackup {
                         key_name: key_data.key_name.clone(),
                         backup,
-                    }),
+                    })),
                 ])
             }
             _ => Err(ActionError::WrongState {
@@ -719,6 +730,20 @@ impl FrostSigner {
 }
 
 #[derive(Clone, Debug)]
+pub struct AwaitingSignAck {
+    pub root_key: Point,
+    pub access_structure_id: AccessStructureId,
+    pub encrypted_secret_share: Ciphertext<32, Scalar<Secret, Zero>>,
+    pub my_party_index: PartyIndex,
+    pub sign_task: CheckedSignTask,
+    pub agg_nonces: Vec<binonce::Nonce<Zero>>,
+    pub parties: BTreeSet<PartyIndex>,
+    pub nonce_start_index: u64,
+    pub nonces_remaining: u64,
+    pub coord_share_decryption_contrib: CoordShareDecryptionContrib,
+}
+
+#[derive(Clone, Debug)]
 pub enum SignerState {
     KeyGen {
         device_to_share_index: BTreeMap<DeviceId, NonZeroU32>,
@@ -731,18 +756,7 @@ pub enum SignerState {
         agg_input: encpedpop::AggKeygenInput,
         key_name: String,
     },
-    AwaitingSignAck {
-        root_key: Point,
-        access_structure_id: AccessStructureId,
-        encrypted_secret_share: Ciphertext<32, Scalar<Secret, Zero>>,
-        my_party_index: PartyIndex,
-        sign_task: CheckedSignTask,
-        agg_nonces: Vec<binonce::Nonce<Zero>>,
-        parties: BTreeSet<PartyIndex>,
-        nonce_start_index: u64,
-        nonces_remaining: u64,
-        coord_share_decryption_contrib: CoordShareDecryptionContrib,
-    },
+    AwaitingSignAck(Box<AwaitingSignAck>),
     AwaitingDsiplayBackupAck {
         key_id: KeyId,
         access_structure_id: AccessStructureId,
@@ -757,10 +771,18 @@ impl SignerState {
         match self {
             SignerState::KeyGen { .. } => "KeyGen",
             SignerState::KeyGenAck { .. } => "KeyGenAck",
-            SignerState::AwaitingSignAck { .. } => "AwaitingSignAck",
+            SignerState::AwaitingSignAck(_) => "AwaitingSignAck",
             SignerState::AwaitingDsiplayBackupAck { .. } => "AwaitingDisplayBackupAck",
         }
     }
+}
+
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
+pub struct SaveShareMutation {
+    pub key_id: KeyId,
+    pub access_structure_id: AccessStructureId,
+    pub party_index: PartyIndex,
+    pub encrypted_secret_share: EncryptedSecretShare,
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
@@ -776,12 +798,7 @@ pub enum Mutation {
         threshold: u16,
         kind: AccessStructureKind,
     },
-    SaveShare {
-        key_id: KeyId,
-        access_structure_id: AccessStructureId,
-        party_index: PartyIndex,
-        encrypted_secret_share: EncryptedSecretShare,
-    },
+    SaveShare(Box<SaveShareMutation>),
     ExpendNonce {
         nonce_counter: u64,
     },

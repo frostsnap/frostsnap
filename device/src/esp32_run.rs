@@ -483,17 +483,20 @@ where
             // ⚠ pop_front ensures messages are sent in order. E.g. update nonce NVS before sending sig.
             while let Some(send) = outbox.pop_front() {
                 match send {
-                    DeviceSend::ToCoordinator(message) => {
-                        if matches!(message, DeviceToCoordinatorMessage::KeyGenResponse(_)) {
+                    DeviceSend::ToCoordinator(boxed) => {
+                        if matches!(
+                            boxed.as_ref(),
+                            DeviceToCoordinatorMessage::KeyGenResponse(_)
+                        ) {
                             ui.set_workflow(ui::Workflow::WaitingFor(
                                 ui::WaitingFor::CoordinatorResponse(ui::WaitingResponse::KeyGen),
                             ));
                         }
 
-                        sends_upstream.push(DeviceSendBody::Core(message));
+                        sends_upstream.push(DeviceSendBody::Core(*boxed));
                     }
-                    DeviceSend::ToUser(user_send) => {
-                        match user_send {
+                    DeviceSend::ToUser(boxed) => {
+                        match *boxed {
                             DeviceToUserMessage::CheckKeyGen {
                                 key_id: _,
                                 session_hash,

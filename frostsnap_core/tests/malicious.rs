@@ -47,21 +47,23 @@ fn keygen_maliciously_replace_public_poly() {
                 message: DeviceToCoordinatorMessage::KeyGenResponse(input),
             } = send
             {
-                // We replace the polynomial the coordinator actually receives with a different
-                // one generated with different randomness.
-                let wrong_messages = shadow_device
+                // A "man in the middle" replace the polynomial the coordinator actually
+                // receives with a different one generated with different randomness. This should
+                // cause the device to detect the switch and abort.
+                let malicious_messages = shadow_device
                     .recv_coordinator_message(do_keygen.clone(), &mut other_rng)
                     .unwrap();
-                let response = wrong_messages
+                let malicious_keygen_response = malicious_messages
                     .into_iter()
                     .find_map(|send| match send {
-                        DeviceSend::ToCoordinator(DeviceToCoordinatorMessage::KeyGenResponse(
-                            response,
-                        )) => Some(response),
+                        DeviceSend::ToCoordinator(boxed) => match *boxed {
+                            DeviceToCoordinatorMessage::KeyGenResponse(response) => Some(response),
+                            _ => None,
+                        },
                         _ => None,
                     })
                     .unwrap();
-                *input = response;
+                *input = malicious_keygen_response;
             }
         }
         run.message_queue.is_empty()

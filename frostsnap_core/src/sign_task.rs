@@ -38,8 +38,8 @@ impl SignTask {
 
                 if let Some(non_matching_key) = non_matching_key {
                     return Err(SignTaskError::WrongKey {
-                        got: non_matching_key,
-                        expected: appkey,
+                        got: Box::new(non_matching_key),
+                        expected: Box::new(appkey),
                     });
                 }
 
@@ -120,7 +120,10 @@ impl SignItem {
 
 #[derive(Clone, Debug)]
 pub enum SignTaskError {
-    WrongKey { got: Appkey, expected: Appkey },
+    WrongKey {
+        got: Box<Appkey>,
+        expected: Box<Appkey>,
+    },
     InvalidBitcoinTransaction,
 }
 

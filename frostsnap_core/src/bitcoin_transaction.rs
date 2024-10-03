@@ -1,5 +1,5 @@
-use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
+use alloc::{boxed::Box, collections::BTreeMap};
 use bitcoin::{
     consensus::Encodable,
     hashes::{sha256d, Hash},
@@ -125,17 +125,17 @@ impl TransactionTemplate {
         &mut self,
         input: PushInput<'_>,
         owner: LocalSpk,
-    ) -> Result<(), SpkDoesntMatchPathError> {
+    ) -> Result<(), Box<SpkDoesntMatchPathError>> {
         let txout = input.prev_txout.txout();
         let expected_spk = owner.spk();
 
         if txout.script_pubkey != expected_spk {
-            return Err(SpkDoesntMatchPathError {
+            return Err(Box::new(SpkDoesntMatchPathError {
                 got: txout.script_pubkey.clone(),
                 expected: expected_spk,
                 path: owner.bip32_path.to_u32_array().to_vec(),
                 appkey: owner.appkey,
-            });
+            }));
         }
 
         self.inputs.push(Input {

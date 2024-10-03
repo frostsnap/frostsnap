@@ -3,9 +3,11 @@ use crate::{
     KeyId, SessionHash, Vec,
 };
 use crate::{DeviceId, SignTask};
-use alloc::collections::VecDeque;
-use alloc::collections::{BTreeMap, BTreeSet};
-use alloc::string::String;
+use alloc::{
+    boxed::Box,
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    string::String,
+};
 use core::num::NonZeroU32;
 use schnorr_fun::binonce;
 use schnorr_fun::frost::{chilldkg::encpedpop, PartyIndex};
@@ -17,8 +19,8 @@ use sha2::Digest;
 #[derive(Clone, Debug)]
 #[must_use]
 pub enum DeviceSend {
-    ToUser(DeviceToUserMessage),
-    ToCoordinator(DeviceToCoordinatorMessage),
+    ToUser(Box<DeviceToUserMessage>),
+    ToCoordinator(Box<DeviceToCoordinatorMessage>),
 }
 
 #[derive(Clone, Debug)]
