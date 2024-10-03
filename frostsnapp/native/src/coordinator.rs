@@ -1,4 +1,5 @@
 use crate::api::{self, KeyState};
+use crate::TEMP_KEY;
 use anyhow::{anyhow, Result};
 use flutter_rust_bridge::{RustOpaque, StreamSink};
 use frostsnap_coordinator::backup::BackupProtocol;
@@ -8,7 +9,11 @@ use frostsnap_coordinator::firmware_upgrade::{
 use frostsnap_coordinator::frostsnap_comms::{
     CoordinatorSendBody, CoordinatorSendMessage, Destination, FirmwareDigest,
 };
+use frostsnap_coordinator::frostsnap_core::coordinator::{
+    AccessStructureRef, CoordAccessStructure,
+};
 use frostsnap_coordinator::frostsnap_core::message::CoordinatorSend;
+use frostsnap_coordinator::frostsnap_core::SymmetricKey;
 use frostsnap_coordinator::frostsnap_persist::DeviceNames;
 use frostsnap_coordinator::keygen::KeyGenState;
 use frostsnap_coordinator::persist::Persisted;
@@ -19,7 +24,7 @@ use frostsnap_coordinator::{
 use frostsnap_coordinator::{Completion, DeviceChange};
 use frostsnap_core::{
     coordinator::{FrostCoordinator, SigningSessionState},
-    DeviceId, KeyId, SignTask,
+    Appkey, DeviceId, SignTask,
 };
 use std::collections::{BTreeSet, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -413,6 +418,7 @@ impl FfiCoordinator {
         Ok(())
     }
 
+    // FIXME: no need for this stuff to return api:: types. They can just be transformed in the api itself.
     pub fn frost_keys(&self) -> Vec<crate::api::FrostKey> {
         frost_keys(&self.coordinator.lock().unwrap())
     }
@@ -437,15 +443,21 @@ impl FfiCoordinator {
 
     pub fn start_signing(
         &self,
-        key_id: KeyId,
+        access_structure_ref: AccessStructureRef,
         devices: BTreeSet<DeviceId>,
         task: SignTask,
         sink: StreamSink<api::SigningState>,
+        encryption_key: SymmetricKey,
     ) -> anyhow::Result<()> {
         let mut coordinator = self.coordinator.lock().unwrap();
-        let mut messages = coordinator
-            .staged_mutate(&mut self.db.lock().unwrap(), |coordinator| {
-                Ok(coordinator.start_sign(key_id, task, devices.clone())?)
+        let mut messages =
+            coordinator.staged_mutate(&mut self.db.lock().unwrap(), |coordinator| {
+                Ok(coordinator.start_sign(
+                    access_structure_ref,
+                    task,
+                    devices.clone(),
+                    encryption_key,
+                )?)
             })?;
         let mut ui_protocol =
             frostsnap_coordinator::signing::SigningDispatcher::from_filter_out_start_sign(
@@ -462,7 +474,7 @@ impl FfiCoordinator {
 
     pub fn try_restore_signing_session(
         &self,
-        #[allow(unused)] /* we only have one key for now */ key_id: KeyId,
+        #[allow(unused)] /* we only have one key for now */ appkey: Appkey,
         sink: StreamSink<api::SigningState>,
     ) -> anyhow::Result<()> {
         let signing_session_state = self.signing_session.lock().unwrap();
@@ -492,10 +504,10 @@ impl FfiCoordinator {
 
     pub fn persisted_sign_session_description(
         &self,
-        key_id: KeyId,
+        appkey: Appkey,
     ) -> Option<api::SignTaskDescription> {
         let session = self.signing_session.lock().unwrap().clone()?;
-        if session.request.key_id != key_id {
+        if session.access_structure.appkey() != appkey {
             return None;
         }
         Some(match session.request.sign_task {
@@ -512,8 +524,9 @@ impl FfiCoordinator {
     pub fn request_display_backup(
         &self,
         device_id: DeviceId,
-        key_id: KeyId,
+        access_structure_ref: AccessStructureRef,
         stream: StreamSink<()>,
+        encryption_key: SymmetricKey,
     ) -> anyhow::Result<()> {
         // XXX: We should be storing the id to make sure the device that sends the backup ack is
         // from the one we expected. In practice it doesn't matter that much and flutter rust bridge
@@ -525,7 +538,7 @@ impl FfiCoordinator {
             .lock()
             .unwrap()
             .MUTATE_NO_PERSIST()
-            .request_device_display_backup(device_id, key_id)?;
+            .request_device_display_backup(device_id, access_structure_ref, encryption_key)?;
         self.pending_for_outbox.lock().unwrap().extend(messages);
 
         self.start_protocol(backup_protocol);
@@ -607,20 +620,22 @@ impl FfiCoordinator {
         self.device_names.lock().unwrap().get(id)
     }
 
-    pub fn get_key_name(&self, key_id: KeyId) -> Option<String> {
+    pub fn get_key_name(&self, appkey: Appkey) -> Option<String> {
         self.frost_keys()
             .iter()
-            .find(|key| key.0.key_id() == key_id)
-            .map(|frost_key| frost_key.0.key_name())
+            .find(|key| key.0.appkey == appkey)
+            .map(|frost_key| frost_key.0.key_name.clone())
     }
 
-    pub fn final_keygen_ack(&self) -> Result<KeyId> {
+    pub fn final_keygen_ack(&self) -> Result<AccessStructureRef> {
         let mut db = self.db.lock().unwrap();
-        let key_id = self
+        let appkey = self
             .coordinator
             .lock()
             .unwrap()
-            .staged_mutate(&mut db, |coordinator| Ok(coordinator.final_keygen_ack()?))?;
+            .staged_mutate(&mut db, |coordinator| {
+                Ok(coordinator.final_keygen_ack(TEMP_KEY, &mut rand::thread_rng())?)
+            })?;
 
         // need to tell the UI protocol that it's finished so it cleans itself up later.
         self.ui_protocol
@@ -631,8 +646,15 @@ impl FfiCoordinator {
             .as_mut_any()
             .downcast_mut::<frostsnap_coordinator::keygen::KeyGen>()
             .ok_or(anyhow!("somehow UI was not in KeyGen state"))?
-            .final_keygen_ack(key_id);
-        Ok(key_id)
+            .final_keygen_ack(appkey);
+        Ok(appkey)
+    }
+
+    pub fn get_access_structure(&self, as_ref: AccessStructureRef) -> Option<CoordAccessStructure> {
+        self.coordinator
+            .lock()
+            .unwrap()
+            .get_access_structure(as_ref)
     }
 }
 

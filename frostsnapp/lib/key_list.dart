@@ -12,7 +12,7 @@ import 'package:confetti/confetti.dart';
 import 'sign_message.dart';
 
 class KeyList extends StatelessWidget {
-  final Function(KeyId)? onNewKey;
+  final Function(Appkey)? onNewKey;
   final Function(BuildContext, FrostKey) itemBuilder;
   const KeyList({super.key, this.onNewKey, required this.itemBuilder});
 
@@ -93,12 +93,12 @@ class _KeyCard extends State<KeyCard> {
   void initState() {
     super.initState();
     restorableSignSession =
-        coord.persistedSignSessionDescription(keyId: widget.frostKey.id());
+        coord.persistedSignSessionDescription(appkey: widget.frostKey.appkey());
   }
 
   @override
   Widget build(BuildContext context) {
-    final keyId = widget.frostKey.id();
+    final appkey = widget.frostKey.appkey();
     final signButton = ElevatedButton(
         onPressed: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) {
@@ -110,7 +110,7 @@ class _KeyCard extends State<KeyCard> {
     final Widget walletButton = ElevatedButton(
         onPressed: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) {
-            return WalletHome(keyId: keyId);
+            return WalletHome(appkey: appkey);
           }));
         },
         child: Text("₿"));
@@ -121,7 +121,7 @@ class _KeyCard extends State<KeyCard> {
       continueSigning = ElevatedButton(
           onPressed: () async {
             final signingStream = coord
-                .tryRestoreSigningSession(keyId: keyId)
+                .tryRestoreSigningSession(appkey: appkey)
                 .toBehaviorSubject();
 
             switch (restorableSignSession!) {
@@ -136,19 +136,21 @@ class _KeyCard extends State<KeyCard> {
                       context: context,
                       signingStream: signingStream,
                       unsignedTx: unsignedTx,
-                      keyId: keyId);
+                      appkey: appkey);
                 }
             }
 
             setState(() {
               restorableSignSession = coord.persistedSignSessionDescription(
-                  keyId: widget.frostKey.id());
+                  appkey: widget.frostKey.appkey());
             });
           },
           child: Text("Continue signing"));
     } else {
       continueSigning = Container();
     }
+
+    final threshold = widget.frostKey.accessStructures()[0].threshold();
 
     return Card(
       color: backgroundSecondaryColor,
@@ -166,7 +168,7 @@ class _KeyCard extends State<KeyCard> {
                   fontFamily: 'Monospace'),
             ),
             const SizedBox(height: 8),
-            Text("Threshold: ${widget.frostKey.threshold()}",
+            Text("Threshold: $threshold",
                 style: TextStyle(color: textSecondaryColor)),
             Row(mainAxisAlignment: MainAxisAlignment.center, children: [
               signButton,
@@ -207,7 +209,7 @@ class _KeyListWithConfetti extends State<KeyListWithConfetti> {
           itemBuilder: (context, key) {
             return KeyCard(frostKey: key);
           },
-          onNewKey: (keyId) {
+          onNewKey: (appkey) {
             _confettiController.play();
           },
         )),

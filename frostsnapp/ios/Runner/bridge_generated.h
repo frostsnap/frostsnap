@@ -20,9 +20,18 @@ typedef struct wire_DeviceId {
   struct wire_uint_8_list *field0;
 } wire_DeviceId;
 
-typedef struct wire_KeyId {
+typedef struct wire_Appkey {
   struct wire_uint_8_list *field0;
-} wire_KeyId;
+} wire_Appkey;
+
+typedef struct wire_AccessStructureId {
+  struct wire_uint_8_list *field0;
+} wire_AccessStructureId;
+
+typedef struct wire_AccessStructureRef {
+  struct wire_Appkey appkey;
+  struct wire_AccessStructureId access_structure_id;
+} wire_AccessStructureRef;
 
 typedef struct wire_ArcRTransaction {
   const void *ptr;
@@ -46,13 +55,21 @@ typedef struct wire_ConnectedDevice {
   struct wire_DeviceId id;
 } wire_ConnectedDevice;
 
-typedef struct wire_FrostsnapCoreCoordinatorCoordinatorFrostKey {
+typedef struct wire_FrostsnapCoreCoordinatorCoordFrostKey {
   const void *ptr;
-} wire_FrostsnapCoreCoordinatorCoordinatorFrostKey;
+} wire_FrostsnapCoreCoordinatorCoordFrostKey;
 
 typedef struct wire_FrostKey {
-  struct wire_FrostsnapCoreCoordinatorCoordinatorFrostKey field0;
+  struct wire_FrostsnapCoreCoordinatorCoordFrostKey field0;
 } wire_FrostKey;
+
+typedef struct wire_FrostsnapCoreCoordinatorCoordAccessStructure {
+  const void *ptr;
+} wire_FrostsnapCoreCoordinatorCoordAccessStructure;
+
+typedef struct wire_AccessStructure {
+  struct wire_FrostsnapCoreCoordinatorCoordAccessStructure field0;
+} wire_AccessStructure;
 
 typedef struct wire_PortOpenSender {
   const void *ptr;
@@ -107,9 +124,9 @@ typedef struct wire_MutexFrostsnapWallet {
   const void *ptr;
 } wire_MutexFrostsnapWallet;
 
-typedef struct wire_MutexBTreeMapKeyIdStreamSinkTxState {
+typedef struct wire_MutexBTreeMapAppkeyStreamSinkTxState {
   const void *ptr;
-} wire_MutexBTreeMapKeyIdStreamSinkTxState;
+} wire_MutexBTreeMapAppkeyStreamSinkTxState;
 
 typedef struct wire_ChainSync {
   const void *ptr;
@@ -117,7 +134,7 @@ typedef struct wire_ChainSync {
 
 typedef struct wire_Wallet {
   struct wire_MutexFrostsnapWallet inner;
-  struct wire_MutexBTreeMapKeyIdStreamSinkTxState wallet_streams;
+  struct wire_MutexBTreeMapAppkeyStreamSinkTxState wallet_streams;
   struct wire_ChainSync chain_sync;
 } wire_Wallet;
 
@@ -244,13 +261,17 @@ void wire_load(int64_t port_, struct wire_uint_8_list *db_file);
 
 void wire_load_host_handles_serial(int64_t port_, struct wire_uint_8_list *db_file);
 
-void wire_echo_key_id(int64_t port_, struct wire_KeyId *key_id);
-
 WireSyncReturn wire_psbt_bytes_to_psbt(struct wire_uint_8_list *psbt_bytes);
 
 void wire_new_qr_reader(int64_t port_);
 
 void wire_new_qr_encoder(int64_t port_, struct wire_uint_8_list *bytes);
+
+void wire_echo_appkey(int64_t port_, struct wire_Appkey *appkey);
+
+void wire_echo_asid(int64_t port_, struct wire_AccessStructureId *value);
+
+void wire_echo_asr(int64_t port_, struct wire_AccessStructureRef *value);
 
 WireSyncReturn wire_txid__method__Transaction(struct wire_Transaction *that);
 
@@ -258,15 +279,23 @@ WireSyncReturn wire_ready__method__ConnectedDevice(struct wire_ConnectedDevice *
 
 WireSyncReturn wire_needs_firmware_upgrade__method__ConnectedDevice(struct wire_ConnectedDevice *that);
 
-WireSyncReturn wire_threshold__method__FrostKey(struct wire_FrostKey *that);
-
-WireSyncReturn wire_id__method__FrostKey(struct wire_FrostKey *that);
+WireSyncReturn wire_appkey__method__FrostKey(struct wire_FrostKey *that);
 
 WireSyncReturn wire_key_name__method__FrostKey(struct wire_FrostKey *that);
 
-WireSyncReturn wire_devices__method__FrostKey(struct wire_FrostKey *that);
+WireSyncReturn wire_access_structures__method__FrostKey(struct wire_FrostKey *that);
 
-WireSyncReturn wire_polynomial_identifier__method__FrostKey(struct wire_FrostKey *that);
+WireSyncReturn wire_threshold__method__AccessStructure(struct wire_AccessStructure *that);
+
+WireSyncReturn wire_access_structure_ref__method__AccessStructure(struct wire_AccessStructure *that);
+
+WireSyncReturn wire_devices__method__AccessStructure(struct wire_AccessStructure *that);
+
+WireSyncReturn wire_id__method__AccessStructure(struct wire_AccessStructure *that);
+
+WireSyncReturn wire_short_id__method__AccessStructure(struct wire_AccessStructure *that);
+
+WireSyncReturn wire_appkey__method__AccessStructure(struct wire_AccessStructure *that);
 
 void wire_satisfy__method__PortOpen(int64_t port_,
                                     struct wire_PortOpen *that,
@@ -290,39 +319,39 @@ WireSyncReturn wire_get_device__method__DeviceListState(struct wire_DeviceListSt
 
 void wire_sub_tx_state__method__Wallet(int64_t port_,
                                        struct wire_Wallet *that,
-                                       struct wire_KeyId *key_id);
+                                       struct wire_Appkey *appkey);
 
-WireSyncReturn wire_tx_state__method__Wallet(struct wire_Wallet *that, struct wire_KeyId *key_id);
+WireSyncReturn wire_tx_state__method__Wallet(struct wire_Wallet *that, struct wire_Appkey *appkey);
 
 void wire_sync_txids__method__Wallet(int64_t port_,
                                      struct wire_Wallet *that,
-                                     struct wire_KeyId *key_id,
+                                     struct wire_Appkey *appkey,
                                      struct wire_StringList *txids);
 
-void wire_sync__method__Wallet(int64_t port_, struct wire_Wallet *that, struct wire_KeyId *key_id);
+void wire_sync__method__Wallet(int64_t port_, struct wire_Wallet *that, struct wire_Appkey *appkey);
 
 void wire_next_address__method__Wallet(int64_t port_,
                                        struct wire_Wallet *that,
-                                       struct wire_KeyId *key_id);
+                                       struct wire_Appkey *appkey);
 
 WireSyncReturn wire_addresses_state__method__Wallet(struct wire_Wallet *that,
-                                                    struct wire_KeyId *key_id);
+                                                    struct wire_Appkey *appkey);
 
 void wire_send_to__method__Wallet(int64_t port_,
                                   struct wire_Wallet *that,
-                                  struct wire_KeyId *key_id,
+                                  struct wire_Appkey *appkey,
                                   struct wire_uint_8_list *to_address,
                                   uint64_t value,
                                   double feerate);
 
 void wire_broadcast_tx__method__Wallet(int64_t port_,
                                        struct wire_Wallet *that,
-                                       struct wire_KeyId *key_id,
+                                       struct wire_Appkey *appkey,
                                        struct wire_SignedTx *tx);
 
 WireSyncReturn wire_psbt_to_unsigned_tx__method__Wallet(struct wire_Wallet *that,
                                                         struct wire_Psbt *psbt,
-                                                        struct wire_KeyId *key_id);
+                                                        struct wire_Appkey *appkey);
 
 void wire_set_available_ports__method__FfiSerial(int64_t port_,
                                                  struct wire_FfiSerial *that,
@@ -349,30 +378,30 @@ void wire_cancel_all__method__Coordinator(int64_t port_, struct wire_Coordinator
 void wire_display_backup__method__Coordinator(int64_t port_,
                                               struct wire_Coordinator *that,
                                               struct wire_DeviceId *id,
-                                              struct wire_KeyId *key_id);
+                                              struct wire_AccessStructureRef *access_structure_ref);
 
 WireSyncReturn wire_key_state__method__Coordinator(struct wire_Coordinator *that);
 
 void wire_sub_key_events__method__Coordinator(int64_t port_, struct wire_Coordinator *that);
 
 WireSyncReturn wire_get_key__method__Coordinator(struct wire_Coordinator *that,
-                                                 struct wire_KeyId *key_id);
+                                                 struct wire_Appkey *appkey);
 
 WireSyncReturn wire_get_key_name__method__Coordinator(struct wire_Coordinator *that,
-                                                      struct wire_KeyId *key_id);
+                                                      struct wire_Appkey *appkey);
 
-WireSyncReturn wire_keys_for_device__method__Coordinator(struct wire_Coordinator *that,
-                                                         struct wire_DeviceId *device_id);
+WireSyncReturn wire_access_structures_involving_device__method__Coordinator(struct wire_Coordinator *that,
+                                                                            struct wire_DeviceId *device_id);
 
 void wire_start_signing__method__Coordinator(int64_t port_,
                                              struct wire_Coordinator *that,
-                                             struct wire_KeyId *key_id,
+                                             struct wire_AccessStructureRef *access_structure_ref,
                                              struct wire_list_device_id *devices,
                                              struct wire_uint_8_list *message);
 
 void wire_start_signing_tx__method__Coordinator(int64_t port_,
                                                 struct wire_Coordinator *that,
-                                                struct wire_KeyId *key_id,
+                                                struct wire_AccessStructureRef *access_structure_ref,
                                                 struct wire_UnsignedTx *unsigned_tx,
                                                 struct wire_list_device_id *devices);
 
@@ -389,11 +418,11 @@ void wire_generate_new_key__method__Coordinator(int64_t port_,
                                                 struct wire_uint_8_list *key_name);
 
 WireSyncReturn wire_persisted_sign_session_description__method__Coordinator(struct wire_Coordinator *that,
-                                                                            struct wire_KeyId *key_id);
+                                                                            struct wire_Appkey *appkey);
 
 void wire_try_restore_signing_session__method__Coordinator(int64_t port_,
                                                            struct wire_Coordinator *that,
-                                                           struct wire_KeyId *key_id);
+                                                           struct wire_Appkey *appkey);
 
 void wire_start_firmware_upgrade__method__Coordinator(int64_t port_, struct wire_Coordinator *that);
 
@@ -409,8 +438,11 @@ WireSyncReturn wire_get_device_name__method__Coordinator(struct wire_Coordinator
 
 void wire_final_keygen_ack__method__Coordinator(int64_t port_, struct wire_Coordinator *that);
 
+WireSyncReturn wire_get_access_structure__method__Coordinator(struct wire_Coordinator *that,
+                                                              struct wire_AccessStructureRef *as_ref);
+
 WireSyncReturn wire_descriptor_for_key__method__BitcoinContext(struct wire_BitcoinContext *that,
-                                                               struct wire_KeyId *key_id);
+                                                               struct wire_Appkey *appkey);
 
 WireSyncReturn wire_validate_amount__method__BitcoinContext(struct wire_BitcoinContext *that,
                                                             struct wire_uint_8_list *address,
@@ -420,7 +452,7 @@ WireSyncReturn wire_validate_destination_address__method__BitcoinContext(struct 
                                                                          struct wire_uint_8_list *address);
 
 WireSyncReturn wire_effect__method__SignedTx(struct wire_SignedTx *that,
-                                             struct wire_KeyId *key_id,
+                                             struct wire_Appkey *appkey,
                                              struct wire_BitcoinNetwork network);
 
 void wire_attach_signatures_to_psbt__method__UnsignedTx(int64_t port_,
@@ -433,7 +465,7 @@ void wire_complete__method__UnsignedTx(int64_t port_,
                                        struct wire_list_encoded_signature *signatures);
 
 WireSyncReturn wire_effect__method__UnsignedTx(struct wire_UnsignedTx *that,
-                                               struct wire_KeyId *key_id,
+                                               struct wire_Appkey *appkey,
                                                struct wire_BitcoinNetwork network);
 
 WireSyncReturn wire_to_bytes__method__Psbt(struct wire_Psbt *that);
@@ -462,9 +494,11 @@ struct wire_FfiQrReader new_FfiQrReader(void);
 
 struct wire_FrostsnapCoreBitcoinTransactionTransactionTemplate new_FrostsnapCoreBitcoinTransactionTransactionTemplate(void);
 
-struct wire_FrostsnapCoreCoordinatorCoordinatorFrostKey new_FrostsnapCoreCoordinatorCoordinatorFrostKey(void);
+struct wire_FrostsnapCoreCoordinatorCoordAccessStructure new_FrostsnapCoreCoordinatorCoordAccessStructure(void);
 
-struct wire_MutexBTreeMapKeyIdStreamSinkTxState new_MutexBTreeMapKeyIdStreamSinkTxState(void);
+struct wire_FrostsnapCoreCoordinatorCoordFrostKey new_FrostsnapCoreCoordinatorCoordFrostKey(void);
+
+struct wire_MutexBTreeMapAppkeyStreamSinkTxState new_MutexBTreeMapAppkeyStreamSinkTxState(void);
 
 struct wire_MutexFrostsnapWallet new_MutexFrostsnapWallet(void);
 
@@ -479,6 +513,14 @@ struct wire_PortWriteSender new_PortWriteSender(void);
 struct wire_RTransaction new_RTransaction(void);
 
 struct wire_StringList *new_StringList_0(int32_t len);
+
+struct wire_AccessStructure *new_box_autoadd_access_structure_0(void);
+
+struct wire_AccessStructureId *new_box_autoadd_access_structure_id_0(void);
+
+struct wire_AccessStructureRef *new_box_autoadd_access_structure_ref_0(void);
+
+struct wire_Appkey *new_box_autoadd_appkey_0(void);
 
 struct wire_BitcoinContext *new_box_autoadd_bitcoin_context_0(void);
 
@@ -495,8 +537,6 @@ struct wire_DeviceListState *new_box_autoadd_device_list_state_0(void);
 struct wire_FfiSerial *new_box_autoadd_ffi_serial_0(void);
 
 struct wire_FrostKey *new_box_autoadd_frost_key_0(void);
-
-struct wire_KeyId *new_box_autoadd_key_id_0(void);
 
 struct wire_PortBytesToRead *new_box_autoadd_port_bytes_to_read_0(void);
 
@@ -566,13 +606,17 @@ void drop_opaque_FrostsnapCoreBitcoinTransactionTransactionTemplate(const void *
 
 const void *share_opaque_FrostsnapCoreBitcoinTransactionTransactionTemplate(const void *ptr);
 
-void drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(const void *ptr);
+void drop_opaque_FrostsnapCoreCoordinatorCoordAccessStructure(const void *ptr);
 
-const void *share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(const void *ptr);
+const void *share_opaque_FrostsnapCoreCoordinatorCoordAccessStructure(const void *ptr);
 
-void drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(const void *ptr);
+void drop_opaque_FrostsnapCoreCoordinatorCoordFrostKey(const void *ptr);
 
-const void *share_opaque_MutexBTreeMapKeyIdStreamSinkTxState(const void *ptr);
+const void *share_opaque_FrostsnapCoreCoordinatorCoordFrostKey(const void *ptr);
+
+void drop_opaque_MutexBTreeMapAppkeyStreamSinkTxState(const void *ptr);
+
+const void *share_opaque_MutexBTreeMapAppkeyStreamSinkTxState(const void *ptr);
 
 void drop_opaque_MutexFrostsnapWallet(const void *ptr);
 
@@ -611,18 +655,24 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_get_connected_device);
     dummy_var ^= ((int64_t) (void*) wire_load);
     dummy_var ^= ((int64_t) (void*) wire_load_host_handles_serial);
-    dummy_var ^= ((int64_t) (void*) wire_echo_key_id);
     dummy_var ^= ((int64_t) (void*) wire_psbt_bytes_to_psbt);
     dummy_var ^= ((int64_t) (void*) wire_new_qr_reader);
     dummy_var ^= ((int64_t) (void*) wire_new_qr_encoder);
+    dummy_var ^= ((int64_t) (void*) wire_echo_appkey);
+    dummy_var ^= ((int64_t) (void*) wire_echo_asid);
+    dummy_var ^= ((int64_t) (void*) wire_echo_asr);
     dummy_var ^= ((int64_t) (void*) wire_txid__method__Transaction);
     dummy_var ^= ((int64_t) (void*) wire_ready__method__ConnectedDevice);
     dummy_var ^= ((int64_t) (void*) wire_needs_firmware_upgrade__method__ConnectedDevice);
-    dummy_var ^= ((int64_t) (void*) wire_threshold__method__FrostKey);
-    dummy_var ^= ((int64_t) (void*) wire_id__method__FrostKey);
+    dummy_var ^= ((int64_t) (void*) wire_appkey__method__FrostKey);
     dummy_var ^= ((int64_t) (void*) wire_key_name__method__FrostKey);
-    dummy_var ^= ((int64_t) (void*) wire_devices__method__FrostKey);
-    dummy_var ^= ((int64_t) (void*) wire_polynomial_identifier__method__FrostKey);
+    dummy_var ^= ((int64_t) (void*) wire_access_structures__method__FrostKey);
+    dummy_var ^= ((int64_t) (void*) wire_threshold__method__AccessStructure);
+    dummy_var ^= ((int64_t) (void*) wire_access_structure_ref__method__AccessStructure);
+    dummy_var ^= ((int64_t) (void*) wire_devices__method__AccessStructure);
+    dummy_var ^= ((int64_t) (void*) wire_id__method__AccessStructure);
+    dummy_var ^= ((int64_t) (void*) wire_short_id__method__AccessStructure);
+    dummy_var ^= ((int64_t) (void*) wire_appkey__method__AccessStructure);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortOpen);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortRead);
     dummy_var ^= ((int64_t) (void*) wire_satisfy__method__PortWrite);
@@ -648,7 +698,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_sub_key_events__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_get_key__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_get_key_name__method__Coordinator);
-    dummy_var ^= ((int64_t) (void*) wire_keys_for_device__method__Coordinator);
+    dummy_var ^= ((int64_t) (void*) wire_access_structures_involving_device__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_start_signing__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_start_signing_tx__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_nonces_available__method__Coordinator);
@@ -662,6 +712,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_enter_firmware_upgrade_mode__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_get_device_name__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_final_keygen_ack__method__Coordinator);
+    dummy_var ^= ((int64_t) (void*) wire_get_access_structure__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_descriptor_for_key__method__BitcoinContext);
     dummy_var ^= ((int64_t) (void*) wire_validate_amount__method__BitcoinContext);
     dummy_var ^= ((int64_t) (void*) wire_validate_destination_address__method__BitcoinContext);
@@ -681,8 +732,9 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) new_FfiQrEncoder);
     dummy_var ^= ((int64_t) (void*) new_FfiQrReader);
     dummy_var ^= ((int64_t) (void*) new_FrostsnapCoreBitcoinTransactionTransactionTemplate);
-    dummy_var ^= ((int64_t) (void*) new_FrostsnapCoreCoordinatorCoordinatorFrostKey);
-    dummy_var ^= ((int64_t) (void*) new_MutexBTreeMapKeyIdStreamSinkTxState);
+    dummy_var ^= ((int64_t) (void*) new_FrostsnapCoreCoordinatorCoordAccessStructure);
+    dummy_var ^= ((int64_t) (void*) new_FrostsnapCoreCoordinatorCoordFrostKey);
+    dummy_var ^= ((int64_t) (void*) new_MutexBTreeMapAppkeyStreamSinkTxState);
     dummy_var ^= ((int64_t) (void*) new_MutexFrostsnapWallet);
     dummy_var ^= ((int64_t) (void*) new_PortBytesToReadSender);
     dummy_var ^= ((int64_t) (void*) new_PortOpenSender);
@@ -690,6 +742,10 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) new_PortWriteSender);
     dummy_var ^= ((int64_t) (void*) new_RTransaction);
     dummy_var ^= ((int64_t) (void*) new_StringList_0);
+    dummy_var ^= ((int64_t) (void*) new_box_autoadd_access_structure_0);
+    dummy_var ^= ((int64_t) (void*) new_box_autoadd_access_structure_id_0);
+    dummy_var ^= ((int64_t) (void*) new_box_autoadd_access_structure_ref_0);
+    dummy_var ^= ((int64_t) (void*) new_box_autoadd_appkey_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_bitcoin_context_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_confirmation_time_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_connected_device_0);
@@ -698,7 +754,6 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_device_list_state_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_ffi_serial_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_frost_key_0);
-    dummy_var ^= ((int64_t) (void*) new_box_autoadd_key_id_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_port_bytes_to_read_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_port_open_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_port_read_0);
@@ -733,10 +788,12 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) share_opaque_FfiQrReader);
     dummy_var ^= ((int64_t) (void*) drop_opaque_FrostsnapCoreBitcoinTransactionTransactionTemplate);
     dummy_var ^= ((int64_t) (void*) share_opaque_FrostsnapCoreBitcoinTransactionTransactionTemplate);
-    dummy_var ^= ((int64_t) (void*) drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey);
-    dummy_var ^= ((int64_t) (void*) share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey);
-    dummy_var ^= ((int64_t) (void*) drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState);
-    dummy_var ^= ((int64_t) (void*) share_opaque_MutexBTreeMapKeyIdStreamSinkTxState);
+    dummy_var ^= ((int64_t) (void*) drop_opaque_FrostsnapCoreCoordinatorCoordAccessStructure);
+    dummy_var ^= ((int64_t) (void*) share_opaque_FrostsnapCoreCoordinatorCoordAccessStructure);
+    dummy_var ^= ((int64_t) (void*) drop_opaque_FrostsnapCoreCoordinatorCoordFrostKey);
+    dummy_var ^= ((int64_t) (void*) share_opaque_FrostsnapCoreCoordinatorCoordFrostKey);
+    dummy_var ^= ((int64_t) (void*) drop_opaque_MutexBTreeMapAppkeyStreamSinkTxState);
+    dummy_var ^= ((int64_t) (void*) share_opaque_MutexBTreeMapAppkeyStreamSinkTxState);
     dummy_var ^= ((int64_t) (void*) drop_opaque_MutexFrostsnapWallet);
     dummy_var ^= ((int64_t) (void*) share_opaque_MutexFrostsnapWallet);
     dummy_var ^= ((int64_t) (void*) drop_opaque_PortBytesToReadSender);

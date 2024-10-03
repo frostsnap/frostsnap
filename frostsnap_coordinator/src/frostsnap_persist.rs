@@ -30,9 +30,9 @@ impl Persist<rusqlite::Connection> for FrostCoordinator {
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS fs_signing_sessions (
-               key_id TEXT,
+               appkey TEXT,
                session BLOB,
-               PRIMARY KEY (key_id, session)
+               PRIMARY KEY (appkey, session)
              )",
             params,
         )?;

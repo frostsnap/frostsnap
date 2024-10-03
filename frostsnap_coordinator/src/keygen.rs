@@ -3,9 +3,9 @@ use std::collections::BTreeSet;
 use crate::{Completion, Sink, UiProtocol, UiToStorageMessage};
 use frostsnap_comms::{CoordinatorSendBody, CoordinatorSendMessage, Destination};
 use frostsnap_core::{
-    coordinator::FrostCoordinator,
+    coordinator::{AccessStructureRef, FrostCoordinator},
     message::{CoordinatorSend, CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage},
-    DeviceId, KeyId,
+    DeviceId, SessionHash,
 };
 use tracing::{event, Level};
 
@@ -76,8 +76,8 @@ impl KeyGen {
         self.emit_state();
     }
 
-    pub fn final_keygen_ack(&mut self, key_id: KeyId) {
-        self.state.finished = Some(key_id);
+    pub fn final_keygen_ack(&mut self, as_ref: AccessStructureRef) {
+        self.state.finished = Some(as_ref);
         self.emit_state()
     }
 }
@@ -161,7 +161,7 @@ pub struct KeyGenState {
     pub got_shares: Vec<DeviceId>,
     pub session_acks: Vec<DeviceId>,
     pub all_acks: bool,
-    pub session_hash: Option<[u8; 32]>,
-    pub finished: Option<KeyId>,
+    pub session_hash: Option<SessionHash>,
+    pub finished: Option<AccessStructureRef>,
     pub aborted: Option<String>,
 }

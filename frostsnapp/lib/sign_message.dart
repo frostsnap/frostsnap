@@ -57,8 +57,10 @@ class _SignMessageFormState extends State<SignMessageForm> {
 
   @override
   Widget build(BuildContext context) {
-    final buttonReady = selected.length == widget.frostKey.threshold() &&
-        _messageController.text.isNotEmpty;
+    final accessStructure = widget.frostKey.accessStructures()[0];
+    final threshold = accessStructure.threshold();
+    final buttonReady =
+        selected.length == threshold && _messageController.text.isNotEmpty;
 
     var submitButtonOnPressed;
     if (buttonReady) {
@@ -66,14 +68,13 @@ class _SignMessageFormState extends State<SignMessageForm> {
         final message = _messageController.text;
         final signingStream = coord
             .startSigning(
-                keyId: widget.frostKey.id(),
+                accessStructureRef: accessStructure.accessStructureRef(),
                 devices: selected.toList(),
                 message: message)
             .toBehaviorSubject();
 
-        final signatures =
-            await signMessageWorkflowDialog(context, signingStream, message);
-        if (signatures != null && context.mounted) {
+        await signMessageWorkflowDialog(context, signingStream, message);
+        if (context.mounted) {
           Navigator.pop(context);
         }
       };
@@ -94,7 +95,7 @@ class _SignMessageFormState extends State<SignMessageForm> {
         ),
         SizedBox(height: 20.0),
         Text(
-          'Select ${widget.frostKey.threshold()} device${widget.frostKey.threshold() > 1 ? "s" : ""} to sign with:',
+          'Select $threshold device${threshold > 1 ? "s" : ""} to sign with:',
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 20.0),
         ),
@@ -142,7 +143,8 @@ class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
 
   @override
   Widget build(BuildContext context) {
-    final devices = widget.frostKey.devices();
+    final accessStrcuture = widget.frostKey.accessStructures()[0];
+    final devices = accessStrcuture.devices();
 
     return ListView.builder(
       itemCount: devices.length,
