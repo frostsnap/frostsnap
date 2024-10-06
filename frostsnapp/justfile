@@ -11,7 +11,7 @@ gen:
         --wasm
 
 build TARGET="linux" +ARGS="":
-    flutter build -v {{TARGET}} {{ARGS}}
+    flutter build {{TARGET}} {{ARGS}}
 
 run +ARGS="":
     flutter run {{ARGS}}
