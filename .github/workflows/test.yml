@@ -64,7 +64,7 @@ jobs:
     needs: device
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         include:
           - os: ubuntu-latest
             build_command: linux
@@ -74,6 +74,10 @@ jobs:
             build_command: windows
             artifact_name: Frostsnapp-${{ github.sha }}-windows-x64
             artifact_path: frostsnapp/build/windows/x64/runner/Release
+          - os: macos-latest
+            build_command: macos
+            artifact_name: Frostsnapp-${{ github.sha }}-x64.app
+            artifact_path: frostsnapp/build/macos/Build/Products/Release/frostsnapp.app
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
@@ -93,6 +97,19 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build libstdc++-12-dev libgtk-3-0 libgtk-3-dev libudev-dev libarchive-tools qtbase5-dev qt5-qmake qtdeclarative5-dev cmake
+      - name: Install macOS dependencies
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install just
+          sudo gem install cocoapods
+      - name: Configure macOS
+        if: matrix.os == 'macos-latest'
+        run: |
+          cd frostsnapp
+          flutter pub get
+          cd macos
+          pod install
+          cd ../..
       - run: just frostsnapp/install-rust-deps
       - name: Build app
         run: just frostsnapp/build ${{ matrix.build_command }} --release
