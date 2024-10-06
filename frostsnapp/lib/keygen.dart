@@ -122,7 +122,8 @@ class DevicesPage extends StatelessWidget {
 
             final anyNeedsName = devices.any((device) => device.name == null);
 
-            final allDevicesReady = !(anyNeedsName || anyNeedUpgrade);
+            final allDevicesReady =
+                !(anyNeedsName || anyNeedUpgrade || devices.isEmpty);
             final style = TextStyle(fontSize: 16);
 
             if (anyNeedUpgrade) {
