@@ -60,9 +60,21 @@ jobs:
       - run: just lint-non-device --release
       - run: just test --release --all-features
 
-  app-build-linux:
-    runs-on: ubuntu-latest
+  app-build:
     needs: device
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            build_command: linux
+            artifact_name: Frostsnapp-${{ github.sha }}-x86_64.AppImage
+            artifact_path: Frostsnapp.AppImage
+          - os: windows-latest
+            build_command: windows
+            artifact_name: Frostsnapp-${{ github.sha }}-windows-x64
+            artifact_path: frostsnapp/build/windows/x64/runner/Release
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
       - name: Download firmware elf
@@ -76,22 +88,31 @@ jobs:
         with:
           channel: "stable"
       - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y ninja-build libstdc++-12-dev libgtk-3-0 libgtk-3-dev libudev-dev libarchive-tools qtbase5-dev qt5-qmake qtdeclarative5-dev cmake
+      - name: Install Linux dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libstdc++-12-dev libgtk-3-0 libgtk-3-dev libudev-dev libarchive-tools qtbase5-dev qt5-qmake qtdeclarative5-dev cmake
       - run: just frostsnapp/install-rust-deps
-      - run: just frostsnapp/build linux --release
-      - name: Build AppImage
+      - name: Build app
+        run: just frostsnapp/build ${{ matrix.build_command }} --release
+      - name: Build AppImage (Linux only)
+        if: matrix.os == 'ubuntu-latest'
         uses: AppImageCrafters/build-appimage-action@master
         env:
           UPDATE_INFO: frostsnapp-${{ github.sha }}-x86_64.AppImage.zsync
         with:
           recipe: AppImageBuilder.yml
-      - run: sudo chmod +x Frostsnapp-latest-x86_64.AppImage
-      - run: mv Frostsnapp-latest-x86_64.AppImage Frostsnapp.AppImage
-      - name: Upload AppImage
+      - name: Prepare AppImage (Linux only)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo chmod +x Frostsnapp-latest-x86_64.AppImage
+          mv Frostsnapp-latest-x86_64.AppImage Frostsnapp.AppImage
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Frostsnapp-${{ github.sha }}-x86_64.AppImage
-          path: Frostsnapp.AppImage
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
           if-no-files-found: error
 
   app-build-android:
