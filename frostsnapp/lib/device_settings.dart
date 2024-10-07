@@ -455,7 +455,7 @@ class BackupSettingsPage extends StatelessWidget {
                             return null;
                           });
 
-                          final result = await showDeviceActionDialog(
+                          final result = await showDeviceActionDialog<bool>(
                             context: context,
                             complete: aborted,
                             builder: (BuildContext context) {
