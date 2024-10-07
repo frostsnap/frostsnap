@@ -839,27 +839,7 @@ class NativeImpl implements Native {
         argNames: ["that", "id"],
       );
 
-  Future<void> cancelAllMethodCoordinator(
-      {required Coordinator that, dynamic hint}) {
-    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
-    return _platform.executeNormal(FlutterRustBridgeTask(
-      callFfi: (port_) =>
-          _platform.inner.wire_cancel_all__method__Coordinator(port_, arg0),
-      parseSuccessData: _wire2api_unit,
-      parseErrorData: null,
-      constMeta: kCancelAllMethodCoordinatorConstMeta,
-      argValues: [that],
-      hint: hint,
-    ));
-  }
-
-  FlutterRustBridgeTaskConstMeta get kCancelAllMethodCoordinatorConstMeta =>
-      const FlutterRustBridgeTaskConstMeta(
-        debugName: "cancel_all__method__Coordinator",
-        argNames: ["that"],
-      );
-
-  Stream<void> displayBackupMethodCoordinator(
+  Stream<bool> displayBackupMethodCoordinator(
       {required Coordinator that,
       required DeviceId id,
       required KeyId keyId,
@@ -870,7 +850,7 @@ class NativeImpl implements Native {
     return _platform.executeStream(FlutterRustBridgeTask(
       callFfi: (port_) => _platform.inner
           .wire_display_backup__method__Coordinator(port_, arg0, arg1, arg2),
-      parseSuccessData: _wire2api_unit,
+      parseSuccessData: _wire2api_bool,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kDisplayBackupMethodCoordinatorConstMeta,
       argValues: [that, id, keyId],
@@ -1286,6 +1266,33 @@ class NativeImpl implements Native {
           const FlutterRustBridgeTaskConstMeta(
             debugName: "final_keygen_ack__method__Coordinator",
             argNames: ["that"],
+          );
+
+  Stream<CheckShareState> checkShareOnDeviceMethodCoordinator(
+      {required Coordinator that,
+      required DeviceId deviceId,
+      required KeyId keyId,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
+    var arg1 = _platform.api2wire_box_autoadd_device_id(deviceId);
+    var arg2 = _platform.api2wire_box_autoadd_key_id(keyId);
+    return _platform.executeStream(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner
+          .wire_check_share_on_device__method__Coordinator(
+              port_, arg0, arg1, arg2),
+      parseSuccessData: _wire2api_check_share_state,
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kCheckShareOnDeviceMethodCoordinatorConstMeta,
+      argValues: [that, deviceId, keyId],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kCheckShareOnDeviceMethodCoordinatorConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "check_share_on_device__method__Coordinator",
+            argNames: ["that", "deviceId", "keyId"],
           );
 
   String descriptorForKeyMethodBitcoinContext(
@@ -1789,6 +1796,10 @@ class NativeImpl implements Native {
     return raw as bool;
   }
 
+  bool _wire2api_box_autoadd_bool(dynamic raw) {
+    return raw as bool;
+  }
+
   ConfirmationTime _wire2api_box_autoadd_confirmation_time(dynamic raw) {
     return _wire2api_confirmation_time(raw);
   }
@@ -1835,6 +1846,16 @@ class NativeImpl implements Native {
 
   UnsignedTx _wire2api_box_autoadd_unsigned_tx(dynamic raw) {
     return _wire2api_unsigned_tx(raw);
+  }
+
+  CheckShareState _wire2api_check_share_state(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return CheckShareState(
+      outcome: _wire2api_opt_box_autoadd_bool(arr[0]),
+      abort: _wire2api_opt_String(arr[1]),
+    );
   }
 
   ConfirmationTime _wire2api_confirmation_time(dynamic raw) {
@@ -2067,6 +2088,10 @@ class NativeImpl implements Native {
 
   String? _wire2api_opt_String(dynamic raw) {
     return raw == null ? null : _wire2api_String(raw);
+  }
+
+  bool? _wire2api_opt_box_autoadd_bool(dynamic raw) {
+    return raw == null ? null : _wire2api_box_autoadd_bool(raw);
   }
 
   ConfirmationTime? _wire2api_opt_box_autoadd_confirmation_time(dynamic raw) {

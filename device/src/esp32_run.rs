@@ -309,7 +309,7 @@ where
                                                     frostsnap_comms::NameCommand::Finish(
                                                         new_name,
                                                     ) => {
-                                                        ui.set_workflow(ui::Workflow::UserPrompt(
+                                                        ui.set_workflow(ui::Workflow::prompt(
                                                             ui::Prompt::NewName {
                                                                 old_name: name.clone(),
                                                                 new_name: new_name.clone(),
@@ -369,7 +369,7 @@ where
 
                                                         },
                                                     }
-                                                }
+                                                },
                                             }
                                         }
 
@@ -483,6 +483,16 @@ where
                         // special case where updrade will handle things from now on
                         switch_workflow = None;
                     }
+                    UiEvent::EnteredShareBackup(share_backup) => outbox.push_back(
+                        DeviceSend::ToUser(DeviceToUserMessage::EnteredBackup(share_backup)),
+                    ),
+                    UiEvent::EnteredShareBackupConfirm(share_backup) => {
+                        outbox.extend(
+                            signer
+                                .loaded_share_backup(share_backup)
+                                .expect("invalid state to restore share"),
+                        );
+                    }
                 }
 
                 if let Some(switch_workflow) = switch_workflow {
@@ -512,14 +522,14 @@ where
                                 session_hash,
                                 key_name,
                             } => {
-                                ui.set_workflow(ui::Workflow::UserPrompt(ui::Prompt::KeyGen {
+                                ui.set_workflow(ui::Workflow::prompt(ui::Prompt::KeyGen {
                                     key_id,
                                     session_hash,
                                     key_name,
                                 }));
                             }
                             DeviceToUserMessage::SignatureRequest { sign_task, .. } => {
-                                ui.set_workflow(ui::Workflow::UserPrompt(ui::Prompt::Signing(
+                                ui.set_workflow(ui::Workflow::prompt(ui::Prompt::Signing(
                                     match sign_task.into_inner() {
                                         SignTask::Plain { message } => {
                                             ui::SignPrompt::Plain(message)
@@ -553,7 +563,7 @@ where
                                     .get(&key_id)
                                     .cloned()
                                     .unwrap_or(key_id.to_string());
-                                ui.set_workflow(ui::Workflow::UserPrompt(
+                                ui.set_workflow(ui::Workflow::prompt(
                                     ui::Prompt::DisplayBackupRequest((key_name.clone(), key_id)),
                                 ))
                             }
@@ -562,6 +572,16 @@ where
                             }
                             DeviceToUserMessage::DisplayBackup { key_id: _, backup } => {
                                 ui.set_workflow(ui::Workflow::DisplayBackup { backup });
+                            }
+                            DeviceToUserMessage::EnterBackup => {
+                                ui.set_workflow(ui::Workflow::EnteringBackup(
+                                    ui::EnteringBackupStage::Init,
+                                ));
+                            }
+                            DeviceToUserMessage::EnteredBackup(share_backup) => {
+                                ui.set_workflow(ui::Workflow::prompt(
+                                    ui::Prompt::ConfirmLoadBackup(share_backup),
+                                ));
                             }
                         };
                     }

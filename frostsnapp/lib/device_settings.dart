@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/animated_check.dart';
@@ -8,8 +9,10 @@ import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_id_ext.dart';
 import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/device_setup.dart';
+import 'package:frostsnapp/keygen.dart';
 import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/global.dart';
+import 'package:frostsnapp/show_backup.dart';
 import 'package:frostsnapp/theme.dart';
 
 class DeviceSettingsPage extends StatelessWidget {
@@ -67,7 +70,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
     final deviceKeys = coord.keysForDevice(deviceId: widget.id);
     if (device == null) {
       body = Center(
-          child: Column(children: const [
+          child: Column(mainAxisSize: MainAxisSize.min, children: const [
         Text(
           'Waiting for device to reconnect',
           style: TextStyle(color: uninterestedColor, fontSize: 24.0),
@@ -82,70 +85,29 @@ class _DeviceSettingsState extends State<DeviceSettings> {
         itemBuilder: (context, index) {
           final keyId = deviceKeys[index];
           final keyName = coord.getKeyName(keyId: keyId)!;
-          return Padding(
-              padding: const EdgeInsets.only(
-                  bottom: 4.0), // Adjust the padding/margin here
-              child: ListTile(
-                  title: Row(
-                      mainAxisAlignment: MainAxisAlignment.start,
-                      children: [
-                    Column(children: [
-                      Text(
-                        keyName,
-                        style: const TextStyle(fontSize: 20.0),
-                      ),
-                    ]),
-                    SizedBox(width: 10),
-                    ElevatedButton(
-                      onPressed: () async {
-                        final confirmed = coord
-                            .displayBackup(id: widget.id, keyId: keyId)
-                            .first;
-
-                        final result = await showDeviceActionDialog(
-                          context: context,
-                          complete: _deviceRemoved.future,
-                          builder: (context) {
-                            return FutureBuilder(
-                                future: confirmed,
-                                builder: (context, snapshot) {
-                                  return Column(children: [
-                                    DialogHeader(
-                                        child: Text(snapshot.connectionState ==
-                                                ConnectionState.waiting
-                                            ? "Confirm on device to show backup"
-                                            : "Record backup displayed on device screen. Press cancel when finished.")),
-                                    Expanded(child: DeviceListWithIcons(
-                                        iconAssigner: (context, deviceId) {
-                                      if (deviceIdEquals(deviceId, widget.id)) {
-                                        final label = LabeledDeviceText(
-                                            device_.name ?? "<unamed>");
-                                        final Widget icon;
-                                        if (snapshot.connectionState ==
-                                            ConnectionState.waiting) {
-                                          icon = ConfirmPrompt();
-                                        } else {
-                                          icon = DevicePrompt(
-                                              icon: Icon(Icons.edit_document,
-                                                  color: successColor),
-                                              text: "Record");
-                                        }
-                                        return (label, icon);
-                                      } else {
-                                        return (null, null);
-                                      }
-                                    }))
-                                  ]);
-                                });
-                          },
-                        );
-                        if (result == null) {
-                          coord.cancelProtocol();
-                        }
-                      },
-                      child: Text("Backup"),
-                    ),
-                  ])));
+          return ListTile(
+            title: Row(mainAxisAlignment: MainAxisAlignment.start, children: [
+              Text(
+                keyName,
+                style: const TextStyle(fontSize: 20.0),
+              ),
+              SizedBox(width: 10),
+              ElevatedButton(
+                onPressed: () async {
+                  Navigator.push(context, MaterialPageRoute(builder: (context) {
+                    return BackupSettingsPage(
+                      context: context,
+                      id: device_.id,
+                      deviceName: device_.name ?? "unamed",
+                      keyId: keyId,
+                      keyName: keyName,
+                    );
+                  }));
+                },
+                child: Text("Backup"),
+              )
+            ]),
+          );
         },
       );
 
@@ -408,5 +370,144 @@ class KeyValueListWidget extends StatelessWidget {
         }).toList(),
       ),
     );
+  }
+}
+
+class BackupSettingsPage extends StatelessWidget {
+  final DeviceId id;
+  final String deviceName;
+  final KeyId keyId;
+  final String keyName;
+
+  const BackupSettingsPage({
+    super.key,
+    required BuildContext context,
+    required this.id,
+    required this.deviceName,
+    required this.keyId,
+    required this.keyName,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+        appBar: AppBar(title: Text('Key Share Backup')),
+        body: Center(
+            child: Padding(
+                padding: EdgeInsets.all(8.0),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Key:',
+                        textAlign: TextAlign.left,
+                        style: TextStyle(
+                          fontSize: 16,
+                        ),
+                      ),
+                      Text(
+                        keyName,
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                        textAlign: TextAlign.left,
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Device:',
+                        textAlign: TextAlign.left,
+                        style: TextStyle(
+                          fontSize: 16,
+                        ),
+                      ),
+                      Text(
+                        '$deviceName',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                        textAlign: TextAlign.left,
+                      ),
+                      SizedBox(height: 24),
+                      Text(
+                        'Display this device\'s share backup for this key:',
+                        textAlign: TextAlign.left,
+                      ),
+                      SizedBox(height: 8),
+                      ElevatedButton(
+                        onPressed: () async {
+                          await doBackupWorkflow(context,
+                              devices: [id], keyId: keyId);
+                        },
+                        child: Text("Show Backup"),
+                      ),
+                      SizedBox(height: 24),
+                      Text(
+                          "Check this backup by re-entering it on the device:"),
+                      SizedBox(height: 8),
+                      ElevatedButton(
+                        onPressed: () async {
+                          final shareRestoreStream = coord
+                              .checkShareOnDevice(deviceId: id, keyId: keyId)
+                              .asBroadcastStream();
+
+                          final aborted = shareRestoreStream
+                              .firstWhere((state) => state.abort != null)
+                              .then((state) {
+                            if (context.mounted) {
+                              showErrorSnackbar(context, state.abort!);
+                            }
+                            return null;
+                          });
+
+                          final result = await showDeviceActionDialog(
+                            context: context,
+                            complete: aborted,
+                            builder: (BuildContext context) {
+                              return StreamBuilder(
+                                  stream: shareRestoreStream,
+                                  builder: (context, snapshot) {
+                                    final outcome = snapshot.data?.outcome;
+                                    return Column(children: [
+                                      DialogHeader(
+                                          child: Text(
+                                              "Enter the backup on the device.")),
+                                      Expanded(
+                                        child: DeviceListWithIcons(
+                                          iconAssigner: (context, deviceId) {
+                                            if (deviceIdEquals(deviceId, id)) {
+                                              final Widget icon = DevicePrompt(
+                                                  icon: Icon(Icons.keyboard),
+                                                  text: "");
+                                              return (null, icon);
+                                            } else {
+                                              return (null, null);
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                      DialogFooter(
+                                          child: ElevatedButton(
+                                        onPressed: () {
+                                          Navigator.pop(context, outcome);
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                            backgroundColor: switch (outcome) {
+                                          true => Colors.green,
+                                          false => Colors.red,
+                                          null => null,
+                                        }),
+                                        child: Text(switch (outcome) {
+                                          true => "Your backup is valid",
+                                          false => "Your backup is invalid",
+                                          null => "Cancel"
+                                        }),
+                                      ))
+                                    ]);
+                                  });
+                            },
+                          );
+                          if (result == null) {
+                            coord.cancelProtocol();
+                          }
+                        },
+                        child: Text('Check Backup'),
+                      )
+                    ]))));
   }
 }

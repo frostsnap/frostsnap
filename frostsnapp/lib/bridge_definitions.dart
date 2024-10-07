@@ -228,12 +228,7 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kSendCancelMethodCoordinatorConstMeta;
 
-  Future<void> cancelAllMethodCoordinator(
-      {required Coordinator that, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kCancelAllMethodCoordinatorConstMeta;
-
-  Stream<void> displayBackupMethodCoordinator(
+  Stream<bool> displayBackupMethodCoordinator(
       {required Coordinator that,
       required DeviceId id,
       required KeyId keyId,
@@ -346,6 +341,15 @@ abstract class Native {
       {required Coordinator that, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kFinalKeygenAckMethodCoordinatorConstMeta;
+
+  Stream<CheckShareState> checkShareOnDeviceMethodCoordinator(
+      {required Coordinator that,
+      required DeviceId deviceId,
+      required KeyId keyId,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta
+      get kCheckShareOnDeviceMethodCoordinatorConstMeta;
 
   String descriptorForKeyMethodBitcoinContext(
       {required BitcoinContext that, required KeyId keyId, dynamic hint});
@@ -792,6 +796,16 @@ class BitcoinContext {
       );
 }
 
+class CheckShareState {
+  final bool? outcome;
+  final String? abort;
+
+  const CheckShareState({
+    this.outcome,
+    this.abort,
+  });
+}
+
 class ConfirmationTime {
   final int height;
   final int time;
@@ -863,11 +877,7 @@ class Coordinator {
         id: id,
       );
 
-  Future<void> cancelAll({dynamic hint}) => bridge.cancelAllMethodCoordinator(
-        that: this,
-      );
-
-  Stream<void> displayBackup(
+  Stream<bool> displayBackup(
           {required DeviceId id, required KeyId keyId, dynamic hint}) =>
       bridge.displayBackupMethodCoordinator(
         that: this,
@@ -993,6 +1003,14 @@ class Coordinator {
   Future<KeyId> finalKeygenAck({dynamic hint}) =>
       bridge.finalKeygenAckMethodCoordinator(
         that: this,
+      );
+
+  Stream<CheckShareState> checkShareOnDevice(
+          {required DeviceId deviceId, required KeyId keyId, dynamic hint}) =>
+      bridge.checkShareOnDeviceMethodCoordinator(
+        that: this,
+        deviceId: deviceId,
+        keyId: keyId,
       );
 }
 

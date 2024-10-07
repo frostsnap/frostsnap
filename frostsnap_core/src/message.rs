@@ -5,8 +5,10 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 use core::num::NonZeroU32;
 use schnorr_fun::binonce;
+use schnorr_fun::frost::SecretShare;
 use schnorr_fun::frost::{chilldkg::encpedpop, PartyIndex};
 use schnorr_fun::fun::prelude::*;
+use schnorr_fun::fun::{Point, Scalar};
 use schnorr_fun::{binonce::Nonce, frost::PairedSecretShare, Signature};
 use sha2::digest::Update;
 use sha2::Digest;
@@ -45,6 +47,7 @@ pub enum CoordinatorToDeviceMessage {
     DisplayBackup {
         key_id: KeyId,
     },
+    CheckShareBackup,
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
@@ -109,6 +112,7 @@ impl CoordinatorToDeviceMessage {
             CoordinatorToDeviceMessage::FinishKeyGen { .. } => "FinishKeyGen",
             CoordinatorToDeviceMessage::RequestSign { .. } => "RequestSign",
             CoordinatorToDeviceMessage::DisplayBackup { .. } => "DisplayBackup",
+            CoordinatorToDeviceMessage::CheckShareBackup { .. } => "CheckShareBackup",
         }
     }
 }
@@ -123,6 +127,10 @@ pub enum DeviceToCoordinatorMessage {
         new_nonces: DeviceNonces,
     },
     DisplayBackupConfirmed,
+    CheckShareBackup {
+        share_index: PartyIndex,
+        share_image: Point,
+    },
 }
 
 pub type KeyGenResponse = encpedpop::KeygenInput;
@@ -157,6 +165,7 @@ impl DeviceToCoordinatorMessage {
             KeyGenAck(_) => "KeyGenAck",
             SignatureShare { .. } => "SignatureShare",
             DisplayBackupConfirmed => "DisplayBackupConfirmed",
+            CheckShareBackup { .. } => "LoadingShareBackup",
         }
     }
 }
@@ -165,7 +174,14 @@ impl DeviceToCoordinatorMessage {
 pub enum CoordinatorToUserMessage {
     KeyGen(CoordinatorToUserKeyGenMessage),
     Signing(CoordinatorToUserSigningMessage),
-    DisplayBackupConfirmed { device_id: DeviceId },
+    DisplayBackupConfirmed {
+        device_id: DeviceId,
+    },
+    EnteredBackup {
+        device_id: DeviceId,
+        /// whether it was a valid backup for this key
+        valid: bool,
+    },
 }
 
 #[derive(Clone, Debug, Copy)]
@@ -223,6 +239,8 @@ pub enum DeviceToUserMessage {
         key_id: KeyId,
         backup: String,
     },
+    EnterBackup,
+    EnteredBackup(SecretShare),
 }
 
 #[derive(Clone, Debug)]
@@ -230,6 +248,7 @@ pub enum TaskKind {
     KeyGen,
     Sign,
     DisplayBackup,
+    LoadBackup,
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]

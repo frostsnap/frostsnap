@@ -634,9 +634,6 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* void */ wire_send_cancel__method__Coordinator(
       NativePortType port_, List<dynamic> that, List<dynamic> id);
 
-  external dynamic /* void */ wire_cancel_all__method__Coordinator(
-      NativePortType port_, List<dynamic> that);
-
   external dynamic /* void */ wire_display_backup__method__Coordinator(
       NativePortType port_,
       List<dynamic> that,
@@ -712,6 +709,12 @@ class NativeWasmModule implements WasmModule {
 
   external dynamic /* void */ wire_final_keygen_ack__method__Coordinator(
       NativePortType port_, List<dynamic> that);
+
+  external dynamic /* void */ wire_check_share_on_device__method__Coordinator(
+      NativePortType port_,
+      List<dynamic> that,
+      List<dynamic> device_id,
+      List<dynamic> key_id);
 
   external dynamic /* String */ wire_descriptor_for_key__method__BitcoinContext(
       List<dynamic> that, List<dynamic> key_id);
@@ -976,10 +979,6 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
           NativePortType port_, List<dynamic> that, List<dynamic> id) =>
       wasmModule.wire_send_cancel__method__Coordinator(port_, that, id);
 
-  void wire_cancel_all__method__Coordinator(
-          NativePortType port_, List<dynamic> that) =>
-      wasmModule.wire_cancel_all__method__Coordinator(port_, that);
-
   void wire_display_backup__method__Coordinator(NativePortType port_,
           List<dynamic> that, List<dynamic> id, List<dynamic> key_id) =>
       wasmModule.wire_display_backup__method__Coordinator(
@@ -1076,6 +1075,11 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   void wire_final_keygen_ack__method__Coordinator(
           NativePortType port_, List<dynamic> that) =>
       wasmModule.wire_final_keygen_ack__method__Coordinator(port_, that);
+
+  void wire_check_share_on_device__method__Coordinator(NativePortType port_,
+          List<dynamic> that, List<dynamic> device_id, List<dynamic> key_id) =>
+      wasmModule.wire_check_share_on_device__method__Coordinator(
+          port_, that, device_id, key_id);
 
   dynamic /* String */ wire_descriptor_for_key__method__BitcoinContext(
           List<dynamic> that, List<dynamic> key_id) =>

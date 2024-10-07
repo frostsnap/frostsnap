@@ -1,10 +1,10 @@
 use std::collections::BTreeSet;
 
 use crate::{Completion, Sink, UiProtocol, UiToStorageMessage};
-use frostsnap_comms::{CoordinatorSendBody, CoordinatorSendMessage, Destination};
+use frostsnap_comms::CoordinatorSendMessage;
 use frostsnap_core::{
     coordinator::FrostCoordinator,
-    message::{CoordinatorSend, CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage},
+    message::{CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage},
     DeviceId, KeyId,
 };
 use tracing::{event, Level};
@@ -44,20 +44,11 @@ impl KeyGen {
         match coordinator.do_keygen(&devices, threshold, key_name, rng) {
             Ok(messages) => {
                 for message in messages {
-                    match message {
-                        CoordinatorSend::ToDevice {
-                            message,
-                            destinations,
-                        } => {
-                            let keygen_message = CoordinatorSendMessage {
-                                target_destinations: Destination::Particular(destinations),
-                                message_body: CoordinatorSendBody::Core(message),
-                            };
-                            self_.keygen_messages.push(keygen_message);
-                        }
-                        CoordinatorSend::ToUser(_) => todo!("handle these if they ever exist"),
-                        CoordinatorSend::SigningSessionStore(_) => unreachable!("not signing"),
-                    }
+                    self_.keygen_messages.push(
+                        message
+                            .try_into()
+                            .expect("will only send messages to device"),
+                    );
                 }
             }
             Err(e) => self_.abort(format!("couldn't start keygen: {e}"), false),

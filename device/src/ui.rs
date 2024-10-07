@@ -1,6 +1,10 @@
+use crate::graphics::{
+    animation::AnimationState,
+    widgets::{EnterShareIndexScreen, EnterShareScreen},
+};
 use alloc::string::{String, ToString};
 use frostsnap_comms::FirmwareDigest;
-use frostsnap_core::{KeyId, SessionHash};
+use frostsnap_core::{schnorr_fun::frost::SecretShare, KeyId, SessionHash};
 
 pub trait UserInteraction {
     fn set_downstream_connection_state(&mut self, state: crate::DownstreamConnectionState);
@@ -29,13 +33,15 @@ pub trait UserInteraction {
     fn cancel(&mut self) {
         let workflow = self.take_workflow();
         let new_workflow = match workflow {
-            Workflow::UserPrompt(Prompt::NewName { old_name, new_name }) => {
-                Workflow::NamingDevice { old_name, new_name }
-            }
+            Workflow::UserPrompt {
+                prompt: Prompt::NewName { old_name, new_name },
+                ..
+            } => Workflow::NamingDevice { old_name, new_name },
             Workflow::NamingDevice { .. }
             | Workflow::DisplayBackup { .. }
-            | Workflow::UserPrompt(_)
+            | Workflow::UserPrompt { .. }
             | Workflow::BusyDoing(_)
+            | Workflow::EnteringBackup { .. }
             | Workflow::WaitingFor(_) => Workflow::WaitingFor(WaitingFor::CoordinatorInstruction {
                 completed_task: None,
             }),
@@ -44,6 +50,8 @@ pub trait UserInteraction {
         self.set_workflow(new_workflow);
     }
 }
+
+const HOLD_TO_CONFIRM_TIME_MS: crate::Duration = crate::Duration::millis(600);
 
 #[derive(Clone, Debug)]
 pub enum WaitingFor {
@@ -62,12 +70,15 @@ pub enum WaitingResponse {
     KeyGen,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum Workflow {
     None,
     WaitingFor(WaitingFor),
     BusyDoing(BusyTask),
-    UserPrompt(Prompt),
+    UserPrompt {
+        prompt: Prompt,
+        animation: AnimationState,
+    },
     Debug(String),
     NamingDevice {
         old_name: Option<String>,
@@ -76,6 +87,24 @@ pub enum Workflow {
     DisplayBackup {
         backup: String,
     },
+    EnteringBackup(EnteringBackupStage),
+}
+
+impl Workflow {
+    pub fn prompt(prompt: Prompt) -> Self {
+        Self::UserPrompt {
+            prompt,
+            animation: AnimationState::new(HOLD_TO_CONFIRM_TIME_MS),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum EnteringBackupStage {
+    //HACK So the creator of the workflow doesn't have to construct the screen
+    Init,
+    ShareIndex { screen: EnterShareIndexScreen },
+    Share { screen: EnterShareScreen },
 }
 
 impl Default for Workflow {
@@ -85,7 +114,6 @@ impl Default for Workflow {
 }
 
 #[derive(Clone, Debug)]
-
 pub enum Prompt {
     KeyGen {
         session_hash: SessionHash,
@@ -102,6 +130,7 @@ pub enum Prompt {
         firmware_digest: FirmwareDigest,
         size: u32,
     },
+    ConfirmLoadBackup(SecretShare),
 }
 
 #[derive(Clone, Debug)]
@@ -143,4 +172,6 @@ pub enum UiEvent {
         size: u32,
         firmware_digest: FirmwareDigest,
     },
+    EnteredShareBackup(SecretShare),
+    EnteredShareBackupConfirm(SecretShare),
 }

@@ -163,7 +163,7 @@ class DeviceBoxContainer extends StatelessWidget {
 }
 
 class LabeledDeviceText extends StatelessWidget {
-  final String name;
+  final String? name;
 
   const LabeledDeviceText(this.name, {super.key});
 
@@ -174,7 +174,8 @@ class LabeledDeviceText extends StatelessWidget {
         height: 25.0,
         child: FittedBox(
           fit: BoxFit.contain,
-          child: Text(name, style: TextStyle(fontWeight: FontWeight.bold)),
+          child: Text(name ?? "<unamed>",
+              style: TextStyle(fontWeight: FontWeight.bold)),
         ));
   }
 }
@@ -205,7 +206,7 @@ class DeviceListWithIcons extends StatelessWidget {
   Widget _builder(BuildContext context, ConnectedDevice device,
       Orientation orientation, Animation<double> animation) {
     final (overrideLabel, icon) = iconAssigner.call(context, device.id);
-    final label = overrideLabel ?? LabeledDeviceText(device.name ?? '-');
+    final label = overrideLabel ?? LabeledDeviceText(device.name);
     return DeviceBoxContainer(
         animation: animation,
         orientation: orientation,

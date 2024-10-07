@@ -127,10 +127,12 @@ class FsProgressIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AspectRatio(
-        aspectRatio: 1,
-        child: CircularProgressIndicator.adaptive(
-          valueColor: AlwaysStoppedAnimation<Color>(textSecondaryColor),
-        ));
+    return SizedBox(
+        height: 30.0,
+        child: AspectRatio(
+            aspectRatio: 1,
+            child: CircularProgressIndicator.adaptive(
+              valueColor: AlwaysStoppedAnimation<Color>(textSecondaryColor),
+            )));
   }
 }

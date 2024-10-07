@@ -254,11 +254,6 @@ pub fn wire_send_cancel__method__Coordinator(port_: MessagePort, that: JsValue, 
 }
 
 #[wasm_bindgen]
-pub fn wire_cancel_all__method__Coordinator(port_: MessagePort, that: JsValue) {
-    wire_cancel_all__method__Coordinator_impl(port_, that)
-}
-
-#[wasm_bindgen]
 pub fn wire_display_backup__method__Coordinator(
     port_: MessagePort,
     that: JsValue,
@@ -399,6 +394,16 @@ pub fn wire_get_device_name__method__Coordinator(
 #[wasm_bindgen]
 pub fn wire_final_keygen_ack__method__Coordinator(port_: MessagePort, that: JsValue) {
     wire_final_keygen_ack__method__Coordinator_impl(port_, that)
+}
+
+#[wasm_bindgen]
+pub fn wire_check_share_on_device__method__Coordinator(
+    port_: MessagePort,
+    that: JsValue,
+    device_id: JsValue,
+    key_id: JsValue,
+) {
+    wire_check_share_on_device__method__Coordinator_impl(port_, that, device_id, key_id)
 }
 
 #[wasm_bindgen]

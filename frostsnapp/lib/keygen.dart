@@ -10,6 +10,7 @@ import 'package:frostsnapp/device_id_ext.dart';
 import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/hex.dart';
+import 'package:frostsnapp/show_backup.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/theme.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
@@ -121,7 +122,8 @@ class DevicesPage extends StatelessWidget {
 
             final anyNeedsName = devices.any((device) => device.name == null);
 
-            final allDevicesReady = !(anyNeedsName || anyNeedUpgrade);
+            final allDevicesReady =
+                !(anyNeedsName || anyNeedUpgrade || devices.isEmpty);
             final style = TextStyle(fontSize: 16);
 
             if (anyNeedUpgrade) {
@@ -295,8 +297,13 @@ class _ThresholdPageState extends State<ThresholdPage> {
                     context: context,
                     stream: stream,
                   );
+
                   if (keyId != null && context.mounted) {
-                    await showBackupDialogue(context: context, keyId: keyId);
+                    await doBackupWorkflow(context,
+                        devices: widget.selectedDevices
+                            .map((device) => device.id)
+                            .toList(),
+                        keyId: keyId);
                   }
 
                   if (keyId == null && context.mounted) {
@@ -472,98 +479,4 @@ Future<KeyId?> showCheckKeyGenDialog({
     coord.cancelProtocol();
   }
   return result;
-}
-
-Future<void> showBackupDialogue(
-    {required KeyId keyId, required BuildContext context}) async {
-  final frostKey = coord.getKey(keyId: keyId)!;
-  final polynomialIdentifier = frostKey.polynomialIdentifier();
-
-  return showDialog(
-    context: context,
-    builder: (context) {
-      return AlertDialog(
-          actions: [
-            ElevatedButton(
-              child: Text("I have written down my backups"),
-              onPressed: () {
-                coord.cancelAll();
-                Navigator.pop(context);
-              },
-            ),
-          ],
-          content: SizedBox(
-            width: Platform.isAndroid ? double.maxFinite : 400.0,
-            child: Align(
-              alignment: Alignment.center,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text.rich(TextSpan(
-                      text:
-                          "Write down each device's backup for this key onto separate pieces of paper. Each piece of paper should look like this with every ",
-                      children: [
-                        TextSpan(
-                          text: 'X',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        TextSpan(
-                          text: ' replaced with the character shown on screen.',
-                        )
-                      ])),
-                  SizedBox(height: 8),
-                  Divider(),
-                  Center(
-                    child: Text.rich(TextSpan(
-                      text: 'frost[',
-                      children: <TextSpan>[
-                        TextSpan(
-                          text: 'X',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        TextSpan(
-                          text: ']',
-                        ),
-                      ],
-                      style: TextStyle(
-                          fontFamily: 'Courier',
-                          color: textSecondaryColor,
-                          fontSize: 20),
-                    )),
-                  ),
-                  Center(
-                    child: Text(
-                      "xxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xxx",
-                      style: TextStyle(
-                          fontFamily: 'Courier',
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: textSecondaryColor),
-                    ),
-                  ),
-                  Center(
-                      child: Text(
-                    "Identifier: ${toSpacedHex(polynomialIdentifier)}",
-                    style: TextStyle(fontFamily: 'Courier', fontSize: 18),
-                  )),
-                  Divider(),
-                  SizedBox(height: 16),
-                  Text(
-                      "Alongside each backup, also record the identifier above."),
-                  SizedBox(height: 8),
-                  Text(
-                      "This identifier is useful for knowing that these share backups belong to the same key and are compatibile."),
-                  SizedBox(height: 24),
-                  Text(
-                      "Any ${frostKey.threshold()} of these backups will provide complete control over this key."),
-                  SizedBox(height: 8),
-                  Text(
-                      "You should store these backups securely in separate locations."),
-                ],
-              ),
-            ),
-          ));
-    },
-  );
 }

@@ -14,8 +14,10 @@ pub use frostsnap_coordinator::firmware_upgrade::FirmwareUpgradeConfirmState;
 pub use frostsnap_coordinator::frostsnap_core;
 use frostsnap_coordinator::frostsnap_core::schnorr_fun::fun::hash::HashAdd;
 pub use frostsnap_coordinator::{
-    keygen::KeyGenState, signing::SigningState, DeviceChange, PortDesc,
+    check_share::CheckShareState, keygen::KeyGenState, signing::SigningState, DeviceChange,
+    PortDesc,
 };
+
 use frostsnap_coordinator::{DesktopSerial, UsbSerialManager};
 pub use frostsnap_core::message::EncodedSignature;
 pub use frostsnap_core::{DeviceId, FrostKeyExt, KeyId, SignTask};
@@ -333,6 +335,12 @@ pub struct _FirmwareUpgradeConfirmState {
     pub need_upgrade: Vec<DeviceId>,
     pub abort: bool,
     pub upgrade_ready_to_start: bool,
+}
+
+#[frb(mirror(CheckShareState))]
+pub struct _CheckShareState {
+    outcome: Option<bool>,
+    abort: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -657,15 +665,11 @@ impl Coordinator {
         self.0.send_cancel(id);
     }
 
-    pub fn cancel_all(&self) {
-        self.0.cancel_all()
-    }
-
     pub fn display_backup(
         &self,
         id: DeviceId,
         key_id: KeyId,
-        stream: StreamSink<()>,
+        stream: StreamSink<bool>,
     ) -> Result<()> {
         self.0.request_display_backup(id, key_id, stream)?;
         Ok(())
@@ -813,6 +817,16 @@ impl Coordinator {
 
     pub fn final_keygen_ack(&self) -> Result<KeyId> {
         self.0.final_keygen_ack()
+    }
+
+    pub fn check_share_on_device(
+        &self,
+        device_id: DeviceId,
+        key_id: KeyId,
+        sink: StreamSink<CheckShareState>,
+    ) -> Result<()> {
+        self.0.check_share_on_device(device_id, key_id, sink)?;
+        Ok(())
     }
 }
 

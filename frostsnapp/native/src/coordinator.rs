@@ -1,7 +1,8 @@
 use crate::api::{self, KeyState};
 use anyhow::{anyhow, Result};
 use flutter_rust_bridge::{RustOpaque, StreamSink};
-use frostsnap_coordinator::backup::BackupProtocol;
+use frostsnap_coordinator::check_share::{CheckShareProtocol, CheckShareState};
+use frostsnap_coordinator::display_backup::DisplayBackupProtocol;
 use frostsnap_coordinator::firmware_upgrade::{
     FirmwareUpgradeConfirmState, FirmwareUpgradeProtocol,
 };
@@ -94,7 +95,6 @@ impl FfiCoordinator {
         let pending_loop = self.pending_for_outbox.clone();
         let coordinator_loop = self.coordinator.clone();
         let ui_protocol = self.ui_protocol.clone();
-        let key_event_stream_loop = self.key_event_stream.clone();
         let db_loop = self.db.clone();
         let device_names = self.device_names.clone();
         let usb_sender = self.usb_sender.clone();
@@ -225,39 +225,11 @@ impl FfiCoordinator {
                             }
                         }
 
-                        if let Some(completion) = ui_protocol.is_complete() {
-                            // HACK: we check if the protocol just completed was a keygen and
-                            // trigger an update of the keylist if so. The alternative to this is
-                            // making the keygen protocol do this directly but this would mean
-                            // giving it the whole state of the key list which seemed a bit heavy.
-                            if ui_protocol
-                                .as_any()
-                                .is::<frostsnap_coordinator::keygen::KeyGen>()
-                            {
-                                if let Some(stream) = &*key_event_stream_loop.lock().unwrap() {
-                                    stream.add(KeyState {
-                                        keys: frost_keys(&coordinator),
-                                    });
-                                }
-                            }
-                            event!(
-                                Level::INFO,
-                                "UI Protocol {} completed with {:?}",
-                                ui_protocol.name(),
-                                completion
-                            );
-                            *ui_protocol_loop = None;
-                            if let Completion::Abort {
-                                send_cancel_to_all_devices,
-                            } = completion
-                            {
-                                coordinator.MUTATE_NO_PERSIST().cancel();
-                                event!(Level::DEBUG, "canceling protocol due to abort");
-                                if send_cancel_to_all_devices {
-                                    usb_sender.send_cancel_all();
-                                }
-                            }
-                        }
+                        Self::try_finish_protocol(
+                            usb_sender.clone(),
+                            coordinator.MUTATE_NO_PERSIST(),
+                            &mut ui_protocol_loop,
+                        );
                     }
 
                     crate::api::emit_device_events(
@@ -373,15 +345,6 @@ impl FfiCoordinator {
 
     pub fn send_cancel(&self, id: DeviceId) {
         self.usb_sender.send_cancel(id)
-    }
-
-    pub fn cancel_all(&self) {
-        self.coordinator
-            .lock()
-            .unwrap()
-            .MUTATE_NO_PERSIST()
-            .cancel();
-        self.usb_sender.send_cancel_all();
     }
 
     pub fn generate_new_key(
@@ -513,20 +476,14 @@ impl FfiCoordinator {
         &self,
         device_id: DeviceId,
         key_id: KeyId,
-        stream: StreamSink<()>,
+        stream: StreamSink<bool>,
     ) -> anyhow::Result<()> {
-        // XXX: We should be storing the id to make sure the device that sends the backup ack is
-        // from the one we expected. In practice it doesn't matter that much and flutter rust bridge
-        // was giving me extreme grief. Can try again with frb v2.
-        let backup_protocol = BackupProtocol::new(device_id, SinkWrap(stream));
-
-        let messages = self
-            .coordinator
-            .lock()
-            .unwrap()
-            .MUTATE_NO_PERSIST()
-            .request_device_display_backup(device_id, key_id)?;
-        self.pending_for_outbox.lock().unwrap().extend(messages);
+        let backup_protocol = DisplayBackupProtocol::new(
+            self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
+            device_id,
+            key_id,
+            SinkWrap(stream),
+        )?;
 
         self.start_protocol(backup_protocol);
 
@@ -582,9 +539,53 @@ impl FfiCoordinator {
     }
 
     pub fn cancel_protocol(&self) {
-        if let Some(proto) = &mut *self.ui_protocol.lock().unwrap() {
+        let mut proto_opt = self.ui_protocol.lock().unwrap();
+        if let Some(proto) = &mut *proto_opt {
             proto.cancel();
+            assert!(
+                Self::try_finish_protocol(
+                    self.usb_sender.clone(),
+                    self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
+                    &mut proto_opt
+                ),
+                "protocol must be finished after cancel"
+            );
         }
+    }
+
+    fn try_finish_protocol(
+        usb_sender: UsbSender,
+        coordinator: &mut FrostCoordinator,
+        proto_opt: &mut Option<Box<dyn UiProtocol>>,
+    ) -> bool {
+        if let Some(proto) = proto_opt {
+            if let Some(completion) = proto.is_complete() {
+                event!(
+                    Level::INFO,
+                    "UI Protocol {} completed with {:?}",
+                    proto.name(),
+                    completion
+                );
+                match completion {
+                    Completion::Abort {
+                        send_cancel_to_all_devices,
+                    } => {
+                        if send_cancel_to_all_devices {
+                            usb_sender.send_cancel_all();
+                        }
+                        coordinator.cancel();
+                        *proto_opt = None;
+                        return true;
+                    }
+                    Completion::Success => {
+                        *proto_opt = None;
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
     }
 
     pub fn enter_firmware_upgrade_mode(&self, sink: StreamSink<f32>) -> Result<()> {
@@ -615,24 +616,53 @@ impl FfiCoordinator {
     }
 
     pub fn final_keygen_ack(&self) -> Result<KeyId> {
+        let mut coordinator = self.coordinator.lock().unwrap();
         let mut db = self.db.lock().unwrap();
-        let key_id = self
-            .coordinator
-            .lock()
-            .unwrap()
+        let key_id = coordinator
             .staged_mutate(&mut db, |coordinator| Ok(coordinator.final_keygen_ack()?))?;
 
-        // need to tell the UI protocol that it's finished so it cleans itself up later.
-        self.ui_protocol
-            .lock()
-            .unwrap()
+        let mut proto = self.ui_protocol.lock().unwrap();
+        let keygen = proto
             .as_mut()
             .ok_or(anyhow!("No UI protocol running"))?
             .as_mut_any()
             .downcast_mut::<frostsnap_coordinator::keygen::KeyGen>()
-            .ok_or(anyhow!("somehow UI was not in KeyGen state"))?
-            .final_keygen_ack(key_id);
+            .ok_or(anyhow!("somehow UI was not in KeyGen state"))?;
+
+        keygen.final_keygen_ack(key_id);
+
+        if let Some(stream) = &*self.key_event_stream.lock().unwrap() {
+            stream.add(KeyState {
+                keys: frost_keys(&coordinator),
+            });
+        }
+
+        assert!(
+            Self::try_finish_protocol(
+                self.usb_sender.clone(),
+                coordinator.MUTATE_NO_PERSIST(),
+                &mut proto
+            ),
+            "keygen must be finished after we call final ack"
+        );
         Ok(key_id)
+    }
+
+    pub fn check_share_on_device(
+        &self,
+        device_id: DeviceId,
+        key_id: KeyId,
+        stream: StreamSink<api::CheckShareState>,
+    ) -> anyhow::Result<()> {
+        let check_share_protocol = CheckShareProtocol::new(
+            self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
+            device_id,
+            key_id,
+            SinkWrap(stream),
+        );
+        check_share_protocol.emit_state();
+        self.start_protocol(check_share_protocol);
+        Ok(())
     }
 }
 
@@ -664,4 +694,5 @@ macro_rules! bridge_sink {
 bridge_sink!(KeyGenState);
 bridge_sink!(FirmwareUpgradeConfirmState);
 bridge_sink!(SigningState);
-bridge_sink!(());
+bridge_sink!(CheckShareState);
+bridge_sink!(bool);

@@ -167,6 +167,9 @@ impl common::Env for TestEnv {
             CoordinatorToUserMessage::DisplayBackupConfirmed { device_id } => {
                 self.backup_confirmed_on_coordinator.insert(device_id);
             }
+            CoordinatorToUserMessage::EnteredBackup { .. } => {
+                todo!()
+            }
         }
     }
 
@@ -203,6 +206,12 @@ impl common::Env for TestEnv {
             }
             DeviceToUserMessage::Canceled { .. } => {
                 panic!("no cancelling done");
+            }
+            DeviceToUserMessage::EnterBackup { .. } => {
+                panic!("restoring backups untested")
+            }
+            DeviceToUserMessage::EnteredBackup(_) => {
+                panic!("restoring backups untested")
             }
         }
     }
@@ -336,7 +345,11 @@ fn test_display_backup() {
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
     let coord_frost_key = run.coordinator.iter_keys().next().unwrap().clone();
     let key_id = coord_frost_key.key_id();
-    assert_eq!(env.backups.len(), n_parties);
+    assert_eq!(
+        env.backups.len(),
+        0,
+        "no backups should have been displayed automatically"
+    );
 
     env.backups = BTreeMap::new(); // clear backups so we can request one again for a party
     let display_backup = run
@@ -369,7 +382,6 @@ fn test_display_backup() {
         .values()
         .map(|(bu_key_id, backup)| {
             assert_eq!(*bu_key_id, key_id);
-
             schnorr_fun::frost::SecretShare::from_bech32_backup(backup).expect("valid backup")
         })
         .collect::<Vec<_>>();

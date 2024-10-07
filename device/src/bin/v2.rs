@@ -6,11 +6,10 @@
 #[macro_use]
 extern crate alloc;
 use alloc::string::String;
-use core::mem::MaybeUninit;
-use cst816s::CST816S;
+use core::{borrow::BorrowMut, mem::MaybeUninit};
+use cst816s::{TouchGesture, CST816S};
 use display_interface_spi::SPIInterface;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
-use embedded_graphics_framebuf::FrameBuf;
 use embedded_hal as hal;
 use esp_hal::{
     clock::ClockControl,
@@ -35,17 +34,23 @@ use esp_hal::{
     usb_serial_jtag::UsbSerialJtag,
     Blocking,
 };
+use frostsnap_comms::Downstream;
 use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_device::{
-    esp32_run, graphics,
+    esp32_run,
+    graphics::{
+        self,
+        animation::AnimationProgress,
+        widgets::{EnterShareIndexScreen, EnterShareScreen},
+    },
     io::SerialInterface,
     ui::{
-        BusyTask, FirmwareUpgradeStatus, Prompt, SignPrompt, UiEvent, UserInteraction, WaitingFor,
-        WaitingResponse, Workflow,
+        BusyTask, EnteringBackupStage, FirmwareUpgradeStatus, Prompt, SignPrompt, UiEvent,
+        UserInteraction, WaitingFor, WaitingResponse, Workflow,
     },
-    DownstreamConnectionState, UpstreamConnection,
+    DownstreamConnectionState, Instant, UpstreamConnection,
 };
-use fugit::{Duration, Instant};
+use micromath::F32Ext;
 use mipidsi::{error::Error, models::ST7789, options::ColorInversion};
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
@@ -53,7 +58,7 @@ use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
 
 fn init_heap() {
-    const HEAP_SIZE: usize = 128 * 1024;
+    const HEAP_SIZE: usize = 256 * 1024;
     static mut HEAP: MaybeUninit<[u8; HEAP_SIZE]> = MaybeUninit::uninit();
 
     unsafe {
@@ -123,9 +128,7 @@ fn main() -> ! {
         .reset_pin(Output::new(io.pins.gpio6, Level::Low))
         .init(&mut delay)
         .unwrap();
-    let mut framearray = [Rgb565::BLACK; 240 * 280];
-    let framebuf = FrameBuf::new(&mut framearray, 240, 280);
-    let mut display = graphics::Graphics::new(display, framebuf).unwrap();
+    let mut display = graphics::Graphics::new(display).unwrap();
 
     let i2c = I2C::new(
         peripherals.I2C0,
@@ -144,7 +147,7 @@ fn main() -> ! {
 
     display.clear();
     display.header("Frostsnap");
-    display.flush().unwrap();
+    display.flush();
     channel0.start_duty_fade(0, 30, 500).unwrap();
 
     let detect_device_upstream = upstream_detect.is_low();
@@ -169,7 +172,7 @@ fn main() -> ! {
     } else {
         SerialInterface::new_jtag(UsbSerialJtag::new(peripherals.USB_DEVICE, None), &timer0)
     };
-    let downstream_serial = {
+    let downstream_serial: SerialInterface<_, _, Downstream> = {
         let serial_conf = uart::config::Config {
             baudrate: frostsnap_comms::BAUDRATE,
             ..Default::default()
@@ -204,7 +207,6 @@ fn main() -> ! {
         workflow: Default::default(),
         device_name: Default::default(),
         changes: false,
-        confirm_state: AnimationState::new(&timer1, 600.millis()),
         last_touch: None,
         timer: &timer1,
     };
@@ -239,86 +241,33 @@ impl embedded_hal::digital::ErrorType for NoCs {
 }
 
 pub struct FrostyUi<'t, T, DT, I2C, PINT, RST> {
-    display: graphics::Graphics<'t, DT>,
+    display: graphics::Graphics<DT>,
     capsense: CST816S<I2C, PINT, RST>,
-    last_touch: Option<Instant<u64, 1, 1_000_000>>,
+    last_touch: Option<(Point, Instant)>,
     downstream_connection_state: DownstreamConnectionState,
     upstream_connection_state: Option<UpstreamConnection>,
     workflow: Workflow,
     device_name: Option<String>,
     changes: bool,
-    confirm_state: AnimationState<'t, T>,
     timer: &'t Timer<T, Blocking>,
 }
 
-struct AnimationState<'t, T> {
-    timer: &'t Timer<T, Blocking>,
-    start: Option<Instant<u64, 1, 1_000_000>>,
-    bar_duration: Duration<u64, 1, 1_000_000>,
-    finished: bool,
-}
-
-impl<'t, T> AnimationState<'t, T>
-where
-    T: timer::timg::Instance,
-{
-    pub fn new(timer: &'t Timer<T, Blocking>, bar_duration: Duration<u64, 1, 1_000_000>) -> Self {
-        Self {
-            timer,
-            bar_duration,
-            start: None,
-            finished: false,
-        }
-    }
-
-    pub fn reset(&mut self) {
-        self.start = None;
-        self.finished = false;
-    }
-
-    pub fn poll(&mut self) -> AnimationProgress {
-        if self.finished {
-            return AnimationProgress::Done;
-        }
-        let now = self.timer.now();
-        match self.start {
-            Some(start) => {
-                let duration = now.checked_duration_since(start).unwrap();
-                if duration < self.bar_duration {
-                    AnimationProgress::Progress(
-                        duration.to_millis() as f32 / self.bar_duration.to_millis() as f32,
-                    )
-                } else {
-                    self.finished = true;
-                    AnimationProgress::FinalTick
-                }
-            }
-            None => {
-                self.start = Some(now);
-                self.poll()
-            }
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum AnimationProgress {
-    Progress(f32),
-    FinalTick,
-    Done,
-}
-
-impl<'t, T, DT, I2C, PINT, RST> FrostyUi<'t, T, DT, I2C, PINT, RST>
+impl<'t, T, DT, I2C, PINT, RST, CommE, PinE> FrostyUi<'t, T, DT, I2C, PINT, RST>
 where
     T: timer::timg::Instance,
     DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
+    I2C: hal::i2c::I2c<Error = CommE>,
+    PINT: hal::digital::InputPin,
+    RST: hal::digital::StatefulOutputPin<Error = PinE>,
 {
     fn render(&mut self) {
-        self.display.clear();
+        if !matches!(self.workflow, Workflow::EnteringBackup { .. }) {
+            self.display.clear();
+        }
         self.display
             .header(self.device_name.as_deref().unwrap_or("New Device"));
 
-        match &self.workflow {
+        match self.workflow.borrow_mut() {
             Workflow::None => {}
             Workflow::NamingDevice {
                 old_name: existing_name,
@@ -356,7 +305,7 @@ where
                     }
                 },
             },
-            Workflow::UserPrompt(prompt) => {
+            Workflow::UserPrompt { prompt, animation } => {
                 match prompt {
                     Prompt::Signing(task) => match task {
                         SignPrompt::Bitcoin {
@@ -411,6 +360,12 @@ where
                     } => self
                         .display
                         .print(format!("confirm firmware switch to: \n{firmware_digest}")),
+                    Prompt::ConfirmLoadBackup(share_backup) => self
+                        .display
+                        .show_backup(share_backup.to_bech32_backup(), false),
+                }
+                if let Some(completion) = animation.completion() {
+                    self.display.confirm_bar(completion);
                 }
                 self.display.button();
             }
@@ -439,7 +394,10 @@ where
                 self.display
                     .print(format!("{}: {}", self.timer.now(), string));
             }
-            Workflow::DisplayBackup { backup } => self.display.show_backup(backup.clone()),
+            Workflow::DisplayBackup { backup } => self.display.show_backup(backup.clone(), true),
+            Workflow::EnteringBackup(..) => {
+                // this is drawn during poll
+            }
         }
 
         if let Some(upstream_connection) = self.upstream_connection_state {
@@ -453,7 +411,7 @@ where
         self.display
             .set_mem_debug(ALLOCATOR.used(), ALLOCATOR.free());
 
-        self.display.flush().unwrap();
+        self.display.flush();
     }
 }
 
@@ -497,10 +455,11 @@ where
 
     fn set_workflow(&mut self, workflow: Workflow) {
         if matches!(self.workflow, Workflow::Debug(_))
-            && !matches!(workflow, Workflow::Debug(_) | Workflow::UserPrompt(_))
+            && !matches!(workflow, Workflow::Debug(_) | Workflow::UserPrompt { .. })
         {
             return;
         }
+
         self.workflow = workflow;
         self.changes = true;
     }
@@ -511,59 +470,130 @@ where
 
         let mut event = None;
 
-        if let Workflow::UserPrompt(prompt) = &self.workflow {
-            let is_pressed = match self.capsense.read_one_touch_event(true) {
-                None => match self.last_touch {
-                    None => false,
-                    Some(last_touch) => {
-                        now.checked_duration_since(last_touch).unwrap().to_millis() < 20
-                    }
-                },
-                Some(_touch) => {
-                    self.last_touch = Some(now);
-                    true
-                }
-            };
+        let (current_touch, last_touch) = match self.capsense.read_one_touch_event(true) {
+            Some(touch) => {
+                let corrected_y =
+                    touch.y + x_based_adjustment(touch.x) + y_based_adjustment(touch.y);
+                let corrected_point = Point::new(touch.x, corrected_y);
 
-            if is_pressed {
-                match self.confirm_state.poll() {
-                    AnimationProgress::Progress(progress) => {
-                        self.display.confirm_bar(progress);
-                    }
-                    AnimationProgress::FinalTick => {
-                        let ui_event = match prompt {
-                            Prompt::KeyGen {
-                                key_name, key_id, ..
-                            } => UiEvent::KeyGenConfirm {
-                                key_name: key_name.clone(),
-                                key_id: *key_id,
-                            },
-                            Prompt::Signing(_) => UiEvent::SigningConfirm,
-                            Prompt::NewName { new_name, .. } => {
-                                UiEvent::NameConfirm(new_name.clone())
-                            }
-                            Prompt::DisplayBackupRequest((_key_name, key_id)) => {
-                                UiEvent::BackupRequestConfirm(*key_id)
-                            }
-                            Prompt::ConfirmFirmwareUpgrade {
-                                firmware_digest,
-                                size,
-                            } => UiEvent::UpgradeConfirm {
-                                firmware_digest: *firmware_digest,
-                                size: *size,
-                            },
-                        };
-                        event = Some(ui_event);
-                    }
-                    AnimationProgress::Done => {}
+                let lift_up = touch.action == 1;
+                let last_touch = self.last_touch.take();
+                if !lift_up {
+                    // lift up is not really a "touch" it's the lack of a touch so it doesn't count here.
+                    self.last_touch = Some((corrected_point, now));
                 }
-            } else {
-                // deal with button released before confirming
-                if self.confirm_state.start.is_some() {
-                    self.confirm_state.reset();
+
+                (Some((corrected_point, touch.gesture, lift_up)), last_touch)
+            }
+            // XXX: We're not interested in last_touch unless there's been a touch because
+            // last_touch might be *stuck* because We might miss the "lift_up" event due to screen
+            // rendering. So we only make progress on confirm if there is actually a touch right now
+            // and we only use last_touch for dragging where these stuck last_touchs don't do any
+            // noticible damage.
+            None => (None, None),
+        };
+
+        match self.workflow.borrow_mut() {
+            Workflow::UserPrompt { prompt, animation } => {
+                let lift_up = if let Some((_, _, lift_up)) = current_touch {
+                    lift_up
+                } else {
+                    false
+                };
+
+                if lift_up {
+                    animation.reset();
                     self.changes = true;
+                } else if current_touch.is_some() {
+                    match animation.poll(now) {
+                        AnimationProgress::Progress(progress) => {
+                            self.display.confirm_bar(progress);
+                        }
+                        AnimationProgress::Done => {
+                            let ui_event = match prompt {
+                                Prompt::KeyGen {
+                                    key_name, key_id, ..
+                                } => UiEvent::KeyGenConfirm {
+                                    key_name: key_name.clone(),
+                                    key_id: *key_id,
+                                },
+                                Prompt::Signing(_) => UiEvent::SigningConfirm,
+                                Prompt::NewName { new_name, .. } => {
+                                    UiEvent::NameConfirm(new_name.clone())
+                                }
+                                Prompt::DisplayBackupRequest((_key_name, key_id)) => {
+                                    UiEvent::BackupRequestConfirm(*key_id)
+                                }
+                                Prompt::ConfirmFirmwareUpgrade {
+                                    firmware_digest,
+                                    size,
+                                } => UiEvent::UpgradeConfirm {
+                                    firmware_digest: *firmware_digest,
+                                    size: *size,
+                                },
+                                Prompt::ConfirmLoadBackup(secret_share) => {
+                                    UiEvent::EnteredShareBackupConfirm(*secret_share)
+                                }
+                            };
+                            event = Some(ui_event);
+                        }
+                    }
                 }
             }
+            Workflow::EnteringBackup(stage) => match stage {
+                EnteringBackupStage::Init => {
+                    *stage = EnteringBackupStage::ShareIndex {
+                        screen: EnterShareIndexScreen::new(
+                            self.display.display.bounding_box().size,
+                        ),
+                    };
+                }
+                EnteringBackupStage::ShareIndex { screen } => {
+                    let mut next_screen = None;
+                    if let Some((point, _, lift_up)) = current_touch {
+                        if let Some(share_index) = screen.handle_touch(point, now, lift_up) {
+                            next_screen = Some(EnteringBackupStage::Share {
+                                screen: EnterShareScreen::new(
+                                    self.display.display.bounding_box().size,
+                                    share_index,
+                                ),
+                            });
+                        }
+                    }
+                    screen.draw(&mut self.display.display, now);
+                    if let Some(next_screen) = next_screen {
+                        *stage = next_screen;
+                    }
+                }
+                EnteringBackupStage::Share { screen } => {
+                    if let Some((point, gesture, lift_up)) = current_touch {
+                        match gesture {
+                            TouchGesture::SlideUp | TouchGesture::SlideDown => {
+                                screen.handle_vertical_drag(
+                                    last_touch.map(|(point, _)| point.y as u32),
+                                    point.y as u32,
+                                );
+                            }
+                            _ => {
+                                screen.handle_touch(point, now, lift_up);
+                                if screen.is_finished() {
+                                    match screen.try_create_share() {
+                                        Ok(secret_share) => {
+                                            event = Some(UiEvent::EnteredShareBackup(secret_share));
+                                        }
+                                        Err(_e) => {
+                                            // for now we just make user keep going until they make it right
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    screen.draw(&mut self.display.display, now)
+                }
+            },
+            _ => { /* no user actions to poll */ }
         }
 
         if self.changes {
@@ -573,6 +603,28 @@ where
 
         event
     }
+}
+
+fn x_based_adjustment(x: i32) -> i32 {
+    let x = x as f32;
+    let corrected = 1.3189e-14 * x.powi(7) - 2.1879e-12 * x.powi(6) - 7.6483e-10 * x.powi(5)
+        + 3.2578e-8 * x.powi(4)
+        + 6.4233e-5 * x.powi(3)
+        - 1.2229e-2 * x.powi(2)
+        + 0.8356 * x
+        - 20.0;
+    (-corrected) as i32
+}
+
+fn y_based_adjustment(y: i32) -> i32 {
+    if y > 170 {
+        return 0;
+    }
+    let y = y as f32;
+    let corrected =
+        -5.5439e-07 * y.powi(4) + 1.7576e-04 * y.powi(3) - 1.5104e-02 * y.powi(2) - 2.3443e-02 * y
+            + 40.0;
+    (-corrected) as i32
 }
 
 #[panic_handler]

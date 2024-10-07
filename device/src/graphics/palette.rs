@@ -12,6 +12,7 @@ pub struct Palette {
     pub(crate) warning: Rgb565,
     pub(crate) error: Rgb565,
     pub(crate) background: Rgb565,
+    pub(crate) disabled: Rgb565,
 }
 
 // Default color theme
@@ -23,4 +24,5 @@ pub const COLORS: Palette = Palette {
     warning: Rgb565::CSS_ORANGE,
     error: Rgb565::RED,
     background: Rgb565::BLACK,
+    disabled: Rgb565::CSS_DARK_GRAY,
 };

@@ -295,11 +295,6 @@ pub extern "C" fn wire_send_cancel__method__Coordinator(
 }
 
 #[no_mangle]
-pub extern "C" fn wire_cancel_all__method__Coordinator(port_: i64, that: *mut wire_Coordinator) {
-    wire_cancel_all__method__Coordinator_impl(port_, that)
-}
-
-#[no_mangle]
 pub extern "C" fn wire_display_backup__method__Coordinator(
     port_: i64,
     that: *mut wire_Coordinator,
@@ -459,6 +454,16 @@ pub extern "C" fn wire_final_keygen_ack__method__Coordinator(
     that: *mut wire_Coordinator,
 ) {
     wire_final_keygen_ack__method__Coordinator_impl(port_, that)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_check_share_on_device__method__Coordinator(
+    port_: i64,
+    that: *mut wire_Coordinator,
+    device_id: *mut wire_DeviceId,
+    key_id: *mut wire_KeyId,
+) {
+    wire_check_share_on_device__method__Coordinator_impl(port_, that, device_id, key_id)
 }
 
 #[no_mangle]

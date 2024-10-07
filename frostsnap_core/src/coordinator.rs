@@ -12,7 +12,7 @@ use schnorr_fun::{
     frost::{
         self, chilldkg::encpedpop, CoordinatorSignSession, Frost, Nonce, PartyIndex, SharedKey,
     },
-    fun::prelude::*,
+    fun::{poly, prelude::*},
     Schnorr, Signature,
 };
 use sha2::{digest::FixedOutput, Digest, Sha256};
@@ -376,6 +376,31 @@ impl FrostCoordinator {
                     Ok(vec![])
                 }
             }
+            (
+                Some(CoordinatorState::LoadingDeviceShare { key, device }),
+                DeviceToCoordinatorMessage::CheckShareBackup {
+                    share_index,
+                    share_image,
+                },
+            ) => {
+                if from != *device {
+                    return Err(Error::coordinator_invalid_message(
+                        message_kind,
+                        "unexpected device responded with backup",
+                    ));
+                }
+
+                let frost_key = key.frost_key();
+                let polynomial = frost_key.point_polynomial();
+                let expected = poly::point::eval(polynomial, share_index);
+
+                Ok(vec![CoordinatorSend::ToUser(
+                    CoordinatorToUserMessage::EnteredBackup {
+                        device_id: from,
+                        valid: expected == share_image,
+                    },
+                )])
+            }
             _ => Err(Error::coordinator_message_kind(
                 &self.action_state,
                 message_kind,
@@ -666,6 +691,25 @@ impl FrostCoordinator {
         }])
     }
 
+    pub fn check_share(
+        &mut self,
+        device_id: DeviceId,
+        key_id: KeyId,
+    ) -> Result<Vec<CoordinatorSend>, ActionError> {
+        let key = self
+            .keys
+            .get(&key_id)
+            .ok_or(ActionError::StateInconsistent("no such key".into()))?;
+        self.action_state = Some(CoordinatorState::LoadingDeviceShare {
+            key: key.clone(),
+            device: device_id,
+        });
+        Ok(vec![CoordinatorSend::ToDevice {
+            message: CoordinatorToDeviceMessage::CheckShareBackup,
+            destinations: BTreeSet::from_iter([device_id]),
+        }])
+    }
+
     pub fn state_name(&self) -> &'static str {
         self.action_state
             .as_ref()
@@ -695,6 +739,7 @@ impl CoordinatorState {
             },
             CoordinatorState::Signing { .. } => "Signing",
             CoordinatorState::DisplayBackup => "DisplayBackup",
+            CoordinatorState::LoadingDeviceShare { .. } => "RestoringDeviceShare",
         }
     }
 }
@@ -751,6 +796,10 @@ pub enum CoordinatorState {
         key: CoordinatorFrostKey,
     },
     DisplayBackup,
+    LoadingDeviceShare {
+        key: CoordinatorFrostKey,
+        device: DeviceId,
+    },
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
@@ -794,6 +843,18 @@ pub struct CoordinatorFrostKey {
 }
 
 impl CoordinatorFrostKey {
+    pub fn new(
+        frost_key: SharedKey,
+        device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
+        key_name: String,
+    ) -> Self {
+        Self {
+            frost_key,
+            device_to_share_index,
+            key_name,
+        }
+    }
+
     pub fn threshold(&self) -> usize {
         self.frost_key.threshold()
     }
@@ -812,6 +873,10 @@ impl CoordinatorFrostKey {
 
     pub fn key_name(&self) -> String {
         self.key_name.clone()
+    }
+
+    pub fn device_to_share_indicies(&self) -> BTreeMap<DeviceId, Scalar<Public, NonZero>> {
+        self.device_to_share_index.clone()
     }
 }
 

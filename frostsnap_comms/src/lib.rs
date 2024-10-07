@@ -10,6 +10,7 @@ use alloc::vec::Vec;
 use alloc::{collections::BTreeSet, string::String};
 use bincode::{de::read::Reader, enc::write::Writer, Decode, Encode};
 use core::marker::PhantomData;
+use frostsnap_core::message::CoordinatorSend;
 use frostsnap_core::{DeviceId, Gist};
 
 pub const BAUDRATE: u32 = 14_400;
@@ -61,6 +62,23 @@ impl<D: Direction> Gist for ReceiveSerial<D> {
 pub struct CoordinatorSendMessage {
     pub target_destinations: Destination,
     pub message_body: CoordinatorSendBody,
+}
+
+impl TryFrom<CoordinatorSend> for CoordinatorSendMessage {
+    type Error = &'static str;
+
+    fn try_from(value: CoordinatorSend) -> Result<Self, Self::Error> {
+        match value {
+            CoordinatorSend::ToDevice {
+                message,
+                destinations,
+            } => Ok(CoordinatorSendMessage {
+                target_destinations: Destination::from(destinations),
+                message_body: CoordinatorSendBody::Core(message),
+            }),
+            _ => Err("was not a ToDevice message"),
+        }
+    }
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
