@@ -17,13 +17,13 @@ pub extern "C" fn wire_log(level: i32, message: *mut wire_uint_8_list) -> suppor
 }
 
 #[no_mangle]
-pub extern "C" fn wire_turn_stderr_logging_on(port_: i64, level: i32) {
-    wire_turn_stderr_logging_on_impl(port_, level)
+pub extern "C" fn wire_turn_stderr_logging_on(port_: i64, level: i32, utc_offset: i32) {
+    wire_turn_stderr_logging_on_impl(port_, level, utc_offset)
 }
 
 #[no_mangle]
-pub extern "C" fn wire_turn_logcat_logging_on(port_: i64, level: i32) {
-    wire_turn_logcat_logging_on_impl(port_, level)
+pub extern "C" fn wire_turn_logcat_logging_on(port_: i64, level: i32, utc_offset: i32) {
+    wire_turn_logcat_logging_on_impl(port_, level, utc_offset)
 }
 
 #[no_mangle]

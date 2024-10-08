@@ -17,13 +17,13 @@ pub fn wire_log(level: i32, message: String) -> support::WireSyncReturn {
 }
 
 #[wasm_bindgen]
-pub fn wire_turn_stderr_logging_on(port_: MessagePort, level: i32) {
-    wire_turn_stderr_logging_on_impl(port_, level)
+pub fn wire_turn_stderr_logging_on(port_: MessagePort, level: i32, utc_offset: i32) {
+    wire_turn_stderr_logging_on_impl(port_, level, utc_offset)
 }
 
 #[wasm_bindgen]
-pub fn wire_turn_logcat_logging_on(port_: MessagePort, level: i32) {
-    wire_turn_logcat_logging_on_impl(port_, level)
+pub fn wire_turn_logcat_logging_on(port_: MessagePort, level: i32, utc_offset: i32) {
+    wire_turn_logcat_logging_on_impl(port_, level, utc_offset)
 }
 
 #[wasm_bindgen]

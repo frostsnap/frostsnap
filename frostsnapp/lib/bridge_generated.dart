@@ -73,15 +73,17 @@ class NativeImpl implements Native {
         argNames: ["level", "message"],
       );
 
-  Stream<String> turnStderrLoggingOn({required LogLevel level, dynamic hint}) {
+  Stream<String> turnStderrLoggingOn(
+      {required LogLevel level, required int utcOffset, dynamic hint}) {
     var arg0 = api2wire_log_level(level);
+    var arg1 = api2wire_i32(utcOffset);
     return _platform.executeStream(FlutterRustBridgeTask(
       callFfi: (port_) =>
-          _platform.inner.wire_turn_stderr_logging_on(port_, arg0),
+          _platform.inner.wire_turn_stderr_logging_on(port_, arg0, arg1),
       parseSuccessData: _wire2api_String,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kTurnStderrLoggingOnConstMeta,
-      argValues: [level],
+      argValues: [level, utcOffset],
       hint: hint,
     ));
   }
@@ -89,18 +91,20 @@ class NativeImpl implements Native {
   FlutterRustBridgeTaskConstMeta get kTurnStderrLoggingOnConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
         debugName: "turn_stderr_logging_on",
-        argNames: ["level"],
+        argNames: ["level", "utcOffset"],
       );
 
-  Stream<String> turnLogcatLoggingOn({required LogLevel level, dynamic hint}) {
+  Stream<String> turnLogcatLoggingOn(
+      {required LogLevel level, required int utcOffset, dynamic hint}) {
     var arg0 = api2wire_log_level(level);
+    var arg1 = api2wire_i32(utcOffset);
     return _platform.executeStream(FlutterRustBridgeTask(
       callFfi: (port_) =>
-          _platform.inner.wire_turn_logcat_logging_on(port_, arg0),
+          _platform.inner.wire_turn_logcat_logging_on(port_, arg0, arg1),
       parseSuccessData: _wire2api_String,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kTurnLogcatLoggingOnConstMeta,
-      argValues: [level],
+      argValues: [level, utcOffset],
       hint: hint,
     ));
   }
@@ -108,7 +112,7 @@ class NativeImpl implements Native {
   FlutterRustBridgeTaskConstMeta get kTurnLogcatLoggingOnConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
         debugName: "turn_logcat_logging_on",
-        argNames: ["level"],
+        argNames: ["level", "utcOffset"],
       );
 
   ConnectedDevice? deviceAtIndex({required int index, dynamic hint}) {
