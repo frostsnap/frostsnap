@@ -28,15 +28,12 @@ void main() async {
 
   // set logging up first before doing anything else
 
-  final utcOffset = DateTime.now().timeZoneOffset.inSeconds;
   if (Platform.isAndroid) {
-    logStream = api
-        .turnLogcatLoggingOn(level: LogLevel.Debug, utcOffset: utcOffset)
-        .toReplaySubject();
+    logStream =
+        api.turnLogcatLoggingOn(level: LogLevel.Debug).toReplaySubject();
   } else {
-    logStream = api
-        .turnStderrLoggingOn(level: LogLevel.Debug, utcOffset: utcOffset)
-        .toReplaySubject();
+    logStream =
+        api.turnStderrLoggingOn(level: LogLevel.Debug).toReplaySubject();
   }
 
   // wait for first message to appear so that logging is working before we carry on

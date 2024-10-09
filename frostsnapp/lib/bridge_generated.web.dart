@@ -515,10 +515,10 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* void */ wire_log(int level, String message);
 
   external dynamic /* void */ wire_turn_stderr_logging_on(
-      NativePortType port_, int level, int utc_offset);
+      NativePortType port_, int level);
 
   external dynamic /* void */ wire_turn_logcat_logging_on(
-      NativePortType port_, int level, int utc_offset);
+      NativePortType port_, int level);
 
   external dynamic /* List<dynamic>? */ wire_device_at_index(int index);
 
@@ -836,13 +836,11 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
   dynamic /* void */ wire_log(int level, String message) =>
       wasmModule.wire_log(level, message);
 
-  void wire_turn_stderr_logging_on(
-          NativePortType port_, int level, int utc_offset) =>
-      wasmModule.wire_turn_stderr_logging_on(port_, level, utc_offset);
+  void wire_turn_stderr_logging_on(NativePortType port_, int level) =>
+      wasmModule.wire_turn_stderr_logging_on(port_, level);
 
-  void wire_turn_logcat_logging_on(
-          NativePortType port_, int level, int utc_offset) =>
-      wasmModule.wire_turn_logcat_logging_on(port_, level, utc_offset);
+  void wire_turn_logcat_logging_on(NativePortType port_, int level) =>
+      wasmModule.wire_turn_logcat_logging_on(port_, level);
 
   dynamic /* List<dynamic>? */ wire_device_at_index(int index) =>
       wasmModule.wire_device_at_index(index);

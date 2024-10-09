@@ -84,9 +84,6 @@ class _$PortEventCopyWithImpl<$Res, $Val extends PortEvent>
   final $Val _value;
   // ignore: unused_field
   final $Res Function($Val) _then;
-
-  /// Create a copy of PortEvent
-  /// with the given fields replaced by the non-null parameter values.
 }
 
 /// @nodoc
@@ -106,8 +103,6 @@ class __$$PortEvent_OpenImplCopyWithImpl<$Res>
       _$PortEvent_OpenImpl _value, $Res Function(_$PortEvent_OpenImpl) _then)
       : super(_value, _then);
 
-  /// Create a copy of PortEvent
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -146,9 +141,7 @@ class _$PortEvent_OpenImpl implements PortEvent_Open {
   @override
   int get hashCode => Object.hash(runtimeType, request);
 
-  /// Create a copy of PortEvent
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$PortEvent_OpenImplCopyWith<_$PortEvent_OpenImpl> get copyWith =>
@@ -236,10 +229,7 @@ abstract class PortEvent_Open implements PortEvent {
 
   @override
   PortOpen get request;
-
-  /// Create a copy of PortEvent
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$PortEvent_OpenImplCopyWith<_$PortEvent_OpenImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -261,8 +251,6 @@ class __$$PortEvent_WriteImplCopyWithImpl<$Res>
       _$PortEvent_WriteImpl _value, $Res Function(_$PortEvent_WriteImpl) _then)
       : super(_value, _then);
 
-  /// Create a copy of PortEvent
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -301,9 +289,7 @@ class _$PortEvent_WriteImpl implements PortEvent_Write {
   @override
   int get hashCode => Object.hash(runtimeType, request);
 
-  /// Create a copy of PortEvent
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$PortEvent_WriteImplCopyWith<_$PortEvent_WriteImpl> get copyWith =>
@@ -391,10 +377,7 @@ abstract class PortEvent_Write implements PortEvent {
 
   @override
   PortWrite get request;
-
-  /// Create a copy of PortEvent
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$PortEvent_WriteImplCopyWith<_$PortEvent_WriteImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -416,8 +399,6 @@ class __$$PortEvent_ReadImplCopyWithImpl<$Res>
       _$PortEvent_ReadImpl _value, $Res Function(_$PortEvent_ReadImpl) _then)
       : super(_value, _then);
 
-  /// Create a copy of PortEvent
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -456,9 +437,7 @@ class _$PortEvent_ReadImpl implements PortEvent_Read {
   @override
   int get hashCode => Object.hash(runtimeType, request);
 
-  /// Create a copy of PortEvent
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$PortEvent_ReadImplCopyWith<_$PortEvent_ReadImpl> get copyWith =>
@@ -546,10 +525,7 @@ abstract class PortEvent_Read implements PortEvent {
 
   @override
   PortRead get request;
-
-  /// Create a copy of PortEvent
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$PortEvent_ReadImplCopyWith<_$PortEvent_ReadImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -572,8 +548,6 @@ class __$$PortEvent_BytesToReadImplCopyWithImpl<$Res>
       $Res Function(_$PortEvent_BytesToReadImpl) _then)
       : super(_value, _then);
 
-  /// Create a copy of PortEvent
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -612,9 +586,7 @@ class _$PortEvent_BytesToReadImpl implements PortEvent_BytesToRead {
   @override
   int get hashCode => Object.hash(runtimeType, request);
 
-  /// Create a copy of PortEvent
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$PortEvent_BytesToReadImplCopyWith<_$PortEvent_BytesToReadImpl>
@@ -702,10 +674,7 @@ abstract class PortEvent_BytesToRead implements PortEvent {
 
   @override
   PortBytesToRead get request;
-
-  /// Create a copy of PortEvent
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$PortEvent_BytesToReadImplCopyWith<_$PortEvent_BytesToReadImpl>
       get copyWith => throw _privateConstructorUsedError;
 }
@@ -775,9 +744,6 @@ class _$QrDecoderStatusCopyWithImpl<$Res, $Val extends QrDecoderStatus>
   final $Val _value;
   // ignore: unused_field
   final $Res Function($Val) _then;
-
-  /// Create a copy of QrDecoderStatus
-  /// with the given fields replaced by the non-null parameter values.
 }
 
 /// @nodoc
@@ -799,8 +765,6 @@ class __$$QrDecoderStatus_ProgressImplCopyWithImpl<$Res>
       $Res Function(_$QrDecoderStatus_ProgressImpl) _then)
       : super(_value, _then);
 
-  /// Create a copy of QrDecoderStatus
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -839,9 +803,7 @@ class _$QrDecoderStatus_ProgressImpl implements QrDecoderStatus_Progress {
   @override
   int get hashCode => Object.hash(runtimeType, field0);
 
-  /// Create a copy of QrDecoderStatus
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$QrDecoderStatus_ProgressImplCopyWith<_$QrDecoderStatus_ProgressImpl>
@@ -923,10 +885,7 @@ abstract class QrDecoderStatus_Progress implements QrDecoderStatus {
 
   @override
   DecodingProgress get field0;
-
-  /// Create a copy of QrDecoderStatus
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$QrDecoderStatus_ProgressImplCopyWith<_$QrDecoderStatus_ProgressImpl>
       get copyWith => throw _privateConstructorUsedError;
 }
@@ -950,8 +909,6 @@ class __$$QrDecoderStatus_DecodedImplCopyWithImpl<$Res>
       $Res Function(_$QrDecoderStatus_DecodedImpl) _then)
       : super(_value, _then);
 
-  /// Create a copy of QrDecoderStatus
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -991,9 +948,7 @@ class _$QrDecoderStatus_DecodedImpl implements QrDecoderStatus_Decoded {
   int get hashCode =>
       Object.hash(runtimeType, const DeepCollectionEquality().hash(field0));
 
-  /// Create a copy of QrDecoderStatus
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$QrDecoderStatus_DecodedImplCopyWith<_$QrDecoderStatus_DecodedImpl>
@@ -1075,10 +1030,7 @@ abstract class QrDecoderStatus_Decoded implements QrDecoderStatus {
 
   @override
   Uint8List get field0;
-
-  /// Create a copy of QrDecoderStatus
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$QrDecoderStatus_DecodedImplCopyWith<_$QrDecoderStatus_DecodedImpl>
       get copyWith => throw _privateConstructorUsedError;
 }
@@ -1102,8 +1054,6 @@ class __$$QrDecoderStatus_FailedImplCopyWithImpl<$Res>
       $Res Function(_$QrDecoderStatus_FailedImpl) _then)
       : super(_value, _then);
 
-  /// Create a copy of QrDecoderStatus
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -1142,9 +1092,7 @@ class _$QrDecoderStatus_FailedImpl implements QrDecoderStatus_Failed {
   @override
   int get hashCode => Object.hash(runtimeType, field0);
 
-  /// Create a copy of QrDecoderStatus
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$QrDecoderStatus_FailedImplCopyWith<_$QrDecoderStatus_FailedImpl>
@@ -1226,10 +1174,7 @@ abstract class QrDecoderStatus_Failed implements QrDecoderStatus {
 
   @override
   String get field0;
-
-  /// Create a copy of QrDecoderStatus
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$QrDecoderStatus_FailedImplCopyWith<_$QrDecoderStatus_FailedImpl>
       get copyWith => throw _privateConstructorUsedError;
 }
@@ -1293,9 +1238,6 @@ class _$SignTaskDescriptionCopyWithImpl<$Res, $Val extends SignTaskDescription>
   final $Val _value;
   // ignore: unused_field
   final $Res Function($Val) _then;
-
-  /// Create a copy of SignTaskDescription
-  /// with the given fields replaced by the non-null parameter values.
 }
 
 /// @nodoc
@@ -1318,8 +1260,6 @@ class __$$SignTaskDescription_PlainImplCopyWithImpl<$Res>
       $Res Function(_$SignTaskDescription_PlainImpl) _then)
       : super(_value, _then);
 
-  /// Create a copy of SignTaskDescription
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -1358,9 +1298,7 @@ class _$SignTaskDescription_PlainImpl implements SignTaskDescription_Plain {
   @override
   int get hashCode => Object.hash(runtimeType, message);
 
-  /// Create a copy of SignTaskDescription
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$SignTaskDescription_PlainImplCopyWith<_$SignTaskDescription_PlainImpl>
@@ -1436,10 +1374,7 @@ abstract class SignTaskDescription_Plain implements SignTaskDescription {
       _$SignTaskDescription_PlainImpl;
 
   String get message;
-
-  /// Create a copy of SignTaskDescription
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$SignTaskDescription_PlainImplCopyWith<_$SignTaskDescription_PlainImpl>
       get copyWith => throw _privateConstructorUsedError;
 }
@@ -1464,8 +1399,6 @@ class __$$SignTaskDescription_TransactionImplCopyWithImpl<$Res>
       $Res Function(_$SignTaskDescription_TransactionImpl) _then)
       : super(_value, _then);
 
-  /// Create a copy of SignTaskDescription
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -1506,9 +1439,7 @@ class _$SignTaskDescription_TransactionImpl
   @override
   int get hashCode => Object.hash(runtimeType, unsignedTx);
 
-  /// Create a copy of SignTaskDescription
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$SignTaskDescription_TransactionImplCopyWith<
@@ -1586,10 +1517,7 @@ abstract class SignTaskDescription_Transaction implements SignTaskDescription {
       _$SignTaskDescription_TransactionImpl;
 
   UnsignedTx get unsignedTx;
-
-  /// Create a copy of SignTaskDescription
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$SignTaskDescription_TransactionImplCopyWith<
           _$SignTaskDescription_TransactionImpl>
       get copyWith => throw _privateConstructorUsedError;

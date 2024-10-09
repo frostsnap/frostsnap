@@ -912,40 +912,34 @@ class NativeWire implements FlutterRustBridgeWireBase {
   void wire_turn_stderr_logging_on(
     int port_,
     int level,
-    int utc_offset,
   ) {
     return _wire_turn_stderr_logging_on(
       port_,
       level,
-      utc_offset,
     );
   }
 
-  late final _wire_turn_stderr_logging_onPtr = _lookup<
-          ffi
-          .NativeFunction<ffi.Void Function(ffi.Int64, ffi.Int32, ffi.Int32)>>(
-      'wire_turn_stderr_logging_on');
-  late final _wire_turn_stderr_logging_on = _wire_turn_stderr_logging_onPtr
-      .asFunction<void Function(int, int, int)>();
+  late final _wire_turn_stderr_logging_onPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Int64, ffi.Int32)>>(
+          'wire_turn_stderr_logging_on');
+  late final _wire_turn_stderr_logging_on =
+      _wire_turn_stderr_logging_onPtr.asFunction<void Function(int, int)>();
 
   void wire_turn_logcat_logging_on(
     int port_,
     int level,
-    int utc_offset,
   ) {
     return _wire_turn_logcat_logging_on(
       port_,
       level,
-      utc_offset,
     );
   }
 
-  late final _wire_turn_logcat_logging_onPtr = _lookup<
-          ffi
-          .NativeFunction<ffi.Void Function(ffi.Int64, ffi.Int32, ffi.Int32)>>(
-      'wire_turn_logcat_logging_on');
-  late final _wire_turn_logcat_logging_on = _wire_turn_logcat_logging_onPtr
-      .asFunction<void Function(int, int, int)>();
+  late final _wire_turn_logcat_logging_onPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Int64, ffi.Int32)>>(
+          'wire_turn_logcat_logging_on');
+  late final _wire_turn_logcat_logging_on =
+      _wire_turn_logcat_logging_onPtr.asFunction<void Function(int, int)>();
 
   WireSyncReturn wire_device_at_index(
     int index,

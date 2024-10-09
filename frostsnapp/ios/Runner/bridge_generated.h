@@ -232,9 +232,9 @@ void wire_sub_device_events(int64_t port_);
 
 WireSyncReturn wire_log(int32_t level, struct wire_uint_8_list *message);
 
-void wire_turn_stderr_logging_on(int64_t port_, int32_t level, int32_t utc_offset);
+void wire_turn_stderr_logging_on(int64_t port_, int32_t level);
 
-void wire_turn_logcat_logging_on(int64_t port_, int32_t level, int32_t utc_offset);
+void wire_turn_logcat_logging_on(int64_t port_, int32_t level);
 
 WireSyncReturn wire_device_at_index(uintptr_t index);
 

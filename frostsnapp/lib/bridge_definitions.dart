@@ -27,13 +27,11 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kLogConstMeta;
 
-  Stream<String> turnStderrLoggingOn(
-      {required LogLevel level, required int utcOffset, dynamic hint});
+  Stream<String> turnStderrLoggingOn({required LogLevel level, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kTurnStderrLoggingOnConstMeta;
 
-  Stream<String> turnLogcatLoggingOn(
-      {required LogLevel level, required int utcOffset, dynamic hint});
+  Stream<String> turnLogcatLoggingOn({required LogLevel level, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kTurnLogcatLoggingOnConstMeta;
 

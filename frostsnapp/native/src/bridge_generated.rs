@@ -75,7 +75,6 @@ fn wire_log_impl(
 fn wire_turn_stderr_logging_on_impl(
     port_: MessagePort,
     level: impl Wire2Api<LogLevel> + UnwindSafe,
-    utc_offset: impl Wire2Api<i32> + UnwindSafe,
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
         WrapInfo {
@@ -85,13 +84,8 @@ fn wire_turn_stderr_logging_on_impl(
         },
         move || {
             let api_level = level.wire2api();
-            let api_utc_offset = utc_offset.wire2api();
             move |task_callback| {
-                turn_stderr_logging_on(
-                    api_level,
-                    api_utc_offset,
-                    task_callback.stream_sink::<_, String>(),
-                )
+                turn_stderr_logging_on(api_level, task_callback.stream_sink::<_, String>())
             }
         },
     )
@@ -99,7 +93,6 @@ fn wire_turn_stderr_logging_on_impl(
 fn wire_turn_logcat_logging_on_impl(
     port_: MessagePort,
     level: impl Wire2Api<LogLevel> + UnwindSafe,
-    utc_offset: impl Wire2Api<i32> + UnwindSafe,
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
         WrapInfo {
@@ -109,13 +102,8 @@ fn wire_turn_logcat_logging_on_impl(
         },
         move || {
             let api_level = level.wire2api();
-            let api_utc_offset = utc_offset.wire2api();
             move |task_callback| {
-                turn_logcat_logging_on(
-                    api_level,
-                    api_utc_offset,
-                    task_callback.stream_sink::<_, String>(),
-                )
+                turn_logcat_logging_on(api_level, task_callback.stream_sink::<_, String>())
             }
         },
     )

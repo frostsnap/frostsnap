@@ -276,17 +276,13 @@ impl From<LogLevel> for tracing::Level {
     }
 }
 
-pub fn turn_stderr_logging_on(
-    level: LogLevel,
-    utc_offset: i32,
-    log_stream: StreamSink<String>,
-) -> anyhow::Result<()> {
+pub fn turn_stderr_logging_on(level: LogLevel, log_stream: StreamSink<String>) -> Result<()> {
     let subscriber = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::from(level))
         .without_time()
         .pretty()
         .finish()
-        .with(crate::logger::dart_logger(log_stream, utc_offset));
+        .with(crate::logger::dart_logger(log_stream));
 
     let _ = tracing::subscriber::set_global_default(subscriber);
     event!(Level::INFO, "logging to stderr and Dart logger");
@@ -295,11 +291,7 @@ pub fn turn_stderr_logging_on(
 }
 
 #[allow(unused_variables)]
-pub fn turn_logcat_logging_on(
-    level: LogLevel,
-    utc_offset: i32,
-    log_stream: StreamSink<String>,
-) -> anyhow::Result<()> {
+pub fn turn_logcat_logging_on(level: LogLevel, log_stream: StreamSink<String>) -> Result<()> {
     #[cfg(not(target_os = "android"))]
     panic!("Do not call turn_logcat_logging_on outside of android");
 
@@ -318,7 +310,7 @@ pub fn turn_logcat_logging_on(
             use tracing_subscriber::layer::SubscriberExt;
             subscriber
                 .with(tracing_android::layer("rust-frostsnapp").unwrap())
-                .with(crate::logger::dart_logger(log_stream, utc_offset))
+                .with(crate::logger::dart_logger(log_stream))
         };
 
         tracing::subscriber::set_global_default(subscriber)?;

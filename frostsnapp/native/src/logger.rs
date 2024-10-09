@@ -1,7 +1,9 @@
 use flutter_rust_bridge::StreamSink;
 use std::io;
-use time::format_description::well_known::Rfc3339;
-use time::{OffsetDateTime, UtcOffset};
+use time::{
+    format_description::well_known::{iso8601::Config, Iso8601},
+    OffsetDateTime,
+};
 use tracing_subscriber::registry::LookupSpan;
 
 #[derive(Clone)]
@@ -22,10 +24,7 @@ impl io::Write for DartLogWriter {
     }
 }
 
-pub fn dart_logger<S>(
-    sink: StreamSink<String>,
-    utc_offset: i32,
-) -> impl tracing_subscriber::layer::Layer<S>
+pub fn dart_logger<S>(sink: StreamSink<String>) -> impl tracing_subscriber::layer::Layer<S>
 where
     S: tracing::Subscriber + for<'a> LookupSpan<'a>,
 {
@@ -34,27 +33,22 @@ where
         .with_file(false)
         .with_line_number(false)
         .with_target(false)
-        .with_timer(TimeFormatter { utc_offset })
+        .with_timer(TimeFormatter)
         .with_writer(move || io::LineWriter::new(DartLogWriter { sink: sink.clone() }))
 }
 
-struct TimeFormatter {
-    utc_offset: i32,
-}
+struct TimeFormatter;
+
+const ISO8601_CONFIG: Config = Config::DEFAULT.set_time_precision(
+    time::format_description::well_known::iso8601::TimePrecision::Second {
+        decimal_digits: None,
+    },
+);
+const TIME_FORMAT: Iso8601<{ ISO8601_CONFIG.encode() }> = Iso8601;
 
 impl tracing_subscriber::fmt::time::FormatTime for TimeFormatter {
     fn format_time(&self, w: &mut tracing_subscriber::fmt::format::Writer<'_>) -> std::fmt::Result {
-        let offset = UtcOffset::from_whole_seconds(self.utc_offset).unwrap_or(UtcOffset::UTC);
-        let utc_now = OffsetDateTime::now_utc();
-        let now = utc_now.to_offset(offset);
-        write!(
-            w,
-            "{}",
-            now.format(&Rfc3339)
-                .unwrap()
-                .split('.')
-                .next()
-                .unwrap_or("")
-        )
+        let now = OffsetDateTime::now_utc();
+        write!(w, "{}", now.format(&TIME_FORMAT).unwrap())
     }
 }
