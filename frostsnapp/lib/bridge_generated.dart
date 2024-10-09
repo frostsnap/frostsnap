@@ -54,13 +54,32 @@ class NativeImpl implements Native {
         argNames: [],
       );
 
-  Future<void> turnStderrLoggingOn({required LogLevel level, dynamic hint}) {
+  void log({required LogLevel level, required String message, dynamic hint}) {
     var arg0 = api2wire_log_level(level);
-    return _platform.executeNormal(FlutterRustBridgeTask(
-      callFfi: (port_) =>
-          _platform.inner.wire_turn_stderr_logging_on(port_, arg0),
+    var arg1 = _platform.api2wire_String(message);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner.wire_log(arg0, arg1),
       parseSuccessData: _wire2api_unit,
       parseErrorData: null,
+      constMeta: kLogConstMeta,
+      argValues: [level, message],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kLogConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "log",
+        argNames: ["level", "message"],
+      );
+
+  Stream<String> turnStderrLoggingOn({required LogLevel level, dynamic hint}) {
+    var arg0 = api2wire_log_level(level);
+    return _platform.executeStream(FlutterRustBridgeTask(
+      callFfi: (port_) =>
+          _platform.inner.wire_turn_stderr_logging_on(port_, arg0),
+      parseSuccessData: _wire2api_String,
+      parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kTurnStderrLoggingOnConstMeta,
       argValues: [level],
       hint: hint,
@@ -73,13 +92,13 @@ class NativeImpl implements Native {
         argNames: ["level"],
       );
 
-  Future<void> turnLogcatLoggingOn({required LogLevel level, dynamic hint}) {
+  Stream<String> turnLogcatLoggingOn({required LogLevel level, dynamic hint}) {
     var arg0 = api2wire_log_level(level);
-    return _platform.executeNormal(FlutterRustBridgeTask(
+    return _platform.executeStream(FlutterRustBridgeTask(
       callFfi: (port_) =>
           _platform.inner.wire_turn_logcat_logging_on(port_, arg0),
-      parseSuccessData: _wire2api_unit,
-      parseErrorData: null,
+      parseSuccessData: _wire2api_String,
+      parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kTurnLogcatLoggingOnConstMeta,
       argValues: [level],
       hint: hint,

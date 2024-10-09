@@ -31,6 +31,7 @@ pub use std::sync::{Mutex, RwLock};
 use std::time::Instant;
 #[allow(unused)]
 use tracing::{event, span, Level};
+use tracing_subscriber::layer::SubscriberExt;
 
 lazy_static! {
     static ref PORT_EVENT_STREAM: RwLock<Option<StreamSink<PortEvent>>> = RwLock::default();
@@ -253,44 +254,73 @@ impl PortBytesToRead {
     }
 }
 
+pub fn log(level: LogLevel, message: String) -> SyncReturn<()> {
+    // dunno why I can't use runtime log levels here but event! hates it
+    match level {
+        LogLevel::Debug => event!(Level::DEBUG, "[dart] {}", message),
+        LogLevel::Info => event!(Level::INFO, "[dart] {}", message),
+    }
+
+    SyncReturn(())
+}
+
 pub enum LogLevel {
     Debug,
     Info,
 }
 
-pub fn turn_stderr_logging_on(level: LogLevel) {
-    let subscriber = tracing_subscriber::fmt()
-        .with_max_level(match level {
-            LogLevel::Info => Level::INFO,
-            LogLevel::Debug => Level::DEBUG,
-        })
-        .without_time()
-        .pretty()
-        .finish();
-    let _ = tracing::subscriber::set_global_default(subscriber);
-    event!(Level::INFO, "logging to stderr");
+impl From<LogLevel> for tracing::Level {
+    fn from(value: LogLevel) -> Self {
+        match value {
+            LogLevel::Info => tracing::Level::INFO,
+            LogLevel::Debug => tracing::Level::DEBUG,
+        }
+    }
 }
 
-pub fn turn_logcat_logging_on(_level: LogLevel) {
+pub fn turn_stderr_logging_on(level: LogLevel, log_stream: StreamSink<String>) -> Result<()> {
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::from(level))
+        .without_time()
+        .pretty()
+        .finish()
+        .with(crate::logger::dart_logger(log_stream));
+
+    let _ = tracing::subscriber::set_global_default(subscriber);
+    event!(Level::INFO, "logging to stderr and Dart logger");
+
+    Ok(())
+}
+
+#[allow(unused_variables)]
+pub fn turn_logcat_logging_on(level: LogLevel, log_stream: StreamSink<String>) -> Result<()> {
+    #[cfg(not(target_os = "android"))]
+    panic!("Do not call turn_logcat_logging_on outside of android");
+
     #[cfg(target_os = "android")]
     {
         let subscriber = tracing_subscriber::fmt()
-            .with_max_level(match _level {
+            .with_max_level(match level {
                 LogLevel::Info => tracing::Level::INFO,
                 LogLevel::Debug => tracing::Level::DEBUG,
             })
             .without_time()
+            .pretty()
             .finish();
 
         let subscriber = {
             use tracing_subscriber::layer::SubscriberExt;
-            subscriber.with(tracing_android::layer("rust-frostsnapp").unwrap())
+            subscriber
+                .with(tracing_android::layer("rust-frostsnapp").unwrap())
+                .with(crate::logger::dart_logger(log_stream))
         };
-        let _ = tracing::subscriber::set_global_default(subscriber);
-        event!(Level::INFO, "frostsnap logging to logcat");
+
+        tracing::subscriber::set_global_default(subscriber)?;
+        event!(Level::INFO, "frostsnap logging to logcat and Dart logger");
     }
-    #[cfg(not(target_os = "android"))]
-    panic!("Do not call turn_logcat_logging_on outside of android");
+
+    #[allow(unreachable_code)]
+    Ok(())
 }
 
 pub fn device_at_index(index: usize) -> SyncReturn<Option<ConnectedDevice>> {

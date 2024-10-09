@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/key_list.dart';
 import 'package:flutter/services.dart';
+import 'package:frostsnapp/logs.dart';
 import 'package:frostsnapp/serialport.dart';
+import 'package:frostsnapp/sign_message.dart';
+import 'package:frostsnapp/stream_ext.dart';
 import 'package:path_provider/path_provider.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'dart:io';
@@ -19,14 +24,22 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   String? startupError;
+  Stream<String> logStream;
+
+  // set logging up first before doing anything else
+
+  if (Platform.isAndroid) {
+    logStream =
+        api.turnLogcatLoggingOn(level: LogLevel.Debug).toReplaySubject();
+  } else {
+    logStream =
+        api.turnStderrLoggingOn(level: LogLevel.Debug).toReplaySubject();
+  }
+
+  // wait for first message to appear so that logging is working before we carry on
+  await logStream.first;
 
   try {
-    // set logging up first before doing anything else
-    if (Platform.isAndroid) {
-      api.turnLogcatLoggingOn(level: LogLevel.Debug);
-    } else {
-      api.turnStderrLoggingOn(level: LogLevel.Debug);
-    }
     final appDir = await getApplicationSupportDirectory();
     final dbFile = '${appDir.path}/frostsnap.sqlite';
     if (Platform.isAndroid) {
@@ -45,6 +58,8 @@ void main() async {
       wallet = wallet_;
       bitcoinContext = bitcoinContext_;
     }
+    api.log(level: LogLevel.Info, message: "Starting coordinator thread");
+
     coord.startThread();
   } catch (error, stacktrace) {
     print("$error");
@@ -69,7 +84,9 @@ void main() async {
       WakelockPlus.disable();
     }
   });
-  runApp(MyApp(startupError: startupError));
+  api.log(level: LogLevel.Info, message: "starting app");
+  runApp(FrostsnapContext(
+      logStream: logStream, child: MyApp(startupError: startupError)));
 }
 
 class MyApp extends StatelessWidget {
@@ -96,16 +113,80 @@ class MyHomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final logStream = FrostsnapContext.of(context)?.logStream;
+
     return Scaffold(
-        appBar: AppBar(title: Text("Key List")),
+        appBar: AppBar(title: Text("Key List"), actions: [
+          PopupMenuButton<String>(
+              onSelected: (String result) {
+                if (result == 'logs') {
+                  Navigator.push(context, MaterialPageRoute(builder: (context) {
+                    return LogScreen(logStream: logStream!);
+                  }));
+                }
+              },
+              itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                    if (logStream != null)
+                      const PopupMenuItem<String>(
+                        value: 'logs',
+                        child: Text('Logs'),
+                      )
+                  ])
+        ]),
         body: Center(child: KeyListWithConfetti()));
   }
 }
 
-class StartupErrorWidget extends StatelessWidget {
+class StartupErrorWidget extends StatefulWidget {
   final String error;
 
   const StartupErrorWidget({Key? key, required this.error}) : super(key: key);
+
+  @override
+  _StartupErrorWidgetState createState() => _StartupErrorWidgetState();
+}
+
+class _StartupErrorWidgetState extends State<StartupErrorWidget> {
+  List<String> _logs = [];
+  StreamSubscription<String>? _subscription;
+
+  @override
+  void initState() {
+    super.initState();
+    // Delay the context access until after the first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final logStream = FrostsnapContext.of(context)?.logStream;
+
+      if (logStream != null) {
+        _subscription = logStream.listen(
+          (log) {
+            setState(() {
+              _logs.add(log);
+            });
+          },
+        );
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
+  }
+
+  /// Combines all logs and the error message into a single string.
+  String get _combinedErrorWithLogs {
+    if (_logs.isEmpty) {
+      return widget.error;
+    }
+
+    // Format each log entry
+    final String logsText = _logs.join('\n');
+
+    // Combine logs with the error message
+    return '$logsText\n------------------\n${widget.error}';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -116,59 +197,88 @@ class StartupErrorWidget extends StatelessWidget {
       body: Padding(
         padding: EdgeInsets.all(16.0),
         child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: <Widget>[
-              Text(
-                'ERROR',
-                style: TextStyle(
-                  fontSize: 24.0,
-                  fontWeight: FontWeight.bold,
-                  color: errorColor,
-                ),
-              ),
-              SizedBox(height: 8),
-              Text(
-                'Please report this to the frostsnap team',
-                style: TextStyle(
-                  fontSize: 16.0,
-                  color: textColor,
-                ),
-              ),
-              SizedBox(height: 20),
-              Container(
-                padding: EdgeInsets.all(8.0),
-                decoration: BoxDecoration(
-                  color: textSecondaryColor,
-                  borderRadius: BorderRadius.circular(4.0),
-                  border: Border.all(color: textSecondaryColor),
-                ),
-                child: SelectableText(
-                  error,
+          child: SingleChildScrollView(
+            // To handle overflow if logs are extensive
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: <Widget>[
+                Text(
+                  'STARTUP ERROR',
                   style: TextStyle(
-                    fontFamily: 'Courier', // Monospaced font
+                    fontSize: 24.0,
+                    fontWeight: FontWeight.bold,
+                    color: errorColor,
+                  ),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  "Sorry! Something has gone wrong with the app. Please report this directly to the frostsnap team.",
+                  style: TextStyle(
+                    fontSize: 16.0,
                     color: textColor,
                   ),
                 ),
-              ),
-              SizedBox(height: 20),
-              IconButton(
-                icon: Icon(Icons.content_copy),
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: error));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Error message copied to clipboard!'),
+                SizedBox(height: 20),
+                Container(
+                  width:
+                      double.infinity, // Ensure the container takes full width
+                  padding: EdgeInsets.all(8.0),
+                  decoration: BoxDecoration(
+                    color:
+                        backgroundSecondaryColor, // Replace with your `textSecondaryColor`
+                    borderRadius: BorderRadius.circular(4.0),
+                    border: Border.all(),
+                  ),
+                  child: SelectableText(
+                    _combinedErrorWithLogs,
+                    style: TextStyle(
+                      fontFamily: 'Courier', // Monospaced font
+                      color: textColor,
                     ),
-                  );
-                },
-                tooltip: 'Copy to Clipboard',
-              ),
-            ],
+                  ),
+                ),
+                SizedBox(height: 20),
+                IconButton(
+                  icon: Icon(Icons.content_copy),
+                  onPressed: () {
+                    Clipboard.setData(
+                        ClipboardData(text: _combinedErrorWithLogs));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                            "Copied! Only send this to the Frostsnap team."),
+                      ),
+                    );
+                  },
+                  tooltip: 'Copy to Clipboard',
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
+  }
+}
+
+class FrostsnapContext extends InheritedWidget {
+  final Stream<String> logStream;
+
+  const FrostsnapContext({
+    Key? key,
+    required this.logStream,
+    required Widget child,
+  }) : super(key: key, child: child);
+
+  // Static method to allow easy access to the Foo instance
+  static FrostsnapContext? of(BuildContext context) {
+    return context.dependOnInheritedWidgetOfExactType<FrostsnapContext>();
+  }
+
+  @override
+  bool updateShouldNotify(FrostsnapContext oldWidget) {
+    // we never change the log stream
+    return false;
   }
 }

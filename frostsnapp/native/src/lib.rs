@@ -9,6 +9,7 @@ pub use coordinator::*;
 mod device_list;
 use frostsnap_coordinator::FirmwareBin;
 mod ffi_serial_port;
+mod logger;
 
 #[cfg(feature = "no_build_firmware")]
 pub const FIRMWARE: FirmwareBin = FirmwareBin::new(&[]);

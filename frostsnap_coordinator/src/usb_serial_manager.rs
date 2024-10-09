@@ -482,7 +482,12 @@ impl UsbSerialManager {
                         self.disconnect(&serial_number, &mut device_changes);
                     }
                     Ok(_) => {
-                        event!(Level::DEBUG, "Sent message",);
+                        event!(
+                            Level::DEBUG,
+                            port = serial_number,
+                            gist = wire_message.gist(),
+                            "sent message"
+                        );
                     }
                 }
             }

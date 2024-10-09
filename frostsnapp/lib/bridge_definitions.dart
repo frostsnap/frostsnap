@@ -23,11 +23,15 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kSubDeviceEventsConstMeta;
 
-  Future<void> turnStderrLoggingOn({required LogLevel level, dynamic hint});
+  void log({required LogLevel level, required String message, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kLogConstMeta;
+
+  Stream<String> turnStderrLoggingOn({required LogLevel level, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kTurnStderrLoggingOnConstMeta;
 
-  Future<void> turnLogcatLoggingOn({required LogLevel level, dynamic hint});
+  Stream<String> turnLogcatLoggingOn({required LogLevel level, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kTurnLogcatLoggingOnConstMeta;
 
