@@ -72,7 +72,7 @@ jobs:
             name: Build Android APK
           - os: ubuntu-latest
             build_command: linux
-            artifact_name: Frostsnapp-${{ github.sha }}-x86_64.AppImage
+            artifact_name: Frostsnapp-${{ github.sha }}-x64.AppImage
             artifact_path: Frostsnapp-latest-x86_64.AppImage
             name: Build Linux AppImage
           - os: windows-latest
@@ -89,10 +89,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: frostsnap-${{ github.sha }}.elf
-          path: target/riscv32imc-unknown-none-elf/release/v2
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.build_command == 'apk' && 'aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android' || '' }}
@@ -101,7 +97,12 @@ jobs:
         with:
           channel: "stable"
       - uses: Swatinem/rust-cache@v2
-      
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: frostsnap-${{ github.sha }}.elf
+          path: target/riscv32imc-unknown-none-elf/release/
+
       - name: Setup (Android)
         if: matrix.build_command == 'apk'
         uses: actions/setup-java@v4
@@ -147,7 +148,7 @@ jobs:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_path }}
           if-no-files-found: error
-      
+
       - name: Upload App Bundle (Android)
         if: matrix.build_command == 'apk'
         uses: actions/upload-artifact@v4
