@@ -3,6 +3,7 @@
 # appimage-builder recipe see https://appimage-builder.readthedocs.io for details
 version: 1
 script:
+- apt update
 - which mksquashfs || apt install squashfs-tools
 - mkdir -p AppDir
 - cp -r frostsnapp/build/linux/x64/release/bundle/* AppDir
@@ -41,6 +42,24 @@ AppDir:
       - libxcb1
       - libwayland-cursor0
       - qtwayland5
+        # Additional libraries based on ldd output.
+        # FIXME: test non-ubuntu OSs
+      - gvfs
+      - libglib2.0-0
+      - libdbus-1-3
+      - libcairo2
+      - libpangocairo-1.0-0
+      - libharfbuzz0b
+      - libatk1.0-0
+      - libepoxy0
+      - libfontconfig1
+      - libpangoft2-1.0-0
+      - libfribidi0
+      - libxkbcommon0
+      - libxrandr2
+      - libxinerama1
+      - libxext6
+      - libxi6
   files:
     include: []
     exclude:

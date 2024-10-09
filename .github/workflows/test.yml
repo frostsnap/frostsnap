@@ -156,3 +156,4 @@ jobs:
           name: frostsnapp-${{ github.sha }}.aab
           path: frostsnapp/build/app/outputs/bundle/release/app-release.aab
           if-no-files-found: error
+
