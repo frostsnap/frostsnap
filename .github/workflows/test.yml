@@ -8,6 +8,7 @@ on:
 
 jobs:
   device:
+    name: Build Device Firmware
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -16,71 +17,143 @@ jobs:
       run:
         working-directory: ./device
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: taiki-e/install-action@just
-      - name: Setup | RISC-V GCC prerequisites
-        run: sudo apt-get update && sudo apt-get install autoconf automake autotools-dev curl python3 libmpc-dev libmpfr-dev libgmp-dev gawk build-essential bison flex texinfo gperf libtool patchutils bc zlib1g-dev libexpat-dev ninja-build
-      - name: Setup | RISCV GCC
+      - name: Cache RISC-V GCC
+        uses: actions/cache@v4
+        with:
+          path: ${GITHUB_WORKSPACE}/device/riscv
+          key: ${{ runner.os }}-riscv-gcc-${{ hashFiles('**/riscv-gcc-version.txt') }}
+      - name: Setup RISC-V GCC
+        if: steps.cache-riscv-gcc.outputs.cache-hit != 'true'
         run: |
+          sudo apt-get update && sudo apt-get install -y autoconf automake autotools-dev curl python3 libmpc-dev libmpfr-dev libgmp-dev gawk build-essential bison flex texinfo gperf libtool patchutils bc zlib1g-dev libexpat-dev ninja-build
           wget -nv https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2023.05.24/riscv32-elf-ubuntu-22.04-nightly-2023.05.24-nightly.tar.gz
           tar -zxf riscv32-elf-ubuntu-22.04-nightly-2023.05.24-nightly.tar.gz
           echo "PATH=$PATH:${GITHUB_WORKSPACE}/device/riscv/bin" >> $GITHUB_ENV
-          ls ${GITHUB_WORKSPACE}/device/riscv/bin
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: riscv32imc-unknown-none-elf
           components: clippy
+      - uses: Swatinem/rust-cache@v2
       - run: just lint-device --release
       - run: just build-device ${{ matrix.board }}
-      - name: Upload firmware artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: frostsnap-v2-${{ github.run_id }}.elf
+          name: frostsnap-${{ github.sha }}.elf
           path: target/riscv32imc-unknown-none-elf/release/v2
           if-no-files-found: error
 
   non-device:
+    name: Build Non-Device Rust
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: taiki-e/install-action@just
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - run: sudo apt-get update
-      - run: sudo apt-get install -y libudev-dev
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y libudev-dev
       - run: just frostsnapp/install-rust-deps
       - run: just lint-non-device --release
       - run: just test --release --all-features
 
   app-build:
-    runs-on: ubuntu-latest
     needs: device
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            build_command: apk
+            artifact_name: frostsnapp-${{ github.sha }}.apk
+            artifact_path: frostsnapp/build/app/outputs/apk/release/app-release.apk
+            name: Build Android APK
+          - os: ubuntu-latest
+            build_command: linux
+            artifact_name: Frostsnapp-${{ github.sha }}-x64.AppImage
+            artifact_path: Frostsnapp-latest-x86_64.AppImage
+            name: Build Linux AppImage
+          - os: windows-latest
+            build_command: windows
+            artifact_name: Frostsnapp-${{ github.sha }}-windows-x64
+            artifact_path: frostsnapp/build/windows/x64/runner/Release
+            name: Build Windows App
+          - os: macos-latest
+            build_command: macos
+            artifact_name: Frostsnapp-${{ github.sha }}-x64.app
+            artifact_path: frostsnapp/build/macos/Build/Products/Release/frostsnapp.app
+            name: Build MacOS App
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v3
-      - name: Download firmwre elf
-        uses: actions/download-artifact@v4
-        with:
-          name: frostsnap-v2-${{ github.run_id }}.elf
-          path: target/riscv32imc-unknown-none-elf/release/
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+          targets: ${{ matrix.build_command == 'apk' && 'aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android' || '' }}
       - uses: taiki-e/install-action@just
       - uses: subosito/flutter-action@v2
         with:
           channel: "stable"
-      - uses: actions/setup-java@v3
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: frostsnap-${{ github.sha }}.elf
+          path: target/riscv32imc-unknown-none-elf/release/
+
+      - name: Setup (Android)
+        if: matrix.build_command == 'apk'
+        uses: actions/setup-java@v4
         with:
           distribution: zulu
           java-version: 18
           cache: gradle
       - uses: nttld/setup-ndk@v1
+        if: matrix.build_command == 'apk'
         with:
           ndk-version: r25c
-      - name: Show riscv release directory
-        run: ls -R target/riscv32imc-unknown-none-elf/release/
-      - run: sudo apt-get update && sudo apt install -y ninja-build libstdc++-12-dev libgtk-3-0 libgtk-3-dev libudev-dev
+
+      - name: Setup (Linux)
+        if: matrix.os == 'ubuntu-latest' && matrix.build_command == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libstdc++-12-dev libgtk-3-0 libgtk-3-dev libudev-dev libarchive-tools qtbase5-dev qt5-qmake qtdeclarative5-dev cmake
+      
+      - name: Setup (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install just
+          sudo gem install cocoapods
+          cd frostsnapp && flutter pub get && cd macos && pod install && cd ../..
+      
       - run: just frostsnapp/install-rust-deps
-      - run: just frostsnapp/build linux
-      - run: just frostsnapp/build appbundle
+      - run: just frostsnapp/build ${{ matrix.build_command }} --release
+      
+      - name: Build App Bundle (Android)
+        if: matrix.build_command == 'apk'
+        run: just frostsnapp/build appbundle --release
+      
+      - name: Build AppImage (Linux)
+        if: matrix.os == 'ubuntu-latest' && matrix.build_command == 'linux'
+        uses: AppImageCrafters/build-appimage-action@master
+        env:
+          UPDATE_INFO: frostsnapp-${{ github.sha }}-x86_64.AppImage.zsync
+        with:
+          recipe: AppImageBuilder.yml
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: error
+
+      - name: Upload App Bundle (Android)
+        if: matrix.build_command == 'apk'
+        uses: actions/upload-artifact@v4
+        with:
+          name: frostsnapp-${{ github.sha }}.aab
+          path: frostsnapp/build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+
