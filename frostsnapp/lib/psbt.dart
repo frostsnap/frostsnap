@@ -20,8 +20,10 @@ import "dart:developer" as developer;
 
 class LoadPsbtPage extends StatefulWidget {
   final KeyId keyId;
+  final Wallet wallet;
 
-  const LoadPsbtPage({Key? key, required this.keyId}) : super(key: key);
+  const LoadPsbtPage({Key? key, required this.keyId, required this.wallet})
+      : super(key: key);
 
   @override
   LoadPsbtPageState createState() => LoadPsbtPageState();
@@ -55,8 +57,8 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
                           );
                         }));
                         if (context.mounted) {
-                          await runPsbtSigningWorkflow(
-                              context: context,
+                          await runPsbtSigningWorkflow(context,
+                              wallet: widget.wallet,
                               psbtBytes: psbtBytes,
                               selectedDevices: selectedDevices.toList(),
                               keyId: widget.keyId);
@@ -82,8 +84,8 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
                   if (fileResult != null) {
                     File file = File(fileResult.files.single.path!);
                     Uint8List psbtBytes = await file.readAsBytes();
-                    await runPsbtSigningWorkflow(
-                        context: context,
+                    await runPsbtSigningWorkflow(context,
+                        wallet: widget.wallet,
                         psbtBytes: psbtBytes,
                         selectedDevices: selectedDevices.toList(),
                         keyId: widget.keyId);
@@ -125,11 +127,12 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
   }
 }
 
-Future<void> runPsbtSigningWorkflow({
-  required BuildContext context,
+Future<void> runPsbtSigningWorkflow(
+  BuildContext context, {
   required Uint8List psbtBytes,
   required List<DeviceId> selectedDevices,
   required KeyId keyId,
+  required Wallet wallet,
 }) async {
   final Psbt psbt;
   final unsignedTx;
@@ -144,8 +147,7 @@ Future<void> runPsbtSigningWorkflow({
   final signingStream = coord.startSigningTx(
       keyId: keyId, unsignedTx: unsignedTx, devices: selectedDevices);
 
-  final effect =
-      unsignedTx.effect(keyId: keyId, network: bitcoinContext.network);
+  final effect = unsignedTx.effect(keyId: keyId, network: wallet.network);
 
   final signatures = await showSigningProgressDialog(
     context,
@@ -160,27 +162,27 @@ Future<void> runPsbtSigningWorkflow({
     if (context.mounted) {
       await saveOrBroadcastSignedPsbtDialog(
         context,
-        keyId,
-        signedTx,
-        signedPsbt,
+        keyId: keyId,
+        tx: signedTx,
+        psbt: signedPsbt,
+        wallet: wallet,
       );
     }
   }
 }
 
-Future<void> saveOrBroadcastSignedPsbtDialog(
-  BuildContext context,
-  KeyId keyId,
-  SignedTx tx,
-  Psbt psbt,
-) {
+Future<void> saveOrBroadcastSignedPsbtDialog(BuildContext context,
+    {required KeyId keyId,
+    required SignedTx tx,
+    required Psbt psbt,
+    required Wallet wallet}) {
   return showDialog(
       context: context,
       builder: (context) {
         final broadcastButton = ElevatedButton(
             onPressed: () async {
-              final broadcasted =
-                  await showBroadcastConfirmDialog(context, keyId, tx);
+              final broadcasted = await showBroadcastConfirmDialog(context,
+                  keyId: keyId, tx: tx, wallet: wallet);
               if (broadcasted && context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(

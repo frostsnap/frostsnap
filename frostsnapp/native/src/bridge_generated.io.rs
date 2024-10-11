@@ -173,6 +173,23 @@ pub extern "C" fn wire_get_device__method__DeviceListState(
 }
 
 #[no_mangle]
+pub extern "C" fn wire_create__static_method__WalletLoader(
+    port_: i64,
+    directory: *mut wire_uint_8_list,
+) {
+    wire_create__static_method__WalletLoader_impl(port_, directory)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_load__method__WalletLoader(
+    port_: i64,
+    that: *mut wire_WalletLoader,
+    network: *mut wire_BitcoinNetwork,
+) {
+    wire_load__method__WalletLoader_impl(port_, that, network)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_sub_tx_state__method__Wallet(
     port_: i64,
     that: *mut wire_Wallet,
@@ -254,6 +271,36 @@ pub extern "C" fn wire_psbt_to_unsigned_tx__method__Wallet(
     key_id: *mut wire_KeyId,
 ) -> support::WireSyncReturn {
     wire_psbt_to_unsigned_tx__method__Wallet_impl(that, psbt, key_id)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_signet__static_method__BitcoinNetwork() -> support::WireSyncReturn {
+    wire_signet__static_method__BitcoinNetwork_impl()
+}
+
+#[no_mangle]
+pub extern "C" fn wire_descriptor_for_key__method__BitcoinNetwork(
+    that: *mut wire_BitcoinNetwork,
+    key_id: *mut wire_KeyId,
+) -> support::WireSyncReturn {
+    wire_descriptor_for_key__method__BitcoinNetwork_impl(that, key_id)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_validate_amount__method__BitcoinNetwork(
+    that: *mut wire_BitcoinNetwork,
+    address: *mut wire_uint_8_list,
+    value: u64,
+) -> support::WireSyncReturn {
+    wire_validate_amount__method__BitcoinNetwork_impl(that, address, value)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_validate_destination_address__method__BitcoinNetwork(
+    that: *mut wire_BitcoinNetwork,
+    address: *mut wire_uint_8_list,
+) -> support::WireSyncReturn {
+    wire_validate_destination_address__method__BitcoinNetwork_impl(that, address)
 }
 
 #[no_mangle]
@@ -472,35 +519,10 @@ pub extern "C" fn wire_check_share_on_device__method__Coordinator(
 }
 
 #[no_mangle]
-pub extern "C" fn wire_descriptor_for_key__method__BitcoinContext(
-    that: *mut wire_BitcoinContext,
-    key_id: *mut wire_KeyId,
-) -> support::WireSyncReturn {
-    wire_descriptor_for_key__method__BitcoinContext_impl(that, key_id)
-}
-
-#[no_mangle]
-pub extern "C" fn wire_validate_amount__method__BitcoinContext(
-    that: *mut wire_BitcoinContext,
-    address: *mut wire_uint_8_list,
-    value: u64,
-) -> support::WireSyncReturn {
-    wire_validate_amount__method__BitcoinContext_impl(that, address, value)
-}
-
-#[no_mangle]
-pub extern "C" fn wire_validate_destination_address__method__BitcoinContext(
-    that: *mut wire_BitcoinContext,
-    address: *mut wire_uint_8_list,
-) -> support::WireSyncReturn {
-    wire_validate_destination_address__method__BitcoinContext_impl(that, address)
-}
-
-#[no_mangle]
 pub extern "C" fn wire_effect__method__SignedTx(
     that: *mut wire_SignedTx,
     key_id: *mut wire_KeyId,
-    network: wire_BitcoinNetwork,
+    network: *mut wire_BitcoinNetwork,
 ) -> support::WireSyncReturn {
     wire_effect__method__SignedTx_impl(that, key_id, network)
 }
@@ -528,7 +550,7 @@ pub extern "C" fn wire_complete__method__UnsignedTx(
 pub extern "C" fn wire_effect__method__UnsignedTx(
     that: *mut wire_UnsignedTx,
     key_id: *mut wire_KeyId,
-    network: wire_BitcoinNetwork,
+    network: *mut wire_BitcoinNetwork,
 ) -> support::WireSyncReturn {
     wire_effect__method__UnsignedTx_impl(that, key_id, network)
 }
@@ -557,6 +579,16 @@ pub extern "C" fn wire_next__method__QrEncoder(
 // Section: allocate functions
 
 #[no_mangle]
+pub extern "C" fn new_ArcChainSync() -> wire_ArcChainSync {
+    wire_ArcChainSync::new_with_null_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn new_ArcMutexFrostsnapWallet() -> wire_ArcMutexFrostsnapWallet {
+    wire_ArcMutexFrostsnapWallet::new_with_null_ptr()
+}
+
+#[no_mangle]
 pub extern "C" fn new_ArcMutexVecPortDesc() -> wire_ArcMutexVecPortDesc {
     wire_ArcMutexVecPortDesc::new_with_null_ptr()
 }
@@ -567,18 +599,13 @@ pub extern "C" fn new_ArcRTransaction() -> wire_ArcRTransaction {
 }
 
 #[no_mangle]
-pub extern "C" fn new_BitcoinNetwork() -> wire_BitcoinNetwork {
-    wire_BitcoinNetwork::new_with_null_ptr()
+pub extern "C" fn new_ArcWalletStreams() -> wire_ArcWalletStreams {
+    wire_ArcWalletStreams::new_with_null_ptr()
 }
 
 #[no_mangle]
 pub extern "C" fn new_BitcoinPsbt() -> wire_BitcoinPsbt {
     wire_BitcoinPsbt::new_with_null_ptr()
-}
-
-#[no_mangle]
-pub extern "C" fn new_ChainSync() -> wire_ChainSync {
-    wire_ChainSync::new_with_null_ptr()
 }
 
 #[no_mangle]
@@ -609,14 +636,9 @@ pub extern "C" fn new_FrostsnapCoreCoordinatorCoordinatorFrostKey(
 }
 
 #[no_mangle]
-pub extern "C" fn new_MutexBTreeMapKeyIdStreamSinkTxState(
-) -> wire_MutexBTreeMapKeyIdStreamSinkTxState {
-    wire_MutexBTreeMapKeyIdStreamSinkTxState::new_with_null_ptr()
-}
-
-#[no_mangle]
-pub extern "C" fn new_MutexFrostsnapWallet() -> wire_MutexFrostsnapWallet {
-    wire_MutexFrostsnapWallet::new_with_null_ptr()
+pub extern "C" fn new_MutexHashMapRBitcoinNetworkWallet() -> wire_MutexHashMapRBitcoinNetworkWallet
+{
+    wire_MutexHashMapRBitcoinNetworkWallet::new_with_null_ptr()
 }
 
 #[no_mangle]
@@ -640,6 +662,11 @@ pub extern "C" fn new_PortWriteSender() -> wire_PortWriteSender {
 }
 
 #[no_mangle]
+pub extern "C" fn new_RBitcoinNetwork() -> wire_RBitcoinNetwork {
+    wire_RBitcoinNetwork::new_with_null_ptr()
+}
+
+#[no_mangle]
 pub extern "C" fn new_RTransaction() -> wire_RTransaction {
     wire_RTransaction::new_with_null_ptr()
 }
@@ -654,8 +681,8 @@ pub extern "C" fn new_StringList_0(len: i32) -> *mut wire_StringList {
 }
 
 #[no_mangle]
-pub extern "C" fn new_box_autoadd_bitcoin_context_0() -> *mut wire_BitcoinContext {
-    support::new_leak_box_ptr(wire_BitcoinContext::new_with_null_ptr())
+pub extern "C" fn new_box_autoadd_bitcoin_network_0() -> *mut wire_BitcoinNetwork {
+    support::new_leak_box_ptr(wire_BitcoinNetwork::new_with_null_ptr())
 }
 
 #[no_mangle]
@@ -754,6 +781,11 @@ pub extern "C" fn new_box_autoadd_wallet_0() -> *mut wire_Wallet {
 }
 
 #[no_mangle]
+pub extern "C" fn new_box_autoadd_wallet_loader_0() -> *mut wire_WalletLoader {
+    support::new_leak_box_ptr(wire_WalletLoader::new_with_null_ptr())
+}
+
+#[no_mangle]
 pub extern "C" fn new_list_connected_device_0(len: i32) -> *mut wire_list_connected_device {
     let wrap = wire_list_connected_device {
         ptr: support::new_leak_vec_ptr(<wire_ConnectedDevice>::new_with_null_ptr(), len),
@@ -801,6 +833,36 @@ pub extern "C" fn new_uint_8_list_0(len: i32) -> *mut wire_uint_8_list {
 // Section: related functions
 
 #[no_mangle]
+pub extern "C" fn drop_opaque_ArcChainSync(ptr: *const c_void) {
+    unsafe {
+        Arc::<Arc<ChainSync>>::decrement_strong_count(ptr as _);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn share_opaque_ArcChainSync(ptr: *const c_void) -> *const c_void {
+    unsafe {
+        Arc::<Arc<ChainSync>>::increment_strong_count(ptr as _);
+        ptr
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn drop_opaque_ArcMutexFrostsnapWallet(ptr: *const c_void) {
+    unsafe {
+        Arc::<Arc<Mutex<FrostsnapWallet>>>::decrement_strong_count(ptr as _);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn share_opaque_ArcMutexFrostsnapWallet(ptr: *const c_void) -> *const c_void {
+    unsafe {
+        Arc::<Arc<Mutex<FrostsnapWallet>>>::increment_strong_count(ptr as _);
+        ptr
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn drop_opaque_ArcMutexVecPortDesc(ptr: *const c_void) {
     unsafe {
         Arc::<Arc<Mutex<Vec<PortDesc>>>>::decrement_strong_count(ptr as _);
@@ -831,16 +893,16 @@ pub extern "C" fn share_opaque_ArcRTransaction(ptr: *const c_void) -> *const c_v
 }
 
 #[no_mangle]
-pub extern "C" fn drop_opaque_BitcoinNetwork(ptr: *const c_void) {
+pub extern "C" fn drop_opaque_ArcWalletStreams(ptr: *const c_void) {
     unsafe {
-        Arc::<bitcoin::Network>::decrement_strong_count(ptr as _);
+        Arc::<Arc<WalletStreams>>::decrement_strong_count(ptr as _);
     }
 }
 
 #[no_mangle]
-pub extern "C" fn share_opaque_BitcoinNetwork(ptr: *const c_void) -> *const c_void {
+pub extern "C" fn share_opaque_ArcWalletStreams(ptr: *const c_void) -> *const c_void {
     unsafe {
-        Arc::<bitcoin::Network>::increment_strong_count(ptr as _);
+        Arc::<Arc<WalletStreams>>::increment_strong_count(ptr as _);
         ptr
     }
 }
@@ -856,21 +918,6 @@ pub extern "C" fn drop_opaque_BitcoinPsbt(ptr: *const c_void) {
 pub extern "C" fn share_opaque_BitcoinPsbt(ptr: *const c_void) -> *const c_void {
     unsafe {
         Arc::<BitcoinPsbt>::increment_strong_count(ptr as _);
-        ptr
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn drop_opaque_ChainSync(ptr: *const c_void) {
-    unsafe {
-        Arc::<ChainSync>::decrement_strong_count(ptr as _);
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn share_opaque_ChainSync(ptr: *const c_void) -> *const c_void {
-    unsafe {
-        Arc::<ChainSync>::increment_strong_count(ptr as _);
         ptr
     }
 }
@@ -961,33 +1008,18 @@ pub extern "C" fn share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(
 }
 
 #[no_mangle]
-pub extern "C" fn drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(ptr: *const c_void) {
+pub extern "C" fn drop_opaque_MutexHashMapRBitcoinNetworkWallet(ptr: *const c_void) {
     unsafe {
-        Arc::<Mutex<BTreeMap<KeyId, StreamSink<TxState>>>>::decrement_strong_count(ptr as _);
+        Arc::<Mutex<HashMap<RBitcoinNetwork, Wallet>>>::decrement_strong_count(ptr as _);
     }
 }
 
 #[no_mangle]
-pub extern "C" fn share_opaque_MutexBTreeMapKeyIdStreamSinkTxState(
+pub extern "C" fn share_opaque_MutexHashMapRBitcoinNetworkWallet(
     ptr: *const c_void,
 ) -> *const c_void {
     unsafe {
-        Arc::<Mutex<BTreeMap<KeyId, StreamSink<TxState>>>>::increment_strong_count(ptr as _);
-        ptr
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn drop_opaque_MutexFrostsnapWallet(ptr: *const c_void) {
-    unsafe {
-        Arc::<Mutex<FrostsnapWallet>>::decrement_strong_count(ptr as _);
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn share_opaque_MutexFrostsnapWallet(ptr: *const c_void) -> *const c_void {
-    unsafe {
-        Arc::<Mutex<FrostsnapWallet>>::increment_strong_count(ptr as _);
+        Arc::<Mutex<HashMap<RBitcoinNetwork, Wallet>>>::increment_strong_count(ptr as _);
         ptr
     }
 }
@@ -1053,6 +1085,21 @@ pub extern "C" fn share_opaque_PortWriteSender(ptr: *const c_void) -> *const c_v
 }
 
 #[no_mangle]
+pub extern "C" fn drop_opaque_RBitcoinNetwork(ptr: *const c_void) {
+    unsafe {
+        Arc::<RBitcoinNetwork>::decrement_strong_count(ptr as _);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn share_opaque_RBitcoinNetwork(ptr: *const c_void) -> *const c_void {
+    unsafe {
+        Arc::<RBitcoinNetwork>::increment_strong_count(ptr as _);
+        ptr
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn drop_opaque_RTransaction(ptr: *const c_void) {
     unsafe {
         Arc::<RTransaction>::decrement_strong_count(ptr as _);
@@ -1069,6 +1116,16 @@ pub extern "C" fn share_opaque_RTransaction(ptr: *const c_void) -> *const c_void
 
 // Section: impl Wire2Api
 
+impl Wire2Api<RustOpaque<Arc<ChainSync>>> for wire_ArcChainSync {
+    fn wire2api(self) -> RustOpaque<Arc<ChainSync>> {
+        unsafe { support::opaque_from_dart(self.ptr as _) }
+    }
+}
+impl Wire2Api<RustOpaque<Arc<Mutex<FrostsnapWallet>>>> for wire_ArcMutexFrostsnapWallet {
+    fn wire2api(self) -> RustOpaque<Arc<Mutex<FrostsnapWallet>>> {
+        unsafe { support::opaque_from_dart(self.ptr as _) }
+    }
+}
 impl Wire2Api<RustOpaque<Arc<Mutex<Vec<PortDesc>>>>> for wire_ArcMutexVecPortDesc {
     fn wire2api(self) -> RustOpaque<Arc<Mutex<Vec<PortDesc>>>> {
         unsafe { support::opaque_from_dart(self.ptr as _) }
@@ -1079,18 +1136,13 @@ impl Wire2Api<RustOpaque<Arc<RTransaction>>> for wire_ArcRTransaction {
         unsafe { support::opaque_from_dart(self.ptr as _) }
     }
 }
-impl Wire2Api<RustOpaque<bitcoin::Network>> for wire_BitcoinNetwork {
-    fn wire2api(self) -> RustOpaque<bitcoin::Network> {
+impl Wire2Api<RustOpaque<Arc<WalletStreams>>> for wire_ArcWalletStreams {
+    fn wire2api(self) -> RustOpaque<Arc<WalletStreams>> {
         unsafe { support::opaque_from_dart(self.ptr as _) }
     }
 }
 impl Wire2Api<RustOpaque<BitcoinPsbt>> for wire_BitcoinPsbt {
     fn wire2api(self) -> RustOpaque<BitcoinPsbt> {
-        unsafe { support::opaque_from_dart(self.ptr as _) }
-    }
-}
-impl Wire2Api<RustOpaque<ChainSync>> for wire_ChainSync {
-    fn wire2api(self) -> RustOpaque<ChainSync> {
         unsafe { support::opaque_from_dart(self.ptr as _) }
     }
 }
@@ -1123,15 +1175,10 @@ impl Wire2Api<RustOpaque<frostsnap_core::coordinator::CoordinatorFrostKey>>
         unsafe { support::opaque_from_dart(self.ptr as _) }
     }
 }
-impl Wire2Api<RustOpaque<Mutex<BTreeMap<KeyId, StreamSink<TxState>>>>>
-    for wire_MutexBTreeMapKeyIdStreamSinkTxState
+impl Wire2Api<RustOpaque<Mutex<HashMap<RBitcoinNetwork, Wallet>>>>
+    for wire_MutexHashMapRBitcoinNetworkWallet
 {
-    fn wire2api(self) -> RustOpaque<Mutex<BTreeMap<KeyId, StreamSink<TxState>>>> {
-        unsafe { support::opaque_from_dart(self.ptr as _) }
-    }
-}
-impl Wire2Api<RustOpaque<Mutex<FrostsnapWallet>>> for wire_MutexFrostsnapWallet {
-    fn wire2api(self) -> RustOpaque<Mutex<FrostsnapWallet>> {
+    fn wire2api(self) -> RustOpaque<Mutex<HashMap<RBitcoinNetwork, Wallet>>> {
         unsafe { support::opaque_from_dart(self.ptr as _) }
     }
 }
@@ -1155,6 +1202,11 @@ impl Wire2Api<RustOpaque<PortWriteSender>> for wire_PortWriteSender {
         unsafe { support::opaque_from_dart(self.ptr as _) }
     }
 }
+impl Wire2Api<RustOpaque<RBitcoinNetwork>> for wire_RBitcoinNetwork {
+    fn wire2api(self) -> RustOpaque<RBitcoinNetwork> {
+        unsafe { support::opaque_from_dart(self.ptr as _) }
+    }
+}
 impl Wire2Api<RustOpaque<RTransaction>> for wire_RTransaction {
     fn wire2api(self) -> RustOpaque<RTransaction> {
         unsafe { support::opaque_from_dart(self.ptr as _) }
@@ -1175,17 +1227,15 @@ impl Wire2Api<Vec<String>> for *mut wire_StringList {
         vec.into_iter().map(Wire2Api::wire2api).collect()
     }
 }
-impl Wire2Api<BitcoinContext> for wire_BitcoinContext {
-    fn wire2api(self) -> BitcoinContext {
-        BitcoinContext {
-            network: self.network.wire2api(),
-        }
+impl Wire2Api<BitcoinNetwork> for wire_BitcoinNetwork {
+    fn wire2api(self) -> BitcoinNetwork {
+        BitcoinNetwork(self.field0.wire2api())
     }
 }
-impl Wire2Api<BitcoinContext> for *mut wire_BitcoinContext {
-    fn wire2api(self) -> BitcoinContext {
+impl Wire2Api<BitcoinNetwork> for *mut wire_BitcoinNetwork {
+    fn wire2api(self) -> BitcoinNetwork {
         let wrap = unsafe { support::box_from_leak_ptr(self) };
-        Wire2Api::<BitcoinContext>::wire2api(*wrap).into()
+        Wire2Api::<BitcoinNetwork>::wire2api(*wrap).into()
     }
 }
 impl Wire2Api<ConfirmationTime> for *mut wire_ConfirmationTime {
@@ -1300,6 +1350,12 @@ impl Wire2Api<Wallet> for *mut wire_Wallet {
     fn wire2api(self) -> Wallet {
         let wrap = unsafe { support::box_from_leak_ptr(self) };
         Wire2Api::<Wallet>::wire2api(*wrap).into()
+    }
+}
+impl Wire2Api<WalletLoader> for *mut wire_WalletLoader {
+    fn wire2api(self) -> WalletLoader {
+        let wrap = unsafe { support::box_from_leak_ptr(self) };
+        Wire2Api::<WalletLoader>::wire2api(*wrap).into()
     }
 }
 impl Wire2Api<ConfirmationTime> for wire_ConfirmationTime {
@@ -1512,10 +1568,31 @@ impl Wire2Api<Wallet> for wire_Wallet {
             inner: self.inner.wire2api(),
             wallet_streams: self.wallet_streams.wire2api(),
             chain_sync: self.chain_sync.wire2api(),
+            network: self.network.wire2api(),
+        }
+    }
+}
+impl Wire2Api<WalletLoader> for wire_WalletLoader {
+    fn wire2api(self) -> WalletLoader {
+        WalletLoader {
+            directory: self.directory.wire2api(),
+            loaded: self.loaded.wire2api(),
         }
     }
 }
 // Section: wire structs
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_ArcChainSync {
+    ptr: *const core::ffi::c_void,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_ArcMutexFrostsnapWallet {
+    ptr: *const core::ffi::c_void,
+}
 
 #[repr(C)]
 #[derive(Clone)]
@@ -1531,19 +1608,13 @@ pub struct wire_ArcRTransaction {
 
 #[repr(C)]
 #[derive(Clone)]
-pub struct wire_BitcoinNetwork {
+pub struct wire_ArcWalletStreams {
     ptr: *const core::ffi::c_void,
 }
 
 #[repr(C)]
 #[derive(Clone)]
 pub struct wire_BitcoinPsbt {
-    ptr: *const core::ffi::c_void,
-}
-
-#[repr(C)]
-#[derive(Clone)]
-pub struct wire_ChainSync {
     ptr: *const core::ffi::c_void,
 }
 
@@ -1579,13 +1650,7 @@ pub struct wire_FrostsnapCoreCoordinatorCoordinatorFrostKey {
 
 #[repr(C)]
 #[derive(Clone)]
-pub struct wire_MutexBTreeMapKeyIdStreamSinkTxState {
-    ptr: *const core::ffi::c_void,
-}
-
-#[repr(C)]
-#[derive(Clone)]
-pub struct wire_MutexFrostsnapWallet {
+pub struct wire_MutexHashMapRBitcoinNetworkWallet {
     ptr: *const core::ffi::c_void,
 }
 
@@ -1615,6 +1680,12 @@ pub struct wire_PortWriteSender {
 
 #[repr(C)]
 #[derive(Clone)]
+pub struct wire_RBitcoinNetwork {
+    ptr: *const core::ffi::c_void,
+}
+
+#[repr(C)]
+#[derive(Clone)]
 pub struct wire_RTransaction {
     ptr: *const core::ffi::c_void,
 }
@@ -1628,8 +1699,8 @@ pub struct wire_StringList {
 
 #[repr(C)]
 #[derive(Clone)]
-pub struct wire_BitcoinContext {
-    network: wire_BitcoinNetwork,
+pub struct wire_BitcoinNetwork {
+    field0: wire_RBitcoinNetwork,
 }
 
 #[repr(C)]
@@ -1807,9 +1878,17 @@ pub struct wire_UnsignedTx {
 #[repr(C)]
 #[derive(Clone)]
 pub struct wire_Wallet {
-    inner: wire_MutexFrostsnapWallet,
-    wallet_streams: wire_MutexBTreeMapKeyIdStreamSinkTxState,
-    chain_sync: wire_ChainSync,
+    inner: wire_ArcMutexFrostsnapWallet,
+    wallet_streams: wire_ArcWalletStreams,
+    chain_sync: wire_ArcChainSync,
+    network: wire_BitcoinNetwork,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_WalletLoader {
+    directory: *mut wire_uint_8_list,
+    loaded: wire_MutexHashMapRBitcoinNetworkWallet,
 }
 
 // Section: impl NewWithNullPtr
@@ -1824,6 +1903,20 @@ impl<T> NewWithNullPtr for *mut T {
     }
 }
 
+impl NewWithNullPtr for wire_ArcChainSync {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            ptr: core::ptr::null(),
+        }
+    }
+}
+impl NewWithNullPtr for wire_ArcMutexFrostsnapWallet {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            ptr: core::ptr::null(),
+        }
+    }
+}
 impl NewWithNullPtr for wire_ArcMutexVecPortDesc {
     fn new_with_null_ptr() -> Self {
         Self {
@@ -1838,7 +1931,7 @@ impl NewWithNullPtr for wire_ArcRTransaction {
         }
     }
 }
-impl NewWithNullPtr for wire_BitcoinNetwork {
+impl NewWithNullPtr for wire_ArcWalletStreams {
     fn new_with_null_ptr() -> Self {
         Self {
             ptr: core::ptr::null(),
@@ -1846,13 +1939,6 @@ impl NewWithNullPtr for wire_BitcoinNetwork {
     }
 }
 impl NewWithNullPtr for wire_BitcoinPsbt {
-    fn new_with_null_ptr() -> Self {
-        Self {
-            ptr: core::ptr::null(),
-        }
-    }
-}
-impl NewWithNullPtr for wire_ChainSync {
     fn new_with_null_ptr() -> Self {
         Self {
             ptr: core::ptr::null(),
@@ -1894,14 +1980,7 @@ impl NewWithNullPtr for wire_FrostsnapCoreCoordinatorCoordinatorFrostKey {
         }
     }
 }
-impl NewWithNullPtr for wire_MutexBTreeMapKeyIdStreamSinkTxState {
-    fn new_with_null_ptr() -> Self {
-        Self {
-            ptr: core::ptr::null(),
-        }
-    }
-}
-impl NewWithNullPtr for wire_MutexFrostsnapWallet {
+impl NewWithNullPtr for wire_MutexHashMapRBitcoinNetworkWallet {
     fn new_with_null_ptr() -> Self {
         Self {
             ptr: core::ptr::null(),
@@ -1936,6 +2015,13 @@ impl NewWithNullPtr for wire_PortWriteSender {
         }
     }
 }
+impl NewWithNullPtr for wire_RBitcoinNetwork {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            ptr: core::ptr::null(),
+        }
+    }
+}
 impl NewWithNullPtr for wire_RTransaction {
     fn new_with_null_ptr() -> Self {
         Self {
@@ -1944,15 +2030,15 @@ impl NewWithNullPtr for wire_RTransaction {
     }
 }
 
-impl NewWithNullPtr for wire_BitcoinContext {
+impl NewWithNullPtr for wire_BitcoinNetwork {
     fn new_with_null_ptr() -> Self {
         Self {
-            network: wire_BitcoinNetwork::new_with_null_ptr(),
+            field0: wire_RBitcoinNetwork::new_with_null_ptr(),
         }
     }
 }
 
-impl Default for wire_BitcoinContext {
+impl Default for wire_BitcoinNetwork {
     fn default() -> Self {
         Self::new_with_null_ptr()
     }
@@ -2259,14 +2345,30 @@ impl Default for wire_UnsignedTx {
 impl NewWithNullPtr for wire_Wallet {
     fn new_with_null_ptr() -> Self {
         Self {
-            inner: wire_MutexFrostsnapWallet::new_with_null_ptr(),
-            wallet_streams: wire_MutexBTreeMapKeyIdStreamSinkTxState::new_with_null_ptr(),
-            chain_sync: wire_ChainSync::new_with_null_ptr(),
+            inner: wire_ArcMutexFrostsnapWallet::new_with_null_ptr(),
+            wallet_streams: wire_ArcWalletStreams::new_with_null_ptr(),
+            chain_sync: wire_ArcChainSync::new_with_null_ptr(),
+            network: Default::default(),
         }
     }
 }
 
 impl Default for wire_Wallet {
+    fn default() -> Self {
+        Self::new_with_null_ptr()
+    }
+}
+
+impl NewWithNullPtr for wire_WalletLoader {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            directory: core::ptr::null_mut(),
+            loaded: wire_MutexHashMapRBitcoinNetworkWallet::new_with_null_ptr(),
+        }
+    }
+}
+
+impl Default for wire_WalletLoader {
     fn default() -> Self {
         Self::new_with_null_ptr()
     }

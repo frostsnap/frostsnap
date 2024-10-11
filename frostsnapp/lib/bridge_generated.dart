@@ -164,12 +164,11 @@ class NativeImpl implements Native {
         argNames: ["id"],
       );
 
-  Future<(Coordinator, Wallet, BitcoinContext)> load(
-      {required String dbFile, dynamic hint}) {
+  Future<Coordinator> load({required String dbFile, dynamic hint}) {
     var arg0 = _platform.api2wire_String(dbFile);
     return _platform.executeNormal(FlutterRustBridgeTask(
       callFfi: (port_) => _platform.inner.wire_load(port_, arg0),
-      parseSuccessData: _wire2api___record__coordinator_wallet_bitcoin_context,
+      parseSuccessData: (d) => _wire2api_coordinator(d),
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kLoadConstMeta,
       argValues: [dbFile],
@@ -183,14 +182,13 @@ class NativeImpl implements Native {
         argNames: ["dbFile"],
       );
 
-  Future<(Coordinator, FfiSerial, Wallet, BitcoinContext)>
-      loadHostHandlesSerial({required String dbFile, dynamic hint}) {
+  Future<(Coordinator, FfiSerial)> loadHostHandlesSerial(
+      {required String dbFile, dynamic hint}) {
     var arg0 = _platform.api2wire_String(dbFile);
     return _platform.executeNormal(FlutterRustBridgeTask(
       callFfi: (port_) =>
           _platform.inner.wire_load_host_handles_serial(port_, arg0),
-      parseSuccessData:
-          _wire2api___record__coordinator_ffi_serial_wallet_bitcoin_context,
+      parseSuccessData: _wire2api___record__coordinator_ffi_serial,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kLoadHostHandlesSerialConstMeta,
       argValues: [dbFile],
@@ -535,6 +533,49 @@ class NativeImpl implements Native {
         argNames: ["that", "id"],
       );
 
+  Future<WalletLoader> createStaticMethodWalletLoader(
+      {required String directory, dynamic hint}) {
+    var arg0 = _platform.api2wire_String(directory);
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) =>
+          _platform.inner.wire_create__static_method__WalletLoader(port_, arg0),
+      parseSuccessData: (d) => _wire2api_wallet_loader(d),
+      parseErrorData: null,
+      constMeta: kCreateStaticMethodWalletLoaderConstMeta,
+      argValues: [directory],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kCreateStaticMethodWalletLoaderConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "create__static_method__WalletLoader",
+        argNames: ["directory"],
+      );
+
+  Future<Wallet> loadMethodWalletLoader(
+      {required WalletLoader that,
+      required BitcoinNetwork network,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_wallet_loader(that);
+    var arg1 = _platform.api2wire_box_autoadd_bitcoin_network(network);
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) =>
+          _platform.inner.wire_load__method__WalletLoader(port_, arg0, arg1),
+      parseSuccessData: (d) => _wire2api_wallet(d),
+      parseErrorData: _wire2api_FrbAnyhowException,
+      constMeta: kLoadMethodWalletLoaderConstMeta,
+      argValues: [that, network],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kLoadMethodWalletLoaderConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "load__method__WalletLoader",
+        argNames: ["that", "network"],
+      );
+
   Stream<TxState> subTxStateMethodWallet(
       {required Wallet that, required KeyId keyId, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_wallet(that);
@@ -742,6 +783,96 @@ class NativeImpl implements Native {
         debugName: "psbt_to_unsigned_tx__method__Wallet",
         argNames: ["that", "psbt", "keyId"],
       );
+
+  BitcoinNetwork signetStaticMethodBitcoinNetwork({dynamic hint}) {
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () =>
+          _platform.inner.wire_signet__static_method__BitcoinNetwork(),
+      parseSuccessData: _wire2api_bitcoin_network,
+      parseErrorData: null,
+      constMeta: kSignetStaticMethodBitcoinNetworkConstMeta,
+      argValues: [],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kSignetStaticMethodBitcoinNetworkConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "signet__static_method__BitcoinNetwork",
+            argNames: [],
+          );
+
+  String descriptorForKeyMethodBitcoinNetwork(
+      {required BitcoinNetwork that, required KeyId keyId, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_bitcoin_network(that);
+    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner
+          .wire_descriptor_for_key__method__BitcoinNetwork(arg0, arg1),
+      parseSuccessData: _wire2api_String,
+      parseErrorData: null,
+      constMeta: kDescriptorForKeyMethodBitcoinNetworkConstMeta,
+      argValues: [that, keyId],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kDescriptorForKeyMethodBitcoinNetworkConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "descriptor_for_key__method__BitcoinNetwork",
+            argNames: ["that", "keyId"],
+          );
+
+  String? validateAmountMethodBitcoinNetwork(
+      {required BitcoinNetwork that,
+      required String address,
+      required int value,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_bitcoin_network(that);
+    var arg1 = _platform.api2wire_String(address);
+    var arg2 = _platform.api2wire_u64(value);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner
+          .wire_validate_amount__method__BitcoinNetwork(arg0, arg1, arg2),
+      parseSuccessData: _wire2api_opt_String,
+      parseErrorData: null,
+      constMeta: kValidateAmountMethodBitcoinNetworkConstMeta,
+      argValues: [that, address, value],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kValidateAmountMethodBitcoinNetworkConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "validate_amount__method__BitcoinNetwork",
+            argNames: ["that", "address", "value"],
+          );
+
+  String? validateDestinationAddressMethodBitcoinNetwork(
+      {required BitcoinNetwork that, required String address, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_bitcoin_network(that);
+    var arg1 = _platform.api2wire_String(address);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner
+          .wire_validate_destination_address__method__BitcoinNetwork(
+              arg0, arg1),
+      parseSuccessData: _wire2api_opt_String,
+      parseErrorData: null,
+      constMeta: kValidateDestinationAddressMethodBitcoinNetworkConstMeta,
+      argValues: [that, address],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kValidateDestinationAddressMethodBitcoinNetworkConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "validate_destination_address__method__BitcoinNetwork",
+            argNames: ["that", "address"],
+          );
 
   Future<void> setAvailablePortsMethodFfiSerial(
       {required FfiSerial that, required List<PortDesc> ports, dynamic hint}) {
@@ -1314,77 +1445,6 @@ class NativeImpl implements Native {
             argNames: ["that", "deviceId", "keyId"],
           );
 
-  String descriptorForKeyMethodBitcoinContext(
-      {required BitcoinContext that, required KeyId keyId, dynamic hint}) {
-    var arg0 = _platform.api2wire_box_autoadd_bitcoin_context(that);
-    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
-    return _platform.executeSync(FlutterRustBridgeSyncTask(
-      callFfi: () => _platform.inner
-          .wire_descriptor_for_key__method__BitcoinContext(arg0, arg1),
-      parseSuccessData: _wire2api_String,
-      parseErrorData: null,
-      constMeta: kDescriptorForKeyMethodBitcoinContextConstMeta,
-      argValues: [that, keyId],
-      hint: hint,
-    ));
-  }
-
-  FlutterRustBridgeTaskConstMeta
-      get kDescriptorForKeyMethodBitcoinContextConstMeta =>
-          const FlutterRustBridgeTaskConstMeta(
-            debugName: "descriptor_for_key__method__BitcoinContext",
-            argNames: ["that", "keyId"],
-          );
-
-  String? validateAmountMethodBitcoinContext(
-      {required BitcoinContext that,
-      required String address,
-      required int value,
-      dynamic hint}) {
-    var arg0 = _platform.api2wire_box_autoadd_bitcoin_context(that);
-    var arg1 = _platform.api2wire_String(address);
-    var arg2 = _platform.api2wire_u64(value);
-    return _platform.executeSync(FlutterRustBridgeSyncTask(
-      callFfi: () => _platform.inner
-          .wire_validate_amount__method__BitcoinContext(arg0, arg1, arg2),
-      parseSuccessData: _wire2api_opt_String,
-      parseErrorData: null,
-      constMeta: kValidateAmountMethodBitcoinContextConstMeta,
-      argValues: [that, address, value],
-      hint: hint,
-    ));
-  }
-
-  FlutterRustBridgeTaskConstMeta
-      get kValidateAmountMethodBitcoinContextConstMeta =>
-          const FlutterRustBridgeTaskConstMeta(
-            debugName: "validate_amount__method__BitcoinContext",
-            argNames: ["that", "address", "value"],
-          );
-
-  String? validateDestinationAddressMethodBitcoinContext(
-      {required BitcoinContext that, required String address, dynamic hint}) {
-    var arg0 = _platform.api2wire_box_autoadd_bitcoin_context(that);
-    var arg1 = _platform.api2wire_String(address);
-    return _platform.executeSync(FlutterRustBridgeSyncTask(
-      callFfi: () => _platform.inner
-          .wire_validate_destination_address__method__BitcoinContext(
-              arg0, arg1),
-      parseSuccessData: _wire2api_opt_String,
-      parseErrorData: null,
-      constMeta: kValidateDestinationAddressMethodBitcoinContextConstMeta,
-      argValues: [that, address],
-      hint: hint,
-    ));
-  }
-
-  FlutterRustBridgeTaskConstMeta
-      get kValidateDestinationAddressMethodBitcoinContextConstMeta =>
-          const FlutterRustBridgeTaskConstMeta(
-            debugName: "validate_destination_address__method__BitcoinContext",
-            argNames: ["that", "address"],
-          );
-
   EffectOfTx effectMethodSignedTx(
       {required SignedTx that,
       required KeyId keyId,
@@ -1392,7 +1452,7 @@ class NativeImpl implements Native {
       dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_signed_tx(that);
     var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
-    var arg2 = _platform.api2wire_BitcoinNetwork(network);
+    var arg2 = _platform.api2wire_box_autoadd_bitcoin_network(network);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
       callFfi: () =>
           _platform.inner.wire_effect__method__SignedTx(arg0, arg1, arg2),
@@ -1467,7 +1527,7 @@ class NativeImpl implements Native {
       dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_unsigned_tx(that);
     var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
-    var arg2 = _platform.api2wire_BitcoinNetwork(network);
+    var arg2 = _platform.api2wire_box_autoadd_bitcoin_network(network);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
       callFfi: () =>
           _platform.inner.wire_effect__method__UnsignedTx(arg0, arg1, arg2),
@@ -1542,6 +1602,20 @@ class NativeImpl implements Native {
         argNames: ["that"],
       );
 
+  DropFnType get dropOpaqueArcChainSync =>
+      _platform.inner.drop_opaque_ArcChainSync;
+  ShareFnType get shareOpaqueArcChainSync =>
+      _platform.inner.share_opaque_ArcChainSync;
+  OpaqueTypeFinalizer get ArcChainSyncFinalizer =>
+      _platform.ArcChainSyncFinalizer;
+
+  DropFnType get dropOpaqueArcMutexFrostsnapWallet =>
+      _platform.inner.drop_opaque_ArcMutexFrostsnapWallet;
+  ShareFnType get shareOpaqueArcMutexFrostsnapWallet =>
+      _platform.inner.share_opaque_ArcMutexFrostsnapWallet;
+  OpaqueTypeFinalizer get ArcMutexFrostsnapWalletFinalizer =>
+      _platform.ArcMutexFrostsnapWalletFinalizer;
+
   DropFnType get dropOpaqueArcMutexVecPortDesc =>
       _platform.inner.drop_opaque_ArcMutexVecPortDesc;
   ShareFnType get shareOpaqueArcMutexVecPortDesc =>
@@ -1556,12 +1630,12 @@ class NativeImpl implements Native {
   OpaqueTypeFinalizer get ArcRTransactionFinalizer =>
       _platform.ArcRTransactionFinalizer;
 
-  DropFnType get dropOpaqueBitcoinNetwork =>
-      _platform.inner.drop_opaque_BitcoinNetwork;
-  ShareFnType get shareOpaqueBitcoinNetwork =>
-      _platform.inner.share_opaque_BitcoinNetwork;
-  OpaqueTypeFinalizer get BitcoinNetworkFinalizer =>
-      _platform.BitcoinNetworkFinalizer;
+  DropFnType get dropOpaqueArcWalletStreams =>
+      _platform.inner.drop_opaque_ArcWalletStreams;
+  ShareFnType get shareOpaqueArcWalletStreams =>
+      _platform.inner.share_opaque_ArcWalletStreams;
+  OpaqueTypeFinalizer get ArcWalletStreamsFinalizer =>
+      _platform.ArcWalletStreamsFinalizer;
 
   DropFnType get dropOpaqueBitcoinPsbt =>
       _platform.inner.drop_opaque_BitcoinPsbt;
@@ -1569,11 +1643,6 @@ class NativeImpl implements Native {
       _platform.inner.share_opaque_BitcoinPsbt;
   OpaqueTypeFinalizer get BitcoinPsbtFinalizer =>
       _platform.BitcoinPsbtFinalizer;
-
-  DropFnType get dropOpaqueChainSync => _platform.inner.drop_opaque_ChainSync;
-  ShareFnType get shareOpaqueChainSync =>
-      _platform.inner.share_opaque_ChainSync;
-  OpaqueTypeFinalizer get ChainSyncFinalizer => _platform.ChainSyncFinalizer;
 
   DropFnType get dropOpaqueFfiCoordinator =>
       _platform.inner.drop_opaque_FfiCoordinator;
@@ -1615,19 +1684,12 @@ class NativeImpl implements Native {
       get FrostsnapCoreCoordinatorCoordinatorFrostKeyFinalizer =>
           _platform.FrostsnapCoreCoordinatorCoordinatorFrostKeyFinalizer;
 
-  DropFnType get dropOpaqueMutexBTreeMapKeyIdStreamSinkTxState =>
-      _platform.inner.drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState;
-  ShareFnType get shareOpaqueMutexBTreeMapKeyIdStreamSinkTxState =>
-      _platform.inner.share_opaque_MutexBTreeMapKeyIdStreamSinkTxState;
-  OpaqueTypeFinalizer get MutexBTreeMapKeyIdStreamSinkTxStateFinalizer =>
-      _platform.MutexBTreeMapKeyIdStreamSinkTxStateFinalizer;
-
-  DropFnType get dropOpaqueMutexFrostsnapWallet =>
-      _platform.inner.drop_opaque_MutexFrostsnapWallet;
-  ShareFnType get shareOpaqueMutexFrostsnapWallet =>
-      _platform.inner.share_opaque_MutexFrostsnapWallet;
-  OpaqueTypeFinalizer get MutexFrostsnapWalletFinalizer =>
-      _platform.MutexFrostsnapWalletFinalizer;
+  DropFnType get dropOpaqueMutexHashMapRBitcoinNetworkWallet =>
+      _platform.inner.drop_opaque_MutexHashMapRBitcoinNetworkWallet;
+  ShareFnType get shareOpaqueMutexHashMapRBitcoinNetworkWallet =>
+      _platform.inner.share_opaque_MutexHashMapRBitcoinNetworkWallet;
+  OpaqueTypeFinalizer get MutexHashMapRBitcoinNetworkWalletFinalizer =>
+      _platform.MutexHashMapRBitcoinNetworkWalletFinalizer;
 
   DropFnType get dropOpaquePortBytesToReadSender =>
       _platform.inner.drop_opaque_PortBytesToReadSender;
@@ -1657,6 +1719,13 @@ class NativeImpl implements Native {
   OpaqueTypeFinalizer get PortWriteSenderFinalizer =>
       _platform.PortWriteSenderFinalizer;
 
+  DropFnType get dropOpaqueRBitcoinNetwork =>
+      _platform.inner.drop_opaque_RBitcoinNetwork;
+  ShareFnType get shareOpaqueRBitcoinNetwork =>
+      _platform.inner.share_opaque_RBitcoinNetwork;
+  OpaqueTypeFinalizer get RBitcoinNetworkFinalizer =>
+      _platform.RBitcoinNetworkFinalizer;
+
   DropFnType get dropOpaqueRTransaction =>
       _platform.inner.drop_opaque_RTransaction;
   ShareFnType get shareOpaqueRTransaction =>
@@ -1669,6 +1738,14 @@ class NativeImpl implements Native {
   }
 // Section: wire2api
 
+  ArcChainSync _wire2api_ArcChainSync(dynamic raw) {
+    return ArcChainSync.fromRaw(raw[0], raw[1], this);
+  }
+
+  ArcMutexFrostsnapWallet _wire2api_ArcMutexFrostsnapWallet(dynamic raw) {
+    return ArcMutexFrostsnapWallet.fromRaw(raw[0], raw[1], this);
+  }
+
   ArcMutexVecPortDesc _wire2api_ArcMutexVecPortDesc(dynamic raw) {
     return ArcMutexVecPortDesc.fromRaw(raw[0], raw[1], this);
   }
@@ -1677,16 +1754,12 @@ class NativeImpl implements Native {
     return ArcRTransaction.fromRaw(raw[0], raw[1], this);
   }
 
-  BitcoinNetwork _wire2api_BitcoinNetwork(dynamic raw) {
-    return BitcoinNetwork.fromRaw(raw[0], raw[1], this);
+  ArcWalletStreams _wire2api_ArcWalletStreams(dynamic raw) {
+    return ArcWalletStreams.fromRaw(raw[0], raw[1], this);
   }
 
   BitcoinPsbt _wire2api_BitcoinPsbt(dynamic raw) {
     return BitcoinPsbt.fromRaw(raw[0], raw[1], this);
-  }
-
-  ChainSync _wire2api_ChainSync(dynamic raw) {
-    return ChainSync.fromRaw(raw[0], raw[1], this);
   }
 
   FfiCoordinator _wire2api_FfiCoordinator(dynamic raw) {
@@ -1718,13 +1791,9 @@ class NativeImpl implements Native {
         raw[0], raw[1], this);
   }
 
-  MutexBTreeMapKeyIdStreamSinkTxState
-      _wire2api_MutexBTreeMapKeyIdStreamSinkTxState(dynamic raw) {
-    return MutexBTreeMapKeyIdStreamSinkTxState.fromRaw(raw[0], raw[1], this);
-  }
-
-  MutexFrostsnapWallet _wire2api_MutexFrostsnapWallet(dynamic raw) {
-    return MutexFrostsnapWallet.fromRaw(raw[0], raw[1], this);
+  MutexHashMapRBitcoinNetworkWallet _wire2api_MutexHashMapRBitcoinNetworkWallet(
+      dynamic raw) {
+    return MutexHashMapRBitcoinNetworkWallet.fromRaw(raw[0], raw[1], this);
   }
 
   PortBytesToReadSender _wire2api_PortBytesToReadSender(dynamic raw) {
@@ -1741,6 +1810,10 @@ class NativeImpl implements Native {
 
   PortWriteSender _wire2api_PortWriteSender(dynamic raw) {
     return PortWriteSender.fromRaw(raw[0], raw[1], this);
+  }
+
+  RBitcoinNetwork _wire2api_RBitcoinNetwork(dynamic raw) {
+    return RBitcoinNetwork.fromRaw(raw[0], raw[1], this);
   }
 
   RTransaction _wire2api_RTransaction(dynamic raw) {
@@ -1762,31 +1835,15 @@ class NativeImpl implements Native {
     );
   }
 
-  (Coordinator, FfiSerial, Wallet, BitcoinContext)
-      _wire2api___record__coordinator_ffi_serial_wallet_bitcoin_context(
-          dynamic raw) {
+  (Coordinator, FfiSerial) _wire2api___record__coordinator_ffi_serial(
+      dynamic raw) {
     final arr = raw as List<dynamic>;
-    if (arr.length != 4) {
-      throw Exception('Expected 4 elements, got ${arr.length}');
+    if (arr.length != 2) {
+      throw Exception('Expected 2 elements, got ${arr.length}');
     }
     return (
       _wire2api_coordinator(arr[0]),
       _wire2api_ffi_serial(arr[1]),
-      _wire2api_wallet(arr[2]),
-      _wire2api_bitcoin_context(arr[3]),
-    );
-  }
-
-  (Coordinator, Wallet, BitcoinContext)
-      _wire2api___record__coordinator_wallet_bitcoin_context(dynamic raw) {
-    final arr = raw as List<dynamic>;
-    if (arr.length != 3) {
-      throw Exception('Expected 3 elements, got ${arr.length}');
-    }
-    return (
-      _wire2api_coordinator(arr[0]),
-      _wire2api_wallet(arr[1]),
-      _wire2api_bitcoin_context(arr[2]),
     );
   }
 
@@ -1801,13 +1858,13 @@ class NativeImpl implements Native {
     );
   }
 
-  BitcoinContext _wire2api_bitcoin_context(dynamic raw) {
+  BitcoinNetwork _wire2api_bitcoin_network(dynamic raw) {
     final arr = raw as List<dynamic>;
     if (arr.length != 1)
       throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
-    return BitcoinContext(
+    return BitcoinNetwork(
       bridge: this,
-      network: _wire2api_BitcoinNetwork(arr[0]),
+      field0: _wire2api_RBitcoinNetwork(arr[0]),
     );
   }
 
@@ -2370,13 +2427,25 @@ class NativeImpl implements Native {
 
   Wallet _wire2api_wallet(dynamic raw) {
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return Wallet(
       bridge: this,
-      inner: _wire2api_MutexFrostsnapWallet(arr[0]),
-      walletStreams: _wire2api_MutexBTreeMapKeyIdStreamSinkTxState(arr[1]),
-      chainSync: _wire2api_ChainSync(arr[2]),
+      inner: _wire2api_ArcMutexFrostsnapWallet(arr[0]),
+      walletStreams: _wire2api_ArcWalletStreams(arr[1]),
+      chainSync: _wire2api_ArcChainSync(arr[2]),
+      network: _wire2api_bitcoin_network(arr[3]),
+    );
+  }
+
+  WalletLoader _wire2api_wallet_loader(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return WalletLoader(
+      bridge: this,
+      directory: _wire2api_String(arr[0]),
+      loaded: _wire2api_MutexHashMapRBitcoinNetworkWallet(arr[1]),
     );
   }
 }

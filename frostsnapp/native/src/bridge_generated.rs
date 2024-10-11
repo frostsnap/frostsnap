@@ -147,7 +147,7 @@ fn wire_get_connected_device_impl(
     )
 }
 fn wire_load_impl(port_: MessagePort, db_file: impl Wire2Api<String> + UnwindSafe) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (Coordinator, Wallet, BitcoinContext), _>(
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, Coordinator, _>(
         WrapInfo {
             debug_name: "load",
             port: Some(port_),
@@ -163,18 +163,17 @@ fn wire_load_host_handles_serial_impl(
     port_: MessagePort,
     db_file: impl Wire2Api<String> + UnwindSafe,
 ) {
-    FLUTTER_RUST_BRIDGE_HANDLER
-        .wrap::<_, _, _, (Coordinator, FfiSerial, Wallet, BitcoinContext), _>(
-            WrapInfo {
-                debug_name: "load_host_handles_serial",
-                port: Some(port_),
-                mode: FfiCallMode::Normal,
-            },
-            move || {
-                let api_db_file = db_file.wire2api();
-                move |task_callback| load_host_handles_serial(api_db_file)
-            },
-        )
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (Coordinator, FfiSerial), _>(
+        WrapInfo {
+            debug_name: "load_host_handles_serial",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_db_file = db_file.wire2api();
+            move |task_callback| load_host_handles_serial(api_db_file)
+        },
+    )
 }
 fn wire_echo_key_id_impl(port_: MessagePort, key_id: impl Wire2Api<KeyId> + UnwindSafe) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, mirror_KeyId, _>(
@@ -442,6 +441,40 @@ fn wire_get_device__method__DeviceListState_impl(
         },
     )
 }
+fn wire_create__static_method__WalletLoader_impl(
+    port_: MessagePort,
+    directory: impl Wire2Api<String> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, WalletLoader, _>(
+        WrapInfo {
+            debug_name: "create__static_method__WalletLoader",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_directory = directory.wire2api();
+            move |task_callback| Result::<_, ()>::Ok(WalletLoader::create(api_directory))
+        },
+    )
+}
+fn wire_load__method__WalletLoader_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<WalletLoader> + UnwindSafe,
+    network: impl Wire2Api<BitcoinNetwork> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, Wallet, _>(
+        WrapInfo {
+            debug_name: "load__method__WalletLoader",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_network = network.wire2api();
+            move |task_callback| WalletLoader::load(&api_that, api_network)
+        },
+    )
+}
 fn wire_sub_tx_state__method__Wallet_impl(
     port_: MessagePort,
     that: impl Wire2Api<Wallet> + UnwindSafe,
@@ -633,6 +666,76 @@ fn wire_psbt_to_unsigned_tx__method__Wallet_impl(
             let api_psbt = psbt.wire2api();
             let api_key_id = key_id.wire2api();
             Wallet::psbt_to_unsigned_tx(&api_that, api_psbt, api_key_id)
+        },
+    )
+}
+fn wire_signet__static_method__BitcoinNetwork_impl() -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "signet__static_method__BitcoinNetwork",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || Result::<_, ()>::Ok(BitcoinNetwork::signet()),
+    )
+}
+fn wire_descriptor_for_key__method__BitcoinNetwork_impl(
+    that: impl Wire2Api<BitcoinNetwork> + UnwindSafe,
+    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "descriptor_for_key__method__BitcoinNetwork",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_key_id = key_id.wire2api();
+            Result::<_, ()>::Ok(BitcoinNetwork::descriptor_for_key(&api_that, api_key_id))
+        },
+    )
+}
+fn wire_validate_amount__method__BitcoinNetwork_impl(
+    that: impl Wire2Api<BitcoinNetwork> + UnwindSafe,
+    address: impl Wire2Api<String> + UnwindSafe,
+    value: impl Wire2Api<u64> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "validate_amount__method__BitcoinNetwork",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_address = address.wire2api();
+            let api_value = value.wire2api();
+            Result::<_, ()>::Ok(BitcoinNetwork::validate_amount(
+                &api_that,
+                api_address,
+                api_value,
+            ))
+        },
+    )
+}
+fn wire_validate_destination_address__method__BitcoinNetwork_impl(
+    that: impl Wire2Api<BitcoinNetwork> + UnwindSafe,
+    address: impl Wire2Api<String> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "validate_destination_address__method__BitcoinNetwork",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_address = address.wire2api();
+            Result::<_, ()>::Ok(BitcoinNetwork::validate_destination_address(
+                &api_that,
+                api_address,
+            ))
         },
     )
 }
@@ -1147,70 +1250,10 @@ fn wire_check_share_on_device__method__Coordinator_impl(
         },
     )
 }
-fn wire_descriptor_for_key__method__BitcoinContext_impl(
-    that: impl Wire2Api<BitcoinContext> + UnwindSafe,
-    key_id: impl Wire2Api<KeyId> + UnwindSafe,
-) -> support::WireSyncReturn {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
-        WrapInfo {
-            debug_name: "descriptor_for_key__method__BitcoinContext",
-            port: None,
-            mode: FfiCallMode::Sync,
-        },
-        move || {
-            let api_that = that.wire2api();
-            let api_key_id = key_id.wire2api();
-            Result::<_, ()>::Ok(BitcoinContext::descriptor_for_key(&api_that, api_key_id))
-        },
-    )
-}
-fn wire_validate_amount__method__BitcoinContext_impl(
-    that: impl Wire2Api<BitcoinContext> + UnwindSafe,
-    address: impl Wire2Api<String> + UnwindSafe,
-    value: impl Wire2Api<u64> + UnwindSafe,
-) -> support::WireSyncReturn {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
-        WrapInfo {
-            debug_name: "validate_amount__method__BitcoinContext",
-            port: None,
-            mode: FfiCallMode::Sync,
-        },
-        move || {
-            let api_that = that.wire2api();
-            let api_address = address.wire2api();
-            let api_value = value.wire2api();
-            Result::<_, ()>::Ok(BitcoinContext::validate_amount(
-                &api_that,
-                api_address,
-                api_value,
-            ))
-        },
-    )
-}
-fn wire_validate_destination_address__method__BitcoinContext_impl(
-    that: impl Wire2Api<BitcoinContext> + UnwindSafe,
-    address: impl Wire2Api<String> + UnwindSafe,
-) -> support::WireSyncReturn {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
-        WrapInfo {
-            debug_name: "validate_destination_address__method__BitcoinContext",
-            port: None,
-            mode: FfiCallMode::Sync,
-        },
-        move || {
-            let api_that = that.wire2api();
-            let api_address = address.wire2api();
-            Result::<_, ()>::Ok(BitcoinContext::validate_destination_address(
-                &api_that,
-                api_address,
-            ))
-        },
-    )
-}
 fn wire_effect__method__SignedTx_impl(
     that: impl Wire2Api<SignedTx> + UnwindSafe,
     key_id: impl Wire2Api<KeyId> + UnwindSafe,
-    network: impl Wire2Api<RustOpaque<bitcoin::Network>> + UnwindSafe,
+    network: impl Wire2Api<BitcoinNetwork> + UnwindSafe,
 ) -> support::WireSyncReturn {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
         WrapInfo {
@@ -1275,7 +1318,7 @@ fn wire_complete__method__UnsignedTx_impl(
 fn wire_effect__method__UnsignedTx_impl(
     that: impl Wire2Api<UnsignedTx> + UnwindSafe,
     key_id: impl Wire2Api<KeyId> + UnwindSafe,
-    network: impl Wire2Api<RustOpaque<bitcoin::Network>> + UnwindSafe,
+    network: impl Wire2Api<BitcoinNetwork> + UnwindSafe,
 ) -> support::WireSyncReturn {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
         WrapInfo {
@@ -1507,13 +1550,13 @@ impl rust2dart::IntoIntoDart<Address> for Address {
     }
 }
 
-impl support::IntoDart for BitcoinContext {
+impl support::IntoDart for BitcoinNetwork {
     fn into_dart(self) -> support::DartAbi {
-        vec![self.network.into_dart()].into_dart()
+        vec![self.0.into_dart()].into_dart()
     }
 }
-impl support::IntoDartExceptPrimitive for BitcoinContext {}
-impl rust2dart::IntoIntoDart<BitcoinContext> for BitcoinContext {
+impl support::IntoDartExceptPrimitive for BitcoinNetwork {}
+impl rust2dart::IntoIntoDart<BitcoinNetwork> for BitcoinNetwork {
     fn into_into_dart(self) -> Self {
         self
     }
@@ -2027,12 +2070,29 @@ impl support::IntoDart for Wallet {
             self.inner.into_dart(),
             self.wallet_streams.into_dart(),
             self.chain_sync.into_dart(),
+            self.network.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
 }
 impl support::IntoDartExceptPrimitive for Wallet {}
 impl rust2dart::IntoIntoDart<Wallet> for Wallet {
+    fn into_into_dart(self) -> Self {
+        self
+    }
+}
+
+impl support::IntoDart for WalletLoader {
+    fn into_dart(self) -> support::DartAbi {
+        vec![
+            self.directory.into_into_dart().into_dart(),
+            self.loaded.into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for WalletLoader {}
+impl rust2dart::IntoIntoDart<WalletLoader> for WalletLoader {
     fn into_into_dart(self) -> Self {
         self
     }

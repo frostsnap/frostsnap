@@ -14,9 +14,10 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class WalletHome extends StatefulWidget {
+  final Wallet wallet;
   final KeyId keyId;
 
-  const WalletHome({super.key, required this.keyId});
+  const WalletHome({super.key, required this.keyId, required this.wallet});
 
   @override
   _WalletHomeState createState() => _WalletHomeState();
@@ -25,11 +26,13 @@ class WalletHome extends StatefulWidget {
 class _WalletHomeState extends State<WalletHome> {
   int _selectedIndex = 0; // Tracks the current index for BottomNavigationBar
   late Stream<TxState> txStream;
+  late Wallet wallet;
 
   @override
   void initState() {
     super.initState();
-    txStream = wallet.subTxState(keyId: widget.keyId).toBehaviorSubject();
+    txStream =
+        widget.wallet.subTxState(keyId: widget.keyId).toBehaviorSubject();
   }
 
   // The widget options to display based on the selected index
@@ -38,11 +41,13 @@ class _WalletHomeState extends State<WalletHome> {
     switch (_selectedIndex) {
       case 0:
         // Pass any required parameters to the WalletActivity widget
-        return WalletActivity(keyId: widget.keyId, txStream: txStream);
+        return WalletActivity(
+            wallet: widget.wallet, keyId: widget.keyId, txStream: txStream);
       case 1:
         // Placeholder for the Send page
         return WalletSend(
             keyId: widget.keyId,
+            wallet: widget.wallet,
             txStream: txStream,
             onBroadcastNewTx: () {
               setState(() {
@@ -50,8 +55,7 @@ class _WalletHomeState extends State<WalletHome> {
               });
             });
       case 2:
-        // Placeholder for the Receive page
-        return WalletReceive(keyId: widget.keyId);
+        return WalletReceive(wallet: widget.wallet, keyId: widget.keyId);
       default:
         return Text('Page not found');
     }
@@ -120,7 +124,7 @@ class _WalletHomeState extends State<WalletHome> {
           onSelected: (String result) {
             if (result == 'export_descriptor') {
               _showQRCodeDialog(context,
-                  bitcoinContext.descriptorForKey(keyId: widget.keyId));
+                  widget.wallet.network.descriptorForKey(keyId: widget.keyId));
             }
           },
           itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
@@ -151,10 +155,14 @@ class _WalletHomeState extends State<WalletHome> {
 // Renaming WalletHomePage to WalletActivity
 class WalletActivity extends StatefulWidget {
   final KeyId keyId;
+  final Wallet wallet;
   final Stream<TxState> txStream;
 
   const WalletActivity(
-      {super.key, required this.keyId, required this.txStream});
+      {super.key,
+      required this.keyId,
+      required this.txStream,
+      required this.wallet});
 
   @override
   State<WalletActivity> createState() => _WalletActivity();
@@ -178,7 +186,7 @@ class _WalletActivity extends State<WalletActivity> {
     return Scaffold(
       floatingActionButton: SpinningSyncButton(onPressed: () async {
         final progressStream =
-            wallet.sync(keyId: widget.keyId).asBroadcastStream();
+            widget.wallet.sync(keyId: widget.keyId).asBroadcastStream();
         setState(() {
           syncProgressStream = progressStream;
           floatingProgressKey = UniqueKey();
@@ -193,7 +201,10 @@ class _WalletActivity extends State<WalletActivity> {
         Column(children: [
           Balance(txStream: widget.txStream),
           Expanded(
-              child: TxList(keyId: widget.keyId, txStream: widget.txStream))
+              child: TxList(
+                  wallet: widget.wallet,
+                  keyId: widget.keyId,
+                  txStream: widget.txStream))
         ]),
       ]),
     );
@@ -359,7 +370,12 @@ class _FloatingProgress extends State<FloatingProgress>
 class TxList extends StatelessWidget {
   final KeyId keyId;
   final Stream<TxState> txStream;
-  const TxList({super.key, required this.keyId, required this.txStream});
+  final Wallet wallet;
+  const TxList(
+      {super.key,
+      required this.keyId,
+      required this.txStream,
+      required this.wallet});
 
   @override
   Widget build(BuildContext context) {
@@ -446,8 +462,9 @@ class TxList extends StatelessWidget {
 
 class WalletReceive extends StatefulWidget {
   final KeyId keyId;
+  final Wallet wallet;
 
-  const WalletReceive({super.key, required this.keyId});
+  const WalletReceive({super.key, required this.keyId, required this.wallet});
 
   @override
   _WalletReceiveState createState() => _WalletReceiveState();
@@ -460,18 +477,18 @@ class _WalletReceiveState extends State<WalletReceive> {
   @override
   void initState() {
     super.initState();
-    _addresses = wallet.addressesState(keyId: widget.keyId);
+    _addresses = widget.wallet.addressesState(keyId: widget.keyId);
   }
 
   void _addAddress() async {
-    Address newAddress = await wallet.nextAddress(keyId: widget.keyId);
+    Address newAddress = await widget.wallet.nextAddress(keyId: widget.keyId);
     _addresses.insert(0, newAddress);
     _listKey.currentState?.insertItem(0);
   }
 
   @override
   Widget build(BuildContext context) {
-    final keyXpub = bitcoinContext.descriptorForKey(keyId: widget.keyId);
+    final keyXpub = widget.wallet.network.descriptorForKey(keyId: widget.keyId);
     return Scaffold(
         body: Padding(
       padding: const EdgeInsets.all(10.0),
@@ -526,12 +543,14 @@ class _WalletReceiveState extends State<WalletReceive> {
 class WalletSend extends StatefulWidget {
   final Stream<TxState> txStream;
   final KeyId keyId;
+  final Wallet wallet;
   final Function()? onBroadcastNewTx;
 
   const WalletSend({
     Key? key,
     required this.txStream,
     required this.keyId,
+    required this.wallet,
     this.onBroadcastNewTx,
   }) : super(key: key);
 
@@ -569,6 +588,7 @@ class _WalletSendState extends State<WalletSend> {
         onPressed: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) {
             return LoadPsbtPage(
+              wallet: widget.wallet,
               keyId: widget.keyId,
             );
           }));
@@ -592,8 +612,8 @@ class _WalletSendState extends State<WalletSend> {
                     decoration: InputDecoration(labelText: 'Address'),
                     validator: (value) {
                       // Use the provided predicate for address validation
-                      return bitcoinContext.validateDestinationAddress(
-                          address: value ?? '');
+                      return widget.wallet.network
+                          .validateDestinationAddress(address: value ?? '');
                     },
                     onSaved: (value) => _address = value ?? '',
                   ),
@@ -604,8 +624,8 @@ class _WalletSendState extends State<WalletSend> {
                     validator: (value) {
                       // Convert value to int and use the provided predicate for amount validation
                       final amount = int.tryParse(value ?? '') ?? 0;
-                      return bitcoinContext.validateAmount(
-                          address: _address, value: amount);
+                      return widget.wallet.network
+                          .validateAmount(address: _address, value: amount);
                     },
                     onSaved: (value) =>
                         _amount = int.tryParse(value ?? '') ?? 0,
@@ -660,7 +680,7 @@ class _WalletSendState extends State<WalletSend> {
                             : () async {
                                 if (_formKey.currentState!.validate()) {
                                   _formKey.currentState!.save();
-                                  final unsignedTx = await wallet.sendTo(
+                                  final unsignedTx = await widget.wallet.sendTo(
                                       keyId: widget.keyId,
                                       toAddress: _address,
                                       value: _amount,
@@ -671,6 +691,7 @@ class _WalletSendState extends State<WalletSend> {
                                       devices: selectedDevices.toList());
                                   if (context.mounted) {
                                     await signAndBroadcastWorkflowDialog(
+                                        wallet: widget.wallet,
                                         context: context,
                                         signingStream: signingStream,
                                         unsignedTx: unsignedTx,
@@ -696,10 +717,10 @@ Future<void> signAndBroadcastWorkflowDialog(
     {required BuildContext context,
     required Stream<SigningState> signingStream,
     required UnsignedTx unsignedTx,
+    required Wallet wallet,
     required KeyId keyId,
     Function()? onBroadcastNewTx}) async {
-  final effect =
-      unsignedTx.effect(keyId: keyId, network: bitcoinContext.network);
+  final effect = unsignedTx.effect(keyId: keyId, network: wallet.network);
 
   final signatures = await showSigningProgressDialog(
     context,
@@ -709,8 +730,8 @@ Future<void> signAndBroadcastWorkflowDialog(
   if (signatures != null) {
     final signedTx = await unsignedTx.complete(signatures: signatures);
     if (context.mounted) {
-      final wasBroadcast =
-          await showBroadcastConfirmDialog(context, keyId, signedTx);
+      final wasBroadcast = await showBroadcastConfirmDialog(context,
+          keyId: keyId, tx: signedTx, wallet: wallet);
       if (wasBroadcast) {
         onBroadcastNewTx?.call();
       }
@@ -818,13 +839,15 @@ Widget describeEffect(EffectOfTx effect) {
   return description;
 }
 
-Future<bool> showBroadcastConfirmDialog(
-    BuildContext context, KeyId keyId, SignedTx tx) async {
+Future<bool> showBroadcastConfirmDialog(BuildContext context,
+    {required KeyId keyId,
+    required SignedTx tx,
+    required Wallet wallet}) async {
   final wasBroadcast = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
-        final effect = tx.effect(keyId: keyId, network: bitcoinContext.network);
+        final effect = tx.effect(keyId: keyId, network: wallet.network);
         final effectWidget = EffectTable(effect: effect);
         return AlertDialog(
             title: Text("Broadcast?"),
