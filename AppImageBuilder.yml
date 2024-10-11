@@ -1,8 +1,6 @@
-# icon, executable, bare machine, build in release
-# appimage-builder recipe see https://appimage-builder.readthedocs.io for details
 version: 1
 script:
-- apt update
+- apt update && apt upgrade -y
 - which mksquashfs || apt install squashfs-tools
 - mkdir -p AppDir
 - cp -r frostsnapp/build/linux/x64/release/bundle/* AppDir
@@ -19,10 +17,12 @@ AppDir:
     - cp frostsnapp/com.frostsnapp.app.desktop AppDir/usr/share/applications/com.frostsnapp.app.desktop
     # Adding empty GL configuration files to avoid warnings
     - mkdir -p AppDir/etc
+    - cp -r /etc/fonts AppDir/etc/fonts
     - touch AppDir/etc/drirc
     - mkdir -p AppDir/home/$USER
     - touch AppDir/home/$USER/.drirc
     - chmod +x AppDir/Frostsnapp
+    - cp -r /usr/share/mime AppDir/usr/share/mime
   app_info:
     id: com.frostsnapp.app
     name: Frostsnapp
@@ -37,8 +37,6 @@ AppDir:
         key_url: 'http://keyserver.ubuntu.com/pks/lookup?op=get&search=0x3b4fe6acc0b21f32'
     include:
       - bash
-      # Some of these are from flutter docs, but most are from trial and error on ubuntu-latest.
-      # https://docs.flutter.dev/platform-integration/linux/building
       - libgtk-3-0
       - libblkid1
       - liblzma5
@@ -50,28 +48,11 @@ AppDir:
       - libxcb1
       - libwayland-cursor0
       - qtwayland5
-      # Additional libraries based on ldd output.
-      - gvfs
       - libglib2.0-0
-      - libdbus-1-3
-      - libcairo2
-      - libpangocairo-1.0-0
-      - libharfbuzz0b
-      - libatk1.0-0
-      - libepoxy0
-      - libfontconfig1
-      - libfontconfig1-dev
-      - libpangoft2-1.0-0
-      - libfribidi0
-      - libxkbcommon0
-      - libxrandr2
-      - libxinerama1
-      - libxext6
-      - libxi6
-      # claude
-      - libwayland-egl1-mesa
-      - libpng16-16
-      - libfreetype6
+      - gvfs-libs
+      - gvfs
+      - libglib2.0-dev
+      - fontconfig
   files:
     include: []
     exclude:
@@ -80,10 +61,12 @@ AppDir:
     - usr/share/doc/*/changelog.*
     - usr/share/doc/*/NEWS.*
     - usr/share/doc/*/TODO.*
-  runtime:
-    env:
-      LD_LIBRARY_PATH: "${APPDIR}/usr/lib:${APPDIR}/lib:${LD_LIBRARY_PATH}"
-      PATH: "${APPDIR}/usr/bin:${PATH}"
+  # runtime:
+  #   env:
+  #     LD_LIBRARY_PATH: "${APPDIR}/usr/lib:${APPDIR}/lib:${LD_LIBRARY_PATH}"
+  #     FONTCONFIG_PATH: "${APPDIR}/etc/fonts"
+  #     XDG_DATA_DIRS: "${APPDIR}/usr/share:${XDG_DATA_DIRS}"
+  #     GIO_MODULE_DIR: "${APPDIR}/usr/lib/gio/modules"
   test:
     fedora-30:
       image: appimagecrafters/tests-env:fedora-30
@@ -101,5 +84,5 @@ AppDir:
       image: appimagecrafters/tests-env:ubuntu-xenial
       command: ./AppRun
 AppImage:
-  arch: x86_64 
+  arch: x86_64
   update-information: guess

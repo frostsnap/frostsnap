@@ -70,7 +70,7 @@ jobs:
             artifact_name: frostsnapp-${{ github.sha }}.apk
             artifact_path: frostsnapp/build/app/outputs/apk/release/app-release.apk
             name: Build Android APK
-          - os: ubuntu-latest
+          - os: ubuntu-20.04
             build_command: linux
             artifact_name: Frostsnapp-${{ github.sha }}-x64.AppImage
             artifact_path: Frostsnapp-latest-x86_64.AppImage
@@ -116,10 +116,11 @@ jobs:
           ndk-version: r25c
 
       - name: Setup (Linux)
-        if: matrix.os == 'ubuntu-latest' && matrix.build_command == 'linux'
+        if: matrix.build_command == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libstdc++-12-dev libgtk-3-0 libgtk-3-dev libudev-dev libarchive-tools qtbase5-dev qt5-qmake qtdeclarative5-dev cmake
+          sudo apt-get install -y ninja-build glibc-source libc6 libgtk-3-0 libgtk-3-dev libudev-dev libarchive-tools qtbase5-dev qt5-qmake qtdeclarative5-dev cmake
+        # sudo apt-get install -y ninja-build libstdc++-12-dev libgtk-3-0 libgtk-3-dev libudev-dev libarchive-tools qtbase5-dev qt5-qmake qtdeclarative5-dev cmake
       
       - name: Setup (macOS)
         if: matrix.os == 'macos-latest'
@@ -136,7 +137,7 @@ jobs:
         run: just frostsnapp/build appbundle --release
       
       - name: Build AppImage (Linux)
-        if: matrix.os == 'ubuntu-latest' && matrix.build_command == 'linux'
+        if: matrix.build_command == 'linux'
         uses: AppImageCrafters/build-appimage-action@master
         env:
           UPDATE_INFO: frostsnapp-${{ github.sha }}-x86_64.AppImage.zsync
