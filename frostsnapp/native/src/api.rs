@@ -6,6 +6,7 @@ pub use crate::FfiCoordinator;
 pub use crate::{FfiQrEncoder, FfiQrReader, QrDecoderStatus};
 use anyhow::{anyhow, Context, Result};
 pub use bitcoin::psbt::Psbt as BitcoinPsbt;
+pub use bitcoin::Network as RBitcoinNetwork;
 pub use bitcoin::Transaction as RTransaction;
 use flutter_rust_bridge::{frb, RustOpaque, StreamSink, SyncReturn};
 pub use frostsnap_coordinator::bitcoin::wallet::ConfirmationTime;
@@ -23,8 +24,11 @@ pub use frostsnap_core::message::EncodedSignature;
 pub use frostsnap_core::{DeviceId, FrostKeyExt, KeyId, SignTask};
 use lazy_static::lazy_static;
 use sha2::Digest;
+use std::collections::hash_map::Entry;
 pub use std::collections::BTreeMap;
+pub use std::collections::HashMap;
 use std::ops::Deref;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 pub use std::sync::{Mutex, RwLock};
@@ -405,13 +409,71 @@ impl DeviceListState {
     }
 }
 
+pub struct WalletLoader {
+    pub directory: String,
+    pub loaded: RustOpaque<Mutex<HashMap<RBitcoinNetwork, Wallet>>>,
+}
+
+impl WalletLoader {
+    pub fn create(directory: String) -> WalletLoader {
+        Self {
+            directory,
+            loaded: RustOpaque::new(Default::default()),
+        }
+    }
+
+    pub fn load(&self, network: BitcoinNetwork) -> Result<Wallet> {
+        let mut loaded = self.loaded.lock().unwrap();
+        let wallet = match loaded.entry(*network.0) {
+            Entry::Occupied(occupied) => occupied.get().clone(),
+            Entry::Vacant(vacant) => {
+                let mut db_file = PathBuf::from_str(&self.directory)?;
+                db_file.push(format!("wallet-{}.sql", (*network.0)));
+                vacant
+                    .insert(Wallet::load_or_new(db_file, network)?)
+                    .clone()
+            }
+        };
+
+        Ok(wallet)
+    }
+}
+
+pub type WalletStreams = Mutex<BTreeMap<KeyId, StreamSink<TxState>>>;
+
+#[derive(Clone)]
 pub struct Wallet {
-    pub inner: RustOpaque<Mutex<FrostsnapWallet>>,
-    pub wallet_streams: RustOpaque<Mutex<BTreeMap<KeyId, StreamSink<TxState>>>>,
-    pub chain_sync: RustOpaque<ChainSync>,
+    pub inner: RustOpaque<Arc<Mutex<FrostsnapWallet>>>,
+    pub wallet_streams: RustOpaque<Arc<WalletStreams>>,
+    pub chain_sync: RustOpaque<Arc<ChainSync>>,
+    pub network: BitcoinNetwork,
 }
 
 impl Wallet {
+    fn load_or_new(db_file: impl AsRef<Path>, network: BitcoinNetwork) -> Result<Wallet> {
+        let db_file = db_file.as_ref();
+        let db = rusqlite::Connection::open(db_file).context(format!(
+            "failed to load database from {}",
+            db_file.display()
+        ))?;
+
+        let db = Arc::new(Mutex::new(db));
+
+        let wallet = FrostsnapWallet::load_or_init(db.clone(), *network.0)
+            .with_context(|| format!("loading wallet from data in {}", db_file.display()))?;
+
+        let chain_sync = ChainSync::new(*network.0)?;
+
+        let wallet = Wallet {
+            inner: RustOpaque::new(Arc::new(Mutex::new(wallet))),
+            chain_sync: RustOpaque::new(Arc::new(chain_sync)),
+            wallet_streams: RustOpaque::new(Default::default()),
+            network,
+        };
+
+        Ok(wallet)
+    }
+
     pub fn sub_tx_state(&self, key_id: KeyId, stream: StreamSink<TxState>) -> Result<()> {
         stream.add(self.tx_state(key_id).0);
         if let Some(existing) = self.wallet_streams.lock().unwrap().insert(key_id, stream) {
@@ -614,47 +676,81 @@ impl Wallet {
     }
 }
 
-pub fn load(db_file: String) -> anyhow::Result<(Coordinator, Wallet, BitcoinContext)> {
+pub fn load(db_file: String) -> anyhow::Result<Coordinator> {
     let usb_manager = UsbSerialManager::new(Box::new(DesktopSerial), crate::FIRMWARE);
     _load(db_file, usb_manager)
 }
 
-pub fn load_host_handles_serial(
-    db_file: String,
-) -> anyhow::Result<(Coordinator, FfiSerial, Wallet, BitcoinContext)> {
+pub fn load_host_handles_serial(db_file: String) -> anyhow::Result<(Coordinator, FfiSerial)> {
     let ffi_serial = FfiSerial::default();
     let usb_manager = UsbSerialManager::new(Box::new(ffi_serial.clone()), crate::FIRMWARE);
-    let (coord, wallet, bitcoin_context) = _load(db_file, usb_manager)?;
-    Ok((coord, ffi_serial, wallet, bitcoin_context))
+    let coord = _load(db_file, usb_manager)?;
+    Ok((coord, ffi_serial))
 }
 
-fn _load(
-    db_file: String,
-    usb_serial_manager: UsbSerialManager,
-) -> Result<(Coordinator, Wallet, BitcoinContext)> {
-    event!(Level::INFO, path = db_file, "initializing database");
+#[derive(Debug, Clone)]
+pub struct BitcoinNetwork(pub RustOpaque<RBitcoinNetwork>);
 
+/// The point of this is to keep bitcoin API functionalities that don't require the wallet separate
+/// from it.
+impl BitcoinNetwork {
+    pub fn signet() -> SyncReturn<BitcoinNetwork> {
+        SyncReturn(Self(RustOpaque::new(bitcoin::Network::Signet)))
+    }
+
+    pub fn descriptor_for_key(&self, key_id: KeyId) -> SyncReturn<String> {
+        let descriptor = frostsnap_coordinator::bitcoin::multi_x_descriptor_for_account(
+            key_id.to_root_pubkey().expect("valid key id"),
+            frostsnap_core::tweak::Account::Segwitv1,
+            *self.0,
+        );
+        SyncReturn(descriptor.to_string())
+    }
+
+    pub fn validate_amount(&self, address: String, value: u64) -> SyncReturn<Option<String>> {
+        SyncReturn(match bitcoin::Address::from_str(&address) {
+            Ok(address) => match address.require_network(*self.0) {
+                Ok(address) => {
+                    let dust_value = address.script_pubkey().minimal_non_dust().to_sat();
+                    if value < dust_value {
+                        event!(
+                            Level::DEBUG,
+                            value = value,
+                            dust_value = dust_value,
+                            "address validation rejected"
+                        );
+                        Some(format!("Too small to send. Must be at least {dust_value}"))
+                    } else {
+                        None
+                    }
+                }
+                Err(_e) => None,
+            },
+            Err(_e) => None,
+        })
+    }
+
+    pub fn validate_destination_address(&self, address: String) -> SyncReturn<Option<String>> {
+        SyncReturn(match bitcoin::Address::from_str(&address) {
+            Ok(address) => match address.require_network(*self.0) {
+                Ok(_) => None,
+                Err(e) => Some(e.to_string()),
+            },
+            Err(e) => Some(e.to_string()),
+        })
+    }
+}
+
+fn _load(db_file: String, usb_serial_manager: UsbSerialManager) -> Result<Coordinator> {
+    event!(Level::INFO, path = db_file, "initializing database");
     let db = rusqlite::Connection::open(&db_file)
         .context(format!("failed to load database from {db_file}"))?;
 
     let db = Arc::new(Mutex::new(db));
 
     let coordinator = FfiCoordinator::new(db.clone(), usb_serial_manager)?;
-    let wallet = FrostsnapWallet::load_or_init(db.clone(), bitcoin::Network::Signet)
-        .with_context(|| format!("loading wallet from data in {db_file}"))?;
     let coordinator = Coordinator(RustOpaque::new(coordinator));
-    let chain_sync = ChainSync::new(wallet.network)?;
-    let bitcoin_context = BitcoinContext {
-        network: RustOpaque::new(wallet.network),
-    };
-
-    let wallet = Wallet {
-        inner: RustOpaque::new(Mutex::new(wallet)),
-        chain_sync: RustOpaque::new(chain_sync),
-        wallet_streams: RustOpaque::new(Default::default()),
-    };
-
-    Ok((coordinator, wallet, bitcoin_context))
+    Ok(coordinator)
 }
 
 #[derive(Debug, Clone)]
@@ -860,56 +956,6 @@ impl Coordinator {
     }
 }
 
-/// The point of this is to keep bitcoin API functionalities that don't require the wallet separate
-/// from it.
-pub struct BitcoinContext {
-    pub network: RustOpaque<bitcoin::Network>,
-}
-
-impl BitcoinContext {
-    pub fn descriptor_for_key(&self, key_id: KeyId) -> SyncReturn<String> {
-        let descriptor = frostsnap_coordinator::bitcoin::multi_x_descriptor_for_account(
-            key_id.to_root_pubkey().expect("valid key id"),
-            frostsnap_core::tweak::Account::Segwitv1,
-            *self.network,
-        );
-        SyncReturn(descriptor.to_string())
-    }
-
-    pub fn validate_amount(&self, address: String, value: u64) -> SyncReturn<Option<String>> {
-        SyncReturn(match bitcoin::Address::from_str(&address) {
-            Ok(address) => match address.require_network(*self.network) {
-                Ok(address) => {
-                    let dust_value = address.script_pubkey().minimal_non_dust().to_sat();
-                    if value < dust_value {
-                        event!(
-                            Level::DEBUG,
-                            value = value,
-                            dust_value = dust_value,
-                            "address validation rejected"
-                        );
-                        Some(format!("Too small to send. Must be at least {dust_value}"))
-                    } else {
-                        None
-                    }
-                }
-                Err(_e) => None,
-            },
-            Err(_e) => None,
-        })
-    }
-
-    pub fn validate_destination_address(&self, address: String) -> SyncReturn<Option<String>> {
-        SyncReturn(match bitcoin::Address::from_str(&address) {
-            Ok(address) => match address.require_network(*self.network) {
-                Ok(_) => None,
-                Err(e) => Some(e.to_string()),
-            },
-            Err(e) => Some(e.to_string()),
-        })
-    }
-}
-
 #[derive(Clone)]
 pub struct UnsignedTx {
     pub template_tx: RustOpaque<frostsnap_core::bitcoin_transaction::TransactionTemplate>,
@@ -921,11 +967,7 @@ pub struct SignedTx {
 }
 
 impl SignedTx {
-    pub fn effect(
-        &self,
-        key_id: KeyId,
-        network: RustOpaque<bitcoin::Network>,
-    ) -> Result<SyncReturn<EffectOfTx>> {
+    pub fn effect(&self, key_id: KeyId, network: BitcoinNetwork) -> Result<SyncReturn<EffectOfTx>> {
         self.unsigned_tx.effect(key_id, network)
     }
 }
@@ -971,11 +1013,7 @@ impl UnsignedTx {
         }
     }
 
-    pub fn effect(
-        &self,
-        key_id: KeyId,
-        network: RustOpaque<bitcoin::Network>,
-    ) -> Result<SyncReturn<EffectOfTx>> {
+    pub fn effect(&self, key_id: KeyId, network: BitcoinNetwork) -> Result<SyncReturn<EffectOfTx>> {
         use frostsnap_core::bitcoin_transaction::RootOwner;
         let fee = self
             .template_tx
@@ -995,7 +1033,7 @@ impl UnsignedTx {
                 RootOwner::Foreign(spk) => {
                     if value > 0 {
                         Some(Ok((
-                            bitcoin::Address::from_script(spk.as_script(), *network)
+                            bitcoin::Address::from_script(spk.as_script(), *network.0)
                                 .expect("will have address form")
                                 .to_string(),
                             value as u64,

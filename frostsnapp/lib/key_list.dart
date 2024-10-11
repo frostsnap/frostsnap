@@ -108,9 +108,11 @@ class _KeyCard extends State<KeyCard> {
         child: Text("Sign"));
 
     final Widget walletButton = ElevatedButton(
-        onPressed: () {
+        onPressed: () async {
+          final wallet = await walletLoader.load(
+              network: BitcoinNetwork.signet(bridge: api));
           Navigator.push(context, MaterialPageRoute(builder: (context) {
-            return WalletHome(keyId: keyId);
+            return WalletHome(keyId: keyId, wallet: wallet);
           }));
         },
         child: Text("₿"));
@@ -132,7 +134,11 @@ class _KeyCard extends State<KeyCard> {
                 }
               case SignTaskDescription_Transaction(:final unsignedTx):
                 {
+                  final wallet = await walletLoader.load(
+                      network: BitcoinNetwork.signet(bridge: api));
+
                   await signAndBroadcastWorkflowDialog(
+                      wallet: wallet,
                       context: context,
                       signingStream: signingStream,
                       unsignedTx: unsignedTx,

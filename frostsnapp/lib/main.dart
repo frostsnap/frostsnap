@@ -1,5 +1,4 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/key_list.dart';
@@ -40,25 +39,21 @@ void main() async {
 
   try {
     final appDir = await getApplicationSupportDirectory();
-    final dbFile = '${appDir.path}/frostsnap.sqlite';
+    final coordDbFile = '${appDir.path}/frostsnap.sqlite';
     if (Platform.isAndroid) {
-      final (coord_, ffiserial, wallet_, bitcoinContext_) =
-          await api.loadHostHandlesSerial(dbFile: dbFile);
+      final (coord_, ffiserial) =
+          await api.loadHostHandlesSerial(dbFile: coordDbFile);
       globalHostPortHandler = HostPortHandler(ffiserial);
       coord = coord_;
-      wallet = wallet_;
-      bitcoinContext = bitcoinContext_;
       // check for devices that were plugged in before the app even started
       globalHostPortHandler.scanDevices();
     } else {
-      final (coord_, wallet_, bitcoinContext_) = await api.load(dbFile: dbFile);
-      globalHostPortHandler = HostPortHandler(null);
+      final coord_ = await api.load(dbFile: coordDbFile);
       coord = coord_;
-      wallet = wallet_;
-      bitcoinContext = bitcoinContext_;
+      globalHostPortHandler = HostPortHandler(null);
     }
-    api.log(level: LogLevel.Info, message: "Starting coordinator thread");
-
+    walletLoader =
+        await WalletLoader.create(bridge: api, directory: appDir.path)!;
     coord.startThread();
   } catch (error, stacktrace) {
     api.log(level: LogLevel.Info, message: "startup failed: $error");
@@ -85,6 +80,7 @@ void main() async {
   api.log(level: LogLevel.Info, message: "starting app");
   runApp(FrostsnapContext(
       logStream: logStream, child: MyApp(startupError: startupError)));
+  runApp(MyApp(startupError: startupError));
 }
 
 class MyApp extends StatelessWidget {
