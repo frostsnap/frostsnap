@@ -1697,6 +1697,44 @@ class NativeWire implements FlutterRustBridgeWireBase {
       _wire_signet__static_method__BitcoinNetworkPtr
           .asFunction<WireSyncReturn Function()>();
 
+  WireSyncReturn wire_mainnet__static_method__BitcoinNetwork() {
+    return _wire_mainnet__static_method__BitcoinNetwork();
+  }
+
+  late final _wire_mainnet__static_method__BitcoinNetworkPtr =
+      _lookup<ffi.NativeFunction<WireSyncReturn Function()>>(
+          'wire_mainnet__static_method__BitcoinNetwork');
+  late final _wire_mainnet__static_method__BitcoinNetwork =
+      _wire_mainnet__static_method__BitcoinNetworkPtr
+          .asFunction<WireSyncReturn Function()>();
+
+  WireSyncReturn wire_from_string__static_method__BitcoinNetwork(
+    ffi.Pointer<wire_uint_8_list> string,
+  ) {
+    return _wire_from_string__static_method__BitcoinNetwork(
+      string,
+    );
+  }
+
+  late final _wire_from_string__static_method__BitcoinNetworkPtr = _lookup<
+          ffi.NativeFunction<
+              WireSyncReturn Function(ffi.Pointer<wire_uint_8_list>)>>(
+      'wire_from_string__static_method__BitcoinNetwork');
+  late final _wire_from_string__static_method__BitcoinNetwork =
+      _wire_from_string__static_method__BitcoinNetworkPtr
+          .asFunction<WireSyncReturn Function(ffi.Pointer<wire_uint_8_list>)>();
+
+  WireSyncReturn wire_supported_networks__static_method__BitcoinNetwork() {
+    return _wire_supported_networks__static_method__BitcoinNetwork();
+  }
+
+  late final _wire_supported_networks__static_method__BitcoinNetworkPtr =
+      _lookup<ffi.NativeFunction<WireSyncReturn Function()>>(
+          'wire_supported_networks__static_method__BitcoinNetwork');
+  late final _wire_supported_networks__static_method__BitcoinNetwork =
+      _wire_supported_networks__static_method__BitcoinNetworkPtr
+          .asFunction<WireSyncReturn Function()>();
+
   WireSyncReturn wire_name__method__BitcoinNetwork(
     ffi.Pointer<wire_BitcoinNetwork> that,
   ) {

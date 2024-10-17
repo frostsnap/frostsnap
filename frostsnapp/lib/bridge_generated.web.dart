@@ -716,6 +716,15 @@ class NativeWasmModule implements WasmModule {
   external dynamic /* List<dynamic> */
       wire_signet__static_method__BitcoinNetwork();
 
+  external dynamic /* List<dynamic> */
+      wire_mainnet__static_method__BitcoinNetwork();
+
+  external dynamic /* List<dynamic>? */
+      wire_from_string__static_method__BitcoinNetwork(String string);
+
+  external dynamic /* List<dynamic> */
+      wire_supported_networks__static_method__BitcoinNetwork();
+
   external dynamic /* String */ wire_name__method__BitcoinNetwork(
       List<dynamic> that);
 
@@ -1129,6 +1138,17 @@ class NativeWire extends FlutterRustBridgeWasmWireBase<NativeWasmModule> {
 
   dynamic /* List<dynamic> */ wire_signet__static_method__BitcoinNetwork() =>
       wasmModule.wire_signet__static_method__BitcoinNetwork();
+
+  dynamic /* List<dynamic> */ wire_mainnet__static_method__BitcoinNetwork() =>
+      wasmModule.wire_mainnet__static_method__BitcoinNetwork();
+
+  dynamic /* List<dynamic>? */ wire_from_string__static_method__BitcoinNetwork(
+          String string) =>
+      wasmModule.wire_from_string__static_method__BitcoinNetwork(string);
+
+  dynamic /* List<dynamic> */
+      wire_supported_networks__static_method__BitcoinNetwork() =>
+          wasmModule.wire_supported_networks__static_method__BitcoinNetwork();
 
   dynamic /* String */ wire_name__method__BitcoinNetwork(List<dynamic> that) =>
       wasmModule.wire_name__method__BitcoinNetwork(that);

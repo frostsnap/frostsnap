@@ -701,6 +701,27 @@ impl BitcoinNetwork {
         SyncReturn(Self(RustOpaque::new(bitcoin::Network::Signet)))
     }
 
+    pub fn mainnet() -> SyncReturn<BitcoinNetwork> {
+        SyncReturn(Self(RustOpaque::new(bitcoin::Network::Bitcoin)))
+    }
+
+    pub fn from_string(string: String) -> SyncReturn<Option<BitcoinNetwork>> {
+        SyncReturn(
+            bitcoin::Network::from_str(&string)
+                .ok()
+                .map(|network| Self(RustOpaque::new(network))),
+        )
+    }
+
+    pub fn supported_networks() -> SyncReturn<Vec<BitcoinNetwork>> {
+        SyncReturn(
+            SUPPORTED_NETWORKS
+                .into_iter()
+                .map(BitcoinNetwork::from)
+                .collect(),
+        )
+    }
+
     pub fn name(&self) -> SyncReturn<String> {
         SyncReturn(self.0.to_string())
     }

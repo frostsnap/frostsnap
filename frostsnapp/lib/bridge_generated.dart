@@ -760,6 +760,66 @@ class NativeImpl implements Native {
             argNames: [],
           );
 
+  BitcoinNetwork mainnetStaticMethodBitcoinNetwork({dynamic hint}) {
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () =>
+          _platform.inner.wire_mainnet__static_method__BitcoinNetwork(),
+      parseSuccessData: _wire2api_bitcoin_network,
+      parseErrorData: null,
+      constMeta: kMainnetStaticMethodBitcoinNetworkConstMeta,
+      argValues: [],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kMainnetStaticMethodBitcoinNetworkConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "mainnet__static_method__BitcoinNetwork",
+            argNames: [],
+          );
+
+  BitcoinNetwork? fromStringStaticMethodBitcoinNetwork(
+      {required String string, dynamic hint}) {
+    var arg0 = _platform.api2wire_String(string);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () =>
+          _platform.inner.wire_from_string__static_method__BitcoinNetwork(arg0),
+      parseSuccessData: _wire2api_opt_box_autoadd_bitcoin_network,
+      parseErrorData: null,
+      constMeta: kFromStringStaticMethodBitcoinNetworkConstMeta,
+      argValues: [string],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kFromStringStaticMethodBitcoinNetworkConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "from_string__static_method__BitcoinNetwork",
+            argNames: ["string"],
+          );
+
+  List<BitcoinNetwork> supportedNetworksStaticMethodBitcoinNetwork(
+      {dynamic hint}) {
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner
+          .wire_supported_networks__static_method__BitcoinNetwork(),
+      parseSuccessData: _wire2api_list_bitcoin_network,
+      parseErrorData: null,
+      constMeta: kSupportedNetworksStaticMethodBitcoinNetworkConstMeta,
+      argValues: [],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kSupportedNetworksStaticMethodBitcoinNetworkConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "supported_networks__static_method__BitcoinNetwork",
+            argNames: [],
+          );
+
   String nameMethodBitcoinNetwork(
       {required BitcoinNetwork that, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_bitcoin_network(that);
@@ -2180,6 +2240,10 @@ class NativeImpl implements Native {
     return raw as bool;
   }
 
+  BitcoinNetwork _wire2api_box_autoadd_bitcoin_network(dynamic raw) {
+    return _wire2api_bitcoin_network(raw);
+  }
+
   bool _wire2api_box_autoadd_bool(dynamic raw) {
     return raw as bool;
   }
@@ -2488,6 +2552,10 @@ class NativeImpl implements Native {
     return (raw as List<dynamic>).map(_wire2api_address).toList();
   }
 
+  List<BitcoinNetwork> _wire2api_list_bitcoin_network(dynamic raw) {
+    return (raw as List<dynamic>).map(_wire2api_bitcoin_network).toList();
+  }
+
   List<ConnectedDevice> _wire2api_list_connected_device(dynamic raw) {
     return (raw as List<dynamic>).map(_wire2api_connected_device).toList();
   }
@@ -2518,6 +2586,10 @@ class NativeImpl implements Native {
 
   String? _wire2api_opt_String(dynamic raw) {
     return raw == null ? null : _wire2api_String(raw);
+  }
+
+  BitcoinNetwork? _wire2api_opt_box_autoadd_bitcoin_network(dynamic raw) {
+    return raw == null ? null : _wire2api_box_autoadd_bitcoin_network(raw);
   }
 
   bool? _wire2api_opt_box_autoadd_bool(dynamic raw) {

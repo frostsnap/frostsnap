@@ -262,6 +262,24 @@ pub extern "C" fn wire_signet__static_method__BitcoinNetwork() -> support::WireS
 }
 
 #[no_mangle]
+pub extern "C" fn wire_mainnet__static_method__BitcoinNetwork() -> support::WireSyncReturn {
+    wire_mainnet__static_method__BitcoinNetwork_impl()
+}
+
+#[no_mangle]
+pub extern "C" fn wire_from_string__static_method__BitcoinNetwork(
+    string: *mut wire_uint_8_list,
+) -> support::WireSyncReturn {
+    wire_from_string__static_method__BitcoinNetwork_impl(string)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_supported_networks__static_method__BitcoinNetwork() -> support::WireSyncReturn
+{
+    wire_supported_networks__static_method__BitcoinNetwork_impl()
+}
+
+#[no_mangle]
 pub extern "C" fn wire_name__method__BitcoinNetwork(
     that: *mut wire_BitcoinNetwork,
 ) -> support::WireSyncReturn {
