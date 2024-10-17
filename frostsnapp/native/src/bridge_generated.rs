@@ -645,6 +645,41 @@ fn wire_signet__static_method__BitcoinNetwork_impl() -> support::WireSyncReturn 
         move || Result::<_, ()>::Ok(BitcoinNetwork::signet()),
     )
 }
+fn wire_mainnet__static_method__BitcoinNetwork_impl() -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "mainnet__static_method__BitcoinNetwork",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || Result::<_, ()>::Ok(BitcoinNetwork::mainnet()),
+    )
+}
+fn wire_from_string__static_method__BitcoinNetwork_impl(
+    string: impl Wire2Api<String> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "from_string__static_method__BitcoinNetwork",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_string = string.wire2api();
+            Result::<_, ()>::Ok(BitcoinNetwork::from_string(api_string))
+        },
+    )
+}
+fn wire_supported_networks__static_method__BitcoinNetwork_impl() -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "supported_networks__static_method__BitcoinNetwork",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || Result::<_, ()>::Ok(BitcoinNetwork::supported_networks()),
+    )
+}
 fn wire_name__method__BitcoinNetwork_impl(
     that: impl Wire2Api<BitcoinNetwork> + UnwindSafe,
 ) -> support::WireSyncReturn {

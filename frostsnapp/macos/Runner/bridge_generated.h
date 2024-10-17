@@ -372,6 +372,12 @@ WireSyncReturn wire_psbt_to_unsigned_tx__method__Wallet(struct wire_Wallet *that
 
 WireSyncReturn wire_signet__static_method__BitcoinNetwork(void);
 
+WireSyncReturn wire_mainnet__static_method__BitcoinNetwork(void);
+
+WireSyncReturn wire_from_string__static_method__BitcoinNetwork(struct wire_uint_8_list *string);
+
+WireSyncReturn wire_supported_networks__static_method__BitcoinNetwork(void);
+
 WireSyncReturn wire_name__method__BitcoinNetwork(struct wire_BitcoinNetwork *that);
 
 WireSyncReturn wire_is_mainnet__method__BitcoinNetwork(struct wire_BitcoinNetwork *that);
@@ -774,6 +780,9 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_broadcast_tx__method__Wallet);
     dummy_var ^= ((int64_t) (void*) wire_psbt_to_unsigned_tx__method__Wallet);
     dummy_var ^= ((int64_t) (void*) wire_signet__static_method__BitcoinNetwork);
+    dummy_var ^= ((int64_t) (void*) wire_mainnet__static_method__BitcoinNetwork);
+    dummy_var ^= ((int64_t) (void*) wire_from_string__static_method__BitcoinNetwork);
+    dummy_var ^= ((int64_t) (void*) wire_supported_networks__static_method__BitcoinNetwork);
     dummy_var ^= ((int64_t) (void*) wire_name__method__BitcoinNetwork);
     dummy_var ^= ((int64_t) (void*) wire_is_mainnet__method__BitcoinNetwork);
     dummy_var ^= ((int64_t) (void*) wire_descriptor_for_key__method__BitcoinNetwork);

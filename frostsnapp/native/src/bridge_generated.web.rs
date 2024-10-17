@@ -225,6 +225,21 @@ pub fn wire_signet__static_method__BitcoinNetwork() -> support::WireSyncReturn {
 }
 
 #[wasm_bindgen]
+pub fn wire_mainnet__static_method__BitcoinNetwork() -> support::WireSyncReturn {
+    wire_mainnet__static_method__BitcoinNetwork_impl()
+}
+
+#[wasm_bindgen]
+pub fn wire_from_string__static_method__BitcoinNetwork(string: String) -> support::WireSyncReturn {
+    wire_from_string__static_method__BitcoinNetwork_impl(string)
+}
+
+#[wasm_bindgen]
+pub fn wire_supported_networks__static_method__BitcoinNetwork() -> support::WireSyncReturn {
+    wire_supported_networks__static_method__BitcoinNetwork_impl()
+}
+
+#[wasm_bindgen]
 pub fn wire_name__method__BitcoinNetwork(that: JsValue) -> support::WireSyncReturn {
     wire_name__method__BitcoinNetwork_impl(that)
 }

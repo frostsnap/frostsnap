@@ -203,6 +203,23 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kSignetStaticMethodBitcoinNetworkConstMeta;
 
+  BitcoinNetwork mainnetStaticMethodBitcoinNetwork({dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta
+      get kMainnetStaticMethodBitcoinNetworkConstMeta;
+
+  BitcoinNetwork? fromStringStaticMethodBitcoinNetwork(
+      {required String string, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta
+      get kFromStringStaticMethodBitcoinNetworkConstMeta;
+
+  List<BitcoinNetwork> supportedNetworksStaticMethodBitcoinNetwork(
+      {dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta
+      get kSupportedNetworksStaticMethodBitcoinNetworkConstMeta;
+
   String nameMethodBitcoinNetwork({required BitcoinNetwork that, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kNameMethodBitcoinNetworkConstMeta;
@@ -1005,6 +1022,17 @@ class BitcoinNetwork {
 
   static BitcoinNetwork signet({required Native bridge, dynamic hint}) =>
       bridge.signetStaticMethodBitcoinNetwork(hint: hint);
+
+  static BitcoinNetwork mainnet({required Native bridge, dynamic hint}) =>
+      bridge.mainnetStaticMethodBitcoinNetwork(hint: hint);
+
+  static BitcoinNetwork? fromString(
+          {required Native bridge, required String string, dynamic hint}) =>
+      bridge.fromStringStaticMethodBitcoinNetwork(string: string, hint: hint);
+
+  static List<BitcoinNetwork> supportedNetworks(
+          {required Native bridge, dynamic hint}) =>
+      bridge.supportedNetworksStaticMethodBitcoinNetwork(hint: hint);
 
   String name({dynamic hint}) => bridge.nameMethodBitcoinNetwork(
         that: this,
