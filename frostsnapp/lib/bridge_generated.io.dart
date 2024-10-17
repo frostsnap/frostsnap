@@ -18,17 +18,18 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
 // Section: api2wire
 
   @protected
-  wire_ArcChainSync api2wire_ArcChainSync(ArcChainSync raw) {
-    final ptr = inner.new_ArcChainSync();
-    _api_fill_to_wire_ArcChainSync(raw, ptr);
-    return ptr;
-  }
-
-  @protected
   wire_ArcMutexFrostsnapWallet api2wire_ArcMutexFrostsnapWallet(
       ArcMutexFrostsnapWallet raw) {
     final ptr = inner.new_ArcMutexFrostsnapWallet();
     _api_fill_to_wire_ArcMutexFrostsnapWallet(raw, ptr);
+    return ptr;
+  }
+
+  @protected
+  wire_ArcMutexRusqliteConnection api2wire_ArcMutexRusqliteConnection(
+      ArcMutexRusqliteConnection raw) {
+    final ptr = inner.new_ArcMutexRusqliteConnection();
+    _api_fill_to_wire_ArcMutexRusqliteConnection(raw, ptr);
     return ptr;
   }
 
@@ -58,6 +59,13 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   wire_BitcoinPsbt api2wire_BitcoinPsbt(BitcoinPsbt raw) {
     final ptr = inner.new_BitcoinPsbt();
     _api_fill_to_wire_BitcoinPsbt(raw, ptr);
+    return ptr;
+  }
+
+  @protected
+  wire_ChainClient api2wire_ChainClient(ChainClient raw) {
+    final ptr = inner.new_ChainClient();
+    _api_fill_to_wire_ChainClient(raw, ptr);
     return ptr;
   }
 
@@ -102,11 +110,59 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   }
 
   @protected
+  wire_HashMapRBitcoinNetworkChainClient
+      api2wire_HashMapRBitcoinNetworkChainClient(
+          HashMapRBitcoinNetworkChainClient raw) {
+    final ptr = inner.new_HashMapRBitcoinNetworkChainClient();
+    _api_fill_to_wire_HashMapRBitcoinNetworkChainClient(raw, ptr);
+    return ptr;
+  }
+
+  @protected
+  wire_MaybeSinkDeveloperSettings api2wire_MaybeSinkDeveloperSettings(
+      MaybeSinkDeveloperSettings raw) {
+    final ptr = inner.new_MaybeSinkDeveloperSettings();
+    _api_fill_to_wire_MaybeSinkDeveloperSettings(raw, ptr);
+    return ptr;
+  }
+
+  @protected
+  wire_MaybeSinkElectrumSettings api2wire_MaybeSinkElectrumSettings(
+      MaybeSinkElectrumSettings raw) {
+    final ptr = inner.new_MaybeSinkElectrumSettings();
+    _api_fill_to_wire_MaybeSinkElectrumSettings(raw, ptr);
+    return ptr;
+  }
+
+  @protected
+  wire_MaybeSinkWalletSettings api2wire_MaybeSinkWalletSettings(
+      MaybeSinkWalletSettings raw) {
+    final ptr = inner.new_MaybeSinkWalletSettings();
+    _api_fill_to_wire_MaybeSinkWalletSettings(raw, ptr);
+    return ptr;
+  }
+
+  @protected
   wire_MutexHashMapRBitcoinNetworkWallet
       api2wire_MutexHashMapRBitcoinNetworkWallet(
           MutexHashMapRBitcoinNetworkWallet raw) {
     final ptr = inner.new_MutexHashMapRBitcoinNetworkWallet();
     _api_fill_to_wire_MutexHashMapRBitcoinNetworkWallet(raw, ptr);
+    return ptr;
+  }
+
+  @protected
+  wire_MutexPersistedRSettings api2wire_MutexPersistedRSettings(
+      MutexPersistedRSettings raw) {
+    final ptr = inner.new_MutexPersistedRSettings();
+    _api_fill_to_wire_MutexPersistedRSettings(raw, ptr);
+    return ptr;
+  }
+
+  @protected
+  wire_PathBuf api2wire_PathBuf(PathBuf raw) {
+    final ptr = inner.new_PathBuf();
+    _api_fill_to_wire_PathBuf(raw, ptr);
     return ptr;
   }
 
@@ -286,6 +342,13 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   }
 
   @protected
+  ffi.Pointer<wire_Settings> api2wire_box_autoadd_settings(Settings raw) {
+    final ptr = inner.new_box_autoadd_settings_0();
+    _api_fill_to_wire_settings(raw, ptr.ref);
+    return ptr;
+  }
+
+  @protected
   ffi.Pointer<wire_SignedTx> api2wire_box_autoadd_signed_tx(SignedTx raw) {
     final ptr = inner.new_box_autoadd_signed_tx_0();
     _api_fill_to_wire_signed_tx(raw, ptr.ref);
@@ -312,14 +375,6 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   ffi.Pointer<wire_Wallet> api2wire_box_autoadd_wallet(Wallet raw) {
     final ptr = inner.new_box_autoadd_wallet_0();
     _api_fill_to_wire_wallet(raw, ptr.ref);
-    return ptr;
-  }
-
-  @protected
-  ffi.Pointer<wire_WalletLoader> api2wire_box_autoadd_wallet_loader(
-      WalletLoader raw) {
-    final ptr = inner.new_box_autoadd_wallet_loader_0();
-    _api_fill_to_wire_wallet_loader(raw, ptr.ref);
     return ptr;
   }
 
@@ -407,13 +462,14 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
 
 // Section: finalizer
 
-  late final OpaqueTypeFinalizer _ArcChainSyncFinalizer =
-      OpaqueTypeFinalizer(inner._drop_opaque_ArcChainSyncPtr);
-  OpaqueTypeFinalizer get ArcChainSyncFinalizer => _ArcChainSyncFinalizer;
   late final OpaqueTypeFinalizer _ArcMutexFrostsnapWalletFinalizer =
       OpaqueTypeFinalizer(inner._drop_opaque_ArcMutexFrostsnapWalletPtr);
   OpaqueTypeFinalizer get ArcMutexFrostsnapWalletFinalizer =>
       _ArcMutexFrostsnapWalletFinalizer;
+  late final OpaqueTypeFinalizer _ArcMutexRusqliteConnectionFinalizer =
+      OpaqueTypeFinalizer(inner._drop_opaque_ArcMutexRusqliteConnectionPtr);
+  OpaqueTypeFinalizer get ArcMutexRusqliteConnectionFinalizer =>
+      _ArcMutexRusqliteConnectionFinalizer;
   late final OpaqueTypeFinalizer _ArcMutexVecPortDescFinalizer =
       OpaqueTypeFinalizer(inner._drop_opaque_ArcMutexVecPortDescPtr);
   OpaqueTypeFinalizer get ArcMutexVecPortDescFinalizer =>
@@ -428,6 +484,9 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   late final OpaqueTypeFinalizer _BitcoinPsbtFinalizer =
       OpaqueTypeFinalizer(inner._drop_opaque_BitcoinPsbtPtr);
   OpaqueTypeFinalizer get BitcoinPsbtFinalizer => _BitcoinPsbtFinalizer;
+  late final OpaqueTypeFinalizer _ChainClientFinalizer =
+      OpaqueTypeFinalizer(inner._drop_opaque_ChainClientPtr);
+  OpaqueTypeFinalizer get ChainClientFinalizer => _ChainClientFinalizer;
   late final OpaqueTypeFinalizer _FfiCoordinatorFinalizer =
       OpaqueTypeFinalizer(inner._drop_opaque_FfiCoordinatorPtr);
   OpaqueTypeFinalizer get FfiCoordinatorFinalizer => _FfiCoordinatorFinalizer;
@@ -451,11 +510,35 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   OpaqueTypeFinalizer
       get FrostsnapCoreCoordinatorCoordinatorFrostKeyFinalizer =>
           _FrostsnapCoreCoordinatorCoordinatorFrostKeyFinalizer;
+  late final OpaqueTypeFinalizer _HashMapRBitcoinNetworkChainClientFinalizer =
+      OpaqueTypeFinalizer(
+          inner._drop_opaque_HashMapRBitcoinNetworkChainClientPtr);
+  OpaqueTypeFinalizer get HashMapRBitcoinNetworkChainClientFinalizer =>
+      _HashMapRBitcoinNetworkChainClientFinalizer;
+  late final OpaqueTypeFinalizer _MaybeSinkDeveloperSettingsFinalizer =
+      OpaqueTypeFinalizer(inner._drop_opaque_MaybeSinkDeveloperSettingsPtr);
+  OpaqueTypeFinalizer get MaybeSinkDeveloperSettingsFinalizer =>
+      _MaybeSinkDeveloperSettingsFinalizer;
+  late final OpaqueTypeFinalizer _MaybeSinkElectrumSettingsFinalizer =
+      OpaqueTypeFinalizer(inner._drop_opaque_MaybeSinkElectrumSettingsPtr);
+  OpaqueTypeFinalizer get MaybeSinkElectrumSettingsFinalizer =>
+      _MaybeSinkElectrumSettingsFinalizer;
+  late final OpaqueTypeFinalizer _MaybeSinkWalletSettingsFinalizer =
+      OpaqueTypeFinalizer(inner._drop_opaque_MaybeSinkWalletSettingsPtr);
+  OpaqueTypeFinalizer get MaybeSinkWalletSettingsFinalizer =>
+      _MaybeSinkWalletSettingsFinalizer;
   late final OpaqueTypeFinalizer _MutexHashMapRBitcoinNetworkWalletFinalizer =
       OpaqueTypeFinalizer(
           inner._drop_opaque_MutexHashMapRBitcoinNetworkWalletPtr);
   OpaqueTypeFinalizer get MutexHashMapRBitcoinNetworkWalletFinalizer =>
       _MutexHashMapRBitcoinNetworkWalletFinalizer;
+  late final OpaqueTypeFinalizer _MutexPersistedRSettingsFinalizer =
+      OpaqueTypeFinalizer(inner._drop_opaque_MutexPersistedRSettingsPtr);
+  OpaqueTypeFinalizer get MutexPersistedRSettingsFinalizer =>
+      _MutexPersistedRSettingsFinalizer;
+  late final OpaqueTypeFinalizer _PathBufFinalizer =
+      OpaqueTypeFinalizer(inner._drop_opaque_PathBufPtr);
+  OpaqueTypeFinalizer get PathBufFinalizer => _PathBufFinalizer;
   late final OpaqueTypeFinalizer _PortBytesToReadSenderFinalizer =
       OpaqueTypeFinalizer(inner._drop_opaque_PortBytesToReadSenderPtr);
   OpaqueTypeFinalizer get PortBytesToReadSenderFinalizer =>
@@ -477,13 +560,14 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   OpaqueTypeFinalizer get RTransactionFinalizer => _RTransactionFinalizer;
 // Section: api_fill_to_wire
 
-  void _api_fill_to_wire_ArcChainSync(
-      ArcChainSync apiObj, wire_ArcChainSync wireObj) {
+  void _api_fill_to_wire_ArcMutexFrostsnapWallet(
+      ArcMutexFrostsnapWallet apiObj, wire_ArcMutexFrostsnapWallet wireObj) {
     wireObj.ptr = apiObj.shareOrMove();
   }
 
-  void _api_fill_to_wire_ArcMutexFrostsnapWallet(
-      ArcMutexFrostsnapWallet apiObj, wire_ArcMutexFrostsnapWallet wireObj) {
+  void _api_fill_to_wire_ArcMutexRusqliteConnection(
+      ArcMutexRusqliteConnection apiObj,
+      wire_ArcMutexRusqliteConnection wireObj) {
     wireObj.ptr = apiObj.shareOrMove();
   }
 
@@ -504,6 +588,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
 
   void _api_fill_to_wire_BitcoinPsbt(
       BitcoinPsbt apiObj, wire_BitcoinPsbt wireObj) {
+    wireObj.ptr = apiObj.shareOrMove();
+  }
+
+  void _api_fill_to_wire_ChainClient(
+      ChainClient apiObj, wire_ChainClient wireObj) {
     wireObj.ptr = apiObj.shareOrMove();
   }
 
@@ -534,9 +623,41 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
     wireObj.ptr = apiObj.shareOrMove();
   }
 
+  void _api_fill_to_wire_HashMapRBitcoinNetworkChainClient(
+      HashMapRBitcoinNetworkChainClient apiObj,
+      wire_HashMapRBitcoinNetworkChainClient wireObj) {
+    wireObj.ptr = apiObj.shareOrMove();
+  }
+
+  void _api_fill_to_wire_MaybeSinkDeveloperSettings(
+      MaybeSinkDeveloperSettings apiObj,
+      wire_MaybeSinkDeveloperSettings wireObj) {
+    wireObj.ptr = apiObj.shareOrMove();
+  }
+
+  void _api_fill_to_wire_MaybeSinkElectrumSettings(
+      MaybeSinkElectrumSettings apiObj,
+      wire_MaybeSinkElectrumSettings wireObj) {
+    wireObj.ptr = apiObj.shareOrMove();
+  }
+
+  void _api_fill_to_wire_MaybeSinkWalletSettings(
+      MaybeSinkWalletSettings apiObj, wire_MaybeSinkWalletSettings wireObj) {
+    wireObj.ptr = apiObj.shareOrMove();
+  }
+
   void _api_fill_to_wire_MutexHashMapRBitcoinNetworkWallet(
       MutexHashMapRBitcoinNetworkWallet apiObj,
       wire_MutexHashMapRBitcoinNetworkWallet wireObj) {
+    wireObj.ptr = apiObj.shareOrMove();
+  }
+
+  void _api_fill_to_wire_MutexPersistedRSettings(
+      MutexPersistedRSettings apiObj, wire_MutexPersistedRSettings wireObj) {
+    wireObj.ptr = apiObj.shareOrMove();
+  }
+
+  void _api_fill_to_wire_PathBuf(PathBuf apiObj, wire_PathBuf wireObj) {
     wireObj.ptr = apiObj.shareOrMove();
   }
 
@@ -655,6 +776,11 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
     _api_fill_to_wire_qr_reader(apiObj, wireObj.ref);
   }
 
+  void _api_fill_to_wire_box_autoadd_settings(
+      Settings apiObj, ffi.Pointer<wire_Settings> wireObj) {
+    _api_fill_to_wire_settings(apiObj, wireObj.ref);
+  }
+
   void _api_fill_to_wire_box_autoadd_signed_tx(
       SignedTx apiObj, ffi.Pointer<wire_SignedTx> wireObj) {
     _api_fill_to_wire_signed_tx(apiObj, wireObj.ref);
@@ -673,11 +799,6 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   void _api_fill_to_wire_box_autoadd_wallet(
       Wallet apiObj, ffi.Pointer<wire_Wallet> wireObj) {
     _api_fill_to_wire_wallet(apiObj, wireObj.ref);
-  }
-
-  void _api_fill_to_wire_box_autoadd_wallet_loader(
-      WalletLoader apiObj, ffi.Pointer<wire_WalletLoader> wireObj) {
-    _api_fill_to_wire_wallet_loader(apiObj, wireObj.ref);
   }
 
   void _api_fill_to_wire_confirmation_time(
@@ -770,6 +891,22 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
     wireObj.field0 = api2wire_FfiQrReader(apiObj.field0);
   }
 
+  void _api_fill_to_wire_settings(Settings apiObj, wire_Settings wireObj) {
+    wireObj.settings = api2wire_MutexPersistedRSettings(apiObj.settings);
+    wireObj.db = api2wire_ArcMutexRusqliteConnection(apiObj.db);
+    wireObj.chain_clients =
+        api2wire_HashMapRBitcoinNetworkChainClient(apiObj.chainClients);
+    wireObj.app_directory = api2wire_PathBuf(apiObj.appDirectory);
+    wireObj.loaded_wallets =
+        api2wire_MutexHashMapRBitcoinNetworkWallet(apiObj.loadedWallets);
+    wireObj.wallet_settings_stream =
+        api2wire_MaybeSinkWalletSettings(apiObj.walletSettingsStream);
+    wireObj.developer_settings_stream =
+        api2wire_MaybeSinkDeveloperSettings(apiObj.developerSettingsStream);
+    wireObj.electrum_settings_stream =
+        api2wire_MaybeSinkElectrumSettings(apiObj.electrumSettingsStream);
+  }
+
   void _api_fill_to_wire_signed_tx(SignedTx apiObj, wire_SignedTx wireObj) {
     wireObj.signed_tx = api2wire_RTransaction(apiObj.signedTx);
     _api_fill_to_wire_unsigned_tx(apiObj.unsignedTx, wireObj.unsigned_tx);
@@ -793,14 +930,8 @@ class NativePlatform extends FlutterRustBridgeBase<NativeWire> {
   void _api_fill_to_wire_wallet(Wallet apiObj, wire_Wallet wireObj) {
     wireObj.inner = api2wire_ArcMutexFrostsnapWallet(apiObj.inner);
     wireObj.wallet_streams = api2wire_ArcWalletStreams(apiObj.walletStreams);
-    wireObj.chain_sync = api2wire_ArcChainSync(apiObj.chainSync);
+    wireObj.chain_sync = api2wire_ChainClient(apiObj.chainSync);
     _api_fill_to_wire_bitcoin_network(apiObj.network, wireObj.network);
-  }
-
-  void _api_fill_to_wire_wallet_loader(
-      WalletLoader apiObj, wire_WalletLoader wireObj) {
-    wireObj.directory = api2wire_String(apiObj.directory);
-    wireObj.loaded = api2wire_MutexHashMapRBitcoinNetworkWallet(apiObj.loaded);
   }
 }
 
@@ -1018,11 +1149,11 @@ class NativeWire implements FlutterRustBridgeWireBase {
 
   void wire_load(
     int port_,
-    ffi.Pointer<wire_uint_8_list> db_file,
+    ffi.Pointer<wire_uint_8_list> app_dir,
   ) {
     return _wire_load(
       port_,
-      db_file,
+      app_dir,
     );
   }
 
@@ -1035,11 +1166,11 @@ class NativeWire implements FlutterRustBridgeWireBase {
 
   void wire_load_host_handles_serial(
     int port_,
-    ffi.Pointer<wire_uint_8_list> db_file,
+    ffi.Pointer<wire_uint_8_list> app_dir,
   ) {
     return _wire_load_host_handles_serial(
       port_,
-      db_file,
+      app_dir,
     );
   }
 
@@ -1351,46 +1482,6 @@ class NativeWire implements FlutterRustBridgeWireBase {
           WireSyncReturn Function(
               ffi.Pointer<wire_DeviceListState>, ffi.Pointer<wire_DeviceId>)>();
 
-  void wire_create__static_method__WalletLoader(
-    int port_,
-    ffi.Pointer<wire_uint_8_list> directory,
-  ) {
-    return _wire_create__static_method__WalletLoader(
-      port_,
-      directory,
-    );
-  }
-
-  late final _wire_create__static_method__WalletLoaderPtr = _lookup<
-          ffi.NativeFunction<
-              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_uint_8_list>)>>(
-      'wire_create__static_method__WalletLoader');
-  late final _wire_create__static_method__WalletLoader =
-      _wire_create__static_method__WalletLoaderPtr
-          .asFunction<void Function(int, ffi.Pointer<wire_uint_8_list>)>();
-
-  void wire_load__method__WalletLoader(
-    int port_,
-    ffi.Pointer<wire_WalletLoader> that,
-    ffi.Pointer<wire_BitcoinNetwork> network,
-  ) {
-    return _wire_load__method__WalletLoader(
-      port_,
-      that,
-      network,
-    );
-  }
-
-  late final _wire_load__method__WalletLoaderPtr = _lookup<
-          ffi.NativeFunction<
-              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_WalletLoader>,
-                  ffi.Pointer<wire_BitcoinNetwork>)>>(
-      'wire_load__method__WalletLoader');
-  late final _wire_load__method__WalletLoader =
-      _wire_load__method__WalletLoaderPtr.asFunction<
-          void Function(int, ffi.Pointer<wire_WalletLoader>,
-              ffi.Pointer<wire_BitcoinNetwork>)>();
-
   void wire_sub_tx_state__method__Wallet(
     int port_,
     ffi.Pointer<wire_Wallet> that,
@@ -1606,6 +1697,38 @@ class NativeWire implements FlutterRustBridgeWireBase {
       _wire_signet__static_method__BitcoinNetworkPtr
           .asFunction<WireSyncReturn Function()>();
 
+  WireSyncReturn wire_name__method__BitcoinNetwork(
+    ffi.Pointer<wire_BitcoinNetwork> that,
+  ) {
+    return _wire_name__method__BitcoinNetwork(
+      that,
+    );
+  }
+
+  late final _wire_name__method__BitcoinNetworkPtr = _lookup<
+          ffi.NativeFunction<
+              WireSyncReturn Function(ffi.Pointer<wire_BitcoinNetwork>)>>(
+      'wire_name__method__BitcoinNetwork');
+  late final _wire_name__method__BitcoinNetwork =
+      _wire_name__method__BitcoinNetworkPtr.asFunction<
+          WireSyncReturn Function(ffi.Pointer<wire_BitcoinNetwork>)>();
+
+  WireSyncReturn wire_is_mainnet__method__BitcoinNetwork(
+    ffi.Pointer<wire_BitcoinNetwork> that,
+  ) {
+    return _wire_is_mainnet__method__BitcoinNetwork(
+      that,
+    );
+  }
+
+  late final _wire_is_mainnet__method__BitcoinNetworkPtr = _lookup<
+          ffi.NativeFunction<
+              WireSyncReturn Function(ffi.Pointer<wire_BitcoinNetwork>)>>(
+      'wire_is_mainnet__method__BitcoinNetwork');
+  late final _wire_is_mainnet__method__BitcoinNetwork =
+      _wire_is_mainnet__method__BitcoinNetworkPtr.asFunction<
+          WireSyncReturn Function(ffi.Pointer<wire_BitcoinNetwork>)>();
+
   WireSyncReturn wire_descriptor_for_key__method__BitcoinNetwork(
     ffi.Pointer<wire_BitcoinNetwork> that,
     ffi.Pointer<wire_KeyId> key_id,
@@ -1669,6 +1792,22 @@ class NativeWire implements FlutterRustBridgeWireBase {
       _wire_validate_destination_address__method__BitcoinNetworkPtr.asFunction<
           WireSyncReturn Function(ffi.Pointer<wire_BitcoinNetwork>,
               ffi.Pointer<wire_uint_8_list>)>();
+
+  WireSyncReturn wire_default_electrum_server__method__BitcoinNetwork(
+    ffi.Pointer<wire_BitcoinNetwork> that,
+  ) {
+    return _wire_default_electrum_server__method__BitcoinNetwork(
+      that,
+    );
+  }
+
+  late final _wire_default_electrum_server__method__BitcoinNetworkPtr = _lookup<
+          ffi.NativeFunction<
+              WireSyncReturn Function(ffi.Pointer<wire_BitcoinNetwork>)>>(
+      'wire_default_electrum_server__method__BitcoinNetwork');
+  late final _wire_default_electrum_server__method__BitcoinNetwork =
+      _wire_default_electrum_server__method__BitcoinNetworkPtr.asFunction<
+          WireSyncReturn Function(ffi.Pointer<wire_BitcoinNetwork>)>();
 
   void wire_set_available_ports__method__FfiSerial(
     int port_,
@@ -2364,15 +2503,177 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _wire_next__method__QrEncoder = _wire_next__method__QrEncoderPtr
       .asFunction<WireSyncReturn Function(ffi.Pointer<wire_QrEncoder>)>();
 
-  wire_ArcChainSync new_ArcChainSync() {
-    return _new_ArcChainSync();
+  void wire_sub_developer_settings__method__Settings(
+    int port_,
+    ffi.Pointer<wire_Settings> that,
+  ) {
+    return _wire_sub_developer_settings__method__Settings(
+      port_,
+      that,
+    );
   }
 
-  late final _new_ArcChainSyncPtr =
-      _lookup<ffi.NativeFunction<wire_ArcChainSync Function()>>(
-          'new_ArcChainSync');
-  late final _new_ArcChainSync =
-      _new_ArcChainSyncPtr.asFunction<wire_ArcChainSync Function()>();
+  late final _wire_sub_developer_settings__method__SettingsPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Settings>)>>(
+      'wire_sub_developer_settings__method__Settings');
+  late final _wire_sub_developer_settings__method__Settings =
+      _wire_sub_developer_settings__method__SettingsPtr
+          .asFunction<void Function(int, ffi.Pointer<wire_Settings>)>();
+
+  void wire_sub_electrum_settings__method__Settings(
+    int port_,
+    ffi.Pointer<wire_Settings> that,
+  ) {
+    return _wire_sub_electrum_settings__method__Settings(
+      port_,
+      that,
+    );
+  }
+
+  late final _wire_sub_electrum_settings__method__SettingsPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Settings>)>>(
+      'wire_sub_electrum_settings__method__Settings');
+  late final _wire_sub_electrum_settings__method__Settings =
+      _wire_sub_electrum_settings__method__SettingsPtr
+          .asFunction<void Function(int, ffi.Pointer<wire_Settings>)>();
+
+  void wire_sub_wallet_settings__method__Settings(
+    int port_,
+    ffi.Pointer<wire_Settings> that,
+  ) {
+    return _wire_sub_wallet_settings__method__Settings(
+      port_,
+      that,
+    );
+  }
+
+  late final _wire_sub_wallet_settings__method__SettingsPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Settings>)>>(
+      'wire_sub_wallet_settings__method__Settings');
+  late final _wire_sub_wallet_settings__method__Settings =
+      _wire_sub_wallet_settings__method__SettingsPtr
+          .asFunction<void Function(int, ffi.Pointer<wire_Settings>)>();
+
+  void wire_load_wallet__method__Settings(
+    int port_,
+    ffi.Pointer<wire_Settings> that,
+    ffi.Pointer<wire_BitcoinNetwork> network,
+  ) {
+    return _wire_load_wallet__method__Settings(
+      port_,
+      that,
+      network,
+    );
+  }
+
+  late final _wire_load_wallet__method__SettingsPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Settings>,
+                  ffi.Pointer<wire_BitcoinNetwork>)>>(
+      'wire_load_wallet__method__Settings');
+  late final _wire_load_wallet__method__Settings =
+      _wire_load_wallet__method__SettingsPtr.asFunction<
+          void Function(int, ffi.Pointer<wire_Settings>,
+              ffi.Pointer<wire_BitcoinNetwork>)>();
+
+  void wire_set_wallet_network__method__Settings(
+    int port_,
+    ffi.Pointer<wire_Settings> that,
+    ffi.Pointer<wire_KeyId> key_id,
+    ffi.Pointer<wire_BitcoinNetwork> network,
+  ) {
+    return _wire_set_wallet_network__method__Settings(
+      port_,
+      that,
+      key_id,
+      network,
+    );
+  }
+
+  late final _wire_set_wallet_network__method__SettingsPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Settings>,
+                  ffi.Pointer<wire_KeyId>, ffi.Pointer<wire_BitcoinNetwork>)>>(
+      'wire_set_wallet_network__method__Settings');
+  late final _wire_set_wallet_network__method__Settings =
+      _wire_set_wallet_network__method__SettingsPtr.asFunction<
+          void Function(int, ffi.Pointer<wire_Settings>,
+              ffi.Pointer<wire_KeyId>, ffi.Pointer<wire_BitcoinNetwork>)>();
+
+  void wire_set_developer_mode__method__Settings(
+    int port_,
+    ffi.Pointer<wire_Settings> that,
+    bool value,
+  ) {
+    return _wire_set_developer_mode__method__Settings(
+      port_,
+      that,
+      value,
+    );
+  }
+
+  late final _wire_set_developer_mode__method__SettingsPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Settings>,
+              ffi.Bool)>>('wire_set_developer_mode__method__Settings');
+  late final _wire_set_developer_mode__method__Settings =
+      _wire_set_developer_mode__method__SettingsPtr
+          .asFunction<void Function(int, ffi.Pointer<wire_Settings>, bool)>();
+
+  void wire_check_and_set_electrum_server__method__Settings(
+    int port_,
+    ffi.Pointer<wire_Settings> that,
+    ffi.Pointer<wire_BitcoinNetwork> network,
+    ffi.Pointer<wire_uint_8_list> url,
+  ) {
+    return _wire_check_and_set_electrum_server__method__Settings(
+      port_,
+      that,
+      network,
+      url,
+    );
+  }
+
+  late final _wire_check_and_set_electrum_server__method__SettingsPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Void Function(
+                  ffi.Int64,
+                  ffi.Pointer<wire_Settings>,
+                  ffi.Pointer<wire_BitcoinNetwork>,
+                  ffi.Pointer<wire_uint_8_list>)>>(
+      'wire_check_and_set_electrum_server__method__Settings');
+  late final _wire_check_and_set_electrum_server__method__Settings =
+      _wire_check_and_set_electrum_server__method__SettingsPtr.asFunction<
+          void Function(
+              int,
+              ffi.Pointer<wire_Settings>,
+              ffi.Pointer<wire_BitcoinNetwork>,
+              ffi.Pointer<wire_uint_8_list>)>();
+
+  void wire_subscribe_chain_status__method__Settings(
+    int port_,
+    ffi.Pointer<wire_Settings> that,
+    ffi.Pointer<wire_BitcoinNetwork> network,
+  ) {
+    return _wire_subscribe_chain_status__method__Settings(
+      port_,
+      that,
+      network,
+    );
+  }
+
+  late final _wire_subscribe_chain_status__method__SettingsPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Void Function(ffi.Int64, ffi.Pointer<wire_Settings>,
+                  ffi.Pointer<wire_BitcoinNetwork>)>>(
+      'wire_subscribe_chain_status__method__Settings');
+  late final _wire_subscribe_chain_status__method__Settings =
+      _wire_subscribe_chain_status__method__SettingsPtr.asFunction<
+          void Function(int, ffi.Pointer<wire_Settings>,
+              ffi.Pointer<wire_BitcoinNetwork>)>();
 
   wire_ArcMutexFrostsnapWallet new_ArcMutexFrostsnapWallet() {
     return _new_ArcMutexFrostsnapWallet();
@@ -2383,6 +2684,17 @@ class NativeWire implements FlutterRustBridgeWireBase {
           'new_ArcMutexFrostsnapWallet');
   late final _new_ArcMutexFrostsnapWallet = _new_ArcMutexFrostsnapWalletPtr
       .asFunction<wire_ArcMutexFrostsnapWallet Function()>();
+
+  wire_ArcMutexRusqliteConnection new_ArcMutexRusqliteConnection() {
+    return _new_ArcMutexRusqliteConnection();
+  }
+
+  late final _new_ArcMutexRusqliteConnectionPtr =
+      _lookup<ffi.NativeFunction<wire_ArcMutexRusqliteConnection Function()>>(
+          'new_ArcMutexRusqliteConnection');
+  late final _new_ArcMutexRusqliteConnection =
+      _new_ArcMutexRusqliteConnectionPtr
+          .asFunction<wire_ArcMutexRusqliteConnection Function()>();
 
   wire_ArcMutexVecPortDesc new_ArcMutexVecPortDesc() {
     return _new_ArcMutexVecPortDesc();
@@ -2423,6 +2735,16 @@ class NativeWire implements FlutterRustBridgeWireBase {
           'new_BitcoinPsbt');
   late final _new_BitcoinPsbt =
       _new_BitcoinPsbtPtr.asFunction<wire_BitcoinPsbt Function()>();
+
+  wire_ChainClient new_ChainClient() {
+    return _new_ChainClient();
+  }
+
+  late final _new_ChainClientPtr =
+      _lookup<ffi.NativeFunction<wire_ChainClient Function()>>(
+          'new_ChainClient');
+  late final _new_ChainClient =
+      _new_ChainClientPtr.asFunction<wire_ChainClient Function()>();
 
   wire_FfiCoordinator new_FfiCoordinator() {
     return _new_FfiCoordinator();
@@ -2482,6 +2804,50 @@ class NativeWire implements FlutterRustBridgeWireBase {
       _new_FrostsnapCoreCoordinatorCoordinatorFrostKeyPtr.asFunction<
           wire_FrostsnapCoreCoordinatorCoordinatorFrostKey Function()>();
 
+  wire_HashMapRBitcoinNetworkChainClient
+      new_HashMapRBitcoinNetworkChainClient() {
+    return _new_HashMapRBitcoinNetworkChainClient();
+  }
+
+  late final _new_HashMapRBitcoinNetworkChainClientPtr = _lookup<
+          ffi
+          .NativeFunction<wire_HashMapRBitcoinNetworkChainClient Function()>>(
+      'new_HashMapRBitcoinNetworkChainClient');
+  late final _new_HashMapRBitcoinNetworkChainClient =
+      _new_HashMapRBitcoinNetworkChainClientPtr
+          .asFunction<wire_HashMapRBitcoinNetworkChainClient Function()>();
+
+  wire_MaybeSinkDeveloperSettings new_MaybeSinkDeveloperSettings() {
+    return _new_MaybeSinkDeveloperSettings();
+  }
+
+  late final _new_MaybeSinkDeveloperSettingsPtr =
+      _lookup<ffi.NativeFunction<wire_MaybeSinkDeveloperSettings Function()>>(
+          'new_MaybeSinkDeveloperSettings');
+  late final _new_MaybeSinkDeveloperSettings =
+      _new_MaybeSinkDeveloperSettingsPtr
+          .asFunction<wire_MaybeSinkDeveloperSettings Function()>();
+
+  wire_MaybeSinkElectrumSettings new_MaybeSinkElectrumSettings() {
+    return _new_MaybeSinkElectrumSettings();
+  }
+
+  late final _new_MaybeSinkElectrumSettingsPtr =
+      _lookup<ffi.NativeFunction<wire_MaybeSinkElectrumSettings Function()>>(
+          'new_MaybeSinkElectrumSettings');
+  late final _new_MaybeSinkElectrumSettings = _new_MaybeSinkElectrumSettingsPtr
+      .asFunction<wire_MaybeSinkElectrumSettings Function()>();
+
+  wire_MaybeSinkWalletSettings new_MaybeSinkWalletSettings() {
+    return _new_MaybeSinkWalletSettings();
+  }
+
+  late final _new_MaybeSinkWalletSettingsPtr =
+      _lookup<ffi.NativeFunction<wire_MaybeSinkWalletSettings Function()>>(
+          'new_MaybeSinkWalletSettings');
+  late final _new_MaybeSinkWalletSettings = _new_MaybeSinkWalletSettingsPtr
+      .asFunction<wire_MaybeSinkWalletSettings Function()>();
+
   wire_MutexHashMapRBitcoinNetworkWallet
       new_MutexHashMapRBitcoinNetworkWallet() {
     return _new_MutexHashMapRBitcoinNetworkWallet();
@@ -2494,6 +2860,25 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _new_MutexHashMapRBitcoinNetworkWallet =
       _new_MutexHashMapRBitcoinNetworkWalletPtr
           .asFunction<wire_MutexHashMapRBitcoinNetworkWallet Function()>();
+
+  wire_MutexPersistedRSettings new_MutexPersistedRSettings() {
+    return _new_MutexPersistedRSettings();
+  }
+
+  late final _new_MutexPersistedRSettingsPtr =
+      _lookup<ffi.NativeFunction<wire_MutexPersistedRSettings Function()>>(
+          'new_MutexPersistedRSettings');
+  late final _new_MutexPersistedRSettings = _new_MutexPersistedRSettingsPtr
+      .asFunction<wire_MutexPersistedRSettings Function()>();
+
+  wire_PathBuf new_PathBuf() {
+    return _new_PathBuf();
+  }
+
+  late final _new_PathBufPtr =
+      _lookup<ffi.NativeFunction<wire_PathBuf Function()>>('new_PathBuf');
+  late final _new_PathBuf =
+      _new_PathBufPtr.asFunction<wire_PathBuf Function()>();
 
   wire_PortBytesToReadSender new_PortBytesToReadSender() {
     return _new_PortBytesToReadSender();
@@ -2734,6 +3119,16 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _new_box_autoadd_qr_reader_0 = _new_box_autoadd_qr_reader_0Ptr
       .asFunction<ffi.Pointer<wire_QrReader> Function()>();
 
+  ffi.Pointer<wire_Settings> new_box_autoadd_settings_0() {
+    return _new_box_autoadd_settings_0();
+  }
+
+  late final _new_box_autoadd_settings_0Ptr =
+      _lookup<ffi.NativeFunction<ffi.Pointer<wire_Settings> Function()>>(
+          'new_box_autoadd_settings_0');
+  late final _new_box_autoadd_settings_0 = _new_box_autoadd_settings_0Ptr
+      .asFunction<ffi.Pointer<wire_Settings> Function()>();
+
   ffi.Pointer<wire_SignedTx> new_box_autoadd_signed_tx_0() {
     return _new_box_autoadd_signed_tx_0();
   }
@@ -2773,17 +3168,6 @@ class NativeWire implements FlutterRustBridgeWireBase {
           'new_box_autoadd_wallet_0');
   late final _new_box_autoadd_wallet_0 = _new_box_autoadd_wallet_0Ptr
       .asFunction<ffi.Pointer<wire_Wallet> Function()>();
-
-  ffi.Pointer<wire_WalletLoader> new_box_autoadd_wallet_loader_0() {
-    return _new_box_autoadd_wallet_loader_0();
-  }
-
-  late final _new_box_autoadd_wallet_loader_0Ptr =
-      _lookup<ffi.NativeFunction<ffi.Pointer<wire_WalletLoader> Function()>>(
-          'new_box_autoadd_wallet_loader_0');
-  late final _new_box_autoadd_wallet_loader_0 =
-      _new_box_autoadd_wallet_loader_0Ptr
-          .asFunction<ffi.Pointer<wire_WalletLoader> Function()>();
 
   ffi.Pointer<wire_list_connected_device> new_list_connected_device_0(
     int len,
@@ -2860,35 +3244,6 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _new_uint_8_list_0 = _new_uint_8_list_0Ptr
       .asFunction<ffi.Pointer<wire_uint_8_list> Function(int)>();
 
-  void drop_opaque_ArcChainSync(
-    ffi.Pointer<ffi.Void> ptr,
-  ) {
-    return _drop_opaque_ArcChainSync(
-      ptr,
-    );
-  }
-
-  late final _drop_opaque_ArcChainSyncPtr =
-      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
-          'drop_opaque_ArcChainSync');
-  late final _drop_opaque_ArcChainSync = _drop_opaque_ArcChainSyncPtr
-      .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
-
-  ffi.Pointer<ffi.Void> share_opaque_ArcChainSync(
-    ffi.Pointer<ffi.Void> ptr,
-  ) {
-    return _share_opaque_ArcChainSync(
-      ptr,
-    );
-  }
-
-  late final _share_opaque_ArcChainSyncPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Pointer<ffi.Void> Function(
-              ffi.Pointer<ffi.Void>)>>('share_opaque_ArcChainSync');
-  late final _share_opaque_ArcChainSync = _share_opaque_ArcChainSyncPtr
-      .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
-
   void drop_opaque_ArcMutexFrostsnapWallet(
     ffi.Pointer<ffi.Void> ptr,
   ) {
@@ -2918,6 +3273,37 @@ class NativeWire implements FlutterRustBridgeWireBase {
               ffi.Pointer<ffi.Void>)>>('share_opaque_ArcMutexFrostsnapWallet');
   late final _share_opaque_ArcMutexFrostsnapWallet =
       _share_opaque_ArcMutexFrostsnapWalletPtr
+          .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
+
+  void drop_opaque_ArcMutexRusqliteConnection(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _drop_opaque_ArcMutexRusqliteConnection(
+      ptr,
+    );
+  }
+
+  late final _drop_opaque_ArcMutexRusqliteConnectionPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+          'drop_opaque_ArcMutexRusqliteConnection');
+  late final _drop_opaque_ArcMutexRusqliteConnection =
+      _drop_opaque_ArcMutexRusqliteConnectionPtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  ffi.Pointer<ffi.Void> share_opaque_ArcMutexRusqliteConnection(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _share_opaque_ArcMutexRusqliteConnection(
+      ptr,
+    );
+  }
+
+  late final _share_opaque_ArcMutexRusqliteConnectionPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>>(
+      'share_opaque_ArcMutexRusqliteConnection');
+  late final _share_opaque_ArcMutexRusqliteConnection =
+      _share_opaque_ArcMutexRusqliteConnectionPtr
           .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
 
   void drop_opaque_ArcMutexVecPortDesc(
@@ -3036,6 +3422,35 @@ class NativeWire implements FlutterRustBridgeWireBase {
           ffi.Pointer<ffi.Void> Function(
               ffi.Pointer<ffi.Void>)>>('share_opaque_BitcoinPsbt');
   late final _share_opaque_BitcoinPsbt = _share_opaque_BitcoinPsbtPtr
+      .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
+
+  void drop_opaque_ChainClient(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _drop_opaque_ChainClient(
+      ptr,
+    );
+  }
+
+  late final _drop_opaque_ChainClientPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+          'drop_opaque_ChainClient');
+  late final _drop_opaque_ChainClient = _drop_opaque_ChainClientPtr
+      .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  ffi.Pointer<ffi.Void> share_opaque_ChainClient(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _share_opaque_ChainClient(
+      ptr,
+    );
+  }
+
+  late final _share_opaque_ChainClientPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Void> Function(
+              ffi.Pointer<ffi.Void>)>>('share_opaque_ChainClient');
+  late final _share_opaque_ChainClient = _share_opaque_ChainClientPtr
       .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
 
   void drop_opaque_FfiCoordinator(
@@ -3191,6 +3606,130 @@ class NativeWire implements FlutterRustBridgeWireBase {
       _share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKeyPtr
           .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
 
+  void drop_opaque_HashMapRBitcoinNetworkChainClient(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _drop_opaque_HashMapRBitcoinNetworkChainClient(
+      ptr,
+    );
+  }
+
+  late final _drop_opaque_HashMapRBitcoinNetworkChainClientPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+          'drop_opaque_HashMapRBitcoinNetworkChainClient');
+  late final _drop_opaque_HashMapRBitcoinNetworkChainClient =
+      _drop_opaque_HashMapRBitcoinNetworkChainClientPtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  ffi.Pointer<ffi.Void> share_opaque_HashMapRBitcoinNetworkChainClient(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _share_opaque_HashMapRBitcoinNetworkChainClient(
+      ptr,
+    );
+  }
+
+  late final _share_opaque_HashMapRBitcoinNetworkChainClientPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>>(
+      'share_opaque_HashMapRBitcoinNetworkChainClient');
+  late final _share_opaque_HashMapRBitcoinNetworkChainClient =
+      _share_opaque_HashMapRBitcoinNetworkChainClientPtr
+          .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
+
+  void drop_opaque_MaybeSinkDeveloperSettings(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _drop_opaque_MaybeSinkDeveloperSettings(
+      ptr,
+    );
+  }
+
+  late final _drop_opaque_MaybeSinkDeveloperSettingsPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+          'drop_opaque_MaybeSinkDeveloperSettings');
+  late final _drop_opaque_MaybeSinkDeveloperSettings =
+      _drop_opaque_MaybeSinkDeveloperSettingsPtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  ffi.Pointer<ffi.Void> share_opaque_MaybeSinkDeveloperSettings(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _share_opaque_MaybeSinkDeveloperSettings(
+      ptr,
+    );
+  }
+
+  late final _share_opaque_MaybeSinkDeveloperSettingsPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>>(
+      'share_opaque_MaybeSinkDeveloperSettings');
+  late final _share_opaque_MaybeSinkDeveloperSettings =
+      _share_opaque_MaybeSinkDeveloperSettingsPtr
+          .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
+
+  void drop_opaque_MaybeSinkElectrumSettings(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _drop_opaque_MaybeSinkElectrumSettings(
+      ptr,
+    );
+  }
+
+  late final _drop_opaque_MaybeSinkElectrumSettingsPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+          'drop_opaque_MaybeSinkElectrumSettings');
+  late final _drop_opaque_MaybeSinkElectrumSettings =
+      _drop_opaque_MaybeSinkElectrumSettingsPtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  ffi.Pointer<ffi.Void> share_opaque_MaybeSinkElectrumSettings(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _share_opaque_MaybeSinkElectrumSettings(
+      ptr,
+    );
+  }
+
+  late final _share_opaque_MaybeSinkElectrumSettingsPtr = _lookup<
+          ffi.NativeFunction<
+              ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>>(
+      'share_opaque_MaybeSinkElectrumSettings');
+  late final _share_opaque_MaybeSinkElectrumSettings =
+      _share_opaque_MaybeSinkElectrumSettingsPtr
+          .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
+
+  void drop_opaque_MaybeSinkWalletSettings(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _drop_opaque_MaybeSinkWalletSettings(
+      ptr,
+    );
+  }
+
+  late final _drop_opaque_MaybeSinkWalletSettingsPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+          'drop_opaque_MaybeSinkWalletSettings');
+  late final _drop_opaque_MaybeSinkWalletSettings =
+      _drop_opaque_MaybeSinkWalletSettingsPtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  ffi.Pointer<ffi.Void> share_opaque_MaybeSinkWalletSettings(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _share_opaque_MaybeSinkWalletSettings(
+      ptr,
+    );
+  }
+
+  late final _share_opaque_MaybeSinkWalletSettingsPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Void> Function(
+              ffi.Pointer<ffi.Void>)>>('share_opaque_MaybeSinkWalletSettings');
+  late final _share_opaque_MaybeSinkWalletSettings =
+      _share_opaque_MaybeSinkWalletSettingsPtr
+          .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
+
   void drop_opaque_MutexHashMapRBitcoinNetworkWallet(
     ffi.Pointer<ffi.Void> ptr,
   ) {
@@ -3221,6 +3760,66 @@ class NativeWire implements FlutterRustBridgeWireBase {
   late final _share_opaque_MutexHashMapRBitcoinNetworkWallet =
       _share_opaque_MutexHashMapRBitcoinNetworkWalletPtr
           .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
+
+  void drop_opaque_MutexPersistedRSettings(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _drop_opaque_MutexPersistedRSettings(
+      ptr,
+    );
+  }
+
+  late final _drop_opaque_MutexPersistedRSettingsPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+          'drop_opaque_MutexPersistedRSettings');
+  late final _drop_opaque_MutexPersistedRSettings =
+      _drop_opaque_MutexPersistedRSettingsPtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  ffi.Pointer<ffi.Void> share_opaque_MutexPersistedRSettings(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _share_opaque_MutexPersistedRSettings(
+      ptr,
+    );
+  }
+
+  late final _share_opaque_MutexPersistedRSettingsPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Void> Function(
+              ffi.Pointer<ffi.Void>)>>('share_opaque_MutexPersistedRSettings');
+  late final _share_opaque_MutexPersistedRSettings =
+      _share_opaque_MutexPersistedRSettingsPtr
+          .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
+
+  void drop_opaque_PathBuf(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _drop_opaque_PathBuf(
+      ptr,
+    );
+  }
+
+  late final _drop_opaque_PathBufPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+          'drop_opaque_PathBuf');
+  late final _drop_opaque_PathBuf = _drop_opaque_PathBufPtr
+      .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  ffi.Pointer<ffi.Void> share_opaque_PathBuf(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _share_opaque_PathBuf(
+      ptr,
+    );
+  }
+
+  late final _share_opaque_PathBufPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Void> Function(
+              ffi.Pointer<ffi.Void>)>>('share_opaque_PathBuf');
+  late final _share_opaque_PathBuf = _share_opaque_PathBufPtr
+      .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Void>)>();
 
   void drop_opaque_PortBytesToReadSender(
     ffi.Pointer<ffi.Void> ptr,
@@ -3532,14 +4131,16 @@ final class wire_DeviceListState extends ffi.Struct {
   external int state_id;
 }
 
-final class wire_MutexHashMapRBitcoinNetworkWallet extends ffi.Struct {
+final class wire_ArcMutexFrostsnapWallet extends ffi.Struct {
   external ffi.Pointer<ffi.Void> ptr;
 }
 
-final class wire_WalletLoader extends ffi.Struct {
-  external ffi.Pointer<wire_uint_8_list> directory;
+final class wire_ArcWalletStreams extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
 
-  external wire_MutexHashMapRBitcoinNetworkWallet loaded;
+final class wire_ChainClient extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
 }
 
 final class wire_RBitcoinNetwork extends ffi.Struct {
@@ -3550,24 +4151,12 @@ final class wire_BitcoinNetwork extends ffi.Struct {
   external wire_RBitcoinNetwork field0;
 }
 
-final class wire_ArcMutexFrostsnapWallet extends ffi.Struct {
-  external ffi.Pointer<ffi.Void> ptr;
-}
-
-final class wire_ArcWalletStreams extends ffi.Struct {
-  external ffi.Pointer<ffi.Void> ptr;
-}
-
-final class wire_ArcChainSync extends ffi.Struct {
-  external ffi.Pointer<ffi.Void> ptr;
-}
-
 final class wire_Wallet extends ffi.Struct {
   external wire_ArcMutexFrostsnapWallet inner;
 
   external wire_ArcWalletStreams wallet_streams;
 
-  external wire_ArcChainSync chain_sync;
+  external wire_ChainClient chain_sync;
 
   external wire_BitcoinNetwork network;
 }
@@ -3671,6 +4260,56 @@ final class wire_FfiQrEncoder extends ffi.Struct {
 
 final class wire_QrEncoder extends ffi.Struct {
   external wire_FfiQrEncoder field0;
+}
+
+final class wire_MutexPersistedRSettings extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_ArcMutexRusqliteConnection extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_HashMapRBitcoinNetworkChainClient extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_PathBuf extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_MutexHashMapRBitcoinNetworkWallet extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_MaybeSinkWalletSettings extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_MaybeSinkDeveloperSettings extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_MaybeSinkElectrumSettings extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> ptr;
+}
+
+final class wire_Settings extends ffi.Struct {
+  external wire_MutexPersistedRSettings settings;
+
+  external wire_ArcMutexRusqliteConnection db;
+
+  external wire_HashMapRBitcoinNetworkChainClient chain_clients;
+
+  external wire_PathBuf app_directory;
+
+  external wire_MutexHashMapRBitcoinNetworkWallet loaded_wallets;
+
+  external wire_MaybeSinkWalletSettings wallet_settings_stream;
+
+  external wire_MaybeSinkDeveloperSettings developer_settings_stream;
+
+  external wire_MaybeSinkElectrumSettings electrum_settings_stream;
 }
 
 typedef DartPostCObjectFnType = ffi.Pointer<

@@ -47,12 +47,12 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kGetConnectedDeviceConstMeta;
 
-  Future<Coordinator> load({required String dbFile, dynamic hint});
+  Future<(Coordinator, Settings)> load({required String appDir, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kLoadConstMeta;
 
-  Future<(Coordinator, FfiSerial)> loadHostHandlesSerial(
-      {required String dbFile, dynamic hint});
+  Future<(Coordinator, Settings, FfiSerial)> loadHostHandlesSerial(
+      {required String appDir, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kLoadHostHandlesSerialConstMeta;
 
@@ -140,18 +140,6 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kGetDeviceMethodDeviceListStateConstMeta;
 
-  Future<WalletLoader> createStaticMethodWalletLoader(
-      {required String directory, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kCreateStaticMethodWalletLoaderConstMeta;
-
-  Future<Wallet> loadMethodWalletLoader(
-      {required WalletLoader that,
-      required BitcoinNetwork network,
-      dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kLoadMethodWalletLoaderConstMeta;
-
   Stream<TxState> subTxStateMethodWallet(
       {required Wallet that, required KeyId keyId, dynamic hint});
 
@@ -215,6 +203,15 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kSignetStaticMethodBitcoinNetworkConstMeta;
 
+  String nameMethodBitcoinNetwork({required BitcoinNetwork that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kNameMethodBitcoinNetworkConstMeta;
+
+  bool isMainnetMethodBitcoinNetwork(
+      {required BitcoinNetwork that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kIsMainnetMethodBitcoinNetworkConstMeta;
+
   String descriptorForKeyMethodBitcoinNetwork(
       {required BitcoinNetwork that, required KeyId keyId, dynamic hint});
 
@@ -235,6 +232,12 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta
       get kValidateDestinationAddressMethodBitcoinNetworkConstMeta;
+
+  String defaultElectrumServerMethodBitcoinNetwork(
+      {required BitcoinNetwork that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta
+      get kDefaultElectrumServerMethodBitcoinNetworkConstMeta;
 
   Future<void> setAvailablePortsMethodFfiSerial(
       {required FfiSerial that, required List<PortDesc> ports, dynamic hint});
@@ -436,13 +439,63 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kNextMethodQrEncoderConstMeta;
 
-  DropFnType get dropOpaqueArcChainSync;
-  ShareFnType get shareOpaqueArcChainSync;
-  OpaqueTypeFinalizer get ArcChainSyncFinalizer;
+  Stream<DeveloperSettings> subDeveloperSettingsMethodSettings(
+      {required Settings that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta
+      get kSubDeveloperSettingsMethodSettingsConstMeta;
+
+  Stream<ElectrumSettings> subElectrumSettingsMethodSettings(
+      {required Settings that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta
+      get kSubElectrumSettingsMethodSettingsConstMeta;
+
+  Stream<WalletSettings> subWalletSettingsMethodSettings(
+      {required Settings that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kSubWalletSettingsMethodSettingsConstMeta;
+
+  Future<Wallet> loadWalletMethodSettings(
+      {required Settings that, required BitcoinNetwork network, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kLoadWalletMethodSettingsConstMeta;
+
+  Future<void> setWalletNetworkMethodSettings(
+      {required Settings that,
+      required KeyId keyId,
+      required BitcoinNetwork network,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kSetWalletNetworkMethodSettingsConstMeta;
+
+  Future<void> setDeveloperModeMethodSettings(
+      {required Settings that, required bool value, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kSetDeveloperModeMethodSettingsConstMeta;
+
+  Future<void> checkAndSetElectrumServerMethodSettings(
+      {required Settings that,
+      required BitcoinNetwork network,
+      required String url,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta
+      get kCheckAndSetElectrumServerMethodSettingsConstMeta;
+
+  Stream<ChainStatus> subscribeChainStatusMethodSettings(
+      {required Settings that, required BitcoinNetwork network, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta
+      get kSubscribeChainStatusMethodSettingsConstMeta;
 
   DropFnType get dropOpaqueArcMutexFrostsnapWallet;
   ShareFnType get shareOpaqueArcMutexFrostsnapWallet;
   OpaqueTypeFinalizer get ArcMutexFrostsnapWalletFinalizer;
+
+  DropFnType get dropOpaqueArcMutexRusqliteConnection;
+  ShareFnType get shareOpaqueArcMutexRusqliteConnection;
+  OpaqueTypeFinalizer get ArcMutexRusqliteConnectionFinalizer;
 
   DropFnType get dropOpaqueArcMutexVecPortDesc;
   ShareFnType get shareOpaqueArcMutexVecPortDesc;
@@ -459,6 +512,10 @@ abstract class Native {
   DropFnType get dropOpaqueBitcoinPsbt;
   ShareFnType get shareOpaqueBitcoinPsbt;
   OpaqueTypeFinalizer get BitcoinPsbtFinalizer;
+
+  DropFnType get dropOpaqueChainClient;
+  ShareFnType get shareOpaqueChainClient;
+  OpaqueTypeFinalizer get ChainClientFinalizer;
 
   DropFnType get dropOpaqueFfiCoordinator;
   ShareFnType get shareOpaqueFfiCoordinator;
@@ -481,9 +538,33 @@ abstract class Native {
   ShareFnType get shareOpaqueFrostsnapCoreCoordinatorCoordinatorFrostKey;
   OpaqueTypeFinalizer get FrostsnapCoreCoordinatorCoordinatorFrostKeyFinalizer;
 
+  DropFnType get dropOpaqueHashMapRBitcoinNetworkChainClient;
+  ShareFnType get shareOpaqueHashMapRBitcoinNetworkChainClient;
+  OpaqueTypeFinalizer get HashMapRBitcoinNetworkChainClientFinalizer;
+
+  DropFnType get dropOpaqueMaybeSinkDeveloperSettings;
+  ShareFnType get shareOpaqueMaybeSinkDeveloperSettings;
+  OpaqueTypeFinalizer get MaybeSinkDeveloperSettingsFinalizer;
+
+  DropFnType get dropOpaqueMaybeSinkElectrumSettings;
+  ShareFnType get shareOpaqueMaybeSinkElectrumSettings;
+  OpaqueTypeFinalizer get MaybeSinkElectrumSettingsFinalizer;
+
+  DropFnType get dropOpaqueMaybeSinkWalletSettings;
+  ShareFnType get shareOpaqueMaybeSinkWalletSettings;
+  OpaqueTypeFinalizer get MaybeSinkWalletSettingsFinalizer;
+
   DropFnType get dropOpaqueMutexHashMapRBitcoinNetworkWallet;
   ShareFnType get shareOpaqueMutexHashMapRBitcoinNetworkWallet;
   OpaqueTypeFinalizer get MutexHashMapRBitcoinNetworkWalletFinalizer;
+
+  DropFnType get dropOpaqueMutexPersistedRSettings;
+  ShareFnType get shareOpaqueMutexPersistedRSettings;
+  OpaqueTypeFinalizer get MutexPersistedRSettingsFinalizer;
+
+  DropFnType get dropOpaquePathBuf;
+  ShareFnType get shareOpaquePathBuf;
+  OpaqueTypeFinalizer get PathBufFinalizer;
 
   DropFnType get dropOpaquePortBytesToReadSender;
   ShareFnType get shareOpaquePortBytesToReadSender;
@@ -511,21 +592,6 @@ abstract class Native {
 }
 
 @sealed
-class ArcChainSync extends FrbOpaque {
-  final Native bridge;
-  ArcChainSync.fromRaw(int ptr, int size, this.bridge)
-      : super.unsafe(ptr, size);
-  @override
-  DropFnType get dropFn => bridge.dropOpaqueArcChainSync;
-
-  @override
-  ShareFnType get shareFn => bridge.shareOpaqueArcChainSync;
-
-  @override
-  OpaqueTypeFinalizer get staticFinalizer => bridge.ArcChainSyncFinalizer;
-}
-
-@sealed
 class ArcMutexFrostsnapWallet extends FrbOpaque {
   final Native bridge;
   ArcMutexFrostsnapWallet.fromRaw(int ptr, int size, this.bridge)
@@ -539,6 +605,22 @@ class ArcMutexFrostsnapWallet extends FrbOpaque {
   @override
   OpaqueTypeFinalizer get staticFinalizer =>
       bridge.ArcMutexFrostsnapWalletFinalizer;
+}
+
+@sealed
+class ArcMutexRusqliteConnection extends FrbOpaque {
+  final Native bridge;
+  ArcMutexRusqliteConnection.fromRaw(int ptr, int size, this.bridge)
+      : super.unsafe(ptr, size);
+  @override
+  DropFnType get dropFn => bridge.dropOpaqueArcMutexRusqliteConnection;
+
+  @override
+  ShareFnType get shareFn => bridge.shareOpaqueArcMutexRusqliteConnection;
+
+  @override
+  OpaqueTypeFinalizer get staticFinalizer =>
+      bridge.ArcMutexRusqliteConnectionFinalizer;
 }
 
 @sealed
@@ -599,6 +681,20 @@ class BitcoinPsbt extends FrbOpaque {
 
   @override
   OpaqueTypeFinalizer get staticFinalizer => bridge.BitcoinPsbtFinalizer;
+}
+
+@sealed
+class ChainClient extends FrbOpaque {
+  final Native bridge;
+  ChainClient.fromRaw(int ptr, int size, this.bridge) : super.unsafe(ptr, size);
+  @override
+  DropFnType get dropFn => bridge.dropOpaqueChainClient;
+
+  @override
+  ShareFnType get shareFn => bridge.shareOpaqueChainClient;
+
+  @override
+  OpaqueTypeFinalizer get staticFinalizer => bridge.ChainClientFinalizer;
 }
 
 @sealed
@@ -684,6 +780,71 @@ class FrostsnapCoreCoordinatorCoordinatorFrostKey extends FrbOpaque {
 }
 
 @sealed
+class HashMapRBitcoinNetworkChainClient extends FrbOpaque {
+  final Native bridge;
+  HashMapRBitcoinNetworkChainClient.fromRaw(int ptr, int size, this.bridge)
+      : super.unsafe(ptr, size);
+  @override
+  DropFnType get dropFn => bridge.dropOpaqueHashMapRBitcoinNetworkChainClient;
+
+  @override
+  ShareFnType get shareFn =>
+      bridge.shareOpaqueHashMapRBitcoinNetworkChainClient;
+
+  @override
+  OpaqueTypeFinalizer get staticFinalizer =>
+      bridge.HashMapRBitcoinNetworkChainClientFinalizer;
+}
+
+@sealed
+class MaybeSinkDeveloperSettings extends FrbOpaque {
+  final Native bridge;
+  MaybeSinkDeveloperSettings.fromRaw(int ptr, int size, this.bridge)
+      : super.unsafe(ptr, size);
+  @override
+  DropFnType get dropFn => bridge.dropOpaqueMaybeSinkDeveloperSettings;
+
+  @override
+  ShareFnType get shareFn => bridge.shareOpaqueMaybeSinkDeveloperSettings;
+
+  @override
+  OpaqueTypeFinalizer get staticFinalizer =>
+      bridge.MaybeSinkDeveloperSettingsFinalizer;
+}
+
+@sealed
+class MaybeSinkElectrumSettings extends FrbOpaque {
+  final Native bridge;
+  MaybeSinkElectrumSettings.fromRaw(int ptr, int size, this.bridge)
+      : super.unsafe(ptr, size);
+  @override
+  DropFnType get dropFn => bridge.dropOpaqueMaybeSinkElectrumSettings;
+
+  @override
+  ShareFnType get shareFn => bridge.shareOpaqueMaybeSinkElectrumSettings;
+
+  @override
+  OpaqueTypeFinalizer get staticFinalizer =>
+      bridge.MaybeSinkElectrumSettingsFinalizer;
+}
+
+@sealed
+class MaybeSinkWalletSettings extends FrbOpaque {
+  final Native bridge;
+  MaybeSinkWalletSettings.fromRaw(int ptr, int size, this.bridge)
+      : super.unsafe(ptr, size);
+  @override
+  DropFnType get dropFn => bridge.dropOpaqueMaybeSinkWalletSettings;
+
+  @override
+  ShareFnType get shareFn => bridge.shareOpaqueMaybeSinkWalletSettings;
+
+  @override
+  OpaqueTypeFinalizer get staticFinalizer =>
+      bridge.MaybeSinkWalletSettingsFinalizer;
+}
+
+@sealed
 class MutexHashMapRBitcoinNetworkWallet extends FrbOpaque {
   final Native bridge;
   MutexHashMapRBitcoinNetworkWallet.fromRaw(int ptr, int size, this.bridge)
@@ -698,6 +859,36 @@ class MutexHashMapRBitcoinNetworkWallet extends FrbOpaque {
   @override
   OpaqueTypeFinalizer get staticFinalizer =>
       bridge.MutexHashMapRBitcoinNetworkWalletFinalizer;
+}
+
+@sealed
+class MutexPersistedRSettings extends FrbOpaque {
+  final Native bridge;
+  MutexPersistedRSettings.fromRaw(int ptr, int size, this.bridge)
+      : super.unsafe(ptr, size);
+  @override
+  DropFnType get dropFn => bridge.dropOpaqueMutexPersistedRSettings;
+
+  @override
+  ShareFnType get shareFn => bridge.shareOpaqueMutexPersistedRSettings;
+
+  @override
+  OpaqueTypeFinalizer get staticFinalizer =>
+      bridge.MutexPersistedRSettingsFinalizer;
+}
+
+@sealed
+class PathBuf extends FrbOpaque {
+  final Native bridge;
+  PathBuf.fromRaw(int ptr, int size, this.bridge) : super.unsafe(ptr, size);
+  @override
+  DropFnType get dropFn => bridge.dropOpaquePathBuf;
+
+  @override
+  ShareFnType get shareFn => bridge.shareOpaquePathBuf;
+
+  @override
+  OpaqueTypeFinalizer get staticFinalizer => bridge.PathBufFinalizer;
 }
 
 @sealed
@@ -815,6 +1006,14 @@ class BitcoinNetwork {
   static BitcoinNetwork signet({required Native bridge, dynamic hint}) =>
       bridge.signetStaticMethodBitcoinNetwork(hint: hint);
 
+  String name({dynamic hint}) => bridge.nameMethodBitcoinNetwork(
+        that: this,
+      );
+
+  bool isMainnet({dynamic hint}) => bridge.isMainnetMethodBitcoinNetwork(
+        that: this,
+      );
+
   String descriptorForKey({required KeyId keyId, dynamic hint}) =>
       bridge.descriptorForKeyMethodBitcoinNetwork(
         that: this,
@@ -834,6 +1033,28 @@ class BitcoinNetwork {
         that: this,
         address: address,
       );
+
+  String defaultElectrumServer({dynamic hint}) =>
+      bridge.defaultElectrumServerMethodBitcoinNetwork(
+        that: this,
+      );
+}
+
+class ChainStatus {
+  final String electrumUrl;
+  final ChainStatusState state;
+
+  const ChainStatus({
+    required this.electrumUrl,
+    required this.state,
+  });
+}
+
+enum ChainStatusState {
+  Connected,
+  Syncing,
+  Disconnected,
+  Connecting,
 }
 
 class CheckShareState {
@@ -1064,6 +1285,14 @@ class DecodingProgress {
   });
 }
 
+class DeveloperSettings {
+  final bool developerMode;
+
+  const DeveloperSettings({
+    required this.developerMode,
+  });
+}
+
 class DeviceId {
   final U8Array33 field0;
 
@@ -1129,6 +1358,14 @@ class EffectOfTx {
     required this.fee,
     this.feerate,
     required this.foreignReceivingAddresses,
+  });
+}
+
+class ElectrumSettings {
+  final List<(BitcoinNetwork, String)> electrumServers;
+
+  const ElectrumSettings({
+    required this.electrumServers,
   });
 }
 
@@ -1413,6 +1650,84 @@ class QrReader {
       );
 }
 
+class Settings {
+  final Native bridge;
+  final MutexPersistedRSettings settings;
+  final ArcMutexRusqliteConnection db;
+  final HashMapRBitcoinNetworkChainClient chainClients;
+  final PathBuf appDirectory;
+  final MutexHashMapRBitcoinNetworkWallet loadedWallets;
+  final MaybeSinkWalletSettings walletSettingsStream;
+  final MaybeSinkDeveloperSettings developerSettingsStream;
+  final MaybeSinkElectrumSettings electrumSettingsStream;
+
+  const Settings({
+    required this.bridge,
+    required this.settings,
+    required this.db,
+    required this.chainClients,
+    required this.appDirectory,
+    required this.loadedWallets,
+    required this.walletSettingsStream,
+    required this.developerSettingsStream,
+    required this.electrumSettingsStream,
+  });
+
+  Stream<DeveloperSettings> subDeveloperSettings({dynamic hint}) =>
+      bridge.subDeveloperSettingsMethodSettings(
+        that: this,
+      );
+
+  Stream<ElectrumSettings> subElectrumSettings({dynamic hint}) =>
+      bridge.subElectrumSettingsMethodSettings(
+        that: this,
+      );
+
+  Stream<WalletSettings> subWalletSettings({dynamic hint}) =>
+      bridge.subWalletSettingsMethodSettings(
+        that: this,
+      );
+
+  Future<Wallet> loadWallet({required BitcoinNetwork network, dynamic hint}) =>
+      bridge.loadWalletMethodSettings(
+        that: this,
+        network: network,
+      );
+
+  Future<void> setWalletNetwork(
+          {required KeyId keyId,
+          required BitcoinNetwork network,
+          dynamic hint}) =>
+      bridge.setWalletNetworkMethodSettings(
+        that: this,
+        keyId: keyId,
+        network: network,
+      );
+
+  Future<void> setDeveloperMode({required bool value, dynamic hint}) =>
+      bridge.setDeveloperModeMethodSettings(
+        that: this,
+        value: value,
+      );
+
+  Future<void> checkAndSetElectrumServer(
+          {required BitcoinNetwork network,
+          required String url,
+          dynamic hint}) =>
+      bridge.checkAndSetElectrumServerMethodSettings(
+        that: this,
+        network: network,
+        url: url,
+      );
+
+  Stream<ChainStatus> subscribeChainStatus(
+          {required BitcoinNetwork network, dynamic hint}) =>
+      bridge.subscribeChainStatusMethodSettings(
+        that: this,
+        network: network,
+      );
+}
+
 @freezed
 sealed class SignTaskDescription with _$SignTaskDescription {
   const factory SignTaskDescription.plain({
@@ -1551,7 +1866,7 @@ class Wallet {
   final Native bridge;
   final ArcMutexFrostsnapWallet inner;
   final ArcWalletStreams walletStreams;
-  final ArcChainSync chainSync;
+  final ChainClient chainSync;
   final BitcoinNetwork network;
 
   const Wallet({
@@ -1631,24 +1946,10 @@ class Wallet {
       );
 }
 
-class WalletLoader {
-  final Native bridge;
-  final String directory;
-  final MutexHashMapRBitcoinNetworkWallet loaded;
+class WalletSettings {
+  final List<(KeyId, BitcoinNetwork)> walletNetworks;
 
-  const WalletLoader({
-    required this.bridge,
-    required this.directory,
-    required this.loaded,
+  const WalletSettings({
+    required this.walletNetworks,
   });
-
-  static Future<WalletLoader> create(
-          {required Native bridge, required String directory, dynamic hint}) =>
-      bridge.createStaticMethodWalletLoader(directory: directory, hint: hint);
-
-  Future<Wallet> load({required BitcoinNetwork network, dynamic hint}) =>
-      bridge.loadMethodWalletLoader(
-        that: this,
-        network: network,
-      );
 }

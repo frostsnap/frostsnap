@@ -27,6 +27,21 @@ impl<T> Persisted<T> {
         Ok(ret)
     }
 
+    pub fn mutate2<C, R>(
+        &mut self,
+        db: &mut C,
+        mutator: impl FnOnce(&mut T, &mut T::Update) -> Result<R>,
+    ) -> Result<R>
+    where
+        T: Persist<C>,
+        T::Update: Default,
+    {
+        let mut update = T::Update::default();
+        let result = (mutator)(&mut self.0, &mut update);
+        T::persist_update(db, update)?;
+        result
+    }
+
     pub fn staged_mutate<C, R>(
         &mut self,
         db: &mut C,
@@ -227,6 +242,24 @@ impl<T: bincode::Decode> FromSql for BincodeWrapper<T> {
             bincode::decode_from_slice::<T, _>(value.as_blob()?, bincode::config::standard())
                 .map_err(|e| FromSqlError::Other(Box::new(e)))?;
 
+        Ok(Self(decoded))
+    }
+}
+
+pub struct ToStringWrapper<T>(pub T);
+
+impl<T: ToString> ToSql for ToStringWrapper<T> {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        Ok(ToSqlOutput::from(self.0.to_string()))
+    }
+}
+
+impl<T: FromStr> FromSql for ToStringWrapper<T>
+where
+    T::Err: std::error::Error + Send + 'static + Sync,
+{
+    fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        let decoded = T::from_str(value.as_str()?).map_err(|e| FromSqlError::Other(Box::new(e)))?;
         Ok(Self(decoded))
     }
 }

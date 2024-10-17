@@ -31,11 +31,6 @@ pub trait UiProtocol: Send + Any + 'static {
     fn as_mut_any(&mut self) -> &mut dyn Any;
 }
 
-pub trait Sink<M>: Send {
-    fn send(&self, state: M);
-    fn close(&self);
-}
-
 #[derive(Clone, Debug)]
 pub enum Completion {
     Success,

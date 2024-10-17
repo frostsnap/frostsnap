@@ -1,3 +1,4 @@
+use alloc::string::String;
 use schnorr_fun::{
     frost::{PairedSecretShare, SharedKey},
     fun::prelude::*,
@@ -28,6 +29,13 @@ impl KeyId {
 
     pub fn to_root_pubkey(&self) -> Option<Point> {
         Point::from_bytes(self.0)
+    }
+
+    pub fn to_redacted_string(&self) -> String {
+        use alloc::string::ToString;
+        let full = self.to_string();
+        let redacted = format!("{}...{}", &full[..4], &full[full.len() - 4..]);
+        redacted
     }
 }
 

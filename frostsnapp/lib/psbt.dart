@@ -7,16 +7,14 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnapp/camera.dart';
-import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_id_ext.dart';
 import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/hex.dart';
+import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/sign_message.dart';
+import 'package:frostsnapp/snackbar.dart';
 import 'package:frostsnapp/wallet.dart';
-import 'package:path/path.dart' as path;
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
-import "dart:developer" as developer;
 
 class LoadPsbtPage extends StatefulWidget {
   final KeyId keyId;
@@ -97,7 +95,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
         ));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Sign PSBT')),
+      appBar: FsAppBar(title: const Text('Sign PSBT')),
       body: Padding(
         padding: EdgeInsets.all(8.0),
         child: Column(
@@ -140,7 +138,7 @@ Future<void> runPsbtSigningWorkflow(
     psbt = api.psbtBytesToPsbt(psbtBytes: psbtBytes);
     unsignedTx = wallet.psbtToUnsignedTx(psbt: psbt, keyId: keyId);
   } catch (e) {
-    showErrorSnackbar(context, "Error loading PSBT: $e");
+    showErrorSnackbarTop(context, "Error loading PSBT: $e");
     return;
   }
 

@@ -146,32 +146,32 @@ fn wire_get_connected_device_impl(
         },
     )
 }
-fn wire_load_impl(port_: MessagePort, db_file: impl Wire2Api<String> + UnwindSafe) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, Coordinator, _>(
+fn wire_load_impl(port_: MessagePort, app_dir: impl Wire2Api<String> + UnwindSafe) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (Coordinator, Settings), _>(
         WrapInfo {
             debug_name: "load",
             port: Some(port_),
             mode: FfiCallMode::Normal,
         },
         move || {
-            let api_db_file = db_file.wire2api();
-            move |task_callback| load(api_db_file)
+            let api_app_dir = app_dir.wire2api();
+            move |task_callback| load(api_app_dir)
         },
     )
 }
 fn wire_load_host_handles_serial_impl(
     port_: MessagePort,
-    db_file: impl Wire2Api<String> + UnwindSafe,
+    app_dir: impl Wire2Api<String> + UnwindSafe,
 ) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (Coordinator, FfiSerial), _>(
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (Coordinator, Settings, FfiSerial), _>(
         WrapInfo {
             debug_name: "load_host_handles_serial",
             port: Some(port_),
             mode: FfiCallMode::Normal,
         },
         move || {
-            let api_db_file = db_file.wire2api();
-            move |task_callback| load_host_handles_serial(api_db_file)
+            let api_app_dir = app_dir.wire2api();
+            move |task_callback| load_host_handles_serial(api_app_dir)
         },
     )
 }
@@ -441,40 +441,6 @@ fn wire_get_device__method__DeviceListState_impl(
         },
     )
 }
-fn wire_create__static_method__WalletLoader_impl(
-    port_: MessagePort,
-    directory: impl Wire2Api<String> + UnwindSafe,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, WalletLoader, _>(
-        WrapInfo {
-            debug_name: "create__static_method__WalletLoader",
-            port: Some(port_),
-            mode: FfiCallMode::Normal,
-        },
-        move || {
-            let api_directory = directory.wire2api();
-            move |task_callback| Result::<_, ()>::Ok(WalletLoader::create(api_directory))
-        },
-    )
-}
-fn wire_load__method__WalletLoader_impl(
-    port_: MessagePort,
-    that: impl Wire2Api<WalletLoader> + UnwindSafe,
-    network: impl Wire2Api<BitcoinNetwork> + UnwindSafe,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, Wallet, _>(
-        WrapInfo {
-            debug_name: "load__method__WalletLoader",
-            port: Some(port_),
-            mode: FfiCallMode::Normal,
-        },
-        move || {
-            let api_that = that.wire2api();
-            let api_network = network.wire2api();
-            move |task_callback| WalletLoader::load(&api_that, api_network)
-        },
-    )
-}
 fn wire_sub_tx_state__method__Wallet_impl(
     port_: MessagePort,
     that: impl Wire2Api<Wallet> + UnwindSafe,
@@ -679,6 +645,36 @@ fn wire_signet__static_method__BitcoinNetwork_impl() -> support::WireSyncReturn 
         move || Result::<_, ()>::Ok(BitcoinNetwork::signet()),
     )
 }
+fn wire_name__method__BitcoinNetwork_impl(
+    that: impl Wire2Api<BitcoinNetwork> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "name__method__BitcoinNetwork",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            Result::<_, ()>::Ok(BitcoinNetwork::name(&api_that))
+        },
+    )
+}
+fn wire_is_mainnet__method__BitcoinNetwork_impl(
+    that: impl Wire2Api<BitcoinNetwork> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "is_mainnet__method__BitcoinNetwork",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            Result::<_, ()>::Ok(BitcoinNetwork::is_mainnet(&api_that))
+        },
+    )
+}
 fn wire_descriptor_for_key__method__BitcoinNetwork_impl(
     that: impl Wire2Api<BitcoinNetwork> + UnwindSafe,
     key_id: impl Wire2Api<KeyId> + UnwindSafe,
@@ -736,6 +732,21 @@ fn wire_validate_destination_address__method__BitcoinNetwork_impl(
                 &api_that,
                 api_address,
             ))
+        },
+    )
+}
+fn wire_default_electrum_server__method__BitcoinNetwork_impl(
+    that: impl Wire2Api<BitcoinNetwork> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "default_electrum_server__method__BitcoinNetwork",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            Result::<_, ()>::Ok(BitcoinNetwork::default_electrum_server(&api_that))
         },
     )
 }
@@ -1382,7 +1393,178 @@ fn wire_next__method__QrEncoder_impl(
         },
     )
 }
+fn wire_sub_developer_settings__method__Settings_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<Settings> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "sub_developer_settings__method__Settings",
+            port: Some(port_),
+            mode: FfiCallMode::Stream,
+        },
+        move || {
+            let api_that = that.wire2api();
+            move |task_callback| {
+                Settings::sub_developer_settings(
+                    &api_that,
+                    task_callback.stream_sink::<_, DeveloperSettings>(),
+                )
+            }
+        },
+    )
+}
+fn wire_sub_electrum_settings__method__Settings_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<Settings> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "sub_electrum_settings__method__Settings",
+            port: Some(port_),
+            mode: FfiCallMode::Stream,
+        },
+        move || {
+            let api_that = that.wire2api();
+            move |task_callback| {
+                Settings::sub_electrum_settings(
+                    &api_that,
+                    task_callback.stream_sink::<_, ElectrumSettings>(),
+                )
+            }
+        },
+    )
+}
+fn wire_sub_wallet_settings__method__Settings_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<Settings> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "sub_wallet_settings__method__Settings",
+            port: Some(port_),
+            mode: FfiCallMode::Stream,
+        },
+        move || {
+            let api_that = that.wire2api();
+            move |task_callback| {
+                Settings::sub_wallet_settings(
+                    &api_that,
+                    task_callback.stream_sink::<_, WalletSettings>(),
+                )
+            }
+        },
+    )
+}
+fn wire_load_wallet__method__Settings_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<Settings> + UnwindSafe,
+    network: impl Wire2Api<BitcoinNetwork> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, Wallet, _>(
+        WrapInfo {
+            debug_name: "load_wallet__method__Settings",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_network = network.wire2api();
+            move |task_callback| Settings::load_wallet(&api_that, api_network)
+        },
+    )
+}
+fn wire_set_wallet_network__method__Settings_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<Settings> + UnwindSafe,
+    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    network: impl Wire2Api<BitcoinNetwork> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "set_wallet_network__method__Settings",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_key_id = key_id.wire2api();
+            let api_network = network.wire2api();
+            move |task_callback| Settings::set_wallet_network(&api_that, api_key_id, api_network)
+        },
+    )
+}
+fn wire_set_developer_mode__method__Settings_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<Settings> + UnwindSafe,
+    value: impl Wire2Api<bool> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "set_developer_mode__method__Settings",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_value = value.wire2api();
+            move |task_callback| Settings::set_developer_mode(&api_that, api_value)
+        },
+    )
+}
+fn wire_check_and_set_electrum_server__method__Settings_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<Settings> + UnwindSafe,
+    network: impl Wire2Api<BitcoinNetwork> + UnwindSafe,
+    url: impl Wire2Api<String> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "check_and_set_electrum_server__method__Settings",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_network = network.wire2api();
+            let api_url = url.wire2api();
+            move |task_callback| {
+                Settings::check_and_set_electrum_server(&api_that, api_network, api_url)
+            }
+        },
+    )
+}
+fn wire_subscribe_chain_status__method__Settings_impl(
+    port_: MessagePort,
+    that: impl Wire2Api<Settings> + UnwindSafe,
+    network: impl Wire2Api<BitcoinNetwork> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "subscribe_chain_status__method__Settings",
+            port: Some(port_),
+            mode: FfiCallMode::Stream,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_network = network.wire2api();
+            move |task_callback| {
+                Settings::subscribe_chain_status(
+                    &api_that,
+                    api_network,
+                    task_callback.stream_sink::<_, mirror_ChainStatus>(),
+                )
+            }
+        },
+    )
+}
 // Section: wrapper structs
+
+#[derive(Clone)]
+pub struct mirror_ChainStatus(ChainStatus);
+
+#[derive(Clone)]
+pub struct mirror_ChainStatusState(ChainStatusState);
 
 #[derive(Clone)]
 pub struct mirror_CheckShareState(CheckShareState);
@@ -1411,6 +1593,17 @@ pub struct mirror_SigningState(SigningState);
 // Section: static checks
 
 const _: fn() = || {
+    {
+        let ChainStatus = None::<ChainStatus>.unwrap();
+        let _: String = ChainStatus.electrum_url;
+        let _: ChainStatusState = ChainStatus.state;
+    }
+    match None::<ChainStatusState>.unwrap() {
+        ChainStatusState::Connected => {}
+        ChainStatusState::Syncing => {}
+        ChainStatusState::Disconnected => {}
+        ChainStatusState::Connecting => {}
+    }
     {
         let CheckShareState = None::<CheckShareState>.unwrap();
         let _: Option<bool> = CheckShareState.outcome;
@@ -1474,6 +1667,12 @@ where
 {
     fn wire2api(self) -> Option<T> {
         (!self.is_null()).then(|| self.wire2api())
+    }
+}
+
+impl Wire2Api<bool> for bool {
+    fn wire2api(self) -> bool {
+        self
     }
 }
 
@@ -1562,6 +1761,40 @@ impl rust2dart::IntoIntoDart<BitcoinNetwork> for BitcoinNetwork {
     }
 }
 
+impl support::IntoDart for mirror_ChainStatus {
+    fn into_dart(self) -> support::DartAbi {
+        vec![
+            self.0.electrum_url.into_into_dart().into_dart(),
+            self.0.state.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for mirror_ChainStatus {}
+impl rust2dart::IntoIntoDart<mirror_ChainStatus> for ChainStatus {
+    fn into_into_dart(self) -> mirror_ChainStatus {
+        mirror_ChainStatus(self)
+    }
+}
+
+impl support::IntoDart for mirror_ChainStatusState {
+    fn into_dart(self) -> support::DartAbi {
+        match self.0 {
+            ChainStatusState::Connected => 0,
+            ChainStatusState::Syncing => 1,
+            ChainStatusState::Disconnected => 2,
+            ChainStatusState::Connecting => 3,
+        }
+        .into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for mirror_ChainStatusState {}
+impl rust2dart::IntoIntoDart<mirror_ChainStatusState> for ChainStatusState {
+    fn into_into_dart(self) -> mirror_ChainStatusState {
+        mirror_ChainStatusState(self)
+    }
+}
+
 impl support::IntoDart for mirror_CheckShareState {
     fn into_dart(self) -> support::DartAbi {
         vec![self.0.outcome.into_dart(), self.0.abort.into_dart()].into_dart()
@@ -1631,6 +1864,18 @@ impl support::IntoDart for DecodingProgress {
 }
 impl support::IntoDartExceptPrimitive for DecodingProgress {}
 impl rust2dart::IntoIntoDart<DecodingProgress> for DecodingProgress {
+    fn into_into_dart(self) -> Self {
+        self
+    }
+}
+
+impl support::IntoDart for DeveloperSettings {
+    fn into_dart(self) -> support::DartAbi {
+        vec![self.developer_mode.into_into_dart().into_dart()].into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for DeveloperSettings {}
+impl rust2dart::IntoIntoDart<DeveloperSettings> for DeveloperSettings {
     fn into_into_dart(self) -> Self {
         self
     }
@@ -1729,6 +1974,18 @@ impl support::IntoDart for EffectOfTx {
 }
 impl support::IntoDartExceptPrimitive for EffectOfTx {}
 impl rust2dart::IntoIntoDart<EffectOfTx> for EffectOfTx {
+    fn into_into_dart(self) -> Self {
+        self
+    }
+}
+
+impl support::IntoDart for ElectrumSettings {
+    fn into_dart(self) -> support::DartAbi {
+        vec![self.electrum_servers.into_into_dart().into_dart()].into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for ElectrumSettings {}
+impl rust2dart::IntoIntoDart<ElectrumSettings> for ElectrumSettings {
     fn into_into_dart(self) -> Self {
         self
     }
@@ -1970,6 +2227,28 @@ impl rust2dart::IntoIntoDart<QrReader> for QrReader {
     }
 }
 
+impl support::IntoDart for Settings {
+    fn into_dart(self) -> support::DartAbi {
+        vec![
+            self.settings.into_dart(),
+            self.db.into_dart(),
+            self.chain_clients.into_dart(),
+            self.app_directory.into_dart(),
+            self.loaded_wallets.into_dart(),
+            self.wallet_settings_stream.into_dart(),
+            self.developer_settings_stream.into_dart(),
+            self.electrum_settings_stream.into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for Settings {}
+impl rust2dart::IntoIntoDart<Settings> for Settings {
+    fn into_into_dart(self) -> Self {
+        self
+    }
+}
+
 impl support::IntoDart for SignTaskDescription {
     fn into_dart(self) -> support::DartAbi {
         match self {
@@ -2082,17 +2361,13 @@ impl rust2dart::IntoIntoDart<Wallet> for Wallet {
     }
 }
 
-impl support::IntoDart for WalletLoader {
+impl support::IntoDart for WalletSettings {
     fn into_dart(self) -> support::DartAbi {
-        vec![
-            self.directory.into_into_dart().into_dart(),
-            self.loaded.into_dart(),
-        ]
-        .into_dart()
+        vec![self.wallet_networks.into_into_dart().into_dart()].into_dart()
     }
 }
-impl support::IntoDartExceptPrimitive for WalletLoader {}
-impl rust2dart::IntoIntoDart<WalletLoader> for WalletLoader {
+impl support::IntoDartExceptPrimitive for WalletSettings {}
+impl rust2dart::IntoIntoDart<WalletSettings> for WalletSettings {
     fn into_into_dart(self) -> Self {
         self
     }

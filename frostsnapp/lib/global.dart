@@ -5,7 +5,6 @@ import 'serialport.dart';
 
 late Coordinator coord;
 late HostPortHandler globalHostPortHandler;
-late WalletLoader walletLoader;
 
 /// Gets new updates from the device list
 Stream<DeviceListUpdate> deviceListUpdateStream =
