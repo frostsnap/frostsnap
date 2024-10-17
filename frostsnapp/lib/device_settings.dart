@@ -10,7 +10,9 @@ import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/device_setup.dart';
 import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/global.dart';
+import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/show_backup.dart';
+import 'package:frostsnapp/snackbar.dart';
 import 'package:frostsnapp/theme.dart';
 
 class DeviceSettingsPage extends StatelessWidget {
@@ -21,7 +23,7 @@ class DeviceSettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Device Settings')),
+      appBar: FsAppBar(title: const Text('Device Settings')),
       body: DeviceList(),
     );
   }
@@ -68,7 +70,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
     final deviceKeys = coord.keysForDevice(deviceId: widget.id);
     if (device == null) {
       body = Center(
-          child: Column(mainAxisSize: MainAxisSize.min, children: const [
+          child: Column(children: const [
         Text(
           'Waiting for device to reconnect',
           style: TextStyle(color: uninterestedColor, fontSize: 24.0),
@@ -83,29 +85,70 @@ class _DeviceSettingsState extends State<DeviceSettings> {
         itemBuilder: (context, index) {
           final keyId = deviceKeys[index];
           final keyName = coord.getKeyName(keyId: keyId)!;
-          return ListTile(
-            title: Row(mainAxisAlignment: MainAxisAlignment.start, children: [
-              Text(
-                keyName,
-                style: const TextStyle(fontSize: 20.0),
-              ),
-              SizedBox(width: 10),
-              ElevatedButton(
-                onPressed: () async {
-                  Navigator.push(context, MaterialPageRoute(builder: (context) {
-                    return BackupSettingsPage(
-                      context: context,
-                      id: device_.id,
-                      deviceName: device_.name ?? "unamed",
-                      keyId: keyId,
-                      keyName: keyName,
-                    );
-                  }));
-                },
-                child: Text("Backup"),
-              )
-            ]),
-          );
+          return Padding(
+              padding: const EdgeInsets.only(
+                  bottom: 4.0), // Adjust the padding/margin here
+              child: ListTile(
+                  title: Row(
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      children: [
+                    Column(children: [
+                      Text(
+                        keyName,
+                        style: const TextStyle(fontSize: 20.0),
+                      ),
+                    ]),
+                    SizedBox(width: 10),
+                    ElevatedButton(
+                      onPressed: () async {
+                        final confirmed = coord
+                            .displayBackup(id: widget.id, keyId: keyId)
+                            .first;
+
+                        final result = await showDeviceActionDialog(
+                          context: context,
+                          complete: _deviceRemoved.future,
+                          builder: (context) {
+                            return FutureBuilder(
+                                future: confirmed,
+                                builder: (context, snapshot) {
+                                  return Column(children: [
+                                    DialogHeader(
+                                        child: Text(snapshot.connectionState ==
+                                                ConnectionState.waiting
+                                            ? "Confirm on device to show backup"
+                                            : "Record backup displayed on device screen. Press cancel when finished.")),
+                                    Expanded(child: DeviceListWithIcons(
+                                        iconAssigner: (context, deviceId) {
+                                      if (deviceIdEquals(deviceId, widget.id)) {
+                                        final label = LabeledDeviceText(
+                                            device_.name ?? "<unamed>");
+                                        final Widget icon;
+                                        if (snapshot.connectionState ==
+                                            ConnectionState.waiting) {
+                                          icon = ConfirmPrompt();
+                                        } else {
+                                          icon = DevicePrompt(
+                                              icon: Icon(Icons.edit_document,
+                                                  color: successColor),
+                                              text: "Record");
+                                        }
+                                        return (label, icon);
+                                      } else {
+                                        return (null, null);
+                                      }
+                                    }))
+                                  ]);
+                                });
+                          },
+                        );
+                        if (result == null) {
+                          coord.cancelProtocol();
+                        }
+                      },
+                      child: Text("Backup"),
+                    ),
+                  ])));
         },
       );
 
@@ -171,7 +214,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
     }
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: FsAppBar(
         title: Text(
           "Device Settings",
         ),
@@ -268,7 +311,7 @@ class _FirmwareUpgradeDialogState extends State<FirmwareUpgradeDialog> {
 
       if (newState.abort) {
         if (mounted) {
-          showErrorSnackbar(context, "Firmware upgrade aborted");
+          showErrorSnackbarBottom(context, "Firmware upgrade aborted");
           Navigator.pop(context);
         }
 
@@ -283,7 +326,7 @@ class _FirmwareUpgradeDialogState extends State<FirmwareUpgradeDialog> {
           }).onDone(() {
             if (mounted) {
               if (progress != 1.0) {
-                showErrorSnackbar(context, "Firmware upgrade failed");
+                showErrorSnackbarBottom(context, "Firmware upgrade failed");
               }
               Navigator.pop(context);
             }
@@ -448,7 +491,7 @@ class BackupSettingsPage extends StatelessWidget {
                               .firstWhere((state) => state.abort != null)
                               .then((state) {
                             if (context.mounted) {
-                              showErrorSnackbar(context, state.abort!);
+                              showErrorSnackbarBottom(context, state.abort!);
                             }
                             return null;
                           });

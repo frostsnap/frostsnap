@@ -7,6 +7,7 @@ import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_id_ext.dart';
 import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/global.dart';
+import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/theme.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
@@ -20,7 +21,7 @@ class SignMessagePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(title: const Text('Sign Message')),
+        appBar: FsAppBar(title: const Text('Sign Message')),
         body: Padding(
           padding: EdgeInsets.all(8.0),
           child: SignMessageForm(

@@ -1,24 +1,36 @@
+import 'package:frostsnapp/device_id_ext.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/keygen.dart';
+import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/theme.dart';
 import 'package:frostsnapp/wallet.dart';
+import 'package:collection/collection.dart';
 
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'package:flutter/material.dart';
 import 'package:confetti/confetti.dart';
+import 'package:rxdart/rxdart.dart';
 
 import 'sign_message.dart';
 
 class KeyList extends StatelessWidget {
   final Function(KeyId)? onNewKey;
-  final Function(BuildContext, FrostKey) itemBuilder;
+  final Function(BuildContext, FrostKey, BitcoinNetwork?) itemBuilder;
+
   const KeyList({super.key, this.onNewKey, required this.itemBuilder});
 
   @override
   Widget build(BuildContext context) {
-    final keyStateSream = coord.subKeyEvents().toBehaviorSubject();
+    final keyStateStream =
+        coord.subKeyEvents().toBehaviorSubject().map((value) {
+      return value;
+    });
+    final settingsStream =
+        SettingsContext.of(context)!.walletSettings.map((value) {
+      return value;
+    });
 
     final showDevicesButton = ElevatedButton(
         onPressed: () {
@@ -28,12 +40,29 @@ class KeyList extends StatelessWidget {
         },
         child: Text("Show Devices"));
 
-    final content = StreamBuilder<KeyState>(
-        stream: keyStateSream,
+    final keyStream =
+        Rx.combineLatest2(settingsStream, keyStateStream, (settings, keyState) {
+      return keyState.keys.map((frostKey) {
+        final targetKeyId = frostKey.id();
+        final BitcoinNetwork network = settings.walletNetworks
+                .firstWhereOrNull(
+                  (record) => keyIdEquals(record.$1, targetKeyId),
+                )
+                ?.$2 ??
+            BitcoinNetwork.signet(bridge: api);
+        return (key: frostKey, network: network);
+      }).toList();
+    }).map((value) {
+      return value;
+    });
+
+    final content = StreamBuilder(
+        stream: keyStream,
         builder: (context, snap) {
           var keys = [];
+
           if (snap.hasData) {
-            keys = snap.data!.keys;
+            keys = snap.data!;
           }
           final StatelessWidget list;
           if (keys.isEmpty) {
@@ -42,8 +71,10 @@ class KeyList extends StatelessWidget {
             list = ListView.builder(
                 shrinkWrap: true,
                 itemCount: keys.length,
-                itemBuilder: (context, index) =>
-                    itemBuilder(context, keys[index]));
+                itemBuilder: (context, index) {
+                  final record = keys[index];
+                  return itemBuilder(context, record.key, record.network);
+                });
           }
           return Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -79,8 +110,9 @@ class KeyList extends StatelessWidget {
 
 class KeyCard extends StatefulWidget {
   final FrostKey frostKey;
+  final BitcoinNetwork? bitcoinNetwork;
 
-  const KeyCard({super.key, required this.frostKey});
+  const KeyCard({super.key, required this.frostKey, this.bitcoinNetwork});
 
   @override
   State<KeyCard> createState() => _KeyCard();
@@ -99,6 +131,10 @@ class _KeyCard extends State<KeyCard> {
   @override
   Widget build(BuildContext context) {
     final keyId = widget.frostKey.id();
+    final bitcoinNetwork =
+        widget.bitcoinNetwork ?? BitcoinNetwork.signet(bridge: api);
+    final settingsCtx = SettingsContext.of(context)!;
+    final settings = settingsCtx.settings;
     final signButton = ElevatedButton(
         onPressed: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) {
@@ -108,14 +144,27 @@ class _KeyCard extends State<KeyCard> {
         child: Text("Sign"));
 
     final Widget walletButton = ElevatedButton(
-        onPressed: () async {
-          final wallet = await walletLoader.load(
-              network: BitcoinNetwork.signet(bridge: api));
-          Navigator.push(context, MaterialPageRoute(builder: (context) {
-            return WalletHome(keyId: keyId, wallet: wallet);
-          }));
-        },
-        child: Text("₿"));
+      onPressed: bitcoinNetwork == null
+          ? null
+          : () async {
+              final wallet = await settings.loadWallet(network: bitcoinNetwork);
+              Navigator.push(context, MaterialPageRoute(builder: (context) {
+                return WalletPage(keyId: keyId, wallet: wallet);
+              }));
+            },
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text("₿"),
+          if (!(bitcoinNetwork?.isMainnet() ?? false))
+            Text(
+              bitcoinNetwork?.name() ?? "testnet",
+              style:
+                  TextStyle(fontSize: 12, color: Colors.red), // Custom styling
+            ),
+        ],
+      ),
+    );
 
     final Widget continueSigning;
 
@@ -134,15 +183,17 @@ class _KeyCard extends State<KeyCard> {
                 }
               case SignTaskDescription_Transaction(:final unsignedTx):
                 {
-                  final wallet = await walletLoader.load(
-                      network: BitcoinNetwork.signet(bridge: api));
+                  final wallet =
+                      await settings.loadWallet(network: bitcoinNetwork);
 
-                  await signAndBroadcastWorkflowDialog(
-                      wallet: wallet,
-                      context: context,
-                      signingStream: signingStream,
-                      unsignedTx: unsignedTx,
-                      keyId: keyId);
+                  if (context.mounted) {
+                    await signAndBroadcastWorkflowDialog(
+                        wallet: wallet,
+                        context: context,
+                        signingStream: signingStream,
+                        unsignedTx: unsignedTx,
+                        keyId: keyId);
+                  }
                 }
             }
 
@@ -210,8 +261,8 @@ class _KeyListWithConfetti extends State<KeyListWithConfetti> {
       children: [
         Positioned.fill(
             child: KeyList(
-          itemBuilder: (context, key) {
-            return KeyCard(frostKey: key);
+          itemBuilder: (context, key, network) {
+            return KeyCard(frostKey: key, bitcoinNetwork: network);
           },
           onNewKey: (keyId) {
             _confettiController.play();

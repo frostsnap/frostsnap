@@ -6,6 +6,7 @@ import 'package:frostsnapp/device_list.dart';
 
 import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/global.dart';
+import 'package:frostsnapp/settings.dart';
 
 class DeviceSetup extends StatelessWidget {
   final DeviceId id;
@@ -15,7 +16,7 @@ class DeviceSetup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(
+        appBar: FsAppBar(
           title: const Text('Device Setup'),
         ),
         body: Padding(

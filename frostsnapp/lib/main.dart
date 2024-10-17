@@ -4,6 +4,7 @@ import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/key_list.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnapp/logs.dart';
+import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/serialport.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:path_provider/path_provider.dart';
@@ -36,24 +37,25 @@ void main() async {
 
   // wait for first message to appear so that logging is working before we carry on
   await logStream.first;
+  Settings? settings;
 
   try {
     final appDir = await getApplicationSupportDirectory();
-    final coordDbFile = '${appDir.path}/frostsnap.sqlite';
+    final appDirPath = appDir.path;
     if (Platform.isAndroid) {
-      final (coord_, ffiserial) =
-          await api.loadHostHandlesSerial(dbFile: coordDbFile);
+      final (coord_, settings_, ffiserial) =
+          await api.loadHostHandlesSerial(appDir: appDirPath);
       globalHostPortHandler = HostPortHandler(ffiserial);
       coord = coord_;
+      settings = settings_;
       // check for devices that were plugged in before the app even started
       globalHostPortHandler.scanDevices();
     } else {
-      final coord_ = await api.load(dbFile: coordDbFile);
+      final (coord_, settings_) = await api.load(appDir: appDirPath);
       coord = coord_;
+      settings = settings_;
       globalHostPortHandler = HostPortHandler(null);
     }
-    walletLoader =
-        await WalletLoader.create(bridge: api, directory: appDir.path)!;
     coord.startThread();
   } catch (error, stacktrace) {
     api.log(level: LogLevel.Info, message: "startup failed: $error");
@@ -77,10 +79,15 @@ void main() async {
       WakelockPlus.disable();
     }
   });
-  api.log(level: LogLevel.Info, message: "starting app");
-  runApp(FrostsnapContext(
-      logStream: logStream, child: MyApp(startupError: startupError)));
-  runApp(MyApp(startupError: startupError));
+
+  Widget mainWidget = FrostsnapContext(
+      logStream: logStream, child: MyApp(startupError: startupError));
+
+  if (settings != null) {
+    mainWidget = SettingsContext(settings: settings, child: mainWidget);
+  }
+
+  runApp(mainWidget);
 }
 
 class MyApp extends StatelessWidget {
@@ -110,23 +117,7 @@ class MyHomePage extends StatelessWidget {
     final logStream = FrostsnapContext.of(context)?.logStream;
 
     return Scaffold(
-        appBar: AppBar(title: Text("Key List"), actions: [
-          PopupMenuButton<String>(
-              onSelected: (String result) {
-                if (result == 'logs') {
-                  Navigator.push(context, MaterialPageRoute(builder: (context) {
-                    return LogScreen(logStream: logStream!);
-                  }));
-                }
-              },
-              itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                    if (logStream != null)
-                      const PopupMenuItem<String>(
-                        value: 'logs',
-                        child: Text('Logs'),
-                      )
-                  ])
-        ]),
+        appBar: FsAppBar(title: Text("Key List")),
         body: Center(child: KeyListWithConfetti()));
   }
 }
@@ -185,7 +176,7 @@ class _StartupErrorWidgetState extends State<StartupErrorWidget> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: FsAppBar(
         title: Text('Startup Error'),
       ),
       body: Padding(

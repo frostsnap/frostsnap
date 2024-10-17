@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/image_converter.dart';
+import 'package:frostsnapp/settings.dart';
+import 'package:frostsnapp/snackbar.dart';
 import 'package:frostsnapp/theme.dart';
 
 class PsbtCameraReader extends StatefulWidget {
@@ -69,7 +71,7 @@ class _PsbtCameraReaderState extends State<PsbtCameraReader> {
       });
     }).catchError((Object e) {
       if (mounted) {
-        showErrorSnackbar(context, "Error scanning QR: $e");
+        showErrorSnackbarTop(context, "Error scanning QR: $e");
       }
     });
   }
@@ -91,7 +93,7 @@ class _PsbtCameraReaderState extends State<PsbtCameraReader> {
     }
 
     return Scaffold(
-        appBar: AppBar(title: const Text('Scan PSBT')),
+        appBar: FsAppBar(title: const Text('Scan PSBT')),
         body: Padding(
           padding: EdgeInsets.all(8.0),
           child: Column(

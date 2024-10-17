@@ -10,6 +10,7 @@ import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/hex.dart';
 import 'package:frostsnapp/show_backup.dart';
+import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/theme.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
@@ -50,7 +51,7 @@ class _KeyNamePageState extends State<KeyNamePage> {
         : null;
 
     return Scaffold(
-      appBar: AppBar(title: Text('Key Name')),
+      appBar: FsAppBar(title: Text('Key Name')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -108,7 +109,7 @@ class DevicesPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Devices')),
+      appBar: FsAppBar(title: Text('Devices')),
       body: StreamBuilder(
           stream: deviceListSubject,
           builder: (context, snapshot) {
@@ -234,7 +235,7 @@ class _ThresholdPageState extends State<ThresholdPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Threshold')),
+      appBar: FsAppBar(title: Text('Threshold')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(

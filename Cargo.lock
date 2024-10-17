@@ -170,7 +170,6 @@ source = "git+https://github.com/LLFourn/bdk.git?rev=0dcb8f6c8c4d338b0dd13f7c20d
 dependencies = [
  "bitcoin",
  "miniscript",
- "serde",
 ]
 
 [[package]]
@@ -1491,7 +1490,6 @@ checksum = "add2d4aee30e4291ce5cffa3a322e441ff4d4bc57b38c8d9bf0e94faa50ab626"
 dependencies = [
  "bech32",
  "bitcoin",
- "serde",
 ]
 
 [[package]]
