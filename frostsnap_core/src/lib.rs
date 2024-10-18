@@ -226,7 +226,7 @@ impl_fromstr_deserialize! {
     }
 }
 
-/// The hash of a threshold access structure for a particualr key
+/// The hash of a root key
 #[derive(Clone, Copy, PartialEq, PartialOrd, Ord, Eq)]
 pub struct KeyId([u8; 32]);
 

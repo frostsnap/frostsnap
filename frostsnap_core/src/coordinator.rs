@@ -68,15 +68,15 @@ impl CoordFrostKey {
         access_structure_id: AccessStructureId,
         encryption_key: SymmetricKey,
     ) -> Option<SharedKey> {
-        let access_strcuture = self.get_access_structure(access_structure_id)?;
+        let access_structure = self.get_access_structure(access_structure_id)?;
         let root_key = self.encrypted_root_key.decrypt(encryption_key)?;
-        let mut poly = access_strcuture
+        let mut poly = access_structure
             .app_shared_key
             .key
             .point_polynomial()
             .to_vec();
         poly[0] = root_key.mark_zero();
-        debug_assert!(Appkey::derive_from_root_key(root_key) == access_strcuture.appkey());
+        debug_assert!(Appkey::derive_from_root_key(root_key) == access_structure.appkey());
         Some(SharedKey::from_poly(poly).non_zero().expect("invariant"))
     }
 }
@@ -812,9 +812,9 @@ impl FrostCoordinator {
         access_structure_ref: AccessStructureRef,
     ) -> Option<CoordAccessStructure> {
         let key = self.keys.get(&access_structure_ref.appkey)?;
-        let access_strcuture =
+        let access_structure =
             key.get_access_structure(access_structure_ref.access_structure_id)?;
-        Some(access_strcuture)
+        Some(access_structure)
     }
 }
 

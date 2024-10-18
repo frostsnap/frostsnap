@@ -170,7 +170,7 @@ impl FrostSigner {
         let task = match self.action_state.take()? {
             SignerState::KeyGen { .. } | SignerState::KeyGenAck { .. } => TaskKind::KeyGen,
             SignerState::AwaitingSignAck(_) => TaskKind::Sign,
-            SignerState::AwaitingDsiplayBackupAck { .. } => TaskKind::DisplayBackup,
+            SignerState::AwaitingDisplayBackupAck { .. } => TaskKind::DisplayBackup,
         };
 
         Some(DeviceSend::ToUser(Box::new(
@@ -466,7 +466,7 @@ impl FrostSigner {
                     })?
                     .ciphertext;
 
-                self.action_state = Some(SignerState::AwaitingDsiplayBackupAck {
+                self.action_state = Some(SignerState::AwaitingDisplayBackupAck {
                     party_index,
                     key_id,
                     access_structure_id,
@@ -679,7 +679,7 @@ impl FrostSigner {
         symm_key_gen: &mut impl DeviceSymmetricKeyGen,
     ) -> Result<Vec<DeviceSend>, ActionError> {
         match self.action_state {
-            Some(SignerState::AwaitingDsiplayBackupAck {
+            Some(SignerState::AwaitingDisplayBackupAck {
                 key_id,
                 access_structure_id,
                 party_index,
@@ -757,7 +757,7 @@ pub enum SignerState {
         key_name: String,
     },
     AwaitingSignAck(Box<AwaitingSignAck>),
-    AwaitingDsiplayBackupAck {
+    AwaitingDisplayBackupAck {
         key_id: KeyId,
         access_structure_id: AccessStructureId,
         party_index: PartyIndex,
@@ -772,7 +772,7 @@ impl SignerState {
             SignerState::KeyGen { .. } => "KeyGen",
             SignerState::KeyGenAck { .. } => "KeyGenAck",
             SignerState::AwaitingSignAck(_) => "AwaitingSignAck",
-            SignerState::AwaitingDsiplayBackupAck { .. } => "AwaitingDisplayBackupAck",
+            SignerState::AwaitingDisplayBackupAck { .. } => "AwaitingDisplayBackupAck",
         }
     }
 }

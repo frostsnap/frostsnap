@@ -143,8 +143,8 @@ class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
 
   @override
   Widget build(BuildContext context) {
-    final accessStrcuture = widget.frostKey.accessStructures()[0];
-    final devices = accessStrcuture.devices();
+    final accessStructure = widget.frostKey.accessStructures()[0];
+    final devices = accessStructure.devices();
 
     return ListView.builder(
       itemCount: devices.length,
