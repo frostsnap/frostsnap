@@ -2,20 +2,29 @@ use crate::device_list::DeviceList;
 pub use crate::ffi_serial_port::{
     PortBytesToReadSender, PortOpenSender, PortReadSender, PortWriteSender,
 };
+use crate::sink_wrap::SinkWrap;
 pub use crate::FfiCoordinator;
 pub use crate::{FfiQrEncoder, FfiQrReader, QrDecoderStatus};
 use anyhow::{anyhow, Context, Result};
 pub use bitcoin::psbt::Psbt as BitcoinPsbt;
+pub use bitcoin::Network as RBitcoinNetwork;
 pub use bitcoin::Transaction as RTransaction;
+use bitcoin::{network, NetworkKind};
 use flutter_rust_bridge::{frb, RustOpaque, StreamSink, SyncReturn};
+use frostsnap_coordinator::bitcoin::chain_sync::{
+    default_electrum_server, ElectrumConnection, SUPPORTED_NETWORKS,
+};
 pub use frostsnap_coordinator::bitcoin::wallet::ConfirmationTime;
-pub use frostsnap_coordinator::bitcoin::{chain_sync::ChainSync, wallet::FrostsnapWallet};
+pub use frostsnap_coordinator::bitcoin::{
+    chain_sync::{ChainClient, ChainStatus, ChainStatusState},
+    wallet::FrostsnapWallet,
+};
 pub use frostsnap_coordinator::firmware_upgrade::FirmwareUpgradeConfirmState;
 pub use frostsnap_coordinator::frostsnap_core;
 use frostsnap_coordinator::frostsnap_core::schnorr_fun::fun::hash::HashAdd;
 pub use frostsnap_coordinator::{
-    check_share::CheckShareState, keygen::KeyGenState, signing::SigningState, DeviceChange,
-    PortDesc,
+    check_share::CheckShareState, keygen::KeyGenState, persist::Persisted, signing::SigningState,
+    DeviceChange, PortDesc, Settings as RSettings,
 };
 
 use frostsnap_coordinator::{DesktopSerial, UsbSerialManager};
@@ -23,8 +32,12 @@ pub use frostsnap_core::message::EncodedSignature;
 pub use frostsnap_core::{DeviceId, FrostKeyExt, KeyId, SignTask};
 use lazy_static::lazy_static;
 use sha2::Digest;
+use std::collections::hash_map::Entry;
 pub use std::collections::BTreeMap;
+pub use std::collections::HashMap;
 use std::ops::Deref;
+use std::path::Path;
+pub use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 pub use std::sync::{Mutex, RwLock};
@@ -373,6 +386,20 @@ pub struct _CheckShareState {
     abort: Option<String>,
 }
 
+#[frb(mirror(ChainStatus))]
+pub struct _ChainStatus {
+    pub electrum_url: String,
+    pub state: ChainStatusState,
+}
+
+#[frb(mirror(ChainStatusState))]
+pub enum _ChainStatusState {
+    Connected,
+    Syncing,
+    Disconnected,
+    Connecting,
+}
+
 #[derive(Clone, Debug)]
 pub enum DeviceListChangeKind {
     Added,
@@ -405,13 +432,43 @@ impl DeviceListState {
     }
 }
 
+pub type WalletStreams = Mutex<BTreeMap<KeyId, StreamSink<TxState>>>;
+
+#[derive(Clone)]
 pub struct Wallet {
-    pub inner: RustOpaque<Mutex<FrostsnapWallet>>,
-    pub wallet_streams: RustOpaque<Mutex<BTreeMap<KeyId, StreamSink<TxState>>>>,
-    pub chain_sync: RustOpaque<ChainSync>,
+    pub inner: RustOpaque<Arc<Mutex<FrostsnapWallet>>>,
+    pub wallet_streams: RustOpaque<Arc<WalletStreams>>,
+    pub chain_sync: RustOpaque<ChainClient>,
+    pub network: BitcoinNetwork,
 }
 
 impl Wallet {
+    fn load_or_new(
+        db_file: impl AsRef<Path>,
+        network: BitcoinNetwork,
+        chain_sync: ChainClient,
+    ) -> Result<Wallet> {
+        let db_file = db_file.as_ref();
+        let db = rusqlite::Connection::open(db_file).context(format!(
+            "failed to load database from {}",
+            db_file.display()
+        ))?;
+
+        let db = Arc::new(Mutex::new(db));
+
+        let wallet = FrostsnapWallet::load_or_init(db.clone(), *network.0)
+            .with_context(|| format!("loading wallet from data in {}", db_file.display()))?;
+
+        let wallet = Wallet {
+            inner: RustOpaque::new(Arc::new(Mutex::new(wallet))),
+            chain_sync: RustOpaque::new(chain_sync),
+            wallet_streams: RustOpaque::new(Default::default()),
+            network,
+        };
+
+        Ok(wallet)
+    }
+
     pub fn sub_tx_state(&self, key_id: KeyId, stream: StreamSink<TxState>) -> Result<()> {
         stream.add(self.tx_state(key_id).0);
         if let Some(existing) = self.wallet_streams.lock().unwrap().insert(key_id, stream) {
@@ -502,9 +559,13 @@ impl Wallet {
         };
         let chain_sync = self.chain_sync.clone();
 
-        let update = chain_sync.sync(sync_request)?;
+        let update = chain_sync
+            .sync(sync_request)
+            .inspect_err(|e| event!(Level::ERROR, error = e.to_string(), "syncing error"))?;
         let mut wallet = self.inner.lock().unwrap();
-        let something_changed = wallet.finish_sync(update)?;
+        let something_changed = wallet.finish_sync(update).inspect_err(|e| {
+            event!(Level::ERROR, error = e.to_string(), "applying update error")
+        })?;
 
         if something_changed {
             let txs = wallet.list_transactions(key_id);
@@ -567,7 +628,7 @@ impl Wallet {
     }
 
     pub fn broadcast_tx(&self, key_id: KeyId, tx: SignedTx) -> Result<()> {
-        match self.chain_sync.broadcast(&tx.signed_tx) {
+        match self.chain_sync.broadcast(tx.signed_tx.deref().clone()) {
             Ok(_) => {
                 event!(
                     Level::INFO,
@@ -614,47 +675,140 @@ impl Wallet {
     }
 }
 
-pub fn load(db_file: String) -> anyhow::Result<(Coordinator, Wallet, BitcoinContext)> {
+pub fn load(app_dir: String) -> anyhow::Result<(Coordinator, Settings)> {
+    let app_dir = PathBuf::from_str(&app_dir)?;
     let usb_manager = UsbSerialManager::new(Box::new(DesktopSerial), crate::FIRMWARE);
-    _load(db_file, usb_manager)
+    _load(app_dir, usb_manager)
 }
 
 pub fn load_host_handles_serial(
-    db_file: String,
-) -> anyhow::Result<(Coordinator, FfiSerial, Wallet, BitcoinContext)> {
+    app_dir: String,
+) -> anyhow::Result<(Coordinator, Settings, FfiSerial)> {
+    let app_dir = PathBuf::from_str(&app_dir)?;
     let ffi_serial = FfiSerial::default();
     let usb_manager = UsbSerialManager::new(Box::new(ffi_serial.clone()), crate::FIRMWARE);
-    let (coord, wallet, bitcoin_context) = _load(db_file, usb_manager)?;
-    Ok((coord, ffi_serial, wallet, bitcoin_context))
+    let (coord, settings) = _load(app_dir, usb_manager)?;
+    Ok((coord, settings, ffi_serial))
+}
+
+#[derive(Debug, Clone)]
+pub struct BitcoinNetwork(pub RustOpaque<RBitcoinNetwork>);
+
+/// The point of this is to keep bitcoin API functionalities that don't require the wallet separate
+/// from it.
+impl BitcoinNetwork {
+    pub fn signet() -> SyncReturn<BitcoinNetwork> {
+        SyncReturn(Self(RustOpaque::new(bitcoin::Network::Signet)))
+    }
+
+    pub fn mainnet() -> SyncReturn<BitcoinNetwork> {
+        SyncReturn(Self(RustOpaque::new(bitcoin::Network::Bitcoin)))
+    }
+
+    pub fn from_string(string: String) -> SyncReturn<Option<BitcoinNetwork>> {
+        SyncReturn(
+            bitcoin::Network::from_str(&string)
+                .ok()
+                .map(|network| Self(RustOpaque::new(network))),
+        )
+    }
+
+    pub fn supported_networks() -> SyncReturn<Vec<BitcoinNetwork>> {
+        SyncReturn(
+            SUPPORTED_NETWORKS
+                .into_iter()
+                .map(BitcoinNetwork::from)
+                .collect(),
+        )
+    }
+
+    pub fn name(&self) -> SyncReturn<String> {
+        SyncReturn(self.0.to_string())
+    }
+
+    pub fn is_mainnet(&self) -> SyncReturn<bool> {
+        SyncReturn(bitcoin::NetworkKind::from(*self.0).is_mainnet())
+    }
+
+    pub fn descriptor_for_key(&self, key_id: KeyId) -> SyncReturn<String> {
+        let descriptor = frostsnap_coordinator::bitcoin::multi_x_descriptor_for_account(
+            key_id.to_root_pubkey().expect("valid key id"),
+            frostsnap_core::tweak::Account::Segwitv1,
+            *self.0,
+        );
+        SyncReturn(descriptor.to_string())
+    }
+
+    pub fn validate_amount(&self, address: String, value: u64) -> SyncReturn<Option<String>> {
+        SyncReturn(match bitcoin::Address::from_str(&address) {
+            Ok(address) => match address.require_network(*self.0) {
+                Ok(address) => {
+                    let dust_value = address.script_pubkey().minimal_non_dust().to_sat();
+                    if value < dust_value {
+                        event!(
+                            Level::DEBUG,
+                            value = value,
+                            dust_value = dust_value,
+                            "address validation rejected"
+                        );
+                        Some(format!("Too small to send. Must be at least {dust_value}"))
+                    } else {
+                        None
+                    }
+                }
+                Err(_e) => None,
+            },
+            Err(_e) => None,
+        })
+    }
+
+    pub fn validate_destination_address(&self, address: String) -> SyncReturn<Option<String>> {
+        SyncReturn(match bitcoin::Address::from_str(&address) {
+            Ok(address) => match address.require_network(*self.0) {
+                Ok(_) => None,
+                Err(e) => Some(e.to_string()),
+            },
+            Err(e) => Some(e.to_string()),
+        })
+    }
+
+    pub fn default_electrum_server(&self) -> SyncReturn<String> {
+        SyncReturn(default_electrum_server(*self.0).to_string())
+    }
+}
+
+impl From<BitcoinNetwork> for network::Network {
+    fn from(value: BitcoinNetwork) -> Self {
+        *value.0
+    }
+}
+
+impl From<network::Network> for BitcoinNetwork {
+    fn from(value: network::Network) -> Self {
+        BitcoinNetwork(RustOpaque::new(value))
+    }
 }
 
 fn _load(
-    db_file: String,
+    app_dir: PathBuf,
     usb_serial_manager: UsbSerialManager,
-) -> Result<(Coordinator, Wallet, BitcoinContext)> {
-    event!(Level::INFO, path = db_file, "initializing database");
-
-    let db = rusqlite::Connection::open(&db_file)
-        .context(format!("failed to load database from {db_file}"))?;
-
+) -> Result<(Coordinator, Settings)> {
+    let db_file = app_dir.join("frostsnap.sqlite");
+    event!(
+        Level::INFO,
+        path = db_file.display().to_string(),
+        "initializing database"
+    );
+    let db = rusqlite::Connection::open(&db_file).context(format!(
+        "failed to load database from {}",
+        db_file.display()
+    ))?;
     let db = Arc::new(Mutex::new(db));
 
     let coordinator = FfiCoordinator::new(db.clone(), usb_serial_manager)?;
-    let wallet = FrostsnapWallet::load_or_init(db.clone(), bitcoin::Network::Signet)
-        .with_context(|| format!("loading wallet from data in {db_file}"))?;
     let coordinator = Coordinator(RustOpaque::new(coordinator));
-    let chain_sync = ChainSync::new(wallet.network)?;
-    let bitcoin_context = BitcoinContext {
-        network: RustOpaque::new(wallet.network),
-    };
-
-    let wallet = Wallet {
-        inner: RustOpaque::new(Mutex::new(wallet)),
-        chain_sync: RustOpaque::new(chain_sync),
-        wallet_streams: RustOpaque::new(Default::default()),
-    };
-
-    Ok((coordinator, wallet, bitcoin_context))
+    let settings = Settings::new(db.clone(), app_dir)?;
+    Ok((coordinator, settings))
 }
 
 #[derive(Debug, Clone)]
@@ -860,56 +1014,6 @@ impl Coordinator {
     }
 }
 
-/// The point of this is to keep bitcoin API functionalities that don't require the wallet separate
-/// from it.
-pub struct BitcoinContext {
-    pub network: RustOpaque<bitcoin::Network>,
-}
-
-impl BitcoinContext {
-    pub fn descriptor_for_key(&self, key_id: KeyId) -> SyncReturn<String> {
-        let descriptor = frostsnap_coordinator::bitcoin::multi_x_descriptor_for_account(
-            key_id.to_root_pubkey().expect("valid key id"),
-            frostsnap_core::tweak::Account::Segwitv1,
-            *self.network,
-        );
-        SyncReturn(descriptor.to_string())
-    }
-
-    pub fn validate_amount(&self, address: String, value: u64) -> SyncReturn<Option<String>> {
-        SyncReturn(match bitcoin::Address::from_str(&address) {
-            Ok(address) => match address.require_network(*self.network) {
-                Ok(address) => {
-                    let dust_value = address.script_pubkey().minimal_non_dust().to_sat();
-                    if value < dust_value {
-                        event!(
-                            Level::DEBUG,
-                            value = value,
-                            dust_value = dust_value,
-                            "address validation rejected"
-                        );
-                        Some(format!("Too small to send. Must be at least {dust_value}"))
-                    } else {
-                        None
-                    }
-                }
-                Err(_e) => None,
-            },
-            Err(_e) => None,
-        })
-    }
-
-    pub fn validate_destination_address(&self, address: String) -> SyncReturn<Option<String>> {
-        SyncReturn(match bitcoin::Address::from_str(&address) {
-            Ok(address) => match address.require_network(*self.network) {
-                Ok(_) => None,
-                Err(e) => Some(e.to_string()),
-            },
-            Err(e) => Some(e.to_string()),
-        })
-    }
-}
-
 #[derive(Clone)]
 pub struct UnsignedTx {
     pub template_tx: RustOpaque<frostsnap_core::bitcoin_transaction::TransactionTemplate>,
@@ -921,11 +1025,7 @@ pub struct SignedTx {
 }
 
 impl SignedTx {
-    pub fn effect(
-        &self,
-        key_id: KeyId,
-        network: RustOpaque<bitcoin::Network>,
-    ) -> Result<SyncReturn<EffectOfTx>> {
+    pub fn effect(&self, key_id: KeyId, network: BitcoinNetwork) -> Result<SyncReturn<EffectOfTx>> {
         self.unsigned_tx.effect(key_id, network)
     }
 }
@@ -971,11 +1071,7 @@ impl UnsignedTx {
         }
     }
 
-    pub fn effect(
-        &self,
-        key_id: KeyId,
-        network: RustOpaque<bitcoin::Network>,
-    ) -> Result<SyncReturn<EffectOfTx>> {
+    pub fn effect(&self, key_id: KeyId, network: BitcoinNetwork) -> Result<SyncReturn<EffectOfTx>> {
         use frostsnap_core::bitcoin_transaction::RootOwner;
         let fee = self
             .template_tx
@@ -995,7 +1091,7 @@ impl UnsignedTx {
                 RootOwner::Foreign(spk) => {
                     if value > 0 {
                         Some(Ok((
-                            bitcoin::Address::from_script(spk.as_script(), *network)
+                            bitcoin::Address::from_script(spk.as_script(), *network.0)
                                 .expect("will have address form")
                                 .to_string(),
                             value as u64,
@@ -1132,5 +1228,232 @@ pub fn new_qr_encoder(bytes: Vec<u8>) -> QrEncoder {
 impl QrEncoder {
     pub fn next(&self) -> SyncReturn<String> {
         SyncReturn(self.0.next().to_uppercase())
+    }
+}
+
+pub struct Settings {
+    pub settings: RustOpaque<Mutex<Persisted<RSettings>>>,
+    pub db: RustOpaque<Arc<Mutex<rusqlite::Connection>>>,
+    pub chain_clients: RustOpaque<HashMap<RBitcoinNetwork, ChainClient>>,
+
+    pub app_directory: RustOpaque<PathBuf>,
+    pub loaded_wallets: RustOpaque<Mutex<HashMap<RBitcoinNetwork, Wallet>>>,
+
+    // streams of settings updates
+    pub wallet_settings_stream: RustOpaque<MaybeSink<WalletSettings>>,
+    pub developer_settings_stream: RustOpaque<MaybeSink<DeveloperSettings>>,
+    pub electrum_settings_stream: RustOpaque<MaybeSink<ElectrumSettings>>,
+}
+
+pub type MaybeSink<T> = Mutex<Option<StreamSink<T>>>;
+
+macro_rules! settings_impl {
+    ($stream_name:ident, $stream_emit_name:ident, $stream_sub:ident, $type_name:ident) => {
+        pub fn $stream_sub(&self, stream: StreamSink<$type_name>) -> Result<()> {
+            if let Some(prev) = self.$stream_name.lock().unwrap().replace(stream) {
+                prev.close();
+            }
+
+            self.$stream_emit_name();
+            Ok(())
+        }
+
+        fn $stream_emit_name(&self) {
+            if let Some(stream) = &*self.$stream_name.lock().unwrap() {
+                let settings = self.settings.lock().unwrap();
+                stream.add(<$type_name>::from_settings(&*settings));
+            }
+        }
+    };
+}
+
+impl Settings {
+    fn new(db: Arc<Mutex<rusqlite::Connection>>, app_directory: PathBuf) -> anyhow::Result<Self> {
+        let persisted: Persisted<RSettings> = {
+            let mut db_ = db.lock().unwrap();
+            Persisted::new(&mut *db_, ())?
+        };
+
+        let chain_apis = SUPPORTED_NETWORKS
+            .into_iter()
+            .map(|network| {
+                let (connection, chain_api) = ElectrumConnection::new(
+                    network,
+                    persisted.get_electrum_server(network),
+                    NetworkKind::from(network).is_mainnet(),
+                );
+                connection.spawn();
+                (network, chain_api)
+            })
+            .collect();
+        Ok(Self {
+            loaded_wallets: RustOpaque::new(Default::default()),
+            settings: RustOpaque::new(Mutex::new(persisted)),
+            app_directory: RustOpaque::new(app_directory),
+            chain_clients: RustOpaque::new(chain_apis),
+            wallet_settings_stream: RustOpaque::new(Default::default()),
+            developer_settings_stream: RustOpaque::new(Default::default()),
+            electrum_settings_stream: RustOpaque::new(Default::default()),
+            db: RustOpaque::new(db),
+        })
+    }
+
+    settings_impl!(
+        developer_settings_stream,
+        emit_developer_settings,
+        sub_developer_settings,
+        DeveloperSettings
+    );
+
+    settings_impl!(
+        electrum_settings_stream,
+        emit_electrum_settings,
+        sub_electrum_settings,
+        ElectrumSettings
+    );
+
+    settings_impl!(
+        wallet_settings_stream,
+        emit_wallet_settings,
+        sub_wallet_settings,
+        WalletSettings
+    );
+
+    pub fn load_wallet(&self, network: BitcoinNetwork) -> Result<Wallet> {
+        let mut loaded = self.loaded_wallets.lock().unwrap();
+
+        let wallet = match loaded.entry(*network.0) {
+            Entry::Occupied(occupied) => occupied.get().clone(),
+            Entry::Vacant(vacant) => {
+                let mut wallet_db_file = (*self.app_directory).clone();
+                wallet_db_file.push(format!("wallet-{}.sql", (*network.0)));
+                let chain_api = self
+                    .chain_clients
+                    .get(&*network.0)
+                    .ok_or(anyhow!("unsupported network {}", *network.0))?
+                    .clone();
+                vacant
+                    .insert(Wallet::load_or_new(wallet_db_file, network, chain_api)?)
+                    .clone()
+            }
+        };
+
+        Ok(wallet)
+    }
+
+    pub fn set_wallet_network(&self, key_id: KeyId, network: BitcoinNetwork) -> Result<()> {
+        let mut db = self.db.lock().unwrap();
+        self.settings
+            .lock()
+            .unwrap()
+            .mutate2(&mut *db, |settings, update| {
+                settings.set_wallet_network(key_id, *network.0, update);
+                Ok(())
+            })?;
+        self.emit_wallet_settings();
+        Ok(())
+    }
+
+    pub fn set_developer_mode(&self, value: bool) -> Result<()> {
+        let mut db = self.db.lock().unwrap();
+        self.settings
+            .lock()
+            .unwrap()
+            .mutate2(&mut *db, |settings, update| {
+                settings.set_developer_mode(value, update);
+                Ok(())
+            })?;
+
+        self.emit_developer_settings();
+
+        Ok(())
+    }
+
+    pub fn check_and_set_electrum_server(
+        &self,
+        network: BitcoinNetwork,
+        url: String,
+    ) -> Result<()> {
+        let chain_api = self
+            .chain_clients
+            .get(&*network.0)
+            .ok_or_else(|| anyhow!("network not supported {}", *network.0))?;
+        chain_api.check_and_set_electrum_server_url(url.clone())?;
+        let mut db = self.db.lock().unwrap();
+        self.settings
+            .lock()
+            .unwrap()
+            .mutate2(&mut *db, |settings, update| {
+                settings.set_electrum_server(*network.0, url, update);
+                Ok(())
+            })?;
+
+        self.emit_electrum_settings();
+
+        Ok(())
+    }
+
+    pub fn subscribe_chain_status(
+        &self,
+        network: BitcoinNetwork,
+        sink: StreamSink<ChainStatus>,
+    ) -> Result<()> {
+        let chain_api = self
+            .chain_clients
+            .get(&*network.0)
+            .ok_or_else(|| anyhow!("network not supported {}", *network.0))?;
+
+        chain_api.set_status_sink(Box::new(SinkWrap(sink)));
+        Ok(())
+    }
+}
+
+pub struct WalletSettings {
+    pub wallet_networks: Vec<(KeyId, BitcoinNetwork)>,
+}
+
+impl WalletSettings {
+    fn from_settings(settings: &RSettings) -> Self {
+        Self {
+            wallet_networks: settings
+                .wallet_networks
+                .clone()
+                .into_iter()
+                .map(|(key_id, network)| (key_id, BitcoinNetwork(RustOpaque::new(network))))
+                .collect(),
+        }
+    }
+}
+
+pub struct ElectrumSettings {
+    pub electrum_servers: Vec<(BitcoinNetwork, String)>,
+}
+
+impl ElectrumSettings {
+    fn from_settings(settings: &RSettings) -> Self {
+        use bitcoin::Network::*;
+        let servers_with_defaults_overridden = [Bitcoin, Signet, Testnet, Regtest]
+            .into_iter()
+            .map(|network| (network, default_electrum_server(network).to_string()))
+            .chain(settings.electrum_servers.clone())
+            .collect::<BTreeMap<_, _>>();
+        ElectrumSettings {
+            electrum_servers: servers_with_defaults_overridden
+                .into_iter()
+                .map(|(network, url)| (network.into(), url))
+                .collect(),
+        }
+    }
+}
+
+pub struct DeveloperSettings {
+    pub developer_mode: bool,
+}
+
+impl DeveloperSettings {
+    fn from_settings(settings: &RSettings) -> Self {
+        DeveloperSettings {
+            developer_mode: settings.developer_mode,
+        }
     }
 }

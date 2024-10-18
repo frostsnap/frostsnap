@@ -11,11 +11,14 @@ import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/hex.dart';
 import 'package:frostsnapp/show_backup.dart';
+import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/theme.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class KeyNamePage extends StatefulWidget {
+  const KeyNamePage({super.key});
+
   @override
   _KeyNamePageState createState() => _KeyNamePageState();
 }
@@ -23,6 +26,7 @@ class KeyNamePage extends StatefulWidget {
 class _KeyNamePageState extends State<KeyNamePage> {
   final TextEditingController _keyNameController = TextEditingController();
   final FocusNode _keyNameFocusNode = FocusNode();
+  BitcoinNetwork bitcoinNetwork = BitcoinNetwork.mainnet(bridge: api);
 
   @override
   void initState() {
@@ -40,6 +44,7 @@ class _KeyNamePageState extends State<KeyNamePage> {
               context,
               createRoute(DevicesPage(
                 keyName: _keyNameController.text,
+                network: bitcoinNetwork,
               )),
             );
             if (context.mounted && keyId != null) {
@@ -48,8 +53,10 @@ class _KeyNamePageState extends State<KeyNamePage> {
           }
         : null;
 
+    final settingsCtx = SettingsContext.of(context)!;
+
     return Scaffold(
-      appBar: AppBar(title: Text('Key Name')),
+      appBar: FsAppBar(title: Text('Key Name')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -84,6 +91,40 @@ class _KeyNamePageState extends State<KeyNamePage> {
                   }),
             ),
             SizedBox(height: 20),
+            StreamBuilder(
+                stream: settingsCtx.developerSettings,
+                builder: (context, snap) {
+                  if (snap.data?.developerMode == true) {
+                    return Column(children: [
+                      SizedBox(height: 20),
+                      Text("(developer) Choose the network:"),
+                      SizedBox(height: 10),
+                      DropdownButton<String>(
+                        hint: Text('Chose a network'),
+                        value: bitcoinNetwork.name(),
+                        onChanged: (String? network) {
+                          setState(() {
+                            if (network != null) {
+                              bitcoinNetwork = BitcoinNetwork.fromString(
+                                  bridge: api, string: network)!;
+                            }
+                          });
+                        },
+                        items: BitcoinNetwork.supportedNetworks(bridge: api)
+                            .map((network) {
+                          final name = network.name();
+                          return DropdownMenuItem<String>(
+                            value: name,
+                            child: Text(
+                                name == "bitcoin" ? "Bitcoin (BTC)" : name),
+                          );
+                        }).toList(),
+                      )
+                    ]);
+                  } else {
+                    return SizedBox();
+                  }
+                }),
             Align(
               alignment: Alignment.center,
               child: ElevatedButton.icon(
@@ -101,13 +142,14 @@ class _KeyNamePageState extends State<KeyNamePage> {
 
 class DevicesPage extends StatelessWidget {
   final String keyName;
+  final BitcoinNetwork network;
 
-  DevicesPage({required this.keyName});
+  const DevicesPage({super.key, required this.keyName, required this.network});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Devices')),
+      appBar: FsAppBar(title: Text('Devices')),
       body: StreamBuilder(
           stream: deviceListSubject,
           builder: (context, snapshot) {
@@ -186,6 +228,7 @@ class DevicesPage extends StatelessWidget {
                                   final keyId = await Navigator.push(
                                     context,
                                     createRoute(ThresholdPage(
+                                      network: network,
                                       keyName: keyName,
                                       selectedDevices: devices,
                                     )),
@@ -212,9 +255,14 @@ class DevicesPage extends StatelessWidget {
 
 class ThresholdPage extends StatefulWidget {
   final String keyName;
+  final BitcoinNetwork network;
   final List<ConnectedDevice> selectedDevices;
 
-  ThresholdPage({required this.keyName, required this.selectedDevices});
+  ThresholdPage(
+      {super.key,
+      required this.keyName,
+      required this.selectedDevices,
+      required this.network});
 
   @override
   _ThresholdPageState createState() => _ThresholdPageState();
@@ -232,7 +280,7 @@ class _ThresholdPageState extends State<ThresholdPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Threshold')),
+      appBar: FsAppBar(title: Text('Threshold')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -296,6 +344,7 @@ class _ThresholdPageState extends State<ThresholdPage> {
                   final keyId = await showCheckKeyGenDialog(
                     context: context,
                     stream: stream,
+                    network: widget.network,
                   );
 
                   if (keyId != null && context.mounted) {
@@ -351,6 +400,7 @@ Route createRoute(Widget page) {
 Future<KeyId?> showCheckKeyGenDialog({
   required Stream<KeyGenState> stream,
   required BuildContext context,
+  required BitcoinNetwork network,
 }) async {
   final result = await showDeviceActionDialog<KeyId>(
       context: context,
@@ -466,7 +516,13 @@ Future<KeyId?> showCheckKeyGenDialog({
                           ElevatedButton(
                               onPressed: finished
                                   ? () async {
-                                      await coord.finalKeygenAck();
+                                      final settingsCtx =
+                                          SettingsContext.of(context)!;
+                                      final keyId =
+                                          await coord.finalKeygenAck();
+                                      await settingsCtx.settings
+                                          .setWalletNetwork(
+                                              keyId: keyId, network: network);
                                     }
                                   : null,
                               child: Text("Confirm"))

@@ -63,12 +63,42 @@ final ThemeData frostsnappTheme = ThemeData(
       surfaceTintColor: Colors.white),
   snackBarTheme: SnackBarThemeData(contentTextStyle: defaultTextStyle),
   textTheme: TextTheme(
-    bodyLarge: defaultTextStyle,
-    bodyMedium: defaultTextStyle,
-    bodySmall: defaultTextStyle,
-    labelLarge: defaultTextStyle,
-    labelMedium: defaultTextStyle,
-    labelSmall: defaultTextStyle,
+    bodyLarge: TextStyle(
+      color: textColor,
+      fontSize: 18.0,
+      fontWeight: FontWeight.normal,
+      height: 1.4,
+    ),
+    bodyMedium: TextStyle(
+      color: textColor,
+      fontSize: 16.0,
+      fontWeight: FontWeight.normal,
+      height: 1.4,
+    ),
+    bodySmall: TextStyle(
+      color: textColor,
+      fontSize: 14.0,
+      fontWeight: FontWeight.normal,
+      height: 1.4,
+    ),
+    labelLarge: TextStyle(
+      color: textColor,
+      fontSize: 16.0,
+      fontWeight: FontWeight.bold,
+      height: 1.2,
+    ),
+    labelMedium: TextStyle(
+      color: textColor,
+      fontSize: 14.0,
+      fontWeight: FontWeight.bold,
+      height: 1.2,
+    ),
+    labelSmall: TextStyle(
+      color: textColor,
+      fontSize: 12.0,
+      fontWeight: FontWeight.bold,
+      height: 1.2,
+    ),
   ),
   colorScheme: ColorScheme.fromSwatch(
     primarySwatch: primarySwatch,
@@ -119,6 +149,27 @@ final ThemeData frostsnappTheme = ThemeData(
     backgroundColor: backgroundSecondaryColor,
     iconColor: backgroundTertiaryColor,
     shadowColor: shadowColor,
+  ),
+  switchTheme: SwitchThemeData(
+    thumbColor: WidgetStateProperty.resolveWith<Color>((states) {
+      if (states.contains(WidgetState.disabled)) {
+        return backgroundSecondaryColor; // Disabled track color
+      }
+      if (states.contains(WidgetState.selected)) {
+        return Colors.green; // Active thumb color
+      }
+      return Colors.grey.shade200; // Inactive thumb color
+    }),
+    trackColor: WidgetStateProperty.resolveWith<Color>((states) {
+      if (states.contains(WidgetState.disabled)) {
+        return backgroundTertiaryColor; // Disabled track color
+      }
+      if (states.contains(WidgetState.selected)) {
+        return Colors.green.shade300; // Active track color
+      }
+      return Colors.grey.shade500; // Inactive track color
+    }),
+    trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
   ),
 );
 

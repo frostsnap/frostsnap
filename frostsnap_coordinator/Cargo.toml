@@ -15,6 +15,6 @@ serialport = "4.2"
 rand_core.workspace = true
 rusqlite.workspace = true
 
-bdk_chain = {  version = "0.16", features = ["serde"] }
+bdk_chain = {  version = "0.16" }
 bdk_electrum = {  version = "0.15" }
 bdk_coin_select = { version = "0.3" }
