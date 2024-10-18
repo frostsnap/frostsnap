@@ -157,8 +157,8 @@ impl AppTweak {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum AppTweakKind {
-    TestMessage = 0,
-    Bitcoin = 1,
+    Bitcoin = 0,
+    TestMessage = 1,
     Nostr = 2,
 }
 

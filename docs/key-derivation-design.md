@@ -46,12 +46,12 @@ Here's how keys are derived. Remember `root_key` is the first coefficient of the
 ```
 root_key (m) // root_key includes a chain code of 32 zeros
 └── app_key (m/0)
-    ├── TestMessage (m/0/0)
     | // Descriptors/PSBT will treat this as the root for everything below
-    ├── Bitcoin (m/0/1)
-    │   └── Segwitv1 (m/0/1/0)
-    │       ├── External Account (m/0/1/0/0)
-    │       └── Internal Account (m/0/1/0/1)
+    ├── Bitcoin (m/0/0)
+    │   └── Segwitv1 (m/0/0/0) // the account
+    │       ├── External keychain (m/0/0/0/0)
+    │       └── Internal keychain (m/0/0/0/1)
+    ├── TestMessage (m/0/1)
     └── Nostr (m/0/2)
 ```
 
