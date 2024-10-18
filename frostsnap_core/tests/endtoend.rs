@@ -431,7 +431,7 @@ fn test_display_backup() {
     .unwrap();
 
     assert_eq!(
-        Appkey::derive_from_root_key(g!(interpolated_joint_secret * G).normalize()),
+        Appkey::derive_from_rootkey(g!(interpolated_joint_secret * G).normalize()),
         key_data.appkey
     );
 }

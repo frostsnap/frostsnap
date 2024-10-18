@@ -263,14 +263,14 @@ impl TweakableKey for Point {
 }
 
 impl<T: TweakableKey> Xpub<T> {
-    pub fn from_root_key(root_key: T) -> Self {
+    pub fn from_rootkey(rootkey: T) -> Self {
         Xpub {
             chaincode: [0u8; 32],
-            key: root_key,
+            key: rootkey,
         }
     }
 
-    pub fn root_key_to_appkey(&self) -> Xpub<T> {
+    pub fn rootkey_to_appkey(&self) -> Xpub<T> {
         let mut appkey = self.clone();
         appkey.derive_bip32(&[0]);
         appkey
@@ -358,7 +358,7 @@ mod test {
             &mut rand::thread_rng(),
         );
 
-        let mut app_xpub = Xpub::from_root_key(frost_key);
+        let mut app_xpub = Xpub::from_rootkey(frost_key);
         let secp = Secp256k1::verification_only();
         let xpub = bitcoin::bip32::Xpub {
             network: bitcoin::Network::Bitcoin.into(),

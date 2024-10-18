@@ -59,7 +59,7 @@ pub struct SignRequest {
     pub nonces: BTreeMap<PartyIndex, SignRequestNonces>,
     pub sign_task: SignTask,
     /// The root key
-    pub root_key: Point,
+    pub rootkey: Point,
     pub access_structure_id: AccessStructureId,
     pub coord_share_decryption_contrib: CoordShareDecryptionContrib,
 }

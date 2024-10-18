@@ -38,7 +38,7 @@ pub struct CoordFrostKey {
     pub appkey: Appkey,
     pub key_name: String,
     pub access_structures: Vec<CoordAccessStructure>,
-    pub encrypted_root_key: Ciphertext<33, Point>,
+    pub encrypted_rootkey: Ciphertext<33, Point>,
 }
 
 impl CoordFrostKey {
@@ -69,14 +69,14 @@ impl CoordFrostKey {
         encryption_key: SymmetricKey,
     ) -> Option<SharedKey> {
         let access_structure = self.get_access_structure(access_structure_id)?;
-        let root_key = self.encrypted_root_key.decrypt(encryption_key)?;
+        let rootkey = self.encrypted_rootkey.decrypt(encryption_key)?;
         let mut poly = access_structure
             .app_shared_key
             .key
             .point_polynomial()
             .to_vec();
-        poly[0] = root_key.mark_zero();
-        debug_assert!(Appkey::derive_from_root_key(root_key) == access_structure.appkey());
+        poly[0] = rootkey.mark_zero();
+        debug_assert!(Appkey::derive_from_rootkey(rootkey) == access_structure.appkey());
         Some(SharedKey::from_poly(poly).non_zero().expect("invariant"))
     }
 }
@@ -103,7 +103,7 @@ impl FrostCoordinator {
             NewKey {
                 appkey,
                 key_name: name,
-                encrypted_root_key,
+                encrypted_rootkey,
             } => {
                 let existing = self
                     .keys
@@ -113,7 +113,7 @@ impl FrostCoordinator {
                             appkey: *appkey,
                             key_name: name.clone(),
                             access_structures: vec![],
-                            encrypted_root_key: *encrypted_root_key,
+                            encrypted_rootkey: *encrypted_rootkey,
                         },
                     )
                     .is_some();
@@ -545,11 +545,11 @@ impl FrostCoordinator {
                     .shared_key()
                     .non_zero()
                     .expect("this should have already been checked");
-                let root_key = root_shared_key.public_key();
-                let root_shared_key = Xpub::from_root_key(root_shared_key);
-                let app_shared_key = root_shared_key.root_key_to_appkey();
-                let encrypted_root_key = Ciphertext::encrypt(encryption_key, &root_key, rng);
-                let appkey = Appkey::derive_from_root_key(root_key);
+                let rootkey = root_shared_key.public_key();
+                let root_shared_key = Xpub::from_rootkey(root_shared_key);
+                let app_shared_key = root_shared_key.rootkey_to_appkey();
+                let encrypted_rootkey = Ciphertext::encrypt(encryption_key, &rootkey, rng);
+                let appkey = Appkey::derive_from_rootkey(rootkey);
                 let name = pending_key_name.clone();
                 if all_acks {
                     let access_structure = CoordAccessStructure {
@@ -561,7 +561,7 @@ impl FrostCoordinator {
                     self.mutate(Mutation::NewKey {
                         key_name: name,
                         appkey,
-                        encrypted_root_key,
+                        encrypted_rootkey,
                     });
                     self.mutate(Mutation::NewAccessStructure(access_structure));
 
@@ -704,7 +704,7 @@ impl FrostCoordinator {
             sign_task: checked_sign_task.into_inner(),
             nonces: signing_nonces.clone(),
             access_structure_id,
-            root_key: root_shared_key.public_key(),
+            rootkey: root_shared_key.public_key(),
             coord_share_decryption_contrib: CoordShareDecryptionContrib::from_root_shared_key(
                 &root_shared_key,
             ),
@@ -773,7 +773,7 @@ impl FrostCoordinator {
                 "device does not have share in key".into(),
             ))?;
         self.action_state = Some(CoordinatorState::DisplayBackup);
-        let root_key = key_data.encrypted_root_key.decrypt(encryption_key).ok_or(
+        let rootkey = key_data.encrypted_rootkey.decrypt(encryption_key).ok_or(
             ActionError::StateInconsistent("couldn't decrypt root key".into()),
         )?;
         let coord_share_decryption_contrib = key_data
@@ -783,7 +783,7 @@ impl FrostCoordinator {
             ))?;
         Ok(vec![CoordinatorSend::ToDevice {
             message: CoordinatorToDeviceMessage::DisplayBackup {
-                key_id: KeyId::from_root_key(root_key),
+                key_id: KeyId::from_rootkey(rootkey),
                 access_structure_id,
                 coord_share_decryption_contrib,
                 party_index,
@@ -1042,7 +1042,7 @@ pub enum Mutation {
     NewKey {
         appkey: Appkey,
         key_name: String,
-        encrypted_root_key: Ciphertext<33, Point>,
+        encrypted_rootkey: Ciphertext<33, Point>,
     },
     NewAccessStructure(CoordAccessStructure),
     NoncesUsed {

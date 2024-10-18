@@ -41,11 +41,11 @@ Now an attacker who finds a device learns nothing from it other than a share ima
 
 ### Concrete key derivations
 
-Here's how keys are derived. Remember `root_key` is the first coefficient of the root polynomial generated during key generation.
+Here's how keys are derived. Remember `rootkey` is the first coefficient of the root polynomial generated during key generation.
 
 ```
-root_key (m) // root_key includes a chain code of 32 zeros
-└── app_key (m/0)
+rootkey (m) // rootkey includes a chain code of 32 zeros
+└── appkey (m/0)
     | // Descriptors/PSBT will treat this as the root for everything below
     ├── Bitcoin (m/0/0)
     │   └── Segwitv1 (m/0/0/0) // the account
@@ -55,16 +55,16 @@ root_key (m) // root_key includes a chain code of 32 zeros
     └── Nostr (m/0/2)
 ```
 
-Recall that the devices delete `root_key` soon after they receive it during keygen and don't store any public keys at all.
-The coordinator will provide the `root_key` along with any signing request along with something derived from the root polynomial to decrypt their signature shares. The `root_key` itself doesn't help decrypt by itself since it doesn't demonstrate knowledge of the entire access structure. The devices can verify the `root_key` is correct since they have a hash of it.
-With the `root_key` the devices can derive all the public keys involved in the signing request and verify that everything matches expectations (e.g. input public keys are at the right derivation paths).
+Recall that the devices delete `rootkey` soon after they receive it during keygen and don't store any public keys at all.
+The coordinator will provide the `rootkey` along with any signing request along with something derived from the root polynomial to decrypt their signature shares. The `rootkey` itself doesn't help decrypt by itself since it doesn't demonstrate knowledge of the entire access structure. The devices can verify the `rootkey` is correct since they have a hash of it.
+With the `rootkey` the devices can derive all the public keys involved in the signing request and verify that everything matches expectations (e.g. input public keys are at the right derivation paths).
 
 
 ### Coordinator encryption
 
-Coordinators should encrypt the `root_key` on their side so the user has to authenticate themselves to the app to explicitly decrypt and use it. Remember the root *polynomial* is what gives you the ability to request signatuers but with the `root_key` and the rest of the polynomial coefficients you can construct it. The "`app_poly`" is on the coordinator unencrypted -- this is the root polynomial with the `root_key` replaced with the `app_key`. Once you have the `root_key` you can restore the `root_poly` by replacing it.
+Coordinators should encrypt the `rootkey` on their side so the user has to authenticate themselves to the app to explicitly decrypt and use it. Remember the root *polynomial* is what gives you the ability to request signatuers but with the `rootkey` and the rest of the polynomial coefficients you can construct it. The "`app_poly`" is on the coordinator unencrypted -- this is the root polynomial with the `rootkey` replaced with the `appkey`. Once you have the `rootkey` you can restore the `root_poly` by replacing it.
 
-Keep in mind with the `app_key` (an XPUB) the coordinator can derive any public key in the tree below it which means all the wallet addresses. Coordinator applications may want to keep `app_key` as secret as possible and require authentication before using it but the right approach is probably just to encrypt the whole application database. With the `app_poly` the coordinator can always verify signatures without decrypting the root key.
+Keep in mind with the `appkey` (an XPUB) the coordinator can derive any public key in the tree below it which means all the wallet addresses. Coordinator applications may want to keep `appkey` as secret as possible and require authentication before using it but the right approach is probably just to encrypt the whole application database. With the `app_poly` the coordinator can always verify signatures without decrypting the root key.
 
 
 

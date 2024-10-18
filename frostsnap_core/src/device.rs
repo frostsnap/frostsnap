@@ -312,8 +312,8 @@ impl FrostSigner {
                 })?;
 
                 let session_hash = SessionHash::from_agg_input(&agg_input);
-                let root_key = agg_input.shared_key().public_key();
-                let key_id = KeyId::from_root_key(root_key);
+                let rootkey = agg_input.shared_key().public_key();
+                let key_id = KeyId::from_rootkey(rootkey);
 
                 self.action_state = Some(SignerState::KeyGenAck {
                     secret_share,
@@ -330,8 +330,8 @@ impl FrostSigner {
                 ))])
             }
             (None, CoordinatorToDeviceMessage::RequestSign(sign_req)) => {
-                let root_key = sign_req.root_key;
-                let key_id = KeyId::from_root_key(root_key);
+                let rootkey = sign_req.rootkey;
+                let key_id = KeyId::from_rootkey(rootkey);
                 let access_structure_id = sign_req.access_structure_id;
                 let nonces = sign_req.nonces.clone();
                 let key_data = self
@@ -349,7 +349,7 @@ impl FrostSigner {
                     })?
                     .clone();
 
-                let appkey = Appkey::derive_from_root_key(root_key);
+                let appkey = Appkey::derive_from_rootkey(rootkey);
                 let access_structure_data =
                     key_data.access_structures.get(&access_structure_id)
                         .ok_or_else( || {
@@ -413,7 +413,7 @@ impl FrostSigner {
                 let agg_nonces = (0..n_signatures_requested).map(|i| sign_req.agg_nonce(i));
 
                 self.action_state = Some(SignerState::AwaitingSignAck(Box::new(AwaitingSignAck {
-                    root_key,
+                    rootkey,
                     access_structure_id,
                     encrypted_secret_share: encrypted_secret_share.ciphertext,
                     my_party_index: party_index,
@@ -496,12 +496,11 @@ impl FrostSigner {
                 secret_share,
                 key_name,
             }) => {
-                let root_key = secret_share.public_key();
-                let key_id = KeyId::from_root_key(root_key);
-                let root_shared_key = Xpub::from_root_key(
-                    agg_input.shared_key().non_zero().expect("already checked"),
-                );
-                let app_shared_key = root_shared_key.root_key_to_appkey();
+                let rootkey = secret_share.public_key();
+                let key_id = KeyId::from_rootkey(rootkey);
+                let root_shared_key =
+                    Xpub::from_rootkey(agg_input.shared_key().non_zero().expect("already checked"));
+                let app_shared_key = root_shared_key.rootkey_to_appkey();
 
                 let access_structure_id =
                     AccessStructureId::from_app_poly(app_shared_key.key.point_polynomial());
@@ -569,7 +568,7 @@ impl FrostSigner {
         match self.action_state.take() {
             Some(SignerState::AwaitingSignAck(boxed)) => {
                 let AwaitingSignAck {
-                    root_key,
+                    rootkey,
                     access_structure_id,
                     encrypted_secret_share,
                     my_party_index,
@@ -617,7 +616,7 @@ impl FrostSigner {
                 let frost = frost::new_without_nonce_generation::<Sha256>();
                 let mut signature_shares = vec![];
 
-                let key_id = KeyId::from_root_key(root_key);
+                let key_id = KeyId::from_rootkey(rootkey);
                 let symmetric_key = symm_key_gen.get_share_encryption_key(
                     key_id,
                     access_structure_id,
@@ -631,14 +630,14 @@ impl FrostSigner {
                             ActionError::StateInconsistent("couldn't decrypt secrert share".into())
                         })?;
                 let root_paired_secret_share =
-                    Xpub::from_root_key(PairedSecretShare::new_unchecked(
+                    Xpub::from_rootkey(PairedSecretShare::new_unchecked(
                         SecretShare {
                             index: my_party_index,
                             share: secret_share,
                         },
-                        root_key,
+                        rootkey,
                     ));
-                let app_paired_secret_share = root_paired_secret_share.root_key_to_appkey();
+                let app_paired_secret_share = root_paired_secret_share.rootkey_to_appkey();
 
                 for (signature_index, (sign_item, secret_nonce)) in
                     sign_items.iter().zip(secret_nonces).enumerate()
@@ -731,7 +730,7 @@ impl FrostSigner {
 
 #[derive(Clone, Debug)]
 pub struct AwaitingSignAck {
-    pub root_key: Point,
+    pub rootkey: Point,
     pub access_structure_id: AccessStructureId,
     pub encrypted_secret_share: Ciphertext<32, Scalar<Secret, Zero>>,
     pub my_party_index: PartyIndex,

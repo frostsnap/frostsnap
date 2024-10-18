@@ -7,8 +7,8 @@ use schnorr_fun::fun::prelude::*;
 pub struct Appkey(pub [u8; 65]);
 
 impl Appkey {
-    pub fn derive_from_root_key(root_key: Point) -> Self {
-        let xpub = Xpub::<Point>::from_root_key(root_key).root_key_to_appkey();
+    pub fn derive_from_rootkey(rootkey: Point) -> Self {
+        let xpub = Xpub::<Point>::from_rootkey(rootkey).rootkey_to_appkey();
         Self::from_xpub_unchecked(&xpub)
     }
 

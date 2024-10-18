@@ -231,7 +231,7 @@ impl_fromstr_deserialize! {
 pub struct KeyId([u8; 32]);
 
 impl KeyId {
-    pub fn from_root_key(point: Point<Normal, Public, impl ZeroChoice>) -> Self {
+    pub fn from_rootkey(point: Point<Normal, Public, impl ZeroChoice>) -> Self {
         Self(prefix_hash("KEY_ID").add(point).finalize_fixed().into())
     }
 }
