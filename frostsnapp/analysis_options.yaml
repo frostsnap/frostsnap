@@ -26,6 +26,8 @@ linter:
     # prefer_single_quotes: true  # Uncomment to enable the `prefer_single_quotes` rule
 
 analyzer:
+  exclude:
+    - "lib/bridge_*.dart"
   errors:
     prefer_const_constructors: ignore
 # Additional information about this file can be found at

@@ -58,7 +58,7 @@ class _PsbtCameraReaderState extends State<PsbtCameraReader> {
                 progress = 1;
               });
 
-              if (context.mounted) {
+              if (mounted) {
                 Navigator.pop(context, field0);
               }
             }
@@ -68,7 +68,9 @@ class _PsbtCameraReaderState extends State<PsbtCameraReader> {
         }
       });
     }).catchError((Object e) {
-      showErrorSnackbar(context, "Error scanning QR: $e");
+      if (mounted) {
+        showErrorSnackbar(context, "Error scanning QR: $e");
+      }
     });
   }
 

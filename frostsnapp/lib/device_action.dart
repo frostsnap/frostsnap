@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'dart:io';
 import 'dart:async';
 
 import 'package:frostsnapp/theme.dart';
@@ -17,7 +16,7 @@ Future<T?> showDeviceActionDialog<T>({
       Navigator.pop(dialogContext!, result);
     }
   }).catchError((error) {
-    if (!failed) {
+    if (!failed && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("ERROR: $error")),
       );
@@ -43,7 +42,7 @@ Future<T?> showDeviceActionDialog<T>({
               decoration: BoxDecoration(
                 color: backgroundPrimaryColor,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                boxShadow: [
+                boxShadow: const [
                   BoxShadow(
                     color: shadowColor,
                     blurRadius: 10,

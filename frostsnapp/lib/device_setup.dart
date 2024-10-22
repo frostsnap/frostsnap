@@ -52,7 +52,7 @@ class _DeviceNameField extends State<DeviceNameField> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      onPopInvoked: (didPop) {
+      onPopInvokedWithResult: (didPop, result) {
         if (changed) {
           coord.sendCancel(id: widget.id);
         }

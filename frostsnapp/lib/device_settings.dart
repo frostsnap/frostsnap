@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/animated_check.dart';
@@ -9,7 +8,6 @@ import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_id_ext.dart';
 import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/device_setup.dart';
-import 'package:frostsnapp/keygen.dart';
 import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/show_backup.dart';
@@ -269,8 +267,8 @@ class _FirmwareUpgradeDialogState extends State<FirmwareUpgradeDialog> {
       });
 
       if (newState.abort) {
-        showErrorSnackbar(context, "Firmware upgrade aborted");
         if (mounted) {
+          showErrorSnackbar(context, "Firmware upgrade aborted");
           Navigator.pop(context);
         }
 
@@ -283,10 +281,10 @@ class _FirmwareUpgradeDialogState extends State<FirmwareUpgradeDialog> {
           progressStream.listen((progress_) {
             setState(() => progress = progress_);
           }).onDone(() {
-            if (progress != 1.0) {
-              showErrorSnackbar(context, "Firmware upgrade failed");
-            }
             if (mounted) {
+              if (progress != 1.0) {
+                showErrorSnackbar(context, "Firmware upgrade failed");
+              }
               Navigator.pop(context);
             }
           });
@@ -419,7 +417,7 @@ class BackupSettingsPage extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        '$deviceName',
+                        deviceName,
                         style: TextStyle(fontWeight: FontWeight.bold),
                         textAlign: TextAlign.left,
                       ),

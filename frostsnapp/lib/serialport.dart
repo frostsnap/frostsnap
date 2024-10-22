@@ -1,9 +1,7 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/global.dart';
 import 'package:usb_serial/usb_serial.dart';
 import 'package:collection/collection.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
@@ -100,7 +98,7 @@ class HostPortHandler {
 }
 
 class SerialPort {
-  UsbPort? port = null;
+  UsbPort? port;
   Uint8List buffer = Uint8List(0);
 
   static Future<SerialPort> open(String id, int baudRate) async {

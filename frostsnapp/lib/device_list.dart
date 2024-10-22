@@ -22,7 +22,7 @@ const double iconSize = 20.0;
 class DeviceList extends StatefulWidget {
   final DeviceBuilder deviceBuilder;
 
-  DeviceList({
+  const DeviceList({
     Key? key,
     this.deviceBuilder = buildInteractiveDevice,
   }) : super(key: key);
@@ -217,7 +217,7 @@ class DeviceListWithIcons extends StatelessWidget {
               ? [
                   label,
                   SizedBox(height: 4),
-                  Container(height: iconSize, child: icon),
+                  SizedBox(height: iconSize, child: icon),
                   SizedBox(height: 4)
                 ]
               : [label],
@@ -227,9 +227,8 @@ class DeviceListWithIcons extends StatelessWidget {
 
 Widget buildInteractiveDevice(BuildContext context, ConnectedDevice device,
     Orientation orientation, Animation<double> animation) {
-  Widget child;
   final List<Widget> children = [];
-  final upToDate = device.firmwareDigest! == coord.upgradeFirmwareDigest();
+  final upToDate = device.firmwareDigest == coord.upgradeFirmwareDigest();
 
   if (device.name == null) {
     children.add(Spacer(flex: 6));
@@ -290,5 +289,5 @@ Widget buildInteractiveDevice(BuildContext context, ConnectedDevice device,
   return DeviceBoxContainer(
       orientation: orientation,
       animation: animation,
-      child: Column(children: children, mainAxisSize: MainAxisSize.max));
+      child: Column(mainAxisSize: MainAxisSize.max, children: children));
 }

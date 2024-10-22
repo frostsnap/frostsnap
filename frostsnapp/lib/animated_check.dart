@@ -38,7 +38,7 @@ class AnimatedCheckCircle extends StatefulWidget {
   const AnimatedCheckCircle({super.key, this.size = iconSize});
 
   @override
-  _AnimatedCheckCircleState createState() => _AnimatedCheckCircleState();
+  State<AnimatedCheckCircle> createState() => _AnimatedCheckCircleState();
 }
 
 class _AnimatedCheckCircleState extends State<AnimatedCheckCircle>

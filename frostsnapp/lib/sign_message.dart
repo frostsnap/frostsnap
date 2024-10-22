@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:collection';
 import 'dart:typed_data';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -12,7 +11,6 @@ import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/theme.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'hex.dart';
-import "dart:developer" as developer;
 
 class SignMessagePage extends StatelessWidget {
   final FrostKey frostKey;
@@ -37,7 +35,7 @@ class SignMessageForm extends StatefulWidget {
   const SignMessageForm({Key? key, required this.frostKey}) : super(key: key);
 
   @override
-  _SignMessageFormState createState() => _SignMessageFormState();
+  State<SignMessageForm> createState() => _SignMessageFormState();
 }
 
 class _SignMessageFormState extends State<SignMessageForm> {
@@ -60,7 +58,7 @@ class _SignMessageFormState extends State<SignMessageForm> {
     final buttonReady = selected.length == widget.frostKey.threshold() &&
         _messageController.text.isNotEmpty;
 
-    var submitButtonOnPressed;
+    Future<void> Function()? submitButtonOnPressed;
     if (buttonReady) {
       submitButtonOnPressed = () async {
         final message = _messageController.text;
@@ -73,15 +71,14 @@ class _SignMessageFormState extends State<SignMessageForm> {
 
         final signatures =
             await signMessageWorkflowDialog(context, signingStream, message);
-        if (signatures != null && context.mounted) {
-          Navigator.pop(context);
+        if (context.mounted) {
+          Navigator.pop(context, signatures);
         }
       };
     }
 
     return Center(
-        child: Container(
-            child: Column(
+        child: Column(
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -111,7 +108,7 @@ class _SignMessageFormState extends State<SignMessageForm> {
           child: Text('Submit'),
         ),
       ],
-    )));
+    ));
   }
 }
 
@@ -151,7 +148,7 @@ class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
       itemBuilder: (context, index) {
         final id = devices[index];
         final name = coord.getDeviceName(id: id);
-        final onChanged = (bool? value) {
+        onChanged(bool? value) {
           setState(() {
             if (value == true) {
               selected.add(id);
@@ -160,7 +157,8 @@ class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
             }
           });
           widget.onChanged?.call(selected);
-        };
+        }
+
         final enoughNonces = coord.noncesAvailable(id: id) >= 1;
         return Padding(
             padding: EdgeInsets.all(5),
@@ -224,7 +222,7 @@ Future<void> _showSignatureDialog(
       builder: (context) {
         return AlertDialog(
             title: Text("Signing success"),
-            content: Container(
+            content: SizedBox(
                 width: Platform.isAndroid ? double.maxFinite : 400.0,
                 child: Align(
                     alignment: Alignment.center,
@@ -242,7 +240,7 @@ Future<void> _showSignatureDialog(
 class DeviceSigningProgress extends StatelessWidget {
   final Stream<SigningState> stream;
 
-  DeviceSigningProgress({super.key, required this.stream});
+  const DeviceSigningProgress({super.key, required this.stream});
 
   @override
   Widget build(BuildContext context) {
@@ -281,7 +279,7 @@ class DeviceSigningProgress extends StatelessWidget {
                       }
                       return ListTile(
                         title: Text(name ?? "<unknown>"),
-                        trailing: Container(height: iconSize, child: icon),
+                        trailing: SizedBox(height: iconSize, child: icon),
                       );
                     });
               });
