@@ -50,6 +50,7 @@ jobs:
       - run: sudo apt-get update
       - run: sudo apt-get install -y libudev-dev
       - run: just frostsnapp/install-rust-deps
+      - run: just gen
       - run: just lint-non-device --release
       - run: just test --release --all-features
 
@@ -90,6 +91,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-flutter-
       - run: just frostsnapp/install-rust-deps
+      - run: just gen
       - run: just frostsnapp/build linux
       - run: just frostsnapp/build appbundle
 
@@ -114,6 +116,7 @@ jobs:
       - name: Install flutter dependencies
         run: flutter pub get
         working-directory: ./frostsnapp
+      - run: just gen
       - name: Run Flutter analyze
         run: |
           flutter analyze
