@@ -49,3 +49,9 @@ jniLibs
 
 Cargo.lock
 pubspec.lock
+
+**/bridge_generated*.dart
+**/bridge_generated*.h
+**/bridge_generated*.rs
+**/bridge_definitions*.dart
+
