@@ -1,14 +1,11 @@
 import 'dart:async';
 
 import 'package:collection/collection.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:frostsnapp/electrum_server.dart';
 import 'package:frostsnapp/electrum_server_settings.dart';
 import 'package:frostsnapp/logs.dart';
 import 'package:frostsnapp/main.dart';
-import 'package:frostsnapp/serialport.dart';
 import 'package:frostsnapp/todo.dart';
 import 'package:frostsnapp/wallet.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
@@ -116,7 +113,7 @@ class SettingsPage extends StatelessWidget {
                           title: "Logs",
                           icon: Icons.list_alt,
                           bodyBuilder: (context) {
-                            return LogPane(logStream: logContext!.logStream);
+                            return LogPane(logStream: logContext.logStream);
                           }),
                     SettingsItem(
                         title: "Developer mode",

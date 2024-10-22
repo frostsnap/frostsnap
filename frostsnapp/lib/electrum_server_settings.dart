@@ -77,7 +77,7 @@ class _ElectrumServerSettingWidgetState
       final settingsCtx = SettingsContext.of(context)!;
       await settingsCtx.settings.checkAndSetElectrumServer(
           network: widget.network, url: _controller.text);
-    } catch (e, st) {
+    } catch (e) {
       error = e.toString();
     }
 
@@ -94,7 +94,7 @@ class _ElectrumServerSettingWidgetState
           SnackBar(
               backgroundColor: errorColor,
               content: Text(
-                  'Failed to connect. Please check the server URL. ERROR: ${error!}')),
+                  'Failed to connect. Please check the server URL. ERROR: $error')),
         );
       }
     });

@@ -7,7 +7,7 @@ class Todo extends StatefulWidget {
   const Todo(this.todoDescription, {super.key});
 
   @override
-  _TodoState createState() => _TodoState();
+  State<Todo> createState() => _TodoState();
 }
 
 class _TodoState extends State<Todo> {

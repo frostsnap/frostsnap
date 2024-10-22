@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/key_list.dart';
 import 'package:flutter/services.dart';
-import 'package:frostsnapp/logs.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/serialport.dart';
 import 'package:frostsnapp/stream_ext.dart';
@@ -114,8 +113,6 @@ class MyHomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final logStream = FrostsnapContext.of(context)?.logStream;
-
     return Scaffold(
         appBar: FsAppBar(title: Text("Key List")),
         body: Center(child: KeyListWithConfetti()));

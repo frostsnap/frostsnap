@@ -13,7 +13,7 @@ class LogPane extends StatefulWidget {
 }
 
 class _LogPane extends State<LogPane> {
-  List<String> _logs = [];
+  final List<String> _logs = [];
   late StreamSubscription<String> _subscription;
   final ScrollController _scrollController = ScrollController();
 
@@ -102,7 +102,7 @@ class _LogPane extends State<LogPane> {
           IconButton(
             icon: const Icon(Icons.content_copy),
             onPressed: () {
-              final String combinedLogs = _logs.map((log) => '$log').join('\n');
+              final String combinedLogs = _logs.map((log) => log).join('\n');
               Clipboard.setData(ClipboardData(text: combinedLogs));
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(

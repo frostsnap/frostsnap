@@ -144,21 +144,21 @@ class _KeyCard extends State<KeyCard> {
         child: Text("Sign"));
 
     final Widget walletButton = ElevatedButton(
-      onPressed: bitcoinNetwork == null
-          ? null
-          : () async {
-              final wallet = await settings.loadWallet(network: bitcoinNetwork);
-              Navigator.push(context, MaterialPageRoute(builder: (context) {
-                return WalletPage(keyId: keyId, wallet: wallet);
-              }));
-            },
+      onPressed: () async {
+        final wallet = await settings.loadWallet(network: bitcoinNetwork);
+        if (context.mounted) {
+          Navigator.push(context, MaterialPageRoute(builder: (context) {
+            return WalletPage(keyId: keyId, wallet: wallet);
+          }));
+        }
+      },
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text("₿"),
-          if (!(bitcoinNetwork?.isMainnet() ?? false))
+          if (!bitcoinNetwork.isMainnet())
             Text(
-              bitcoinNetwork?.name() ?? "testnet",
+              bitcoinNetwork.name(),
               style:
                   TextStyle(fontSize: 12, color: Colors.red), // Custom styling
             ),

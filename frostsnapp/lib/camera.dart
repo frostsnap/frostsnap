@@ -3,7 +3,6 @@ import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/image_converter.dart';
 import 'package:frostsnapp/settings.dart';

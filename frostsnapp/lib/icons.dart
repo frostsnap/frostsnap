@@ -27,7 +27,7 @@ class SpinningSyncIcon extends StatefulWidget {
   }
 
   @override
-  _SpinningSyncIconState createState() => _SpinningSyncIconState();
+  State<SpinningSyncIcon> createState() => _SpinningSyncIconState();
 }
 
 class _SpinningSyncIconState extends State<SpinningSyncIcon>
