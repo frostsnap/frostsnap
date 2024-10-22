@@ -28,18 +28,24 @@ lint-non-device +ARGS="":
 lint-device +ARGS="":
     cd device && cargo clippy {{ARGS}} --all-features --bins -- -Dwarnings
 
+lint-app +ARGS="":
+    ( cd frostsnapp && flutter analyze {{ARGS}}; )
+
+fix-dart:
+    ( cd frostsnapp && dart format . && dart fix --apply )
+
 gen:
     just "frostsnapp/gen"
 
-fix:
+fix: fix-dart
     cargo clippy --fix --allow-dirty --allow-staged {{non_device_packages}} --all-features --tests --bins
     ( cd device && cargo clippy --fix --allow-dirty --allow-staged --all-features --bins; )
     cargo fmt --all
-    ( cd frostsnapp && dart format .; )
+
 
 run +ARGS="":
     just build-device
     just frostsnapp/run {{ARGS}}
 
 check: check-non-device check-device
-lint: lint-non-device lint-device
+lint: lint-non-device lint-device lint-app

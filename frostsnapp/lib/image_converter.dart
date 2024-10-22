@@ -103,7 +103,7 @@ class ImageUtils {
         throw Exception("Image type not supported for conversion");
       }
 
-      imglib.PngEncoder pngEncoder = new imglib.PngEncoder();
+      imglib.PngEncoder pngEncoder = imglib.PngEncoder();
 
       // Convert to png
       final png = pngEncoder.encode(img);

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
 import 'package:file_picker/file_picker.dart';
@@ -10,13 +9,10 @@ import 'package:frostsnapp/camera.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_id_ext.dart';
 import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/hex.dart';
 import 'package:frostsnapp/sign_message.dart';
 import 'package:frostsnapp/wallet.dart';
-import 'package:path/path.dart' as path;
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
-import "dart:developer" as developer;
 
 class LoadPsbtPage extends StatefulWidget {
   final KeyId keyId;
@@ -82,11 +78,13 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
                   if (fileResult != null) {
                     File file = File(fileResult.files.single.path!);
                     Uint8List psbtBytes = await file.readAsBytes();
-                    await runPsbtSigningWorkflow(
-                        context: context,
-                        psbtBytes: psbtBytes,
-                        selectedDevices: selectedDevices.toList(),
-                        keyId: widget.keyId);
+                    if (context.mounted) {
+                      await runPsbtSigningWorkflow(
+                          context: context,
+                          psbtBytes: psbtBytes,
+                          selectedDevices: selectedDevices.toList(),
+                          keyId: widget.keyId);
+                    }
                   } else {
                     // User canceled the file picker
                   }
@@ -132,7 +130,7 @@ Future<void> runPsbtSigningWorkflow({
   required KeyId keyId,
 }) async {
   final Psbt psbt;
-  final unsignedTx;
+  final UnsignedTx unsignedTx;
   try {
     psbt = api.psbtBytesToPsbt(psbtBytes: psbtBytes);
     unsignedTx = wallet.psbtToUnsignedTx(psbt: psbt, keyId: keyId);
@@ -222,7 +220,7 @@ Future<void> saveOrBroadcastSignedPsbtDialog(
 
         return AlertDialog(
             title: Text("Signed PSBT"),
-            content: Container(
+            content: SizedBox(
                 width: Platform.isAndroid ? double.maxFinite : 400.0,
                 child: Align(
                     alignment: Alignment.center,
@@ -303,7 +301,7 @@ class AnimatedQr extends StatefulWidget {
   const AnimatedQr({Key? key, required this.input}) : super(key: key);
 
   @override
-  _AnimatedQrState createState() => _AnimatedQrState();
+  State<AnimatedQr> createState() => _AnimatedQrState();
 }
 
 class _AnimatedQrState extends State<AnimatedQr> {

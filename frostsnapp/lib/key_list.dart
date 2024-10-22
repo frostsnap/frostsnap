@@ -115,7 +115,7 @@ class _KeyCard extends State<KeyCard> {
         },
         child: Text("₿"));
 
-    final continueSigning;
+    final Widget continueSigning;
 
     if (restorableSignSession != null) {
       continueSigning = ElevatedButton(

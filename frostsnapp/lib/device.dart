@@ -67,6 +67,8 @@ class DevicePrompt extends StatelessWidget {
 }
 
 class ConfirmPrompt extends StatelessWidget {
+  const ConfirmPrompt({super.key});
+
   @override
   Widget build(BuildContext context) {
     return DevicePrompt(

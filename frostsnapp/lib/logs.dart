@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/theme.dart';
 
 class LogScreen extends StatefulWidget {
@@ -10,11 +9,11 @@ class LogScreen extends StatefulWidget {
   const LogScreen({super.key, required this.logStream});
 
   @override
-  _LogScreenState createState() => _LogScreenState();
+  State<LogScreen> createState() => _LogScreenState();
 }
 
 class _LogScreenState extends State<LogScreen> {
-  List<String> _logs = [];
+  final List<String> _logs = [];
   late StreamSubscription<String> _subscription;
   final ScrollController _scrollController = ScrollController();
 
@@ -110,7 +109,7 @@ class _LogScreenState extends State<LogScreen> {
                     icon: const Icon(Icons.content_copy),
                     onPressed: () {
                       final String combinedLogs =
-                          _logs.map((log) => '$log').join('\n');
+                          _logs.map((log) => log).join('\n');
                       Clipboard.setData(ClipboardData(text: combinedLogs));
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(

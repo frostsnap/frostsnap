@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -16,8 +15,10 @@ import 'package:frostsnapp/theme.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class KeyNamePage extends StatefulWidget {
+  const KeyNamePage({super.key});
+
   @override
-  _KeyNamePageState createState() => _KeyNamePageState();
+  State<KeyNamePage> createState() => _KeyNamePageState();
 }
 
 class _KeyNamePageState extends State<KeyNamePage> {
@@ -34,7 +35,7 @@ class _KeyNamePageState extends State<KeyNamePage> {
 
   @override
   Widget build(BuildContext context) {
-    final _nextPage = _keyNameController.text.isNotEmpty
+    final nextPage = _keyNameController.text.isNotEmpty
         ? () async {
             final keyId = await Navigator.push(
               context,
@@ -79,7 +80,7 @@ class _KeyNamePageState extends State<KeyNamePage> {
                   },
                   onSubmitted: (name) {
                     if (name.isNotEmpty) {
-                      _nextPage?.call();
+                      nextPage?.call();
                     }
                   }),
             ),
@@ -87,7 +88,7 @@ class _KeyNamePageState extends State<KeyNamePage> {
             Align(
               alignment: Alignment.center,
               child: ElevatedButton.icon(
-                onPressed: _nextPage,
+                onPressed: nextPage,
                 icon: Icon(Icons.arrow_forward),
                 label: Text('Next'),
               ),
@@ -102,7 +103,7 @@ class _KeyNamePageState extends State<KeyNamePage> {
 class DevicesPage extends StatelessWidget {
   final String keyName;
 
-  DevicesPage({required this.keyName});
+  const DevicesPage({super.key, required this.keyName});
 
   @override
   Widget build(BuildContext context) {
@@ -143,13 +144,13 @@ class DevicesPage extends StatelessWidget {
                   style: style);
             } else if (devices.isEmpty) {
               prompt = Text(
-                "Insert the devices that will be part of ‘${keyName}’",
+                "Insert the devices that will be part of ‘$keyName’",
                 style: style,
                 textAlign: TextAlign.center,
               );
             } else {
               prompt = Text(
-                "These ${devices.length} devices will be part of ‘${keyName}’",
+                "These ${devices.length} devices will be part of ‘$keyName’",
                 style: style,
                 textAlign: TextAlign.center,
               );
@@ -164,7 +165,7 @@ class DevicesPage extends StatelessWidget {
                   // Wrap the bottom section in a Container with BoxDecoration
                   decoration: BoxDecoration(
                     color: backgroundPrimaryColor,
-                    boxShadow: [
+                    boxShadow: const [
                       BoxShadow(
                         color: shadowColor,
                         spreadRadius: 1,
@@ -214,10 +215,11 @@ class ThresholdPage extends StatefulWidget {
   final String keyName;
   final List<ConnectedDevice> selectedDevices;
 
-  ThresholdPage({required this.keyName, required this.selectedDevices});
+  const ThresholdPage(
+      {super.key, required this.keyName, required this.selectedDevices});
 
   @override
-  _ThresholdPageState createState() => _ThresholdPageState();
+  State<ThresholdPage> createState() => _ThresholdPageState();
 }
 
 class _ThresholdPageState extends State<ThresholdPage> {

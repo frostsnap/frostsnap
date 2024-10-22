@@ -6,7 +6,6 @@ import 'package:frostsnapp/key_list.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnapp/logs.dart';
 import 'package:frostsnapp/serialport.dart';
-import 'package:frostsnapp/sign_message.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:path_provider/path_provider.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
@@ -62,8 +61,7 @@ void main() async {
 
     coord.startThread();
   } catch (error, stacktrace) {
-    print("$error");
-    print("$stacktrace");
+    api.log(level: LogLevel.Info, message: "startup failed: $error");
     startupError = "$error\n$stacktrace";
   }
 
@@ -143,11 +141,11 @@ class StartupErrorWidget extends StatefulWidget {
   const StartupErrorWidget({Key? key, required this.error}) : super(key: key);
 
   @override
-  _StartupErrorWidgetState createState() => _StartupErrorWidgetState();
+  State<StartupErrorWidget> createState() => _StartupErrorWidgetState();
 }
 
 class _StartupErrorWidgetState extends State<StartupErrorWidget> {
-  List<String> _logs = [];
+  final List<String> _logs = [];
   StreamSubscription<String>? _subscription;
 
   @override

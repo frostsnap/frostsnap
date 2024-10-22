@@ -19,7 +19,7 @@ class WalletHome extends StatefulWidget {
   const WalletHome({super.key, required this.keyId});
 
   @override
-  _WalletHomeState createState() => _WalletHomeState();
+  State<WalletHome> createState() => _WalletHomeState();
 }
 
 class _WalletHomeState extends State<WalletHome> {
@@ -65,9 +65,11 @@ class _WalletHomeState extends State<WalletHome> {
 
   void _copyToClipboard(BuildContext context, String walletDescriptor) {
     Clipboard.setData(ClipboardData(text: walletDescriptor)).then((_) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Wallet descriptor copied to clipboard')),
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Wallet descriptor copied to clipboard')),
+        );
+      }
     });
   }
 
@@ -450,7 +452,7 @@ class WalletReceive extends StatefulWidget {
   const WalletReceive({super.key, required this.keyId});
 
   @override
-  _WalletReceiveState createState() => _WalletReceiveState();
+  State<WalletReceive> createState() => _WalletReceiveState();
 }
 
 class _WalletReceiveState extends State<WalletReceive> {
@@ -471,7 +473,6 @@ class _WalletReceiveState extends State<WalletReceive> {
 
   @override
   Widget build(BuildContext context) {
-    final keyXpub = bitcoinContext.descriptorForKey(keyId: widget.keyId);
     return Scaffold(
         body: Padding(
       padding: const EdgeInsets.all(10.0),
@@ -536,7 +537,7 @@ class WalletSend extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  _WalletSendState createState() => _WalletSendState();
+  State<WalletSend> createState() => _WalletSendState();
 }
 
 class _WalletSendState extends State<WalletSend> {

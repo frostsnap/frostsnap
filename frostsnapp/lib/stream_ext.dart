@@ -46,7 +46,7 @@ extension StreamCompletionFuture<T> on Stream<T> {
   Future<void> get completionFuture {
     final Completer<void> completer = Completer<void>();
 
-    this.listen(
+    listen(
       (event) {
         // Do nothing with the events
       },

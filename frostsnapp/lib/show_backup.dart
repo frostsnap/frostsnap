@@ -13,10 +13,13 @@ import 'package:frostsnapp/hex.dart';
 Future<void> doBackupWorkflow(BuildContext context,
     {required List<DeviceId> devices, required KeyId keyId}) async {
   for (final deviceId in devices) {
-    final confirmed =
-        await showDeviceBackupDialog(context, deviceId: deviceId, keyId: keyId);
-    if (confirmed) {
-      await showBackupInstructionsDialog(context, keyId: keyId);
+    if (context.mounted) {
+      final confirmed = await showDeviceBackupDialog(context,
+          deviceId: deviceId, keyId: keyId);
+
+      if (confirmed && context.mounted) {
+        await showBackupInstructionsDialog(context, keyId: keyId);
+      }
     }
     await coord.cancelProtocol();
   }
@@ -33,7 +36,6 @@ Future<bool> showDeviceBackupDialog(BuildContext context,
         DeviceListWithIcons(
           iconAssigner: (context, id) {
             if (deviceIdEquals(deviceId, id)) {
-              final deviceName = coord.getDeviceName(id: deviceId);
               final Widget icon = ConfirmPrompt();
               return (null, icon);
             } else {
@@ -78,7 +80,7 @@ Future<void> showBackupInstructionsDialog(BuildContext context,
                   Text.rich(TextSpan(
                       text:
                           "Write down each device's backup for this key onto separate pieces of paper. Each piece of paper should look like this with every ",
-                      children: [
+                      children: const [
                         TextSpan(
                           text: 'X',
                           style: TextStyle(fontWeight: FontWeight.bold),
@@ -92,7 +94,7 @@ Future<void> showBackupInstructionsDialog(BuildContext context,
                   Center(
                     child: Text.rich(TextSpan(
                       text: 'frost[',
-                      children: <TextSpan>[
+                      children: const <TextSpan>[
                         TextSpan(
                           text: 'X',
                           style: TextStyle(fontWeight: FontWeight.bold),
