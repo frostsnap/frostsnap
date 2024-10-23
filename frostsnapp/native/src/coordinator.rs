@@ -1,8 +1,7 @@
 use crate::api::{self, KeyState};
+use crate::sink_wrap::SinkWrap;
 use anyhow::{anyhow, Result};
 use flutter_rust_bridge::{RustOpaque, StreamSink};
-use frostsnap_coordinator::check_share::{CheckShareProtocol, CheckShareState};
-use frostsnap_coordinator::display_backup::DisplayBackupProtocol;
 use frostsnap_coordinator::firmware_upgrade::{
     FirmwareUpgradeConfirmState, FirmwareUpgradeProtocol,
 };
@@ -11,9 +10,10 @@ use frostsnap_coordinator::frostsnap_comms::{
 };
 use frostsnap_coordinator::frostsnap_core::message::CoordinatorSend;
 use frostsnap_coordinator::frostsnap_persist::DeviceNames;
-use frostsnap_coordinator::keygen::KeyGenState;
 use frostsnap_coordinator::persist::Persisted;
-use frostsnap_coordinator::signing::SigningState;
+use frostsnap_coordinator::{
+    check_share::CheckShareProtocol, display_backup::DisplayBackupProtocol,
+};
 use frostsnap_coordinator::{
     frostsnap_core, AppMessageBody, FirmwareBin, UiProtocol, UsbSender, UsbSerialManager,
 };
@@ -672,27 +672,3 @@ fn frost_keys(coordinator: &FrostCoordinator) -> Vec<crate::api::FrostKey> {
         .map(|coord_frost_key| crate::api::FrostKey(RustOpaque::new(coord_frost_key.clone())))
         .collect()
 }
-
-// we need to wrap it so we can impl it on foreign FRB type. You can't do a single generic impl. Try
-// it if you don't believe me.
-struct SinkWrap<T>(StreamSink<T>);
-
-macro_rules! bridge_sink {
-    ($type:ty) => {
-        impl frostsnap_coordinator::Sink<$type> for SinkWrap<$type> {
-            fn send(&self, state: $type) {
-                self.0.add(state);
-            }
-
-            fn close(&self) {
-                self.0.close();
-            }
-        }
-    };
-}
-
-bridge_sink!(KeyGenState);
-bridge_sink!(FirmwareUpgradeConfirmState);
-bridge_sink!(SigningState);
-bridge_sink!(CheckShareState);
-bridge_sink!(bool);

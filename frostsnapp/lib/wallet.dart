@@ -1,22 +1,92 @@
+import 'dart:async';
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_id_ext.dart';
 import 'package:frostsnapp/global.dart';
+import 'package:frostsnapp/icons.dart';
 import 'package:frostsnapp/psbt.dart';
+import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/sign_message.dart';
+import 'package:frostsnapp/snackbar.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/theme.dart';
-import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
-class WalletHome extends StatefulWidget {
+class WalletContext extends InheritedWidget {
+  final Wallet wallet;
+  final KeyId keyId;
+  late final Stream<TxState> txStream;
+  // We have a contextual Stream of syncing events (each syncing event is
+  // represented as a Stream<double> where the double is the progress).
+  final StreamController<Stream<double>> syncs = StreamController.broadcast();
+
+  WalletContext({
+    super.key,
+    required this.wallet,
+    required this.keyId,
+    required Widget child,
+  }) : super(child: child) {
+    txStream = wallet.subTxState(keyId: keyId).toBehaviorSubject();
+  }
+
+  static WalletContext? of(BuildContext context) {
+    return context.dependOnInheritedWidgetOfExactType<WalletContext>();
+  }
+
+  // Allows children to start syncs The reason this is here rather than being
+  // called directly by button onPressed for example is so we can trigger it in other ways.
+  Stream<double> startFullSync({BuildContext? context}) {
+    final progress =
+        wallet.sync(keyId: keyId).asBroadcastStream().handleError((error) {
+      if (context != null && context.mounted) {
+        showErrorSnackbarBottom(context, "sync failed: $error");
+      }
+    });
+
+    syncs.add(progress.asBroadcastStream());
+    return progress;
+  }
+
+  Stream<bool> syncStartStopStream() {
+    return syncs.stream.asyncExpand((syncStream) async* {
+      yield true;
+      try {
+        // wait for the sync to finish
+        await syncStream.toList();
+      } catch (e) {
+        // do nothing
+      }
+
+      yield false;
+    });
+  }
+
+  @override
+  bool updateShouldNotify(WalletContext oldWidget) {
+    // never updates
+    return false;
+  }
+}
+
+class WalletPage extends StatelessWidget {
+  final Wallet wallet;
   final KeyId keyId;
 
-  const WalletHome({super.key, required this.keyId});
+  const WalletPage({super.key, required this.wallet, required this.keyId});
+
+  @override
+  Widget build(BuildContext context) {
+    return WalletContext(
+        wallet: wallet,
+        keyId: keyId,
+        child: WalletSyncTrigger(child: WalletHome()));
+  }
+}
+
+class WalletHome extends StatefulWidget {
+  const WalletHome({super.key});
 
   @override
   State<WalletHome> createState() => _WalletHomeState();
@@ -24,34 +94,29 @@ class WalletHome extends StatefulWidget {
 
 class _WalletHomeState extends State<WalletHome> {
   int _selectedIndex = 0; // Tracks the current index for BottomNavigationBar
-  late Stream<TxState> txStream;
 
   @override
   void initState() {
     super.initState();
-    txStream = wallet.subTxState(keyId: widget.keyId).toBehaviorSubject();
   }
 
   // The widget options to display based on the selected index
   // A method that returns the correct widget based on the selected index
   Widget _getSelectedWidget() {
+    final walletCtx = WalletContext.of(context)!;
     switch (_selectedIndex) {
       case 0:
         // Pass any required parameters to the WalletActivity widget
-        return WalletActivity(keyId: widget.keyId, txStream: txStream);
+        return WalletActivity();
       case 1:
         // Placeholder for the Send page
-        return WalletSend(
-            keyId: widget.keyId,
-            txStream: txStream,
-            onBroadcastNewTx: () {
-              setState(() {
-                _selectedIndex = 0;
-              });
-            });
+        return WalletSend(onBroadcastNewTx: () {
+          setState(() {
+            _selectedIndex = 0;
+          });
+        });
       case 2:
-        // Placeholder for the Receive page
-        return WalletReceive(keyId: widget.keyId);
+        return WalletReceive(wallet: walletCtx.wallet, keyId: walletCtx.keyId);
       default:
         return Text('Page not found');
     }
@@ -63,76 +128,10 @@ class _WalletHomeState extends State<WalletHome> {
     });
   }
 
-  void _copyToClipboard(BuildContext context, String walletDescriptor) {
-    Clipboard.setData(ClipboardData(text: walletDescriptor)).then((_) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Wallet descriptor copied to clipboard')),
-        );
-      }
-    });
-  }
-
-  void _showQRCodeDialog(BuildContext context, String walletDescriptor) {
-    final qrCode = QrCode(8, QrErrorCorrectLevel.L);
-    qrCode.addData(walletDescriptor);
-    final qrImage = QrImage(qrCode);
-
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Center(child: Text('Export Descriptor')),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              PrettyQrView(
-                qrImage: qrImage,
-                decoration: const PrettyQrDecoration(
-                  shape: PrettyQrSmoothSymbol(),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            IconButton(
-              iconSize: 30.0,
-              onPressed: () => _copyToClipboard(context, walletDescriptor),
-              icon: Icon(Icons.copy),
-            ),
-            SizedBox(width: 30.0),
-            IconButton(
-              iconSize: 30.0,
-              icon: Icon(Icons.close),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            )
-          ],
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Bitcoin Wallet'), actions: [
-        PopupMenuButton<String>(
-          onSelected: (String result) {
-            if (result == 'export_descriptor') {
-              _showQRCodeDialog(context,
-                  bitcoinContext.descriptorForKey(keyId: widget.keyId));
-            }
-          },
-          itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-            const PopupMenuItem<String>(
-              value: 'export_descriptor',
-              child: Text('Export Descriptor'),
-            ),
-          ],
-        )
-      ]),
+      appBar: FsAppBar(title: Text('Bitcoin Wallet')),
       body: Center(
           // Display the widget based on the current index
           child: _getSelectedWidget()),
@@ -150,154 +149,34 @@ class _WalletHomeState extends State<WalletHome> {
   }
 }
 
-// Renaming WalletHomePage to WalletActivity
-class WalletActivity extends StatefulWidget {
-  final KeyId keyId;
-  final Stream<TxState> txStream;
-
-  const WalletActivity(
-      {super.key, required this.keyId, required this.txStream});
-
-  @override
-  State<WalletActivity> createState() => _WalletActivity();
-}
-
-class _WalletActivity extends State<WalletActivity> {
-  Stream<double>? syncProgressStream;
-
-  // we need this so that flutter actually rebuilds the progress bar when you
-  // click the button again.
-  UniqueKey floatingProgressKey = UniqueKey();
-
-  @override
-  void initState() {
-    super.initState();
-  }
+class WalletActivity extends StatelessWidget {
+  const WalletActivity({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // Your existing WalletActivity implementation
+    final walletContext = WalletContext.of(context)!;
     return Scaffold(
-      floatingActionButton: SpinningSyncButton(onPressed: () async {
-        final progressStream =
-            wallet.sync(keyId: widget.keyId).asBroadcastStream();
-        setState(() {
-          syncProgressStream = progressStream;
-          floatingProgressKey = UniqueKey();
-        });
-        // this waits until stream is done so the button will keep spinning.
-        await progressStream.toList();
-      }),
+      floatingActionButton: FloatingActionButton(
+          child: SpinningSyncIcon(
+            spinStream: walletContext.syncStartStopStream(),
+          ),
+          onPressed: () async {
+            walletContext.startFullSync(context: context);
+          }),
       body: Stack(children: [
-        if (syncProgressStream != null)
-          FloatingProgress(
-              key: floatingProgressKey, progressStream: syncProgressStream!),
-        Column(children: [
-          Balance(txStream: widget.txStream),
-          Expanded(
-              child: TxList(keyId: widget.keyId, txStream: widget.txStream))
-        ]),
+        StreamBuilder(
+            stream: walletContext.syncs.stream,
+            builder: (context, snap) {
+              if (!snap.hasData) {
+                return SizedBox();
+              }
+              // we need make sure we don't use the old FloatingProgress widget for each sync
+              UniqueKey floatingProgressKey = UniqueKey();
+              return FloatingProgress(
+                  key: floatingProgressKey, progressStream: snap.data!);
+            }),
+        Column(children: const [UpdatingBalance(), Expanded(child: TxList())]),
       ]),
-    );
-  }
-}
-
-class SpinningSyncButton extends StatefulWidget {
-  final SpinningOnPressed onPressed;
-  const SpinningSyncButton({super.key, required this.onPressed});
-  @override
-  State<SpinningSyncButton> createState() => _SpinningSyncButton();
-}
-
-typedef SpinningOnPressed = Future Function();
-
-class _SpinningSyncButton extends State<SpinningSyncButton>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
-
-  @override
-  void initState() {
-    super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(seconds: 2),
-      vsync: this,
-    );
-  }
-
-  @override
-  void dispose() {
-    _animationController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FloatingActionButton(
-      onPressed: () async {
-        if (_animationController.isAnimating) {
-          return;
-        }
-        final finishedWhen = widget.onPressed();
-        _animationController.repeat();
-        await finishedWhen;
-        if (mounted) {
-          _animationController.reset();
-          _animationController.stop();
-        }
-      },
-      child: RotationTransition(
-        turns: _animationController,
-        child: Icon(Icons.sync),
-      ),
-    );
-  }
-}
-
-class SpinningSyncIcon extends StatefulWidget {
-  final SpinningOnPressed onPressed;
-  const SpinningSyncIcon({super.key, required this.onPressed});
-  @override
-  State<SpinningSyncIcon> createState() => _SpinningSyncIcon();
-}
-
-class _SpinningSyncIcon extends State<SpinningSyncIcon>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
-
-  @override
-  void initState() {
-    super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(seconds: 2),
-      vsync: this,
-    );
-  }
-
-  @override
-  void dispose() {
-    _animationController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      onPressed: () async {
-        if (_animationController.isAnimating) {
-          return;
-        }
-        final finishedWhen = widget.onPressed();
-        _animationController.repeat();
-        await finishedWhen;
-        if (mounted) {
-          _animationController.reset();
-          _animationController.stop();
-        }
-      },
-      icon: RotationTransition(
-        turns: _animationController,
-        child: Icon(Icons.sync),
-      ),
     );
   }
 }
@@ -325,8 +204,11 @@ class _FloatingProgress extends State<FloatingProgress>
       setState(() {
         progress = event;
       });
-    }).onDone(() {
-      _progressFadeController.forward();
+    }, onDone: () {
+      // trigger rebuild to start the animation
+      setState(() {
+        _progressFadeController.forward();
+      });
     });
   }
 
@@ -359,88 +241,91 @@ class _FloatingProgress extends State<FloatingProgress>
 }
 
 class TxList extends StatelessWidget {
-  final KeyId keyId;
-  final Stream<TxState> txStream;
-  const TxList({super.key, required this.keyId, required this.txStream});
+  const TxList({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final walletContext = WalletContext.of(context)!;
     return StreamBuilder<TxState>(
-      stream: txStream,
+      stream: walletContext.txStream,
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
           return Center(child: FsProgressIndicator());
         }
         final transactions = snapshot.data!.txs;
-        return ListView.builder(
-          itemCount: transactions.length,
-          itemBuilder: (context, index) {
-            final transaction = transactions[index];
-            String confirmationText;
+        return RefreshIndicator(
+            child: ListView.builder(
+              itemCount: transactions.length,
+              itemBuilder: (context, index) {
+                final transaction = transactions[index];
+                String confirmationText;
 
-            if (transaction.confirmationTime != null) {
-              // Convert the Unix timestamp to a DateTime object
-              DateTime confirmationDateTime =
-                  DateTime.fromMillisecondsSinceEpoch(
-                      transaction.confirmationTime!.time * 1000);
-              // Format the DateTime object to a string
-              String formattedTime =
-                  '${confirmationDateTime.year}-${confirmationDateTime.month.toString().padLeft(2, '0')}-${confirmationDateTime.day.toString().padLeft(2, '0')} ${confirmationDateTime.hour.toString().padLeft(2, '0')}:${confirmationDateTime.minute.toString().padLeft(2, '0')}';
-              confirmationText =
-                  'Confirmation: ${transaction.confirmationTime!.height} ($formattedTime)';
-            } else {
-              confirmationText = 'Unconfirmed';
-            }
+                if (transaction.confirmationTime != null) {
+                  DateTime confirmationDateTime =
+                      DateTime.fromMillisecondsSinceEpoch(
+                          transaction.confirmationTime!.time * 1000);
+                  String formattedTime =
+                      '${confirmationDateTime.year}-${confirmationDateTime.month.toString().padLeft(2, '0')}-${confirmationDateTime.day.toString().padLeft(2, '0')} ${confirmationDateTime.hour.toString().padLeft(2, '0')}:${confirmationDateTime.minute.toString().padLeft(2, '0')}';
+                  confirmationText =
+                      'Confirmation: ${transaction.confirmationTime!.height} ($formattedTime)';
+                } else {
+                  confirmationText = 'Unconfirmed';
+                }
 
-            return Card(
-              child: ListTile(
-                leading: Icon(
-                  transaction.netValue > 0
-                      ? Icons.arrow_downward
-                      : Icons.arrow_upward,
-                  color: transaction.netValue > 0 ? successColor : errorColor,
-                ),
-                title: Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: NetValue(transaction.netValue),
+                return Card(
+                  child: ListTile(
+                    leading: Icon(
+                      transaction.netValue > 0
+                          ? Icons.arrow_downward
+                          : Icons.arrow_upward,
+                      color:
+                          transaction.netValue > 0 ? successColor : errorColor,
                     ),
-                    if (transaction.confirmationTime == null)
-                      SpinningSyncIcon(onPressed: () async {
-                        final stream = wallet.syncTxids(
-                            keyId: keyId, txids: [transaction.txid()]);
-                        // wait till it's over
-                        await stream.toList();
-                      }),
-                    IconButton(
-                      icon: Icon(Icons.copy),
-                      onPressed: () {
-                        Clipboard.setData(
-                            ClipboardData(text: transaction.txid()));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Transaction ID copied to clipboard'),
-                          ),
-                        );
-                      },
+                    title: Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: NetValue(transaction.netValue),
+                        ),
+                        if (transaction.confirmationTime == null)
+                          SpinningSyncButton(onPressed: () async {
+                            final stream = walletContext.wallet.syncTxids(
+                                keyId: walletContext.keyId,
+                                txids: [transaction.txid()]);
+                            await stream.toList();
+                          }),
+                        IconButton(
+                          icon: Icon(Icons.copy),
+                          onPressed: () {
+                            Clipboard.setData(
+                                ClipboardData(text: transaction.txid()));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content:
+                                    Text('Transaction ID copied to clipboard'),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text('ID: ${transaction.txid()}'),
-                    Text(
-                      confirmationText, // Display confirmation height and time or 'Unconfirmed'
-                      style:
-                          TextStyle(fontSize: 12), // Adjust the style as needed
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text('ID: ${transaction.txid()}'),
+                        Text(
+                          confirmationText,
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
+                  ),
+                );
+              },
+            ),
+            onRefresh: () async {
+              final stream = walletContext.startFullSync(context: context);
+              await stream.toList();
+            });
       },
     );
   }
@@ -448,8 +333,9 @@ class TxList extends StatelessWidget {
 
 class WalletReceive extends StatefulWidget {
   final KeyId keyId;
+  final Wallet wallet;
 
-  const WalletReceive({super.key, required this.keyId});
+  const WalletReceive({super.key, required this.keyId, required this.wallet});
 
   @override
   State<WalletReceive> createState() => _WalletReceiveState();
@@ -462,11 +348,11 @@ class _WalletReceiveState extends State<WalletReceive> {
   @override
   void initState() {
     super.initState();
-    _addresses = wallet.addressesState(keyId: widget.keyId);
+    _addresses = widget.wallet.addressesState(keyId: widget.keyId);
   }
 
   void _addAddress() async {
-    Address newAddress = await wallet.nextAddress(keyId: widget.keyId);
+    Address newAddress = await widget.wallet.nextAddress(keyId: widget.keyId);
     _addresses.insert(0, newAddress);
     _listKey.currentState?.insertItem(0);
   }
@@ -499,40 +385,42 @@ class _WalletReceiveState extends State<WalletReceive> {
 
   Widget _buildAddressItem(Address address, Animation<double> animation) {
     return SizeTransition(
-        sizeFactor: animation,
-        child: Padding(
-          padding: const EdgeInsets.only(
-              bottom: 4.0), // Adjust the padding/margin here
-          child: Card(
-            color: address.used ? textSecondaryColor : textColor,
-            child: ListTile(
-              title: Text(
-                '${address.index}: ${address.addressString}',
-                style: TextStyle(fontFamily: 'Monospace'),
-              ),
-              trailing: IconButton(
-                icon: Icon(Icons.copy),
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: address.addressString));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Address copied to clipboard')));
-                },
+      sizeFactor: animation,
+      child: Padding(
+        padding: const EdgeInsets.only(
+            bottom: 4.0), // Adjust the padding/margin here
+        child: Card(
+          child: ListTile(
+            tileColor: address.used
+                ? backgroundSecondaryColor
+                : backgroundTertiaryColor, // This changes the background color of the ListTile
+            title: Text(
+              '${address.index}: ${address.addressString}',
+              style: TextStyle(
+                fontFamily: 'Courier',
               ),
             ),
+            trailing: IconButton(
+              icon: Icon(Icons.copy),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: address.addressString));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Address copied to clipboard')),
+                );
+              },
+            ),
           ),
-        ));
+        ),
+      ),
+    );
   }
 }
 
 class WalletSend extends StatefulWidget {
-  final Stream<TxState> txStream;
-  final KeyId keyId;
   final Function()? onBroadcastNewTx;
 
   const WalletSend({
     Key? key,
-    required this.txStream,
-    required this.keyId,
     this.onBroadcastNewTx,
   }) : super(key: key);
 
@@ -563,14 +451,16 @@ class _WalletSendState extends State<WalletSend> {
 
   @override
   Widget build(BuildContext context) {
-    final frostKey = coord.getKey(keyId: widget.keyId)!;
+    final walletCtx = WalletContext.of(context)!;
+    final frostKey = coord.getKey(keyId: walletCtx.keyId)!;
     final enoughSelected = selectedDevices.length == frostKey.threshold();
 
     final Widget signPsbtButton = ElevatedButton(
         onPressed: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) {
             return LoadPsbtPage(
-              keyId: widget.keyId,
+              wallet: walletCtx.wallet,
+              keyId: walletCtx.keyId,
             );
           }));
         },
@@ -588,13 +478,13 @@ class _WalletSendState extends State<WalletSend> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Balance(txStream: widget.txStream),
+                  UpdatingBalance(),
                   TextFormField(
                     decoration: InputDecoration(labelText: 'Address'),
                     validator: (value) {
                       // Use the provided predicate for address validation
-                      return bitcoinContext.validateDestinationAddress(
-                          address: value ?? '');
+                      return walletCtx.wallet.network
+                          .validateDestinationAddress(address: value ?? '');
                     },
                     onSaved: (value) => _address = value ?? '',
                   ),
@@ -605,8 +495,8 @@ class _WalletSendState extends State<WalletSend> {
                     validator: (value) {
                       // Convert value to int and use the provided predicate for amount validation
                       final amount = int.tryParse(value ?? '') ?? 0;
-                      return bitcoinContext.validateAmount(
-                          address: _address, value: amount);
+                      return walletCtx.wallet.network
+                          .validateAmount(address: _address, value: amount);
                     },
                     onSaved: (value) =>
                         _amount = int.tryParse(value ?? '') ?? 0,
@@ -661,21 +551,23 @@ class _WalletSendState extends State<WalletSend> {
                             : () async {
                                 if (_formKey.currentState!.validate()) {
                                   _formKey.currentState!.save();
-                                  final unsignedTx = await wallet.sendTo(
-                                      keyId: widget.keyId,
-                                      toAddress: _address,
-                                      value: _amount,
-                                      feerate: _feerate);
+                                  final unsignedTx = await walletCtx.wallet
+                                      .sendTo(
+                                          keyId: walletCtx.keyId,
+                                          toAddress: _address,
+                                          value: _amount,
+                                          feerate: _feerate);
                                   final signingStream = coord.startSigningTx(
-                                      keyId: widget.keyId,
+                                      keyId: walletCtx.keyId,
                                       unsignedTx: unsignedTx,
                                       devices: selectedDevices.toList());
                                   if (context.mounted) {
                                     await signAndBroadcastWorkflowDialog(
+                                        wallet: walletCtx.wallet,
                                         context: context,
                                         signingStream: signingStream,
                                         unsignedTx: unsignedTx,
-                                        keyId: widget.keyId,
+                                        keyId: walletCtx.keyId,
                                         onBroadcastNewTx:
                                             widget.onBroadcastNewTx);
                                   }
@@ -697,10 +589,10 @@ Future<void> signAndBroadcastWorkflowDialog(
     {required BuildContext context,
     required Stream<SigningState> signingStream,
     required UnsignedTx unsignedTx,
+    required Wallet wallet,
     required KeyId keyId,
     Function()? onBroadcastNewTx}) async {
-  final effect =
-      unsignedTx.effect(keyId: keyId, network: bitcoinContext.network);
+  final effect = unsignedTx.effect(keyId: keyId, network: wallet.network);
 
   final signatures = await showSigningProgressDialog(
     context,
@@ -710,8 +602,8 @@ Future<void> signAndBroadcastWorkflowDialog(
   if (signatures != null) {
     final signedTx = await unsignedTx.complete(signatures: signatures);
     if (context.mounted) {
-      final wasBroadcast =
-          await showBroadcastConfirmDialog(context, keyId, signedTx);
+      final wasBroadcast = await showBroadcastConfirmDialog(context,
+          keyId: keyId, tx: signedTx, wallet: wallet);
       if (wasBroadcast) {
         onBroadcastNewTx?.call();
       }
@@ -819,13 +711,15 @@ Widget describeEffect(EffectOfTx effect) {
   return description;
 }
 
-Future<bool> showBroadcastConfirmDialog(
-    BuildContext context, KeyId keyId, SignedTx tx) async {
+Future<bool> showBroadcastConfirmDialog(BuildContext context,
+    {required KeyId keyId,
+    required SignedTx tx,
+    required Wallet wallet}) async {
   final wasBroadcast = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
-        final effect = tx.effect(keyId: keyId, network: bitcoinContext.network);
+        final effect = tx.effect(keyId: keyId, network: wallet.network);
         final effectWidget = EffectTable(effect: effect);
         return AlertDialog(
             title: Text("Broadcast?"),
@@ -853,7 +747,8 @@ Future<bool> showBroadcastConfirmDialog(
                     } catch (e) {
                       if (dialogContext.mounted) {
                         Navigator.pop(dialogContext, false);
-                        showErrorSnackbar(dialogContext, "Broadcast error: $e");
+                        showErrorSnackbarTop(
+                            dialogContext, "Broadcast error: $e");
                       }
                     }
                   },
@@ -864,27 +759,25 @@ Future<bool> showBroadcastConfirmDialog(
   return wasBroadcast ?? false;
 }
 
-class Balance extends StatelessWidget {
-  final Stream<TxState> txStream;
-
-  const Balance({Key? key, required this.txStream}) : super(key: key);
+class UpdatingBalance extends StatelessWidget {
+  const UpdatingBalance({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
+    final walletContext = WalletContext.of(context)!;
     return StreamBuilder<TxState>(
-      stream: txStream,
+      stream: walletContext.txStream,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return Text('Error: ${snapshot.error}');
         }
         final transactions = snapshot.data?.txs ?? [];
         int balance = transactions.fold(0, (sum, tx) => sum + tx.netValue);
-        // Assuming the balance is in satoshis, convert it to BTC for display
         final balanceInBTC = formatSatoshi(balance);
         return Padding(
           padding: const EdgeInsets.all(20.0),
           child: Text(
-            balanceInBTC, // Unicode for Bitcoin symbol
+            balanceInBTC,
             style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold),
           ),
         );
@@ -924,4 +817,51 @@ String formatSatoshi(int satoshis) {
 
   // Combine the whole number part with the formatted fractional part
   return '${parts[0]}.$fractionalPart\u20BF';
+}
+
+class WalletSyncTrigger extends StatefulWidget {
+  final Widget child;
+  final bool enabled;
+  const WalletSyncTrigger(
+      {super.key, required this.child, this.enabled = true});
+
+  @override
+  State<WalletSyncTrigger> createState() => _WalletSyncTrigger();
+}
+
+class _WalletSyncTrigger extends State<WalletSyncTrigger> {
+  bool hasTriggered = false;
+
+  // WalletContext not available in initState() so we use this
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    if (!widget.enabled) {
+      return;
+    }
+
+    if (hasTriggered) {
+      return;
+    }
+
+    var walletCtx = WalletContext.of(context);
+    if (walletCtx == null) {
+      return;
+    }
+
+    hasTriggered = true;
+
+    // we want to trigger it
+    Future.microtask(() {
+      if (context.mounted) {
+        walletCtx.startFullSync();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return widget.child;
+  }
 }

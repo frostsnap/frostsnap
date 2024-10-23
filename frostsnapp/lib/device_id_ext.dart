@@ -15,3 +15,6 @@ HashSet<DeviceId> deviceIdSet(List<DeviceId> devices) {
 
 bool deviceIdEquals(DeviceId lhs, DeviceId rhs) =>
     listEquals(lhs.field0.toList(), rhs.field0.toList());
+
+bool keyIdEquals(KeyId lhs, KeyId rhs) =>
+    listEquals(lhs.field0.toList(), rhs.field0.toList());

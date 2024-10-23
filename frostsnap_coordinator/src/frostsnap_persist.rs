@@ -14,7 +14,7 @@ impl Persist<rusqlite::Connection> for FrostCoordinator {
     type Update = VecDeque<coordinator::Mutation>;
     type InitParams = ();
 
-    fn initialize(conn: &mut rusqlite::Connection, params: Self::InitParams) -> anyhow::Result<Self>
+    fn initialize(conn: &mut rusqlite::Connection, _: Self::InitParams) -> anyhow::Result<Self>
     where
         Self: Sized,
     {
@@ -26,15 +26,6 @@ impl Persist<rusqlite::Connection> for FrostCoordinator {
                version INTEGER NOT NULL
              )",
             [],
-        )?;
-
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS fs_signing_sessions (
-               key_id TEXT,
-               session BLOB,
-               PRIMARY KEY (key_id, session)
-             )",
-            params,
         )?;
 
         let mut stmt = conn.prepare("SELECT message, version FROM fs_core_messages ORDER BY id")?;

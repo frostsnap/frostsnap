@@ -103,22 +103,31 @@ typedef struct wire_DeviceListState {
   uintptr_t state_id;
 } wire_DeviceListState;
 
-typedef struct wire_MutexFrostsnapWallet {
+typedef struct wire_ArcMutexFrostsnapWallet {
   const void *ptr;
-} wire_MutexFrostsnapWallet;
+} wire_ArcMutexFrostsnapWallet;
 
-typedef struct wire_MutexBTreeMapKeyIdStreamSinkTxState {
+typedef struct wire_ArcWalletStreams {
   const void *ptr;
-} wire_MutexBTreeMapKeyIdStreamSinkTxState;
+} wire_ArcWalletStreams;
 
-typedef struct wire_ChainSync {
+typedef struct wire_ChainClient {
   const void *ptr;
-} wire_ChainSync;
+} wire_ChainClient;
+
+typedef struct wire_RBitcoinNetwork {
+  const void *ptr;
+} wire_RBitcoinNetwork;
+
+typedef struct wire_BitcoinNetwork {
+  struct wire_RBitcoinNetwork field0;
+} wire_BitcoinNetwork;
 
 typedef struct wire_Wallet {
-  struct wire_MutexFrostsnapWallet inner;
-  struct wire_MutexBTreeMapKeyIdStreamSinkTxState wallet_streams;
-  struct wire_ChainSync chain_sync;
+  struct wire_ArcMutexFrostsnapWallet inner;
+  struct wire_ArcWalletStreams wallet_streams;
+  struct wire_ChainClient chain_sync;
+  struct wire_BitcoinNetwork network;
 } wire_Wallet;
 
 typedef struct wire_StringList {
@@ -183,14 +192,6 @@ typedef struct wire_list_device_id {
   int32_t len;
 } wire_list_device_id;
 
-typedef struct wire_BitcoinNetwork {
-  const void *ptr;
-} wire_BitcoinNetwork;
-
-typedef struct wire_BitcoinContext {
-  struct wire_BitcoinNetwork network;
-} wire_BitcoinContext;
-
 typedef struct wire_EncodedSignature {
   struct wire_uint_8_list *field0;
 } wire_EncodedSignature;
@@ -215,6 +216,49 @@ typedef struct wire_FfiQrEncoder {
 typedef struct wire_QrEncoder {
   struct wire_FfiQrEncoder field0;
 } wire_QrEncoder;
+
+typedef struct wire_MutexPersistedRSettings {
+  const void *ptr;
+} wire_MutexPersistedRSettings;
+
+typedef struct wire_ArcMutexRusqliteConnection {
+  const void *ptr;
+} wire_ArcMutexRusqliteConnection;
+
+typedef struct wire_HashMapRBitcoinNetworkChainClient {
+  const void *ptr;
+} wire_HashMapRBitcoinNetworkChainClient;
+
+typedef struct wire_PathBuf {
+  const void *ptr;
+} wire_PathBuf;
+
+typedef struct wire_MutexHashMapRBitcoinNetworkWallet {
+  const void *ptr;
+} wire_MutexHashMapRBitcoinNetworkWallet;
+
+typedef struct wire_MaybeSinkWalletSettings {
+  const void *ptr;
+} wire_MaybeSinkWalletSettings;
+
+typedef struct wire_MaybeSinkDeveloperSettings {
+  const void *ptr;
+} wire_MaybeSinkDeveloperSettings;
+
+typedef struct wire_MaybeSinkElectrumSettings {
+  const void *ptr;
+} wire_MaybeSinkElectrumSettings;
+
+typedef struct wire_Settings {
+  struct wire_MutexPersistedRSettings settings;
+  struct wire_ArcMutexRusqliteConnection db;
+  struct wire_HashMapRBitcoinNetworkChainClient chain_clients;
+  struct wire_PathBuf app_directory;
+  struct wire_MutexHashMapRBitcoinNetworkWallet loaded_wallets;
+  struct wire_MaybeSinkWalletSettings wallet_settings_stream;
+  struct wire_MaybeSinkDeveloperSettings developer_settings_stream;
+  struct wire_MaybeSinkElectrumSettings electrum_settings_stream;
+} wire_Settings;
 
 void store_dart_post_cobject(DartPostCObjectFnType ptr);
 
@@ -242,9 +286,9 @@ WireSyncReturn wire_device_list_state(void);
 
 WireSyncReturn wire_get_connected_device(struct wire_DeviceId *id);
 
-void wire_load(int64_t port_, struct wire_uint_8_list *db_file);
+void wire_load(int64_t port_, struct wire_uint_8_list *app_dir);
 
-void wire_load_host_handles_serial(int64_t port_, struct wire_uint_8_list *db_file);
+void wire_load_host_handles_serial(int64_t port_, struct wire_uint_8_list *app_dir);
 
 void wire_echo_key_id(int64_t port_, struct wire_KeyId *key_id);
 
@@ -325,6 +369,30 @@ void wire_broadcast_tx__method__Wallet(int64_t port_,
 WireSyncReturn wire_psbt_to_unsigned_tx__method__Wallet(struct wire_Wallet *that,
                                                         struct wire_Psbt *psbt,
                                                         struct wire_KeyId *key_id);
+
+WireSyncReturn wire_signet__static_method__BitcoinNetwork(void);
+
+WireSyncReturn wire_mainnet__static_method__BitcoinNetwork(void);
+
+WireSyncReturn wire_from_string__static_method__BitcoinNetwork(struct wire_uint_8_list *string);
+
+WireSyncReturn wire_supported_networks__static_method__BitcoinNetwork(void);
+
+WireSyncReturn wire_name__method__BitcoinNetwork(struct wire_BitcoinNetwork *that);
+
+WireSyncReturn wire_is_mainnet__method__BitcoinNetwork(struct wire_BitcoinNetwork *that);
+
+WireSyncReturn wire_descriptor_for_key__method__BitcoinNetwork(struct wire_BitcoinNetwork *that,
+                                                               struct wire_KeyId *key_id);
+
+WireSyncReturn wire_validate_amount__method__BitcoinNetwork(struct wire_BitcoinNetwork *that,
+                                                            struct wire_uint_8_list *address,
+                                                            uint64_t value);
+
+WireSyncReturn wire_validate_destination_address__method__BitcoinNetwork(struct wire_BitcoinNetwork *that,
+                                                                         struct wire_uint_8_list *address);
+
+WireSyncReturn wire_default_electrum_server__method__BitcoinNetwork(struct wire_BitcoinNetwork *that);
 
 void wire_set_available_ports__method__FfiSerial(int64_t port_,
                                                  struct wire_FfiSerial *that,
@@ -414,19 +482,9 @@ void wire_check_share_on_device__method__Coordinator(int64_t port_,
                                                      struct wire_DeviceId *device_id,
                                                      struct wire_KeyId *key_id);
 
-WireSyncReturn wire_descriptor_for_key__method__BitcoinContext(struct wire_BitcoinContext *that,
-                                                               struct wire_KeyId *key_id);
-
-WireSyncReturn wire_validate_amount__method__BitcoinContext(struct wire_BitcoinContext *that,
-                                                            struct wire_uint_8_list *address,
-                                                            uint64_t value);
-
-WireSyncReturn wire_validate_destination_address__method__BitcoinContext(struct wire_BitcoinContext *that,
-                                                                         struct wire_uint_8_list *address);
-
 WireSyncReturn wire_effect__method__SignedTx(struct wire_SignedTx *that,
                                              struct wire_KeyId *key_id,
-                                             struct wire_BitcoinNetwork network);
+                                             struct wire_BitcoinNetwork *network);
 
 void wire_attach_signatures_to_psbt__method__UnsignedTx(int64_t port_,
                                                         struct wire_UnsignedTx *that,
@@ -439,7 +497,7 @@ void wire_complete__method__UnsignedTx(int64_t port_,
 
 WireSyncReturn wire_effect__method__UnsignedTx(struct wire_UnsignedTx *that,
                                                struct wire_KeyId *key_id,
-                                               struct wire_BitcoinNetwork network);
+                                               struct wire_BitcoinNetwork *network);
 
 WireSyncReturn wire_to_bytes__method__Psbt(struct wire_Psbt *that);
 
@@ -449,15 +507,47 @@ void wire_decode_from_bytes__method__QrReader(int64_t port_,
 
 WireSyncReturn wire_next__method__QrEncoder(struct wire_QrEncoder *that);
 
+void wire_sub_developer_settings__method__Settings(int64_t port_, struct wire_Settings *that);
+
+void wire_sub_electrum_settings__method__Settings(int64_t port_, struct wire_Settings *that);
+
+void wire_sub_wallet_settings__method__Settings(int64_t port_, struct wire_Settings *that);
+
+void wire_load_wallet__method__Settings(int64_t port_,
+                                        struct wire_Settings *that,
+                                        struct wire_BitcoinNetwork *network);
+
+void wire_set_wallet_network__method__Settings(int64_t port_,
+                                               struct wire_Settings *that,
+                                               struct wire_KeyId *key_id,
+                                               struct wire_BitcoinNetwork *network);
+
+void wire_set_developer_mode__method__Settings(int64_t port_,
+                                               struct wire_Settings *that,
+                                               bool value);
+
+void wire_check_and_set_electrum_server__method__Settings(int64_t port_,
+                                                          struct wire_Settings *that,
+                                                          struct wire_BitcoinNetwork *network,
+                                                          struct wire_uint_8_list *url);
+
+void wire_subscribe_chain_status__method__Settings(int64_t port_,
+                                                   struct wire_Settings *that,
+                                                   struct wire_BitcoinNetwork *network);
+
+struct wire_ArcMutexFrostsnapWallet new_ArcMutexFrostsnapWallet(void);
+
+struct wire_ArcMutexRusqliteConnection new_ArcMutexRusqliteConnection(void);
+
 struct wire_ArcMutexVecPortDesc new_ArcMutexVecPortDesc(void);
 
 struct wire_ArcRTransaction new_ArcRTransaction(void);
 
-struct wire_BitcoinNetwork new_BitcoinNetwork(void);
+struct wire_ArcWalletStreams new_ArcWalletStreams(void);
 
 struct wire_BitcoinPsbt new_BitcoinPsbt(void);
 
-struct wire_ChainSync new_ChainSync(void);
+struct wire_ChainClient new_ChainClient(void);
 
 struct wire_FfiCoordinator new_FfiCoordinator(void);
 
@@ -469,9 +559,19 @@ struct wire_FrostsnapCoreBitcoinTransactionTransactionTemplate new_FrostsnapCore
 
 struct wire_FrostsnapCoreCoordinatorCoordinatorFrostKey new_FrostsnapCoreCoordinatorCoordinatorFrostKey(void);
 
-struct wire_MutexBTreeMapKeyIdStreamSinkTxState new_MutexBTreeMapKeyIdStreamSinkTxState(void);
+struct wire_HashMapRBitcoinNetworkChainClient new_HashMapRBitcoinNetworkChainClient(void);
 
-struct wire_MutexFrostsnapWallet new_MutexFrostsnapWallet(void);
+struct wire_MaybeSinkDeveloperSettings new_MaybeSinkDeveloperSettings(void);
+
+struct wire_MaybeSinkElectrumSettings new_MaybeSinkElectrumSettings(void);
+
+struct wire_MaybeSinkWalletSettings new_MaybeSinkWalletSettings(void);
+
+struct wire_MutexHashMapRBitcoinNetworkWallet new_MutexHashMapRBitcoinNetworkWallet(void);
+
+struct wire_MutexPersistedRSettings new_MutexPersistedRSettings(void);
+
+struct wire_PathBuf new_PathBuf(void);
 
 struct wire_PortBytesToReadSender new_PortBytesToReadSender(void);
 
@@ -481,11 +581,13 @@ struct wire_PortReadSender new_PortReadSender(void);
 
 struct wire_PortWriteSender new_PortWriteSender(void);
 
+struct wire_RBitcoinNetwork new_RBitcoinNetwork(void);
+
 struct wire_RTransaction new_RTransaction(void);
 
 struct wire_StringList *new_StringList_0(int32_t len);
 
-struct wire_BitcoinContext *new_box_autoadd_bitcoin_context_0(void);
+struct wire_BitcoinNetwork *new_box_autoadd_bitcoin_network_0(void);
 
 struct wire_ConfirmationTime *new_box_autoadd_confirmation_time_0(void);
 
@@ -517,6 +619,8 @@ struct wire_QrEncoder *new_box_autoadd_qr_encoder_0(void);
 
 struct wire_QrReader *new_box_autoadd_qr_reader_0(void);
 
+struct wire_Settings *new_box_autoadd_settings_0(void);
+
 struct wire_SignedTx *new_box_autoadd_signed_tx_0(void);
 
 struct wire_Transaction *new_box_autoadd_transaction_0(void);
@@ -535,6 +639,14 @@ struct wire_list_port_desc *new_list_port_desc_0(int32_t len);
 
 struct wire_uint_8_list *new_uint_8_list_0(int32_t len);
 
+void drop_opaque_ArcMutexFrostsnapWallet(const void *ptr);
+
+const void *share_opaque_ArcMutexFrostsnapWallet(const void *ptr);
+
+void drop_opaque_ArcMutexRusqliteConnection(const void *ptr);
+
+const void *share_opaque_ArcMutexRusqliteConnection(const void *ptr);
+
 void drop_opaque_ArcMutexVecPortDesc(const void *ptr);
 
 const void *share_opaque_ArcMutexVecPortDesc(const void *ptr);
@@ -543,17 +655,17 @@ void drop_opaque_ArcRTransaction(const void *ptr);
 
 const void *share_opaque_ArcRTransaction(const void *ptr);
 
-void drop_opaque_BitcoinNetwork(const void *ptr);
+void drop_opaque_ArcWalletStreams(const void *ptr);
 
-const void *share_opaque_BitcoinNetwork(const void *ptr);
+const void *share_opaque_ArcWalletStreams(const void *ptr);
 
 void drop_opaque_BitcoinPsbt(const void *ptr);
 
 const void *share_opaque_BitcoinPsbt(const void *ptr);
 
-void drop_opaque_ChainSync(const void *ptr);
+void drop_opaque_ChainClient(const void *ptr);
 
-const void *share_opaque_ChainSync(const void *ptr);
+const void *share_opaque_ChainClient(const void *ptr);
 
 void drop_opaque_FfiCoordinator(const void *ptr);
 
@@ -575,13 +687,33 @@ void drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(const void *ptr);
 
 const void *share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(const void *ptr);
 
-void drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState(const void *ptr);
+void drop_opaque_HashMapRBitcoinNetworkChainClient(const void *ptr);
 
-const void *share_opaque_MutexBTreeMapKeyIdStreamSinkTxState(const void *ptr);
+const void *share_opaque_HashMapRBitcoinNetworkChainClient(const void *ptr);
 
-void drop_opaque_MutexFrostsnapWallet(const void *ptr);
+void drop_opaque_MaybeSinkDeveloperSettings(const void *ptr);
 
-const void *share_opaque_MutexFrostsnapWallet(const void *ptr);
+const void *share_opaque_MaybeSinkDeveloperSettings(const void *ptr);
+
+void drop_opaque_MaybeSinkElectrumSettings(const void *ptr);
+
+const void *share_opaque_MaybeSinkElectrumSettings(const void *ptr);
+
+void drop_opaque_MaybeSinkWalletSettings(const void *ptr);
+
+const void *share_opaque_MaybeSinkWalletSettings(const void *ptr);
+
+void drop_opaque_MutexHashMapRBitcoinNetworkWallet(const void *ptr);
+
+const void *share_opaque_MutexHashMapRBitcoinNetworkWallet(const void *ptr);
+
+void drop_opaque_MutexPersistedRSettings(const void *ptr);
+
+const void *share_opaque_MutexPersistedRSettings(const void *ptr);
+
+void drop_opaque_PathBuf(const void *ptr);
+
+const void *share_opaque_PathBuf(const void *ptr);
 
 void drop_opaque_PortBytesToReadSender(const void *ptr);
 
@@ -598,6 +730,10 @@ const void *share_opaque_PortReadSender(const void *ptr);
 void drop_opaque_PortWriteSender(const void *ptr);
 
 const void *share_opaque_PortWriteSender(const void *ptr);
+
+void drop_opaque_RBitcoinNetwork(const void *ptr);
+
+const void *share_opaque_RBitcoinNetwork(const void *ptr);
 
 void drop_opaque_RTransaction(const void *ptr);
 
@@ -643,6 +779,16 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_send_to__method__Wallet);
     dummy_var ^= ((int64_t) (void*) wire_broadcast_tx__method__Wallet);
     dummy_var ^= ((int64_t) (void*) wire_psbt_to_unsigned_tx__method__Wallet);
+    dummy_var ^= ((int64_t) (void*) wire_signet__static_method__BitcoinNetwork);
+    dummy_var ^= ((int64_t) (void*) wire_mainnet__static_method__BitcoinNetwork);
+    dummy_var ^= ((int64_t) (void*) wire_from_string__static_method__BitcoinNetwork);
+    dummy_var ^= ((int64_t) (void*) wire_supported_networks__static_method__BitcoinNetwork);
+    dummy_var ^= ((int64_t) (void*) wire_name__method__BitcoinNetwork);
+    dummy_var ^= ((int64_t) (void*) wire_is_mainnet__method__BitcoinNetwork);
+    dummy_var ^= ((int64_t) (void*) wire_descriptor_for_key__method__BitcoinNetwork);
+    dummy_var ^= ((int64_t) (void*) wire_validate_amount__method__BitcoinNetwork);
+    dummy_var ^= ((int64_t) (void*) wire_validate_destination_address__method__BitcoinNetwork);
+    dummy_var ^= ((int64_t) (void*) wire_default_electrum_server__method__BitcoinNetwork);
     dummy_var ^= ((int64_t) (void*) wire_set_available_ports__method__FfiSerial);
     dummy_var ^= ((int64_t) (void*) wire_start_thread__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_update_name_preview__method__Coordinator);
@@ -668,9 +814,6 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_get_device_name__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_final_keygen_ack__method__Coordinator);
     dummy_var ^= ((int64_t) (void*) wire_check_share_on_device__method__Coordinator);
-    dummy_var ^= ((int64_t) (void*) wire_descriptor_for_key__method__BitcoinContext);
-    dummy_var ^= ((int64_t) (void*) wire_validate_amount__method__BitcoinContext);
-    dummy_var ^= ((int64_t) (void*) wire_validate_destination_address__method__BitcoinContext);
     dummy_var ^= ((int64_t) (void*) wire_effect__method__SignedTx);
     dummy_var ^= ((int64_t) (void*) wire_attach_signatures_to_psbt__method__UnsignedTx);
     dummy_var ^= ((int64_t) (void*) wire_complete__method__UnsignedTx);
@@ -678,25 +821,41 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) wire_to_bytes__method__Psbt);
     dummy_var ^= ((int64_t) (void*) wire_decode_from_bytes__method__QrReader);
     dummy_var ^= ((int64_t) (void*) wire_next__method__QrEncoder);
+    dummy_var ^= ((int64_t) (void*) wire_sub_developer_settings__method__Settings);
+    dummy_var ^= ((int64_t) (void*) wire_sub_electrum_settings__method__Settings);
+    dummy_var ^= ((int64_t) (void*) wire_sub_wallet_settings__method__Settings);
+    dummy_var ^= ((int64_t) (void*) wire_load_wallet__method__Settings);
+    dummy_var ^= ((int64_t) (void*) wire_set_wallet_network__method__Settings);
+    dummy_var ^= ((int64_t) (void*) wire_set_developer_mode__method__Settings);
+    dummy_var ^= ((int64_t) (void*) wire_check_and_set_electrum_server__method__Settings);
+    dummy_var ^= ((int64_t) (void*) wire_subscribe_chain_status__method__Settings);
+    dummy_var ^= ((int64_t) (void*) new_ArcMutexFrostsnapWallet);
+    dummy_var ^= ((int64_t) (void*) new_ArcMutexRusqliteConnection);
     dummy_var ^= ((int64_t) (void*) new_ArcMutexVecPortDesc);
     dummy_var ^= ((int64_t) (void*) new_ArcRTransaction);
-    dummy_var ^= ((int64_t) (void*) new_BitcoinNetwork);
+    dummy_var ^= ((int64_t) (void*) new_ArcWalletStreams);
     dummy_var ^= ((int64_t) (void*) new_BitcoinPsbt);
-    dummy_var ^= ((int64_t) (void*) new_ChainSync);
+    dummy_var ^= ((int64_t) (void*) new_ChainClient);
     dummy_var ^= ((int64_t) (void*) new_FfiCoordinator);
     dummy_var ^= ((int64_t) (void*) new_FfiQrEncoder);
     dummy_var ^= ((int64_t) (void*) new_FfiQrReader);
     dummy_var ^= ((int64_t) (void*) new_FrostsnapCoreBitcoinTransactionTransactionTemplate);
     dummy_var ^= ((int64_t) (void*) new_FrostsnapCoreCoordinatorCoordinatorFrostKey);
-    dummy_var ^= ((int64_t) (void*) new_MutexBTreeMapKeyIdStreamSinkTxState);
-    dummy_var ^= ((int64_t) (void*) new_MutexFrostsnapWallet);
+    dummy_var ^= ((int64_t) (void*) new_HashMapRBitcoinNetworkChainClient);
+    dummy_var ^= ((int64_t) (void*) new_MaybeSinkDeveloperSettings);
+    dummy_var ^= ((int64_t) (void*) new_MaybeSinkElectrumSettings);
+    dummy_var ^= ((int64_t) (void*) new_MaybeSinkWalletSettings);
+    dummy_var ^= ((int64_t) (void*) new_MutexHashMapRBitcoinNetworkWallet);
+    dummy_var ^= ((int64_t) (void*) new_MutexPersistedRSettings);
+    dummy_var ^= ((int64_t) (void*) new_PathBuf);
     dummy_var ^= ((int64_t) (void*) new_PortBytesToReadSender);
     dummy_var ^= ((int64_t) (void*) new_PortOpenSender);
     dummy_var ^= ((int64_t) (void*) new_PortReadSender);
     dummy_var ^= ((int64_t) (void*) new_PortWriteSender);
+    dummy_var ^= ((int64_t) (void*) new_RBitcoinNetwork);
     dummy_var ^= ((int64_t) (void*) new_RTransaction);
     dummy_var ^= ((int64_t) (void*) new_StringList_0);
-    dummy_var ^= ((int64_t) (void*) new_box_autoadd_bitcoin_context_0);
+    dummy_var ^= ((int64_t) (void*) new_box_autoadd_bitcoin_network_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_confirmation_time_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_connected_device_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_coordinator_0);
@@ -712,6 +871,7 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_psbt_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_qr_encoder_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_qr_reader_0);
+    dummy_var ^= ((int64_t) (void*) new_box_autoadd_settings_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_signed_tx_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_transaction_0);
     dummy_var ^= ((int64_t) (void*) new_box_autoadd_unsigned_tx_0);
@@ -721,16 +881,20 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) new_list_encoded_signature_0);
     dummy_var ^= ((int64_t) (void*) new_list_port_desc_0);
     dummy_var ^= ((int64_t) (void*) new_uint_8_list_0);
+    dummy_var ^= ((int64_t) (void*) drop_opaque_ArcMutexFrostsnapWallet);
+    dummy_var ^= ((int64_t) (void*) share_opaque_ArcMutexFrostsnapWallet);
+    dummy_var ^= ((int64_t) (void*) drop_opaque_ArcMutexRusqliteConnection);
+    dummy_var ^= ((int64_t) (void*) share_opaque_ArcMutexRusqliteConnection);
     dummy_var ^= ((int64_t) (void*) drop_opaque_ArcMutexVecPortDesc);
     dummy_var ^= ((int64_t) (void*) share_opaque_ArcMutexVecPortDesc);
     dummy_var ^= ((int64_t) (void*) drop_opaque_ArcRTransaction);
     dummy_var ^= ((int64_t) (void*) share_opaque_ArcRTransaction);
-    dummy_var ^= ((int64_t) (void*) drop_opaque_BitcoinNetwork);
-    dummy_var ^= ((int64_t) (void*) share_opaque_BitcoinNetwork);
+    dummy_var ^= ((int64_t) (void*) drop_opaque_ArcWalletStreams);
+    dummy_var ^= ((int64_t) (void*) share_opaque_ArcWalletStreams);
     dummy_var ^= ((int64_t) (void*) drop_opaque_BitcoinPsbt);
     dummy_var ^= ((int64_t) (void*) share_opaque_BitcoinPsbt);
-    dummy_var ^= ((int64_t) (void*) drop_opaque_ChainSync);
-    dummy_var ^= ((int64_t) (void*) share_opaque_ChainSync);
+    dummy_var ^= ((int64_t) (void*) drop_opaque_ChainClient);
+    dummy_var ^= ((int64_t) (void*) share_opaque_ChainClient);
     dummy_var ^= ((int64_t) (void*) drop_opaque_FfiCoordinator);
     dummy_var ^= ((int64_t) (void*) share_opaque_FfiCoordinator);
     dummy_var ^= ((int64_t) (void*) drop_opaque_FfiQrEncoder);
@@ -741,10 +905,20 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) share_opaque_FrostsnapCoreBitcoinTransactionTransactionTemplate);
     dummy_var ^= ((int64_t) (void*) drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey);
     dummy_var ^= ((int64_t) (void*) share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey);
-    dummy_var ^= ((int64_t) (void*) drop_opaque_MutexBTreeMapKeyIdStreamSinkTxState);
-    dummy_var ^= ((int64_t) (void*) share_opaque_MutexBTreeMapKeyIdStreamSinkTxState);
-    dummy_var ^= ((int64_t) (void*) drop_opaque_MutexFrostsnapWallet);
-    dummy_var ^= ((int64_t) (void*) share_opaque_MutexFrostsnapWallet);
+    dummy_var ^= ((int64_t) (void*) drop_opaque_HashMapRBitcoinNetworkChainClient);
+    dummy_var ^= ((int64_t) (void*) share_opaque_HashMapRBitcoinNetworkChainClient);
+    dummy_var ^= ((int64_t) (void*) drop_opaque_MaybeSinkDeveloperSettings);
+    dummy_var ^= ((int64_t) (void*) share_opaque_MaybeSinkDeveloperSettings);
+    dummy_var ^= ((int64_t) (void*) drop_opaque_MaybeSinkElectrumSettings);
+    dummy_var ^= ((int64_t) (void*) share_opaque_MaybeSinkElectrumSettings);
+    dummy_var ^= ((int64_t) (void*) drop_opaque_MaybeSinkWalletSettings);
+    dummy_var ^= ((int64_t) (void*) share_opaque_MaybeSinkWalletSettings);
+    dummy_var ^= ((int64_t) (void*) drop_opaque_MutexHashMapRBitcoinNetworkWallet);
+    dummy_var ^= ((int64_t) (void*) share_opaque_MutexHashMapRBitcoinNetworkWallet);
+    dummy_var ^= ((int64_t) (void*) drop_opaque_MutexPersistedRSettings);
+    dummy_var ^= ((int64_t) (void*) share_opaque_MutexPersistedRSettings);
+    dummy_var ^= ((int64_t) (void*) drop_opaque_PathBuf);
+    dummy_var ^= ((int64_t) (void*) share_opaque_PathBuf);
     dummy_var ^= ((int64_t) (void*) drop_opaque_PortBytesToReadSender);
     dummy_var ^= ((int64_t) (void*) share_opaque_PortBytesToReadSender);
     dummy_var ^= ((int64_t) (void*) drop_opaque_PortOpenSender);
@@ -753,6 +927,8 @@ static int64_t dummy_method_to_enforce_bundling(void) {
     dummy_var ^= ((int64_t) (void*) share_opaque_PortReadSender);
     dummy_var ^= ((int64_t) (void*) drop_opaque_PortWriteSender);
     dummy_var ^= ((int64_t) (void*) share_opaque_PortWriteSender);
+    dummy_var ^= ((int64_t) (void*) drop_opaque_RBitcoinNetwork);
+    dummy_var ^= ((int64_t) (void*) share_opaque_RBitcoinNetwork);
     dummy_var ^= ((int64_t) (void*) drop_opaque_RTransaction);
     dummy_var ^= ((int64_t) (void*) share_opaque_RTransaction);
     dummy_var ^= ((int64_t) (void*) free_WireSyncReturn);

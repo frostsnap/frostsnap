@@ -4,15 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnapp/theme.dart';
 
-class LogScreen extends StatefulWidget {
+class LogPane extends StatefulWidget {
   final Stream<String> logStream;
-  const LogScreen({super.key, required this.logStream});
+  const LogPane({super.key, required this.logStream});
 
   @override
-  State<LogScreen> createState() => _LogScreenState();
+  State<LogPane> createState() => _LogPane();
 }
 
-class _LogScreenState extends State<LogScreen> {
+class _LogPane extends State<LogPane> {
   final List<String> _logs = [];
   late StreamSubscription<String> _subscription;
   final ScrollController _scrollController = ScrollController();
@@ -70,59 +70,51 @@ class _LogScreenState extends State<LogScreen> {
       }
     }).toList();
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('App Logs'),
-      ),
-      body: _logs.isEmpty
-          ? const Center(child: Text('No logs yet.'))
-          : Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                children: [
-                  Expanded(
-                    child: Container(
-                      width: double.infinity,
-                      padding: EdgeInsets.all(8.0),
-                      decoration: BoxDecoration(
-                        color: backgroundSecondaryColor,
-                        borderRadius: BorderRadius.circular(4.0),
-                        border: Border.all(color: textSecondaryColor),
-                      ),
-                      child: SingleChildScrollView(
-                        controller: _scrollController,
-                        child: SelectableText.rich(
-                          TextSpan(
-                            children: logSpans,
-                          ),
-                          style: TextStyle(
-                            fontFamily: 'Courier',
-                            color: textColor,
-                          ),
-                          dragStartBehavior: DragStartBehavior.down,
-                        ),
-                      ),
-                    ),
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        children: [
+          Expanded(
+            child: Container(
+              width: double.infinity,
+              padding: EdgeInsets.all(8.0),
+              decoration: BoxDecoration(
+                color: backgroundSecondaryColor,
+                borderRadius: BorderRadius.circular(4.0),
+                border: Border.all(color: textSecondaryColor),
+              ),
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                child: SelectableText.rich(
+                  TextSpan(
+                    children: logSpans,
                   ),
-                  SizedBox(height: 16),
-                  IconButton(
-                    icon: const Icon(Icons.content_copy),
-                    onPressed: () {
-                      final String combinedLogs =
-                          _logs.map((log) => log).join('\n');
-                      Clipboard.setData(ClipboardData(text: combinedLogs));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Logs copied to clipboard!'),
-                          duration: Duration(seconds: 1),
-                        ),
-                      );
-                    },
-                    tooltip: 'Copy All Logs',
+                  style: TextStyle(
+                    fontFamily: 'Courier',
+                    color: textColor,
                   ),
-                ],
+                  dragStartBehavior: DragStartBehavior.down,
+                ),
               ),
             ),
+          ),
+          SizedBox(height: 16),
+          IconButton(
+            icon: const Icon(Icons.content_copy),
+            onPressed: () {
+              final String combinedLogs = _logs.map((log) => log).join('\n');
+              Clipboard.setData(ClipboardData(text: combinedLogs));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Logs copied to clipboard!'),
+                  duration: Duration(seconds: 1),
+                ),
+              );
+            },
+            tooltip: 'Copy All Logs',
+          ),
+        ],
+      ),
     );
   }
 
