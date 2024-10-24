@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/key_list.dart';
 import 'package:flutter/services.dart';
@@ -56,10 +57,15 @@ void main() async {
       globalHostPortHandler = HostPortHandler(null);
     }
     coord.startThread();
+  } on PanicException catch (e) {
+    startupError = "rust panic'd with: ${e.error}";
+  } on FrbAnyhowException catch (e) {
+    startupError = "rust error: ${e.anyhow}";
   } catch (error, stacktrace) {
-    api.log(level: LogLevel.Info, message: "startup failed: $error");
     startupError = "$error\n$stacktrace";
   }
+
+  api.log(level: LogLevel.Info, message: "startup failed with $startupError");
 
   // Lock orientation to portrait mode only
   SystemChrome.setPreferredOrientations([
@@ -173,7 +179,7 @@ class _StartupErrorWidgetState extends State<StartupErrorWidget> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: FsAppBar(
+      appBar: AppBar(
         title: Text('Startup Error'),
       ),
       body: Padding(

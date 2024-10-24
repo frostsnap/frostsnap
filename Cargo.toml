@@ -35,7 +35,7 @@ rand_core = "0.6"
 
 
 [patch.crates-io]
-schnorr_fun = { git = "https://github.com/LLFourn/secp256kfun.git", rev = "ad8af9e6aebf77910f221f7cc867085079dc87b8" }
+schnorr_fun = { git = "https://github.com/LLFourn/secp256kfun.git", rev = "029bfab341132e9e29583b8876377c8c8d5279cf" }
 
 [profile.dev]
 # Rust debug is too slow.

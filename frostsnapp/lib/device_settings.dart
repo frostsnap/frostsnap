@@ -67,7 +67,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
   @override
   Widget build(BuildContext context) {
     final Widget body;
-    final deviceKeys = coord.keysForDevice(deviceId: widget.id);
+    final keys = coord.keyState().keys;
     if (device == null) {
       body = Center(
           child: Column(children: const [
@@ -81,10 +81,11 @@ class _DeviceSettingsState extends State<DeviceSettings> {
       final device_ = device!;
       Widget keyList = ListView.builder(
         shrinkWrap: true,
-        itemCount: deviceKeys.length,
+        itemCount: keys.length,
         itemBuilder: (context, index) {
-          final keyId = deviceKeys[index];
-          final keyName = coord.getKeyName(keyId: keyId)!;
+          final key = keys[index];
+          final accessStructure = key.accessStructures()[0];
+          final keyName = key.keyName();
           return Padding(
               padding: const EdgeInsets.only(
                   bottom: 4.0), // Adjust the padding/margin here
@@ -107,7 +108,8 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                             context: context,
                             id: device_.id,
                             deviceName: device_.name ?? "unamed",
-                            keyId: keyId,
+                            accessStructureRef:
+                                accessStructure.accessStructureRef(),
                             keyName: keyName,
                           );
                         }));
@@ -118,7 +120,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
         },
       );
 
-      if (deviceKeys.isEmpty) {
+      if (keys.isEmpty) {
         keyList = Text(
           'No keys on this device',
           style: TextStyle(color: uninterestedColor, fontSize: 20.0),
@@ -385,7 +387,7 @@ class KeyValueListWidget extends StatelessWidget {
 class BackupSettingsPage extends StatelessWidget {
   final DeviceId id;
   final String deviceName;
-  final KeyId keyId;
+  final AccessStructureRef accessStructureRef;
   final String keyName;
 
   const BackupSettingsPage({
@@ -393,7 +395,7 @@ class BackupSettingsPage extends StatelessWidget {
     required BuildContext context,
     required this.id,
     required this.deviceName,
-    required this.keyId,
+    required this.accessStructureRef,
     required this.keyName,
   });
 
@@ -441,7 +443,9 @@ class BackupSettingsPage extends StatelessWidget {
                       ElevatedButton(
                         onPressed: () async {
                           await doBackupWorkflow(context,
-                              devices: [id], keyId: keyId);
+                              devices: [id],
+                              accessStructure: coord.getAccessStructure(
+                                  asRef: accessStructureRef)!);
                         },
                         child: Text("Show Backup"),
                       ),
@@ -452,7 +456,9 @@ class BackupSettingsPage extends StatelessWidget {
                       ElevatedButton(
                         onPressed: () async {
                           final shareRestoreStream = coord
-                              .checkShareOnDevice(deviceId: id, keyId: keyId)
+                              .checkShareOnDevice(
+                                  deviceId: id,
+                                  accessStructureRef: accessStructureRef)
                               .asBroadcastStream();
 
                           final aborted = shareRestoreStream

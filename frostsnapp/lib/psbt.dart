@@ -16,10 +16,10 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class LoadPsbtPage extends StatefulWidget {
-  final KeyId keyId;
+  final Appkey appkey;
   final Wallet wallet;
 
-  const LoadPsbtPage({Key? key, required this.keyId, required this.wallet})
+  const LoadPsbtPage({Key? key, required this.appkey, required this.wallet})
       : super(key: key);
 
   @override
@@ -33,8 +33,10 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
 
   @override
   Widget build(BuildContext context) {
-    final frostKey = coord.getKey(keyId: widget.keyId)!;
-    final enoughSelected = selectedDevices.length == frostKey.threshold();
+    final frostKey = coord.getKey(appkey: widget.appkey)!;
+    final accessStructure = frostKey.accessStructures()[0];
+    final enoughSelected =
+        selectedDevices.length == accessStructure.threshold();
     Widget? scanPsbtButton;
 
     if (Platform.isAndroid || Platform.isIOS) {
@@ -55,10 +57,11 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
                         }));
                         if (context.mounted) {
                           await runPsbtSigningWorkflow(context,
-                              wallet: widget.wallet,
                               psbtBytes: psbtBytes,
                               selectedDevices: selectedDevices.toList(),
-                              keyId: widget.keyId);
+                              accessStructureRef:
+                                  accessStructure.accessStructureRef(),
+                              wallet: widget.wallet);
                         }
                         if (context.mounted) {
                           Navigator.pop(context);
@@ -86,7 +89,8 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
                           wallet: widget.wallet,
                           psbtBytes: psbtBytes,
                           selectedDevices: selectedDevices.toList(),
-                          keyId: widget.keyId);
+                          accessStructureRef:
+                              accessStructure.accessStructureRef());
                     }
                   } else {
                     // User canceled the file picker
@@ -103,7 +107,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text(
-              'Select ${frostKey.threshold()} device${frostKey.threshold() > 1 ? "s" : ""} to sign with:',
+              'Select ${accessStructure.threshold()} device${accessStructure.threshold() > 1 ? "s" : ""} to sign with:',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 20.0),
             ),
@@ -130,23 +134,27 @@ Future<void> runPsbtSigningWorkflow(
   BuildContext context, {
   required Uint8List psbtBytes,
   required List<DeviceId> selectedDevices,
-  required KeyId keyId,
+  required AccessStructureRef accessStructureRef,
   required Wallet wallet,
 }) async {
   final Psbt psbt;
   final UnsignedTx unsignedTx;
   try {
     psbt = api.psbtBytesToPsbt(psbtBytes: psbtBytes);
-    unsignedTx = wallet.psbtToUnsignedTx(psbt: psbt, keyId: keyId);
+    unsignedTx =
+        wallet.psbtToUnsignedTx(psbt: psbt, appkey: accessStructureRef.appkey);
   } catch (e) {
     showErrorSnackbarTop(context, "Error loading PSBT: $e");
     return;
   }
 
   final signingStream = coord.startSigningTx(
-      keyId: keyId, unsignedTx: unsignedTx, devices: selectedDevices);
+      accessStructureRef: accessStructureRef,
+      unsignedTx: unsignedTx,
+      devices: selectedDevices);
 
-  final effect = unsignedTx.effect(keyId: keyId, network: wallet.network);
+  final effect = unsignedTx.effect(
+      appkey: accessStructureRef.appkey, network: wallet.network);
 
   final signatures = await showSigningProgressDialog(
     context,
@@ -161,7 +169,7 @@ Future<void> runPsbtSigningWorkflow(
     if (context.mounted) {
       await saveOrBroadcastSignedPsbtDialog(
         context,
-        keyId: keyId,
+        appkey: accessStructureRef.appkey,
         tx: signedTx,
         psbt: signedPsbt,
         wallet: wallet,
@@ -171,7 +179,7 @@ Future<void> runPsbtSigningWorkflow(
 }
 
 Future<void> saveOrBroadcastSignedPsbtDialog(BuildContext context,
-    {required KeyId keyId,
+    {required Appkey appkey,
     required SignedTx tx,
     required Psbt psbt,
     required Wallet wallet}) {
@@ -181,7 +189,7 @@ Future<void> saveOrBroadcastSignedPsbtDialog(BuildContext context,
         final broadcastButton = ElevatedButton(
             onPressed: () async {
               final broadcasted = await showBroadcastConfirmDialog(context,
-                  keyId: keyId, tx: tx, wallet: wallet);
+                  appkey: appkey, tx: tx, wallet: wallet);
               if (broadcasted && context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(

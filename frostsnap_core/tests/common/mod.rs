@@ -1,16 +1,22 @@
+use frostsnap_core::device::DeviceSymmetricKeyGen;
 use frostsnap_core::message::{
     CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToUserKeyGenMessage,
-    CoordinatorToUserMessage, DeviceSend, DeviceToCoordinatorMessage, DeviceToStorageMessage,
-    DeviceToUserMessage,
+    CoordinatorToUserMessage, DeviceSend, DeviceToCoordinatorMessage, DeviceToUserMessage,
 };
-use frostsnap_core::{coordinator, MessageResult};
+use frostsnap_core::{coordinator, device, MessageResult};
 use frostsnap_core::{
     coordinator::{FrostCoordinator, SigningSessionState},
-    DeviceId, FrostSigner,
+    device::FrostSigner,
+    DeviceId, SymmetricKey,
 };
+use rand::RngCore;
+use schnorr_fun::frost::PartyIndex;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+pub const TEST_ENCRYPTION_KEY: SymmetricKey = SymmetricKey([42u8; 32]);
+
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)] // we're in a test
 pub enum Send {
     DeviceToUser {
         message: DeviceToUserMessage,
@@ -26,10 +32,6 @@ pub enum Send {
         message: CoordinatorToDeviceMessage,
     },
     CoordinatorSigningSession(SigningSessionState),
-    DeviceToStorage {
-        from: DeviceId,
-        message: DeviceToStorageMessage,
-    },
 }
 
 impl From<CoordinatorSend> for Send {
@@ -56,34 +58,49 @@ impl From<CoordinatorToUserMessage> for Send {
     }
 }
 
-// impl From<CoordinatorToDeviceMessage> for Send {
-//     fn from(value: CoordinatorToDeviceMessage) -> Self {
-//         Send::CoordinatorToDevice {
-//             destinations: BTreeSet::new(),
-//             message: value,
-//         }
-//     }
-// }
-
 impl Send {
     pub fn device_send(from: DeviceId, device_send: DeviceSend) -> Self {
         match device_send {
-            DeviceSend::ToCoordinator(message) => Send::DeviceToCoordinator { from, message },
-            DeviceSend::ToUser(message) => Send::DeviceToUser { message, from },
-            DeviceSend::ToStorage(message) => Send::DeviceToStorage { from, message },
+            DeviceSend::ToCoordinator(message) => Send::DeviceToCoordinator {
+                from,
+                message: *message,
+            },
+            DeviceSend::ToUser(message) => Send::DeviceToUser {
+                message: *message,
+                from,
+            },
         }
+    }
+}
+
+pub struct TestDeviceKeygen;
+
+impl DeviceSymmetricKeyGen for TestDeviceKeygen {
+    fn get_share_encryption_key(
+        &mut self,
+        _key_id: frostsnap_core::KeyId,
+        _access_structure_id: frostsnap_core::AccessStructureId,
+        _party_index: PartyIndex,
+        _coord_key: frostsnap_core::CoordShareDecryptionContrib,
+    ) -> SymmetricKey {
+        TEST_ENCRYPTION_KEY
     }
 }
 
 #[allow(unused)]
 pub trait Env {
-    fn user_react_to_coordinator(&mut self, run: &mut Run, message: CoordinatorToUserMessage) {
+    fn user_react_to_coordinator(
+        &mut self,
+        run: &mut Run,
+        message: CoordinatorToUserMessage,
+        rng: &mut impl RngCore,
+    ) {
         match message {
             CoordinatorToUserMessage::KeyGen(CoordinatorToUserKeyGenMessage::KeyGenAck {
                 all_acks_received: true,
                 ..
             }) => {
-                run.coordinator.final_keygen_ack();
+                run.coordinator.final_keygen_ack(TEST_ENCRYPTION_KEY, rng);
             }
             _ => { /* nothing needs doing */ }
         }
@@ -93,18 +110,25 @@ pub trait Env {
         run: &mut Run,
         from: DeviceId,
         message: DeviceToUserMessage,
+        rng: &mut impl RngCore,
     ) {
         match message {
             DeviceToUserMessage::CheckKeyGen { .. } => {
-                let ack = run.device(from).keygen_ack().unwrap();
+                let ack = run
+                    .device(from)
+                    .keygen_ack(&mut TestDeviceKeygen, rng)
+                    .unwrap();
                 run.extend_from_device(from, ack);
             }
             DeviceToUserMessage::SignatureRequest { .. } => {
-                let sign_ack = run.device(from).sign_ack().unwrap();
+                let sign_ack = run.device(from).sign_ack(&mut TestDeviceKeygen).unwrap();
                 run.extend_from_device(from, sign_ack);
             }
             DeviceToUserMessage::DisplayBackupRequest { .. } => {
-                let backup_ack = run.device(from).display_backup_ack().unwrap();
+                let backup_ack = run
+                    .device(from)
+                    .display_backup_ack(&mut TestDeviceKeygen)
+                    .unwrap();
                 run.extend_from_device(from, backup_ack);
             }
             DeviceToUserMessage::Canceled { .. } => {
@@ -113,11 +137,11 @@ pub trait Env {
             _ => { /* do nothing */ }
         }
     }
-    fn storage_react_to_device(
+    fn storage_react_to_device_mutation(
         &mut self,
         run: &mut Run,
         from: DeviceId,
-        message: DeviceToStorageMessage,
+        mutation: device::Mutation,
     ) {
     }
     fn storage_react_to_coordinator_mutation(
@@ -212,10 +236,10 @@ impl Run {
 
             match to_send {
                 Send::DeviceToUser { message, from } => {
-                    env.user_react_to_device(self, from, message);
+                    env.user_react_to_device(self, from, message, rng);
                 }
                 Send::CoordinatorToUser(message) => {
-                    env.user_react_to_coordinator(self, message);
+                    env.user_react_to_coordinator(self, message, rng);
                 }
                 Send::DeviceToCoordinator { from, message } => {
                     self.message_queue.extend(
@@ -240,9 +264,6 @@ impl Run {
                         );
                     }
                 }
-                Send::DeviceToStorage { from, message } => {
-                    env.storage_react_to_device(self, from, message);
-                }
                 Send::CoordinatorSigningSession(signing_session_state) => {
                     env.sign_session_state_react_to_coordinator(self, signing_session_state);
                 }
@@ -251,6 +272,16 @@ impl Run {
             for mutation in self.coordinator.take_staged_mutations() {
                 env.storage_react_to_coordinator_mutation(self, mutation);
             }
+
+            let mut devices = core::mem::take(&mut self.devices);
+
+            for (device_id, device) in &mut devices {
+                for mutation in device.take_staged_mutations() {
+                    env.storage_react_to_device_mutation(self, *device_id, mutation);
+                }
+            }
+
+            self.devices = devices;
         }
 
         Ok(())
