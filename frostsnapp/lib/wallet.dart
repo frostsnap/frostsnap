@@ -16,7 +16,7 @@ import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class WalletContext extends InheritedWidget {
   final Wallet wallet;
-  final KeyId keyId;
+  final Appkey appkey;
   late final Stream<TxState> txStream;
   // We have a contextual Stream of syncing events (each syncing event is
   // represented as a Stream<double> where the double is the progress).
@@ -25,10 +25,10 @@ class WalletContext extends InheritedWidget {
   WalletContext({
     super.key,
     required this.wallet,
-    required this.keyId,
+    required this.appkey,
     required Widget child,
   }) : super(child: child) {
-    txStream = wallet.subTxState(keyId: keyId).toBehaviorSubject();
+    txStream = wallet.subTxState(appkey: appkey).toBehaviorSubject();
   }
 
   static WalletContext? of(BuildContext context) {
@@ -39,7 +39,7 @@ class WalletContext extends InheritedWidget {
   // called directly by button onPressed for example is so we can trigger it in other ways.
   Stream<double> startFullSync({BuildContext? context}) {
     final progress =
-        wallet.sync(keyId: keyId).asBroadcastStream().handleError((error) {
+        wallet.sync(appkey: appkey).asBroadcastStream().handleError((error) {
       if (context != null && context.mounted) {
         showErrorSnackbarBottom(context, "sync failed: $error");
       }
@@ -72,15 +72,15 @@ class WalletContext extends InheritedWidget {
 
 class WalletPage extends StatelessWidget {
   final Wallet wallet;
-  final KeyId keyId;
+  final Appkey appkey;
 
-  const WalletPage({super.key, required this.wallet, required this.keyId});
+  const WalletPage({super.key, required this.wallet, required this.appkey});
 
   @override
   Widget build(BuildContext context) {
     return WalletContext(
         wallet: wallet,
-        keyId: keyId,
+        appkey: appkey,
         child: WalletSyncTrigger(child: WalletHome()));
   }
 }
@@ -116,7 +116,8 @@ class _WalletHomeState extends State<WalletHome> {
           });
         });
       case 2:
-        return WalletReceive(wallet: walletCtx.wallet, keyId: walletCtx.keyId);
+        return WalletReceive(
+            wallet: walletCtx.wallet, appkey: walletCtx.appkey);
       default:
         return Text('Page not found');
     }
@@ -289,7 +290,7 @@ class TxList extends StatelessWidget {
                         if (transaction.confirmationTime == null)
                           SpinningSyncButton(onPressed: () async {
                             final stream = walletContext.wallet.syncTxids(
-                                keyId: walletContext.keyId,
+                                appkey: walletContext.appkey,
                                 txids: [transaction.txid()]);
                             await stream.toList();
                           }),
@@ -332,10 +333,10 @@ class TxList extends StatelessWidget {
 }
 
 class WalletReceive extends StatefulWidget {
-  final KeyId keyId;
+  final Appkey appkey;
   final Wallet wallet;
 
-  const WalletReceive({super.key, required this.keyId, required this.wallet});
+  const WalletReceive({super.key, required this.appkey, required this.wallet});
 
   @override
   State<WalletReceive> createState() => _WalletReceiveState();
@@ -348,11 +349,11 @@ class _WalletReceiveState extends State<WalletReceive> {
   @override
   void initState() {
     super.initState();
-    _addresses = widget.wallet.addressesState(keyId: widget.keyId);
+    _addresses = widget.wallet.addressesState(appkey: widget.appkey);
   }
 
   void _addAddress() async {
-    Address newAddress = await widget.wallet.nextAddress(keyId: widget.keyId);
+    Address newAddress = await widget.wallet.nextAddress(appkey: widget.appkey);
     _addresses.insert(0, newAddress);
     _listKey.currentState?.insertItem(0);
   }
@@ -452,15 +453,17 @@ class _WalletSendState extends State<WalletSend> {
   @override
   Widget build(BuildContext context) {
     final walletCtx = WalletContext.of(context)!;
-    final frostKey = coord.getKey(keyId: walletCtx.keyId)!;
-    final enoughSelected = selectedDevices.length == frostKey.threshold();
+    final frostKey = coord.getKey(appkey: walletCtx.appkey)!;
+    final accessStructure = frostKey.accessStructures()[0];
+    final enoughSelected =
+        selectedDevices.length == accessStructure.threshold();
 
     final Widget signPsbtButton = ElevatedButton(
         onPressed: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) {
             return LoadPsbtPage(
               wallet: walletCtx.wallet,
-              keyId: walletCtx.keyId,
+              appkey: walletCtx.appkey,
             );
           }));
         },
@@ -532,7 +535,7 @@ class _WalletSendState extends State<WalletSend> {
                       thickness: 2.0,
                       color: backgroundSecondaryColor),
                   Text(
-                    'Select ${frostKey.threshold()} device${frostKey.threshold() > 1 ? "s" : ""} to sign with:',
+                    'Select ${accessStructure.threshold()} device${accessStructure.threshold() > 1 ? "s" : ""} to sign with:',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 20.0),
                   ),
@@ -553,12 +556,13 @@ class _WalletSendState extends State<WalletSend> {
                                   _formKey.currentState!.save();
                                   final unsignedTx = await walletCtx.wallet
                                       .sendTo(
-                                          keyId: walletCtx.keyId,
+                                          appkey: walletCtx.appkey,
                                           toAddress: _address,
                                           value: _amount,
                                           feerate: _feerate);
                                   final signingStream = coord.startSigningTx(
-                                      keyId: walletCtx.keyId,
+                                      accessStructureRef:
+                                          accessStructure.accessStructureRef(),
                                       unsignedTx: unsignedTx,
                                       devices: selectedDevices.toList());
                                   if (context.mounted) {
@@ -567,7 +571,7 @@ class _WalletSendState extends State<WalletSend> {
                                         context: context,
                                         signingStream: signingStream,
                                         unsignedTx: unsignedTx,
-                                        keyId: walletCtx.keyId,
+                                        appkey: walletCtx.appkey,
                                         onBroadcastNewTx:
                                             widget.onBroadcastNewTx);
                                   }
@@ -590,9 +594,9 @@ Future<void> signAndBroadcastWorkflowDialog(
     required Stream<SigningState> signingStream,
     required UnsignedTx unsignedTx,
     required Wallet wallet,
-    required KeyId keyId,
+    required Appkey appkey,
     Function()? onBroadcastNewTx}) async {
-  final effect = unsignedTx.effect(keyId: keyId, network: wallet.network);
+  final effect = unsignedTx.effect(appkey: appkey, network: wallet.network);
 
   final signatures = await showSigningProgressDialog(
     context,
@@ -603,7 +607,7 @@ Future<void> signAndBroadcastWorkflowDialog(
     final signedTx = await unsignedTx.complete(signatures: signatures);
     if (context.mounted) {
       final wasBroadcast = await showBroadcastConfirmDialog(context,
-          keyId: keyId, tx: signedTx, wallet: wallet);
+          appkey: appkey, tx: signedTx, wallet: wallet);
       if (wasBroadcast) {
         onBroadcastNewTx?.call();
       }
@@ -712,14 +716,14 @@ Widget describeEffect(EffectOfTx effect) {
 }
 
 Future<bool> showBroadcastConfirmDialog(BuildContext context,
-    {required KeyId keyId,
+    {required Appkey appkey,
     required SignedTx tx,
     required Wallet wallet}) async {
   final wasBroadcast = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
-        final effect = tx.effect(keyId: keyId, network: wallet.network);
+        final effect = tx.effect(appkey: appkey, network: wallet.network);
         final effectWidget = EffectTable(effect: effect);
         return AlertDialog(
             title: Text("Broadcast?"),
@@ -740,7 +744,7 @@ Future<bool> showBroadcastConfirmDialog(BuildContext context,
               ElevatedButton(
                   onPressed: () async {
                     try {
-                      await wallet.broadcastTx(keyId: keyId, tx: tx);
+                      await wallet.broadcastTx(appkey: appkey, tx: tx);
                       if (dialogContext.mounted) {
                         Navigator.pop(context, true);
                       }

@@ -3,38 +3,38 @@ pub mod wallet;
 mod wallet_persist;
 
 use bdk_chain::{
-    bitcoin::{
-        self,
-        bip32::{ChildNumber, DerivationPath},
-        key::Secp256k1,
-    },
+    bitcoin::{self, key::Secp256k1},
     miniscript::{
         descriptor::{DerivPaths, DescriptorMultiXKey, Wildcard},
         Descriptor, DescriptorPublicKey,
     },
 };
 use frostsnap_core::{
-    schnorr_fun::fun::Point,
-    tweak::{Account, TweakableKey},
+    tweak::{AppTweakKind, BitcoinAccount, Keychain},
+    Appkey,
 };
 
 pub fn multi_x_descriptor_for_account(
-    root_key: Point,
-    account: Account,
-    network: bitcoin::Network,
+    appkey: Appkey,
+    account: BitcoinAccount,
+    network: bitcoin::NetworkKind,
 ) -> Descriptor<DescriptorPublicKey> {
-    let root_bitcoin_xpub = root_key.bitcoin_app_xpub().xpub(network);
-    let account_xpub = root_bitcoin_xpub
-        .derive_pub(&Secp256k1::verification_only(), &account.derivation_path())
-        .unwrap();
+    let appkey_xpub = appkey.to_xpub().to_bitcoin_xpub_with_lies(network);
+    let secp = Secp256k1::verification_only();
+    let derivation_path = AppTweakKind::Bitcoin
+        .derivation_path()
+        .extend(account.derivation_path());
+    let account_xpub = appkey_xpub.derive_pub(&secp, &derivation_path).unwrap();
+
+    let keychains = [Keychain::External, Keychain::Internal];
 
     let multi_xpub = DescriptorPublicKey::MultiXPub(DescriptorMultiXKey {
-        origin: Some((root_bitcoin_xpub.fingerprint(), account.derivation_path())),
+        origin: Some((appkey_xpub.fingerprint(), derivation_path)),
         xkey: account_xpub,
         derivation_paths: DerivPaths::new(
-            [0, 1]
+            keychains
                 .into_iter()
-                .map(|i| DerivationPath::from(vec![ChildNumber::Normal { index: i }]))
+                .map(|keychain| keychain.derivation_path())
                 .collect(),
         )
         .unwrap(),

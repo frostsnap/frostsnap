@@ -202,24 +202,6 @@ class NativeImpl implements Native {
         argNames: ["appDir"],
       );
 
-  Future<KeyId> echoKeyId({required KeyId keyId, dynamic hint}) {
-    var arg0 = _platform.api2wire_box_autoadd_key_id(keyId);
-    return _platform.executeNormal(FlutterRustBridgeTask(
-      callFfi: (port_) => _platform.inner.wire_echo_key_id(port_, arg0),
-      parseSuccessData: _wire2api_key_id,
-      parseErrorData: null,
-      constMeta: kEchoKeyIdConstMeta,
-      argValues: [keyId],
-      hint: hint,
-    ));
-  }
-
-  FlutterRustBridgeTaskConstMeta get kEchoKeyIdConstMeta =>
-      const FlutterRustBridgeTaskConstMeta(
-        debugName: "echo_key_id",
-        argNames: ["keyId"],
-      );
-
   Psbt psbtBytesToPsbt({required Uint8List psbtBytes, dynamic hint}) {
     var arg0 = _platform.api2wire_uint_8_list(psbtBytes);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
@@ -271,6 +253,62 @@ class NativeImpl implements Native {
       const FlutterRustBridgeTaskConstMeta(
         debugName: "new_qr_encoder",
         argNames: ["bytes"],
+      );
+
+  Future<Appkey> echoAppkey({required Appkey appkey, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_appkey(appkey);
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner.wire_echo_appkey(port_, arg0),
+      parseSuccessData: _wire2api_appkey,
+      parseErrorData: null,
+      constMeta: kEchoAppkeyConstMeta,
+      argValues: [appkey],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kEchoAppkeyConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "echo_appkey",
+        argNames: ["appkey"],
+      );
+
+  Future<AccessStructureId> echoAsid(
+      {required AccessStructureId value, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_access_structure_id(value);
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner.wire_echo_asid(port_, arg0),
+      parseSuccessData: _wire2api_access_structure_id,
+      parseErrorData: null,
+      constMeta: kEchoAsidConstMeta,
+      argValues: [value],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kEchoAsidConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "echo_asid",
+        argNames: ["value"],
+      );
+
+  Future<AccessStructureRef> echoAsr(
+      {required AccessStructureRef value, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_access_structure_ref(value);
+    return _platform.executeNormal(FlutterRustBridgeTask(
+      callFfi: (port_) => _platform.inner.wire_echo_asr(port_, arg0),
+      parseSuccessData: _wire2api_access_structure_ref,
+      parseErrorData: null,
+      constMeta: kEchoAsrConstMeta,
+      argValues: [value],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kEchoAsrConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "echo_asr",
+        argNames: ["value"],
       );
 
   String txidMethodTransaction({required Transaction that, dynamic hint}) {
@@ -331,39 +369,21 @@ class NativeImpl implements Native {
             argNames: ["that"],
           );
 
-  int thresholdMethodFrostKey({required FrostKey that, dynamic hint}) {
+  Appkey appkeyMethodFrostKey({required FrostKey that, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_frost_key(that);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
-      callFfi: () => _platform.inner.wire_threshold__method__FrostKey(arg0),
-      parseSuccessData: _wire2api_usize,
+      callFfi: () => _platform.inner.wire_appkey__method__FrostKey(arg0),
+      parseSuccessData: _wire2api_appkey,
       parseErrorData: null,
-      constMeta: kThresholdMethodFrostKeyConstMeta,
+      constMeta: kAppkeyMethodFrostKeyConstMeta,
       argValues: [that],
       hint: hint,
     ));
   }
 
-  FlutterRustBridgeTaskConstMeta get kThresholdMethodFrostKeyConstMeta =>
+  FlutterRustBridgeTaskConstMeta get kAppkeyMethodFrostKeyConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
-        debugName: "threshold__method__FrostKey",
-        argNames: ["that"],
-      );
-
-  KeyId idMethodFrostKey({required FrostKey that, dynamic hint}) {
-    var arg0 = _platform.api2wire_box_autoadd_frost_key(that);
-    return _platform.executeSync(FlutterRustBridgeSyncTask(
-      callFfi: () => _platform.inner.wire_id__method__FrostKey(arg0),
-      parseSuccessData: _wire2api_key_id,
-      parseErrorData: null,
-      constMeta: kIdMethodFrostKeyConstMeta,
-      argValues: [that],
-      hint: hint,
-    ));
-  }
-
-  FlutterRustBridgeTaskConstMeta get kIdMethodFrostKeyConstMeta =>
-      const FlutterRustBridgeTaskConstMeta(
-        debugName: "id__method__FrostKey",
+        debugName: "appkey__method__FrostKey",
         argNames: ["that"],
       );
 
@@ -385,44 +405,144 @@ class NativeImpl implements Native {
         argNames: ["that"],
       );
 
-  List<DeviceId> devicesMethodFrostKey({required FrostKey that, dynamic hint}) {
+  List<AccessStructure> accessStructuresMethodFrostKey(
+      {required FrostKey that, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_frost_key(that);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
-      callFfi: () => _platform.inner.wire_devices__method__FrostKey(arg0),
-      parseSuccessData: _wire2api_list_device_id,
+      callFfi: () =>
+          _platform.inner.wire_access_structures__method__FrostKey(arg0),
+      parseSuccessData: _wire2api_list_access_structure,
       parseErrorData: null,
-      constMeta: kDevicesMethodFrostKeyConstMeta,
+      constMeta: kAccessStructuresMethodFrostKeyConstMeta,
       argValues: [that],
       hint: hint,
     ));
   }
 
-  FlutterRustBridgeTaskConstMeta get kDevicesMethodFrostKeyConstMeta =>
+  FlutterRustBridgeTaskConstMeta get kAccessStructuresMethodFrostKeyConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
-        debugName: "devices__method__FrostKey",
+        debugName: "access_structures__method__FrostKey",
         argNames: ["that"],
       );
 
-  Uint8List polynomialIdentifierMethodFrostKey(
-      {required FrostKey that, dynamic hint}) {
-    var arg0 = _platform.api2wire_box_autoadd_frost_key(that);
+  int thresholdMethodAccessStructure(
+      {required AccessStructure that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_access_structure(that);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
       callFfi: () =>
-          _platform.inner.wire_polynomial_identifier__method__FrostKey(arg0),
-      parseSuccessData: _wire2api_uint_8_list,
+          _platform.inner.wire_threshold__method__AccessStructure(arg0),
+      parseSuccessData: _wire2api_usize,
       parseErrorData: null,
-      constMeta: kPolynomialIdentifierMethodFrostKeyConstMeta,
+      constMeta: kThresholdMethodAccessStructureConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kThresholdMethodAccessStructureConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "threshold__method__AccessStructure",
+        argNames: ["that"],
+      );
+
+  AccessStructureRef accessStructureRefMethodAccessStructure(
+      {required AccessStructure that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_access_structure(that);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner
+          .wire_access_structure_ref__method__AccessStructure(arg0),
+      parseSuccessData: _wire2api_access_structure_ref,
+      parseErrorData: null,
+      constMeta: kAccessStructureRefMethodAccessStructureConstMeta,
       argValues: [that],
       hint: hint,
     ));
   }
 
   FlutterRustBridgeTaskConstMeta
-      get kPolynomialIdentifierMethodFrostKeyConstMeta =>
+      get kAccessStructureRefMethodAccessStructureConstMeta =>
           const FlutterRustBridgeTaskConstMeta(
-            debugName: "polynomial_identifier__method__FrostKey",
+            debugName: "access_structure_ref__method__AccessStructure",
             argNames: ["that"],
           );
+
+  List<DeviceId> devicesMethodAccessStructure(
+      {required AccessStructure that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_access_structure(that);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () =>
+          _platform.inner.wire_devices__method__AccessStructure(arg0),
+      parseSuccessData: _wire2api_list_device_id,
+      parseErrorData: null,
+      constMeta: kDevicesMethodAccessStructureConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kDevicesMethodAccessStructureConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "devices__method__AccessStructure",
+        argNames: ["that"],
+      );
+
+  AccessStructureId idMethodAccessStructure(
+      {required AccessStructure that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_access_structure(that);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner.wire_id__method__AccessStructure(arg0),
+      parseSuccessData: _wire2api_access_structure_id,
+      parseErrorData: null,
+      constMeta: kIdMethodAccessStructureConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kIdMethodAccessStructureConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "id__method__AccessStructure",
+        argNames: ["that"],
+      );
+
+  String shortIdMethodAccessStructure(
+      {required AccessStructure that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_access_structure(that);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () =>
+          _platform.inner.wire_short_id__method__AccessStructure(arg0),
+      parseSuccessData: _wire2api_String,
+      parseErrorData: null,
+      constMeta: kShortIdMethodAccessStructureConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kShortIdMethodAccessStructureConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "short_id__method__AccessStructure",
+        argNames: ["that"],
+      );
+
+  Appkey appkeyMethodAccessStructure(
+      {required AccessStructure that, dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_access_structure(that);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner.wire_appkey__method__AccessStructure(arg0),
+      parseSuccessData: _wire2api_appkey,
+      parseErrorData: null,
+      constMeta: kAppkeyMethodAccessStructureConstMeta,
+      argValues: [that],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta get kAppkeyMethodAccessStructureConstMeta =>
+      const FlutterRustBridgeTaskConstMeta(
+        debugName: "appkey__method__AccessStructure",
+        argNames: ["that"],
+      );
 
   Future<void> satisfyMethodPortOpen(
       {required PortOpen that, String? err, dynamic hint}) {
@@ -534,16 +654,16 @@ class NativeImpl implements Native {
       );
 
   Stream<TxState> subTxStateMethodWallet(
-      {required Wallet that, required KeyId keyId, dynamic hint}) {
+      {required Wallet that, required Appkey appkey, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_wallet(that);
-    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg1 = _platform.api2wire_box_autoadd_appkey(appkey);
     return _platform.executeStream(FlutterRustBridgeTask(
       callFfi: (port_) =>
           _platform.inner.wire_sub_tx_state__method__Wallet(port_, arg0, arg1),
       parseSuccessData: _wire2api_tx_state,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kSubTxStateMethodWalletConstMeta,
-      argValues: [that, keyId],
+      argValues: [that, appkey],
       hint: hint,
     ));
   }
@@ -551,19 +671,19 @@ class NativeImpl implements Native {
   FlutterRustBridgeTaskConstMeta get kSubTxStateMethodWalletConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
         debugName: "sub_tx_state__method__Wallet",
-        argNames: ["that", "keyId"],
+        argNames: ["that", "appkey"],
       );
 
   TxState txStateMethodWallet(
-      {required Wallet that, required KeyId keyId, dynamic hint}) {
+      {required Wallet that, required Appkey appkey, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_wallet(that);
-    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg1 = _platform.api2wire_box_autoadd_appkey(appkey);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
       callFfi: () => _platform.inner.wire_tx_state__method__Wallet(arg0, arg1),
       parseSuccessData: _wire2api_tx_state,
       parseErrorData: null,
       constMeta: kTxStateMethodWalletConstMeta,
-      argValues: [that, keyId],
+      argValues: [that, appkey],
       hint: hint,
     ));
   }
@@ -571,16 +691,16 @@ class NativeImpl implements Native {
   FlutterRustBridgeTaskConstMeta get kTxStateMethodWalletConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
         debugName: "tx_state__method__Wallet",
-        argNames: ["that", "keyId"],
+        argNames: ["that", "appkey"],
       );
 
   Stream<double> syncTxidsMethodWallet(
       {required Wallet that,
-      required KeyId keyId,
+      required Appkey appkey,
       required List<String> txids,
       dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_wallet(that);
-    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg1 = _platform.api2wire_box_autoadd_appkey(appkey);
     var arg2 = _platform.api2wire_StringList(txids);
     return _platform.executeStream(FlutterRustBridgeTask(
       callFfi: (port_) => _platform.inner
@@ -588,7 +708,7 @@ class NativeImpl implements Native {
       parseSuccessData: _wire2api_f64,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kSyncTxidsMethodWalletConstMeta,
-      argValues: [that, keyId, txids],
+      argValues: [that, appkey, txids],
       hint: hint,
     ));
   }
@@ -596,20 +716,20 @@ class NativeImpl implements Native {
   FlutterRustBridgeTaskConstMeta get kSyncTxidsMethodWalletConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
         debugName: "sync_txids__method__Wallet",
-        argNames: ["that", "keyId", "txids"],
+        argNames: ["that", "appkey", "txids"],
       );
 
   Stream<double> syncMethodWallet(
-      {required Wallet that, required KeyId keyId, dynamic hint}) {
+      {required Wallet that, required Appkey appkey, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_wallet(that);
-    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg1 = _platform.api2wire_box_autoadd_appkey(appkey);
     return _platform.executeStream(FlutterRustBridgeTask(
       callFfi: (port_) =>
           _platform.inner.wire_sync__method__Wallet(port_, arg0, arg1),
       parseSuccessData: _wire2api_f64,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kSyncMethodWalletConstMeta,
-      argValues: [that, keyId],
+      argValues: [that, appkey],
       hint: hint,
     ));
   }
@@ -617,20 +737,20 @@ class NativeImpl implements Native {
   FlutterRustBridgeTaskConstMeta get kSyncMethodWalletConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
         debugName: "sync__method__Wallet",
-        argNames: ["that", "keyId"],
+        argNames: ["that", "appkey"],
       );
 
   Future<Address> nextAddressMethodWallet(
-      {required Wallet that, required KeyId keyId, dynamic hint}) {
+      {required Wallet that, required Appkey appkey, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_wallet(that);
-    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg1 = _platform.api2wire_box_autoadd_appkey(appkey);
     return _platform.executeNormal(FlutterRustBridgeTask(
       callFfi: (port_) =>
           _platform.inner.wire_next_address__method__Wallet(port_, arg0, arg1),
       parseSuccessData: _wire2api_address,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kNextAddressMethodWalletConstMeta,
-      argValues: [that, keyId],
+      argValues: [that, appkey],
       hint: hint,
     ));
   }
@@ -638,20 +758,20 @@ class NativeImpl implements Native {
   FlutterRustBridgeTaskConstMeta get kNextAddressMethodWalletConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
         debugName: "next_address__method__Wallet",
-        argNames: ["that", "keyId"],
+        argNames: ["that", "appkey"],
       );
 
   List<Address> addressesStateMethodWallet(
-      {required Wallet that, required KeyId keyId, dynamic hint}) {
+      {required Wallet that, required Appkey appkey, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_wallet(that);
-    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg1 = _platform.api2wire_box_autoadd_appkey(appkey);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
       callFfi: () =>
           _platform.inner.wire_addresses_state__method__Wallet(arg0, arg1),
       parseSuccessData: _wire2api_list_address,
       parseErrorData: null,
       constMeta: kAddressesStateMethodWalletConstMeta,
-      argValues: [that, keyId],
+      argValues: [that, appkey],
       hint: hint,
     ));
   }
@@ -659,18 +779,18 @@ class NativeImpl implements Native {
   FlutterRustBridgeTaskConstMeta get kAddressesStateMethodWalletConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
         debugName: "addresses_state__method__Wallet",
-        argNames: ["that", "keyId"],
+        argNames: ["that", "appkey"],
       );
 
   Future<UnsignedTx> sendToMethodWallet(
       {required Wallet that,
-      required KeyId keyId,
+      required Appkey appkey,
       required String toAddress,
       required int value,
       required double feerate,
       dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_wallet(that);
-    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg1 = _platform.api2wire_box_autoadd_appkey(appkey);
     var arg2 = _platform.api2wire_String(toAddress);
     var arg3 = _platform.api2wire_u64(value);
     var arg4 = api2wire_f64(feerate);
@@ -680,7 +800,7 @@ class NativeImpl implements Native {
       parseSuccessData: (d) => _wire2api_unsigned_tx(d),
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kSendToMethodWalletConstMeta,
-      argValues: [that, keyId, toAddress, value, feerate],
+      argValues: [that, appkey, toAddress, value, feerate],
       hint: hint,
     ));
   }
@@ -688,16 +808,16 @@ class NativeImpl implements Native {
   FlutterRustBridgeTaskConstMeta get kSendToMethodWalletConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
         debugName: "send_to__method__Wallet",
-        argNames: ["that", "keyId", "toAddress", "value", "feerate"],
+        argNames: ["that", "appkey", "toAddress", "value", "feerate"],
       );
 
   Future<void> broadcastTxMethodWallet(
       {required Wallet that,
-      required KeyId keyId,
+      required Appkey appkey,
       required SignedTx tx,
       dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_wallet(that);
-    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg1 = _platform.api2wire_box_autoadd_appkey(appkey);
     var arg2 = _platform.api2wire_box_autoadd_signed_tx(tx);
     return _platform.executeNormal(FlutterRustBridgeTask(
       callFfi: (port_) => _platform.inner
@@ -705,7 +825,7 @@ class NativeImpl implements Native {
       parseSuccessData: _wire2api_unit,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kBroadcastTxMethodWalletConstMeta,
-      argValues: [that, keyId, tx],
+      argValues: [that, appkey, tx],
       hint: hint,
     ));
   }
@@ -713,24 +833,24 @@ class NativeImpl implements Native {
   FlutterRustBridgeTaskConstMeta get kBroadcastTxMethodWalletConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
         debugName: "broadcast_tx__method__Wallet",
-        argNames: ["that", "keyId", "tx"],
+        argNames: ["that", "appkey", "tx"],
       );
 
   UnsignedTx psbtToUnsignedTxMethodWallet(
       {required Wallet that,
       required Psbt psbt,
-      required KeyId keyId,
+      required Appkey appkey,
       dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_wallet(that);
     var arg1 = _platform.api2wire_box_autoadd_psbt(psbt);
-    var arg2 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg2 = _platform.api2wire_box_autoadd_appkey(appkey);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
       callFfi: () => _platform.inner
           .wire_psbt_to_unsigned_tx__method__Wallet(arg0, arg1, arg2),
       parseSuccessData: _wire2api_unsigned_tx,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kPsbtToUnsignedTxMethodWalletConstMeta,
-      argValues: [that, psbt, keyId],
+      argValues: [that, psbt, appkey],
       hint: hint,
     ));
   }
@@ -738,7 +858,7 @@ class NativeImpl implements Native {
   FlutterRustBridgeTaskConstMeta get kPsbtToUnsignedTxMethodWalletConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
         debugName: "psbt_to_unsigned_tx__method__Wallet",
-        argNames: ["that", "psbt", "keyId"],
+        argNames: ["that", "psbt", "appkey"],
       );
 
   BitcoinNetwork signetStaticMethodBitcoinNetwork({dynamic hint}) {
@@ -860,16 +980,16 @@ class NativeImpl implements Native {
       );
 
   String descriptorForKeyMethodBitcoinNetwork(
-      {required BitcoinNetwork that, required KeyId keyId, dynamic hint}) {
+      {required BitcoinNetwork that, required Appkey appkey, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_bitcoin_network(that);
-    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg1 = _platform.api2wire_box_autoadd_appkey(appkey);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
       callFfi: () => _platform.inner
           .wire_descriptor_for_key__method__BitcoinNetwork(arg0, arg1),
       parseSuccessData: _wire2api_String,
       parseErrorData: null,
       constMeta: kDescriptorForKeyMethodBitcoinNetworkConstMeta,
-      argValues: [that, keyId],
+      argValues: [that, appkey],
       hint: hint,
     ));
   }
@@ -878,7 +998,7 @@ class NativeImpl implements Native {
       get kDescriptorForKeyMethodBitcoinNetworkConstMeta =>
           const FlutterRustBridgeTaskConstMeta(
             debugName: "descriptor_for_key__method__BitcoinNetwork",
-            argNames: ["that", "keyId"],
+            argNames: ["that", "appkey"],
           );
 
   String? validateAmountMethodBitcoinNetwork(
@@ -1069,18 +1189,19 @@ class NativeImpl implements Native {
   Stream<bool> displayBackupMethodCoordinator(
       {required Coordinator that,
       required DeviceId id,
-      required KeyId keyId,
+      required AccessStructureRef accessStructureRef,
       dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
     var arg1 = _platform.api2wire_box_autoadd_device_id(id);
-    var arg2 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg2 =
+        _platform.api2wire_box_autoadd_access_structure_ref(accessStructureRef);
     return _platform.executeStream(FlutterRustBridgeTask(
       callFfi: (port_) => _platform.inner
           .wire_display_backup__method__Coordinator(port_, arg0, arg1, arg2),
       parseSuccessData: _wire2api_bool,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kDisplayBackupMethodCoordinatorConstMeta,
-      argValues: [that, id, keyId],
+      argValues: [that, id, accessStructureRef],
       hint: hint,
     ));
   }
@@ -1088,7 +1209,7 @@ class NativeImpl implements Native {
   FlutterRustBridgeTaskConstMeta get kDisplayBackupMethodCoordinatorConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
         debugName: "display_backup__method__Coordinator",
-        argNames: ["that", "id", "keyId"],
+        argNames: ["that", "id", "accessStructureRef"],
       );
 
   KeyState keyStateMethodCoordinator(
@@ -1131,16 +1252,16 @@ class NativeImpl implements Native {
       );
 
   FrostKey? getKeyMethodCoordinator(
-      {required Coordinator that, required KeyId keyId, dynamic hint}) {
+      {required Coordinator that, required Appkey appkey, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
-    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg1 = _platform.api2wire_box_autoadd_appkey(appkey);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
       callFfi: () =>
           _platform.inner.wire_get_key__method__Coordinator(arg0, arg1),
       parseSuccessData: _wire2api_opt_box_autoadd_frost_key,
       parseErrorData: null,
       constMeta: kGetKeyMethodCoordinatorConstMeta,
-      argValues: [that, keyId],
+      argValues: [that, appkey],
       hint: hint,
     ));
   }
@@ -1148,20 +1269,20 @@ class NativeImpl implements Native {
   FlutterRustBridgeTaskConstMeta get kGetKeyMethodCoordinatorConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
         debugName: "get_key__method__Coordinator",
-        argNames: ["that", "keyId"],
+        argNames: ["that", "appkey"],
       );
 
   String? getKeyNameMethodCoordinator(
-      {required Coordinator that, required KeyId keyId, dynamic hint}) {
+      {required Coordinator that, required Appkey appkey, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
-    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg1 = _platform.api2wire_box_autoadd_appkey(appkey);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
       callFfi: () =>
           _platform.inner.wire_get_key_name__method__Coordinator(arg0, arg1),
       parseSuccessData: _wire2api_opt_String,
       parseErrorData: null,
       constMeta: kGetKeyNameMethodCoordinatorConstMeta,
-      argValues: [that, keyId],
+      argValues: [that, appkey],
       hint: hint,
     ));
   }
@@ -1169,38 +1290,42 @@ class NativeImpl implements Native {
   FlutterRustBridgeTaskConstMeta get kGetKeyNameMethodCoordinatorConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
         debugName: "get_key_name__method__Coordinator",
-        argNames: ["that", "keyId"],
+        argNames: ["that", "appkey"],
       );
 
-  List<KeyId> keysForDeviceMethodCoordinator(
+  List<AccessStructureRef> accessStructuresInvolvingDeviceMethodCoordinator(
       {required Coordinator that, required DeviceId deviceId, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
     var arg1 = _platform.api2wire_box_autoadd_device_id(deviceId);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
-      callFfi: () =>
-          _platform.inner.wire_keys_for_device__method__Coordinator(arg0, arg1),
-      parseSuccessData: _wire2api_list_key_id,
+      callFfi: () => _platform.inner
+          .wire_access_structures_involving_device__method__Coordinator(
+              arg0, arg1),
+      parseSuccessData: _wire2api_list_access_structure_ref,
       parseErrorData: null,
-      constMeta: kKeysForDeviceMethodCoordinatorConstMeta,
+      constMeta: kAccessStructuresInvolvingDeviceMethodCoordinatorConstMeta,
       argValues: [that, deviceId],
       hint: hint,
     ));
   }
 
-  FlutterRustBridgeTaskConstMeta get kKeysForDeviceMethodCoordinatorConstMeta =>
-      const FlutterRustBridgeTaskConstMeta(
-        debugName: "keys_for_device__method__Coordinator",
-        argNames: ["that", "deviceId"],
-      );
+  FlutterRustBridgeTaskConstMeta
+      get kAccessStructuresInvolvingDeviceMethodCoordinatorConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName:
+                "access_structures_involving_device__method__Coordinator",
+            argNames: ["that", "deviceId"],
+          );
 
   Stream<SigningState> startSigningMethodCoordinator(
       {required Coordinator that,
-      required KeyId keyId,
+      required AccessStructureRef accessStructureRef,
       required List<DeviceId> devices,
       required String message,
       dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
-    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg1 =
+        _platform.api2wire_box_autoadd_access_structure_ref(accessStructureRef);
     var arg2 = _platform.api2wire_list_device_id(devices);
     var arg3 = _platform.api2wire_String(message);
     return _platform.executeStream(FlutterRustBridgeTask(
@@ -1210,7 +1335,7 @@ class NativeImpl implements Native {
       parseSuccessData: _wire2api_signing_state,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kStartSigningMethodCoordinatorConstMeta,
-      argValues: [that, keyId, devices, message],
+      argValues: [that, accessStructureRef, devices, message],
       hint: hint,
     ));
   }
@@ -1218,17 +1343,18 @@ class NativeImpl implements Native {
   FlutterRustBridgeTaskConstMeta get kStartSigningMethodCoordinatorConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
         debugName: "start_signing__method__Coordinator",
-        argNames: ["that", "keyId", "devices", "message"],
+        argNames: ["that", "accessStructureRef", "devices", "message"],
       );
 
   Stream<SigningState> startSigningTxMethodCoordinator(
       {required Coordinator that,
-      required KeyId keyId,
+      required AccessStructureRef accessStructureRef,
       required UnsignedTx unsignedTx,
       required List<DeviceId> devices,
       dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
-    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg1 =
+        _platform.api2wire_box_autoadd_access_structure_ref(accessStructureRef);
     var arg2 = _platform.api2wire_box_autoadd_unsigned_tx(unsignedTx);
     var arg3 = _platform.api2wire_list_device_id(devices);
     return _platform.executeStream(FlutterRustBridgeTask(
@@ -1238,7 +1364,7 @@ class NativeImpl implements Native {
       parseSuccessData: _wire2api_signing_state,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kStartSigningTxMethodCoordinatorConstMeta,
-      argValues: [that, keyId, unsignedTx, devices],
+      argValues: [that, accessStructureRef, unsignedTx, devices],
       hint: hint,
     ));
   }
@@ -1247,7 +1373,7 @@ class NativeImpl implements Native {
       get kStartSigningTxMethodCoordinatorConstMeta =>
           const FlutterRustBridgeTaskConstMeta(
             debugName: "start_signing_tx__method__Coordinator",
-            argNames: ["that", "keyId", "unsignedTx", "devices"],
+            argNames: ["that", "accessStructureRef", "unsignedTx", "devices"],
           );
 
   int noncesAvailableMethodCoordinator(
@@ -1323,9 +1449,9 @@ class NativeImpl implements Native {
           );
 
   SignTaskDescription? persistedSignSessionDescriptionMethodCoordinator(
-      {required Coordinator that, required KeyId keyId, dynamic hint}) {
+      {required Coordinator that, required Appkey appkey, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
-    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg1 = _platform.api2wire_box_autoadd_appkey(appkey);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
       callFfi: () => _platform.inner
           .wire_persisted_sign_session_description__method__Coordinator(
@@ -1333,7 +1459,7 @@ class NativeImpl implements Native {
       parseSuccessData: _wire2api_opt_box_autoadd_sign_task_description,
       parseErrorData: null,
       constMeta: kPersistedSignSessionDescriptionMethodCoordinatorConstMeta,
-      argValues: [that, keyId],
+      argValues: [that, appkey],
       hint: hint,
     ));
   }
@@ -1343,13 +1469,13 @@ class NativeImpl implements Native {
           const FlutterRustBridgeTaskConstMeta(
             debugName:
                 "persisted_sign_session_description__method__Coordinator",
-            argNames: ["that", "keyId"],
+            argNames: ["that", "appkey"],
           );
 
   Stream<SigningState> tryRestoreSigningSessionMethodCoordinator(
-      {required Coordinator that, required KeyId keyId, dynamic hint}) {
+      {required Coordinator that, required Appkey appkey, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
-    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg1 = _platform.api2wire_box_autoadd_appkey(appkey);
     return _platform.executeStream(FlutterRustBridgeTask(
       callFfi: (port_) => _platform.inner
           .wire_try_restore_signing_session__method__Coordinator(
@@ -1357,7 +1483,7 @@ class NativeImpl implements Native {
       parseSuccessData: _wire2api_signing_state,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kTryRestoreSigningSessionMethodCoordinatorConstMeta,
-      argValues: [that, keyId],
+      argValues: [that, appkey],
       hint: hint,
     ));
   }
@@ -1366,7 +1492,7 @@ class NativeImpl implements Native {
       get kTryRestoreSigningSessionMethodCoordinatorConstMeta =>
           const FlutterRustBridgeTaskConstMeta(
             debugName: "try_restore_signing_session__method__Coordinator",
-            argNames: ["that", "keyId"],
+            argNames: ["that", "appkey"],
           );
 
   Stream<FirmwareUpgradeConfirmState> startFirmwareUpgradeMethodCoordinator(
@@ -1474,13 +1600,13 @@ class NativeImpl implements Native {
         argNames: ["that", "id"],
       );
 
-  Future<KeyId> finalKeygenAckMethodCoordinator(
+  Future<AccessStructureRef> finalKeygenAckMethodCoordinator(
       {required Coordinator that, dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
     return _platform.executeNormal(FlutterRustBridgeTask(
       callFfi: (port_) => _platform.inner
           .wire_final_keygen_ack__method__Coordinator(port_, arg0),
-      parseSuccessData: _wire2api_key_id,
+      parseSuccessData: _wire2api_access_structure_ref,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kFinalKeygenAckMethodCoordinatorConstMeta,
       argValues: [that],
@@ -1498,11 +1624,12 @@ class NativeImpl implements Native {
   Stream<CheckShareState> checkShareOnDeviceMethodCoordinator(
       {required Coordinator that,
       required DeviceId deviceId,
-      required KeyId keyId,
+      required AccessStructureRef accessStructureRef,
       dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
     var arg1 = _platform.api2wire_box_autoadd_device_id(deviceId);
-    var arg2 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg2 =
+        _platform.api2wire_box_autoadd_access_structure_ref(accessStructureRef);
     return _platform.executeStream(FlutterRustBridgeTask(
       callFfi: (port_) => _platform.inner
           .wire_check_share_on_device__method__Coordinator(
@@ -1510,7 +1637,7 @@ class NativeImpl implements Native {
       parseSuccessData: _wire2api_check_share_state,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kCheckShareOnDeviceMethodCoordinatorConstMeta,
-      argValues: [that, deviceId, keyId],
+      argValues: [that, deviceId, accessStructureRef],
       hint: hint,
     ));
   }
@@ -1519,16 +1646,40 @@ class NativeImpl implements Native {
       get kCheckShareOnDeviceMethodCoordinatorConstMeta =>
           const FlutterRustBridgeTaskConstMeta(
             debugName: "check_share_on_device__method__Coordinator",
-            argNames: ["that", "deviceId", "keyId"],
+            argNames: ["that", "deviceId", "accessStructureRef"],
+          );
+
+  AccessStructure? getAccessStructureMethodCoordinator(
+      {required Coordinator that,
+      required AccessStructureRef asRef,
+      dynamic hint}) {
+    var arg0 = _platform.api2wire_box_autoadd_coordinator(that);
+    var arg1 = _platform.api2wire_box_autoadd_access_structure_ref(asRef);
+    return _platform.executeSync(FlutterRustBridgeSyncTask(
+      callFfi: () => _platform.inner
+          .wire_get_access_structure__method__Coordinator(arg0, arg1),
+      parseSuccessData: _wire2api_opt_box_autoadd_access_structure,
+      parseErrorData: null,
+      constMeta: kGetAccessStructureMethodCoordinatorConstMeta,
+      argValues: [that, asRef],
+      hint: hint,
+    ));
+  }
+
+  FlutterRustBridgeTaskConstMeta
+      get kGetAccessStructureMethodCoordinatorConstMeta =>
+          const FlutterRustBridgeTaskConstMeta(
+            debugName: "get_access_structure__method__Coordinator",
+            argNames: ["that", "asRef"],
           );
 
   EffectOfTx effectMethodSignedTx(
       {required SignedTx that,
-      required KeyId keyId,
+      required Appkey appkey,
       required BitcoinNetwork network,
       dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_signed_tx(that);
-    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg1 = _platform.api2wire_box_autoadd_appkey(appkey);
     var arg2 = _platform.api2wire_box_autoadd_bitcoin_network(network);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
       callFfi: () =>
@@ -1536,7 +1687,7 @@ class NativeImpl implements Native {
       parseSuccessData: _wire2api_effect_of_tx,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kEffectMethodSignedTxConstMeta,
-      argValues: [that, keyId, network],
+      argValues: [that, appkey, network],
       hint: hint,
     ));
   }
@@ -1544,7 +1695,7 @@ class NativeImpl implements Native {
   FlutterRustBridgeTaskConstMeta get kEffectMethodSignedTxConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
         debugName: "effect__method__SignedTx",
-        argNames: ["that", "keyId", "network"],
+        argNames: ["that", "appkey", "network"],
       );
 
   Future<Psbt> attachSignaturesToPsbtMethodUnsignedTx(
@@ -1599,11 +1750,11 @@ class NativeImpl implements Native {
 
   EffectOfTx effectMethodUnsignedTx(
       {required UnsignedTx that,
-      required KeyId keyId,
+      required Appkey appkey,
       required BitcoinNetwork network,
       dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_unsigned_tx(that);
-    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg1 = _platform.api2wire_box_autoadd_appkey(appkey);
     var arg2 = _platform.api2wire_box_autoadd_bitcoin_network(network);
     return _platform.executeSync(FlutterRustBridgeSyncTask(
       callFfi: () =>
@@ -1611,7 +1762,7 @@ class NativeImpl implements Native {
       parseSuccessData: _wire2api_effect_of_tx,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kEffectMethodUnsignedTxConstMeta,
-      argValues: [that, keyId, network],
+      argValues: [that, appkey, network],
       hint: hint,
     ));
   }
@@ -1619,7 +1770,7 @@ class NativeImpl implements Native {
   FlutterRustBridgeTaskConstMeta get kEffectMethodUnsignedTxConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
         debugName: "effect__method__UnsignedTx",
-        argNames: ["that", "keyId", "network"],
+        argNames: ["that", "appkey", "network"],
       );
 
   Uint8List toBytesMethodPsbt({required Psbt that, dynamic hint}) {
@@ -1765,11 +1916,11 @@ class NativeImpl implements Native {
 
   Future<void> setWalletNetworkMethodSettings(
       {required Settings that,
-      required KeyId keyId,
+      required Appkey appkey,
       required BitcoinNetwork network,
       dynamic hint}) {
     var arg0 = _platform.api2wire_box_autoadd_settings(that);
-    var arg1 = _platform.api2wire_box_autoadd_key_id(keyId);
+    var arg1 = _platform.api2wire_box_autoadd_appkey(appkey);
     var arg2 = _platform.api2wire_box_autoadd_bitcoin_network(network);
     return _platform.executeNormal(FlutterRustBridgeTask(
       callFfi: (port_) => _platform.inner
@@ -1777,7 +1928,7 @@ class NativeImpl implements Native {
       parseSuccessData: _wire2api_unit,
       parseErrorData: _wire2api_FrbAnyhowException,
       constMeta: kSetWalletNetworkMethodSettingsConstMeta,
-      argValues: [that, keyId, network],
+      argValues: [that, appkey, network],
       hint: hint,
     ));
   }
@@ -1785,7 +1936,7 @@ class NativeImpl implements Native {
   FlutterRustBridgeTaskConstMeta get kSetWalletNetworkMethodSettingsConstMeta =>
       const FlutterRustBridgeTaskConstMeta(
         debugName: "set_wallet_network__method__Settings",
-        argNames: ["that", "keyId", "network"],
+        argNames: ["that", "appkey", "network"],
       );
 
   Future<void> setDeveloperModeMethodSettings(
@@ -1939,13 +2090,20 @@ class NativeImpl implements Native {
       get FrostsnapCoreBitcoinTransactionTransactionTemplateFinalizer =>
           _platform.FrostsnapCoreBitcoinTransactionTransactionTemplateFinalizer;
 
-  DropFnType get dropOpaqueFrostsnapCoreCoordinatorCoordinatorFrostKey =>
-      _platform.inner.drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey;
-  ShareFnType get shareOpaqueFrostsnapCoreCoordinatorCoordinatorFrostKey =>
-      _platform.inner.share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey;
+  DropFnType get dropOpaqueFrostsnapCoreCoordinatorCoordAccessStructure =>
+      _platform.inner.drop_opaque_FrostsnapCoreCoordinatorCoordAccessStructure;
+  ShareFnType get shareOpaqueFrostsnapCoreCoordinatorCoordAccessStructure =>
+      _platform.inner.share_opaque_FrostsnapCoreCoordinatorCoordAccessStructure;
   OpaqueTypeFinalizer
-      get FrostsnapCoreCoordinatorCoordinatorFrostKeyFinalizer =>
-          _platform.FrostsnapCoreCoordinatorCoordinatorFrostKeyFinalizer;
+      get FrostsnapCoreCoordinatorCoordAccessStructureFinalizer =>
+          _platform.FrostsnapCoreCoordinatorCoordAccessStructureFinalizer;
+
+  DropFnType get dropOpaqueFrostsnapCoreCoordinatorCoordFrostKey =>
+      _platform.inner.drop_opaque_FrostsnapCoreCoordinatorCoordFrostKey;
+  ShareFnType get shareOpaqueFrostsnapCoreCoordinatorCoordFrostKey =>
+      _platform.inner.share_opaque_FrostsnapCoreCoordinatorCoordFrostKey;
+  OpaqueTypeFinalizer get FrostsnapCoreCoordinatorCoordFrostKeyFinalizer =>
+      _platform.FrostsnapCoreCoordinatorCoordFrostKeyFinalizer;
 
   DropFnType get dropOpaqueHashMapRBitcoinNetworkChainClient =>
       _platform.inner.drop_opaque_HashMapRBitcoinNetworkChainClient;
@@ -2091,10 +2249,15 @@ class NativeImpl implements Native {
         raw[0], raw[1], this);
   }
 
-  FrostsnapCoreCoordinatorCoordinatorFrostKey
-      _wire2api_FrostsnapCoreCoordinatorCoordinatorFrostKey(dynamic raw) {
-    return FrostsnapCoreCoordinatorCoordinatorFrostKey.fromRaw(
+  FrostsnapCoreCoordinatorCoordAccessStructure
+      _wire2api_FrostsnapCoreCoordinatorCoordAccessStructure(dynamic raw) {
+    return FrostsnapCoreCoordinatorCoordAccessStructure.fromRaw(
         raw[0], raw[1], this);
+  }
+
+  FrostsnapCoreCoordinatorCoordFrostKey
+      _wire2api_FrostsnapCoreCoordinatorCoordFrostKey(dynamic raw) {
+    return FrostsnapCoreCoordinatorCoordFrostKey.fromRaw(raw[0], raw[1], this);
   }
 
   HashMapRBitcoinNetworkChainClient _wire2api_HashMapRBitcoinNetworkChainClient(
@@ -2166,6 +2329,18 @@ class NativeImpl implements Native {
     );
   }
 
+  (Appkey, BitcoinNetwork) _wire2api___record__appkey_bitcoin_network(
+      dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2) {
+      throw Exception('Expected 2 elements, got ${arr.length}');
+    }
+    return (
+      _wire2api_appkey(arr[0]),
+      _wire2api_bitcoin_network(arr[1]),
+    );
+  }
+
   (BitcoinNetwork, String) _wire2api___record__bitcoin_network_String(
       dynamic raw) {
     final arr = raw as List<dynamic>;
@@ -2203,15 +2378,32 @@ class NativeImpl implements Native {
     );
   }
 
-  (KeyId, BitcoinNetwork) _wire2api___record__key_id_bitcoin_network(
-      dynamic raw) {
+  AccessStructure _wire2api_access_structure(dynamic raw) {
     final arr = raw as List<dynamic>;
-    if (arr.length != 2) {
-      throw Exception('Expected 2 elements, got ${arr.length}');
-    }
-    return (
-      _wire2api_key_id(arr[0]),
-      _wire2api_bitcoin_network(arr[1]),
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return AccessStructure(
+      bridge: this,
+      field0: _wire2api_FrostsnapCoreCoordinatorCoordAccessStructure(arr[0]),
+    );
+  }
+
+  AccessStructureId _wire2api_access_structure_id(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return AccessStructureId(
+      field0: _wire2api_u8_array_32(arr[0]),
+    );
+  }
+
+  AccessStructureRef _wire2api_access_structure_ref(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return AccessStructureRef(
+      appkey: _wire2api_appkey(arr[0]),
+      accessStructureId: _wire2api_access_structure_id(arr[1]),
     );
   }
 
@@ -2223,6 +2415,15 @@ class NativeImpl implements Native {
       index: _wire2api_u32(arr[0]),
       addressString: _wire2api_String(arr[1]),
       used: _wire2api_bool(arr[2]),
+    );
+  }
+
+  Appkey _wire2api_appkey(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return Appkey(
+      field0: _wire2api_u8_array_65(arr[0]),
     );
   }
 
@@ -2238,6 +2439,14 @@ class NativeImpl implements Native {
 
   bool _wire2api_bool(dynamic raw) {
     return raw as bool;
+  }
+
+  AccessStructure _wire2api_box_autoadd_access_structure(dynamic raw) {
+    return _wire2api_access_structure(raw);
+  }
+
+  AccessStructureRef _wire2api_box_autoadd_access_structure_ref(dynamic raw) {
+    return _wire2api_access_structure_ref(raw);
   }
 
   BitcoinNetwork _wire2api_box_autoadd_bitcoin_network(dynamic raw) {
@@ -2268,10 +2477,6 @@ class NativeImpl implements Native {
     return _wire2api_frost_key(raw);
   }
 
-  KeyId _wire2api_box_autoadd_key_id(dynamic raw) {
-    return _wire2api_key_id(raw);
-  }
-
   PortBytesToRead _wire2api_box_autoadd_port_bytes_to_read(dynamic raw) {
     return _wire2api_port_bytes_to_read(raw);
   }
@@ -2286,6 +2491,10 @@ class NativeImpl implements Native {
 
   PortWrite _wire2api_box_autoadd_port_write(dynamic raw) {
     return _wire2api_port_write(raw);
+  }
+
+  SessionHash _wire2api_box_autoadd_session_hash(dynamic raw) {
+    return _wire2api_session_hash(raw);
   }
 
   SignTaskDescription _wire2api_box_autoadd_sign_task_description(dynamic raw) {
@@ -2485,7 +2694,7 @@ class NativeImpl implements Native {
       throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
     return FrostKey(
       bridge: this,
-      field0: _wire2api_FrostsnapCoreCoordinatorCoordinatorFrostKey(arr[0]),
+      field0: _wire2api_FrostsnapCoreCoordinatorCoordFrostKey(arr[0]),
     );
   }
 
@@ -2499,25 +2708,17 @@ class NativeImpl implements Native {
 
   KeyGenState _wire2api_key_gen_state(dynamic raw) {
     final arr = raw as List<dynamic>;
-    if (arr.length != 7)
-      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    if (arr.length != 8)
+      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
     return KeyGenState(
-      devices: _wire2api_list_device_id(arr[0]),
-      gotShares: _wire2api_list_device_id(arr[1]),
-      sessionAcks: _wire2api_list_device_id(arr[2]),
-      sessionHash: _wire2api_opt_u8_array_32(arr[3]),
-      finished: _wire2api_opt_box_autoadd_key_id(arr[4]),
-      aborted: _wire2api_opt_String(arr[5]),
-      threshold: _wire2api_usize(arr[6]),
-    );
-  }
-
-  KeyId _wire2api_key_id(dynamic raw) {
-    final arr = raw as List<dynamic>;
-    if (arr.length != 1)
-      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
-    return KeyId(
-      field0: _wire2api_u8_array_33(arr[0]),
+      threshold: _wire2api_usize(arr[0]),
+      devices: _wire2api_list_device_id(arr[1]),
+      gotShares: _wire2api_list_device_id(arr[2]),
+      sessionAcks: _wire2api_list_device_id(arr[3]),
+      allAcks: _wire2api_bool(arr[4]),
+      sessionHash: _wire2api_opt_box_autoadd_session_hash(arr[5]),
+      finished: _wire2api_opt_box_autoadd_access_structure_ref(arr[6]),
+      aborted: _wire2api_opt_String(arr[7]),
     );
   }
 
@@ -2534,6 +2735,13 @@ class NativeImpl implements Native {
     return (raw as List<dynamic>).map(_wire2api___record__String_u64).toList();
   }
 
+  List<(Appkey, BitcoinNetwork)>
+      _wire2api_list___record__appkey_bitcoin_network(dynamic raw) {
+    return (raw as List<dynamic>)
+        .map(_wire2api___record__appkey_bitcoin_network)
+        .toList();
+  }
+
   List<(BitcoinNetwork, String)>
       _wire2api_list___record__bitcoin_network_String(dynamic raw) {
     return (raw as List<dynamic>)
@@ -2541,11 +2749,12 @@ class NativeImpl implements Native {
         .toList();
   }
 
-  List<(KeyId, BitcoinNetwork)> _wire2api_list___record__key_id_bitcoin_network(
-      dynamic raw) {
-    return (raw as List<dynamic>)
-        .map(_wire2api___record__key_id_bitcoin_network)
-        .toList();
+  List<AccessStructure> _wire2api_list_access_structure(dynamic raw) {
+    return (raw as List<dynamic>).map(_wire2api_access_structure).toList();
+  }
+
+  List<AccessStructureRef> _wire2api_list_access_structure_ref(dynamic raw) {
+    return (raw as List<dynamic>).map(_wire2api_access_structure_ref).toList();
   }
 
   List<Address> _wire2api_list_address(dynamic raw) {
@@ -2576,16 +2785,21 @@ class NativeImpl implements Native {
     return (raw as List<dynamic>).map(_wire2api_frost_key).toList();
   }
 
-  List<KeyId> _wire2api_list_key_id(dynamic raw) {
-    return (raw as List<dynamic>).map(_wire2api_key_id).toList();
-  }
-
   List<Transaction> _wire2api_list_transaction(dynamic raw) {
     return (raw as List<dynamic>).map(_wire2api_transaction).toList();
   }
 
   String? _wire2api_opt_String(dynamic raw) {
     return raw == null ? null : _wire2api_String(raw);
+  }
+
+  AccessStructure? _wire2api_opt_box_autoadd_access_structure(dynamic raw) {
+    return raw == null ? null : _wire2api_box_autoadd_access_structure(raw);
+  }
+
+  AccessStructureRef? _wire2api_opt_box_autoadd_access_structure_ref(
+      dynamic raw) {
+    return raw == null ? null : _wire2api_box_autoadd_access_structure_ref(raw);
   }
 
   BitcoinNetwork? _wire2api_opt_box_autoadd_bitcoin_network(dynamic raw) {
@@ -2612,8 +2826,8 @@ class NativeImpl implements Native {
     return raw == null ? null : _wire2api_box_autoadd_frost_key(raw);
   }
 
-  KeyId? _wire2api_opt_box_autoadd_key_id(dynamic raw) {
-    return raw == null ? null : _wire2api_box_autoadd_key_id(raw);
+  SessionHash? _wire2api_opt_box_autoadd_session_hash(dynamic raw) {
+    return raw == null ? null : _wire2api_box_autoadd_session_hash(raw);
   }
 
   SignTaskDescription? _wire2api_opt_box_autoadd_sign_task_description(
@@ -2621,10 +2835,6 @@ class NativeImpl implements Native {
     return raw == null
         ? null
         : _wire2api_box_autoadd_sign_task_description(raw);
-  }
-
-  U8Array32? _wire2api_opt_u8_array_32(dynamic raw) {
-    return raw == null ? null : _wire2api_u8_array_32(raw);
   }
 
   PortBytesToRead _wire2api_port_bytes_to_read(dynamic raw) {
@@ -2746,6 +2956,15 @@ class NativeImpl implements Native {
     );
   }
 
+  SessionHash _wire2api_session_hash(dynamic raw) {
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return SessionHash(
+      field0: _wire2api_u8_array_32(arr[0]),
+    );
+  }
+
   Settings _wire2api_settings(dynamic raw) {
     final arr = raw as List<dynamic>;
     if (arr.length != 8)
@@ -2845,6 +3064,10 @@ class NativeImpl implements Native {
     return U8Array64(_wire2api_uint_8_list(raw));
   }
 
+  U8Array65 _wire2api_u8_array_65(dynamic raw) {
+    return U8Array65(_wire2api_uint_8_list(raw));
+  }
+
   Uint8List _wire2api_uint_8_list(dynamic raw) {
     return raw as Uint8List;
   }
@@ -2886,7 +3109,7 @@ class NativeImpl implements Native {
     if (arr.length != 1)
       throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
     return WalletSettings(
-      walletNetworks: _wire2api_list___record__key_id_bitcoin_network(arr[0]),
+      walletNetworks: _wire2api_list___record__appkey_bitcoin_network(arr[0]),
     );
   }
 }

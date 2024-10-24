@@ -56,10 +56,6 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kLoadHostHandlesSerialConstMeta;
 
-  Future<KeyId> echoKeyId({required KeyId keyId, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kEchoKeyIdConstMeta;
-
   Psbt psbtBytesToPsbt({required Uint8List psbtBytes, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kPsbtBytesToPsbtConstMeta;
@@ -71,6 +67,20 @@ abstract class Native {
   Future<QrEncoder> newQrEncoder({required Uint8List bytes, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kNewQrEncoderConstMeta;
+
+  Future<Appkey> echoAppkey({required Appkey appkey, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kEchoAppkeyConstMeta;
+
+  Future<AccessStructureId> echoAsid(
+      {required AccessStructureId value, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kEchoAsidConstMeta;
+
+  Future<AccessStructureRef> echoAsr(
+      {required AccessStructureRef value, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kEchoAsrConstMeta;
 
   String txidMethodTransaction({required Transaction that, dynamic hint});
 
@@ -87,30 +97,51 @@ abstract class Native {
   FlutterRustBridgeTaskConstMeta
       get kNeedsFirmwareUpgradeMethodConnectedDeviceConstMeta;
 
-  int thresholdMethodFrostKey({required FrostKey that, dynamic hint});
+  Appkey appkeyMethodFrostKey({required FrostKey that, dynamic hint});
 
-  FlutterRustBridgeTaskConstMeta get kThresholdMethodFrostKeyConstMeta;
-
-  KeyId idMethodFrostKey({required FrostKey that, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kIdMethodFrostKeyConstMeta;
+  FlutterRustBridgeTaskConstMeta get kAppkeyMethodFrostKeyConstMeta;
 
   String keyNameMethodFrostKey({required FrostKey that, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kKeyNameMethodFrostKeyConstMeta;
 
-  List<DeviceId> devicesMethodFrostKey({required FrostKey that, dynamic hint});
-
-  FlutterRustBridgeTaskConstMeta get kDevicesMethodFrostKeyConstMeta;
-
-  /// Create an identifier that's used to determine compatibility of shamir secret shares.
-  /// The first 4 bech32 chars from a hash of the polynomial coefficients.
-  /// Collision expected once in (32)^4 = 2^20.
-  Uint8List polynomialIdentifierMethodFrostKey(
+  List<AccessStructure> accessStructuresMethodFrostKey(
       {required FrostKey that, dynamic hint});
 
+  FlutterRustBridgeTaskConstMeta get kAccessStructuresMethodFrostKeyConstMeta;
+
+  int thresholdMethodAccessStructure(
+      {required AccessStructure that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kThresholdMethodAccessStructureConstMeta;
+
+  AccessStructureRef accessStructureRefMethodAccessStructure(
+      {required AccessStructure that, dynamic hint});
+
   FlutterRustBridgeTaskConstMeta
-      get kPolynomialIdentifierMethodFrostKeyConstMeta;
+      get kAccessStructureRefMethodAccessStructureConstMeta;
+
+  List<DeviceId> devicesMethodAccessStructure(
+      {required AccessStructure that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kDevicesMethodAccessStructureConstMeta;
+
+  /// Create an identifier that's used to determine compatibility of shamir secret shares.
+  /// The first 4
+  AccessStructureId idMethodAccessStructure(
+      {required AccessStructure that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kIdMethodAccessStructureConstMeta;
+
+  String shortIdMethodAccessStructure(
+      {required AccessStructure that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kShortIdMethodAccessStructureConstMeta;
+
+  Appkey appkeyMethodAccessStructure(
+      {required AccessStructure that, dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta get kAppkeyMethodAccessStructureConstMeta;
 
   Future<void> satisfyMethodPortOpen(
       {required PortOpen that, String? err, dynamic hint});
@@ -141,41 +172,41 @@ abstract class Native {
   FlutterRustBridgeTaskConstMeta get kGetDeviceMethodDeviceListStateConstMeta;
 
   Stream<TxState> subTxStateMethodWallet(
-      {required Wallet that, required KeyId keyId, dynamic hint});
+      {required Wallet that, required Appkey appkey, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kSubTxStateMethodWalletConstMeta;
 
   TxState txStateMethodWallet(
-      {required Wallet that, required KeyId keyId, dynamic hint});
+      {required Wallet that, required Appkey appkey, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kTxStateMethodWalletConstMeta;
 
   Stream<double> syncTxidsMethodWallet(
       {required Wallet that,
-      required KeyId keyId,
+      required Appkey appkey,
       required List<String> txids,
       dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kSyncTxidsMethodWalletConstMeta;
 
   Stream<double> syncMethodWallet(
-      {required Wallet that, required KeyId keyId, dynamic hint});
+      {required Wallet that, required Appkey appkey, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kSyncMethodWalletConstMeta;
 
   Future<Address> nextAddressMethodWallet(
-      {required Wallet that, required KeyId keyId, dynamic hint});
+      {required Wallet that, required Appkey appkey, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kNextAddressMethodWalletConstMeta;
 
   List<Address> addressesStateMethodWallet(
-      {required Wallet that, required KeyId keyId, dynamic hint});
+      {required Wallet that, required Appkey appkey, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kAddressesStateMethodWalletConstMeta;
 
   Future<UnsignedTx> sendToMethodWallet(
       {required Wallet that,
-      required KeyId keyId,
+      required Appkey appkey,
       required String toAddress,
       required int value,
       required double feerate,
@@ -185,7 +216,7 @@ abstract class Native {
 
   Future<void> broadcastTxMethodWallet(
       {required Wallet that,
-      required KeyId keyId,
+      required Appkey appkey,
       required SignedTx tx,
       dynamic hint});
 
@@ -194,7 +225,7 @@ abstract class Native {
   UnsignedTx psbtToUnsignedTxMethodWallet(
       {required Wallet that,
       required Psbt psbt,
-      required KeyId keyId,
+      required Appkey appkey,
       dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kPsbtToUnsignedTxMethodWalletConstMeta;
@@ -230,7 +261,7 @@ abstract class Native {
   FlutterRustBridgeTaskConstMeta get kIsMainnetMethodBitcoinNetworkConstMeta;
 
   String descriptorForKeyMethodBitcoinNetwork(
-      {required BitcoinNetwork that, required KeyId keyId, dynamic hint});
+      {required BitcoinNetwork that, required Appkey appkey, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta
       get kDescriptorForKeyMethodBitcoinNetworkConstMeta;
@@ -291,7 +322,7 @@ abstract class Native {
   Stream<bool> displayBackupMethodCoordinator(
       {required Coordinator that,
       required DeviceId id,
-      required KeyId keyId,
+      required AccessStructureRef accessStructureRef,
       dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kDisplayBackupMethodCoordinatorConstMeta;
@@ -306,23 +337,24 @@ abstract class Native {
   FlutterRustBridgeTaskConstMeta get kSubKeyEventsMethodCoordinatorConstMeta;
 
   FrostKey? getKeyMethodCoordinator(
-      {required Coordinator that, required KeyId keyId, dynamic hint});
+      {required Coordinator that, required Appkey appkey, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kGetKeyMethodCoordinatorConstMeta;
 
   String? getKeyNameMethodCoordinator(
-      {required Coordinator that, required KeyId keyId, dynamic hint});
+      {required Coordinator that, required Appkey appkey, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kGetKeyNameMethodCoordinatorConstMeta;
 
-  List<KeyId> keysForDeviceMethodCoordinator(
+  List<AccessStructureRef> accessStructuresInvolvingDeviceMethodCoordinator(
       {required Coordinator that, required DeviceId deviceId, dynamic hint});
 
-  FlutterRustBridgeTaskConstMeta get kKeysForDeviceMethodCoordinatorConstMeta;
+  FlutterRustBridgeTaskConstMeta
+      get kAccessStructuresInvolvingDeviceMethodCoordinatorConstMeta;
 
   Stream<SigningState> startSigningMethodCoordinator(
       {required Coordinator that,
-      required KeyId keyId,
+      required AccessStructureRef accessStructureRef,
       required List<DeviceId> devices,
       required String message,
       dynamic hint});
@@ -331,7 +363,7 @@ abstract class Native {
 
   Stream<SigningState> startSigningTxMethodCoordinator(
       {required Coordinator that,
-      required KeyId keyId,
+      required AccessStructureRef accessStructureRef,
       required UnsignedTx unsignedTx,
       required List<DeviceId> devices,
       dynamic hint});
@@ -358,13 +390,13 @@ abstract class Native {
   FlutterRustBridgeTaskConstMeta get kGenerateNewKeyMethodCoordinatorConstMeta;
 
   SignTaskDescription? persistedSignSessionDescriptionMethodCoordinator(
-      {required Coordinator that, required KeyId keyId, dynamic hint});
+      {required Coordinator that, required Appkey appkey, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta
       get kPersistedSignSessionDescriptionMethodCoordinatorConstMeta;
 
   Stream<SigningState> tryRestoreSigningSessionMethodCoordinator(
-      {required Coordinator that, required KeyId keyId, dynamic hint});
+      {required Coordinator that, required Appkey appkey, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta
       get kTryRestoreSigningSessionMethodCoordinatorConstMeta;
@@ -397,7 +429,7 @@ abstract class Native {
 
   FlutterRustBridgeTaskConstMeta get kGetDeviceNameMethodCoordinatorConstMeta;
 
-  Future<KeyId> finalKeygenAckMethodCoordinator(
+  Future<AccessStructureRef> finalKeygenAckMethodCoordinator(
       {required Coordinator that, dynamic hint});
 
   FlutterRustBridgeTaskConstMeta get kFinalKeygenAckMethodCoordinatorConstMeta;
@@ -405,15 +437,23 @@ abstract class Native {
   Stream<CheckShareState> checkShareOnDeviceMethodCoordinator(
       {required Coordinator that,
       required DeviceId deviceId,
-      required KeyId keyId,
+      required AccessStructureRef accessStructureRef,
       dynamic hint});
 
   FlutterRustBridgeTaskConstMeta
       get kCheckShareOnDeviceMethodCoordinatorConstMeta;
 
+  AccessStructure? getAccessStructureMethodCoordinator(
+      {required Coordinator that,
+      required AccessStructureRef asRef,
+      dynamic hint});
+
+  FlutterRustBridgeTaskConstMeta
+      get kGetAccessStructureMethodCoordinatorConstMeta;
+
   EffectOfTx effectMethodSignedTx(
       {required SignedTx that,
-      required KeyId keyId,
+      required Appkey appkey,
       required BitcoinNetwork network,
       dynamic hint});
 
@@ -437,7 +477,7 @@ abstract class Native {
 
   EffectOfTx effectMethodUnsignedTx(
       {required UnsignedTx that,
-      required KeyId keyId,
+      required Appkey appkey,
       required BitcoinNetwork network,
       dynamic hint});
 
@@ -480,7 +520,7 @@ abstract class Native {
 
   Future<void> setWalletNetworkMethodSettings(
       {required Settings that,
-      required KeyId keyId,
+      required Appkey appkey,
       required BitcoinNetwork network,
       dynamic hint});
 
@@ -551,9 +591,13 @@ abstract class Native {
   OpaqueTypeFinalizer
       get FrostsnapCoreBitcoinTransactionTransactionTemplateFinalizer;
 
-  DropFnType get dropOpaqueFrostsnapCoreCoordinatorCoordinatorFrostKey;
-  ShareFnType get shareOpaqueFrostsnapCoreCoordinatorCoordinatorFrostKey;
-  OpaqueTypeFinalizer get FrostsnapCoreCoordinatorCoordinatorFrostKeyFinalizer;
+  DropFnType get dropOpaqueFrostsnapCoreCoordinatorCoordAccessStructure;
+  ShareFnType get shareOpaqueFrostsnapCoreCoordinatorCoordAccessStructure;
+  OpaqueTypeFinalizer get FrostsnapCoreCoordinatorCoordAccessStructureFinalizer;
+
+  DropFnType get dropOpaqueFrostsnapCoreCoordinatorCoordFrostKey;
+  ShareFnType get shareOpaqueFrostsnapCoreCoordinatorCoordFrostKey;
+  OpaqueTypeFinalizer get FrostsnapCoreCoordinatorCoordFrostKeyFinalizer;
 
   DropFnType get dropOpaqueHashMapRBitcoinNetworkChainClient;
   ShareFnType get shareOpaqueHashMapRBitcoinNetworkChainClient;
@@ -778,22 +822,40 @@ class FrostsnapCoreBitcoinTransactionTransactionTemplate extends FrbOpaque {
 }
 
 @sealed
-class FrostsnapCoreCoordinatorCoordinatorFrostKey extends FrbOpaque {
+class FrostsnapCoreCoordinatorCoordAccessStructure extends FrbOpaque {
   final Native bridge;
-  FrostsnapCoreCoordinatorCoordinatorFrostKey.fromRaw(
+  FrostsnapCoreCoordinatorCoordAccessStructure.fromRaw(
       int ptr, int size, this.bridge)
       : super.unsafe(ptr, size);
   @override
   DropFnType get dropFn =>
-      bridge.dropOpaqueFrostsnapCoreCoordinatorCoordinatorFrostKey;
+      bridge.dropOpaqueFrostsnapCoreCoordinatorCoordAccessStructure;
 
   @override
   ShareFnType get shareFn =>
-      bridge.shareOpaqueFrostsnapCoreCoordinatorCoordinatorFrostKey;
+      bridge.shareOpaqueFrostsnapCoreCoordinatorCoordAccessStructure;
 
   @override
   OpaqueTypeFinalizer get staticFinalizer =>
-      bridge.FrostsnapCoreCoordinatorCoordinatorFrostKeyFinalizer;
+      bridge.FrostsnapCoreCoordinatorCoordAccessStructureFinalizer;
+}
+
+@sealed
+class FrostsnapCoreCoordinatorCoordFrostKey extends FrbOpaque {
+  final Native bridge;
+  FrostsnapCoreCoordinatorCoordFrostKey.fromRaw(int ptr, int size, this.bridge)
+      : super.unsafe(ptr, size);
+  @override
+  DropFnType get dropFn =>
+      bridge.dropOpaqueFrostsnapCoreCoordinatorCoordFrostKey;
+
+  @override
+  ShareFnType get shareFn =>
+      bridge.shareOpaqueFrostsnapCoreCoordinatorCoordFrostKey;
+
+  @override
+  OpaqueTypeFinalizer get staticFinalizer =>
+      bridge.FrostsnapCoreCoordinatorCoordFrostKeyFinalizer;
 }
 
 @sealed
@@ -999,6 +1061,61 @@ class RTransaction extends FrbOpaque {
   OpaqueTypeFinalizer get staticFinalizer => bridge.RTransactionFinalizer;
 }
 
+class AccessStructure {
+  final Native bridge;
+  final FrostsnapCoreCoordinatorCoordAccessStructure field0;
+
+  const AccessStructure({
+    required this.bridge,
+    required this.field0,
+  });
+
+  int threshold({dynamic hint}) => bridge.thresholdMethodAccessStructure(
+        that: this,
+      );
+
+  AccessStructureRef accessStructureRef({dynamic hint}) =>
+      bridge.accessStructureRefMethodAccessStructure(
+        that: this,
+      );
+
+  List<DeviceId> devices({dynamic hint}) => bridge.devicesMethodAccessStructure(
+        that: this,
+      );
+
+  /// Create an identifier that's used to determine compatibility of shamir secret shares.
+  /// The first 4
+  AccessStructureId id({dynamic hint}) => bridge.idMethodAccessStructure(
+        that: this,
+      );
+
+  String shortId({dynamic hint}) => bridge.shortIdMethodAccessStructure(
+        that: this,
+      );
+
+  Appkey appkey({dynamic hint}) => bridge.appkeyMethodAccessStructure(
+        that: this,
+      );
+}
+
+class AccessStructureId {
+  final U8Array32 field0;
+
+  const AccessStructureId({
+    required this.field0,
+  });
+}
+
+class AccessStructureRef {
+  final Appkey appkey;
+  final AccessStructureId accessStructureId;
+
+  const AccessStructureRef({
+    required this.appkey,
+    required this.accessStructureId,
+  });
+}
+
 class Address {
   final int index;
   final String addressString;
@@ -1008,6 +1125,14 @@ class Address {
     required this.index,
     required this.addressString,
     required this.used,
+  });
+}
+
+class Appkey {
+  final U8Array65 field0;
+
+  const Appkey({
+    required this.field0,
   });
 }
 
@@ -1042,10 +1167,10 @@ class BitcoinNetwork {
         that: this,
       );
 
-  String descriptorForKey({required KeyId keyId, dynamic hint}) =>
+  String descriptorForKey({required Appkey appkey, dynamic hint}) =>
       bridge.descriptorForKeyMethodBitcoinNetwork(
         that: this,
-        keyId: keyId,
+        appkey: appkey,
       );
 
   String? validateAmount(
@@ -1167,11 +1292,13 @@ class Coordinator {
       );
 
   Stream<bool> displayBackup(
-          {required DeviceId id, required KeyId keyId, dynamic hint}) =>
+          {required DeviceId id,
+          required AccessStructureRef accessStructureRef,
+          dynamic hint}) =>
       bridge.displayBackupMethodCoordinator(
         that: this,
         id: id,
-        keyId: keyId,
+        accessStructureRef: accessStructureRef,
       );
 
   KeyState keyState({dynamic hint}) => bridge.keyStateMethodCoordinator(
@@ -1183,44 +1310,45 @@ class Coordinator {
         that: this,
       );
 
-  FrostKey? getKey({required KeyId keyId, dynamic hint}) =>
+  FrostKey? getKey({required Appkey appkey, dynamic hint}) =>
       bridge.getKeyMethodCoordinator(
         that: this,
-        keyId: keyId,
+        appkey: appkey,
       );
 
-  String? getKeyName({required KeyId keyId, dynamic hint}) =>
+  String? getKeyName({required Appkey appkey, dynamic hint}) =>
       bridge.getKeyNameMethodCoordinator(
         that: this,
-        keyId: keyId,
+        appkey: appkey,
       );
 
-  List<KeyId> keysForDevice({required DeviceId deviceId, dynamic hint}) =>
-      bridge.keysForDeviceMethodCoordinator(
+  List<AccessStructureRef> accessStructuresInvolvingDevice(
+          {required DeviceId deviceId, dynamic hint}) =>
+      bridge.accessStructuresInvolvingDeviceMethodCoordinator(
         that: this,
         deviceId: deviceId,
       );
 
   Stream<SigningState> startSigning(
-          {required KeyId keyId,
+          {required AccessStructureRef accessStructureRef,
           required List<DeviceId> devices,
           required String message,
           dynamic hint}) =>
       bridge.startSigningMethodCoordinator(
         that: this,
-        keyId: keyId,
+        accessStructureRef: accessStructureRef,
         devices: devices,
         message: message,
       );
 
   Stream<SigningState> startSigningTx(
-          {required KeyId keyId,
+          {required AccessStructureRef accessStructureRef,
           required UnsignedTx unsignedTx,
           required List<DeviceId> devices,
           dynamic hint}) =>
       bridge.startSigningTxMethodCoordinator(
         that: this,
-        keyId: keyId,
+        accessStructureRef: accessStructureRef,
         unsignedTx: unsignedTx,
         devices: devices,
       );
@@ -1250,17 +1378,17 @@ class Coordinator {
       );
 
   SignTaskDescription? persistedSignSessionDescription(
-          {required KeyId keyId, dynamic hint}) =>
+          {required Appkey appkey, dynamic hint}) =>
       bridge.persistedSignSessionDescriptionMethodCoordinator(
         that: this,
-        keyId: keyId,
+        appkey: appkey,
       );
 
   Stream<SigningState> tryRestoreSigningSession(
-          {required KeyId keyId, dynamic hint}) =>
+          {required Appkey appkey, dynamic hint}) =>
       bridge.tryRestoreSigningSessionMethodCoordinator(
         that: this,
-        keyId: keyId,
+        appkey: appkey,
       );
 
   Stream<FirmwareUpgradeConfirmState> startFirmwareUpgrade({dynamic hint}) =>
@@ -1289,17 +1417,26 @@ class Coordinator {
         id: id,
       );
 
-  Future<KeyId> finalKeygenAck({dynamic hint}) =>
+  Future<AccessStructureRef> finalKeygenAck({dynamic hint}) =>
       bridge.finalKeygenAckMethodCoordinator(
         that: this,
       );
 
   Stream<CheckShareState> checkShareOnDevice(
-          {required DeviceId deviceId, required KeyId keyId, dynamic hint}) =>
+          {required DeviceId deviceId,
+          required AccessStructureRef accessStructureRef,
+          dynamic hint}) =>
       bridge.checkShareOnDeviceMethodCoordinator(
         that: this,
         deviceId: deviceId,
-        keyId: keyId,
+        accessStructureRef: accessStructureRef,
+      );
+
+  AccessStructure? getAccessStructure(
+          {required AccessStructureRef asRef, dynamic hint}) =>
+      bridge.getAccessStructureMethodCoordinator(
+        that: this,
+        asRef: asRef,
       );
 }
 
@@ -1440,18 +1577,14 @@ class FirmwareUpgradeConfirmState {
 
 class FrostKey {
   final Native bridge;
-  final FrostsnapCoreCoordinatorCoordinatorFrostKey field0;
+  final FrostsnapCoreCoordinatorCoordFrostKey field0;
 
   const FrostKey({
     required this.bridge,
     required this.field0,
   });
 
-  int threshold({dynamic hint}) => bridge.thresholdMethodFrostKey(
-        that: this,
-      );
-
-  KeyId id({dynamic hint}) => bridge.idMethodFrostKey(
+  Appkey appkey({dynamic hint}) => bridge.appkeyMethodFrostKey(
         that: this,
       );
 
@@ -1459,44 +1592,31 @@ class FrostKey {
         that: this,
       );
 
-  List<DeviceId> devices({dynamic hint}) => bridge.devicesMethodFrostKey(
-        that: this,
-      );
-
-  /// Create an identifier that's used to determine compatibility of shamir secret shares.
-  /// The first 4 bech32 chars from a hash of the polynomial coefficients.
-  /// Collision expected once in (32)^4 = 2^20.
-  Uint8List polynomialIdentifier({dynamic hint}) =>
-      bridge.polynomialIdentifierMethodFrostKey(
+  List<AccessStructure> accessStructures({dynamic hint}) =>
+      bridge.accessStructuresMethodFrostKey(
         that: this,
       );
 }
 
 class KeyGenState {
+  final int threshold;
   final List<DeviceId> devices;
   final List<DeviceId> gotShares;
   final List<DeviceId> sessionAcks;
-  final U8Array32? sessionHash;
-  final KeyId? finished;
+  final bool allAcks;
+  final SessionHash? sessionHash;
+  final AccessStructureRef? finished;
   final String? aborted;
-  final int threshold;
 
   const KeyGenState({
+    required this.threshold,
     required this.devices,
     required this.gotShares,
     required this.sessionAcks,
+    required this.allAcks,
     this.sessionHash,
     this.finished,
     this.aborted,
-    required this.threshold,
-  });
-}
-
-class KeyId {
-  final U8Array33 field0;
-
-  const KeyId({
-    required this.field0,
   });
 }
 
@@ -1678,6 +1798,14 @@ class QrReader {
       );
 }
 
+class SessionHash {
+  final U8Array32 field0;
+
+  const SessionHash({
+    required this.field0,
+  });
+}
+
 class Settings {
   final Native bridge;
   final MutexPersistedRSettings settings;
@@ -1723,12 +1851,12 @@ class Settings {
       );
 
   Future<void> setWalletNetwork(
-          {required KeyId keyId,
+          {required Appkey appkey,
           required BitcoinNetwork network,
           dynamic hint}) =>
       bridge.setWalletNetworkMethodSettings(
         that: this,
-        keyId: keyId,
+        appkey: appkey,
         network: network,
       );
 
@@ -1778,12 +1906,12 @@ class SignedTx {
   });
 
   EffectOfTx effect(
-          {required KeyId keyId,
+          {required Appkey appkey,
           required BitcoinNetwork network,
           dynamic hint}) =>
       bridge.effectMethodSignedTx(
         that: this,
-        keyId: keyId,
+        appkey: appkey,
         network: network,
       );
 }
@@ -1853,6 +1981,15 @@ class U8Array64 extends NonGrowableListView<int> {
   U8Array64.init() : super(Uint8List(arraySize));
 }
 
+class U8Array65 extends NonGrowableListView<int> {
+  static const arraySize = 65;
+  U8Array65(Uint8List inner)
+      : assert(inner.length == arraySize),
+        super(inner);
+  U8Array65.unchecked(Uint8List inner) : super(inner);
+  U8Array65.init() : super(Uint8List(arraySize));
+}
+
 class UnsignedTx {
   final Native bridge;
   final FrostsnapCoreBitcoinTransactionTransactionTemplate templateTx;
@@ -1880,12 +2017,12 @@ class UnsignedTx {
       );
 
   EffectOfTx effect(
-          {required KeyId keyId,
+          {required Appkey appkey,
           required BitcoinNetwork network,
           dynamic hint}) =>
       bridge.effectMethodUnsignedTx(
         that: this,
-        keyId: keyId,
+        appkey: appkey,
         network: network,
       );
 }
@@ -1905,77 +2042,79 @@ class Wallet {
     required this.network,
   });
 
-  Stream<TxState> subTxState({required KeyId keyId, dynamic hint}) =>
+  Stream<TxState> subTxState({required Appkey appkey, dynamic hint}) =>
       bridge.subTxStateMethodWallet(
         that: this,
-        keyId: keyId,
+        appkey: appkey,
       );
 
-  TxState txState({required KeyId keyId, dynamic hint}) =>
+  TxState txState({required Appkey appkey, dynamic hint}) =>
       bridge.txStateMethodWallet(
         that: this,
-        keyId: keyId,
+        appkey: appkey,
       );
 
   Stream<double> syncTxids(
-          {required KeyId keyId, required List<String> txids, dynamic hint}) =>
+          {required Appkey appkey,
+          required List<String> txids,
+          dynamic hint}) =>
       bridge.syncTxidsMethodWallet(
         that: this,
-        keyId: keyId,
+        appkey: appkey,
         txids: txids,
       );
 
-  Stream<double> sync({required KeyId keyId, dynamic hint}) =>
+  Stream<double> sync({required Appkey appkey, dynamic hint}) =>
       bridge.syncMethodWallet(
         that: this,
-        keyId: keyId,
+        appkey: appkey,
       );
 
-  Future<Address> nextAddress({required KeyId keyId, dynamic hint}) =>
+  Future<Address> nextAddress({required Appkey appkey, dynamic hint}) =>
       bridge.nextAddressMethodWallet(
         that: this,
-        keyId: keyId,
+        appkey: appkey,
       );
 
-  List<Address> addressesState({required KeyId keyId, dynamic hint}) =>
+  List<Address> addressesState({required Appkey appkey, dynamic hint}) =>
       bridge.addressesStateMethodWallet(
         that: this,
-        keyId: keyId,
+        appkey: appkey,
       );
 
   Future<UnsignedTx> sendTo(
-          {required KeyId keyId,
+          {required Appkey appkey,
           required String toAddress,
           required int value,
           required double feerate,
           dynamic hint}) =>
       bridge.sendToMethodWallet(
         that: this,
-        keyId: keyId,
+        appkey: appkey,
         toAddress: toAddress,
         value: value,
         feerate: feerate,
       );
 
   Future<void> broadcastTx(
-          {required KeyId keyId, required SignedTx tx, dynamic hint}) =>
+          {required Appkey appkey, required SignedTx tx, dynamic hint}) =>
       bridge.broadcastTxMethodWallet(
         that: this,
-        keyId: keyId,
+        appkey: appkey,
         tx: tx,
       );
 
   UnsignedTx psbtToUnsignedTx(
-          {required Psbt psbt, required KeyId keyId, dynamic hint}) =>
+          {required Psbt psbt, required Appkey appkey, dynamic hint}) =>
       bridge.psbtToUnsignedTxMethodWallet(
         that: this,
         psbt: psbt,
-        keyId: keyId,
+        appkey: appkey,
       );
 }
 
 class WalletSettings {
-  final List<(KeyId, BitcoinNetwork)> walletNetworks;
+  final List<(Appkey, BitcoinNetwork)> walletNetworks;
 
   const WalletSettings({
     required this.walletNetworks,

@@ -39,15 +39,15 @@ class _KeyNamePageState extends State<KeyNamePage> {
   Widget build(BuildContext context) {
     final nextPage = _keyNameController.text.isNotEmpty
         ? () async {
-            final keyId = await Navigator.push(
+            final appkey = await Navigator.push(
               context,
               createRoute(DevicesPage(
                 keyName: _keyNameController.text,
                 network: bitcoinNetwork,
               )),
             );
-            if (context.mounted && keyId != null) {
-              Navigator.pop(context, keyId);
+            if (context.mounted && appkey != null) {
+              Navigator.pop(context, appkey);
             }
           }
         : null;
@@ -224,7 +224,7 @@ class DevicesPage extends StatelessWidget {
                         child: ElevatedButton.icon(
                           onPressed: allDevicesReady
                               ? () async {
-                                  final keyId = await Navigator.push(
+                                  final appkey = await Navigator.push(
                                     context,
                                     createRoute(ThresholdPage(
                                       network: network,
@@ -232,8 +232,8 @@ class DevicesPage extends StatelessWidget {
                                       selectedDevices: devices,
                                     )),
                                   );
-                                  if (context.mounted && keyId != null) {
-                                    Navigator.pop(context, keyId);
+                                  if (context.mounted && appkey != null) {
+                                    Navigator.pop(context, appkey);
                                   }
                                 }
                               : null,
@@ -340,27 +340,31 @@ class _ThresholdPageState extends State<ThresholdPage> {
                               .toList(),
                           keyName: widget.keyName)
                       .toBehaviorSubject();
-                  final keyId = await showCheckKeyGenDialog(
+                  final accessStructureRef = await showCheckKeyGenDialog(
                     context: context,
                     stream: stream,
                     network: widget.network,
                   );
 
-                  if (keyId != null && context.mounted) {
+                  if (accessStructureRef != null && context.mounted) {
+                    final accessStructure =
+                        coord.getAccessStructure(asRef: accessStructureRef)!;
                     await doBackupWorkflow(context,
                         devices: widget.selectedDevices
                             .map((device) => device.id)
                             .toList(),
-                        keyId: keyId);
+                        accessStructure: accessStructure);
                   }
 
-                  if (keyId == null && context.mounted) {
+                  if (accessStructureRef == null) {
                     coord.cancelProtocol();
-                    Navigator.popUntil(context, (route) {
-                      return route.settings.name == "DevicesPage";
-                    });
+                    if (context.mounted) {
+                      Navigator.popUntil(context, (route) {
+                        return route.settings.name == "DevicesPage";
+                      });
+                    }
                   } else if (context.mounted) {
-                    Navigator.pop(context, keyId);
+                    Navigator.pop(context, accessStructureRef);
                   }
                 },
                 icon: Icon(Icons.check),
@@ -396,16 +400,15 @@ Route createRoute(Widget page) {
   );
 }
 
-Future<KeyId?> showCheckKeyGenDialog({
+Future<AccessStructureRef?> showCheckKeyGenDialog({
   required Stream<KeyGenState> stream,
   required BuildContext context,
   required BitcoinNetwork network,
 }) async {
-  final result = await showDeviceActionDialog<KeyId>(
+  final accessStructureRef = await showDeviceActionDialog<AccessStructureRef>(
       context: context,
       complete: stream
-          .firstWhere(
-              (state) => state.aborted != null || state.finished != null)
+          .firstWhere((state) => state.aborted != null)
           .then((state) => state.finished),
       builder: (context) {
         return StreamBuilder(
@@ -453,8 +456,8 @@ Future<KeyId?> showCheckKeyGenDialog({
                 Text(
                   state.sessionHash == null
                       ? ""
-                      : toSpacedHex(
-                          Uint8List.fromList(state.sessionHash!.sublist(0, 4))),
+                      : toSpacedHex(Uint8List.fromList(
+                          state.sessionHash!.field0.sublist(0, 4))),
                   style: TextStyle(
                     fontFamily: 'Courier',
                     fontWeight: FontWeight.bold,
@@ -517,11 +520,16 @@ Future<KeyId?> showCheckKeyGenDialog({
                                   ? () async {
                                       final settingsCtx =
                                           SettingsContext.of(context)!;
-                                      final keyId =
+                                      final accessStructureRef =
                                           await coord.finalKeygenAck();
                                       await settingsCtx.settings
                                           .setWalletNetwork(
-                                              keyId: keyId, network: network);
+                                              appkey: accessStructureRef.appkey,
+                                              network: network);
+                                      if (context.mounted) {
+                                        Navigator.pop(
+                                            context, accessStructureRef);
+                                      }
                                     }
                                   : null,
                               child: Text("Confirm"))
@@ -530,8 +538,8 @@ Future<KeyId?> showCheckKeyGenDialog({
             });
       });
 
-  if (result == null) {
+  if (accessStructureRef == null) {
     coord.cancelProtocol();
   }
-  return result;
+  return accessStructureRef;
 }
