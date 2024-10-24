@@ -1,5 +1,5 @@
 //! Tests for a malicious actions. A malicious coordinator, a malicious device or both.
-use common::DefaultTestEnv;
+use common::{DefaultTestEnv, TEST_ENCRYPTION_KEY};
 use frostsnap_core::message::{
     CoordinatorSend, CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage,
     SignRequest,
@@ -47,21 +47,23 @@ fn keygen_maliciously_replace_public_poly() {
                 message: DeviceToCoordinatorMessage::KeyGenResponse(input),
             } = send
             {
-                // We replace the polynomial the coordinator actually receives with a different
-                // one generated with different randomness.
-                let wrong_messages = shadow_device
+                // A "man in the middle" replace the polynomial the coordinator actually
+                // receives with a different one generated with different randomness. This should
+                // cause the device to detect the switch and abort.
+                let malicious_messages = shadow_device
                     .recv_coordinator_message(do_keygen.clone(), &mut other_rng)
                     .unwrap();
-                let response = wrong_messages
+                let malicious_keygen_response = malicious_messages
                     .into_iter()
                     .find_map(|send| match send {
-                        DeviceSend::ToCoordinator(DeviceToCoordinatorMessage::KeyGenResponse(
-                            response,
-                        )) => Some(response),
+                        DeviceSend::ToCoordinator(boxed) => match *boxed {
+                            DeviceToCoordinatorMessage::KeyGenResponse(response) => Some(response),
+                            _ => None,
+                        },
                         _ => None,
                     })
                     .unwrap();
-                *input = response;
+                *input = malicious_keygen_response;
             }
         }
         run.message_queue.is_empty()
@@ -93,37 +95,42 @@ fn nonce_reuse() {
 
     run.run_until_finished(&mut DefaultTestEnv, &mut test_rng)
         .unwrap();
-    let key_id = run.coordinator.iter_keys().next().unwrap().key_id();
+    let key_data = run.coordinator.iter_keys().next().unwrap();
     let task1 = SignTask::Plain {
         message: "utxo.club!".into(),
     };
+    let access_structure = key_data.access_structures[0].clone();
     let sign_init = run
         .coordinator
-        .start_sign(key_id, task1, device_set)
+        .start_sign(
+            access_structure.access_structure_ref(),
+            task1,
+            device_set,
+            TEST_ENCRYPTION_KEY,
+        )
         .unwrap();
     run.extend(sign_init);
     run.run_until_finished(&mut DefaultTestEnv, &mut test_rng)
         .unwrap();
 
-    let nonces = run
+    let sign_req = run
         .transcript
         .iter()
         .find_map(|m| match m {
             Send::CoordinatorToDevice {
-                message: CoordinatorToDeviceMessage::RequestSign(SignRequest { nonces, .. }),
+                message: CoordinatorToDeviceMessage::RequestSign(sign_req),
                 ..
-            } => Some(nonces),
+            } => Some(sign_req),
             _ => None,
         })
         .unwrap();
 
     // Receive a new sign request with the same nonces as the previous session
     let new_sign_request = CoordinatorToDeviceMessage::RequestSign(SignRequest {
-        nonces: nonces.clone(),
-        key_id,
         sign_task: SignTask::Plain {
             message: "we lost track of first FROST txn on bitcoin mainnet @ bushbash 2022".into(),
         },
+        ..sign_req.clone()
     });
     let sign_request_result = run
         .devices

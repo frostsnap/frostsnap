@@ -1,24 +1,28 @@
-use crate::{coordinator, CheckedSignTask, Gist, KeyId, SessionHash, Vec};
+use crate::{
+    coordinator, AccessStructureId, Appkey, CheckedSignTask, CoordShareDecryptionContrib, Gist,
+    KeyId, SessionHash, Vec,
+};
 use crate::{DeviceId, SignTask};
-use alloc::collections::VecDeque;
-use alloc::collections::{BTreeMap, BTreeSet};
-use alloc::string::String;
+use alloc::{
+    boxed::Box,
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    string::String,
+};
 use core::num::NonZeroU32;
 use schnorr_fun::binonce;
 use schnorr_fun::frost::SecretShare;
 use schnorr_fun::frost::{chilldkg::encpedpop, PartyIndex};
 use schnorr_fun::fun::prelude::*;
 use schnorr_fun::fun::{Point, Scalar};
-use schnorr_fun::{binonce::Nonce, frost::PairedSecretShare, Signature};
+use schnorr_fun::{binonce::Nonce, Signature};
 use sha2::digest::Update;
 use sha2::Digest;
 
 #[derive(Clone, Debug)]
 #[must_use]
 pub enum DeviceSend {
-    ToUser(DeviceToUserMessage),
-    ToCoordinator(DeviceToCoordinatorMessage),
-    ToStorage(DeviceToStorageMessage),
+    ToUser(Box<DeviceToUserMessage>),
+    ToCoordinator(Box<DeviceToCoordinatorMessage>),
 }
 
 #[derive(Clone, Debug)]
@@ -46,6 +50,9 @@ pub enum CoordinatorToDeviceMessage {
     RequestNonces,
     DisplayBackup {
         key_id: KeyId,
+        access_structure_id: AccessStructureId,
+        coord_share_decryption_contrib: CoordShareDecryptionContrib,
+        party_index: PartyIndex,
     },
     CheckShareBackup,
 }
@@ -54,7 +61,10 @@ pub enum CoordinatorToDeviceMessage {
 pub struct SignRequest {
     pub nonces: BTreeMap<PartyIndex, SignRequestNonces>,
     pub sign_task: SignTask,
-    pub key_id: KeyId,
+    /// The root key
+    pub rootkey: Point,
+    pub access_structure_id: AccessStructureId,
+    pub coord_share_decryption_contrib: CoordShareDecryptionContrib,
 }
 
 impl SignRequest {
@@ -128,8 +138,7 @@ pub enum DeviceToCoordinatorMessage {
     },
     DisplayBackupConfirmed,
     CheckShareBackup {
-        share_index: PartyIndex,
-        share_image: Point,
+        share_image: ShareImage,
     },
 }
 
@@ -165,7 +174,7 @@ impl DeviceToCoordinatorMessage {
             KeyGenAck(_) => "KeyGenAck",
             SignatureShare { .. } => "SignatureShare",
             DisplayBackupConfirmed => "DisplayBackupConfirmed",
-            CheckShareBackup { .. } => "LoadingShareBackup",
+            CheckShareBackup { .. } => "CheckShareBackup",
         }
     }
 }
@@ -227,16 +236,17 @@ pub enum DeviceToUserMessage {
     },
     SignatureRequest {
         sign_task: CheckedSignTask,
-        key_id: KeyId,
+        appkey: Appkey,
     },
     Canceled {
         task: TaskKind,
     },
     DisplayBackupRequest {
+        key_name: String,
         key_id: KeyId,
     },
     DisplayBackup {
-        key_id: KeyId,
+        key_name: String,
         backup: String,
     },
     EnterBackup,
@@ -248,11 +258,11 @@ pub enum TaskKind {
     KeyGen,
     Sign,
     DisplayBackup,
-    LoadBackup,
+    CheckBackup,
 }
 
-#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
-pub enum DeviceToStorageMessage {
-    SaveKey(PairedSecretShare),
-    ExpendNonce { nonce_counter: u64 },
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
+pub struct ShareImage {
+    pub point: Point<Normal, Public, Zero>,
+    pub share_index: PartyIndex,
 }

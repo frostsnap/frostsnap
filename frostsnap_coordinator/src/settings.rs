@@ -5,14 +5,14 @@ use crate::{
 use anyhow::Context as _;
 use bdk_chain::bitcoin;
 use core::str::FromStr;
-use frostsnap_core::KeyId;
+use frostsnap_core::Appkey;
 use rusqlite::params;
 use std::collections::{BTreeMap, HashMap};
 use tracing::{event, Level};
 
 #[derive(Default)]
 pub struct Settings {
-    pub wallet_networks: HashMap<KeyId, bitcoin::Network>,
+    pub wallet_networks: HashMap<Appkey, bitcoin::Network>,
     pub electrum_servers: BTreeMap<bitcoin::Network, String>,
     pub developer_mode: bool,
 }
@@ -20,11 +20,11 @@ pub struct Settings {
 impl Settings {
     pub fn set_wallet_network(
         &mut self,
-        key_id: KeyId,
+        appkey: Appkey,
         network: bitcoin::Network,
         mutations: &mut Vec<Mutation>,
     ) {
-        self.mutate(Mutation::SetWalletNetwork { key_id, network }, mutations);
+        self.mutate(Mutation::SetWalletNetwork { appkey, network }, mutations);
     }
 
     pub fn set_developer_mode(&mut self, value: bool, mutations: &mut Vec<Mutation>) {
@@ -55,8 +55,8 @@ impl Settings {
 
     fn apply_mutation(&mut self, mutation: Mutation) {
         match mutation {
-            Mutation::SetWalletNetwork { key_id, network } => {
-                self.wallet_networks.insert(key_id, network);
+            Mutation::SetWalletNetwork { appkey, network } => {
+                self.wallet_networks.insert(appkey, network);
             }
             Mutation::SetDeveloperMode { value } => {
                 self.developer_mode = value;
@@ -74,7 +74,7 @@ impl Settings {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mutation {
     SetWalletNetwork {
-        key_id: KeyId,
+        appkey: Appkey,
         network: bitcoin::Network,
     },
     SetDeveloperMode {
@@ -96,7 +96,7 @@ impl Persist<rusqlite::Connection> for Settings {
     {
         conn.execute(
             "CREATE TABLE IF NOT EXISTS fs_wallet_settings (
-                key_id TEXT PRIMARY KEY,
+                appkey TEXT PRIMARY KEY,
                 network TEXT
             )",
             [],
@@ -114,16 +114,16 @@ impl Persist<rusqlite::Connection> for Settings {
         let mut settings = Settings::default();
 
         {
-            let mut stmt = conn.prepare("SELECT key_id, network FROM fs_wallet_settings")?;
+            let mut stmt = conn.prepare("SELECT appkey, network FROM fs_wallet_settings")?;
             let row_iter = stmt.query_map([], |row| {
-                let key_id = row.get::<_, ToStringWrapper<KeyId>>(0)?.0;
+                let appkey = row.get::<_, ToStringWrapper<Appkey>>(0)?.0;
                 let network = row.get::<_, ToStringWrapper<bitcoin::Network>>(1)?.0;
-                Ok((key_id, network))
+                Ok((appkey, network))
             })?;
 
             for row in row_iter {
-                let (key_id, network) = row?;
-                settings.apply_mutation(Mutation::SetWalletNetwork { key_id, network });
+                let (appkey, network) = row?;
+                settings.apply_mutation(Mutation::SetWalletNetwork { appkey, network });
             }
         }
 
@@ -182,16 +182,16 @@ impl Persist<rusqlite::Connection> for Settings {
     fn persist_update(conn: &mut rusqlite::Connection, update: Self::Update) -> anyhow::Result<()> {
         for mutation in update {
             match mutation {
-                Mutation::SetWalletNetwork { key_id, network } => {
+                Mutation::SetWalletNetwork { appkey, network } => {
                     event!(
                         Level::DEBUG,
-                        name = key_id.to_redacted_string(),
+                        name = appkey.to_redacted_string(),
                         network = network.to_string(),
                         "set wallet's network",
                     );
                     conn.execute(
-                        "INSERT OR REPLACE INTO fs_wallet_settings (key_id, network) VALUES (?1, ?2)",
-                        params![ToStringWrapper(key_id), ToStringWrapper(network)],
+                        "INSERT OR REPLACE INTO fs_wallet_settings (appkey, network) VALUES (?1, ?2)",
+                        params![ToStringWrapper(appkey), ToStringWrapper(network)],
                     )?;
                 }
                 Mutation::SetDeveloperMode { value } => {

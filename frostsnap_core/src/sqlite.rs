@@ -1,4 +1,4 @@
-use crate::{DeviceId, KeyId};
+use crate::{Appkey, DeviceId};
 use alloc::boxed::Box;
 use alloc::str::FromStr;
 use alloc::string::ToString;
@@ -19,13 +19,13 @@ impl ToSql for DeviceId {
     }
 }
 
-impl FromSql for KeyId {
+impl FromSql for Appkey {
     fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
         Self::from_str(value.as_str()?).map_err(|e| FromSqlError::Other(Box::new(e)))
     }
 }
 
-impl ToSql for KeyId {
+impl ToSql for Appkey {
     fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
         Ok(ToSqlOutput::from(self.to_string()))
     }

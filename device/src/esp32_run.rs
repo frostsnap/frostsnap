@@ -1,12 +1,11 @@
 use crate::{
     io::SerialInterface,
+    key_generator::HmacKeyGen,
     ota, storage,
     ui::{self, UiEvent, UserInteraction},
     DownstreamConnectionState, Duration, Instant, UpstreamConnection, UpstreamConnectionState,
 };
-use alloc::{
-    collections::BTreeMap, collections::VecDeque, string::String, string::ToString, vec::Vec,
-};
+use alloc::{boxed::Box, collections::VecDeque, string::ToString, vec::Vec};
 use esp_hal::{gpio, sha::Sha, timer, uart, Blocking};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{
@@ -15,11 +14,12 @@ use frostsnap_comms::{
 };
 use frostsnap_comms::{CoordinatorSendMessage, Downstream, MAGIC_BYTES_PERIOD};
 use frostsnap_core::{
+    device::FrostSigner,
     message::{
         CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, DeviceToUserMessage,
     },
     schnorr_fun::fun::{marker::Normal, KeyPair, Scalar},
-    DeviceId, FrostSigner, KeyId, SignTask,
+    DeviceId, SignTask,
 };
 use rand_chacha::rand_core::RngCore;
 
@@ -56,6 +56,7 @@ where
             mut sha256,
         } = self;
 
+        let mut keygen = HmacKeyGen::new();
         let flash = FlashStorage::new();
         let mut flash = storage::DeviceStorage::new(flash);
         let ota_config = ota::OtaConfig::new(flash.flash_mut());
@@ -63,27 +64,23 @@ where
         let active_firmware_digest = active_partition.digest(flash.flash_mut(), &mut sha256);
         ui.set_busy_task(ui::BusyTask::Loading);
 
-        let (mut signer, mut name, mut key_names) =
+        let (mut signer, mut name) =
             match flash.read_header().expect("failed to read header from nvs") {
                 Some(header) => {
                     let mut signer = FrostSigner::new(KeyPair::<Normal>::new(header.secret_key));
                     let mut name: Option<alloc::string::String> = None;
-                    let mut key_names: BTreeMap<KeyId, String> = BTreeMap::new();
 
                     for change in flash.iter() {
                         match change {
-                            storage::Change::Core(core) => {
-                                signer.apply_change(core);
+                            storage::Change::Core(mutation) => {
+                                signer.apply_mutation(&mutation);
                             }
                             storage::Change::Name(name_update) => {
                                 name = Some(name_update);
                             }
-                            storage::Change::KeyNamed((key_id, key_name)) => {
-                                key_names.insert(key_id, key_name);
-                            }
                         }
                     }
-                    (signer, name, key_names)
+                    (signer, name)
                 }
                 None => {
                     let secret_key = Scalar::random(&mut rng);
@@ -92,7 +89,7 @@ where
                         .write_header(crate::storage::Header { secret_key })
                         .unwrap();
                     let signer = FrostSigner::new(keypair);
-                    (signer, None, Default::default())
+                    (signer, None)
                 }
             };
         let device_id = signer.device_id();
@@ -434,27 +431,20 @@ where
                     },
                 )); // this is just the default
                 match ui_event {
-                    UiEvent::KeyGenConfirm {
-                        ref key_name,
-                        ref key_id,
-                    } => {
+                    UiEvent::KeyGenConfirm => {
                         outbox.extend(
                             signer
-                                .keygen_ack()
+                                .keygen_ack(&mut keygen, &mut rng)
                                 .expect("state changed while confirming keygen"),
                         );
-
-                        if key_names.contains_key(key_id) {
-                            panic!("Renaming keys is not yet supported.");
-                        }
-                        flash
-                            .push(storage::Change::KeyNamed((*key_id, key_name.clone())))
-                            .expect("flash write fail");
-                        key_names.insert(*key_id, key_name.clone());
                     }
                     UiEvent::SigningConfirm => {
                         ui.set_busy_task(ui::BusyTask::Signing);
-                        outbox.extend(signer.sign_ack().expect("state changed while acking sign"));
+                        outbox.extend(
+                            signer
+                                .sign_ack(&mut keygen)
+                                .expect("state changed while acking sign"),
+                        );
                     }
                     UiEvent::NameConfirm(ref new_name) => {
                         name = Some(new_name.into());
@@ -466,10 +456,10 @@ where
                             name: new_name.into(),
                         });
                     }
-                    UiEvent::BackupRequestConfirm(_) => {
+                    UiEvent::BackupRequestConfirm => {
                         outbox.extend(
                             signer
-                                .display_backup_ack()
+                                .display_backup_ack(&mut keygen)
                                 .expect("state changed while displaying backup"),
                         );
                     }
@@ -480,9 +470,11 @@ where
                         // special case where updrade will handle things from now on
                         switch_workflow = None;
                     }
-                    UiEvent::EnteredShareBackup(share_backup) => outbox.push_back(
-                        DeviceSend::ToUser(DeviceToUserMessage::EnteredBackup(share_backup)),
-                    ),
+                    UiEvent::EnteredShareBackup(share_backup) => {
+                        outbox.push_back(DeviceSend::ToUser(Box::new(
+                            DeviceToUserMessage::EnteredBackup(share_backup),
+                        )))
+                    }
                     UiEvent::EnteredShareBackupConfirm(share_backup) => {
                         outbox.extend(
                             signer
@@ -500,33 +492,26 @@ where
             // ⚠ pop_front ensures messages are sent in order. E.g. update nonce NVS before sending sig.
             while let Some(send) = outbox.pop_front() {
                 match send {
-                    DeviceSend::ToStorage(message) => {
-                        let now = self.timer.now();
-                        flash.push(storage::Change::Core(message)).unwrap();
-                        let after = self.timer.now().checked_duration_since(now).unwrap();
-                        sends_upstream.send_debug(format!(
-                            "core mutation persisted in {}",
-                            after.to_millis()
-                        ));
-                    }
-                    DeviceSend::ToCoordinator(message) => {
-                        if matches!(message, DeviceToCoordinatorMessage::KeyGenResponse(_)) {
+                    DeviceSend::ToCoordinator(boxed) => {
+                        if matches!(
+                            boxed.as_ref(),
+                            DeviceToCoordinatorMessage::KeyGenResponse(_)
+                        ) {
                             ui.set_workflow(ui::Workflow::WaitingFor(
                                 ui::WaitingFor::CoordinatorResponse(ui::WaitingResponse::KeyGen),
                             ));
                         }
 
-                        sends_upstream.push(DeviceSendBody::Core(message));
+                        sends_upstream.push(DeviceSendBody::Core(*boxed));
                     }
-                    DeviceSend::ToUser(user_send) => {
-                        match user_send {
+                    DeviceSend::ToUser(boxed) => {
+                        match *boxed {
                             DeviceToUserMessage::CheckKeyGen {
-                                key_id,
+                                key_id: _,
                                 session_hash,
                                 key_name,
                             } => {
                                 ui.set_workflow(ui::Workflow::prompt(ui::Prompt::KeyGen {
-                                    key_id,
                                     session_hash,
                                     key_name,
                                 }));
@@ -560,21 +545,15 @@ where
                                     },
                                 )));
                             }
-                            DeviceToUserMessage::DisplayBackupRequest { key_id } => {
-                                // keys should have names after keygen
-                                let key_name = key_names
-                                    .get(&key_id)
-                                    .cloned()
-                                    .unwrap_or(key_id.to_string());
-                                ui.set_workflow(ui::Workflow::prompt(
-                                    ui::Prompt::DisplayBackupRequest((key_name.clone(), key_id)),
-                                ))
-                            }
+                            DeviceToUserMessage::DisplayBackupRequest { key_name, key_id } => ui
+                                .set_workflow(ui::Workflow::prompt(
+                                    ui::Prompt::DisplayBackupRequest { key_name, key_id },
+                                )),
                             DeviceToUserMessage::Canceled { .. } => {
                                 ui.cancel();
                             }
-                            DeviceToUserMessage::DisplayBackup { key_id: _, backup } => {
-                                ui.set_workflow(ui::Workflow::DisplayBackup { backup });
+                            DeviceToUserMessage::DisplayBackup { key_name, backup } => {
+                                ui.set_workflow(ui::Workflow::DisplayBackup { key_name, backup });
                             }
                             DeviceToUserMessage::EnterBackup => {
                                 ui.set_workflow(ui::Workflow::EnteringBackup(

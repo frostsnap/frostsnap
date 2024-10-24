@@ -1,14 +1,17 @@
+use common::{TestDeviceKeygen, TEST_ENCRYPTION_KEY};
 use frostsnap_core::bitcoin_transaction::{LocalSpk, TransactionTemplate};
+use frostsnap_core::coordinator::CoordAccessStructure;
 use frostsnap_core::message::{
     CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, CoordinatorToUserSigningMessage,
     DeviceToUserMessage, EncodedSignature,
 };
-use frostsnap_core::tweak::AppBip32Path;
+use frostsnap_core::tweak::BitcoinBip32Path;
 use frostsnap_core::{
-    coordinator::FrostCoordinator, CheckedSignTask, DeviceId, FrostKeyExt, FrostSigner, KeyId,
+    coordinator::FrostCoordinator, device::FrostSigner, Appkey, CheckedSignTask, DeviceId,
     SessionHash, SignTask,
 };
 use rand::seq::IteratorRandom;
+use rand::RngCore;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::binonce::Nonce;
@@ -26,7 +29,8 @@ struct TestEnv {
     pub received_keygen_shares: BTreeSet<DeviceId>,
     pub coordinator_check: Option<SessionHash>,
     pub coordinator_got_keygen_acks: BTreeSet<DeviceId>,
-    pub key_ids: BTreeSet<KeyId>,
+    pub appkeys: BTreeSet<Appkey>,
+    pub access_structures: BTreeMap<Appkey, Vec<CoordAccessStructure>>,
 
     // signing
     pub received_signing_shares: BTreeSet<DeviceId>,
@@ -36,8 +40,8 @@ struct TestEnv {
     // storage
     pub coord_nonces: BTreeMap<(DeviceId, u64), Nonce>,
     pub device_nonces: BTreeMap<DeviceId, u64>,
-
-    pub backups: BTreeMap<DeviceId, (KeyId, String)>,
+    pub coord_appkeys: BTreeMap<Appkey, String>,
+    pub backups: BTreeMap<DeviceId, (String, String)>,
     pub backup_confirmed_on_coordinator: BTreeSet<DeviceId>,
 }
 
@@ -49,7 +53,18 @@ impl common::Env for TestEnv {
     ) {
         use frostsnap_core::coordinator::Mutation::*;
         match mutation {
-            NewKey(_) => { /*  */ }
+            NewKey {
+                appkey, key_name, ..
+            } => {
+                self.coord_appkeys.insert(appkey, key_name);
+            }
+            NewAccessStructure(access_structure) => {
+                let access_structures = self
+                    .access_structures
+                    .entry(access_structure.appkey())
+                    .or_default();
+                access_structures.push(access_structure);
+            }
             NoncesUsed {
                 device_id,
                 nonce_counter,
@@ -100,22 +115,29 @@ impl common::Env for TestEnv {
         }
     }
 
-    fn storage_react_to_device(
+    fn storage_react_to_device_mutation(
         &mut self,
         _run: &mut Run,
         from: DeviceId,
-        message: frostsnap_core::message::DeviceToStorageMessage,
+        mutation: frostsnap_core::device::Mutation,
     ) {
-        use frostsnap_core::message::DeviceToStorageMessage::*;
-        match message {
-            SaveKey(_) => { /*  */ }
+        use frostsnap_core::device::Mutation::*;
+        match mutation {
+            NewKey { .. } => { /*  */ }
+            SaveShare(_) => { /*  */ }
+            NewAccessStructure { .. } => { /*  */ }
             ExpendNonce { nonce_counter } => {
                 self.device_nonces.insert(from, nonce_counter);
             }
         }
     }
 
-    fn user_react_to_coordinator(&mut self, run: &mut Run, message: CoordinatorToUserMessage) {
+    fn user_react_to_coordinator(
+        &mut self,
+        run: &mut Run,
+        message: CoordinatorToUserMessage,
+        rng: &mut impl RngCore,
+    ) {
         match message {
             CoordinatorToUserMessage::KeyGen(keygen_message) => match keygen_message {
                 CoordinatorToUserKeyGenMessage::ReceivedShares { from } => {
@@ -144,8 +166,11 @@ impl common::Env for TestEnv {
                             self.coordinator_got_keygen_acks.len(),
                             self.received_keygen_shares.len()
                         );
-                        let key_id = run.coordinator.final_keygen_ack().unwrap();
-                        self.key_ids.insert(key_id);
+                        let access_structure_ref = run
+                            .coordinator
+                            .final_keygen_ack(TEST_ENCRYPTION_KEY, rng)
+                            .unwrap();
+                        self.appkeys.insert(access_structure_ref.appkey);
                     }
                 }
             },
@@ -178,6 +203,7 @@ impl common::Env for TestEnv {
         run: &mut Run,
         from: DeviceId,
         message: DeviceToUserMessage,
+        rng: &mut impl RngCore,
     ) {
         match message {
             DeviceToUserMessage::CheckKeyGen {
@@ -186,23 +212,29 @@ impl common::Env for TestEnv {
                 ..
             } => {
                 self.keygen_checks.insert(from, session_hash);
-                let ack = run.device(from).keygen_ack().unwrap();
+                let ack = run
+                    .device(from)
+                    .keygen_ack(&mut TestDeviceKeygen, rng)
+                    .unwrap();
                 run.extend_from_device(from, ack);
             }
             DeviceToUserMessage::SignatureRequest {
                 sign_task,
-                key_id: _,
+                appkey: _,
             } => {
                 self.sign_tasks.insert(from, sign_task);
-                let sign_ack = run.device(from).sign_ack().unwrap();
+                let sign_ack = run.device(from).sign_ack(&mut TestDeviceKeygen).unwrap();
                 run.extend_from_device(from, sign_ack);
             }
             DeviceToUserMessage::DisplayBackupRequest { .. } => {
-                let backup_ack = run.device(from).display_backup_ack().unwrap();
+                let backup_ack = run
+                    .device(from)
+                    .display_backup_ack(&mut TestDeviceKeygen)
+                    .unwrap();
                 run.extend_from_device(from, backup_ack);
             }
-            DeviceToUserMessage::DisplayBackup { key_id, backup } => {
-                self.backups.insert(from, (key_id, backup));
+            DeviceToUserMessage::DisplayBackup { key_name, backup } => {
+                self.backups.insert(from, (key_name, backup));
             }
             DeviceToUserMessage::Canceled { .. } => {
                 panic!("no cancelling done");
@@ -269,9 +301,8 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
 
     assert_eq!(env.coordinator_got_keygen_acks, device_set);
     assert_eq!(env.received_keygen_shares, device_set);
-    let coord_frost_key = run.coordinator.iter_keys().next().unwrap();
-
-    let key_id = coord_frost_key.key_id();
+    let key_data = run.coordinator.iter_keys().next().unwrap().clone();
+    let access_structure_ref = key_data.access_structures[0].access_structure_ref();
 
     for (message, signers) in [("johnmcafee47", [0, 1]), ("pyramid schmee", [1, 2])] {
         env.signatures.clear();
@@ -280,12 +311,17 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
         let task = SignTask::Plain {
             message: message.into(),
         };
-        let checked_task = task.clone().check(key_id).unwrap();
+        let checked_task = task.clone().check(key_data.appkey).unwrap();
         let set = BTreeSet::from_iter(signers.iter().map(|i| device_list[*i]));
 
         let sign_init = run
             .coordinator
-            .start_sign(key_id, task.clone(), set.clone())
+            .start_sign(
+                access_structure_ref,
+                task.clone(),
+                set.clone(),
+                TEST_ENCRYPTION_KEY,
+            )
             .unwrap();
         run.extend(sign_init);
         run.run_until_finished(&mut env, &mut test_rng).unwrap();
@@ -343,8 +379,9 @@ fn test_display_backup() {
     run.extend(keygen_init);
 
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
-    let coord_frost_key = run.coordinator.iter_keys().next().unwrap().clone();
-    let key_id = coord_frost_key.key_id();
+    let key_data = run.coordinator.iter_keys().next().unwrap().clone();
+    let access_structure = key_data.access_structures[0].clone();
+
     assert_eq!(
         env.backups.len(),
         0,
@@ -354,7 +391,11 @@ fn test_display_backup() {
     env.backups = BTreeMap::new(); // clear backups so we can request one again for a party
     let display_backup = run
         .coordinator
-        .request_device_display_backup(device_list[0], key_id)
+        .request_device_display_backup(
+            device_list[0],
+            access_structure.access_structure_ref(),
+            TEST_ENCRYPTION_KEY,
+        )
         .unwrap();
     run.extend(display_backup);
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
@@ -364,11 +405,19 @@ fn test_display_backup() {
 
     let mut display_backup = run
         .coordinator
-        .request_device_display_backup(device_list[1], key_id)
+        .request_device_display_backup(
+            device_list[1],
+            access_structure.access_structure_ref(),
+            TEST_ENCRYPTION_KEY,
+        )
         .unwrap();
     display_backup.extend(
         run.coordinator
-            .request_device_display_backup(device_list[2], key_id)
+            .request_device_display_backup(
+                device_list[2],
+                access_structure.access_structure_ref(),
+                TEST_ENCRYPTION_KEY,
+            )
             .unwrap(),
     );
     run.extend(display_backup);
@@ -380,8 +429,7 @@ fn test_display_backup() {
     let decoded_backups = env
         .backups
         .values()
-        .map(|(bu_key_id, backup)| {
-            assert_eq!(*bu_key_id, key_id);
+        .map(|(_name, backup)| {
             schnorr_fun::frost::SecretShare::from_bech32_backup(backup).expect("valid backup")
         })
         .collect::<Vec<_>>();
@@ -391,11 +439,13 @@ fn test_display_backup() {
             .choose_multiple(&mut test_rng, 2)
             .cloned()
             .collect::<Vec<_>>(),
-    );
+    )
+    .non_zero()
+    .unwrap();
 
     assert_eq!(
-        g!(interpolated_joint_secret * G),
-        coord_frost_key.frost_key().public_key()
+        Appkey::derive_from_rootkey(g!(interpolated_joint_secret * G).normalize()),
+        key_data.appkey
     );
 }
 
@@ -423,8 +473,8 @@ fn when_we_abandon_a_sign_request_we_should_be_able_to_start_a_new_one() {
     run.extend(std::iter::once(request_nonces));
 
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
-    let coord_frost_key = run.coordinator.iter_keys().next().unwrap().clone();
-    let key_id = coord_frost_key.key_id();
+    let key_data = run.coordinator.iter_keys().next().unwrap().clone();
+    let access_structure_ref = key_data.access_structures[0].access_structure_ref();
 
     let uncompleting_sign_task = SignTask::Plain {
         message: "frostsnap in taiwan".into(),
@@ -439,7 +489,12 @@ fn when_we_abandon_a_sign_request_we_should_be_able_to_start_a_new_one() {
 
     let _unused_sign_request = run
         .coordinator
-        .start_sign(key_id, uncompleting_sign_task, device_set.clone())
+        .start_sign(
+            access_structure_ref,
+            uncompleting_sign_task,
+            device_set.clone(),
+            TEST_ENCRYPTION_KEY,
+        )
         .unwrap();
 
     let fewer_nonces_on_coordinator = run
@@ -468,7 +523,12 @@ fn when_we_abandon_a_sign_request_we_should_be_able_to_start_a_new_one() {
 
     let used_sign_request = run
         .coordinator
-        .start_sign(key_id, completing_sign_task, device_set)
+        .start_sign(
+            access_structure_ref,
+            completing_sign_task,
+            device_set,
+            TEST_ENCRYPTION_KEY,
+        )
         .unwrap()
         .clone();
 
@@ -515,28 +575,28 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
 
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
 
-    let coord_frost_key = run.coordinator.iter_keys().next().unwrap();
-    let root_public_key = coord_frost_key.frost_key().public_key();
+    let key_data = run.coordinator.iter_keys().next().unwrap();
+    let access_structure_ref = key_data.access_structures[0].access_structure_ref();
     let mut tx_template = TransactionTemplate::new();
 
     tx_template.push_imaginary_owned_input(
         LocalSpk {
-            root_key: root_public_key,
-            bip32_path: AppBip32Path::external(7),
+            appkey: key_data.appkey,
+            bip32_path: BitcoinBip32Path::external(7),
         },
         bitcoin::Amount::from_sat(42_000),
     );
 
     tx_template.push_imaginary_owned_input(
         LocalSpk {
-            root_key: root_public_key,
-            bip32_path: AppBip32Path::internal(42),
+            appkey: key_data.appkey,
+            bip32_path: BitcoinBip32Path::internal(42),
         },
         bitcoin::Amount::from_sat(1_337_000),
     );
 
     let task = SignTask::BitcoinTransaction(tx_template);
-    let checked_task = task.clone().check(root_public_key.key_id()).unwrap();
+    let checked_task = task.clone().check(key_data.appkey).unwrap();
 
     let set = device_set
         .iter()
@@ -544,10 +604,10 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
         .into_iter()
         .cloned()
         .collect();
-    let key_id = coord_frost_key.key_id();
+
     let sign_init = run
         .coordinator
-        .start_sign(key_id, task.clone(), set)
+        .start_sign(access_structure_ref, task.clone(), set, TEST_ENCRYPTION_KEY)
         .unwrap();
     run.extend(sign_init);
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
