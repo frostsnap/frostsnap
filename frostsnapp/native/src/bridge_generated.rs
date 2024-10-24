@@ -175,19 +175,6 @@ fn wire_load_host_handles_serial_impl(
         },
     )
 }
-fn wire_echo_key_id_impl(port_: MessagePort, key_id: impl Wire2Api<KeyId> + UnwindSafe) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, mirror_KeyId, _>(
-        WrapInfo {
-            debug_name: "echo_key_id",
-            port: Some(port_),
-            mode: FfiCallMode::Normal,
-        },
-        move || {
-            let api_key_id = key_id.wire2api();
-            move |task_callback| Result::<_, ()>::Ok(echo_key_id(api_key_id))
-        },
-    )
-}
 fn wire_psbt_bytes_to_psbt_impl(
     psbt_bytes: impl Wire2Api<Vec<u8>> + UnwindSafe,
 ) -> support::WireSyncReturn {
@@ -223,6 +210,45 @@ fn wire_new_qr_encoder_impl(port_: MessagePort, bytes: impl Wire2Api<Vec<u8>> + 
         move || {
             let api_bytes = bytes.wire2api();
             move |task_callback| Result::<_, ()>::Ok(new_qr_encoder(api_bytes))
+        },
+    )
+}
+fn wire_echo_appkey_impl(port_: MessagePort, appkey: impl Wire2Api<Appkey> + UnwindSafe) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, mirror_Appkey, _>(
+        WrapInfo {
+            debug_name: "echo_appkey",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_appkey = appkey.wire2api();
+            move |task_callback| Result::<_, ()>::Ok(echo_appkey(api_appkey))
+        },
+    )
+}
+fn wire_echo_asid_impl(port_: MessagePort, value: impl Wire2Api<AccessStructureId> + UnwindSafe) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, mirror_AccessStructureId, _>(
+        WrapInfo {
+            debug_name: "echo_asid",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_value = value.wire2api();
+            move |task_callback| Result::<_, ()>::Ok(echo_asid(api_value))
+        },
+    )
+}
+fn wire_echo_asr_impl(port_: MessagePort, value: impl Wire2Api<AccessStructureRef> + UnwindSafe) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, mirror_AccessStructureRef, _>(
+        WrapInfo {
+            debug_name: "echo_asr",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_value = value.wire2api();
+            move |task_callback| Result::<_, ()>::Ok(echo_asr(api_value))
         },
     )
 }
@@ -271,33 +297,18 @@ fn wire_needs_firmware_upgrade__method__ConnectedDevice_impl(
         },
     )
 }
-fn wire_threshold__method__FrostKey_impl(
+fn wire_appkey__method__FrostKey_impl(
     that: impl Wire2Api<FrostKey> + UnwindSafe,
 ) -> support::WireSyncReturn {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
         WrapInfo {
-            debug_name: "threshold__method__FrostKey",
+            debug_name: "appkey__method__FrostKey",
             port: None,
             mode: FfiCallMode::Sync,
         },
         move || {
             let api_that = that.wire2api();
-            Result::<_, ()>::Ok(FrostKey::threshold(&api_that))
-        },
-    )
-}
-fn wire_id__method__FrostKey_impl(
-    that: impl Wire2Api<FrostKey> + UnwindSafe,
-) -> support::WireSyncReturn {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
-        WrapInfo {
-            debug_name: "id__method__FrostKey",
-            port: None,
-            mode: FfiCallMode::Sync,
-        },
-        move || {
-            let api_that = that.wire2api();
-            Result::<_, ()>::Ok(FrostKey::id(&api_that))
+            Result::<_, ()>::Ok(FrostKey::appkey(&api_that))
         },
     )
 }
@@ -316,33 +327,108 @@ fn wire_key_name__method__FrostKey_impl(
         },
     )
 }
-fn wire_devices__method__FrostKey_impl(
+fn wire_access_structures__method__FrostKey_impl(
     that: impl Wire2Api<FrostKey> + UnwindSafe,
 ) -> support::WireSyncReturn {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
         WrapInfo {
-            debug_name: "devices__method__FrostKey",
+            debug_name: "access_structures__method__FrostKey",
             port: None,
             mode: FfiCallMode::Sync,
         },
         move || {
             let api_that = that.wire2api();
-            Result::<_, ()>::Ok(FrostKey::devices(&api_that))
+            Result::<_, ()>::Ok(FrostKey::access_structures(&api_that))
         },
     )
 }
-fn wire_polynomial_identifier__method__FrostKey_impl(
-    that: impl Wire2Api<FrostKey> + UnwindSafe,
+fn wire_threshold__method__AccessStructure_impl(
+    that: impl Wire2Api<AccessStructure> + UnwindSafe,
 ) -> support::WireSyncReturn {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
         WrapInfo {
-            debug_name: "polynomial_identifier__method__FrostKey",
+            debug_name: "threshold__method__AccessStructure",
             port: None,
             mode: FfiCallMode::Sync,
         },
         move || {
             let api_that = that.wire2api();
-            Result::<_, ()>::Ok(FrostKey::polynomial_identifier(&api_that))
+            Result::<_, ()>::Ok(AccessStructure::threshold(&api_that))
+        },
+    )
+}
+fn wire_access_structure_ref__method__AccessStructure_impl(
+    that: impl Wire2Api<AccessStructure> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "access_structure_ref__method__AccessStructure",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            Result::<_, ()>::Ok(AccessStructure::access_structure_ref(&api_that))
+        },
+    )
+}
+fn wire_devices__method__AccessStructure_impl(
+    that: impl Wire2Api<AccessStructure> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "devices__method__AccessStructure",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            Result::<_, ()>::Ok(AccessStructure::devices(&api_that))
+        },
+    )
+}
+fn wire_id__method__AccessStructure_impl(
+    that: impl Wire2Api<AccessStructure> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "id__method__AccessStructure",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            Result::<_, ()>::Ok(AccessStructure::id(&api_that))
+        },
+    )
+}
+fn wire_short_id__method__AccessStructure_impl(
+    that: impl Wire2Api<AccessStructure> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "short_id__method__AccessStructure",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            Result::<_, ()>::Ok(AccessStructure::short_id(&api_that))
+        },
+    )
+}
+fn wire_appkey__method__AccessStructure_impl(
+    that: impl Wire2Api<AccessStructure> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "appkey__method__AccessStructure",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            Result::<_, ()>::Ok(AccessStructure::appkey(&api_that))
         },
     )
 }
@@ -444,7 +530,7 @@ fn wire_get_device__method__DeviceListState_impl(
 fn wire_sub_tx_state__method__Wallet_impl(
     port_: MessagePort,
     that: impl Wire2Api<Wallet> + UnwindSafe,
-    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    appkey: impl Wire2Api<Appkey> + UnwindSafe,
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
         WrapInfo {
@@ -454,11 +540,11 @@ fn wire_sub_tx_state__method__Wallet_impl(
         },
         move || {
             let api_that = that.wire2api();
-            let api_key_id = key_id.wire2api();
+            let api_appkey = appkey.wire2api();
             move |task_callback| {
                 Wallet::sub_tx_state(
                     &api_that,
-                    api_key_id,
+                    api_appkey,
                     task_callback.stream_sink::<_, TxState>(),
                 )
             }
@@ -467,7 +553,7 @@ fn wire_sub_tx_state__method__Wallet_impl(
 }
 fn wire_tx_state__method__Wallet_impl(
     that: impl Wire2Api<Wallet> + UnwindSafe,
-    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    appkey: impl Wire2Api<Appkey> + UnwindSafe,
 ) -> support::WireSyncReturn {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
         WrapInfo {
@@ -477,15 +563,15 @@ fn wire_tx_state__method__Wallet_impl(
         },
         move || {
             let api_that = that.wire2api();
-            let api_key_id = key_id.wire2api();
-            Result::<_, ()>::Ok(Wallet::tx_state(&api_that, api_key_id))
+            let api_appkey = appkey.wire2api();
+            Result::<_, ()>::Ok(Wallet::tx_state(&api_that, api_appkey))
         },
     )
 }
 fn wire_sync_txids__method__Wallet_impl(
     port_: MessagePort,
     that: impl Wire2Api<Wallet> + UnwindSafe,
-    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    appkey: impl Wire2Api<Appkey> + UnwindSafe,
     txids: impl Wire2Api<Vec<String>> + UnwindSafe,
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
@@ -496,12 +582,12 @@ fn wire_sync_txids__method__Wallet_impl(
         },
         move || {
             let api_that = that.wire2api();
-            let api_key_id = key_id.wire2api();
+            let api_appkey = appkey.wire2api();
             let api_txids = txids.wire2api();
             move |task_callback| {
                 Wallet::sync_txids(
                     &api_that,
-                    api_key_id,
+                    api_appkey,
                     api_txids,
                     task_callback.stream_sink::<_, f64>(),
                 )
@@ -512,7 +598,7 @@ fn wire_sync_txids__method__Wallet_impl(
 fn wire_sync__method__Wallet_impl(
     port_: MessagePort,
     that: impl Wire2Api<Wallet> + UnwindSafe,
-    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    appkey: impl Wire2Api<Appkey> + UnwindSafe,
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
         WrapInfo {
@@ -522,9 +608,9 @@ fn wire_sync__method__Wallet_impl(
         },
         move || {
             let api_that = that.wire2api();
-            let api_key_id = key_id.wire2api();
+            let api_appkey = appkey.wire2api();
             move |task_callback| {
-                Wallet::sync(&api_that, api_key_id, task_callback.stream_sink::<_, f64>())
+                Wallet::sync(&api_that, api_appkey, task_callback.stream_sink::<_, f64>())
             }
         },
     )
@@ -532,7 +618,7 @@ fn wire_sync__method__Wallet_impl(
 fn wire_next_address__method__Wallet_impl(
     port_: MessagePort,
     that: impl Wire2Api<Wallet> + UnwindSafe,
-    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    appkey: impl Wire2Api<Appkey> + UnwindSafe,
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, Address, _>(
         WrapInfo {
@@ -542,14 +628,14 @@ fn wire_next_address__method__Wallet_impl(
         },
         move || {
             let api_that = that.wire2api();
-            let api_key_id = key_id.wire2api();
-            move |task_callback| Wallet::next_address(&api_that, api_key_id)
+            let api_appkey = appkey.wire2api();
+            move |task_callback| Wallet::next_address(&api_that, api_appkey)
         },
     )
 }
 fn wire_addresses_state__method__Wallet_impl(
     that: impl Wire2Api<Wallet> + UnwindSafe,
-    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    appkey: impl Wire2Api<Appkey> + UnwindSafe,
 ) -> support::WireSyncReturn {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
         WrapInfo {
@@ -559,15 +645,15 @@ fn wire_addresses_state__method__Wallet_impl(
         },
         move || {
             let api_that = that.wire2api();
-            let api_key_id = key_id.wire2api();
-            Result::<_, ()>::Ok(Wallet::addresses_state(&api_that, api_key_id))
+            let api_appkey = appkey.wire2api();
+            Result::<_, ()>::Ok(Wallet::addresses_state(&api_that, api_appkey))
         },
     )
 }
 fn wire_send_to__method__Wallet_impl(
     port_: MessagePort,
     that: impl Wire2Api<Wallet> + UnwindSafe,
-    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    appkey: impl Wire2Api<Appkey> + UnwindSafe,
     to_address: impl Wire2Api<String> + UnwindSafe,
     value: impl Wire2Api<u64> + UnwindSafe,
     feerate: impl Wire2Api<f64> + UnwindSafe,
@@ -580,14 +666,14 @@ fn wire_send_to__method__Wallet_impl(
         },
         move || {
             let api_that = that.wire2api();
-            let api_key_id = key_id.wire2api();
+            let api_appkey = appkey.wire2api();
             let api_to_address = to_address.wire2api();
             let api_value = value.wire2api();
             let api_feerate = feerate.wire2api();
             move |task_callback| {
                 Wallet::send_to(
                     &api_that,
-                    api_key_id,
+                    api_appkey,
                     api_to_address,
                     api_value,
                     api_feerate,
@@ -599,7 +685,7 @@ fn wire_send_to__method__Wallet_impl(
 fn wire_broadcast_tx__method__Wallet_impl(
     port_: MessagePort,
     that: impl Wire2Api<Wallet> + UnwindSafe,
-    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    appkey: impl Wire2Api<Appkey> + UnwindSafe,
     tx: impl Wire2Api<SignedTx> + UnwindSafe,
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
@@ -610,16 +696,16 @@ fn wire_broadcast_tx__method__Wallet_impl(
         },
         move || {
             let api_that = that.wire2api();
-            let api_key_id = key_id.wire2api();
+            let api_appkey = appkey.wire2api();
             let api_tx = tx.wire2api();
-            move |task_callback| Wallet::broadcast_tx(&api_that, api_key_id, api_tx)
+            move |task_callback| Wallet::broadcast_tx(&api_that, api_appkey, api_tx)
         },
     )
 }
 fn wire_psbt_to_unsigned_tx__method__Wallet_impl(
     that: impl Wire2Api<Wallet> + UnwindSafe,
     psbt: impl Wire2Api<Psbt> + UnwindSafe,
-    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    appkey: impl Wire2Api<Appkey> + UnwindSafe,
 ) -> support::WireSyncReturn {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
         WrapInfo {
@@ -630,8 +716,8 @@ fn wire_psbt_to_unsigned_tx__method__Wallet_impl(
         move || {
             let api_that = that.wire2api();
             let api_psbt = psbt.wire2api();
-            let api_key_id = key_id.wire2api();
-            Wallet::psbt_to_unsigned_tx(&api_that, api_psbt, api_key_id)
+            let api_appkey = appkey.wire2api();
+            Wallet::psbt_to_unsigned_tx(&api_that, api_psbt, api_appkey)
         },
     )
 }
@@ -712,7 +798,7 @@ fn wire_is_mainnet__method__BitcoinNetwork_impl(
 }
 fn wire_descriptor_for_key__method__BitcoinNetwork_impl(
     that: impl Wire2Api<BitcoinNetwork> + UnwindSafe,
-    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    appkey: impl Wire2Api<Appkey> + UnwindSafe,
 ) -> support::WireSyncReturn {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
         WrapInfo {
@@ -722,8 +808,8 @@ fn wire_descriptor_for_key__method__BitcoinNetwork_impl(
         },
         move || {
             let api_that = that.wire2api();
-            let api_key_id = key_id.wire2api();
-            Result::<_, ()>::Ok(BitcoinNetwork::descriptor_for_key(&api_that, api_key_id))
+            let api_appkey = appkey.wire2api();
+            Result::<_, ()>::Ok(BitcoinNetwork::descriptor_for_key(&api_that, api_appkey))
         },
     )
 }
@@ -889,7 +975,7 @@ fn wire_display_backup__method__Coordinator_impl(
     port_: MessagePort,
     that: impl Wire2Api<Coordinator> + UnwindSafe,
     id: impl Wire2Api<DeviceId> + UnwindSafe,
-    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    access_structure_ref: impl Wire2Api<AccessStructureRef> + UnwindSafe,
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
         WrapInfo {
@@ -900,12 +986,12 @@ fn wire_display_backup__method__Coordinator_impl(
         move || {
             let api_that = that.wire2api();
             let api_id = id.wire2api();
-            let api_key_id = key_id.wire2api();
+            let api_access_structure_ref = access_structure_ref.wire2api();
             move |task_callback| {
                 Coordinator::display_backup(
                     &api_that,
                     api_id,
-                    api_key_id,
+                    api_access_structure_ref,
                     task_callback.stream_sink::<_, bool>(),
                 )
             }
@@ -947,7 +1033,7 @@ fn wire_sub_key_events__method__Coordinator_impl(
 }
 fn wire_get_key__method__Coordinator_impl(
     that: impl Wire2Api<Coordinator> + UnwindSafe,
-    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    appkey: impl Wire2Api<Appkey> + UnwindSafe,
 ) -> support::WireSyncReturn {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
         WrapInfo {
@@ -957,14 +1043,14 @@ fn wire_get_key__method__Coordinator_impl(
         },
         move || {
             let api_that = that.wire2api();
-            let api_key_id = key_id.wire2api();
-            Result::<_, ()>::Ok(Coordinator::get_key(&api_that, api_key_id))
+            let api_appkey = appkey.wire2api();
+            Result::<_, ()>::Ok(Coordinator::get_key(&api_that, api_appkey))
         },
     )
 }
 fn wire_get_key_name__method__Coordinator_impl(
     that: impl Wire2Api<Coordinator> + UnwindSafe,
-    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    appkey: impl Wire2Api<Appkey> + UnwindSafe,
 ) -> support::WireSyncReturn {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
         WrapInfo {
@@ -974,32 +1060,35 @@ fn wire_get_key_name__method__Coordinator_impl(
         },
         move || {
             let api_that = that.wire2api();
-            let api_key_id = key_id.wire2api();
-            Result::<_, ()>::Ok(Coordinator::get_key_name(&api_that, api_key_id))
+            let api_appkey = appkey.wire2api();
+            Result::<_, ()>::Ok(Coordinator::get_key_name(&api_that, api_appkey))
         },
     )
 }
-fn wire_keys_for_device__method__Coordinator_impl(
+fn wire_access_structures_involving_device__method__Coordinator_impl(
     that: impl Wire2Api<Coordinator> + UnwindSafe,
     device_id: impl Wire2Api<DeviceId> + UnwindSafe,
 ) -> support::WireSyncReturn {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
         WrapInfo {
-            debug_name: "keys_for_device__method__Coordinator",
+            debug_name: "access_structures_involving_device__method__Coordinator",
             port: None,
             mode: FfiCallMode::Sync,
         },
         move || {
             let api_that = that.wire2api();
             let api_device_id = device_id.wire2api();
-            Result::<_, ()>::Ok(Coordinator::keys_for_device(&api_that, api_device_id))
+            Result::<_, ()>::Ok(Coordinator::access_structures_involving_device(
+                &api_that,
+                api_device_id,
+            ))
         },
     )
 }
 fn wire_start_signing__method__Coordinator_impl(
     port_: MessagePort,
     that: impl Wire2Api<Coordinator> + UnwindSafe,
-    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    access_structure_ref: impl Wire2Api<AccessStructureRef> + UnwindSafe,
     devices: impl Wire2Api<Vec<DeviceId>> + UnwindSafe,
     message: impl Wire2Api<String> + UnwindSafe,
 ) {
@@ -1011,13 +1100,13 @@ fn wire_start_signing__method__Coordinator_impl(
         },
         move || {
             let api_that = that.wire2api();
-            let api_key_id = key_id.wire2api();
+            let api_access_structure_ref = access_structure_ref.wire2api();
             let api_devices = devices.wire2api();
             let api_message = message.wire2api();
             move |task_callback| {
                 Coordinator::start_signing(
                     &api_that,
-                    api_key_id,
+                    api_access_structure_ref,
                     api_devices,
                     api_message,
                     task_callback.stream_sink::<_, mirror_SigningState>(),
@@ -1029,7 +1118,7 @@ fn wire_start_signing__method__Coordinator_impl(
 fn wire_start_signing_tx__method__Coordinator_impl(
     port_: MessagePort,
     that: impl Wire2Api<Coordinator> + UnwindSafe,
-    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    access_structure_ref: impl Wire2Api<AccessStructureRef> + UnwindSafe,
     unsigned_tx: impl Wire2Api<UnsignedTx> + UnwindSafe,
     devices: impl Wire2Api<Vec<DeviceId>> + UnwindSafe,
 ) {
@@ -1041,13 +1130,13 @@ fn wire_start_signing_tx__method__Coordinator_impl(
         },
         move || {
             let api_that = that.wire2api();
-            let api_key_id = key_id.wire2api();
+            let api_access_structure_ref = access_structure_ref.wire2api();
             let api_unsigned_tx = unsigned_tx.wire2api();
             let api_devices = devices.wire2api();
             move |task_callback| {
                 Coordinator::start_signing_tx(
                     &api_that,
-                    api_key_id,
+                    api_access_structure_ref,
                     api_unsigned_tx,
                     api_devices,
                     task_callback.stream_sink::<_, mirror_SigningState>(),
@@ -1122,7 +1211,7 @@ fn wire_generate_new_key__method__Coordinator_impl(
 }
 fn wire_persisted_sign_session_description__method__Coordinator_impl(
     that: impl Wire2Api<Coordinator> + UnwindSafe,
-    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    appkey: impl Wire2Api<Appkey> + UnwindSafe,
 ) -> support::WireSyncReturn {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
         WrapInfo {
@@ -1132,9 +1221,9 @@ fn wire_persisted_sign_session_description__method__Coordinator_impl(
         },
         move || {
             let api_that = that.wire2api();
-            let api_key_id = key_id.wire2api();
+            let api_appkey = appkey.wire2api();
             Result::<_, ()>::Ok(Coordinator::persisted_sign_session_description(
-                &api_that, api_key_id,
+                &api_that, api_appkey,
             ))
         },
     )
@@ -1142,7 +1231,7 @@ fn wire_persisted_sign_session_description__method__Coordinator_impl(
 fn wire_try_restore_signing_session__method__Coordinator_impl(
     port_: MessagePort,
     that: impl Wire2Api<Coordinator> + UnwindSafe,
-    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    appkey: impl Wire2Api<Appkey> + UnwindSafe,
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
         WrapInfo {
@@ -1152,11 +1241,11 @@ fn wire_try_restore_signing_session__method__Coordinator_impl(
         },
         move || {
             let api_that = that.wire2api();
-            let api_key_id = key_id.wire2api();
+            let api_appkey = appkey.wire2api();
             move |task_callback| {
                 Coordinator::try_restore_signing_session(
                     &api_that,
-                    api_key_id,
+                    api_appkey,
                     task_callback.stream_sink::<_, mirror_SigningState>(),
                 )
             }
@@ -1257,7 +1346,7 @@ fn wire_final_keygen_ack__method__Coordinator_impl(
     port_: MessagePort,
     that: impl Wire2Api<Coordinator> + UnwindSafe,
 ) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, mirror_KeyId, _>(
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, mirror_AccessStructureRef, _>(
         WrapInfo {
             debug_name: "final_keygen_ack__method__Coordinator",
             port: Some(port_),
@@ -1273,7 +1362,7 @@ fn wire_check_share_on_device__method__Coordinator_impl(
     port_: MessagePort,
     that: impl Wire2Api<Coordinator> + UnwindSafe,
     device_id: impl Wire2Api<DeviceId> + UnwindSafe,
-    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    access_structure_ref: impl Wire2Api<AccessStructureRef> + UnwindSafe,
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
         WrapInfo {
@@ -1284,21 +1373,38 @@ fn wire_check_share_on_device__method__Coordinator_impl(
         move || {
             let api_that = that.wire2api();
             let api_device_id = device_id.wire2api();
-            let api_key_id = key_id.wire2api();
+            let api_access_structure_ref = access_structure_ref.wire2api();
             move |task_callback| {
                 Coordinator::check_share_on_device(
                     &api_that,
                     api_device_id,
-                    api_key_id,
+                    api_access_structure_ref,
                     task_callback.stream_sink::<_, mirror_CheckShareState>(),
                 )
             }
         },
     )
 }
+fn wire_get_access_structure__method__Coordinator_impl(
+    that: impl Wire2Api<Coordinator> + UnwindSafe,
+    as_ref: impl Wire2Api<AccessStructureRef> + UnwindSafe,
+) -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "get_access_structure__method__Coordinator",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || {
+            let api_that = that.wire2api();
+            let api_as_ref = as_ref.wire2api();
+            Result::<_, ()>::Ok(Coordinator::get_access_structure(&api_that, api_as_ref))
+        },
+    )
+}
 fn wire_effect__method__SignedTx_impl(
     that: impl Wire2Api<SignedTx> + UnwindSafe,
-    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    appkey: impl Wire2Api<Appkey> + UnwindSafe,
     network: impl Wire2Api<BitcoinNetwork> + UnwindSafe,
 ) -> support::WireSyncReturn {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
@@ -1309,9 +1415,9 @@ fn wire_effect__method__SignedTx_impl(
         },
         move || {
             let api_that = that.wire2api();
-            let api_key_id = key_id.wire2api();
+            let api_appkey = appkey.wire2api();
             let api_network = network.wire2api();
-            SignedTx::effect(&api_that, api_key_id, api_network)
+            SignedTx::effect(&api_that, api_appkey, api_network)
         },
     )
 }
@@ -1363,7 +1469,7 @@ fn wire_complete__method__UnsignedTx_impl(
 }
 fn wire_effect__method__UnsignedTx_impl(
     that: impl Wire2Api<UnsignedTx> + UnwindSafe,
-    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    appkey: impl Wire2Api<Appkey> + UnwindSafe,
     network: impl Wire2Api<BitcoinNetwork> + UnwindSafe,
 ) -> support::WireSyncReturn {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
@@ -1374,9 +1480,9 @@ fn wire_effect__method__UnsignedTx_impl(
         },
         move || {
             let api_that = that.wire2api();
-            let api_key_id = key_id.wire2api();
+            let api_appkey = appkey.wire2api();
             let api_network = network.wire2api();
-            UnsignedTx::effect(&api_that, api_key_id, api_network)
+            UnsignedTx::effect(&api_that, api_appkey, api_network)
         },
     )
 }
@@ -1512,7 +1618,7 @@ fn wire_load_wallet__method__Settings_impl(
 fn wire_set_wallet_network__method__Settings_impl(
     port_: MessagePort,
     that: impl Wire2Api<Settings> + UnwindSafe,
-    key_id: impl Wire2Api<KeyId> + UnwindSafe,
+    appkey: impl Wire2Api<Appkey> + UnwindSafe,
     network: impl Wire2Api<BitcoinNetwork> + UnwindSafe,
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
@@ -1523,9 +1629,9 @@ fn wire_set_wallet_network__method__Settings_impl(
         },
         move || {
             let api_that = that.wire2api();
-            let api_key_id = key_id.wire2api();
+            let api_appkey = appkey.wire2api();
             let api_network = network.wire2api();
-            move |task_callback| Settings::set_wallet_network(&api_that, api_key_id, api_network)
+            move |task_callback| Settings::set_wallet_network(&api_that, api_appkey, api_network)
         },
     )
 }
@@ -1596,6 +1702,15 @@ fn wire_subscribe_chain_status__method__Settings_impl(
 // Section: wrapper structs
 
 #[derive(Clone)]
+pub struct mirror_AccessStructureId(AccessStructureId);
+
+#[derive(Clone)]
+pub struct mirror_AccessStructureRef(AccessStructureRef);
+
+#[derive(Clone)]
+pub struct mirror_Appkey(Appkey);
+
+#[derive(Clone)]
 pub struct mirror_ChainStatus(ChainStatus);
 
 #[derive(Clone)]
@@ -1620,7 +1735,7 @@ pub struct mirror_FirmwareUpgradeConfirmState(FirmwareUpgradeConfirmState);
 pub struct mirror_KeyGenState(KeyGenState);
 
 #[derive(Clone)]
-pub struct mirror_KeyId(KeyId);
+pub struct mirror_SessionHash(SessionHash);
 
 #[derive(Clone)]
 pub struct mirror_SigningState(SigningState);
@@ -1628,6 +1743,19 @@ pub struct mirror_SigningState(SigningState);
 // Section: static checks
 
 const _: fn() = || {
+    {
+        let AccessStructureId_ = None::<AccessStructureId>.unwrap();
+        let _: [u8; 32] = AccessStructureId_.0;
+    }
+    {
+        let AccessStructureRef = None::<AccessStructureRef>.unwrap();
+        let _: Appkey = AccessStructureRef.appkey;
+        let _: AccessStructureId = AccessStructureRef.access_structure_id;
+    }
+    {
+        let Appkey_ = None::<Appkey>.unwrap();
+        let _: [u8; 65] = Appkey_.0;
+    }
     {
         let ChainStatus = None::<ChainStatus>.unwrap();
         let _: String = ChainStatus.electrum_url;
@@ -1667,17 +1795,18 @@ const _: fn() = || {
     }
     {
         let KeyGenState = None::<KeyGenState>.unwrap();
+        let _: usize = KeyGenState.threshold;
         let _: Vec<DeviceId> = KeyGenState.devices;
         let _: Vec<DeviceId> = KeyGenState.got_shares;
         let _: Vec<DeviceId> = KeyGenState.session_acks;
-        let _: Option<[u8; 32]> = KeyGenState.session_hash;
-        let _: Option<KeyId> = KeyGenState.finished;
+        let _: bool = KeyGenState.all_acks;
+        let _: Option<SessionHash> = KeyGenState.session_hash;
+        let _: Option<AccessStructureRef> = KeyGenState.finished;
         let _: Option<String> = KeyGenState.aborted;
-        let _: usize = KeyGenState.threshold;
     }
     {
-        let KeyId_ = None::<KeyId>.unwrap();
-        let _: [u8; 33] = KeyId_.0;
+        let SessionHash_ = None::<SessionHash>.unwrap();
+        let _: [u8; 32] = SessionHash_.0;
     }
     {
         let SigningState = None::<SigningState>.unwrap();
@@ -1767,6 +1896,46 @@ impl Wire2Api<usize> for usize {
 
 // Section: impl IntoDart
 
+impl support::IntoDart for AccessStructure {
+    fn into_dart(self) -> support::DartAbi {
+        vec![self.0.into_dart()].into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for AccessStructure {}
+impl rust2dart::IntoIntoDart<AccessStructure> for AccessStructure {
+    fn into_into_dart(self) -> Self {
+        self
+    }
+}
+
+impl support::IntoDart for mirror_AccessStructureId {
+    fn into_dart(self) -> support::DartAbi {
+        vec![self.0 .0.into_into_dart().into_dart()].into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for mirror_AccessStructureId {}
+impl rust2dart::IntoIntoDart<mirror_AccessStructureId> for AccessStructureId {
+    fn into_into_dart(self) -> mirror_AccessStructureId {
+        mirror_AccessStructureId(self)
+    }
+}
+
+impl support::IntoDart for mirror_AccessStructureRef {
+    fn into_dart(self) -> support::DartAbi {
+        vec![
+            self.0.appkey.into_into_dart().into_dart(),
+            self.0.access_structure_id.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for mirror_AccessStructureRef {}
+impl rust2dart::IntoIntoDart<mirror_AccessStructureRef> for AccessStructureRef {
+    fn into_into_dart(self) -> mirror_AccessStructureRef {
+        mirror_AccessStructureRef(self)
+    }
+}
+
 impl support::IntoDart for Address {
     fn into_dart(self) -> support::DartAbi {
         vec![
@@ -1781,6 +1950,18 @@ impl support::IntoDartExceptPrimitive for Address {}
 impl rust2dart::IntoIntoDart<Address> for Address {
     fn into_into_dart(self) -> Self {
         self
+    }
+}
+
+impl support::IntoDart for mirror_Appkey {
+    fn into_dart(self) -> support::DartAbi {
+        vec![self.0 .0.into_into_dart().into_dart()].into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for mirror_Appkey {}
+impl rust2dart::IntoIntoDart<mirror_Appkey> for Appkey {
+    fn into_into_dart(self) -> mirror_Appkey {
+        mirror_Appkey(self)
     }
 }
 
@@ -2084,13 +2265,20 @@ impl rust2dart::IntoIntoDart<FrostKey> for FrostKey {
 impl support::IntoDart for mirror_KeyGenState {
     fn into_dart(self) -> support::DartAbi {
         vec![
+            self.0.threshold.into_into_dart().into_dart(),
             self.0.devices.into_into_dart().into_dart(),
             self.0.got_shares.into_into_dart().into_dart(),
             self.0.session_acks.into_into_dart().into_dart(),
-            self.0.session_hash.into_dart(),
-            self.0.finished.map(|v| mirror_KeyId(v)).into_dart(),
+            self.0.all_acks.into_into_dart().into_dart(),
+            self.0
+                .session_hash
+                .map(|v| mirror_SessionHash(v))
+                .into_dart(),
+            self.0
+                .finished
+                .map(|v| mirror_AccessStructureRef(v))
+                .into_dart(),
             self.0.aborted.into_dart(),
-            self.0.threshold.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -2099,18 +2287,6 @@ impl support::IntoDartExceptPrimitive for mirror_KeyGenState {}
 impl rust2dart::IntoIntoDart<mirror_KeyGenState> for KeyGenState {
     fn into_into_dart(self) -> mirror_KeyGenState {
         mirror_KeyGenState(self)
-    }
-}
-
-impl support::IntoDart for mirror_KeyId {
-    fn into_dart(self) -> support::DartAbi {
-        vec![self.0 .0.into_into_dart().into_dart()].into_dart()
-    }
-}
-impl support::IntoDartExceptPrimitive for mirror_KeyId {}
-impl rust2dart::IntoIntoDart<mirror_KeyId> for KeyId {
-    fn into_into_dart(self) -> mirror_KeyId {
-        mirror_KeyId(self)
     }
 }
 
@@ -2259,6 +2435,18 @@ impl support::IntoDartExceptPrimitive for QrReader {}
 impl rust2dart::IntoIntoDart<QrReader> for QrReader {
     fn into_into_dart(self) -> Self {
         self
+    }
+}
+
+impl support::IntoDart for mirror_SessionHash {
+    fn into_dart(self) -> support::DartAbi {
+        vec![self.0 .0.into_into_dart().into_dart()].into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for mirror_SessionHash {}
+impl rust2dart::IntoIntoDart<mirror_SessionHash> for SessionHash {
+    fn into_into_dart(self) -> mirror_SessionHash {
+        mirror_SessionHash(self)
     }
 }
 

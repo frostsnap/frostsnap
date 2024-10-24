@@ -52,11 +52,6 @@ pub extern "C" fn wire_load_host_handles_serial(port_: i64, app_dir: *mut wire_u
 }
 
 #[no_mangle]
-pub extern "C" fn wire_echo_key_id(port_: i64, key_id: *mut wire_KeyId) {
-    wire_echo_key_id_impl(port_, key_id)
-}
-
-#[no_mangle]
 pub extern "C" fn wire_psbt_bytes_to_psbt(
     psbt_bytes: *mut wire_uint_8_list,
 ) -> support::WireSyncReturn {
@@ -71,6 +66,21 @@ pub extern "C" fn wire_new_qr_reader(port_: i64) {
 #[no_mangle]
 pub extern "C" fn wire_new_qr_encoder(port_: i64, bytes: *mut wire_uint_8_list) {
     wire_new_qr_encoder_impl(port_, bytes)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_echo_appkey(port_: i64, appkey: *mut wire_Appkey) {
+    wire_echo_appkey_impl(port_, appkey)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_echo_asid(port_: i64, value: *mut wire_AccessStructureId) {
+    wire_echo_asid_impl(port_, value)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_echo_asr(port_: i64, value: *mut wire_AccessStructureRef) {
+    wire_echo_asr_impl(port_, value)
 }
 
 #[no_mangle]
@@ -95,15 +105,10 @@ pub extern "C" fn wire_needs_firmware_upgrade__method__ConnectedDevice(
 }
 
 #[no_mangle]
-pub extern "C" fn wire_threshold__method__FrostKey(
+pub extern "C" fn wire_appkey__method__FrostKey(
     that: *mut wire_FrostKey,
 ) -> support::WireSyncReturn {
-    wire_threshold__method__FrostKey_impl(that)
-}
-
-#[no_mangle]
-pub extern "C" fn wire_id__method__FrostKey(that: *mut wire_FrostKey) -> support::WireSyncReturn {
-    wire_id__method__FrostKey_impl(that)
+    wire_appkey__method__FrostKey_impl(that)
 }
 
 #[no_mangle]
@@ -114,17 +119,52 @@ pub extern "C" fn wire_key_name__method__FrostKey(
 }
 
 #[no_mangle]
-pub extern "C" fn wire_devices__method__FrostKey(
+pub extern "C" fn wire_access_structures__method__FrostKey(
     that: *mut wire_FrostKey,
 ) -> support::WireSyncReturn {
-    wire_devices__method__FrostKey_impl(that)
+    wire_access_structures__method__FrostKey_impl(that)
 }
 
 #[no_mangle]
-pub extern "C" fn wire_polynomial_identifier__method__FrostKey(
-    that: *mut wire_FrostKey,
+pub extern "C" fn wire_threshold__method__AccessStructure(
+    that: *mut wire_AccessStructure,
 ) -> support::WireSyncReturn {
-    wire_polynomial_identifier__method__FrostKey_impl(that)
+    wire_threshold__method__AccessStructure_impl(that)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_access_structure_ref__method__AccessStructure(
+    that: *mut wire_AccessStructure,
+) -> support::WireSyncReturn {
+    wire_access_structure_ref__method__AccessStructure_impl(that)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_devices__method__AccessStructure(
+    that: *mut wire_AccessStructure,
+) -> support::WireSyncReturn {
+    wire_devices__method__AccessStructure_impl(that)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_id__method__AccessStructure(
+    that: *mut wire_AccessStructure,
+) -> support::WireSyncReturn {
+    wire_id__method__AccessStructure_impl(that)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_short_id__method__AccessStructure(
+    that: *mut wire_AccessStructure,
+) -> support::WireSyncReturn {
+    wire_short_id__method__AccessStructure_impl(that)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_appkey__method__AccessStructure(
+    that: *mut wire_AccessStructure,
+) -> support::WireSyncReturn {
+    wire_appkey__method__AccessStructure_impl(that)
 }
 
 #[no_mangle]
@@ -176,84 +216,84 @@ pub extern "C" fn wire_get_device__method__DeviceListState(
 pub extern "C" fn wire_sub_tx_state__method__Wallet(
     port_: i64,
     that: *mut wire_Wallet,
-    key_id: *mut wire_KeyId,
+    appkey: *mut wire_Appkey,
 ) {
-    wire_sub_tx_state__method__Wallet_impl(port_, that, key_id)
+    wire_sub_tx_state__method__Wallet_impl(port_, that, appkey)
 }
 
 #[no_mangle]
 pub extern "C" fn wire_tx_state__method__Wallet(
     that: *mut wire_Wallet,
-    key_id: *mut wire_KeyId,
+    appkey: *mut wire_Appkey,
 ) -> support::WireSyncReturn {
-    wire_tx_state__method__Wallet_impl(that, key_id)
+    wire_tx_state__method__Wallet_impl(that, appkey)
 }
 
 #[no_mangle]
 pub extern "C" fn wire_sync_txids__method__Wallet(
     port_: i64,
     that: *mut wire_Wallet,
-    key_id: *mut wire_KeyId,
+    appkey: *mut wire_Appkey,
     txids: *mut wire_StringList,
 ) {
-    wire_sync_txids__method__Wallet_impl(port_, that, key_id, txids)
+    wire_sync_txids__method__Wallet_impl(port_, that, appkey, txids)
 }
 
 #[no_mangle]
 pub extern "C" fn wire_sync__method__Wallet(
     port_: i64,
     that: *mut wire_Wallet,
-    key_id: *mut wire_KeyId,
+    appkey: *mut wire_Appkey,
 ) {
-    wire_sync__method__Wallet_impl(port_, that, key_id)
+    wire_sync__method__Wallet_impl(port_, that, appkey)
 }
 
 #[no_mangle]
 pub extern "C" fn wire_next_address__method__Wallet(
     port_: i64,
     that: *mut wire_Wallet,
-    key_id: *mut wire_KeyId,
+    appkey: *mut wire_Appkey,
 ) {
-    wire_next_address__method__Wallet_impl(port_, that, key_id)
+    wire_next_address__method__Wallet_impl(port_, that, appkey)
 }
 
 #[no_mangle]
 pub extern "C" fn wire_addresses_state__method__Wallet(
     that: *mut wire_Wallet,
-    key_id: *mut wire_KeyId,
+    appkey: *mut wire_Appkey,
 ) -> support::WireSyncReturn {
-    wire_addresses_state__method__Wallet_impl(that, key_id)
+    wire_addresses_state__method__Wallet_impl(that, appkey)
 }
 
 #[no_mangle]
 pub extern "C" fn wire_send_to__method__Wallet(
     port_: i64,
     that: *mut wire_Wallet,
-    key_id: *mut wire_KeyId,
+    appkey: *mut wire_Appkey,
     to_address: *mut wire_uint_8_list,
     value: u64,
     feerate: f64,
 ) {
-    wire_send_to__method__Wallet_impl(port_, that, key_id, to_address, value, feerate)
+    wire_send_to__method__Wallet_impl(port_, that, appkey, to_address, value, feerate)
 }
 
 #[no_mangle]
 pub extern "C" fn wire_broadcast_tx__method__Wallet(
     port_: i64,
     that: *mut wire_Wallet,
-    key_id: *mut wire_KeyId,
+    appkey: *mut wire_Appkey,
     tx: *mut wire_SignedTx,
 ) {
-    wire_broadcast_tx__method__Wallet_impl(port_, that, key_id, tx)
+    wire_broadcast_tx__method__Wallet_impl(port_, that, appkey, tx)
 }
 
 #[no_mangle]
 pub extern "C" fn wire_psbt_to_unsigned_tx__method__Wallet(
     that: *mut wire_Wallet,
     psbt: *mut wire_Psbt,
-    key_id: *mut wire_KeyId,
+    appkey: *mut wire_Appkey,
 ) -> support::WireSyncReturn {
-    wire_psbt_to_unsigned_tx__method__Wallet_impl(that, psbt, key_id)
+    wire_psbt_to_unsigned_tx__method__Wallet_impl(that, psbt, appkey)
 }
 
 #[no_mangle]
@@ -296,9 +336,9 @@ pub extern "C" fn wire_is_mainnet__method__BitcoinNetwork(
 #[no_mangle]
 pub extern "C" fn wire_descriptor_for_key__method__BitcoinNetwork(
     that: *mut wire_BitcoinNetwork,
-    key_id: *mut wire_KeyId,
+    appkey: *mut wire_Appkey,
 ) -> support::WireSyncReturn {
-    wire_descriptor_for_key__method__BitcoinNetwork_impl(that, key_id)
+    wire_descriptor_for_key__method__BitcoinNetwork_impl(that, appkey)
 }
 
 #[no_mangle]
@@ -373,9 +413,9 @@ pub extern "C" fn wire_display_backup__method__Coordinator(
     port_: i64,
     that: *mut wire_Coordinator,
     id: *mut wire_DeviceId,
-    key_id: *mut wire_KeyId,
+    access_structure_ref: *mut wire_AccessStructureRef,
 ) {
-    wire_display_backup__method__Coordinator_impl(port_, that, id, key_id)
+    wire_display_backup__method__Coordinator_impl(port_, that, id, access_structure_ref)
 }
 
 #[no_mangle]
@@ -396,47 +436,59 @@ pub extern "C" fn wire_sub_key_events__method__Coordinator(
 #[no_mangle]
 pub extern "C" fn wire_get_key__method__Coordinator(
     that: *mut wire_Coordinator,
-    key_id: *mut wire_KeyId,
+    appkey: *mut wire_Appkey,
 ) -> support::WireSyncReturn {
-    wire_get_key__method__Coordinator_impl(that, key_id)
+    wire_get_key__method__Coordinator_impl(that, appkey)
 }
 
 #[no_mangle]
 pub extern "C" fn wire_get_key_name__method__Coordinator(
     that: *mut wire_Coordinator,
-    key_id: *mut wire_KeyId,
+    appkey: *mut wire_Appkey,
 ) -> support::WireSyncReturn {
-    wire_get_key_name__method__Coordinator_impl(that, key_id)
+    wire_get_key_name__method__Coordinator_impl(that, appkey)
 }
 
 #[no_mangle]
-pub extern "C" fn wire_keys_for_device__method__Coordinator(
+pub extern "C" fn wire_access_structures_involving_device__method__Coordinator(
     that: *mut wire_Coordinator,
     device_id: *mut wire_DeviceId,
 ) -> support::WireSyncReturn {
-    wire_keys_for_device__method__Coordinator_impl(that, device_id)
+    wire_access_structures_involving_device__method__Coordinator_impl(that, device_id)
 }
 
 #[no_mangle]
 pub extern "C" fn wire_start_signing__method__Coordinator(
     port_: i64,
     that: *mut wire_Coordinator,
-    key_id: *mut wire_KeyId,
+    access_structure_ref: *mut wire_AccessStructureRef,
     devices: *mut wire_list_device_id,
     message: *mut wire_uint_8_list,
 ) {
-    wire_start_signing__method__Coordinator_impl(port_, that, key_id, devices, message)
+    wire_start_signing__method__Coordinator_impl(
+        port_,
+        that,
+        access_structure_ref,
+        devices,
+        message,
+    )
 }
 
 #[no_mangle]
 pub extern "C" fn wire_start_signing_tx__method__Coordinator(
     port_: i64,
     that: *mut wire_Coordinator,
-    key_id: *mut wire_KeyId,
+    access_structure_ref: *mut wire_AccessStructureRef,
     unsigned_tx: *mut wire_UnsignedTx,
     devices: *mut wire_list_device_id,
 ) {
-    wire_start_signing_tx__method__Coordinator_impl(port_, that, key_id, unsigned_tx, devices)
+    wire_start_signing_tx__method__Coordinator_impl(
+        port_,
+        that,
+        access_structure_ref,
+        unsigned_tx,
+        devices,
+    )
 }
 
 #[no_mangle]
@@ -469,18 +521,18 @@ pub extern "C" fn wire_generate_new_key__method__Coordinator(
 #[no_mangle]
 pub extern "C" fn wire_persisted_sign_session_description__method__Coordinator(
     that: *mut wire_Coordinator,
-    key_id: *mut wire_KeyId,
+    appkey: *mut wire_Appkey,
 ) -> support::WireSyncReturn {
-    wire_persisted_sign_session_description__method__Coordinator_impl(that, key_id)
+    wire_persisted_sign_session_description__method__Coordinator_impl(that, appkey)
 }
 
 #[no_mangle]
 pub extern "C" fn wire_try_restore_signing_session__method__Coordinator(
     port_: i64,
     that: *mut wire_Coordinator,
-    key_id: *mut wire_KeyId,
+    appkey: *mut wire_Appkey,
 ) {
-    wire_try_restore_signing_session__method__Coordinator_impl(port_, that, key_id)
+    wire_try_restore_signing_session__method__Coordinator_impl(port_, that, appkey)
 }
 
 #[no_mangle]
@@ -535,18 +587,31 @@ pub extern "C" fn wire_check_share_on_device__method__Coordinator(
     port_: i64,
     that: *mut wire_Coordinator,
     device_id: *mut wire_DeviceId,
-    key_id: *mut wire_KeyId,
+    access_structure_ref: *mut wire_AccessStructureRef,
 ) {
-    wire_check_share_on_device__method__Coordinator_impl(port_, that, device_id, key_id)
+    wire_check_share_on_device__method__Coordinator_impl(
+        port_,
+        that,
+        device_id,
+        access_structure_ref,
+    )
+}
+
+#[no_mangle]
+pub extern "C" fn wire_get_access_structure__method__Coordinator(
+    that: *mut wire_Coordinator,
+    as_ref: *mut wire_AccessStructureRef,
+) -> support::WireSyncReturn {
+    wire_get_access_structure__method__Coordinator_impl(that, as_ref)
 }
 
 #[no_mangle]
 pub extern "C" fn wire_effect__method__SignedTx(
     that: *mut wire_SignedTx,
-    key_id: *mut wire_KeyId,
+    appkey: *mut wire_Appkey,
     network: *mut wire_BitcoinNetwork,
 ) -> support::WireSyncReturn {
-    wire_effect__method__SignedTx_impl(that, key_id, network)
+    wire_effect__method__SignedTx_impl(that, appkey, network)
 }
 
 #[no_mangle]
@@ -571,10 +636,10 @@ pub extern "C" fn wire_complete__method__UnsignedTx(
 #[no_mangle]
 pub extern "C" fn wire_effect__method__UnsignedTx(
     that: *mut wire_UnsignedTx,
-    key_id: *mut wire_KeyId,
+    appkey: *mut wire_Appkey,
     network: *mut wire_BitcoinNetwork,
 ) -> support::WireSyncReturn {
-    wire_effect__method__UnsignedTx_impl(that, key_id, network)
+    wire_effect__method__UnsignedTx_impl(that, appkey, network)
 }
 
 #[no_mangle]
@@ -632,10 +697,10 @@ pub extern "C" fn wire_load_wallet__method__Settings(
 pub extern "C" fn wire_set_wallet_network__method__Settings(
     port_: i64,
     that: *mut wire_Settings,
-    key_id: *mut wire_KeyId,
+    appkey: *mut wire_Appkey,
     network: *mut wire_BitcoinNetwork,
 ) {
-    wire_set_wallet_network__method__Settings_impl(port_, that, key_id, network)
+    wire_set_wallet_network__method__Settings_impl(port_, that, appkey, network)
 }
 
 #[no_mangle]
@@ -725,9 +790,15 @@ pub extern "C" fn new_FrostsnapCoreBitcoinTransactionTransactionTemplate(
 }
 
 #[no_mangle]
-pub extern "C" fn new_FrostsnapCoreCoordinatorCoordinatorFrostKey(
-) -> wire_FrostsnapCoreCoordinatorCoordinatorFrostKey {
-    wire_FrostsnapCoreCoordinatorCoordinatorFrostKey::new_with_null_ptr()
+pub extern "C" fn new_FrostsnapCoreCoordinatorCoordAccessStructure(
+) -> wire_FrostsnapCoreCoordinatorCoordAccessStructure {
+    wire_FrostsnapCoreCoordinatorCoordAccessStructure::new_with_null_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn new_FrostsnapCoreCoordinatorCoordFrostKey(
+) -> wire_FrostsnapCoreCoordinatorCoordFrostKey {
+    wire_FrostsnapCoreCoordinatorCoordFrostKey::new_with_null_ptr()
 }
 
 #[no_mangle]
@@ -807,6 +878,26 @@ pub extern "C" fn new_StringList_0(len: i32) -> *mut wire_StringList {
 }
 
 #[no_mangle]
+pub extern "C" fn new_box_autoadd_access_structure_0() -> *mut wire_AccessStructure {
+    support::new_leak_box_ptr(wire_AccessStructure::new_with_null_ptr())
+}
+
+#[no_mangle]
+pub extern "C" fn new_box_autoadd_access_structure_id_0() -> *mut wire_AccessStructureId {
+    support::new_leak_box_ptr(wire_AccessStructureId::new_with_null_ptr())
+}
+
+#[no_mangle]
+pub extern "C" fn new_box_autoadd_access_structure_ref_0() -> *mut wire_AccessStructureRef {
+    support::new_leak_box_ptr(wire_AccessStructureRef::new_with_null_ptr())
+}
+
+#[no_mangle]
+pub extern "C" fn new_box_autoadd_appkey_0() -> *mut wire_Appkey {
+    support::new_leak_box_ptr(wire_Appkey::new_with_null_ptr())
+}
+
+#[no_mangle]
 pub extern "C" fn new_box_autoadd_bitcoin_network_0() -> *mut wire_BitcoinNetwork {
     support::new_leak_box_ptr(wire_BitcoinNetwork::new_with_null_ptr())
 }
@@ -844,11 +935,6 @@ pub extern "C" fn new_box_autoadd_ffi_serial_0() -> *mut wire_FfiSerial {
 #[no_mangle]
 pub extern "C" fn new_box_autoadd_frost_key_0() -> *mut wire_FrostKey {
     support::new_leak_box_ptr(wire_FrostKey::new_with_null_ptr())
-}
-
-#[no_mangle]
-pub extern "C" fn new_box_autoadd_key_id_0() -> *mut wire_KeyId {
-    support::new_leak_box_ptr(wire_KeyId::new_with_null_ptr())
 }
 
 #[no_mangle]
@@ -1132,18 +1218,35 @@ pub extern "C" fn share_opaque_FrostsnapCoreBitcoinTransactionTransactionTemplat
 }
 
 #[no_mangle]
-pub extern "C" fn drop_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(ptr: *const c_void) {
+pub extern "C" fn drop_opaque_FrostsnapCoreCoordinatorCoordAccessStructure(ptr: *const c_void) {
     unsafe {
-        Arc::<frostsnap_core::coordinator::CoordinatorFrostKey>::decrement_strong_count(ptr as _);
+        Arc::<frostsnap_core::coordinator::CoordAccessStructure>::decrement_strong_count(ptr as _);
     }
 }
 
 #[no_mangle]
-pub extern "C" fn share_opaque_FrostsnapCoreCoordinatorCoordinatorFrostKey(
+pub extern "C" fn share_opaque_FrostsnapCoreCoordinatorCoordAccessStructure(
     ptr: *const c_void,
 ) -> *const c_void {
     unsafe {
-        Arc::<frostsnap_core::coordinator::CoordinatorFrostKey>::increment_strong_count(ptr as _);
+        Arc::<frostsnap_core::coordinator::CoordAccessStructure>::increment_strong_count(ptr as _);
+        ptr
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn drop_opaque_FrostsnapCoreCoordinatorCoordFrostKey(ptr: *const c_void) {
+    unsafe {
+        Arc::<frostsnap_core::coordinator::CoordFrostKey>::decrement_strong_count(ptr as _);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn share_opaque_FrostsnapCoreCoordinatorCoordFrostKey(
+    ptr: *const c_void,
+) -> *const c_void {
+    unsafe {
+        Arc::<frostsnap_core::coordinator::CoordFrostKey>::increment_strong_count(ptr as _);
         ptr
     }
 }
@@ -1406,10 +1509,17 @@ impl Wire2Api<RustOpaque<frostsnap_core::bitcoin_transaction::TransactionTemplat
         unsafe { support::opaque_from_dart(self.ptr as _) }
     }
 }
-impl Wire2Api<RustOpaque<frostsnap_core::coordinator::CoordinatorFrostKey>>
-    for wire_FrostsnapCoreCoordinatorCoordinatorFrostKey
+impl Wire2Api<RustOpaque<frostsnap_core::coordinator::CoordAccessStructure>>
+    for wire_FrostsnapCoreCoordinatorCoordAccessStructure
 {
-    fn wire2api(self) -> RustOpaque<frostsnap_core::coordinator::CoordinatorFrostKey> {
+    fn wire2api(self) -> RustOpaque<frostsnap_core::coordinator::CoordAccessStructure> {
+        unsafe { support::opaque_from_dart(self.ptr as _) }
+    }
+}
+impl Wire2Api<RustOpaque<frostsnap_core::coordinator::CoordFrostKey>>
+    for wire_FrostsnapCoreCoordinatorCoordFrostKey
+{
+    fn wire2api(self) -> RustOpaque<frostsnap_core::coordinator::CoordFrostKey> {
         unsafe { support::opaque_from_dart(self.ptr as _) }
     }
 }
@@ -1497,12 +1607,59 @@ impl Wire2Api<Vec<String>> for *mut wire_StringList {
         vec.into_iter().map(Wire2Api::wire2api).collect()
     }
 }
+impl Wire2Api<AccessStructure> for wire_AccessStructure {
+    fn wire2api(self) -> AccessStructure {
+        AccessStructure(self.field0.wire2api())
+    }
+}
+impl Wire2Api<AccessStructureId> for wire_AccessStructureId {
+    fn wire2api(self) -> AccessStructureId {
+        AccessStructureId(self.field0.wire2api())
+    }
+}
+impl Wire2Api<AccessStructureRef> for wire_AccessStructureRef {
+    fn wire2api(self) -> AccessStructureRef {
+        AccessStructureRef {
+            appkey: self.appkey.wire2api(),
+            access_structure_id: self.access_structure_id.wire2api(),
+        }
+    }
+}
+impl Wire2Api<Appkey> for wire_Appkey {
+    fn wire2api(self) -> Appkey {
+        Appkey(self.field0.wire2api())
+    }
+}
 impl Wire2Api<BitcoinNetwork> for wire_BitcoinNetwork {
     fn wire2api(self) -> BitcoinNetwork {
         BitcoinNetwork(self.field0.wire2api())
     }
 }
 
+impl Wire2Api<AccessStructure> for *mut wire_AccessStructure {
+    fn wire2api(self) -> AccessStructure {
+        let wrap = unsafe { support::box_from_leak_ptr(self) };
+        Wire2Api::<AccessStructure>::wire2api(*wrap).into()
+    }
+}
+impl Wire2Api<AccessStructureId> for *mut wire_AccessStructureId {
+    fn wire2api(self) -> AccessStructureId {
+        let wrap = unsafe { support::box_from_leak_ptr(self) };
+        Wire2Api::<AccessStructureId>::wire2api(*wrap).into()
+    }
+}
+impl Wire2Api<AccessStructureRef> for *mut wire_AccessStructureRef {
+    fn wire2api(self) -> AccessStructureRef {
+        let wrap = unsafe { support::box_from_leak_ptr(self) };
+        Wire2Api::<AccessStructureRef>::wire2api(*wrap).into()
+    }
+}
+impl Wire2Api<Appkey> for *mut wire_Appkey {
+    fn wire2api(self) -> Appkey {
+        let wrap = unsafe { support::box_from_leak_ptr(self) };
+        Wire2Api::<Appkey>::wire2api(*wrap).into()
+    }
+}
 impl Wire2Api<BitcoinNetwork> for *mut wire_BitcoinNetwork {
     fn wire2api(self) -> BitcoinNetwork {
         let wrap = unsafe { support::box_from_leak_ptr(self) };
@@ -1549,12 +1706,6 @@ impl Wire2Api<FrostKey> for *mut wire_FrostKey {
     fn wire2api(self) -> FrostKey {
         let wrap = unsafe { support::box_from_leak_ptr(self) };
         Wire2Api::<FrostKey>::wire2api(*wrap).into()
-    }
-}
-impl Wire2Api<KeyId> for *mut wire_KeyId {
-    fn wire2api(self) -> KeyId {
-        let wrap = unsafe { support::box_from_leak_ptr(self) };
-        Wire2Api::<KeyId>::wire2api(*wrap).into()
     }
 }
 impl Wire2Api<PortBytesToRead> for *mut wire_PortBytesToRead {
@@ -1684,11 +1835,6 @@ impl Wire2Api<FrostKey> for wire_FrostKey {
     }
 }
 
-impl Wire2Api<KeyId> for wire_KeyId {
-    fn wire2api(self) -> KeyId {
-        KeyId(self.field0.wire2api())
-    }
-}
 impl Wire2Api<Vec<ConnectedDevice>> for *mut wire_list_connected_device {
     fn wire2api(self) -> Vec<ConnectedDevice> {
         let vec = unsafe {
@@ -1819,6 +1965,12 @@ impl Wire2Api<Transaction> for wire_Transaction {
     }
 }
 
+impl Wire2Api<[u8; 32]> for *mut wire_uint_8_list {
+    fn wire2api(self) -> [u8; 32] {
+        let vec: Vec<u8> = self.wire2api();
+        support::from_vec_to_array(vec)
+    }
+}
 impl Wire2Api<[u8; 33]> for *mut wire_uint_8_list {
     fn wire2api(self) -> [u8; 33] {
         let vec: Vec<u8> = self.wire2api();
@@ -1827,6 +1979,12 @@ impl Wire2Api<[u8; 33]> for *mut wire_uint_8_list {
 }
 impl Wire2Api<[u8; 64]> for *mut wire_uint_8_list {
     fn wire2api(self) -> [u8; 64] {
+        let vec: Vec<u8> = self.wire2api();
+        support::from_vec_to_array(vec)
+    }
+}
+impl Wire2Api<[u8; 65]> for *mut wire_uint_8_list {
+    fn wire2api(self) -> [u8; 65] {
         let vec: Vec<u8> = self.wire2api();
         support::from_vec_to_array(vec)
     }
@@ -1927,7 +2085,13 @@ pub struct wire_FrostsnapCoreBitcoinTransactionTransactionTemplate {
 
 #[repr(C)]
 #[derive(Clone)]
-pub struct wire_FrostsnapCoreCoordinatorCoordinatorFrostKey {
+pub struct wire_FrostsnapCoreCoordinatorCoordAccessStructure {
+    ptr: *const core::ffi::c_void,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_FrostsnapCoreCoordinatorCoordFrostKey {
     ptr: *const core::ffi::c_void,
 }
 
@@ -2018,6 +2182,31 @@ pub struct wire_StringList {
 
 #[repr(C)]
 #[derive(Clone)]
+pub struct wire_AccessStructure {
+    field0: wire_FrostsnapCoreCoordinatorCoordAccessStructure,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_AccessStructureId {
+    field0: *mut wire_uint_8_list,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_AccessStructureRef {
+    appkey: wire_Appkey,
+    access_structure_id: wire_AccessStructureId,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_Appkey {
+    field0: *mut wire_uint_8_list,
+}
+
+#[repr(C)]
+#[derive(Clone)]
 pub struct wire_BitcoinNetwork {
     field0: wire_RBitcoinNetwork,
 }
@@ -2072,13 +2261,7 @@ pub struct wire_FfiSerial {
 #[repr(C)]
 #[derive(Clone)]
 pub struct wire_FrostKey {
-    field0: wire_FrostsnapCoreCoordinatorCoordinatorFrostKey,
-}
-
-#[repr(C)]
-#[derive(Clone)]
-pub struct wire_KeyId {
-    field0: *mut wire_uint_8_list,
+    field0: wire_FrostsnapCoreCoordinatorCoordFrostKey,
 }
 
 #[repr(C)]
@@ -2305,7 +2488,14 @@ impl NewWithNullPtr for wire_FrostsnapCoreBitcoinTransactionTransactionTemplate 
         }
     }
 }
-impl NewWithNullPtr for wire_FrostsnapCoreCoordinatorCoordinatorFrostKey {
+impl NewWithNullPtr for wire_FrostsnapCoreCoordinatorCoordAccessStructure {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            ptr: core::ptr::null(),
+        }
+    }
+}
+impl NewWithNullPtr for wire_FrostsnapCoreCoordinatorCoordFrostKey {
     fn new_with_null_ptr() -> Self {
         Self {
             ptr: core::ptr::null(),
@@ -2401,6 +2591,63 @@ impl NewWithNullPtr for wire_RTransaction {
         Self {
             ptr: core::ptr::null(),
         }
+    }
+}
+
+impl NewWithNullPtr for wire_AccessStructure {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            field0: wire_FrostsnapCoreCoordinatorCoordAccessStructure::new_with_null_ptr(),
+        }
+    }
+}
+
+impl Default for wire_AccessStructure {
+    fn default() -> Self {
+        Self::new_with_null_ptr()
+    }
+}
+
+impl NewWithNullPtr for wire_AccessStructureId {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            field0: core::ptr::null_mut(),
+        }
+    }
+}
+
+impl Default for wire_AccessStructureId {
+    fn default() -> Self {
+        Self::new_with_null_ptr()
+    }
+}
+
+impl NewWithNullPtr for wire_AccessStructureRef {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            appkey: Default::default(),
+            access_structure_id: Default::default(),
+        }
+    }
+}
+
+impl Default for wire_AccessStructureRef {
+    fn default() -> Self {
+        Self::new_with_null_ptr()
+    }
+}
+
+impl NewWithNullPtr for wire_Appkey {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            field0: core::ptr::null_mut(),
+        }
+    }
+}
+
+impl Default for wire_Appkey {
+    fn default() -> Self {
+        Self::new_with_null_ptr()
     }
 }
 
@@ -2524,26 +2771,12 @@ impl Default for wire_FfiSerial {
 impl NewWithNullPtr for wire_FrostKey {
     fn new_with_null_ptr() -> Self {
         Self {
-            field0: wire_FrostsnapCoreCoordinatorCoordinatorFrostKey::new_with_null_ptr(),
+            field0: wire_FrostsnapCoreCoordinatorCoordFrostKey::new_with_null_ptr(),
         }
     }
 }
 
 impl Default for wire_FrostKey {
-    fn default() -> Self {
-        Self::new_with_null_ptr()
-    }
-}
-
-impl NewWithNullPtr for wire_KeyId {
-    fn new_with_null_ptr() -> Self {
-        Self {
-            field0: core::ptr::null_mut(),
-        }
-    }
-}
-
-impl Default for wire_KeyId {
     fn default() -> Self {
         Self::new_with_null_ptr()
     }

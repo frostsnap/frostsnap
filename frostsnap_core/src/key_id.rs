@@ -30,13 +30,6 @@ impl KeyId {
     pub fn to_root_pubkey(&self) -> Option<Point> {
         Point::from_bytes(self.0)
     }
-
-    pub fn to_redacted_string(&self) -> String {
-        use alloc::string::ToString;
-        let full = self.to_string();
-        let redacted = format!("{}...{}", &full[..4], &full[full.len() - 4..]);
-        redacted
-    }
 }
 
 pub trait FrostKeyExt {

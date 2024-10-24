@@ -85,6 +85,7 @@ pub enum Workflow {
         new_name: String,
     },
     DisplayBackup {
+        key_name: String,
         backup: String,
     },
     EnteringBackup(EnteringBackupStage),
@@ -118,14 +119,16 @@ pub enum Prompt {
     KeyGen {
         session_hash: SessionHash,
         key_name: String,
-        key_id: KeyId,
     },
     Signing(SignPrompt),
     NewName {
         old_name: Option<String>,
         new_name: String,
     },
-    DisplayBackupRequest((String, KeyId)),
+    DisplayBackupRequest {
+        key_name: String,
+        key_id: KeyId,
+    },
     ConfirmFirmwareUpgrade {
         firmware_digest: FirmwareDigest,
         size: u32,
@@ -161,17 +164,11 @@ pub enum FirmwareUpgradeStatus {
 
 #[derive(Clone, Debug)]
 pub enum UiEvent {
-    KeyGenConfirm {
-        key_name: String,
-        key_id: KeyId,
-    },
+    KeyGenConfirm,
     SigningConfirm,
     NameConfirm(String),
-    BackupRequestConfirm(KeyId),
-    UpgradeConfirm {
-        size: u32,
-        firmware_digest: FirmwareDigest,
-    },
     EnteredShareBackup(SecretShare),
     EnteredShareBackupConfirm(SecretShare),
+    BackupRequestConfirm,
+    UpgradeConfirm,
 }

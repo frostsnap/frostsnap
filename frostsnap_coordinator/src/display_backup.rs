@@ -1,6 +1,8 @@
 use frostsnap_comms::CoordinatorSendMessage;
 use frostsnap_core::{
-    coordinator::FrostCoordinator, message::CoordinatorToUserMessage, DeviceId, KeyId,
+    coordinator::{AccessStructureRef, FrostCoordinator},
+    message::CoordinatorToUserMessage,
+    DeviceId, SymmetricKey,
 };
 
 use crate::{Completion, Sink, UiProtocol, UiToStorageMessage};
@@ -18,11 +20,12 @@ impl DisplayBackupProtocol {
     pub fn new(
         coord: &mut FrostCoordinator,
         device_id: DeviceId,
-        key_id: KeyId,
+        access_structure_ref: AccessStructureRef,
+        encryption_key: SymmetricKey,
         sink: impl Sink<bool> + 'static,
     ) -> anyhow::Result<Self> {
         let messages = coord
-            .request_device_display_backup(device_id, key_id)?
+            .request_device_display_backup(device_id, access_structure_ref, encryption_key)?
             .into_iter()
             .map(|message| {
                 message

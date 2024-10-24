@@ -16,7 +16,7 @@ import 'package:rxdart/rxdart.dart';
 import 'sign_message.dart';
 
 class KeyList extends StatelessWidget {
-  final Function(KeyId)? onNewKey;
+  final Function(AccessStructureRef)? onNewKey;
   final Function(BuildContext, FrostKey, BitcoinNetwork?) itemBuilder;
 
   const KeyList({super.key, this.onNewKey, required this.itemBuilder});
@@ -43,10 +43,10 @@ class KeyList extends StatelessWidget {
     final keyStream =
         Rx.combineLatest2(settingsStream, keyStateStream, (settings, keyState) {
       return keyState.keys.map((frostKey) {
-        final targetKeyId = frostKey.id();
+        final targetAppKey = frostKey.appkey();
         final BitcoinNetwork network = settings.walletNetworks
                 .firstWhereOrNull(
-                  (record) => keyIdEquals(record.$1, targetKeyId),
+                  (record) => appkeyEquals(record.$1, targetAppKey),
                 )
                 ?.$2 ??
             BitcoinNetwork.signet(bridge: api);
@@ -125,12 +125,13 @@ class _KeyCard extends State<KeyCard> {
   void initState() {
     super.initState();
     restorableSignSession =
-        coord.persistedSignSessionDescription(keyId: widget.frostKey.id());
+        coord.persistedSignSessionDescription(appkey: widget.frostKey.appkey());
   }
 
   @override
   Widget build(BuildContext context) {
-    final keyId = widget.frostKey.id();
+    final appkey = widget.frostKey.appkey();
+
     final bitcoinNetwork =
         widget.bitcoinNetwork ?? BitcoinNetwork.signet(bridge: api);
     final settingsCtx = SettingsContext.of(context)!;
@@ -148,7 +149,7 @@ class _KeyCard extends State<KeyCard> {
         final wallet = await settings.loadWallet(network: bitcoinNetwork);
         if (context.mounted) {
           Navigator.push(context, MaterialPageRoute(builder: (context) {
-            return WalletPage(keyId: keyId, wallet: wallet);
+            return WalletPage(appkey: appkey, wallet: wallet);
           }));
         }
       },
@@ -172,7 +173,7 @@ class _KeyCard extends State<KeyCard> {
       continueSigning = ElevatedButton(
           onPressed: () async {
             final signingStream = coord
-                .tryRestoreSigningSession(keyId: keyId)
+                .tryRestoreSigningSession(appkey: appkey)
                 .toBehaviorSubject();
 
             switch (restorableSignSession!) {
@@ -192,20 +193,22 @@ class _KeyCard extends State<KeyCard> {
                         context: context,
                         signingStream: signingStream,
                         unsignedTx: unsignedTx,
-                        keyId: keyId);
+                        appkey: appkey);
                   }
                 }
             }
 
             setState(() {
               restorableSignSession = coord.persistedSignSessionDescription(
-                  keyId: widget.frostKey.id());
+                  appkey: widget.frostKey.appkey());
             });
           },
           child: Text("Continue signing"));
     } else {
       continueSigning = Container();
     }
+
+    final threshold = widget.frostKey.accessStructures()[0].threshold();
 
     return Card(
       color: backgroundSecondaryColor,
@@ -223,7 +226,7 @@ class _KeyCard extends State<KeyCard> {
                   fontFamily: 'Monospace'),
             ),
             const SizedBox(height: 8),
-            Text("Threshold: ${widget.frostKey.threshold()}",
+            Text("Threshold: $threshold",
                 style: TextStyle(color: textSecondaryColor)),
             Row(mainAxisAlignment: MainAxisAlignment.center, children: [
               signButton,
@@ -264,7 +267,7 @@ class _KeyListWithConfetti extends State<KeyListWithConfetti> {
           itemBuilder: (context, key, network) {
             return KeyCard(frostKey: key, bitcoinNetwork: network);
           },
-          onNewKey: (keyId) {
+          onNewKey: (appkey) {
             _confettiController.play();
           },
         )),
