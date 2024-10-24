@@ -101,50 +101,16 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                     SizedBox(width: 10),
                     ElevatedButton(
                       onPressed: () async {
-                        final confirmed = coord
-                            .displayBackup(id: widget.id, keyId: keyId)
-                            .first;
-
-                        final result = await showDeviceActionDialog(
-                          context: context,
-                          complete: _deviceRemoved.future,
-                          builder: (context) {
-                            return FutureBuilder(
-                                future: confirmed,
-                                builder: (context, snapshot) {
-                                  return Column(children: [
-                                    DialogHeader(
-                                        child: Text(snapshot.connectionState ==
-                                                ConnectionState.waiting
-                                            ? "Confirm on device to show backup"
-                                            : "Record backup displayed on device screen. Press cancel when finished.")),
-                                    Expanded(child: DeviceListWithIcons(
-                                        iconAssigner: (context, deviceId) {
-                                      if (deviceIdEquals(deviceId, widget.id)) {
-                                        final label = LabeledDeviceText(
-                                            device_.name ?? "<unamed>");
-                                        final Widget icon;
-                                        if (snapshot.connectionState ==
-                                            ConnectionState.waiting) {
-                                          icon = ConfirmPrompt();
-                                        } else {
-                                          icon = DevicePrompt(
-                                              icon: Icon(Icons.edit_document,
-                                                  color: successColor),
-                                              text: "Record");
-                                        }
-                                        return (label, icon);
-                                      } else {
-                                        return (null, null);
-                                      }
-                                    }))
-                                  ]);
-                                });
-                          },
-                        );
-                        if (result == null) {
-                          coord.cancelProtocol();
-                        }
+                        Navigator.push(context,
+                            MaterialPageRoute(builder: (context) {
+                          return BackupSettingsPage(
+                            context: context,
+                            id: device_.id,
+                            deviceName: device_.name ?? "unamed",
+                            keyId: keyId,
+                            keyName: keyName,
+                          );
+                        }));
                       },
                       child: Text("Backup"),
                     ),
