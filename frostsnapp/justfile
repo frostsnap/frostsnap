@@ -1,7 +1,6 @@
 default: gen lint
 
 gen:
-    flutter pub get
     flutter_rust_bridge_codegen \
         --rust-input native/src/api.rs \
         --dart-output lib/bridge_generated.dart \
@@ -29,13 +28,23 @@ flutter_rust_bridge_version:
     flutter_rust_bridge_version=$(perl -0777 -nE '/name = "flutter_rust_bridge".*?version = "(.*?)"/s && print $1' < ../Cargo.lock)
     echo $flutter_rust_bridge_version
 
+install-flutter-deps:
+    #!/bin/sh
+    flutter pub get
+
 install-rust-deps:
     #!/bin/sh
+    cargo install cargo-ndk espflash cargo-expand
     flutter_rust_bridge_version=$(just flutter_rust_bridge_version)
     if test "$flutter_rust_bridge_version"; then
-        cargo install "flutter_rust_bridge_codegen@$flutter_rust_bridge_version" cargo-ndk espflash
+        # Check if binaries are already cached, skipping installation if they exist
+        if [ ! -x ~/.cargo/bin/flutter_rust_bridge_codegen ]; then
+            cargo install "flutter_rust_bridge_codegen@$flutter_rust_bridge_version"
+        else
+            echo "The correct flutter rust bridge is already installed."
+        fi
     else
-        echo "coudln't determine version for flutter_rust_bridge" >&2;
+        echo "couldn't determine version for flutter_rust_bridge" >&2;
         exit 1
     fi
 

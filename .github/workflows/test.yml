@@ -1,4 +1,4 @@
-name: Tests
+name: Frostsnap CI
 
 on:
   push:
@@ -6,8 +6,49 @@ on:
       - master
   pull_request:
 
+env:
+  BRIDGE_FILES: |
+    ./frostsnapp/native/src/bridge_generated.web.rs
+    ./frostsnapp/native/src/bridge_generated.io.rs
+    ./frostsnapp/native/src/bridge_generated.rs
+    ./frostsnapp/macos/Runner/bridge_generated.h
+    ./frostsnapp/lib/bridge_generated.io.dart
+    ./frostsnapp/lib/bridge_generated.dart
+    ./frostsnapp/lib/bridge_generated.web.dart
+    ./frostsnapp/ios/Runner/bridge_generated.h
+    ./frostsnapp/lib/bridge_definitions.freezed.dart
+    ./frostsnapp/lib/bridge_definitions.dart
+
 jobs:
+  build-rust-deps:
+    name: Build Rust Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Restore cargo cache
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('./Cargo.lock') }}-v1
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: riscv32imc-unknown-none-elf,aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+          components: rustfmt, clippy
+
+      - uses: taiki-e/install-action@just
+      - name: Setup | Install libudev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libudev-dev
+      - run: just frostsnapp/install-rust-deps
+
   device:
+    name: Build Device Firmware
+    needs: build-rust-deps
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -16,107 +57,273 @@ jobs:
       run:
         working-directory: ./device
     steps:
-      - uses: actions/checkout@v3
-      - uses: taiki-e/install-action@just
+      - uses: actions/checkout@v4
+
+      # RISC-V toolchain cache
+      - uses: actions/cache@v4
+        id: cache-riscv
+        with:
+          path: device/riscv
+          key: ${{ runner.os }}-riscv-toolchain-2023.05.24-v1
+
       - name: Setup | RISC-V GCC prerequisites
-        run: sudo apt-get update && sudo apt-get install autoconf automake autotools-dev curl python3 libmpc-dev libmpfr-dev libgmp-dev gawk build-essential bison flex texinfo gperf libtool patchutils bc zlib1g-dev libexpat-dev ninja-build
-      - name: Setup | RISCV GCC
+        if: steps.cache-riscv.outputs.cache-hit != 'true'
         run: |
-          wget -nv https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2023.05.24/riscv32-elf-ubuntu-22.04-nightly-2023.05.24-nightly.tar.gz
-          tar -zxf riscv32-elf-ubuntu-22.04-nightly-2023.05.24-nightly.tar.gz
-          echo "PATH=$PATH:${GITHUB_WORKSPACE}/device/riscv/bin" >> $GITHUB_ENV
-          ls ${GITHUB_WORKSPACE}/device/riscv/bin
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf automake autotools-dev curl python3 libmpc-dev \
+            libmpfr-dev libgmp-dev gawk build-essential bison flex \
+            texinfo gperf libtool patchutils bc zlib1g-dev \
+            libexpat-dev ninja-build
+
+      - name: Setup | RISCV GCC
+        if: steps.cache-riscv.outputs.cache-hit != 'true'
+        run: |
+          wget -nv https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2023.05.24/riscv32-elf-ubuntu-22.04-nightly-2024.09.03-nightly.tar.gz 
+          tar -zxf riscv32-elf-ubuntu-22.04-nightly-2024.09.03-nightly.tar.gz
+
+      - name: Add RISC-V GCC to PATH
+        run: echo "PATH=$PATH:${GITHUB_WORKSPACE}/device/riscv/bin" >> $GITHUB_ENV
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: riscv32imc-unknown-none-elf
-          components: clippy
+
+      # Restore cargo cache
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('./Cargo.lock') }}-v1
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
+      # Device-specific target cache
+      - uses: actions/cache@v4
+        with:
+          path: target/riscv32imc-unknown-none-elf/
+          key: ${{ runner.os }}-device-target-${{ hashFiles('device/Cargo.toml', './Cargo.lock') }}-v1
+          restore-keys: |
+            ${{ runner.os }}-device-target-
+
+      - uses: taiki-e/install-action@just
       - run: just lint-device --release
       - run: just build-device ${{ matrix.board }}
-      - name: Upload firmware artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: frostsnap-v2-${{ github.run_id }}.elf
+          name: frostsnap-${{ github.sha }}.elf
           path: target/riscv32imc-unknown-none-elf/release/v2
           if-no-files-found: error
 
-  non-device:
+  generate-bridge-files:
+    name: Generate Flutter Rust Bridge FFI
+    needs: build-rust-deps
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+
+      # Restore pub cache
+      - uses: actions/cache@v4
+        id: cache-pub
+        with:
+          path: ~/.pub-cache/
+          key: ${{ runner.os }}-pub-cache-${{ hashFiles('frostsnapp/pubspec.lock') }}-v1
+          restore-keys: |
+            ${{ runner.os }}-pub-cache-
+
+      # Restore cargo cache
+      - uses: actions/cache@v4
+        id: cache-cargo
+        with:
+          path: ~/.cargo/
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('./Cargo.lock') }}-v1
+
+      # Restore bridge files cache
+      - uses: actions/cache@v4
+        id: cache-bridge
+        with:
+          path: ${{ env.BRIDGE_FILES }}
+          key: bridge-files-${{ hashFiles('frostsnapp/native/src/**/*') }}
+          restore-keys: |
+            bridge-files-
+
+      - name: Skip FFI gen if all caches hit
+        id: skip-ffigen
+        run: |
+          if [[ '${{ steps.cache-pub.outputs.cache-hit }}' == 'true' ]] && \
+             [[ '${{ steps.cache-cargo.outputs.cache-hit }}' == 'true' ]] && \
+             [[ '${{ steps.cache-bridge.outputs.cache-hit }}' == 'true' ]]; then
+            echo "All caches hit, will not regenerate FFI."
+            echo "skip=true" >> $GITHUB_ENV
+          else
+            echo "One of the above caches changed, will generate FFI."
+            echo "skip=false" >> $GITHUB_ENV
+          fi
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: subosito/flutter-action@v2
+        if: env.skip != 'true'
+        with:
+          channel: stable
+          cache: true
+
+      - name: Setup | Install libudev
+        if: env.skip != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libudev-dev
+
+      - uses: taiki-e/install-action@just
+
+      # Skip the `just gen` step if the skip flag is set
+      - name: Generate FFI
+        if: env.skip != 'true'
+        run: |
+          just frostsnapp/install-rust-deps
+          just frostsnapp/install-flutter-deps
+          just gen
+
+  non-device:
+    name: Build Non-Device
+    needs: [generate-bridge-files, build-rust-deps]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Restore cargo cache
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('./Cargo.lock') }}-v1
+
+      # Non-device specific target cache
+      - uses: actions/cache@v4
+        with:
+          path: target/
+          key: ${{ runner.os }}-non-device-target-${{ hashFiles('non-device/Cargo.toml', './Cargo.lock') }}-v1
+          restore-keys: |
+            ${{ runner.os }}-non-device-target-
+
+      # Restore bridge files
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.BRIDGE_FILES }}
+          key: bridge-files-${{ hashFiles('frostsnapp/native/src/**/*') }}
+          restore-keys: |
+            bridge-files-
+
       - uses: taiki-e/install-action@just
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - run: sudo apt-get update
-      - run: sudo apt-get install -y libudev-dev
-      - run: just frostsnapp/install-rust-deps
-      - run: just gen
+
+      - name: Setup | Install libudev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libudev-dev
+
       - run: just lint-non-device --release
       - run: just test --release --all-features
 
   app-build:
-    name: Flutter app build
+    name: Build Flutter App
+    needs: ["generate-bridge-files", "device", "build-rust-deps"]
     runs-on: ubuntu-latest
-    needs: device
     steps:
-      - uses: actions/checkout@v3
-      - name: Download firmwre elf
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+
+      # Restore cargo cache
+      - uses: actions/cache@v4
         with:
-          name: frostsnap-v2-${{ github.run_id }}.elf
-          path: target/riscv32imc-unknown-none-elf/release/
-      - uses: dtolnay/rust-toolchain@stable
+          path: ~/.cargo/
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('./Cargo.lock') }}-v1
+
+      # App-specific target cache
+      - uses: actions/cache@v4
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
-      - uses: taiki-e/install-action@just
-      - uses: subosito/flutter-action@v2
+          path: target/
+          key: ${{ runner.os }}-app-target-${{ hashFiles('frostsnapp/Cargo.toml', './Cargo.lock') }}-v1
+          restore-keys: |
+            ${{ runner.os }}-app-target-
+
+      # Restore pub cache
+      - uses: actions/cache@v4
         with:
-          channel: "stable"
-      - uses: actions/setup-java@v3
+          path: ~/.pub-cache/
+          key: ${{ runner.os }}-pub-cache-${{ hashFiles('frostsnapp/pubspec.lock') }}-v1
+          restore-keys: |
+            ${{ runner.os }}-pub-cache-
+
+      # Restore bridge files
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.BRIDGE_FILES }}
+          key: bridge-files-${{ hashFiles('frostsnapp/native/src/**/*') }}
+          restore-keys: |
+            bridge-files-
+
+      # Setup Java and NDK
+      - uses: actions/setup-java@v4
         with:
           distribution: zulu
           java-version: 18
           cache: gradle
+
       - uses: nttld/setup-ndk@v1
         with:
           ndk-version: r25c
-      - name: Show riscv release directory
-        run: ls -R target/riscv32imc-unknown-none-elf/release/
-      - run: sudo apt-get update && sudo apt install -y ninja-build libstdc++-12-dev libgtk-3-0 libgtk-3-dev libudev-dev
-      - name: Cache Flutter dependencies
-        uses: actions/cache@v3
+
+      - uses: subosito/flutter-action@v2
         with:
-          path: ~/.pub-cache
-          key: ${{ runner.os }}-flutter-${{ hashFiles('**/pubspec.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-flutter-
-      - run: just frostsnapp/install-rust-deps
-      - run: just gen
+          channel: stable
+          cache: true
+
+      - uses: taiki-e/install-action@just
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+
+      - name: Setup | Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build libstdc++-12-dev libgtk-3-0 libgtk-3-dev libudev-dev
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: frostsnap-${{ github.sha }}.elf
+          path: target/riscv32imc-unknown-none-elf/release/
+
+      - run: just frostsnapp/install-flutter-deps
       - run: just frostsnapp/build linux
       - run: just frostsnapp/build appbundle
 
   flutter-analyze:
     name: Flutter Analyze
+    needs: generate-bridge-files
     runs-on: ubuntu-latest
-    needs: device
     steps:
-      - name: Check out the repository
-        uses: actions/checkout@v3
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      - uses: actions/checkout@v4
+
+      # Restore pub cache
+      - uses: actions/cache@v4
         with:
-          channel: "stable"
-      - name: Cache Flutter dependencies
-        uses: actions/cache@v3
+          path: ~/.pub-cache/
+          key: ${{ runner.os }}-pub-cache-${{ hashFiles('frostsnapp/pubspec.lock') }}-v1
+
+      - uses: subosito/flutter-action@v2
         with:
-          path: ~/.pub-cache
-          key: ${{ runner.os }}-flutter-${{ hashFiles('**/pubspec.yaml') }}
+          channel: stable
+          cache: true
+
+      # Restore bridge files
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.BRIDGE_FILES }}
+          key: bridge-files-${{ hashFiles('frostsnapp/native/src/**/*') }}
           restore-keys: |
-            ${{ runner.os }}-flutter-
-      - name: Install flutter dependencies
-        run: flutter pub get
-        working-directory: ./frostsnapp
-      - run: just gen
-      - name: Run Flutter analyze
-        run: |
-          flutter analyze
+            bridge-files-
+
+      - uses: taiki-e/install-action@just
+      - run: just frostsnapp/install-flutter-deps
+      - run: just lint-app
