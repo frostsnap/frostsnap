@@ -45,9 +45,10 @@ dependencies:
   # needed for firstWhereOrNull and other useful extensions
   collection: ^1.0.0
   usb_serial:
+  # TODO: https://github.com/altera2015/usbserial/issues/118
     git:
-      url: "https://github.com/altera2015/usbserial.git"
-      ref: "c20e1e6e171137db4b52413dac14333653f07905"
+      url: "https://github.com/hwh97/usbserial.git"
+      ref: "2dff0b4dcb141e740688b8a8182c4b77b38e9fba"
   file_picker: ^8.0.2
   camera: ^0.11.0
   zxing2: ^0.2.3
