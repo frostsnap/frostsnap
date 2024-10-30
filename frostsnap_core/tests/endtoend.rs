@@ -6,6 +6,7 @@ use frostsnap_core::message::{
     DeviceToUserMessage, EncodedSignature,
 };
 use frostsnap_core::tweak::BitcoinBip32Path;
+use frostsnap_core::KeyId;
 use frostsnap_core::{
     coordinator::FrostCoordinator, device::FrostSigner, Appkey, CheckedSignTask, DeviceId,
     SessionHash, SignTask,
@@ -29,8 +30,11 @@ struct TestEnv {
     pub received_keygen_shares: BTreeSet<DeviceId>,
     pub coordinator_check: Option<SessionHash>,
     pub coordinator_got_keygen_acks: BTreeSet<DeviceId>,
-    pub appkeys: BTreeSet<Appkey>,
-    pub access_structures: BTreeMap<Appkey, Vec<CoordAccessStructure>>,
+    pub keygen_acks: BTreeSet<KeyId>,
+
+    // backups
+    pub backups: BTreeMap<DeviceId, (String, String)>,
+    pub backup_confirmed_on_coordinator: BTreeSet<DeviceId>,
 
     // signing
     pub received_signing_shares: BTreeSet<DeviceId>,
@@ -41,8 +45,7 @@ struct TestEnv {
     pub coord_nonces: BTreeMap<(DeviceId, u64), Nonce>,
     pub device_nonces: BTreeMap<DeviceId, u64>,
     pub coord_appkeys: BTreeMap<Appkey, String>,
-    pub backups: BTreeMap<DeviceId, (String, String)>,
-    pub backup_confirmed_on_coordinator: BTreeSet<DeviceId>,
+    pub coordinator_access_structures: BTreeMap<KeyId, Vec<CoordAccessStructure>>,
 }
 
 impl common::Env for TestEnv {
@@ -60,8 +63,8 @@ impl common::Env for TestEnv {
             }
             NewAccessStructure(access_structure) => {
                 let access_structures = self
-                    .access_structures
-                    .entry(access_structure.appkey())
+                    .coordinator_access_structures
+                    .entry(access_structure.appkey().key_id())
                     .or_default();
                 access_structures.push(access_structure);
             }
@@ -170,7 +173,7 @@ impl common::Env for TestEnv {
                             .coordinator
                             .final_keygen_ack(TEST_ENCRYPTION_KEY, rng)
                             .unwrap();
-                        self.appkeys.insert(access_structure_ref.appkey);
+                        self.keygen_acks.insert(access_structure_ref.key_id);
                     }
                 }
             },

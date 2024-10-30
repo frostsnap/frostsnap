@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/device.dart';
 import 'package:frostsnapp/device_action.dart';
-import 'package:frostsnapp/device_id_ext.dart';
+import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/device_list.dart';
 
 import 'package:frostsnapp/ffi.dart';

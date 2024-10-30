@@ -21,6 +21,7 @@ pub use frostsnap_coordinator::bitcoin::{
 };
 pub use frostsnap_coordinator::firmware_upgrade::FirmwareUpgradeConfirmState;
 pub use frostsnap_coordinator::frostsnap_core;
+use frostsnap_coordinator::frostsnap_core::coordinator::CoordFrostKey;
 pub use frostsnap_coordinator::{
     check_share::CheckShareState, keygen::KeyGenState, persist::Persisted, signing::SigningState,
     DeviceChange, PortDesc, Settings as RSettings,
@@ -29,7 +30,8 @@ pub use frostsnap_coordinator::{
 use frostsnap_coordinator::{DesktopSerial, UsbSerialManager};
 pub use frostsnap_core::message::EncodedSignature;
 pub use frostsnap_core::{
-    coordinator::AccessStructureRef, AccessStructureId, Appkey, DeviceId, SessionHash, SignTask,
+    coordinator::AccessStructureRef, AccessStructureId, Appkey, DeviceId, KeyId, SessionHash,
+    SignTask,
 };
 use lazy_static::lazy_static;
 pub use std::collections::BTreeMap;
@@ -159,6 +161,10 @@ impl FrostKey {
         SyncReturn(self.0.appkey)
     }
 
+    pub fn key_id(&self) -> SyncReturn<KeyId> {
+        SyncReturn(self.0.appkey.key_id())
+    }
+
     pub fn key_name(&self) -> SyncReturn<String> {
         SyncReturn(self.0.key_name.clone())
     }
@@ -172,6 +178,12 @@ impl FrostKey {
                 .map(From::from)
                 .collect(),
         )
+    }
+}
+
+impl From<CoordFrostKey> for FrostKey {
+    fn from(value: CoordFrostKey) -> Self {
+        FrostKey(RustOpaque::new(value))
     }
 }
 
@@ -842,32 +854,18 @@ impl Coordinator {
 
     pub fn key_state(&self) -> SyncReturn<KeyState> {
         SyncReturn(KeyState {
-            keys: self.0.frost_keys(),
+            keys: self
+                .0
+                .frost_keys()
+                .into_iter()
+                .map(FrostKey::from)
+                .collect(),
         })
     }
 
     pub fn sub_key_events(&self, stream: StreamSink<KeyState>) -> Result<()> {
         self.0.sub_key_events(stream);
         Ok(())
-    }
-
-    pub fn get_key(&self, appkey: Appkey) -> SyncReturn<Option<FrostKey>> {
-        SyncReturn(
-            self.0
-                .frost_keys()
-                .into_iter()
-                .find(|frost_key| frost_key.appkey().0 == appkey),
-        )
-    }
-
-    pub fn get_key_name(&self, appkey: Appkey) -> SyncReturn<Option<String>> {
-        SyncReturn(
-            self.0
-                .frost_keys()
-                .into_iter()
-                .find(|frost_key| frost_key.appkey().0 == appkey)
-                .map(|frost_key| frost_key.key_name().0),
-        )
     }
 
     pub fn access_structures_involving_device(
@@ -879,15 +877,14 @@ impl Coordinator {
                 .frost_keys()
                 .into_iter()
                 .flat_map(|frost_key| {
-                    let appkey: Appkey = frost_key.appkey().0;
+                    let key_id: KeyId = frost_key.appkey.key_id();
                     frost_key
-                        .0
                         .access_structures
                         .iter()
                         .filter(|access_structure| access_structure.contains_device(device_id))
                         .map(|access_structure| access_structure.access_structure_id())
                         .map(|access_structure_id| AccessStructureRef {
-                            appkey,
+                            key_id,
                             access_structure_id,
                         })
                         .collect::<Vec<_>>()
@@ -955,17 +952,17 @@ impl Coordinator {
 
     pub fn persisted_sign_session_description(
         &self,
-        appkey: Appkey,
+        key_id: KeyId,
     ) -> SyncReturn<Option<SignTaskDescription>> {
-        SyncReturn(self.0.persisted_sign_session_description(appkey))
+        SyncReturn(self.0.persisted_sign_session_description(key_id))
     }
 
     pub fn try_restore_signing_session(
         &self,
-        appkey: Appkey,
+        key_id: KeyId,
         stream: StreamSink<SigningState>,
     ) -> Result<()> {
-        self.0.try_restore_signing_session(appkey, stream)
+        self.0.try_restore_signing_session(key_id, stream)
     }
 
     pub fn start_firmware_upgrade(
@@ -1020,6 +1017,10 @@ impl Coordinator {
                 .get_access_structure(as_ref)
                 .map(|access_structure| AccessStructure(RustOpaque::new(access_structure))),
         )
+    }
+
+    pub fn get_frost_key(&self, key_id: KeyId) -> SyncReturn<Option<FrostKey>> {
+        SyncReturn(self.0.get_frost_key(key_id).map(FrostKey::from))
     }
 }
 
@@ -1353,13 +1354,13 @@ impl Settings {
         Ok(wallet)
     }
 
-    pub fn set_wallet_network(&self, appkey: Appkey, network: BitcoinNetwork) -> Result<()> {
+    pub fn set_wallet_network(&self, key_id: KeyId, network: BitcoinNetwork) -> Result<()> {
         let mut db = self.db.lock().unwrap();
         self.settings
             .lock()
             .unwrap()
             .mutate2(&mut *db, |settings, update| {
-                settings.set_wallet_network(appkey, *network.0, update);
+                settings.set_wallet_network(key_id, *network.0, update);
                 Ok(())
             })?;
         self.emit_wallet_settings();
@@ -1421,7 +1422,7 @@ impl Settings {
 }
 
 pub struct WalletSettings {
-    pub wallet_networks: Vec<(Appkey, BitcoinNetwork)>,
+    pub wallet_networks: Vec<(KeyId, BitcoinNetwork)>,
 }
 
 impl WalletSettings {
@@ -1479,6 +1480,9 @@ pub struct _DeviceId(pub [u8; 33]);
 #[frb(mirror(Appkey))]
 pub struct _Appkey(pub [u8; 65]);
 
+#[frb(mirror(KeyId))]
+pub struct _KeyId(pub [u8; 32]);
+
 #[frb(mirror(SessionHash))]
 pub struct _SessionHash(pub [u8; 32]);
 
@@ -1516,7 +1520,7 @@ pub struct _FirmwareUpgradeConfirmState {
 
 #[frb(mirror(AccessStructureRef))]
 pub struct _AccessStructureRef {
-    pub appkey: Appkey,
+    pub key_id: KeyId,
     pub access_structure_id: AccessStructureId,
 }
 
@@ -1552,4 +1556,9 @@ pub fn echo_asid(value: AccessStructureId) -> AccessStructureId {
 
 pub fn echo_asr(value: AccessStructureRef) -> AccessStructureRef {
     value
+}
+
+// In flutter_rust_bridge v2 we can just extend Appkey with this
+pub fn appkey_ext_to_key_id(appkey: Appkey) -> SyncReturn<KeyId> {
+    SyncReturn(appkey.key_id())
 }
