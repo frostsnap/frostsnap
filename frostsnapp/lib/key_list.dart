@@ -1,4 +1,4 @@
-import 'package:frostsnapp/device_id_ext.dart';
+import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/keygen.dart';
@@ -43,10 +43,10 @@ class KeyList extends StatelessWidget {
     final keyStream =
         Rx.combineLatest2(settingsStream, keyStateStream, (settings, keyState) {
       return keyState.keys.map((frostKey) {
-        final targetAppKey = frostKey.appkey();
+        final targetKeyId = frostKey.keyId();
         final BitcoinNetwork network = settings.walletNetworks
                 .firstWhereOrNull(
-                  (record) => appkeyEquals(record.$1, targetAppKey),
+                  (record) => keyIdEquals(record.$1, targetKeyId),
                 )
                 ?.$2 ??
             BitcoinNetwork.signet(bridge: api);
@@ -125,13 +125,11 @@ class _KeyCard extends State<KeyCard> {
   void initState() {
     super.initState();
     restorableSignSession =
-        coord.persistedSignSessionDescription(appkey: widget.frostKey.appkey());
+        coord.persistedSignSessionDescription(keyId: widget.frostKey.keyId());
   }
 
   @override
   Widget build(BuildContext context) {
-    final appkey = widget.frostKey.appkey();
-
     final bitcoinNetwork =
         widget.bitcoinNetwork ?? BitcoinNetwork.signet(bridge: api);
     final settingsCtx = SettingsContext.of(context)!;
@@ -149,7 +147,7 @@ class _KeyCard extends State<KeyCard> {
         final wallet = await settings.loadWallet(network: bitcoinNetwork);
         if (context.mounted) {
           Navigator.push(context, MaterialPageRoute(builder: (context) {
-            return WalletPage(appkey: appkey, wallet: wallet);
+            return WalletPage(appkey: widget.frostKey.appkey(), wallet: wallet);
           }));
         }
       },
@@ -173,7 +171,7 @@ class _KeyCard extends State<KeyCard> {
       continueSigning = ElevatedButton(
           onPressed: () async {
             final signingStream = coord
-                .tryRestoreSigningSession(appkey: appkey)
+                .tryRestoreSigningSession(keyId: widget.frostKey.keyId())
                 .toBehaviorSubject();
 
             switch (restorableSignSession!) {
@@ -193,14 +191,14 @@ class _KeyCard extends State<KeyCard> {
                         context: context,
                         signingStream: signingStream,
                         unsignedTx: unsignedTx,
-                        appkey: appkey);
+                        appkey: widget.frostKey.appkey());
                   }
                 }
             }
 
             setState(() {
               restorableSignSession = coord.persistedSignSessionDescription(
-                  appkey: widget.frostKey.appkey());
+                  keyId: widget.frostKey.keyId());
             });
           },
           child: Text("Continue signing"));

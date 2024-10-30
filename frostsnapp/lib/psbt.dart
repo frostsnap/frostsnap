@@ -6,7 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnapp/camera.dart';
-import 'package:frostsnapp/device_id_ext.dart';
+import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/sign_message.dart';
@@ -18,9 +18,12 @@ import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 class LoadPsbtPage extends StatefulWidget {
   final Appkey appkey;
   final Wallet wallet;
+  late final FrostKey frostKey;
 
-  const LoadPsbtPage({Key? key, required this.appkey, required this.wallet})
-      : super(key: key);
+  LoadPsbtPage({Key? key, required this.appkey, required this.wallet})
+      : super(key: key) {
+    frostKey = coord.getFrostKey(keyId: api.appkeyExtToKeyId(appkey: appkey))!;
+  }
 
   @override
   LoadPsbtPageState createState() => LoadPsbtPageState();
@@ -33,8 +36,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
 
   @override
   Widget build(BuildContext context) {
-    final frostKey = coord.getKey(appkey: widget.appkey)!;
-    final accessStructure = frostKey.accessStructures()[0];
+    final accessStructure = widget.frostKey.accessStructures()[0];
     final enoughSelected =
         selectedDevices.length == accessStructure.threshold();
     Widget? scanPsbtButton;
@@ -112,7 +114,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
               style: TextStyle(fontSize: 20.0),
             ),
             SigningDeviceSelector(
-                frostKey: frostKey,
+                frostKey: widget.frostKey,
                 onChanged: (selected) {
                   setState(() {
                     selectedDevices = selected;
@@ -139,10 +141,11 @@ Future<void> runPsbtSigningWorkflow(
 }) async {
   final Psbt psbt;
   final UnsignedTx unsignedTx;
+  final frostkey = coord.getFrostKey(keyId: accessStructureRef.keyId)!;
+  final appkey = frostkey.appkey();
   try {
     psbt = api.psbtBytesToPsbt(psbtBytes: psbtBytes);
-    unsignedTx =
-        wallet.psbtToUnsignedTx(psbt: psbt, appkey: accessStructureRef.appkey);
+    unsignedTx = wallet.psbtToUnsignedTx(psbt: psbt, appkey: appkey);
   } catch (e) {
     showErrorSnackbarTop(context, "Error loading PSBT: $e");
     return;
@@ -153,8 +156,7 @@ Future<void> runPsbtSigningWorkflow(
       unsignedTx: unsignedTx,
       devices: selectedDevices);
 
-  final effect = unsignedTx.effect(
-      appkey: accessStructureRef.appkey, network: wallet.network);
+  final effect = unsignedTx.effect(appkey: appkey, network: wallet.network);
 
   final signatures = await showSigningProgressDialog(
     context,
@@ -169,7 +171,7 @@ Future<void> runPsbtSigningWorkflow(
     if (context.mounted) {
       await saveOrBroadcastSignedPsbtDialog(
         context,
-        appkey: accessStructureRef.appkey,
+        appkey: appkey,
         tx: signedTx,
         psbt: signedPsbt,
         wallet: wallet,

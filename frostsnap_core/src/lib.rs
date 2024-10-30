@@ -227,12 +227,16 @@ impl_fromstr_deserialize! {
 }
 
 /// The hash of a root key
-#[derive(Clone, Copy, PartialEq, PartialOrd, Ord, Eq)]
-pub struct KeyId([u8; 32]);
+#[derive(Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash)]
+pub struct KeyId(pub [u8; 32]);
 
 impl KeyId {
-    pub fn from_rootkey(point: Point<Normal, Public, impl ZeroChoice>) -> Self {
-        Self(prefix_hash("KEY_ID").add(point).finalize_fixed().into())
+    pub fn from_rootkey(rootkey: Point) -> Self {
+        Self::from_appkey(Appkey::derive_from_rootkey(rootkey))
+    }
+
+    pub fn from_appkey(appkey: Appkey) -> Self {
+        Self(prefix_hash("KEY_ID").add(appkey.0).finalize_fixed().into())
     }
 }
 

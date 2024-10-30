@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:frostsnapp/device_id_ext.dart';
+import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/icons.dart';
 import 'package:frostsnapp/psbt.dart';
@@ -17,6 +17,7 @@ import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 class WalletContext extends InheritedWidget {
   final Wallet wallet;
   final Appkey appkey;
+  late final KeyId keyId;
   late final Stream<TxState> txStream;
   // We have a contextual Stream of syncing events (each syncing event is
   // represented as a Stream<double> where the double is the progress).
@@ -28,6 +29,7 @@ class WalletContext extends InheritedWidget {
     required this.appkey,
     required Widget child,
   }) : super(child: child) {
+    keyId = api.appkeyExtToKeyId(appkey: appkey);
     txStream = wallet.subTxState(appkey: appkey).toBehaviorSubject();
   }
 
@@ -453,7 +455,7 @@ class _WalletSendState extends State<WalletSend> {
   @override
   Widget build(BuildContext context) {
     final walletCtx = WalletContext.of(context)!;
-    final frostKey = coord.getKey(appkey: walletCtx.appkey)!;
+    final frostKey = coord.getFrostKey(keyId: walletCtx.keyId)!;
     final accessStructure = frostKey.accessStructures()[0];
     final enoughSelected =
         selectedDevices.length == accessStructure.threshold();

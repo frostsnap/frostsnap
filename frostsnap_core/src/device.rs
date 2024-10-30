@@ -314,7 +314,11 @@ impl FrostSigner {
                 })?;
 
                 let session_hash = SessionHash::from_agg_input(&agg_input);
-                let rootkey = agg_input.shared_key().public_key();
+                let rootkey = agg_input
+                    .shared_key()
+                    .public_key()
+                    .non_zero()
+                    .expect("this has beeen checked");
                 let key_id = KeyId::from_rootkey(rootkey);
 
                 self.action_state = Some(SignerState::KeyGenAck {

@@ -26,8 +26,8 @@ pub const MIN_NONCES_BEFORE_REQUEST: usize = 5;
 
 #[derive(Debug, Clone, Default)]
 pub struct FrostCoordinator {
-    keys: BTreeMap<Appkey, CoordFrostKey>,
-    key_order: Vec<Appkey>,
+    keys: BTreeMap<KeyId, CoordFrostKey>,
+    key_order: Vec<KeyId>,
     action_state: Option<CoordinatorState>,
     device_nonces: BTreeMap<DeviceId, DeviceNonces>,
     mutations: VecDeque<Mutation>,
@@ -105,10 +105,11 @@ impl FrostCoordinator {
                 key_name: name,
                 encrypted_rootkey,
             } => {
+                let key_id = KeyId::from_appkey(*appkey);
                 let existing = self
                     .keys
                     .insert(
-                        *appkey,
+                        key_id,
                         CoordFrostKey {
                             appkey: *appkey,
                             key_name: name.clone(),
@@ -118,7 +119,7 @@ impl FrostCoordinator {
                     )
                     .is_some();
                 if !existing {
-                    self.key_order.push(*appkey);
+                    self.key_order.push(key_id);
                 }
             }
             NoncesUsed {
@@ -153,7 +154,7 @@ impl FrostCoordinator {
                 device_nonces.nonces.extend(new_nonces);
             }
             NewAccessStructure(access_structure) => {
-                match self.keys.get_mut(&access_structure.appkey()) {
+                match self.keys.get_mut(&access_structure.appkey().key_id()) {
                     Some(key_data) => {
                         key_data.access_structures.push(access_structure.clone());
                     }
@@ -182,6 +183,10 @@ impl FrostCoordinator {
         self.key_order
             .iter()
             .map(|appkey| self.keys.get(appkey).expect("invariant"))
+    }
+
+    pub fn get_frost_key(&self, key_id: KeyId) -> Option<&CoordFrostKey> {
+        self.keys.get(&key_id)
     }
 
     pub fn recv_device_message(
@@ -609,7 +614,7 @@ impl FrostCoordinator {
         encryption_key: SymmetricKey,
     ) -> Result<Vec<CoordinatorSend>, StartSignError> {
         let AccessStructureRef {
-            appkey,
+            key_id,
             access_structure_id,
         } = access_structure_ref;
         if self.action_state.is_some() {
@@ -621,8 +626,8 @@ impl FrostCoordinator {
 
         let key_data = self
             .keys
-            .get(&appkey)
-            .ok_or(StartSignError::UnknownKey { appkey })?
+            .get(&key_id)
+            .ok_or(StartSignError::UnknownKey { key_id })?
             .clone();
 
         let access_structure = key_data
@@ -642,7 +647,9 @@ impl FrostCoordinator {
             });
         }
 
-        let checked_sign_task = sign_task.check(appkey).map_err(StartSignError::SignTask)?;
+        let checked_sign_task = sign_task
+            .check(key_data.appkey)
+            .map_err(StartSignError::SignTask)?;
 
         let sign_items = checked_sign_task.sign_items();
         let n_signatures = sign_items.len();
@@ -778,12 +785,12 @@ impl FrostCoordinator {
         encryption_key: SymmetricKey,
     ) -> Result<Vec<CoordinatorSend>, ActionError> {
         let AccessStructureRef {
-            appkey,
+            key_id,
             access_structure_id,
         } = access_structure_ref;
         let key_data = self
             .keys
-            .get(&appkey)
+            .get(&key_id)
             .ok_or(ActionError::StateInconsistent("no such key".into()))?;
         let access_structure = key_data.get_access_structure(access_structure_id).ok_or(
             ActionError::StateInconsistent("no such access structure".into()),
@@ -865,7 +872,7 @@ impl FrostCoordinator {
         &self,
         access_structure_ref: AccessStructureRef,
     ) -> Option<CoordAccessStructure> {
-        let key = self.keys.get(&access_structure_ref.appkey)?;
+        let key = self.keys.get(&access_structure_ref.key_id)?;
         let access_structure =
             key.get_access_structure(access_structure_ref.access_structure_id)?;
         Some(access_structure)
@@ -996,7 +1003,7 @@ impl CoordAccessStructure {
 
     pub fn access_structure_ref(&self) -> AccessStructureRef {
         AccessStructureRef {
-            appkey: self.appkey(),
+            key_id: self.appkey().key_id(),
             access_structure_id: self.access_structure_id(),
         }
     }
@@ -1029,7 +1036,7 @@ impl CoordAccessStructure {
 #[derive(Debug, Clone)]
 pub enum StartSignError {
     UnknownKey {
-        appkey: Appkey,
+        key_id: KeyId,
     },
     DeviceNotPartOfKey {
         device_id: DeviceId,
@@ -1085,9 +1092,9 @@ impl core::fmt::Display for StartSignError {
                     device_id
                 )
             }
-            StartSignError::UnknownKey { appkey } => write!(
+            StartSignError::UnknownKey { key_id } => write!(
                 f,
-                "device does not have key is was asked to sign with, id: {appkey}"
+                "device does not have key is was asked to sign with, id: {key_id}"
             ),
             StartSignError::SignTask(error) => {
                 write!(f, "{error}")
@@ -1146,6 +1153,6 @@ impl Gist for Mutation {
 // Uniquely identifies an access structure for a particular `appkey`.
 #[derive(Debug, Clone, Copy)]
 pub struct AccessStructureRef {
-    pub appkey: Appkey,
+    pub key_id: KeyId,
     pub access_structure_id: AccessStructureId,
 }

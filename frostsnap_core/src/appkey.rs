@@ -1,4 +1,7 @@
-use crate::tweak::{TweakableKey, Xpub};
+use crate::{
+    tweak::{TweakableKey, Xpub},
+    KeyId,
+};
 use alloc::string::String;
 use schnorr_fun::fun::prelude::*;
 
@@ -34,6 +37,10 @@ impl Appkey {
         let full = self.to_string();
         let redacted = format!("{}...{}", &full[..4], &full[full.len() - 4..]);
         redacted
+    }
+
+    pub fn key_id(&self) -> KeyId {
+        KeyId::from_appkey(*self)
     }
 }
 
