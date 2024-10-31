@@ -30,7 +30,7 @@ pub use frostsnap_coordinator::{
 use frostsnap_coordinator::{DesktopSerial, UsbSerialManager};
 pub use frostsnap_core::message::EncodedSignature;
 pub use frostsnap_core::{
-    coordinator::AccessStructureRef, AccessStructureId, Appkey, DeviceId, KeyId, SessionHash,
+    coordinator::AccessStructureRef, AccessStructureId, DeviceId, KeyId, MasterAppkey, SessionHash,
     SignTask,
 };
 use lazy_static::lazy_static;
@@ -157,12 +157,12 @@ pub struct KeyState {
 pub struct FrostKey(pub(crate) RustOpaque<frostsnap_core::coordinator::CoordFrostKey>);
 
 impl FrostKey {
-    pub fn appkey(&self) -> SyncReturn<Appkey> {
-        SyncReturn(self.0.appkey)
+    pub fn master_appkey(&self) -> SyncReturn<MasterAppkey> {
+        SyncReturn(self.0.master_appkey)
     }
 
     pub fn key_id(&self) -> SyncReturn<KeyId> {
-        SyncReturn(self.0.appkey.key_id())
+        SyncReturn(self.0.master_appkey.key_id())
     }
 
     pub fn key_name(&self) -> SyncReturn<String> {
@@ -219,8 +219,8 @@ impl AccessStructure {
         SyncReturn(self.0.access_structure_id().to_string().split_off(8))
     }
 
-    pub fn appkey(&self) -> SyncReturn<Appkey> {
-        SyncReturn(self.0.appkey())
+    pub fn master_appkey(&self) -> SyncReturn<MasterAppkey> {
+        SyncReturn(self.0.master_appkey())
     }
 }
 
@@ -419,7 +419,7 @@ impl DeviceListState {
     }
 }
 
-pub type WalletStreams = Mutex<BTreeMap<Appkey, StreamSink<TxState>>>;
+pub type WalletStreams = Mutex<BTreeMap<MasterAppkey, StreamSink<TxState>>>;
 
 #[derive(Clone)]
 pub struct Wallet {
@@ -456,23 +456,32 @@ impl Wallet {
         Ok(wallet)
     }
 
-    pub fn sub_tx_state(&self, appkey: Appkey, stream: StreamSink<TxState>) -> Result<()> {
-        stream.add(self.tx_state(appkey).0);
-        if let Some(existing) = self.wallet_streams.lock().unwrap().insert(appkey, stream) {
+    pub fn sub_tx_state(
+        &self,
+        master_appkey: MasterAppkey,
+        stream: StreamSink<TxState>,
+    ) -> Result<()> {
+        stream.add(self.tx_state(master_appkey).0);
+        if let Some(existing) = self
+            .wallet_streams
+            .lock()
+            .unwrap()
+            .insert(master_appkey, stream)
+        {
             existing.close();
         }
 
         Ok(())
     }
 
-    pub fn tx_state(&self, appkey: Appkey) -> SyncReturn<TxState> {
-        let txs = self.inner.lock().unwrap().list_transactions(appkey);
+    pub fn tx_state(&self, master_appkey: MasterAppkey) -> SyncReturn<TxState> {
+        let txs = self.inner.lock().unwrap().list_transactions(master_appkey);
         SyncReturn(txs.into())
     }
 
     pub fn sync_txids(
         &self,
-        appkey: Appkey,
+        master_appkey: MasterAppkey,
         txids: Vec<String>,
         stream: StreamSink<f64>,
     ) -> Result<()> {
@@ -501,9 +510,9 @@ impl Wallet {
         let something_changed = wallet.finish_sync(update)?;
 
         if something_changed {
-            let txs = wallet.list_transactions(appkey);
+            let txs = wallet.list_transactions(master_appkey);
             drop(wallet);
-            if let Some(wallet_stream) = self.wallet_streams.lock().unwrap().get(&appkey) {
+            if let Some(wallet_stream) = self.wallet_streams.lock().unwrap().get(&master_appkey) {
                 wallet_stream.add(txs.into());
             }
 
@@ -526,8 +535,12 @@ impl Wallet {
         Ok(())
     }
 
-    pub fn sync(&self, appkey: Appkey, stream: StreamSink<f64>) -> Result<()> {
-        let span = span!(Level::DEBUG, "syncing", appkey = appkey.to_string());
+    pub fn sync(&self, master_appkey: MasterAppkey, stream: StreamSink<f64>) -> Result<()> {
+        let span = span!(
+            Level::DEBUG,
+            "syncing",
+            master_appkey = master_appkey.to_string()
+        );
         let _enter = span.enter();
         let start = Instant::now();
         event!(Level::INFO, "starting sync");
@@ -535,7 +548,7 @@ impl Wallet {
             let wallet = self.inner.lock().unwrap();
             let inspect_stream = stream.clone();
             wallet
-                .start_sync(appkey)
+                .start_sync(master_appkey)
                 .inspect(move |_, progress| {
                     inspect_stream.add(progress.consumed() as f64 / progress.total() as f64);
                 })
@@ -552,9 +565,9 @@ impl Wallet {
         })?;
 
         if something_changed {
-            let txs = wallet.list_transactions(appkey);
+            let txs = wallet.list_transactions(master_appkey);
             drop(wallet);
-            if let Some(wallet_stream) = self.wallet_streams.lock().unwrap().get(&appkey) {
+            if let Some(wallet_stream) = self.wallet_streams.lock().unwrap().get(&master_appkey) {
                 wallet_stream.add(txs.into());
             }
         }
@@ -572,20 +585,20 @@ impl Wallet {
         Ok(())
     }
 
-    pub fn next_address(&self, appkey: Appkey) -> Result<Address> {
+    pub fn next_address(&self, master_appkey: MasterAppkey) -> Result<Address> {
         self.inner
             .lock()
             .unwrap()
-            .next_address(appkey)
+            .next_address(master_appkey)
             .map(Into::into)
     }
 
-    pub fn addresses_state(&self, appkey: Appkey) -> SyncReturn<Vec<Address>> {
+    pub fn addresses_state(&self, master_appkey: MasterAppkey) -> SyncReturn<Vec<Address>> {
         SyncReturn(
             self.inner
                 .lock()
                 .unwrap()
-                .list_addresses(appkey)
+                .list_addresses(master_appkey)
                 .into_iter()
                 .map(Into::into)
                 .collect(),
@@ -594,7 +607,7 @@ impl Wallet {
 
     pub fn send_to(
         &self,
-        appkey: Appkey,
+        master_appkey: MasterAppkey,
         to_address: String,
         value: u64,
         feerate: f64,
@@ -604,14 +617,14 @@ impl Wallet {
             .expect("validation should have checked")
             .require_network(wallet.network)
             .expect("validation should have checked");
-        let signing_task = wallet.send_to(appkey, to_address, value, feerate as f32)?;
+        let signing_task = wallet.send_to(master_appkey, to_address, value, feerate as f32)?;
         let unsigned_tx = UnsignedTx {
             template_tx: RustOpaque::new(signing_task),
         };
         Ok(unsigned_tx)
     }
 
-    pub fn broadcast_tx(&self, appkey: Appkey, tx: SignedTx) -> Result<()> {
+    pub fn broadcast_tx(&self, master_appkey: MasterAppkey, tx: SignedTx) -> Result<()> {
         match self.chain_sync.broadcast(tx.signed_tx.deref().clone()) {
             Ok(_) => {
                 event!(
@@ -622,8 +635,8 @@ impl Wallet {
                 let mut inner = self.inner.lock().unwrap();
                 inner.broadcast_success(tx.signed_tx.deref().to_owned());
                 let wallet_streams = self.wallet_streams.lock().unwrap();
-                if let Some(stream) = wallet_streams.get(&appkey) {
-                    let txs = inner.list_transactions(appkey);
+                if let Some(stream) = wallet_streams.get(&master_appkey) {
+                    let txs = inner.list_transactions(master_appkey);
                     stream.add(txs.into());
                 }
                 Ok(())
@@ -649,13 +662,13 @@ impl Wallet {
     pub fn psbt_to_unsigned_tx(
         &self,
         psbt: Psbt,
-        appkey: Appkey,
+        master_appkey: MasterAppkey,
     ) -> Result<SyncReturn<UnsignedTx>> {
         let template = self
             .inner
             .lock()
             .unwrap()
-            .psbt_to_tx_template(&psbt.inner, appkey)?;
+            .psbt_to_tx_template(&psbt.inner, master_appkey)?;
 
         Ok(SyncReturn(UnsignedTx {
             template_tx: RustOpaque::new(template),
@@ -718,9 +731,9 @@ impl BitcoinNetwork {
         SyncReturn(bitcoin::NetworkKind::from(*self.0).is_mainnet())
     }
 
-    pub fn descriptor_for_key(&self, appkey: Appkey) -> SyncReturn<String> {
+    pub fn descriptor_for_key(&self, master_appkey: MasterAppkey) -> SyncReturn<String> {
         let descriptor = frostsnap_coordinator::bitcoin::multi_x_descriptor_for_account(
-            appkey,
+            master_appkey,
             frostsnap_core::tweak::BitcoinAccount::default(),
             (*self.0).into(),
         );
@@ -877,7 +890,7 @@ impl Coordinator {
                 .frost_keys()
                 .into_iter()
                 .flat_map(|frost_key| {
-                    let key_id: KeyId = frost_key.appkey.key_id();
+                    let key_id: KeyId = frost_key.master_appkey.key_id();
                     frost_key
                         .access_structures
                         .iter()
@@ -1037,10 +1050,10 @@ pub struct SignedTx {
 impl SignedTx {
     pub fn effect(
         &self,
-        appkey: Appkey,
+        master_appkey: MasterAppkey,
         network: BitcoinNetwork,
     ) -> Result<SyncReturn<EffectOfTx>> {
-        self.unsigned_tx.effect(appkey, network)
+        self.unsigned_tx.effect(master_appkey, network)
     }
 }
 
@@ -1087,7 +1100,7 @@ impl UnsignedTx {
 
     pub fn effect(
         &self,
-        appkey: Appkey,
+        master_appkey: MasterAppkey,
         network: BitcoinNetwork,
     ) -> Result<SyncReturn<EffectOfTx>> {
         use frostsnap_core::bitcoin_transaction::RootOwner;
@@ -1097,7 +1110,7 @@ impl UnsignedTx {
             .ok_or(anyhow!("invalid transaction"))?;
         let mut net_value = self.template_tx.net_value();
         let value_for_this_key = net_value
-            .remove(&RootOwner::Local(appkey))
+            .remove(&RootOwner::Local(master_appkey))
             .ok_or(anyhow!("this transaction has no effect on this key"))?;
 
         let foreign_receiving_addresses = net_value
@@ -1172,7 +1185,7 @@ pub enum SignTaskDescription {
     // Nostr {
     //     #[bincode(with_serde)]
     //     event: Box<crate::nostr::UnsignedEvent>,
-    //     appkey: Appkey,
+    //     master_appkey: MasterAppkey,
     // }, // 1 nonce & sig
     Transaction { unsigned_tx: UnsignedTx },
 }
@@ -1432,7 +1445,9 @@ impl WalletSettings {
                 .wallet_networks
                 .clone()
                 .into_iter()
-                .map(|(appkey, network)| (appkey, BitcoinNetwork(RustOpaque::new(network))))
+                .map(|(master_appkey, network)| {
+                    (master_appkey, BitcoinNetwork(RustOpaque::new(network)))
+                })
                 .collect(),
         }
     }
@@ -1477,8 +1492,8 @@ pub struct _AccessStructureId(pub [u8; 32]);
 #[frb(mirror(DeviceId))]
 pub struct _DeviceId(pub [u8; 33]);
 
-#[frb(mirror(Appkey))]
-pub struct _Appkey(pub [u8; 65]);
+#[frb(mirror(MasterAppkey))]
+pub struct _MasterAppkey(pub [u8; 65]);
 
 #[frb(mirror(KeyId))]
 pub struct _KeyId(pub [u8; 32]);
@@ -1546,8 +1561,8 @@ pub enum _ChainStatusState {
 
 // XXX: bugs in flutter_rust_bridge mean that sometimes the right code doesn't get emitted unless
 // you use it as an argument.
-pub fn echo_appkey(appkey: Appkey) -> Appkey {
-    appkey
+pub fn echo_master_appkey(master_appkey: MasterAppkey) -> MasterAppkey {
+    master_appkey
 }
 
 pub fn echo_asid(value: AccessStructureId) -> AccessStructureId {
@@ -1558,7 +1573,7 @@ pub fn echo_asr(value: AccessStructureRef) -> AccessStructureRef {
     value
 }
 
-// In flutter_rust_bridge v2 we can just extend Appkey with this
-pub fn appkey_ext_to_key_id(appkey: Appkey) -> SyncReturn<KeyId> {
-    SyncReturn(appkey.key_id())
+// In flutter_rust_bridge v2 we can just extend MasterAppkey with this
+pub fn master_appkey_ext_to_key_id(master_appkey: MasterAppkey) -> SyncReturn<KeyId> {
+    SyncReturn(master_appkey.key_id())
 }

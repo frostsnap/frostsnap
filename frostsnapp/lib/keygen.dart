@@ -39,15 +39,15 @@ class _KeyNamePageState extends State<KeyNamePage> {
   Widget build(BuildContext context) {
     final nextPage = _keyNameController.text.isNotEmpty
         ? () async {
-            final appkey = await Navigator.push(
+            final masterAppkey = await Navigator.push(
               context,
               createRoute(DevicesPage(
                 keyName: _keyNameController.text,
                 network: bitcoinNetwork,
               )),
             );
-            if (context.mounted && appkey != null) {
-              Navigator.pop(context, appkey);
+            if (context.mounted && masterAppkey != null) {
+              Navigator.pop(context, masterAppkey);
             }
           }
         : null;
@@ -224,7 +224,7 @@ class DevicesPage extends StatelessWidget {
                         child: ElevatedButton.icon(
                           onPressed: allDevicesReady
                               ? () async {
-                                  final appkey = await Navigator.push(
+                                  final masterAppkey = await Navigator.push(
                                     context,
                                     createRoute(ThresholdPage(
                                       network: network,
@@ -232,8 +232,8 @@ class DevicesPage extends StatelessWidget {
                                       selectedDevices: devices,
                                     )),
                                   );
-                                  if (context.mounted && appkey != null) {
-                                    Navigator.pop(context, appkey);
+                                  if (context.mounted && masterAppkey != null) {
+                                    Navigator.pop(context, masterAppkey);
                                   }
                                 }
                               : null,

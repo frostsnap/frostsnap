@@ -173,8 +173,8 @@ impl AppTweak {
         }
     }
 
-    pub fn derive_xonly_key<K: TweakableKey>(&self, appkey: &Xpub<K>) -> K::XOnly {
-        let mut xpub_for_app = appkey.clone();
+    pub fn derive_xonly_key<K: TweakableKey>(&self, master_appkey: &Xpub<K>) -> K::XOnly {
+        let mut xpub_for_app = master_appkey.clone();
         xpub_for_app.derive_bip32([self.kind() as u32]);
 
         match &self {
@@ -321,10 +321,10 @@ impl<T: TweakableKey> Xpub<T> {
         }
     }
 
-    pub fn rootkey_to_appkey(&self) -> Xpub<T> {
-        let mut appkey = self.clone();
-        appkey.derive_bip32([0]);
-        appkey
+    pub fn rootkey_to_master_appkey(&self) -> Xpub<T> {
+        let mut master_appkey = self.clone();
+        master_appkey.derive_bip32([0]);
+        master_appkey
     }
 
     pub fn new(key: T, chaincode: [u8; 32]) -> Self {

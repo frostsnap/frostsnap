@@ -1,6 +1,6 @@
 use crate::{
-    coordinator, AccessStructureId, Appkey, CheckedSignTask, CoordShareDecryptionContrib, Gist,
-    KeyId, SessionHash, Vec,
+    coordinator, AccessStructureId, CheckedSignTask, CoordShareDecryptionContrib, Gist, KeyId,
+    MasterAppkey, SessionHash, Vec,
 };
 use crate::{DeviceId, SignTask};
 use alloc::{
@@ -236,7 +236,7 @@ pub enum DeviceToUserMessage {
     },
     SignatureRequest {
         sign_task: CheckedSignTask,
-        appkey: Appkey,
+        master_appkey: MasterAppkey,
     },
     Canceled {
         task: TaskKind,

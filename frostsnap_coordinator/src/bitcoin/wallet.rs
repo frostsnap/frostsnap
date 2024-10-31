@@ -13,7 +13,7 @@ use bdk_chain::{
 use frostsnap_core::{
     bitcoin_transaction::{self, LocalSpk},
     tweak::{BitcoinAccountKeychain, BitcoinBip32Path},
-    Appkey,
+    MasterAppkey,
 };
 use frostsnap_core::{
     bitcoin_transaction::{PushInput, TransactionTemplate},
@@ -27,7 +27,7 @@ use tracing::{event, Level};
 
 pub type WalletIndexedTxGraph = indexed_tx_graph::IndexedTxGraph<
     ConfirmationBlockTime,
-    KeychainTxOutIndex<(Appkey, BitcoinAccountKeychain)>,
+    KeychainTxOutIndex<(MasterAppkey, BitcoinAccountKeychain)>,
 >;
 pub type WalletIndexedTxGraphChangeSet =
     indexed_tx_graph::ChangeSet<ConfirmationBlockTime, keychain_txout::ChangeSet>;
@@ -66,7 +66,7 @@ impl FrostsnapWallet {
     }
 
     fn descriptors_for_key(
-        approot: Appkey,
+        approot: MasterAppkey,
         network: bitcoin::NetworkKind,
     ) -> Vec<(BitcoinAccountKeychain, Descriptor<DescriptorPublicKey>)> {
         [
@@ -83,21 +83,21 @@ impl FrostsnapWallet {
         .collect()
     }
 
-    fn lazily_initialize_key(&mut self, appkey: Appkey) {
+    fn lazily_initialize_key(&mut self, master_appkey: MasterAppkey) {
         if self
             .tx_graph
             .index
-            .get_descriptor((appkey, BitcoinAccountKeychain::external()))
+            .get_descriptor((master_appkey, BitcoinAccountKeychain::external()))
             .is_none()
         {
             for (account_keychain, descriptor) in
-                Self::descriptors_for_key(appkey, self.network.into())
+                Self::descriptors_for_key(master_appkey, self.network.into())
             {
                 let _intentionally_ignore_saving_descriptors = self
                     .tx_graph
                     .MUTATE_NO_PERSIST()
                     .index
-                    .insert_descriptor((appkey, account_keychain), descriptor);
+                    .insert_descriptor((master_appkey, account_keychain), descriptor);
             }
             let all_txs = self
                 .tx_graph
@@ -112,11 +112,11 @@ impl FrostsnapWallet {
         }
     }
 
-    pub fn list_addresses(&mut self, appkey: Appkey) -> Vec<AddressInfo> {
-        self.lazily_initialize_key(appkey);
+    pub fn list_addresses(&mut self, master_appkey: MasterAppkey) -> Vec<AddressInfo> {
+        self.lazily_initialize_key(master_appkey);
         self.tx_graph
             .index
-            .revealed_keychain_spks((appkey, BitcoinAccountKeychain::external()))
+            .revealed_keychain_spks((master_appkey, BitcoinAccountKeychain::external()))
             .rev()
             .map(|(i, spk)| AddressInfo {
                 index: i,
@@ -125,19 +125,19 @@ impl FrostsnapWallet {
                 used: self
                     .tx_graph
                     .index
-                    .is_used((appkey, BitcoinAccountKeychain::external()), i),
+                    .is_used((master_appkey, BitcoinAccountKeychain::external()), i),
             })
             .collect()
     }
 
-    pub fn next_address(&mut self, appkey: Appkey) -> Result<AddressInfo> {
-        self.lazily_initialize_key(appkey);
+    pub fn next_address(&mut self, master_appkey: MasterAppkey) -> Result<AddressInfo> {
+        self.lazily_initialize_key(master_appkey);
 
         let mut db = self.db.lock().unwrap();
         let (index, spk) = self.tx_graph.mutate(&mut *db, |tx_graph| {
             tx_graph
                 .index
-                .reveal_next_spk((appkey, BitcoinAccountKeychain::external()))
+                .reveal_next_spk((master_appkey, BitcoinAccountKeychain::external()))
                 .ok_or(anyhow!("no more addresses on this keychain"))
         })?;
 
@@ -147,12 +147,12 @@ impl FrostsnapWallet {
             used: self
                 .tx_graph
                 .index
-                .is_used((appkey, BitcoinAccountKeychain::external()), index),
+                .is_used((master_appkey, BitcoinAccountKeychain::external()), index),
         })
     }
 
-    pub fn list_transactions(&mut self, appkey: Appkey) -> Vec<Transaction> {
-        self.lazily_initialize_key(appkey);
+    pub fn list_transactions(&mut self, master_appkey: MasterAppkey) -> Vec<Transaction> {
+        self.lazily_initialize_key(master_appkey);
         let mut txs = self
             .tx_graph
             .graph()
@@ -169,10 +169,10 @@ impl FrostsnapWallet {
                     }),
                     _ => None,
                 };
-                let net_value = self
-                    .tx_graph
-                    .index
-                    .net_value(&canonical_tx.tx_node.tx, Self::key_index_range(appkey));
+                let net_value = self.tx_graph.index.net_value(
+                    &canonical_tx.tx_node.tx,
+                    Self::key_index_range(master_appkey),
+                );
 
                 if net_value == SignedAmount::ZERO {
                     return None;
@@ -193,12 +193,12 @@ impl FrostsnapWallet {
             .txids(txids)
     }
 
-    pub fn start_sync(&self, appkey: Appkey) -> SyncRequestBuilder {
+    pub fn start_sync(&self, master_appkey: MasterAppkey) -> SyncRequestBuilder {
         // We want to sync all spks for now!
         let interesting_spks = self
             .tx_graph
             .index
-            .revealed_spks(Self::key_index_range(appkey))
+            .revealed_spks(Self::key_index_range(master_appkey))
             .map(|(_, spk)| spk.to_owned());
         SyncRequest::builder()
             .chain_tip(self.chain.tip())
@@ -229,12 +229,12 @@ impl FrostsnapWallet {
 
     pub fn send_to(
         &mut self,
-        appkey: Appkey,
+        master_appkey: MasterAppkey,
         to_address: bitcoin::Address,
         value: u64,
         feerate: f32,
     ) -> Result<bitcoin_transaction::TransactionTemplate> {
-        self.lazily_initialize_key(appkey);
+        self.lazily_initialize_key(master_appkey);
         use bdk_coin_select::{
             metrics, Candidate, ChangePolicy, CoinSelector, DrainWeights, FeeRate, Target,
             TargetFee, TargetOutputs, TR_DUST_RELAY_MIN_VALUE, TR_KEYSPEND_TXIN_WEIGHT,
@@ -248,7 +248,7 @@ impl FrostsnapWallet {
                 self.chain.tip().block_id(),
                 self.tx_graph
                     .index
-                    .keychain_outpoints_in_range(Self::key_index_range(appkey)),
+                    .keychain_outpoints_in_range(Self::key_index_range(master_appkey)),
             )
             .collect();
 
@@ -327,8 +327,8 @@ impl FrostsnapWallet {
 
         let mut template_tx = frostsnap_core::bitcoin_transaction::TransactionTemplate::new();
 
-        for (((_appkey, account_keychain), index), selected_utxo) in selected_utxos {
-            assert_eq!(_appkey, &appkey);
+        for (((_master_appkey, account_keychain), index), selected_utxo) in selected_utxos {
+            assert_eq!(_master_appkey, &master_appkey);
             let prev_tx = self
                 .tx_graph
                 .graph()
@@ -341,7 +341,10 @@ impl FrostsnapWallet {
             template_tx
                 .push_owned_input(
                     PushInput::spend_tx_output(prev_tx.as_ref(), selected_utxo.outpoint.vout),
-                    LocalSpk { appkey, bip32_path },
+                    LocalSpk {
+                        master_appkey,
+                        bip32_path,
+                    },
                 )
                 .expect("must be able to add input");
         }
@@ -351,7 +354,7 @@ impl FrostsnapWallet {
             let (i, _change_spk) = self.tx_graph.mutate(&mut *db, |tx_graph| {
                 Ok(tx_graph
                     .index
-                    .next_unused_spk((appkey, BitcoinAccountKeychain::internal()))
+                    .next_unused_spk((master_appkey, BitcoinAccountKeychain::internal()))
                     .expect(
                         "this should have been initialzed by now since we are spending from it",
                     ))
@@ -360,12 +363,12 @@ impl FrostsnapWallet {
             self.tx_graph
                 .MUTATE_NO_PERSIST()
                 .index
-                .mark_used((appkey, BitcoinAccountKeychain::internal()), i);
+                .mark_used((master_appkey, BitcoinAccountKeychain::internal()), i);
 
             template_tx.push_owned_output(
                 Amount::from_sat(value),
                 LocalSpk {
-                    appkey,
+                    master_appkey,
                     bip32_path: BitcoinBip32Path {
                         account_keychain: BitcoinAccountKeychain::internal(),
                         index: i,
@@ -379,8 +382,11 @@ impl FrostsnapWallet {
         Ok(template_tx)
     }
 
-    fn key_index_range(appkey: Appkey) -> impl RangeBounds<(Appkey, BitcoinAccountKeychain)> {
-        (appkey, BitcoinAccountKeychain::external())..=(appkey, BitcoinAccountKeychain::internal())
+    fn key_index_range(
+        master_appkey: MasterAppkey,
+    ) -> impl RangeBounds<(MasterAppkey, BitcoinAccountKeychain)> {
+        (master_appkey, BitcoinAccountKeychain::external())
+            ..=(master_appkey, BitcoinAccountKeychain::internal())
     }
 
     pub fn fee(&self, tx: &bitcoin::Transaction) -> Result<u64> {
@@ -419,9 +425,9 @@ impl FrostsnapWallet {
     pub fn psbt_to_tx_template(
         &mut self,
         psbt: &bitcoin::Psbt,
-        appkey: Appkey,
+        master_appkey: MasterAppkey,
     ) -> Result<TransactionTemplate> {
-        let xpub = appkey
+        let xpub = master_appkey
             .to_xpub()
             .to_bitcoin_xpub_with_lies(self.network.into());
         let our_fingerprint = xpub.fingerprint();
@@ -497,7 +503,10 @@ impl FrostsnapWallet {
 
             template.push_owned_input(
                 input_push,
-                frostsnap_core::bitcoin_transaction::LocalSpk { appkey, bip32_path },
+                frostsnap_core::bitcoin_transaction::LocalSpk {
+                    master_appkey,
+                    bip32_path,
+                },
             )?;
         }
 
@@ -511,7 +520,7 @@ impl FrostsnapWallet {
                 Some(&((_, account_keychain), index)) => template.push_owned_output(
                     txout.value,
                     LocalSpk {
-                        appkey,
+                        master_appkey,
                         bip32_path: BitcoinBip32Path {
                             account_keychain,
                             index,
@@ -556,15 +565,17 @@ mod test {
 
     #[test]
     fn wallet_descriptors_match_our_tweaking() {
-        let appkey = Appkey::derive_from_rootkey(Point::random(&mut rand::thread_rng()));
-        let descriptors = FrostsnapWallet::descriptors_for_key(appkey, bitcoin::NetworkKind::Main);
+        let master_appkey =
+            MasterAppkey::derive_from_rootkey(Point::random(&mut rand::thread_rng()));
+        let descriptors =
+            FrostsnapWallet::descriptors_for_key(master_appkey, bitcoin::NetworkKind::Main);
 
         let (account_keychain, external_descriptor) = &descriptors[0];
         let xonly = AppTweak::Bitcoin(BitcoinBip32Path {
             account_keychain: *account_keychain,
             index: 42,
         })
-        .derive_xonly_key(&appkey.to_xpub());
+        .derive_xonly_key(&master_appkey.to_xpub());
 
         let definite_descriptor = external_descriptor.at_derivation_index(42).unwrap();
         definite_descriptor
