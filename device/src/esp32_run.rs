@@ -2,17 +2,12 @@ use crate::{
     io::SerialInterface,
     ota, storage,
     ui::{self, UiEvent, UserInteraction},
-    DownstreamConnectionState, UpstreamConnection, UpstreamConnectionState,
+    DownstreamConnectionState, Duration, Instant, UpstreamConnection, UpstreamConnectionState,
 };
 use alloc::{
     collections::BTreeMap, collections::VecDeque, string::String, string::ToString, vec::Vec,
 };
-use esp_hal::{
-    gpio,
-    sha::Sha,
-    timer::{self, timg::Timer},
-    uart, Blocking,
-};
+use esp_hal::{gpio, sha::Sha, timer, uart, Blocking};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{
     CoordinatorSendBody, CoordinatorUpgradeMessage, DeviceSendBody, DeviceSendMessage,
@@ -35,7 +30,7 @@ pub struct Run<'a, UpstreamUart, DownstreamUart, Rng, Ui, T, DownstreamDetectPin
     pub downstream_serial: SerialInterface<'a, T, DownstreamUart, Downstream>,
     pub rng: Rng,
     pub ui: Ui,
-    pub timer: &'a Timer<T, Blocking>,
+    pub timer: &'a T,
     pub downstream_detect: gpio::Input<'a, DownstreamDetectPin>,
     pub sha256: Sha<'a, Blocking>,
 }
@@ -47,7 +42,7 @@ where
     DownstreamUart: uart::Instance,
     DownstreamDetectPin: gpio::InputPin,
     Ui: UserInteraction,
-    T: timer::timg::Instance,
+    T: timer::Timer,
     Rng: RngCore,
 {
     pub fn run(self) -> ! {
@@ -111,7 +106,7 @@ where
         let mut sends_upstream = UpstreamSends::new(device_id);
         let mut sends_user: Vec<DeviceToUserMessage> = vec![];
         let mut outbox = VecDeque::new();
-        let mut next_write_magic_bytes_downstream = 0;
+        let mut next_write_magic_bytes_downstream: Instant = Instant::from_ticks(0);
         // FIXME: If we keep getting magic bytes instead of getting a proper message we have to accept that
         // the upstream doesn't think we're awake yet and we should soft reset again and send our
         // magic bytes again.
@@ -145,7 +140,7 @@ where
                 sends_downstream.clear();
                 downstream_connection_state = DownstreamConnectionState::Disconnected;
                 upstream_connection.state = UpstreamConnectionState::Connected;
-                next_write_magic_bytes_downstream = 0;
+                next_write_magic_bytes_downstream = Instant::from_ticks(0);
                 upgrade = None;
                 outbox.clear();
                 ui.cancel();
@@ -161,7 +156,9 @@ where
                 (true, DownstreamConnectionState::Connected) => {
                     let now = timer.now();
                     if now > next_write_magic_bytes_downstream {
-                        next_write_magic_bytes_downstream = now + 80_000 * MAGIC_BYTES_PERIOD;
+                        next_write_magic_bytes_downstream = now
+                            .checked_add_duration(Duration::millis(MAGIC_BYTES_PERIOD))
+                            .expect("won't overlfow");
                         downstream_serial
                             .write_magic_bytes()
                             .expect("couldn't write magic bytes downstream");
@@ -504,7 +501,13 @@ where
             while let Some(send) = outbox.pop_front() {
                 match send {
                     DeviceSend::ToStorage(message) => {
+                        let now = self.timer.now();
                         flash.push(storage::Change::Core(message)).unwrap();
+                        let after = self.timer.now().checked_duration_since(now).unwrap();
+                        sends_upstream.send_debug(format!(
+                            "core mutation persisted in {}",
+                            after.to_millis()
+                        ));
                     }
                     DeviceSend::ToCoordinator(message) => {
                         if matches!(message, DeviceToCoordinatorMessage::KeyGenResponse(_)) {

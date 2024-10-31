@@ -11,12 +11,7 @@ use core::marker::PhantomData;
 use embedded_hal_nb::serial::{Read, Write};
 use esp_hal::clock::Clocks;
 use esp_hal::Blocking;
-use esp_hal::{
-    prelude::*,
-    timer::{self, timg::Timer},
-    uart,
-    usb_serial_jtag::UsbSerialJtag,
-};
+use esp_hal::{prelude::*, timer, uart, usb_serial_jtag::UsbSerialJtag};
 use frostsnap_comms::Direction;
 use frostsnap_comms::MagicBytes;
 use frostsnap_comms::ReceiveSerial;
@@ -29,14 +24,14 @@ pub struct SerialInterface<'a, T, U, D> {
     io: SerialIo<'a, U>,
     ring_buffer: VecDeque<u8>,
     magic_bytes_progress: usize,
-    timer: &'a Timer<T, Blocking>,
+    timer: &'a T,
     direction: PhantomData<D>,
 }
 
 impl<'a, T, U, D> SerialInterface<'a, T, U, D> {
     pub fn new_uart(
         uart: uart::Uart<'a, U, Blocking>,
-        timer: &'a Timer<T, Blocking>,
+        timer: &'a T,
         clocks: &'a Clocks<'a>,
     ) -> Self {
         Self {
@@ -58,7 +53,7 @@ impl<'a, T, U, D> SerialInterface<'a, T, U, D> {
 }
 
 impl<'a, T, U> SerialInterface<'a, T, U, Upstream> {
-    pub fn new_jtag(jtag: UsbSerialJtag<'a, Blocking>, timer: &'a Timer<T, Blocking>) -> Self {
+    pub fn new_jtag(jtag: UsbSerialJtag<'a, Blocking>, timer: &'a T) -> Self {
         Self {
             io: SerialIo::Jtag(jtag),
             ring_buffer: VecDeque::with_capacity(RING_BUFFER_SIZE),
@@ -72,7 +67,7 @@ impl<'a, T, U> SerialInterface<'a, T, U, Upstream> {
 impl<'a, T, U, D> SerialInterface<'a, T, U, D>
 where
     U: uart::Instance,
-    T: timer::timg::Instance,
+    T: timer::Timer,
     D: Direction,
 {
     pub fn fill_buffer(&mut self) {
@@ -142,7 +137,7 @@ where
 impl<'a, T, U, D> Reader for SerialInterface<'a, T, U, D>
 where
     U: uart::Instance,
-    T: timer::timg::Instance,
+    T: timer::Timer,
     D: Direction,
 {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), DecodeError> {
