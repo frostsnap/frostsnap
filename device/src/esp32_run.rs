@@ -488,8 +488,16 @@ where
                     ui.set_workflow(switch_workflow);
                 }
             }
-            // Handle message outbox to send: ToStorage, ToCoordinator, ToUser.
-            // ⚠ pop_front ensures messages are sent in order. E.g. update nonce NVS before sending sig.
+
+            // process saving mutations before sending messages out
+            for mutation in signer.staged_mutations().drain(..) {
+                flash
+                    .push(storage::Change::Core(mutation))
+                    .expect("writing core mutation to storage failed");
+            }
+
+            // Handle message outbox to send: ToCoordinator, ToUser.
+            // ⚠ pop_front ensures messages are sent in order.
             while let Some(send) = outbox.pop_front() {
                 match send {
                     DeviceSend::ToCoordinator(boxed) => {
