@@ -16,13 +16,14 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class LoadPsbtPage extends StatefulWidget {
-  final Appkey appkey;
+  final MasterAppkey masterAppkey;
   final Wallet wallet;
   late final FrostKey frostKey;
 
-  LoadPsbtPage({Key? key, required this.appkey, required this.wallet})
+  LoadPsbtPage({Key? key, required this.masterAppkey, required this.wallet})
       : super(key: key) {
-    frostKey = coord.getFrostKey(keyId: api.appkeyExtToKeyId(appkey: appkey))!;
+    frostKey = coord.getFrostKey(
+        keyId: api.masterAppkeyExtToKeyId(masterAppkey: masterAppkey))!;
   }
 
   @override
@@ -142,10 +143,11 @@ Future<void> runPsbtSigningWorkflow(
   final Psbt psbt;
   final UnsignedTx unsignedTx;
   final frostkey = coord.getFrostKey(keyId: accessStructureRef.keyId)!;
-  final appkey = frostkey.appkey();
+  final masterAppkey = frostkey.masterAppkey();
   try {
     psbt = api.psbtBytesToPsbt(psbtBytes: psbtBytes);
-    unsignedTx = wallet.psbtToUnsignedTx(psbt: psbt, appkey: appkey);
+    unsignedTx =
+        wallet.psbtToUnsignedTx(psbt: psbt, masterAppkey: masterAppkey);
   } catch (e) {
     showErrorSnackbarTop(context, "Error loading PSBT: $e");
     return;
@@ -156,7 +158,8 @@ Future<void> runPsbtSigningWorkflow(
       unsignedTx: unsignedTx,
       devices: selectedDevices);
 
-  final effect = unsignedTx.effect(appkey: appkey, network: wallet.network);
+  final effect =
+      unsignedTx.effect(masterAppkey: masterAppkey, network: wallet.network);
 
   final signatures = await showSigningProgressDialog(
     context,
@@ -171,7 +174,7 @@ Future<void> runPsbtSigningWorkflow(
     if (context.mounted) {
       await saveOrBroadcastSignedPsbtDialog(
         context,
-        appkey: appkey,
+        masterAppkey: masterAppkey,
         tx: signedTx,
         psbt: signedPsbt,
         wallet: wallet,
@@ -181,7 +184,7 @@ Future<void> runPsbtSigningWorkflow(
 }
 
 Future<void> saveOrBroadcastSignedPsbtDialog(BuildContext context,
-    {required Appkey appkey,
+    {required MasterAppkey masterAppkey,
     required SignedTx tx,
     required Psbt psbt,
     required Wallet wallet}) {
@@ -191,7 +194,7 @@ Future<void> saveOrBroadcastSignedPsbtDialog(BuildContext context,
         final broadcastButton = ElevatedButton(
             onPressed: () async {
               final broadcasted = await showBroadcastConfirmDialog(context,
-                  appkey: appkey, tx: tx, wallet: wallet);
+                  masterAppkey: masterAppkey, tx: tx, wallet: wallet);
               if (broadcasted && context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(

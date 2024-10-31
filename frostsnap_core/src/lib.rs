@@ -3,8 +3,8 @@
 #[cfg(feature = "std")]
 #[macro_use]
 extern crate std;
-mod appkey;
 mod macros;
+mod master_appkey;
 pub mod message;
 pub mod nostr;
 pub mod tweak;
@@ -20,8 +20,8 @@ mod sign_task;
 use sha2::{digest::FixedOutput, Digest};
 pub use sign_task::*;
 
-pub use appkey::*;
 pub use bincode;
+pub use master_appkey::*;
 pub use serde;
 pub mod coordinator;
 pub mod device;
@@ -232,11 +232,16 @@ pub struct KeyId(pub [u8; 32]);
 
 impl KeyId {
     pub fn from_rootkey(rootkey: Point) -> Self {
-        Self::from_appkey(Appkey::derive_from_rootkey(rootkey))
+        Self::from_master_appkey(MasterAppkey::derive_from_rootkey(rootkey))
     }
 
-    pub fn from_appkey(appkey: Appkey) -> Self {
-        Self(prefix_hash("KEY_ID").add(appkey.0).finalize_fixed().into())
+    pub fn from_master_appkey(master_appkey: MasterAppkey) -> Self {
+        Self(
+            prefix_hash("KEY_ID")
+                .add(master_appkey.0)
+                .finalize_fixed()
+                .into(),
+        )
     }
 }
 

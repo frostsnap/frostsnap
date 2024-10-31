@@ -8,7 +8,7 @@ use frostsnap_core::message::{
 use frostsnap_core::tweak::BitcoinBip32Path;
 use frostsnap_core::KeyId;
 use frostsnap_core::{
-    coordinator::FrostCoordinator, device::FrostSigner, Appkey, CheckedSignTask, DeviceId,
+    coordinator::FrostCoordinator, device::FrostSigner, CheckedSignTask, DeviceId, MasterAppkey,
     SessionHash, SignTask,
 };
 use rand::seq::IteratorRandom;
@@ -44,7 +44,7 @@ struct TestEnv {
     // storage
     pub coord_nonces: BTreeMap<(DeviceId, u64), Nonce>,
     pub device_nonces: BTreeMap<DeviceId, u64>,
-    pub coord_appkeys: BTreeMap<Appkey, String>,
+    pub coord_master_appkeys: BTreeMap<MasterAppkey, String>,
     pub coordinator_access_structures: BTreeMap<KeyId, Vec<CoordAccessStructure>>,
 }
 
@@ -57,14 +57,16 @@ impl common::Env for TestEnv {
         use frostsnap_core::coordinator::Mutation::*;
         match mutation {
             NewKey {
-                appkey, key_name, ..
+                master_appkey,
+                key_name,
+                ..
             } => {
-                self.coord_appkeys.insert(appkey, key_name);
+                self.coord_master_appkeys.insert(master_appkey, key_name);
             }
             NewAccessStructure(access_structure) => {
                 let access_structures = self
                     .coordinator_access_structures
-                    .entry(access_structure.appkey().key_id())
+                    .entry(access_structure.master_appkey().key_id())
                     .or_default();
                 access_structures.push(access_structure);
             }
@@ -223,7 +225,7 @@ impl common::Env for TestEnv {
             }
             DeviceToUserMessage::SignatureRequest {
                 sign_task,
-                appkey: _,
+                master_appkey: _,
             } => {
                 self.sign_tasks.insert(from, sign_task);
                 let sign_ack = run.device(from).sign_ack(&mut TestDeviceKeygen).unwrap();
@@ -314,7 +316,7 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
         let task = SignTask::Plain {
             message: message.into(),
         };
-        let checked_task = task.clone().check(key_data.appkey).unwrap();
+        let checked_task = task.clone().check(key_data.master_appkey).unwrap();
         let set = BTreeSet::from_iter(signers.iter().map(|i| device_list[*i]));
 
         let sign_init = run
@@ -447,8 +449,8 @@ fn test_display_backup() {
     .unwrap();
 
     assert_eq!(
-        Appkey::derive_from_rootkey(g!(interpolated_joint_secret * G).normalize()),
-        key_data.appkey
+        MasterAppkey::derive_from_rootkey(g!(interpolated_joint_secret * G).normalize()),
+        key_data.master_appkey
     );
 }
 
@@ -584,7 +586,7 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
 
     tx_template.push_imaginary_owned_input(
         LocalSpk {
-            appkey: key_data.appkey,
+            master_appkey: key_data.master_appkey,
             bip32_path: BitcoinBip32Path::external(7),
         },
         bitcoin::Amount::from_sat(42_000),
@@ -592,14 +594,14 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
 
     tx_template.push_imaginary_owned_input(
         LocalSpk {
-            appkey: key_data.appkey,
+            master_appkey: key_data.master_appkey,
             bip32_path: BitcoinBip32Path::internal(42),
         },
         bitcoin::Amount::from_sat(1_337_000),
     );
 
     let task = SignTask::BitcoinTransaction(tx_template);
-    let checked_task = task.clone().check(key_data.appkey).unwrap();
+    let checked_task = task.clone().check(key_data.master_appkey).unwrap();
 
     let set = device_set
         .iter()

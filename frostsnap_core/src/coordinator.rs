@@ -2,7 +2,7 @@ use crate::{
     message::*,
     symmetric_encryption::{Ciphertext, SymmetricKey},
     tweak::Xpub,
-    AccessStructureId, ActionError, Appkey, CoordShareDecryptionContrib, Error, Gist, KeyId,
+    AccessStructureId, ActionError, CoordShareDecryptionContrib, Error, Gist, KeyId, MasterAppkey,
     MessageResult, SessionHash, SignItem, SignTask, SignTaskError,
 };
 use alloc::{
@@ -35,7 +35,7 @@ pub struct FrostCoordinator {
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq)]
 pub struct CoordFrostKey {
-    pub appkey: Appkey,
+    pub master_appkey: MasterAppkey,
     pub key_name: String,
     pub access_structures: Vec<CoordAccessStructure>,
     pub encrypted_rootkey: Ciphertext<33, Point>,
@@ -76,7 +76,9 @@ impl CoordFrostKey {
             .point_polynomial()
             .to_vec();
         poly[0] = rootkey.mark_zero();
-        debug_assert!(Appkey::derive_from_rootkey(rootkey) == access_structure.appkey());
+        debug_assert!(
+            MasterAppkey::derive_from_rootkey(rootkey) == access_structure.master_appkey()
+        );
         Some(SharedKey::from_poly(poly).non_zero().expect("invariant"))
     }
 }
@@ -101,17 +103,17 @@ impl FrostCoordinator {
         use Mutation::*;
         match mutation {
             NewKey {
-                appkey,
+                master_appkey,
                 key_name: name,
                 encrypted_rootkey,
             } => {
-                let key_id = KeyId::from_appkey(*appkey);
+                let key_id = KeyId::from_master_appkey(*master_appkey);
                 let existing = self
                     .keys
                     .insert(
                         key_id,
                         CoordFrostKey {
-                            appkey: *appkey,
+                            master_appkey: *master_appkey,
                             key_name: name.clone(),
                             access_structures: vec![],
                             encrypted_rootkey: *encrypted_rootkey,
@@ -154,7 +156,10 @@ impl FrostCoordinator {
                 device_nonces.nonces.extend(new_nonces);
             }
             NewAccessStructure(access_structure) => {
-                match self.keys.get_mut(&access_structure.appkey().key_id()) {
+                match self
+                    .keys
+                    .get_mut(&access_structure.master_appkey().key_id())
+                {
                     Some(key_data) => {
                         key_data.access_structures.push(access_structure.clone());
                     }
@@ -182,7 +187,7 @@ impl FrostCoordinator {
     pub fn iter_keys(&self) -> impl Iterator<Item = &CoordFrostKey> + '_ {
         self.key_order
             .iter()
-            .map(|appkey| self.keys.get(appkey).expect("invariant"))
+            .map(|master_appkey| self.keys.get(master_appkey).expect("invariant"))
     }
 
     pub fn get_frost_key(&self, key_id: KeyId) -> Option<&CoordFrostKey> {
@@ -574,9 +579,9 @@ impl FrostCoordinator {
                     .expect("this should have already been checked");
                 let rootkey = root_shared_key.public_key();
                 let root_shared_key = Xpub::from_rootkey(root_shared_key);
-                let app_shared_key = root_shared_key.rootkey_to_appkey();
+                let app_shared_key = root_shared_key.rootkey_to_master_appkey();
                 let encrypted_rootkey = Ciphertext::encrypt(encryption_key, &rootkey, rng);
-                let appkey = Appkey::derive_from_rootkey(rootkey);
+                let master_appkey = MasterAppkey::derive_from_rootkey(rootkey);
                 let name = pending_key_name.clone();
                 if all_acks {
                     let access_structure = CoordAccessStructure {
@@ -587,7 +592,7 @@ impl FrostCoordinator {
                     self.action_state = None;
                     self.mutate(Mutation::NewKey {
                         key_name: name,
-                        appkey,
+                        master_appkey,
                         encrypted_rootkey,
                     });
                     self.mutate(Mutation::NewAccessStructure(access_structure));
@@ -648,7 +653,7 @@ impl FrostCoordinator {
         }
 
         let checked_sign_task = sign_task
-            .check(key_data.appkey)
+            .check(key_data.master_appkey)
             .map_err(StartSignError::SignTask)?;
 
         let sign_items = checked_sign_task.sign_items();
@@ -934,9 +939,9 @@ impl SignSessionProgress {
         schnorr: &Schnorr<sha2::Sha256, NG>,
         signature: &Signature,
     ) -> bool {
-        let appkey = Appkey::from_xpub_unchecked(&self.app_shared_key);
+        let master_appkey = MasterAppkey::from_xpub_unchecked(&self.app_shared_key);
         self.sign_item
-            .verify_final_signature(schnorr, appkey, signature)
+            .verify_final_signature(schnorr, master_appkey, signature)
     }
 }
 
@@ -1003,7 +1008,7 @@ impl CoordAccessStructure {
 
     pub fn access_structure_ref(&self) -> AccessStructureRef {
         AccessStructureRef {
-            key_id: self.appkey().key_id(),
+            key_id: self.master_appkey().key_id(),
             access_structure_id: self.access_structure_id(),
         }
     }
@@ -1012,8 +1017,8 @@ impl CoordAccessStructure {
         self.app_shared_key.clone()
     }
 
-    pub fn appkey(&self) -> Appkey {
-        Appkey::from_xpub_unchecked(&self.app_shared_key)
+    pub fn master_appkey(&self) -> MasterAppkey {
+        MasterAppkey::from_xpub_unchecked(&self.app_shared_key)
     }
 
     pub fn devices(&self) -> impl Iterator<Item = DeviceId> + '_ {
@@ -1115,7 +1120,7 @@ impl std::error::Error for StartSignError {}
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub enum Mutation {
     NewKey {
-        appkey: Appkey,
+        master_appkey: MasterAppkey,
         key_name: String,
         encrypted_rootkey: Ciphertext<33, Point>,
     },
@@ -1150,7 +1155,7 @@ impl Gist for Mutation {
     }
 }
 
-// Uniquely identifies an access structure for a particular `appkey`.
+// Uniquely identifies an access structure for a particular `master_appkey`.
 #[derive(Debug, Clone, Copy)]
 pub struct AccessStructureRef {
     pub key_id: KeyId,

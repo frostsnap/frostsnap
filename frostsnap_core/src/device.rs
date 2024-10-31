@@ -6,7 +6,7 @@ use crate::{
     message::*, AccessStructureId, ActionError, CheckedSignTask, CoordShareDecryptionContrib,
     Error, KeyId, MessageResult, SessionHash, NONCE_BATCH_SIZE,
 };
-use crate::{Appkey, DeviceId};
+use crate::{DeviceId, MasterAppkey};
 use alloc::boxed::Box;
 use alloc::{
     collections::{BTreeMap, BTreeSet, VecDeque},
@@ -355,7 +355,7 @@ impl FrostSigner {
                     })?
                     .clone();
 
-                let appkey = Appkey::derive_from_rootkey(rootkey);
+                let master_appkey = MasterAppkey::derive_from_rootkey(rootkey);
                 let access_structure_data =
                     key_data.access_structures.get(&access_structure_id)
                         .ok_or_else( || {
@@ -379,7 +379,7 @@ impl FrostSigner {
                 let checked_sign_task = sign_req
                     .sign_task
                     .clone()
-                    .check(appkey)
+                    .check(master_appkey)
                     .map_err(|e| Error::signer_invalid_message(&message, e))?;
 
                 let my_nonces = nonces.get(&party_index).ok_or_else(|| {
@@ -433,7 +433,7 @@ impl FrostSigner {
                 Ok(vec![DeviceSend::ToUser(Box::new(
                     DeviceToUserMessage::SignatureRequest {
                         sign_task: checked_sign_task,
-                        appkey,
+                        master_appkey,
                     },
                 ))])
             }
@@ -512,7 +512,7 @@ impl FrostSigner {
                 let key_id = KeyId::from_rootkey(rootkey);
                 let root_shared_key =
                     Xpub::from_rootkey(agg_input.shared_key().non_zero().expect("already checked"));
-                let app_shared_key = root_shared_key.rootkey_to_appkey();
+                let app_shared_key = root_shared_key.rootkey_to_master_appkey();
 
                 let access_structure_id =
                     AccessStructureId::from_app_poly(app_shared_key.key.point_polynomial());
@@ -643,7 +643,7 @@ impl FrostSigner {
                         },
                         rootkey,
                     ));
-                let app_paired_secret_share = root_paired_secret_share.rootkey_to_appkey();
+                let app_paired_secret_share = root_paired_secret_share.rootkey_to_master_appkey();
 
                 for (signature_index, (sign_item, secret_nonce)) in
                     sign_items.iter().zip(secret_nonces).enumerate()

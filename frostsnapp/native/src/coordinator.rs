@@ -449,7 +449,7 @@ impl FfiCoordinator {
 
     pub fn try_restore_signing_session(
         &self,
-        #[allow(unused)] /* we only have one key for now */ appkey: KeyId,
+        #[allow(unused)] /* we only have one key for now */ master_appkey: KeyId,
         sink: StreamSink<api::SigningState>,
     ) -> anyhow::Result<()> {
         let signing_session_state = self.signing_session.lock().unwrap();
@@ -482,7 +482,7 @@ impl FfiCoordinator {
         key_id: KeyId,
     ) -> Option<api::SignTaskDescription> {
         let session = self.signing_session.lock().unwrap().clone()?;
-        if session.access_structure.appkey().key_id() != key_id {
+        if session.access_structure.master_appkey().key_id() != key_id {
             return None;
         }
         Some(match session.request.sign_task {

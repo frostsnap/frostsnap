@@ -10,7 +10,7 @@ use bitcoin::{
 
 use crate::{
     tweak::{AppTweak, BitcoinBip32Path},
-    Appkey,
+    MasterAppkey,
 };
 
 /// Invalid state free representation of a transaction
@@ -134,7 +134,7 @@ impl TransactionTemplate {
                 got: txout.script_pubkey.clone(),
                 expected: expected_spk,
                 path: owner.bip32_path.derivation_path().to_u32_vec(),
-                appkey: owner.appkey,
+                master_appkey: owner.master_appkey,
             }));
         }
 
@@ -286,7 +286,7 @@ impl TransactionTemplate {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum RootOwner {
-    Local(Appkey),
+    Local(MasterAppkey),
     Foreign(ScriptBuf),
 }
 
@@ -296,12 +296,12 @@ pub struct SpkDoesntMatchPathError {
     pub got: ScriptBuf,
     pub expected: ScriptBuf,
     pub path: Vec<u32>,
-    pub appkey: Appkey,
+    pub master_appkey: MasterAppkey,
 }
 
 impl core::fmt::Display for SpkDoesntMatchPathError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "the script pubkey {:?} didn't match what we expected {:?} at derivation path {:?} from {}", self.got, self.expected, self.path, self.appkey)
+        write!(f, "the script pubkey {:?} didn't match what we expected {:?} at derivation path {:?} from {}", self.got, self.expected, self.path, self.master_appkey)
     }
 }
 
@@ -337,14 +337,14 @@ impl Input {
 
 #[derive(bincode::Encode, bincode::Decode, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct LocalSpk {
-    pub appkey: Appkey,
+    pub master_appkey: MasterAppkey,
     pub bip32_path: BitcoinBip32Path,
 }
 
 impl LocalSpk {
     pub fn spk(&self) -> ScriptBuf {
         let expected_external_xonly =
-            AppTweak::Bitcoin(self.bip32_path).derive_xonly_key(&self.appkey.to_xpub());
+            AppTweak::Bitcoin(self.bip32_path).derive_xonly_key(&self.master_appkey.to_xpub());
         ScriptBuf::new_p2tr_tweaked(TweakedPublicKey::dangerous_assume_tweaked(
             expected_external_xonly.into(),
         ))
@@ -384,7 +384,7 @@ impl SpkOwner {
     pub fn root_owner(&self) -> RootOwner {
         match self {
             SpkOwner::Foreign(spk) => RootOwner::Foreign(spk.clone()),
-            SpkOwner::Local(local) => RootOwner::Local(local.appkey),
+            SpkOwner::Local(local) => RootOwner::Local(local.master_appkey),
         }
     }
     pub fn spk(&self) -> ScriptBuf {
@@ -394,10 +394,10 @@ impl SpkOwner {
         }
     }
 
-    pub fn local_owner_key(&self) -> Option<Appkey> {
+    pub fn local_owner_key(&self) -> Option<MasterAppkey> {
         match self {
             SpkOwner::Foreign(_) => None,
-            SpkOwner::Local(owner) => Some(owner.appkey),
+            SpkOwner::Local(owner) => Some(owner.master_appkey),
         }
     }
 

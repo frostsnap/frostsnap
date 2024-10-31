@@ -147,7 +147,8 @@ class _KeyCard extends State<KeyCard> {
         final wallet = await settings.loadWallet(network: bitcoinNetwork);
         if (context.mounted) {
           Navigator.push(context, MaterialPageRoute(builder: (context) {
-            return WalletPage(appkey: widget.frostKey.appkey(), wallet: wallet);
+            return WalletPage(
+                masterAppkey: widget.frostKey.masterAppkey(), wallet: wallet);
           }));
         }
       },
@@ -191,7 +192,7 @@ class _KeyCard extends State<KeyCard> {
                         context: context,
                         signingStream: signingStream,
                         unsignedTx: unsignedTx,
-                        appkey: widget.frostKey.appkey());
+                        masterAppkey: widget.frostKey.masterAppkey());
                   }
                 }
             }
@@ -265,7 +266,7 @@ class _KeyListWithConfetti extends State<KeyListWithConfetti> {
           itemBuilder: (context, key, network) {
             return KeyCard(frostKey: key, bitcoinNetwork: network);
           },
-          onNewKey: (appkey) {
+          onNewKey: (masterAppkey) {
             _confettiController.play();
           },
         )),
