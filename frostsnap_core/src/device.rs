@@ -8,6 +8,7 @@ use crate::{
 };
 use crate::{DeviceId, MasterAppkey};
 use alloc::boxed::Box;
+use alloc::string::ToString as _;
 use alloc::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     string::String,
@@ -162,8 +163,8 @@ impl FrostSigner {
         }
     }
 
-    pub fn take_staged_mutations(&mut self) -> VecDeque<Mutation> {
-        core::mem::take(&mut self.mutations)
+    pub fn staged_mutations(&mut self) -> &mut VecDeque<Mutation> {
+        &mut self.mutations
     }
 
     #[must_use]
@@ -448,7 +449,14 @@ impl FrostSigner {
             ) => {
                 let key_data = self.keys.get(&key_id).ok_or(Error::signer_invalid_message(
                     &message,
-                    "signer doesn't have a share for this key",
+                    format!(
+                        "signer doesn't have a share for this key: {}",
+                        self.keys
+                            .keys()
+                            .map(|key| key.to_string())
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    ),
                 ))?;
 
                 let access_structure_data = key_data
