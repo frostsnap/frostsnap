@@ -276,7 +276,7 @@ impl Run {
             let mut devices = core::mem::take(&mut self.devices);
 
             for (device_id, device) in &mut devices {
-                for mutation in device.take_staged_mutations() {
+                for mutation in device.staged_mutations().drain(..) {
                     env.storage_react_to_device_mutation(self, *device_id, mutation);
                 }
             }

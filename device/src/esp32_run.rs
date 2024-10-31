@@ -449,7 +449,7 @@ where
                     UiEvent::NameConfirm(ref new_name) => {
                         name = Some(new_name.into());
                         flash
-                            .push(storage::Change::Name(new_name.clone()))
+                            .append([storage::Change::Name(new_name.clone())])
                             .expect("flash write fail");
                         ui.set_device_name(new_name.into());
                         sends_upstream.push(DeviceSendBody::SetName {
@@ -489,11 +489,25 @@ where
                 }
             }
 
-            // process saving mutations before sending messages out
-            for mutation in signer.staged_mutations().drain(..) {
+            {
+                // ⚠ Apply any mutations made to flash before outputting anything to user or to coordinator
+                let now = self.timer.now();
+                let mut empty = true;
                 flash
-                    .push(storage::Change::Core(mutation))
-                    .expect("writing core mutation to storage failed");
+                    .append(
+                        signer
+                            .staged_mutations()
+                            .drain(..)
+                            .map(storage::Change::Core)
+                            .inspect(|_| empty = false),
+                    )
+                    .expect("writing core mutations failed");
+
+                if !empty {
+                    let after = self.timer.now().checked_duration_since(now).unwrap();
+                    sends_upstream
+                        .send_debug(format!("core mutations took {}ms", after.to_millis()));
+                }
             }
 
             // Handle message outbox to send: ToCoordinator, ToUser.

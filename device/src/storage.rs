@@ -1,5 +1,5 @@
 extern crate alloc;
-use alloc::{format, string::String};
+use alloc::{format, string::String, vec::Vec};
 use bincode::{
     de::read::Reader,
     enc::write::Writer,
@@ -19,6 +19,7 @@ const MAGIC_BYTES: [u8; MAGIC_BYTES_LEN] = *b"fsheader";
 pub struct DeviceStorage {
     flash: FlashStorage,
     pos: u32,
+    write_buffer: Vec<u8>,
 }
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
@@ -58,6 +59,8 @@ impl DeviceStorage {
         Self {
             flash,
             pos: DATA_START,
+            // This is just the starting capacity
+            write_buffer: Vec::with_capacity(1024),
         }
     }
 
@@ -85,8 +88,29 @@ impl DeviceStorage {
         self.flash.write(NVS_PARTITION_START, &header_bytes)
     }
 
-    pub fn push(&mut self, change: Change) -> Result<(), bincode::error::EncodeError> {
-        bincode::encode_into_writer(change, self, bincode::config::standard())
+    pub fn append(
+        &mut self,
+        changes: impl IntoIterator<Item = Change>,
+    ) -> Result<(), bincode::error::EncodeError> {
+        for change in changes.into_iter() {
+            bincode::encode_into_writer(
+                change,
+                BufWriter(&mut self.write_buffer),
+                bincode::config::standard(),
+            )?;
+        }
+        if self.write_buffer.is_empty() {
+            return Ok(());
+        }
+        self.flash
+            .write(self.pos, &self.write_buffer[..])
+            .map_err(|e| {
+                bincode::error::EncodeError::OtherString(format!("flash write error: {:?}", e))
+            })?;
+        self.pos += self.write_buffer.len() as u32;
+        self.write_buffer.clear();
+
+        Ok(())
     }
 
     pub fn iter(&mut self) -> impl Iterator<Item = Change> + '_ {
@@ -118,12 +142,11 @@ impl Reader for DeviceStorage {
     }
 }
 
-impl Writer for DeviceStorage {
+struct BufWriter<'a>(&'a mut Vec<u8>);
+
+impl<'a> Writer for BufWriter<'a> {
     fn write(&mut self, bytes: &[u8]) -> Result<(), EncodeError> {
-        self.flash
-            .write(self.pos, bytes)
-            .map_err(|e| EncodeError::OtherString(format!("Flash write error {:?}", e)))?;
-        self.pos += bytes.len() as u32;
+        self.0.extend(bytes);
         Ok(())
     }
 }
