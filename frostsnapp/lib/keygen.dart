@@ -449,7 +449,7 @@ Future<AccessStructureRef?> showCheckKeyGenDialog({
                     }
                   });
 
-              final waitingText = Text("waiting for devices to generation key");
+              final waitingText = Text("Waiting for devices to generate key");
               final checkPrompt = Column(children: [
                 Text("Confirm all devices show:"),
                 SizedBox(height: 10),
