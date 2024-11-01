@@ -295,6 +295,7 @@ jobs:
           path: target/riscv32imc-unknown-none-elf/release/
 
       - run: just frostsnapp/install-flutter-deps
+      - run: just frostsnapp/install-rust-deps
       - run: just frostsnapp/build linux
       - run: just frostsnapp/build appbundle
 
