@@ -47,8 +47,9 @@ native/target
 xcuserdata
 jniLibs
 
-Cargo.lock
-pubspec.lock
+# We actually want to commit these to use for CI caching
+#Cargo.lock
+#pubspec.lock
 
 **/bridge_generated*.dart
 **/bridge_generated*.h
