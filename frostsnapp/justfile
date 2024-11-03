@@ -9,8 +9,8 @@ gen:
         --dart-decl-output lib/bridge_definitions.dart \
         --wasm
 
-build TARGET="linux":
-    BUILD_FIRMWARE=1 flutter build {{TARGET}}
+build TARGET="linux" +ARGS="":
+    BUILD_FIRMWARE=1 flutter build {{TARGET}} {{ARGS}}
 
 run +ARGS="":
     BUILD_FIRMWARE=1 flutter run {{ARGS}}
