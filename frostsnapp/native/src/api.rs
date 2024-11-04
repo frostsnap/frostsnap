@@ -1014,7 +1014,7 @@ impl Coordinator {
         sink: StreamSink<CheckShareState>,
     ) -> Result<()> {
         self.0
-            .check_share_on_device(device_id, access_structure_ref, sink)?;
+            .check_share_on_device(device_id, access_structure_ref, sink, crate::TEMP_KEY)?;
         Ok(())
     }
 

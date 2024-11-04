@@ -680,12 +680,14 @@ impl FfiCoordinator {
         device_id: DeviceId,
         access_structure_ref: AccessStructureRef,
         stream: StreamSink<CheckShareState>,
+        encryption_key: SymmetricKey,
     ) -> anyhow::Result<()> {
         let check_share_protocol = CheckShareProtocol::new(
             self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
             device_id,
             access_structure_ref,
             SinkWrap(stream),
+            encryption_key,
         );
         check_share_protocol.emit_state();
         self.start_protocol(check_share_protocol);
