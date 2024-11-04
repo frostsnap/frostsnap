@@ -64,7 +64,7 @@ jobs:
         id: cache-riscv
         with:
           path: device/riscv
-          key: ${{ runner.os }}-riscv-toolchain-2023.05.24-v1
+          key: ${{ runner.os }}-riscv-toolchain-2024.09.03-v1
 
       - name: Setup | RISC-V GCC prerequisites
         if: steps.cache-riscv.outputs.cache-hit != 'true'
@@ -79,8 +79,8 @@ jobs:
       - name: Setup | RISCV GCC
         if: steps.cache-riscv.outputs.cache-hit != 'true'
         run: |
-          wget -nv https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2023.05.24/riscv32-elf-ubuntu-22.04-nightly-2024.09.03-nightly.tar.gz 
-          tar -zxf riscv32-elf-ubuntu-22.04-nightly-2024.09.03-nightly.tar.gz
+          wget -nv https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2024.09.03/riscv32-elf-ubuntu-22.04-gcc-nightly-2024.09.03-nightly.tar.gz
+          tar -zxf riscv32-elf-ubuntu-22.04-gcc-nightly-2024.09.03-nightly.tar.gz
 
       - name: Add RISC-V GCC to PATH
         run: echo "PATH=$PATH:${GITHUB_WORKSPACE}/device/riscv/bin" >> $GITHUB_ENV
