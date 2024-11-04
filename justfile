@@ -1,5 +1,5 @@
 default_board := "v2"
-non_device_packages := "-p native -p frostsnap_core -p frostsnap_coordinator"
+non_device_packages := "-p frostsnap_core -p frostsnap_coordinator -p native"
 
 alias erase := erase-device
 
@@ -22,7 +22,7 @@ check-device +ARGS="":
     cd device && cargo check {{ARGS}} --all-features --bins
 
 lint-non-device +ARGS="":
-    cargo fmt --all -- --check
+    cargo fmt {{non_device_packages}} -- --check
     cargo clippy {{non_device_packages}} {{ARGS}} --all-features --tests --bins -- -Dwarnings
 
 lint-device +ARGS="":
