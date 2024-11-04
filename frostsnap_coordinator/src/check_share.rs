@@ -4,7 +4,7 @@ use frostsnap_comms::CoordinatorSendMessage;
 use frostsnap_core::{
     coordinator::{AccessStructureRef, FrostCoordinator},
     message::CoordinatorToUserMessage,
-    DeviceId,
+    DeviceId, SymmetricKey,
 };
 use tracing::{event, Level};
 
@@ -29,6 +29,7 @@ impl CheckShareProtocol {
         device_id: DeviceId,
         access_structure_ref: AccessStructureRef,
         sink: impl Sink<CheckShareState> + 'static,
+        encryption_key: SymmetricKey,
     ) -> Self {
         let mut self_ = Self {
             state: CheckShareState {
@@ -40,7 +41,7 @@ impl CheckShareProtocol {
             check_share_messages: vec![],
         };
 
-        match coordinator.check_share(access_structure_ref, device_id) {
+        match coordinator.check_share(access_structure_ref, device_id, encryption_key) {
             Ok(messages) => {
                 for message in messages {
                     self_.check_share_messages.push(

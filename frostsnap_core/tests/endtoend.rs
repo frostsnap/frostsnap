@@ -16,6 +16,7 @@ use rand::RngCore;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::binonce::Nonce;
+use schnorr_fun::frost::SecretShare;
 use schnorr_fun::fun::{g, G};
 use schnorr_fun::{Schnorr, Signature};
 use std::collections::{BTreeMap, BTreeSet};
@@ -197,8 +198,8 @@ impl common::Env for TestEnv {
             CoordinatorToUserMessage::DisplayBackupConfirmed { device_id } => {
                 self.backup_confirmed_on_coordinator.insert(device_id);
             }
-            CoordinatorToUserMessage::EnteredBackup { .. } => {
-                todo!()
+            CoordinatorToUserMessage::EnteredBackup { valid, .. } => {
+                assert!(valid, "entered share was valid");
             }
         }
     }
@@ -245,7 +246,11 @@ impl common::Env for TestEnv {
                 panic!("no cancelling done");
             }
             DeviceToUserMessage::EnterBackup { .. } => {
-                panic!("restoring backups untested")
+                let device = run.device(from);
+                let (_, backup) = self.backups.get(&from).unwrap();
+                let secret_share = SecretShare::from_bech32_backup(backup).unwrap();
+                let response = device.loaded_share_backup(secret_share).unwrap();
+                run.extend_from_device(from, response);
             }
             DeviceToUserMessage::EnteredBackup(_) => {
                 panic!("restoring backups untested")
@@ -618,4 +623,39 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
     assert!(checked_task.verify_final_signatures(&schnorr, &env.signatures));
     // TODO: test actual transaction validity
+}
+
+#[test]
+fn check_valid_share_works() {
+    let n_parties = 3;
+    let threshold = 2;
+    let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
+    let mut run = Run::generate(n_parties, &mut test_rng);
+    let mut env = TestEnv::default();
+    let device_set = run.device_set();
+
+    let keygen_init = run
+        .coordinator
+        .do_keygen(&device_set, threshold, "my key".into(), &mut test_rng)
+        .unwrap();
+    run.extend(keygen_init);
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
+
+    let key_data = run.coordinator.iter_keys().next().unwrap();
+    let access_structure_ref = key_data.access_structures[0].access_structure_ref();
+
+    for device_id in device_set {
+        let display_backup = run
+            .coordinator
+            .request_device_display_backup(device_id, access_structure_ref, TEST_ENCRYPTION_KEY)
+            .unwrap();
+        run.extend(display_backup);
+        run.run_until_finished(&mut env, &mut test_rng).unwrap();
+        let check_share = run
+            .coordinator
+            .check_share(access_structure_ref, device_id, TEST_ENCRYPTION_KEY)
+            .unwrap();
+        run.extend(check_share);
+        run.run_until_finished(&mut env, &mut test_rng).unwrap();
+    }
 }

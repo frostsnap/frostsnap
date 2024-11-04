@@ -830,7 +830,25 @@ impl FrostCoordinator {
         &mut self,
         access_structure_ref: AccessStructureRef,
         device: DeviceId,
+        encryption_key: SymmetricKey,
     ) -> Result<Vec<CoordinatorSend>, ActionError> {
+        let AccessStructureRef {
+            key_id,
+            access_structure_id,
+        } = access_structure_ref;
+
+        let key_data = self
+            .keys
+            .get(&key_id)
+            .ok_or(ActionError::StateInconsistent("no such key".into()))?
+            .clone();
+
+        let root_shared_key = key_data
+            .root_shared_key(access_structure_id, encryption_key)
+            .ok_or(ActionError::StateInconsistent(
+                "couldn't decrypt root key".into(),
+            ))?;
+
         let access_structure = self.get_access_structure(access_structure_ref).ok_or(
             ActionError::StateInconsistent("no such access_structure".into()),
         )?;
@@ -840,11 +858,7 @@ impl FrostCoordinator {
         )?;
 
         let expected_image = ShareImage {
-            point: poly::point::eval(
-                access_structure.app_shared_key.key.point_polynomial(),
-                share_index,
-            )
-            .normalize(),
+            point: poly::point::eval(root_shared_key.point_polynomial(), share_index).normalize(),
             share_index,
         };
 
