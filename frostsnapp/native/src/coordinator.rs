@@ -10,23 +10,19 @@ use frostsnap_coordinator::firmware_upgrade::{
 use frostsnap_coordinator::frostsnap_comms::{
     CoordinatorSendBody, CoordinatorSendMessage, Destination, FirmwareDigest,
 };
-use frostsnap_coordinator::frostsnap_core::coordinator::{
-    AccessStructureRef, CoordAccessStructure, CoordFrostKey,
-};
-use frostsnap_coordinator::frostsnap_core::message::CoordinatorSend;
+use frostsnap_coordinator::frostsnap_core;
 use frostsnap_coordinator::frostsnap_core::SymmetricKey;
 use frostsnap_coordinator::frostsnap_persist::DeviceNames;
 use frostsnap_coordinator::persist::Persisted;
 use frostsnap_coordinator::{
     check_share::CheckShareProtocol, display_backup::DisplayBackupProtocol,
 };
-use frostsnap_coordinator::{
-    frostsnap_core, AppMessageBody, FirmwareBin, UiProtocol, UsbSender, UsbSerialManager,
-};
+use frostsnap_coordinator::{AppMessageBody, FirmwareBin, UiProtocol, UsbSender, UsbSerialManager};
 use frostsnap_coordinator::{Completion, DeviceChange};
+use frostsnap_core::coordinator::{CoordAccessStructure, CoordFrostKey, CoordinatorSend};
 use frostsnap_core::{
     coordinator::{FrostCoordinator, SigningSessionState},
-    DeviceId, KeyId, SignTask,
+    AccessStructureRef, DeviceId, KeyId, SignTask,
 };
 use std::collections::{BTreeSet, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -306,6 +302,12 @@ impl FfiCoordinator {
                         CoordinatorSend::ToUser(msg) => {
                             if let Some(ui_protocol) = &mut *ui_protocol_loop {
                                 ui_protocol.process_to_user_message(msg);
+                            } else {
+                                event!(
+                                    Level::WARN,
+                                    kind = msg.kind(),
+                                    "ignoring protocol message we have no ui protoocl to handle"
+                                );
                             }
                         }
                         CoordinatorSend::SigningSessionStore(state) => {

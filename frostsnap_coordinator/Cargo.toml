@@ -7,8 +7,8 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1"
-frostsnap_comms = { workspace = true }
-frostsnap_core = { workspace = true, features = ["std", "rusqlite"] }
+frostsnap_comms = { workspace = true, features = ["coordinator"] }
+frostsnap_core = { workspace = true, features = ["coordinator", "rusqlite"] }
 bincode = { workspace = true, features = ["std"] }
 tracing = { workspace = true }
 serialport = "4.2"

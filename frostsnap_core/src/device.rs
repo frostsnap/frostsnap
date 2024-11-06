@@ -1,10 +1,9 @@
-use core::num::NonZeroU32;
-
 use crate::symmetric_encryption::{Ciphertext, SymmetricKey};
 use crate::tweak::Xpub;
 use crate::{
-    message::*, AccessStructureId, ActionError, CheckedSignTask, CoordShareDecryptionContrib,
-    Error, KeyId, MessageResult, SessionHash, NONCE_BATCH_SIZE,
+    message::*, AccessStructureId, AccessStructureRef, ActionError, CheckedSignTask,
+    CoordShareDecryptionContrib, Error, KeyId, MessageResult, SessionHash, ShareImage,
+    NONCE_BATCH_SIZE,
 };
 use crate::{DeviceId, MasterAppkey};
 use alloc::boxed::Box;
@@ -14,6 +13,7 @@ use alloc::{
     string::String,
     vec::Vec,
 };
+use core::num::NonZeroU32;
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::binonce;
 use schnorr_fun::frost::chilldkg::encpedpop;
@@ -29,7 +29,7 @@ use schnorr_fun::{
 
 use sha2::Sha256;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FrostSigner {
     keypair: KeyPair,
     keys: BTreeMap<KeyId, KeyData>,
@@ -38,9 +38,9 @@ pub struct FrostSigner {
     mutations: VecDeque<Mutation>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct KeyData {
-    access_structures: BTreeMap<AccessStructureId, AccessStrucureData>,
+    access_structures: BTreeMap<AccessStructureId, AccessStructureData>,
     #[allow(dead_code)] // We'll use this soon
     purposes: BTreeSet<KeyPurpose>,
     key_name: String,
@@ -68,7 +68,7 @@ impl KeyPurpose {
 }
 
 #[derive(Clone, Debug, PartialEq, bincode::Decode, bincode::Encode)]
-pub struct AccessStrucureData {
+pub struct AccessStructureData {
     pub kind: AccessStructureKind,
     /// Keep the threshold around to make recover easier. The device tells the coordinator about it
     /// so they can tell the user how close they are to restoring the key.
@@ -131,7 +131,7 @@ impl FrostSigner {
                 self.keys.entry(*key_id).and_modify(|key_data| {
                     key_data.access_structures.insert(
                         *access_structure_id,
-                        AccessStrucureData {
+                        AccessStructureData {
                             kind: *kind,
                             threshold: *threshold,
                             shares: Default::default(),
@@ -759,15 +759,51 @@ impl FrostSigner {
         ))])
     }
 
+    pub fn held_shares(&self) -> Vec<HeldShare> {
+        let mut held_shares = vec![];
+
+        for (key_id, key_data) in &self.keys {
+            for (access_structure_id, access_structure) in &key_data.access_structures {
+                for (share_index, share) in &access_structure.shares {
+                    if access_structure.kind == AccessStructureKind::Master {
+                        held_shares.push(HeldShare {
+                            key_name: key_data.key_name.clone(),
+                            share_image: ShareImage {
+                                point: share.image,
+                                share_index: *share_index,
+                            },
+                            access_structure_ref: AccessStructureRef {
+                                access_structure_id: *access_structure_id,
+                                key_id: *key_id,
+                            },
+                            threshold: access_structure.threshold,
+                        });
+                    }
+                }
+            }
+        }
+        held_shares
+    }
+
+    pub fn send_held_shares(&self) -> impl Iterator<Item = DeviceSend> {
+        core::iter::once(DeviceSend::ToCoordinator(Box::new(
+            DeviceToCoordinatorMessage::HeldShares(self.held_shares()),
+        )))
+    }
+
     pub fn action_state_name(&self) -> &'static str {
         self.action_state
             .as_ref()
             .map(|x| x.name())
             .unwrap_or("None")
     }
+
+    pub fn nonce_counter(&self) -> u64 {
+        self.nonce_counter
+    }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AwaitingSignAck {
     pub rootkey: Point,
     pub access_structure_id: AccessStructureId,
@@ -781,7 +817,7 @@ pub struct AwaitingSignAck {
     pub coord_share_decryption_contrib: CoordShareDecryptionContrib,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SignerState {
     KeyGen {
         device_to_share_index: BTreeMap<DeviceId, NonZeroU32>,

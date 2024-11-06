@@ -1,8 +1,8 @@
 //! Tests for a malicious actions. A malicious coordinator, a malicious device or both.
 use common::{DefaultTestEnv, TEST_ENCRYPTION_KEY};
+use frostsnap_core::coordinator::CoordinatorSend;
 use frostsnap_core::message::{
-    CoordinatorSend, CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage,
-    SignRequest,
+    CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, SignRequest,
 };
 use frostsnap_core::SignTask;
 use rand_chacha::rand_core::SeedableRng;
@@ -99,7 +99,7 @@ fn nonce_reuse() {
     let task1 = SignTask::Plain {
         message: "utxo.club!".into(),
     };
-    let access_structure = key_data.access_structures[0].clone();
+    let access_structure = key_data.access_structures.values().next().unwrap().clone();
     let sign_init = run
         .coordinator
         .start_sign(

@@ -38,7 +38,7 @@ rand_core = "0.6"
 # bdk_chain = { path = "../bdk/crates/chain" }
 bdk_chain = { git = "https://github.com/LLFourn/bdk.git", rev = "0dcb8f6c8c4d338b0dd13f7c20dc9ec34377ee32" }
 bdk_electrum = { git = "https://github.com/LLFourn/bdk.git", rev = "0dcb8f6c8c4d338b0dd13f7c20dc9ec34377ee32" }
-schnorr_fun = { git = "https://github.com/LLFourn/secp256kfun.git", rev = "029bfab341132e9e29583b8876377c8c8d5279cf" }
+schnorr_fun = { git = "https://github.com/LLFourn/secp256kfun.git", rev = "b1dc0b77f22493d5215227f9e180273d9ea3ff36" }
 
 [profile.dev]
 # Rust debug is too slow.

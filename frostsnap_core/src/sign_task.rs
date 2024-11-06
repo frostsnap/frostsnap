@@ -97,7 +97,7 @@ impl CheckedSignTask {
     }
 }
 
-#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
 pub struct SignItem {
     pub message: Vec<u8>,
     pub app_tweak: AppTweak,
