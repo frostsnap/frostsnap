@@ -2496,7 +2496,7 @@ checksum = "e86697c916019a8588c99b5fac3cead74ec0b4b819707a682fd4d23fa0ce1ba1"
 [[package]]
 name = "schnorr_fun"
 version = "0.10.0"
-source = "git+https://github.com/LLFourn/secp256kfun.git?rev=029bfab341132e9e29583b8876377c8c8d5279cf#029bfab341132e9e29583b8876377c8c8d5279cf"
+source = "git+https://github.com/LLFourn/secp256kfun.git?rev=8132fbe806d9f306a9fb646f2147e5971bfea88d#8132fbe806d9f306a9fb646f2147e5971bfea88d"
 dependencies = [
  "bech32",
  "secp256kfun",
@@ -2569,7 +2569,7 @@ dependencies = [
 [[package]]
 name = "secp256kfun"
 version = "0.10.0"
-source = "git+https://github.com/LLFourn/secp256kfun.git?rev=029bfab341132e9e29583b8876377c8c8d5279cf#029bfab341132e9e29583b8876377c8c8d5279cf"
+source = "git+https://github.com/LLFourn/secp256kfun.git?rev=8132fbe806d9f306a9fb646f2147e5971bfea88d#8132fbe806d9f306a9fb646f2147e5971bfea88d"
 dependencies = [
  "bincode",
  "digest",
@@ -2585,7 +2585,7 @@ dependencies = [
 [[package]]
 name = "secp256kfun_arithmetic_macros"
 version = "0.1.0"
-source = "git+https://github.com/LLFourn/secp256kfun.git?rev=029bfab341132e9e29583b8876377c8c8d5279cf#029bfab341132e9e29583b8876377c8c8d5279cf"
+source = "git+https://github.com/LLFourn/secp256kfun.git?rev=8132fbe806d9f306a9fb646f2147e5971bfea88d#8132fbe806d9f306a9fb646f2147e5971bfea88d"
 dependencies = [
  "proc-macro2",
  "quote",

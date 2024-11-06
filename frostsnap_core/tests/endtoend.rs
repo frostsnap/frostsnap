@@ -1,7 +1,6 @@
 use bitcoin::Address;
 use common::{TestDeviceKeygen, TEST_ENCRYPTION_KEY};
 use frostsnap_core::bitcoin_transaction::{LocalSpk, TransactionTemplate};
-use frostsnap_core::coordinator::CoordAccessStructure;
 use frostsnap_core::device::{BitcoinNetworkKind, KeyPurpose};
 use frostsnap_core::message::{
     CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, CoordinatorToUserSigningMessage,
@@ -10,14 +9,13 @@ use frostsnap_core::message::{
 use frostsnap_core::tweak::BitcoinBip32Path;
 use frostsnap_core::KeyId;
 use frostsnap_core::{
-    coordinator::FrostCoordinator, device::FrostSigner, CheckedSignTask, DeviceId, MasterAppkey,
-    SessionHash, SignTask,
+    coordinator::FrostCoordinator, device::FrostSigner, AccessStructureRef, CheckedSignTask,
+    DeviceId, MasterAppkey, SessionHash, SignTask,
 };
 use rand::seq::IteratorRandom;
 use rand::RngCore;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-use schnorr_fun::binonce::Nonce;
 use schnorr_fun::frost::SecretShare;
 use schnorr_fun::fun::{g, G};
 use schnorr_fun::{Schnorr, Signature};
@@ -44,104 +42,10 @@ struct TestEnv {
     pub sign_tasks: BTreeMap<DeviceId, CheckedSignTask>,
     pub signatures: Vec<Signature>,
 
-    // storage
-    pub coord_nonces: BTreeMap<(DeviceId, u64), Nonce>,
-    pub device_nonces: BTreeMap<DeviceId, u64>,
-    pub coord_master_appkeys: BTreeMap<MasterAppkey, String>,
-    pub coordinator_access_structures: BTreeMap<KeyId, Vec<CoordAccessStructure>>,
-
     pub verification_requests: BTreeMap<DeviceId, (Address, BitcoinBip32Path)>,
 }
 
 impl common::Env for TestEnv {
-    fn storage_react_to_coordinator_mutation(
-        &mut self,
-        _run: &mut Run,
-        mutation: frostsnap_core::coordinator::Mutation,
-    ) {
-        use frostsnap_core::coordinator::Mutation::*;
-        match mutation {
-            NewKey {
-                master_appkey,
-                key_name,
-                ..
-            } => {
-                self.coord_master_appkeys.insert(master_appkey, key_name);
-            }
-            NewAccessStructure(access_structure) => {
-                let access_structures = self
-                    .coordinator_access_structures
-                    .entry(access_structure.master_appkey().key_id())
-                    .or_default();
-                access_structures.push(access_structure);
-            }
-            NoncesUsed {
-                device_id,
-                nonce_counter,
-            } => {
-                let to_remove = self
-                    .coord_nonces
-                    .range((device_id, 0)..(device_id, nonce_counter))
-                    .map(|(k, _)| *k)
-                    .collect::<Vec<_>>();
-                for k in to_remove {
-                    self.coord_nonces.remove(&k);
-                }
-            }
-            ResetNonces { nonces, device_id } => {
-                for k in self
-                    .coord_nonces
-                    .range((device_id, 0)..(device_id, u64::MAX))
-                    .map(|(k, _)| *k)
-                    .collect::<Vec<_>>()
-                {
-                    self.coord_nonces.remove(&k);
-                }
-                self.coord_nonces.extend(
-                    nonces
-                        .nonces
-                        .into_iter()
-                        .enumerate()
-                        .map(|(i, nonce)| ((device_id, nonces.start_index + i as u64), nonce)),
-                );
-            }
-            NewNonces {
-                device_id,
-                new_nonces,
-            } => {
-                let start = self
-                    .coord_nonces
-                    .range((device_id, 0)..=(device_id, u64::MAX))
-                    .last()
-                    .map(|((_, i), _)| *i + 1)
-                    .unwrap_or(0);
-                self.coord_nonces.extend(
-                    new_nonces
-                        .into_iter()
-                        .enumerate()
-                        .map(|(i, nonce)| ((device_id, start + i as u64), nonce)),
-                );
-            }
-        }
-    }
-
-    fn storage_react_to_device_mutation(
-        &mut self,
-        _run: &mut Run,
-        from: DeviceId,
-        mutation: frostsnap_core::device::Mutation,
-    ) {
-        use frostsnap_core::device::Mutation::*;
-        match mutation {
-            NewKey { .. } => { /*  */ }
-            SaveShare(_) => { /*  */ }
-            NewAccessStructure { .. } => { /*  */ }
-            ExpendNonce { nonce_counter } => {
-                self.device_nonces.insert(from, nonce_counter);
-            }
-        }
-    }
-
     fn user_react_to_coordinator(
         &mut self,
         run: &mut Run,
@@ -204,6 +108,21 @@ impl common::Env for TestEnv {
             }
             CoordinatorToUserMessage::EnteredBackup { valid, .. } => {
                 assert!(valid, "entered share was valid");
+            }
+            CoordinatorToUserMessage::PromptRecoverAccessStructure {
+                device_id,
+                held_share,
+            } => {
+                let messages = run.coordinator.recover_share(device_id, *held_share);
+                run.extend(messages);
+            }
+            CoordinatorToUserMessage::ConfirmRecoverAccessStructure {
+                access_structure_ref,
+                ..
+            } => {
+                run.coordinator
+                    .recover_access_structure(access_structure_ref, TEST_ENCRYPTION_KEY, rng)
+                    .unwrap();
             }
         }
     }
@@ -324,7 +243,11 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
     assert_eq!(env.coordinator_got_keygen_acks, device_set);
     assert_eq!(env.received_keygen_shares, device_set);
     let key_data = run.coordinator.iter_keys().next().unwrap().clone();
-    let access_structure_ref = key_data.access_structures[0].access_structure_ref();
+    let access_structure_id = *key_data.access_structures.keys().next().unwrap();
+    let access_structure_ref = AccessStructureRef {
+        key_id: key_data.master_appkey.key_id(),
+        access_structure_id,
+    };
 
     for (message, signers) in [("johnmcafee47", [0, 1]), ("pyramid schmee", [1, 2])] {
         env.signatures.clear();
@@ -346,6 +269,7 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
             )
             .unwrap();
         run.extend(sign_init);
+        dbg!(message);
         run.run_until_finished(&mut env, &mut test_rng).unwrap();
         assert_eq!(env.sign_tasks.keys().cloned().collect::<BTreeSet<_>>(), set);
         assert!(env.sign_tasks.values().all(|v| *v == checked_task));
@@ -354,21 +278,29 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
 
         // check view of the coordianttor and device nonces are the same
         for &device in &device_set {
-            let (&(_, idx), &coord_next_nonce) = env
-                .coord_nonces
-                .range((device, 0)..=(device, u64::MAX))
-                .next()
-                .unwrap();
-            let &nonce_counter = env.device_nonces.get(&device).unwrap_or(&0);
-            assert_eq!(nonce_counter, idx);
+            // let (&(_, idx), &coord_next_nonce) = env
+            //     .coord_nonces
+            //     .range((device, 0)..=(device, u64::MAX))
+            //     .next()
+            //     .unwrap();
+            // let &nonce_counter = env.device_nonces.get(&device).unwrap_or(&0);
+
+            let coord_nonces = run.coordinator.device_nonces().get(&device).cloned();
+            let coord_nonce_counter = coord_nonces
+                .clone()
+                .map(|nonces| nonces.start_index)
+                .unwrap_or(0);
+            let device_nonce_counter = run.device(device).nonce_counter();
+            assert_eq!(device_nonce_counter, coord_nonce_counter);
+            let coord_next_nonce =
+                coord_nonces.and_then(|nonces| nonces.nonces.iter().next().cloned());
 
             let device_nonce = run
                 .devices
                 .get(&device)
                 .unwrap()
-                .generate_public_nonces(idx)
-                .next()
-                .unwrap();
+                .generate_public_nonces(device_nonce_counter)
+                .next();
             assert_eq!(device_nonce, coord_next_nonce);
         }
     }
@@ -407,8 +339,8 @@ fn test_display_backup() {
     run.extend(keygen_init);
 
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
-    let key_data = run.coordinator.iter_keys().next().unwrap().clone();
-    let access_structure = key_data.access_structures[0].clone();
+    let (access_structure_ref, access_structure) =
+        run.coordinator.iter_access_structures().next().unwrap();
 
     assert_eq!(
         env.backups.len(),
@@ -425,6 +357,7 @@ fn test_display_backup() {
             TEST_ENCRYPTION_KEY,
         )
         .unwrap();
+
     run.extend(display_backup);
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
 
@@ -471,6 +404,10 @@ fn test_display_backup() {
     .non_zero()
     .unwrap();
 
+    let key_data = run
+        .coordinator
+        .get_frost_key(access_structure_ref.key_id)
+        .unwrap();
     assert_eq!(
         MasterAppkey::derive_from_rootkey(g!(interpolated_joint_secret * G).normalize()),
         key_data.master_appkey
@@ -509,8 +446,11 @@ fn test_verify_address() {
 
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
     let coord_frost_key = run.coordinator.iter_keys().next().unwrap().clone();
-    let access_structure_ref = coord_frost_key.access_structures[0].access_structure_ref();
-
+    let access_structure_id = *coord_frost_key.access_structures.keys().next().unwrap();
+    let access_structure_ref = AccessStructureRef {
+        key_id: coord_frost_key.master_appkey.key_id(),
+        access_structure_id,
+    };
     let verify_request = run
         .coordinator
         .verify_address(access_structure_ref, 0, coord_frost_key.master_appkey)
@@ -551,8 +491,8 @@ fn when_we_abandon_a_sign_request_we_should_be_able_to_start_a_new_one() {
     run.extend(std::iter::once(request_nonces));
 
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
-    let key_data = run.coordinator.iter_keys().next().unwrap().clone();
-    let access_structure_ref = key_data.access_structures[0].access_structure_ref();
+    let (access_structure_ref, _access_structure) =
+        run.coordinator.iter_access_structures().next().unwrap();
 
     let uncompleting_sign_task = SignTask::Plain {
         message: "frostsnap in taiwan".into(),
@@ -659,8 +599,12 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
 
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
 
-    let key_data = run.coordinator.iter_keys().next().unwrap();
-    let access_structure_ref = key_data.access_structures[0].access_structure_ref();
+    let (access_structure_ref, _access_structure) =
+        run.coordinator.iter_access_structures().next().unwrap();
+    let key_data = run
+        .coordinator
+        .get_frost_key(access_structure_ref.key_id)
+        .unwrap();
     let mut tx_template = TransactionTemplate::new();
 
     tx_template.push_imaginary_owned_input(
@@ -700,7 +644,7 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
 }
 
 #[test]
-fn check_valid_share_works() {
+fn check_share_for_valid_share_works() {
     let n_parties = 3;
     let threshold = 2;
     let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
@@ -721,8 +665,8 @@ fn check_valid_share_works() {
     run.extend(keygen_init);
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
 
-    let key_data = run.coordinator.iter_keys().next().unwrap();
-    let access_structure_ref = key_data.access_structures[0].access_structure_ref();
+    let (access_structure_ref, _access_structure) =
+        run.coordinator.iter_access_structures().next().unwrap();
 
     for device_id in device_set {
         let display_backup = run
@@ -738,4 +682,66 @@ fn check_valid_share_works() {
         run.extend(check_share);
         run.run_until_finished(&mut env, &mut test_rng).unwrap();
     }
+}
+
+#[test]
+fn restore_a_share_by_connecting_devices_to_coordinator() {
+    let n_parties = 3;
+    let threshold = 2;
+    let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
+    let mut run = Run::generate(n_parties, &mut test_rng);
+    let mut env = TestEnv::default();
+    let device_set = run.device_set();
+
+    let keygen_init = run
+        .coordinator
+        .do_keygen(
+            &device_set,
+            threshold,
+            "my key".into(),
+            KeyPurpose::Test,
+            &mut test_rng,
+        )
+        .unwrap();
+    run.extend(keygen_init);
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
+    run.check_mutations();
+    let (access_structure_ref, access_structure) =
+        run.coordinator.iter_access_structures().next().unwrap();
+
+    // replace coordinator with a fresh one that doesn't know about the key
+    run.replace_coordiantor(FrostCoordinator::new());
+
+    let restoring_devices = device_set.iter().cloned().take(2).collect::<Vec<_>>();
+
+    for device_id in restoring_devices {
+        let device = run.device(device_id);
+        let messages = device.send_held_shares();
+        run.extend_from_device(device_id, messages);
+    }
+
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
+    let (restored_access_structure_ref, restored_access_structure) = run
+        .coordinator
+        .iter_access_structures()
+        .next()
+        .expect("two devices should have been enough to restore the share");
+
+    assert_eq!(restored_access_structure_ref, access_structure_ref);
+    assert_eq!(
+        restored_access_structure.device_to_share_indicies().len(),
+        2
+    );
+
+    let final_device = device_set.iter().cloned().nth(2).unwrap();
+    let messages = run.device(final_device).send_held_shares();
+    run.extend_from_device(final_device, messages);
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
+    let (_, restored_access_structure) = run
+        .coordinator
+        .iter_access_structures()
+        .next()
+        .expect("should still be restored");
+
+    assert_eq!(restored_access_structure, access_structure);
 }

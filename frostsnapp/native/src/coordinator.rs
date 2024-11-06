@@ -10,25 +10,22 @@ use frostsnap_coordinator::firmware_upgrade::{
 use frostsnap_coordinator::frostsnap_comms::{
     CoordinatorSendBody, CoordinatorSendMessage, Destination, FirmwareDigest,
 };
+use frostsnap_coordinator::frostsnap_core;
 use frostsnap_coordinator::frostsnap_core::coordinator::{
-    AccessStructureRef, CoordAccessStructure, CoordFrostKey,
+    CoordAccessStructure, CoordFrostKey, CoordinatorSend,
 };
 use frostsnap_coordinator::frostsnap_core::device::KeyPurpose;
-use frostsnap_coordinator::frostsnap_core::message::CoordinatorSend;
-use frostsnap_coordinator::frostsnap_core::{MasterAppkey, SymmetricKey};
 use frostsnap_coordinator::frostsnap_persist::DeviceNames;
 use frostsnap_coordinator::persist::Persisted;
 use frostsnap_coordinator::verify_address::VerifyAddressProtocol;
 use frostsnap_coordinator::{
     check_share::CheckShareProtocol, display_backup::DisplayBackupProtocol,
 };
-use frostsnap_coordinator::{
-    frostsnap_core, AppMessageBody, FirmwareBin, UiProtocol, UsbSender, UsbSerialManager,
-};
+use frostsnap_coordinator::{AppMessageBody, FirmwareBin, UiProtocol, UsbSender, UsbSerialManager};
 use frostsnap_coordinator::{Completion, DeviceChange};
 use frostsnap_core::{
     coordinator::{FrostCoordinator, SigningSessionState},
-    DeviceId, KeyId, SignTask,
+    AccessStructureRef, DeviceId, KeyId, MasterAppkey, SignTask, SymmetricKey,
 };
 use std::collections::{BTreeSet, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -309,6 +306,12 @@ impl FfiCoordinator {
                         CoordinatorSend::ToUser(msg) => {
                             if let Some(ui_protocol) = &mut *ui_protocol_loop {
                                 ui_protocol.process_to_user_message(msg);
+                            } else {
+                                event!(
+                                    Level::WARN,
+                                    kind = msg.kind(),
+                                    "ignoring protocol message we have no ui protoocl to handle"
+                                );
                             }
                         }
                         CoordinatorSend::SigningSessionStore(state) => {

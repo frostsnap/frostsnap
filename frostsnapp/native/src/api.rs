@@ -30,8 +30,7 @@ pub use frostsnap_coordinator::{
 use frostsnap_coordinator::{DesktopSerial, UsbSerialManager};
 pub use frostsnap_core::message::EncodedSignature;
 pub use frostsnap_core::{
-    coordinator::AccessStructureRef, AccessStructureId, DeviceId, KeyId, MasterAppkey, SessionHash,
-    SignTask,
+    AccessStructureId, AccessStructureRef, DeviceId, KeyId, MasterAppkey, SessionHash, SignTask,
 };
 use lazy_static::lazy_static;
 pub use std::collections::BTreeMap;
@@ -172,7 +171,7 @@ impl FrostKey {
         SyncReturn(
             self.0
                 .access_structures
-                .iter()
+                .values()
                 .cloned()
                 .map(From::from)
                 .collect(),
@@ -845,16 +844,10 @@ impl Coordinator {
                 .frost_keys()
                 .into_iter()
                 .flat_map(|frost_key| {
-                    let key_id: KeyId = frost_key.master_appkey.key_id();
                     frost_key
-                        .access_structures
-                        .iter()
-                        .filter(|access_structure| access_structure.contains_device(device_id))
-                        .map(|access_structure| access_structure.access_structure_id())
-                        .map(|access_structure_id| AccessStructureRef {
-                            key_id,
-                            access_structure_id,
-                        })
+                        .access_structures()
+                        .filter(|(_, access_structure)| access_structure.contains_device(device_id))
+                        .map(|(accsref, _)| accsref)
                         .collect::<Vec<_>>()
                 })
                 .collect(),
