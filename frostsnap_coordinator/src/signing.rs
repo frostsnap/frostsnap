@@ -1,8 +1,9 @@
 use frostsnap_comms::{CoordinatorSendBody, CoordinatorSendMessage, Destination};
 use frostsnap_core::{
+    coordinator::CoordinatorSend,
     message::{
-        CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToUserMessage,
-        CoordinatorToUserSigningMessage, EncodedSignature, SignRequest,
+        CoordinatorToDeviceMessage, CoordinatorToUserMessage, CoordinatorToUserSigningMessage,
+        EncodedSignature, SignRequest,
     },
     DeviceId,
 };

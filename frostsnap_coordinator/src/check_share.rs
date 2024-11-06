@@ -2,9 +2,8 @@ use std::borrow::BorrowMut;
 
 use frostsnap_comms::CoordinatorSendMessage;
 use frostsnap_core::{
-    coordinator::{AccessStructureRef, FrostCoordinator},
-    message::CoordinatorToUserMessage,
-    DeviceId, SymmetricKey,
+    coordinator::FrostCoordinator, message::CoordinatorToUserMessage, AccessStructureRef, DeviceId,
+    SymmetricKey,
 };
 use tracing::{event, Level};
 
