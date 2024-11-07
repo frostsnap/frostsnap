@@ -19,19 +19,16 @@ pub fn multi_x_descriptor_for_account(
     account: BitcoinAccount,
     network: bitcoin::NetworkKind,
 ) -> Descriptor<DescriptorPublicKey> {
-    let master_appkey_xpub = master_appkey.to_xpub().to_bitcoin_xpub_with_lies(network);
     let secp = Secp256k1::verification_only();
-    let derivation_path = AppTweakKind::Bitcoin
-        .derivation_path()
-        .extend(account.derivation_path());
-    let account_xpub = master_appkey_xpub
-        .derive_pub(&secp, &derivation_path)
+    let bitcoin_app_xpub = master_appkey.derive_appkey(&secp, AppTweakKind::Bitcoin, network);
+    let account_xpub = bitcoin_app_xpub
+        .derive_pub(&secp, &account.derivation_path())
         .unwrap();
 
     let keychains = [Keychain::External, Keychain::Internal];
 
     let multi_xpub = DescriptorPublicKey::MultiXPub(DescriptorMultiXKey {
-        origin: Some((master_appkey_xpub.fingerprint(), derivation_path)),
+        origin: Some((bitcoin_app_xpub.fingerprint(), account.derivation_path())),
         xkey: account_xpub,
         derivation_paths: DerivPaths::new(
             keychains

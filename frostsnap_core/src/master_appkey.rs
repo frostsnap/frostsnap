@@ -1,8 +1,9 @@
 use crate::{
-    tweak::{TweakableKey, Xpub},
+    tweak::{AppTweakKind, TweakableKey, Xpub},
     KeyId,
 };
 use alloc::string::String;
+use bitcoin::key::Secp256k1;
 use schnorr_fun::fun::prelude::*;
 
 /// A 65-byte encoded point and chaincode. This is a byte array because it's easier to pass around byte
@@ -41,6 +42,18 @@ impl MasterAppkey {
 
     pub fn key_id(&self) -> KeyId {
         KeyId::from_master_appkey(*self)
+    }
+
+    pub fn derive_appkey<C: bitcoin::secp256k1::Context + bitcoin::secp256k1::Verification>(
+        &self,
+        secp: &Secp256k1<C>,
+        appkey_kind: AppTweakKind,
+        network: bitcoin::NetworkKind,
+    ) -> bitcoin::bip32::Xpub {
+        let app_key_xpub = self.to_xpub().to_bitcoin_xpub_with_lies(network);
+        app_key_xpub
+            .derive_pub(secp, &appkey_kind.derivation_path())
+            .expect("no hardened derivation")
     }
 }
 
