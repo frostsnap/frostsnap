@@ -2,7 +2,7 @@ use super::chain_sync::SyncRequest;
 use crate::persist::Persisted;
 use anyhow::{anyhow, Context, Result};
 use bdk_chain::{
-    bitcoin::{self, bip32, Amount, SignedAmount},
+    bitcoin::{self, bip32, key::Secp256k1, Amount, SignedAmount},
     indexed_tx_graph,
     indexer::keychain_txout::{self, KeychainTxOutIndex},
     local_chain,
@@ -12,7 +12,7 @@ use bdk_chain::{
 };
 use frostsnap_core::{
     bitcoin_transaction::{self, LocalSpk},
-    tweak::{BitcoinAccountKeychain, BitcoinBip32Path},
+    tweak::{AppTweakKind, BitcoinAccountKeychain, BitcoinBip32Path},
     MasterAppkey,
 };
 use frostsnap_core::{
@@ -427,10 +427,12 @@ impl FrostsnapWallet {
         psbt: &bitcoin::Psbt,
         master_appkey: MasterAppkey,
     ) -> Result<TransactionTemplate> {
-        let xpub = master_appkey
-            .to_xpub()
-            .to_bitcoin_xpub_with_lies(self.network.into());
-        let our_fingerprint = xpub.fingerprint();
+        let bitcoin_app_xpub = master_appkey.derive_appkey(
+            &Secp256k1::verification_only(),
+            AppTweakKind::Bitcoin,
+            self.network.into(),
+        );
+        let our_fingerprint = bitcoin_app_xpub.fingerprint();
         let mut template = frostsnap_core::bitcoin_transaction::TransactionTemplate::new();
         let rust_bitcoin_tx = &psbt.unsigned_tx;
         template.set_version(rust_bitcoin_tx.version);
@@ -497,7 +499,14 @@ impl FrostsnapWallet {
             let bip32_path = match BitcoinBip32Path::from_u32_slice(&normal_derivation_path) {
                 Some(bip32_path) => bip32_path,
                 None => {
-                    bail!("it has an unusual derivation path");
+                    bail!(format!(
+                        "it has an unusual derivation path {:?}",
+                        normal_derivation_path
+                            .into_iter()
+                            .map(|n| n.to_string())
+                            .collect::<Vec<String>>()
+                            .join("/")
+                    ));
                 }
             };
 
