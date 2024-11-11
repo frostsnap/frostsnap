@@ -51,4 +51,7 @@ install-rust-deps:
 serve *args='':
     flutter pub run flutter_rust_bridge:serve {{args}}
 
+build-appimage +ARGS="":
+    appimage-builder --recipe AppImageBuilder.yml {{ARGS}}
+
 # vim:expandtab:sw=4:ts=4

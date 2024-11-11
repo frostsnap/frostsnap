@@ -3,19 +3,19 @@ script:
   - apt update && apt upgrade -y
   - which mksquashfs || apt install squashfs-tools
   - mkdir -p AppDir
-  - cp -r frostsnapp/build/linux/x64/release/bundle/* AppDir
+  - cp -r build/linux/x64/release/bundle/* AppDir
 
 AppDir:
   path: AppDir
   after_bundle:
-    - cp frostsnapp/build/linux/x64/release/bundle/Frostsnapp AppDir
-    - cp -r frostsnapp/build/linux/x64/release/bundle/lib/. AppDir/lib
-    - cp -r frostsnapp/build/linux/x64/release/bundle/data AppDir
+    - cp build/linux/x64/release/bundle/Frostsnapp AppDir
+    - cp -r build/linux/x64/release/bundle/lib/. AppDir/lib
+    - cp -r build/linux/x64/release/bundle/data AppDir
     - mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
-    - cp frostsnapp/Frostsnapp.png AppDir/usr/share/icons/hicolor/256x256/apps/Frostsnapp.png
-    - cp frostsnapp/Frostsnapp.png AppDir/Frostsnapp.png
+    - cp Frostsnapp.png AppDir/usr/share/icons/hicolor/256x256/apps/Frostsnapp.png
+    - cp Frostsnapp.png AppDir/Frostsnapp.png
     - mkdir -p AppDir/usr/share/applications/
-    - cp frostsnapp/com.frostsnapp.app.desktop AppDir/usr/share/applications/com.frostsnapp.app.desktop
+    - cp com.frostsnapp.app.desktop AppDir/usr/share/applications/com.frostsnapp.app.desktop
     # Adding empty GL configuration files to avoid warnings
     - mkdir -p AppDir/etc
     - cp -r /etc/fonts AppDir/etc/fonts
@@ -40,7 +40,7 @@ AppDir:
     arch: amd64
     allow_unauthenticated: true
     sources:
-      - sourceline: 'deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ jammy main restricted universe multiverse'
+      - sourceline: "deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ jammy main restricted universe multiverse"
     include:
       - libgtk-3-0
       - libblkid1

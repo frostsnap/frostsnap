@@ -237,14 +237,14 @@ jobs:
         include:
           - os: ubuntu-latest
             build_command: apk
-            artifact_name: frostsnapp-${{ github.sha }}.apk
+            artifact_name: Frostsnapp-${{ github.sha }}.apk
             artifact_path: frostsnapp/build/app/outputs/apk/release/app-release.apk
             name: Build Android APK
           - os: ubuntu-latest
             build_command: linux
-            artifact_name: Frostsnapp-${{ github.sha }}-x64.AppImage
-            artifact_path: Frostsnapp-latest-x86_64.AppImage
-            name: Build Linux AppImage
+            artifact_name: Frostsnapp-${{ github.sha }}-linux-x64
+            artifact_path: frostsnapp/build/linux/x64/release/bundle
+            name: Build Linux App
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     steps:
@@ -301,6 +301,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          cache: true
 
       - uses: taiki-e/install-action@just
       - uses: dtolnay/rust-toolchain@stable
@@ -311,23 +312,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.build_command == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            ninja-build \
-            libgtk-3-dev \
-            libglib2.0-dev \
-            libpango1.0-dev \
-            libgdk-pixbuf2.0-dev \
-            libcairo2-dev \
-            python3-pip \
-            git \
-            wget \
-            libudev-dev \
-            qtbase5-dev \
-            qt5-qmake \
-            qtdeclarative5-dev \
-            cmake \
-            libarchive-tools
-          sudo pip3 install --upgrade appimage-builder
+          sudo apt-get install -y ninja-build libstdc++-12-dev libgtk-3-0 libgtk-3-dev libudev-dev
 
       - uses: actions/download-artifact@v4
         with:
@@ -344,14 +329,6 @@ jobs:
         if: matrix.build_command == 'apk'
         run: just frostsnapp/build appbundle --release
 
-      - name: Build AppImage (Linux)
-        if: matrix.os == 'ubuntu-latest' && matrix.build_command == 'linux'
-        uses: AppImageCrafters/build-appimage-action@master
-        env:
-          UPDATE_INFO: frostsnapp-${{ github.sha }}-x86_64.AppImage.zsync
-        with:
-          recipe: frostsnapp/AppImageBuilder.yml
-
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
@@ -364,6 +341,29 @@ jobs:
         with:
           name: frostsnapp-${{ github.sha }}.aab
           path: frostsnapp/build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+
+  app-image:
+    name: Package AppImage
+    needs: app-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Frostsnapp-${{ github.sha }}-linux-x64
+          path: frostsnapp/build/linux/x64/release/bundle
+
+      - run: sudo pip3 install --upgrade appimage-builder
+
+      - uses: taiki-e/install-action@just
+      - run: just frostsnapp/build-appimage --skip-tests
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: Frostsnapp-${{ github.sha }}-x64.AppImage
+          path: frostsnapp/Frostsnapp-latest-x86_64.AppImage
           if-no-files-found: error
 
   flutter-analyze:
@@ -384,6 +384,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          cache: true
 
       # Restore bridge files
       - uses: actions/cache@v4
