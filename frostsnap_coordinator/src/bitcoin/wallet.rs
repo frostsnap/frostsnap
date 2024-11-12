@@ -2,23 +2,21 @@ use super::chain_sync::SyncRequest;
 use crate::persist::Persisted;
 use anyhow::{anyhow, Context, Result};
 use bdk_chain::{
-    bitcoin::{self, bip32, key::Secp256k1, Amount, SignedAmount},
+    bitcoin::{self, Amount, Psbt, SignedAmount},
     indexed_tx_graph,
     indexer::keychain_txout::{self, KeychainTxOutIndex},
     local_chain,
     miniscript::{Descriptor, DescriptorPublicKey},
     spk_client, ChainPosition, ConfirmationBlockTime, Indexer, Merge,
 };
+use frostsnap_core::{bitcoin_transaction::PushInput, tweak::BitcoinAccount};
 use frostsnap_core::{
     bitcoin_transaction::{self, LocalSpk},
-    tweak::{AppTweakKind, BitcoinAccountKeychain, BitcoinBip32Path},
+    tweak::{BitcoinAccountKeychain, BitcoinBip32Path},
     MasterAppkey,
 };
-use frostsnap_core::{
-    bitcoin_transaction::{PushInput, TransactionTemplate},
-    tweak::BitcoinAccount,
-};
 use std::{
+    collections::BTreeMap,
     ops::RangeBounds,
     sync::{Arc, Mutex},
 };
@@ -417,123 +415,21 @@ impl FrostsnapWallet {
         }
     }
 
-    pub fn psbt_to_tx_template(
-        &mut self,
-        psbt: &bitcoin::Psbt,
-        master_appkey: MasterAppkey,
-    ) -> Result<TransactionTemplate> {
-        let bitcoin_app_xpub = master_appkey.derive_appkey(
-            &Secp256k1::verification_only(),
-            AppTweakKind::Bitcoin,
-            self.network.into(),
-        );
-        let our_fingerprint = bitcoin_app_xpub.fingerprint();
-        let mut template = frostsnap_core::bitcoin_transaction::TransactionTemplate::new();
-        let rust_bitcoin_tx = &psbt.unsigned_tx;
-        template.set_version(rust_bitcoin_tx.version);
-        template.set_lock_time(rust_bitcoin_tx.lock_time);
-
-        for (i, input) in psbt.inputs.iter().enumerate() {
-            let txin = rust_bitcoin_tx
-                .input
-                .get(i)
-                .ok_or(anyhow!("PSBT input {i} is malformed"))?;
-
-            let txout = input
-                .witness_utxo
-                .as_ref()
-                .or_else(|| {
-                    let tx = input.non_witness_utxo.as_ref()?;
-                    tx.output.get(txin.previous_output.vout as usize)
-                })
-                .ok_or(anyhow!(
-                    "PSBT input {i} missing witness and non-witness utxo"
-                ))?;
-
-            let input_push =
-                PushInput::spend_outpoint(txout, txin.previous_output).with_sequence(txin.sequence);
-
-            macro_rules! bail {
-                ($($reason:tt)*) => {{
-                    event!(
-                        Level::INFO,
-                        "Skipping signing PSBT input {i} because it {}", $($reason)*
-                    );
-                    template.push_foreign_input(input_push);
-                    continue;
-
-                }};
-            }
-
-            if input.final_script_witness.is_some() {
-                bail!("it already has a final_script_witness");
-            }
-
-            let tap_internal_key = match &input.tap_internal_key {
-                Some(tap_internal_key) => tap_internal_key,
-                None => bail!("it doesn't have an tap_internal_key"),
-            };
-
-            let (fingerprint, derivation_path) = match input.tap_key_origins.get(tap_internal_key) {
-                Some(origin) => origin.1.clone(),
-                None => bail!("it doesn't provide a source for the tap_internal_key"),
-            };
-
-            if fingerprint != our_fingerprint {
-                bail!("it's key fingerprint doesn't match our root key");
-            }
-
-            let normal_derivation_path = derivation_path
-                .into_iter()
-                .map(|child_number| match child_number {
-                    bip32::ChildNumber::Normal { index } => Ok(*index),
-                    _ => Err(anyhow!("can't sign with hardended derivation")),
-                })
-                .collect::<Result<Vec<_>>>()?;
-
-            let bip32_path = match BitcoinBip32Path::from_u32_slice(&normal_derivation_path) {
-                Some(bip32_path) => bip32_path,
-                None => {
-                    bail!(format!(
-                        "it has an unusual derivation path {:?}",
-                        normal_derivation_path
-                            .into_iter()
-                            .map(|n| n.to_string())
-                            .collect::<Vec<String>>()
-                            .join("/")
-                    ));
-                }
-            };
-
-            template.push_owned_input(
-                input_push,
-                frostsnap_core::bitcoin_transaction::LocalSpk {
-                    master_appkey,
-                    bip32_path,
-                },
-            )?;
-        }
-
-        for (i, _) in psbt.outputs.iter().enumerate() {
-            let txout = &rust_bitcoin_tx.output[i];
-            match self.tx_graph.index.index_of_spk(&txout.script_pubkey) {
-                Some(&((_, account_keychain), index)) => template.push_owned_output(
-                    txout.value,
-                    LocalSpk {
-                        master_appkey,
-                        bip32_path: BitcoinBip32Path {
-                            account_keychain,
-                            index,
-                        },
-                    },
-                ),
-                None => {
-                    template.push_foreign_output(txout.clone());
-                }
-            }
-        }
-
-        Ok(template)
+    pub fn owned_outputs_of_psbt(
+        &self,
+        psbt: Psbt,
+    ) -> BTreeMap<usize, (BitcoinAccountKeychain, u32)> {
+        psbt.outputs
+            .iter()
+            .enumerate()
+            .filter_map(|(i, _)| {
+                let txout = &psbt.unsigned_tx.output[i];
+                self.tx_graph
+                    .index
+                    .index_of_spk(&txout.script_pubkey)
+                    .map(|&((_, account_keychain), index)| (i, (account_keychain, index)))
+            })
+            .collect()
     }
 }
 

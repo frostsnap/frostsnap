@@ -665,14 +665,18 @@ impl Wallet {
         psbt: Psbt,
         master_appkey: MasterAppkey,
     ) -> Result<SyncReturn<UnsignedTx>> {
-        let template = self
-            .inner
-            .lock()
-            .unwrap()
-            .psbt_to_tx_template(&psbt.inner, master_appkey)?;
+        let wallet = self.inner.lock().unwrap();
+        let owned_outputs = wallet.owned_outputs_of_psbt(psbt.inner.deref().clone());
+
+        let tx_template = frostsnap_core::psbt_to_tx_template(
+            &psbt.inner,
+            master_appkey,
+            owned_outputs,
+            wallet.network,
+        )?;
 
         Ok(SyncReturn(UnsignedTx {
-            template_tx: RustOpaque::new(template),
+            template_tx: RustOpaque::new(tx_template),
         }))
     }
 }
