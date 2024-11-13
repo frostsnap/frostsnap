@@ -109,7 +109,7 @@ impl Persist<rusqlite::Connection> for WalletIndexedTxGraph {
     }
 
     fn persist_update(conn: &mut rusqlite::Connection, update: Self::Update) -> Result<()> {
-        for tx in &update.graph.txs {
+        for tx in &update.tx_graph.txs {
             conn.execute(
                 "INSERT INTO bdk_transactions (txid, bitcoin_tx) VALUES (?1, ?2)
                  ON CONFLICT(txid) DO UPDATE SET bitcoin_tx=excluded.bitcoin_tx",
@@ -120,7 +120,7 @@ impl Persist<rusqlite::Connection> for WalletIndexedTxGraph {
             )?;
         }
 
-        for (txid, last_seen) in &update.graph.last_seen {
+        for (txid, last_seen) in &update.tx_graph.last_seen {
             conn.execute(
                 "INSERT INTO bdk_transactions (txid, last_seen) VALUES (?1, ?2)
                    ON CONFLICT(txid) DO UPDATE SET
@@ -130,7 +130,7 @@ impl Persist<rusqlite::Connection> for WalletIndexedTxGraph {
             )?;
         }
 
-        for (anchor, txid) in &update.graph.anchors {
+        for (anchor, txid) in &update.tx_graph.anchors {
             conn.execute(
                 "INSERT OR REPLACE INTO bdk_anchors (txid, height, blockhash, timestamp) VALUES (?1, ?2, ?3, ?4)",
                 params![SqlTxid(*txid), anchor.block_id.height, SqlBlockHash(anchor.block_id.hash), anchor.confirmation_time])?;
@@ -196,7 +196,7 @@ impl Persist<rusqlite::Connection> for local_chain::LocalChain {
 
         for row in rows {
             let (height, hash) = row.context("loading block")?;
-            changeset.insert(height, Some(hash));
+            changeset.blocks.insert(height, Some(hash));
         }
 
         Ok(Self::from_changeset(changeset)?)
@@ -204,7 +204,7 @@ impl Persist<rusqlite::Connection> for local_chain::LocalChain {
 
     fn persist_update(conn: &mut rusqlite::Connection, update: Self::Update) -> Result<()> {
         let tx = conn.transaction()?;
-        for (height, hash) in update {
+        for (height, hash) in update.blocks {
             tx.execute(
                 "INSERT OR REPLACE INTO bdk_local_chain (height, hash) VALUES (?1, ?2)",
                 params![height, hash.map(SqlBlockHash)],
