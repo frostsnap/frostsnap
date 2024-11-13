@@ -1,10 +1,10 @@
 use core::num::NonZeroU32;
 
 use crate::symmetric_encryption::{Ciphertext, SymmetricKey};
-use crate::tweak::Xpub;
+use crate::tweak::{self, Xpub};
 use crate::{
-    message::*, AccessStructureId, ActionError, CheckedSignTask, CoordShareDecryptionContrib,
-    Error, KeyId, MessageResult, SessionHash, NONCE_BATCH_SIZE,
+    bitcoin_transaction, message::*, AccessStructureId, ActionError, CheckedSignTask,
+    CoordShareDecryptionContrib, Error, KeyId, MessageResult, SessionHash, NONCE_BATCH_SIZE,
 };
 use crate::{DeviceId, MasterAppkey};
 use alloc::boxed::Box;
@@ -174,6 +174,7 @@ impl FrostSigner {
             SignerState::AwaitingSignAck { .. } => TaskKind::Sign,
             SignerState::LoadingBackup { .. } => TaskKind::CheckBackup,
             SignerState::AwaitingDisplayBackupAck { .. } => TaskKind::DisplayBackup,
+            SignerState::VerifyAddress { .. } => TaskKind::VerifyAddress,
         };
 
         Some(DeviceSend::ToUser(Box::new(
@@ -495,6 +496,55 @@ impl FrostSigner {
                     },
                 ))])
             }
+            (
+                None,
+                CoordinatorToDeviceMessage::VerifyAddress {
+                    rootkey,
+                    derivation_index,
+                },
+            ) => {
+                let key_id = KeyId::from_rootkey(rootkey);
+                // check we actually know about this key
+                let _key_data = self
+                    .keys
+                    .get(&key_id)
+                    .ok_or_else(|| {
+                        Error::signer_invalid_message(
+                            &message,
+                            // we could instead send back a message saying we don't have this key but I
+                            // think this will never happen in practice unless we have a way for one
+                            // coordinator to delete a key from a device without the other coordinator
+                            // knowing.
+                            format!("device doesn't have key for {key_id}"),
+                        )
+                    })?
+                    .clone();
+
+                self.action_state = Some(SignerState::VerifyAddress {
+                    key_id,
+                    derivation_index,
+                });
+
+                let master_appkey = MasterAppkey::derive_from_rootkey(rootkey);
+
+                let bip32_path = tweak::BitcoinBip32Path {
+                    account_keychain: tweak::BitcoinAccountKeychain::external(),
+                    index: derivation_index,
+                };
+                let spk = bitcoin_transaction::LocalSpk {
+                    master_appkey,
+                    bip32_path,
+                };
+                let address = bitcoin::Address::from_script(&spk.spk(), bitcoin::Network::Signet)
+                    .expect("has address form");
+
+                Ok(vec![DeviceSend::ToUser(Box::new(
+                    DeviceToUserMessage::VerifyAddress {
+                        address,
+                        bip32_path,
+                    },
+                ))])
+            }
             (None, CoordinatorToDeviceMessage::CheckShareBackup) => {
                 self.action_state = Some(SignerState::LoadingBackup);
                 Ok(vec![DeviceSend::ToUser(Box::new(
@@ -803,6 +853,10 @@ pub enum SignerState {
         coord_share_decryption_contrib: CoordShareDecryptionContrib,
     },
     LoadingBackup,
+    VerifyAddress {
+        key_id: KeyId,
+        derivation_index: u32,
+    },
 }
 
 impl SignerState {
@@ -813,6 +867,7 @@ impl SignerState {
             SignerState::LoadingBackup { .. } => "LoadingBackup",
             SignerState::AwaitingSignAck(_) => "AwaitingSignAck",
             SignerState::AwaitingDisplayBackupAck { .. } => "AwaitingDisplayBackupAck",
+            SignerState::VerifyAddress { .. } => "VerifyAddress",
         }
     }
 }

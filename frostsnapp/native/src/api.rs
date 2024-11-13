@@ -6,6 +6,7 @@ use crate::sink_wrap::SinkWrap;
 pub use crate::FfiCoordinator;
 pub use crate::{FfiQrEncoder, FfiQrReader, QrDecoderStatus};
 use anyhow::{anyhow, Context, Result};
+use bitcoin::bip32::DerivationPath;
 pub use bitcoin::psbt::Psbt as BitcoinPsbt;
 pub use bitcoin::Network as RBitcoinNetwork;
 pub use bitcoin::Transaction as RTransaction;
@@ -22,6 +23,8 @@ pub use frostsnap_coordinator::bitcoin::{
 pub use frostsnap_coordinator::firmware_upgrade::FirmwareUpgradeConfirmState;
 pub use frostsnap_coordinator::frostsnap_core;
 use frostsnap_coordinator::frostsnap_core::coordinator::CoordFrostKey;
+use frostsnap_coordinator::frostsnap_core::tweak::DerivationPathExt;
+pub use frostsnap_coordinator::verify_address::VerifyAddressProtocolState;
 pub use frostsnap_coordinator::{
     check_share::CheckShareState, keygen::KeyGenState, persist::Persisted, signing::SigningState,
     DeviceChange, PortDesc, Settings as RSettings,
@@ -674,6 +677,20 @@ impl Wallet {
             template_tx: RustOpaque::new(template),
         }))
     }
+
+    pub fn derivation_path_for_address(
+        &self,
+        index: u32,
+        change_address: bool,
+    ) -> SyncReturn<String> {
+        let mut derivation_path = frostsnap_core::tweak::AccountKind::Segwitv1
+            .path_segments_from_bitcoin_appkey()
+            .collect::<Vec<_>>();
+        derivation_path.extend([change_address as u32, index]);
+        SyncReturn(
+            DerivationPath::from_normal_path_segments(derivation_path.into_iter()).to_string(),
+        )
+    }
 }
 
 pub fn load(app_dir: String) -> anyhow::Result<(Coordinator, Settings)> {
@@ -992,6 +1009,17 @@ impl Coordinator {
                 .upgrade_firmware_digest()
                 .map(|digest| digest.to_string()),
         )
+    }
+
+    pub fn verify_address(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        address_index: u32,
+        sink: StreamSink<VerifyAddressProtocolState>,
+    ) -> Result<()> {
+        self.0
+            .verify_address(access_structure_ref, address_index, sink, crate::TEMP_KEY)?;
+        Ok(())
     }
 
     pub fn cancel_protocol(&self) {
@@ -1557,6 +1585,12 @@ pub enum _ChainStatusState {
     Syncing,
     Disconnected,
     Connecting,
+}
+
+#[frb(mirror(VerifyAddressProtocolState))]
+pub struct _VerifyAddressProtocolState {
+    pub target_devices: Vec<DeviceId>,
+    pub sent_to_devices: Vec<DeviceId>,
 }
 
 // XXX: bugs in flutter_rust_bridge mean that sometimes the right code doesn't get emitted unless

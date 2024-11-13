@@ -587,6 +587,21 @@ where
                                     ui::Prompt::ConfirmLoadBackup(share_backup),
                                 ));
                             }
+                            DeviceToUserMessage::VerifyAddress {
+                                address,
+                                bip32_path,
+                            } => {
+                                let rand_seed = rng.next_u32();
+                                ui.set_workflow(ui::Workflow::DisplayAddress {
+                                    address: address.to_string(),
+                                    bip32_path: bip32_path
+                                        .path_segments_from_bitcoin_appkey()
+                                        .map(|i| i.to_string())
+                                        .collect::<Vec<_>>()
+                                        .join("/"),
+                                    rand_seed,
+                                })
+                            }
                         };
                     }
                 }

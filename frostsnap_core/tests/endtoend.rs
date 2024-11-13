@@ -1,3 +1,4 @@
+use bitcoin::Address;
 use common::{TestDeviceKeygen, TEST_ENCRYPTION_KEY};
 use frostsnap_core::bitcoin_transaction::{LocalSpk, TransactionTemplate};
 use frostsnap_core::coordinator::CoordAccessStructure;
@@ -47,6 +48,8 @@ struct TestEnv {
     pub device_nonces: BTreeMap<DeviceId, u64>,
     pub coord_master_appkeys: BTreeMap<MasterAppkey, String>,
     pub coordinator_access_structures: BTreeMap<KeyId, Vec<CoordAccessStructure>>,
+
+    pub verification_requests: BTreeMap<DeviceId, (Address, BitcoinBip32Path)>,
 }
 
 impl common::Env for TestEnv {
@@ -255,6 +258,13 @@ impl common::Env for TestEnv {
             DeviceToUserMessage::EnteredBackup(_) => {
                 panic!("restoring backups untested")
             }
+            DeviceToUserMessage::VerifyAddress {
+                address,
+                bip32_path,
+            } => {
+                self.verification_requests
+                    .insert(from, (address, bip32_path));
+            }
         }
     }
 }
@@ -457,6 +467,44 @@ fn test_display_backup() {
         MasterAppkey::derive_from_rootkey(g!(interpolated_joint_secret * G).normalize()),
         key_data.master_appkey
     );
+}
+
+#[test]
+fn test_verify_address() {
+    let n_parties = 3;
+    let threshold = 2;
+    let coordinator = FrostCoordinator::new();
+    let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
+
+    let devices = (0..n_parties)
+        .map(|_| FrostSigner::new_random(&mut test_rng))
+        .map(|device| (device.device_id(), device))
+        .collect::<BTreeMap<_, _>>();
+
+    let device_set = devices.keys().cloned().collect::<BTreeSet<_>>();
+    let mut env = TestEnv::default();
+    let mut test_rng = ChaCha20Rng::from_seed([123u8; 32]);
+
+    let mut run = Run::new(coordinator, devices);
+
+    let keygen_init = run
+        .coordinator
+        .do_keygen(&device_set, threshold, "my key".to_string(), &mut test_rng)
+        .unwrap();
+    run.extend(keygen_init);
+
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
+    let coord_frost_key = run.coordinator.iter_keys().next().unwrap().clone();
+    let access_structure_ref = coord_frost_key.access_structures[0].access_structure_ref();
+
+    let verify_request = run
+        .coordinator
+        .verify_address(access_structure_ref, 0, TEST_ENCRYPTION_KEY)
+        .unwrap();
+    run.extend(verify_request);
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
+
+    assert_eq!(env.verification_requests.len(), 3);
 }
 
 // this test needs a better name and to properly explain what it's doing

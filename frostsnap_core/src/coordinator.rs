@@ -872,6 +872,44 @@ impl FrostCoordinator {
         }])
     }
 
+    pub fn verify_address(
+        &mut self,
+        access_structure_ref: AccessStructureRef,
+        derivation_index: u32,
+        encryption_key: SymmetricKey,
+    ) -> Result<Vec<CoordinatorSend>, ActionError> {
+        let AccessStructureRef { key_id, .. } = access_structure_ref;
+
+        let access_structure = self.get_access_structure(access_structure_ref).ok_or(
+            ActionError::StateInconsistent("no such access_structure".into()),
+        )?;
+
+        let key_data = self
+            .keys
+            .get(&key_id)
+            .ok_or(ActionError::StateInconsistent("no such key".into()))?
+            .clone();
+
+        let rootkey = key_data.encrypted_rootkey.decrypt(encryption_key).ok_or(
+            ActionError::StateInconsistent("couldn't decrypt root key".into()),
+        )?;
+
+        // verify on any device that knows about this key
+        let target_devices: BTreeSet<_> = access_structure
+            .device_to_share_index
+            .keys()
+            .cloned()
+            .collect();
+
+        Ok(vec![CoordinatorSend::ToDevice {
+            message: CoordinatorToDeviceMessage::VerifyAddress {
+                rootkey,
+                derivation_index,
+            },
+            destinations: target_devices.clone(),
+        }])
+    }
+
     pub fn state_name(&self) -> &'static str {
         self.action_state
             .as_ref()

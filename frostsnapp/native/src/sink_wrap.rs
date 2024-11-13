@@ -2,6 +2,7 @@ use flutter_rust_bridge::StreamSink;
 use frostsnap_coordinator::{
     bitcoin::chain_sync::ChainStatus, check_share::CheckShareState,
     firmware_upgrade::FirmwareUpgradeConfirmState, keygen::KeyGenState, signing::SigningState,
+    verify_address::VerifyAddressProtocolState,
 };
 
 // we need to wrap it so we can impl it on foreign FRB type. You can't do a single generic impl. Try
@@ -24,6 +25,7 @@ macro_rules! bridge_sink {
 
 bridge_sink!(KeyGenState);
 bridge_sink!(FirmwareUpgradeConfirmState);
+bridge_sink!(VerifyAddressProtocolState);
 bridge_sink!(SigningState);
 bridge_sink!(CheckShareState);
 bridge_sink!(bool);
