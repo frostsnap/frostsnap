@@ -15,7 +15,7 @@ serialport = "4.2"
 rand_core.workspace = true
 rusqlite.workspace = true
 
-bdk_chain = { version = "0.20" }
+bdk_chain = { version = "0.20", features = ["rusqlite"] }
 bdk_electrum = { version = "0.19", default-features = false, features = [
   "use-rustls-ring",
 ] }
