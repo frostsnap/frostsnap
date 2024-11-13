@@ -29,6 +29,12 @@ echo "ANDROID_NDK=.." >> ~/.gradle/gradle.properties
 
 ## Generate bindings
 
+Before generating bindings, make sure you install `ffigen` by running:
+
+```
+flutter pub get
+```
+
 On non-debian linux you will need to export your CPATH
 
 ```
