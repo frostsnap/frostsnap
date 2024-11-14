@@ -66,16 +66,6 @@ jobs:
           path: device/riscv
           key: ${{ runner.os }}-riscv-toolchain-2024.09.03-v1
 
-      - name: Setup | RISC-V GCC prerequisites
-        if: steps.cache-riscv.outputs.cache-hit != 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            autoconf automake autotools-dev curl python3 libmpc-dev \
-            libmpfr-dev libgmp-dev gawk build-essential bison flex \
-            texinfo gperf libtool patchutils bc zlib1g-dev \
-            libexpat-dev ninja-build
-
       - name: Setup | RISCV GCC
         if: steps.cache-riscv.outputs.cache-hit != 'true'
         run: |
