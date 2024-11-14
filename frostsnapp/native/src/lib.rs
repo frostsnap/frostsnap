@@ -12,9 +12,9 @@ mod ffi_serial_port;
 mod logger;
 mod sink_wrap;
 
-#[cfg(feature = "no_build_firmware")]
+#[cfg(not(bundle_firmware))]
 pub const FIRMWARE: FirmwareBin = FirmwareBin::new(&[]);
 
-#[cfg(not(feature = "no_build_firmware"))]
+#[cfg(bundle_firmware)]
 pub const FIRMWARE: FirmwareBin =
     FirmwareBin::new(include_bytes!(concat!(env!("OUT_DIR"), "/firmware.bin")));

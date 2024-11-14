@@ -1,5 +1,5 @@
 default_board := "v2"
-non_device_packages := "-p frostsnap_core -p frostsnap_coordinator -p native"
+non_device_packages := "-p frostsnap_core -p frostsnap_coordinator -p frostsnap_comms -p native"
 
 alias erase := erase-device
 

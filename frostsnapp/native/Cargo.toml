@@ -32,4 +32,3 @@ time = { version = "0.3.36", features = ["formatting"] }
 
 [features]
 default = []
-no_build_firmware = []
