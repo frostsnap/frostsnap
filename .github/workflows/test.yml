@@ -40,10 +40,6 @@ jobs:
           components: rustfmt, clippy
 
       - uses: taiki-e/install-action@just
-      - name: Setup | Install libudev
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libudev-dev
       - run: just frostsnapp/install-rust-deps
 
   device:
@@ -159,12 +155,6 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Setup | Install libudev
-        if: env.skip != 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libudev-dev
-
       - uses: taiki-e/install-action@just
 
       # Skip the `just gen` step if the skip flag is set
@@ -210,11 +200,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-
-      - name: Setup | Install libudev
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libudev-dev
 
       - run: just lint-non-device --release
       - run: just test --release --all-features
@@ -279,10 +264,6 @@ jobs:
           java-version: 18
           cache: gradle
 
-      - name: Dependencies (Android)
-        if: matrix.build_command == 'apk'
-        run: |
-          sudo apt-get update && sudo apt-get install -y libudev-dev
       - uses: nttld/setup-ndk@v1
         if: matrix.build_command == 'apk'
         with:
@@ -302,7 +283,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.build_command == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libstdc++-12-dev libgtk-3-0 libgtk-3-dev libudev-dev
+          sudo apt-get install -y ninja-build libstdc++-12-dev libgtk-3-0 libgtk-3-dev
 
       - uses: actions/download-artifact@v4
         with:
