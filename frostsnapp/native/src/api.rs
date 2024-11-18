@@ -499,16 +499,14 @@ impl Wallet {
             let wallet = self.inner.lock().unwrap();
             let txids = txids
                 .into_iter()
-                .map(|txid| bitcoin::Txid::from_str(&txid).unwrap())
-                .collect();
-            let sync_request = wallet.sync_txs(txids);
-            let total = sync_request.txids.len();
-            let mut i = 0;
+                .map(|txid| bitcoin::Txid::from_str(&txid).unwrap());
             let inspect_stream = stream.clone();
-            sync_request.inspect_txids(move |_txid| {
-                inspect_stream.add(i as f64 / total as f64);
-                i += 1;
-            })
+            wallet
+                .sync_txs(txids)
+                .inspect(move |_, progress| {
+                    inspect_stream.add(progress.consumed() as f64 / progress.total() as f64);
+                })
+                .build()
         };
 
         let update = chain_sync.sync(sync_request)?;
@@ -547,15 +545,14 @@ impl Wallet {
         let start = Instant::now();
         event!(Level::INFO, "starting sync");
         let sync_request = {
-            let inspect_stream = stream.clone();
             let wallet = self.inner.lock().unwrap();
-            let sync_req = wallet.start_sync(key_id);
-            let total = sync_req.spks.len();
-            let mut i = 0;
-            sync_req.inspect_spks(move |_spk| {
-                inspect_stream.add(i as f64 / total as f64);
-                i += 1;
-            })
+            let inspect_stream = stream.clone();
+            wallet
+                .start_sync(key_id)
+                .inspect(move |_, progress| {
+                    inspect_stream.add(progress.consumed() as f64 / progress.total() as f64);
+                })
+                .build()
         };
         let chain_sync = self.chain_sync.clone();
 

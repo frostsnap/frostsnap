@@ -198,13 +198,7 @@ impl ElectrumConnection {
                         });
 
                         match client.sync(req, 10, true) {
-                            Ok(mut sync_result) => {
-                                let now = std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .expect("valid duration")
-                                    .as_secs();
-
-                                let _ = sync_result.graph_update.update_last_seen_unconfirmed(now);
+                            Ok(sync_result) => {
                                 resp.send(Ok(sync_result));
                                 self.emit_status();
                             }
