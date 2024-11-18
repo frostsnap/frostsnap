@@ -1,0 +1,21 @@
+name: "App build preamble"
+description: "Sets up common stuff for building the flutter app"
+
+runs:
+  using: "composite"
+  steps:
+    - uses: taiki-e/install-action@just
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: subosito/flutter-action@v2
+      with:
+        channel: stable
+        cache: true
+    - uses: "./.github/actions/fetch-cargo-deps"
+    - uses: "./.github/actions/fetch-dart-deps"
+    - uses: "./.github/actions/generate-frb"
+    - uses: "./.github/actions/install-cargo-bins" # needed for espflash
+    - name: Rertrieve device firmware
+      uses: actions/download-artifact@v4
+      with:
+        name: "frostsnap-${{ github.sha }}.elf"
+        path: target/riscv32imc-unknown-none-elf/release/

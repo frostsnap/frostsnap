@@ -1,0 +1,35 @@
+name: "Fetch cargo deps"
+description: "Caches Cargo registry and Git index, and fetches cargo dependencies"
+inputs:
+  version:
+    description: "Version identifier for cache key"
+    required: false
+    default: "v0"
+runs:
+  using: "composite"
+  steps:
+    - name: Cache Cargo Registry
+      uses: actions/cache@v4
+      id: cargo-registry-cache
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ inputs.version }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-registry-${{ inputs.version }}-
+
+    - name: Cache Cargo Git Index
+      uses: actions/cache@v4
+      id: cargo-git-cache
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-git-${{ inputs.version }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-git-${{ inputs.version }}-
+
+    - uses: dtolnay/rust-toolchain@stable
+      if: steps.cargo-registry-cache.cache-hit != 'true' || steps.cargo-git-cache.cache-hit != 'true'
+
+    - name: Fetch Cargo Dependencies
+      if: steps.cargo-registry-cache.cache-hit != 'true' || steps.cargo-git-cache.cache-hit != 'true'
+      run: cargo fetch
+      shell: sh
