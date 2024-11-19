@@ -10,10 +10,10 @@ gen:
         --wasm
 
 build TARGET="linux" +ARGS="":
-    flutter build {{TARGET}} {{ARGS}}
+    BUNDLE_FIRMWARE=1 flutter build {{TARGET}} {{ARGS}}
 
 run +ARGS="":
-    flutter run {{ARGS}}
+    BUNDLE_FIRMWARE=1 flutter run {{ARGS}}
 
 lint:
     cd native && cargo fmt
