@@ -56,3 +56,5 @@ jniLibs
 **/bridge_generated*.rs
 **/bridge_definitions*.dart
 
+# Used so we can check if we need to re-run bindings regeneration
+binding-rerun.sha256
