@@ -1,5 +1,5 @@
 default_board := "v2"
-non_device_packages := "-p frostsnap_core -p frostsnap_coordinator -p native"
+coordinator_packages := "-p frostsnap_core -p frostsnap_coordinator -p frostsnap_comms -p native"
 
 alias erase := erase-device
 
@@ -12,18 +12,21 @@ erase-device +ARGS="nvs":
 build-device BOARD=default_board +ARGS="":
     cd device && cargo build --release --features {{BOARD}} --bin {{BOARD}} {{ARGS}}
 
-test +ARGS="":
-    cargo test {{ARGS}} {{non_device_packages}}
+test-coordinator +ARGS="":
+    cargo test {{ARGS}} {{coordinator_packages}}
 
-check-non-device +ARGS="":
-    cargo check {{non_device_packages}} {{ARGS}} --all-features --tests --bins
+test +ARGS="":
+   just test-coordinator {{ARGS}}
+
+check-coordinator +ARGS="":
+    cargo check {{coordinator_packages}} {{ARGS}} --all-features --tests --bins
 
 check-device +ARGS="":
     cd device && cargo check {{ARGS}} --all-features --bins
 
-lint-non-device +ARGS="":
-    cargo fmt {{non_device_packages}} -- --check
-    cargo clippy {{non_device_packages}} {{ARGS}} --all-features --tests --bins -- -Dwarnings
+lint-coordinator +ARGS="":
+    cargo fmt {{coordinator_packages}} -- --check
+    cargo clippy {{coordinator_packages}} {{ARGS}} --all-features --tests --bins -- -Dwarnings
 
 lint-device +ARGS="":
     cd device && cargo clippy {{ARGS}} --all-features --bins -- -Dwarnings
@@ -38,7 +41,7 @@ gen:
     just "frostsnapp/gen"
 
 fix: fix-dart
-    cargo clippy --fix --allow-dirty --allow-staged {{non_device_packages}} --all-features --tests --bins
+    cargo clippy --fix --allow-dirty --allow-staged {{coordinator_packages}} --all-features --tests --bins
     ( cd device && cargo clippy --fix --allow-dirty --allow-staged --all-features --bins; )
     cargo fmt --all
 
@@ -47,5 +50,5 @@ run +ARGS="":
     just build-device
     just frostsnapp/run {{ARGS}}
 
-check: check-non-device check-device
-lint: lint-non-device lint-device lint-app
+check: check-coordinator check-device
+lint: lint-coordinator lint-device lint-app

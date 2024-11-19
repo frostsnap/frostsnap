@@ -9,11 +9,11 @@ gen:
         --dart-decl-output lib/bridge_definitions.dart \
         --wasm
 
-build TARGET="linux":
-    BUILD_FIRMWARE=1 flutter build {{TARGET}}
+build TARGET="linux" +ARGS="":
+    flutter build {{TARGET}} {{ARGS}}
 
 run +ARGS="":
-    BUILD_FIRMWARE=1 flutter run {{ARGS}}
+    flutter run {{ARGS}}
 
 lint:
     cd native && cargo fmt
@@ -32,23 +32,19 @@ install-flutter-deps:
     #!/bin/sh
     flutter pub get
 
-install-rust-deps:
+install-cargo-bins:
     #!/bin/sh
-    cargo install cargo-ndk espflash cargo-expand
     flutter_rust_bridge_version=$(just flutter_rust_bridge_version)
-    if test "$flutter_rust_bridge_version"; then
-        # Check if binaries are already cached, skipping installation if they exist
-        if [ ! -x ~/.cargo/bin/flutter_rust_bridge_codegen ]; then
-            cargo install "flutter_rust_bridge_codegen@$flutter_rust_bridge_version"
-        else
-            echo "The correct flutter rust bridge is already installed."
-        fi
-    else
+    if ! test "$flutter_rust_bridge_version"; then
         echo "couldn't determine version for flutter_rust_bridge" >&2;
         exit 1
     fi
+    cargo install cargo-ndk@3.5.4 espflash@3.2.0 cargo-expand@1.0.95 "flutter_rust_bridge_codegen@$flutter_rust_bridge_version"
 
 serve *args='':
     flutter pub run flutter_rust_bridge:serve {{args}}
+
+build-appimage +ARGS="":
+    appimage-builder --recipe AppImageBuilder.yml {{ARGS}}
 
 # vim:expandtab:sw=4:ts=4

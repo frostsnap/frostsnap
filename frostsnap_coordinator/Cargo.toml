@@ -11,7 +11,7 @@ frostsnap_comms = { workspace = true }
 frostsnap_core = { workspace = true, features = ["std", "rusqlite"] }
 bincode = { workspace = true, features = ["std"] }
 tracing = { workspace = true }
-serialport = "4.2"
+serialport = {version = "4.6", default-features = false } # default-features = false so no libudev
 rand_core.workspace = true
 rusqlite.workspace = true
 

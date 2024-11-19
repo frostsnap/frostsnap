@@ -1,0 +1,31 @@
+name: "Fetch Flutter Dependencies"
+description: "Caches and fetches Flutter dependencies"
+inputs:
+  version:
+    description: "Version identifier for cache key"
+    required: false
+    default: "v0"
+runs:
+  using: "composite"
+  steps:
+    - name: Cache Pub Dependencies
+      id: fetch-dart-cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.pub-cache
+        key: ${{ runner.os }}-pub-cache-${{ inputs.version }}-${{ hashFiles('frostsnapp/pubspec.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-pub-cache-${{ inputs.version }}-
+
+    - name: Set Up Flutter
+      uses: subosito/flutter-action@v2
+      if: steps.fetch-dart-cache.cache-hit != 'true'
+      with:
+        channel: stable
+        cache: true
+
+    - name: Get Flutter Dependencies
+      working-directory: frostsnapp
+      if: steps.fetch-dart-cache.cache-hit != 'true'
+      run: flutter pub get
+      shell: sh

@@ -1,0 +1,44 @@
+name: "Install Cargo Binaries"
+description: "Installs Rust CLI binaries and caches them"
+inputs:
+  version:
+    description: "Version identifier for cache key"
+    required: false
+    default: "v1"
+runs:
+  using: "composite"
+  steps:
+    - uses: taiki-e/install-action@just
+
+    - name: Compute Hash of Cargo Binaries
+      id: hash_rust_bins
+      shell: sh
+      run: |
+        hash=$(cd frostsnapp; just --show install-cargo-bins | sha256sum | cut -d ' ' -f1)
+        echo "hash=$hash" >> $GITHUB_OUTPUT
+
+    - name: Cache Rust Binaries
+      id: cache-rust-bins
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/bin
+          ~/.cargo/.crates.toml
+          ~/.cargo/.crates2.json
+        key: ${{ runner.os }}-rust-bins-${{ inputs.version }}-${{ steps.hash_rust_bins.outputs.hash }}
+
+    - name: Setup Rust Toolchain
+      if: steps.cache-rust-bins.outputs.cache-hit != 'true'
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Install libudev for espflash
+      if: steps.cache-rust-bins.outputs.cache-hit != 'true'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libudev-dev
+      shell: sh
+
+    - name: Install Cargo Binaries
+      if: steps.cache-rust-bins.outputs.cache-hit != 'true'
+      run: just frostsnapp/install-cargo-bins
+      shell: sh

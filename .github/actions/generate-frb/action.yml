@@ -1,0 +1,58 @@
+name: "Generate FRB Bridge Files"
+description: "Caches and generates FRB bridge files"
+inputs:
+  version:
+    description: "Version identifier for cache key"
+    required: false
+    default: "v0"
+runs:
+  using: "composite"
+  steps:
+    - name: Cache Generated FRB Files
+      id: generate-frb
+      uses: actions/cache@v4
+      with:
+        path: |
+          ./frostsnapp/native/src/bridge_generated.web.rs
+          ./frostsnapp/native/src/bridge_generated.io.rs
+          ./frostsnapp/native/src/bridge_generated.rs
+          ./frostsnapp/macos/Runner/bridge_generated.h
+          ./frostsnapp/lib/bridge_generated.io.dart
+          ./frostsnapp/lib/bridge_generated.dart
+          ./frostsnapp/lib/bridge_generated.web.dart
+          ./frostsnapp/ios/Runner/bridge_generated.h
+          ./frostsnapp/lib/bridge_definitions.freezed.dart
+          ./frostsnapp/lib/bridge_definitions.dart
+        key: frb-files-${{ inputs.version }}-${{ hashFiles('frostsnapp/native/src/**/*') }}
+
+    - uses: dtolnay/rust-toolchain@stable
+      if: steps.generate-frb.outputs.cache-hit != 'true'
+      with:
+        components: rustfmt # FRB needs this
+    - name: "install libclang-dev" #FRB needs libclang-dev
+      if: steps.generate-frb.outputs.cache-hit != 'true'
+      shell: sh
+      run: |
+        sudo apt update
+        sudo apt install -y libclang-dev
+
+    - name: Set Up Flutter
+      if: steps.generate-frb.outputs.cache-hit != 'true'
+      uses: subosito/flutter-action@v2
+      with:
+        channel: stable
+        cache: true
+
+    - uses: taiki-e/install-action@just
+      if: steps.generate-frb.outputs.cache-hit != 'true'
+
+    - uses: ./.github/actions/install-cargo-bins
+      if: steps.generate-frb.outputs.cache-hit != 'true'
+
+    - uses: ./.github/actions/fetch-dart-deps
+      if: steps.generate-frb.outputs.cache-hit != 'true'
+
+    - name: Generate FFI Files
+      if: steps.generate-frb.outputs.cache-hit != 'true'
+      run: just gen
+      shell: sh

@@ -1,0 +1,29 @@
+name: "Cache rust target"
+description: "Caches one or more Rust target subdirectories"
+
+inputs:
+  key:
+    description: "String to be used in the cache key"
+    required: true
+  path:
+    description: |
+      Newline-separated list of subdirectories in the target directory to cache.
+      Example:
+        target/release
+        target/debug
+    required: false
+    default: |
+      target/release
+
+runs:
+  using: "composite"
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+      id: rust-toolchain
+    - name: "Cache Rust Targets"
+      uses: actions/cache@v4
+      with:
+        path: ${{ inputs.path }}
+        key: "${{ runner.os }}-${{ inputs.key }}-rust-target-${{steps.rust-toolchain.outputs-cachekey}}-${{ hashFiles('**/Cargo.lock') }}"
+        restore-keys: |
+          ${{ runner.os }}-${{ inputs.key }}-rust-target-${{steps.rust-toolchain.outputs-cachekey}}-

@@ -1,9 +1,10 @@
 fn main() {
+    println!("cargo::rustc-check-cfg=cfg(bundle_firmware)");
     use std::env;
     use std::path::{Path, PathBuf};
     use std::process::Command;
-
-    if env::var("BUILD_FIRMWARE").is_ok() {
+    if env::var("BUNDLE_FIRMWARE").is_ok() {
+        println!("cargo:rustc-cfg=bundle_firmware");
         let out_dir = env::var("OUT_DIR").unwrap();
         let output_path = PathBuf::from(out_dir).join("firmware.bin");
 
@@ -31,7 +32,5 @@ fn main() {
             status.success(),
             "Unsuccesful exit of command to create binary firmware file from elf file"
         );
-    } else {
-        println!("cargo:rustc-cfg=no_build_firmware")
     }
 }
