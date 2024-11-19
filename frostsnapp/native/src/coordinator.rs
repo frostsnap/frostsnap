@@ -35,7 +35,7 @@ pub struct FfiCoordinator {
     thread_handle: Mutex<Option<JoinHandle<()>>>,
     ui_protocol: Arc<Mutex<Option<Box<dyn UiProtocol>>>>,
     usb_sender: UsbSender,
-    firmware_bin: FirmwareBin,
+    firmware_bin: Option<FirmwareBin>,
     firmware_upgrade_progress: Arc<Mutex<Option<StreamSink<f32>>>>,
 
     // persisted things
@@ -111,17 +111,23 @@ impl FfiCoordinator {
                 if let Some(firmware_upgrade_pogress) = &mut *firmware_upgrade_progress_loop {
                     // We're in a firmware upgrade.
                     // Do the firmware upgrade and then carry on as usual
-                    let progress_iter = usb_manager.run_firmware_upgrade();
                     let mut error = Ok(());
-                    for progress in progress_iter {
-                        match progress {
-                            Ok(progress) => {
-                                firmware_upgrade_pogress.add(progress);
+                    match usb_manager.run_firmware_upgrade() {
+                        Ok(progress_iter) => {
+                            for progress in progress_iter {
+                                match progress {
+                                    Ok(progress) => {
+                                        firmware_upgrade_pogress.add(progress);
+                                    }
+                                    Err(e) => {
+                                        error = Err(e);
+                                        break;
+                                    }
+                                }
                             }
-                            Err(e) => {
-                                error = Err(e);
-                                break;
-                            }
+                        }
+                        Err(e) => {
+                            error = Err(e);
                         }
                     }
 
@@ -494,7 +500,10 @@ impl FfiCoordinator {
         &self,
         sink: StreamSink<FirmwareUpgradeConfirmState>,
     ) -> anyhow::Result<()> {
-        let bin = self.firmware_bin;
+        let firmware_bin = self.firmware_bin.ok_or(anyhow!(
+            "App wasn't compiled with BUNDLE_FIRMWARE so it can't do firmware upgrades"
+        ))?;
+
         let devices = api::device_list_state()
             .0
             .devices
@@ -510,15 +519,16 @@ impl FfiCoordinator {
             .map(|device| device.id)
             .collect();
 
-        let ui_protocol = FirmwareUpgradeProtocol::new(devices, need_upgrade, bin, SinkWrap(sink));
+        let ui_protocol =
+            FirmwareUpgradeProtocol::new(devices, need_upgrade, firmware_bin, SinkWrap(sink));
         ui_protocol.emit_state();
         self.start_protocol(ui_protocol);
 
         Ok(())
     }
 
-    pub fn upgrade_firmware_digest(&self) -> FirmwareDigest {
-        self.firmware_bin.digest()
+    pub fn upgrade_firmware_digest(&self) -> Option<FirmwareDigest> {
+        self.firmware_bin.map(|firmware_bin| firmware_bin.digest())
     }
 
     fn start_protocol<P: UiProtocol + Send + 'static>(&self, mut protocol: P) {

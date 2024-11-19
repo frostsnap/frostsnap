@@ -131,7 +131,7 @@ pub struct ConnectedDevice {
     pub name: Option<String>,
     // NOTE: digest should always be present in any device that is actually plugged in
     pub firmware_digest: String,
-    pub latest_digest: String,
+    pub latest_digest: Option<String>,
     pub id: DeviceId,
 }
 
@@ -141,7 +141,7 @@ impl ConnectedDevice {
     }
 
     pub fn needs_firmware_upgrade(&self) -> SyncReturn<bool> {
-        SyncReturn(self.firmware_digest != self.latest_digest)
+        SyncReturn(Some(self.firmware_digest.as_str()) != self.latest_digest.as_deref())
     }
 }
 
@@ -980,8 +980,12 @@ impl Coordinator {
         Ok(())
     }
 
-    pub fn upgrade_firmware_digest(&self) -> SyncReturn<String> {
-        SyncReturn(self.0.upgrade_firmware_digest().to_string())
+    pub fn upgrade_firmware_digest(&self) -> SyncReturn<Option<String>> {
+        SyncReturn(
+            self.0
+                .upgrade_firmware_digest()
+                .map(|digest| digest.to_string()),
+        )
     }
 
     pub fn cancel_protocol(&self) {

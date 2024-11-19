@@ -13,8 +13,10 @@ mod logger;
 mod sink_wrap;
 
 #[cfg(not(bundle_firmware))]
-pub const FIRMWARE: FirmwareBin = FirmwareBin::new(&[]);
+pub const FIRMWARE: Option<FirmwareBin> = None;
 
 #[cfg(bundle_firmware)]
-pub const FIRMWARE: FirmwareBin =
-    FirmwareBin::new(include_bytes!(concat!(env!("OUT_DIR"), "/firmware.bin")));
+pub const FIRMWARE: Option<FirmwareBin> = Some(FirmwareBin::new(include_bytes!(concat!(
+    env!("OUT_DIR"),
+    "/firmware.bin"
+))));
