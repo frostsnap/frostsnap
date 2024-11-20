@@ -141,6 +141,8 @@ impl ConnectedDevice {
     }
 
     pub fn needs_firmware_upgrade(&self) -> SyncReturn<bool> {
+        // We still want to have this return true even when we don't have firmware in the app so we
+        // know that the device needs a firmware upgrade (even if we can't give it to them).
         SyncReturn(Some(self.firmware_digest.as_str()) != self.latest_digest.as_deref())
     }
 }
