@@ -40,7 +40,7 @@ pub struct FrostSigner {
 
 #[derive(Clone, Debug)]
 pub struct KeyData {
-    access_structures: BTreeMap<AccessStructureId, AccessStrucureData>,
+    access_structures: BTreeMap<AccessStructureId, AccessStructureData>,
     #[allow(dead_code)] // We'll use this soon
     purposes: BTreeSet<KeyPurpose>,
     key_name: String,
@@ -52,7 +52,7 @@ pub enum AccessStructureKind {
     Master,
 }
 
-/// So the coorindator can recognise which keys are relevant to it
+/// So the coordindator can recognise which keys are relevant to it
 #[derive(Clone, Copy, Debug, PartialEq, bincode::Decode, bincode::Encode, Eq, PartialOrd, Ord)]
 pub enum KeyPurpose {
     Test,
@@ -68,7 +68,7 @@ impl KeyPurpose {
 }
 
 #[derive(Clone, Debug, PartialEq, bincode::Decode, bincode::Encode)]
-pub struct AccessStrucureData {
+pub struct AccessStructureData {
     pub kind: AccessStructureKind,
     /// Keep the threshold around to make recover easier. The device tells the coordinator about it
     /// so they can tell the user how close they are to restoring the key.
@@ -131,7 +131,7 @@ impl FrostSigner {
                 self.keys.entry(*key_id).and_modify(|key_data| {
                     key_data.access_structures.insert(
                         *access_structure_id,
-                        AccessStrucureData {
+                        AccessStructureData {
                             kind: *kind,
                             threshold: *threshold,
                             shares: Default::default(),
@@ -319,7 +319,7 @@ impl FrostSigner {
                     .shared_key()
                     .public_key()
                     .non_zero()
-                    .expect("this has beeen checked");
+                    .expect("this has been checked");
                 let key_id = KeyId::from_rootkey(rootkey);
 
                 self.action_state = Some(SignerState::KeyGenAck {
@@ -641,7 +641,7 @@ impl FrostSigner {
                     encrypted_secret_share
                         .decrypt(symmetric_key)
                         .ok_or_else(|| {
-                            ActionError::StateInconsistent("couldn't decrypt secrert share".into())
+                            ActionError::StateInconsistent("couldn't decrypt secret share".into())
                         })?;
                 let root_paired_secret_share =
                     Xpub::from_rootkey(PairedSecretShare::new_unchecked(

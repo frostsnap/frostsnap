@@ -16,7 +16,7 @@ pub enum AccountKind {
 }
 
 impl AccountKind {
-    pub fn path_segments_from_bitcoion_appkey(&self) -> impl Iterator<Item = u32> {
+    pub fn path_segments_from_bitcoin_appkey(&self) -> impl Iterator<Item = u32> {
         core::iter::once(*self as u32)
     }
 }
@@ -71,7 +71,7 @@ pub struct BitcoinAccount {
 impl BitcoinAccount {
     pub fn path_segments_from_bitcoin_appkey(&self) -> impl Iterator<Item = u32> {
         self.kind
-            .path_segments_from_bitcoion_appkey()
+            .path_segments_from_bitcoin_appkey()
             .chain(core::iter::once(self.index))
     }
 }

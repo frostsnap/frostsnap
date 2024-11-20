@@ -198,7 +198,7 @@ pub trait Gist {
     fn gist(&self) -> String;
 }
 
-/// The hash of a threshold access structure for a particualr key
+/// The hash of a threshold access structure for a particular key
 #[derive(Clone, Copy, PartialEq, Ord, PartialOrd, Eq)]
 pub struct AccessStructureId(pub [u8; 32]);
 
