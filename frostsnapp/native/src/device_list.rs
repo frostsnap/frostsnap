@@ -42,18 +42,16 @@ impl DeviceList {
                     firmware_digest,
                     latest_firmware_digest,
                 } => {
-                    self.connected
-                        .entry(id)
-                        .and_modify(|connected| {
-                            connected.firmware_digest = firmware_digest.to_string();
-                            connected.latest_digest = latest_firmware_digest.to_string();
-                        })
-                        .or_insert(api::ConnectedDevice {
-                            firmware_digest: firmware_digest.to_string(),
-                            latest_digest: latest_firmware_digest.to_string(),
-                            name: None,
-                            id,
-                        });
+                    let connected = self.connected.entry(id).or_insert(api::ConnectedDevice {
+                        firmware_digest: Default::default(),
+                        latest_digest: Default::default(),
+                        name: None,
+                        id,
+                    });
+
+                    connected.firmware_digest = firmware_digest.to_string();
+                    connected.latest_digest =
+                        latest_firmware_digest.map(|digest| digest.to_string());
                 }
                 DeviceChange::NameChange { id, name } => {
                     if let Some(index) = self.index_of(id) {

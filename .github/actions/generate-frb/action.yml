@@ -23,6 +23,7 @@ runs:
           ./frostsnapp/ios/Runner/bridge_generated.h
           ./frostsnapp/lib/bridge_definitions.freezed.dart
           ./frostsnapp/lib/bridge_definitions.dart
+          ./frostsnapp/binding-rerun.sha256
         key: frb-files-${{ inputs.version }}-${{ hashFiles('frostsnapp/native/src/**/*') }}
 
     - uses: dtolnay/rust-toolchain@stable

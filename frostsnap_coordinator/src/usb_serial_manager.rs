@@ -4,6 +4,7 @@ const USB_PID: u16 = 4097;
 
 use crate::PortOpenError;
 use crate::{FramedSerialPort, Serial};
+use anyhow::anyhow;
 use frostsnap_comms::{
     CoordinatorSendBody, CoordinatorUpgradeMessage, Destination, DeviceSendBody, FirmwareDigest,
     FIRMWARE_IMAGE_SIZE, FIRMWARE_NEXT_CHUNK_READY_SIGNAL, FIRMWARE_UPGRADE_CHUNK_LEN,
@@ -45,7 +46,7 @@ pub struct UsbSerialManager {
     /// sometimes we need to put things in the outbox internally
     outbox_sender: std::sync::mpsc::Sender<CoordinatorSendMessage>,
     /// The firmware binary provided to devices who are doing an upgrade
-    firmware_bin: FirmwareBin,
+    firmware_bin: Option<FirmwareBin>,
 }
 
 pub struct DevicePort {
@@ -63,7 +64,7 @@ struct AwaitingMagic {
 
 impl UsbSerialManager {
     /// Returns self and a `UsbSender` which can be used to queue messages
-    pub fn new(serial_impl: Box<dyn Serial>, firmware_bin: FirmwareBin) -> Self {
+    pub fn new(serial_impl: Box<dyn Serial>, firmware_bin: Option<FirmwareBin>) -> Self {
         let (sender, receiver) = std::sync::mpsc::channel();
         Self {
             serial_impl,
@@ -329,7 +330,9 @@ impl UsbSerialManager {
                             None => device_changes.push(DeviceChange::Connected {
                                 id: message.from,
                                 firmware_digest,
-                                latest_firmware_digest: self.firmware_bin.cached_digest(),
+                                latest_firmware_digest: self
+                                    .firmware_bin
+                                    .map(|mut firmware_bin| firmware_bin.cached_digest()),
                             }),
                         }
 
@@ -523,15 +526,17 @@ impl UsbSerialManager {
             .map(|device_port| device_port.firmware_digest)
     }
 
-    pub fn upgrade_bin(&self) -> FirmwareBin {
+    pub fn upgrade_bin(&self) -> Option<FirmwareBin> {
         self.firmware_bin
     }
 
-    pub fn run_firmware_upgrade(&mut self) -> impl Iterator<Item = anyhow::Result<f32>> + '_ {
-        let n_chunks = ceil_div(
-            self.firmware_bin.bin.len() as u32,
-            FIRMWARE_UPGRADE_CHUNK_LEN,
-        );
+    pub fn run_firmware_upgrade(
+        &mut self,
+    ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<f32>> + '_> {
+        let firmware_bin = self.firmware_bin.ok_or(anyhow!(
+            "App wasn't compiled with BUNDLE_FIRMWARE=1 so it can't do firmware upgrades"
+        ))?;
+        let n_chunks = ceil_div(firmware_bin.size(), FIRMWARE_UPGRADE_CHUNK_LEN);
         let total_chunks = n_chunks * self.ready.len() as u32;
 
         let mut iters = vec![];
@@ -558,8 +563,7 @@ impl UsbSerialManager {
             }
 
             event!(Level::INFO, port = port, "starting writing firmware");
-            let mut chunks = self
-                .firmware_bin
+            let mut chunks = firmware_bin
                 .bin
                 .chunks(FIRMWARE_UPGRADE_CHUNK_LEN as usize)
                 .enumerate();
@@ -599,7 +603,7 @@ impl UsbSerialManager {
             }));
         }
 
-        iters.into_iter().flatten()
+        Ok(iters.into_iter().flatten())
     }
 }
 
@@ -665,7 +669,7 @@ pub enum DeviceChange {
     Connected {
         id: DeviceId,
         firmware_digest: FirmwareDigest,
-        latest_firmware_digest: FirmwareDigest,
+        latest_firmware_digest: Option<FirmwareDigest>,
     },
     NeedsName {
         id: DeviceId,
@@ -707,6 +711,10 @@ pub struct FirmwareBin {
 }
 
 impl FirmwareBin {
+    pub const fn is_stub(&self) -> bool {
+        self.bin.is_empty()
+    }
+
     pub const fn new(bin: &'static [u8]) -> Self {
         Self {
             bin,
