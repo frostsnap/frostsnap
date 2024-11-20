@@ -2,7 +2,7 @@ use super::chain_sync::SyncRequest;
 use crate::persist::Persisted;
 use anyhow::{anyhow, Context, Result};
 use bdk_chain::{
-    bitcoin::{self, bip32, key::Secp256k1, Amount, SignedAmount},
+    bitcoin::{self, bip32, Amount, SignedAmount},
     indexed_tx_graph,
     indexer::keychain_txout::{self, KeychainTxOutIndex},
     local_chain,
@@ -427,11 +427,7 @@ impl FrostsnapWallet {
         psbt: &bitcoin::Psbt,
         master_appkey: MasterAppkey,
     ) -> Result<TransactionTemplate> {
-        let bitcoin_app_xpub = master_appkey.derive_appkey(
-            &Secp256k1::verification_only(),
-            AppTweakKind::Bitcoin,
-            self.network.into(),
-        );
+        let bitcoin_app_xpub = master_appkey.derive_appkey(AppTweakKind::Bitcoin);
         let our_fingerprint = bitcoin_app_xpub.fingerprint();
         let mut template = frostsnap_core::bitcoin_transaction::TransactionTemplate::new();
         let rust_bitcoin_tx = &psbt.unsigned_tx;

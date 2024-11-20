@@ -133,7 +133,10 @@ impl TransactionTemplate {
             return Err(Box::new(SpkDoesntMatchPathError {
                 got: txout.script_pubkey.clone(),
                 expected: expected_spk,
-                path: owner.bip32_path.derivation_path().to_u32_vec(),
+                path: owner
+                    .bip32_path
+                    .path_segments_from_bitcoin_appkey()
+                    .collect(),
                 master_appkey: owner.master_appkey,
             }));
         }
