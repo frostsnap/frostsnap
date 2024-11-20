@@ -20,3 +20,7 @@ bdk_electrum = { version = "0.19", default-features = false, features = [
   "use-rustls-ring",
 ] }
 bdk_coin_select = { version = "0.3" }
+
+
+[dev-dependencies]
+rand = "0.8"

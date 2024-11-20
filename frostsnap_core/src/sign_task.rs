@@ -1,4 +1,4 @@
-use crate::{bitcoin_transaction, tweak::AppTweak, KeyId};
+use crate::{bitcoin_transaction, tweak::AppTweak, MasterAppkey};
 use alloc::{boxed::Box, string::String, vec::Vec};
 use bitcoin::hashes::Hash;
 use schnorr_fun::{fun::marker::*, Message, Schnorr, Signature};
@@ -18,19 +18,19 @@ pub enum SignTask {
 #[derive(Debug, Clone, PartialEq)]
 /// A sign task bound to a single key. We only support signing tasks with single keys for now.
 pub struct CheckedSignTask {
-    key_id: KeyId,
+    master_appkey: MasterAppkey,
     sign_task: SignTask,
 }
 
 impl SignTask {
-    pub fn check(self, key_id: KeyId) -> Result<CheckedSignTask, SignTaskError> {
+    pub fn check(self, master_appkey: MasterAppkey) -> Result<CheckedSignTask, SignTaskError> {
         match &self {
             SignTask::Plain { .. } | SignTask::Nostr { .. } => {}
             SignTask::BitcoinTransaction(transaction) => {
                 let non_matching_key = transaction.inputs().iter().find_map(|input| {
                     let owner = input.owner().local_owner()?;
-                    if Some(owner.root_key) != key_id.to_root_pubkey() {
-                        Some(KeyId::from_root_pubkey(owner.root_key))
+                    if owner.master_appkey != master_appkey {
+                        Some(owner.master_appkey)
                     } else {
                         None
                     }
@@ -38,8 +38,8 @@ impl SignTask {
 
                 if let Some(non_matching_key) = non_matching_key {
                     return Err(SignTaskError::WrongKey {
-                        got: non_matching_key,
-                        expected: key_id,
+                        got: Box::new(non_matching_key),
+                        expected: Box::new(master_appkey),
                     });
                 }
 
@@ -49,7 +49,7 @@ impl SignTask {
             }
         }
         Ok(CheckedSignTask {
-            key_id,
+            master_appkey,
             sign_task: self,
         })
     }
@@ -65,10 +65,9 @@ impl CheckedSignTask {
         schnorr: &Schnorr<sha2::Sha256, NG>,
         signatures: &[Signature],
     ) -> bool {
-        self.sign_items()
-            .iter()
-            .enumerate()
-            .all(|(i, item)| item.verify_final_signature(schnorr, self.key_id, &signatures[i]))
+        self.sign_items().iter().enumerate().all(|(i, item)| {
+            item.verify_final_signature(schnorr, self.master_appkey, &signatures[i])
+        })
     }
 
     pub fn sign_items(&self) -> Vec<SignItem> {
@@ -84,7 +83,10 @@ impl CheckedSignTask {
             SignTask::BitcoinTransaction(transaction) => transaction
                 .iter_sighashes_of_locally_owned_inputs()
                 .map(|(owner, sighash)| {
-                    assert_eq!(owner.root_key, self.key_id, "we should have checked this");
+                    assert_eq!(
+                        owner.master_appkey, self.master_appkey,
+                        "we should have checked this"
+                    );
                     SignItem {
                         message: sighash.as_raw_hash().to_byte_array().to_vec(),
                         app_tweak: AppTweak::Bitcoin(owner.bip32_path),
@@ -105,14 +107,10 @@ impl SignItem {
     pub fn verify_final_signature<NG>(
         &self,
         schnorr: &Schnorr<sha2::Sha256, NG>,
-        key_id: KeyId,
+        master_appkey: MasterAppkey,
         signature: &Signature,
     ) -> bool {
-        let root_pubkey = match key_id.to_root_pubkey() {
-            Some(root_pubkey) => root_pubkey,
-            None => return false,
-        };
-        let derived_key = self.app_tweak.derive_xonly_key(&root_pubkey);
+        let derived_key = self.app_tweak.derive_xonly_key(&master_appkey.to_xpub());
         schnorr.verify(&derived_key, self.schnorr_fun_message(), signature)
     }
 
@@ -124,7 +122,10 @@ impl SignItem {
 
 #[derive(Clone, Debug)]
 pub enum SignTaskError {
-    WrongKey { got: KeyId, expected: KeyId },
+    WrongKey {
+        got: Box<MasterAppkey>,
+        expected: Box<MasterAppkey>,
+    },
     InvalidBitcoinTransaction,
 }
 

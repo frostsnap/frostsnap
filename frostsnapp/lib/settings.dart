@@ -84,7 +84,8 @@ class SettingsPage extends StatelessWidget {
                             return ExportDescriptorPage(
                                 walletDescriptor: walletContext!.wallet.network
                                     .descriptorForKey(
-                                        keyId: walletContext!.keyId));
+                                        masterAppkey:
+                                            walletContext!.masterAppkey));
                           }),
                     ]),
                   SettingsCategory(

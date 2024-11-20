@@ -1,9 +1,10 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/device.dart';
 import 'package:frostsnapp/device_action.dart';
-import 'package:frostsnapp/device_id_ext.dart';
+import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/global.dart';
@@ -11,14 +12,17 @@ import 'package:frostsnapp/theme.dart';
 import 'package:frostsnapp/hex.dart';
 
 Future<void> doBackupWorkflow(BuildContext context,
-    {required List<DeviceId> devices, required KeyId keyId}) async {
+    {required List<DeviceId> devices,
+    required AccessStructure accessStructure}) async {
   for (final deviceId in devices) {
     if (context.mounted) {
       final confirmed = await showDeviceBackupDialog(context,
-          deviceId: deviceId, keyId: keyId);
+          deviceId: deviceId,
+          accessStructureRef: accessStructure.accessStructureRef());
 
       if (confirmed && context.mounted) {
-        await showBackupInstructionsDialog(context, keyId: keyId);
+        await showBackupInstructionsDialog(context,
+            accessStructure: accessStructure);
       }
     }
     await coord.cancelProtocol();
@@ -26,10 +30,13 @@ Future<void> doBackupWorkflow(BuildContext context,
 }
 
 Future<bool> showDeviceBackupDialog(BuildContext context,
-    {required DeviceId deviceId, required KeyId keyId}) async {
+    {required DeviceId deviceId,
+    required AccessStructureRef accessStructureRef}) async {
   final result = await showDeviceActionDialog<bool>(
     context: context,
-    complete: coord.displayBackup(id: deviceId, keyId: keyId).first,
+    complete: coord
+        .displayBackup(id: deviceId, accessStructureRef: accessStructureRef)
+        .first,
     builder: (context) {
       return Column(children: [
         DialogHeader(child: Text("Confirm on device to show backup")),
@@ -52,11 +59,10 @@ Future<bool> showDeviceBackupDialog(BuildContext context,
   return confirmed;
 }
 
-Future<void> showBackupInstructionsDialog(BuildContext context,
-    {required KeyId keyId}) async {
-  final frostKey = coord.getKey(keyId: keyId)!;
-  final polynomialIdentifier = frostKey.polynomialIdentifier();
-
+Future<void> showBackupInstructionsDialog(
+  BuildContext context, {
+  required AccessStructure accessStructure,
+}) async {
   return showDialog(
     context: context,
     builder: (context) {
@@ -121,7 +127,7 @@ Future<void> showBackupInstructionsDialog(BuildContext context,
                   ),
                   Center(
                       child: Text(
-                    "Identifier: ${toSpacedHex(polynomialIdentifier)}",
+                    "Identifier: ${toSpacedHex(Uint8List.fromList(accessStructure.id().field0.sublist(0, 4)))}",
                     style: TextStyle(fontFamily: 'Courier', fontSize: 18),
                   )),
                   Divider(),
@@ -133,7 +139,7 @@ Future<void> showBackupInstructionsDialog(BuildContext context,
                       "This identifier is useful for knowing that these share backups belong to the same key and are compatibile."),
                   SizedBox(height: 24),
                   Text(
-                      "Any ${frostKey.threshold()} of these backups will provide complete control over this key."),
+                      "Any ${accessStructure.threshold()} of these backups will provide complete control over this key."),
                   SizedBox(height: 8),
                   Text(
                       "You should store these backups securely in separate locations."),

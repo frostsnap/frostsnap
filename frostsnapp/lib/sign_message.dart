@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/animated_check.dart';
 import 'package:frostsnapp/device_action.dart';
-import 'package:frostsnapp/device_id_ext.dart';
+import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/settings.dart';
@@ -56,8 +56,10 @@ class _SignMessageFormState extends State<SignMessageForm> {
 
   @override
   Widget build(BuildContext context) {
-    final buttonReady = selected.length == widget.frostKey.threshold() &&
-        _messageController.text.isNotEmpty;
+    final accessStructure = widget.frostKey.accessStructures()[0];
+    final threshold = accessStructure.threshold();
+    final buttonReady =
+        selected.length == threshold && _messageController.text.isNotEmpty;
 
     Future<void> Function()? submitButtonOnPressed;
     if (buttonReady) {
@@ -65,15 +67,14 @@ class _SignMessageFormState extends State<SignMessageForm> {
         final message = _messageController.text;
         final signingStream = coord
             .startSigning(
-                keyId: widget.frostKey.id(),
+                accessStructureRef: accessStructure.accessStructureRef(),
                 devices: selected.toList(),
                 message: message)
             .toBehaviorSubject();
 
-        final signatures =
-            await signMessageWorkflowDialog(context, signingStream, message);
+        await signMessageWorkflowDialog(context, signingStream, message);
         if (context.mounted) {
-          Navigator.pop(context, signatures);
+          Navigator.pop(context);
         }
       };
     }
@@ -92,7 +93,7 @@ class _SignMessageFormState extends State<SignMessageForm> {
         ),
         SizedBox(height: 20.0),
         Text(
-          'Select ${widget.frostKey.threshold()} device${widget.frostKey.threshold() > 1 ? "s" : ""} to sign with:',
+          'Select $threshold device${threshold > 1 ? "s" : ""} to sign with:',
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 20.0),
         ),
@@ -140,7 +141,8 @@ class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
 
   @override
   Widget build(BuildContext context) {
-    final devices = widget.frostKey.devices();
+    final accessStructure = widget.frostKey.accessStructures()[0];
+    final devices = accessStructure.devices();
 
     return ListView.builder(
       itemCount: devices.length,

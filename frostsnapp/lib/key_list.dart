@@ -1,4 +1,4 @@
-import 'package:frostsnapp/device_id_ext.dart';
+import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/keygen.dart';
@@ -16,7 +16,7 @@ import 'package:rxdart/rxdart.dart';
 import 'sign_message.dart';
 
 class KeyList extends StatelessWidget {
-  final Function(KeyId)? onNewKey;
+  final Function(AccessStructureRef)? onNewKey;
   final Function(BuildContext, FrostKey, BitcoinNetwork?) itemBuilder;
 
   const KeyList({super.key, this.onNewKey, required this.itemBuilder});
@@ -43,7 +43,7 @@ class KeyList extends StatelessWidget {
     final keyStream =
         Rx.combineLatest2(settingsStream, keyStateStream, (settings, keyState) {
       return keyState.keys.map((frostKey) {
-        final targetKeyId = frostKey.id();
+        final targetKeyId = frostKey.keyId();
         final BitcoinNetwork network = settings.walletNetworks
                 .firstWhereOrNull(
                   (record) => keyIdEquals(record.$1, targetKeyId),
@@ -125,12 +125,11 @@ class _KeyCard extends State<KeyCard> {
   void initState() {
     super.initState();
     restorableSignSession =
-        coord.persistedSignSessionDescription(keyId: widget.frostKey.id());
+        coord.persistedSignSessionDescription(keyId: widget.frostKey.keyId());
   }
 
   @override
   Widget build(BuildContext context) {
-    final keyId = widget.frostKey.id();
     final bitcoinNetwork =
         widget.bitcoinNetwork ?? BitcoinNetwork.signet(bridge: api);
     final settingsCtx = SettingsContext.of(context)!;
@@ -148,7 +147,8 @@ class _KeyCard extends State<KeyCard> {
         final wallet = await settings.loadWallet(network: bitcoinNetwork);
         if (context.mounted) {
           Navigator.push(context, MaterialPageRoute(builder: (context) {
-            return WalletPage(keyId: keyId, wallet: wallet);
+            return WalletPage(
+                masterAppkey: widget.frostKey.masterAppkey(), wallet: wallet);
           }));
         }
       },
@@ -172,7 +172,7 @@ class _KeyCard extends State<KeyCard> {
       continueSigning = ElevatedButton(
           onPressed: () async {
             final signingStream = coord
-                .tryRestoreSigningSession(keyId: keyId)
+                .tryRestoreSigningSession(keyId: widget.frostKey.keyId())
                 .toBehaviorSubject();
 
             switch (restorableSignSession!) {
@@ -192,20 +192,22 @@ class _KeyCard extends State<KeyCard> {
                         context: context,
                         signingStream: signingStream,
                         unsignedTx: unsignedTx,
-                        keyId: keyId);
+                        masterAppkey: widget.frostKey.masterAppkey());
                   }
                 }
             }
 
             setState(() {
               restorableSignSession = coord.persistedSignSessionDescription(
-                  keyId: widget.frostKey.id());
+                  keyId: widget.frostKey.keyId());
             });
           },
           child: Text("Continue signing"));
     } else {
       continueSigning = Container();
     }
+
+    final threshold = widget.frostKey.accessStructures()[0].threshold();
 
     return Card(
       color: backgroundSecondaryColor,
@@ -223,7 +225,7 @@ class _KeyCard extends State<KeyCard> {
                   fontFamily: 'Monospace'),
             ),
             const SizedBox(height: 8),
-            Text("Threshold: ${widget.frostKey.threshold()}",
+            Text("Threshold: $threshold",
                 style: TextStyle(color: textSecondaryColor)),
             Row(mainAxisAlignment: MainAxisAlignment.center, children: [
               signButton,
@@ -264,7 +266,7 @@ class _KeyListWithConfetti extends State<KeyListWithConfetti> {
           itemBuilder: (context, key, network) {
             return KeyCard(frostKey: key, bitcoinNetwork: network);
           },
-          onNewKey: (keyId) {
+          onNewKey: (masterAppkey) {
             _confettiController.play();
           },
         )),

@@ -185,7 +185,7 @@ impl Persist<rusqlite::Connection> for Settings {
                 Mutation::SetWalletNetwork { key_id, network } => {
                     event!(
                         Level::DEBUG,
-                        name = key_id.to_redacted_string(),
+                        key_id = key_id.to_string(),
                         network = network.to_string(),
                         "set wallet's network",
                     );

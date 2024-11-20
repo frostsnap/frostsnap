@@ -1,14 +1,20 @@
 use crate::api::{self, KeyState};
 use crate::sink_wrap::SinkWrap;
+use crate::TEMP_KEY;
 use anyhow::{anyhow, Result};
 use flutter_rust_bridge::{RustOpaque, StreamSink};
+use frostsnap_coordinator::check_share::CheckShareState;
 use frostsnap_coordinator::firmware_upgrade::{
     FirmwareUpgradeConfirmState, FirmwareUpgradeProtocol,
 };
 use frostsnap_coordinator::frostsnap_comms::{
     CoordinatorSendBody, CoordinatorSendMessage, Destination, FirmwareDigest,
 };
+use frostsnap_coordinator::frostsnap_core::coordinator::{
+    AccessStructureRef, CoordAccessStructure, CoordFrostKey,
+};
 use frostsnap_coordinator::frostsnap_core::message::CoordinatorSend;
+use frostsnap_coordinator::frostsnap_core::SymmetricKey;
 use frostsnap_coordinator::frostsnap_persist::DeviceNames;
 use frostsnap_coordinator::persist::Persisted;
 use frostsnap_coordinator::{
@@ -54,8 +60,11 @@ impl FfiCoordinator {
 
         let mut db_ = db.lock().unwrap();
 
+        event!(Level::DEBUG, "loading core coordinator");
         let coordinator = Persisted::<FrostCoordinator>::new(&mut db_, ())?;
+        event!(Level::DEBUG, "loading device names");
         let device_names = Persisted::<DeviceNames>::new(&mut db_, ())?;
+        event!(Level::DEBUG, "loading saved signing session");
         let signing_session = Persisted::<Option<SigningSessionState>>::new(&mut db_, ())?;
 
         let usb_sender = usb_manager.usb_sender();
@@ -331,9 +340,13 @@ impl FfiCoordinator {
         Ok(())
     }
 
-    pub fn sub_key_events(&self, stream: StreamSink<KeyState>) {
-        stream.add(KeyState {
-            keys: self.frost_keys(),
+    pub fn sub_key_events(&self, stream: StreamSink<crate::api::KeyState>) {
+        stream.add(crate::api::KeyState {
+            keys: self
+                .frost_keys()
+                .into_iter()
+                .map(crate::api::FrostKey::from)
+                .collect(),
         });
         let mut key_event_stream = self.key_event_stream.lock().unwrap();
         if let Some(existing) = key_event_stream.replace(stream) {
@@ -382,8 +395,13 @@ impl FfiCoordinator {
         Ok(())
     }
 
-    pub fn frost_keys(&self) -> Vec<crate::api::FrostKey> {
-        frost_keys(&self.coordinator.lock().unwrap())
+    pub fn frost_keys(&self) -> Vec<CoordFrostKey> {
+        self.coordinator
+            .lock()
+            .unwrap()
+            .iter_keys()
+            .cloned()
+            .collect()
     }
 
     pub fn nonces_left(&self, id: DeviceId) -> Option<usize> {
@@ -406,15 +424,21 @@ impl FfiCoordinator {
 
     pub fn start_signing(
         &self,
-        key_id: KeyId,
+        access_structure_ref: AccessStructureRef,
         devices: BTreeSet<DeviceId>,
         task: SignTask,
         sink: StreamSink<api::SigningState>,
+        encryption_key: SymmetricKey,
     ) -> anyhow::Result<()> {
         let mut coordinator = self.coordinator.lock().unwrap();
-        let mut messages = coordinator
-            .staged_mutate(&mut self.db.lock().unwrap(), |coordinator| {
-                Ok(coordinator.start_sign(key_id, task, devices.clone())?)
+        let mut messages =
+            coordinator.staged_mutate(&mut self.db.lock().unwrap(), |coordinator| {
+                Ok(coordinator.start_sign(
+                    access_structure_ref,
+                    task,
+                    devices.clone(),
+                    encryption_key,
+                )?)
             })?;
         let mut ui_protocol =
             frostsnap_coordinator::signing::SigningDispatcher::from_filter_out_start_sign(
@@ -431,7 +455,7 @@ impl FfiCoordinator {
 
     pub fn try_restore_signing_session(
         &self,
-        #[allow(unused)] /* we only have one key for now */ key_id: KeyId,
+        #[allow(unused)] /* we only have one key for now */ master_appkey: KeyId,
         sink: StreamSink<api::SigningState>,
     ) -> anyhow::Result<()> {
         let signing_session_state = self.signing_session.lock().unwrap();
@@ -464,7 +488,7 @@ impl FfiCoordinator {
         key_id: KeyId,
     ) -> Option<api::SignTaskDescription> {
         let session = self.signing_session.lock().unwrap().clone()?;
-        if session.request.key_id != key_id {
+        if session.access_structure.master_appkey().key_id() != key_id {
             return None;
         }
         Some(match session.request.sign_task {
@@ -481,13 +505,15 @@ impl FfiCoordinator {
     pub fn request_display_backup(
         &self,
         device_id: DeviceId,
-        key_id: KeyId,
+        access_structure_ref: AccessStructureRef,
+        encryption_key: SymmetricKey,
         stream: StreamSink<bool>,
     ) -> anyhow::Result<()> {
         let backup_protocol = DisplayBackupProtocol::new(
             self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
             device_id,
-            key_id,
+            access_structure_ref,
+            encryption_key,
             SinkWrap(stream),
         )?;
 
@@ -618,18 +644,12 @@ impl FfiCoordinator {
         self.device_names.lock().unwrap().get(id)
     }
 
-    pub fn get_key_name(&self, key_id: KeyId) -> Option<String> {
-        self.frost_keys()
-            .iter()
-            .find(|key| key.0.key_id() == key_id)
-            .map(|frost_key| frost_key.0.key_name())
-    }
-
-    pub fn final_keygen_ack(&self) -> Result<KeyId> {
+    pub fn final_keygen_ack(&self) -> Result<AccessStructureRef> {
         let mut coordinator = self.coordinator.lock().unwrap();
         let mut db = self.db.lock().unwrap();
-        let key_id = coordinator
-            .staged_mutate(&mut db, |coordinator| Ok(coordinator.final_keygen_ack()?))?;
+        let accs_ref = coordinator.staged_mutate(&mut db, |coordinator| {
+            Ok(coordinator.final_keygen_ack(TEMP_KEY, &mut rand::thread_rng())?)
+        })?;
 
         let mut proto = self.ui_protocol.lock().unwrap();
         let keygen = proto
@@ -639,7 +659,7 @@ impl FfiCoordinator {
             .downcast_mut::<frostsnap_coordinator::keygen::KeyGen>()
             .ok_or(anyhow!("somehow UI was not in KeyGen state"))?;
 
-        keygen.final_keygen_ack(key_id);
+        keygen.final_keygen_ack(accs_ref);
 
         if let Some(stream) = &*self.key_event_stream.lock().unwrap() {
             stream.add(KeyState {
@@ -655,24 +675,41 @@ impl FfiCoordinator {
             ),
             "keygen must be finished after we call final ack"
         );
-        Ok(key_id)
+        Ok(accs_ref)
+    }
+
+    pub fn get_access_structure(&self, as_ref: AccessStructureRef) -> Option<CoordAccessStructure> {
+        self.coordinator
+            .lock()
+            .unwrap()
+            .get_access_structure(as_ref)
     }
 
     pub fn check_share_on_device(
         &self,
         device_id: DeviceId,
-        key_id: KeyId,
-        stream: StreamSink<api::CheckShareState>,
+        access_structure_ref: AccessStructureRef,
+        stream: StreamSink<CheckShareState>,
+        encryption_key: SymmetricKey,
     ) -> anyhow::Result<()> {
         let check_share_protocol = CheckShareProtocol::new(
             self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
             device_id,
-            key_id,
+            access_structure_ref,
             SinkWrap(stream),
+            encryption_key,
         );
         check_share_protocol.emit_state();
         self.start_protocol(check_share_protocol);
         Ok(())
+    }
+
+    pub fn get_frost_key(&self, key_id: KeyId) -> Option<CoordFrostKey> {
+        self.coordinator
+            .lock()
+            .unwrap()
+            .get_frost_key(key_id)
+            .cloned()
     }
 }
 

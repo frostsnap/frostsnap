@@ -2,7 +2,9 @@ use std::borrow::BorrowMut;
 
 use frostsnap_comms::CoordinatorSendMessage;
 use frostsnap_core::{
-    coordinator::FrostCoordinator, message::CoordinatorToUserMessage, DeviceId, KeyId,
+    coordinator::{AccessStructureRef, FrostCoordinator},
+    message::CoordinatorToUserMessage,
+    DeviceId, SymmetricKey,
 };
 use tracing::{event, Level};
 
@@ -25,8 +27,9 @@ impl CheckShareProtocol {
     pub fn new(
         coordinator: &mut FrostCoordinator,
         device_id: DeviceId,
-        key_id: KeyId,
+        access_structure_ref: AccessStructureRef,
         sink: impl Sink<CheckShareState> + 'static,
+        encryption_key: SymmetricKey,
     ) -> Self {
         let mut self_ = Self {
             state: CheckShareState {
@@ -38,7 +41,7 @@ impl CheckShareProtocol {
             check_share_messages: vec![],
         };
 
-        match coordinator.check_share(device_id, key_id) {
+        match coordinator.check_share(access_structure_ref, device_id, encryption_key) {
             Ok(messages) => {
                 for message in messages {
                     self_.check_share_messages.push(

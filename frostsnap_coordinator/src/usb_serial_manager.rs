@@ -355,20 +355,19 @@ impl UsbSerialManager {
                             "Announced!"
                         );
                     }
-                    DeviceSendBody::Debug {
-                        message: dbg_message,
-                    } => {
-                        event!(
-                            Level::DEBUG,
-                            port = serial_number,
-                            from = message.from.to_string(),
-                            name = self
-                                .device_names
-                                .get(&message.from)
-                                .cloned()
-                                .unwrap_or("<unknown>".into()),
-                            dbg_message
-                        );
+                    DeviceSendBody::Debug { message: _ } => {
+                        // XXX: We don't need to debug log this because we already debug log the gist of every message
+                        // event!(
+                        //     Level::DEBUG,
+                        //     port = serial_number,
+                        //     from = message.from.to_string(),
+                        //     name = self
+                        //         .device_names
+                        //         .get(&message.from)
+                        //         .cloned()
+                        //         .unwrap_or("<unknown>".into()),
+                        //     dbg_message
+                        // );
                     }
                     DeviceSendBody::Core(core_msg) => {
                         device_changes.push(DeviceChange::AppMessage(AppMessage {

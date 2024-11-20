@@ -3,26 +3,32 @@
 #[cfg(feature = "std")]
 #[macro_use]
 extern crate std;
-mod key_id;
 mod macros;
+mod master_appkey;
 pub mod message;
 pub mod nostr;
 pub mod tweak;
 
 use coordinator::CoordinatorState;
-use schnorr_fun::fun::Point;
+use device::SignerState;
+use schnorr_fun::{
+    frost::{chilldkg::encpedpop, SharedKey},
+    fun::{hash::HashAdd, prelude::*},
+};
 pub use sha2;
 mod sign_task;
+use sha2::{digest::FixedOutput, Digest};
 pub use sign_task::*;
 
 pub use bincode;
-pub use key_id::*;
+pub use master_appkey::*;
 pub use serde;
 pub mod coordinator;
-mod device;
-pub use device::*;
+pub mod device;
 pub use schnorr_fun;
 pub mod bitcoin_transaction;
+mod symmetric_encryption;
+pub use symmetric_encryption::*;
 
 #[cfg(feature = "rusqlite")]
 mod sqlite;
@@ -36,8 +42,6 @@ use alloc::{string::String, string::ToString, vec::Vec};
 pub use schnorr_fun::fun::hex;
 
 const NONCE_BATCH_SIZE: u64 = 10;
-
-pub type SessionHash = [u8; 32];
 
 #[derive(Clone, Copy, PartialEq, Hash, Eq, Ord, PartialOrd)]
 pub struct DeviceId(pub [u8; 33]);
@@ -192,4 +196,127 @@ impl std::error::Error for ActionError {}
 /// Output very basic debug info about a type
 pub trait Gist {
     fn gist(&self) -> String;
+}
+
+/// The hash of a threshold access structure for a particular key
+#[derive(Clone, Copy, PartialEq, Ord, PartialOrd, Eq)]
+pub struct AccessStructureId(pub [u8; 32]);
+
+impl AccessStructureId {
+    pub fn from_app_poly(app_poly: &[Point<Normal, Public, Zero>]) -> Self {
+        Self(
+            prefix_hash("ACCESS_STRUCTURE_ID")
+                .add(app_poly)
+                .finalize_fixed()
+                .into(),
+        )
+    }
+}
+
+impl_display_debug_serialize! {
+    fn to_bytes(as_id: &AccessStructureId) -> [u8;32] {
+        as_id.0
+    }
+}
+
+impl_fromstr_deserialize! {
+    name => "frostsnap access structure id",
+    fn from_bytes(bytes: [u8;32]) -> AccessStructureId {
+        AccessStructureId(bytes)
+    }
+}
+
+/// The hash of a root key
+#[derive(Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash)]
+pub struct KeyId(pub [u8; 32]);
+
+impl KeyId {
+    pub fn from_rootkey(rootkey: Point) -> Self {
+        Self::from_master_appkey(MasterAppkey::derive_from_rootkey(rootkey))
+    }
+
+    pub fn from_master_appkey(master_appkey: MasterAppkey) -> Self {
+        Self(
+            prefix_hash("KEY_ID")
+                .add(master_appkey.0)
+                .finalize_fixed()
+                .into(),
+        )
+    }
+}
+
+impl_display_debug_serialize! {
+    fn to_bytes(value: &KeyId) -> [u8;32] {
+        value.0
+    }
+}
+
+impl_fromstr_deserialize! {
+    name => "frostsnap key id",
+    fn from_bytes(bytes: [u8;32]) -> KeyId {
+        KeyId(bytes)
+    }
+}
+
+fn prefix_hash(prefix: &'static str) -> sha2::Sha256 {
+    let mut hash = sha2::Sha256::default();
+    hash.update((prefix.len() as u32).to_be_bytes());
+    hash.update(prefix);
+    hash
+}
+
+#[derive(Clone, Copy, PartialEq)]
+/// This is the data provided by the coordinator that helps the device decrypt their share.
+/// Devices can't decrypt their shares on their own.
+pub struct CoordShareDecryptionContrib([u8; 32]);
+
+impl CoordShareDecryptionContrib {
+    pub fn from_root_shared_key(shared_key: &SharedKey<Normal, impl ZeroChoice>) -> Self {
+        Self(
+            prefix_hash("SHARE_DECRYPTION")
+                .add(shared_key.point_polynomial())
+                .finalize_fixed()
+                .into(),
+        )
+    }
+}
+
+impl_display_debug_serialize! {
+    fn to_bytes(value: &CoordShareDecryptionContrib) -> [u8;32] {
+        value.0
+    }
+}
+
+impl_fromstr_deserialize! {
+    name => "share decryption key",
+    fn from_bytes(bytes: [u8;32]) -> CoordShareDecryptionContrib {
+        CoordShareDecryptionContrib(bytes)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Hash, Eq, Ord, PartialOrd)]
+pub struct SessionHash(pub [u8; 32]);
+
+impl SessionHash {
+    pub fn from_agg_input(agg_input: &encpedpop::AggKeygenInput) -> Self {
+        Self(
+            sha2::Sha256::default()
+                .chain_update(agg_input.cert_bytes())
+                .finalize_fixed()
+                .into(),
+        )
+    }
+}
+
+impl_display_debug_serialize! {
+    fn to_bytes(value: &SessionHash) -> [u8;32] {
+        value.0
+    }
+}
+
+impl_fromstr_deserialize! {
+    name => "session hash",
+    fn from_bytes(bytes: [u8;32]) -> SessionHash {
+        SessionHash(bytes)
+    }
 }
