@@ -1,0 +1,30 @@
+name: "Upload artifact"
+description: "Uploads an artifact and displays it in the workflow"
+inputs:
+  friendly:
+    description: "The friendly name of the artifact"
+    required: false
+  description:
+    description: "description of the artifact"
+    required: false
+  name:
+    description: "The artifact name"
+    required: true
+  path:
+    description: "The path of the artifact"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/upload-artifact@v4
+      id: upload-artifact
+      with:
+        name: ${{ inputs.name }}
+        path: ${{ inputs.path }}
+        if-no-files-found: error
+    - name: Update Workflow Summary with Artifact Link
+      if: success()
+      shell: sh
+      run: |
+        echo "- [📎 ${{ inputs.friendly || inputs.name }}](${{ steps.upload-artifact.outputs.artifact-url }}): ${{ inputs.description }}" >> $GITHUB_STEP_SUMMARY

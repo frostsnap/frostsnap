@@ -48,13 +48,12 @@ jobs:
           key: "build-device-firmware-v0"
           path: "target/riscv32imc-unknown-none-elf/release"
 
-      - uses: actions/upload-artifact@v4
       - run: just lint-device --release --locked
       - run: just build-device ${{ matrix.board }} --locked
+      - uses: "./.github/actions/upload-artifact"
         with:
           name: frostsnap-${{ github.sha }}.elf
           path: target/riscv32imc-unknown-none-elf/release/v2
-          if-no-files-found: error
 
   test-coordinator-libs:
     name: Test coordinator libraries
@@ -111,17 +110,18 @@ jobs:
         run: just frostsnapp/build apk --release
       - name: Build appbundle
         run: just frostsnapp/build appbundle --release
-      - uses: actions/upload-artifact@v4
+      - name: Upload APK (Android)
+        uses: "./.github/actions/upload-artifact"
         with:
+          friendly: "Frostsnapp.apk"
+          description: "Frostsnapp for android"
           name: Frostsnapp-${{ github.sha }}.apk
           path: frostsnapp/build/app/outputs/apk/release/app-release.apk
-          if-no-files-found: error
       - name: Upload App Bundle (Android)
-        uses: actions/upload-artifact@v4
+        uses: "./.github/actions/upload-artifact"
         with:
           name: frostsnapp-${{ github.sha }}.aab
           path: frostsnapp/build/app/outputs/bundle/release/app-release.aab
-          if-no-files-found: error
 
   app-build-linux:
     needs: ["build-device-firmware"]
@@ -142,11 +142,10 @@ jobs:
       - name: Build App Linux
         run: just frostsnapp/build linux --release
 
-      - uses: actions/upload-artifact@v4
+      - uses: "./.github/actions/upload-artifact"
         with:
           name: Frostsnapp-${{ github.sha }}-linux-x64
           path: frostsnapp/build/linux/x64/release/bundle
-          if-no-files-found: error
 
   app-image:
     name: Package AppImage
@@ -168,11 +167,12 @@ jobs:
       - run: just frostsnapp/build-appimage --skip-tests
 
       - name: Upload AppImage
-        uses: actions/upload-artifact@v4
+        uses: "./.github/actions/upload-artifact"
         with:
+          friendly: Frostsnapp.AppImage
+          description: "AppImage for x86_64 Linux"
           name: Frostsnapp-${{ github.sha }}-x64.AppImage
           path: frostsnapp/Frostsnapp-latest-x86_64.AppImage
-          if-no-files-found: error
 
   flutter-analyze:
     name: Flutter Analyze
