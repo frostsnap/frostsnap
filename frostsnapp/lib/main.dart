@@ -63,9 +63,8 @@ void main() async {
     startupError = "rust error: ${e.anyhow}";
   } catch (error, stacktrace) {
     startupError = "$error\n$stacktrace";
+    api.log(level: LogLevel.Info, message: "startup failed with $startupError");
   }
-
-  api.log(level: LogLevel.Info, message: "startup failed with $startupError");
 
   // Lock orientation to portrait mode only
   SystemChrome.setPreferredOrientations([
