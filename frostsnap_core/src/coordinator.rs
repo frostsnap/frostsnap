@@ -873,11 +873,11 @@ impl FrostCoordinator {
     }
 
     pub fn verify_address(
-        &mut self,
+        &self,
         access_structure_ref: AccessStructureRef,
         derivation_index: u32,
         encryption_key: SymmetricKey,
-    ) -> Result<Vec<CoordinatorSend>, ActionError> {
+    ) -> Result<VerifyAddress, ActionError> {
         let AccessStructureRef { key_id, .. } = access_structure_ref;
 
         let access_structure = self.get_access_structure(access_structure_ref).ok_or(
@@ -901,13 +901,11 @@ impl FrostCoordinator {
             .cloned()
             .collect();
 
-        Ok(vec![CoordinatorSend::ToDevice {
-            message: CoordinatorToDeviceMessage::VerifyAddress {
-                rootkey,
-                derivation_index,
-            },
-            destinations: target_devices.clone(),
-        }])
+        Ok(VerifyAddress {
+            rootkey,
+            derivation_index,
+            target_devices,
+        })
     }
 
     pub fn state_name(&self) -> &'static str {
@@ -1212,4 +1210,26 @@ impl Gist for Mutation {
 pub struct AccessStructureRef {
     pub key_id: KeyId,
     pub access_structure_id: AccessStructureId,
+}
+
+#[derive(Debug, Clone)]
+pub struct VerifyAddress {
+    pub rootkey: Point,
+    pub derivation_index: u32,
+    pub target_devices: BTreeSet<DeviceId>,
+}
+
+impl<'a> IntoIterator for &'a VerifyAddress {
+    type Item = CoordinatorSend;
+    type IntoIter = core::iter::Once<CoordinatorSend>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        core::iter::once(CoordinatorSend::ToDevice {
+            message: CoordinatorToDeviceMessage::VerifyAddress {
+                rootkey: self.rootkey,
+                derivation_index: self.derivation_index,
+            },
+            destinations: self.target_devices.clone(),
+        })
+    }
 }

@@ -131,7 +131,7 @@ class AddressPage extends StatelessWidget {
             DialogHeader(
               child: Column(
                 children: const [
-                  Text("Verify Address"),
+                  Text("Plug in a device to verify this address"),
                 ],
               ),
             ),
@@ -203,7 +203,6 @@ class VerifyAddressProgress extends StatelessWidget {
                 state.targetDevices.any((id) => devicesPluggedIn.contains(id));
 
             final deviceProgress = ListView.builder(
-              physics: NeverScrollableScrollPhysics(),
               shrinkWrap: true,
               itemCount: state.targetDevices.length,
               itemBuilder: (context, index) {
@@ -226,56 +225,45 @@ class VerifyAddressProgress extends StatelessWidget {
               },
             );
 
-            return Column(
-              children: [
-                Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Text(
-                      "Plug in one of these devices to verify this address:"),
-                ),
-                SizedBox(height: 8),
-                deviceProgress,
-                Container(
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      border: Border(
-                        bottom: BorderSide(
-                          color: Theme.of(context).dividerColor,
-                          width: 1.0,
+            return Column(children: [
+              deviceProgress,
+              if (targetConnected)
+                DialogFooter(
+                  child: Column(children: const [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          size: 20,
                         ),
-                      ),
+                        SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            "Check that the sender can see the same address as shown on the device.",
+                          ),
+                        ),
+                      ],
                     ),
-                    child: Column()),
-                SizedBox(
-                  height: 8,
+                    SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          size: 20,
+                        ),
+                        SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            "Two random chunks have been highlighted for convenience.",
+                          ),
+                        ),
+                      ],
+                    ),
+                  ]),
                 ),
-                if (targetConnected)
-                  Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8),
-                    child: Column(children: const [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.info_outline,
-                            size: 20,
-                          ),
-                          SizedBox(width: 8),
-                          Flexible(
-                            child: Text(
-                              "Check that the sender can see the same address as shown on the device.",
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        "Two random chunks have been highlighted for convenience.",
-                      )
-                    ]),
-                  ),
-              ],
-            );
+            ]);
           },
         );
       },

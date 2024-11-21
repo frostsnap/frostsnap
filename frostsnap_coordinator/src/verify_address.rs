@@ -2,8 +2,7 @@ use std::{borrow::BorrowMut, collections::BTreeSet};
 
 use frostsnap_comms::{CoordinatorSendBody, CoordinatorSendMessage, Destination};
 use frostsnap_core::{
-    message::{CoordinatorSend, CoordinatorToDeviceMessage},
-    schnorr_fun::fun::Point,
+    coordinator::VerifyAddress, message::CoordinatorToDeviceMessage, schnorr_fun::fun::Point,
     DeviceId,
 };
 use tracing::{event, Level};
@@ -27,35 +26,17 @@ pub struct VerifyAddressProtocol {
 
 impl VerifyAddressProtocol {
     pub fn new(
-        verify_address_messages: &mut Vec<CoordinatorSend>,
+        verify_address_message: VerifyAddress,
         sink: impl Sink<VerifyAddressProtocolState> + 'static,
     ) -> Self {
-        let (i, rootkey, derivation_index, targets) = verify_address_messages
-            .iter()
-            .enumerate()
-            .find_map(|(i, m)| match m {
-                CoordinatorSend::ToDevice {
-                    message:
-                        CoordinatorToDeviceMessage::VerifyAddress {
-                            rootkey,
-                            derivation_index,
-                        },
-                    destinations,
-                } => Some((i, *rootkey, *derivation_index, destinations.clone())),
-                _ => None,
-            })
-            .expect("must have a sign request");
-
-        let _ /*recreating message when target is connected*/ = verify_address_messages.remove(i);
-
         Self {
             state: VerifyAddressProtocolState {
-                target_devices: targets.clone().into_iter().collect(),
+                target_devices: verify_address_message.target_devices.into_iter().collect(),
                 sent_to_devices: Default::default(),
             },
+            rootkey: verify_address_message.rootkey,
+            derivation_index: verify_address_message.derivation_index,
             is_complete: None,
-            rootkey,
-            derivation_index,
             need_to_send_to: Default::default(),
             sink: Box::new(sink),
         }
@@ -80,12 +61,14 @@ impl UiProtocol for VerifyAddressProtocol {
     fn connected(&mut self, id: frostsnap_core::DeviceId) {
         if self.state.target_devices.contains(&id) {
             self.need_to_send_to.insert(id);
+            self.emit_state()
         }
-        self.emit_state()
     }
 
     fn disconnected(&mut self, device_id: frostsnap_core::DeviceId) {
-        self.need_to_send_to.remove(&device_id);
+        if self.need_to_send_to.remove(&device_id) {
+            self.emit_state()
+        };
     }
 
     fn process_to_user_message(
@@ -118,7 +101,6 @@ impl UiProtocol for VerifyAddressProtocol {
             }),
         };
 
-        self.emit_state();
         (vec![verify_address_message], vec![])
     }
 

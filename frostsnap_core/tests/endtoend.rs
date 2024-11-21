@@ -1,4 +1,3 @@
-use bitcoin::Address;
 use common::{TestDeviceKeygen, TEST_ENCRYPTION_KEY};
 use frostsnap_core::bitcoin_transaction::{LocalSpk, TransactionTemplate};
 use frostsnap_core::coordinator::CoordAccessStructure;
@@ -49,7 +48,7 @@ struct TestEnv {
     pub coord_master_appkeys: BTreeMap<MasterAppkey, String>,
     pub coordinator_access_structures: BTreeMap<KeyId, Vec<CoordAccessStructure>>,
 
-    pub verification_requests: BTreeMap<DeviceId, (Address, BitcoinBip32Path)>,
+    pub verification_requests: BTreeMap<DeviceId, (LocalSpk, BitcoinBip32Path)>,
 }
 
 impl common::Env for TestEnv {
@@ -258,12 +257,8 @@ impl common::Env for TestEnv {
             DeviceToUserMessage::EnteredBackup(_) => {
                 panic!("restoring backups untested")
             }
-            DeviceToUserMessage::VerifyAddress {
-                address,
-                bip32_path,
-            } => {
-                self.verification_requests
-                    .insert(from, (address, bip32_path));
+            DeviceToUserMessage::VerifyAddress { spk, bip32_path } => {
+                self.verification_requests.insert(from, (spk, bip32_path));
             }
         }
     }
@@ -501,7 +496,7 @@ fn test_verify_address() {
         .coordinator
         .verify_address(access_structure_ref, 0, TEST_ENCRYPTION_KEY)
         .unwrap();
-    run.extend(verify_request);
+    run.extend(&verify_request);
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
 
     assert_eq!(env.verification_requests.len(), 3);

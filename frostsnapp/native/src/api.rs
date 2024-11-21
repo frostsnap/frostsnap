@@ -6,7 +6,6 @@ use crate::sink_wrap::SinkWrap;
 pub use crate::FfiCoordinator;
 pub use crate::{FfiQrEncoder, FfiQrReader, QrDecoderStatus};
 use anyhow::{anyhow, Context, Result};
-use bitcoin::bip32::DerivationPath;
 pub use bitcoin::psbt::Psbt as BitcoinPsbt;
 pub use bitcoin::Network as RBitcoinNetwork;
 pub use bitcoin::Transaction as RTransaction;
@@ -23,7 +22,7 @@ pub use frostsnap_coordinator::bitcoin::{
 pub use frostsnap_coordinator::firmware_upgrade::FirmwareUpgradeConfirmState;
 pub use frostsnap_coordinator::frostsnap_core;
 use frostsnap_coordinator::frostsnap_core::coordinator::CoordFrostKey;
-use frostsnap_coordinator::frostsnap_core::tweak::DerivationPathExt;
+use frostsnap_coordinator::frostsnap_core::tweak;
 pub use frostsnap_coordinator::verify_address::VerifyAddressProtocolState;
 pub use frostsnap_coordinator::{
     check_share::CheckShareState, keygen::KeyGenState, persist::Persisted, signing::SigningState,
@@ -683,12 +682,22 @@ impl Wallet {
         index: u32,
         change_address: bool,
     ) -> SyncReturn<String> {
-        let mut derivation_path = frostsnap_core::tweak::AccountKind::Segwitv1
-            .path_segments_from_bitcoin_appkey()
-            .collect::<Vec<_>>();
-        derivation_path.extend([change_address as u32, index]);
+        let account_keychain = if change_address {
+            tweak::BitcoinAccountKeychain::internal()
+        } else {
+            tweak::BitcoinAccountKeychain::external()
+        };
+        let bip32_path = tweak::BitcoinBip32Path {
+            account_keychain,
+            index,
+        };
+
         SyncReturn(
-            DerivationPath::from_normal_path_segments(derivation_path.into_iter()).to_string(),
+            bip32_path
+                .path_segments_from_bitcoin_appkey()
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join("/"),
         )
     }
 }

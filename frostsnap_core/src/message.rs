@@ -1,3 +1,4 @@
+use crate::bitcoin_transaction::LocalSpk;
 use crate::tweak::BitcoinBip32Path;
 use crate::{
     coordinator, AccessStructureId, CheckedSignTask, CoordShareDecryptionContrib, Gist, KeyId,
@@ -9,7 +10,6 @@ use alloc::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     string::String,
 };
-use bitcoin::Address;
 use core::num::NonZeroU32;
 use schnorr_fun::binonce;
 use schnorr_fun::frost::SecretShare;
@@ -259,7 +259,7 @@ pub enum DeviceToUserMessage {
     EnterBackup,
     EnteredBackup(SecretShare),
     VerifyAddress {
-        address: Address,
+        spk: LocalSpk,
         bip32_path: BitcoinBip32Path,
     },
 }

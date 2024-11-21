@@ -174,7 +174,6 @@ impl FrostSigner {
             SignerState::AwaitingSignAck { .. } => TaskKind::Sign,
             SignerState::LoadingBackup { .. } => TaskKind::CheckBackup,
             SignerState::AwaitingDisplayBackupAck { .. } => TaskKind::DisplayBackup,
-            SignerState::VerifyAddress { .. } => TaskKind::VerifyAddress,
         };
 
         Some(DeviceSend::ToUser(Box::new(
@@ -520,11 +519,6 @@ impl FrostSigner {
                     })?
                     .clone();
 
-                self.action_state = Some(SignerState::VerifyAddress {
-                    key_id,
-                    derivation_index,
-                });
-
                 let master_appkey = MasterAppkey::derive_from_rootkey(rootkey);
 
                 let bip32_path = tweak::BitcoinBip32Path {
@@ -535,14 +529,9 @@ impl FrostSigner {
                     master_appkey,
                     bip32_path,
                 };
-                let address = bitcoin::Address::from_script(&spk.spk(), bitcoin::Network::Signet)
-                    .expect("has address form");
 
                 Ok(vec![DeviceSend::ToUser(Box::new(
-                    DeviceToUserMessage::VerifyAddress {
-                        address,
-                        bip32_path,
-                    },
+                    DeviceToUserMessage::VerifyAddress { spk, bip32_path },
                 ))])
             }
             (None, CoordinatorToDeviceMessage::CheckShareBackup) => {
@@ -853,10 +842,6 @@ pub enum SignerState {
         coord_share_decryption_contrib: CoordShareDecryptionContrib,
     },
     LoadingBackup,
-    VerifyAddress {
-        key_id: KeyId,
-        derivation_index: u32,
-    },
 }
 
 impl SignerState {
@@ -867,7 +852,6 @@ impl SignerState {
             SignerState::LoadingBackup { .. } => "LoadingBackup",
             SignerState::AwaitingSignAck(_) => "AwaitingSignAck",
             SignerState::AwaitingDisplayBackupAck { .. } => "AwaitingDisplayBackupAck",
-            SignerState::VerifyAddress { .. } => "VerifyAddress",
         }
     }
 }

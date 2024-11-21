@@ -720,18 +720,19 @@ impl FfiCoordinator {
         stream: StreamSink<api::VerifyAddressProtocolState>,
         encryption_key: SymmetricKey,
     ) -> anyhow::Result<()> {
-        let mut coordinator = self.coordinator.lock().unwrap();
-        let mut messages =
-            coordinator.staged_mutate(&mut self.db.lock().unwrap(), |coordinator| {
-                Ok(coordinator.verify_address(
-                    access_structure_ref,
-                    address_index,
-                    encryption_key,
-                )?)
-            })?;
-        let ui_protocol = VerifyAddressProtocol::new(&mut messages, SinkWrap(stream));
+        let coordinator = self.coordinator.lock().unwrap();
 
-        self.pending_for_outbox.lock().unwrap().extend(messages);
+        let verify_address_messages =
+            coordinator.verify_address(access_structure_ref, address_index, encryption_key)?;
+
+        let ui_protocol =
+            VerifyAddressProtocol::new(verify_address_messages.clone(), SinkWrap(stream));
+
+        self.pending_for_outbox
+            .lock()
+            .unwrap()
+            .extend(&verify_address_messages);
+
         ui_protocol.emit_state();
         self.start_protocol(ui_protocol);
 

@@ -587,10 +587,11 @@ where
                                     ui::Prompt::ConfirmLoadBackup(share_backup),
                                 ));
                             }
-                            DeviceToUserMessage::VerifyAddress {
-                                address,
-                                bip32_path,
-                            } => {
+                            DeviceToUserMessage::VerifyAddress { spk, bip32_path } => {
+                                let address =
+                                    bitcoin::Address::from_script(&spk.spk(), BITCOIN_NETWORK)
+                                        .expect("has address form");
+
                                 let rand_seed = rng.next_u32();
                                 ui.set_workflow(ui::Workflow::DisplayAddress {
                                     address: address.to_string(),
