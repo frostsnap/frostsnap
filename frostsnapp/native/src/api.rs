@@ -979,12 +979,14 @@ impl Coordinator {
         threshold: u16,
         devices: Vec<DeviceId>,
         key_name: String,
+        is_mainnet_key: bool,
         event_stream: StreamSink<KeyGenState>,
     ) -> anyhow::Result<()> {
         self.0.generate_new_key(
             devices.into_iter().collect(),
             threshold,
             key_name,
+            is_mainnet_key,
             event_stream,
         )
     }

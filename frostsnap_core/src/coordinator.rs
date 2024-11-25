@@ -1,4 +1,5 @@
 use crate::{
+    device::KeyPurpose,
     message::*,
     symmetric_encryption::{Ciphertext, SymmetricKey},
     tweak::Xpub,
@@ -491,6 +492,7 @@ impl FrostCoordinator {
         devices: &BTreeSet<DeviceId>,
         threshold: u16,
         key_name: String,
+        key_purpose: KeyPurpose,
         rng: &mut impl rand_core::RngCore,
     ) -> Result<Vec<CoordinatorSend>, ActionError> {
         if devices.len() < threshold as usize {
@@ -547,6 +549,7 @@ impl FrostCoordinator {
                         device_to_share_index,
                         threshold,
                         key_name,
+                        key_purpose,
                     },
                     destinations: devices.clone(),
                 }])

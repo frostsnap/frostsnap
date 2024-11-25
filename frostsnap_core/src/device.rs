@@ -56,15 +56,27 @@ pub enum AccessStructureKind {
 #[derive(Clone, Copy, Debug, PartialEq, bincode::Decode, bincode::Encode, Eq, PartialOrd, Ord)]
 pub enum KeyPurpose {
     Test,
-    Bitcoin,
+    Bitcoin(BitcoinNetworkKind),
     Nostr,
 }
 
 impl KeyPurpose {
     pub fn all() -> impl Iterator<Item = KeyPurpose> {
         use KeyPurpose::*;
-        [Test, Bitcoin, Nostr].into_iter()
+        [
+            Test,
+            Bitcoin(BitcoinNetworkKind::Main),
+            Bitcoin(BitcoinNetworkKind::Test),
+            Nostr,
+        ]
+        .into_iter()
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, bincode::Decode, bincode::Encode, Eq, PartialOrd, Ord)]
+pub enum BitcoinNetworkKind {
+    Main = 0,
+    Test = 1,
 }
 
 #[derive(Clone, Debug, PartialEq, bincode::Decode, bincode::Encode)]
@@ -236,6 +248,7 @@ impl FrostSigner {
                     device_to_share_index,
                     threshold,
                     key_name,
+                    key_purpose,
                 },
             ) => {
                 if !device_to_share_index.contains_key(&self.device_id()) {
@@ -272,6 +285,7 @@ impl FrostSigner {
                     device_to_share_index,
                     threshold,
                     key_name,
+                    key_purpose,
                 });
 
                 Ok(vec![DeviceSend::ToCoordinator(Box::new(
@@ -283,6 +297,7 @@ impl FrostSigner {
                     device_to_share_index,
                     input_state,
                     key_name,
+                    key_purpose,
                     ..
                 }),
                 CoordinatorToDeviceMessage::FinishKeyGen { agg_input },
@@ -326,6 +341,7 @@ impl FrostSigner {
                     secret_share,
                     agg_input,
                     key_name: key_name.clone(),
+                    key_purpose: *key_purpose,
                 });
 
                 Ok(vec![DeviceSend::ToUser(Box::new(
@@ -530,8 +546,18 @@ impl FrostSigner {
                     bip32_path,
                 };
 
+                let network = self
+                    .wallet_network(key_id)
+                    .unwrap_or(bitcoin::Network::Bitcoin);
+
+                let address =
+                    bitcoin::Address::from_script(&spk.spk(), network).expect("has address form");
+
                 Ok(vec![DeviceSend::ToUser(Box::new(
-                    DeviceToUserMessage::VerifyAddress { spk, bip32_path },
+                    DeviceToUserMessage::VerifyAddress {
+                        address,
+                        bip32_path,
+                    },
                 ))])
             }
             (None, CoordinatorToDeviceMessage::CheckShareBackup) => {
@@ -554,6 +580,7 @@ impl FrostSigner {
                 agg_input,
                 secret_share,
                 key_name,
+                key_purpose,
             }) => {
                 let rootkey = secret_share.public_key();
                 let key_id = KeyId::from_rootkey(rootkey);
@@ -579,7 +606,7 @@ impl FrostSigner {
                 self.mutate(Mutation::NewKey {
                     key_id,
                     key_name: key_name.clone(),
-                    purposes: KeyPurpose::all().collect(),
+                    purposes: BTreeSet::from_iter([key_purpose]),
                 });
                 self.mutate(Mutation::NewAccessStructure {
                     key_id,
@@ -804,6 +831,19 @@ impl FrostSigner {
             .map(|x| x.name())
             .unwrap_or("None")
     }
+
+    pub fn wallet_network(&self, key_id: KeyId) -> Option<bitcoin::Network> {
+        self.keys.get(&key_id).and_then(|key| {
+            let purposes = key.purposes.clone();
+            if purposes.contains(&KeyPurpose::Bitcoin(BitcoinNetworkKind::Main)) {
+                Some(bitcoin::Network::Bitcoin)
+            } else if purposes.contains(&KeyPurpose::Bitcoin(BitcoinNetworkKind::Test)) {
+                Some(bitcoin::Network::Signet)
+            } else {
+                None
+            }
+        })
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -827,11 +867,13 @@ pub enum SignerState {
         input_state: encpedpop::Contributor,
         threshold: u16,
         key_name: String,
+        key_purpose: KeyPurpose,
     },
     KeyGenAck {
         secret_share: PairedSecretShare,
         agg_input: encpedpop::AggKeygenInput,
         key_name: String,
+        key_purpose: KeyPurpose,
     },
     AwaitingSignAck(Box<AwaitingSignAck>),
     AwaitingDisplayBackupAck {
