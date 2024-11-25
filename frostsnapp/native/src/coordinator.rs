@@ -432,20 +432,18 @@ impl FfiCoordinator {
         encryption_key: SymmetricKey,
     ) -> anyhow::Result<()> {
         let mut coordinator = self.coordinator.lock().unwrap();
-        let mut messages =
-            coordinator.staged_mutate(&mut self.db.lock().unwrap(), |coordinator| {
-                Ok(coordinator.start_sign(
-                    access_structure_ref,
-                    task,
-                    devices.clone(),
-                    encryption_key,
-                )?)
-            })?;
-        let mut ui_protocol =
-            frostsnap_coordinator::signing::SigningDispatcher::from_filter_out_start_sign(
-                &mut messages,
-                SinkWrap(sink),
-            );
+        let messages = coordinator.staged_mutate(&mut self.db.lock().unwrap(), |coordinator| {
+            Ok(coordinator.start_sign(
+                access_structure_ref,
+                task,
+                devices.clone(),
+                encryption_key,
+            )?)
+        })?;
+        let mut ui_protocol = frostsnap_coordinator::signing::SigningDispatcher::new(
+            messages.clone(),
+            SinkWrap(sink),
+        );
 
         self.pending_for_outbox.lock().unwrap().extend(messages);
         ui_protocol.emit_state();
@@ -731,7 +729,7 @@ impl FfiCoordinator {
         self.pending_for_outbox
             .lock()
             .unwrap()
-            .extend(&verify_address_messages);
+            .extend(verify_address_messages);
 
         ui_protocol.emit_state();
         self.start_protocol(ui_protocol);

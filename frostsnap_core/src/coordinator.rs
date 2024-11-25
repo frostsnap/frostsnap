@@ -617,7 +617,7 @@ impl FrostCoordinator {
         sign_task: SignTask,
         signing_parties: BTreeSet<DeviceId>,
         encryption_key: SymmetricKey,
-    ) -> Result<Vec<CoordinatorSend>, StartSignError> {
+    ) -> Result<StartSign, StartSignError> {
         let AccessStructureRef {
             key_id,
             access_structure_id,
@@ -758,10 +758,10 @@ impl FrostCoordinator {
             },
         });
 
-        Ok(vec![CoordinatorSend::ToDevice {
-            destinations: signing_parties,
-            message: CoordinatorToDeviceMessage::RequestSign(sign_request),
-        }])
+        Ok(StartSign {
+            target_devices: signing_parties,
+            sign_request,
+        })
     }
 
     pub fn maybe_request_nonce_replenishment(
@@ -1219,7 +1219,7 @@ pub struct VerifyAddress {
     pub target_devices: BTreeSet<DeviceId>,
 }
 
-impl<'a> IntoIterator for &'a VerifyAddress {
+impl IntoIterator for VerifyAddress {
     type Item = CoordinatorSend;
     type IntoIter = core::iter::Once<CoordinatorSend>;
 
@@ -1229,7 +1229,25 @@ impl<'a> IntoIterator for &'a VerifyAddress {
                 rootkey: self.rootkey,
                 derivation_index: self.derivation_index,
             },
-            destinations: self.target_devices.clone(),
+            destinations: self.target_devices,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct StartSign {
+    pub target_devices: BTreeSet<DeviceId>,
+    pub sign_request: SignRequest,
+}
+
+impl IntoIterator for StartSign {
+    type Item = CoordinatorSend;
+    type IntoIter = core::iter::Once<CoordinatorSend>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        core::iter::once(CoordinatorSend::ToDevice {
+            message: CoordinatorToDeviceMessage::RequestSign(self.sign_request),
+            destinations: self.target_devices,
         })
     }
 }

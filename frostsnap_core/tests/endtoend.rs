@@ -496,7 +496,7 @@ fn test_verify_address() {
         .coordinator
         .verify_address(access_structure_ref, 0, TEST_ENCRYPTION_KEY)
         .unwrap();
-    run.extend(&verify_request);
+    run.extend(verify_request);
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
 
     assert_eq!(env.verification_requests.len(), 3);
