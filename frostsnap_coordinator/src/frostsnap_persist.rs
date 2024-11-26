@@ -20,15 +20,17 @@ impl Persist<rusqlite::Connection> for FrostCoordinator {
     {
         let mut coordinator = FrostCoordinator::new();
         conn.execute(
-            "CREATE TABLE IF NOT EXISTS fs_core_messages (
+            "CREATE TABLE IF NOT EXISTS fs_coordinator_mutations (
                id INTEGER PRIMARY KEY AUTOINCREMENT,
-               message BLOB NOT NULL,
+               mutation BLOB NOT NULL,
+               tied_to_key TEXT,
                version INTEGER NOT NULL
              )",
             [],
         )?;
 
-        let mut stmt = conn.prepare("SELECT message, version FROM fs_core_messages ORDER BY id")?;
+        let mut stmt =
+            conn.prepare("SELECT mutation, version FROM fs_coordinator_mutations ORDER BY id")?;
 
         let row_iter = stmt.query_map([], |row| {
             let version = row.get::<_, usize>(1)?;
@@ -39,9 +41,9 @@ impl Persist<rusqlite::Connection> for FrostCoordinator {
                 )
             }
 
-            let message = row.get::<_, BincodeWrapper<coordinator::Mutation>>(0)?.0;
+            let mutation = row.get::<_, BincodeWrapper<coordinator::Mutation>>(0)?.0;
 
-            Ok(message)
+            Ok(mutation)
         })?;
 
         for mutation in row_iter {
@@ -54,10 +56,21 @@ impl Persist<rusqlite::Connection> for FrostCoordinator {
 
     fn persist_update(conn: &mut rusqlite::Connection, update: Self::Update) -> anyhow::Result<()> {
         for mutation in update {
-            conn.execute(
-                "INSERT INTO fs_core_messages (message, version) VALUES (?1, 0)",
-                params![BincodeWrapper(mutation)],
-            )?;
+            match mutation {
+                coordinator::Mutation::DeleteKey(key_id) => {
+                    conn.execute(
+                        "DELETE FROM fs_coordinator_mutations WHERE tied_to_key=?1",
+                        params![key_id],
+                    )?;
+                }
+                mutation => {
+                    let tied_to_key = mutation.tied_to_key();
+                    conn.execute(
+                        "INSERT INTO fs_coordinator_mutations (mutation, tied_to_key, version) VALUES (?1, ?2, 0)",
+                        params![BincodeWrapper(mutation), tied_to_key],
+                    )?;
+                }
+            }
         }
         Ok(())
     }
