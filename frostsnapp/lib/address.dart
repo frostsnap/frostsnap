@@ -22,95 +22,43 @@ class AddressPage extends StatelessWidget {
     required this.masterAppkey,
     required this.accessStructureRef,
   }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
+  void _showQrDialog(BuildContext context) {
     final qrCode = QrCode(8, QrErrorCorrectLevel.L);
     qrCode.addData(address.addressString);
     final qrImage = QrImage(qrCode);
-
-    final walletCtx = WalletContext.of(context)!;
-
-    final derivationPath = walletCtx.wallet
-        .derivationPathForAddress(index: address.index, changeAddress: false);
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Address'),
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+          child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Card(
+              color: Colors.white,
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    Text(
-                      "Address",
-                      style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: textColor),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: 450,
+                    maxHeight: 450,
+                  ),
+                  child: PrettyQrView(
+                    qrImage: qrImage,
+                    decoration: const PrettyQrDecoration(
+                      shape: PrettyQrSmoothSymbol(),
                     ),
-                    Text(
-                      "Derivation path: $derivationPath",
-                      style: TextStyle(color: textSecondaryColor),
-                    ),
-                    SizedBox(height: 32),
-                    Card(
-                      color: Colors.white,
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(
-                            maxWidth: 280,
-                            maxHeight: 280,
-                          ),
-                          child: PrettyQrView(
-                            qrImage: qrImage,
-                            decoration: const PrettyQrDecoration(
-                              shape: PrettyQrSmoothSymbol(),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    SizedBox(height: 16),
-                    GestureDetector(
-                      child: chunkedAddressFormat(address.addressString),
-                      onTap: () {
-                        copyToClipboard(context, address.addressString);
-                      },
-                    ),
-                    SizedBox(height: 16),
-                    IconButton(
-                      iconSize: 30.0,
-                      onPressed: () =>
-                          copyToClipboard(context, address.addressString),
-                      icon: Icon(Icons.copy),
-                    ),
-                    SizedBox(height: 32),
-                    Text(
-                        "After giving this address to the sender you can verify it was securely transmitted by checking it against a device."),
-                    SizedBox(height: 8),
-                    ElevatedButton(
-                      onPressed: () {
-                        // copy regardless in case the user forgot
-                        Clipboard.setData(
-                            ClipboardData(text: address.addressString));
-                        _showVerificationDialog(
-                            context, accessStructureRef, address);
-                      },
-                      child: Text('Verify Address'),
-                    )
-                  ],
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
-      ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Close'),
+            ),
+          ],
+        ),
+      )),
     );
   }
 
@@ -164,6 +112,86 @@ class AddressPage extends StatelessWidget {
       },
     );
     coord.cancelProtocol();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final walletCtx = WalletContext.of(context)!;
+    final derivationPath = walletCtx.wallet
+        .derivationPathForAddress(index: address.index, changeAddress: false);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Address'),
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  children: [
+                    Text(
+                      "Address",
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: textColor,
+                      ),
+                    ),
+                    Text(
+                      "Derivation path: $derivationPath",
+                      style: TextStyle(color: textSecondaryColor),
+                    ),
+                    SizedBox(height: 16),
+                    GestureDetector(
+                      child: chunkedAddressFormat(address.addressString,
+                          backgroundColor: backgroundSecondaryColor,
+                          textColor: textColor),
+                      onTap: () {
+                        copyToClipboard(context, address.addressString);
+                      },
+                    ),
+                    SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          iconSize: 30.0,
+                          onPressed: () =>
+                              copyToClipboard(context, address.addressString),
+                          icon: Icon(Icons.copy),
+                        ),
+                        SizedBox(width: 16),
+                        IconButton(
+                          onPressed: () => _showQrDialog(context),
+                          icon: Icon(Icons.qr_code),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 32),
+                    Text(
+                        "After giving this address to the sender you can verify it was securely transmitted by checking it against a device."),
+                    SizedBox(height: 8),
+                    ElevatedButton(
+                      onPressed: () {
+                        // copy regardless in case the user forgot
+                        Clipboard.setData(
+                            ClipboardData(text: address.addressString));
+                        _showVerificationDialog(
+                            context, accessStructureRef, address);
+                      },
+                      child: Text('Verify Address'),
+                    )
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

@@ -42,34 +42,52 @@ List<String> splitIntoChunks(String str, int chunkSize) {
   return chunks;
 }
 
-Widget chunkedAddressFormat(String string, {int chunkSize = 4}) {
+Widget chunkedAddressFormat(
+  String string, {
+  int chunkSize = 4,
+  Color? textColor,
+  Color? backgroundColor,
+}) {
   List<String> chunks = splitIntoChunks(string, chunkSize);
 
-  // Widget to dynamically layout the chunks
-  return LayoutBuilder(
-    builder: (BuildContext context, BoxConstraints constraints) {
-      // int maxChunksPerRow = (constraints.maxWidth / (chunkSize * 20)).floor();
-      int maxChunksPerRow = 3; // hard code to match device
-      maxChunksPerRow =
-          math.max(1, maxChunksPerRow); // Ensure at least one chunk per row
-
-      List<Row> rows = [];
-      for (var i = 0; i < chunks.length; i += maxChunksPerRow) {
-        var rowChunks =
-            chunks.sublist(i, math.min(i + maxChunksPerRow, chunks.length));
-        rows.add(Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: rowChunks
-              .map((chunk) => Text('$chunk ',
-                  style: TextStyle(fontFamily: 'Courier', fontSize: 20)))
-              .toList(),
-        ));
-      }
-
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: rows,
-      );
-    },
+  return Align(
+    alignment: Alignment.center,
+    child: Container(
+      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: backgroundColor != null
+          ? BoxDecoration(
+              color: backgroundColor,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.white.withOpacity(0.1)),
+            )
+          : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          for (int i = 0;
+              i < chunks.length;
+              i += 3) // Group chunks in rows of 3
+            Row(
+              mainAxisSize:
+                  MainAxisSize.min, // Wraps the row tightly around the content
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                for (int j = i; j < i + 3 && j < chunks.length; j++)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Text(
+                      chunks[j],
+                      style: TextStyle(
+                        fontFamily: 'Courier',
+                        fontSize: 20,
+                        color: textColor,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+        ],
+      ),
+    ),
   );
 }
