@@ -607,6 +607,25 @@ impl Wallet {
         )
     }
 
+    pub fn search_for_address(
+        &self,
+        master_appkey: MasterAppkey,
+        address_str: String,
+        start: u32,
+        stop: u32,
+    ) -> Option<Address> {
+        self.inner
+            .lock()
+            .unwrap()
+            .search_for_address(master_appkey, address_str, start, stop)
+            .map(|address_info| Address {
+                index: address_info.clone().index,
+                address_string: address_info.address.to_string(),
+                used: address_info.used,
+                external: address_info.external,
+            })
+    }
+
     pub fn send_to(
         &self,
         master_appkey: MasterAppkey,
@@ -677,15 +696,11 @@ impl Wallet {
         }))
     }
 
-    pub fn derivation_path_for_address(
-        &self,
-        index: u32,
-        change_address: bool,
-    ) -> SyncReturn<String> {
-        let account_keychain = if change_address {
-            tweak::BitcoinAccountKeychain::internal()
-        } else {
+    pub fn derivation_path_for_address(&self, index: u32, external: bool) -> SyncReturn<String> {
+        let account_keychain = if external {
             tweak::BitcoinAccountKeychain::external()
+        } else {
+            tweak::BitcoinAccountKeychain::internal()
         };
         let bip32_path = tweak::BitcoinBip32Path {
             account_keychain,
@@ -1187,6 +1202,7 @@ pub struct Address {
     pub index: u32,
     pub address_string: String,
     pub used: bool,
+    pub external: bool,
 }
 
 impl From<frostsnap_coordinator::bitcoin::wallet::AddressInfo> for Address {
@@ -1195,6 +1211,7 @@ impl From<frostsnap_coordinator::bitcoin::wallet::AddressInfo> for Address {
             index: value.index,
             address_string: value.address.to_string(),
             used: value.used,
+            external: value.external,
         }
     }
 }

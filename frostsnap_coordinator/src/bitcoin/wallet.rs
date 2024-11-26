@@ -1,4 +1,4 @@
-use super::chain_sync::SyncRequest;
+use super::{chain_sync::SyncRequest, multi_x_descriptor_for_account};
 use crate::persist::Persisted;
 use anyhow::{anyhow, Context, Result};
 use bdk_chain::{
@@ -21,6 +21,7 @@ use frostsnap_core::{
 };
 use std::{
     ops::RangeBounds,
+    str::FromStr,
     sync::{Arc, Mutex},
 };
 use tracing::{event, Level};
@@ -122,6 +123,7 @@ impl FrostsnapWallet {
                 index: i,
                 address: bitcoin::Address::from_script(&spk, self.network)
                     .expect("has address form"),
+                external: true,
                 used: self
                     .tx_graph
                     .index
@@ -144,11 +146,64 @@ impl FrostsnapWallet {
         Ok(AddressInfo {
             index,
             address: bitcoin::Address::from_script(&spk, self.network).expect("has address form"),
+            external: true,
             used: self
                 .tx_graph
                 .index
                 .is_used((master_appkey, BitcoinAccountKeychain::external()), index),
         })
+    }
+
+    pub fn search_for_address(
+        &self,
+        master_appkey: MasterAppkey,
+        address_str: String,
+        start: u32,
+        stop: u32,
+    ) -> Option<AddressInfo> {
+        let account_descriptors = multi_x_descriptor_for_account(
+            master_appkey,
+            BitcoinAccount::default(),
+            self.network.into(),
+        )
+        .into_single_descriptors()
+        .ok()?;
+        let target_address = bitcoin::Address::from_str(&address_str)
+            .ok()?
+            .require_network(self.network)
+            .ok()?;
+
+        let found_address_derivation = {
+            (start..stop).find_map(|i| {
+                account_descriptors.iter().find_map(|descriptor| {
+                    let derived = descriptor.at_derivation_index(i).ok()?;
+                    let address = derived.address(self.network).ok()?;
+                    if address == target_address {
+                        let spk = derived.script_pubkey();
+                        let address = bitcoin::Address::from_script(&spk, self.network).unwrap();
+                        // bit hacky but we assume first descriptor is external elsewhere
+                        let external = account_descriptors[0] == *descriptor;
+                        let keychain = if external {
+                            BitcoinAccountKeychain::external()
+                        } else {
+                            BitcoinAccountKeychain::internal()
+                        };
+                        // there's a good chance this is not synced if the address is far out
+                        let used = self.tx_graph.index.is_used((master_appkey, keychain), i);
+
+                        Some(AddressInfo {
+                            index: i,
+                            address,
+                            external,
+                            used,
+                        })
+                    } else {
+                        None
+                    }
+                })
+            })
+        };
+        found_address_derivation
     }
 
     pub fn list_transactions(&mut self, master_appkey: MasterAppkey) -> Vec<Transaction> {
@@ -546,6 +601,7 @@ impl FrostsnapWallet {
 pub struct AddressInfo {
     pub index: u32,
     pub address: bitcoin::Address,
+    pub external: bool,
     pub used: bool,
 }
 
