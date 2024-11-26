@@ -9,6 +9,8 @@ pub mod message;
 pub mod nostr;
 pub mod tweak;
 
+use core::ops::RangeBounds;
+
 use device::SignerState;
 use schnorr_fun::{
     frost::{chilldkg::encpedpop, PartyIndex, SharedKey},
@@ -339,4 +341,16 @@ pub struct ShareImage {
 pub struct AccessStructureRef {
     pub key_id: KeyId,
     pub access_structure_id: AccessStructureId,
+}
+
+impl AccessStructureRef {
+    pub fn range_for_key(key_id: KeyId) -> impl RangeBounds<AccessStructureRef> {
+        AccessStructureRef {
+            key_id,
+            access_structure_id: AccessStructureId([0x00u8; 32]),
+        }..=AccessStructureRef {
+            key_id,
+            access_structure_id: AccessStructureId([0xffu8; 32]),
+        }
+    }
 }

@@ -285,8 +285,6 @@ where
                                                     ui.set_upstream_connection_state(
                                                         upstream_connection,
                                                     );
-
-                                                    outbox.extend(signer.send_held_shares());
                                                 }
                                                 CoordinatorSendBody::Naming(naming) => match naming
                                                 {
