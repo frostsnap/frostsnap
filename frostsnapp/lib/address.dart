@@ -415,8 +415,7 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
       context,
       MaterialPageRoute(
         builder: (context) => WalletContext(
-          wallet: widget.walletContext.wallet,
-          masterAppkey: widget.walletContext.masterAppkey,
+          keyWallet: widget.walletContext.wallet,
           child: AddressPage(
             masterAppkey: widget.walletContext.masterAppkey,
             address: address,

@@ -52,6 +52,7 @@ pub enum CoordinatorToDeviceMessage {
         master_appkey: MasterAppkey,
         derivation_index: u32,
     },
+    RequestHeldShares,
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
@@ -121,6 +122,7 @@ impl CoordinatorToDeviceMessage {
             CoordinatorToDeviceMessage::DisplayBackup { .. } => "DisplayBackup",
             CoordinatorToDeviceMessage::CheckShareBackup { .. } => "CheckShareBackup",
             CoordinatorToDeviceMessage::VerifyAddress { .. } => "VerifyAddress",
+            CoordinatorToDeviceMessage::RequestHeldShares => "RequestHeldShares",
         }
     }
 }
@@ -206,14 +208,7 @@ pub enum CoordinatorToUserMessage {
         /// whether it was a valid backup for this key
         valid: bool,
     },
-    PromptRecoverAccessStructure {
-        device_id: DeviceId,
-        held_share: Box<HeldShare>,
-    },
-    ConfirmRecoverAccessStructure {
-        key_name: String,
-        access_structure_ref: AccessStructureRef,
-    },
+    PromptRecoverShare(Box<RecoverShare>),
 }
 
 impl CoordinatorToUserMessage {
@@ -224,8 +219,7 @@ impl CoordinatorToUserMessage {
             Signing(_) => "Signing",
             DisplayBackupConfirmed { .. } => "DisplayBackupConfirmed",
             EnteredBackup { .. } => "EnteredBackup",
-            PromptRecoverAccessStructure { .. } => "PromptRecoverAccessStructure",
-            ConfirmRecoverAccessStructure { .. } => "ConfirmRecoverAccessStructure",
+            PromptRecoverShare { .. } => "PromptRecoverAccessStructure",
         }
     }
 }
@@ -301,4 +295,10 @@ pub enum TaskKind {
     DisplayBackup,
     CheckBackup,
     VerifyAddress,
+}
+
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
+pub struct RecoverShare {
+    pub held_by: DeviceId,
+    pub held_share: HeldShare,
 }

@@ -1,4 +1,4 @@
-use crate::api::{self, DeviceListState};
+use crate::api::{self, ConnectedDevice, DeviceListState};
 use frostsnap_coordinator::{frostsnap_core::DeviceId, DeviceChange};
 use std::collections::HashMap;
 
@@ -7,21 +7,20 @@ pub struct DeviceList {
     devices: Vec<DeviceId>,
     connected: HashMap<DeviceId, api::ConnectedDevice>,
     state_counter: usize,
+    outbox: Vec<crate::api::DeviceListChange>,
 }
 
 impl DeviceList {
-    pub fn state(&self) -> api::DeviceListState {
-        let devices = self
-            .devices
+    pub fn update_ready(&self) -> bool {
+        !self.outbox.is_empty()
+    }
+
+    pub fn devices(&self) -> Vec<ConnectedDevice> {
+        self.devices
             .iter()
             .cloned()
             .map(|id| self.connected.get(&id).cloned().expect("invariant"))
-            .collect();
-
-        DeviceListState {
-            devices,
-            state_id: self.state_counter,
-        }
+            .collect()
     }
 
     pub fn device_at_index(&self, index: usize) -> Option<api::ConnectedDevice> {
@@ -30,92 +29,97 @@ impl DeviceList {
             .map(|id| self.connected.get(id).cloned().expect("invariant"))
     }
 
-    pub fn consume_manager_event(
-        &mut self,
-        changes: Vec<api::DeviceChange>,
-    ) -> Vec<crate::api::DeviceListChange> {
-        let mut output = vec![];
-        for change in changes {
-            match change {
-                DeviceChange::Connected {
-                    id,
-                    firmware_digest,
-                    latest_firmware_digest,
-                } => {
-                    let connected = self.connected.entry(id).or_insert(api::ConnectedDevice {
-                        firmware_digest: Default::default(),
-                        latest_digest: Default::default(),
-                        name: None,
-                        id,
-                    });
+    pub fn take_update(&mut self) -> api::DeviceListUpdate {
+        let changes = core::mem::take(&mut self.outbox);
+        let update = api::DeviceListUpdate {
+            changes,
+            state: DeviceListState {
+                devices: self.devices(),
+                state_id: self.state_counter,
+            },
+        };
 
-                    connected.firmware_digest = firmware_digest.to_string();
-                    connected.latest_digest =
-                        latest_firmware_digest.map(|digest| digest.to_string());
-                }
-                DeviceChange::NameChange { id, name } => {
-                    if let Some(index) = self.index_of(id) {
-                        let connected = self.connected.get_mut(&id).expect("invariant");
-                        connected.name = Some(name);
-                        output.push(api::DeviceListChange {
-                            kind: api::DeviceListChangeKind::Named,
-                            index,
-                            device: connected.clone(),
-                        });
-                    }
-                }
-                DeviceChange::NeedsName { id } => {
-                    output.extend(self.append(id));
-                }
-                DeviceChange::Registered { id, name } => {
-                    let index = self.index_of(id);
-                    let connected = self
-                        .connected
-                        .get_mut(&id)
-                        .expect("registered means connected already emitted");
-                    match index {
-                        Some(index) => {
-                            if connected.name.is_some() {
-                                assert_eq!(
-                                    connected.name,
-                                    Some(name.clone()),
-                                    "we should have got a renamed event if they were different"
-                                );
-                            } else {
-                                // The device had no name and now it's been named
-                                connected.name = Some(name);
-                                output.push(api::DeviceListChange {
-                                    kind: api::DeviceListChangeKind::Named,
-                                    index,
-                                    device: connected.clone(),
-                                });
-                            }
-                        }
-                        None => {
-                            connected.name = Some(name);
-                            output.extend(self.append(id));
-                        }
-                    }
-                }
-                DeviceChange::Disconnected { id } => {
-                    let device = self.connected.remove(&id);
-                    if let Some(index) = self.index_of(id) {
-                        self.devices.remove(index);
-                        output.push(api::DeviceListChange {
-                            kind: api::DeviceListChangeKind::Removed,
-                            index,
-                            device: device.expect("invariant"),
-                        })
-                    }
-                }
-                DeviceChange::AppMessage(_) => { /* not relevant */ }
-            }
-        }
-
-        if !output.is_empty() {
+        if !update.changes.is_empty() {
             self.state_counter += 1;
         }
-        output
+
+        update
+    }
+
+    pub fn consume_manager_event(&mut self, change: api::DeviceChange) {
+        match change {
+            DeviceChange::Connected {
+                id,
+                firmware_digest,
+                latest_firmware_digest,
+            } => {
+                let connected = self.connected.entry(id).or_insert(api::ConnectedDevice {
+                    firmware_digest: Default::default(),
+                    latest_digest: Default::default(),
+                    name: None,
+                    id,
+                });
+
+                connected.firmware_digest = firmware_digest.to_string();
+                connected.latest_digest = latest_firmware_digest.map(|digest| digest.to_string());
+            }
+            DeviceChange::NameChange { id, name } => {
+                if let Some(index) = self.index_of(id) {
+                    let connected = self.connected.get_mut(&id).expect("invariant");
+                    connected.name = Some(name);
+                    self.outbox.push(api::DeviceListChange {
+                        kind: api::DeviceListChangeKind::Named,
+                        index,
+                        device: connected.clone(),
+                    });
+                }
+            }
+            DeviceChange::NeedsName { id } => {
+                self.append(id);
+            }
+            DeviceChange::Registered { id, name } => {
+                let index = self.index_of(id);
+                let connected = self
+                    .connected
+                    .get_mut(&id)
+                    .expect("registered means connected already emitted");
+                match index {
+                    Some(index) => {
+                        if connected.name.is_some() {
+                            assert_eq!(
+                                connected.name,
+                                Some(name.clone()),
+                                "we should have got a renamed event if they were different"
+                            );
+                        } else {
+                            // The device had no name and now it's been named
+                            connected.name = Some(name);
+                            self.outbox.push(api::DeviceListChange {
+                                kind: api::DeviceListChangeKind::Named,
+                                index,
+                                device: connected.clone(),
+                            });
+                        }
+                    }
+                    None => {
+                        connected.name = Some(name);
+                        self.append(id);
+                    }
+                }
+            }
+            DeviceChange::Disconnected { id } => {
+                let device = self.connected.remove(&id);
+                if let Some(index) = self.index_of(id) {
+                    self.devices.remove(index);
+                    self.outbox.push(api::DeviceListChange {
+                        kind: api::DeviceListChangeKind::Removed,
+                        index,
+                        device: device.expect("invariant"),
+                    })
+                }
+            }
+            DeviceChange::AppMessage(_) => { /* not relevant */ }
+        }
     }
 
     pub fn get_device(&self, id: DeviceId) -> Option<api::ConnectedDevice> {
@@ -129,17 +133,14 @@ impl DeviceList {
             .map(|(i, _)| i)
     }
 
-    #[must_use]
-    fn append(&mut self, id: DeviceId) -> Option<crate::api::DeviceListChange> {
+    fn append(&mut self, id: DeviceId) {
         if self.index_of(id).is_none() {
             self.devices.push(id);
-            Some(crate::api::DeviceListChange {
+            self.outbox.push(crate::api::DeviceListChange {
                 kind: api::DeviceListChangeKind::Added,
                 index: self.devices.len() - 1,
-                device: self.get_device(id)?,
-            })
-        } else {
-            None
+                device: self.get_device(id).expect("invariant"),
+            });
         }
     }
 }

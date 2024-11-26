@@ -9,8 +9,8 @@ use frostsnap_core::message::{
 use frostsnap_core::tweak::BitcoinBip32Path;
 use frostsnap_core::KeyId;
 use frostsnap_core::{
-    coordinator::FrostCoordinator, device::FrostSigner, AccessStructureRef, CheckedSignTask,
-    DeviceId, MasterAppkey, SessionHash, SignTask,
+    coordinator::FrostCoordinator, device::FrostSigner, CheckedSignTask, DeviceId, MasterAppkey,
+    SessionHash, SignTask,
 };
 use rand::seq::IteratorRandom;
 use rand::RngCore;
@@ -109,19 +109,14 @@ impl common::Env for TestEnv {
             CoordinatorToUserMessage::EnteredBackup { valid, .. } => {
                 assert!(valid, "entered share was valid");
             }
-            CoordinatorToUserMessage::PromptRecoverAccessStructure {
-                device_id,
-                held_share,
-            } => {
-                let messages = run.coordinator.recover_share(device_id, *held_share);
-                run.extend(messages);
-            }
-            CoordinatorToUserMessage::ConfirmRecoverAccessStructure {
-                access_structure_ref,
-                ..
-            } => {
+            CoordinatorToUserMessage::PromptRecoverShare(recover_share) => {
+                dbg!(&recover_share);
                 run.coordinator
-                    .recover_access_structure(access_structure_ref, TEST_ENCRYPTION_KEY, rng)
+                    .recover_share_and_maybe_recover_access_structure(
+                        *recover_share,
+                        TEST_ENCRYPTION_KEY,
+                        rng,
+                    )
                     .unwrap();
             }
         }
@@ -243,11 +238,7 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
     assert_eq!(env.coordinator_got_keygen_acks, device_set);
     assert_eq!(env.received_keygen_shares, device_set);
     let key_data = run.coordinator.iter_keys().next().unwrap().clone();
-    let access_structure_id = *key_data.access_structures.keys().next().unwrap();
-    let access_structure_ref = AccessStructureRef {
-        key_id: key_data.master_appkey.key_id(),
-        access_structure_id,
-    };
+    let (access_structure_ref, _) = key_data.access_structures().next().unwrap();
 
     for (message, signers) in [("johnmcafee47", [0, 1]), ("pyramid schmee", [1, 2])] {
         env.signatures.clear();
@@ -256,7 +247,8 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
         let task = SignTask::Plain {
             message: message.into(),
         };
-        let checked_task = task.clone().check(key_data.master_appkey).unwrap();
+        let complete_key = key_data.complete_key.as_ref().unwrap();
+        let checked_task = task.clone().check(complete_key.master_appkey).unwrap();
         let set = BTreeSet::from_iter(signers.iter().map(|i| device_list[*i]));
 
         let sign_init = run
@@ -278,13 +270,6 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
 
         // check view of the coordianttor and device nonces are the same
         for &device in &device_set {
-            // let (&(_, idx), &coord_next_nonce) = env
-            //     .coord_nonces
-            //     .range((device, 0)..=(device, u64::MAX))
-            //     .next()
-            //     .unwrap();
-            // let &nonce_counter = env.device_nonces.get(&device).unwrap_or(&0);
-
             let coord_nonces = run.coordinator.device_nonces().get(&device).cloned();
             let coord_nonce_counter = coord_nonces
                 .clone()
@@ -410,7 +395,7 @@ fn test_display_backup() {
         .unwrap();
     assert_eq!(
         MasterAppkey::derive_from_rootkey(g!(interpolated_joint_secret * G).normalize()),
-        key_data.master_appkey
+        key_data.complete_key.as_ref().unwrap().master_appkey
     );
 }
 
@@ -445,15 +430,13 @@ fn test_verify_address() {
     run.extend(keygen_init);
 
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
-    let coord_frost_key = run.coordinator.iter_keys().next().unwrap().clone();
-    let access_structure_id = *coord_frost_key.access_structures.keys().next().unwrap();
-    let access_structure_ref = AccessStructureRef {
-        key_id: coord_frost_key.master_appkey.key_id(),
-        access_structure_id,
-    };
+    let key_data = run.coordinator.iter_keys().next().unwrap().clone();
+    let (access_structure_ref, _) = key_data.access_structures().next().unwrap();
+    let master_appkey = key_data.complete_key.as_ref().unwrap().master_appkey;
+
     let verify_request = run
         .coordinator
-        .verify_address(access_structure_ref, 0, coord_frost_key.master_appkey)
+        .verify_address(access_structure_ref, 0, master_appkey)
         .unwrap();
     run.extend(verify_request);
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
@@ -607,9 +590,11 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
         .unwrap();
     let mut tx_template = TransactionTemplate::new();
 
+    let master_appkey = key_data.complete_key.as_ref().unwrap().master_appkey;
+
     tx_template.push_imaginary_owned_input(
         LocalSpk {
-            master_appkey: key_data.master_appkey,
+            master_appkey,
             bip32_path: BitcoinBip32Path::external(7),
         },
         bitcoin::Amount::from_sat(42_000),
@@ -617,14 +602,14 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
 
     tx_template.push_imaginary_owned_input(
         LocalSpk {
-            master_appkey: key_data.master_appkey,
+            master_appkey,
             bip32_path: BitcoinBip32Path::internal(42),
         },
         bitcoin::Amount::from_sat(1_337_000),
     );
 
     let task = SignTask::BitcoinTransaction(tx_template);
-    let checked_task = task.clone().check(key_data.master_appkey).unwrap();
+    let checked_task = task.clone().check(master_appkey).unwrap();
 
     let set = device_set
         .iter()
@@ -685,7 +670,7 @@ fn check_share_for_valid_share_works() {
 }
 
 #[test]
-fn restore_a_share_by_connecting_devices_to_coordinator() {
+fn restore_a_share_by_connecting_devices_to_a_new_coordinator() {
     let n_parties = 3;
     let threshold = 2;
     let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
@@ -715,9 +700,8 @@ fn restore_a_share_by_connecting_devices_to_coordinator() {
     let restoring_devices = device_set.iter().cloned().take(2).collect::<Vec<_>>();
 
     for device_id in restoring_devices {
-        let device = run.device(device_id);
-        let messages = device.send_held_shares();
-        run.extend_from_device(device_id, messages);
+        let messages = run.coordinator.request_held_shares(device_id);
+        run.extend(messages);
     }
 
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
@@ -734,9 +718,87 @@ fn restore_a_share_by_connecting_devices_to_coordinator() {
     );
 
     let final_device = device_set.iter().cloned().nth(2).unwrap();
-    let messages = run.device(final_device).send_held_shares();
-    run.extend_from_device(final_device, messages);
+    let messages = run.coordinator.request_held_shares(final_device);
+    run.extend(messages);
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
+    let (_, restored_access_structure) = run
+        .coordinator
+        .iter_access_structures()
+        .next()
+        .expect("should still be restored");
+
+    assert_eq!(restored_access_structure, access_structure);
+}
+
+#[test]
+fn delete_then_restore_a_share_by_connecting_devices_to_coordinator() {
+    let n_parties = 3;
+    let threshold = 2;
+    let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
+    let mut run = Run::generate(n_parties, &mut test_rng);
+    let mut env = TestEnv::default();
+    let device_set = run.device_set();
+
+    let keygen_init = run
+        .coordinator
+        .do_keygen(
+            &device_set,
+            threshold,
+            "my key".into(),
+            KeyPurpose::Test,
+            &mut test_rng,
+        )
+        .unwrap();
+    run.extend(keygen_init);
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
+    run.check_mutations();
+    let (access_structure_ref, access_structure) =
+        run.coordinator.iter_access_structures().next().unwrap();
+
+    run.coordinator.delete_key(access_structure_ref.key_id);
+
+    assert_eq!(run.coordinator.iter_access_structures().count(), 0);
+    assert_eq!(
+        run.coordinator.get_frost_key(access_structure_ref.key_id),
+        None
+    );
+
+    let mut i = 0;
+    let mut recover_next_share = |run: &mut Run| {
+        let device_id = device_set.iter().cloned().skip(i).take(1).next().unwrap();
+        i += 1;
+        let messages = run.coordinator.request_held_shares(device_id);
+        run.extend(messages);
+        run.run_until_finished(&mut env, &mut test_rng).unwrap();
+    };
+
+    recover_next_share(&mut run);
+
+    let coord_key = run
+        .coordinator
+        .iter_keys()
+        .next()
+        .expect("one device should be enough to restore the key");
+
+    assert_eq!(coord_key.complete_key, None);
+    assert_eq!(coord_key.key_id, access_structure_ref.key_id);
+
+    recover_next_share(&mut run);
+
+    let (restored_access_structure_ref, restored_access_structure) = run
+        .coordinator
+        .iter_access_structures()
+        .next()
+        .expect("two devices should have restored the access structure");
+
+    assert_eq!(restored_access_structure_ref, access_structure_ref);
+    assert_eq!(
+        restored_access_structure.device_to_share_indicies().len(),
+        2
+    );
+
+    recover_next_share(&mut run);
+
     let (_, restored_access_structure) = run
         .coordinator
         .iter_access_structures()

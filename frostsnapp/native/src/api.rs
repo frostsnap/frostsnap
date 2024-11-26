@@ -1,4 +1,3 @@
-use crate::device_list::DeviceList;
 pub use crate::ffi_serial_port::{
     PortBytesToReadSender, PortOpenSender, PortReadSender, PortWriteSender,
 };
@@ -35,6 +34,7 @@ pub use frostsnap_core::{
 use lazy_static::lazy_static;
 pub use std::collections::BTreeMap;
 pub use std::collections::HashMap;
+use std::collections::HashSet;
 use std::ops::Deref;
 use std::path::Path;
 pub use std::path::PathBuf;
@@ -47,9 +47,6 @@ use tracing_subscriber::layer::SubscriberExt;
 
 lazy_static! {
     static ref PORT_EVENT_STREAM: RwLock<Option<StreamSink<PortEvent>>> = RwLock::default();
-    static ref DEVICE_LIST: Mutex<(DeviceList, Option<StreamSink<DeviceListUpdate>>)> =
-        Default::default();
-    static ref KEY_EVENT_STREAM: Mutex<Option<StreamSink<KeyState>>> = Default::default();
 }
 
 pub fn sub_port_events(event_stream: StreamSink<PortEvent>) {
@@ -57,18 +54,6 @@ pub fn sub_port_events(event_stream: StreamSink<PortEvent>) {
         .write()
         .expect("lock must not be poisoned");
     *v = Some(event_stream);
-}
-
-pub fn sub_device_events(new_stream: StreamSink<DeviceListUpdate>) {
-    let mut device_list_and_stream = DEVICE_LIST.lock().unwrap();
-    let (list, stream) = &mut *device_list_and_stream;
-    new_stream.add(DeviceListUpdate {
-        changes: vec![],
-        state: list.state(),
-    });
-    if let Some(old_stream) = stream.replace(new_stream) {
-        old_stream.close();
-    }
 }
 
 pub(crate) fn emit_event(event: PortEvent) -> Result<()> {
@@ -81,20 +66,6 @@ pub(crate) fn emit_event(event: PortEvent) -> Result<()> {
     }
 
     Ok(())
-}
-
-pub(crate) fn emit_device_events(new_events: Vec<DeviceChange>) {
-    let mut device_list_and_stream = DEVICE_LIST.lock().unwrap();
-    let (list, stream) = &mut *device_list_and_stream;
-    let list_events = list.consume_manager_event(new_events);
-    if let Some(stream) = stream {
-        if !list_events.is_empty() {
-            stream.add(DeviceListUpdate {
-                state: list.state(),
-                changes: list_events,
-            });
-        }
-    }
 }
 
 pub struct Transaction {
@@ -149,18 +120,32 @@ impl ConnectedDevice {
 #[derive(Clone, Debug)]
 pub struct KeyState {
     pub keys: Vec<FrostKey>,
+    pub recoverable: Vec<RecoverableKey>,
+}
+
+#[derive(Clone, Debug)]
+pub struct RecoverableKey {
+    pub name: String,
+    pub threshold: u16,
+    pub access_structure_ref: AccessStructureRef,
+    pub shares_obtained: u16,
 }
 
 #[derive(Clone, Debug)]
 pub struct FrostKey(pub(crate) RustOpaque<frostsnap_core::coordinator::CoordFrostKey>);
 
 impl FrostKey {
-    pub fn master_appkey(&self) -> SyncReturn<MasterAppkey> {
-        SyncReturn(self.0.master_appkey)
+    pub fn master_appkey(&self) -> SyncReturn<Option<MasterAppkey>> {
+        SyncReturn(
+            self.0
+                .complete_key
+                .as_ref()
+                .map(|complete_key| complete_key.master_appkey),
+        )
     }
 
     pub fn key_id(&self) -> SyncReturn<KeyId> {
-        SyncReturn(self.0.master_appkey.key_id())
+        SyncReturn(self.0.key_id)
     }
 
     pub fn key_name(&self) -> SyncReturn<String> {
@@ -170,12 +155,76 @@ impl FrostKey {
     pub fn access_structures(&self) -> SyncReturn<Vec<AccessStructure>> {
         SyncReturn(
             self.0
-                .access_structures
-                .values()
-                .cloned()
-                .map(From::from)
+                .complete_key
+                .iter()
+                .flat_map(|complete_key| {
+                    complete_key
+                        .access_structures
+                        .values()
+                        .cloned()
+                        .map(From::from)
+                })
                 .collect(),
         )
+    }
+
+    pub fn is_complete(&self) -> SyncReturn<bool> {
+        SyncReturn(self.0.complete_key.is_some())
+    }
+
+    pub fn access_structure_state(&self) -> SyncReturn<AccessStructureListState> {
+        SyncReturn(AccessStructureListState::from_frost_key(&self.0))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct RecoveringAccessStructure {
+    pub access_structure_id: AccessStructureId,
+    pub threshold: u16,
+    pub got_shares_from: Vec<DeviceId>,
+}
+
+impl RecoveringAccessStructure {
+    fn from_core(
+        access_structure_id: AccessStructureId,
+        recovering_access_structure: frostsnap_core::coordinator::RecoveringAccessStructure,
+    ) -> Self {
+        RecoveringAccessStructure {
+            access_structure_id,
+            threshold: recovering_access_structure.threshold,
+            got_shares_from: recovering_access_structure
+                .share_images
+                .iter()
+                .map(|(_, (device_id, _))| *device_id)
+                .collect::<HashSet<DeviceId>>()
+                .into_iter()
+                .collect(),
+        }
+    }
+}
+
+pub struct AccessStructureListState(pub Vec<AccessStructureState>);
+
+pub enum AccessStructureState {
+    Recovering(RecoveringAccessStructure),
+    Complete(AccessStructure),
+}
+
+impl AccessStructureListState {
+    pub(crate) fn from_frost_key(frost_key: &CoordFrostKey) -> Self {
+        let complete = frost_key.access_structures().map(|(_, access_structure)| {
+            AccessStructureState::Complete(AccessStructure::from(access_structure.clone()))
+        });
+        let recovering = frost_key.recovering_access_structures.iter().map(
+            |(access_structure_id, recovering_access_structure)| {
+                AccessStructureState::Recovering(RecoveringAccessStructure::from_core(
+                    *access_structure_id,
+                    recovering_access_structure.clone(),
+                ))
+            },
+        );
+
+        AccessStructureListState(complete.chain(recovering).collect())
     }
 }
 
@@ -375,19 +424,6 @@ pub fn turn_logcat_logging_on(level: LogLevel, log_stream: StreamSink<String>) -
 
     #[allow(unreachable_code)]
     Ok(())
-}
-
-pub fn device_at_index(index: usize) -> SyncReturn<Option<ConnectedDevice>> {
-    SyncReturn(DEVICE_LIST.lock().unwrap().0.device_at_index(index))
-}
-
-pub fn device_list_state() -> SyncReturn<DeviceListState> {
-    SyncReturn(DEVICE_LIST.lock().unwrap().0.state())
-}
-
-pub fn get_connected_device(id: DeviceId) -> SyncReturn<Option<ConnectedDevice>> {
-    let device = DEVICE_LIST.lock().unwrap().0.get_device(id);
-    SyncReturn(device)
 }
 
 #[derive(Clone, Debug)]
@@ -820,14 +856,7 @@ impl Coordinator {
     }
 
     pub fn key_state(&self) -> SyncReturn<KeyState> {
-        SyncReturn(KeyState {
-            keys: self
-                .0
-                .frost_keys()
-                .into_iter()
-                .map(FrostKey::from)
-                .collect(),
-        })
+        SyncReturn(self.0.key_state())
     }
 
     pub fn sub_key_events(&self, stream: StreamSink<KeyState>) -> Result<()> {
@@ -997,6 +1026,33 @@ impl Coordinator {
     pub fn get_frost_key(&self, key_id: KeyId) -> SyncReturn<Option<FrostKey>> {
         SyncReturn(self.0.get_frost_key(key_id).map(FrostKey::from))
     }
+
+    pub fn start_recovery(&self, key_id: KeyId) -> Result<()> {
+        self.0.start_recovery(key_id)?;
+
+        Ok(())
+    }
+
+    pub fn delete_key(&self, key_id: KeyId) -> Result<()> {
+        self.0.delete_key(key_id)
+    }
+
+    pub fn device_at_index(&self, index: usize) -> SyncReturn<Option<ConnectedDevice>> {
+        SyncReturn(self.0.device_at_index(index))
+    }
+
+    pub fn device_list_state(&self) -> SyncReturn<DeviceListState> {
+        SyncReturn(self.0.device_list_state())
+    }
+
+    pub fn sub_device_events(&self, sink: StreamSink<DeviceListUpdate>) -> Result<()> {
+        self.0.sub_device_events(sink);
+        Ok(())
+    }
+
+    pub fn get_connected_device(&self, id: DeviceId) -> SyncReturn<Option<ConnectedDevice>> {
+        SyncReturn(self.0.get_connected_device(id))
+    }
 }
 
 #[derive(Clone)]
@@ -1126,12 +1182,18 @@ impl From<frostsnap_coordinator::bitcoin::wallet::AddressInfo> for Address {
 
 pub struct TxState {
     pub txs: Vec<Transaction>,
+    pub balance: u64,
 }
 
 impl From<Vec<frostsnap_coordinator::bitcoin::wallet::Transaction>> for TxState {
-    fn from(value: Vec<frostsnap_coordinator::bitcoin::wallet::Transaction>) -> Self {
+    fn from(txs: Vec<frostsnap_coordinator::bitcoin::wallet::Transaction>) -> Self {
         Self {
-            txs: value.into_iter().map(From::from).collect(),
+            balance: txs
+                .iter()
+                .fold(0i64, |acc, tx| acc + tx.net_value)
+                .try_into()
+                .unwrap_or(0),
+            txs: txs.into_iter().map(From::from).collect(),
         }
     }
 }
@@ -1339,6 +1401,18 @@ impl Settings {
         Ok(())
     }
 
+    pub fn get_wallet_network(&self, key_id: KeyId) -> SyncReturn<Option<BitcoinNetwork>> {
+        SyncReturn(
+            self.settings
+                .lock()
+                .unwrap()
+                .wallet_networks
+                .get(&key_id)
+                .cloned()
+                .map(BitcoinNetwork::from),
+        )
+    }
+
     pub fn set_developer_mode(&self, value: bool) -> Result<()> {
         let mut db = self.db.lock().unwrap();
         self.settings
@@ -1534,6 +1608,10 @@ pub fn echo_asid(value: AccessStructureId) -> AccessStructureId {
 }
 
 pub fn echo_asr(value: AccessStructureRef) -> AccessStructureRef {
+    value
+}
+
+pub fn echo_device_list_update(value: DeviceListUpdate) -> DeviceListUpdate {
     value
 }
 

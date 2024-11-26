@@ -143,7 +143,11 @@ Future<void> runPsbtSigningWorkflow(
   final Psbt psbt;
   final UnsignedTx unsignedTx;
   final frostkey = coord.getFrostKey(keyId: accessStructureRef.keyId)!;
-  final masterAppkey = frostkey.masterAppkey();
+  final masterAppkey = frostkey.masterAppkey()!;
+  final keyWallet = KeyWallet(
+    masterAppkey: masterAppkey,
+    wallet: wallet,
+  );
   try {
     psbt = api.psbtBytesToPsbt(psbtBytes: psbtBytes);
     unsignedTx =
@@ -174,27 +178,27 @@ Future<void> runPsbtSigningWorkflow(
     if (context.mounted) {
       await saveOrBroadcastSignedPsbtDialog(
         context,
-        masterAppkey: masterAppkey,
+        keyWallet: keyWallet,
         tx: signedTx,
         psbt: signedPsbt,
-        wallet: wallet,
       );
     }
   }
 }
 
-Future<void> saveOrBroadcastSignedPsbtDialog(BuildContext context,
-    {required MasterAppkey masterAppkey,
-    required SignedTx tx,
-    required Psbt psbt,
-    required Wallet wallet}) {
+Future<void> saveOrBroadcastSignedPsbtDialog(
+  BuildContext context, {
+  required KeyWallet keyWallet,
+  required SignedTx tx,
+  required Psbt psbt,
+}) {
   return showDialog(
       context: context,
       builder: (context) {
         final broadcastButton = ElevatedButton(
             onPressed: () async {
               final broadcasted = await showBroadcastConfirmDialog(context,
-                  masterAppkey: masterAppkey, tx: tx, wallet: wallet);
+                  keyWallet: keyWallet, tx: tx);
               if (broadcasted && context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(

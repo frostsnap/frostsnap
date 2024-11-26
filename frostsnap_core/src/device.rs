@@ -564,6 +564,11 @@ impl FrostSigner {
                     DeviceToUserMessage::EnterBackup,
                 ))])
             }
+            (_, CoordinatorToDeviceMessage::RequestHeldShares) => {
+                Ok(vec![DeviceSend::ToCoordinator(Box::new(
+                    DeviceToCoordinatorMessage::HeldShares(self.held_shares()),
+                ))])
+            }
             _ => Err(Error::signer_message_kind(&self.action_state, &message)),
         }
     }
@@ -847,12 +852,6 @@ impl FrostSigner {
             }
         }
         held_shares
-    }
-
-    pub fn send_held_shares(&self) -> impl Iterator<Item = DeviceSend> {
-        core::iter::once(DeviceSend::ToCoordinator(Box::new(
-            DeviceToCoordinatorMessage::HeldShares(self.held_shares()),
-        )))
     }
 
     pub fn action_state_name(&self) -> &'static str {

@@ -8,7 +8,7 @@ late HostPortHandler globalHostPortHandler;
 
 /// Gets new updates from the device list
 Stream<DeviceListUpdate> deviceListUpdateStream =
-    api.subDeviceEvents().asBroadcastStream();
+    coord.subDeviceEvents().asBroadcastStream();
 
 /// Stream of device list changes. Only emits when there is a change.
 Stream<DeviceListChange> deviceListChangeStream = deviceListUpdateStream

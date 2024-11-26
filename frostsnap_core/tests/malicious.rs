@@ -112,15 +112,10 @@ fn nonce_reuse() {
     let task1 = SignTask::Plain {
         message: "utxo.club!".into(),
     };
-    let access_structure = key_data.access_structures.values().next().unwrap().clone();
+    let (access_structure_ref, _) = key_data.access_structures().next().unwrap().clone();
     let sign_init = run
         .coordinator
-        .start_sign(
-            access_structure.access_structure_ref(),
-            task1,
-            device_set,
-            TEST_ENCRYPTION_KEY,
-        )
+        .start_sign(access_structure_ref, task1, device_set, TEST_ENCRYPTION_KEY)
         .unwrap();
     run.extend(sign_init);
     run.run_until_finished(&mut DefaultTestEnv, &mut test_rng)

@@ -7,6 +7,7 @@ use crate::{
     KeyId, MasterAppkey, MessageResult, SessionHash, ShareImage, SignItem, SignTask, SignTaskError,
 };
 use alloc::{
+    borrow::ToOwned,
     boxed::Box,
     collections::{BTreeMap, BTreeSet, VecDeque},
     string::{String, ToString},
@@ -22,6 +23,7 @@ use schnorr_fun::{
 };
 use sha2::Sha256;
 use std::collections::HashMap;
+use tracing::{event, Level};
 
 use crate::DeviceId;
 
@@ -34,59 +36,24 @@ pub struct FrostCoordinator {
     action_state: Option<CoordinatorState>,
     device_nonces: HashMap<DeviceId, DeviceNonces>,
     mutations: VecDeque<Mutation>,
-    recovering_access_structures: HashMap<AccessStructureRef, PendingAccessStructure>,
 }
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq)]
 pub struct CoordFrostKey {
-    pub master_appkey: MasterAppkey,
+    pub key_id: KeyId,
+    pub complete_key: Option<CompleteKey>,
     pub key_name: String,
-    pub access_structures: HashMap<AccessStructureId, CoordAccessStructure>,
-    pub encrypted_rootkey: Ciphertext<33, Point>,
+    pub recovering_access_structures: HashMap<AccessStructureId, RecoveringAccessStructure>,
 }
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq)]
-struct PendingAccessStructure {
-    threshold: u16,
-    key_name: String,
-    share_images: BTreeMap<PartyIndex, (DeviceId, Point<Normal, Public, Zero>)>,
+pub struct CompleteKey {
+    pub master_appkey: MasterAppkey,
+    pub encrypted_rootkey: Ciphertext<33, Point>,
+    pub access_structures: HashMap<AccessStructureId, CoordAccessStructure>,
 }
 
-macro_rules! fail {
-    ($($fail:tt)*) => {
-        tracing::event!(
-            tracing::Level::ERROR,
-            $($fail)*
-        );
-        debug_assert!(false, $($fail)*);
-    };
-}
-
-impl CoordFrostKey {
-    pub fn get_access_structure(
-        &self,
-        access_structure_id: AccessStructureId,
-    ) -> Option<CoordAccessStructure> {
-        self.access_structures.get(&access_structure_id).cloned()
-    }
-
-    pub fn access_structures(
-        &self,
-    ) -> impl Iterator<Item = (AccessStructureRef, &CoordAccessStructure)> {
-        let key_id = self.master_appkey.key_id();
-        self.access_structures
-            .iter()
-            .map(move |(&access_structure_id, as_)| {
-                (
-                    AccessStructureRef {
-                        key_id,
-                        access_structure_id,
-                    },
-                    as_,
-                )
-            })
-    }
-
+impl CompleteKey {
     pub fn coord_share_decryption_contrib(
         &self,
         access_structure_id: AccessStructureId,
@@ -103,7 +70,7 @@ impl CoordFrostKey {
         access_structure_id: AccessStructureId,
         encryption_key: SymmetricKey,
     ) -> Option<SharedKey> {
-        let access_structure = self.get_access_structure(access_structure_id)?;
+        let access_structure = self.access_structures.get(&access_structure_id)?;
         let rootkey = self.encrypted_rootkey.decrypt(encryption_key)?;
         let mut poly = access_structure
             .app_shared_key
@@ -118,6 +85,53 @@ impl CoordFrostKey {
     }
 }
 
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq)]
+pub struct RecoveringAccessStructure {
+    pub threshold: u16,
+    pub share_images: BTreeMap<PartyIndex, (DeviceId, Point<Normal, Public, Zero>)>,
+}
+
+macro_rules! fail {
+    ($($fail:tt)*) => {{
+        tracing::event!(
+            tracing::Level::ERROR,
+            $($fail)*
+        );
+        debug_assert!(false, $($fail)*);
+    }};
+}
+
+impl CoordFrostKey {
+    pub fn get_access_structure(
+        &self,
+        access_structure_id: AccessStructureId,
+    ) -> Option<CoordAccessStructure> {
+        self.complete_key
+            .as_ref()?
+            .access_structures
+            .get(&access_structure_id)
+            .cloned()
+    }
+
+    pub fn access_structures(
+        &self,
+    ) -> impl Iterator<Item = (AccessStructureRef, CoordAccessStructure)> + '_ {
+        self.complete_key.iter().flat_map(|completed_key| {
+            completed_key.access_structures.iter().map(
+                |(&access_structure_id, access_structure)| {
+                    (
+                        AccessStructureRef {
+                            key_id: self.key_id,
+                            access_structure_id,
+                        },
+                        access_structure.clone(),
+                    )
+                },
+            )
+        })
+    }
+}
+
 impl FrostCoordinator {
     pub fn new() -> Self {
         Self {
@@ -126,38 +140,54 @@ impl FrostCoordinator {
             action_state: None,
             device_nonces: Default::default(),
             mutations: Default::default(),
-            recovering_access_structures: Default::default(),
         }
     }
 
     pub fn mutate(&mut self, mutation: Mutation) {
+        event!(Level::DEBUG, gist = mutation.gist(), "mutating");
         self.apply_mutation(&mutation);
         self.mutations.push_back(mutation);
     }
 
     pub fn apply_mutation(&mut self, mutation: &Mutation) {
+        fn ensure_key<'a>(
+            coord: &'a mut FrostCoordinator,
+            key_id: KeyId,
+            key_name: &str,
+        ) -> &'a mut CoordFrostKey {
+            let exists = coord.keys.contains_key(&key_id);
+            let key = coord.keys.entry(key_id).or_insert_with(|| CoordFrostKey {
+                key_id,
+                complete_key: Default::default(),
+                key_name: key_name.to_owned(),
+                recovering_access_structures: Default::default(),
+            });
+            if !exists {
+                coord.key_order.push(key_id);
+            }
+            key
+        }
         use Mutation::*;
         match mutation {
-            NewKey {
+            NewKey { key_id, key_name } => {
+                ensure_key(self, *key_id, key_name);
+            }
+            CompleteKey {
                 master_appkey,
-                key_name: name,
                 encrypted_rootkey,
             } => {
-                let key_id = KeyId::from_master_appkey(*master_appkey);
-                let existing = self
-                    .keys
-                    .insert(
-                        key_id,
-                        CoordFrostKey {
+                if let Some(key) = self.keys.get_mut(&master_appkey.key_id()) {
+                    if key.complete_key.is_none() {
+                        key.complete_key = Some(self::CompleteKey {
                             master_appkey: *master_appkey,
-                            key_name: name.clone(),
-                            access_structures: Default::default(),
                             encrypted_rootkey: *encrypted_rootkey,
-                        },
-                    )
-                    .is_some();
-                if !existing {
-                    self.key_order.push(key_id);
+                            access_structures: Default::default(),
+                        });
+                    } else {
+                        fail!("key is completed");
+                    }
+                } else {
+                    fail!("can't complete non existent key");
                 }
             }
             NoncesUsed {
@@ -200,20 +230,26 @@ impl FrostCoordinator {
                     key_id,
                     access_structure_id,
                 };
-                // NewAccessStructure deletes any recovery progress It's up to application to make
-                // sure that pending_access_structures doesn't contain useful information when this
-                // happens.
-                self.recovering_access_structures
-                    .remove(&access_structure_ref);
+
                 match self.keys.get_mut(&key_id) {
                     Some(key_data) => {
-                        key_data.access_structures.insert(
-                            access_structure_id,
-                            CoordAccessStructure {
-                                app_shared_key: shared_key.clone(),
-                                device_to_share_index: Default::default(),
-                            },
-                        );
+                        match key_data.complete_key.as_mut() {
+                            Some(complete_key) => {
+                                key_data
+                                    .recovering_access_structures
+                                    .remove(&access_structure_ref.access_structure_id);
+                                complete_key.access_structures.insert(
+                                    access_structure_id,
+                                    CoordAccessStructure {
+                                        app_shared_key: shared_key.clone(),
+                                        device_to_share_index: Default::default(),
+                                    },
+                                );
+                            }
+                            None => {
+                                fail!("can't add access structure to incomplete key");
+                            }
+                        };
                     }
                     None => {
                         fail!("access structure added to non-existent key");
@@ -226,7 +262,15 @@ impl FrostCoordinator {
                 share_index,
             } => match self.keys.get_mut(&access_structure_ref.key_id) {
                 Some(key_data) => {
-                    match key_data
+                    let complete_key = match key_data.complete_key.as_mut() {
+                        Some(complete_key) => complete_key,
+                        None => {
+                            fail!("tried to add a share to incomplete key");
+                            return;
+                        }
+                    };
+
+                    match complete_key
                         .access_structures
                         .get_mut(&access_structure_ref.access_structure_id)
                     {
@@ -250,22 +294,35 @@ impl FrostCoordinator {
                     );
                 }
             },
-            RecoverShare {
+            RecoverShare(self::RecoverShare {
                 held_share,
                 held_by,
-            } => {
-                let pending_as = self
-                    .recovering_access_structures
-                    .entry(held_share.access_structure_ref)
-                    .or_insert_with(|| PendingAccessStructure {
-                        threshold: held_share.threshold,
-                        share_images: Default::default(),
-                        key_name: held_share.key_name.clone(),
+            }) => {
+                let key_id = held_share.access_structure_ref.key_id;
+                let key = ensure_key(self, key_id, &held_share.key_name);
+                if key.complete_key.is_some() {
+                    self.apply_mutation(&NewShare {
+                        access_structure_ref: held_share.access_structure_ref,
+                        device_id: *held_by,
+                        share_index: held_share.share_image.share_index,
                     });
-                pending_as.share_images.insert(
-                    held_share.share_image.share_index,
-                    (*held_by, held_share.share_image.point),
-                );
+                } else {
+                    let pending_as = key
+                        .recovering_access_structures
+                        .entry(held_share.access_structure_ref.access_structure_id)
+                        .or_insert_with(|| RecoveringAccessStructure {
+                            threshold: held_share.threshold,
+                            share_images: Default::default(),
+                        });
+                    pending_as.share_images.insert(
+                        held_share.share_image.share_index,
+                        (*held_by, held_share.share_image.point),
+                    );
+                }
+            }
+            DeleteKey(key_id) => {
+                self.keys.remove(key_id);
+                self.key_order.retain(|entry| entry != key_id);
             }
         }
     }
@@ -281,23 +338,15 @@ impl FrostCoordinator {
     pub fn iter_keys(&self) -> impl Iterator<Item = &CoordFrostKey> + '_ {
         self.key_order
             .iter()
-            .map(|master_appkey| self.keys.get(master_appkey).expect("invariant"))
+            .map(|key_id| self.keys.get(key_id).expect("invariant"))
     }
 
     pub fn iter_access_structures(
         &self,
     ) -> impl Iterator<Item = (AccessStructureRef, CoordAccessStructure)> + '_ {
-        self.keys.iter().flat_map(|(&key_id, key_data)| {
-            key_data.access_structures.iter().map(
-                move |(&access_structure_id, access_structure)| {
-                    let access_structure_ref = AccessStructureRef {
-                        access_structure_id,
-                        key_id,
-                    };
-                    (access_structure_ref, access_structure.clone())
-                },
-            )
-        })
+        self.keys
+            .iter()
+            .flat_map(|(_, key_data)| key_data.access_structures())
     }
 
     pub fn get_frost_key(&self, key_id: KeyId) -> Option<&CoordFrostKey> {
@@ -323,28 +372,29 @@ impl FrostCoordinator {
                 for held_share in held_shares {
                     let access_structure =
                         self.get_access_structure(held_share.access_structure_ref);
+
+                    let recover_msg = CoordinatorSend::ToUser(
+                        CoordinatorToUserMessage::PromptRecoverShare(Box::new(RecoverShare {
+                            held_by: from,
+                            held_share: held_share.clone(),
+                        })),
+                    );
                     match access_structure {
                         Some(access_structure) => {
+                            // NOTE: we can't verify the correctness of the share here without
+                            // decrypting the root key so this is done when you actually try to
+                            // recover the share.
                             match access_structure.device_to_share_index.get(&from) {
                                 Some(share_index) => {
                                     if *share_index != held_share.share_image.share_index {
                                         fail!("device claims to own a different held_share");
                                     }
                                 }
-                                None => self.mutate(Mutation::NewShare {
-                                    access_structure_ref: held_share.access_structure_ref,
-                                    device_id: from,
-                                    share_index: held_share.share_image.share_index,
-                                }),
+                                None => messages.push(recover_msg),
                             }
                         }
                         None => {
-                            messages.push(CoordinatorSend::ToUser(
-                                CoordinatorToUserMessage::PromptRecoverAccessStructure {
-                                    device_id: from,
-                                    held_share: Box::new(held_share),
-                                },
-                            ));
+                            messages.push(recover_msg);
                         }
                     }
                 }
@@ -762,12 +812,18 @@ impl FrostCoordinator {
             .ok_or(StartSignError::UnknownKey { key_id })?
             .clone();
 
-        let access_structure = key_data
-            .get_access_structure(access_structure_id)
+        let complete_key = key_data
+            .complete_key
+            .as_ref()
+            .ok_or(StartSignError::KeyIsRecovering { key_id })?;
+
+        let access_structure = complete_key
+            .access_structures
+            .get(&access_structure_id)
             .ok_or(StartSignError::NoSuchAccessStructure)?;
         let app_shared_key = access_structure.app_shared_key().clone();
 
-        let root_shared_key = key_data
+        let root_shared_key = complete_key
             .root_shared_key(access_structure_id, encryption_key)
             .ok_or(StartSignError::CouldntDecryptRootKey)?;
 
@@ -780,7 +836,7 @@ impl FrostCoordinator {
         }
 
         let checked_sign_task = sign_task
-            .check(key_data.master_appkey)
+            .check(complete_key.master_appkey)
             .map_err(StartSignError::SignTask)?;
 
         let sign_items = checked_sign_task.sign_items();
@@ -920,13 +976,21 @@ impl FrostCoordinator {
             key_id,
             access_structure_id,
         } = access_structure_ref;
-        let key_data = self
+        let complete_key = self
             .keys
             .get(&key_id)
-            .ok_or(ActionError::StateInconsistent("no such key".into()))?;
-        let access_structure = key_data.get_access_structure(access_structure_id).ok_or(
-            ActionError::StateInconsistent("no such access structure".into()),
-        )?;
+            .ok_or(ActionError::StateInconsistent("no such key".into()))?
+            .complete_key
+            .as_ref()
+            .ok_or(ActionError::StateInconsistent(
+                "can't show backup on key that hasn't been recovered yet".into(),
+            ))?;
+        let access_structure = complete_key
+            .access_structures
+            .get(&access_structure_id)
+            .ok_or(ActionError::StateInconsistent(
+                "no such access structure".into(),
+            ))?;
         let party_index = *access_structure
             .device_to_share_index
             .get(&device_id)
@@ -934,10 +998,13 @@ impl FrostCoordinator {
                 "device does not have share in key".into(),
             ))?;
         self.action_state = Some(CoordinatorState::DisplayBackup);
-        let rootkey = key_data.encrypted_rootkey.decrypt(encryption_key).ok_or(
-            ActionError::StateInconsistent("couldn't decrypt root key".into()),
-        )?;
-        let coord_share_decryption_contrib = key_data
+        let rootkey = complete_key
+            .encrypted_rootkey
+            .decrypt(encryption_key)
+            .ok_or(ActionError::StateInconsistent(
+                "couldn't decrypt root key".into(),
+            ))?;
+        let coord_share_decryption_contrib = complete_key
             .coord_share_decryption_contrib(access_structure_id, encryption_key)
             .ok_or(ActionError::StateInconsistent(
                 "couldn't decrypt root key".into(),
@@ -964,13 +1031,18 @@ impl FrostCoordinator {
             access_structure_id,
         } = access_structure_ref;
 
-        let key_data = self
+        let complete_key = self
             .keys
             .get(&key_id)
             .ok_or(ActionError::StateInconsistent("no such key".into()))?
+            .complete_key
+            .as_ref()
+            .ok_or(ActionError::StateInconsistent(
+                "can't check share of a key that hasn't been restored".into(),
+            ))?
             .clone();
 
-        let root_shared_key = key_data
+        let root_shared_key = complete_key
             .root_shared_key(access_structure_id, encryption_key)
             .ok_or(ActionError::StateInconsistent(
                 "couldn't decrypt root key".into(),
@@ -1048,30 +1120,40 @@ impl FrostCoordinator {
         Some(access_structure)
     }
 
-    pub fn recover_share(
-        &mut self,
-        held_by: DeviceId,
-        held_share: HeldShare,
-    ) -> impl IntoIterator<Item = CoordinatorSend> {
-        self.mutate(Mutation::RecoverShare {
-            held_by,
-            held_share: held_share.clone(),
-        });
+    pub fn recover_share(&mut self, recover_share: RecoverShare) -> bool {
+        let access_structure_ref = recover_share.held_share.access_structure_ref;
+        self.mutate(Mutation::RecoverShare(recover_share));
 
-        if let Some(pending_as) = self
+        let coord_key = self
+            .keys
+            .get(&access_structure_ref.key_id)
+            .expect("mutation should have created it");
+
+        // This may be `None` if the access structure has already been recovered
+        if let Some(pending_as) = coord_key
             .recovering_access_structures
-            .get(&held_share.access_structure_ref)
+            .get(&access_structure_ref.access_structure_id)
         {
-            if pending_as.share_images.len() >= pending_as.threshold as usize {
-                return Some(CoordinatorSend::ToUser(
-                    CoordinatorToUserMessage::ConfirmRecoverAccessStructure {
-                        key_name: pending_as.key_name.clone(),
-                        access_structure_ref: held_share.access_structure_ref,
-                    },
-                ));
-            }
+            return pending_as.share_images.len() >= pending_as.threshold as usize;
         }
-        None
+
+        false
+    }
+
+    pub fn recover_share_and_maybe_recover_access_structure(
+        &mut self,
+        recover_share: RecoverShare,
+        encryption_key: SymmetricKey,
+        rng: &mut impl rand_core::RngCore,
+    ) -> Result<(), ActionError> {
+        let access_structure_ref = recover_share.held_share.access_structure_ref;
+        let ready_for_as_recovery = self.recover_share(recover_share);
+
+        if ready_for_as_recovery {
+            self.recover_access_structure(access_structure_ref, encryption_key, rng)?;
+        }
+
+        Ok(())
     }
 
     pub fn recover_access_structure(
@@ -1080,9 +1162,13 @@ impl FrostCoordinator {
         encryption_key: SymmetricKey,
         rng: &mut impl rand_core::RngCore,
     ) -> Result<(), ActionError> {
-        let pending_as = self
+        let key = self
+            .keys
+            .get(&access_structure_ref.key_id)
+            .ok_or(ActionError::StateInconsistent("key doesn't exist".into()))?;
+        let pending_as = key
             .recovering_access_structures
-            .get(&access_structure_ref)
+            .get(&access_structure_ref.access_structure_id)
             .ok_or(ActionError::StateInconsistent(format!(
                 "access structure for recovery not found {:?}",
                 access_structure_ref
@@ -1106,7 +1192,7 @@ impl FrostCoordinator {
                 .map(|(party_index, (device_id, _))| (device_id, party_index))
                 .collect();
             self.mutate_new_key(
-                pending_as.key_name.clone(),
+                key.key_name.clone(),
                 root_shared_key,
                 device_to_share_index,
                 encryption_key,
@@ -1147,6 +1233,14 @@ impl FrostCoordinator {
         if self.get_frost_key(key_id).is_none() {
             self.mutate(Mutation::NewKey {
                 key_name: name,
+                key_id,
+            });
+        }
+
+        let frost_key = self.get_frost_key(key_id).expect("just inserted");
+
+        if frost_key.complete_key.is_none() {
+            self.mutate(Mutation::CompleteKey {
                 master_appkey,
                 encrypted_rootkey,
             });
@@ -1165,6 +1259,19 @@ impl FrostCoordinator {
         }
 
         access_structure_ref
+    }
+
+    pub fn delete_key(&mut self, key_id: KeyId) {
+        if self.keys.contains_key(&key_id) {
+            self.mutate(Mutation::DeleteKey(key_id));
+        }
+    }
+
+    pub fn request_held_shares(&self, id: DeviceId) -> impl Iterator<Item = CoordinatorSend> {
+        core::iter::once(CoordinatorSend::ToDevice {
+            message: CoordinatorToDeviceMessage::RequestHeldShares,
+            destinations: [id].into(),
+        })
     }
 }
 
@@ -1345,6 +1452,9 @@ pub enum StartSignError {
     SignTask(SignTaskError),
     NoSuchAccessStructure,
     CouldntDecryptRootKey,
+    KeyIsRecovering {
+        key_id: KeyId,
+    },
 }
 
 impl core::fmt::Display for StartSignError {
@@ -1393,6 +1503,10 @@ impl core::fmt::Display for StartSignError {
                 "the access structure you wanted to sign with did not exist"
             ),
             StartSignError::CouldntDecryptRootKey => write!(f, "the decryption key did not"),
+            StartSignError::KeyIsRecovering { key_id } => write!(
+                f,
+                "you can't sign under the key {key_id} that hasn't been fully recovered"
+            ),
         }
     }
 }
@@ -1404,8 +1518,11 @@ impl std::error::Error for StartSignError {}
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
 pub enum Mutation {
     NewKey {
-        master_appkey: MasterAppkey,
         key_name: String,
+        key_id: KeyId,
+    },
+    CompleteKey {
+        master_appkey: MasterAppkey,
         encrypted_rootkey: Ciphertext<33, Point>,
     },
     NewAccessStructure {
@@ -1430,10 +1547,29 @@ pub enum Mutation {
         device_id: DeviceId,
         share_index: PartyIndex,
     },
-    RecoverShare {
-        held_share: HeldShare,
-        held_by: DeviceId,
-    },
+    RecoverShare(RecoverShare),
+    DeleteKey(KeyId),
+}
+
+impl Mutation {
+    pub fn tied_to_key(&self) -> Option<KeyId> {
+        Some(match self {
+            Mutation::NewKey { key_id, .. } => *key_id,
+            Mutation::CompleteKey { master_appkey, .. } => master_appkey.key_id(),
+            Mutation::NewAccessStructure { shared_key } => {
+                MasterAppkey::from_xpub_unchecked(shared_key).key_id()
+            }
+            Mutation::NewShare {
+                access_structure_ref,
+                ..
+            } => access_structure_ref.key_id,
+            Mutation::RecoverShare(RecoverShare { held_share, .. }) => {
+                held_share.access_structure_ref.key_id
+            }
+            Mutation::DeleteKey(key_id) => *key_id,
+            _ => return None,
+        })
+    }
 }
 
 impl Gist for Mutation {
@@ -1441,12 +1577,14 @@ impl Gist for Mutation {
         use Mutation::*;
         match self {
             NoncesUsed { .. } => "NoncesUsed",
+            CompleteKey { .. } => "CompleteKey",
             ResetNonces { .. } => "ResetNonces",
             NewNonces { .. } => "NewNonces",
             NewAccessStructure { .. } => "NewAccessStructure",
             NewKey { .. } => "NewKey",
             NewShare { .. } => "NewShare",
             RecoverShare { .. } => "RecoverShare",
+            DeleteKey(_) => "DeleteKey",
         }
         .into()
     }
