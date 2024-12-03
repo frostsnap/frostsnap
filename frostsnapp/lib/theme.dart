@@ -98,7 +98,7 @@ final ThemeData frostsnappTheme = ThemeData(
     ),
     titleSmall: TextStyle(
       color: textColor,
-      fontSize: 18.0,
+      fontSize: 16.0,
       fontWeight: FontWeight.bold,
       height: 1.25,
     ),
@@ -141,6 +141,14 @@ final ThemeData frostsnappTheme = ThemeData(
       fontSize: 12.0,
       fontWeight: FontWeight.bold,
       height: 1.2,
+    ),
+  ),
+  cardTheme: CardTheme(
+    color: backgroundSecondaryColor,
+    margin: const EdgeInsets.all(4.0),
+    elevation: 1.0,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(12.0),
     ),
   ),
   colorScheme: ColorScheme.fromSwatch(

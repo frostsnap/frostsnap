@@ -11,6 +11,7 @@ class BulletList extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: bullets.map((bullet) {
         return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               '\u2022',

@@ -10,6 +10,7 @@ import 'package:frostsnapp/electrum_server_settings.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/logs.dart';
 import 'package:frostsnapp/main.dart';
+import 'package:frostsnapp/theme.dart';
 import 'package:frostsnapp/todo.dart';
 import 'package:frostsnapp/wallet.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
@@ -628,8 +629,12 @@ class HoldToDeleteButton extends StatefulWidget {
 class _HoldToDeleteButtonState extends State<HoldToDeleteButton> {
   double _progress = 0.0;
   Timer? _timer;
+  bool _isPressed = false;
 
   void _startProgress() {
+    setState(() {
+      _isPressed = true;
+    });
     const holdDuration = Duration(seconds: 3);
     const tick = Duration(milliseconds: 50);
     int ticks = holdDuration.inMilliseconds ~/ tick.inMilliseconds;
@@ -650,6 +655,7 @@ class _HoldToDeleteButtonState extends State<HoldToDeleteButton> {
   void _stopProgress() {
     _timer?.cancel();
     setState(() {
+      _isPressed = false;
       _progress = 0.0;
     });
   }
@@ -663,25 +669,45 @@ class _HoldToDeleteButtonState extends State<HoldToDeleteButton> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onLongPressStart: (_) => _startProgress(),
-      onLongPressEnd: (_) => _stopProgress(),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          SizedBox(
-            width: 120,
-            height: 120,
-            child: CircularProgressIndicator(
-              value: _progress,
-              backgroundColor: Colors.grey[300],
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.red),
+      onTapDown: (_) => _startProgress(),
+      onTapUp: (_) => _stopProgress(),
+      onTapCancel: () => _stopProgress(),
+      child: AnimatedContainer(
+        duration: Duration(milliseconds: 100),
+        width: 120,
+        height: 120,
+        decoration: BoxDecoration(
+          color:
+              _isPressed ? backgroundSecondaryColor : backgroundTertiaryColor,
+          shape: BoxShape.circle,
+          boxShadow: _isPressed
+              ? []
+              : [
+                  BoxShadow(
+                    color: Colors.black26,
+                    offset: Offset(0, 4),
+                    blurRadius: 4.0,
+                  ),
+                ],
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            SizedBox(
+              width: 120,
+              height: 120,
+              child: CircularProgressIndicator(
+                value: _progress,
+                backgroundColor: backgroundTertiaryColor,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.red),
+              ),
             ),
-          ),
-          Text(
-            'Hold to Delete',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-        ],
+            Text(
+              'Hold to Delete',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
       ),
     );
   }
