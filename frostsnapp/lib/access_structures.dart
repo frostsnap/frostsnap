@@ -95,3 +95,23 @@ class AccessStructureWidget extends StatelessWidget {
     );
   }
 }
+
+class AccessStructureSummary extends StatelessWidget {
+  final int t;
+  final int n;
+
+  const AccessStructureSummary({super.key, required this.t, this.n = 0});
+
+  @override
+  Widget build(BuildContext context) {
+    final nText = n < t ? "?" : n.toString();
+
+    return Text(
+      "($t-of-$nText)",
+      style: Theme.of(context)
+          .textTheme
+          .titleSmall!
+          .copyWith(fontStyle: FontStyle.italic),
+    );
+  }
+}
