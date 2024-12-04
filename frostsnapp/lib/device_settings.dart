@@ -84,39 +84,34 @@ class _DeviceSettingsState extends State<DeviceSettings> {
         itemCount: keys.length,
         itemBuilder: (context, index) {
           final key = keys[index];
-          final accessStructure = key.accessStructures()[0];
+          final accessStructureRef =
+              key.accessStructures().elementAtOrNull(0)?.accessStructureRef();
           final keyName = key.keyName();
           return Padding(
-              padding: const EdgeInsets.only(
-                  bottom: 4.0), // Adjust the padding/margin here
+              padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
               child: ListTile(
-                  title: Row(
-                      mainAxisAlignment: MainAxisAlignment.start,
-                      children: [
-                    Column(children: [
-                      Text(
-                        keyName,
-                        style: const TextStyle(fontSize: 20.0),
-                      ),
-                    ]),
-                    SizedBox(width: 10),
-                    ElevatedButton(
-                      onPressed: () async {
-                        Navigator.push(context,
-                            MaterialPageRoute(builder: (context) {
-                          return BackupSettingsPage(
-                            context: context,
-                            id: device_.id,
-                            deviceName: device_.name ?? "unamed",
-                            accessStructureRef:
-                                accessStructure.accessStructureRef(),
-                            keyName: keyName,
-                          );
-                        }));
-                      },
-                      child: Text("Backup"),
-                    ),
-                  ])));
+                title: Text(
+                  keyName,
+                  style: const TextStyle(fontSize: 20.0),
+                ),
+                trailing: ElevatedButton(
+                  onPressed: accessStructureRef == null
+                      ? null
+                      : () async {
+                          Navigator.push(context,
+                              MaterialPageRoute(builder: (context) {
+                            return BackupSettingsPage(
+                              context: context,
+                              id: device_.id,
+                              deviceName: device_.name ?? "??",
+                              accessStructureRef: accessStructureRef,
+                              keyName: keyName,
+                            );
+                          }));
+                        },
+                  child: Text("Backup"),
+                ),
+              ));
         },
       );
 
@@ -166,7 +161,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
 
       final settings = SettingsSection(settings: [
         ("Name", DeviceNameField(id: device_.id, existingName: device_.name)),
-        ("Keys", keyList),
+        ("Key Shares", keyList),
         ("Nonces", NonceCounterDisplay(id: device_.id)),
         ("Update Firmware", firmwareSettings)
       ]);
