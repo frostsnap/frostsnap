@@ -144,7 +144,7 @@ impl Reader for DeviceStorage {
 
 struct BufWriter<'a>(&'a mut Vec<u8>);
 
-impl<'a> Writer for BufWriter<'a> {
+impl Writer for BufWriter<'_> {
     fn write(&mut self, bytes: &[u8]) -> Result<(), EncodeError> {
         self.0.extend(bytes);
         Ok(())

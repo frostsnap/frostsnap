@@ -62,6 +62,7 @@ fn init_heap() {
     static mut HEAP: MaybeUninit<[u8; HEAP_SIZE]> = MaybeUninit::uninit();
 
     unsafe {
+        #[allow(static_mut_refs)]
         ALLOCATOR.init(HEAP.as_mut_ptr() as *mut u8, HEAP_SIZE);
     }
 }
@@ -252,7 +253,7 @@ pub struct FrostyUi<'t, T, DT, I2C, PINT, RST> {
     timer: &'t Timer<T, Blocking>,
 }
 
-impl<'t, T, DT, I2C, PINT, RST, CommE, PinE> FrostyUi<'t, T, DT, I2C, PINT, RST>
+impl<T, DT, I2C, PINT, RST, CommE, PinE> FrostyUi<'_, T, DT, I2C, PINT, RST>
 where
     T: timer::timg::Instance,
     DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
@@ -418,7 +419,7 @@ where
     }
 }
 
-impl<'t, T, DT, I2C, PINT, RST, CommE, PinE> UserInteraction for FrostyUi<'t, T, DT, I2C, PINT, RST>
+impl<T, DT, I2C, PINT, RST, CommE, PinE> UserInteraction for FrostyUi<'_, T, DT, I2C, PINT, RST>
 where
     I2C: hal::i2c::I2c<Error = CommE>,
     PINT: hal::digital::InputPin,

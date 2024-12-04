@@ -134,7 +134,7 @@ where
     }
 }
 
-impl<'a, T, U, D> Reader for SerialInterface<'a, T, U, D>
+impl<T, U, D> Reader for SerialInterface<'_, T, U, D>
 where
     U: uart::Instance,
     T: timer::Timer,
@@ -171,7 +171,7 @@ where
     }
 }
 
-impl<'a, T, U, D> Writer for SerialInterface<'a, T, U, D>
+impl<T, U, D> Writer for SerialInterface<'_, T, U, D>
 where
     U: uart::Instance,
 {
@@ -192,7 +192,7 @@ pub enum SerialIo<'a, U> {
     Jtag(UsbSerialJtag<'a, Blocking>),
 }
 
-impl<'a, U> SerialIo<'a, U>
+impl<U> SerialIo<'_, U>
 where
     U: uart::Instance,
 {

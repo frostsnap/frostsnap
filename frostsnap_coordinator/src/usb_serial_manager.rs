@@ -535,7 +535,7 @@ impl UsbSerialManager {
         let firmware_bin = self.firmware_bin.ok_or(anyhow!(
             "App wasn't compiled with BUNDLE_FIRMWARE=1 so it can't do firmware upgrades"
         ))?;
-        let n_chunks = ceil_div(firmware_bin.size(), FIRMWARE_UPGRADE_CHUNK_LEN);
+        let n_chunks = firmware_bin.size().div_ceil(FIRMWARE_UPGRADE_CHUNK_LEN);
         let total_chunks = n_chunks * self.ready.len() as u32;
 
         let mut iters = vec![];
@@ -699,10 +699,6 @@ pub enum AppMessageBody {
     AckUpgradeMode,
 }
 
-fn ceil_div(dividend: u32, divisor: u32) -> u32 {
-    (dividend + divisor - 1) / divisor
-}
-
 #[derive(Clone, Copy)]
 pub struct FirmwareBin {
     bin: &'static [u8],
@@ -722,7 +718,7 @@ impl FirmwareBin {
     }
 
     pub fn num_chunks(&self) -> u32 {
-        ceil_div(self.bin.len() as u32, FIRMWARE_UPGRADE_CHUNK_LEN)
+        (self.bin.len() as u32).div_ceil(FIRMWARE_UPGRADE_CHUNK_LEN)
     }
 
     pub fn size(&self) -> u32 {

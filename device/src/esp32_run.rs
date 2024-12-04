@@ -35,8 +35,8 @@ pub struct Run<'a, UpstreamUart, DownstreamUart, Rng, Ui, T, DownstreamDetectPin
     pub sha256: Sha<'a, Blocking>,
 }
 
-impl<'a, UpstreamUart, DownstreamUart, Rng, Ui, T, DownstreamDetectPin>
-    Run<'a, UpstreamUart, DownstreamUart, Rng, Ui, T, DownstreamDetectPin>
+impl<UpstreamUart, DownstreamUart, Rng, Ui, T, DownstreamDetectPin>
+    Run<'_, UpstreamUart, DownstreamUart, Rng, Ui, T, DownstreamDetectPin>
 where
     UpstreamUart: uart::Instance,
     DownstreamUart: uart::Instance,
