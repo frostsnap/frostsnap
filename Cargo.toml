@@ -31,8 +31,7 @@ sha2 = { version = "0.10", default-features = false }
 bitcoin = { version = "0.32", features = ["serde"], default-features = false }
 bdk_coin_select = { version = "0.3" }
 rand_core = "0.6"
-
-
+futures = "0.3.31"
 
 [patch.crates-io]
 schnorr_fun = { git = "https://github.com/LLFourn/secp256kfun.git", rev = "029bfab341132e9e29583b8876377c8c8d5279cf" }

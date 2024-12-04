@@ -11,16 +11,22 @@ frostsnap_comms = { workspace = true }
 frostsnap_core = { workspace = true, features = ["std", "rusqlite"] }
 bincode = { workspace = true, features = ["std"] }
 tracing = { workspace = true }
-serialport = {version = "4.6", default-features = false } # default-features = false so no libudev
+serialport = { version = "4.6", default-features = false }            # default-features = false so no libudev
 rand_core.workspace = true
 rusqlite.workspace = true
+futures.workspace = true
 
 bdk_chain = { version = "0.20", features = ["rusqlite"] }
-bdk_electrum = { version = "0.19", default-features = false, features = [
-  "use-rustls-ring",
-] }
+bdk_electrum_c = { version = "0.7" }
 bdk_coin_select = { version = "0.3" }
 
+futures-rustls = { version = "0.26", default-features = false, features = [
+  "tls12",
+  "ring",
+] }
+futures-timer = "3.0.3"
+async-std = { version = "1.13" }
+webpki-roots = { version = "0.26" }
 
 [dev-dependencies]
 rand = "0.8"
