@@ -9,11 +9,9 @@ use anyhow::{anyhow, Context, Result};
 pub use bitcoin::psbt::Psbt as BitcoinPsbt;
 pub use bitcoin::Network as RBitcoinNetwork;
 pub use bitcoin::Transaction as RTransaction;
-use bitcoin::{network, NetworkKind};
+use bitcoin::{network, Txid};
 use flutter_rust_bridge::{frb, RustOpaque, StreamSink, SyncReturn};
-use frostsnap_coordinator::bitcoin::chain_sync::{
-    default_electrum_server, ElectrumConnection, SUPPORTED_NETWORKS,
-};
+use frostsnap_coordinator::bitcoin::chain_sync::{default_electrum_server, SUPPORTED_NETWORKS};
 pub use frostsnap_coordinator::bitcoin::wallet::ConfirmationTime;
 pub use frostsnap_coordinator::bitcoin::{
     chain_sync::{ChainClient, ChainStatus, ChainStatusState},
@@ -37,14 +35,13 @@ pub use frostsnap_core::{
 };
 use lazy_static::lazy_static;
 pub use std::collections::BTreeMap;
-pub use std::collections::{hash_map::Entry, HashMap};
+pub use std::collections::HashMap;
 use std::ops::Deref;
 use std::path::Path;
 pub use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 pub use std::sync::{Mutex, RwLock};
-use std::time::Instant;
 #[allow(unused)]
 use tracing::{event, span, Level};
 use tracing_subscriber::layer::SubscriberExt;
@@ -433,19 +430,19 @@ pub struct Wallet {
 
 impl Wallet {
     fn load_or_new(
-        db_file: impl AsRef<Path>,
+        app_dir: impl AsRef<Path>,
         network: BitcoinNetwork,
         chain_sync: ChainClient,
     ) -> Result<Wallet> {
-        let db_file = db_file.as_ref();
-        let db = rusqlite::Connection::open(db_file).context(format!(
+        let db_file = network.bdk_file(app_dir);
+        let db = rusqlite::Connection::open(&db_file).context(format!(
             "failed to load database from {}",
             db_file.display()
         ))?;
 
         let db = Arc::new(Mutex::new(db));
 
-        let wallet = FrostsnapWallet::load_or_init(db.clone(), *network.0)
+        let wallet = FrostsnapWallet::load_or_init(db.clone(), *network.0, chain_sync.clone())
             .with_context(|| format!("loading wallet from data in {}", db_file.display()))?;
 
         let wallet = Wallet {
@@ -481,110 +478,8 @@ impl Wallet {
         SyncReturn(txs.into())
     }
 
-    pub fn sync_txids(
-        &self,
-        master_appkey: MasterAppkey,
-        txids: Vec<String>,
-        stream: StreamSink<f64>,
-    ) -> Result<()> {
-        let span = span!(Level::DEBUG, "syncing txids");
-        event!(Level::INFO, "starting sync");
-        let _enter = span.enter();
-        let chain_sync = self.chain_sync.clone();
-        let start = Instant::now();
-
-        let sync_request = {
-            let wallet = self.inner.lock().unwrap();
-            let txids = txids
-                .into_iter()
-                .map(|txid| bitcoin::Txid::from_str(&txid).unwrap());
-            let inspect_stream = stream.clone();
-            wallet
-                .sync_txs(txids)
-                .inspect(move |_, progress| {
-                    inspect_stream.add(progress.consumed() as f64 / progress.total() as f64);
-                })
-                .build()
-        };
-
-        let update = chain_sync.sync(sync_request)?;
-        let mut wallet = self.inner.lock().unwrap();
-        let something_changed = wallet.finish_sync(update)?;
-
-        if something_changed {
-            let txs = wallet.list_transactions(master_appkey);
-            drop(wallet);
-            if let Some(wallet_stream) = self.wallet_streams.lock().unwrap().get(&master_appkey) {
-                wallet_stream.add(txs.into());
-            }
-
-            event!(
-                Level::INFO,
-                elapsed = start.elapsed().as_millis(),
-                "finished syncing txids with changes"
-            );
-        } else {
-            event!(
-                Level::INFO,
-                elapsed = start.elapsed().as_millis(),
-                "finished syncing txids without chanages"
-            );
-        }
-
-        stream.add(100.0);
-        stream.close();
-
-        Ok(())
-    }
-
-    pub fn sync(&self, master_appkey: MasterAppkey, stream: StreamSink<f64>) -> Result<()> {
-        let span = span!(
-            Level::DEBUG,
-            "syncing",
-            master_appkey = master_appkey.to_string()
-        );
-        let _enter = span.enter();
-        let start = Instant::now();
-        event!(Level::INFO, "starting sync");
-        let sync_request = {
-            let wallet = self.inner.lock().unwrap();
-            let inspect_stream = stream.clone();
-            wallet
-                .start_sync(master_appkey)
-                .inspect(move |_, progress| {
-                    inspect_stream.add(progress.consumed() as f64 / progress.total() as f64);
-                })
-                .build()
-        };
-        let chain_sync = self.chain_sync.clone();
-
-        let update = chain_sync
-            .sync(sync_request)
-            .inspect_err(|e| event!(Level::ERROR, error = e.to_string(), "syncing error"))?;
-        let mut wallet = self.inner.lock().unwrap();
-        let something_changed = wallet.finish_sync(update).inspect_err(|e| {
-            event!(Level::ERROR, error = e.to_string(), "applying update error")
-        })?;
-
-        if something_changed {
-            let txs = wallet.list_transactions(master_appkey);
-            drop(wallet);
-            if let Some(wallet_stream) = self.wallet_streams.lock().unwrap().get(&master_appkey) {
-                wallet_stream.add(txs.into());
-            }
-        }
-
-        event!(
-            Level::INFO,
-            elapsed = start.elapsed().as_millis(),
-            changes = something_changed.to_string(),
-            "finished syncing"
-        );
-
-        stream.add(100.0);
-        stream.close();
-
-        Ok(())
+    pub fn reconnect(&self) {
+        self.chain_sync.reconnect();
     }
 
     pub fn next_address(&self, master_appkey: MasterAppkey) -> Result<Address> {
@@ -624,6 +519,16 @@ impl Wallet {
                 used: address_info.used,
                 external: address_info.external,
             })
+    }
+
+    pub fn rebroadcast(&self, txid: String) {
+        let txid = Txid::from_str(&txid).expect("Txid must be valid");
+        let wallet = self.inner.lock().unwrap();
+        if let Some(tx) = wallet.get_tx(txid) {
+            if let Err(err) = self.chain_sync.broadcast(tx.as_ref().clone()) {
+                tracing::error!("Rebroadcasting {} failed: {}", txid, err);
+            };
+        }
     }
 
     pub fn send_to(
@@ -816,6 +721,10 @@ impl BitcoinNetwork {
 
     pub fn default_electrum_server(&self) -> SyncReturn<String> {
         SyncReturn(default_electrum_server(*self.0).to_string())
+    }
+
+    fn bdk_file(&self, app_dir: impl AsRef<Path>) -> PathBuf {
+        app_dir.as_ref().join(format!("wallet-{}.sql", *self.0))
     }
 }
 
@@ -1357,20 +1266,29 @@ impl Settings {
             Persisted::new(&mut *db_, ())?
         };
 
-        let chain_apis = SUPPORTED_NETWORKS
-            .into_iter()
-            .map(|network| {
-                let (connection, chain_api) = ElectrumConnection::new(
-                    network,
-                    persisted.get_electrum_server(network),
-                    NetworkKind::from(network).is_mainnet(),
-                );
-                connection.spawn();
-                (network, chain_api)
-            })
-            .collect();
+        let mut loaded_wallets: HashMap<RBitcoinNetwork, Wallet> = Default::default();
+        let mut chain_apis = HashMap::new();
+
+        for network in SUPPORTED_NETWORKS {
+            let bitcoin_network = BitcoinNetwork::from(network);
+            let electrum_url = persisted.get_electrum_server(network);
+            let (chain_api, conn_handler) = ChainClient::new();
+            let wallet = Wallet::load_or_new(&app_directory, bitcoin_network, chain_api.clone())?;
+            conn_handler.run(electrum_url, Arc::clone(&wallet.inner), {
+                let wallet_streams = Arc::clone(&wallet.wallet_streams);
+                move |master_appkey, txs| {
+                    let wallet_streams = wallet_streams.lock().unwrap();
+                    if let Some(stream) = wallet_streams.get(&master_appkey) {
+                        stream.add(txs.into());
+                    }
+                }
+            });
+            loaded_wallets.insert(network, wallet);
+            chain_apis.insert(network, chain_api);
+        }
+
         Ok(Self {
-            loaded_wallets: RustOpaque::new(Default::default()),
+            loaded_wallets: RustOpaque::new(Mutex::new(loaded_wallets)),
             settings: RustOpaque::new(Mutex::new(persisted)),
             app_directory: RustOpaque::new(app_directory),
             chain_clients: RustOpaque::new(chain_apis),
@@ -1403,25 +1321,11 @@ impl Settings {
     );
 
     pub fn load_wallet(&self, network: BitcoinNetwork) -> Result<Wallet> {
-        let mut loaded = self.loaded_wallets.lock().unwrap();
-
-        let wallet = match loaded.entry(*network.0) {
-            Entry::Occupied(occupied) => occupied.get().clone(),
-            Entry::Vacant(vacant) => {
-                let mut wallet_db_file = (*self.app_directory).clone();
-                wallet_db_file.push(format!("wallet-{}.sql", (*network.0)));
-                let chain_api = self
-                    .chain_clients
-                    .get(&*network.0)
-                    .ok_or(anyhow!("unsupported network {}", *network.0))?
-                    .clone();
-                vacant
-                    .insert(Wallet::load_or_new(wallet_db_file, network, chain_api)?)
-                    .clone()
-            }
-        };
-
-        Ok(wallet)
+        let loaded = self.loaded_wallets.lock().unwrap();
+        loaded
+            .get(&network.0)
+            .cloned()
+            .ok_or(anyhow!("unsupported network {:?}", network.0))
     }
 
     pub fn set_wallet_network(&self, key_id: KeyId, network: BitcoinNetwork) -> Result<()> {
@@ -1611,7 +1515,6 @@ pub struct _ChainStatus {
 #[frb(mirror(ChainStatusState))]
 pub enum _ChainStatusState {
     Connected,
-    Syncing,
     Disconnected,
     Connecting,
 }

@@ -16,6 +16,7 @@ use frostsnap_core::{
     tweak::{AppTweakKind, BitcoinAccount, DerivationPathExt, Keychain},
     MasterAppkey,
 };
+use wallet::KeychainId;
 
 /// Descriptor for a key.
 pub fn multi_x_descriptor_for_account(
@@ -49,6 +50,17 @@ pub fn multi_x_descriptor_for_account(
     let desc_key = multi_xpub;
 
     Descriptor::new_tr(desc_key, None).expect("well formed")
+}
+
+pub fn descriptor_for_account_keychain(
+    keychain: KeychainId,
+    network: bitcoin::NetworkKind,
+) -> Descriptor<DescriptorPublicKey> {
+    let idx = keychain.1.keychain as usize;
+    multi_x_descriptor_for_account(keychain.0, keychain.1.account, network)
+        .into_single_descriptors()
+        .expect("infallible")
+        .remove(idx)
 }
 
 #[cfg(test)]
