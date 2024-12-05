@@ -218,7 +218,10 @@ class WalletActivity extends StatelessWidget {
                   key: floatingProgressKey, progressStream: snap.data!);
             }),
         Column(children: [
-          UpdatingBalance(txStateStream: walletContext.txStream),
+          UpdatingBalance(
+              txStateStream: walletContext.txStream,
+              textStyle:
+                  TextStyle(fontWeight: FontWeight.bold, fontSize: 34.0)),
           Expanded(child: TxList())
         ]),
       ]),
@@ -876,8 +879,12 @@ Future<bool> showBroadcastConfirmDialog(
 }
 
 class UpdatingBalance extends StatelessWidget {
+  final TextStyle textStyle;
   final Stream<TxState> txStateStream;
-  const UpdatingBalance({super.key, required this.txStateStream});
+  const UpdatingBalance(
+      {super.key,
+      required this.txStateStream,
+      this.textStyle = const TextStyle(fontWeight: FontWeight.bold)});
 
   @override
   Widget build(BuildContext context) {
@@ -893,7 +900,7 @@ class UpdatingBalance extends StatelessWidget {
           padding: const EdgeInsets.all(20.0),
           child: Text(
             balanceInBTC,
-            style: TextStyle(fontWeight: FontWeight.bold),
+            style: textStyle,
           ),
         );
       },
