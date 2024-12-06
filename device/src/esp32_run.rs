@@ -364,6 +364,9 @@ where
                                                         },
                                                     }
                                                 },
+                                                CoordinatorSendBody::DataWipe => {
+                                                    ui.set_workflow(ui::Workflow::prompt(ui::Prompt::WipeDevice));
+                                                },
                                             }
                                         }
 
@@ -481,6 +484,12 @@ where
                                 .loaded_share_backup(share_backup)
                                 .expect("invalid state to restore share"),
                         );
+                    }
+                    UiEvent::WipeDataConfirm => {
+                        flash
+                            .overwrite_header_wipe()
+                            .expect("overwriting header failed");
+                        esp_hal::reset::software_reset();
                     }
                 }
 
