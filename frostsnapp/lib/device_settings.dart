@@ -47,14 +47,32 @@ class _DeviceSettingsState extends State<DeviceSettings> {
     super.initState();
     _deviceRemoved = Completer();
     _subscription = deviceListSubject.listen((event) {
+      final currentContext = context;
+      for (final change in event.changes) {
+        switch (change.kind) {
+          case DeviceListChangeKind.Removed:
+            {
+              if (deviceIdEquals(change.device.id, widget.id)) {
+                _deviceRemoved.complete();
+                if (currentContext.mounted) {
+                  Navigator.pop(currentContext);
+                }
+              }
+            }
+          case DeviceListChangeKind.Added:
+            {
+              /* nothing needs to be done */
+            }
+          case DeviceListChangeKind.Named:
+            {
+              /* nothing needs to be done */
+            }
+        }
+      }
+
       setState(() {
         device = event.state.getDevice(id: widget.id);
       });
-      if (device == null) {
-        if (!_deviceRemoved.isCompleted) {
-          _deviceRemoved.complete();
-        }
-      }
     });
   }
 
@@ -68,6 +86,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
   Widget build(BuildContext context) {
     final Widget body;
     final keys = coord.keyState().keys;
+
     if (device == null) {
       body = Center(
           child: Column(children: const [
@@ -164,11 +183,25 @@ class _DeviceSettingsState extends State<DeviceSettings> {
         ),
       ]);
 
+      final wipeDeviceSettings =
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Delete all device data, making it a blank new device.',
+            style: TextStyle()),
+        SizedBox(height: 8),
+        ElevatedButton(
+          onPressed: () async {
+            coord.wipeDeviceData(deviceId: device_.id);
+          },
+          child: Text("Wipe"),
+        ),
+      ]);
+
       final settings = SettingsSection(settings: [
         ("Name", DeviceNameField(id: device_.id, existingName: device_.name)),
         ("Keys", keyList),
         ("Nonces", NonceCounterDisplay(id: device_.id)),
-        ("Update Firmware", firmwareSettings)
+        ("Update Firmware", firmwareSettings),
+        ("Wipe Device", wipeDeviceSettings)
       ]);
 
       body = Column(children: [
