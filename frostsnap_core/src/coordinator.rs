@@ -331,6 +331,10 @@ impl FrostCoordinator {
         core::mem::take(&mut self.mutations)
     }
 
+    pub fn staged_mutations(&self) -> &VecDeque<Mutation> {
+        &self.mutations
+    }
+
     pub fn restore_sign_session(&mut self, sign_state: SigningSessionState) {
         self.action_state = Some(CoordinatorState::Signing { sign_state });
     }
@@ -370,32 +374,38 @@ impl FrostCoordinator {
             (_, DeviceToCoordinatorMessage::HeldShares(held_shares)) => {
                 let mut messages = vec![];
                 for held_share in held_shares {
-                    let access_structure =
-                        self.get_access_structure(held_share.access_structure_ref);
+                    let access_structure_ref = held_share.access_structure_ref;
+                    let already_got = self
+                        .keys
+                        .get(&access_structure_ref.key_id)
+                        .map(|coord_key| {
+                            let access_structure_id = access_structure_ref.access_structure_id;
+                            let is_recovering = coord_key
+                                .recovering_access_structures
+                                .get(&access_structure_id)
+                                .and_then(|recovering_accs| {
+                                    recovering_accs
+                                        .share_images
+                                        .get(&held_share.share_image.share_index)
+                                })
+                                .is_some();
 
-                    let recover_msg = CoordinatorSend::ToUser(
-                        CoordinatorToUserMessage::PromptRecoverShare(Box::new(RecoverShare {
-                            held_by: from,
-                            held_share: held_share.clone(),
-                        })),
-                    );
-                    match access_structure {
-                        Some(access_structure) => {
-                            // NOTE: we can't verify the correctness of the share here without
-                            // decrypting the root key so this is done when you actually try to
-                            // recover the share.
-                            match access_structure.device_to_share_index.get(&from) {
-                                Some(share_index) => {
-                                    if *share_index != held_share.share_image.share_index {
-                                        fail!("device claims to own a different held_share");
-                                    }
-                                }
-                                None => messages.push(recover_msg),
-                            }
-                        }
-                        None => {
-                            messages.push(recover_msg);
-                        }
+                            let already_recovered = coord_key
+                                .get_access_structure(access_structure_id)
+                                .map(|access_structure| access_structure.contains_device(from))
+                                .unwrap_or(false);
+
+                            already_recovered || is_recovering
+                        })
+                        .unwrap_or(false);
+
+                    if !already_got {
+                        messages.push(CoordinatorSend::ToUser(
+                            CoordinatorToUserMessage::PromptRecoverShare(Box::new(RecoverShare {
+                                held_by: from,
+                                held_share: held_share.clone(),
+                            })),
+                        ));
                     }
                 }
                 Ok(messages)
