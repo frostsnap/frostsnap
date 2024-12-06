@@ -110,7 +110,6 @@ impl common::Env for TestEnv {
                 assert!(valid, "entered share was valid");
             }
             CoordinatorToUserMessage::PromptRecoverShare(recover_share) => {
-                dbg!(&recover_share);
                 run.coordinator
                     .recover_share_and_maybe_recover_access_structure(
                         *recover_share,
@@ -261,7 +260,6 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
             )
             .unwrap();
         run.extend(sign_init);
-        dbg!(message);
         run.run_until_finished(&mut env, &mut test_rng).unwrap();
         assert_eq!(env.sign_tasks.keys().cloned().collect::<BTreeSet<_>>(), set);
         assert!(env.sign_tasks.values().all(|v| *v == checked_task));
@@ -763,16 +761,26 @@ fn delete_then_restore_a_share_by_connecting_devices_to_coordinator() {
         None
     );
 
-    let mut i = 0;
-    let mut recover_next_share = |run: &mut Run| {
+    let mut recover_next_share = |run: &mut Run, i: usize| {
         let device_id = device_set.iter().cloned().skip(i).take(1).next().unwrap();
-        i += 1;
         let messages = run.coordinator.request_held_shares(device_id);
         run.extend(messages);
         run.run_until_finished(&mut env, &mut test_rng).unwrap();
     };
 
-    recover_next_share(&mut run);
+    recover_next_share(&mut run, 0);
+    assert!(
+        !run.coordinator.staged_mutations().is_empty(),
+        "recovering share should mutate something"
+    );
+    run.check_mutations(); // this clears mutations
+
+    recover_next_share(&mut run, 0);
+
+    assert!(
+        run.coordinator.staged_mutations().is_empty(),
+        "recovering share again should not mutate"
+    );
 
     let coord_key = run
         .coordinator
@@ -783,7 +791,12 @@ fn delete_then_restore_a_share_by_connecting_devices_to_coordinator() {
     assert_eq!(coord_key.complete_key, None);
     assert_eq!(coord_key.key_id, access_structure_ref.key_id);
 
-    recover_next_share(&mut run);
+    recover_next_share(&mut run, 1);
+
+    assert!(
+        !run.coordinator.staged_mutations().is_empty(),
+        "recovering share should mutate something"
+    );
 
     let (restored_access_structure_ref, restored_access_structure) = run
         .coordinator
@@ -797,7 +810,7 @@ fn delete_then_restore_a_share_by_connecting_devices_to_coordinator() {
         2
     );
 
-    recover_next_share(&mut run);
+    recover_next_share(&mut run, 2);
 
     let (_, restored_access_structure) = run
         .coordinator
@@ -806,4 +819,14 @@ fn delete_then_restore_a_share_by_connecting_devices_to_coordinator() {
         .expect("should still be restored");
 
     assert_eq!(restored_access_structure, access_structure);
+
+    run.check_mutations();
+
+    recover_next_share(&mut run, 0);
+    assert!(
+        run.coordinator.staged_mutations().is_empty(),
+        "receiving same shares again should not mutate"
+    );
+    recover_next_share(&mut run, 1);
+    recover_next_share(&mut run, 2);
 }
