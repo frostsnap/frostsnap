@@ -920,6 +920,10 @@ impl FfiCoordinator {
     pub fn get_connected_device(&self, id: DeviceId) -> Option<api::ConnectedDevice> {
         self.device_list.lock().unwrap().get_device(id)
     }
+
+    pub fn wipe_device_data(&self, id: DeviceId) {
+        self.usb_sender.wipe_device_data(id);
+    }
 }
 
 fn key_state(
