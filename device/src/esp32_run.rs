@@ -359,6 +359,9 @@ where
                                                         },
                                                     }
                                                 },
+                                                CoordinatorSendBody::DataWipe => {
+                                                    ui.set_workflow(ui::Workflow::prompt(ui::Prompt::WipeDevice));
+                                                },
                                             }
                                         }
 
@@ -476,6 +479,10 @@ where
                                 .loaded_share_backup(share_backup)
                                 .expect("invalid state to restore share"),
                         );
+                    }
+                    UiEvent::WipeDataConfirm => {
+                        flash.erase().expect("erasing flash storage failed");
+                        esp_hal::reset::software_reset();
                     }
                 }
 
