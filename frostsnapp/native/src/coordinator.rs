@@ -711,6 +711,10 @@ impl FfiCoordinator {
             .get_frost_key(key_id)
             .cloned()
     }
+
+    pub fn wipe_device_data(&self, id: DeviceId) {
+        self.usb_sender.wipe_device_data(id);
+    }
 }
 
 fn frost_keys(coordinator: &FrostCoordinator) -> Vec<crate::api::FrostKey> {

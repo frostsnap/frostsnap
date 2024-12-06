@@ -52,6 +52,7 @@ pub trait UserInteraction {
 }
 
 const HOLD_TO_CONFIRM_TIME_MS: crate::Duration = crate::Duration::millis(600);
+const LONG_HOLD_TO_CONFIRM_TIME_MS: crate::Duration = crate::Duration::millis(6000);
 
 #[derive(Clone, Debug)]
 pub enum WaitingFor {
@@ -93,9 +94,13 @@ pub enum Workflow {
 
 impl Workflow {
     pub fn prompt(prompt: Prompt) -> Self {
+        let hold_duration = match prompt {
+            Prompt::WipeDevice => LONG_HOLD_TO_CONFIRM_TIME_MS,
+            _ => HOLD_TO_CONFIRM_TIME_MS,
+        };
         Self::UserPrompt {
             prompt,
-            animation: AnimationState::new(HOLD_TO_CONFIRM_TIME_MS),
+            animation: AnimationState::new(hold_duration),
         }
     }
 }
@@ -134,6 +139,7 @@ pub enum Prompt {
         size: u32,
     },
     ConfirmLoadBackup(SecretShare),
+    WipeDevice,
 }
 
 #[derive(Clone, Debug)]
@@ -171,4 +177,5 @@ pub enum UiEvent {
     EnteredShareBackupConfirm(SecretShare),
     BackupRequestConfirm,
     UpgradeConfirm,
+    WipeDataConfirm,
 }
