@@ -15,7 +15,7 @@ use frostsnap_coordinator::frostsnap_core::coordinator::{
 };
 use frostsnap_coordinator::frostsnap_core::device::KeyPurpose;
 use frostsnap_coordinator::frostsnap_core::message::CoordinatorSend;
-use frostsnap_coordinator::frostsnap_core::SymmetricKey;
+use frostsnap_coordinator::frostsnap_core::{MasterAppkey, SymmetricKey};
 use frostsnap_coordinator::frostsnap_persist::DeviceNames;
 use frostsnap_coordinator::persist::Persisted;
 use frostsnap_coordinator::verify_address::VerifyAddressProtocol;
@@ -725,12 +725,12 @@ impl FfiCoordinator {
         access_structure_ref: AccessStructureRef,
         address_index: u32,
         stream: StreamSink<api::VerifyAddressProtocolState>,
-        encryption_key: SymmetricKey,
+        master_appkey: MasterAppkey,
     ) -> anyhow::Result<()> {
         let coordinator = self.coordinator.lock().unwrap();
 
         let verify_address_messages =
-            coordinator.verify_address(access_structure_ref, address_index, encryption_key)?;
+            coordinator.verify_address(access_structure_ref, address_index, master_appkey)?;
 
         let ui_protocol =
             VerifyAddressProtocol::new(verify_address_messages.clone(), SinkWrap(stream));

@@ -60,7 +60,7 @@ pub enum CoordinatorToDeviceMessage {
     },
     CheckShareBackup,
     VerifyAddress {
-        rootkey: Point,
+        master_appkey: MasterAppkey,
         derivation_index: u32,
     },
 }

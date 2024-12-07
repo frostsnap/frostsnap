@@ -513,7 +513,7 @@ fn test_verify_address() {
 
     let verify_request = run
         .coordinator
-        .verify_address(access_structure_ref, 0, TEST_ENCRYPTION_KEY)
+        .verify_address(access_structure_ref, 0, coord_frost_key.master_appkey)
         .unwrap();
     run.extend(verify_request);
     run.run_until_finished(&mut env, &mut test_rng).unwrap();

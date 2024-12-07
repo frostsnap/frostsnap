@@ -129,7 +129,10 @@ class AddressPage extends StatelessWidget {
                         Clipboard.setData(
                             ClipboardData(text: address.addressString));
                         await _showVerificationDialog(
-                            context, accessStructureRef, address.index);
+                            context,
+                            accessStructureRef,
+                            address.index,
+                            walletCtx.masterAppkey);
                       },
                       child: Text('Verify Address'),
                     )
@@ -144,12 +147,16 @@ class AddressPage extends StatelessWidget {
   }
 }
 
-Future<void> _showVerificationDialog(BuildContext context,
-    AccessStructureRef accessStructureRef, int index) async {
+Future<void> _showVerificationDialog(
+    BuildContext context,
+    AccessStructureRef accessStructureRef,
+    int index,
+    MasterAppkey masterAppKey) async {
   final verifyAddressStream = coord
       .verifyAddress(
         accessStructureRef: accessStructureRef,
         addressIndex: index,
+        masterAppkey: masterAppKey,
       )
       .toBehaviorSubject();
 

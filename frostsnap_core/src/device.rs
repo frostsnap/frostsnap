@@ -514,11 +514,11 @@ impl FrostSigner {
             (
                 None,
                 CoordinatorToDeviceMessage::VerifyAddress {
-                    rootkey,
+                    master_appkey,
                     derivation_index,
                 },
             ) => {
-                let key_id = KeyId::from_rootkey(rootkey);
+                let key_id = master_appkey.key_id();
                 // check we actually know about this key
                 let _key_data = self
                     .keys
@@ -534,8 +534,6 @@ impl FrostSigner {
                         )
                     })?
                     .clone();
-
-                let master_appkey = MasterAppkey::derive_from_rootkey(rootkey);
 
                 let bip32_path = tweak::BitcoinBip32Path {
                     account_keychain: tweak::BitcoinAccountKeychain::external(),

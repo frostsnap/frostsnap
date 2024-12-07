@@ -879,22 +879,10 @@ impl FrostCoordinator {
         &self,
         access_structure_ref: AccessStructureRef,
         derivation_index: u32,
-        encryption_key: SymmetricKey,
+        master_appkey: MasterAppkey,
     ) -> Result<VerifyAddress, ActionError> {
-        let AccessStructureRef { key_id, .. } = access_structure_ref;
-
         let access_structure = self.get_access_structure(access_structure_ref).ok_or(
             ActionError::StateInconsistent("no such access_structure".into()),
-        )?;
-
-        let key_data = self
-            .keys
-            .get(&key_id)
-            .ok_or(ActionError::StateInconsistent("no such key".into()))?
-            .clone();
-
-        let rootkey = key_data.encrypted_rootkey.decrypt(encryption_key).ok_or(
-            ActionError::StateInconsistent("couldn't decrypt root key".into()),
         )?;
 
         // verify on any device that knows about this key
@@ -905,7 +893,7 @@ impl FrostCoordinator {
             .collect();
 
         Ok(VerifyAddress {
-            rootkey,
+            master_appkey,
             derivation_index,
             target_devices,
         })
@@ -1217,7 +1205,7 @@ pub struct AccessStructureRef {
 
 #[derive(Debug, Clone)]
 pub struct VerifyAddress {
-    pub rootkey: Point,
+    pub master_appkey: MasterAppkey,
     pub derivation_index: u32,
     pub target_devices: BTreeSet<DeviceId>,
 }
@@ -1229,7 +1217,7 @@ impl IntoIterator for VerifyAddress {
     fn into_iter(self) -> Self::IntoIter {
         core::iter::once(CoordinatorSend::ToDevice {
             message: CoordinatorToDeviceMessage::VerifyAddress {
-                rootkey: self.rootkey,
+                master_appkey: self.master_appkey,
                 derivation_index: self.derivation_index,
             },
             destinations: self.target_devices,

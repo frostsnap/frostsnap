@@ -2,8 +2,7 @@ use std::{borrow::BorrowMut, collections::BTreeSet};
 
 use frostsnap_comms::{CoordinatorSendBody, CoordinatorSendMessage, Destination};
 use frostsnap_core::{
-    coordinator::VerifyAddress, message::CoordinatorToDeviceMessage, schnorr_fun::fun::Point,
-    DeviceId,
+    coordinator::VerifyAddress, message::CoordinatorToDeviceMessage, DeviceId, MasterAppkey,
 };
 use tracing::{event, Level};
 
@@ -17,7 +16,7 @@ pub struct VerifyAddressProtocolState {
 
 pub struct VerifyAddressProtocol {
     state: VerifyAddressProtocolState,
-    rootkey: Point,
+    master_appkey: MasterAppkey,
     derivation_index: u32,
     is_complete: Option<Completion>,
     need_to_send_to: BTreeSet<DeviceId>,
@@ -34,7 +33,7 @@ impl VerifyAddressProtocol {
                 target_devices: verify_address_message.target_devices.into_iter().collect(),
                 sent_to_devices: Default::default(),
             },
-            rootkey: verify_address_message.rootkey,
+            master_appkey: verify_address_message.master_appkey,
             derivation_index: verify_address_message.derivation_index,
             is_complete: None,
             need_to_send_to: Default::default(),
@@ -96,7 +95,7 @@ impl UiProtocol for VerifyAddressProtocol {
                 &mut self.need_to_send_to,
             )),
             message_body: CoordinatorSendBody::Core(CoordinatorToDeviceMessage::VerifyAddress {
-                rootkey: self.rootkey,
+                master_appkey: self.master_appkey,
                 derivation_index: self.derivation_index,
             }),
         };

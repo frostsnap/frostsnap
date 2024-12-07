@@ -1041,10 +1041,11 @@ impl Coordinator {
         &self,
         access_structure_ref: AccessStructureRef,
         address_index: u32,
+        master_appkey: MasterAppkey,
         sink: StreamSink<VerifyAddressProtocolState>,
     ) -> Result<()> {
         self.0
-            .verify_address(access_structure_ref, address_index, sink, crate::TEMP_KEY)?;
+            .verify_address(access_structure_ref, address_index, sink, master_appkey)?;
         Ok(())
     }
 
