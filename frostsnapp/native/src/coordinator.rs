@@ -13,10 +13,12 @@ use frostsnap_coordinator::frostsnap_comms::{
 use frostsnap_coordinator::frostsnap_core::coordinator::{
     AccessStructureRef, CoordAccessStructure, CoordFrostKey,
 };
+use frostsnap_coordinator::frostsnap_core::device::KeyPurpose;
 use frostsnap_coordinator::frostsnap_core::message::CoordinatorSend;
-use frostsnap_coordinator::frostsnap_core::SymmetricKey;
+use frostsnap_coordinator::frostsnap_core::{MasterAppkey, SymmetricKey};
 use frostsnap_coordinator::frostsnap_persist::DeviceNames;
 use frostsnap_coordinator::persist::Persisted;
+use frostsnap_coordinator::verify_address::VerifyAddressProtocol;
 use frostsnap_coordinator::{
     check_share::CheckShareProtocol, display_backup::DisplayBackupProtocol,
 };
@@ -371,6 +373,7 @@ impl FfiCoordinator {
         devices: BTreeSet<DeviceId>,
         threshold: u16,
         key_name: String,
+        is_mainnet_key: bool,
         sink: StreamSink<frostsnap_coordinator::keygen::KeyGenState>,
     ) -> anyhow::Result<()> {
         let currently_connected = api::device_list_state()
@@ -379,6 +382,12 @@ impl FfiCoordinator {
             .into_iter()
             .map(|device| device.id)
             .collect();
+
+        let key_purpose = if is_mainnet_key {
+            KeyPurpose::Bitcoin(frostsnap_core::device::BitcoinNetworkKind::Main)
+        } else {
+            KeyPurpose::Bitcoin(frostsnap_core::device::BitcoinNetworkKind::Test)
+        };
         let ui_protocol = frostsnap_coordinator::keygen::KeyGen::new(
             SinkWrap(sink),
             self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
@@ -386,6 +395,7 @@ impl FfiCoordinator {
             currently_connected,
             threshold,
             key_name,
+            key_purpose,
             &mut rand::thread_rng(),
         );
 
@@ -431,20 +441,18 @@ impl FfiCoordinator {
         encryption_key: SymmetricKey,
     ) -> anyhow::Result<()> {
         let mut coordinator = self.coordinator.lock().unwrap();
-        let mut messages =
-            coordinator.staged_mutate(&mut self.db.lock().unwrap(), |coordinator| {
-                Ok(coordinator.start_sign(
-                    access_structure_ref,
-                    task,
-                    devices.clone(),
-                    encryption_key,
-                )?)
-            })?;
-        let mut ui_protocol =
-            frostsnap_coordinator::signing::SigningDispatcher::from_filter_out_start_sign(
-                &mut messages,
-                SinkWrap(sink),
-            );
+        let messages = coordinator.staged_mutate(&mut self.db.lock().unwrap(), |coordinator| {
+            Ok(coordinator.start_sign(
+                access_structure_ref,
+                task,
+                devices.clone(),
+                encryption_key,
+            )?)
+        })?;
+        let mut ui_protocol = frostsnap_coordinator::signing::SigningDispatcher::new(
+            messages.clone(),
+            SinkWrap(sink),
+        );
 
         self.pending_for_outbox.lock().unwrap().extend(messages);
         ui_protocol.emit_state();
@@ -710,6 +718,32 @@ impl FfiCoordinator {
             .unwrap()
             .get_frost_key(key_id)
             .cloned()
+    }
+
+    pub fn verify_address(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        address_index: u32,
+        stream: StreamSink<api::VerifyAddressProtocolState>,
+        master_appkey: MasterAppkey,
+    ) -> anyhow::Result<()> {
+        let coordinator = self.coordinator.lock().unwrap();
+
+        let verify_address_messages =
+            coordinator.verify_address(access_structure_ref, address_index, master_appkey)?;
+
+        let ui_protocol =
+            VerifyAddressProtocol::new(verify_address_messages.clone(), SinkWrap(stream));
+
+        self.pending_for_outbox
+            .lock()
+            .unwrap()
+            .extend(verify_address_messages);
+
+        ui_protocol.emit_state();
+        self.start_protocol(ui_protocol);
+
+        Ok(())
     }
 }
 

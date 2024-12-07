@@ -402,6 +402,11 @@ where
             Workflow::EnteringBackup(..) => {
                 // this is drawn during poll
             }
+            Workflow::DisplayAddress {
+                address,
+                rand_seed,
+                bip32_path,
+            } => self.display.show_address(address, bip32_path, *rand_seed),
         }
 
         if let Some(upstream_connection) = self.upstream_connection_state {

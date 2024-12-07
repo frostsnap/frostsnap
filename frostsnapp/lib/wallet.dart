@@ -11,6 +11,7 @@ import 'package:frostsnapp/sign_message.dart';
 import 'package:frostsnapp/snackbar.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/theme.dart';
+import 'package:frostsnapp/address.dart';
 
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
@@ -154,6 +155,16 @@ class _WalletHomeState extends State<WalletHome> {
       ),
     );
   }
+}
+
+void copyToClipboard(BuildContext context, String copyText) {
+  Clipboard.setData(ClipboardData(text: copyText)).then((_) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Copied to clipboard!')),
+      );
+    }
+  });
 }
 
 class WalletActivity extends StatelessWidget {
@@ -360,15 +371,29 @@ class _WalletReceiveState extends State<WalletReceive> {
         widget.wallet.addressesState(masterAppkey: widget.masterAppkey);
   }
 
-  void _addAddress() async {
-    Address newAddress =
+  Future<Address> _addAddress(BuildContext context) async {
+    final nextAddressInfo =
         await widget.wallet.nextAddress(masterAppkey: widget.masterAppkey);
-    _addresses.insert(0, newAddress);
-    _listKey.currentState?.insertItem(0);
+    final Address newAddress = nextAddressInfo;
+
+    if (context.mounted) {
+      if (context.mounted) {
+        setState(() {
+          _addresses.insert(0, newAddress);
+          _listKey.currentState?.insertItem(0);
+        });
+      }
+    }
+    return nextAddressInfo;
   }
 
   @override
   Widget build(BuildContext context) {
+    final walletCtx = WalletContext.of(context)!;
+    final frostKey = coord.getFrostKey(keyId: walletCtx.keyId)!;
+    final accessStructureRef =
+        frostKey.accessStructures()[0].accessStructureRef();
+
     return Scaffold(
         body: Padding(
       padding: const EdgeInsets.all(10.0),
@@ -376,7 +401,25 @@ class _WalletReceiveState extends State<WalletReceive> {
         Padding(
           padding: const EdgeInsets.all(10.0),
           child: ElevatedButton(
-            onPressed: _addAddress,
+            onPressed: () async {
+              final address = await _addAddress(context);
+              if (context.mounted) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => WalletContext(
+                      wallet: walletCtx.wallet,
+                      masterAppkey: walletCtx.masterAppkey,
+                      child: AddressPage(
+                        masterAppkey: walletCtx.masterAppkey,
+                        address: address,
+                        accessStructureRef: accessStructureRef,
+                      ),
+                    ),
+                  ),
+                );
+              }
+            },
             child: Text('Get New Address'),
           ),
         ),
@@ -385,7 +428,7 @@ class _WalletReceiveState extends State<WalletReceive> {
             key: _listKey,
             initialItemCount: _addresses.length,
             itemBuilder: (context, index, animation) {
-              return _buildAddressItem(_addresses[index], animation);
+              return _buildAddressItem(context, _addresses[index], animation);
             },
           ),
         ),
@@ -393,7 +436,13 @@ class _WalletReceiveState extends State<WalletReceive> {
     ));
   }
 
-  Widget _buildAddressItem(Address address, Animation<double> animation) {
+  Widget _buildAddressItem(
+      BuildContext context, Address address, Animation<double> animation) {
+    final walletCtx = WalletContext.of(context)!;
+    final frostKey = coord.getFrostKey(keyId: walletCtx.keyId)!;
+    final accessStructureRef =
+        frostKey.accessStructures()[0].accessStructureRef();
+
     return SizeTransition(
       sizeFactor: animation,
       child: Padding(
@@ -410,14 +459,37 @@ class _WalletReceiveState extends State<WalletReceive> {
                 fontFamily: 'Courier',
               ),
             ),
-            trailing: IconButton(
-              icon: Icon(Icons.copy),
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: address.addressString));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Address copied to clipboard')),
-                );
-              },
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: Icon(Icons.policy),
+                  onPressed: () async {
+                    Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => WalletContext(
+                            wallet: widget.wallet,
+                            masterAppkey: widget.masterAppkey,
+                            child: AddressPage(
+                              masterAppkey: widget.masterAppkey,
+                              address: address,
+                              accessStructureRef: accessStructureRef,
+                            ),
+                          ),
+                        ));
+                  },
+                ),
+                IconButton(
+                  icon: Icon(Icons.copy),
+                  onPressed: () async {
+                    Clipboard.setData(
+                        ClipboardData(text: address.addressString));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Address copied to clipboard')));
+                  },
+                ),
+              ],
             ),
           ),
         ),
@@ -447,7 +519,7 @@ class _WalletSendState extends State<WalletSend> {
   Set<DeviceId> selectedDevices = deviceIdSet([]);
 
   void _updateETA() {
-    // TODO: get ETA
+    // todo: get ETA
     setState(() {
       if (_feerate < 5.0) {
         _eta = "2 hrs";

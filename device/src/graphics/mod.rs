@@ -5,6 +5,7 @@ use crate::alloc::string::ToString;
 use crate::{DownstreamConnectionState, UpstreamConnectionState};
 use alloc::boxed::Box;
 use alloc::string::String;
+use alloc::vec::Vec;
 use embedded_graphics::framebuffer::{buffer_size, Framebuffer};
 use embedded_graphics::pixelcolor::raw::{LittleEndian, RawU16};
 use embedded_graphics::{
@@ -267,17 +268,7 @@ where
         let vertical_spacing = 35;
         let horizontal_spacing = 80; // Separate variable for horizontal spacing
         let (hrp, backup_chars) = str.split_at(str.find(']').expect("backup has a hrp") + 1);
-        let chunked_backup = backup_chars[1..] // skip 1
-            .chars()
-            .fold(vec![String::new()], |mut chunk_vec, char| {
-                if chunk_vec.last().unwrap().len() < 4 {
-                    let last = chunk_vec.last_mut().unwrap();
-                    last.push(char);
-                } else {
-                    chunk_vec.push(char.to_string());
-                }
-                chunk_vec
-            });
+        let chunked_backup = chunk_string(backup_chars[1..].to_string(), 4); // skip 1
 
         if show_hint {
             Text::with_alignment(
@@ -449,6 +440,73 @@ where
         .draw(&mut body)
         .unwrap();
     }
+
+    pub fn show_address(&mut self, address: &str, derivation_path: &str, rand_seed: u32) {
+        let mut body = self.body();
+        let mut y_offset = 15;
+        let mut x_offset = 0;
+        let vertical_spacing = 35_i32;
+
+        let chunked_address = chunk_string(address.to_string(), 4);
+        let available_chunks = chunked_address.len() - 2; // exclude first and last
+
+        let highlight_index1 = (rand_seed as usize % available_chunks) + 1;
+        let highlight_index2 = ((rand_seed.rotate_right(16)) as usize % available_chunks) + 1;
+
+        // if we happened to get the same index, shift the second one
+        let highlight_index2 = if highlight_index2 == highlight_index1 {
+            (highlight_index2 + 1) % available_chunks + 1
+        } else {
+            highlight_index2
+        };
+
+        let mut i = 0;
+        for row_chunks in chunked_address.chunks(3) {
+            for item in row_chunks {
+                let text_color = if i == highlight_index1 || i == highlight_index2 {
+                    COLORS.info
+                } else {
+                    COLORS.primary
+                };
+
+                // centre align last one
+                if item == chunked_address.last().unwrap() {
+                    Text::with_alignment(
+                        item,
+                        Point::new((body.size().width / 2) as i32, y_offset),
+                        U8g2TextStyle::new(FONT_LARGE, text_color),
+                        Alignment::Center,
+                    )
+                    .draw(&mut body)
+                    .unwrap();
+                } else {
+                    Text::new(
+                        item,
+                        Point::new(x_offset, y_offset),
+                        U8g2TextStyle::new(FONT_LARGE, text_color),
+                        // Alignment::Center,
+                    )
+                    .draw(&mut body)
+                    .unwrap();
+                }
+
+                x_offset += 80;
+                i += 1;
+            }
+            y_offset += vertical_spacing;
+            x_offset = 5;
+        }
+
+        y_offset += 5;
+        Text::with_alignment(
+            derivation_path,
+            Point::new((body.size().width / 2) as i32, y_offset),
+            U8g2TextStyle::new(FONT_SMALL, COLORS.secondary),
+            Alignment::Center,
+        )
+        .draw(&mut body)
+        .unwrap();
+    }
 }
 
 pub fn error_print<DT>(display: &mut DT, error: impl AsRef<str>)
@@ -505,4 +563,17 @@ where
         TEXTBOX_STYLE,
     )
     .draw(display);
+}
+
+fn chunk_string(str: String, chunk_size: usize) -> Vec<String> {
+    str.chars()
+        .fold(vec![String::new()], |mut chunk_vec, char| {
+            if chunk_vec.last().unwrap().len() < chunk_size {
+                let last = chunk_vec.last_mut().unwrap();
+                last.push(char);
+            } else {
+                chunk_vec.push(char.to_string());
+            }
+            chunk_vec
+        })
 }

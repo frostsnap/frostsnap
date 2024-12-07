@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:frostsnapp/address.dart';
 import 'package:frostsnapp/electrum_server_settings.dart';
 import 'package:frostsnapp/logs.dart';
 import 'package:frostsnapp/main.dart';
@@ -86,6 +87,14 @@ class SettingsPage extends StatelessWidget {
                                     .descriptorForKey(
                                         masterAppkey:
                                             walletContext!.masterAppkey));
+                          }),
+                      SettingsItem(
+                          title: 'Check address',
+                          icon: Icons.policy,
+                          bodyBuilder: (context) {
+                            return CheckAddressPage(
+                              walletContext: walletContext!,
+                            );
                           }),
                     ]),
                   SettingsCategory(

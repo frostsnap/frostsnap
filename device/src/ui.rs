@@ -40,6 +40,7 @@ pub trait UserInteraction {
             Workflow::NamingDevice { .. }
             | Workflow::DisplayBackup { .. }
             | Workflow::UserPrompt { .. }
+            | Workflow::DisplayAddress { .. }
             | Workflow::BusyDoing(_)
             | Workflow::EnteringBackup { .. }
             | Workflow::WaitingFor(_) => Workflow::WaitingFor(WaitingFor::CoordinatorInstruction {
@@ -89,6 +90,11 @@ pub enum Workflow {
         backup: String,
     },
     EnteringBackup(EnteringBackupStage),
+    DisplayAddress {
+        address: String,
+        bip32_path: String,
+        rand_seed: u32,
+    },
 }
 
 impl Workflow {

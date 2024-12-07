@@ -22,6 +22,8 @@ pub use frostsnap_coordinator::bitcoin::{
 pub use frostsnap_coordinator::firmware_upgrade::FirmwareUpgradeConfirmState;
 pub use frostsnap_coordinator::frostsnap_core;
 use frostsnap_coordinator::frostsnap_core::coordinator::CoordFrostKey;
+use frostsnap_coordinator::frostsnap_core::tweak;
+pub use frostsnap_coordinator::verify_address::VerifyAddressProtocolState;
 pub use frostsnap_coordinator::{
     check_share::CheckShareState, keygen::KeyGenState, persist::Persisted, signing::SigningState,
     DeviceChange, PortDesc, Settings as RSettings,
@@ -605,6 +607,25 @@ impl Wallet {
         )
     }
 
+    pub fn search_for_address(
+        &self,
+        master_appkey: MasterAppkey,
+        address_str: String,
+        start: u32,
+        stop: u32,
+    ) -> Option<Address> {
+        self.inner
+            .lock()
+            .unwrap()
+            .search_for_address(master_appkey, address_str, start, stop)
+            .map(|address_info| Address {
+                index: address_info.clone().index,
+                address_string: address_info.address.to_string(),
+                used: address_info.used,
+                external: address_info.external,
+            })
+    }
+
     pub fn send_to(
         &self,
         master_appkey: MasterAppkey,
@@ -673,6 +694,26 @@ impl Wallet {
         Ok(SyncReturn(UnsignedTx {
             template_tx: RustOpaque::new(template),
         }))
+    }
+
+    pub fn derivation_path_for_address(&self, index: u32, external: bool) -> SyncReturn<String> {
+        let account_keychain = if external {
+            tweak::BitcoinAccountKeychain::external()
+        } else {
+            tweak::BitcoinAccountKeychain::internal()
+        };
+        let bip32_path = tweak::BitcoinBip32Path {
+            account_keychain,
+            index,
+        };
+
+        SyncReturn(
+            bip32_path
+                .path_segments_from_bitcoin_appkey()
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join("/"),
+        )
     }
 }
 
@@ -953,12 +994,14 @@ impl Coordinator {
         threshold: u16,
         devices: Vec<DeviceId>,
         key_name: String,
+        is_mainnet_key: bool,
         event_stream: StreamSink<KeyGenState>,
     ) -> anyhow::Result<()> {
         self.0.generate_new_key(
             devices.into_iter().collect(),
             threshold,
             key_name,
+            is_mainnet_key,
             event_stream,
         )
     }
@@ -992,6 +1035,18 @@ impl Coordinator {
                 .upgrade_firmware_digest()
                 .map(|digest| digest.to_string()),
         )
+    }
+
+    pub fn verify_address(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        address_index: u32,
+        master_appkey: MasterAppkey,
+        sink: StreamSink<VerifyAddressProtocolState>,
+    ) -> Result<()> {
+        self.0
+            .verify_address(access_structure_ref, address_index, sink, master_appkey)?;
+        Ok(())
     }
 
     pub fn cancel_protocol(&self) {
@@ -1148,6 +1203,7 @@ pub struct Address {
     pub index: u32,
     pub address_string: String,
     pub used: bool,
+    pub external: bool,
 }
 
 impl From<frostsnap_coordinator::bitcoin::wallet::AddressInfo> for Address {
@@ -1156,6 +1212,7 @@ impl From<frostsnap_coordinator::bitcoin::wallet::AddressInfo> for Address {
             index: value.index,
             address_string: value.address.to_string(),
             used: value.used,
+            external: value.external,
         }
     }
 }
@@ -1557,6 +1614,12 @@ pub enum _ChainStatusState {
     Syncing,
     Disconnected,
     Connecting,
+}
+
+#[frb(mirror(VerifyAddressProtocolState))]
+pub struct _VerifyAddressProtocolState {
+    pub target_devices: Vec<DeviceId>,
+    pub sent_to_devices: Vec<DeviceId>,
 }
 
 // XXX: bugs in flutter_rust_bridge mean that sometimes the right code doesn't get emitted unless
