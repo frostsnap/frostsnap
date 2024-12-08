@@ -228,7 +228,25 @@ class RecoveringKeyCard extends StatelessWidget {
                                 .bodySmall!
                                 .copyWith(fontStyle: FontStyle.italic)),
                         SizedBox(height: 10),
-                        AnimatedCustomProgressIndicator(progress: n, total: t),
+                        Row(children: [
+                          Expanded(
+                              child: AnimatedCustomProgressIndicator(
+                                  progress: n, total: t)),
+                          IconButton(
+                              onPressed: () {
+                                Navigator.push(context,
+                                    MaterialPageRoute(builder: (context) {
+                                  return KeyContext(
+                                      keyId: keyId!,
+                                      child: Scaffold(
+                                        body: DeleteWalletPage(),
+                                        appBar: AppBar(
+                                            title: Text("Cancel recovery")),
+                                      ));
+                                }));
+                              },
+                              icon: Icon(Icons.cancel))
+                        ]),
                         SizedBox(height: 10),
                         Row(
                             mainAxisAlignment: MainAxisAlignment.end,
