@@ -573,20 +573,28 @@ class DeleteWalletPage extends StatelessWidget {
             DefaultTextStyle(
                 textAlign: TextAlign.left,
                 style: Theme.of(context).textTheme.bodyLarge!,
-                child: BulletList(const [
-                  Text('This only deletes the wallet from this app.',
+                child: BulletList([
+                  walletCtx != null
+                      ? Text('This only deletes the wallet from this app.',
+                          softWrap: true)
+                      : Text('All recovery progress in this app will be lost'),
+                  Text('No secret keys will be deleted from devices',
                       softWrap: true),
                   Text(
-                      'It does not delete any secret keys. The keys will remaing on the signing devices.',
-                      softWrap: true),
-                  Text(
-                      'The wallet will be recoverable from the signing devices and/or backups',
+                      'The wallet will still be recoverable from the signing devices and/or backups',
                       softWrap: true),
                 ])),
             SizedBox(height: 24),
             // Hold-to-Delete Button
             Center(
               child: HoldToDeleteButton(
+                buttonText: Text(
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                    softWrap: true,
+                    textAlign: TextAlign.center,
+                    walletCtx != null
+                        ? "Hold to Delete"
+                        : "Hold to Cancel Recovery"),
                 onComplete: () async {
                   await coord.deleteKey(keyId: keyId);
                   if (context.mounted) {
@@ -619,8 +627,12 @@ class DeleteWalletPage extends StatelessWidget {
 
 class HoldToDeleteButton extends StatefulWidget {
   final VoidCallback onComplete;
+  final Widget buttonText;
 
-  const HoldToDeleteButton({super.key, required this.onComplete});
+  const HoldToDeleteButton(
+      {super.key,
+      required this.onComplete,
+      this.buttonText = const Text("Hold to Delete")});
 
   @override
   State<HoldToDeleteButton> createState() => _HoldToDeleteButtonState();
@@ -702,10 +714,7 @@ class _HoldToDeleteButtonState extends State<HoldToDeleteButton> {
                 valueColor: AlwaysStoppedAnimation<Color>(Colors.red),
               ),
             ),
-            Text(
-              'Hold to Delete',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
+            widget.buttonText,
           ],
         ),
       ),
