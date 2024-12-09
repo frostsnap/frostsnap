@@ -7,7 +7,7 @@ import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/image_converter.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/snackbar.dart';
-import 'package:frostsnapp/theme.dart';
+import 'package:frostsnapp/progress_indicator.dart';
 
 class PsbtCameraReader extends StatefulWidget {
   const PsbtCameraReader({required this.cameras, super.key});
@@ -99,18 +99,14 @@ class _PsbtCameraReaderState extends State<PsbtCameraReader> {
             children: [
               CameraPreview(controller),
               Padding(
-                  padding: EdgeInsets.all(4.0),
-                  child: LinearProgressIndicator(
-                    value: progress,
-                    backgroundColor: backgroundSecondaryColor,
-                    valueColor: AlwaysStoppedAnimation<Color>(awaitingColor),
-                    minHeight: 8,
-                  )),
+                padding: EdgeInsets.all(4.0),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 8,
+                ),
+              ),
               SizedBox(height: 8),
-              Text(
-                "${(progress * 100).round()}%",
-                style: TextStyle(fontSize: 24),
-              )
+              Text("${(progress * 100).round()}%")
             ],
           ),
         ));

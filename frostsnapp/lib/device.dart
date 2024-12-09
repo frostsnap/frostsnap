@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:frostsnapp/theme.dart';
 
 class DeviceWidget extends StatelessWidget {
   final Widget child;
@@ -39,10 +38,7 @@ class DeviceWidget extends StatelessWidget {
             Padding(
               padding: EdgeInsets.symmetric(
                   vertical: 10 * scale, horizontal: 12 * scale),
-              child: DefaultTextStyle(
-                style: TextStyle(color: textColor, fontSize: 18.0),
-                child: child,
-              ),
+              child: child,
             ),
           ],
         ));
@@ -71,7 +67,6 @@ class ConfirmPrompt extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DevicePrompt(
-        icon: Icon(Icons.touch_app, color: textColor), text: "Confirm");
+    return DevicePrompt(icon: Icon(Icons.touch_app), text: "Confirm");
   }
 }
