@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/icons.dart';
 import 'package:frostsnapp/psbt.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/sign_message.dart';
@@ -18,6 +18,7 @@ import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 class WalletContext extends InheritedWidget {
   final Wallet wallet;
   final MasterAppkey masterAppkey;
+  final String walletName;
   late final KeyId keyId;
   late final Stream<TxState> txStream;
   // We have a contextual Stream of syncing events (each syncing event is
@@ -28,6 +29,7 @@ class WalletContext extends InheritedWidget {
     super.key,
     required this.wallet,
     required this.masterAppkey,
+    required this.walletName,
     required Widget child,
   }) : super(child: child) {
     keyId = api.masterAppkeyExtToKeyId(masterAppkey: masterAppkey);
@@ -63,14 +65,21 @@ class WalletContext extends InheritedWidget {
 class WalletPage extends StatelessWidget {
   final Wallet wallet;
   final MasterAppkey masterAppkey;
+  final String walletName;
 
   const WalletPage(
-      {super.key, required this.wallet, required this.masterAppkey});
+      {super.key,
+      required this.wallet,
+      required this.masterAppkey,
+      required this.walletName});
 
   @override
   Widget build(BuildContext context) {
     return WalletContext(
-        wallet: wallet, masterAppkey: masterAppkey, child: WalletHome());
+        wallet: wallet,
+        masterAppkey: masterAppkey,
+        walletName: walletName,
+        child: WalletHome());
   }
 }
 
@@ -89,6 +98,11 @@ class _WalletHomeState extends State<WalletHome> {
     super.initState();
   }
 
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
   // The widget options to display based on the selected index
   // A method that returns the correct widget based on the selected index
   Widget _getSelectedWidget() {
@@ -96,7 +110,7 @@ class _WalletHomeState extends State<WalletHome> {
     switch (_selectedIndex) {
       case 0:
         // Pass any required parameters to the WalletActivity widget
-        return WalletActivity();
+        return TxList();
       case 1:
         // Placeholder for the Send page
         return WalletSend(onBroadcastNewTx: () {
@@ -112,28 +126,31 @@ class _WalletHomeState extends State<WalletHome> {
     }
   }
 
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
+    final walletCtx = WalletContext.of(context)!;
+    final theme = Theme.of(context);
+
     return Scaffold(
-      appBar: FsAppBar(title: Text('Bitcoin Wallet')),
-      body: Center(
-          // Display the widget based on the current index
-          child: _getSelectedWidget()),
-      bottomNavigationBar: BottomNavigationBar(
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(icon: Icon(Icons.list), label: 'Activity'),
-          BottomNavigationBarItem(icon: Icon(Icons.send), label: 'Send'),
-          BottomNavigationBarItem(
+      extendBody: true,
+      backgroundColor: theme.colorScheme.secondary,
+      appBar: FsAppBar(
+        title: Text(walletCtx.walletName),
+        backgroundColor: theme.colorScheme.surface,
+      ),
+      body: SafeArea(bottom: true, child: _getSelectedWidget()),
+      resizeToAvoidBottomInset: true,
+      bottomNavigationBar: NavigationBar(
+        indicatorColor: theme.colorScheme.primary,
+        onDestinationSelected: (int index) =>
+            setState(() => _selectedIndex = index),
+        selectedIndex: _selectedIndex,
+        destinations: const <Widget>[
+          NavigationDestination(icon: Icon(Icons.list), label: 'Activity'),
+          NavigationDestination(icon: Icon(Icons.send), label: 'Send'),
+          NavigationDestination(
               icon: Icon(Icons.account_balance_wallet), label: 'Receive'),
         ],
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
       ),
     );
   }
@@ -147,18 +164,6 @@ void copyToClipboard(BuildContext context, String copyText) {
       );
     }
   });
-}
-
-class WalletActivity extends StatelessWidget {
-  const WalletActivity({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Column(
-          children: const [UpdatingBalance(), Expanded(child: TxList())]),
-    );
-  }
 }
 
 class FloatingProgress extends StatefulWidget {
@@ -212,10 +217,197 @@ class _FloatingProgress extends State<FloatingProgress>
           child: LinearProgressIndicator(
             value: progress,
             backgroundColor: backgroundSecondaryColor,
-            valueColor: AlwaysStoppedAnimation<Color>(textColor),
+            valueColor: AlwaysStoppedAnimation<Color>(textPrimaryColor),
           ),
         ),
       ),
+    );
+  }
+}
+
+class TxItem extends StatelessWidget {
+  final Transaction transaction;
+  static const Map<int, String> monthMap = {
+    1: 'Jan',
+    2: 'Feb',
+    3: 'Mar',
+    4: 'Apr',
+    5: 'May',
+    6: 'Jun',
+    7: 'Jul',
+    8: 'Aug',
+    9: 'Sep',
+    10: 'Oct',
+    11: 'Nov',
+    12: 'Dec',
+  };
+
+  const TxItem({super.key, required this.transaction});
+
+  @override
+  Widget build(BuildContext context) {
+    final walletContext = WalletContext.of(context)!;
+
+    final theme = Theme.of(context);
+    final txid = transaction.txid();
+    final txidText =
+        '${txid.substring(0, 6)}...${txid.substring(txid.length - 6, txid.length)}';
+
+    final blockHeight = walletContext.wallet.height();
+    final blockCount = blockHeight + 1;
+    final timestamp = transaction.timestamp();
+
+    final confirmations =
+        blockCount - (transaction.confirmationTime?.height ?? blockCount);
+
+    final dateTime = (timestamp != null)
+        ? DateTime.fromMillisecondsSinceEpoch(timestamp * 1000)
+        : DateTime.now();
+    final dayText = dateTime.day.toString();
+    final monthText = monthMap[dateTime.month]!;
+    final yearText = dateTime.year.toString();
+    final hourText = dateTime.hour.toString().padLeft(2, '0');
+    final minuteText = dateTime.minute.toString().padLeft(2, '0');
+    final dateText = '$monthText $dayText, $yearText';
+    final timeText = (timestamp != null) ? '$hourText:$minuteText' : '??:??';
+
+    final Widget icon = Icon(
+      transaction.netValue > 0 ? Icons.south_east : Icons.north_east,
+      color: (confirmations == 0)
+          ? Colors.white38
+          : transaction.netValue > 0
+              ? theme.colorScheme.primary
+              : theme.colorScheme.error,
+    );
+
+    final tile = Padding(
+        padding: EdgeInsets.symmetric(vertical: 4.0, horizontal: 24.0),
+        child: Row(
+          mainAxisSize: MainAxisSize.max,
+          spacing: 8.0,
+          children: [
+            icon,
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 12.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  mainAxisSize: MainAxisSize.max,
+                  spacing: 4.0,
+                  children: [
+                    Text(
+                      dateText,
+                      softWrap: false,
+                      overflow: TextOverflow.fade,
+                      style: theme.textTheme.titleMedium,
+                    ),
+                    Text(
+                      timeText,
+                      softWrap: false,
+                      overflow: TextOverflow.fade,
+                      style: theme.textTheme.titleSmall
+                          ?.copyWith(color: Colors.white38),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 12.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  mainAxisSize: MainAxisSize.max,
+                  spacing: 4.0,
+                  children: [
+                    SatoshiText(
+                        value: transaction.netValue,
+                        showSign: true,
+                        style: theme.textTheme.titleMedium),
+                    Text(
+                      txidText,
+                      softWrap: false,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.sourceCodePro(
+                          textStyle: theme.textTheme.titleSmall
+                              ?.copyWith(color: Colors.white38)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ));
+
+    rebroadcastAction(BuildContext context) {
+      walletContext.wallet.rebroadcast(txid: txid);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Transaction rebroadcasted'),
+        ),
+      );
+    }
+
+    copyAction(BuildContext context) {
+      Clipboard.setData(ClipboardData(text: transaction.txid()));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Transaction ID copied to clipboard'),
+        ),
+      );
+    }
+
+    final screenWidth = MediaQuery.of(context).size.width;
+
+    return MenuAnchor(
+      alignmentOffset: const Offset(32.0, -8.0),
+      menuChildren: [
+        MenuItemButton(
+          onPressed: () => copyAction(context),
+          leadingIcon: const Icon(Icons.copy),
+          child: SizedBox(
+            width: screenWidth * 2 / 3,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              spacing: 4.0,
+              children: [
+                Text('Copy Transaction ID'),
+                Text(
+                  txid,
+                  softWrap: true,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.sourceCodePro(
+                      textStyle: theme.textTheme.titleSmall
+                          ?.copyWith(color: Colors.white38)),
+                )
+              ],
+            ),
+          ),
+        ),
+        (transaction.confirmationTime == null)
+            ? MenuItemButton(
+                onPressed: () => rebroadcastAction(context),
+                leadingIcon: const Icon(Icons.publish),
+                child: const Text('Rebroadcast'),
+              )
+            : SizedBox.shrink(),
+      ],
+      builder: (_, MenuController controller, Widget? child) {
+        return InkWell(
+          //focusNode: _inkWellFocusNode,
+          onLongPress: () {
+            if (controller.isOpen) {
+              controller.close();
+            } else {
+              controller.open();
+            }
+          },
+          child: tile,
+        );
+      },
     );
   }
 }
@@ -226,79 +418,56 @@ class TxList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final walletContext = WalletContext.of(context)!;
-    return StreamBuilder<TxState>(
-      stream: walletContext.txStream,
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return Center(child: FsProgressIndicator());
-        }
-        final transactions = snapshot.data!.txs;
-        return ListView.builder(
-          itemCount: transactions.length,
-          itemBuilder: (context, index) {
-            final transaction = transactions[index];
-            final txid = transaction.txid();
-            String confirmationText;
 
-            if (transaction.confirmationTime != null) {
-              DateTime confirmationDateTime =
-                  DateTime.fromMillisecondsSinceEpoch(
-                      transaction.confirmationTime!.time * 1000);
-              String formattedTime =
-                  '${confirmationDateTime.year}-${confirmationDateTime.month.toString().padLeft(2, '0')}-${confirmationDateTime.day.toString().padLeft(2, '0')} ${confirmationDateTime.hour.toString().padLeft(2, '0')}:${confirmationDateTime.minute.toString().padLeft(2, '0')}';
-              confirmationText =
-                  'Confirmation: ${transaction.confirmationTime!.height} ($formattedTime)';
-            } else {
-              confirmationText = 'Unconfirmed';
-            }
-
-            return Card(
-              child: ListTile(
-                leading: Icon(
-                  transaction.netValue > 0
-                      ? Icons.arrow_downward
-                      : Icons.arrow_upward,
-                  color: transaction.netValue > 0 ? successColor : errorColor,
-                ),
-                title: Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: NetValue(transaction.netValue),
-                    ),
-                    if (transaction.confirmationTime == null)
-                      SpinningSyncButton(onPressed: () async {
-                        await walletContext.wallet.rebroadcast(txid: txid);
-                      }),
-                    IconButton(
-                      icon: Icon(Icons.copy),
-                      onPressed: () {
-                        Clipboard.setData(
-                            ClipboardData(text: transaction.txid()));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Transaction ID copied to clipboard'),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text('ID: ${transaction.txid()}'),
-                    Text(
-                      confirmationText,
-                      style: TextStyle(fontSize: 12),
-                    ),
-                  ],
+    return CustomScrollView(slivers: <Widget>[
+      SliverToBoxAdapter(
+        child: Column(
+          children: [
+            Container(
+              color: Theme.of(context).colorScheme.surface,
+              child: StreamBuilder(
+                stream: walletContext.txStream,
+                builder: (context, snapshot) => UpdatingBalance(),
+              ),
+              //child: UpdatingBalance(),
+            ),
+            Container(
+              width: double.infinity,
+              height: 16.0,
+              color: Theme.of(context).colorScheme.surface,
+              foregroundDecoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.secondary,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
                 ),
               ),
-            );
-          },
-        );
-      },
-    );
+            ),
+            //Padding(
+            //  padding:
+            //      const EdgeInsets.symmetric(horizontal: 24.0, vertical: 4.0)
+            //          .copyWith(top: 8.0),
+            //  child: Row(
+            //    children: const [Expanded(child: Text('Transactions'))],
+            //  ),
+            //),
+          ],
+        ),
+      ),
+      StreamBuilder(
+        stream: walletContext.txStream,
+        builder: (context, snapshot) {
+          final transactions = snapshot.data?.txs ?? [];
+
+          return SliverList.builder(
+            itemCount: transactions.length,
+            itemBuilder: (context, index) =>
+                TxItem(transaction: transactions[index]),
+            //separatorBuilder: (BuildContext _, int index) => const Divider(),
+          );
+        },
+      ),
+    ]);
   }
 }
 
@@ -347,8 +516,7 @@ class _WalletReceiveState extends State<WalletReceive> {
     final accessStructureRef =
         frostKey.accessStructures()[0].accessStructureRef();
 
-    return Scaffold(
-        body: Padding(
+    return Padding(
       padding: const EdgeInsets.all(10.0),
       child: Column(children: [
         Padding(
@@ -363,6 +531,7 @@ class _WalletReceiveState extends State<WalletReceive> {
                     builder: (context) => WalletContext(
                       wallet: walletCtx.wallet,
                       masterAppkey: walletCtx.masterAppkey,
+                      walletName: walletCtx.walletName,
                       child: AddressPage(
                         masterAppkey: walletCtx.masterAppkey,
                         address: address,
@@ -386,7 +555,7 @@ class _WalletReceiveState extends State<WalletReceive> {
           ),
         ),
       ]),
-    ));
+    );
   }
 
   Widget _buildAddressItem(
@@ -408,9 +577,7 @@ class _WalletReceiveState extends State<WalletReceive> {
                 : backgroundTertiaryColor, // This changes the background color of the ListTile
             title: Text(
               '${address.index}: ${address.addressString}',
-              style: TextStyle(
-                fontFamily: 'Courier',
-              ),
+              style: GoogleFonts.sourceCodePro(),
             ),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
@@ -423,6 +590,7 @@ class _WalletReceiveState extends State<WalletReceive> {
                         MaterialPageRoute(
                           builder: (context) => WalletContext(
                             wallet: widget.wallet,
+                            walletName: walletCtx.walletName,
                             masterAppkey: widget.masterAppkey,
                             child: AddressPage(
                               masterAppkey: widget.masterAppkey,
@@ -505,17 +673,35 @@ class _WalletSendState extends State<WalletSend> {
           "Load PSBT",
         ));
 
-    return Scaffold(
-      body: Container(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(children: [
-            Expanded(
-                child: Form(
+    return CustomScrollView(
+      slivers: <Widget>[
+        SliverToBoxAdapter(
+          child: Container(
+            color: Theme.of(context).colorScheme.surface,
+            child: UpdatingBalance(),
+          ),
+        ),
+        SliverPadding(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 24.0).copyWith(top: 24.0),
+          sliver: SliverToBoxAdapter(
+            child: Row(
+              mainAxisSize: MainAxisSize.max,
+              children: const [
+                Expanded(child: Text('Create Transaction')),
+              ],
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+          sliver: SliverToBoxAdapter(
+              child: Column(children: [
+            Form(
               key: _formKey,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  UpdatingBalance(),
                   TextFormField(
                     decoration: InputDecoration(labelText: 'Address'),
                     validator: (value) {
@@ -615,10 +801,12 @@ class _WalletSendState extends State<WalletSend> {
                       )),
                 ],
               ),
-            )),
+            ),
             // const SizedBox(height: 15),
             signPsbtButton,
           ])),
+        ),
+      ],
     );
   }
 }
@@ -636,7 +824,7 @@ Future<void> signAndBroadcastWorkflowDialog(
   final signatures = await showSigningProgressDialog(
     context,
     signingStream,
-    describeEffect(effect),
+    describeEffect(context, effect),
   );
   if (signatures != null) {
     final signedTx = await unsignedTx.complete(signatures: signatures);
@@ -667,7 +855,7 @@ class EffectTable extends StatelessWidget {
           ),
           Padding(
             padding: const EdgeInsets.all(8.0),
-            child: NetValue(-value),
+            child: SatoshiText.withSign(value: -value),
           ),
         ],
       );
@@ -682,7 +870,8 @@ class EffectTable extends StatelessWidget {
                   ? Text("${effect.feerate!.toStringAsFixed(1)} (sats/vb))")
                   : Text("unknown")),
           Padding(
-              padding: const EdgeInsets.all(8.0), child: NetValue(-effect.fee)),
+              padding: const EdgeInsets.all(8.0),
+              child: SatoshiText.withSign(value: -effect.fee)),
         ],
       ),
     );
@@ -696,7 +885,7 @@ class EffectTable extends StatelessWidget {
           ),
           Padding(
             padding: const EdgeInsets.all(8.0),
-            child: NetValue(effect.netValue),
+            child: SatoshiText.withSign(value: effect.netValue),
           ),
         ],
       ),
@@ -713,7 +902,7 @@ class EffectTable extends StatelessWidget {
 
     final effectWidget = Column(
       children: [
-        describeEffect(effect),
+        describeEffect(context, effect),
         Divider(),
         effectTable,
       ],
@@ -723,23 +912,24 @@ class EffectTable extends StatelessWidget {
   }
 }
 
-Widget describeEffect(EffectOfTx effect) {
+Widget describeEffect(BuildContext context, EffectOfTx effect) {
+  final style =
+      DefaultTextStyle.of(context).style.copyWith(fontWeight: FontWeight.w600);
   final Widget description;
 
   if (effect.foreignReceivingAddresses.length == 1) {
     final (dest, amount) = effect.foreignReceivingAddresses[0];
-    description = RichText(
-      text: TextSpan(
-        style: TextStyle(color: textColor, fontSize: 16), // Default text style
-        children: <TextSpan>[
-          TextSpan(text: 'Sending '),
-          TextSpan(
-              text: formatSatoshi(amount),
-              style: TextStyle(fontWeight: FontWeight.bold)),
-          TextSpan(text: ' to '),
-          TextSpan(text: dest, style: TextStyle(fontWeight: FontWeight.bold)),
-        ],
-      ),
+    description = Wrap(
+      direction: Axis.horizontal,
+      children: <Widget>[
+        Text('Sending '),
+        SatoshiText(value: amount, style: style),
+        Text(' to '),
+        Text(
+          dest,
+          style: GoogleFonts.sourceCodePro(textStyle: style),
+        )
+      ],
     );
   } else if (effect.foreignReceivingAddresses.isEmpty) {
     description = Text("Internal transfer");
@@ -806,20 +996,59 @@ class UpdatingBalance extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final walletContext = WalletContext.of(context)!;
+    final balanceTextStyle = DefaultTextStyle.of(context)
+        .style
+        .copyWith(fontSize: 36.0, fontWeight: FontWeight.w600);
+    final padding = EdgeInsets.all(24.0).copyWith(top: 16.0);
+
     return StreamBuilder<TxState>(
       stream: walletContext.txStream,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return Text('Error: ${snapshot.error}');
+          return Text('Error: ${snapshot.error}', style: balanceTextStyle);
         }
         final transactions = snapshot.data?.txs ?? [];
-        int balance = transactions.fold(0, (sum, tx) => sum + tx.netValue);
-        final balanceInBTC = formatSatoshi(balance);
+
+        var pendingIncomingBalance = 0;
+        var avaliableBalance = 0;
+        for (final tx in transactions) {
+          if (tx.confirmationTime == null && tx.netValue > 0) {
+            pendingIncomingBalance += tx.netValue;
+          } else {
+            avaliableBalance += tx.netValue;
+          }
+        }
+
         return Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: Text(
-            balanceInBTC,
-            style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold),
+          padding: padding,
+          child: Row(
+            mainAxisSize: MainAxisSize.max,
+            children: [
+              Expanded(
+                child: Column(
+                  spacing: 8.0,
+                  children: [
+                    SatoshiText(
+                      value: avaliableBalance,
+                      style: balanceTextStyle,
+                      letterSpacingReductionFactor: 0.02,
+                    ),
+                    pendingIncomingBalance == 0
+                        ? SizedBox.shrink()
+                        : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            spacing: 4.0,
+                            children: [
+                              Icon(Icons.hourglass_top, size: 12.0),
+                              SatoshiText(
+                                  value: pendingIncomingBalance,
+                                  showSign: true),
+                            ],
+                          ),
+                  ],
+                ),
+              )
+            ],
           ),
         );
       },
@@ -827,35 +1056,70 @@ class UpdatingBalance extends StatelessWidget {
   }
 }
 
-class NetValue extends StatelessWidget {
-  final int netValue;
-  const NetValue(this.netValue, {super.key});
+class SatoshiText extends StatelessWidget {
+  final int value;
+  final bool showSign;
+  final double opacityChangeFactor;
+  final double letterSpacingReductionFactor;
+  final TextStyle? style;
+
+  const SatoshiText({
+    Key? key,
+    required this.value,
+    this.showSign = false,
+    this.opacityChangeFactor = 0.5,
+    this.letterSpacingReductionFactor = 0.0,
+    this.style,
+  }) : super(key: key);
+
+  const SatoshiText.withSign({
+    Key? key,
+    required int value,
+  }) : this(key: key, value: value, showSign: true);
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      formatSatoshi(netValue), // Display net value in BTC
-      style: TextStyle(
-        color: netValue > 0 ? successColor : errorColor,
-      ),
+    final baseStyle = GoogleFonts.inter(
+        textStyle: style ?? DefaultTextStyle.of(context).style);
+    // We reduce the line spacing by the percentage from the fontSize (as per design specs).
+    final baseLetterSpacing = (baseStyle.letterSpacing ?? 0.0) -
+        (baseStyle.fontSize ?? 0.0) * letterSpacingReductionFactor;
+
+    final activeStyle = baseStyle.copyWith(letterSpacing: baseLetterSpacing);
+    final inactiveStyle = baseStyle.copyWith(
+      letterSpacing: baseLetterSpacing,
+      // Reduce text opacity by `opacityChangeFactor` initially.
+      color: baseStyle.color!.withAlpha(
+          Color.getAlphaFromOpacity(baseStyle.color!.a * opacityChangeFactor)),
+    );
+
+    // Convert to BTC string with 8 decimal places
+    String btcString = (value / 100000000.0).toStringAsFixed(8);
+    // Split the string into two parts, removing - sign: before and after the decimal
+    final parts = btcString.replaceFirst(r'-', '').split('.');
+    // Format the fractional part into segments
+    final String fractionalPart =
+        "${parts[1].substring(0, 2)} ${parts[1].substring(2, 5)} ${parts[1].substring(5)}";
+    // Combine the whole number part with the formatted fractional part
+    btcString = '${parts[0]}.$fractionalPart \u20BF';
+    // Add sign if required.
+    if (showSign || !showSign && value.isNegative) {
+      btcString = value.isNegative ? '- $btcString' : '+ $btcString';
+    }
+
+    var activeIndex = btcString.indexOf(RegExp(r'[1-9]'));
+    if (activeIndex == -1) activeIndex = btcString.length - 1;
+    final inactiveString = btcString.substring(0, activeIndex);
+    final activeString = btcString.substring(activeIndex);
+
+    return Text.rich(
+      TextSpan(children: <TextSpan>[
+        TextSpan(text: inactiveString, style: inactiveStyle),
+        TextSpan(text: activeString, style: activeStyle),
+      ]),
+      textAlign: TextAlign.right,
+      softWrap: false,
+      overflow: TextOverflow.fade,
     );
   }
-}
-
-String formatSatoshi(int satoshis) {
-  // Convert satoshis to BTC as a double
-  double btcAmount = satoshis / 100000000.0;
-
-  // Convert to string with 8 decimal places
-  String btcString = btcAmount.toStringAsFixed(8);
-
-  // Split the string into two parts: before and after the decimal
-  var parts = btcString.split('.');
-
-  // Format the fractional part into segments
-  String fractionalPart =
-      "${parts[1].substring(0, 2)} ${parts[1].substring(2, 5)} ${parts[1].substring(5)}";
-
-  // Combine the whole number part with the formatted fractional part
-  return '${parts[0]}.$fractionalPart\u20BF';
 }

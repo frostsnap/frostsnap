@@ -68,6 +68,7 @@ class AddressPage extends StatelessWidget {
     final walletCtx = WalletContext.of(context)!;
     final derivationPath = walletCtx.wallet.derivationPathForAddress(
         index: address.index, external: address.external);
+    final textColor = Theme.of(context).colorScheme.onSurface;
 
     return Scaffold(
       appBar: AppBar(
@@ -214,6 +215,7 @@ class VerifyAddressProgress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final textColor = Theme.of(context).colorScheme.onSurface;
     return StreamBuilder<DeviceListState>(
       stream: deviceListSubject.map((update) => update.state),
       builder: (context, deviceListSnapshot) {
@@ -416,6 +418,7 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
       MaterialPageRoute(
         builder: (context) => WalletContext(
           wallet: widget.walletContext.wallet,
+          walletName: widget.walletContext.walletName,
           masterAppkey: widget.walletContext.masterAppkey,
           child: AddressPage(
             masterAppkey: widget.walletContext.masterAppkey,

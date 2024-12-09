@@ -32,7 +32,7 @@ class KeyList extends StatelessWidget {
       return value;
     });
 
-    final showDevicesButton = ElevatedButton(
+    final showDevicesButton = FilledButton(
         onPressed: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) {
             return DeviceSettingsPage();
@@ -85,7 +85,7 @@ class KeyList extends StatelessWidget {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    ElevatedButton(
+                    FilledButton(
                       child: const Text("New key"),
                       onPressed: () async {
                         final newId = await Navigator.push(context,
@@ -130,11 +130,14 @@ class _KeyCard extends State<KeyCard> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final bitcoinNetwork =
         widget.bitcoinNetwork ?? BitcoinNetwork.signet(bridge: api);
     final settingsCtx = SettingsContext.of(context)!;
     final settings = settingsCtx.settings;
-    final signButton = ElevatedButton(
+    final signButton = FilledButton(
+        style:
+            FilledButton.styleFrom(backgroundColor: theme.colorScheme.surface),
         onPressed: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) {
             return SignMessagePage(frostKey: widget.frostKey);
@@ -142,13 +145,16 @@ class _KeyCard extends State<KeyCard> {
         },
         child: Text("Sign"));
 
-    final Widget walletButton = ElevatedButton(
+    final Widget walletButton = FilledButton(
+      style: FilledButton.styleFrom(backgroundColor: theme.colorScheme.surface),
       onPressed: () async {
         final wallet = await settings.loadWallet(network: bitcoinNetwork);
         if (context.mounted) {
           Navigator.push(context, MaterialPageRoute(builder: (context) {
             return WalletPage(
-                masterAppkey: widget.frostKey.masterAppkey(), wallet: wallet);
+                masterAppkey: widget.frostKey.masterAppkey(),
+                walletName: widget.frostKey.keyName(),
+                wallet: wallet);
           }));
         }
       },
@@ -169,7 +175,9 @@ class _KeyCard extends State<KeyCard> {
     final Widget continueSigning;
 
     if (restorableSignSession != null) {
-      continueSigning = ElevatedButton(
+      continueSigning = FilledButton(
+          style: FilledButton.styleFrom(
+              backgroundColor: theme.colorScheme.surface),
           onPressed: () async {
             final signingStream = coord
                 .tryRestoreSigningSession(keyId: widget.frostKey.keyId())

@@ -164,7 +164,7 @@ Future<void> runPsbtSigningWorkflow(
   final signatures = await showSigningProgressDialog(
     context,
     signingStream,
-    describeEffect(effect),
+    describeEffect(context, effect),
   );
   if (signatures != null) {
     final signedPsbt = await unsignedTx.attachSignaturesToPsbt(

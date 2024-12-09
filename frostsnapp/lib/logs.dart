@@ -91,7 +91,7 @@ class _LogPane extends State<LogPane> {
                   ),
                   style: TextStyle(
                     fontFamily: 'Courier',
-                    color: textColor,
+                    color: textPrimaryColor,
                   ),
                   dragStartBehavior: DragStartBehavior.down,
                 ),
@@ -129,7 +129,7 @@ class _LogPane extends State<LogPane> {
       case 'WARNING':
         return awaitingColor;
       default:
-        return textColor;
+        return textPrimaryColor;
     }
   }
 }

@@ -23,7 +23,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   String? startupError;
-  Stream<String> logStream;
+  final Stream<String> logStream;
 
   // set logging up first before doing anything else
 
@@ -102,13 +102,18 @@ class MyApp extends StatelessWidget {
   // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
+    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+      systemNavigationBarColor: frostsnappTheme.colorScheme.surface,
+    ));
+
     return MaterialApp(
-        title: 'Frostsnapp',
-        theme: frostsnappTheme,
-        home: startupError == null
-            ? const MyHomePage(title: 'Frostsnapp')
-            : StartupErrorWidget(error: startupError!),
-        debugShowCheckedModeBanner: false);
+      title: 'Frostsnapp',
+      theme: frostsnappTheme,
+      home: startupError == null
+          ? const MyHomePage(title: 'Frostsnapp')
+          : StartupErrorWidget(error: startupError!),
+      debugShowCheckedModeBanner: false,
+    );
   }
 }
 
@@ -203,7 +208,7 @@ class _StartupErrorWidgetState extends State<StartupErrorWidget> {
                   "Sorry! Something has gone wrong with the app. Please report this directly to the frostsnap team.",
                   style: TextStyle(
                     fontSize: 16.0,
-                    color: textColor,
+                    color: textPrimaryColor,
                   ),
                 ),
                 SizedBox(height: 20),
@@ -221,7 +226,7 @@ class _StartupErrorWidgetState extends State<StartupErrorWidget> {
                     _combinedErrorWithLogs,
                     style: TextStyle(
                       fontFamily: 'Courier', // Monospaced font
-                      color: textColor,
+                      color: textPrimaryColor,
                     ),
                   ),
                 ),

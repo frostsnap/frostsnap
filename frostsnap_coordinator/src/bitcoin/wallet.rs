@@ -259,6 +259,7 @@ impl FrostsnapWallet {
                     inner: canonical_tx.tx_node.tx.clone(),
                     confirmation_time,
                     net_value: net_value.to_sat(),
+                    last_seen: canonical_tx.tx_node.last_seen_unconfirmed,
                 })
             })
             .collect()
@@ -618,6 +619,7 @@ pub struct Transaction {
     pub net_value: i64,
     pub inner: Arc<bitcoin::Transaction>,
     pub confirmation_time: Option<ConfirmationTime>,
+    pub last_seen: Option<u64>,
 }
 
 #[derive(Clone, Debug)]

@@ -102,6 +102,7 @@ pub struct Transaction {
     pub net_value: i64,
     pub inner: RustOpaque<Arc<RTransaction>>,
     pub confirmation_time: Option<ConfirmationTime>,
+    pub last_seen: Option<u64>,
 }
 
 impl From<frostsnap_coordinator::bitcoin::wallet::Transaction> for Transaction {
@@ -110,6 +111,7 @@ impl From<frostsnap_coordinator::bitcoin::wallet::Transaction> for Transaction {
             net_value: value.net_value,
             inner: RustOpaque::new(value.inner),
             confirmation_time: value.confirmation_time,
+            last_seen: value.last_seen,
         }
     }
 }
@@ -117,6 +119,15 @@ impl From<frostsnap_coordinator::bitcoin::wallet::Transaction> for Transaction {
 impl Transaction {
     pub fn txid(&self) -> SyncReturn<String> {
         SyncReturn(self.inner.compute_txid().to_string())
+    }
+
+    pub fn timestamp(&self) -> SyncReturn<Option<u64>> {
+        SyncReturn(
+            self.confirmation_time
+                .as_ref()
+                .map(|t| t.time)
+                .or(self.last_seen),
+        )
     }
 }
 
@@ -476,6 +487,10 @@ impl Wallet {
         }
 
         Ok(())
+    }
+
+    pub fn height(&self) -> SyncReturn<u32> {
+        SyncReturn(self.inner.lock().unwrap().chain_tip().height())
     }
 
     pub fn tx_state(&self, master_appkey: MasterAppkey) -> SyncReturn<TxState> {

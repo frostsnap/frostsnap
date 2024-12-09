@@ -108,7 +108,7 @@ class DialogHeader extends StatelessWidget {
             style: TextStyle(
               fontSize: 18.0,
               fontWeight: FontWeight.normal,
-              color: textColor,
+              color: textPrimaryColor,
             ),
             child: Align(alignment: Alignment.topCenter, child: child)));
   }

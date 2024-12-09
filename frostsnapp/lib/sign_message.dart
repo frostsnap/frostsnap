@@ -278,7 +278,7 @@ class DeviceSigningProgress extends StatelessWidget {
                             color: awaitingColor, size: iconSize);
                       } else {
                         icon = Icon(Icons.circle_outlined,
-                            color: textColor, size: iconSize);
+                            color: textPrimaryColor, size: iconSize);
                       }
                       return ListTile(
                         title: Text(name ?? "<unknown>"),

@@ -156,8 +156,15 @@ class SettingsPage extends StatelessWidget {
 class FsAppBar extends StatelessWidget implements PreferredSizeWidget {
   final Widget title;
   final List<Widget> actions;
+  final PreferredSizeWidget? bottom;
+  final Color? backgroundColor;
 
-  const FsAppBar({super.key, required this.title, this.actions = const []});
+  const FsAppBar(
+      {super.key,
+      required this.title,
+      this.bottom,
+      this.backgroundColor,
+      this.actions = const []});
 
   @override
   Widget build(BuildContext context) {
@@ -165,7 +172,11 @@ class FsAppBar extends StatelessWidget implements PreferredSizeWidget {
     final settingsCtx = SettingsContext.of(context)!;
 
     return AppBar(
+      centerTitle: true,
       title: title,
+      bottom: bottom,
+      backgroundColor: backgroundColor,
+      surfaceTintColor: backgroundColor,
       actions: [
         ...actions,
         if (walletCtx != null)
@@ -428,6 +439,7 @@ class ChainStatusIcon extends StatelessWidget {
     final double iconSize = IconTheme.of(context).size ?? 30.0;
     final String statusName;
     final VoidCallback? onPressed;
+    final theme = Theme.of(context);
 
     if (chainStatus.state == ChainStatusState.Connected) {
       onPressed = () {
@@ -441,13 +453,13 @@ class ChainStatusIcon extends StatelessWidget {
       case ChainStatusState.Connected:
         statusName = "Connected";
         iconData = Icons.power;
-        iconColor = Colors.green;
+        iconColor = theme.colorScheme.primary;
         break;
       case ChainStatusState.Connecting:
       case ChainStatusState.Disconnected:
         statusName = "Disconnected";
         iconData = Icons.power_off;
-        iconColor = Colors.red;
+        iconColor = theme.colorScheme.error;
         break;
     }
 

@@ -342,7 +342,7 @@ class _FirmwareUpgradeDialogState extends State<FirmwareUpgradeDialog> {
                   value: progress!,
                   backgroundColor: backgroundSecondaryColor,
                   minHeight: 10.0,
-                  valueColor: AlwaysStoppedAnimation<Color>(textColor),
+                  valueColor: AlwaysStoppedAnimation<Color>(textPrimaryColor),
                 ));
           }
         }

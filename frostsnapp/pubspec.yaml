@@ -51,6 +51,7 @@ dependencies:
   zxing2: ^0.2.3
   image: ^4.1.7
   pretty_qr_code: ^3.3.0
+  google_fonts: ^6.2.1
 
 dev_dependencies:
   flutter_test:
