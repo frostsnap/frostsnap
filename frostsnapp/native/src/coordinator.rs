@@ -342,86 +342,84 @@ impl FfiCoordinator {
                             usb_sender.send(send_message);
                         }
                         CoordinatorSend::ToUser(msg) => {
-                            if let Some(ui_protocol) = &mut *ui_protocol_loop {
-                                ui_protocol.process_to_user_message(msg);
-                            } else {
-                                match msg {
-                                    CoordinatorToUserMessage::PromptRecoverShare(recover_share) => {
-                                        let span = span!(
-                                            Level::INFO,
-                                            "recovering share",
-                                            from = recover_share.held_by.to_string(),
-                                            key_name = recover_share.held_share.key_name,
-                                            access_structure_ref = format!(
-                                                "{:?}",
-                                                recover_share.held_share.access_structure_ref
-                                            ),
+                            match msg {
+                                // there is no UI protocol for share recovery because it happens in the background.
+                                CoordinatorToUserMessage::PromptRecoverShare(recover_share) => {
+                                    let span = span!(
+                                        Level::INFO,
+                                        "recovering share",
+                                        from = recover_share.held_by.to_string(),
+                                        key_name = recover_share.held_share.key_name,
+                                        access_structure_ref = format!(
+                                            "{:?}",
+                                            recover_share.held_share.access_structure_ref
+                                        ),
+                                    );
+                                    let _enter = span.enter();
+                                    let access_structure_ref =
+                                        recover_share.held_share.access_structure_ref;
+                                    let key_id = access_structure_ref.key_id;
+                                    if coordinator.get_frost_key(key_id).is_some() {
+                                        event!(Level::INFO, "share was for an existing key");
+                                        // we don't need to the user to do anything here if they've already agreed to recover this key
+                                        let result = coordinator.staged_mutate(
+                                            &mut *db,
+                                            |coordinator| {
+                                                // TODO We're going to have to fetch a fresh encryption key from secure element here.
+                                                // We can do this without bothering the user:
+                                                // - generate a ChaCha key here
+                                                // - generate a asymmetric key from phone secure element
+                                                // - encrypt the ChaCha key to asymmetri key
+                                                // - save the encrypted ChaCha key in our database
+                                                // - Now only when we want to decrypt we need to ask user to put in pin
+                                                coordinator
+                                                    .recover_share_and_maybe_recover_access_structure(*recover_share.clone(), TEMP_KEY, &mut thread_rng())?;
+                                                Ok(())
+                                            },
                                         );
-                                        let _enter = span.enter();
-                                        let access_structure_ref =
-                                            recover_share.held_share.access_structure_ref;
-                                        let key_id = access_structure_ref.key_id;
-                                        if coordinator.get_frost_key(key_id).is_some() {
-                                            event!(Level::INFO, "share was for an existing key");
-                                            // we don't need to the user to do anything here if they've already agreed to recover this key
-                                            let result = coordinator.staged_mutate(
-                                                &mut *db,
-                                                |coordinator| {
-                                                    // TODO We're going to have to fetch a fresh encryption key from secure element here.
-                                                    // We can do this without bothering the user:
-                                                    // - generate a ChaCha key here
-                                                    // - generate a asymmetric key from phone secure element
-                                                    // - encrypt the ChaCha key to asymmetri key
-                                                    // - save the encrypted ChaCha key in our database
-                                                    // - Now only when we want to decrypt we need to ask user to put in pin
-                                                    coordinator
-                                                        .recover_share_and_maybe_recover_access_structure(*recover_share.clone(), TEMP_KEY, &mut thread_rng())?;
-                                                    Ok(())
-                                                },
-                                            );
 
-                                            if let Err(e) = result {
-                                                event!(
-                                                    Level::ERROR,
-                                                    from = recover_share.held_by.to_string(),
-                                                    share_index = recover_share
-                                                        .held_share
-                                                        .share_image
-                                                        .share_index
-                                                        .to_string(),
-                                                    key_id = recover_share
-                                                        .held_share
-                                                        .access_structure_ref
-                                                        .key_id
-                                                        .to_string(),
-                                                    error = e.to_string(),
-                                                    "failed to recover share (or access structure)"
-                                                );
-                                            }
-                                        } else {
+                                        if let Err(e) = result {
                                             event!(
-                                                Level::INFO,
-                                                "recovery of this key has not been confirmed. Marking share as recoverable."
+                                                Level::ERROR,
+                                                from = recover_share.held_by.to_string(),
+                                                share_index = recover_share
+                                                    .held_share
+                                                    .share_image
+                                                    .share_index
+                                                    .to_string(),
+                                                key_id = recover_share
+                                                    .held_share
+                                                    .access_structure_ref
+                                                    .key_id
+                                                    .to_string(),
+                                                error = e.to_string(),
+                                                "failed to recover share (or access structure)"
                                             );
-                                            let mut recoverable_keys =
-                                                recoverable_keys.lock().unwrap();
-                                            let shares = recoverable_keys
-                                                .entry(
-                                                    recover_share.held_share.access_structure_ref,
-                                                )
-                                                .or_default();
-
-                                            if !shares.contains(&recover_share) {
-                                                shares.push(*recover_share);
-                                            }
                                         }
+                                    } else {
+                                        event!(
+                                            Level::INFO,
+                                            "recovery of this key has not been confirmed. Marking share as recoverable."
+                                        );
+                                        let mut recoverable_keys = recoverable_keys.lock().unwrap();
+                                        let shares = recoverable_keys
+                                            .entry(recover_share.held_share.access_structure_ref)
+                                            .or_default();
 
-                                        if let Some(stream) = &*key_event_stream.lock().unwrap() {
-                                            let recoverable_keys = recoverable_keys.lock().unwrap();
-                                            stream.add(key_state(&recoverable_keys, &coordinator));
+                                        if !shares.contains(&recover_share) {
+                                            shares.push(*recover_share);
                                         }
                                     }
-                                    _ => {
+
+                                    if let Some(stream) = &*key_event_stream.lock().unwrap() {
+                                        let recoverable_keys = recoverable_keys.lock().unwrap();
+                                        stream.add(key_state(&recoverable_keys, &coordinator));
+                                    }
+                                }
+                                _ => {
+                                    if let Some(ui_protocol) = &mut *ui_protocol_loop {
+                                        ui_protocol.process_to_user_message(msg);
+                                    } else {
                                         event!(
                                             Level::WARN,
                                             kind = msg.kind(),
