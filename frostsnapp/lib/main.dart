@@ -119,7 +119,7 @@ class MyHomePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: FsAppBar(title: Text("Key List")),
+        appBar: FsAppBar(title: Text("Wallets")),
         body: Center(child: KeyListWithConfetti()));
   }
 }
