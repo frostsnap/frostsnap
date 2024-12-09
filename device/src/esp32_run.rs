@@ -5,7 +5,7 @@ use crate::{
     ui::{self, UiEvent, UserInteraction},
     DownstreamConnectionState, Duration, Instant, UpstreamConnection, UpstreamConnectionState,
 };
-use alloc::{boxed::Box, collections::VecDeque, string::ToString, vec::Vec};
+use alloc::{boxed::Box, collections::VecDeque, vec::Vec};
 use esp_hal::{gpio, sha::Sha, timer, uart, Blocking};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{
@@ -19,7 +19,7 @@ use frostsnap_core::{
         CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, DeviceToUserMessage,
     },
     schnorr_fun::fun::{marker::Normal, KeyPair, Scalar},
-    DeviceId, SignTask,
+    SignTask,
 };
 use rand_chacha::rand_core::RngCore;
 
@@ -98,7 +98,6 @@ where
         let mut soft_reset = true;
         let mut downstream_connection_state = DownstreamConnectionState::Disconnected;
         let mut sends_downstream: Vec<CoordinatorSendMessage> = vec![];
-        let mut sends_upstream = UpstreamSends::new(device_id);
         let mut sends_user: Vec<DeviceToUserMessage> = vec![];
         let mut outbox = VecDeque::new();
         let mut next_write_magic_bytes_downstream: Instant = Instant::from_ticks(0);
@@ -117,24 +116,20 @@ where
             },
         ));
 
-        let mut upstream_connection = UpstreamConnection {
-            is_device: !upstream_serial.is_jtag(),
-            state: UpstreamConnectionState::Connected,
-        };
+        let mut upstream_connection = UpstreamConnection::new(device_id);
 
-        ui.set_upstream_connection_state(upstream_connection);
+        ui.set_upstream_connection_state(upstream_connection.state);
         let mut upgrade: Option<ota::FirmwareUpgradeMode> = None;
 
         loop {
             if soft_reset {
                 soft_reset = false;
                 magic_bytes_timeout_counter = 0;
-                sends_upstream.messages.clear();
                 let _ = signer.cancel_action();
                 sends_user.clear();
                 sends_downstream.clear();
                 downstream_connection_state = DownstreamConnectionState::Disconnected;
-                upstream_connection.state = UpstreamConnectionState::Connected;
+                upstream_connection.set_state(UpstreamConnectionState::PowerOn, &mut ui);
                 next_write_magic_bytes_downstream = Instant::from_ticks(0);
                 upgrade = None;
                 outbox.clear();
@@ -161,7 +156,8 @@ where
                     if downstream_serial.find_and_remove_magic_bytes() {
                         downstream_connection_state = DownstreamConnectionState::Established;
                         ui.set_downstream_connection_state(downstream_connection_state);
-                        sends_upstream.send_debug("Device read magic bytes from another device!");
+                        upstream_connection
+                            .send_debug("Device read magic bytes from another device!");
                     }
                 }
                 (
@@ -173,7 +169,8 @@ where
                     ui.set_downstream_connection_state(downstream_connection_state);
                     sends_downstream.clear();
                     if state == DownstreamConnectionState::Established {
-                        sends_upstream.push(DeviceSendBody::DisconnectDownstream);
+                        upstream_connection
+                            .send_to_coordinator([DeviceSendBody::DisconnectDownstream]);
                     }
                 }
                 _ => { /* nothing to do */ }
@@ -185,25 +182,29 @@ where
                         Ok(device_send) => {
                             match device_send {
                                 ReceiveSerial::MagicBytes(_) => {
-                                    sends_upstream.send_debug(
+                                    upstream_connection.send_debug(
                                         "downstream device sent unexpected magic bytes",
                                     );
                                     // soft disconnect downstream device to reset it becasue it's
                                     // doing stuff we don't understand.
-                                    sends_upstream.push(DeviceSendBody::DisconnectDownstream);
+                                    upstream_connection.send_to_coordinator([
+                                        DeviceSendBody::DisconnectDownstream,
+                                    ]);
                                     downstream_connection_state =
                                         DownstreamConnectionState::Disconnected;
                                 }
                                 ReceiveSerial::Message(message) => {
-                                    sends_upstream.messages.push(message)
+                                    upstream_connection.forward_to_coordinator(message)
                                 }
                             };
                         }
                         Err(e) => {
-                            sends_upstream
+                            upstream_connection
                                 .send_debug(format!("Failed to decode on downstream port: {e}"));
-                            sends_upstream.push(DeviceSendBody::DisconnectDownstream);
+                            upstream_connection
+                                .send_to_coordinator([DeviceSendBody::DisconnectDownstream]);
                             downstream_connection_state = DownstreamConnectionState::Disconnected;
+                            break;
                         }
                     };
                 }
@@ -215,8 +216,8 @@ where
             }
 
             // === UPSTREAM connection management
-            match upstream_connection.state {
-                UpstreamConnectionState::Connected => {
+            match upstream_connection.get_state() {
+                UpstreamConnectionState::PowerOn => {
                     if upstream_serial.find_and_remove_magic_bytes() {
                         upstream_serial
                             .write_magic_bytes()
@@ -226,7 +227,8 @@ where
                                 from: device_id,
                                 body: DeviceSendBody::Announce {
                                     firmware_digest: active_firmware_digest,
-                                },
+                                }
+                                .into(),
                             })
                             .expect("sending announce");
                         upstream_serial
@@ -235,11 +237,12 @@ where
                                 body: match &name {
                                     Some(name) => DeviceSendBody::SetName { name: name.into() },
                                     None => DeviceSendBody::NeedName,
-                                },
+                                }
+                                .into(),
                             })
                             .expect("sending name message");
-                        upstream_connection.state = UpstreamConnectionState::Established;
-                        ui.set_upstream_connection_state(upstream_connection);
+                        upstream_connection
+                            .set_state(UpstreamConnectionState::Established, &mut ui);
                     }
                 }
                 upstream_state => {
@@ -281,10 +284,7 @@ where
                                                     }
                                                 }
                                                 CoordinatorSendBody::AnnounceAck => {
-                                                    upstream_connection.state = UpstreamConnectionState::EstablishedAndCoordAck;
-                                                    ui.set_upstream_connection_state(
-                                                        upstream_connection,
-                                                    );
+                                                    upstream_connection.set_state(UpstreamConnectionState::EstablishedAndCoordAck, &mut ui);
                                                 }
                                                 CoordinatorSendBody::Naming(naming) => match naming
                                                 {
@@ -383,19 +383,21 @@ where
                         };
                     }
 
+                    let is_upstream_established = matches!(
+                        upstream_connection.get_state(),
+                        UpstreamConnectionState::EstablishedAndCoordAck
+                    );
+
                     if last_message_was_magic_bytes {
-                        if matches!(
-                            upstream_state,
-                            UpstreamConnectionState::EstablishedAndCoordAck
-                        ) {
+                        if is_upstream_established {
                             // We get unexpected magic bytes after receiving normal messages.
                             // Upstream must have reset so we should reset.
                             soft_reset = true;
                         } else if magic_bytes_timeout_counter > 1 {
                             // We keep receving magic bytes so we reset the
                             // connection and try announce again.
-                            upstream_connection.state = UpstreamConnectionState::Connected;
-                            ui.set_upstream_connection_state(upstream_connection);
+                            upstream_connection
+                                .set_state(UpstreamConnectionState::PowerOn, &mut ui);
                             magic_bytes_timeout_counter = 0;
                         } else {
                             magic_bytes_timeout_counter += 1;
@@ -404,16 +406,14 @@ where
 
                     if let Some(upgrade_) = &mut upgrade {
                         let (message, workflow) = upgrade_.poll(flash.flash_mut());
-                        sends_upstream.extend(message);
+                        upstream_connection.send_to_coordinator(message);
                         if let Some(workflow) = workflow {
                             ui.set_workflow(workflow);
                         }
                     }
 
-                    if let UpstreamConnectionState::EstablishedAndCoordAck =
-                        upstream_connection.state
-                    {
-                        for send in sends_upstream.messages.drain(..) {
+                    if is_upstream_established {
+                        for send in upstream_connection.take_messages() {
                             upstream_serial
                                 .send(send)
                                 .expect("unable to send to coordinator");
@@ -450,9 +450,9 @@ where
                             .append([storage::Change::Name(new_name.clone())])
                             .expect("flash write fail");
                         ui.set_device_name(new_name.into());
-                        sends_upstream.push(DeviceSendBody::SetName {
+                        upstream_connection.send_to_coordinator([DeviceSendBody::SetName {
                             name: new_name.into(),
-                        });
+                        }]);
                     }
                     UiEvent::BackupRequestConfirm => {
                         outbox.extend(
@@ -503,7 +503,7 @@ where
 
                 if !empty {
                     let after = self.timer.now().checked_duration_since(now).unwrap();
-                    sends_upstream
+                    upstream_connection
                         .send_debug(format!("core mutations took {}ms", after.to_millis()));
                 }
             }
@@ -522,7 +522,7 @@ where
                             ));
                         }
 
-                        sends_upstream.push(DeviceSendBody::Core(*boxed));
+                        upstream_connection.send_to_coordinator([DeviceSendBody::Core(*boxed)]);
                     }
                     DeviceSend::ToUser(boxed) => {
                         match *boxed {
@@ -612,41 +612,5 @@ where
                 }
             }
         }
-    }
-}
-
-/// simple mechanism to attach our device id to outgoing messages
-struct UpstreamSends {
-    messages: Vec<DeviceSendMessage>,
-    my_device_id: DeviceId,
-}
-
-impl UpstreamSends {
-    fn new(my_device_id: DeviceId) -> Self {
-        Self {
-            messages: Default::default(),
-            my_device_id,
-        }
-    }
-
-    fn push(&mut self, body: DeviceSendBody) {
-        self.messages.push(DeviceSendMessage {
-            from: self.my_device_id,
-            body,
-        });
-    }
-
-    fn extend(&mut self, iter: impl IntoIterator<Item = DeviceSendBody>) {
-        self.messages
-            .extend(iter.into_iter().map(|body| DeviceSendMessage {
-                from: self.my_device_id,
-                body,
-            }));
-    }
-
-    fn send_debug(&mut self, message: impl ToString) {
-        self.push(DeviceSendBody::Debug {
-            message: message.to_string(),
-        })
     }
 }

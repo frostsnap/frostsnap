@@ -8,7 +8,7 @@ use frostsnap_core::{schnorr_fun::frost::SecretShare, KeyId, SessionHash};
 
 pub trait UserInteraction {
     fn set_downstream_connection_state(&mut self, state: crate::DownstreamConnectionState);
-    fn set_upstream_connection_state(&mut self, state: crate::UpstreamConnection);
+    fn set_upstream_connection_state(&mut self, state: crate::UpstreamConnectionState);
 
     fn set_device_name(&mut self, name: String);
 
