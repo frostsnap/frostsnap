@@ -1,11 +1,11 @@
 use crate::{
-    coordinator, AccessStructureId, CheckedSignTask, CoordShareDecryptionContrib, Gist, KeyId,
-    MasterAppkey, SessionHash, Vec,
+    AccessStructureId, AccessStructureRef, CheckedSignTask, CoordShareDecryptionContrib, Gist,
+    KeyId, MasterAppkey, SessionHash, ShareImage, Vec,
 };
 use crate::{DeviceId, SignTask};
 use alloc::{
     boxed::Box,
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, VecDeque},
     string::String,
 };
 use core::num::NonZeroU32;
@@ -23,17 +23,6 @@ use sha2::Digest;
 pub enum DeviceSend {
     ToUser(Box<DeviceToUserMessage>),
     ToCoordinator(Box<DeviceToCoordinatorMessage>),
-}
-
-#[derive(Clone, Debug)]
-#[must_use]
-pub enum CoordinatorSend {
-    ToDevice {
-        message: CoordinatorToDeviceMessage,
-        destinations: BTreeSet<DeviceId>,
-    },
-    ToUser(CoordinatorToUserMessage),
-    SigningSessionStore(coordinator::SigningSessionState),
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
@@ -55,9 +44,10 @@ pub enum CoordinatorToDeviceMessage {
         party_index: PartyIndex,
     },
     CheckShareBackup,
+    RequestHeldShares,
 }
 
-#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
 pub struct SignRequest {
     pub nonces: BTreeMap<PartyIndex, SignRequestNonces>,
     pub sign_task: SignTask,
@@ -88,7 +78,7 @@ impl SignRequest {
     }
 }
 
-#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
 pub struct SignRequestNonces {
     /// the nonces the device should sign with
     pub nonces: Vec<Nonce>,
@@ -123,6 +113,7 @@ impl CoordinatorToDeviceMessage {
             CoordinatorToDeviceMessage::RequestSign { .. } => "RequestSign",
             CoordinatorToDeviceMessage::DisplayBackup { .. } => "DisplayBackup",
             CoordinatorToDeviceMessage::CheckShareBackup { .. } => "CheckShareBackup",
+            CoordinatorToDeviceMessage::RequestHeldShares => "RequestHeldShares",
         }
     }
 }
@@ -140,12 +131,28 @@ pub enum DeviceToCoordinatorMessage {
     CheckShareBackup {
         share_image: ShareImage,
     },
+    HeldShares(Vec<HeldShare>),
+}
+
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
+pub struct HeldShare {
+    pub access_structure_ref: AccessStructureRef,
+    pub share_image: ShareImage,
+    pub threshold: u16,
+    pub key_name: String,
 }
 
 pub type KeyGenResponse = encpedpop::KeygenInput;
 
 #[derive(
-    Debug, Clone, bincode::Encode, bincode::Decode, serde::Serialize, serde::Deserialize, Default,
+    Debug,
+    Clone,
+    bincode::Encode,
+    bincode::Decode,
+    serde::Serialize,
+    serde::Deserialize,
+    Default,
+    PartialEq,
 )]
 pub struct DeviceNonces {
     /// the nonce index of the first nonce in `nonces`
@@ -175,6 +182,7 @@ impl DeviceToCoordinatorMessage {
             SignatureShare { .. } => "SignatureShare",
             DisplayBackupConfirmed => "DisplayBackupConfirmed",
             CheckShareBackup { .. } => "CheckShareBackup",
+            HeldShares(_) => "HeldShares",
         }
     }
 }
@@ -191,6 +199,20 @@ pub enum CoordinatorToUserMessage {
         /// whether it was a valid backup for this key
         valid: bool,
     },
+    PromptRecoverShare(Box<RecoverShare>),
+}
+
+impl CoordinatorToUserMessage {
+    pub fn kind(&self) -> &'static str {
+        use CoordinatorToUserMessage::*;
+        match self {
+            KeyGen(_) => "KeyGen",
+            Signing(_) => "Signing",
+            DisplayBackupConfirmed { .. } => "DisplayBackupConfirmed",
+            EnteredBackup { .. } => "EnteredBackup",
+            PromptRecoverShare { .. } => "PromptRecoverAccessStructure",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Copy)]
@@ -262,7 +284,7 @@ pub enum TaskKind {
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
-pub struct ShareImage {
-    pub point: Point<Normal, Public, Zero>,
-    pub share_index: PartyIndex,
+pub struct RecoverShare {
+    pub held_by: DeviceId,
+    pub held_share: HeldShare,
 }

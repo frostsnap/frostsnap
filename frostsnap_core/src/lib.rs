@@ -9,10 +9,11 @@ pub mod message;
 pub mod nostr;
 pub mod tweak;
 
-use coordinator::CoordinatorState;
+use core::ops::RangeBounds;
+
 use device::SignerState;
 use schnorr_fun::{
-    frost::{chilldkg::encpedpop, SharedKey},
+    frost::{chilldkg::encpedpop, PartyIndex, SharedKey},
     fun::{hash::HashAdd, prelude::*},
 };
 pub use sha2;
@@ -23,6 +24,7 @@ pub use sign_task::*;
 pub use bincode;
 pub use master_appkey::*;
 pub use serde;
+#[cfg(feature = "coordinator")]
 pub mod coordinator;
 pub mod device;
 pub use schnorr_fun;
@@ -95,7 +97,11 @@ pub enum Error {
 }
 
 impl Error {
-    pub fn coordinator_message_kind(state: &Option<CoordinatorState>, kind: &'static str) -> Self {
+    #[cfg(feature = "coordinator")]
+    pub fn coordinator_message_kind(
+        state: &Option<coordinator::CoordinatorState>,
+        kind: &'static str,
+    ) -> Self {
         Self::MessageKind {
             state: state.as_ref().map(|x| x.name()).unwrap_or("None"),
             kind,
@@ -112,6 +118,7 @@ impl Error {
         }
     }
 
+    #[cfg(feature = "coordinator")]
     pub fn coordinator_invalid_message(kind: &'static str, reason: impl ToString) -> Self {
         Self::InvalidMessage {
             kind,
@@ -198,8 +205,8 @@ pub trait Gist {
     fn gist(&self) -> String;
 }
 
-/// The hash of a threshold access structure for a particular key
-#[derive(Clone, Copy, PartialEq, Ord, PartialOrd, Eq)]
+/// The hash of a threshold access structure for a particualr key
+#[derive(Clone, Copy, PartialEq, Ord, PartialOrd, Eq, Hash)]
 pub struct AccessStructureId(pub [u8; 32]);
 
 impl AccessStructureId {
@@ -318,5 +325,32 @@ impl_fromstr_deserialize! {
     name => "session hash",
     fn from_bytes(bytes: [u8;32]) -> SessionHash {
         SessionHash(bytes)
+    }
+}
+
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, Ord, PartialOrd, PartialEq, Eq)]
+pub struct ShareImage {
+    pub share_index: PartyIndex,
+    pub point: Point<Normal, Public, Zero>,
+}
+
+// Uniquely identifies an access structure for a particular `master_appkey`.
+#[derive(
+    Debug, Clone, Copy, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash, Ord, PartialOrd,
+)]
+pub struct AccessStructureRef {
+    pub key_id: KeyId,
+    pub access_structure_id: AccessStructureId,
+}
+
+impl AccessStructureRef {
+    pub fn range_for_key(key_id: KeyId) -> impl RangeBounds<AccessStructureRef> {
+        AccessStructureRef {
+            key_id,
+            access_structure_id: AccessStructureId([0x00u8; 32]),
+        }..=AccessStructureRef {
+            key_id,
+            access_structure_id: AccessStructureId([0xffu8; 32]),
+        }
     }
 }
