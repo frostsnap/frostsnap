@@ -8,12 +8,12 @@ import 'package:flutter/services.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/serialport.dart';
 import 'package:frostsnapp/stream_ext.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'dart:io';
 import 'package:flutter/rendering.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
-import 'theme.dart';
 
 void main() async {
   // enable this if you're trying to figure out why things are displaying in
@@ -24,7 +24,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   String? startupError;
-  Stream<String> logStream;
+  final Stream<String> logStream;
 
   // set logging up first before doing anything else
 
@@ -107,13 +107,26 @@ class MyApp extends StatelessWidget {
   // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
+    final colorScheme = ColorScheme.fromSeed(
+      brightness: Brightness.dark,
+      seedColor: Color(0xFF0E9384),
+    );
+
+    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+      systemNavigationBarColor: colorScheme.surface,
+    ));
+
     return MaterialApp(
-        title: 'Frostsnapp',
-        theme: frostsnappTheme,
-        home: startupError == null
-            ? const MyHomePage(title: 'Frostsnapp')
-            : StartupErrorWidget(error: startupError!),
-        debugShowCheckedModeBanner: false);
+      title: 'Frostsnapp',
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: colorScheme,
+      ),
+      home: startupError == null
+          ? const MyHomePage(title: 'Frostsnapp')
+          : StartupErrorWidget(error: startupError!),
+      debugShowCheckedModeBanner: false,
+    );
   }
 }
 
@@ -182,6 +195,7 @@ class _StartupErrorWidgetState extends State<StartupErrorWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
         title: Text('Startup Error'),
@@ -197,19 +211,13 @@ class _StartupErrorWidgetState extends State<StartupErrorWidget> {
               children: <Widget>[
                 Text(
                   'STARTUP ERROR',
-                  style: TextStyle(
-                    fontSize: 24.0,
-                    fontWeight: FontWeight.bold,
-                    color: errorColor,
-                  ),
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(color: theme.colorScheme.error),
                 ),
                 SizedBox(height: 8),
                 Text(
                   "Sorry! Something has gone wrong with the app. Please report this directly to the frostsnap team.",
-                  style: TextStyle(
-                    fontSize: 16.0,
-                    color: textColor,
-                  ),
+                  style: theme.textTheme.titleMedium,
                 ),
                 SizedBox(height: 20),
                 Container(
@@ -217,17 +225,13 @@ class _StartupErrorWidgetState extends State<StartupErrorWidget> {
                       double.infinity, // Ensure the container takes full width
                   padding: EdgeInsets.all(8.0),
                   decoration: BoxDecoration(
-                    color:
-                        backgroundSecondaryColor, // Replace with your `textSecondaryColor`
+                    color: theme.colorScheme.surfaceContainer,
                     borderRadius: BorderRadius.circular(4.0),
                     border: Border.all(),
                   ),
                   child: SelectableText(
                     _combinedErrorWithLogs,
-                    style: TextStyle(
-                      fontFamily: 'Courier', // Monospaced font
-                      color: textColor,
-                    ),
+                    style: GoogleFonts.sourceCodePro(),
                   ),
                 ),
                 SizedBox(height: 20),

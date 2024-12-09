@@ -13,7 +13,7 @@ import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/show_backup.dart';
 import 'package:frostsnapp/snackbar.dart';
-import 'package:frostsnapp/theme.dart';
+import 'package:frostsnapp/progress_indicator.dart';
 
 class DeviceSettingsPage extends StatelessWidget {
   const DeviceSettingsPage({
@@ -66,14 +66,15 @@ class _DeviceSettingsState extends State<DeviceSettings> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final Widget body;
     final keys = coord.keyState().keys;
     if (device == null) {
       body = Center(
-          child: Column(children: const [
+          child: Column(children: [
         Text(
           'Waiting for device to reconnect',
-          style: TextStyle(color: uninterestedColor, fontSize: 24.0),
+          style: theme.textTheme.titleMedium,
         ),
         FsProgressIndicator(),
       ]));
@@ -118,7 +119,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
       if (keys.isEmpty) {
         keyList = Text(
           'No keys on this device',
-          style: TextStyle(color: uninterestedColor, fontSize: 20.0),
+          style: theme.textTheme.titleMedium,
         );
       }
       final deviceFirmwareDigest = device_.firmwareDigest;
@@ -227,7 +228,7 @@ class SettingsSection extends StatelessWidget {
                   fontSize: 32,
                 ),
               ),
-              Divider(thickness: 2, color: backgroundSecondaryColor),
+              Divider(),
               Padding(
                 padding: const EdgeInsets.only(top: 8.0, bottom: 16.0),
                 child: settings[index].$2,
@@ -335,9 +336,7 @@ class _FirmwareUpgradeDialogState extends State<FirmwareUpgradeDialog> {
                 padding: EdgeInsets.symmetric(vertical: 5.0, horizontal: 5.0),
                 child: LinearProgressIndicator(
                   value: progress!,
-                  backgroundColor: backgroundSecondaryColor,
                   minHeight: 10.0,
-                  valueColor: AlwaysStoppedAnimation<Color>(textColor),
                 ));
           }
         }

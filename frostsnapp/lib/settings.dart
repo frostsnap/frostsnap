@@ -10,7 +10,6 @@ import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/electrum_server_settings.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/logs.dart';
-import 'package:frostsnapp/theme.dart';
 import 'package:frostsnapp/todo.dart';
 import 'package:frostsnapp/wallet.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
@@ -196,8 +195,15 @@ class SettingsPage extends StatelessWidget {
 class FsAppBar extends StatelessWidget implements PreferredSizeWidget {
   final Widget title;
   final List<Widget> actions;
+  final PreferredSizeWidget? bottom;
+  final Color? backgroundColor;
 
-  const FsAppBar({super.key, required this.title, this.actions = const []});
+  const FsAppBar(
+      {super.key,
+      required this.title,
+      this.bottom,
+      this.backgroundColor,
+      this.actions = const []});
 
   @override
   Widget build(BuildContext context) {
@@ -205,7 +211,11 @@ class FsAppBar extends StatelessWidget implements PreferredSizeWidget {
     final settingsCtx = SettingsContext.of(context)!;
 
     return AppBar(
+      centerTitle: true,
       title: title,
+      bottom: bottom,
+      backgroundColor: backgroundColor,
+      surfaceTintColor: backgroundColor,
       actions: [
         ...actions,
         if (walletCtx != null)
@@ -483,6 +493,7 @@ class ChainStatusIcon extends StatelessWidget {
     final double iconSize = IconTheme.of(context).size ?? 30.0;
     final String statusName;
     final VoidCallback? onPressed;
+    final theme = Theme.of(context);
 
     if (chainStatus.state == ChainStatusState.Connected) {
       onPressed = () {
@@ -496,13 +507,13 @@ class ChainStatusIcon extends StatelessWidget {
       case ChainStatusState.Connected:
         statusName = "Connected";
         iconData = Icons.power;
-        iconColor = Colors.green;
+        iconColor = theme.colorScheme.primary;
         break;
       case ChainStatusState.Connecting:
       case ChainStatusState.Disconnected:
         statusName = "Disconnected";
         iconData = Icons.power_off;
-        iconColor = Colors.red;
+        iconColor = theme.colorScheme.error;
         break;
     }
 
@@ -555,15 +566,15 @@ class DeleteWalletPage extends StatelessWidget {
             SizedBox(height: 8),
 
             if (walletCtx != null)
-              const DefaultTextStyle(
-                  style: TextStyle(fontSize: 24),
+              DefaultTextStyle(
+                  style: const TextStyle(fontSize: 24),
                   child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(
-                          'Balance:',
+                        const Text(
+                          'Balance: ',
                         ),
-                        UpdatingBalance(),
+                        UpdatingBalance(txStream: walletCtx.txStream),
                       ])),
             SizedBox(height: 16),
             DefaultTextStyle(
@@ -676,6 +687,8 @@ class _HoldToDeleteButtonState extends State<HoldToDeleteButton> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return GestureDetector(
       onTapDown: (_) => _startProgress(),
       onTapUp: (_) => _stopProgress(),
@@ -685,8 +698,9 @@ class _HoldToDeleteButtonState extends State<HoldToDeleteButton> {
         width: 120,
         height: 120,
         decoration: BoxDecoration(
-          color:
-              _isPressed ? backgroundSecondaryColor : backgroundTertiaryColor,
+          color: _isPressed
+              ? theme.colorScheme.secondary
+              : theme.colorScheme.tertiary,
           shape: BoxShape.circle,
           boxShadow: _isPressed
               ? []
@@ -706,7 +720,7 @@ class _HoldToDeleteButtonState extends State<HoldToDeleteButton> {
               height: 120,
               child: CircularProgressIndicator(
                 value: _progress,
-                backgroundColor: backgroundTertiaryColor,
+                backgroundColor: theme.colorScheme.surfaceContainer,
                 valueColor: AlwaysStoppedAnimation<Color>(Colors.red),
               ),
             ),

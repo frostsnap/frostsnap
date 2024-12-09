@@ -4,17 +4,20 @@ import 'package:flutter/material.dart';
 class SpinningSyncIcon extends StatefulWidget {
   final Stream<bool> spinStream;
   final double? size;
+  final IconData? iconData;
 
-  const SpinningSyncIcon({super.key, required this.spinStream, this.size});
+  const SpinningSyncIcon(
+      {super.key, required this.spinStream, this.iconData, this.size});
 
-  factory SpinningSyncIcon.always({double? size}) {
+  factory SpinningSyncIcon.always({double? size, IconData? iconData}) {
     late final StreamController<bool> controller;
     controller = StreamController<bool>.broadcast(
       onListen: () {
         controller.add(true);
       },
     );
-    return SpinningSyncIcon(spinStream: controller.stream, size: size);
+    return SpinningSyncIcon(
+        spinStream: controller.stream, iconData: iconData, size: size);
   }
 
   factory SpinningSyncIcon.until(Future<void> future, {double? size}) {
@@ -39,7 +42,7 @@ class _SpinningSyncIconState extends State<SpinningSyncIcon>
   void initState() {
     super.initState();
     _controller =
-        AnimationController(vsync: this, duration: Duration(seconds: 1));
+        AnimationController(vsync: this, duration: Duration(seconds: 5));
 
     _subscription = widget.spinStream.listen((spinning) {
       if (spinning) {
@@ -77,7 +80,7 @@ class _SpinningSyncIconState extends State<SpinningSyncIcon>
         return Transform.rotate(
           angle: _controller.value * 2.0 * 3.14159,
           child: Icon(
-            Icons.sync,
+            widget.iconData ?? Icons.sync,
             size: widget.size ?? IconTheme.of(context).size,
           ),
         );
