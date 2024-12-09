@@ -4,6 +4,7 @@ use crate::{Completion, Sink, UiProtocol, UiToStorageMessage};
 use frostsnap_comms::CoordinatorSendMessage;
 use frostsnap_core::{
     coordinator::{AccessStructureRef, FrostCoordinator},
+    device::KeyPurpose,
     message::{CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage},
     DeviceId, SessionHash,
 };
@@ -17,6 +18,7 @@ pub struct KeyGen {
 }
 
 impl KeyGen {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         keygen_sink: impl Sink<KeyGenState> + 'static,
         coordinator: &mut FrostCoordinator,
@@ -24,6 +26,7 @@ impl KeyGen {
         currently_connected: BTreeSet<DeviceId>,
         threshold: u16,
         key_name: String,
+        key_purpose: KeyPurpose,
         rng: &mut impl rand_core::RngCore,
     ) -> Self {
         let mut self_ = Self {
@@ -41,7 +44,7 @@ impl KeyGen {
             self_.abort("A selected device was disconnected".into(), false);
         }
 
-        match coordinator.do_keygen(&devices, threshold, key_name, rng) {
+        match coordinator.do_keygen(&devices, threshold, key_name, key_purpose, rng) {
             Ok(messages) => {
                 for message in messages {
                     self_.keygen_messages.push(

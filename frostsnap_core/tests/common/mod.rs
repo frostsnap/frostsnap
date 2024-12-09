@@ -134,6 +134,9 @@ pub trait Env {
             DeviceToUserMessage::Canceled { .. } => {
                 panic!("no cancelling done");
             }
+            DeviceToUserMessage::VerifyAddress { .. } => {
+                // we dont actually confirm on the device
+            }
             _ => { /* do nothing */ }
         }
     }

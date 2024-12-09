@@ -338,7 +338,8 @@ class _ThresholdPageState extends State<ThresholdPage> {
                           devices: widget.selectedDevices
                               .map((device) => device.id)
                               .toList(),
-                          keyName: widget.keyName)
+                          keyName: widget.keyName,
+                          isMainnetKey: widget.network.isMainnet())
                       .toBehaviorSubject();
                   final accessStructureRef = await showCheckKeyGenDialog(
                     context: context,

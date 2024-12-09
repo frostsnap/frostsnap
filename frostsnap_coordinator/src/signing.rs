@@ -1,8 +1,9 @@
 use frostsnap_comms::{CoordinatorSendBody, CoordinatorSendMessage, Destination};
 use frostsnap_core::{
+    coordinator::StartSign,
     message::{
-        CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToUserMessage,
-        CoordinatorToUserSigningMessage, EncodedSignature, SignRequest,
+        CoordinatorToDeviceMessage, CoordinatorToUserMessage, CoordinatorToUserSigningMessage,
+        EncodedSignature, SignRequest,
     },
     DeviceId,
 };
@@ -24,27 +25,15 @@ pub struct SigningDispatcher {
 }
 
 impl SigningDispatcher {
-    /// Takes in the messages from `start_sign` and extracts the signing request to handle separately.
-    ///
-    /// We need to do this because we want to only send out the message to the devices that are connected.
-    pub fn from_filter_out_start_sign(
-        start_sign_messages: &mut Vec<CoordinatorSend>,
+    pub fn new(
+        start_sign_messages: StartSign,
         sink: impl crate::Sink<SigningState> + 'static,
     ) -> Self {
-        let (i, request, targets) = start_sign_messages
-            .iter()
-            .enumerate()
-            .find_map(|(i, m)| match m {
-                CoordinatorSend::ToDevice {
-                    message: CoordinatorToDeviceMessage::RequestSign(request),
-                    destinations,
-                } => Some((i, request.clone(), destinations.clone())),
-                _ => None,
-            })
-            .expect("must have a sign request");
-
-        let _ /*already cloned*/ = start_sign_messages.remove(i);
-        Self::new_from_request(request, targets, sink)
+        Self::new_from_request(
+            start_sign_messages.sign_request,
+            start_sign_messages.target_devices,
+            sink,
+        )
     }
 
     pub fn new_from_request(

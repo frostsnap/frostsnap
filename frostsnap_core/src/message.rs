@@ -1,3 +1,5 @@
+use crate::device::KeyPurpose;
+use crate::tweak::BitcoinBip32Path;
 use crate::{
     coordinator, AccessStructureId, CheckedSignTask, CoordShareDecryptionContrib, Gist, KeyId,
     MasterAppkey, SessionHash, Vec,
@@ -8,6 +10,7 @@ use alloc::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     string::String,
 };
+use bitcoin::address::{Address, NetworkChecked};
 use core::num::NonZeroU32;
 use schnorr_fun::binonce;
 use schnorr_fun::frost::SecretShare;
@@ -42,6 +45,7 @@ pub enum CoordinatorToDeviceMessage {
         device_to_share_index: BTreeMap<DeviceId, NonZeroU32>,
         threshold: u16,
         key_name: String,
+        key_purpose: KeyPurpose,
     },
     FinishKeyGen {
         agg_input: encpedpop::AggKeygenInput,
@@ -55,6 +59,10 @@ pub enum CoordinatorToDeviceMessage {
         party_index: PartyIndex,
     },
     CheckShareBackup,
+    VerifyAddress {
+        master_appkey: MasterAppkey,
+        derivation_index: u32,
+    },
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
@@ -123,6 +131,7 @@ impl CoordinatorToDeviceMessage {
             CoordinatorToDeviceMessage::RequestSign { .. } => "RequestSign",
             CoordinatorToDeviceMessage::DisplayBackup { .. } => "DisplayBackup",
             CoordinatorToDeviceMessage::CheckShareBackup { .. } => "CheckShareBackup",
+            CoordinatorToDeviceMessage::VerifyAddress { .. } => "VerifyAddress",
         }
     }
 }
@@ -251,6 +260,10 @@ pub enum DeviceToUserMessage {
     },
     EnterBackup,
     EnteredBackup(SecretShare),
+    VerifyAddress {
+        address: Address<NetworkChecked>,
+        bip32_path: BitcoinBip32Path,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -259,6 +272,7 @@ pub enum TaskKind {
     Sign,
     DisplayBackup,
     CheckBackup,
+    VerifyAddress,
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]

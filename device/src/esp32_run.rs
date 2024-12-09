@@ -23,8 +23,6 @@ use frostsnap_core::{
 };
 use rand_chacha::rand_core::RngCore;
 
-pub const BITCOIN_NETWORK: bitcoin::Network = bitcoin::Network::Signet;
-
 pub struct Run<'a, UpstreamUart, DownstreamUart, Rng, Ui, T, DownstreamDetectPin> {
     pub upstream_serial: SerialInterface<'a, T, UpstreamUart, Upstream>,
     pub downstream_serial: SerialInterface<'a, T, DownstreamUart, Downstream>,
@@ -538,7 +536,10 @@ where
                                     key_name,
                                 }));
                             }
-                            DeviceToUserMessage::SignatureRequest { sign_task, .. } => {
+                            DeviceToUserMessage::SignatureRequest {
+                                sign_task,
+                                master_appkey,
+                            } => {
                                 ui.set_workflow(ui::Workflow::prompt(ui::Prompt::Signing(
                                     match sign_task.into_inner() {
                                         SignTask::Plain { message } => {
@@ -548,12 +549,16 @@ where
                                             ui::SignPrompt::Nostr(event.content)
                                         }
                                         SignTask::BitcoinTransaction(transaction) => {
+                                            let network = signer
+                                                .wallet_network(master_appkey.key_id())
+                                                .unwrap_or(bitcoin::Network::Bitcoin);
+
                                             let fee = transaction.fee().expect("transaction validity should have already been checked");
                                             let foreign_recipients = transaction
                                                 .foreign_recipients()
                                                 .map(|(spk, value)| {
                                                     (
-                                                        bitcoin::Address::from_script(spk, BITCOIN_NETWORK)
+                                                        bitcoin::Address::from_script(spk, network)
                                                             .expect("has address representation"),
                                                         bitcoin::Amount::from_sat(value),
                                                     )
@@ -586,6 +591,21 @@ where
                                 ui.set_workflow(ui::Workflow::prompt(
                                     ui::Prompt::ConfirmLoadBackup(share_backup),
                                 ));
+                            }
+                            DeviceToUserMessage::VerifyAddress {
+                                address,
+                                bip32_path,
+                            } => {
+                                let rand_seed = rng.next_u32();
+                                ui.set_workflow(ui::Workflow::DisplayAddress {
+                                    address: address.to_string(),
+                                    bip32_path: bip32_path
+                                        .path_segments_from_bitcoin_appkey()
+                                        .map(|i| i.to_string())
+                                        .collect::<Vec<_>>()
+                                        .join("/"),
+                                    rand_seed,
+                                })
                             }
                         };
                     }

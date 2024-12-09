@@ -1,4 +1,5 @@
 use crate::{
+    device::KeyPurpose,
     message::*,
     symmetric_encryption::{Ciphertext, SymmetricKey},
     tweak::Xpub,
@@ -491,6 +492,7 @@ impl FrostCoordinator {
         devices: &BTreeSet<DeviceId>,
         threshold: u16,
         key_name: String,
+        key_purpose: KeyPurpose,
         rng: &mut impl rand_core::RngCore,
     ) -> Result<Vec<CoordinatorSend>, ActionError> {
         if devices.len() < threshold as usize {
@@ -547,6 +549,7 @@ impl FrostCoordinator {
                         device_to_share_index,
                         threshold,
                         key_name,
+                        key_purpose,
                     },
                     destinations: devices.clone(),
                 }])
@@ -617,7 +620,7 @@ impl FrostCoordinator {
         sign_task: SignTask,
         signing_parties: BTreeSet<DeviceId>,
         encryption_key: SymmetricKey,
-    ) -> Result<Vec<CoordinatorSend>, StartSignError> {
+    ) -> Result<StartSign, StartSignError> {
         let AccessStructureRef {
             key_id,
             access_structure_id,
@@ -758,10 +761,10 @@ impl FrostCoordinator {
             },
         });
 
-        Ok(vec![CoordinatorSend::ToDevice {
-            destinations: signing_parties,
-            message: CoordinatorToDeviceMessage::RequestSign(sign_request),
-        }])
+        Ok(StartSign {
+            target_devices: signing_parties,
+            sign_request,
+        })
     }
 
     pub fn maybe_request_nonce_replenishment(
@@ -870,6 +873,30 @@ impl FrostCoordinator {
             message: CoordinatorToDeviceMessage::CheckShareBackup,
             destinations: BTreeSet::from_iter([device]),
         }])
+    }
+
+    pub fn verify_address(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        derivation_index: u32,
+        master_appkey: MasterAppkey,
+    ) -> Result<VerifyAddress, ActionError> {
+        let access_structure = self.get_access_structure(access_structure_ref).ok_or(
+            ActionError::StateInconsistent("no such access_structure".into()),
+        )?;
+
+        // verify on any device that knows about this key
+        let target_devices: BTreeSet<_> = access_structure
+            .device_to_share_index
+            .keys()
+            .cloned()
+            .collect();
+
+        Ok(VerifyAddress {
+            master_appkey,
+            derivation_index,
+            target_devices,
+        })
     }
 
     pub fn state_name(&self) -> &'static str {
@@ -1174,4 +1201,44 @@ impl Gist for Mutation {
 pub struct AccessStructureRef {
     pub key_id: KeyId,
     pub access_structure_id: AccessStructureId,
+}
+
+#[derive(Debug, Clone)]
+pub struct VerifyAddress {
+    pub master_appkey: MasterAppkey,
+    pub derivation_index: u32,
+    pub target_devices: BTreeSet<DeviceId>,
+}
+
+impl IntoIterator for VerifyAddress {
+    type Item = CoordinatorSend;
+    type IntoIter = core::iter::Once<CoordinatorSend>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        core::iter::once(CoordinatorSend::ToDevice {
+            message: CoordinatorToDeviceMessage::VerifyAddress {
+                master_appkey: self.master_appkey,
+                derivation_index: self.derivation_index,
+            },
+            destinations: self.target_devices,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct StartSign {
+    pub target_devices: BTreeSet<DeviceId>,
+    pub sign_request: SignRequest,
+}
+
+impl IntoIterator for StartSign {
+    type Item = CoordinatorSend;
+    type IntoIter = core::iter::Once<CoordinatorSend>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        core::iter::once(CoordinatorSend::ToDevice {
+            message: CoordinatorToDeviceMessage::RequestSign(self.sign_request),
+            destinations: self.target_devices,
+        })
+    }
 }
