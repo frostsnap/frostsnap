@@ -16,34 +16,51 @@ import 'package:frostsnapp/address.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class WalletContext extends InheritedWidget {
-  final Wallet wallet;
-  final MasterAppkey masterAppkey;
-  late final KeyId keyId;
+  final KeyWallet keyWallet;
   late final Stream<TxState> txStream;
   // We have a contextual Stream of syncing events (each syncing event is
   // represented as a Stream<double> where the double is the progress).
-  final StreamController<Stream<double>> syncs = StreamController.broadcast();
+  late final StreamController<Stream<double>> syncs;
 
-  WalletContext({
-    super.key,
-    required this.wallet,
-    required this.masterAppkey,
-    required Widget child,
-  }) : super(child: child) {
-    keyId = api.masterAppkeyExtToKeyId(masterAppkey: masterAppkey);
-    txStream =
-        wallet.subTxState(masterAppkey: masterAppkey).toBehaviorSubject();
+  WalletContext(
+      {super.key,
+      required this.keyWallet,
+      required Widget child,
+      Stream<TxState>? txStream,
+      StreamController<Stream<double>>? syncs})
+      : super(
+          // a wallet context implies a key context so we wrap the child in one also
+          child: KeyContext(
+              keyId: api.masterAppkeyExtToKeyId(
+                  masterAppkey: keyWallet.masterAppkey),
+              child: child),
+        ) {
+    this.txStream = txStream ??
+        keyWallet.wallet
+            .subTxState(masterAppkey: keyWallet.masterAppkey)
+            .toBehaviorSubject();
+    this.syncs = syncs ?? StreamController.broadcast();
   }
 
   static WalletContext? of(BuildContext context) {
-    return context.dependOnInheritedWidgetOfExactType<WalletContext>();
+    return context.getInheritedWidgetOfExactType<WalletContext>();
+  }
+
+  /// so we can clone this context over a new widget tree
+  WalletContext wrap(Widget child) {
+    return WalletContext(
+      keyWallet: keyWallet,
+      txStream: txStream,
+      syncs: syncs,
+      child: child,
+    );
   }
 
   // Allows children to start syncs The reason this is here rather than being
   // called directly by button onPressed for example is so we can trigger it in other ways.
   Stream<double> startFullSync({BuildContext? context}) {
-    final progress = wallet
-        .sync(masterAppkey: masterAppkey)
+    final progress = keyWallet.wallet
+        .sync(masterAppkey: keyWallet.masterAppkey)
         .asBroadcastStream()
         .handleError((error) {
       if (context != null && context.mounted) {
@@ -74,21 +91,28 @@ class WalletContext extends InheritedWidget {
     // never updates
     return false;
   }
+
+  get wallet => keyWallet.wallet;
+  get masterAppkey => keyWallet.masterAppkey;
+  get keyId => api.masterAppkeyExtToKeyId(masterAppkey: keyWallet.masterAppkey);
 }
 
-class WalletPage extends StatelessWidget {
+class KeyWallet {
   final Wallet wallet;
   final MasterAppkey masterAppkey;
 
-  const WalletPage(
-      {super.key, required this.wallet, required this.masterAppkey});
+  KeyWallet({required this.wallet, required this.masterAppkey});
+}
+
+class WalletPage extends StatelessWidget {
+  final KeyWallet keyWallet;
+
+  const WalletPage({super.key, required this.keyWallet});
 
   @override
   Widget build(BuildContext context) {
     return WalletContext(
-        wallet: wallet,
-        masterAppkey: masterAppkey,
-        child: WalletSyncTrigger(child: WalletHome()));
+        keyWallet: keyWallet, child: WalletSyncTrigger(child: WalletHome()));
   }
 }
 
@@ -193,7 +217,13 @@ class WalletActivity extends StatelessWidget {
               return FloatingProgress(
                   key: floatingProgressKey, progressStream: snap.data!);
             }),
-        Column(children: const [UpdatingBalance(), Expanded(child: TxList())]),
+        Column(children: [
+          UpdatingBalance(
+              txStateStream: walletContext.txStream,
+              textStyle:
+                  TextStyle(fontWeight: FontWeight.bold, fontSize: 34.0)),
+          Expanded(child: TxList())
+        ]),
       ]),
     );
   }
@@ -408,8 +438,7 @@ class _WalletReceiveState extends State<WalletReceive> {
                   context,
                   MaterialPageRoute(
                     builder: (context) => WalletContext(
-                      wallet: walletCtx.wallet,
-                      masterAppkey: walletCtx.masterAppkey,
+                      keyWallet: walletCtx.wallet,
                       child: AddressPage(
                         masterAppkey: walletCtx.masterAppkey,
                         address: address,
@@ -469,8 +498,7 @@ class _WalletReceiveState extends State<WalletReceive> {
                         context,
                         MaterialPageRoute(
                           builder: (context) => WalletContext(
-                            wallet: widget.wallet,
-                            masterAppkey: widget.masterAppkey,
+                            keyWallet: walletCtx.keyWallet,
                             child: AddressPage(
                               masterAppkey: widget.masterAppkey,
                               address: address,
@@ -562,7 +590,7 @@ class _WalletSendState extends State<WalletSend> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  UpdatingBalance(),
+                  UpdatingBalance(txStateStream: walletCtx.txStream),
                   TextFormField(
                     decoration: InputDecoration(labelText: 'Address'),
                     validator: (value) {
@@ -648,11 +676,10 @@ class _WalletSendState extends State<WalletSend> {
                                       devices: selectedDevices.toList());
                                   if (context.mounted) {
                                     await signAndBroadcastWorkflowDialog(
-                                        wallet: walletCtx.wallet,
+                                        keyWallet: walletCtx.keyWallet,
                                         context: context,
                                         signingStream: signingStream,
                                         unsignedTx: unsignedTx,
-                                        masterAppkey: walletCtx.masterAppkey,
                                         onBroadcastNewTx:
                                             widget.onBroadcastNewTx);
                                   }
@@ -674,11 +701,10 @@ Future<void> signAndBroadcastWorkflowDialog(
     {required BuildContext context,
     required Stream<SigningState> signingStream,
     required UnsignedTx unsignedTx,
-    required Wallet wallet,
-    required MasterAppkey masterAppkey,
+    required KeyWallet keyWallet,
     Function()? onBroadcastNewTx}) async {
-  final effect =
-      unsignedTx.effect(masterAppkey: masterAppkey, network: wallet.network);
+  final effect = unsignedTx.effect(
+      masterAppkey: keyWallet.masterAppkey, network: keyWallet.wallet.network);
 
   final signatures = await showSigningProgressDialog(
     context,
@@ -688,8 +714,11 @@ Future<void> signAndBroadcastWorkflowDialog(
   if (signatures != null) {
     final signedTx = await unsignedTx.complete(signatures: signatures);
     if (context.mounted) {
-      final wasBroadcast = await showBroadcastConfirmDialog(context,
-          masterAppkey: masterAppkey, tx: signedTx, wallet: wallet);
+      final wasBroadcast = await showBroadcastConfirmDialog(
+        context,
+        keyWallet: keyWallet,
+        tx: signedTx,
+      );
       if (wasBroadcast) {
         onBroadcastNewTx?.call();
       }
@@ -797,16 +826,18 @@ Widget describeEffect(EffectOfTx effect) {
   return description;
 }
 
-Future<bool> showBroadcastConfirmDialog(BuildContext context,
-    {required MasterAppkey masterAppkey,
-    required SignedTx tx,
-    required Wallet wallet}) async {
+Future<bool> showBroadcastConfirmDialog(
+  BuildContext context, {
+  required KeyWallet keyWallet,
+  required SignedTx tx,
+}) async {
   final wasBroadcast = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
-        final effect =
-            tx.effect(masterAppkey: masterAppkey, network: wallet.network);
+        final effect = tx.effect(
+            masterAppkey: keyWallet.masterAppkey,
+            network: keyWallet.wallet.network);
         final effectWidget = EffectTable(effect: effect);
         return AlertDialog(
             title: Text("Broadcast?"),
@@ -827,8 +858,8 @@ Future<bool> showBroadcastConfirmDialog(BuildContext context,
               ElevatedButton(
                   onPressed: () async {
                     try {
-                      await wallet.broadcastTx(
-                          masterAppkey: masterAppkey, tx: tx);
+                      await keyWallet.wallet.broadcastTx(
+                          masterAppkey: keyWallet.masterAppkey, tx: tx);
                       if (dialogContext.mounted) {
                         Navigator.pop(context, true);
                       }
@@ -848,25 +879,28 @@ Future<bool> showBroadcastConfirmDialog(BuildContext context,
 }
 
 class UpdatingBalance extends StatelessWidget {
-  const UpdatingBalance({Key? key}) : super(key: key);
+  final TextStyle textStyle;
+  final Stream<TxState> txStateStream;
+  const UpdatingBalance(
+      {super.key,
+      required this.txStateStream,
+      this.textStyle = const TextStyle(fontWeight: FontWeight.bold)});
 
   @override
   Widget build(BuildContext context) {
-    final walletContext = WalletContext.of(context)!;
     return StreamBuilder<TxState>(
-      stream: walletContext.txStream,
+      stream: txStateStream,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return Text('Error: ${snapshot.error}');
         }
-        final transactions = snapshot.data?.txs ?? [];
-        int balance = transactions.fold(0, (sum, tx) => sum + tx.netValue);
+        final balance = snapshot.data?.balance ?? 0;
         final balanceInBTC = formatSatoshi(balance);
         return Padding(
           padding: const EdgeInsets.all(20.0),
           child: Text(
             balanceInBTC,
-            style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold),
+            style: textStyle,
           ),
         );
       },
