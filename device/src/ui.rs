@@ -79,6 +79,7 @@ pub enum Workflow {
     UserPrompt {
         prompt: Prompt,
         animation: AnimationState,
+        confirm_emitted: bool,
     },
     Debug(String),
     NamingDevice {
@@ -102,6 +103,7 @@ impl Workflow {
         Self::UserPrompt {
             prompt,
             animation: AnimationState::new(HOLD_TO_CONFIRM_TIME_MS),
+            confirm_emitted: false,
         }
     }
 }
