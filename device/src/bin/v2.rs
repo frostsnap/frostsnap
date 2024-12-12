@@ -306,7 +306,9 @@ where
                     }
                 },
             },
-            Workflow::UserPrompt { prompt, animation } => {
+            Workflow::UserPrompt {
+                prompt, animation, ..
+            } => {
                 match prompt {
                     Prompt::Signing(task) => match task {
                         SignPrompt::Bitcoin {
@@ -507,7 +509,11 @@ where
         };
 
         match self.workflow.borrow_mut() {
-            Workflow::UserPrompt { prompt, animation } => {
+            Workflow::UserPrompt {
+                prompt,
+                animation,
+                confirm_emitted,
+            } => {
                 let lift_up = if let Some((_, _, lift_up)) = current_touch {
                     lift_up
                 } else {
@@ -523,22 +529,26 @@ where
                             self.display.confirm_bar(progress);
                         }
                         AnimationProgress::Done => {
-                            let ui_event = match prompt {
-                                Prompt::KeyGen { .. } => UiEvent::KeyGenConfirm,
-                                Prompt::Signing(_) => UiEvent::SigningConfirm,
-                                Prompt::NewName { new_name, .. } => {
-                                    UiEvent::NameConfirm(new_name.clone())
-                                }
-                                Prompt::DisplayBackupRequest { .. } => {
-                                    UiEvent::BackupRequestConfirm
-                                }
-                                Prompt::ConfirmFirmwareUpgrade { .. } => UiEvent::UpgradeConfirm,
-                                Prompt::ConfirmLoadBackup(secret_share) => {
-                                    UiEvent::EnteredShareBackupConfirm(*secret_share)
-                                }
-                                Prompt::WipeDevice => UiEvent::WipeDataConfirm,
-                            };
-                            event = Some(ui_event);
+                            if !*confirm_emitted {
+                                event = Some(match prompt {
+                                    Prompt::KeyGen { .. } => UiEvent::KeyGenConfirm,
+                                    Prompt::Signing(_) => UiEvent::SigningConfirm,
+                                    Prompt::NewName { new_name, .. } => {
+                                        UiEvent::NameConfirm(new_name.clone())
+                                    }
+                                    Prompt::DisplayBackupRequest { .. } => {
+                                        UiEvent::BackupRequestConfirm
+                                    }
+                                    Prompt::ConfirmFirmwareUpgrade { .. } => {
+                                        UiEvent::UpgradeConfirm
+                                    }
+                                    Prompt::ConfirmLoadBackup(secret_share) => {
+                                        UiEvent::EnteredShareBackupConfirm(*secret_share)
+                                    }
+                                    Prompt::WipeDevice => UiEvent::WipeDataConfirm,
+                                });
+                                *confirm_emitted = true;
+                            }
                         }
                     }
                 }
