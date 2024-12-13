@@ -38,7 +38,6 @@ use tracing::{event, Level};
 
 pub struct FfiCoordinator {
     usb_manager: Mutex<Option<UsbSerialManager>>,
-    pending_for_outbox: Arc<Mutex<VecDeque<CoordinatorSend>>>,
     key_event_stream: Arc<Mutex<Option<StreamSink<KeyState>>>>,
     thread_handle: Mutex<Option<JoinHandle<()>>>,
     ui_protocol: Arc<Mutex<Option<Box<dyn UiProtocol>>>>,
@@ -58,8 +57,6 @@ impl FfiCoordinator {
         db: Arc<Mutex<rusqlite::Connection>>,
         usb_manager: UsbSerialManager,
     ) -> anyhow::Result<Self> {
-        let pending_for_outbox = Arc::new(Mutex::new(VecDeque::new()));
-
         let mut db_ = db.lock().unwrap();
 
         event!(Level::DEBUG, "loading core coordinator");
@@ -77,7 +74,6 @@ impl FfiCoordinator {
 
         Ok(Self {
             usb_manager,
-            pending_for_outbox,
             thread_handle: Default::default(),
             key_event_stream: Default::default(),
             ui_protocol: Default::default(),
@@ -103,7 +99,6 @@ impl FfiCoordinator {
             .unwrap()
             .take()
             .expect("can only start once");
-        let pending_loop = self.pending_for_outbox.clone();
         let coordinator_loop = self.coordinator.clone();
         let ui_protocol = self.ui_protocol.clone();
         let db_loop = self.db.clone();
@@ -164,7 +159,7 @@ impl FfiCoordinator {
                 let device_changes = usb_manager.poll_ports();
                 let mut coordinator = coordinator_loop.lock().unwrap();
                 let mut ui_protocol_loop = ui_protocol.lock().unwrap();
-                let mut coordinator_outbox = pending_loop.lock().unwrap();
+                let mut coordinator_outbox = VecDeque::default();
                 let mut messages_from_devices = vec![];
                 let mut db = db_loop.lock().unwrap();
 
@@ -454,7 +449,6 @@ impl FfiCoordinator {
             SinkWrap(sink),
         );
 
-        self.pending_for_outbox.lock().unwrap().extend(messages);
         ui_protocol.emit_state();
         self.start_protocol(ui_protocol);
 
@@ -734,11 +728,6 @@ impl FfiCoordinator {
 
         let ui_protocol =
             VerifyAddressProtocol::new(verify_address_messages.clone(), SinkWrap(stream));
-
-        self.pending_for_outbox
-            .lock()
-            .unwrap()
-            .extend(verify_address_messages);
 
         ui_protocol.emit_state();
         self.start_protocol(ui_protocol);

@@ -25,15 +25,8 @@ pub struct SigningDispatcher {
 }
 
 impl SigningDispatcher {
-    pub fn new(
-        start_sign_messages: StartSign,
-        sink: impl crate::Sink<SigningState> + 'static,
-    ) -> Self {
-        Self::new_from_request(
-            start_sign_messages.sign_request,
-            start_sign_messages.target_devices,
-            sink,
-        )
+    pub fn new(start_sign: StartSign, sink: impl crate::Sink<SigningState> + 'static) -> Self {
+        Self::new_from_request(start_sign.sign_request, start_sign.target_devices, sink)
     }
 
     pub fn new_from_request(
