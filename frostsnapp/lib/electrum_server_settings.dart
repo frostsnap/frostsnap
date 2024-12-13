@@ -155,7 +155,7 @@ class _ElectrumServerSettingWidgetState
         if (_isTestingConnection)
           Positioned.fill(
             child: Container(
-              color: Colors.black.withOpacity(0.5),
+              color: Colors.black.withValues(alpha: 127),
               child: Center(
                 child: FsProgressIndicator(),
               ),

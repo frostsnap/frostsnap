@@ -58,7 +58,7 @@ Widget chunkedAddressFormat(
           ? BoxDecoration(
               color: backgroundColor,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.white.withOpacity(0.1)),
+              border: Border.all(color: Colors.white.withValues(alpha: 26)),
             )
           : null,
       child: Column(
