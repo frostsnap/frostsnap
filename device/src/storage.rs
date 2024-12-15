@@ -5,7 +5,7 @@ use bincode::{
     enc::write::Writer,
     error::{DecodeError, EncodeError},
 };
-use embedded_storage::{ReadStorage, Storage};
+use embedded_storage::{nor_flash, ReadStorage, Storage};
 use esp_storage::{FlashStorage, FlashStorageError};
 use frostsnap_core::{device, schnorr_fun::fun::Scalar};
 
@@ -129,6 +129,14 @@ impl DeviceStorage {
 
     pub fn flash_mut(&mut self) -> &mut FlashStorage {
         &mut self.flash
+    }
+
+    pub fn erase(&mut self) -> Result<(), FlashStorageError> {
+        nor_flash::NorFlash::erase(
+            &mut self.flash,
+            NVS_PARTITION_START,
+            NVS_PARTITION_START + _NVS_PARTITION_SIZE as u32,
+        )
     }
 }
 
