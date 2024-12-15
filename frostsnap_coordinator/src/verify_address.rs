@@ -82,25 +82,25 @@ impl UiProtocol for VerifyAddressProtocol {
     }
 
     fn poll(&mut self) -> (Vec<CoordinatorSendMessage>, Vec<UiToStorageMessage>) {
-        if self.is_complete.is_some() {
-            return (vec![], vec![]);
+        let mut messages = vec![];
+        if !self.need_to_send_to.is_empty() {
+            messages.push(CoordinatorSendMessage {
+                target_destinations: Destination::Particular(core::mem::take(
+                    &mut self.need_to_send_to,
+                )),
+                message_body: CoordinatorSendBody::Core(
+                    CoordinatorToDeviceMessage::VerifyAddress {
+                        master_appkey: self.master_appkey,
+                        derivation_index: self.derivation_index,
+                    },
+                ),
+            });
         }
-
         self.state
             .sent_to_devices
             .extend(self.need_to_send_to.iter().cloned());
 
-        let verify_address_message = CoordinatorSendMessage {
-            target_destinations: Destination::Particular(core::mem::take(
-                &mut self.need_to_send_to,
-            )),
-            message_body: CoordinatorSendBody::Core(CoordinatorToDeviceMessage::VerifyAddress {
-                master_appkey: self.master_appkey,
-                derivation_index: self.derivation_index,
-            }),
-        };
-
-        (vec![verify_address_message], vec![])
+        (messages, vec![])
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

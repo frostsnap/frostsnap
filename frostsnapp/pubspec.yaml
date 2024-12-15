@@ -31,9 +31,6 @@ dependencies:
     sdk: flutter
 
   rxdart: ^0.27.7
-  # The following adds the Cupertino Icons font to your application.
-  # Use with the CupertinoIcons class for iOS style icons.
-  cupertino_icons: ^1.0.6
   ffi: ^2.1.0
   flutter_rust_bridge: 1.82.6
   freezed_annotation: ^2.4.1
@@ -45,11 +42,11 @@ dependencies:
   # needed for firstWhereOrNull and other useful extensions
   collection: ^1.0.0
   usb_serial:
-  # TODO: https://github.com/altera2015/usbserial/issues/118
+    # TODO: https://github.com/altera2015/usbserial/issues/118
     git:
       url: "https://github.com/hwh97/usbserial.git"
       ref: "2dff0b4dcb141e740688b8a8182c4b77b38e9fba"
-  file_picker: ^8.0.2
+  file_picker: 8.1.2
   camera: ^0.11.0
   zxing2: ^0.2.3
   image: ^4.1.7
