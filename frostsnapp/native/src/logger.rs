@@ -1,21 +1,29 @@
+use std::{io, sync::RwLock};
+
 use flutter_rust_bridge::StreamSink;
-use std::io;
+use lazy_static::lazy_static;
 use time::{
     format_description::well_known::{iso8601::Config, Iso8601},
     OffsetDateTime,
 };
 use tracing_subscriber::registry::LookupSpan;
 
-#[derive(Clone)]
-pub struct DartLogWriter {
-    sink: StreamSink<String>,
+lazy_static! {
+    static ref LOG_SINK: RwLock<Option<StreamSink<String>>> = Default::default();
 }
+
+#[derive(Clone)]
+struct DartLogWriter;
 
 impl io::Write for DartLogWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let string = String::from_utf8_lossy(buf);
         let newline_stripped = string.trim_end_matches('\n');
-        self.sink.add(newline_stripped.to_string());
+        let sink_lock = LOG_SINK.read().unwrap();
+        sink_lock
+            .as_ref()
+            .unwrap()
+            .add(newline_stripped.to_string());
         Ok(buf.len())
     }
 
@@ -24,7 +32,20 @@ impl io::Write for DartLogWriter {
     }
 }
 
-pub fn dart_logger<S>(sink: StreamSink<String>) -> impl tracing_subscriber::layer::Layer<S>
+/// Set the global [`StreamSink`] used by [`dart_logger`].
+///
+/// Returns whether this is the first call.
+pub fn set_dart_logger(sink: StreamSink<String>) -> bool {
+    let mut sink_lock = LOG_SINK.write().unwrap();
+    let is_new = sink_lock.is_none();
+    *sink_lock = Some(sink);
+    is_new
+}
+
+/// Obtain the Dart logger.
+///
+/// [`set_dart_logger`] must be called atleast once before calling this method.
+pub fn dart_logger<S>() -> impl tracing_subscriber::layer::Layer<S>
 where
     S: tracing::Subscriber + for<'a> LookupSpan<'a>,
 {
@@ -34,7 +55,7 @@ where
         .with_line_number(false)
         .with_target(false)
         .with_timer(TimeFormatter)
-        .with_writer(move || io::LineWriter::new(DartLogWriter { sink: sink.clone() }))
+        .with_writer(move || io::LineWriter::new(DartLogWriter))
 }
 
 struct TimeFormatter;
