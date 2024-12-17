@@ -81,7 +81,8 @@ impl UiProtocol for FirmwareUpgradeProtocol {
                         size: self.firmware_bin.size(),
                         firmware_digest: self.firmware_bin.digest(),
                     },
-                ),
+                )
+                .into(),
             });
             self.sent_first_message = true;
         }

@@ -9,8 +9,7 @@ use alloc::{boxed::Box, collections::VecDeque, string::ToString, vec::Vec};
 use esp_hal::{gpio, sha::Sha, timer};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{
-    CoordinatorSendBody, CoordinatorUpgradeMessage, DeviceSendBody, DeviceSendMessage,
-    ReceiveSerial, Upstream,
+    CoordinatorSendBody, CoordinatorUpgradeMessage, DeviceSendBody, ReceiveSerial, Upstream,
 };
 use frostsnap_comms::{CoordinatorSendMessage, Downstream, MAGIC_BYTES_PERIOD};
 use frostsnap_core::{
@@ -51,7 +50,7 @@ where
             mut sha256,
         } = self;
 
-        let mut keygen = HmacKeyGen::new();
+        let mut secret_gen = HmacKeyGen::new();
         let flash = FlashStorage::new();
         let mut flash = storage::DeviceStorage::new(flash);
         let ota_config = ota::OtaConfig::new(flash.flash_mut());
@@ -97,6 +96,7 @@ where
         let mut sends_downstream: Vec<CoordinatorSendMessage> = vec![];
         let mut sends_user: Vec<DeviceToUserMessage> = vec![];
         let mut outbox = VecDeque::new();
+        let mut inbox: Vec<CoordinatorSendBody> = vec![];
         let mut next_write_magic_bytes_downstream: Instant = Instant::from_ticks(0);
         // FIXME: If we keep getting magic bytes instead of getting a proper message we have to accept that
         // the upstream doesn't think we're awake yet and we should soft reset again and send our
@@ -116,7 +116,10 @@ where
         let mut upstream_connection = UpstreamConnection::new(device_id);
 
         ui.set_upstream_connection_state(upstream_connection.state);
+        // HACK: During alpha testing we say direct to coordinator is always ready. Later on we can
+        // just have coordinator signal ready -- but that would break old devices atm.
         let mut upgrade: Option<ota::FirmwareUpgradeMode> = None;
+        let mut ui_event_queue = VecDeque::default();
 
         loop {
             if soft_reset {
@@ -191,8 +194,11 @@ where
                                         DownstreamConnectionState::Disconnected;
                                 }
                                 ReceiveSerial::Message(message) => {
-                                    upstream_connection.forward_to_coordinator(message)
+                                    upstream_serial
+                                        .send(message)
+                                        .expect("failed to forward message");
                                 }
+                                _ => { /* unused */ }
                             };
                         }
                         Err(e) => {
@@ -205,11 +211,6 @@ where
                         }
                     };
                 }
-
-                // Send messages downstream
-                for send in sends_downstream.drain(..) {
-                    downstream_serial.send(send).expect("sending downstream");
-                }
             }
 
             // === UPSTREAM connection management
@@ -219,162 +220,71 @@ where
                         upstream_serial
                             .write_magic_bytes()
                             .expect("failed to write magic bytes");
-                        upstream_serial
-                            .send(DeviceSendMessage {
-                                from: device_id,
-                                body: DeviceSendBody::Announce {
-                                    firmware_digest: active_firmware_digest,
-                                }
-                                .into(),
-                            })
-                            .expect("sending announce");
-                        upstream_serial
-                            .send(DeviceSendMessage {
-                                from: device_id,
-                                body: match &name {
-                                    Some(name) => DeviceSendBody::SetName { name: name.into() },
-                                    None => DeviceSendBody::NeedName,
-                                }
-                                .into(),
-                            })
-                            .expect("sending name message");
+                        upstream_connection.send_announcement(DeviceSendBody::Announce {
+                            firmware_digest: active_firmware_digest,
+                        });
+                        upstream_connection.send_to_coordinator([match &name {
+                            Some(name) => DeviceSendBody::SetName { name: name.into() },
+                            None => DeviceSendBody::NeedName,
+                        }]);
+
                         upstream_connection
                             .set_state(UpstreamConnectionState::Established, &mut ui);
                     }
                 }
-                upstream_state => {
+                _ => {
                     let mut last_message_was_magic_bytes = false;
                     while let Some(received_message) = upstream_serial.receive() {
                         match received_message {
                             Ok(received_message) => {
+                                last_message_was_magic_bytes =
+                                    matches!(received_message, ReceiveSerial::MagicBytes(_));
                                 match received_message {
-                                    ReceiveSerial::MagicBytes(_) => {
-                                        // We don't want to react to magic bytes right away because
-                                        // there might be many magic bytes in the buffer so we
-                                        // should let the loop keep pulling them out.
-                                        last_message_was_magic_bytes = true;
-                                    }
                                     ReceiveSerial::Message(mut message) => {
-                                        last_message_was_magic_bytes = false;
                                         // We have recieved a first message (if this is not a magic bytes message)
                                         let for_me = message
                                             .target_destinations
                                             .remove_from_recipients(device_id);
 
-                                        if for_me {
-                                            match &message.message_body {
-                                                CoordinatorSendBody::Cancel => {
-                                                    // FIXME: This is a mess -- can we redisign
-                                                    // things so the "core" component doesn't need
-                                                    // to know when it is canceled.
-                                                    //
-                                                    // We first ask the
-                                                    // core logic to cancel what it's doing
-                                                    let core_cancel = signer.cancel_action();
-                                                    if core_cancel.is_none() {
-                                                        // .. but if it's not doing anything then we
-                                                        // are probably cancelling something in the
-                                                        // ui
-                                                        ui.cancel();
-                                                    } else {
-                                                        outbox.extend(core_cancel);
-                                                    }
-                                                }
-                                                CoordinatorSendBody::AnnounceAck => {
-                                                    upstream_connection.set_state(UpstreamConnectionState::EstablishedAndCoordAck, &mut ui);
-                                                }
-                                                CoordinatorSendBody::Naming(naming) => match naming
-                                                {
-                                                    frostsnap_comms::NameCommand::Preview(
-                                                        preview_name,
-                                                    ) => {
-                                                        ui.set_workflow(
-                                                            ui::Workflow::NamingDevice {
-                                                                old_name: name.clone(),
-                                                                new_name: preview_name.clone(),
-                                                            },
-                                                        );
-                                                    }
-                                                    frostsnap_comms::NameCommand::Finish(
-                                                        new_name,
-                                                    ) => {
-                                                        ui.set_workflow(ui::Workflow::prompt(
-                                                            ui::Prompt::NewName {
-                                                                old_name: name.clone(),
-                                                                new_name: new_name.clone(),
-                                                            },
-                                                        ));
-                                                    }
-                                                },
-                                                CoordinatorSendBody::Core(core_message) => {
-                                                    // FIXME: It is very inelegant to be inspecting
-                                                    // core messages to figure out when we're going
-                                                    // to be busy.
-                                                    match &core_message {
-                                                        CoordinatorToDeviceMessage::DoKeyGen {
-                                                            ..
-                                                        } => ui.set_busy_task(ui::BusyTask::KeyGen),
-                                                        CoordinatorToDeviceMessage::FinishKeyGen {
-                                                            ..
-                                                        } => ui.set_busy_task(ui::BusyTask::VerifyingShare),
-                                                        _ => { /* no workflow to trigger */ }
-                                                    }
-
-                                                    outbox.extend(
-                                                        signer
-                                                            .recv_coordinator_message(
-                                                                core_message.clone(),
-                                                                &mut rng,
-                                                            )
-                                                            .expect(
-                                                                "failed to process coordinator message",
-                                                            ),
-                                                    );
-                                                }
-                                                CoordinatorSendBody::Upgrade(upgrade_message) => {
-                                                    match upgrade_message {
-                                                        CoordinatorUpgradeMessage::PrepareUpgrade { size, firmware_digest } => {
-                                                            let upgrade_ =
-                                                                ota_config.start_upgrade(flash.flash_mut(), *size, *firmware_digest, active_firmware_digest);
-
-                                                            upgrade = Some(upgrade_);
-                                                        },
-                                                        CoordinatorUpgradeMessage::EnterUpgradeMode => {
-                                                            let downstream_io = if downstream_connection_state == DownstreamConnectionState::Established {
-                                                                downstream_serial.send(message.clone()).expect("failed to init downstream upgrade");
-                                                                Some(downstream_serial.inner_mut())
-                                                            } else {
-                                                                None
-                                                            };
-
-                                                            if let Some(upgrade) = &mut upgrade {
-                                                                let upstream_io = upstream_serial.inner_mut();
-                                                                upgrade.enter_upgrade_mode(flash.flash_mut(), upstream_io, downstream_io, &mut ui, &mut sha256);
-                                                                esp_hal::reset::software_reset();
-                                                            }
-                                                            else {
-                                                                panic!("upgrade cannot start because we were not warned about it")
-                                                            }
-
-                                                        },
-                                                    }
-                                                },
-                                                CoordinatorSendBody::DataWipe => {
-                                                    ui.set_workflow(ui::Workflow::prompt(ui::Prompt::WipeDevice));
-                                                },
-                                            }
-                                        }
-
                                         // Forward messages downstream if there are other target destinations
                                         if downstream_connection_state
                                             == DownstreamConnectionState::Established
-                                            && upstream_state
-                                                == UpstreamConnectionState::EstablishedAndCoordAck
                                             && message.target_destinations.should_forward()
                                         {
-                                            sends_downstream.push(message);
+                                            downstream_serial
+                                                .send(message.clone())
+                                                .expect("sending downstream");
+                                        }
+
+                                        if for_me {
+                                            match message.message_body.decode() {
+                                                // Upgrade mode must be handled eagerly
+                                                Some(CoordinatorSendBody::Upgrade(
+                                                    CoordinatorUpgradeMessage::EnterUpgradeMode,
+                                                )) => {
+                                                    if let Some(upgrade) = &mut upgrade {
+                                                        let upstream_io =
+                                                            upstream_serial.inner_mut();
+                                                        upgrade.enter_upgrade_mode(
+                                                            flash.flash_mut(),
+                                                            upstream_io,
+                                                            if downstream_connection_state == DownstreamConnectionState::Established { Some(downstream_serial.inner_mut()) } else { None },
+                                                            &mut ui,
+                                                            &mut sha256,
+                                                        );
+                                                        esp_hal::reset::software_reset();
+                                                    } else {
+                                                        panic!("upgrade cannot start because we were not warned about it")
+                                                    }
+                                                }
+                                                Some(decoded) => {
+                                                    inbox.push(decoded);
+                                                }
+                                                _ => { /* unable to decode so ignore */ }
+                                            }
                                         }
                                     }
+                                    _ => { /* unused */ }
                                 }
                             }
                             Err(e) => {
@@ -411,101 +321,101 @@ where
                             ui.set_workflow(workflow);
                         }
                     }
-
-                    if is_upstream_established {
-                        for send in upstream_connection.take_messages() {
-                            upstream_serial
-                                .send(send)
-                                .expect("unable to send to coordinator");
-                        }
-                    }
                 }
             }
 
             if let Some(ui_event) = ui.poll() {
-                let mut switch_workflow = Some(ui::Workflow::WaitingFor(
-                    ui::WaitingFor::CoordinatorInstruction {
-                        completed_task: Some(ui_event.clone()),
-                    },
-                )); // this is just the default
-                match ui_event {
-                    UiEvent::KeyGenConfirm => {
-                        outbox.extend(
-                            signer
-                                .keygen_ack(&mut keygen, &mut rng)
-                                .expect("state changed while confirming keygen"),
-                        );
-                    }
-                    UiEvent::SigningConfirm => {
-                        ui.set_busy_task(ui::BusyTask::Signing);
-                        outbox.extend(
-                            signer
-                                .sign_ack(&mut keygen)
-                                .expect("state changed while acking sign"),
-                        );
-                    }
-                    UiEvent::NameConfirm(ref new_name) => {
-                        name = Some(new_name.into());
-                        flash
-                            .append([storage::Change::Name(new_name.clone())])
-                            .expect("flash write fail");
-                        ui.set_device_name(new_name.into());
-                        upstream_connection.send_to_coordinator([DeviceSendBody::SetName {
-                            name: new_name.into(),
-                        }]);
-                    }
-                    UiEvent::BackupRequestConfirm => {
-                        outbox.extend(
-                            signer
-                                .display_backup_ack(&mut keygen)
-                                .expect("state changed while displaying backup"),
-                        );
-                    }
-                    UiEvent::UpgradeConfirm { .. } => {
-                        if let Some(upgrade) = upgrade.as_mut() {
-                            upgrade.upgrade_confirm();
-                        }
-                        // special case where updrade will handle things from now on
-                        switch_workflow = None;
-                    }
-                    UiEvent::EnteredShareBackup(share_backup) => {
-                        outbox.push_back(DeviceSend::ToUser(Box::new(
-                            DeviceToUserMessage::EnteredBackup(share_backup),
-                        )))
-                    }
-                    UiEvent::EnteredShareBackupConfirm(share_backup) => {
-                        outbox.extend(
-                            signer
-                                .loaded_share_backup(share_backup)
-                                .expect("invalid state to restore share"),
-                        );
-                    }
-                    UiEvent::WipeDataConfirm => {
-                        flash.erase().expect("erasing flash storage failed");
-                        esp_hal::reset::software_reset();
-                    }
-                }
+                ui_event_queue.push_back(ui_event);
+            }
 
-                if let Some(switch_workflow) = switch_workflow {
-                    ui.set_workflow(switch_workflow);
+            for message_body in inbox.drain(..) {
+                match &message_body {
+                    CoordinatorSendBody::Cancel => {
+                        // FIXME: This is a mess -- can we redisign
+                        // things so the "core" component doesn't need
+                        // to know when it is canceled.
+                        //
+                        // We first ask the
+                        // core logic to cancel what it's doing
+                        let core_cancel = signer.cancel_action();
+                        if core_cancel.is_none() {
+                            // .. but if it's not doing anything then we
+                            // are probably cancelling something in the
+                            // ui
+                            ui.cancel();
+                        } else {
+                            outbox.extend(core_cancel);
+                        }
+                        upgrade = None;
+                    }
+                    CoordinatorSendBody::AnnounceAck => {
+                        upstream_connection
+                            .set_state(UpstreamConnectionState::EstablishedAndCoordAck, &mut ui);
+                    }
+                    CoordinatorSendBody::Naming(naming) => match naming {
+                        frostsnap_comms::NameCommand::Preview(preview_name) => {
+                            ui.set_workflow(ui::Workflow::NamingDevice {
+                                old_name: name.clone(),
+                                new_name: preview_name.clone(),
+                            });
+                        }
+                        frostsnap_comms::NameCommand::Finish(new_name) => {
+                            ui.set_workflow(ui::Workflow::prompt(ui::Prompt::NewName {
+                                old_name: name.clone(),
+                                new_name: new_name.clone(),
+                            }));
+                        }
+                    },
+                    CoordinatorSendBody::Core(core_message) => {
+                        // FIXME: It is very inelegant to be inspecting
+                        // core messages to figure out when we're going
+                        // to be busy.
+                        match &core_message {
+                            CoordinatorToDeviceMessage::DoKeyGen { .. } => {
+                                ui.set_busy_task(ui::BusyTask::KeyGen)
+                            }
+                            CoordinatorToDeviceMessage::FinishKeyGen { .. } => {
+                                ui.set_busy_task(ui::BusyTask::VerifyingShare)
+                            }
+                            _ => { /* no workflow to trigger */ }
+                        }
+
+                        outbox.extend(
+                            signer
+                                .recv_coordinator_message(core_message.clone(), &mut rng)
+                                .expect("failed to process coordinator message"),
+                        );
+                    }
+                    CoordinatorSendBody::Upgrade(upgrade_message) => match upgrade_message {
+                        CoordinatorUpgradeMessage::PrepareUpgrade {
+                            size,
+                            firmware_digest,
+                        } => {
+                            let upgrade_ = ota_config.start_upgrade(
+                                flash.flash_mut(),
+                                *size,
+                                *firmware_digest,
+                                active_firmware_digest,
+                            );
+
+                            upgrade = Some(upgrade_);
+                        }
+                        CoordinatorUpgradeMessage::EnterUpgradeMode => {}
+                    },
+                    CoordinatorSendBody::DataWipe => {
+                        ui.set_workflow(ui::Workflow::prompt(ui::Prompt::WipeDevice))
+                    }
                 }
             }
 
             {
-                // ⚠ Apply any mutations made to flash before outputting anything to user or to coordinator
-                let now = self.timer.now();
-                let mut empty = true;
-                flash
-                    .append(
-                        signer
-                            .staged_mutations()
-                            .drain(..)
-                            .map(storage::Change::Core)
-                            .inspect(|_| empty = false),
-                    )
-                    .expect("writing core mutations failed");
-
-                if !empty {
+                let staged_mutations = signer.staged_mutations();
+                if !staged_mutations.is_empty() {
+                    let now = self.timer.now();
+                    // ⚠ Apply any mutations made to flash before outputting anything to user or to coordinator
+                    flash
+                        .append(staged_mutations.drain(..).map(storage::Change::Core))
+                        .expect("writing core mutations failed");
                     let after = self.timer.now().checked_duration_since(now).unwrap();
                     upstream_connection
                         .send_debug(format!("core mutations took {}ms", after.to_millis()));
@@ -541,6 +451,21 @@ where
                                     key_name,
                                     t_of_n,
                                 }));
+                            }
+                            DeviceToUserMessage::VerifyAddress {
+                                address,
+                                bip32_path,
+                            } => {
+                                let rand_seed = rng.next_u32();
+                                ui.set_workflow(ui::Workflow::DisplayAddress {
+                                    address: address.to_string(),
+                                    bip32_path: bip32_path
+                                        .path_segments_from_bitcoin_appkey()
+                                        .map(|i| i.to_string())
+                                        .collect::<Vec<_>>()
+                                        .join("/"),
+                                    rand_seed,
+                                })
                             }
                             DeviceToUserMessage::SignatureRequest {
                                 sign_task,
@@ -598,6 +523,125 @@ where
                                     ui::Prompt::ConfirmLoadBackup(share_backup),
                                 ));
                             }
+                        };
+                    }
+                }
+            }
+
+            for ui_event in ui_event_queue.drain(..) {
+                let mut switch_workflow = Some(ui::Workflow::WaitingFor(
+                    ui::WaitingFor::CoordinatorInstruction {
+                        completed_task: Some(ui_event.clone()),
+                    },
+                )); // this is just the default
+
+                match ui_event {
+                    UiEvent::KeyGenConfirm => {
+                        outbox.extend(
+                            signer
+                                .keygen_ack(&mut secret_gen, &mut rng)
+                                .expect("state changed while confirming keygen"),
+                        );
+                    }
+                    UiEvent::SigningConfirm => {
+                        ui.set_busy_task(ui::BusyTask::Signing);
+                        outbox.extend(
+                            signer
+                                .sign_ack(&mut secret_gen)
+                                .expect("state changed while acking sign"),
+                        );
+                    }
+                    UiEvent::NameConfirm(ref new_name) => {
+                        name = Some(new_name.into());
+                        flash
+                            .append([storage::Change::Name(new_name.clone())])
+                            .expect("flash write fail");
+                        ui.set_device_name(new_name.into());
+                        upstream_connection.send_to_coordinator([DeviceSendBody::SetName {
+                            name: new_name.into(),
+                        }]);
+                    }
+                    UiEvent::BackupRequestConfirm => {
+                        outbox.extend(
+                            signer
+                                .display_backup_ack(&mut secret_gen)
+                                .expect("state changed while displaying backup"),
+                        );
+                    }
+                    UiEvent::UpgradeConfirm { .. } => {
+                        if let Some(upgrade) = upgrade.as_mut() {
+                            upgrade.upgrade_confirm();
+                        }
+                        // special case where updrade will handle things from now on
+                        switch_workflow = None;
+                    }
+                    UiEvent::EnteredShareBackup(share_backup) => {
+                        outbox.push_back(DeviceSend::ToUser(Box::new(
+                            DeviceToUserMessage::EnteredBackup(share_backup),
+                        )))
+                    }
+                    UiEvent::EnteredShareBackupConfirm(share_backup) => {
+                        outbox.extend(
+                            signer
+                                .loaded_share_backup(share_backup)
+                                .expect("invalid state to restore share"),
+                        );
+                    }
+                    UiEvent::WipeDataConfirm => {
+                        flash.erase().expect("erasing flash storage failed");
+                        esp_hal::reset::software_reset();
+                    }
+                }
+
+                if let Some(switch_workflow) = switch_workflow {
+                    ui.set_workflow(switch_workflow);
+                }
+            }
+
+            {
+                let staged_mutations = signer.staged_mutations();
+                if !staged_mutations.is_empty() {
+                    let now = self.timer.now();
+                    // ⚠ Apply any mutations made to flash before outputting anything to user or to coordinator
+                    flash
+                        .append(staged_mutations.drain(..).map(storage::Change::Core))
+                        .expect("writing core mutations failed");
+                    let after = self.timer.now().checked_duration_since(now).unwrap();
+                    upstream_connection
+                        .send_debug(format!("core mutations took {}ms", after.to_millis()));
+                }
+            }
+
+            // Handle message outbox to send: ToCoordinator, ToUser.
+            // ⚠ pop_front ensures messages are sent in order.
+            while let Some(send) = outbox.pop_front() {
+                match send {
+                    DeviceSend::ToCoordinator(boxed) => {
+                        if matches!(
+                            boxed.as_ref(),
+                            DeviceToCoordinatorMessage::KeyGenResponse(_)
+                        ) {
+                            ui.set_workflow(ui::Workflow::WaitingFor(
+                                ui::WaitingFor::CoordinatorResponse(ui::WaitingResponse::KeyGen),
+                            ));
+                        }
+
+                        upstream_connection.send_to_coordinator([DeviceSendBody::Core(*boxed)]);
+                    }
+                    DeviceSend::ToUser(boxed) => {
+                        match *boxed {
+                            DeviceToUserMessage::CheckKeyGen {
+                                key_id: _,
+                                session_hash,
+                                key_name,
+                                t_of_n,
+                            } => {
+                                ui.set_workflow(ui::Workflow::prompt(ui::Prompt::KeyGen {
+                                    session_hash,
+                                    key_name,
+                                    t_of_n,
+                                }));
+                            }
                             DeviceToUserMessage::VerifyAddress {
                                 address,
                                 bip32_path,
@@ -612,6 +656,62 @@ where
                                         .join("/"),
                                     rand_seed,
                                 })
+                            }
+                            DeviceToUserMessage::SignatureRequest {
+                                sign_task,
+                                master_appkey,
+                            } => {
+                                ui.set_workflow(ui::Workflow::prompt(ui::Prompt::Signing(
+                                    match sign_task.into_inner() {
+                                        SignTask::Plain { message } => {
+                                            ui::SignPrompt::Plain(message)
+                                        }
+                                        SignTask::Nostr { event } => {
+                                            ui::SignPrompt::Nostr(event.content)
+                                        }
+                                        SignTask::BitcoinTransaction(transaction) => {
+                                            let network = signer
+                                                .wallet_network(master_appkey.key_id())
+                                                .unwrap_or(bitcoin::Network::Bitcoin);
+
+                                            let fee = transaction.fee().expect("transaction validity should have already been checked");
+                                            let foreign_recipients = transaction
+                                                .foreign_recipients()
+                                                .map(|(spk, value)| {
+                                                    (
+                                                        bitcoin::Address::from_script(spk, network)
+                                                            .expect("has address representation"),
+                                                        bitcoin::Amount::from_sat(value),
+                                                    )
+                                                })
+                                                .collect::<Vec<_>>();
+                                            ui::SignPrompt::Bitcoin {
+                                                foreign_recipients,
+                                                fee: bitcoin::Amount::from_sat(fee),
+                                            }
+                                        }
+                                    },
+                                )));
+                            }
+                            DeviceToUserMessage::DisplayBackupRequest { key_name, key_id } => ui
+                                .set_workflow(ui::Workflow::prompt(
+                                    ui::Prompt::DisplayBackupRequest { key_name, key_id },
+                                )),
+                            DeviceToUserMessage::Canceled { .. } => {
+                                ui.cancel();
+                            }
+                            DeviceToUserMessage::DisplayBackup { key_name, backup } => {
+                                ui.set_workflow(ui::Workflow::DisplayBackup { key_name, backup });
+                            }
+                            DeviceToUserMessage::EnterBackup => {
+                                ui.set_workflow(ui::Workflow::EnteringBackup(
+                                    ui::EnteringBackupStage::Init,
+                                ));
+                            }
+                            DeviceToUserMessage::EnteredBackup(share_backup) => {
+                                ui.set_workflow(ui::Workflow::prompt(
+                                    ui::Prompt::ConfirmLoadBackup(share_backup),
+                                ));
                             }
                         };
                     }

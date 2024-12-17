@@ -1,7 +1,6 @@
 use crate::api::{self, ConnectedDevice, DeviceListState};
 use frostsnap_coordinator::{frostsnap_core::DeviceId, DeviceChange};
 use std::collections::HashMap;
-use tracing::{event, Level};
 
 #[derive(Debug, Clone, Default)]
 pub struct DeviceList {

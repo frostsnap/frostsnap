@@ -91,7 +91,8 @@ impl UiProtocol for VerifyAddressProtocol {
                         master_appkey: self.master_appkey,
                         derivation_index: self.derivation_index,
                     },
-                ),
+                )
+                .into(),
             });
         }
 

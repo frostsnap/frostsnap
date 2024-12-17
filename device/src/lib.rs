@@ -1,7 +1,7 @@
 #![no_std]
 
-use alloc::{string::ToString, vec::Vec};
-use frostsnap_comms::{DeviceSendBody, DeviceSendMessage};
+use alloc::{collections::VecDeque, string::ToString};
+use frostsnap_comms::{DeviceSendBody, DeviceSendMessage, WireDeviceSendBody};
 use frostsnap_core::DeviceId;
 use ui::UserInteraction;
 
@@ -22,11 +22,21 @@ pub mod ui;
 #[derive(Debug, Clone)]
 pub struct UpstreamConnection {
     state: UpstreamConnectionState,
-    messages: Vec<DeviceSendMessage>,
+    messages: VecDeque<DeviceSendMessage>,
+    announcement: Option<DeviceSendMessage>,
     my_device_id: DeviceId,
 }
 
 impl UpstreamConnection {
+    pub fn new(my_device_id: DeviceId) -> Self {
+        Self {
+            state: UpstreamConnectionState::PowerOn,
+            messages: Default::default(),
+            announcement: None,
+            my_device_id,
+        }
+    }
+
     pub fn set_state(&mut self, state: UpstreamConnectionState, ui: &mut impl UserInteraction) {
         ui.set_upstream_connection_state(state);
         match state {
@@ -43,23 +53,36 @@ impl UpstreamConnection {
         self.state
     }
 
-    pub fn take_messages(&mut self) -> impl Iterator<Item = DeviceSendMessage> + '_ {
-        self.messages.drain(..)
+    pub fn dequeue_message(&mut self) -> Option<DeviceSendMessage> {
+        if self.state >= UpstreamConnectionState::Established {
+            if let Some(announcement) = self.announcement.take() {
+                return Some(announcement);
+            }
+        }
+
+        if self.state == UpstreamConnectionState::EstablishedAndCoordAck {
+            return self.messages.pop_front();
+        }
+
+        None
+    }
+
+    pub fn send_announcement(&mut self, announcement: DeviceSendBody) {
+        self.announcement = Some(DeviceSendMessage {
+            from: self.my_device_id,
+            body: announcement.into(),
+        });
     }
 
     pub fn send_to_coordinator(
         &mut self,
-        iter: impl IntoIterator<Item = impl Into<DeviceSendBody>>,
+        iter: impl IntoIterator<Item = impl Into<WireDeviceSendBody>>,
     ) {
         self.messages
             .extend(iter.into_iter().map(|body| DeviceSendMessage {
                 from: self.my_device_id,
                 body: body.into(),
             }));
-    }
-
-    pub fn forward_to_coordinator(&mut self, message: DeviceSendMessage) {
-        self.messages.push(message);
     }
 
     fn send_debug(&mut self, message: impl ToString) {
@@ -69,19 +92,13 @@ impl UpstreamConnection {
             }]);
         }
     }
-}
 
-impl UpstreamConnection {
-    pub fn new(my_device_id: DeviceId) -> Self {
-        Self {
-            state: UpstreamConnectionState::PowerOn,
-            messages: Default::default(),
-            my_device_id,
-        }
+    pub fn has_messages_to_send(&self) -> bool {
+        self.announcement.is_some() || !self.messages.is_empty()
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd)]
 pub enum UpstreamConnectionState {
     /// We have power from the upstream port
     PowerOn,
