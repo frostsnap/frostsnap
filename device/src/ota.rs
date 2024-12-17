@@ -286,6 +286,7 @@ impl OtaConfig {
     }
 }
 
+#[derive(Debug)]
 pub enum FirmwareUpgradeMode {
     Upgrading {
         ota: OtaConfig,
@@ -401,7 +402,10 @@ impl FirmwareUpgradeMode {
                 *state = State::Erase { seq: 0 };
             }
             _ => {
-                panic!("Upgrade confirmed while not waiting for a confirmation");
+                panic!(
+                    "Upgrade confirmed while not waiting for a confirmation. {:?}",
+                    self
+                );
             }
         }
     }

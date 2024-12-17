@@ -111,7 +111,8 @@ impl UiProtocol for SigningDispatcher {
                 target_destinations: Destination::from(core::mem::take(&mut self.need_to_send_to)),
                 message_body: CoordinatorSendBody::Core(CoordinatorToDeviceMessage::RequestSign(
                     self.request.clone(),
-                )),
+                ))
+                .into(),
             });
         }
         if self.is_complete().is_some() {
