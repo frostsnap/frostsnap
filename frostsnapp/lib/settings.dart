@@ -427,10 +427,18 @@ class ChainStatusIcon extends StatelessWidget {
     Color iconColor;
     final double iconSize = IconTheme.of(context).size ?? 30.0;
     final String statusName;
+    final VoidCallback? onPressed;
+
+    if (chainStatus.state == ChainStatusState.Connected) {
+      onPressed = () {
+        WalletContext.of(context)?.wallet.reconnect();
+      };
+    } else {
+      onPressed = null;
+    }
 
     switch (chainStatus.state) {
       case ChainStatusState.Connected:
-      case ChainStatusState.Syncing:
         statusName = "Connected";
         iconData = Icons.power;
         iconColor = Colors.green;
@@ -447,13 +455,15 @@ class ChainStatusIcon extends StatelessWidget {
       message: "$statusName: ${chainStatus.electrumUrl}",
       child: Stack(
         children: [
-          Icon(
-            iconData,
-            color: iconColor,
-            size: iconSize,
+          IconButton(
+            iconSize: iconSize,
+            icon: Icon(
+              iconData,
+              color: iconColor,
+            ),
+            onPressed: onPressed,
           ),
-          if (chainStatus.state == ChainStatusState.Syncing ||
-              chainStatus.state == ChainStatusState.Connecting)
+          if (chainStatus.state == ChainStatusState.Connecting)
             Positioned(
               bottom: 0,
               right: 0,

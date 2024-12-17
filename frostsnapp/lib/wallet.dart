@@ -39,22 +39,6 @@ class WalletContext extends InheritedWidget {
     return context.dependOnInheritedWidgetOfExactType<WalletContext>();
   }
 
-  // Allows children to start syncs The reason this is here rather than being
-  // called directly by button onPressed for example is so we can trigger it in other ways.
-  Stream<double> startFullSync({BuildContext? context}) {
-    final progress = wallet
-        .sync(masterAppkey: masterAppkey)
-        .asBroadcastStream()
-        .handleError((error) {
-      if (context != null && context.mounted) {
-        showErrorSnackbarBottom(context, "sync failed: $error");
-      }
-    });
-
-    syncs.add(progress.asBroadcastStream());
-    return progress;
-  }
-
   Stream<bool> syncStartStopStream() {
     return syncs.stream.asyncExpand((syncStream) async* {
       yield true;
@@ -86,9 +70,7 @@ class WalletPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return WalletContext(
-        wallet: wallet,
-        masterAppkey: masterAppkey,
-        child: WalletSyncTrigger(child: WalletHome()));
+        wallet: wallet, masterAppkey: masterAppkey, child: WalletHome());
   }
 }
 
@@ -172,29 +154,9 @@ class WalletActivity extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final walletContext = WalletContext.of(context)!;
     return Scaffold(
-      floatingActionButton: FloatingActionButton(
-          child: SpinningSyncIcon(
-            spinStream: walletContext.syncStartStopStream(),
-          ),
-          onPressed: () async {
-            walletContext.startFullSync(context: context);
-          }),
-      body: Stack(children: [
-        StreamBuilder(
-            stream: walletContext.syncs.stream,
-            builder: (context, snap) {
-              if (!snap.hasData) {
-                return SizedBox();
-              }
-              // we need make sure we don't use the old FloatingProgress widget for each sync
-              UniqueKey floatingProgressKey = UniqueKey();
-              return FloatingProgress(
-                  key: floatingProgressKey, progressStream: snap.data!);
-            }),
-        Column(children: const [UpdatingBalance(), Expanded(child: TxList())]),
-      ]),
+      body: Column(
+          children: const [UpdatingBalance(), Expanded(child: TxList())]),
     );
   }
 }
@@ -271,79 +233,70 @@ class TxList extends StatelessWidget {
           return Center(child: FsProgressIndicator());
         }
         final transactions = snapshot.data!.txs;
-        return RefreshIndicator(
-            child: ListView.builder(
-              itemCount: transactions.length,
-              itemBuilder: (context, index) {
-                final transaction = transactions[index];
-                String confirmationText;
+        return ListView.builder(
+          itemCount: transactions.length,
+          itemBuilder: (context, index) {
+            final transaction = transactions[index];
+            final txid = transaction.txid();
+            String confirmationText;
 
-                if (transaction.confirmationTime != null) {
-                  DateTime confirmationDateTime =
-                      DateTime.fromMillisecondsSinceEpoch(
-                          transaction.confirmationTime!.time * 1000);
-                  String formattedTime =
-                      '${confirmationDateTime.year}-${confirmationDateTime.month.toString().padLeft(2, '0')}-${confirmationDateTime.day.toString().padLeft(2, '0')} ${confirmationDateTime.hour.toString().padLeft(2, '0')}:${confirmationDateTime.minute.toString().padLeft(2, '0')}';
-                  confirmationText =
-                      'Confirmation: ${transaction.confirmationTime!.height} ($formattedTime)';
-                } else {
-                  confirmationText = 'Unconfirmed';
-                }
+            if (transaction.confirmationTime != null) {
+              DateTime confirmationDateTime =
+                  DateTime.fromMillisecondsSinceEpoch(
+                      transaction.confirmationTime!.time * 1000);
+              String formattedTime =
+                  '${confirmationDateTime.year}-${confirmationDateTime.month.toString().padLeft(2, '0')}-${confirmationDateTime.day.toString().padLeft(2, '0')} ${confirmationDateTime.hour.toString().padLeft(2, '0')}:${confirmationDateTime.minute.toString().padLeft(2, '0')}';
+              confirmationText =
+                  'Confirmation: ${transaction.confirmationTime!.height} ($formattedTime)';
+            } else {
+              confirmationText = 'Unconfirmed';
+            }
 
-                return Card(
-                  child: ListTile(
-                    leading: Icon(
-                      transaction.netValue > 0
-                          ? Icons.arrow_downward
-                          : Icons.arrow_upward,
-                      color:
-                          transaction.netValue > 0 ? successColor : errorColor,
+            return Card(
+              child: ListTile(
+                leading: Icon(
+                  transaction.netValue > 0
+                      ? Icons.arrow_downward
+                      : Icons.arrow_upward,
+                  color: transaction.netValue > 0 ? successColor : errorColor,
+                ),
+                title: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: NetValue(transaction.netValue),
                     ),
-                    title: Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: NetValue(transaction.netValue),
-                        ),
-                        if (transaction.confirmationTime == null)
-                          SpinningSyncButton(onPressed: () async {
-                            final stream = walletContext.wallet.syncTxids(
-                                masterAppkey: walletContext.masterAppkey,
-                                txids: [transaction.txid()]);
-                            await stream.toList();
-                          }),
-                        IconButton(
-                          icon: Icon(Icons.copy),
-                          onPressed: () {
-                            Clipboard.setData(
-                                ClipboardData(text: transaction.txid()));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content:
-                                    Text('Transaction ID copied to clipboard'),
-                              ),
-                            );
-                          },
-                        ),
-                      ],
+                    if (transaction.confirmationTime == null)
+                      SpinningSyncButton(onPressed: () async {
+                        await walletContext.wallet.rebroadcast(txid: txid);
+                      }),
+                    IconButton(
+                      icon: Icon(Icons.copy),
+                      onPressed: () {
+                        Clipboard.setData(
+                            ClipboardData(text: transaction.txid()));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Transaction ID copied to clipboard'),
+                          ),
+                        );
+                      },
                     ),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text('ID: ${transaction.txid()}'),
-                        Text(
-                          confirmationText,
-                          style: TextStyle(fontSize: 12),
-                        ),
-                      ],
+                  ],
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text('ID: ${transaction.txid()}'),
+                    Text(
+                      confirmationText,
+                      style: TextStyle(fontSize: 12),
                     ),
-                  ),
-                );
-              },
-            ),
-            onRefresh: () async {
-              final stream = walletContext.startFullSync(context: context);
-              await stream.toList();
-            });
+                  ],
+                ),
+              ),
+            );
+          },
+        );
       },
     );
   }
@@ -905,51 +858,4 @@ String formatSatoshi(int satoshis) {
 
   // Combine the whole number part with the formatted fractional part
   return '${parts[0]}.$fractionalPart\u20BF';
-}
-
-class WalletSyncTrigger extends StatefulWidget {
-  final Widget child;
-  final bool enabled;
-  const WalletSyncTrigger(
-      {super.key, required this.child, this.enabled = true});
-
-  @override
-  State<WalletSyncTrigger> createState() => _WalletSyncTrigger();
-}
-
-class _WalletSyncTrigger extends State<WalletSyncTrigger> {
-  bool hasTriggered = false;
-
-  // WalletContext not available in initState() so we use this
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-
-    if (!widget.enabled) {
-      return;
-    }
-
-    if (hasTriggered) {
-      return;
-    }
-
-    var walletCtx = WalletContext.of(context);
-    if (walletCtx == null) {
-      return;
-    }
-
-    hasTriggered = true;
-
-    // we want to trigger it
-    Future.microtask(() {
-      if (context.mounted) {
-        walletCtx.startFullSync();
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return widget.child;
-  }
 }

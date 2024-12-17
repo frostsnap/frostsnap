@@ -1,14 +1,13 @@
-use super::{chain_sync::SyncRequest, multi_x_descriptor_for_account};
+use super::{chain_sync::ChainClient, multi_x_descriptor_for_account};
 use crate::persist::Persisted;
 use anyhow::{anyhow, Context, Result};
 use bdk_chain::{
-    bitcoin::{self, bip32, Amount, SignedAmount},
+    bitcoin::{self, bip32, Amount, SignedAmount, Txid},
     indexed_tx_graph,
     indexer::keychain_txout::{self, KeychainTxOutIndex},
     local_chain,
     miniscript::{Descriptor, DescriptorPublicKey},
-    spk_client::{self, SyncRequestBuilder},
-    ChainPosition, ConfirmationBlockTime, Indexer, Merge,
+    ChainPosition, CheckPoint, ConfirmationBlockTime, Indexer, Merge,
 };
 use frostsnap_core::{
     bitcoin_transaction::{self, LocalSpk},
@@ -26,10 +25,9 @@ use std::{
 };
 use tracing::{event, Level};
 
-pub type WalletIndexedTxGraph = indexed_tx_graph::IndexedTxGraph<
-    ConfirmationBlockTime,
-    KeychainTxOutIndex<(MasterAppkey, BitcoinAccountKeychain)>,
->;
+pub type KeychainId = (MasterAppkey, BitcoinAccountKeychain);
+pub type WalletIndexedTxGraph =
+    indexed_tx_graph::IndexedTxGraph<ConfirmationBlockTime, KeychainTxOutIndex<KeychainId>>;
 pub type WalletIndexedTxGraphChangeSet =
     indexed_tx_graph::ChangeSet<ConfirmationBlockTime, keychain_txout::ChangeSet>;
 
@@ -37,6 +35,7 @@ pub type WalletIndexedTxGraphChangeSet =
 pub struct FrostsnapWallet {
     tx_graph: Persisted<WalletIndexedTxGraph>,
     chain: Persisted<local_chain::LocalChain>,
+    chain_client: ChainClient,
     pub network: bitcoin::Network,
     db: Arc<Mutex<rusqlite::Connection>>,
 }
@@ -45,6 +44,7 @@ impl FrostsnapWallet {
     pub fn load_or_init(
         db: Arc<Mutex<rusqlite::Connection>>,
         network: bitcoin::Network,
+        chain_client: ChainClient,
     ) -> anyhow::Result<Self> {
         event!(Level::INFO, "initializing wallet");
         let mut db_ = db.lock().unwrap();
@@ -61,9 +61,28 @@ impl FrostsnapWallet {
         Ok(Self {
             tx_graph,
             chain,
+            chain_client,
             db,
             network,
         })
+    }
+
+    /// Get the local chain tip.
+    pub fn chain_tip(&self) -> CheckPoint {
+        self.chain.tip()
+    }
+
+    /// Transaction cache for the chain client.
+    pub fn tx_cache(&self) -> impl Iterator<Item = Arc<bitcoin::Transaction>> + '_ {
+        self.tx_graph.graph().full_txs().map(|tx_node| tx_node.tx)
+    }
+
+    pub fn lookahead(&self) -> u32 {
+        self.tx_graph.index.lookahead()
+    }
+
+    pub fn get_tx(&self, txid: Txid) -> Option<Arc<bitcoin::Transaction>> {
+        self.tx_graph.graph().get_tx(txid)
     }
 
     fn descriptors_for_key(
@@ -94,11 +113,13 @@ impl FrostsnapWallet {
             for (account_keychain, descriptor) in
                 Self::descriptors_for_key(master_appkey, self.network.into())
             {
-                let _intentionally_ignore_saving_descriptors = self
-                    .tx_graph
+                let keychain_id = (master_appkey, account_keychain);
+                self.tx_graph
                     .MUTATE_NO_PERSIST()
                     .index
-                    .insert_descriptor((master_appkey, account_keychain), descriptor);
+                    .insert_descriptor(keychain_id, descriptor)
+                    .expect("two keychains must not have the same spks");
+                self.chain_client.monitor_keychain(keychain_id);
             }
             let all_txs = self
                 .tx_graph
@@ -106,7 +127,9 @@ impl FrostsnapWallet {
                 .full_txs()
                 .map(|tx| tx.tx.clone())
                 .collect::<Vec<_>>();
-            // FIXME: This should be done by BDK automatically in a version soon
+            // FIXME: This should be done by BDK automatically in a version soon.
+            // FIXME: We want a high enough last-derived-index before doing indexing otherwise we
+            // may misindex some txs.
             for tx in &all_txs {
                 let _ = self.tx_graph.MUTATE_NO_PERSIST().index.index_tx(tx);
             }
@@ -241,45 +264,30 @@ impl FrostsnapWallet {
             .collect()
     }
 
-    pub fn sync_txs(&self, txids: impl IntoIterator<Item = bitcoin::Txid>) -> SyncRequestBuilder {
-        // TODO: For consistency, rename this to `start_sync_with_txs`?
-        SyncRequest::builder()
-            .chain_tip(self.chain.tip())
-            .txids(txids)
-    }
-
-    pub fn start_sync(&self, master_appkey: MasterAppkey) -> SyncRequestBuilder {
-        // We want to sync all spks for now!
-        let interesting_spks = self
-            .tx_graph
-            .index
-            .revealed_spks(Self::key_index_range(master_appkey))
-            .map(|(_, spk)| spk.to_owned());
-        SyncRequest::builder()
-            .chain_tip(self.chain.tip())
-            .spks(interesting_spks)
-    }
-
-    pub fn finish_sync(
-        &mut self,
-        update: spk_client::SyncResult<ConfirmationBlockTime>,
-    ) -> Result<bool> {
+    pub fn apply_update(&mut self, update: bdk_electrum_c::Update<KeychainId>) -> Result<bool> {
         let mut db = self.db.lock().unwrap();
-
-        let changed =
-            self.tx_graph
-                .multi(&mut self.chain)
-                .mutate(&mut *db, |tx_graph, chain| {
-                    let changeset_tx = tx_graph.apply_update(update.tx_update);
-                    let changeset_chain = match update.chain_update {
-                        Some(chain_update) => chain.apply_update(chain_update)?,
-                        None => local_chain::ChangeSet::default(),
-                    };
-                    let changed = !(changeset_tx.is_empty() && changeset_chain.is_empty());
-                    Ok((changed, (changeset_tx, changeset_chain)))
-                })?;
-
+        let changed = self
+            .tx_graph
+            .multi(&mut self.chain)
+            .mutate(&mut db, |tx_graph, chain| {
+                let chain_changeset = match update.chain_update {
+                    Some(update) => chain.apply_update(update)?,
+                    None => local_chain::ChangeSet::default(),
+                };
+                let indexer_changeset = tx_graph
+                    .index
+                    .reveal_to_target_multi(&update.last_active_indices);
+                let tx_changeset = tx_graph.apply_update(update.tx_update);
+                let changed = !(chain_changeset.is_empty()
+                    && indexer_changeset.is_empty()
+                    && tx_changeset.is_empty());
+                Ok((changed, (tx_changeset, chain_changeset)))
+            })?;
         Ok(changed)
+    }
+
+    pub fn reconnect(&mut self) {
+        self.chain_client.reconnect()
     }
 
     pub fn send_to(
