@@ -183,12 +183,6 @@ Future<void> _showVerificationDialog(
             builder: (context, snapshot) {
               return ElevatedButton(
                 onPressed: () {
-                  if (snapshot.hasData &&
-                      snapshot.data?.sentToDevices != null &&
-                      snapshot.data!.sentToDevices.isNotEmpty) {
-                    // go back an extra window
-                    Navigator.of(context).pop();
-                  }
                   Navigator.of(context).pop();
                 },
                 child: Text('Done'),
