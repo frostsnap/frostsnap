@@ -336,7 +336,7 @@ impl FfiCoordinator {
                         } => {
                             let send_message = CoordinatorSendMessage {
                                 target_destinations: Destination::from(destinations),
-                                message_body: CoordinatorSendBody::Core(message),
+                                message_body: CoordinatorSendBody::Core(message).into(),
                             };
 
                             usb_sender.send(send_message);

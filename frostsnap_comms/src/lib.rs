@@ -45,6 +45,16 @@ pub const BINCODE_CONFIG: bincode::config::Configuration<
 pub enum ReceiveSerial<D: Direction> {
     MagicBytes(MagicBytes<D>),
     Message(D::RecvType),
+    Unused9,
+    Unused8,
+    Unused7,
+    Unused6,
+    Unused5,
+    Unused4,
+    Unused3,
+    Unused2,
+    Unused1,
+    Unused0,
 }
 
 impl<D: Direction> Gist for ReceiveSerial<D> {
@@ -52,6 +62,7 @@ impl<D: Direction> Gist for ReceiveSerial<D> {
         match self {
             ReceiveSerial::MagicBytes(_) => "MagicBytes".into(),
             ReceiveSerial::Message(msg) => msg.gist(),
+            _ => "Unused".into(),
         }
     }
 }
@@ -60,7 +71,7 @@ impl<D: Direction> Gist for ReceiveSerial<D> {
 #[derive(Encode, Decode, Debug, Clone)]
 pub struct CoordinatorSendMessage {
     pub target_destinations: Destination,
-    pub message_body: CoordinatorSendBody,
+    pub message_body: WireCoordinatorSendBody,
 }
 
 #[cfg(feature = "coordinator")]
@@ -74,7 +85,7 @@ impl TryFrom<frostsnap_core::coordinator::CoordinatorSend> for CoordinatorSendMe
                 destinations,
             } => Ok(CoordinatorSendMessage {
                 target_destinations: Destination::from(destinations),
-                message_body: CoordinatorSendBody::Core(message),
+                message_body: CoordinatorSendBody::Core(message).into(),
             }),
             _ => Err("was not a ToDevice message"),
         }
@@ -138,12 +149,56 @@ impl Gist for CoordinatorSendMessage {
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
+pub enum WireCoordinatorSendBody {
+    _Core,
+    _Naming,
+    // ↑ Coord will never send these to old devices -- it will force firmware upgrade
+    AnnounceAck,
+    Cancel,
+    Upgrade(CoordinatorUpgradeMessage),
+    /// Everything should be encapsulated on the wire. The above is for backwards compat.
+    EncapsV0(EncapsBody),
+}
+
+impl WireCoordinatorSendBody {
+    pub fn decode(self) -> Option<CoordinatorSendBody> {
+        use WireCoordinatorSendBody::*;
+        match self {
+            _Core | _Naming => None,
+            AnnounceAck => Some(CoordinatorSendBody::AnnounceAck),
+            Cancel => Some(CoordinatorSendBody::Cancel),
+            Upgrade(upgrade) => Some(CoordinatorSendBody::Upgrade(upgrade)),
+            EncapsV0(encaps) => bincode::decode_from_slice(encaps.0.as_ref(), BINCODE_CONFIG)
+                .ok()
+                .map(|(body, _)| body),
+        }
+    }
+}
+
+#[derive(Encode, Decode, Debug, Clone, PartialEq)]
+pub struct EncapsBody(Vec<u8>);
+
+#[derive(Encode, Decode, Debug, Clone)]
 pub enum CoordinatorSendBody {
     Core(frostsnap_core::message::CoordinatorToDeviceMessage),
     Naming(NameCommand),
     AnnounceAck,
     Cancel,
     Upgrade(CoordinatorUpgradeMessage),
+}
+
+impl From<CoordinatorSendBody> for WireCoordinatorSendBody {
+    fn from(value: CoordinatorSendBody) -> Self {
+        use CoordinatorSendBody::*;
+        match value {
+            Core(_) | Naming(_) => WireCoordinatorSendBody::EncapsV0(EncapsBody(
+                bincode::encode_to_vec(value, BINCODE_CONFIG).expect("encoding is infallible"),
+            )),
+            AnnounceAck => WireCoordinatorSendBody::AnnounceAck,
+            Cancel => WireCoordinatorSendBody::Cancel,
+            Upgrade(upgrade) => WireCoordinatorSendBody::Upgrade(upgrade),
+        }
+    }
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
@@ -166,6 +221,18 @@ impl Gist for CoordinatorSendBody {
         match self {
             CoordinatorSendBody::Core(core) => core.gist(),
             _ => format!("{:?}", self),
+        }
+    }
+}
+
+impl Gist for WireCoordinatorSendBody {
+    fn gist(&self) -> String {
+        match self {
+            WireCoordinatorSendBody::EncapsV0(_) => "EncapsV0".into(),
+            _ => match self.clone().decode() {
+                Some(decoded) => decoded.gist(),
+                None => "UNINTELLIGBLE".into(),
+            },
         }
     }
 }
@@ -238,10 +305,10 @@ impl<'de, O: Direction> bincode::BorrowDecode<'de> for MagicBytes<O> {
 }
 
 /// Message sent from a device to the coordinator
-#[derive(Encode, Decode, Debug, Clone)]
+#[derive(Encode, Decode, Debug, Clone, PartialEq)]
 pub struct DeviceSendMessage {
     pub from: DeviceId,
-    pub body: DeviceSendBody,
+    pub body: WireDeviceSendBody,
 }
 
 impl Gist for DeviceSendMessage {
@@ -259,6 +326,56 @@ pub enum DeviceSendBody {
     DisconnectDownstream,
     NeedName,
     AckUpgradeMode,
+}
+
+#[derive(Encode, Decode, Debug, Clone, PartialEq)]
+pub enum WireDeviceSendBody {
+    _Core,
+    Debug { message: String },
+    Announce { firmware_digest: FirmwareDigest },
+    SetName { name: String },
+    DisconnectDownstream,
+    NeedName,
+    AckUpgradeMode,
+    EncapsV0(EncapsBody),
+}
+
+impl Gist for WireDeviceSendBody {
+    fn gist(&self) -> String {
+        match self {
+            WireDeviceSendBody::EncapsV0(_) => "EncapsV0(..)".into(),
+            _ => self.clone().decode().expect("infallible").gist(),
+        }
+    }
+}
+
+impl From<DeviceSendBody> for WireDeviceSendBody {
+    fn from(value: DeviceSendBody) -> Self {
+        let encaps = bincode::encode_to_vec(value, BINCODE_CONFIG).expect("encoding works");
+        WireDeviceSendBody::EncapsV0(EncapsBody(encaps))
+    }
+}
+
+impl WireDeviceSendBody {
+    pub fn decode(self) -> Option<DeviceSendBody> {
+        Some(match self {
+            WireDeviceSendBody::_Core => return None,
+            WireDeviceSendBody::Debug { message } => DeviceSendBody::Debug { message },
+            WireDeviceSendBody::Announce { firmware_digest } => {
+                DeviceSendBody::Announce { firmware_digest }
+            }
+            WireDeviceSendBody::SetName { name } => DeviceSendBody::SetName { name },
+            WireDeviceSendBody::DisconnectDownstream => DeviceSendBody::DisconnectDownstream,
+            WireDeviceSendBody::NeedName => DeviceSendBody::NeedName,
+            WireDeviceSendBody::AckUpgradeMode => DeviceSendBody::AckUpgradeMode,
+            WireDeviceSendBody::EncapsV0(encaps) => {
+                match bincode::decode_from_slice(encaps.0.as_ref(), BINCODE_CONFIG).ok() {
+                    Some((msg, _)) => msg,
+                    None => return None,
+                }
+            }
+        })
+    }
 }
 
 impl Gist for DeviceSendBody {
