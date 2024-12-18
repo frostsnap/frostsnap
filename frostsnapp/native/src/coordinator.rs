@@ -28,7 +28,7 @@ use frostsnap_coordinator::{AppMessageBody, FirmwareBin, UiProtocol, UsbSender, 
 use frostsnap_coordinator::{Completion, DeviceChange};
 use frostsnap_core::{
     coordinator::{FrostCoordinator, SigningSessionState},
-    AccessStructureRef, DeviceId, KeyId, MasterAppkey, SignTask,
+    AccessStructureRef, DeviceId, KeyId, SignTask,
 };
 use rand::thread_rng;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -830,15 +830,13 @@ impl FfiCoordinator {
 
     pub fn verify_address(
         &self,
-        access_structure_ref: AccessStructureRef,
+        key_id: KeyId,
         address_index: u32,
         stream: StreamSink<api::VerifyAddressProtocolState>,
-        master_appkey: MasterAppkey,
     ) -> anyhow::Result<()> {
         let coordinator = self.coordinator.lock().unwrap();
 
-        let verify_address_messages =
-            coordinator.verify_address(access_structure_ref, address_index, master_appkey)?;
+        let verify_address_messages = coordinator.verify_address(key_id, address_index)?;
 
         let ui_protocol =
             VerifyAddressProtocol::new(verify_address_messages.clone(), SinkWrap(stream));

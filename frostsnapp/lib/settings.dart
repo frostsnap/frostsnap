@@ -6,10 +6,10 @@ import 'package:flutter/services.dart';
 import 'package:frostsnapp/address.dart';
 import 'package:frostsnapp/access_structures.dart';
 import 'package:frostsnapp/bullet_list.dart';
+import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/electrum_server_settings.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/logs.dart';
-import 'package:frostsnapp/main.dart';
 import 'package:frostsnapp/theme.dart';
 import 'package:frostsnapp/todo.dart';
 import 'package:frostsnapp/wallet.dart';
@@ -27,8 +27,8 @@ class SettingsContext extends InheritedWidget {
   SettingsContext({
     super.key,
     required this.settings,
-    required Widget child,
-  }) : super(child: child) {
+    required super.child,
+  }) {
     developerSettings = settings.subDeveloperSettings().toBehaviorSubject();
     electrumSettings = settings.subElectrumSettings().toBehaviorSubject();
     chainStatuses = [];
@@ -59,7 +59,7 @@ class SettingsContext extends InheritedWidget {
     return stream;
   }
 
-  Future<KeyWallet?> loadKeyWallet({required KeyId keyId}) async {
+  Wallet? loadWallet({required KeyId keyId}) {
     final frostKey = coord.getFrostKey(keyId: keyId);
     if (frostKey == null) {
       return null;
@@ -72,8 +72,8 @@ class SettingsContext extends InheritedWidget {
     if (network == null) {
       return null;
     }
-    final wallet = await settings.loadWallet(network: network);
-    return KeyWallet(wallet: wallet, masterAppkey: masterAppkey);
+    final superWallet = settings.getSuperWallet(network: network);
+    return Wallet(superWallet: superWallet, masterAppkey: masterAppkey);
   }
 }
 
@@ -102,12 +102,11 @@ class SettingsPage extends StatelessWidget {
                             title: Text('External wallet'),
                             icon: Icons.qr_code,
                             bodyBuilder: (context) {
-                              final keyWallet = walletCtx.keyWallet;
+                              final wallet = walletCtx.wallet;
                               return ExportDescriptorPage(
-                                  walletDescriptor: keyWallet.wallet.network
+                                  walletDescriptor: walletCtx.network
                                       .descriptorForKey(
-                                          masterAppkey:
-                                              keyWallet.masterAppkey));
+                                          masterAppkey: wallet.masterAppkey));
                             }),
                       SettingsItem(
                           title: Text("Access"),
@@ -119,9 +118,7 @@ class SettingsPage extends StatelessWidget {
                           title: Text('Check address'),
                           icon: Icons.policy,
                           bodyBuilder: (context) {
-                            return CheckAddressPage(
-                              walletContext: walletCtx!,
-                            );
+                            return CheckAddressPage();
                           }),
                       if (keyCtx != null)
                         SettingsItem(
@@ -213,8 +210,7 @@ class FsAppBar extends StatelessWidget implements PreferredSizeWidget {
         ...actions,
         if (walletCtx != null)
           StreamBuilder(
-              stream: settingsCtx
-                  .chainStatusStream(walletCtx.keyWallet.wallet.network),
+              stream: settingsCtx.chainStatusStream(walletCtx.network),
               builder: (context, snap) {
                 if (!snap.hasData) {
                   return SizedBox();
@@ -490,7 +486,7 @@ class ChainStatusIcon extends StatelessWidget {
 
     if (chainStatus.state == ChainStatusState.Connected) {
       onPressed = () {
-        WalletContext.of(context)?.wallet.reconnect();
+        WalletContext.of(context)?.superWallet?.reconnect();
       };
     } else {
       onPressed = null;
@@ -719,33 +715,6 @@ class _HoldToDeleteButtonState extends State<HoldToDeleteButton> {
         ),
       ),
     );
-  }
-}
-
-class KeyContext extends InheritedWidget {
-  final KeyId keyId;
-
-  const KeyContext({
-    super.key,
-    required super.child,
-    required this.keyId,
-  });
-
-  static KeyContext? of(BuildContext context) {
-    return context.getInheritedWidgetOfExactType<KeyContext>();
-  }
-
-  KeyContext wrap(Widget child) {
-    return KeyContext(keyId: keyId, child: child);
-  }
-
-  FrostKey frostKey() {
-    return coord.getFrostKey(keyId: keyId)!;
-  }
-
-  @override
-  bool updateShouldNotify(KeyContext oldWidget) {
-    return false;
   }
 }
 

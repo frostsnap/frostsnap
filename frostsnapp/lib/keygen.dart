@@ -521,8 +521,6 @@ Future<AccessStructureRef?> showCheckKeyGenDialog({
                           ElevatedButton(
                               onPressed: finished
                                   ? () async {
-                                      final settingsCtx =
-                                          SettingsContext.of(context)!;
                                       final accessStructureRef =
                                           await coord.finalKeygenAck();
                                       if (context.mounted) {

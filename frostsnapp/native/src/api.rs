@@ -14,13 +14,12 @@ use frostsnap_coordinator::bitcoin::chain_sync::{default_electrum_server, SUPPOR
 pub use frostsnap_coordinator::bitcoin::wallet::ConfirmationTime;
 pub use frostsnap_coordinator::bitcoin::{
     chain_sync::{ChainClient, ChainStatus, ChainStatusState},
-    wallet::FrostsnapWallet,
+    wallet::CoordSuperWallet,
 };
 pub use frostsnap_coordinator::firmware_upgrade::FirmwareUpgradeConfirmState;
 pub use frostsnap_coordinator::frostsnap_core;
 use frostsnap_coordinator::frostsnap_core::coordinator::CoordFrostKey;
 use frostsnap_coordinator::frostsnap_core::device::KeyPurpose;
-use frostsnap_coordinator::frostsnap_core::tweak;
 pub use frostsnap_coordinator::verify_address::VerifyAddressProtocolState;
 pub use frostsnap_coordinator::{
     check_share::CheckShareState, keygen::KeyGenState, persist::Persisted, signing::SigningState,
@@ -471,19 +470,19 @@ impl DeviceListState {
 pub type WalletStreams = Mutex<BTreeMap<MasterAppkey, StreamSink<TxState>>>;
 
 #[derive(Clone)]
-pub struct Wallet {
-    pub inner: RustOpaque<Arc<Mutex<FrostsnapWallet>>>,
+pub struct SuperWallet {
+    pub inner: RustOpaque<Arc<Mutex<CoordSuperWallet>>>,
     pub wallet_streams: RustOpaque<Arc<WalletStreams>>,
     pub chain_sync: RustOpaque<ChainClient>,
     pub network: BitcoinNetwork,
 }
 
-impl Wallet {
+impl SuperWallet {
     fn load_or_new(
         app_dir: impl AsRef<Path>,
         network: BitcoinNetwork,
         chain_sync: ChainClient,
-    ) -> Result<Wallet> {
+    ) -> Result<SuperWallet> {
         let db_file = network.bdk_file(app_dir);
         let db = rusqlite::Connection::open(&db_file).context(format!(
             "failed to load database from {}",
@@ -492,11 +491,12 @@ impl Wallet {
 
         let db = Arc::new(Mutex::new(db));
 
-        let wallet = FrostsnapWallet::load_or_init(db.clone(), *network.0, chain_sync.clone())
-            .with_context(|| format!("loading wallet from data in {}", db_file.display()))?;
+        let super_wallet =
+            CoordSuperWallet::load_or_init(db.clone(), *network.0, chain_sync.clone())
+                .with_context(|| format!("loading wallet from data in {}", db_file.display()))?;
 
-        let wallet = Wallet {
-            inner: RustOpaque::new(Arc::new(Mutex::new(wallet))),
+        let wallet = SuperWallet {
+            inner: RustOpaque::new(Arc::new(Mutex::new(super_wallet))),
             chain_sync: RustOpaque::new(chain_sync),
             wallet_streams: RustOpaque::new(Default::default()),
             network,
@@ -563,18 +563,13 @@ impl Wallet {
             .lock()
             .unwrap()
             .search_for_address(master_appkey, address_str, start, stop)
-            .map(|address_info| Address {
-                index: address_info.clone().index,
-                address_string: address_info.address.to_string(),
-                used: address_info.used,
-                external: address_info.external,
-            })
+            .map(|address_info| address_info.into())
     }
 
     pub fn rebroadcast(&self, txid: String) {
         let txid = Txid::from_str(&txid).expect("Txid must be valid");
-        let wallet = self.inner.lock().unwrap();
-        if let Some(tx) = wallet.get_tx(txid) {
+        let super_wallet = self.inner.lock().unwrap();
+        if let Some(tx) = super_wallet.get_tx(txid) {
             if let Err(err) = self.chain_sync.broadcast(tx.as_ref().clone()) {
                 tracing::error!("Rebroadcasting {} failed: {}", txid, err);
             };
@@ -588,12 +583,13 @@ impl Wallet {
         value: u64,
         feerate: f64,
     ) -> Result<UnsignedTx> {
-        let mut wallet = self.inner.lock().unwrap();
+        let mut super_wallet = self.inner.lock().unwrap();
         let to_address = bitcoin::Address::from_str(&to_address)
             .expect("validation should have checked")
-            .require_network(wallet.network)
+            .require_network(super_wallet.network)
             .expect("validation should have checked");
-        let signing_task = wallet.send_to(master_appkey, to_address, value, feerate as f32)?;
+        let signing_task =
+            super_wallet.send_to(master_appkey, to_address, value, feerate as f32)?;
         let unsigned_tx = UnsignedTx {
             template_tx: RustOpaque::new(signing_task),
         };
@@ -649,26 +645,6 @@ impl Wallet {
         Ok(SyncReturn(UnsignedTx {
             template_tx: RustOpaque::new(template),
         }))
-    }
-
-    pub fn derivation_path_for_address(&self, index: u32, external: bool) -> SyncReturn<String> {
-        let account_keychain = if external {
-            tweak::BitcoinAccountKeychain::external()
-        } else {
-            tweak::BitcoinAccountKeychain::internal()
-        };
-        let bip32_path = tweak::BitcoinBip32Path {
-            account_keychain,
-            index,
-        };
-
-        SyncReturn(
-            bip32_path
-                .path_segments_from_bitcoin_appkey()
-                .map(|i| i.to_string())
-                .collect::<Vec<_>>()
-                .join("/"),
-        )
     }
 }
 
@@ -736,6 +712,7 @@ impl BitcoinNetwork {
         SyncReturn(descriptor.to_string())
     }
 
+    // FIXME: doesn't need to be on the network. Can get the script pubkey without the network.
     pub fn validate_amount(&self, address: String, value: u64) -> SyncReturn<Option<String>> {
         SyncReturn(match bitcoin::Address::from_str(&address) {
             Ok(address) => match address.require_network(*self.0) {
@@ -985,13 +962,11 @@ impl Coordinator {
 
     pub fn verify_address(
         &self,
-        access_structure_ref: AccessStructureRef,
+        key_id: KeyId,
         address_index: u32,
-        master_appkey: MasterAppkey,
         sink: StreamSink<VerifyAddressProtocolState>,
     ) -> Result<()> {
-        self.0
-            .verify_address(access_structure_ref, address_index, sink, master_appkey)?;
+        self.0.verify_address(key_id, address_index, sink)?;
         Ok(())
     }
 
@@ -1177,6 +1152,7 @@ pub struct Address {
     pub address_string: String,
     pub used: bool,
     pub external: bool,
+    pub derivation_path: String,
 }
 
 impl From<frostsnap_coordinator::bitcoin::wallet::AddressInfo> for Address {
@@ -1186,6 +1162,12 @@ impl From<frostsnap_coordinator::bitcoin::wallet::AddressInfo> for Address {
             address_string: value.address.to_string(),
             used: value.used,
             external: value.external,
+            derivation_path: value
+                .derivation_path
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join("/"),
         }
     }
 }
@@ -1299,7 +1281,7 @@ pub struct Settings {
     pub chain_clients: RustOpaque<HashMap<RBitcoinNetwork, ChainClient>>,
 
     pub app_directory: RustOpaque<PathBuf>,
-    pub loaded_wallets: RustOpaque<Mutex<HashMap<RBitcoinNetwork, Wallet>>>,
+    pub loaded_wallets: RustOpaque<Mutex<HashMap<RBitcoinNetwork, SuperWallet>>>,
 
     pub developer_settings_stream: RustOpaque<MaybeSink<DeveloperSettings>>,
     pub electrum_settings_stream: RustOpaque<MaybeSink<ElectrumSettings>>,
@@ -1334,16 +1316,17 @@ impl Settings {
             Persisted::new(&mut *db_, ())?
         };
 
-        let mut loaded_wallets: HashMap<RBitcoinNetwork, Wallet> = Default::default();
+        let mut loaded_wallets: HashMap<RBitcoinNetwork, SuperWallet> = Default::default();
         let mut chain_apis = HashMap::new();
 
         for network in SUPPORTED_NETWORKS {
             let bitcoin_network = BitcoinNetwork::from(network);
             let electrum_url = persisted.get_electrum_server(network);
             let (chain_api, conn_handler) = ChainClient::new();
-            let wallet = Wallet::load_or_new(&app_directory, bitcoin_network, chain_api.clone())?;
-            conn_handler.run(electrum_url, Arc::clone(&wallet.inner), {
-                let wallet_streams = Arc::clone(&wallet.wallet_streams);
+            let super_wallet =
+                SuperWallet::load_or_new(&app_directory, bitcoin_network, chain_api.clone())?;
+            conn_handler.run(electrum_url, Arc::clone(&super_wallet.inner), {
+                let wallet_streams = Arc::clone(&super_wallet.wallet_streams);
                 move |master_appkey, txs| {
                     let wallet_streams = wallet_streams.lock().unwrap();
                     if let Some(stream) = wallet_streams.get(&master_appkey) {
@@ -1351,7 +1334,7 @@ impl Settings {
                     }
                 }
             });
-            loaded_wallets.insert(network, wallet);
+            loaded_wallets.insert(network, super_wallet);
             chain_apis.insert(network, chain_api);
         }
 
@@ -1380,11 +1363,12 @@ impl Settings {
         ElectrumSettings
     );
 
-    pub fn load_wallet(&self, network: BitcoinNetwork) -> Result<Wallet> {
+    pub fn get_super_wallet(&self, network: BitcoinNetwork) -> Result<SyncReturn<SuperWallet>> {
         let loaded = self.loaded_wallets.lock().unwrap();
         loaded
             .get(&network.0)
             .cloned()
+            .map(SyncReturn)
             .ok_or(anyhow!("unsupported network {:?}", network.0))
     }
 

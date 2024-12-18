@@ -429,13 +429,8 @@ fn test_verify_address() {
 
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
     let key_data = run.coordinator.iter_keys().next().unwrap().clone();
-    let (access_structure_ref, _) = key_data.access_structures().next().unwrap();
-    let master_appkey = key_data.complete_key.as_ref().unwrap().master_appkey;
 
-    let verify_request = run
-        .coordinator
-        .verify_address(access_structure_ref, 0, master_appkey)
-        .unwrap();
+    let verify_request = run.coordinator.verify_address(key_data.key_id, 0).unwrap();
     run.extend(verify_request);
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
 

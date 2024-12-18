@@ -1,6 +1,7 @@
 import 'package:dotted_border/dotted_border.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
 import 'package:frostsnapp/access_structures.dart';
+import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/goal_progress.dart';
@@ -294,18 +295,11 @@ class KeyCard extends StatelessWidget {
         right: 8,
         child: IconButton(
           onPressed: () async {
-            final settingsCtx = SettingsContext.of(context)!;
-            final keyWallet = await settingsCtx.loadKeyWallet(keyId: keyId!);
+            final superWallet = SuperWalletContext.of(context)!;
             if (context.mounted) {
               Navigator.push(context, MaterialPageRoute(builder: (context) {
-                Widget page = SettingsPage();
-                page = keyWallet != null
-                    ? WalletContext(keyWallet: keyWallet, child: page)
-                    : KeyContext(
-                        keyId: keyId!,
-                        child: page,
-                      );
-                return page;
+                return superWallet.tryWrapInWalletContext(
+                    keyId: keyId!, child: SettingsPage());
               }));
             }
           },
@@ -360,12 +354,11 @@ class _KeyButtons extends State<KeyButtons> {
                 }
               case SignTaskDescription_Transaction(:final unsignedTx):
                 {
-                  final keyWallet =
-                      await settingsCtx.loadKeyWallet(keyId: widget.keyId);
+                  final wallet = settingsCtx.loadWallet(keyId: widget.keyId);
 
                   if (context.mounted) {
                     await signAndBroadcastWorkflowDialog(
-                      keyWallet: keyWallet!,
+                      wallet: wallet!,
                       context: context,
                       signingStream: signingStream,
                       unsignedTx: unsignedTx,
@@ -397,12 +390,13 @@ class _KeyButtons extends State<KeyButtons> {
       onPressed: masterAppkey == null
           ? null
           : () async {
-              final keyWallet = await settingsCtx.loadKeyWallet(
-                  keyId:
-                      api.masterAppkeyExtToKeyId(masterAppkey: masterAppkey));
               if (context.mounted) {
+                final superWallet = SuperWalletContext.of(context)!;
                 Navigator.push(context, MaterialPageRoute(builder: (context) {
-                  return WalletPage(keyWallet: keyWallet!);
+                  return superWallet.tryWrapInWalletContext(
+                      keyId: api.masterAppkeyExtToKeyId(
+                          masterAppkey: masterAppkey),
+                      child: WalletHome());
                 }));
               }
             },

@@ -16,15 +16,9 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class LoadPsbtPage extends StatefulWidget {
-  final MasterAppkey masterAppkey;
   final Wallet wallet;
-  late final FrostKey frostKey;
 
-  LoadPsbtPage({Key? key, required this.masterAppkey, required this.wallet})
-      : super(key: key) {
-    frostKey = coord.getFrostKey(
-        keyId: api.masterAppkeyExtToKeyId(masterAppkey: masterAppkey))!;
-  }
+  const LoadPsbtPage({super.key, required this.wallet});
 
   @override
   LoadPsbtPageState createState() => LoadPsbtPageState();
@@ -37,7 +31,8 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
 
   @override
   Widget build(BuildContext context) {
-    final accessStructure = widget.frostKey.accessStructures()[0];
+    final frostKey = widget.wallet.frostKey()!;
+    final accessStructure = frostKey.accessStructures()[0];
     final enoughSelected =
         selectedDevices.length == accessStructure.threshold();
     Widget? scanPsbtButton;
@@ -115,7 +110,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
               style: TextStyle(fontSize: 20.0),
             ),
             SigningDeviceSelector(
-                frostKey: widget.frostKey,
+                frostKey: frostKey,
                 onChanged: (selected) {
                   setState(() {
                     selectedDevices = selected;
@@ -142,16 +137,11 @@ Future<void> runPsbtSigningWorkflow(
 }) async {
   final Psbt psbt;
   final UnsignedTx unsignedTx;
-  final frostkey = coord.getFrostKey(keyId: accessStructureRef.keyId)!;
-  final masterAppkey = frostkey.masterAppkey()!;
-  final keyWallet = KeyWallet(
-    masterAppkey: masterAppkey,
-    wallet: wallet,
-  );
+
   try {
     psbt = api.psbtBytesToPsbt(psbtBytes: psbtBytes);
-    unsignedTx =
-        wallet.psbtToUnsignedTx(psbt: psbt, masterAppkey: masterAppkey);
+    unsignedTx = wallet.superWallet
+        .psbtToUnsignedTx(psbt: psbt, masterAppkey: wallet.masterAppkey);
   } catch (e) {
     showErrorSnackbarTop(context, "Error loading PSBT: $e");
     return;
@@ -162,8 +152,8 @@ Future<void> runPsbtSigningWorkflow(
       unsignedTx: unsignedTx,
       devices: selectedDevices);
 
-  final effect =
-      unsignedTx.effect(masterAppkey: masterAppkey, network: wallet.network);
+  final effect = unsignedTx.effect(
+      masterAppkey: wallet.masterAppkey, network: wallet.superWallet.network);
 
   final signatures = await showSigningProgressDialog(
     context,
@@ -178,7 +168,7 @@ Future<void> runPsbtSigningWorkflow(
     if (context.mounted) {
       await saveOrBroadcastSignedPsbtDialog(
         context,
-        keyWallet: keyWallet,
+        wallet: wallet,
         tx: signedTx,
         psbt: signedPsbt,
       );
@@ -188,7 +178,7 @@ Future<void> runPsbtSigningWorkflow(
 
 Future<void> saveOrBroadcastSignedPsbtDialog(
   BuildContext context, {
-  required KeyWallet keyWallet,
+  required Wallet wallet,
   required SignedTx tx,
   required Psbt psbt,
 }) {
@@ -198,7 +188,7 @@ Future<void> saveOrBroadcastSignedPsbtDialog(
         final broadcastButton = ElevatedButton(
             onPressed: () async {
               final broadcasted = await showBroadcastConfirmDialog(context,
-                  keyWallet: keyWallet, tx: tx);
+                  wallet: wallet, tx: tx);
               if (broadcasted && context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(

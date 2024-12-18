@@ -1095,19 +1095,31 @@ impl FrostCoordinator {
 
     pub fn verify_address(
         &self,
-        access_structure_ref: AccessStructureRef,
+        key_id: KeyId,
         derivation_index: u32,
-        master_appkey: MasterAppkey,
     ) -> Result<VerifyAddress, ActionError> {
-        let access_structure = self.get_access_structure(access_structure_ref).ok_or(
-            ActionError::StateInconsistent("no such access_structure".into()),
-        )?;
+        let frost_key = self
+            .get_frost_key(key_id)
+            .ok_or(ActionError::StateInconsistent("no such frost key".into()))?;
+
+        let master_appkey = frost_key
+            .complete_key
+            .as_ref()
+            .ok_or(ActionError::StateInconsistent(
+                "can't verify address for incomplete key".into(),
+            ))?
+            .master_appkey;
 
         // verify on any device that knows about this key
-        let target_devices: BTreeSet<_> = access_structure
-            .device_to_share_index
-            .keys()
-            .cloned()
+        let target_devices: BTreeSet<_> = frost_key
+            .access_structures()
+            .flat_map(|(_, accss)| {
+                accss
+                    .device_to_share_index
+                    .keys()
+                    .cloned()
+                    .collect::<Vec<_>>()
+            })
             .collect();
 
         Ok(VerifyAddress {

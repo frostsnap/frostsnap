@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnapp/bridge_definitions.dart';
+import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/global.dart';
@@ -13,15 +14,11 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 class AddressPage extends StatelessWidget {
   final Address address;
-  final MasterAppkey masterAppkey;
-  final AccessStructureRef accessStructureRef;
 
   const AddressPage({
-    Key? key,
+    super.key,
     required this.address,
-    required this.masterAppkey,
-    required this.accessStructureRef,
-  }) : super(key: key);
+  });
 
   void _showQrDialog(BuildContext context) {
     final qrCode = QrCode(8, QrErrorCorrectLevel.L);
@@ -66,8 +63,6 @@ class AddressPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final walletCtx = WalletContext.of(context)!;
-    final derivationPath = walletCtx.wallet.derivationPathForAddress(
-        index: address.index, external: address.external);
 
     return Scaffold(
       appBar: AppBar(
@@ -90,7 +85,7 @@ class AddressPage extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      "Derivation path: $derivationPath",
+                      "Derivation path: ${address.derivationPath}",
                       style: TextStyle(color: textSecondaryColor),
                     ),
                     SizedBox(height: 16),
@@ -129,10 +124,10 @@ class AddressPage extends StatelessWidget {
                         Clipboard.setData(
                             ClipboardData(text: address.addressString));
                         await _showVerificationDialog(
-                            context,
-                            accessStructureRef,
-                            address.index,
-                            walletCtx.masterAppkey);
+                          context,
+                          walletCtx.wallet.keyId(),
+                          address.index,
+                        );
                       },
                       child: Text('Verify Address'),
                     )
@@ -148,15 +143,11 @@ class AddressPage extends StatelessWidget {
 }
 
 Future<void> _showVerificationDialog(
-    BuildContext context,
-    AccessStructureRef accessStructureRef,
-    int index,
-    MasterAppkey masterAppKey) async {
+    BuildContext context, KeyId keyId, int index) async {
   final verifyAddressStream = coord
       .verifyAddress(
-        accessStructureRef: accessStructureRef,
+        keyId: keyId,
         addressIndex: index,
-        masterAppkey: masterAppKey,
       )
       .toBehaviorSubject();
 
@@ -305,10 +296,8 @@ class VerifyAddressProgress extends StatelessWidget {
 }
 
 class CheckAddressPage extends StatefulWidget {
-  final WalletContext walletContext;
   const CheckAddressPage({
     Key? key,
-    required this.walletContext,
   }) : super(key: key);
 
   @override
@@ -334,12 +323,13 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
   }
 
   Future<SearchResult> searchAddress() async {
+    final walletContext = WalletContext.of(context)!;
     if (currentDepth >= 1000) {
       searchSize = 1000;
     }
 
-    final address = await widget.walletContext.wallet.searchForAddress(
-      masterAppkey: widget.walletContext.masterAppkey,
+    final address = await walletContext.wallet.superWallet.searchForAddress(
+      masterAppkey: walletContext.wallet.masterAppkey,
       addressStr: textInputController.text,
       start: currentDepth,
       stop: currentDepth + searchSize,
@@ -350,10 +340,6 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
     return SearchResult(
       depth: currentDepth,
       address: address,
-      derivationPath: address != null
-          ? widget.walletContext.wallet.derivationPathForAddress(
-              index: address.index, external: address.external)
-          : null,
     );
   }
 
@@ -369,7 +355,8 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
 
     if (result.address != null) {
       children.addAll([
-        Text("This address belongs to us at ${result.derivationPath ?? ""}"),
+        Text(
+            "This address belongs to us at ${result.address?.derivationPath ?? ""}"),
         const SizedBox(height: 16),
         ElevatedButton(
           onPressed: () => _navigateToAddressPage(result.address!),
@@ -407,20 +394,11 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
   }
 
   void _navigateToAddressPage(Address address) {
-    final frostKey = coord.getFrostKey(keyId: widget.walletContext.keyId)!;
-    final accessStructureRef =
-        frostKey.accessStructures()[0].accessStructureRef();
-
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => WalletContext(
-          keyWallet: widget.walletContext.wallet,
-          child: AddressPage(
-            masterAppkey: widget.walletContext.masterAppkey,
-            address: address,
-            accessStructureRef: accessStructureRef,
-          ),
+        builder: (context) => AddressPage(
+          address: address,
         ),
       ),
     );
@@ -492,11 +470,9 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
 class SearchResult {
   final int depth;
   final Address? address;
-  final String? derivationPath;
 
   const SearchResult({
     required this.depth,
     required this.address,
-    required this.derivationPath,
   });
 }

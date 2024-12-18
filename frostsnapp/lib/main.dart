@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
+import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/key_list.dart';
 import 'package:flutter/services.dart';
@@ -91,6 +92,7 @@ void main() async {
 
     if (settings != null) {
       mainWidget = SettingsContext(settings: settings, child: mainWidget);
+      mainWidget = SuperWalletContext(settings: settings, child: mainWidget);
     }
 
     runApp(mainWidget);
@@ -249,26 +251,5 @@ class _StartupErrorWidgetState extends State<StartupErrorWidget> {
         ),
       ),
     );
-  }
-}
-
-class FrostsnapContext extends InheritedWidget {
-  final Stream<String> logStream;
-
-  const FrostsnapContext({
-    Key? key,
-    required this.logStream,
-    required Widget child,
-  }) : super(key: key, child: child);
-
-  // Static method to allow easy access to the Foo instance
-  static FrostsnapContext? of(BuildContext context) {
-    return context.dependOnInheritedWidgetOfExactType<FrostsnapContext>();
-  }
-
-  @override
-  bool updateShouldNotify(FrostsnapContext oldWidget) {
-    // we never change the log stream
-    return false;
   }
 }
