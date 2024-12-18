@@ -43,6 +43,7 @@ pub struct CoordFrostKey {
     pub key_id: KeyId,
     pub complete_key: Option<CompleteKey>,
     pub key_name: String,
+    pub purpose: KeyPurpose,
     pub recovering_access_structures: HashMap<AccessStructureId, RecoveringAccessStructure>,
 }
 
@@ -154,6 +155,7 @@ impl FrostCoordinator {
             coord: &'a mut FrostCoordinator,
             key_id: KeyId,
             key_name: &str,
+            purpose: KeyPurpose,
         ) -> &'a mut CoordFrostKey {
             let exists = coord.keys.contains_key(&key_id);
             let key = coord.keys.entry(key_id).or_insert_with(|| CoordFrostKey {
@@ -161,6 +163,7 @@ impl FrostCoordinator {
                 complete_key: Default::default(),
                 key_name: key_name.to_owned(),
                 recovering_access_structures: Default::default(),
+                purpose,
             });
             if !exists {
                 coord.key_order.push(key_id);
@@ -169,8 +172,12 @@ impl FrostCoordinator {
         }
         use Mutation::*;
         match mutation {
-            NewKey { key_id, key_name } => {
-                ensure_key(self, *key_id, key_name);
+            NewKey {
+                key_id,
+                key_name,
+                purpose,
+            } => {
+                ensure_key(self, *key_id, key_name, *purpose);
             }
             CompleteKey {
                 master_appkey,
@@ -299,7 +306,7 @@ impl FrostCoordinator {
                 held_by,
             }) => {
                 let key_id = held_share.access_structure_ref.key_id;
-                let key = ensure_key(self, key_id, &held_share.key_name);
+                let key = ensure_key(self, key_id, &held_share.key_name, held_share.purpose);
                 if key.complete_key.is_some() {
                     self.apply_mutation(&NewShare {
                         access_structure_ref: held_share.access_structure_ref,
@@ -415,6 +422,7 @@ impl FrostCoordinator {
                     input_aggregator,
                     device_to_share_index,
                     pending_key_name,
+                    purpose,
                 })),
                 DeviceToCoordinatorMessage::KeyGenResponse(new_shares),
             ) => {
@@ -466,6 +474,7 @@ impl FrostCoordinator {
                                 .collect(),
                             acks: Default::default(),
                             pending_key_name: pending_key_name.clone(),
+                            purpose: *purpose,
                         }));
                 }
 
@@ -737,6 +746,7 @@ impl FrostCoordinator {
                         input_aggregator,
                         device_to_share_index: device_to_share_index.clone(),
                         pending_key_name: key_name.to_string(),
+                        purpose: key_purpose,
                     }));
 
                 Ok(vec![CoordinatorSend::ToDevice {
@@ -744,7 +754,7 @@ impl FrostCoordinator {
                         device_to_share_index,
                         threshold,
                         key_name,
-                        key_purpose,
+                        purpose: key_purpose,
                     },
                     destinations: devices.clone(),
                 }])
@@ -769,6 +779,7 @@ impl FrostCoordinator {
                 agg_input,
                 acks,
                 pending_key_name,
+                purpose,
             })) => {
                 let all_acks = acks.len() == device_to_share_index.len();
                 if all_acks {
@@ -781,6 +792,7 @@ impl FrostCoordinator {
                         root_shared_key,
                         device_to_share_index.clone(),
                         encryption_key,
+                        *purpose,
                         rng,
                     );
                     self.action_state = None;
@@ -1206,6 +1218,7 @@ impl FrostCoordinator {
                 root_shared_key,
                 device_to_share_index,
                 encryption_key,
+                key.purpose,
                 rng,
             );
             Ok(())
@@ -1225,6 +1238,7 @@ impl FrostCoordinator {
         root_shared_key: SharedKey,
         device_to_share_index: BTreeMap<DeviceId, PartyIndex>,
         encryption_key: SymmetricKey,
+        purpose: KeyPurpose,
         rng: &mut impl rand_core::RngCore,
     ) -> AccessStructureRef {
         let rootkey = root_shared_key.public_key();
@@ -1244,6 +1258,7 @@ impl FrostCoordinator {
             self.mutate(Mutation::NewKey {
                 key_name: name,
                 key_id,
+                purpose,
             });
         }
 
@@ -1387,12 +1402,14 @@ pub enum KeyGenState {
         input_aggregator: encpedpop::Coordinator,
         device_to_share_index: BTreeMap<DeviceId, core::num::NonZeroU32>,
         pending_key_name: String,
+        purpose: KeyPurpose,
     },
     WaitingForAcks {
         agg_input: encpedpop::AggKeygenInput,
         device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
         acks: BTreeSet<DeviceId>,
         pending_key_name: String,
+        purpose: KeyPurpose,
     },
 }
 
@@ -1530,6 +1547,7 @@ pub enum Mutation {
     NewKey {
         key_name: String,
         key_id: KeyId,
+        purpose: KeyPurpose,
     },
     CompleteKey {
         master_appkey: MasterAppkey,

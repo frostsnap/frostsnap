@@ -341,7 +341,7 @@ class _ThresholdPageState extends State<ThresholdPage> {
                               .map((device) => device.id)
                               .toList(),
                           keyName: widget.keyName,
-                          isMainnetKey: widget.network.isMainnet())
+                          network: widget.network)
                       .toBehaviorSubject();
                   final accessStructureRef = await showCheckKeyGenDialog(
                     context: context,
@@ -525,10 +525,6 @@ Future<AccessStructureRef?> showCheckKeyGenDialog({
                                           SettingsContext.of(context)!;
                                       final accessStructureRef =
                                           await coord.finalKeygenAck();
-                                      await settingsCtx.settings
-                                          .setWalletNetwork(
-                                              keyId: accessStructureRef.keyId,
-                                              network: network);
                                       if (context.mounted) {
                                         Navigator.pop(
                                             context, accessStructureRef);

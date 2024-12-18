@@ -5,6 +5,7 @@ use crate::{
     },
     persist::{BincodeWrapper, Persist, TakeStaged},
 };
+use anyhow::Context;
 use frostsnap_core::{coordinator, DeviceId};
 use rusqlite::params;
 use std::collections::{HashMap, VecDeque};
@@ -47,7 +48,7 @@ impl Persist<rusqlite::Connection> for FrostCoordinator {
         })?;
 
         for mutation in row_iter {
-            let mutation = mutation?;
+            let mutation = mutation.context("failed to decode an fs_coordinator_mutation")?;
             coordinator.apply_mutation(&mutation);
         }
 

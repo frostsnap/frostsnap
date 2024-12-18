@@ -481,7 +481,7 @@ impl FfiCoordinator {
         devices: BTreeSet<DeviceId>,
         threshold: u16,
         key_name: String,
-        is_mainnet_key: bool,
+        purpose: KeyPurpose,
         sink: StreamSink<frostsnap_coordinator::keygen::KeyGenState>,
     ) -> anyhow::Result<()> {
         let currently_connected = self
@@ -493,11 +493,6 @@ impl FfiCoordinator {
             .map(|device| device.id)
             .collect();
 
-        let key_purpose = if is_mainnet_key {
-            KeyPurpose::Bitcoin(frostsnap_core::device::BitcoinNetworkKind::Main)
-        } else {
-            KeyPurpose::Bitcoin(frostsnap_core::device::BitcoinNetworkKind::Test)
-        };
         let ui_protocol = frostsnap_coordinator::keygen::KeyGen::new(
             SinkWrap(sink),
             self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
@@ -505,7 +500,7 @@ impl FfiCoordinator {
             currently_connected,
             threshold,
             key_name,
-            key_purpose,
+            purpose,
             &mut rand::thread_rng(),
         );
 

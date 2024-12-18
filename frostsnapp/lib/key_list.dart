@@ -13,7 +13,6 @@ import 'package:frostsnapp/either.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'package:flutter/material.dart';
 import 'package:confetti/confetti.dart';
-import 'package:rxdart/rxdart.dart';
 
 import 'sign_message.dart';
 
@@ -36,10 +35,6 @@ class KeyList extends StatelessWidget {
         coord.subKeyEvents().toBehaviorSubject().map((value) {
       return value;
     });
-    final settingsStream =
-        SettingsContext.of(context)!.walletSettings.map((value) {
-      return value;
-    });
 
     final showDevicesButton = ElevatedButton(
         onPressed: () {
@@ -49,8 +44,7 @@ class KeyList extends StatelessWidget {
         },
         child: Text("Show Devices"));
 
-    final Stream<List<KeyItem>> keyStream =
-        Rx.combineLatest2(settingsStream, keyStateStream, (settings, keyState) {
+    final Stream<List<KeyItem>> keyStream = keyStateStream.map((keyState) {
       return keyState.keys.map((frostKey) {
         return KeyItem.left(frostKey);
       }).followedBy(keyState.recoverable.map((RecoverableKey recoverable) {
@@ -349,8 +343,7 @@ class _KeyButtons extends State<KeyButtons> {
     final Widget continueSigning;
     final frostKey = coord.getFrostKey(keyId: widget.keyId);
     final masterAppkey = frostKey?.masterAppkey();
-    final bitcoinNetwork =
-        settingsCtx.settings.getWalletNetwork(keyId: widget.keyId);
+    final bitcoinNetwork = frostKey?.bitcoinNetwork();
 
     if (restorableSignSession != null && masterAppkey != null) {
       continueSigning = ElevatedButton(
@@ -430,7 +423,7 @@ class _KeyButtons extends State<KeyButtons> {
     return Row(mainAxisAlignment: MainAxisAlignment.center, children: [
       signButton,
       const SizedBox(width: 5),
-      walletButton,
+      if (bitcoinNetwork != null) walletButton,
       const SizedBox(width: 5),
       continueSigning,
     ]);

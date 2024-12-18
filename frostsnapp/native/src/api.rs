@@ -19,6 +19,7 @@ pub use frostsnap_coordinator::bitcoin::{
 pub use frostsnap_coordinator::firmware_upgrade::FirmwareUpgradeConfirmState;
 pub use frostsnap_coordinator::frostsnap_core;
 use frostsnap_coordinator::frostsnap_core::coordinator::CoordFrostKey;
+use frostsnap_coordinator::frostsnap_core::device::KeyPurpose;
 use frostsnap_coordinator::frostsnap_core::tweak;
 pub use frostsnap_coordinator::verify_address::VerifyAddressProtocolState;
 pub use frostsnap_coordinator::{
@@ -174,6 +175,15 @@ impl FrostKey {
 
     pub fn access_structure_state(&self) -> SyncReturn<AccessStructureListState> {
         SyncReturn(AccessStructureListState::from_frost_key(&self.0))
+    }
+
+    pub fn bitcoin_network(&self) -> SyncReturn<Option<BitcoinNetwork>> {
+        SyncReturn(
+            self.0
+                .purpose
+                .bitcoin_network()
+                .map(|network| network.into()),
+        )
     }
 }
 
@@ -930,14 +940,14 @@ impl Coordinator {
         threshold: u16,
         devices: Vec<DeviceId>,
         key_name: String,
-        is_mainnet_key: bool,
+        network: BitcoinNetwork,
         event_stream: StreamSink<KeyGenState>,
     ) -> anyhow::Result<()> {
         self.0.generate_new_key(
             devices.into_iter().collect(),
             threshold,
             key_name,
-            is_mainnet_key,
+            KeyPurpose::Bitcoin(network.into()),
             event_stream,
         )
     }
@@ -1291,8 +1301,6 @@ pub struct Settings {
     pub app_directory: RustOpaque<PathBuf>,
     pub loaded_wallets: RustOpaque<Mutex<HashMap<RBitcoinNetwork, Wallet>>>,
 
-    // streams of settings updates
-    pub wallet_settings_stream: RustOpaque<MaybeSink<WalletSettings>>,
     pub developer_settings_stream: RustOpaque<MaybeSink<DeveloperSettings>>,
     pub electrum_settings_stream: RustOpaque<MaybeSink<ElectrumSettings>>,
 }
@@ -1352,7 +1360,6 @@ impl Settings {
             settings: RustOpaque::new(Mutex::new(persisted)),
             app_directory: RustOpaque::new(app_directory),
             chain_clients: RustOpaque::new(chain_apis),
-            wallet_settings_stream: RustOpaque::new(Default::default()),
             developer_settings_stream: RustOpaque::new(Default::default()),
             electrum_settings_stream: RustOpaque::new(Default::default()),
             db: RustOpaque::new(db),
@@ -1373,44 +1380,12 @@ impl Settings {
         ElectrumSettings
     );
 
-    settings_impl!(
-        wallet_settings_stream,
-        emit_wallet_settings,
-        sub_wallet_settings,
-        WalletSettings
-    );
-
     pub fn load_wallet(&self, network: BitcoinNetwork) -> Result<Wallet> {
         let loaded = self.loaded_wallets.lock().unwrap();
         loaded
             .get(&network.0)
             .cloned()
             .ok_or(anyhow!("unsupported network {:?}", network.0))
-    }
-
-    pub fn set_wallet_network(&self, key_id: KeyId, network: BitcoinNetwork) -> Result<()> {
-        let mut db = self.db.lock().unwrap();
-        self.settings
-            .lock()
-            .unwrap()
-            .mutate2(&mut *db, |settings, update| {
-                settings.set_wallet_network(key_id, *network.0, update);
-                Ok(())
-            })?;
-        self.emit_wallet_settings();
-        Ok(())
-    }
-
-    pub fn get_wallet_network(&self, key_id: KeyId) -> SyncReturn<Option<BitcoinNetwork>> {
-        SyncReturn(
-            self.settings
-                .lock()
-                .unwrap()
-                .wallet_networks
-                .get(&key_id)
-                .cloned()
-                .map(BitcoinNetwork::from),
-        )
     }
 
     pub fn set_developer_mode(&self, value: bool) -> Result<()> {
@@ -1464,25 +1439,6 @@ impl Settings {
 
         chain_api.set_status_sink(Box::new(SinkWrap(sink)));
         Ok(())
-    }
-}
-
-pub struct WalletSettings {
-    pub wallet_networks: Vec<(KeyId, BitcoinNetwork)>,
-}
-
-impl WalletSettings {
-    fn from_settings(settings: &RSettings) -> Self {
-        Self {
-            wallet_networks: settings
-                .wallet_networks
-                .clone()
-                .into_iter()
-                .map(|(master_appkey, network)| {
-                    (master_appkey, BitcoinNetwork(RustOpaque::new(network)))
-                })
-                .collect(),
-        }
     }
 }
 

@@ -34,7 +34,7 @@ pub enum CoordinatorToDeviceMessage {
         device_to_share_index: BTreeMap<DeviceId, NonZeroU32>,
         threshold: u16,
         key_name: String,
-        key_purpose: KeyPurpose,
+        purpose: KeyPurpose,
     },
     FinishKeyGen {
         agg_input: encpedpop::AggKeygenInput,
@@ -149,6 +149,7 @@ pub struct HeldShare {
     pub share_image: ShareImage,
     pub threshold: u16,
     pub key_name: String,
+    pub purpose: KeyPurpose,
 }
 
 pub type KeyGenResponse = encpedpop::KeygenInput;

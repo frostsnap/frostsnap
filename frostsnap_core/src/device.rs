@@ -41,8 +41,7 @@ pub struct FrostSigner {
 #[derive(Clone, Debug, PartialEq)]
 pub struct KeyData {
     access_structures: BTreeMap<AccessStructureId, AccessStructureData>,
-    #[allow(dead_code)] // We'll use this soon
-    purposes: BTreeSet<KeyPurpose>,
+    purpose: KeyPurpose,
     key_name: String,
 }
 
@@ -56,27 +55,17 @@ pub enum AccessStructureKind {
 #[derive(Clone, Copy, Debug, PartialEq, bincode::Decode, bincode::Encode, Eq, PartialOrd, Ord)]
 pub enum KeyPurpose {
     Test,
-    Bitcoin(BitcoinNetworkKind),
+    Bitcoin(#[bincode(with_serde)] bitcoin::Network),
     Nostr,
 }
 
 impl KeyPurpose {
-    pub fn all() -> impl Iterator<Item = KeyPurpose> {
-        use KeyPurpose::*;
-        [
-            Test,
-            Bitcoin(BitcoinNetworkKind::Main),
-            Bitcoin(BitcoinNetworkKind::Test),
-            Nostr,
-        ]
-        .into_iter()
+    pub fn bitcoin_network(&self) -> Option<bitcoin::Network> {
+        match self {
+            KeyPurpose::Bitcoin(network) => Some(*network),
+            _ => None,
+        }
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, bincode::Decode, bincode::Encode, Eq, PartialOrd, Ord)]
-pub enum BitcoinNetworkKind {
-    Main = 0,
-    Test = 1,
 }
 
 #[derive(Clone, Debug, PartialEq, bincode::Decode, bincode::Encode)]
@@ -123,12 +112,12 @@ impl FrostSigner {
             NewKey {
                 key_id,
                 key_name,
-                purposes,
+                purpose,
             } => {
                 self.keys.insert(
                     *key_id,
                     KeyData {
-                        purposes: purposes.clone(),
+                        purpose: *purpose,
                         access_structures: Default::default(),
                         key_name: key_name.into(),
                     },
@@ -248,7 +237,7 @@ impl FrostSigner {
                     device_to_share_index,
                     threshold,
                     key_name,
-                    key_purpose,
+                    purpose: key_purpose,
                 },
             ) => {
                 if !device_to_share_index.contains_key(&self.device_id()) {
@@ -546,7 +535,7 @@ impl FrostSigner {
 
                 let network = self
                     .wallet_network(key_id)
-                    .unwrap_or(bitcoin::Network::Bitcoin);
+                    .expect("cannot verify address on key that doesn't support bitcoin");
 
                 let address =
                     bitcoin::Address::from_script(&spk.spk(), network).expect("has address form");
@@ -609,7 +598,7 @@ impl FrostSigner {
                 self.mutate(Mutation::NewKey {
                     key_id,
                     key_name: key_name.clone(),
-                    purposes: BTreeSet::from_iter([key_purpose]),
+                    purpose: key_purpose,
                 });
                 self.mutate(Mutation::NewAccessStructure {
                     key_id,
@@ -846,6 +835,7 @@ impl FrostSigner {
                                 key_id: *key_id,
                             },
                             threshold: access_structure.threshold,
+                            purpose: key_data.purpose,
                         });
                     }
                 }
@@ -862,15 +852,9 @@ impl FrostSigner {
     }
 
     pub fn wallet_network(&self, key_id: KeyId) -> Option<bitcoin::Network> {
-        self.keys.get(&key_id).and_then(|key| {
-            let purposes = key.purposes.clone();
-            if purposes.contains(&KeyPurpose::Bitcoin(BitcoinNetworkKind::Main)) {
-                Some(bitcoin::Network::Bitcoin)
-            } else if purposes.contains(&KeyPurpose::Bitcoin(BitcoinNetworkKind::Test)) {
-                Some(bitcoin::Network::Signet)
-            } else {
-                None
-            }
+        self.keys.get(&key_id).and_then(|key| match key.purpose {
+            KeyPurpose::Bitcoin(network) => Some(network),
+            _ => None,
         })
     }
 
@@ -944,7 +928,7 @@ pub enum Mutation {
     NewKey {
         key_id: KeyId,
         key_name: String,
-        purposes: BTreeSet<KeyPurpose>,
+        purpose: KeyPurpose,
     },
     NewAccessStructure {
         key_id: KeyId,

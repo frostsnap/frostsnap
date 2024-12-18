@@ -20,7 +20,6 @@ import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class SettingsContext extends InheritedWidget {
   final Settings settings;
-  late final Stream<WalletSettings> walletSettings;
   late final Stream<DeveloperSettings> developerSettings;
   late final Stream<ElectrumSettings> electrumSettings;
   late final List<(BitcoinNetwork, Stream<ChainStatus>)> chainStatuses;
@@ -30,7 +29,6 @@ class SettingsContext extends InheritedWidget {
     required this.settings,
     required Widget child,
   }) : super(child: child) {
-    walletSettings = settings.subWalletSettings().toBehaviorSubject();
     developerSettings = settings.subDeveloperSettings().toBehaviorSubject();
     electrumSettings = settings.subElectrumSettings().toBehaviorSubject();
     chainStatuses = [];
@@ -70,8 +68,10 @@ class SettingsContext extends InheritedWidget {
     if (masterAppkey == null) {
       return null;
     }
-    final BitcoinNetwork network = settings.getWalletNetwork(keyId: keyId) ??
-        BitcoinNetwork.signet(bridge: api);
+    final network = frostKey.bitcoinNetwork();
+    if (network == null) {
+      return null;
+    }
     final wallet = await settings.loadWallet(network: network);
     return KeyWallet(wallet: wallet, masterAppkey: masterAppkey);
   }

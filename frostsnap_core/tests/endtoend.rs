@@ -1,7 +1,7 @@
 use bitcoin::Address;
 use common::{TestDeviceKeygen, TEST_ENCRYPTION_KEY};
 use frostsnap_core::bitcoin_transaction::{LocalSpk, TransactionTemplate};
-use frostsnap_core::device::{BitcoinNetworkKind, KeyPurpose};
+use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::message::{
     CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, CoordinatorToUserSigningMessage,
     DeviceToUserMessage, EncodedSignature,
@@ -421,7 +421,7 @@ fn test_verify_address() {
             &device_set,
             threshold,
             "my key".to_string(),
-            KeyPurpose::Bitcoin(BitcoinNetworkKind::Test),
+            KeyPurpose::Bitcoin(bitcoin::Network::Signet),
             &mut test_rng,
         )
         .unwrap();
@@ -572,7 +572,7 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
             &device_set,
             threshold,
             "my key".into(),
-            KeyPurpose::Bitcoin(BitcoinNetworkKind::Test),
+            KeyPurpose::Bitcoin(bitcoin::Network::Signet),
             &mut test_rng,
         )
         .unwrap();
@@ -724,6 +724,15 @@ fn restore_a_share_by_connecting_devices_to_a_new_coordinator() {
         .iter_access_structures()
         .next()
         .expect("should still be restored");
+
+    assert_eq!(
+        run.coordinator
+            .get_frost_key(access_structure_ref.key_id)
+            .unwrap()
+            .purpose,
+        KeyPurpose::Test,
+        "check the purpose was restored"
+    );
 
     assert_eq!(restored_access_structure, access_structure);
 }
