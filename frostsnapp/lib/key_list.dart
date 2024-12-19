@@ -7,6 +7,7 @@ import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/theme.dart';
 import 'package:frostsnapp/wallet.dart';
 import 'package:collection/collection.dart';
+import 'package:frostsnapp/wallet_send.dart';
 
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'package:flutter/material.dart';

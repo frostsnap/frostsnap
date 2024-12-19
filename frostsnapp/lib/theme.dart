@@ -21,7 +21,7 @@ const TextStyle defaultTextStyle = TextStyle(
 );
 
 final RoundedRectangleBorder squircle =
-    RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.0));
+    RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.0));
 
 const EdgeInsets buttonPadding =
     EdgeInsets.symmetric(vertical: 12.0, horizontal: 16.0);
@@ -45,6 +45,9 @@ final ThemeData frostsnappTheme = ThemeData(
       style: ElevatedButton.styleFrom(shape: squircle, padding: buttonPadding)),
   iconButtonTheme: IconButtonThemeData(
       style: IconButton.styleFrom(shape: squircle, padding: buttonPadding)),
+  floatingActionButtonTheme: FloatingActionButtonThemeData(
+    shape: squircle,
+  ),
   dividerTheme: DividerThemeData(
     thickness: 1.0,
     space: 0.0,

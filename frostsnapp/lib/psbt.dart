@@ -11,7 +11,7 @@ import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/sign_message.dart';
 import 'package:frostsnapp/snackbar.dart';
-import 'package:frostsnapp/wallet.dart';
+import 'package:frostsnapp/wallet_send.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
