@@ -1,4 +1,7 @@
-use frostsnap_comms::{Direction, Downstream, MagicBytes, ReceiveSerial, Upstream, BINCODE_CONFIG};
+use frostsnap_comms::{
+    CoordinatorSendMessage, DeviceSupportedFeatures, Downstream, MagicBytes, ReceiveSerial,
+    Upstream, BINCODE_CONFIG,
+};
 pub use serialport;
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read};
@@ -31,17 +34,21 @@ pub struct PortDesc {
 }
 
 pub struct FramedSerialPort {
+    conch_enabled: bool,
     magic_bytes_progress: usize,
+    has_sent_conch: bool,
     inner: BufReader<SerialPort>,
-    message_queue: VecDeque<<Upstream as Direction>::RecvType>,
+    send_queue: VecDeque<CoordinatorSendMessage>,
 }
 
 impl FramedSerialPort {
     pub fn new(port: SerialPort) -> Self {
         Self {
             inner: BufReader::new(port),
+            has_sent_conch: false,
+            conch_enabled: false,
             magic_bytes_progress: 0,
-            message_queue: Default::default(),
+            send_queue: Default::default(),
         }
     }
 
@@ -53,9 +60,11 @@ impl FramedSerialPort {
         }
     }
 
-    pub fn read_for_magic_bytes(&mut self) -> Result<bool, std::io::Error> {
+    pub fn read_for_magic_bytes(
+        &mut self,
+    ) -> Result<Option<DeviceSupportedFeatures>, std::io::Error> {
         if !self.anything_to_read() {
-            return Ok(false);
+            return Ok(None);
         }
         self.inner.fill_buf()?;
         let mut consumed = 0;
@@ -69,11 +78,12 @@ impl FramedSerialPort {
         );
         self.inner.consume(consumed);
         self.magic_bytes_progress = progress;
-        Ok(found)
+        let supported_features = found.map(DeviceSupportedFeatures::from_version);
+        Ok(supported_features)
     }
 
-    pub fn queue_message(&mut self, message: <Upstream as Direction>::RecvType) {
-        self.message_queue.push_back(message);
+    pub fn queue_send(&mut self, message: CoordinatorSendMessage) {
+        self.send_queue.push_back(message);
     }
 
     pub fn write_magic_bytes(&mut self) -> Result<(), bincode::error::EncodeError> {
@@ -88,6 +98,15 @@ impl FramedSerialPort {
         }
 
         let message = bincode::decode_from_reader(&mut self.inner, BINCODE_CONFIG)?;
+
+        match &message {
+            ReceiveSerial::MagicBytes(_) => { /* magic bytes doesn't count as a message */ }
+            _ => {
+                use frostsnap_core::Gist;
+                self.has_sent_conch = false;
+                event!(Level::TRACE, gist = message.gist(), "GOT CONCH");
+            }
+        };
 
         Ok(Some(message))
     }
@@ -112,6 +131,17 @@ impl FramedSerialPort {
         Ok(())
     }
 
+    pub fn has_conch(&self) -> bool {
+        !self.has_sent_conch
+    }
+
+    pub fn set_conch_enabled(&mut self, enabled: bool) {
+        if self.conch_enabled != enabled {
+            self.conch_enabled = enabled;
+            self.has_sent_conch = false;
+        }
+    }
+
     pub fn raw_send(
         &mut self,
         frame: ReceiveSerial<Upstream>,
@@ -121,8 +151,11 @@ impl FramedSerialPort {
     }
 
     pub fn poll_send(&mut self) -> Result<(), bincode::error::EncodeError> {
-        let messages = core::mem::take(&mut self.message_queue);
-        for message in messages {
+        if self.conch_enabled && self.has_sent_conch {
+            return Ok(());
+        }
+
+        if let Some(message) = self.send_queue.pop_front() {
             use frostsnap_core::Gist;
             event!(
                 Level::DEBUG,
@@ -130,8 +163,15 @@ impl FramedSerialPort {
                 gist = message.message_body.gist(),
                 "sending message"
             );
-            self.raw_send(ReceiveSerial::<Upstream>::Message(message))?;
+            self.raw_send(ReceiveSerial::<Upstream>::Message(message.into()))?;
         }
+
+        if self.conch_enabled && !self.has_sent_conch {
+            event!(Level::TRACE, "SENDING CONCH");
+            self.raw_send(ReceiveSerial::<Upstream>::Conch)?;
+            self.has_sent_conch = true;
+        }
+
         Ok(())
     }
 }

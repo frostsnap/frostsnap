@@ -89,7 +89,7 @@ where
             self.magic_bytes_progress,
         );
         self.magic_bytes_progress = progress;
-        found
+        found.is_some()
     }
 
     pub fn send(
@@ -121,6 +121,16 @@ where
             BINCODE_CONFIG,
         )?;
         self.io.nb_flush();
+        Ok(())
+    }
+    pub fn write_conch(&mut self) -> Result<(), bincode::error::EncodeError> {
+        bincode::encode_into_writer(
+            ReceiveSerial::<D::Opposite>::Conch,
+            &mut *self,
+            BINCODE_CONFIG,
+        )?;
+        self.io.nb_flush();
+
         Ok(())
     }
 

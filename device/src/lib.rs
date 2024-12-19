@@ -1,7 +1,7 @@
 #![no_std]
 
 use alloc::{collections::VecDeque, string::ToString};
-use frostsnap_comms::{DeviceSendBody, DeviceSendMessage, WireDeviceSendBody};
+use frostsnap_comms::{DeviceSendBody, DeviceSendMessage};
 use frostsnap_core::DeviceId;
 use ui::UserInteraction;
 
@@ -22,8 +22,8 @@ pub mod ui;
 #[derive(Debug, Clone)]
 pub struct UpstreamConnection {
     state: UpstreamConnectionState,
-    messages: VecDeque<DeviceSendMessage>,
-    announcement: Option<DeviceSendMessage>,
+    messages: VecDeque<DeviceSendMessage<DeviceSendBody>>,
+    announcement: Option<DeviceSendMessage<DeviceSendBody>>,
     my_device_id: DeviceId,
 }
 
@@ -53,7 +53,7 @@ impl UpstreamConnection {
         self.state
     }
 
-    pub fn dequeue_message(&mut self) -> Option<DeviceSendMessage> {
+    pub fn dequeue_message(&mut self) -> Option<DeviceSendMessage<DeviceSendBody>> {
         if self.state >= UpstreamConnectionState::Established {
             if let Some(announcement) = self.announcement.take() {
                 return Some(announcement);
@@ -70,13 +70,13 @@ impl UpstreamConnection {
     pub fn send_announcement(&mut self, announcement: DeviceSendBody) {
         self.announcement = Some(DeviceSendMessage {
             from: self.my_device_id,
-            body: announcement.into(),
+            body: announcement,
         });
     }
 
     pub fn send_to_coordinator(
         &mut self,
-        iter: impl IntoIterator<Item = impl Into<WireDeviceSendBody>>,
+        iter: impl IntoIterator<Item = impl Into<DeviceSendBody>>,
     ) {
         self.messages
             .extend(iter.into_iter().map(|body| DeviceSendMessage {
