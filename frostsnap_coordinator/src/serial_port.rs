@@ -1,6 +1,8 @@
-use frostsnap_comms::{Downstream, MagicBytes, ReceiveSerial, Upstream, BINCODE_CONFIG};
+use frostsnap_comms::{Direction, Downstream, MagicBytes, ReceiveSerial, Upstream, BINCODE_CONFIG};
 pub use serialport;
+use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read};
+use tracing::{event, Level};
 
 pub type SerialPort = Box<dyn serialport::SerialPort>;
 
@@ -31,6 +33,7 @@ pub struct PortDesc {
 pub struct FramedSerialPort {
     magic_bytes_progress: usize,
     inner: BufReader<SerialPort>,
+    message_queue: VecDeque<<Upstream as Direction>::RecvType>,
 }
 
 impl FramedSerialPort {
@@ -38,6 +41,7 @@ impl FramedSerialPort {
         Self {
             inner: BufReader::new(port),
             magic_bytes_progress: 0,
+            message_queue: Default::default(),
         }
     }
 
@@ -68,17 +72,12 @@ impl FramedSerialPort {
         Ok(found)
     }
 
-    pub fn send_message(
-        &mut self,
-        message: &ReceiveSerial<Upstream>,
-    ) -> Result<(), bincode::error::EncodeError> {
-        let _bytes_written =
-            bincode::encode_into_std_write(message, self.inner.get_mut(), BINCODE_CONFIG)?;
-        Ok(())
+    pub fn queue_message(&mut self, message: <Upstream as Direction>::RecvType) {
+        self.message_queue.push_back(message);
     }
 
     pub fn write_magic_bytes(&mut self) -> Result<(), bincode::error::EncodeError> {
-        self.send_message(&ReceiveSerial::<Upstream>::MagicBytes(MagicBytes::default()))
+        self.raw_send(ReceiveSerial::<Upstream>::MagicBytes(MagicBytes::default()))
     }
 
     pub fn try_read_message(
@@ -87,10 +86,10 @@ impl FramedSerialPort {
         if !self.anything_to_read() && self.inner.buffer().is_empty() {
             return Ok(None);
         }
-        Ok(Some(bincode::decode_from_reader(
-            &mut self.inner,
-            BINCODE_CONFIG,
-        )?))
+
+        let message = bincode::decode_from_reader(&mut self.inner, BINCODE_CONFIG)?;
+
+        Ok(Some(message))
     }
 
     pub fn raw_write(&mut self, bytes: &[u8]) -> Result<(), std::io::Error> {
@@ -101,6 +100,38 @@ impl FramedSerialPort {
 
     pub fn raw_read(&mut self, bytes: &mut [u8]) -> Result<(), std::io::Error> {
         self.inner.read_exact(bytes)?;
+        Ok(())
+    }
+
+    pub fn discard_all_messages(&mut self) -> Result<(), bincode::error::DecodeError> {
+        while self.anything_to_read() || !self.inner.buffer().is_empty() {
+            let _message: ReceiveSerial<Downstream> =
+                bincode::decode_from_reader(&mut self.inner, BINCODE_CONFIG)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn raw_send(
+        &mut self,
+        frame: ReceiveSerial<Upstream>,
+    ) -> Result<(), bincode::error::EncodeError> {
+        bincode::encode_into_std_write(frame, self.inner.get_mut(), BINCODE_CONFIG)?;
+        Ok(())
+    }
+
+    pub fn poll_send(&mut self) -> Result<(), bincode::error::EncodeError> {
+        let messages = core::mem::take(&mut self.message_queue);
+        for message in messages {
+            use frostsnap_core::Gist;
+            event!(
+                Level::DEBUG,
+                to = message.target_destinations.gist(),
+                gist = message.message_body.gist(),
+                "sending message"
+            );
+            self.raw_send(ReceiveSerial::<Upstream>::Message(message))?;
+        }
         Ok(())
     }
 }

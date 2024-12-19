@@ -63,6 +63,47 @@ final ThemeData frostsnappTheme = ThemeData(
       surfaceTintColor: Colors.white),
   snackBarTheme: SnackBarThemeData(contentTextStyle: defaultTextStyle),
   textTheme: TextTheme(
+    // Headline Styles
+    headlineLarge: TextStyle(
+      color: textColor,
+      fontSize: 32.0,
+      fontWeight: FontWeight.bold,
+      height: 1.3,
+    ),
+    headlineMedium: TextStyle(
+      color: textColor,
+      fontSize: 28.0,
+      fontWeight: FontWeight.bold,
+      height: 1.3,
+    ),
+    headlineSmall: TextStyle(
+      color: textColor,
+      fontSize: 24.0,
+      fontWeight: FontWeight.bold,
+      height: 1.3,
+    ),
+
+    // Title Styles
+    titleLarge: TextStyle(
+      color: textColor,
+      fontSize: 30.0,
+      fontWeight: FontWeight.bold,
+      height: 1.25,
+    ),
+    titleMedium: TextStyle(
+      color: textColor,
+      fontSize: 24.0,
+      fontWeight: FontWeight.bold,
+      height: 1.25,
+    ),
+    titleSmall: TextStyle(
+      color: textColor,
+      fontSize: 16.0,
+      fontWeight: FontWeight.bold,
+      height: 1.25,
+    ),
+
+    // Existing Body Styles
     bodyLarge: TextStyle(
       color: textColor,
       fontSize: 18.0,
@@ -81,6 +122,8 @@ final ThemeData frostsnappTheme = ThemeData(
       fontWeight: FontWeight.normal,
       height: 1.4,
     ),
+
+    // Existing Label Styles
     labelLarge: TextStyle(
       color: textColor,
       fontSize: 16.0,
@@ -98,6 +141,14 @@ final ThemeData frostsnappTheme = ThemeData(
       fontSize: 12.0,
       fontWeight: FontWeight.bold,
       height: 1.2,
+    ),
+  ),
+  cardTheme: CardTheme(
+    color: backgroundSecondaryColor,
+    margin: const EdgeInsets.all(4.0),
+    elevation: 1.0,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(12.0),
     ),
   ),
   colorScheme: ColorScheme.fromSwatch(

@@ -1,10 +1,9 @@
-use core::num::NonZeroU32;
-
 use crate::symmetric_encryption::{Ciphertext, SymmetricKey};
 use crate::tweak::{self, Xpub};
 use crate::{
-    bitcoin_transaction, message::*, AccessStructureId, ActionError, CheckedSignTask,
-    CoordShareDecryptionContrib, Error, KeyId, MessageResult, SessionHash, NONCE_BATCH_SIZE,
+    bitcoin_transaction, message::*, AccessStructureId, AccessStructureRef, ActionError,
+    CheckedSignTask, CoordShareDecryptionContrib, Error, KeyId, MessageResult, SessionHash,
+    ShareImage, NONCE_BATCH_SIZE,
 };
 use crate::{DeviceId, MasterAppkey};
 use alloc::boxed::Box;
@@ -14,6 +13,7 @@ use alloc::{
     string::String,
     vec::Vec,
 };
+use core::num::NonZeroU32;
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::binonce;
 use schnorr_fun::frost::chilldkg::encpedpop;
@@ -29,7 +29,7 @@ use schnorr_fun::{
 
 use sha2::Sha256;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FrostSigner {
     keypair: KeyPair,
     keys: BTreeMap<KeyId, KeyData>,
@@ -38,11 +38,10 @@ pub struct FrostSigner {
     mutations: VecDeque<Mutation>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct KeyData {
     access_structures: BTreeMap<AccessStructureId, AccessStructureData>,
-    #[allow(dead_code)] // We'll use this soon
-    purposes: BTreeSet<KeyPurpose>,
+    purpose: KeyPurpose,
     key_name: String,
 }
 
@@ -56,27 +55,17 @@ pub enum AccessStructureKind {
 #[derive(Clone, Copy, Debug, PartialEq, bincode::Decode, bincode::Encode, Eq, PartialOrd, Ord)]
 pub enum KeyPurpose {
     Test,
-    Bitcoin(BitcoinNetworkKind),
+    Bitcoin(#[bincode(with_serde)] bitcoin::Network),
     Nostr,
 }
 
 impl KeyPurpose {
-    pub fn all() -> impl Iterator<Item = KeyPurpose> {
-        use KeyPurpose::*;
-        [
-            Test,
-            Bitcoin(BitcoinNetworkKind::Main),
-            Bitcoin(BitcoinNetworkKind::Test),
-            Nostr,
-        ]
-        .into_iter()
+    pub fn bitcoin_network(&self) -> Option<bitcoin::Network> {
+        match self {
+            KeyPurpose::Bitcoin(network) => Some(*network),
+            _ => None,
+        }
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, bincode::Decode, bincode::Encode, Eq, PartialOrd, Ord)]
-pub enum BitcoinNetworkKind {
-    Main = 0,
-    Test = 1,
 }
 
 #[derive(Clone, Debug, PartialEq, bincode::Decode, bincode::Encode)]
@@ -123,12 +112,12 @@ impl FrostSigner {
             NewKey {
                 key_id,
                 key_name,
-                purposes,
+                purpose,
             } => {
                 self.keys.insert(
                     *key_id,
                     KeyData {
-                        purposes: purposes.clone(),
+                        purpose: *purpose,
                         access_structures: Default::default(),
                         key_name: key_name.into(),
                     },
@@ -248,7 +237,7 @@ impl FrostSigner {
                     device_to_share_index,
                     threshold,
                     key_name,
-                    key_purpose,
+                    purpose: key_purpose,
                 },
             ) => {
                 if !device_to_share_index.contains_key(&self.device_id()) {
@@ -546,7 +535,7 @@ impl FrostSigner {
 
                 let network = self
                     .wallet_network(key_id)
-                    .unwrap_or(bitcoin::Network::Bitcoin);
+                    .expect("cannot verify address on key that doesn't support bitcoin");
 
                 let address =
                     bitcoin::Address::from_script(&spk.spk(), network).expect("has address form");
@@ -562,6 +551,11 @@ impl FrostSigner {
                 self.action_state = Some(SignerState::LoadingBackup);
                 Ok(vec![DeviceSend::ToUser(Box::new(
                     DeviceToUserMessage::EnterBackup,
+                ))])
+            }
+            (_, CoordinatorToDeviceMessage::RequestHeldShares) => {
+                Ok(vec![DeviceSend::ToCoordinator(Box::new(
+                    DeviceToCoordinatorMessage::HeldShares(self.held_shares()),
                 ))])
             }
             _ => Err(Error::signer_message_kind(&self.action_state, &message)),
@@ -604,7 +598,7 @@ impl FrostSigner {
                 self.mutate(Mutation::NewKey {
                     key_id,
                     key_name: key_name.clone(),
-                    purposes: BTreeSet::from_iter([key_purpose]),
+                    purpose: key_purpose,
                 });
                 self.mutate(Mutation::NewAccessStructure {
                     key_id,
@@ -823,6 +817,33 @@ impl FrostSigner {
         ))])
     }
 
+    pub fn held_shares(&self) -> Vec<HeldShare> {
+        let mut held_shares = vec![];
+
+        for (key_id, key_data) in &self.keys {
+            for (access_structure_id, access_structure) in &key_data.access_structures {
+                for (share_index, share) in &access_structure.shares {
+                    if access_structure.kind == AccessStructureKind::Master {
+                        held_shares.push(HeldShare {
+                            key_name: key_data.key_name.clone(),
+                            share_image: ShareImage {
+                                point: share.image,
+                                share_index: *share_index,
+                            },
+                            access_structure_ref: AccessStructureRef {
+                                access_structure_id: *access_structure_id,
+                                key_id: *key_id,
+                            },
+                            threshold: access_structure.threshold,
+                            purpose: key_data.purpose,
+                        });
+                    }
+                }
+            }
+        }
+        held_shares
+    }
+
     pub fn action_state_name(&self) -> &'static str {
         self.action_state
             .as_ref()
@@ -831,20 +852,18 @@ impl FrostSigner {
     }
 
     pub fn wallet_network(&self, key_id: KeyId) -> Option<bitcoin::Network> {
-        self.keys.get(&key_id).and_then(|key| {
-            let purposes = key.purposes.clone();
-            if purposes.contains(&KeyPurpose::Bitcoin(BitcoinNetworkKind::Main)) {
-                Some(bitcoin::Network::Bitcoin)
-            } else if purposes.contains(&KeyPurpose::Bitcoin(BitcoinNetworkKind::Test)) {
-                Some(bitcoin::Network::Signet)
-            } else {
-                None
-            }
+        self.keys.get(&key_id).and_then(|key| match key.purpose {
+            KeyPurpose::Bitcoin(network) => Some(network),
+            _ => None,
         })
+    }
+
+    pub fn nonce_counter(&self) -> u64 {
+        self.nonce_counter
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AwaitingSignAck {
     pub rootkey: Point,
     pub access_structure_id: AccessStructureId,
@@ -858,7 +877,7 @@ pub struct AwaitingSignAck {
     pub coord_share_decryption_contrib: CoordShareDecryptionContrib,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SignerState {
     KeyGen {
         device_to_share_index: BTreeMap<DeviceId, NonZeroU32>,
@@ -909,7 +928,7 @@ pub enum Mutation {
     NewKey {
         key_id: KeyId,
         key_name: String,
-        purposes: BTreeSet<KeyPurpose>,
+        purpose: KeyPurpose,
     },
     NewAccessStructure {
         key_id: KeyId,

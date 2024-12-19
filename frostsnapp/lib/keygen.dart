@@ -172,12 +172,13 @@ class DevicesPage extends StatelessWidget {
                   Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                 Icon(Icons.warning, color: awaitingColor),
                 SizedBox(width: 5.0),
-                Text(
+                Expanded(
+                    child: Text(
                   "Some devices need their firmware upgraded before they can be used to generated a key",
                   style: style,
                   softWrap: true,
                   textAlign: TextAlign.center,
-                )
+                ))
               ]);
             } else if (anyNeedsName) {
               prompt = Text("Set up each device before generating a key",
@@ -316,7 +317,8 @@ class _ThresholdPageState extends State<ThresholdPage> {
                     );
                   }).toList(),
                 ),
-                Padding(
+                Flexible(
+                    child: Padding(
                   padding: const EdgeInsets.only(left: 8.0),
                   child: Text(
                     'of ${widget.selectedDevices.length} devices will be needed to sign',
@@ -324,7 +326,7 @@ class _ThresholdPageState extends State<ThresholdPage> {
                     style: TextStyle(fontSize: 18),
                     textAlign: TextAlign.center,
                   ),
-                ),
+                )),
               ],
             ),
             SizedBox(height: 20),
@@ -339,7 +341,7 @@ class _ThresholdPageState extends State<ThresholdPage> {
                               .map((device) => device.id)
                               .toList(),
                           keyName: widget.keyName,
-                          isMainnetKey: widget.network.isMainnet())
+                          network: widget.network)
                       .toBehaviorSubject();
                   final accessStructureRef = await showCheckKeyGenDialog(
                     context: context,
@@ -519,14 +521,8 @@ Future<AccessStructureRef?> showCheckKeyGenDialog({
                           ElevatedButton(
                               onPressed: finished
                                   ? () async {
-                                      final settingsCtx =
-                                          SettingsContext.of(context)!;
                                       final accessStructureRef =
                                           await coord.finalKeygenAck();
-                                      await settingsCtx.settings
-                                          .setWalletNetwork(
-                                              keyId: accessStructureRef.keyId,
-                                              network: network);
                                       if (context.mounted) {
                                         Navigator.pop(
                                             context, accessStructureRef);
