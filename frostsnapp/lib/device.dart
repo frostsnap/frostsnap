@@ -40,7 +40,7 @@ class DeviceWidget extends StatelessWidget {
               padding: EdgeInsets.symmetric(
                   vertical: 10 * scale, horizontal: 12 * scale),
               child: DefaultTextStyle(
-                style: TextStyle(color: textColor, fontSize: 18.0),
+                style: TextStyle(color: textPrimaryColor, fontSize: 18.0),
                 child: child,
               ),
             ),
@@ -72,6 +72,6 @@ class ConfirmPrompt extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DevicePrompt(
-        icon: Icon(Icons.touch_app, color: textColor), text: "Confirm");
+        icon: Icon(Icons.touch_app, color: textPrimaryColor), text: "Confirm");
   }
 }
