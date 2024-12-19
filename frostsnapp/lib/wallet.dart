@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/icons.dart';
@@ -9,68 +10,23 @@ import 'package:frostsnapp/psbt.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/sign_message.dart';
 import 'package:frostsnapp/snackbar.dart';
-import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/theme.dart';
 import 'package:frostsnapp/address.dart';
 
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
-class WalletContext extends InheritedWidget {
-  final Wallet wallet;
-  final MasterAppkey masterAppkey;
-  late final KeyId keyId;
-  late final Stream<TxState> txStream;
-  // We have a contextual Stream of syncing events (each syncing event is
-  // represented as a Stream<double> where the double is the progress).
-  final StreamController<Stream<double>> syncs = StreamController.broadcast();
-
-  WalletContext({
-    super.key,
-    required this.wallet,
-    required this.masterAppkey,
-    required Widget child,
-  }) : super(child: child) {
-    keyId = api.masterAppkeyExtToKeyId(masterAppkey: masterAppkey);
-    txStream =
-        wallet.subTxState(masterAppkey: masterAppkey).toBehaviorSubject();
-  }
-
-  static WalletContext? of(BuildContext context) {
-    return context.dependOnInheritedWidgetOfExactType<WalletContext>();
-  }
-
-  Stream<bool> syncStartStopStream() {
-    return syncs.stream.asyncExpand((syncStream) async* {
-      yield true;
-      try {
-        // wait for the sync to finish
-        await syncStream.toList();
-      } catch (e) {
-        // do nothing
-      }
-
-      yield false;
-    });
-  }
-
-  @override
-  bool updateShouldNotify(WalletContext oldWidget) {
-    // never updates
-    return false;
-  }
-}
-
-class WalletPage extends StatelessWidget {
-  final Wallet wallet;
+class Wallet {
+  final SuperWallet superWallet;
   final MasterAppkey masterAppkey;
 
-  const WalletPage(
-      {super.key, required this.wallet, required this.masterAppkey});
+  Wallet({required this.superWallet, required this.masterAppkey});
 
-  @override
-  Widget build(BuildContext context) {
-    return WalletContext(
-        wallet: wallet, masterAppkey: masterAppkey, child: WalletHome());
+  FrostKey? frostKey() {
+    return coord.getFrostKey(keyId: keyId());
+  }
+
+  KeyId keyId() {
+    return api.masterAppkeyExtToKeyId(masterAppkey: masterAppkey);
   }
 }
 
@@ -105,8 +61,7 @@ class _WalletHomeState extends State<WalletHome> {
           });
         });
       case 2:
-        return WalletReceive(
-            wallet: walletCtx.wallet, masterAppkey: walletCtx.masterAppkey);
+        return WalletReceive(wallet: walletCtx.wallet);
       default:
         return Text('Page not found');
     }
@@ -267,7 +222,7 @@ class TxList extends StatelessWidget {
                     ),
                     if (transaction.confirmationTime == null)
                       SpinningSyncButton(onPressed: () async {
-                        await walletContext.wallet.rebroadcast(txid: txid);
+                        await walletContext.superWallet.rebroadcast(txid: txid);
                       }),
                     IconButton(
                       icon: Icon(Icons.copy),
@@ -303,11 +258,9 @@ class TxList extends StatelessWidget {
 }
 
 class WalletReceive extends StatefulWidget {
-  final MasterAppkey masterAppkey;
   final Wallet wallet;
 
-  const WalletReceive(
-      {super.key, required this.masterAppkey, required this.wallet});
+  const WalletReceive({super.key, required this.wallet});
 
   @override
   State<WalletReceive> createState() => _WalletReceiveState();
@@ -320,13 +273,13 @@ class _WalletReceiveState extends State<WalletReceive> {
   @override
   void initState() {
     super.initState();
-    _addresses =
-        widget.wallet.addressesState(masterAppkey: widget.masterAppkey);
+    _addresses = widget.wallet.superWallet
+        .addressesState(masterAppkey: widget.wallet.masterAppkey);
   }
 
   Future<Address> _addAddress(BuildContext context) async {
-    final nextAddressInfo =
-        await widget.wallet.nextAddress(masterAppkey: widget.masterAppkey);
+    final nextAddressInfo = await widget.wallet.superWallet
+        .nextAddress(masterAppkey: widget.wallet.masterAppkey);
     final Address newAddress = nextAddressInfo;
 
     if (context.mounted) {
@@ -343,9 +296,6 @@ class _WalletReceiveState extends State<WalletReceive> {
   @override
   Widget build(BuildContext context) {
     final walletCtx = WalletContext.of(context)!;
-    final frostKey = coord.getFrostKey(keyId: walletCtx.keyId)!;
-    final accessStructureRef =
-        frostKey.accessStructures()[0].accessStructureRef();
 
     return Scaffold(
         body: Padding(
@@ -360,15 +310,9 @@ class _WalletReceiveState extends State<WalletReceive> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => WalletContext(
-                      wallet: walletCtx.wallet,
-                      masterAppkey: walletCtx.masterAppkey,
-                      child: AddressPage(
-                        masterAppkey: walletCtx.masterAppkey,
-                        address: address,
-                        accessStructureRef: accessStructureRef,
-                      ),
-                    ),
+                    builder: (context) => walletCtx.wrap(AddressPage(
+                      address: address,
+                    )),
                   ),
                 );
               }
@@ -392,9 +336,6 @@ class _WalletReceiveState extends State<WalletReceive> {
   Widget _buildAddressItem(
       BuildContext context, Address address, Animation<double> animation) {
     final walletCtx = WalletContext.of(context)!;
-    final frostKey = coord.getFrostKey(keyId: walletCtx.keyId)!;
-    final accessStructureRef =
-        frostKey.accessStructures()[0].accessStructureRef();
 
     return SizeTransition(
       sizeFactor: animation,
@@ -421,15 +362,9 @@ class _WalletReceiveState extends State<WalletReceive> {
                     Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => WalletContext(
-                            wallet: widget.wallet,
-                            masterAppkey: widget.masterAppkey,
-                            child: AddressPage(
-                              masterAppkey: widget.masterAppkey,
-                              address: address,
-                              accessStructureRef: accessStructureRef,
-                            ),
-                          ),
+                          builder: (context) => walletCtx.wrap(AddressPage(
+                            address: address,
+                          )),
                         ));
                   },
                 ),
@@ -497,7 +432,6 @@ class _WalletSendState extends State<WalletSend> {
           Navigator.push(context, MaterialPageRoute(builder: (context) {
             return LoadPsbtPage(
               wallet: walletCtx.wallet,
-              masterAppkey: walletCtx.masterAppkey,
             );
           }));
         },
@@ -520,7 +454,7 @@ class _WalletSendState extends State<WalletSend> {
                     decoration: InputDecoration(labelText: 'Address'),
                     validator: (value) {
                       // Use the provided predicate for address validation
-                      return walletCtx.wallet.network
+                      return walletCtx.network
                           .validateDestinationAddress(address: value ?? '');
                     },
                     onSaved: (value) => _address = value ?? '',
@@ -532,7 +466,7 @@ class _WalletSendState extends State<WalletSend> {
                     validator: (value) {
                       // Convert value to int and use the provided predicate for amount validation
                       final amount = int.tryParse(value ?? '') ?? 0;
-                      return walletCtx.wallet.network
+                      return walletCtx.network
                           .validateAmount(address: _address, value: amount);
                     },
                     onSaved: (value) =>
@@ -588,8 +522,8 @@ class _WalletSendState extends State<WalletSend> {
                             : () async {
                                 if (_formKey.currentState!.validate()) {
                                   _formKey.currentState!.save();
-                                  final unsignedTx = await walletCtx.wallet
-                                      .sendTo(
+                                  final unsignedTx =
+                                      await walletCtx.wallet.superWallet.sendTo(
                                           masterAppkey: walletCtx.masterAppkey,
                                           toAddress: _address,
                                           value: _amount,
@@ -605,7 +539,6 @@ class _WalletSendState extends State<WalletSend> {
                                         context: context,
                                         signingStream: signingStream,
                                         unsignedTx: unsignedTx,
-                                        masterAppkey: walletCtx.masterAppkey,
                                         onBroadcastNewTx:
                                             widget.onBroadcastNewTx);
                                   }
@@ -628,10 +561,9 @@ Future<void> signAndBroadcastWorkflowDialog(
     required Stream<SigningState> signingStream,
     required UnsignedTx unsignedTx,
     required Wallet wallet,
-    required MasterAppkey masterAppkey,
     Function()? onBroadcastNewTx}) async {
-  final effect =
-      unsignedTx.effect(masterAppkey: masterAppkey, network: wallet.network);
+  final effect = unsignedTx.effect(
+      masterAppkey: wallet.masterAppkey, network: wallet.superWallet.network);
 
   final signatures = await showSigningProgressDialog(
     context,
@@ -641,8 +573,11 @@ Future<void> signAndBroadcastWorkflowDialog(
   if (signatures != null) {
     final signedTx = await unsignedTx.complete(signatures: signatures);
     if (context.mounted) {
-      final wasBroadcast = await showBroadcastConfirmDialog(context,
-          masterAppkey: masterAppkey, tx: signedTx, wallet: wallet);
+      final wasBroadcast = await showBroadcastConfirmDialog(
+        context,
+        wallet: wallet,
+        tx: signedTx,
+      );
       if (wasBroadcast) {
         onBroadcastNewTx?.call();
       }
@@ -750,16 +685,18 @@ Widget describeEffect(EffectOfTx effect) {
   return description;
 }
 
-Future<bool> showBroadcastConfirmDialog(BuildContext context,
-    {required MasterAppkey masterAppkey,
-    required SignedTx tx,
-    required Wallet wallet}) async {
+Future<bool> showBroadcastConfirmDialog(
+  BuildContext context, {
+  required Wallet wallet,
+  required SignedTx tx,
+}) async {
   final wasBroadcast = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
-        final effect =
-            tx.effect(masterAppkey: masterAppkey, network: wallet.network);
+        final effect = tx.effect(
+            masterAppkey: wallet.masterAppkey,
+            network: wallet.superWallet.network);
         final effectWidget = EffectTable(effect: effect);
         return AlertDialog(
             title: Text("Broadcast?"),
@@ -780,8 +717,8 @@ Future<bool> showBroadcastConfirmDialog(BuildContext context,
               ElevatedButton(
                   onPressed: () async {
                     try {
-                      await wallet.broadcastTx(
-                          masterAppkey: masterAppkey, tx: tx);
+                      await wallet.superWallet.broadcastTx(
+                          masterAppkey: wallet.masterAppkey, tx: tx);
                       if (dialogContext.mounted) {
                         Navigator.pop(context, true);
                       }

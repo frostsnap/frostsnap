@@ -32,7 +32,7 @@ use crate::Sink;
 
 use super::{
     descriptor_for_account_keychain,
-    wallet::{FrostsnapWallet, KeychainId},
+    wallet::{CoordSuperWallet, KeychainId},
 };
 
 pub struct ReqAndResponse<I, O> {
@@ -159,17 +159,17 @@ impl ConnectionHandler {
     pub fn run(
         self,
         url: String,
-        wallet: Arc<std::sync::Mutex<FrostsnapWallet>>,
+        super_wallet: Arc<std::sync::Mutex<CoordSuperWallet>>,
         mut update_action: impl FnMut(MasterAppkey, Vec<crate::bitcoin::wallet::Transaction>)
             + Send
             + 'static,
     ) {
-        let wallet_ = wallet.lock().unwrap();
-        let lookahead = wallet_.lookahead();
+        let super_wallet_ = super_wallet.lock().unwrap();
+        let lookahead = super_wallet_.lookahead();
         let (mut emitter, cmd_sender, mut update_recv) =
-            Emitter::<KeychainId>::new(wallet_.chain_tip(), lookahead);
-        emitter.insert_txs(wallet_.tx_cache());
-        drop(wallet_);
+            Emitter::<KeychainId>::new(super_wallet_.chain_tip(), lookahead);
+        emitter.insert_txs(super_wallet_.tx_cache());
+        drop(super_wallet_);
         let target_server = Arc::new(std::sync::Mutex::new(TargetServer { url, conn: None }));
         let status_sink = Arc::new(std::sync::Mutex::<Box<dyn Sink<ChainStatus>>>::new(
             Box::new(()),
@@ -302,7 +302,7 @@ impl ConnectionHandler {
                         .keys()
                         .map(|(k, _)| *k)
                         .collect::<Vec<_>>();
-                    let mut wallet = wallet.lock().unwrap();
+                    let mut wallet = super_wallet.lock().unwrap();
                     let changed = match wallet.apply_update(update) {
                         Ok(changed) => changed,
                         Err(err) => {

@@ -8,7 +8,7 @@ use frostsnap_core::{schnorr_fun::frost::SecretShare, KeyId, SessionHash};
 
 pub trait UserInteraction {
     fn set_downstream_connection_state(&mut self, state: crate::DownstreamConnectionState);
-    fn set_upstream_connection_state(&mut self, state: crate::UpstreamConnection);
+    fn set_upstream_connection_state(&mut self, state: crate::UpstreamConnectionState);
 
     fn set_device_name(&mut self, name: String);
 
@@ -20,6 +20,12 @@ pub trait UserInteraction {
     fn set_busy_task(&mut self, task: BusyTask) {
         self.set_workflow(Workflow::BusyDoing(task));
         assert!(self.poll().is_none(), "busy tasks cannot have ui events");
+    }
+
+    fn clear_workflow(&mut self) {
+        self.set_workflow(Workflow::WaitingFor(WaitingFor::CoordinatorInstruction {
+            completed_task: None,
+        }));
     }
 
     fn take_workflow(&mut self) -> Workflow;
@@ -79,6 +85,7 @@ pub enum Workflow {
     UserPrompt {
         prompt: Prompt,
         animation: AnimationState,
+        confirm_emitted: bool,
     },
     Debug(String),
     NamingDevice {
@@ -102,6 +109,7 @@ impl Workflow {
         Self::UserPrompt {
             prompt,
             animation: AnimationState::new(HOLD_TO_CONFIRM_TIME_MS),
+            confirm_emitted: false,
         }
     }
 }
@@ -158,6 +166,7 @@ pub enum BusyTask {
     Signing,
     VerifyingShare,
     Loading,
+    GeneratingNonces,
     FirmwareUpgrade(FirmwareUpgradeStatus),
 }
 

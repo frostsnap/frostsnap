@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
+import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/key_list.dart';
 import 'package:flutter/services.dart';
@@ -59,39 +60,43 @@ void main() async {
     coord.startThread();
   } on PanicException catch (e) {
     startupError = "rust panic'd with: ${e.error}";
-  } on FrbAnyhowException catch (e) {
-    startupError = "rust error: ${e.anyhow}";
+  } on FrbAnyhowException catch (e, stacktrace) {
+    startupError = "rust error: ${e.anyhow}\n$stacktrace";
   } catch (error, stacktrace) {
     startupError = "$error\n$stacktrace";
     api.log(level: LogLevel.Info, message: "startup failed with $startupError");
+    runApp(MyApp(startupError: startupError));
   }
 
-  // Lock orientation to portrait mode only
-  SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
+  if (startupError != null) {
+    runApp(MyApp(startupError: startupError));
+  } else {
+    // we want to stop the app from sleeping on mobile if there's a device plugged in.
+    deviceListSubject.forEach((update) {
+      if (Platform.isLinux) {
+        return; // not supported by wakelock
+      }
+      if (update.state.devices.isNotEmpty) {
+        WakelockPlus.enable();
+      } else {
+        WakelockPlus.disable();
+      }
+    });
+    // Lock orientation to portrait mode only
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
 
-  // we want to stop the app from sleeping on mobile if there's a device plugged in.
-  deviceListSubject.forEach((update) {
-    if (Platform.isLinux) {
-      return; // not supported by wakelock
+    Widget mainWidget = FrostsnapContext(logStream: logStream, child: MyApp());
+
+    if (settings != null) {
+      mainWidget = SettingsContext(settings: settings, child: mainWidget);
+      mainWidget = SuperWalletContext(settings: settings, child: mainWidget);
     }
-    if (update.state.devices.isNotEmpty) {
-      WakelockPlus.enable();
-    } else {
-      WakelockPlus.disable();
-    }
-  });
 
-  Widget mainWidget = FrostsnapContext(
-      logStream: logStream, child: MyApp(startupError: startupError));
-
-  if (settings != null) {
-    mainWidget = SettingsContext(settings: settings, child: mainWidget);
+    runApp(mainWidget);
   }
-
-  runApp(mainWidget);
 }
 
 class MyApp extends StatelessWidget {
@@ -246,26 +251,5 @@ class _StartupErrorWidgetState extends State<StartupErrorWidget> {
         ),
       ),
     );
-  }
-}
-
-class FrostsnapContext extends InheritedWidget {
-  final Stream<String> logStream;
-
-  const FrostsnapContext({
-    Key? key,
-    required this.logStream,
-    required Widget child,
-  }) : super(key: key, child: child);
-
-  // Static method to allow easy access to the Foo instance
-  static FrostsnapContext? of(BuildContext context) {
-    return context.dependOnInheritedWidgetOfExactType<FrostsnapContext>();
-  }
-
-  @override
-  bool updateShouldNotify(FrostsnapContext oldWidget) {
-    // we never change the log stream
-    return false;
   }
 }
