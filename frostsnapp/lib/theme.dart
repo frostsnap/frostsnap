@@ -43,6 +43,8 @@ final ThemeData frostsnappTheme = ThemeData(
       style: FilledButton.styleFrom(shape: squircle, padding: buttonPadding)),
   elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(shape: squircle, padding: buttonPadding)),
+  iconButtonTheme: IconButtonThemeData(
+      style: IconButton.styleFrom(shape: squircle, padding: buttonPadding)),
   dividerTheme: DividerThemeData(
     thickness: 1.0,
     space: 0.0,

@@ -158,17 +158,13 @@ class _KeyCard extends State<KeyCard> {
           }));
         }
       },
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text("₿"),
-          if (!bitcoinNetwork.isMainnet())
-            Text(
-              bitcoinNetwork.name(),
-              style:
-                  TextStyle(fontSize: 12, color: Colors.red), // Custom styling
-            ),
-        ],
+      child: Badge(
+        label: Text(bitcoinNetwork.name()),
+        isLabelVisible: !bitcoinNetwork.isMainnet(),
+        alignment: AlignmentDirectional.bottomEnd,
+        textColor: theme.colorScheme.error,
+        backgroundColor: theme.colorScheme.surface,
+        child: Icon(Icons.currency_bitcoin),
       ),
     );
 
