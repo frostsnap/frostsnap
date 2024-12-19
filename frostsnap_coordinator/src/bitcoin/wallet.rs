@@ -2,7 +2,7 @@ use super::{chain_sync::ChainClient, multi_x_descriptor_for_account};
 use crate::persist::Persisted;
 use anyhow::{anyhow, Context, Result};
 use bdk_chain::{
-    bitcoin::{self, bip32, Amount, SignedAmount, Txid},
+    bitcoin::{self, bip32, Amount, Script, SignedAmount, Txid},
     indexed_tx_graph,
     indexer::keychain_txout::{self, KeychainTxOutIndex},
     local_chain,
@@ -31,8 +31,8 @@ pub type WalletIndexedTxGraph =
 pub type WalletIndexedTxGraphChangeSet =
     indexed_tx_graph::ChangeSet<ConfirmationBlockTime, keychain_txout::ChangeSet>;
 
-/// Pretty much a generic bitcoin wallet that indexes everything by key id
-pub struct FrostsnapWallet {
+/// Wallet that manages all the frostsnap keys on the same network in a single transaction graph
+pub struct CoordSuperWallet {
     tx_graph: Persisted<WalletIndexedTxGraph>,
     chain: Persisted<local_chain::LocalChain>,
     chain_client: ChainClient,
@@ -40,7 +40,7 @@ pub struct FrostsnapWallet {
     db: Arc<Mutex<rusqlite::Connection>>,
 }
 
-impl FrostsnapWallet {
+impl CoordSuperWallet {
     pub fn load_or_init(
         db: Arc<Mutex<rusqlite::Connection>>,
         network: bitcoin::Network,
@@ -138,43 +138,51 @@ impl FrostsnapWallet {
 
     pub fn list_addresses(&mut self, master_appkey: MasterAppkey) -> Vec<AddressInfo> {
         self.lazily_initialize_key(master_appkey);
+        let keychain = BitcoinAccountKeychain::external();
         self.tx_graph
             .index
-            .revealed_keychain_spks((master_appkey, BitcoinAccountKeychain::external()))
+            .revealed_keychain_spks((master_appkey, keychain))
             .rev()
-            .map(|(i, spk)| AddressInfo {
-                index: i,
-                address: bitcoin::Address::from_script(&spk, self.network)
-                    .expect("has address form"),
-                external: true,
-                used: self
-                    .tx_graph
-                    .index
-                    .is_used((master_appkey, BitcoinAccountKeychain::external()), i),
-            })
+            .map(|(i, spk)| self.address_info(master_appkey, &spk, i, keychain))
             .collect()
     }
 
-    pub fn next_address(&mut self, master_appkey: MasterAppkey) -> Result<AddressInfo> {
-        self.lazily_initialize_key(master_appkey);
-
-        let mut db = self.db.lock().unwrap();
-        let (index, spk) = self.tx_graph.mutate(&mut *db, |tx_graph| {
-            tx_graph
-                .index
-                .reveal_next_spk((master_appkey, BitcoinAccountKeychain::external()))
-                .ok_or(anyhow!("no more addresses on this keychain"))
-        })?;
-
-        Ok(AddressInfo {
+    fn address_info(
+        &self,
+        master_appkey: MasterAppkey,
+        spk: &Script,
+        index: u32,
+        keychain: BitcoinAccountKeychain,
+    ) -> AddressInfo {
+        AddressInfo {
             index,
-            address: bitcoin::Address::from_script(&spk, self.network).expect("has address form"),
+            address: bitcoin::Address::from_script(spk, self.network).expect("has address form"),
             external: true,
             used: self
                 .tx_graph
                 .index
-                .is_used((master_appkey, BitcoinAccountKeychain::external()), index),
-        })
+                .is_used((master_appkey, keychain), index),
+            derivation_path: BitcoinBip32Path {
+                account_keychain: keychain,
+                index,
+            }
+            .path_segments_from_bitcoin_appkey()
+            .collect(),
+        }
+    }
+
+    pub fn next_address(&mut self, master_appkey: MasterAppkey) -> Result<AddressInfo> {
+        self.lazily_initialize_key(master_appkey);
+        let keychain = BitcoinAccountKeychain::external();
+        let mut db = self.db.lock().unwrap();
+        let (index, spk) = self.tx_graph.mutate(&mut *db, |tx_graph| {
+            tx_graph
+                .index
+                .reveal_next_spk((master_appkey, keychain))
+                .ok_or(anyhow!("no more addresses on this keychain"))
+        })?;
+
+        Ok(self.address_info(master_appkey, &spk, index, keychain))
     }
 
     pub fn search_for_address(
@@ -203,23 +211,15 @@ impl FrostsnapWallet {
                     let address = derived.address(self.network).ok()?;
                     if address == target_address {
                         let spk = derived.script_pubkey();
-                        let address = bitcoin::Address::from_script(&spk, self.network).unwrap();
-                        // bit hacky but we assume first descriptor is external elsewhere
+                        // FIXME: this should get the derivation path from the descriptor itself
                         let external = account_descriptors[0] == *descriptor;
                         let keychain = if external {
                             BitcoinAccountKeychain::external()
                         } else {
                             BitcoinAccountKeychain::internal()
                         };
-                        // there's a good chance this is not synced if the address is far out
-                        let used = self.tx_graph.index.is_used((master_appkey, keychain), i);
 
-                        Some(AddressInfo {
-                            index: i,
-                            address,
-                            external,
-                            used,
-                        })
+                        Some(self.address_info(master_appkey, &spk, i, keychain))
                     } else {
                         None
                     }
@@ -611,6 +611,7 @@ pub struct AddressInfo {
     pub address: bitcoin::Address,
     pub external: bool,
     pub used: bool,
+    pub derivation_path: Vec<u32>,
 }
 
 #[derive(Clone, Debug)]
@@ -637,7 +638,7 @@ mod test {
         let master_appkey =
             MasterAppkey::derive_from_rootkey(Point::random(&mut rand::thread_rng()));
         let descriptors =
-            FrostsnapWallet::descriptors_for_key(master_appkey, bitcoin::NetworkKind::Main);
+            CoordSuperWallet::descriptors_for_key(master_appkey, bitcoin::NetworkKind::Main);
 
         let (account_keychain, external_descriptor) = &descriptors[0];
         let xonly = AppTweak::Bitcoin(BitcoinBip32Path {

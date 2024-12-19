@@ -551,7 +551,7 @@ where
                                         SignTask::BitcoinTransaction(transaction) => {
                                             let network = signer
                                                 .wallet_network(master_appkey.key_id())
-                                                .unwrap_or(bitcoin::Network::Bitcoin);
+                                                .expect("asked to sign a bitcoin transaction that doesn't support bitcoin");
 
                                             let fee = transaction.fee().expect("transaction validity should have already been checked");
                                             let foreign_recipients = transaction

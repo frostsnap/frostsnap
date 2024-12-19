@@ -36,6 +36,7 @@ dependencies:
   freezed_annotation: ^2.4.1
   meta: ^1.8.0
   confetti: ^0.7.0
+  dotted_border: ^2.1.0
   path_provider: 2.1.1
   wakelock_plus: ^1.2.5
   flutter_svg: ^2.0.10
