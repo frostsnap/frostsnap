@@ -112,7 +112,7 @@ class WalletHome extends StatelessWidget {
         title: Text(walletCtx.walletName),
         backgroundColor: theme.colorScheme.surface,
       ),
-      body: SafeArea(bottom: true, child: TxList()),
+      body: TxList(),
       resizeToAvoidBottomInset: true,
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: Padding(
@@ -413,22 +413,27 @@ class TxList extends StatelessWidget {
   Widget build(BuildContext context) {
     final walletContext = WalletContext.of(context)!;
 
-    return CustomScrollView(slivers: <Widget>[
-      SliverToBoxAdapter(
-        child: UpdatingBalance(txStream: walletContext.txStream),
-      ),
-      StreamBuilder(
-        stream: walletContext.txStream,
-        builder: (context, snapshot) {
-          final transactions = snapshot.data?.txs ?? [];
-          return SliverList.builder(
-            itemCount: transactions.length,
-            itemBuilder: (context, index) =>
-                TxItem(transaction: transactions[index]),
-          );
-        },
-      ),
-    ]);
+    return CustomScrollView(
+      slivers: <Widget>[
+        SliverToBoxAdapter(
+          child: UpdatingBalance(txStream: walletContext.txStream),
+        ),
+        SliverSafeArea(
+          sliver: StreamBuilder(
+            stream: walletContext.txStream,
+            builder: (context, snapshot) {
+              final transactions = snapshot.data?.txs ?? [];
+              return SliverList.builder(
+                itemCount: transactions.length,
+                itemBuilder: (context, index) =>
+                    TxItem(transaction: transactions[index]),
+              );
+            },
+          ),
+        ),
+        SliverToBoxAdapter(child: SizedBox(height: 80)),
+      ],
+    );
   }
 }
 
