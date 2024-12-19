@@ -22,6 +22,12 @@ pub trait UserInteraction {
         assert!(self.poll().is_none(), "busy tasks cannot have ui events");
     }
 
+    fn clear_workflow(&mut self) {
+        self.set_workflow(Workflow::WaitingFor(WaitingFor::CoordinatorInstruction {
+            completed_task: None,
+        }));
+    }
+
     fn take_workflow(&mut self) -> Workflow;
 
     fn poll(&mut self) -> Option<UiEvent>;
@@ -167,6 +173,7 @@ pub enum BusyTask {
     Signing,
     VerifyingShare,
     Loading,
+    GeneratingNonces,
     FirmwareUpgrade(FirmwareUpgradeStatus),
 }
 

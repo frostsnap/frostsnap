@@ -11,7 +11,7 @@ use esp_storage::FlashStorage;
 use frostsnap_comms::{
     CoordinatorSendBody, CoordinatorUpgradeMessage, DeviceSendBody, ReceiveSerial, Upstream,
 };
-use frostsnap_comms::{CoordinatorSendMessage, Downstream, MAGIC_BYTES_PERIOD};
+use frostsnap_comms::{Downstream, MAGIC_BYTES_PERIOD};
 use frostsnap_core::{
     device::FrostSigner,
     message::{
@@ -93,18 +93,12 @@ where
 
         let mut soft_reset = true;
         let mut downstream_connection_state = DownstreamConnectionState::Disconnected;
-        let mut sends_downstream: Vec<CoordinatorSendMessage> = vec![];
         let mut sends_user: Vec<DeviceToUserMessage> = vec![];
         let mut outbox = VecDeque::new();
         let mut inbox: Vec<CoordinatorSendBody> = vec![];
         let mut next_write_magic_bytes_downstream: Instant = Instant::from_ticks(0);
-        // FIXME: If we keep getting magic bytes instead of getting a proper message we have to accept that
-        // the upstream doesn't think we're awake yet and we should soft reset again and send our
-        // magic bytes again.
-        //
-        // We wouldn't need this if announce ack was guaranteed to be sent right away (but instead
-        // it waits until we've named it). Announcing and labeling has been sorted out this counter
-        // thingy will go away naturally.
+        // If we keep getting magic bytes instead of getting a proper message we have to accept that
+        // the upstream doesn't think we're awake yet and we should soft reset.
         let mut magic_bytes_timeout_counter = 0;
 
         ui.set_workflow(ui::Workflow::WaitingFor(
@@ -120,14 +114,16 @@ where
         // just have coordinator signal ready -- but that would break old devices atm.
         let mut upgrade: Option<ota::FirmwareUpgradeMode> = None;
         let mut ui_event_queue = VecDeque::default();
+        let mut conch_is_downstream = false;
 
         loop {
+            let mut has_conch = false;
             if soft_reset {
                 soft_reset = false;
+                conch_is_downstream = false;
                 magic_bytes_timeout_counter = 0;
                 let _ = signer.cancel_action();
                 sends_user.clear();
-                sends_downstream.clear();
                 downstream_connection_state = DownstreamConnectionState::Disconnected;
                 upstream_connection.set_state(UpstreamConnectionState::PowerOn, &mut ui);
                 next_write_magic_bytes_downstream = Instant::from_ticks(0);
@@ -167,7 +163,6 @@ where
                 ) => {
                     downstream_connection_state = DownstreamConnectionState::Disconnected;
                     ui.set_downstream_connection_state(downstream_connection_state);
-                    sends_downstream.clear();
                     if state == DownstreamConnectionState::Established {
                         upstream_connection
                             .send_to_coordinator([DeviceSendBody::DisconnectDownstream]);
@@ -194,9 +189,16 @@ where
                                         DownstreamConnectionState::Disconnected;
                                 }
                                 ReceiveSerial::Message(message) => {
+                                    conch_is_downstream = false;
                                     upstream_serial
                                         .send(message)
                                         .expect("failed to forward message");
+                                }
+                                ReceiveSerial::Conch => {
+                                    conch_is_downstream = false;
+                                    upstream_serial
+                                        .write_conch()
+                                        .expect("failed to write conch upstream");
                                 }
                                 _ => { /* unused */ }
                             };
@@ -211,6 +213,14 @@ where
                         }
                     };
                 }
+            }
+
+            if downstream_connection_state != DownstreamConnectionState::Established
+                && conch_is_downstream
+            {
+                // We take the conch back since downstream disconnected
+                has_conch = true;
+                conch_is_downstream = false;
             }
 
             // === UPSTREAM connection management
@@ -284,6 +294,19 @@ where
                                             }
                                         }
                                     }
+                                    ReceiveSerial::Conch => {
+                                        assert!(
+                                            !conch_is_downstream,
+                                            "conch shouldn't be downstream if we receive it"
+                                        );
+                                        assert!(
+                                            !has_conch,
+                                            "we shouldn't have the conch if coordinator sends it"
+                                        );
+
+                                        has_conch = true;
+                                        conch_is_downstream = false;
+                                    }
                                     _ => { /* unused */ }
                                 }
                             }
@@ -328,6 +351,11 @@ where
                 ui_event_queue.push_back(ui_event);
             }
 
+            if !has_conch && conch_is_downstream {
+                // we don't have the conch so we shouldn't do any more work -- just restart the loop
+                continue;
+            }
+
             for message_body in inbox.drain(..) {
                 match &message_body {
                     CoordinatorSendBody::Cancel => {
@@ -370,6 +398,7 @@ where
                         // FIXME: It is very inelegant to be inspecting
                         // core messages to figure out when we're going
                         // to be busy.
+                        let mut is_busy = true;
                         match &core_message {
                             CoordinatorToDeviceMessage::DoKeyGen { .. } => {
                                 ui.set_busy_task(ui::BusyTask::KeyGen)
@@ -377,7 +406,10 @@ where
                             CoordinatorToDeviceMessage::FinishKeyGen { .. } => {
                                 ui.set_busy_task(ui::BusyTask::VerifyingShare)
                             }
-                            _ => { /* no workflow to trigger */ }
+                            CoordinatorToDeviceMessage::RequestNonces => {
+                                ui.set_busy_task(ui::BusyTask::GeneratingNonces);
+                            }
+                            _ => is_busy = false,
                         }
 
                         outbox.extend(
@@ -385,6 +417,10 @@ where
                                 .recv_coordinator_message(core_message.clone(), &mut rng)
                                 .expect("failed to process coordinator message"),
                         );
+
+                        if is_busy {
+                            ui.clear_workflow();
+                        }
                     }
                     CoordinatorSendBody::Upgrade(upgrade_message) => match upgrade_message {
                         CoordinatorUpgradeMessage::PrepareUpgrade {
@@ -715,6 +751,20 @@ where
                             }
                         };
                     }
+                }
+            }
+
+            if has_conch {
+                if let Some(message) = upstream_connection.dequeue_message() {
+                    upstream_serial
+                        .send(message.into())
+                        .expect("failed to send message upstream");
+                } else if downstream_connection_state == DownstreamConnectionState::Established {
+                    conch_is_downstream = true;
+                    downstream_serial.write_conch().unwrap();
+                } else {
+                    conch_is_downstream = false;
+                    upstream_serial.write_conch().unwrap();
                 }
             }
         }

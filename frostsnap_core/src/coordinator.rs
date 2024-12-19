@@ -5,6 +5,7 @@ use crate::{
     tweak::Xpub,
     AccessStructureId, AccessStructureRef, ActionError, CoordShareDecryptionContrib, Error, Gist,
     KeyId, MasterAppkey, MessageResult, SessionHash, ShareImage, SignItem, SignTask, SignTaskError,
+    NONCE_BATCH_SIZE,
 };
 use alloc::{
     borrow::ToOwned,
@@ -27,7 +28,7 @@ use tracing::{event, Level};
 
 use crate::DeviceId;
 
-pub const MIN_NONCES_BEFORE_REQUEST: usize = 5;
+pub const MIN_NONCES_BEFORE_REQUEST: u64 = NONCE_BATCH_SIZE / 2;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FrostCoordinator {
@@ -974,7 +975,7 @@ impl FrostCoordinator {
         device_id: DeviceId,
     ) -> Option<CoordinatorSend> {
         let needs_replenishment = match self.device_nonces.get(&device_id) {
-            Some(device_nonces) => device_nonces.nonces.len() < MIN_NONCES_BEFORE_REQUEST,
+            Some(device_nonces) => device_nonces.nonces.len() < MIN_NONCES_BEFORE_REQUEST as usize,
             None => true,
         };
 

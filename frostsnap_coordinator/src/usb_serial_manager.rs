@@ -211,11 +211,12 @@ impl UsbSerialManager {
         for (port_name, mut awaiting_magic) in self.awaiting_magic.drain().collect::<Vec<_>>() {
             let device_port = &mut awaiting_magic.port;
             match device_port.read_for_magic_bytes() {
-                Ok(true) => {
+                Ok(Some(supported_features)) => {
                     event!(Level::DEBUG, port = port_name, "Read magic bytes");
+                    device_port.set_conch_enabled(supported_features.conch_enabled);
                     self.ready.insert(port_name, awaiting_magic.port);
                 }
-                Ok(false) => {
+                Ok(None) => {
                     let time_since_last_wrote_magic = awaiting_magic
                         .last_wrote_magic_bytes
                         .as_ref()
@@ -284,14 +285,15 @@ impl UsbSerialManager {
                 }
                 ReceiveSerial::Message(message) => {
                     match message.body.decode() {
-                        None => {
+                        Err(e) => {
                             event!(
-                                Level::INFO,
+                                Level::WARN,
                                 from = message.from.to_string(),
+                                error = e.to_string(),
                                 "failed to decode encapsulated message - ignoring"
                             );
                         }
-                        Some(decoded) => {
+                        Ok(decoded) => {
                             event!(
                                 Level::DEBUG,
                                 port = port_name,
@@ -357,8 +359,7 @@ impl UsbSerialManager {
 
                                     self.outbox_sender
                                         .send(CoordinatorSendMessage {
-                                            message_body: CoordinatorSendBody::AnnounceAck {}
-                                                .into(),
+                                            message_body: CoordinatorSendBody::AnnounceAck {},
                                             target_destinations: Destination::from([message.from]),
                                         })
                                         .unwrap();
@@ -468,16 +469,16 @@ impl UsbSerialManager {
                 }
             };
 
-            let mut wire_message = send.clone();
-            wire_message.target_destinations = wire_destinations;
+            let mut message = send.clone();
+            message.target_destinations = wire_destinations;
             let dest_span = tracing::span!(
                 Level::DEBUG,
                 "",
-                destinations = wire_message.target_destinations.gist()
+                destinations = message.target_destinations.gist()
             );
             let _dest_enter = dest_span.enter();
 
-            let gist = wire_message.gist();
+            let gist = message.gist();
 
             for port_name in ports_to_send_on {
                 let span =
@@ -493,12 +494,8 @@ impl UsbSerialManager {
                         continue;
                     }
                 };
-                event!(
-                    Level::DEBUG,
-                    message = wire_message.gist(),
-                    "queueing message"
-                );
-                port.queue_message(wire_message.clone());
+                event!(Level::DEBUG, message = message.gist(), "queueing message");
+                port.queue_send(message.clone());
             }
         }
 
@@ -648,7 +645,7 @@ impl UsbSender {
         self.sender
             .send(CoordinatorSendMessage {
                 target_destinations: frostsnap_comms::Destination::All,
-                message_body: frostsnap_comms::CoordinatorSendBody::Cancel.into(),
+                message_body: frostsnap_comms::CoordinatorSendBody::Cancel,
             })
             .expect("receiver exists");
     }
@@ -657,7 +654,7 @@ impl UsbSender {
         self.sender
             .send(CoordinatorSendMessage {
                 target_destinations: frostsnap_comms::Destination::Particular([device_id].into()),
-                message_body: frostsnap_comms::CoordinatorSendBody::Cancel.into(),
+                message_body: frostsnap_comms::CoordinatorSendBody::Cancel,
             })
             .expect("receiver exists");
     }
@@ -668,8 +665,7 @@ impl UsbSender {
                 target_destinations: [device_id].into(),
                 message_body: CoordinatorSendBody::Naming(frostsnap_comms::NameCommand::Preview(
                     name.into(),
-                ))
-                .into(),
+                )),
             })
             .expect("receiver exists");
     }
@@ -686,8 +682,7 @@ impl UsbSender {
                 target_destinations: [device_id].into(),
                 message_body: CoordinatorSendBody::Naming(frostsnap_comms::NameCommand::Finish(
                     name.into(),
-                ))
-                .into(),
+                )),
             })
             .expect("receiver exists");
     }
@@ -705,7 +700,7 @@ impl UsbSender {
         self.sender
             .send(CoordinatorSendMessage {
                 target_destinations: [device_id].into(),
-                message_body: CoordinatorSendBody::DataWipe.into(),
+                message_body: CoordinatorSendBody::DataWipe,
             })
             .expect("receiver exists");
     }

@@ -396,6 +396,7 @@ where
                         self.display.progress_bar(*progress);
                     }
                 },
+                BusyTask::GeneratingNonces => self.display.print("Generating nonces..."),
             },
             Workflow::Debug(string) => {
                 self.display

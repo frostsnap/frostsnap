@@ -16,6 +16,8 @@ pub const BAUDRATE: u32 = 14_400;
 /// Magic bytes are 7 bytes in length so when the bincode prefixes it with `00` it is 8 bytes long.
 /// A nice round number here is desirable (but not strictly necessary) because TX and TX buffers
 /// will be some multiple of 8 and so it should overflow the ring buffers neatly.
+///
+/// The last byte of magic bytes is used to signal features (by incrementing for new features).
 const MAGIC_BYTES_LEN: usize = 7;
 
 const MAGICBYTES_RECV_DOWNSTREAM: [u8; MAGIC_BYTES_LEN] =
@@ -32,19 +34,24 @@ pub const FIRMWARE_IMAGE_SIZE: u32 = 0x140_000;
 
 pub const FIRMWARE_NEXT_CHUNK_READY_SIGNAL: u8 = 0x11;
 
-const MAX_MESSAGE_SIZE: usize = 1 << 13;
+/// Max memory we should use when deocding a message
+const MAX_MESSAGE_ALLOC_SIZE: usize = 1 << 15;
 
 pub const BINCODE_CONFIG: bincode::config::Configuration<
     bincode::config::LittleEndian,
     bincode::config::Varint,
-    bincode::config::Limit<MAX_MESSAGE_SIZE>,
-> = bincode::config::standard().with_limit::<MAX_MESSAGE_SIZE>();
+    bincode::config::Limit<MAX_MESSAGE_ALLOC_SIZE>,
+> = bincode::config::standard().with_limit::<MAX_MESSAGE_ALLOC_SIZE>();
 
 #[derive(Encode, Decode, Debug, Clone)]
 #[bincode(bounds = "D: Direction")]
 pub enum ReceiveSerial<D: Direction> {
     MagicBytes(MagicBytes<D>),
     Message(D::RecvType),
+    /// You can only send messages if you have the conch. Also devices should only do work if no one
+    /// downstream of them has the conch.
+    Conch,
+    // to allow devices to ignore messages they don't understand
     Unused9,
     Unused8,
     Unused7,
@@ -62,6 +69,7 @@ impl<D: Direction> Gist for ReceiveSerial<D> {
         match self {
             ReceiveSerial::MagicBytes(_) => "MagicBytes".into(),
             ReceiveSerial::Message(msg) => msg.gist(),
+            ReceiveSerial::Conch => "Conch".into(),
             _ => "Unused".into(),
         }
     }
@@ -69,13 +77,15 @@ impl<D: Direction> Gist for ReceiveSerial<D> {
 
 /// A message sent from a coordinator
 #[derive(Encode, Decode, Debug, Clone)]
-pub struct CoordinatorSendMessage {
+pub struct CoordinatorSendMessage<B = CoordinatorSendBody> {
     pub target_destinations: Destination,
-    pub message_body: WireCoordinatorSendBody,
+    pub message_body: B,
 }
 
 #[cfg(feature = "coordinator")]
-impl TryFrom<frostsnap_core::coordinator::CoordinatorSend> for CoordinatorSendMessage {
+impl TryFrom<frostsnap_core::coordinator::CoordinatorSend>
+    for CoordinatorSendMessage<CoordinatorSendBody>
+{
     type Error = &'static str;
 
     fn try_from(value: frostsnap_core::coordinator::CoordinatorSend) -> Result<Self, Self::Error> {
@@ -85,7 +95,7 @@ impl TryFrom<frostsnap_core::coordinator::CoordinatorSend> for CoordinatorSendMe
                 destinations,
             } => Ok(CoordinatorSendMessage {
                 target_destinations: Destination::from(destinations),
-                message_body: CoordinatorSendBody::Core(message).into(),
+                message_body: CoordinatorSendBody::Core(message),
             }),
             _ => Err("was not a ToDevice message"),
         }
@@ -142,7 +152,7 @@ impl<I: IntoIterator<Item = DeviceId>> From<I> for Destination {
     }
 }
 
-impl Gist for CoordinatorSendMessage {
+impl<B: Gist> Gist for CoordinatorSendMessage<B> {
     fn gist(&self) -> String {
         self.message_body.gist()
     }
@@ -202,6 +212,15 @@ impl From<CoordinatorSendBody> for WireCoordinatorSendBody {
     }
 }
 
+impl From<CoordinatorSendMessage> for CoordinatorSendMessage<WireCoordinatorSendBody> {
+    fn from(value: CoordinatorSendMessage) -> Self {
+        CoordinatorSendMessage {
+            target_destinations: value.target_destinations,
+            message_body: value.message_body.into(),
+        }
+    }
+}
+
 #[derive(Encode, Decode, Debug, Clone)]
 pub enum CoordinatorUpgradeMessage {
     PrepareUpgrade {
@@ -256,17 +275,20 @@ pub trait Direction {
     type RecvType: bincode::Decode + bincode::Encode + for<'a> bincode::BorrowDecode<'a> + Gist;
     type Opposite: Direction;
     const MAGIC_BYTES_RECV: [u8; MAGIC_BYTES_LEN];
+    const VERSION_SIGNAL: MagicBytesVersion;
 }
 
 impl Direction for Upstream {
-    type RecvType = CoordinatorSendMessage;
+    type RecvType = CoordinatorSendMessage<WireCoordinatorSendBody>;
     type Opposite = Downstream;
+    const VERSION_SIGNAL: MagicBytesVersion = 0;
     const MAGIC_BYTES_RECV: [u8; MAGIC_BYTES_LEN] = MAGICBYTES_RECV_UPSTREAM;
 }
 
 impl Direction for Downstream {
-    type RecvType = DeviceSendMessage;
+    type RecvType = DeviceSendMessage<WireDeviceSendBody>;
     type Opposite = Upstream;
+    const VERSION_SIGNAL: MagicBytesVersion = 1;
     const MAGIC_BYTES_RECV: [u8; MAGIC_BYTES_LEN] = MAGICBYTES_RECV_DOWNSTREAM;
 }
 
@@ -275,7 +297,9 @@ impl<O: Direction> bincode::Encode for MagicBytes<O> {
         &self,
         encoder: &mut E,
     ) -> Result<(), bincode::error::EncodeError> {
-        encoder.writer().write(&O::MAGIC_BYTES_RECV)
+        let mut magic_bytes = O::MAGIC_BYTES_RECV;
+        magic_bytes[magic_bytes.len() - 1] += O::VERSION_SIGNAL;
+        encoder.writer().write(&magic_bytes)
     }
 }
 
@@ -285,7 +309,10 @@ impl<O: Direction> bincode::Decode for MagicBytes<O> {
     ) -> Result<Self, bincode::error::DecodeError> {
         let mut bytes = [0u8; MAGIC_BYTES_LEN];
         decoder.reader().read(&mut bytes)?;
-        if bytes == O::MAGIC_BYTES_RECV {
+        let expected = O::MAGIC_BYTES_RECV;
+        let except_version_signal_byte = ..MAGIC_BYTES_LEN - 1;
+        if bytes[except_version_signal_byte] == expected[except_version_signal_byte] {
+            // We don't care about version signal here yet
             Ok(MagicBytes(PhantomData))
         } else {
             Err(bincode::error::DecodeError::OtherString(format!(
@@ -293,6 +320,19 @@ impl<O: Direction> bincode::Decode for MagicBytes<O> {
                 O::MAGIC_BYTES_RECV,
                 bytes
             )))
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DeviceSupportedFeatures {
+    pub conch_enabled: bool,
+}
+
+impl DeviceSupportedFeatures {
+    pub fn from_version(version: u8) -> Self {
+        DeviceSupportedFeatures {
+            conch_enabled: version >= 1,
         }
     }
 }
@@ -307,12 +347,12 @@ impl<'de, O: Direction> bincode::BorrowDecode<'de> for MagicBytes<O> {
 
 /// Message sent from a device to the coordinator
 #[derive(Encode, Decode, Debug, Clone, PartialEq)]
-pub struct DeviceSendMessage {
+pub struct DeviceSendMessage<B> {
     pub from: DeviceId,
-    pub body: WireDeviceSendBody,
+    pub body: B,
 }
 
-impl Gist for DeviceSendMessage {
+impl<B: Gist> Gist for DeviceSendMessage<B> {
     fn gist(&self) -> String {
         format!("{} <= {}", self.body.gist(), self.from)
     }
@@ -357,10 +397,23 @@ impl From<DeviceSendBody> for WireDeviceSendBody {
     }
 }
 
+impl From<DeviceSendMessage<DeviceSendBody>> for DeviceSendMessage<WireDeviceSendBody> {
+    fn from(value: DeviceSendMessage<DeviceSendBody>) -> Self {
+        DeviceSendMessage {
+            from: value.from,
+            body: value.body.into(),
+        }
+    }
+}
+
 impl WireDeviceSendBody {
-    pub fn decode(self) -> Option<DeviceSendBody> {
-        Some(match self {
-            WireDeviceSendBody::_Core => return None,
+    pub fn decode(self) -> Result<DeviceSendBody, bincode::error::DecodeError> {
+        Ok(match self {
+            WireDeviceSendBody::_Core => {
+                return Err(bincode::error::DecodeError::Other(
+                    "core messages should never be sent here",
+                ));
+            }
             WireDeviceSendBody::Debug { message } => DeviceSendBody::Debug { message },
             WireDeviceSendBody::Announce { firmware_digest } => {
                 DeviceSendBody::Announce { firmware_digest }
@@ -370,10 +423,8 @@ impl WireDeviceSendBody {
             WireDeviceSendBody::NeedName => DeviceSendBody::NeedName,
             WireDeviceSendBody::AckUpgradeMode => DeviceSendBody::AckUpgradeMode,
             WireDeviceSendBody::EncapsV0(encaps) => {
-                match bincode::decode_from_slice(encaps.0.as_ref(), BINCODE_CONFIG).ok() {
-                    Some((msg, _)) => msg,
-                    None => return None,
-                }
+                let (msg, _) = bincode::decode_from_slice(encaps.0.as_ref(), BINCODE_CONFIG)?;
+                msg
             }
         })
     }
@@ -393,10 +444,12 @@ impl Gist for DeviceSendBody {
     }
 }
 
+pub type MagicBytesVersion = u8;
+
 pub fn make_progress_on_magic_bytes<D: Direction>(
     remaining: impl Iterator<Item = u8>,
     progress: usize,
-) -> (usize, bool) {
+) -> (usize, Option<MagicBytesVersion>) {
     let magic_bytes = D::MAGIC_BYTES_RECV;
     _make_progress_on_magic_bytes(remaining, &magic_bytes, progress)
 }
@@ -405,27 +458,32 @@ fn _make_progress_on_magic_bytes(
     remaining: impl Iterator<Item = u8>,
     magic_bytes: &[u8],
     mut progress: usize,
-) -> (usize, bool) {
+) -> (usize, Option<MagicBytesVersion>) {
     for byte in remaining {
-        if byte == magic_bytes[progress] {
+        // the last byte is used for version signaling -- doesn't need to be exact match
+        let is_last_byte = progress == magic_bytes.len() - 1;
+        let expected_byte = magic_bytes[progress];
+        if is_last_byte && byte >= expected_byte {
+            return (0, Some(byte - expected_byte));
+        } else if byte == expected_byte {
             progress += 1;
-            if progress == magic_bytes.len() {
-                return (0, true);
-            }
         } else {
             progress = 0;
         }
     }
 
-    (progress, false)
+    (progress, None)
 }
 
-pub fn find_and_remove_magic_bytes<D: Direction>(buff: &mut Vec<u8>) -> bool {
+pub fn find_and_remove_magic_bytes<D: Direction>(buff: &mut Vec<u8>) -> Option<MagicBytesVersion> {
     let magic_bytes = D::MAGIC_BYTES_RECV;
     _find_and_remove_magic_bytes(buff, &magic_bytes[..])
 }
 
-fn _find_and_remove_magic_bytes(buff: &mut Vec<u8>, magic_bytes: &[u8]) -> bool {
+fn _find_and_remove_magic_bytes(
+    buff: &mut Vec<u8>,
+    magic_bytes: &[u8],
+) -> Option<MagicBytesVersion> {
     let mut consumed = 0;
     let (_, found) = _make_progress_on_magic_bytes(
         buff.iter().cloned().inspect(|_| consumed += 1),
@@ -433,7 +491,7 @@ fn _find_and_remove_magic_bytes(buff: &mut Vec<u8>, magic_bytes: &[u8]) -> bool 
         0,
     );
 
-    if found {
+    if found.is_some() {
         *buff = buff.split_off(consumed);
     }
 
@@ -463,19 +521,25 @@ mod test {
     #[test]
     fn remove_magic_bytes() {
         let mut bytes = b"hello world".to_vec();
-        assert!(!_find_and_remove_magic_bytes(&mut bytes, b"magic"));
+        assert_eq!(_find_and_remove_magic_bytes(&mut bytes, b"magic"), None);
 
         let mut bytes = b"hello magic world".to_vec();
 
-        assert!(_find_and_remove_magic_bytes(&mut bytes, b"magic"));
+        assert_eq!(_find_and_remove_magic_bytes(&mut bytes, b"magic"), Some(0));
         assert_eq!(bytes, b" world");
 
         let mut bytes = b"hello magicmagic world".to_vec();
-        assert!(_find_and_remove_magic_bytes(&mut bytes, b"magic"));
+        assert_eq!(_find_and_remove_magic_bytes(&mut bytes, b"magic"), Some(0));
         assert_eq!(bytes, b"magic world");
 
         let mut bytes = b"magic".to_vec();
-        assert!(_find_and_remove_magic_bytes(&mut bytes, b"magic"));
+        assert_eq!(_find_and_remove_magic_bytes(&mut bytes, b"magic"), Some(0));
         assert_eq!(bytes, b"");
+
+        let mut bytes = b"hello magid world".to_vec();
+        assert_eq!(_find_and_remove_magic_bytes(&mut bytes, b"magic"), Some(1));
+
+        let mut bytes = b"hello magif world".to_vec();
+        assert_eq!(_find_and_remove_magic_bytes(&mut bytes, b"magic"), Some(3));
     }
 }
