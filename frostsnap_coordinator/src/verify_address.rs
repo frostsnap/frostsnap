@@ -10,8 +10,7 @@ use crate::{Completion, Sink, UiProtocol, UiToStorageMessage};
 
 #[derive(Clone, Debug, Default)]
 pub struct VerifyAddressProtocolState {
-    pub target_devices: Vec<DeviceId>,  // not a set for frb compat
-    pub sent_to_devices: Vec<DeviceId>, // not a set for frb compat
+    pub target_devices: Vec<DeviceId>, // not a set for frb compat
 }
 
 pub struct VerifyAddressProtocol {
@@ -31,7 +30,6 @@ impl VerifyAddressProtocol {
         Self {
             state: VerifyAddressProtocolState {
                 target_devices: verify_address_message.target_devices.into_iter().collect(),
-                sent_to_devices: Default::default(),
             },
             master_appkey: verify_address_message.master_appkey,
             derivation_index: verify_address_message.derivation_index,
@@ -96,9 +94,6 @@ impl UiProtocol for VerifyAddressProtocol {
                 ),
             });
         }
-        self.state
-            .sent_to_devices
-            .extend(self.need_to_send_to.iter().cloned());
 
         (messages, vec![])
     }

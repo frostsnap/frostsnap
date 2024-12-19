@@ -1527,7 +1527,6 @@ pub enum _ChainStatusState {
 #[frb(mirror(VerifyAddressProtocolState))]
 pub struct _VerifyAddressProtocolState {
     pub target_devices: Vec<DeviceId>,
-    pub sent_to_devices: Vec<DeviceId>,
 }
 
 // XXX: bugs in flutter_rust_bridge mean that sometimes the right code doesn't get emitted unless
