@@ -6,26 +6,26 @@
 #[macro_use]
 extern crate alloc;
 use alloc::string::String;
-use core::{borrow::BorrowMut, mem::MaybeUninit};
+use core::borrow::BorrowMut;
 use cst816s::{TouchGesture, CST816S};
 use display_interface_spi::SPIInterface;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use embedded_hal as hal;
 use esp_hal::{
-    clock::ClockControl,
     delay::Delay,
-    gpio::{Input, Io, Level, Output, Pull},
-    i2c::I2C,
+    gpio::{Input, Level, Output, Pull},
+    i2c::master::{Config as i2cConfig, I2c},
     ledc::{
         channel::{self, ChannelIFace},
         timer::{self as timerledc, LSClockSource, TimerIFace},
         LSGlobalClkSource, Ledc, LowSpeed,
     },
-    peripherals::Peripherals,
     prelude::*,
     rng::Trng,
-    spi::{master::Spi, SpiMode},
-    system::SystemControl,
+    spi::{
+        master::{Config as spiConfig, Spi},
+        SpiMode,
+    },
     timer::{
         self,
         timg::{Timer, TimerGroup},
@@ -54,19 +54,6 @@ use micromath::F32Ext;
 use mipidsi::{error::Error, models::ST7789, options::ColorInversion};
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
-#[global_allocator]
-static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
-
-fn init_heap() {
-    const HEAP_SIZE: usize = 256 * 1024;
-    static mut HEAP: MaybeUninit<[u8; HEAP_SIZE]> = MaybeUninit::uninit();
-
-    unsafe {
-        #[allow(static_mut_refs)]
-        ALLOCATOR.init(HEAP.as_mut_ptr() as *mut u8, HEAP_SIZE);
-    }
-}
-
 /// # Pin Configuration
 ///
 /// GPIO21:     USB UART0 TX  (connect upstream)
@@ -80,27 +67,27 @@ fn init_heap() {
 
 #[entry]
 fn main() -> ! {
-    init_heap();
-    let peripherals = Peripherals::take();
-    let system = SystemControl::new(peripherals.SYSTEM);
-    let clocks = ClockControl::max(system.clock_control).freeze();
+    let peripherals = esp_hal::init({
+        let mut config = esp_hal::Config::default();
+        config.cpu_clock = CpuClock::max();
+        config
+    });
+    esp_alloc::heap_allocator!(256 * 1024);
 
-    let timg0 = TimerGroup::new(peripherals.TIMG0, &clocks, None);
-    let timg1 = TimerGroup::new(peripherals.TIMG1, &clocks, None);
+    let timg0 = TimerGroup::new(peripherals.TIMG0);
+    let timg1 = TimerGroup::new(peripherals.TIMG1);
     let timer0 = timg0.timer0;
     let timer1 = timg1.timer0;
 
-    let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
+    let mut delay = Delay::new();
 
-    let mut delay = Delay::new(&clocks);
-
-    let upstream_detect = Input::new(io.pins.gpio0, Pull::Up);
-    let downstream_detect = Input::new(io.pins.gpio10, Pull::Up);
+    let upstream_detect = Input::new(peripherals.GPIO0, Pull::Up);
+    let downstream_detect = Input::new(peripherals.GPIO10, Pull::Up);
 
     // Turn off backlight to hide artifacts as display initializes
-    let mut ledc = Ledc::new(peripherals.LEDC, &clocks);
+    let mut ledc = Ledc::new(peripherals.LEDC);
     ledc.set_global_slow_clock(LSGlobalClkSource::APBClk);
-    let mut lstimer0 = ledc.get_timer::<LowSpeed>(timerledc::Number::Timer0);
+    let mut lstimer0 = ledc.timer::<LowSpeed>(timerledc::Number::Timer0);
     lstimer0
         .configure(timerledc::config::Config {
             duty: timerledc::config::Duty::Duty10Bit,
@@ -108,7 +95,7 @@ fn main() -> ! {
             frequency: 24u32.kHz(),
         })
         .unwrap();
-    let mut channel0 = ledc.get_channel(channel::Number::Channel0, io.pins.gpio1);
+    let mut channel0 = ledc.channel(channel::Number::Channel0, peripherals.GPIO1);
     channel0
         .configure(channel::config::Config {
             timer: &lstimer0,
@@ -117,32 +104,40 @@ fn main() -> ! {
         })
         .unwrap();
 
-    let spi = Spi::new(peripherals.SPI2, 80u32.MHz(), SpiMode::Mode2, &clocks)
-        .with_sck(io.pins.gpio8)
-        .with_mosi(io.pins.gpio7);
+    let spi = Spi::new_with_config(
+        peripherals.SPI2,
+        spiConfig {
+            frequency: 80.MHz(),
+            mode: SpiMode::Mode2,
+            ..spiConfig::default()
+        },
+    )
+    .with_sck(peripherals.GPIO8)
+    .with_mosi(peripherals.GPIO7);
     let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, NoCs);
-    let di = SPIInterface::new(spi_device, Output::new(io.pins.gpio9, Level::Low));
+    let di = SPIInterface::new(spi_device, Output::new(peripherals.GPIO9, Level::Low));
     let display = mipidsi::Builder::new(ST7789, di)
         .display_size(240, 280)
         .display_offset(0, 20) // 240*280 panel
         .invert_colors(ColorInversion::Inverted)
-        .reset_pin(Output::new(io.pins.gpio6, Level::Low))
+        .reset_pin(Output::new(peripherals.GPIO6, Level::Low))
         .init(&mut delay)
         .unwrap();
     let mut display = graphics::Graphics::new(display).unwrap();
 
-    let i2c = I2C::new(
+    let i2c = I2c::new(
         peripherals.I2C0,
-        io.pins.gpio4,
-        io.pins.gpio5,
-        400u32.kHz(),
-        &clocks,
-        None,
-    );
+        i2cConfig {
+            frequency: 400u32.kHz(),
+            ..i2cConfig::default()
+        },
+    )
+    .with_sda(peripherals.GPIO4)
+    .with_scl(peripherals.GPIO5);
     let mut capsense = CST816S::new(
         i2c,
-        Input::new(io.pins.gpio2, Pull::Down),
-        Output::new(io.pins.gpio3, Level::Low),
+        Input::new(peripherals.GPIO2, Pull::Down),
+        Output::new(peripherals.GPIO3, Level::Low),
     );
     capsense.setup(&mut delay).unwrap();
 
@@ -153,7 +148,7 @@ fn main() -> ! {
 
     let detect_device_upstream = upstream_detect.is_low();
     let upstream_serial = if detect_device_upstream {
-        let serial_conf = uart::config::Config {
+        let serial_conf = uart::Config {
             baudrate: frostsnap_comms::BAUDRATE,
             ..Default::default()
         };
@@ -161,35 +156,30 @@ fn main() -> ! {
             Uart::new_with_config(
                 peripherals.UART1,
                 serial_conf,
-                &clocks,
-                None,
-                io.pins.gpio18,
-                io.pins.gpio19,
+                peripherals.GPIO18,
+                peripherals.GPIO19,
             )
             .unwrap(),
             &timer0,
-            &clocks,
         )
     } else {
-        SerialInterface::new_jtag(UsbSerialJtag::new(peripherals.USB_DEVICE, None), &timer0)
+        SerialInterface::new_jtag(UsbSerialJtag::new(peripherals.USB_DEVICE), &timer0)
     };
-    let downstream_serial: SerialInterface<_, _, Downstream> = {
-        let serial_conf = uart::config::Config {
+    let downstream_serial: SerialInterface<_, Downstream> = {
+        let serial_conf = uart::Config {
             baudrate: frostsnap_comms::BAUDRATE,
             ..Default::default()
         };
         let uart = Uart::new_with_config(
             peripherals.UART0,
             serial_conf,
-            &clocks,
-            None,
-            io.pins.gpio21,
-            io.pins.gpio20,
+            peripherals.GPIO21,
+            peripherals.GPIO20,
         )
         .unwrap();
-        SerialInterface::new_uart(uart, &timer0, &clocks)
+        SerialInterface::new_uart(uart, &timer0)
     };
-    let sha256 = esp_hal::sha::Sha::new(peripherals.SHA, esp_hal::sha::ShaMode::SHA256, None);
+    let sha256 = esp_hal::sha::Sha::new(peripherals.SHA);
 
     let mut adc = peripherals.ADC1;
     let mut hal_rng = Trng::new(peripherals.RNG, &mut adc);
@@ -628,15 +618,15 @@ fn y_based_adjustment(y: i32) -> i32 {
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     use core::fmt::Write;
-    let peripherals = unsafe { Peripherals::steal() };
-    let system = SystemControl::new(peripherals.SYSTEM);
-    let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
-    // Disable the RTC and TIMG watchdog timers
-    let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
+    let peripherals = esp_hal::init({
+        let mut config = esp_hal::Config::default();
+        config.cpu_clock = CpuClock::max();
+        config
+    });
 
-    let mut bl = Output::new(io.pins.gpio1, Level::Low);
+    let mut bl = Output::new(peripherals.GPIO1, Level::Low);
 
-    let mut delay = Delay::new(&clocks);
+    let mut delay = Delay::new();
     let mut panic_buf = frostsnap_device::panic::PanicBuffer::<512>::default();
 
     let _ = match info.location() {
@@ -650,17 +640,23 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         None => write!(&mut panic_buf, "{}", info),
     };
 
-    let spi = Spi::new(peripherals.SPI2, 80u32.MHz(), SpiMode::Mode2, &clocks)
-        .with_sck(io.pins.gpio8)
-        .with_mosi(io.pins.gpio7);
+    let spi = Spi::new_with_config(
+        peripherals.SPI2,
+        spiConfig {
+            frequency: 40.MHz(),
+            mode: SpiMode::Mode2,
+            ..spiConfig::default()
+        },
+    )
+    .with_sck(peripherals.GPIO8)
+    .with_mosi(peripherals.GPIO7);
     let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, NoCs);
-
-    let di = SPIInterface::new(spi_device, Output::new(io.pins.gpio9, Level::Low));
+    let di = SPIInterface::new(spi_device, Output::new(peripherals.GPIO9, Level::Low));
     let mut display = mipidsi::Builder::new(ST7789, di)
         .display_size(240, 280)
         .display_offset(0, 20) // 240*280 panel
         .invert_colors(ColorInversion::Inverted)
-        .reset_pin(Output::new(io.pins.gpio6, Level::Low))
+        .reset_pin(Output::new(peripherals.GPIO6, Level::Low))
         .init(&mut delay)
         .unwrap();
     graphics::error_print(&mut display, panic_buf.as_str());
