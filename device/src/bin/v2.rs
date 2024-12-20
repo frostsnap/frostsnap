@@ -67,13 +67,12 @@ use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
 #[entry]
 fn main() -> ! {
+    esp_alloc::heap_allocator!(256 * 1024);
     let peripherals = esp_hal::init({
         let mut config = esp_hal::Config::default();
         config.cpu_clock = CpuClock::max();
         config
     });
-    esp_alloc::heap_allocator!(256 * 1024);
-
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let timg1 = TimerGroup::new(peripherals.TIMG1);
     let timer0 = timg0.timer0;
@@ -408,7 +407,7 @@ where
 
         #[cfg(feature = "mem_debug")]
         self.display
-            .set_mem_debug(ALLOCATOR.used(), ALLOCATOR.free());
+            .set_mem_debug(esp_alloc::HEAP.used(), esp_alloc::HEAP.free());
 
         self.display.flush();
     }
