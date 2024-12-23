@@ -6,9 +6,7 @@ import 'package:frostsnapp/wallet_send.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/stream_ext.dart';
-import 'package:frostsnapp/theme.dart';
 import 'package:url_launcher/url_launcher.dart';
-
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class WalletContext extends InheritedWidget {
@@ -108,11 +106,8 @@ class WalletHome extends StatelessWidget {
 
     return Scaffold(
       extendBody: true,
-      backgroundColor: theme.colorScheme.secondary,
-      appBar: FsAppBar(
-        title: Text(walletCtx.walletName),
-        backgroundColor: theme.colorScheme.surface,
-      ),
+      backgroundColor: theme.colorScheme.surfaceContainer,
+      appBar: FsAppBar(title: Text(walletCtx.walletName)),
       body: TxList(),
       resizeToAvoidBottomInset: true,
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
@@ -211,8 +206,8 @@ class _FloatingProgress extends State<FloatingProgress>
           duration: _progressFadeController.duration!,
           child: LinearProgressIndicator(
             value: progress,
-            backgroundColor: backgroundSecondaryColor,
-            valueColor: AlwaysStoppedAnimation<Color>(textPrimaryColor),
+            //backgroundColor: backgroundSecondaryColor,
+            //valueColor: AlwaysStoppedAnimation<Color>(textPrimaryColor),
           ),
         ),
       ),
@@ -301,8 +296,7 @@ class TxItem extends StatelessWidget {
                       timeText,
                       softWrap: false,
                       overflow: TextOverflow.fade,
-                      style: theme.textTheme.titleSmall
-                          ?.copyWith(color: Colors.white38),
+                      style: theme.textTheme.bodyMedium,
                     ),
                   ],
                 ),
@@ -326,8 +320,8 @@ class TxItem extends StatelessWidget {
                       softWrap: false,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.sourceCodePro(
-                          textStyle: theme.textTheme.titleSmall
-                              ?.copyWith(color: Colors.white38)),
+                        textStyle: theme.textTheme.bodyMedium,
+                      ),
                     ),
                   ],
                 ),
@@ -419,16 +413,22 @@ class TxItem extends StatelessWidget {
 }
 
 class TxList extends StatelessWidget {
-  const TxList({super.key});
+  final ScrollController? scrollController;
+
+  const TxList({super.key, this.scrollController});
 
   @override
   Widget build(BuildContext context) {
     final walletContext = WalletContext.of(context)!;
+    final scrollController = this.scrollController ?? ScrollController();
 
     return CustomScrollView(
+      controller: scrollController,
       slivers: <Widget>[
         SliverToBoxAdapter(
-          child: UpdatingBalance(txStream: walletContext.txStream),
+          child: UpdatingBalance(
+              txStream: walletContext.txStream,
+              scrollController: scrollController),
         ),
         SliverSafeArea(
           sliver: StreamBuilder(
@@ -449,24 +449,93 @@ class TxList extends StatelessWidget {
   }
 }
 
-class UpdatingBalance extends StatelessWidget {
+class UpdatingBalance extends StatefulWidget {
+  final ScrollController? scrollController;
   final Stream<TxState> txStream;
 
-  const UpdatingBalance({Key? key, required this.txStream}) : super(key: key);
+  const UpdatingBalance(
+      {Key? key, required this.txStream, this.scrollController})
+      : super(key: key);
+
+  @override
+  State<UpdatingBalance> createState() => _UpdatingBalanceState();
+}
+
+class _UpdatingBalanceState extends State<UpdatingBalance> {
+  int pendingIncomingBalance = 0;
+  int avaliableBalance = 0;
+  bool scrollPosAtTop = true;
+  double opacity = 1.0;
+
+  @override
+  void initState() {
+    super.initState();
+
+    widget.txStream.listen((txState) {
+      var pendingIncomingBalance = 0;
+      var avaliableBalance = 0;
+      for (final tx in txState.txs) {
+        if (tx.confirmationTime == null && tx.netValue > 0) {
+          pendingIncomingBalance += tx.netValue;
+        } else {
+          avaliableBalance += tx.netValue;
+        }
+      }
+      if (avaliableBalance < 0) {
+        pendingIncomingBalance += avaliableBalance;
+        avaliableBalance = 0;
+      }
+      setState(() {
+        this.pendingIncomingBalance = pendingIncomingBalance;
+        this.avaliableBalance = avaliableBalance;
+      });
+    });
+
+    widget.scrollController?.addListener(() {
+      if (widget.scrollController == null) return;
+
+      final controller = widget.scrollController!;
+      if (scrollPosAtTop) {
+        if (controller.offset != 0.0) {
+          setState(() => scrollPosAtTop = false);
+        }
+      } else {
+        if (controller.offset == 0.0) {
+          setState(() => scrollPosAtTop = true);
+        }
+      }
+
+      const maxOpacityOffset = 32.0;
+      if (controller.offset <= maxOpacityOffset) {
+        setState(() {
+          opacity = (maxOpacityOffset - controller.offset) / maxOpacityOffset;
+        });
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final balanceTextStyle = DefaultTextStyle.of(context)
         .style
         .copyWith(fontSize: 36.0, fontWeight: FontWeight.w600);
     final padding = EdgeInsets.all(24.0).copyWith(top: 16.0);
 
+    final backgroundColor = ElevationOverlay.applySurfaceTint(
+      scrollPosAtTop
+          ? theme.colorScheme.surface
+          : theme.colorScheme.surfaceContainer,
+      theme.colorScheme.surfaceTint,
+      scrollPosAtTop ? 0 : theme.appBarTheme.elevation ?? 3.0,
+    );
+
     final separatorContainer = Container(
       width: double.infinity,
       height: 16.0,
-      color: Theme.of(context).colorScheme.surface,
+      color: backgroundColor,
       foregroundDecoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.secondary,
+        color: theme.colorScheme.surfaceContainer,
         borderRadius: BorderRadius.only(
           topLeft: Radius.circular(16),
           topRight: Radius.circular(16),
@@ -474,63 +543,38 @@ class UpdatingBalance extends StatelessWidget {
       ),
     );
 
-    final textColumn = StreamBuilder<TxState>(
-      stream: txStream,
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Text('Error: ${snapshot.error}', style: balanceTextStyle);
-        }
-        final transactions = snapshot.data?.txs ?? [];
-
-        var pendingIncomingBalance = 0;
-        var avaliableBalance = 0;
-        for (final tx in transactions) {
-          if (tx.confirmationTime == null && tx.netValue > 0) {
-            pendingIncomingBalance += tx.netValue;
-          } else {
-            avaliableBalance += tx.netValue;
-          }
-        }
-        if (avaliableBalance < 0) {
-          pendingIncomingBalance += avaliableBalance;
-          avaliableBalance = 0;
-        }
-
-        return Column(
-          spacing: 8.0,
-          children: [
-            SatoshiText(
-              value: avaliableBalance,
-              style: balanceTextStyle,
-              letterSpacingReductionFactor: 0.02,
-            ),
-            pendingIncomingBalance == 0
-                ? SizedBox.shrink()
-                : Row(
-                    mainAxisSize: MainAxisSize.min,
-                    spacing: 4.0,
-                    children: [
-                      Icon(Icons.hourglass_top, size: 12.0),
-                      SatoshiText(
-                        value: pendingIncomingBalance,
-                        showSign: true,
-                      ),
-                    ],
-                  ),
-          ],
-        );
-      },
+    final textColumn = Column(
+      spacing: 8.0,
+      children: [
+        SatoshiText(
+          value: avaliableBalance,
+          style: balanceTextStyle,
+          letterSpacingReductionFactor: 0.02,
+        ),
+        if (pendingIncomingBalance > 0)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            spacing: 4.0,
+            children: [
+              Icon(Icons.hourglass_top, size: 12.0),
+              SatoshiText(
+                value: pendingIncomingBalance,
+                showSign: true,
+              ),
+            ],
+          ),
+      ],
     );
 
     return Column(children: [
       Container(
         padding: padding,
-        color: Theme.of(context).colorScheme.surface,
+        color: backgroundColor,
         child: Row(
           mainAxisSize: MainAxisSize.max,
           children: [
             Expanded(
-              child: textColumn,
+              child: Opacity(opacity: opacity, child: textColumn),
             )
           ],
         ),

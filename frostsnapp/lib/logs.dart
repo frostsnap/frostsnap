@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:frostsnapp/theme.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class LogPane extends StatefulWidget {
   final Stream<String> logStream;
@@ -56,7 +56,7 @@ class _LogPane extends State<LogPane> {
               text: sections.sublist(0, 2).join(" "),
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                color: _getLevelColor(sections[1]),
+                color: _getLevelColor(context, sections[1]),
               ),
             ),
             TextSpan(
@@ -70,6 +70,7 @@ class _LogPane extends State<LogPane> {
       }
     }).toList();
 
+    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -79,9 +80,10 @@ class _LogPane extends State<LogPane> {
               width: double.infinity,
               padding: EdgeInsets.all(8.0),
               decoration: BoxDecoration(
-                color: backgroundSecondaryColor,
+                color: theme.colorScheme.surfaceContainer,
                 borderRadius: BorderRadius.circular(4.0),
-                border: Border.all(color: textSecondaryColor),
+                border: Border.all(
+                    color: theme.colorScheme.surfaceContainerHighest),
               ),
               child: SingleChildScrollView(
                 controller: _scrollController,
@@ -89,10 +91,7 @@ class _LogPane extends State<LogPane> {
                   TextSpan(
                     children: logSpans,
                   ),
-                  style: TextStyle(
-                    fontFamily: 'Courier',
-                    color: textPrimaryColor,
-                  ),
+                  style: GoogleFonts.sourceCodePro(),
                   dragStartBehavior: DragStartBehavior.down,
                 ),
               ),
@@ -118,18 +117,20 @@ class _LogPane extends State<LogPane> {
     );
   }
 
-  Color _getLevelColor(String level) {
+  Color _getLevelColor(BuildContext context, String level) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     switch (level.toUpperCase()) {
       case 'ERROR':
-        return errorColor;
+        return colorScheme.error;
       case 'DEBUG':
-        return uninterestedColor;
+        return colorScheme.secondary;
       case 'INFO':
-        return awaitingColor;
+        return colorScheme.primary;
       case 'WARNING':
-        return awaitingColor;
+        return colorScheme.primary;
       default:
-        return textPrimaryColor;
+        return colorScheme.onSurface;
     }
   }
 }

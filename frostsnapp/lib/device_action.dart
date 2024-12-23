@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 
-import 'package:frostsnapp/theme.dart';
-
 Future<T?> showDeviceActionDialog<T>({
   required BuildContext context,
   required Widget Function(BuildContext) builder,
@@ -26,6 +24,7 @@ Future<T?> showDeviceActionDialog<T>({
     }
   });
 
+  final theme = Theme.of(context);
   final result = await showModalBottomSheet<T>(
     context: context,
     isScrollControlled: true,
@@ -40,11 +39,10 @@ Future<T?> showDeviceActionDialog<T>({
             Container(
               padding: EdgeInsets.only(right: 24, left: 24, top: 3),
               decoration: BoxDecoration(
-                color: backgroundPrimaryColor,
+                color: theme.colorScheme.surfaceContainer,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
                 boxShadow: const [
                   BoxShadow(
-                    color: shadowColor,
                     blurRadius: 10,
                     offset: Offset(0, -2),
                   ),
@@ -91,10 +89,11 @@ class DialogHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Container(
         width: double.infinity,
         decoration: BoxDecoration(
-          color: backgroundPrimaryColor,
+          color: theme.colorScheme.surfaceContainer,
           border: Border(
             bottom: BorderSide(
               color: Theme.of(context).dividerColor, // Color of the divider
@@ -108,7 +107,7 @@ class DialogHeader extends StatelessWidget {
             style: TextStyle(
               fontSize: 18.0,
               fontWeight: FontWeight.normal,
-              color: textPrimaryColor,
+              //color: textPrimaryColor,
             ),
             child: Align(alignment: Alignment.topCenter, child: child)));
   }
@@ -121,10 +120,12 @@ class DialogFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Container(
         width: double.infinity,
         decoration: BoxDecoration(
-          color: backgroundPrimaryColor, // Background color of the header
+          color: theme
+              .colorScheme.surfaceContainer, // Background color of the header
           border: Border(
             top: BorderSide(
               color: Theme.of(context).dividerColor, // Color of the divider

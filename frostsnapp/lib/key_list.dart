@@ -4,7 +4,6 @@ import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/keygen.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/stream_ext.dart';
-import 'package:frostsnapp/theme.dart';
 import 'package:frostsnapp/wallet.dart';
 import 'package:collection/collection.dart';
 import 'package:frostsnapp/wallet_send.dart';
@@ -136,9 +135,7 @@ class _KeyCard extends State<KeyCard> {
         widget.bitcoinNetwork ?? BitcoinNetwork.signet(bridge: api);
     final settingsCtx = SettingsContext.of(context)!;
     final settings = settingsCtx.settings;
-    final signButton = FilledButton(
-        style:
-            FilledButton.styleFrom(backgroundColor: theme.colorScheme.surface),
+    final signButton = TextButton(
         onPressed: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) {
             return SignMessagePage(frostKey: widget.frostKey);
@@ -146,8 +143,7 @@ class _KeyCard extends State<KeyCard> {
         },
         child: Text("Sign"));
 
-    final Widget walletButton = FilledButton(
-      style: FilledButton.styleFrom(backgroundColor: theme.colorScheme.surface),
+    final Widget walletButton = TextButton(
       onPressed: () async {
         final wallet = await settings.loadWallet(network: bitcoinNetwork);
         if (context.mounted) {
@@ -173,8 +169,6 @@ class _KeyCard extends State<KeyCard> {
 
     if (restorableSignSession != null) {
       continueSigning = FilledButton(
-          style: FilledButton.styleFrom(
-              backgroundColor: theme.colorScheme.surface),
           onPressed: () async {
             final signingStream = coord
                 .tryRestoreSigningSession(keyId: widget.frostKey.keyId())
@@ -214,8 +208,8 @@ class _KeyCard extends State<KeyCard> {
 
     final threshold = widget.frostKey.accessStructures()[0].threshold();
 
-    return Card(
-      color: backgroundSecondaryColor,
+    return Card.filled(
+      color: theme.colorScheme.surfaceContainer,
       child: Padding(
         padding: const EdgeInsets.all(8.0),
         child: Column(
@@ -230,8 +224,10 @@ class _KeyCard extends State<KeyCard> {
                   fontFamily: 'Monospace'),
             ),
             const SizedBox(height: 8),
-            Text("Threshold: $threshold",
-                style: TextStyle(color: textSecondaryColor)),
+            Text(
+              "Threshold: $threshold",
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
             Row(mainAxisAlignment: MainAxisAlignment.center, children: [
               signButton,
               const SizedBox(width: 5),

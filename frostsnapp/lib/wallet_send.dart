@@ -25,7 +25,7 @@ class WalletSendPage extends StatelessWidget {
                 return route is MaterialPageRoute &&
                     route.builder(context) is WalletPage;
               })),
-      backgroundColor: theme.colorScheme.secondary,
+      backgroundColor: theme.colorScheme.surfaceContainer,
     );
   }
 }

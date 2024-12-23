@@ -7,7 +7,7 @@ import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/hex.dart';
 import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/stream_ext.dart';
-import 'package:frostsnapp/theme.dart';
+import 'package:frostsnapp/progress_indicator.dart';
 import 'package:frostsnapp/wallet.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
@@ -68,7 +68,8 @@ class AddressPage extends StatelessWidget {
     final walletCtx = WalletContext.of(context)!;
     final derivationPath = walletCtx.wallet.derivationPathForAddress(
         index: address.index, external: address.external);
-    final textColor = Theme.of(context).colorScheme.onSurface;
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
 
     return Scaffold(
       appBar: AppBar(
@@ -84,21 +85,18 @@ class AddressPage extends StatelessWidget {
                   children: [
                     Text(
                       "Address",
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: textColor,
-                      ),
+                      style: textTheme.titleMedium,
                     ),
                     Text(
                       "Derivation path: $derivationPath",
-                      style: TextStyle(color: textSecondaryColor),
+                      style: textTheme.bodySmall,
                     ),
                     SizedBox(height: 16),
                     GestureDetector(
                       child: chunkedAddressFormat(address.addressString,
-                          backgroundColor: backgroundSecondaryColor,
-                          textColor: textColor),
+                          backgroundColor:
+                              theme.colorScheme.surfaceContainerLow,
+                          textColor: theme.colorScheme.onSurface),
                       onTap: () {
                         copyToClipboard(context, address.addressString);
                       },
@@ -215,7 +213,8 @@ class VerifyAddressProgress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textColor = Theme.of(context).colorScheme.onSurface;
+    final theme = Theme.of(context);
+
     return StreamBuilder<DeviceListState>(
       stream: deviceListSubject.map((update) => update.state),
       builder: (context, deviceListSnapshot) {
@@ -246,11 +245,11 @@ class VerifyAddressProgress extends StatelessWidget {
 
                 Widget icon;
                 if (devicesPluggedIn.contains(id)) {
-                  icon =
-                      Icon(Icons.policy, color: awaitingColor, size: iconSize);
+                  icon = Icon(Icons.policy,
+                      color: theme.colorScheme.primaryFixed, size: iconSize);
                 } else {
                   icon = Icon(Icons.circle_outlined,
-                      color: textColor, size: iconSize);
+                      color: theme.colorScheme.onSurface, size: iconSize);
                 }
 
                 return ListTile(

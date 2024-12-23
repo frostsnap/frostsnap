@@ -9,7 +9,6 @@ import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/stream_ext.dart';
-import 'package:frostsnapp/theme.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'hex.dart';
 
@@ -250,6 +249,7 @@ class DeviceSigningProgress extends StatelessWidget {
     return StreamBuilder(
         stream: deviceListSubject.map((update) => update.state),
         builder: (context, snapshot) {
+          final theme = Theme.of(context);
           if (!snapshot.hasData) {
             return CircularProgressIndicator();
           }
@@ -275,10 +275,10 @@ class DeviceSigningProgress extends StatelessWidget {
                         icon = AnimatedCheckCircle();
                       } else if (devicesPluggedIn.contains(id)) {
                         icon = Icon(Icons.touch_app,
-                            color: awaitingColor, size: iconSize);
+                            color: theme.colorScheme.secondary, size: iconSize);
                       } else {
                         icon = Icon(Icons.circle_outlined,
-                            color: textPrimaryColor, size: iconSize);
+                            color: theme.colorScheme.onSurface, size: iconSize);
                       }
                       return ListTile(
                         title: Text(name ?? "<unknown>"),

@@ -8,8 +8,8 @@ import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/theme.dart';
 import 'package:frostsnapp/hex.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 Future<void> doBackupWorkflow(BuildContext context,
     {required List<DeviceId> devices,
@@ -109,20 +109,14 @@ Future<void> showBackupInstructionsDialog(
                           text: ']',
                         ),
                       ],
-                      style: TextStyle(
-                          fontFamily: 'Courier',
-                          color: textSecondaryColor,
-                          fontSize: 20),
+                      style: GoogleFonts.sourceCodePro(),
                     )),
                   ),
                   Center(
                     child: Text(
                       "xxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xx",
-                      style: TextStyle(
-                          fontFamily: 'Courier',
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: textSecondaryColor),
+                      style: GoogleFonts.sourceCodePro(
+                          textStyle: Theme.of(context).textTheme.titleMedium),
                     ),
                   ),
                   Center(

@@ -152,8 +152,11 @@ class _WalletReceivePageState extends State<WalletReceivePage> {
     }
 
     return Card.filled(
-      color:
-          address.used ? theme.colorScheme.surface : theme.colorScheme.tertiary,
+      color: ElevationOverlay.applySurfaceTint(
+        theme.colorScheme.surface,
+        theme.colorScheme.surfaceTint,
+        address.used ? 0.0 : 6.0,
+      ),
       child: ListTile(
         isThreeLine: true,
         shape:
