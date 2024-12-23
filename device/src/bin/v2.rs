@@ -349,10 +349,11 @@ where
                         firmware_digest, ..
                     } => self
                         .display
-                        .print(format!("confirm firmware switch to: \n{firmware_digest}")),
+                        .print(format!("Confirm firmware switch to: \n{firmware_digest}")),
                     Prompt::ConfirmLoadBackup(share_backup) => self
                         .display
                         .show_backup(share_backup.to_bech32_backup(), false),
+                    Prompt::WipeDevice => self.display.wipe_data_warning(),
                 }
                 if let Some(completion) = animation.completion() {
                     self.display.confirm_bar(completion);
@@ -521,6 +522,7 @@ where
                                 Prompt::ConfirmLoadBackup(secret_share) => {
                                     UiEvent::EnteredShareBackupConfirm(*secret_share)
                                 }
+                                Prompt::WipeDevice => UiEvent::WipeDataConfirm,
                             };
                             event = Some(ui_event);
                         }
