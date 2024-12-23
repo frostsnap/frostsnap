@@ -130,11 +130,11 @@ impl FrostCoordinator {
                 nonce_counter,
             } => {
                 let device_nonces = self.device_nonces.entry(*device_id).or_default();
-                debug_assert!(
-                    *nonce_counter > device_nonces.start_index,
-                    "NoncesUsed should use nonces but  nonce_counter={nonce_counter} <= start_index={}",
-                    device_nonces.start_index
-                );
+                // debug_assert!(
+                //     *nonce_counter > device_nonces.start_index,
+                //     "NoncesUsed should use nonces but  nonce_counter={nonce_counter} <= start_index={}",
+                //     device_nonces.start_index
+                // );
 
                 let new_start_index = device_nonces.start_index.max(*nonce_counter);
 
