@@ -201,7 +201,7 @@ where
 
     pub fn upstream_state(&mut self, connection_state: UpstreamConnectionState) {
         let color = match connection_state {
-            UpstreamConnectionState::Connected => COLORS.secondary,
+            UpstreamConnectionState::PowerOn => COLORS.secondary,
             UpstreamConnectionState::Established
             | UpstreamConnectionState::EstablishedAndCoordAck => COLORS.success,
         };
@@ -213,7 +213,7 @@ where
 
         let circle = Circle::with_center(Point::new(50, 13), 10);
         let color = match connection_state {
-            UpstreamConnectionState::Connected => COLORS.secondary,
+            UpstreamConnectionState::PowerOn => COLORS.secondary,
             UpstreamConnectionState::Established => COLORS.warning,
             UpstreamConnectionState::EstablishedAndCoordAck => COLORS.success,
         };
