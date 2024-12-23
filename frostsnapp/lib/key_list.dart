@@ -4,9 +4,9 @@ import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/keygen.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/stream_ext.dart';
-import 'package:frostsnapp/theme.dart';
 import 'package:frostsnapp/wallet.dart';
 import 'package:collection/collection.dart';
+import 'package:frostsnapp/wallet_send.dart';
 
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'package:flutter/material.dart';
@@ -32,7 +32,7 @@ class KeyList extends StatelessWidget {
       return value;
     });
 
-    final showDevicesButton = ElevatedButton(
+    final showDevicesButton = FilledButton(
         onPressed: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) {
             return DeviceSettingsPage();
@@ -85,7 +85,7 @@ class KeyList extends StatelessWidget {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    ElevatedButton(
+                    FilledButton(
                       child: const Text("New key"),
                       onPressed: () async {
                         final newId = await Navigator.push(context,
@@ -130,11 +130,12 @@ class _KeyCard extends State<KeyCard> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final bitcoinNetwork =
         widget.bitcoinNetwork ?? BitcoinNetwork.signet(bridge: api);
     final settingsCtx = SettingsContext.of(context)!;
     final settings = settingsCtx.settings;
-    final signButton = ElevatedButton(
+    final signButton = TextButton(
         onPressed: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) {
             return SignMessagePage(frostKey: widget.frostKey);
@@ -142,34 +143,32 @@ class _KeyCard extends State<KeyCard> {
         },
         child: Text("Sign"));
 
-    final Widget walletButton = ElevatedButton(
+    final Widget walletButton = TextButton(
       onPressed: () async {
         final wallet = await settings.loadWallet(network: bitcoinNetwork);
         if (context.mounted) {
           Navigator.push(context, MaterialPageRoute(builder: (context) {
             return WalletPage(
-                masterAppkey: widget.frostKey.masterAppkey(), wallet: wallet);
+                masterAppkey: widget.frostKey.masterAppkey(),
+                walletName: widget.frostKey.keyName(),
+                wallet: wallet);
           }));
         }
       },
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text("₿"),
-          if (!bitcoinNetwork.isMainnet())
-            Text(
-              bitcoinNetwork.name(),
-              style:
-                  TextStyle(fontSize: 12, color: Colors.red), // Custom styling
-            ),
-        ],
+      child: Badge(
+        label: Text(bitcoinNetwork.name()),
+        isLabelVisible: !bitcoinNetwork.isMainnet(),
+        alignment: AlignmentDirectional.bottomEnd,
+        textColor: theme.colorScheme.error,
+        backgroundColor: theme.colorScheme.surface,
+        child: Icon(Icons.currency_bitcoin),
       ),
     );
 
     final Widget continueSigning;
 
     if (restorableSignSession != null) {
-      continueSigning = ElevatedButton(
+      continueSigning = FilledButton(
           onPressed: () async {
             final signingStream = coord
                 .tryRestoreSigningSession(keyId: widget.frostKey.keyId())
@@ -209,8 +208,8 @@ class _KeyCard extends State<KeyCard> {
 
     final threshold = widget.frostKey.accessStructures()[0].threshold();
 
-    return Card(
-      color: backgroundSecondaryColor,
+    return Card.filled(
+      color: theme.colorScheme.surfaceContainer,
       child: Padding(
         padding: const EdgeInsets.all(8.0),
         child: Column(
@@ -225,8 +224,10 @@ class _KeyCard extends State<KeyCard> {
                   fontFamily: 'Monospace'),
             ),
             const SizedBox(height: 8),
-            Text("Threshold: $threshold",
-                style: TextStyle(color: textSecondaryColor)),
+            Text(
+              "Threshold: $threshold",
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
             Row(mainAxisAlignment: MainAxisAlignment.center, children: [
               signButton,
               const SizedBox(width: 5),
