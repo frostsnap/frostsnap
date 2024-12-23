@@ -1,11 +1,11 @@
 use frostsnap_core::device::DeviceSymmetricKeyGen;
 use frostsnap_core::message::{
-    CoordinatorSend, CoordinatorToDeviceMessage, CoordinatorToUserKeyGenMessage,
-    CoordinatorToUserMessage, DeviceSend, DeviceToCoordinatorMessage, DeviceToUserMessage,
+    CoordinatorToDeviceMessage, CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage,
+    DeviceSend, DeviceToCoordinatorMessage, DeviceToUserMessage,
 };
-use frostsnap_core::{coordinator, device, MessageResult};
+use frostsnap_core::MessageResult;
 use frostsnap_core::{
-    coordinator::{FrostCoordinator, SigningSessionState},
+    coordinator::{CoordinatorSend, FrostCoordinator, SigningSessionState},
     device::FrostSigner,
     DeviceId, SymmetricKey,
 };
@@ -140,19 +140,6 @@ pub trait Env {
             _ => { /* do nothing */ }
         }
     }
-    fn storage_react_to_device_mutation(
-        &mut self,
-        run: &mut Run,
-        from: DeviceId,
-        mutation: device::Mutation,
-    ) {
-    }
-    fn storage_react_to_coordinator_mutation(
-        &mut self,
-        run: &mut Run,
-        message: coordinator::Mutation,
-    ) {
-    }
     fn sign_session_state_react_to_coordinator(
         &mut self,
         run: &mut Run,
@@ -170,6 +157,8 @@ pub struct Run {
     pub devices: BTreeMap<DeviceId, FrostSigner>,
     pub message_queue: VecDeque<Send>,
     pub transcript: Vec<Send>,
+    pub start_coordinator: FrostCoordinator,
+    pub start_devices: BTreeMap<DeviceId, FrostSigner>,
 }
 
 impl Run {
@@ -186,11 +175,19 @@ impl Run {
     }
     pub fn new(coordinator: FrostCoordinator, devices: BTreeMap<DeviceId, FrostSigner>) -> Self {
         Self {
+            start_coordinator: coordinator.clone(),
+            start_devices: devices.clone(),
             coordinator,
             devices,
             message_queue: Default::default(),
             transcript: Default::default(),
         }
+    }
+
+    #[allow(unused)]
+    pub fn replace_coordiantor(&mut self, coordinator: FrostCoordinator) {
+        self.coordinator = coordinator.clone();
+        self.start_coordinator = coordinator;
     }
 
     pub fn device_set(&self) -> BTreeSet<DeviceId> {
@@ -271,22 +268,46 @@ impl Run {
                     env.sign_session_state_react_to_coordinator(self, signing_session_state);
                 }
             }
-
-            for mutation in self.coordinator.take_staged_mutations() {
-                env.storage_react_to_coordinator_mutation(self, mutation);
-            }
-
-            let mut devices = core::mem::take(&mut self.devices);
-
-            for (device_id, device) in &mut devices {
-                for mutation in device.staged_mutations().drain(..) {
-                    env.storage_react_to_device_mutation(self, *device_id, mutation);
-                }
-            }
-
-            self.devices = devices;
         }
 
         Ok(())
+    }
+
+    pub fn check_mutations(&mut self) {
+        let mutations = self.coordinator.take_staged_mutations();
+
+        for mutation in mutations {
+            self.start_coordinator.apply_mutation(&mutation);
+        }
+        assert_eq!(
+            self.start_coordinator,
+            {
+                let mut tmp = self.coordinator.clone();
+                tmp.cancel();
+                tmp
+            },
+            "coordinator should be the same after applying mutations"
+        );
+
+        for (device_id, device) in &mut self.devices {
+            let mut device = device.clone();
+            let _ = device.cancel_action();
+            let mutations = device.staged_mutations().drain(..);
+            let start_device = self.start_devices.get_mut(device_id).unwrap();
+            for mutation in mutations {
+                start_device.apply_mutation(&mutation);
+            }
+
+            assert_eq!(
+                *start_device, device,
+                "device should be the same after applying mutations"
+            );
+        }
+    }
+}
+
+impl Drop for Run {
+    fn drop(&mut self) {
+        self.check_mutations();
     }
 }

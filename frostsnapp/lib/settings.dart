@@ -4,9 +4,13 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnapp/address.dart';
+import 'package:frostsnapp/access_structures.dart';
+import 'package:frostsnapp/bullet_list.dart';
+import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/electrum_server_settings.dart';
+import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/logs.dart';
-import 'package:frostsnapp/main.dart';
+import 'package:frostsnapp/theme.dart';
 import 'package:frostsnapp/todo.dart';
 import 'package:frostsnapp/wallet.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
@@ -16,7 +20,6 @@ import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class SettingsContext extends InheritedWidget {
   final Settings settings;
-  late final Stream<WalletSettings> walletSettings;
   late final Stream<DeveloperSettings> developerSettings;
   late final Stream<ElectrumSettings> electrumSettings;
   late final List<(BitcoinNetwork, Stream<ChainStatus>)> chainStatuses;
@@ -24,9 +27,8 @@ class SettingsContext extends InheritedWidget {
   SettingsContext({
     super.key,
     required this.settings,
-    required Widget child,
-  }) : super(child: child) {
-    walletSettings = settings.subWalletSettings().toBehaviorSubject();
+    required super.child,
+  }) {
     developerSettings = settings.subDeveloperSettings().toBehaviorSubject();
     electrumSettings = settings.subElectrumSettings().toBehaviorSubject();
     chainStatuses = [];
@@ -34,7 +36,7 @@ class SettingsContext extends InheritedWidget {
 
   static SettingsContext? of(BuildContext context) {
     //
-    return context.dependOnInheritedWidgetOfExactType<SettingsContext>();
+    return context.getInheritedWidgetOfExactType<SettingsContext>();
   }
 
   @override
@@ -56,16 +58,33 @@ class SettingsContext extends InheritedWidget {
 
     return stream;
   }
+
+  Wallet? loadWallet({required KeyId keyId}) {
+    final frostKey = coord.getFrostKey(keyId: keyId);
+    if (frostKey == null) {
+      return null;
+    }
+    final masterAppkey = frostKey.masterAppkey();
+    if (masterAppkey == null) {
+      return null;
+    }
+    final network = frostKey.bitcoinNetwork();
+    if (network == null) {
+      return null;
+    }
+    final superWallet = settings.getSuperWallet(network: network);
+    return Wallet(superWallet: superWallet, masterAppkey: masterAppkey);
+  }
 }
 
 class SettingsPage extends StatelessWidget {
-  final WalletContext? walletContext;
-
-  const SettingsPage({super.key, required this.walletContext});
+  const SettingsPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final logContext = FrostsnapContext.of(context);
+    final walletCtx = WalletContext.of(context);
+    final keyCtx = KeyContext.of(context);
+    final logCtx = FrostsnapContext.of(context);
     return Scaffold(
       appBar: AppBar(
         title: Text('Settings'),
@@ -76,32 +95,53 @@ class SettingsPage extends StatelessWidget {
               child: ListView(
                 padding: const EdgeInsets.all(16.0),
                 children: [
-                  if (walletContext != null)
+                  if (walletCtx != null || keyCtx != null)
                     SettingsCategory(title: "Wallet", items: [
+                      if (walletCtx != null)
+                        SettingsItem(
+                            title: Text('External wallet'),
+                            icon: Icons.qr_code,
+                            bodyBuilder: (context) {
+                              final wallet = walletCtx.wallet;
+                              return ExportDescriptorPage(
+                                  walletDescriptor: walletCtx.network
+                                      .descriptorForKey(
+                                          masterAppkey: wallet.masterAppkey));
+                            }),
                       SettingsItem(
-                          title: 'External wallet',
-                          icon: Icons.qr_code,
+                          title: Text("Access"),
+                          icon: Icons.security,
                           bodyBuilder: (context) {
-                            return ExportDescriptorPage(
-                                walletDescriptor: walletContext!.wallet.network
-                                    .descriptorForKey(
-                                        masterAppkey:
-                                            walletContext!.masterAppkey));
+                            return AccessPage();
                           }),
                       SettingsItem(
-                          title: 'Check address',
+                          title: Text('Check address'),
                           icon: Icons.policy,
                           bodyBuilder: (context) {
-                            return CheckAddressPage(
-                              walletContext: walletContext!,
-                            );
+                            return CheckAddressPage();
                           }),
+                      if (keyCtx != null)
+                        SettingsItem(
+                            title: Text(
+                                walletCtx == null
+                                    ? "Cancel recovery"
+                                    : "Delete wallet",
+                                style: TextStyle(color: Colors.redAccent)),
+                            icon: Icons.delete_forever,
+                            bodyBuilder: (context) {
+                              return DeleteWalletPage();
+                            },
+                            onClose: () {
+                              if (context.mounted) {
+                                Navigator.pop(context);
+                              }
+                            }),
                     ]),
                   SettingsCategory(
                     title: 'General',
                     items: [
                       SettingsItem(
-                        title: 'Theme',
+                        title: Text('Theme'),
                         icon: Icons.color_lens,
                         bodyBuilder: (context) {
                           return Todo(
@@ -109,7 +149,7 @@ class SettingsPage extends StatelessWidget {
                         },
                       ),
                       SettingsItem(
-                        title: 'Electrum server',
+                        title: Text('Electrum server'),
                         icon: Icons.cloud,
                         bodyBuilder: (context) {
                           return ElectrumServerSettingsPage();
@@ -118,15 +158,15 @@ class SettingsPage extends StatelessWidget {
                     ],
                   ),
                   SettingsCategory(title: 'Advanced', items: [
-                    if (logContext != null)
+                    if (logCtx != null)
                       SettingsItem(
-                          title: "Logs",
+                          title: Text("Logs"),
                           icon: Icons.list_alt,
                           bodyBuilder: (context) {
-                            return LogPane(logStream: logContext.logStream);
+                            return LogPane(logStream: logCtx.logStream);
                           }),
                     SettingsItem(
-                        title: "Developer mode",
+                        title: Text("Developer mode"),
                         icon: Icons.developer_mode,
                         builder: (context, title, icon) {
                           final settingsCtx = SettingsContext.of(context)!;
@@ -137,7 +177,7 @@ class SettingsPage extends StatelessWidget {
                                     message:
                                         "enables wallets on Bitcoin test networks",
                                     child: SwitchListTile(
-                                      title: Text(title),
+                                      title: title,
                                       onChanged: (value) async {
                                         await settingsCtx.settings
                                             .setDeveloperMode(value: value);
@@ -170,7 +210,7 @@ class FsAppBar extends StatelessWidget implements PreferredSizeWidget {
         ...actions,
         if (walletCtx != null)
           StreamBuilder(
-              stream: settingsCtx.chainStatusStream(walletCtx.wallet.network),
+              stream: settingsCtx.chainStatusStream(walletCtx.network),
               builder: (context, snap) {
                 if (!snap.hasData) {
                   return SizedBox();
@@ -183,8 +223,11 @@ class FsAppBar extends StatelessWidget implements PreferredSizeWidget {
           onPressed: () {
             Navigator.push(
               context,
-              MaterialPageRoute(
-                  builder: (context) => SettingsPage(walletContext: walletCtx)),
+              MaterialPageRoute(builder: (context) {
+                Widget page = SettingsPage();
+                page = walletCtx?.wrap(page) ?? page;
+                return page;
+              }),
             );
           },
         ),
@@ -219,16 +262,25 @@ class SettingsCategory extends StatelessWidget {
           } else {
             return ListTile(
               leading: Icon(item.icon),
-              title: Text(item.title),
+              title: item.title,
               trailing: Icon(Icons.chevron_right),
-              onTap: () {
-                Navigator.push(
+              onTap: () async {
+                final walletContext = WalletContext.of(context);
+                final keyContext = KeyContext.of(context);
+                await Navigator.push(
                     context,
                     PageRouteBuilder(
                       pageBuilder: (context, animation, secondaryAnimation) {
+                        Widget body =
+                            item.bodyBuilder?.call(context) ?? SizedBox();
+                        if (walletContext != null) {
+                          body = walletContext.wrap(body);
+                        } else if (keyContext != null) {
+                          body = keyContext.wrap(body);
+                        }
                         return Scaffold(
-                          appBar: AppBar(title: Text(item.title)),
-                          body: item.bodyBuilder?.call(context) ?? SizedBox(),
+                          appBar: AppBar(title: item.title),
+                          body: body,
                         );
                       },
                       transitionsBuilder:
@@ -246,6 +298,7 @@ class SettingsCategory extends StatelessWidget {
                         );
                       },
                     ));
+                item.onClose?.call();
               },
             );
           }
@@ -256,14 +309,16 @@ class SettingsCategory extends StatelessWidget {
 }
 
 class SettingsItem {
-  final String title;
+  final Widget title;
   final IconData icon;
   final Function(BuildContext)? bodyBuilder;
-  final Function(BuildContext, String title, IconData icon)? builder;
+  final Function(BuildContext, Widget title, IconData icon)? builder;
+  final Function()? onClose;
 
   SettingsItem(
       {required this.title,
       required this.icon,
+      this.onClose,
       this.bodyBuilder,
       this.builder});
 }
@@ -431,7 +486,7 @@ class ChainStatusIcon extends StatelessWidget {
 
     if (chainStatus.state == ChainStatusState.Connected) {
       onPressed = () {
-        WalletContext.of(context)?.wallet.reconnect();
+        WalletContext.of(context)?.superWallet?.reconnect();
       };
     } else {
       onPressed = null;
@@ -472,5 +527,215 @@ class ChainStatusIcon extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class DeleteWalletPage extends StatelessWidget {
+  const DeleteWalletPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final walletCtx = WalletContext.of(context);
+    final keyId = KeyContext.of(context)!.keyId;
+    final frostKey = coord.getFrostKey(keyId: keyId)!;
+    final walletName = frostKey.keyName();
+
+    return Padding(
+        padding: EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Wallet Name
+            Text(
+              walletCtx != null
+                  ? "DELETE ‘$walletName’?"
+                  : "Cancel recovery of ‘$walletName’?",
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            SizedBox(height: 8),
+
+            if (walletCtx != null)
+              const DefaultTextStyle(
+                  style: TextStyle(fontSize: 24),
+                  child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Balance:',
+                        ),
+                        UpdatingBalance(),
+                      ])),
+            SizedBox(height: 16),
+            DefaultTextStyle(
+                textAlign: TextAlign.left,
+                style: Theme.of(context).textTheme.bodyLarge!,
+                child: BulletList([
+                  walletCtx != null
+                      ? Text('This only deletes the wallet from this app.',
+                          softWrap: true)
+                      : Text('All recovery progress in this app will be lost'),
+                  Text('No secret keys will be deleted from devices',
+                      softWrap: true),
+                  Text(
+                      'The wallet will still be recoverable from the signing devices and/or backups',
+                      softWrap: true),
+                ])),
+            SizedBox(height: 24),
+            // Hold-to-Delete Button
+            Center(
+              child: HoldToDeleteButton(
+                buttonText: Text(
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                    softWrap: true,
+                    textAlign: TextAlign.center,
+                    walletCtx != null
+                        ? "Hold to Delete"
+                        : "Hold to Cancel Recovery"),
+                onComplete: () async {
+                  await coord.deleteKey(keyId: keyId);
+                  if (context.mounted) {
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (context) => AlertDialog(
+                        title: Text('Wallet Deleted'),
+                        content:
+                            Text('The wallet has been successfully deleted.'),
+                        actions: [
+                          TextButton(
+                            onPressed: () {
+                              Navigator.pop(context); // close popup
+                              Navigator.pop(context); // close delete page
+                            },
+                            child: Text('OK'),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                },
+              ),
+            ),
+          ],
+        ));
+  }
+}
+
+class HoldToDeleteButton extends StatefulWidget {
+  final VoidCallback onComplete;
+  final Widget buttonText;
+
+  const HoldToDeleteButton(
+      {super.key,
+      required this.onComplete,
+      this.buttonText = const Text("Hold to Delete")});
+
+  @override
+  State<HoldToDeleteButton> createState() => _HoldToDeleteButtonState();
+}
+
+class _HoldToDeleteButtonState extends State<HoldToDeleteButton> {
+  double _progress = 0.0;
+  Timer? _timer;
+  bool _isPressed = false;
+
+  void _startProgress() {
+    setState(() {
+      _isPressed = true;
+    });
+    const holdDuration = Duration(seconds: 3);
+    const tick = Duration(milliseconds: 50);
+    int ticks = holdDuration.inMilliseconds ~/ tick.inMilliseconds;
+    int currentTick = 0;
+
+    _timer = Timer.periodic(tick, (timer) {
+      setState(() {
+        currentTick++;
+        _progress = currentTick / ticks;
+        if (_progress >= 1.0) {
+          _timer?.cancel();
+          widget.onComplete();
+        }
+      });
+    });
+  }
+
+  void _stopProgress() {
+    _timer?.cancel();
+    setState(() {
+      _isPressed = false;
+      _progress = 0.0;
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => _startProgress(),
+      onTapUp: (_) => _stopProgress(),
+      onTapCancel: () => _stopProgress(),
+      child: AnimatedContainer(
+        duration: Duration(milliseconds: 100),
+        width: 120,
+        height: 120,
+        decoration: BoxDecoration(
+          color:
+              _isPressed ? backgroundSecondaryColor : backgroundTertiaryColor,
+          shape: BoxShape.circle,
+          boxShadow: _isPressed
+              ? []
+              : [
+                  BoxShadow(
+                    color: Colors.black26,
+                    offset: Offset(0, 4),
+                    blurRadius: 4.0,
+                  ),
+                ],
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            SizedBox(
+              width: 120,
+              height: 120,
+              child: CircularProgressIndicator(
+                value: _progress,
+                backgroundColor: backgroundTertiaryColor,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.red),
+              ),
+            ),
+            widget.buttonText,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class AccessPage extends StatelessWidget {
+  const AccessPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final keyCtx = KeyContext.of(context)!;
+    final frostKey = keyCtx.frostKey();
+
+    return Container(
+        padding: EdgeInsets.all(16.0),
+        child: Column(children: [
+          Text(
+            "The ‘${frostKey.keyName()}’ wallet can be spent by:",
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          AccessStructureListWidget(
+            accessStructures: frostKey.accessStructureState().field0,
+          )
+        ]));
   }
 }

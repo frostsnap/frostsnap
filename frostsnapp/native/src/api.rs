@@ -1,4 +1,3 @@
-use crate::device_list::DeviceList;
 pub use crate::ffi_serial_port::{
     PortBytesToReadSender, PortOpenSender, PortReadSender, PortWriteSender,
 };
@@ -15,12 +14,12 @@ use frostsnap_coordinator::bitcoin::chain_sync::{default_electrum_server, SUPPOR
 pub use frostsnap_coordinator::bitcoin::wallet::ConfirmationTime;
 pub use frostsnap_coordinator::bitcoin::{
     chain_sync::{ChainClient, ChainStatus, ChainStatusState},
-    wallet::FrostsnapWallet,
+    wallet::CoordSuperWallet,
 };
 pub use frostsnap_coordinator::firmware_upgrade::FirmwareUpgradeConfirmState;
 pub use frostsnap_coordinator::frostsnap_core;
 use frostsnap_coordinator::frostsnap_core::coordinator::CoordFrostKey;
-use frostsnap_coordinator::frostsnap_core::tweak;
+use frostsnap_coordinator::frostsnap_core::device::KeyPurpose;
 pub use frostsnap_coordinator::verify_address::VerifyAddressProtocolState;
 pub use frostsnap_coordinator::{
     check_share::CheckShareState, keygen::KeyGenState, persist::Persisted, signing::SigningState,
@@ -30,12 +29,12 @@ pub use frostsnap_coordinator::{
 use frostsnap_coordinator::{DesktopSerial, UsbSerialManager};
 pub use frostsnap_core::message::EncodedSignature;
 pub use frostsnap_core::{
-    coordinator::AccessStructureRef, AccessStructureId, DeviceId, KeyId, MasterAppkey, SessionHash,
-    SignTask,
+    AccessStructureId, AccessStructureRef, DeviceId, KeyId, MasterAppkey, SessionHash, SignTask,
 };
 use lazy_static::lazy_static;
 pub use std::collections::BTreeMap;
 pub use std::collections::HashMap;
+use std::collections::HashSet;
 use std::ops::Deref;
 use std::path::Path;
 pub use std::path::PathBuf;
@@ -48,9 +47,6 @@ use tracing_subscriber::layer::SubscriberExt;
 
 lazy_static! {
     static ref PORT_EVENT_STREAM: RwLock<Option<StreamSink<PortEvent>>> = RwLock::default();
-    static ref DEVICE_LIST: Mutex<(DeviceList, Option<StreamSink<DeviceListUpdate>>)> =
-        Default::default();
-    static ref KEY_EVENT_STREAM: Mutex<Option<StreamSink<KeyState>>> = Default::default();
 }
 
 pub fn sub_port_events(event_stream: StreamSink<PortEvent>) {
@@ -58,18 +54,6 @@ pub fn sub_port_events(event_stream: StreamSink<PortEvent>) {
         .write()
         .expect("lock must not be poisoned");
     *v = Some(event_stream);
-}
-
-pub fn sub_device_events(new_stream: StreamSink<DeviceListUpdate>) {
-    let mut device_list_and_stream = DEVICE_LIST.lock().unwrap();
-    let (list, stream) = &mut *device_list_and_stream;
-    new_stream.add(DeviceListUpdate {
-        changes: vec![],
-        state: list.state(),
-    });
-    if let Some(old_stream) = stream.replace(new_stream) {
-        old_stream.close();
-    }
 }
 
 pub(crate) fn emit_event(event: PortEvent) -> Result<()> {
@@ -82,20 +66,6 @@ pub(crate) fn emit_event(event: PortEvent) -> Result<()> {
     }
 
     Ok(())
-}
-
-pub(crate) fn emit_device_events(new_events: Vec<DeviceChange>) {
-    let mut device_list_and_stream = DEVICE_LIST.lock().unwrap();
-    let (list, stream) = &mut *device_list_and_stream;
-    let list_events = list.consume_manager_event(new_events);
-    if let Some(stream) = stream {
-        if !list_events.is_empty() {
-            stream.add(DeviceListUpdate {
-                state: list.state(),
-                changes: list_events,
-            });
-        }
-    }
 }
 
 pub struct Transaction {
@@ -150,18 +120,32 @@ impl ConnectedDevice {
 #[derive(Clone, Debug)]
 pub struct KeyState {
     pub keys: Vec<FrostKey>,
+    pub recoverable: Vec<RecoverableKey>,
+}
+
+#[derive(Clone, Debug)]
+pub struct RecoverableKey {
+    pub name: String,
+    pub threshold: u16,
+    pub access_structure_ref: AccessStructureRef,
+    pub shares_obtained: u16,
 }
 
 #[derive(Clone, Debug)]
 pub struct FrostKey(pub(crate) RustOpaque<frostsnap_core::coordinator::CoordFrostKey>);
 
 impl FrostKey {
-    pub fn master_appkey(&self) -> SyncReturn<MasterAppkey> {
-        SyncReturn(self.0.master_appkey)
+    pub fn master_appkey(&self) -> SyncReturn<Option<MasterAppkey>> {
+        SyncReturn(
+            self.0
+                .complete_key
+                .as_ref()
+                .map(|complete_key| complete_key.master_appkey),
+        )
     }
 
     pub fn key_id(&self) -> SyncReturn<KeyId> {
-        SyncReturn(self.0.master_appkey.key_id())
+        SyncReturn(self.0.key_id)
     }
 
     pub fn key_name(&self) -> SyncReturn<String> {
@@ -171,12 +155,85 @@ impl FrostKey {
     pub fn access_structures(&self) -> SyncReturn<Vec<AccessStructure>> {
         SyncReturn(
             self.0
-                .access_structures
+                .complete_key
                 .iter()
-                .cloned()
-                .map(From::from)
+                .flat_map(|complete_key| {
+                    complete_key
+                        .access_structures
+                        .values()
+                        .cloned()
+                        .map(From::from)
+                })
                 .collect(),
         )
+    }
+
+    pub fn is_complete(&self) -> SyncReturn<bool> {
+        SyncReturn(self.0.complete_key.is_some())
+    }
+
+    pub fn access_structure_state(&self) -> SyncReturn<AccessStructureListState> {
+        SyncReturn(AccessStructureListState::from_frost_key(&self.0))
+    }
+
+    pub fn bitcoin_network(&self) -> SyncReturn<Option<BitcoinNetwork>> {
+        SyncReturn(
+            self.0
+                .purpose
+                .bitcoin_network()
+                .map(|network| network.into()),
+        )
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct RecoveringAccessStructure {
+    pub access_structure_id: AccessStructureId,
+    pub threshold: u16,
+    pub got_shares_from: Vec<DeviceId>,
+}
+
+impl RecoveringAccessStructure {
+    fn from_core(
+        access_structure_id: AccessStructureId,
+        recovering_access_structure: frostsnap_core::coordinator::RecoveringAccessStructure,
+    ) -> Self {
+        RecoveringAccessStructure {
+            access_structure_id,
+            threshold: recovering_access_structure.threshold,
+            got_shares_from: recovering_access_structure
+                .share_images
+                .iter()
+                .map(|(_, (device_id, _))| *device_id)
+                .collect::<HashSet<DeviceId>>()
+                .into_iter()
+                .collect(),
+        }
+    }
+}
+
+pub struct AccessStructureListState(pub Vec<AccessStructureState>);
+
+pub enum AccessStructureState {
+    Recovering(RecoveringAccessStructure),
+    Complete(AccessStructure),
+}
+
+impl AccessStructureListState {
+    pub(crate) fn from_frost_key(frost_key: &CoordFrostKey) -> Self {
+        let complete = frost_key.access_structures().map(|(_, access_structure)| {
+            AccessStructureState::Complete(AccessStructure::from(access_structure.clone()))
+        });
+        let recovering = frost_key.recovering_access_structures.iter().map(
+            |(access_structure_id, recovering_access_structure)| {
+                AccessStructureState::Recovering(RecoveringAccessStructure::from_core(
+                    *access_structure_id,
+                    recovering_access_structure.clone(),
+                ))
+            },
+        );
+
+        AccessStructureListState(complete.chain(recovering).collect())
     }
 }
 
@@ -378,19 +435,6 @@ pub fn turn_logcat_logging_on(level: LogLevel, log_stream: StreamSink<String>) -
     Ok(())
 }
 
-pub fn device_at_index(index: usize) -> SyncReturn<Option<ConnectedDevice>> {
-    SyncReturn(DEVICE_LIST.lock().unwrap().0.device_at_index(index))
-}
-
-pub fn device_list_state() -> SyncReturn<DeviceListState> {
-    SyncReturn(DEVICE_LIST.lock().unwrap().0.state())
-}
-
-pub fn get_connected_device(id: DeviceId) -> SyncReturn<Option<ConnectedDevice>> {
-    let device = DEVICE_LIST.lock().unwrap().0.get_device(id);
-    SyncReturn(device)
-}
-
 #[derive(Clone, Debug)]
 pub enum DeviceListChangeKind {
     Added,
@@ -426,19 +470,19 @@ impl DeviceListState {
 pub type WalletStreams = Mutex<BTreeMap<MasterAppkey, StreamSink<TxState>>>;
 
 #[derive(Clone)]
-pub struct Wallet {
-    pub inner: RustOpaque<Arc<Mutex<FrostsnapWallet>>>,
+pub struct SuperWallet {
+    pub inner: RustOpaque<Arc<Mutex<CoordSuperWallet>>>,
     pub wallet_streams: RustOpaque<Arc<WalletStreams>>,
     pub chain_sync: RustOpaque<ChainClient>,
     pub network: BitcoinNetwork,
 }
 
-impl Wallet {
+impl SuperWallet {
     fn load_or_new(
         app_dir: impl AsRef<Path>,
         network: BitcoinNetwork,
         chain_sync: ChainClient,
-    ) -> Result<Wallet> {
+    ) -> Result<SuperWallet> {
         let db_file = network.bdk_file(app_dir);
         let db = rusqlite::Connection::open(&db_file).context(format!(
             "failed to load database from {}",
@@ -447,11 +491,12 @@ impl Wallet {
 
         let db = Arc::new(Mutex::new(db));
 
-        let wallet = FrostsnapWallet::load_or_init(db.clone(), *network.0, chain_sync.clone())
-            .with_context(|| format!("loading wallet from data in {}", db_file.display()))?;
+        let super_wallet =
+            CoordSuperWallet::load_or_init(db.clone(), *network.0, chain_sync.clone())
+                .with_context(|| format!("loading wallet from data in {}", db_file.display()))?;
 
-        let wallet = Wallet {
-            inner: RustOpaque::new(Arc::new(Mutex::new(wallet))),
+        let wallet = SuperWallet {
+            inner: RustOpaque::new(Arc::new(Mutex::new(super_wallet))),
             chain_sync: RustOpaque::new(chain_sync),
             wallet_streams: RustOpaque::new(Default::default()),
             network,
@@ -518,18 +563,13 @@ impl Wallet {
             .lock()
             .unwrap()
             .search_for_address(master_appkey, address_str, start, stop)
-            .map(|address_info| Address {
-                index: address_info.clone().index,
-                address_string: address_info.address.to_string(),
-                used: address_info.used,
-                external: address_info.external,
-            })
+            .map(|address_info| address_info.into())
     }
 
     pub fn rebroadcast(&self, txid: String) {
         let txid = Txid::from_str(&txid).expect("Txid must be valid");
-        let wallet = self.inner.lock().unwrap();
-        if let Some(tx) = wallet.get_tx(txid) {
+        let super_wallet = self.inner.lock().unwrap();
+        if let Some(tx) = super_wallet.get_tx(txid) {
             if let Err(err) = self.chain_sync.broadcast(tx.as_ref().clone()) {
                 tracing::error!("Rebroadcasting {} failed: {}", txid, err);
             };
@@ -543,12 +583,13 @@ impl Wallet {
         value: u64,
         feerate: f64,
     ) -> Result<UnsignedTx> {
-        let mut wallet = self.inner.lock().unwrap();
+        let mut super_wallet = self.inner.lock().unwrap();
         let to_address = bitcoin::Address::from_str(&to_address)
             .expect("validation should have checked")
-            .require_network(wallet.network)
+            .require_network(super_wallet.network)
             .expect("validation should have checked");
-        let signing_task = wallet.send_to(master_appkey, to_address, value, feerate as f32)?;
+        let signing_task =
+            super_wallet.send_to(master_appkey, to_address, value, feerate as f32)?;
         let unsigned_tx = UnsignedTx {
             template_tx: RustOpaque::new(signing_task),
         };
@@ -604,26 +645,6 @@ impl Wallet {
         Ok(SyncReturn(UnsignedTx {
             template_tx: RustOpaque::new(template),
         }))
-    }
-
-    pub fn derivation_path_for_address(&self, index: u32, external: bool) -> SyncReturn<String> {
-        let account_keychain = if external {
-            tweak::BitcoinAccountKeychain::external()
-        } else {
-            tweak::BitcoinAccountKeychain::internal()
-        };
-        let bip32_path = tweak::BitcoinBip32Path {
-            account_keychain,
-            index,
-        };
-
-        SyncReturn(
-            bip32_path
-                .path_segments_from_bitcoin_appkey()
-                .map(|i| i.to_string())
-                .collect::<Vec<_>>()
-                .join("/"),
-        )
     }
 }
 
@@ -691,6 +712,7 @@ impl BitcoinNetwork {
         SyncReturn(descriptor.to_string())
     }
 
+    // FIXME: doesn't need to be on the network. Can get the script pubkey without the network.
     pub fn validate_amount(&self, address: String, value: u64) -> SyncReturn<Option<String>> {
         SyncReturn(match bitcoin::Address::from_str(&address) {
             Ok(address) => match address.require_network(*self.0) {
@@ -821,14 +843,7 @@ impl Coordinator {
     }
 
     pub fn key_state(&self) -> SyncReturn<KeyState> {
-        SyncReturn(KeyState {
-            keys: self
-                .0
-                .frost_keys()
-                .into_iter()
-                .map(FrostKey::from)
-                .collect(),
-        })
+        SyncReturn(self.0.key_state())
     }
 
     pub fn sub_key_events(&self, stream: StreamSink<KeyState>) -> Result<()> {
@@ -845,16 +860,10 @@ impl Coordinator {
                 .frost_keys()
                 .into_iter()
                 .flat_map(|frost_key| {
-                    let key_id: KeyId = frost_key.master_appkey.key_id();
                     frost_key
-                        .access_structures
-                        .iter()
-                        .filter(|access_structure| access_structure.contains_device(device_id))
-                        .map(|access_structure| access_structure.access_structure_id())
-                        .map(|access_structure_id| AccessStructureRef {
-                            key_id,
-                            access_structure_id,
-                        })
+                        .access_structures()
+                        .filter(|(_, access_structure)| access_structure.contains_device(device_id))
+                        .map(|(accsref, _)| accsref)
                         .collect::<Vec<_>>()
                 })
                 .collect(),
@@ -908,14 +917,14 @@ impl Coordinator {
         threshold: u16,
         devices: Vec<DeviceId>,
         key_name: String,
-        is_mainnet_key: bool,
+        network: BitcoinNetwork,
         event_stream: StreamSink<KeyGenState>,
     ) -> anyhow::Result<()> {
         self.0.generate_new_key(
             devices.into_iter().collect(),
             threshold,
             key_name,
-            is_mainnet_key,
+            KeyPurpose::Bitcoin(network.into()),
             event_stream,
         )
     }
@@ -953,13 +962,11 @@ impl Coordinator {
 
     pub fn verify_address(
         &self,
-        access_structure_ref: AccessStructureRef,
+        key_id: KeyId,
         address_index: u32,
-        master_appkey: MasterAppkey,
         sink: StreamSink<VerifyAddressProtocolState>,
     ) -> Result<()> {
-        self.0
-            .verify_address(access_structure_ref, address_index, sink, master_appkey)?;
+        self.0.verify_address(key_id, address_index, sink)?;
         Ok(())
     }
 
@@ -1003,6 +1010,33 @@ impl Coordinator {
 
     pub fn get_frost_key(&self, key_id: KeyId) -> SyncReturn<Option<FrostKey>> {
         SyncReturn(self.0.get_frost_key(key_id).map(FrostKey::from))
+    }
+
+    pub fn start_recovery(&self, key_id: KeyId) -> Result<()> {
+        self.0.start_recovery(key_id)?;
+
+        Ok(())
+    }
+
+    pub fn delete_key(&self, key_id: KeyId) -> Result<()> {
+        self.0.delete_key(key_id)
+    }
+
+    pub fn device_at_index(&self, index: usize) -> SyncReturn<Option<ConnectedDevice>> {
+        SyncReturn(self.0.device_at_index(index))
+    }
+
+    pub fn device_list_state(&self) -> SyncReturn<DeviceListState> {
+        SyncReturn(self.0.device_list_state())
+    }
+
+    pub fn sub_device_events(&self, sink: StreamSink<DeviceListUpdate>) -> Result<()> {
+        self.0.sub_device_events(sink);
+        Ok(())
+    }
+
+    pub fn get_connected_device(&self, id: DeviceId) -> SyncReturn<Option<ConnectedDevice>> {
+        SyncReturn(self.0.get_connected_device(id))
     }
 }
 
@@ -1118,6 +1152,7 @@ pub struct Address {
     pub address_string: String,
     pub used: bool,
     pub external: bool,
+    pub derivation_path: String,
 }
 
 impl From<frostsnap_coordinator::bitcoin::wallet::AddressInfo> for Address {
@@ -1127,18 +1162,30 @@ impl From<frostsnap_coordinator::bitcoin::wallet::AddressInfo> for Address {
             address_string: value.address.to_string(),
             used: value.used,
             external: value.external,
+            derivation_path: value
+                .derivation_path
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join("/"),
         }
     }
 }
 
 pub struct TxState {
     pub txs: Vec<Transaction>,
+    pub balance: u64,
 }
 
 impl From<Vec<frostsnap_coordinator::bitcoin::wallet::Transaction>> for TxState {
-    fn from(value: Vec<frostsnap_coordinator::bitcoin::wallet::Transaction>) -> Self {
+    fn from(txs: Vec<frostsnap_coordinator::bitcoin::wallet::Transaction>) -> Self {
         Self {
-            txs: value.into_iter().map(From::from).collect(),
+            balance: txs
+                .iter()
+                .fold(0i64, |acc, tx| acc + tx.net_value)
+                .try_into()
+                .unwrap_or(0),
+            txs: txs.into_iter().map(From::from).collect(),
         }
     }
 }
@@ -1234,10 +1281,8 @@ pub struct Settings {
     pub chain_clients: RustOpaque<HashMap<RBitcoinNetwork, ChainClient>>,
 
     pub app_directory: RustOpaque<PathBuf>,
-    pub loaded_wallets: RustOpaque<Mutex<HashMap<RBitcoinNetwork, Wallet>>>,
+    pub loaded_wallets: RustOpaque<Mutex<HashMap<RBitcoinNetwork, SuperWallet>>>,
 
-    // streams of settings updates
-    pub wallet_settings_stream: RustOpaque<MaybeSink<WalletSettings>>,
     pub developer_settings_stream: RustOpaque<MaybeSink<DeveloperSettings>>,
     pub electrum_settings_stream: RustOpaque<MaybeSink<ElectrumSettings>>,
 }
@@ -1271,16 +1316,17 @@ impl Settings {
             Persisted::new(&mut *db_, ())?
         };
 
-        let mut loaded_wallets: HashMap<RBitcoinNetwork, Wallet> = Default::default();
+        let mut loaded_wallets: HashMap<RBitcoinNetwork, SuperWallet> = Default::default();
         let mut chain_apis = HashMap::new();
 
         for network in SUPPORTED_NETWORKS {
             let bitcoin_network = BitcoinNetwork::from(network);
             let electrum_url = persisted.get_electrum_server(network);
             let (chain_api, conn_handler) = ChainClient::new();
-            let wallet = Wallet::load_or_new(&app_directory, bitcoin_network, chain_api.clone())?;
-            conn_handler.run(electrum_url, Arc::clone(&wallet.inner), {
-                let wallet_streams = Arc::clone(&wallet.wallet_streams);
+            let super_wallet =
+                SuperWallet::load_or_new(&app_directory, bitcoin_network, chain_api.clone())?;
+            conn_handler.run(electrum_url, Arc::clone(&super_wallet.inner), {
+                let wallet_streams = Arc::clone(&super_wallet.wallet_streams);
                 move |master_appkey, txs| {
                     let wallet_streams = wallet_streams.lock().unwrap();
                     if let Some(stream) = wallet_streams.get(&master_appkey) {
@@ -1288,7 +1334,7 @@ impl Settings {
                     }
                 }
             });
-            loaded_wallets.insert(network, wallet);
+            loaded_wallets.insert(network, super_wallet);
             chain_apis.insert(network, chain_api);
         }
 
@@ -1297,7 +1343,6 @@ impl Settings {
             settings: RustOpaque::new(Mutex::new(persisted)),
             app_directory: RustOpaque::new(app_directory),
             chain_clients: RustOpaque::new(chain_apis),
-            wallet_settings_stream: RustOpaque::new(Default::default()),
             developer_settings_stream: RustOpaque::new(Default::default()),
             electrum_settings_stream: RustOpaque::new(Default::default()),
             db: RustOpaque::new(db),
@@ -1318,32 +1363,13 @@ impl Settings {
         ElectrumSettings
     );
 
-    settings_impl!(
-        wallet_settings_stream,
-        emit_wallet_settings,
-        sub_wallet_settings,
-        WalletSettings
-    );
-
-    pub fn load_wallet(&self, network: BitcoinNetwork) -> Result<Wallet> {
+    pub fn get_super_wallet(&self, network: BitcoinNetwork) -> Result<SyncReturn<SuperWallet>> {
         let loaded = self.loaded_wallets.lock().unwrap();
         loaded
             .get(&network.0)
             .cloned()
+            .map(SyncReturn)
             .ok_or(anyhow!("unsupported network {:?}", network.0))
-    }
-
-    pub fn set_wallet_network(&self, key_id: KeyId, network: BitcoinNetwork) -> Result<()> {
-        let mut db = self.db.lock().unwrap();
-        self.settings
-            .lock()
-            .unwrap()
-            .mutate2(&mut *db, |settings, update| {
-                settings.set_wallet_network(key_id, *network.0, update);
-                Ok(())
-            })?;
-        self.emit_wallet_settings();
-        Ok(())
     }
 
     pub fn set_developer_mode(&self, value: bool) -> Result<()> {
@@ -1397,25 +1423,6 @@ impl Settings {
 
         chain_api.set_status_sink(Box::new(SinkWrap(sink)));
         Ok(())
-    }
-}
-
-pub struct WalletSettings {
-    pub wallet_networks: Vec<(KeyId, BitcoinNetwork)>,
-}
-
-impl WalletSettings {
-    fn from_settings(settings: &RSettings) -> Self {
-        Self {
-            wallet_networks: settings
-                .wallet_networks
-                .clone()
-                .into_iter()
-                .map(|(master_appkey, network)| {
-                    (master_appkey, BitcoinNetwork(RustOpaque::new(network)))
-                })
-                .collect(),
-        }
     }
 }
 
@@ -1540,6 +1547,10 @@ pub fn echo_asid(value: AccessStructureId) -> AccessStructureId {
 }
 
 pub fn echo_asr(value: AccessStructureRef) -> AccessStructureRef {
+    value
+}
+
+pub fn echo_device_list_update(value: DeviceListUpdate) -> DeviceListUpdate {
     value
 }
 

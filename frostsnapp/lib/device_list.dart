@@ -40,7 +40,7 @@ class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    currentListState = api.deviceListState();
+    currentListState = coord.deviceListState();
     _subscription = deviceListUpdateStream.listen((update) async {
       if (update.state.stateId != currentListState.stateId + 1) {
         // our states are out of sync somehow -- reset the list.
