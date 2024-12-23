@@ -278,8 +278,10 @@ Widget buildInteractiveDevice(BuildContext context, ConnectedDevice device,
             color: awaitingColor,
           ),
           SizedBox(height: 5.0),
-          Text("Upgrade", style: TextStyle(color: textPrimaryColor, fontSize: 13.0)),
-          Text("Firmware", style: TextStyle(color: textPrimaryColor, fontSize: 13.0))
+          Text("Upgrade",
+              style: TextStyle(color: textPrimaryColor, fontSize: 13.0)),
+          Text("Firmware",
+              style: TextStyle(color: textPrimaryColor, fontSize: 13.0))
         ]);
   }
 

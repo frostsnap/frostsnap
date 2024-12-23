@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/theme.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
@@ -381,13 +382,24 @@ class TxItem extends StatelessWidget {
             ),
           ),
         ),
-        (transaction.confirmationTime == null)
-            ? MenuItemButton(
-                onPressed: () => rebroadcastAction(context),
-                leadingIcon: const Icon(Icons.publish),
-                child: const Text('Rebroadcast'),
-              )
-            : SizedBox.shrink(),
+        MenuItemButton(
+          onPressed: () async {
+            final url = Uri.parse("https://mempool.space/tx/$txid");
+            await launchUrl(url);
+          },
+          leadingIcon: SizedBox(
+            width: IconTheme.of(context).size ?? 24,
+            height: IconTheme.of(context).size ?? 24,
+            child: Image.asset('assets/icons/mempool.png'),
+          ),
+          child: Text('View in mempool.space'),
+        ),
+        if (transaction.confirmationTime == null)
+          MenuItemButton(
+            onPressed: () => rebroadcastAction(context),
+            leadingIcon: const Icon(Icons.publish),
+            child: const Text('Rebroadcast'),
+          )
       ],
       builder: (_, MenuController controller, Widget? child) {
         return InkWell(
