@@ -4,7 +4,7 @@ use crate::{
 };
 use alloc::boxed::Box;
 use embedded_storage::{nor_flash, ReadStorage, Storage};
-use esp_hal::{sha::Sha, uart, Blocking};
+use esp_hal::sha::{Sha, Sha256};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{
     DeviceSendBody, FirmwareDigest, BAUDRATE, FIRMWARE_IMAGE_SIZE,
@@ -53,20 +53,17 @@ impl Partition {
         nor_flash::NorFlash::erase(flash, start, start + SECTOR_SIZE).unwrap();
     }
 
-    pub fn digest(
-        &self,
-        flash: &mut FlashStorage,
-        sha256: &mut Sha<'_, Blocking>,
-    ) -> FirmwareDigest {
+    pub fn digest(&self, flash: &mut FlashStorage, sha256: &mut Sha<'_>) -> FirmwareDigest {
+        let mut hasher = sha256.start::<Sha256>();
         for i in 0..(self.size / SECTOR_SIZE) {
             let sector = self.get_sector(flash, i).unwrap();
             let mut remaining = &sector[..];
             while !remaining.is_empty() {
-                remaining = block!(sha256.update(remaining)).unwrap();
+                remaining = block!(hasher.update(remaining)).unwrap();
             }
         }
         let mut digest = FirmwareDigest([0u8; 32]);
-        block!(sha256.finish(&mut digest.0)).unwrap();
+        block!(hasher.finish(&mut digest.0)).unwrap();
         digest
     }
 
@@ -409,10 +406,10 @@ impl FirmwareUpgradeMode {
     pub fn enter_upgrade_mode(
         &mut self,
         flash: &mut FlashStorage,
-        upstream_io: &mut SerialIo<'_, impl uart::Instance>,
-        mut downstream_io: Option<&mut SerialIo<'_, impl uart::Instance>>,
+        upstream_io: &mut SerialIo<'_>,
+        mut downstream_io: Option<&mut SerialIo<'_>>,
         ui: &mut impl UserInteraction,
-        sha: &mut Sha<'_, Blocking>,
+        sha: &mut Sha<'_>,
     ) {
         match self {
             FirmwareUpgradeMode::Upgrading { state, .. } => {

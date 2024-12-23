@@ -6,7 +6,7 @@ use crate::{
     DownstreamConnectionState, Duration, Instant, UpstreamConnection, UpstreamConnectionState,
 };
 use alloc::{boxed::Box, collections::VecDeque, string::ToString, vec::Vec};
-use esp_hal::{gpio, sha::Sha, timer, uart, Blocking};
+use esp_hal::{gpio, sha::Sha, timer};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{
     CoordinatorSendBody, CoordinatorUpgradeMessage, DeviceSendBody, DeviceSendMessage,
@@ -23,21 +23,18 @@ use frostsnap_core::{
 };
 use rand_chacha::rand_core::RngCore;
 
-pub struct Run<'a, UpstreamUart, DownstreamUart, Rng, Ui, T, DownstreamDetectPin> {
-    pub upstream_serial: SerialInterface<'a, T, UpstreamUart, Upstream>,
-    pub downstream_serial: SerialInterface<'a, T, DownstreamUart, Downstream>,
+pub struct Run<'a, Rng, Ui, T, DownstreamDetectPin> {
+    pub upstream_serial: SerialInterface<'a, T, Upstream>,
+    pub downstream_serial: SerialInterface<'a, T, Downstream>,
     pub rng: Rng,
     pub ui: Ui,
     pub timer: &'a T,
     pub downstream_detect: gpio::Input<'a, DownstreamDetectPin>,
-    pub sha256: Sha<'a, Blocking>,
+    pub sha256: Sha<'a>,
 }
 
-impl<UpstreamUart, DownstreamUart, Rng, Ui, T, DownstreamDetectPin>
-    Run<'_, UpstreamUart, DownstreamUart, Rng, Ui, T, DownstreamDetectPin>
+impl<Rng, Ui, T, DownstreamDetectPin> Run<'_, Rng, Ui, T, DownstreamDetectPin>
 where
-    UpstreamUart: uart::Instance,
-    DownstreamUart: uart::Instance,
     DownstreamDetectPin: gpio::InputPin,
     Ui: UserInteraction,
     T: timer::Timer,
