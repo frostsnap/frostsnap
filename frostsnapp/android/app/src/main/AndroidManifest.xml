@@ -4,7 +4,7 @@
     <uses-sdk android:minSdkVersion="12" />
 
     <!-- llfourn removed allowBackup. Seems like we wouldn't want it. -->
-    <!-- evanlinjin added enableOnBackInvokedCallback -->
+    <!-- evanlinjin added enableOnBackInvokedCallback because some android build warning told him too -->
     <application
         android:label="Frostsnapp"
         android:name="${applicationName}"
