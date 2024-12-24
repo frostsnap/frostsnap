@@ -346,10 +346,12 @@ where
                         .display
                         .print(format!("Display the backup for key '{key_name}'?")),
                     Prompt::ConfirmFirmwareUpgrade {
-                        firmware_digest, ..
-                    } => self
-                        .display
-                        .print(format!("confirm firmware switch to: \n{firmware_digest}")),
+                        firmware_digest,
+                        size,
+                    } => self.display.print(format!(
+                        "confirm firmware upgrade to: \n{firmware_digest}\nsize: {:.2}KB",
+                        *size as f32 / 1000.0
+                    )),
                     Prompt::ConfirmLoadBackup(share_backup) => self
                         .display
                         .show_backup(share_backup.to_bech32_backup(), false),
