@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/settings.dart';
-import 'package:frostsnapp/theme.dart';
+import 'package:frostsnapp/progress_indicator.dart';
 import 'package:rxdart/rxdart.dart';
 
 class ElectrumServerSettingsPage extends StatelessWidget {
@@ -92,7 +92,7 @@ class _ElectrumServerSettingWidgetState
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              backgroundColor: errorColor,
+              backgroundColor: Theme.of(context).colorScheme.error,
               content: Text(
                   'Failed to connect. Please check the server URL. ERROR: $error')),
         );

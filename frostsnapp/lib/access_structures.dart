@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/bridge_definitions.dart';
 import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/theme.dart';
 
 class AccessStructureListWidget extends StatelessWidget {
   final List<AccessStructureState> accessStructures;
@@ -50,6 +49,7 @@ class AccessStructureWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -58,7 +58,7 @@ class AccessStructureWidget extends StatelessWidget {
           margin: const EdgeInsets.only(top: 20), // Space for the label
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            border: Border.all(color: backgroundSecondaryColor),
+            border: Border.all(color: theme.colorScheme.secondary),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Wrap(
@@ -70,7 +70,7 @@ class AccessStructureWidget extends StatelessWidget {
                   device,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
-                backgroundColor: backgroundSecondaryColor,
+                backgroundColor: theme.colorScheme.surfaceContainer,
               );
             }).toList(),
           ),
@@ -81,7 +81,7 @@ class AccessStructureWidget extends StatelessWidget {
           top: 10,
           left: 16,
           child: Container(
-            color: backgroundPrimaryColor, // Match background
+            color: theme.colorScheme.surfaceContainer, // Match background
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Text(
               threshold == devices.length
@@ -107,7 +107,7 @@ class AccessStructureSummary extends StatelessWidget {
     final nText = n < t ? "?" : n.toString();
 
     return Text(
-      "($t-of-$nText)",
+      "$t-of-$nText",
       style: Theme.of(context)
           .textTheme
           .titleSmall!
