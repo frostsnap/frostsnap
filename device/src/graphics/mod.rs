@@ -507,6 +507,30 @@ where
         .draw(&mut body)
         .unwrap();
     }
+
+    pub fn wipe_data_warning(&mut self) {
+        let mut body = self.body();
+        Text::with_alignment(
+            "WARNING",
+            Point::new((body.size().width / 2) as i32, 10),
+            U8g2TextStyle::new(FONT_LARGE, COLORS.error),
+            Alignment::Center,
+        )
+        .draw(&mut body)
+        .unwrap();
+
+        TextBox::with_textbox_style(
+            "Confirming will WIPE all device data.\n\nDELETING ALL SECRETS AND KEY DATA.",
+            Rectangle::new(
+                Point { x: 0, y: 30 },
+                Size::new(body.size().width, body.size().height),
+            ),
+            U8g2TextStyle::new(FONT_MED, COLORS.primary),
+            TEXTBOX_STYLE,
+        )
+        .draw(&mut body)
+        .unwrap();
+    }
 }
 
 pub fn error_print<DT>(display: &mut DT, error: impl AsRef<str>)
