@@ -9,7 +9,6 @@ import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/hex.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 Future<void> doBackupWorkflow(BuildContext context,
     {required List<DeviceId> devices,
@@ -98,31 +97,31 @@ Future<void> showBackupInstructionsDialog(
                   SizedBox(height: 8),
                   Divider(),
                   Center(
-                    child: Text.rich(TextSpan(
-                      text: 'frost[',
-                      children: const <TextSpan>[
-                        TextSpan(
-                          text: 'X',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        TextSpan(
-                          text: ']',
-                        ),
-                      ],
-                      style: GoogleFonts.sourceCodePro(),
-                    )),
+                    child: Text.rich(
+                      TextSpan(
+                        text: 'frost[',
+                        children: const <TextSpan>[
+                          TextSpan(
+                            text: 'X',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          TextSpan(
+                            text: ']',
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                   Center(
                     child: Text(
                       "xxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xx",
-                      style: GoogleFonts.sourceCodePro(
-                          textStyle: Theme.of(context).textTheme.titleMedium),
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
                   Center(
                       child: Text(
                     "Identifier: ${toSpacedHex(Uint8List.fromList(accessStructure.id().field0.sublist(0, 4)))}",
-                    style: TextStyle(fontFamily: 'Courier', fontSize: 18),
+                    style: TextStyle(fontSize: 18),
                   )),
                   Divider(),
                   SizedBox(height: 16),
