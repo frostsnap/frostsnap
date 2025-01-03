@@ -446,6 +446,57 @@ impl FrostsnapWallet {
         Ok(template_tx)
     }
 
+    pub fn calculate_avaliable_value(
+        &mut self,
+        master_appkey: MasterAppkey,
+        target_addresses: impl IntoIterator<Item = bitcoin::Address>,
+        feerate: f32,
+        effective_only: bool,
+    ) -> Result<i64> {
+        self.lazily_initialize_key(master_appkey);
+        use bdk_coin_select::{
+            Candidate, CoinSelector, Drain, FeeRate, Target, TargetFee, TargetOutputs,
+            TR_KEYSPEND_TXIN_WEIGHT,
+        };
+
+        let feerate = FeeRate::from_sat_per_vb(feerate);
+        let target = Target {
+            fee: TargetFee::from_feerate(feerate),
+            outputs: TargetOutputs::fund_outputs(target_addresses.into_iter().map(|addr| {
+                let txo = bitcoin::TxOut {
+                    script_pubkey: addr.script_pubkey(),
+                    value: Amount::ZERO,
+                };
+                (txo.weight().to_wu() as u32, 0)
+            })),
+        };
+        let candidates = self
+            .tx_graph
+            .graph()
+            .filter_chain_unspents(
+                self.chain.as_ref(),
+                self.chain.tip().block_id(),
+                self.tx_graph
+                    .index
+                    .keychain_outpoints_in_range(Self::key_index_range(master_appkey)),
+            )
+            .map(|(_path, utxo)| Candidate {
+                input_count: 1,
+                value: utxo.txout.value.to_sat(),
+                weight: TR_KEYSPEND_TXIN_WEIGHT,
+                is_segwit: true,
+            })
+            .collect::<Vec<_>>();
+
+        let mut cs = CoinSelector::new(&candidates);
+        if effective_only {
+            cs.select_all_effective(feerate);
+        } else {
+            cs.select_all();
+        }
+        Ok(cs.excess(target, Drain::NONE))
+    }
+
     fn key_index_range(
         master_appkey: MasterAppkey,
     ) -> impl RangeBounds<(MasterAppkey, BitcoinAccountKeychain)> {

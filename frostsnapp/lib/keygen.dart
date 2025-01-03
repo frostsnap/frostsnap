@@ -461,7 +461,6 @@ Future<AccessStructureRef?> showCheckKeyGenDialog({
                       : toSpacedHex(Uint8List.fromList(
                           state.sessionHash!.field0.sublist(0, 4))),
                   style: TextStyle(
-                    fontFamily: 'Courier',
                     fontWeight: FontWeight.bold,
                     fontSize: 25,
                   ),

@@ -139,10 +139,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
           Expanded(
               child: Text(deviceFirmwareDigest,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: 'RobotoMono', // Using a monospaced font
-                    fontSize: 16,
-                  ))),
+                  style: TextStyle(fontSize: 16))),
         ]),
         SizedBox(height: 5),
         Row(
@@ -157,10 +154,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                     coord.upgradeFirmwareDigest() ??
                         "<app compiled without firmware>",
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: 'RobotoMono', // Using a monospaced font
-                      fontSize: 16,
-                    ))),
+                    style: TextStyle(fontSize: 16))),
           ],
         ),
       ]);

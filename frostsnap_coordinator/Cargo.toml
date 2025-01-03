@@ -17,7 +17,7 @@ rusqlite.workspace = true
 futures.workspace = true
 
 bdk_chain = { version = "0.20", features = ["rusqlite"] }
-bdk_electrum_c = { version = "0.7" }
+bdk_electrum_c = { version = "0.7.2" }
 bdk_coin_select = { version = "0.3" }
 
 futures-rustls = { version = "0.26", default-features = false, features = [

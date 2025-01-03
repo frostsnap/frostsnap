@@ -172,7 +172,6 @@ class FsAppBar extends StatelessWidget implements PreferredSizeWidget {
     final settingsCtx = SettingsContext.of(context)!;
 
     return AppBar(
-      centerTitle: true,
       title: title,
       bottom: bottom,
       backgroundColor: backgroundColor,
@@ -452,13 +451,13 @@ class ChainStatusIcon extends StatelessWidget {
     switch (chainStatus.state) {
       case ChainStatusState.Connected:
         statusName = "Connected";
-        iconData = Icons.power;
+        iconData = Icons.link_rounded;
         iconColor = theme.colorScheme.primary;
         break;
       case ChainStatusState.Connecting:
       case ChainStatusState.Disconnected:
         statusName = "Disconnected";
-        iconData = Icons.power_off;
+        iconData = Icons.link_off_rounded;
         iconColor = theme.colorScheme.error;
         break;
     }

@@ -1,225 +1,664 @@
 import 'dart:io';
-import 'package:frostsnapp/global.dart';
+import 'dart:ui';
+import 'package:camera/camera.dart';
+import 'package:flutter/services.dart';
+import 'package:frostsnapp/address_field.dart';
+import 'package:frostsnapp/cached_future.dart';
+import 'package:frostsnapp/ffi.dart';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/bridge_definitions.dart';
-import 'package:frostsnapp/id_ext.dart';
-import 'package:frostsnapp/psbt.dart';
 import 'package:frostsnapp/sign_message.dart';
 import 'package:frostsnapp/snackbar.dart';
+import 'package:frostsnapp/theme.dart';
 import 'package:frostsnapp/wallet.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:frostsnapp/wallet_send_feerate_picker.dart';
+import 'package:frostsnapp/wallet_send_scan.dart';
 
-class WalletSendPage extends StatelessWidget {
-  const WalletSendPage({super.key});
+enum SendPageIndex {
+  recipient,
+  amount,
+  sign,
+}
+
+class WalletSendPage extends StatefulWidget {
+  final ScrollController? scrollController;
+  const WalletSendPage({super.key, this.scrollController});
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Send Bitcoin'),
-        centerTitle: true,
+  State<WalletSendPage> createState() => _WalletSendPageState();
+}
+
+class _WalletSendPageState extends State<WalletSendPage> {
+  static const sectionPadding = EdgeInsets.fromLTRB(24.0, 8.0, 24.0, 16.0);
+  static const inputCardPadding = EdgeInsets.fromLTRB(8.0, 24.0, 8.0, 8.0);
+
+  final inputCardTopBorder = RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(12.0),
+  );
+  final inputCardBottomBorder = RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(12.0),
+  );
+
+  late final CachedFuture<List<CameraDescription>> cameras;
+
+  late final AddressModel addressModel;
+  late final FeeRateModel feeRateModel;
+  late final AmountAvaliableModel amountAvaliable;
+  late final AmountInputModel amountModel;
+
+  UnsignedTx? unsignedTx;
+  final selectedDevicesModel = SelectedDevicesModel();
+
+  var pageIndex = SendPageIndex.recipient;
+  late final ScrollController _scrollController;
+  late final ValueNotifier<bool> _isAtEnd;
+
+  late final Widget _recipientDoneButton;
+  _initRecipientDoneButton() {
+    _recipientDoneButton = ListenableBuilder(
+      listenable: addressModel,
+      builder: (context, _) => IconButton.filled(
+        onPressed: addressModel.errorText != null
+            ? null
+            : () => recipientDone(context),
+        icon: Icon(Icons.done),
       ),
-      body: WalletSend(
-          onBroadcastNewTx: () => Navigator.popUntil(context, (route) {
-                return route is MaterialPageRoute &&
-                    route.builder(context) is WalletPage;
-              })),
-      backgroundColor: theme.colorScheme.surfaceContainer,
     );
   }
-}
 
-class WalletSend extends StatefulWidget {
-  final Function()? onBroadcastNewTx;
+  late final Widget _amountDoneButton;
+  _initAmountDoneButton() {
+    _amountDoneButton = ListenableBuilder(
+      listenable: amountModel,
+      builder: (context, _) => IconButton.filled(
+        // TODO: Create a getter for this.
+        onPressed: (amountModel.error != null ||
+                amountModel.amount == null ||
+                amountModel.textEditingController.text.isEmpty)
+            ? null
+            : () => amountDone(context),
+        icon: Icon(Icons.done),
+        //child: Text('Next'),
+      ),
+    );
+  }
 
-  const WalletSend({
-    Key? key,
-    this.onBroadcastNewTx,
-  }) : super(key: key);
-
-  @override
-  State<WalletSend> createState() => _WalletSendState();
-}
-
-class _WalletSendState extends State<WalletSend> {
-  final _formKey = GlobalKey<FormState>();
-  String _address = '';
-  int _amount = 0;
-  double _feerate = 1.0; // Default fee rate
-  String _eta = "1 hr";
-  Set<DeviceId> selectedDevices = deviceIdSet([]);
-
-  void _updateETA() {
-    // todo: get ETA
-    setState(() {
-      if (_feerate < 5.0) {
-        _eta = "2 hrs";
-      } else if (_feerate >= 5.0 && _feerate < 10.0) {
-        _eta = "1 hr";
-      } else {
-        _eta = "30 mins";
-      }
-    });
+  late final Widget _signersDoneButton;
+  _initSignersDoneButton() {
+    _signersDoneButton = ListenableBuilder(
+      listenable: selectedDevicesModel,
+      builder: (context, child) {
+        final isThresholdMet = selectedDevicesModel.isThresholdMet;
+        final remaining = selectedDevicesModel.remaining;
+        final nextText =
+            (isThresholdMet) ? 'Sign Transaction' : 'Select $remaining more';
+        return FilledButton(
+            onPressed: (unsignedTx == null || !isThresholdMet)
+                ? null
+                : () => signersDone(context),
+            child: Text(nextText));
+      },
+    );
   }
 
   @override
-  Widget build(BuildContext context) {
-    final walletCtx = WalletContext.of(context)!;
-    final frostKey = coord.getFrostKey(keyId: walletCtx.keyId)!;
-    final accessStructure = frostKey.accessStructures()[0];
-    final enoughSelected =
-        selectedDevices.length == accessStructure.threshold();
+  void initState() {
+    super.initState();
 
-    final Widget signPsbtButton = ElevatedButton(
-        onPressed: () {
-          Navigator.push(context, MaterialPageRoute(builder: (context) {
-            return LoadPsbtPage(
-              wallet: walletCtx.wallet,
-              masterAppkey: walletCtx.masterAppkey,
-            );
-          }));
-        },
-        child: Text(
-          "Load PSBT",
-        ));
+    _isAtEnd = ValueNotifier(true);
+    _scrollController = widget.scrollController ?? ScrollController();
+    _scrollController.addListener(() {
+      _isAtEnd.value = _scrollController.position.atEdge &&
+          _scrollController.position.pixels ==
+              _scrollController.position.maxScrollExtent;
+    });
 
-    return CustomScrollView(
-      slivers: <Widget>[
-        SliverToBoxAdapter(
-          child: Container(
-            color: Theme.of(context).colorScheme.surface,
-            child: UpdatingBalance(txStream: walletCtx.txStream),
-          ),
+    cameras = CachedFuture(
+      availableCameras().catchError((e) => <CameraDescription>[]),
+    );
+
+    addressModel = AddressModel();
+    feeRateModel = FeeRateModel(satsPerVB: 5.0);
+
+    amountAvaliable = AmountAvaliableModel(feeRateModel: feeRateModel);
+    amountModel = AmountInputModel(avaliableAmountModel: amountAvaliable);
+
+    _initRecipientDoneButton();
+    _initAmountDoneButton();
+    _initSignersDoneButton();
+  }
+
+  @override
+  void dispose() {
+    amountModel.dispose();
+    amountAvaliable.dispose();
+    feeRateModel.dispose();
+    addressModel.dispose();
+    selectedDevicesModel.dispose();
+    if (widget.scrollController == null) _scrollController.dispose();
+    _isAtEnd.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (context.mounted) {
+      final walletCtx = WalletContext.of(context);
+      if (walletCtx != null) {
+        selectedDevicesModel.walletContext = walletCtx;
+        amountAvaliable.walletContext = walletCtx;
+      }
+    }
+  }
+
+  Widget completedCardLabel(BuildContext context, String text) => Text.rich(
+        TextSpan(
+          children: [
+            WidgetSpan(
+              child: Padding(
+                padding: const EdgeInsets.all(2.0),
+                child: Icon(Icons.edit_square, size: 14.0),
+              ),
+            ),
+            TextSpan(text: ' '),
+            TextSpan(text: text),
+          ],
         ),
-        SliverPadding(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 24.0).copyWith(top: 24.0),
-          sliver: SliverToBoxAdapter(
+        style: Theme.of(context).textTheme.labelLarge,
+      );
+
+  Future<void>? _estimateFut;
+
+  @override
+  Widget build(BuildContext context) {
+    final walletContext = WalletContext.of(context);
+    if (walletContext == null) return SizedBox();
+    _estimateFut ??= feeRateModel.refreshEstimates(context, walletContext, 1);
+
+    final theme = Theme.of(context);
+
+    final appBar = SliverPadding(
+      padding: EdgeInsets.symmetric(vertical: 0.0, horizontal: 0.0),
+      sliver: SliverAppBar(
+        title: Text('Send Bitcoin'),
+        titleTextStyle: theme.textTheme.titleMedium,
+        centerTitle: true,
+        backgroundColor: theme.colorScheme.surfaceContainerLow,
+        pinned: true,
+        stretch: true,
+        forceMaterialTransparency: true,
+        automaticallyImplyLeading: false,
+        leading: IconButton(
+          onPressed: () => Navigator.pop(context),
+          icon: Icon(Icons.close),
+        ),
+      ),
+    );
+
+    final completedInfoCard = AnimatedSize(
+      duration: Durations.short4,
+      curve: Curves.easeInOutCubicEmphasized,
+      alignment: Alignment.topCenter,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (pageIndex.index > SendPageIndex.recipient.index)
+            ListTile(
+              onTap: () => setState(() => pageIndex = SendPageIndex.recipient),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12.0),
+              ),
+              leading: completedCardLabel(context, 'Recipient'),
+              title: ListenableBuilder(
+                listenable: addressModel,
+                builder: (ctx, _) => Text(
+                  addressModel.formattedAddress,
+                  textWidthBasis: TextWidthBasis.longestLine,
+                  textAlign: TextAlign.right,
+                  style: addressTextStyle,
+                ),
+              ),
+            ),
+          if (pageIndex.index > SendPageIndex.amount.index)
+            ListTile(
+              onTap: () => setState(() => pageIndex = SendPageIndex.amount),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12.0),
+              ),
+              leading: completedCardLabel(context, 'Amount'),
+              title: SatoshiText(value: amountModel.amount ?? 0),
+            ),
+          if (pageIndex.index > SendPageIndex.amount.index)
+            ListTile(
+              onTap: () => showFeeRateDialog(context),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12.0),
+              ),
+              leading: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                spacing: 4.0,
+                children: [
+                  completedCardLabel(context, 'Fee'),
+                  Flexible(
+                    child: Card(
+                      color: theme.colorScheme.secondaryContainer,
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          vertical: 2.0,
+                          horizontal: 6.0,
+                        ),
+                        child: Text(
+                          '${unsignedTx?.feerate()?.toStringAsFixed(1)} sat/vB',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSecondaryContainer,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              title: SatoshiText(
+                value: unsignedTx?.fee(),
+                style: TextStyle(color: theme.colorScheme.onErrorContainer),
+              ),
+            ),
+          if (pageIndex.index > SendPageIndex.recipient.index)
+            SizedBox(height: 24.0),
+        ],
+      ),
+    );
+
+    final Color mainCardColor = theme.colorScheme.surfaceContainerHighest;
+
+    final etaInputCard = ListenableBuilder(
+      listenable: feeRateModel,
+      builder: (context, _) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FilledButton.tonalIcon(
+            onPressed: () => showFeeRateDialog(context),
+            icon: Stack(
+              alignment: AlignmentDirectional.bottomCenter,
+              children: [
+                Icon(Icons.speed_rounded),
+                if (feeRateModel.estimateRunning)
+                  SizedBox(
+                    height: 2.0,
+                    width: 12.0,
+                    child: LinearProgressIndicator(),
+                  )
+              ],
+            ),
+            label: Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(text: '${feeRateModel.satsPerVB} '),
+                  TextSpan(
+                    text: 'sat/vB',
+                    style: TextStyle(
+                        fontSize: theme.textTheme.labelSmall!.fontSize),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+            child: Text(
+                feeRateModel.targetTime == null
+                    ? 'unknown ETA'
+                    : '${feeRateModel.targetTime} min ETA',
+                style: theme.textTheme.labelSmall
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          ),
+        ],
+      ),
+    );
+
+    final recipientInputCard = Card(
+      color: mainCardColor,
+      shape: inputCardTopBorder,
+      margin: EdgeInsets.all(0.0),
+      child: Padding(
+        padding: inputCardPadding, //inputCardPadding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: 12.0,
+          children: [
+            AddressField(
+              model: addressModel,
+              onSubmitted: (_) => recipientDone(context),
+              decoration: InputDecoration(
+                errorMaxLines: 2,
+                labelText: 'Recipient',
+                //counter: _recipientDoneButton,
+                counter: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  spacing: 8.0,
+                  children: [
+                    TextButton.icon(
+                      onPressed: () => recipientPaste(context),
+                      label: Text('Paste'),
+                      icon: Icon(Icons.paste),
+                    ),
+                    TextButton.icon(
+                      onPressed: () => recipientScan(context),
+                      label: Text('Scan'),
+                      icon: Icon(Icons.qr_code),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final amountInputCard = Card(
+      color: mainCardColor,
+      shape: inputCardTopBorder,
+      margin: EdgeInsets.all(0.0),
+      child: Padding(
+        padding: inputCardPadding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: 12.0,
+          children: [
+            AmountField(
+              model: amountModel,
+              onSubmitted: (_) => amountDone(context),
+              decoration: InputDecoration(
+                errorMaxLines: 2,
+                labelText: 'Amount',
+                helper: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text('Max:',
+                        style: theme.textTheme.labelMedium
+                            ?.merge(balanceTextStyle)),
+                    ValueListenableBuilder(
+                      valueListenable: amountAvaliable,
+                      builder: (context, value, _) => SatoshiText(value: value),
+                    ),
+                  ],
+                ),
+                counter: ListenableBuilder(
+                  listenable: Listenable.merge([amountModel, amountAvaliable]),
+                  builder: (context, _) => TextButton.icon(
+                    onPressed: (amountAvaliable.value == null ||
+                            amountAvaliable.value! == 0)
+                        ? null
+                        : () => amountModel.sendAll = !amountModel.sendAll,
+                    icon: Icon(amountModel.sendAll
+                        ? Icons.check_box
+                        : Icons.check_box_outline_blank),
+                    label: Text('Send All'),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final signersInputCard = Card.filled(
+      color: mainCardColor,
+      margin: EdgeInsets.all(0.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: EdgeInsets.all(12.0),
             child: Row(
-              mainAxisSize: MainAxisSize.max,
-              children: const [
-                Expanded(child: Text('Create Transaction')),
+              spacing: 8.0,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Select Signers',
+                  style: theme.textTheme.labelMedium
+                      ?.copyWith(color: theme.colorScheme.primary),
+                ),
+                Text(
+                  '${selectedDevicesModel.threshold} required',
+                  style: theme.textTheme.labelMedium
+                      ?.copyWith(color: theme.dividerColor),
+                ),
+              ],
+            ),
+          ),
+          ListenableBuilder(
+            listenable: selectedDevicesModel,
+            builder: (context, child) => Column(
+              children: selectedDevicesModel.devices.map(
+                (device) {
+                  if (device.nonces == 0) {
+                    selectedDevicesModel.deselect(device.id);
+                  }
+                  return ListTile(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12.0),
+                    ),
+                    leading: Icon(device.selected
+                        ? Icons.check_box
+                        : Icons.check_box_outline_blank),
+                    title: Text(device.name ?? '<unknown>'),
+                    trailing: device.nonces == 0
+                        ? Text(
+                            'no nonces remaining',
+                            style: TextStyle(color: theme.colorScheme.error),
+                          )
+                        : null,
+                    enabled: device.canSelect,
+                    selected: device.selected,
+                    onTap: () => device.selected
+                        ? selectedDevicesModel.deselect(device.id)
+                        : selectedDevicesModel.select(device.id),
+                  );
+                },
+              ).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    final footerButton = switch (pageIndex) {
+      SendPageIndex.recipient => _recipientDoneButton,
+      SendPageIndex.amount => _amountDoneButton,
+      SendPageIndex.sign => _signersDoneButton,
+    };
+
+    final scrollView = CustomScrollView(
+      controller: _scrollController,
+      reverse: true,
+      shrinkWrap: true,
+      slivers: [
+        SliverPadding(
+          padding: sectionPadding.copyWith(
+              bottom: MediaQuery.of(context).viewInsets.bottom + 16.0),
+          sliver: SliverToBoxAdapter(
+            child: Column(
+              spacing: 0.0,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                completedInfoCard,
+                if (pageIndex == SendPageIndex.recipient) recipientInputCard,
+                if (pageIndex == SendPageIndex.amount) amountInputCard,
+                if (pageIndex == SendPageIndex.sign) signersInputCard,
+                SizedBox(height: 12.0),
+                Row(
+                  spacing: 12.0,
+                  mainAxisSize: MainAxisSize.max,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    (pageIndex.index < SendPageIndex.sign.index)
+                        ? etaInputCard
+                        : SizedBox(),
+                    footerButton,
+                  ],
+                ),
               ],
             ),
           ),
         ),
-        SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0),
-          sliver: SliverToBoxAdapter(
-              child: Column(children: [
-            Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  TextFormField(
-                    decoration: InputDecoration(labelText: 'Address'),
-                    validator: (value) {
-                      // Use the provided predicate for address validation
-                      return walletCtx.wallet.network
-                          .validateDestinationAddress(address: value ?? '');
-                    },
-                    onSaved: (value) => _address = value ?? '',
-                  ),
-                  TextFormField(
-                    decoration: InputDecoration(labelText: 'Amount (sats)'),
-                    keyboardType:
-                        TextInputType.numberWithOptions(decimal: false),
-                    validator: (value) {
-                      // Convert value to int and use the provided predicate for amount validation
-                      final amount = int.tryParse(value ?? '') ?? 0;
-                      return walletCtx.wallet.network
-                          .validateAmount(address: _address, value: amount);
-                    },
-                    onSaved: (value) =>
-                        _amount = int.tryParse(value ?? '') ?? 0,
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          decoration: InputDecoration(
-                              labelText: 'Fee Rate (sats/vByte)'),
-                          keyboardType:
-                              TextInputType.numberWithOptions(decimal: true),
-                          initialValue: _feerate.toString(),
-                          onChanged: (value) {
-                            setState(() {
-                              _feerate = double.tryParse(value) ?? _feerate;
-                              _updateETA();
-                            });
-                          },
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(left: 10),
-                        child: Text(
-                          "ETA $_eta",
-                          //style: TextStyle(color: textSecondaryColor),
-                        ),
-                      ),
-                    ],
-                  ),
-                  Divider(
-                    height: 20.0,
-                    thickness: 2.0,
-                    //color: backgroundSecondaryColor,
-                  ),
-                  Text(
-                    'Select ${accessStructure.threshold()} device${accessStructure.threshold() > 1 ? "s" : ""} to sign with:',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 20.0),
-                  ),
-                  SigningDeviceSelector(
-                      frostKey: frostKey,
-                      onChanged: (selected) {
-                        setState(() {
-                          selectedDevices = selected;
-                        });
-                      }),
-                  Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 16.0),
-                      child: ElevatedButton(
-                        onPressed: !enoughSelected
-                            ? null
-                            : () async {
-                                if (_formKey.currentState!.validate()) {
-                                  _formKey.currentState!.save();
-                                  final unsignedTx = await walletCtx.wallet
-                                      .sendTo(
-                                          masterAppkey: walletCtx.masterAppkey,
-                                          toAddress: _address,
-                                          value: _amount,
-                                          feerate: _feerate);
-                                  final signingStream = coord.startSigningTx(
-                                      accessStructureRef:
-                                          accessStructure.accessStructureRef(),
-                                      unsignedTx: unsignedTx,
-                                      devices: selectedDevices.toList());
-                                  if (context.mounted) {
-                                    await signAndBroadcastWorkflowDialog(
-                                        wallet: walletCtx.wallet,
-                                        context: context,
-                                        signingStream: signingStream,
-                                        unsignedTx: unsignedTx,
-                                        masterAppkey: walletCtx.masterAppkey,
-                                        onBroadcastNewTx:
-                                            widget.onBroadcastNewTx);
-                                  }
-                                }
-                              },
-                        child: Text('Submit Transaction'),
-                      )),
-                ],
-              ),
-            ),
-            // const SizedBox(height: 15),
-            signPsbtButton,
-          ])),
-        ),
+        appBar,
       ],
     );
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        prevPageOrPop(result);
+      },
+      child: scrollView,
+    );
+  }
+
+  showFeeRateDialog(BuildContext context) {
+    final walletCtx = WalletContext.of(context);
+    if (walletCtx == null) return;
+    final fut = showDialog<double>(
+      context: context,
+      builder: (context) {
+        return BackdropFilter(
+          filter: blurFilter,
+          child: FeeRatePickerDialog(
+            walletContext: walletCtx,
+            addressModel: addressModel,
+            amountModel: amountModel,
+            feeRateModel: feeRateModel,
+          ),
+        );
+      },
+    );
+    fut.then((_) {
+      if (context.mounted && pageIndex.index > SendPageIndex.amount.index) {
+        // TODO: Ideally we want to be able to update the review page.
+        setState(() => pageIndex = SendPageIndex.amount);
+      }
+    });
+  }
+
+  signersDone(BuildContext context) {
+    if (unsignedTx == null) return;
+    selectedDevicesModel.signAndBroadcast(
+      context,
+      unsignedTx!,
+      () => nextPageOrPop(null),
+    );
+  }
+
+  amountDone(BuildContext context) {
+    final walletCtx = WalletContext.of(context)!;
+    final address = addressModel.address!;
+    final amount = amountModel.amount!;
+    final feerate = feeRateModel.satsPerVB;
+
+    final unsignedTxFut = walletCtx.wallet.sendTo(
+      masterAppkey: walletCtx.masterAppkey,
+      toAddress: address,
+      value: amount,
+      feerate: feerate,
+    );
+    unsignedTxFut.then(
+      (unsignedTx) {
+        this.unsignedTx = unsignedTx;
+        nextPageOrPop(null);
+      },
+      onError: (e) => amountModel.customError =
+          e.toString().replaceFirst('FrbAnyhowException(', ''),
+    );
+  }
+
+  recipientDone(BuildContext context) {
+    final walletCtx = WalletContext.of(context)!;
+    if (addressModel.submit(walletCtx)) {
+      amountAvaliable.targetAddresses = [addressModel.controller.text];
+      nextPageOrPop(null);
+    }
+  }
+
+  recipientPaste(BuildContext context) async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    if (!context.mounted || data == null || data.text == null) return;
+    addressModel.controller.text = data.text!;
+    recipientDone(context);
+  }
+
+  recipientScan(BuildContext context) async {
+    final addressResult = await showDialog<String>(
+      context: context,
+      builder: (context) => FutureBuilder<List<CameraDescription>>(
+        future: cameras.value,
+        builder: (context, snapshot) => BackdropFilter(
+          filter: blurFilter,
+          child: Dialog(
+            child:
+                SendScanBody(cameras: snapshot.data ?? [], initialSelected: 0),
+          ),
+        ),
+      ),
+    );
+    if (!context.mounted || addressResult == null) return;
+    addressModel.controller.text = addressResult;
+    recipientDone(context);
+  }
+
+  scrollToTop() {
+    Future.delayed(Durations.long3).then((_) async {
+      if (context.mounted) {
+        await _scrollController.animateTo(
+          0,
+          duration: Durations.short3,
+          curve: Curves.linear,
+        );
+      }
+    });
+  }
+
+  prevPageOrPop(Object? result) {
+    final SendPageIndex? prevIndex;
+    switch (pageIndex) {
+      case SendPageIndex.recipient:
+        prevIndex = null;
+      case SendPageIndex.amount:
+        prevIndex = SendPageIndex.recipient;
+      case SendPageIndex.sign:
+        prevIndex = SendPageIndex.amount;
+      //case SendPageIndex.broadcast:
+      //  prevIndex = SendPageIndex.sign;
+    }
+    if (prevIndex != null) {
+      setState(() => pageIndex = prevIndex!);
+      if (pageIndex == SendPageIndex.sign) scrollToTop();
+    } else {
+      Navigator.pop(context, result);
+    }
+  }
+
+  nextPageOrPop(Object? result) {
+    final SendPageIndex? nextIndex;
+    switch (pageIndex) {
+      case SendPageIndex.recipient:
+        nextIndex = SendPageIndex.amount;
+      case SendPageIndex.amount:
+        nextIndex = SendPageIndex.sign;
+      case SendPageIndex.sign:
+        nextIndex = null;
+    }
+    if (nextIndex != null) {
+      setState(() => pageIndex = nextIndex!);
+      if (pageIndex == SendPageIndex.sign) scrollToTop();
+    } else {
+      Navigator.pop(context, result);
+    }
   }
 }
 
@@ -339,7 +778,7 @@ Widget describeEffect(BuildContext context, EffectOfTx effect) {
         Text(' to '),
         Text(
           dest,
-          style: GoogleFonts.sourceCodePro(textStyle: style),
+          style: style,
         )
       ],
     );

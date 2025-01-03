@@ -94,33 +94,61 @@ void main() async {
   runApp(mainWidget);
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   final String? startupError;
 
   const MyApp({Key? key, this.startupError}) : super(key: key);
 
-  // This widget is the root of your application.
   @override
-  Widget build(BuildContext context) {
-    final colorScheme = ColorScheme.fromSeed(
-      brightness: Brightness.dark,
-      seedColor: Color(0xFF0E9384),
-    );
+  State<MyApp> createState() => _MyAppState();
+}
 
+class _MyAppState extends State<MyApp> {
+  late final Future<List<void>> googleFontsPending;
+  late final ColorScheme colorScheme;
+
+  @override
+  void initState() {
+    super.initState();
+    googleFontsPending = GoogleFonts.pendingFonts([
+      GoogleFonts.notoSansMono(),
+      GoogleFonts.notoSansTextTheme(),
+    ]);
+    colorScheme = ColorScheme.fromSeed(
+      brightness: Brightness.dark,
+      seedColor: Color(0xFF1595B2),
+    );
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
       systemNavigationBarColor: colorScheme.surface,
     ));
+  }
 
-    return MaterialApp(
-      title: 'Frostsnapp',
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: colorScheme,
-      ),
-      home: startupError == null
-          ? const MyHomePage(title: 'Frostsnapp')
-          : StartupErrorWidget(error: startupError!),
-      debugShowCheckedModeBanner: false,
+  // This widget is the root of your application.
+  @override
+  Widget build(BuildContext context) {
+    final baseTheme = ThemeData(
+      useMaterial3: true,
+      colorScheme: colorScheme,
+    );
+
+    return FutureBuilder(
+      future: googleFontsPending,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return Center(child: CircularProgressIndicator());
+        }
+        final textTheme = GoogleFonts.notoSansTextTheme(baseTheme.textTheme);
+
+        return MaterialApp(
+          title: 'Frostsnapp',
+          theme: baseTheme.copyWith(
+              colorScheme: colorScheme, textTheme: textTheme),
+          home: widget.startupError == null
+              ? const MyHomePage(title: 'Frostsnapp')
+              : StartupErrorWidget(error: widget.startupError!),
+          debugShowCheckedModeBanner: false,
+        );
+      },
     );
   }
 }
@@ -224,10 +252,7 @@ class _StartupErrorWidgetState extends State<StartupErrorWidget> {
                     borderRadius: BorderRadius.circular(4.0),
                     border: Border.all(),
                   ),
-                  child: SelectableText(
-                    _combinedErrorWithLogs,
-                    style: GoogleFonts.sourceCodePro(),
-                  ),
+                  child: SelectableText(_combinedErrorWithLogs),
                 ),
                 SizedBox(height: 20),
                 IconButton(

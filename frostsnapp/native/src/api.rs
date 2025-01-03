@@ -551,6 +551,17 @@ impl Wallet {
         }
     }
 
+    /// Returns feerate in sat/vB.
+    pub fn estimate_fee(&self, target_blocks: Vec<u64>) -> Result<Vec<(u64, u64)>> {
+        let fee_rate_map = self
+            .chain_sync
+            .estimate_fee(target_blocks.into_iter().map(|v| v as usize))?;
+        Ok(fee_rate_map
+            .into_iter()
+            .map(|(target, fee_rate)| (target as u64, fee_rate.to_sat_per_vb_ceil()))
+            .collect())
+    }
+
     pub fn send_to(
         &self,
         master_appkey: MasterAppkey,
@@ -568,6 +579,27 @@ impl Wallet {
             template_tx: RustOpaque::new(signing_task),
         };
         Ok(unsigned_tx)
+    }
+
+    pub fn calculate_avaliable(
+        &self,
+        master_appkey: MasterAppkey,
+        target_addresses: Vec<String>,
+        feerate: f64,
+    ) -> Result<i64> {
+        let mut wallet = self.inner.lock().unwrap();
+        let network = wallet.network;
+        wallet.calculate_avaliable_value(
+            master_appkey,
+            target_addresses.into_iter().map(|s| {
+                bitcoin::Address::from_str(&s)
+                    .expect("validation should have checked")
+                    .require_network(network)
+                    .expect("validation should have checked")
+            }),
+            feerate as f32,
+            true,
+        )
     }
 
     pub fn broadcast_tx(&self, master_appkey: MasterAppkey, tx: SignedTx) -> Result<()> {
@@ -1042,6 +1074,14 @@ impl SignedTx {
 }
 
 impl UnsignedTx {
+    pub fn fee(&self) -> SyncReturn<Option<u64>> {
+        SyncReturn(self.template_tx.fee())
+    }
+
+    pub fn feerate(&self) -> SyncReturn<Option<f64>> {
+        SyncReturn(self.template_tx.feerate())
+    }
+
     pub fn attach_signatures_to_psbt(&self, signatures: Vec<EncodedSignature>, psbt: Psbt) -> Psbt {
         let mut signed_psbt = psbt.inner.deref().clone();
         let mut signatures = signatures.into_iter();
@@ -1215,6 +1255,17 @@ impl QrReader {
         let decoded_qr = crate::camera::read_qr_code_bytes(&bytes)?;
         let decoded_ur = self.0.ingest_ur_strings(decoded_qr)?;
         Ok(decoded_ur)
+    }
+
+    pub fn find_address_from_bytes(&self, bytes: Vec<u8>) -> Result<Option<String>> {
+        let decoded_qr = crate::camera::read_qr_code_bytes(&bytes)?;
+        for maybe_addr in decoded_qr {
+            match bitcoin::Address::from_str(&maybe_addr) {
+                Ok(_) => return Ok(Some(maybe_addr)),
+                Err(_) => continue,
+            }
+        }
+        Ok(None)
     }
 }
 

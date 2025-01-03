@@ -78,7 +78,6 @@ Widget chunkedAddressFormat(
                     child: Text(
                       chunks[j],
                       style: TextStyle(
-                        fontFamily: 'Courier',
                         fontSize: 20,
                         color: textColor,
                       ),

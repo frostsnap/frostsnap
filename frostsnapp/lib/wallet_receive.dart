@@ -5,7 +5,6 @@ import 'package:frostsnapp/bridge_definitions.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/address.dart';
 import 'package:frostsnapp/wallet.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class WalletReceivePage extends StatefulWidget {
   const WalletReceivePage({super.key});
@@ -39,6 +38,12 @@ class _WalletReceivePageState extends State<WalletReceivePage> {
         setState(() => fabIsExtended = true);
       }
     });
+  }
+
+  @override
+  void dispose() {
+    scrollController.dispose();
+    super.dispose();
   }
 
   Future<Address> _addAddress(BuildContext context) async {
@@ -90,8 +95,8 @@ class _WalletReceivePageState extends State<WalletReceivePage> {
       if (context.mounted) {
         await scrollController.animateTo(
           0.0,
-          duration: Duration(milliseconds: 500),
-          curve: Curves.easeIn,
+          duration: Durations.long1,
+          curve: Curves.easeInOutCubicEmphasized,
         );
       }
       if (context.mounted) {
@@ -118,7 +123,8 @@ class _WalletReceivePageState extends State<WalletReceivePage> {
         extendedPadding: fabIsExtended ? null : const EdgeInsets.all(16),
         icon: Icon(Icons.add),
         label: AnimatedSize(
-          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeInOutCubicEmphasized,
+          duration: Durations.long1,
           child: Text(fabIsExtended ? 'New Address' : ''),
         ),
         onPressed: newAddressAction,
@@ -166,7 +172,6 @@ class _WalletReceivePageState extends State<WalletReceivePage> {
           address.addressString,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
-          style: GoogleFonts.sourceCodePro(),
         ),
         onLongPress: copyAddress,
         onTap: openAddressPage,
