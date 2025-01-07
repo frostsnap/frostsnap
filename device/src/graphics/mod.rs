@@ -313,7 +313,7 @@ where
         }
     }
 
-    pub fn show_keygen_check(&mut self, name: &str, check: &str) {
+    pub fn show_keygen_check(&mut self, name: &str, t_of_n: (u16, u16), check: &str) {
         let mut body = self.body();
         let mut y_offset = 15;
         Text::with_alignment(
@@ -343,6 +343,17 @@ where
             check,
             Point::new((body.size().width / 2) as i32, y_offset),
             U8g2TextStyle::new(FONT_LARGE, COLORS.primary),
+            Alignment::Center,
+        )
+        .draw(&mut body)
+        .unwrap();
+
+        y_offset += 35;
+
+        Text::with_alignment(
+            &format!("{}-of-{}", t_of_n.0, t_of_n.1),
+            Point::new((body.size().width / 2) as i32, y_offset),
+            U8g2TextStyle::new(FONT_MED, COLORS.primary),
             Alignment::Center,
         )
         .draw(&mut body)

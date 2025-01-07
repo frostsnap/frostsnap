@@ -265,6 +265,7 @@ pub enum DeviceToUserMessage {
         key_id: KeyId,
         session_hash: SessionHash,
         key_name: String,
+        t_of_n: (u16, u16),
     },
     SignatureRequest {
         sign_task: CheckedSignTask,
