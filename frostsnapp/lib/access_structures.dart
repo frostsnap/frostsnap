@@ -108,10 +108,7 @@ class AccessStructureSummary extends StatelessWidget {
 
     return Text(
       "$t-of-$nText",
-      style: Theme.of(context)
-          .textTheme
-          .titleSmall!
-          .copyWith(fontStyle: FontStyle.italic),
+      style: Theme.of(context).textTheme.titleSmall!,
     );
   }
 }

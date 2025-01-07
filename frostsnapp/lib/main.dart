@@ -109,7 +109,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = ColorScheme.fromSeed(
       brightness: Brightness.dark,
-      seedColor: Color(0xFF0E9384),
+      seedColor: Color(0xFF1595B2),
     );
 
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(

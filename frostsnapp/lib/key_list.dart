@@ -89,7 +89,7 @@ class KeyList extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     FilledButton(
-                      child: const Text("New key"),
+                      child: const Text("New wallet"),
                       onPressed: () async {
                         final newId = await Navigator.push(context,
                             MaterialPageRoute(builder: (context) {
@@ -287,9 +287,11 @@ class KeyCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final (t, n) = accessStructureSummaries[0];
 
     return Card(
+      color: theme.colorScheme.secondaryContainer,
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -338,7 +340,7 @@ class _KeyButtons extends State<KeyButtons> {
     final settingsCtx = SettingsContext.of(context)!;
     final Widget continueSigning;
 
-    final signButton = TextButton(
+    final signButton = ElevatedButton(
         onPressed: () {
           if (frostKey != null) {
             Navigator.push(context, MaterialPageRoute(builder: (context) {
@@ -348,7 +350,7 @@ class _KeyButtons extends State<KeyButtons> {
         },
         child: Text("Sign"));
 
-    final Widget walletButton = TextButton(
+    final Widget walletButton = ElevatedButton(
       onPressed: () async {
         if (frostKey != null) {
           final superWallet = SuperWalletContext.of(context)!;

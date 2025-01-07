@@ -308,7 +308,9 @@ class TxItem extends StatelessWidget {
         ),
         MenuItemButton(
           onPressed: () async {
-            final url = Uri.parse("https://mempool.space/tx/$txid");
+            final explorer =
+                getBlockExplorer(walletContext.superWallet.network);
+            final url = explorer.replace(path: "${explorer.path}tx/$txid");
             await launchUrl(url);
           },
           leadingIcon: SizedBox(
@@ -616,5 +618,14 @@ class SatoshiText extends StatelessWidget {
       softWrap: false,
       overflow: TextOverflow.fade,
     );
+  }
+}
+
+Uri getBlockExplorer(BitcoinNetwork network) {
+  if (network.isMainnet()) {
+    return Uri.parse("https://mempool.space/");
+  } else {
+    // TODO: handle testnet properly
+    return Uri.parse("https://mempool.space/signet/");
   }
 }

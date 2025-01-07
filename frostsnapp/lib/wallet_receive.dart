@@ -149,16 +149,16 @@ class _WalletReceivePageState extends State<WalletReceivePage> {
         isThreeLine: true,
         shape:
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.0)),
-        title: Text('# ${address.index}${address.used ? ' (Used)' : ''}'),
-        subtitle: Text(
+        title: Text(
           address.addressString,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: GoogleFonts.sourceCodePro(),
         ),
+        subtitle: Text('# ${address.index}${address.used ? ' (Used)' : ''}'),
         onLongPress: copyAddress,
         onTap: openAddressPage,
-        trailing: Icon(Icons.open_in_new),
+        trailing: Icon(Icons.policy),
       ),
     );
   }

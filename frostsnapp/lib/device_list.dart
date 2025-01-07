@@ -230,21 +230,17 @@ Widget buildInteractiveDevice(BuildContext context, ConnectedDevice device,
   final theme = Theme.of(context);
   final List<Widget> children = [];
   final upToDate = device.firmwareDigest == coord.upgradeFirmwareDigest();
-
   if (device.name == null) {
     children.add(Spacer(flex: 6));
   } else {
     children.add(LabeledDeviceText(device.name!));
   }
-
   children.add(Spacer(flex: 3));
-
   final Widget interaction;
-
   if (upToDate) {
     if (device.name == null) {
       interaction = TextButton(
-        style: TextButton.styleFrom(
+        style: ElevatedButton.styleFrom(
             shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(4.0), // Rectangular shape
         )),
@@ -253,7 +249,12 @@ Widget buildInteractiveDevice(BuildContext context, ConnectedDevice device,
             return DeviceSetup(id: device.id);
           }));
         },
-        child: Text('New device', style: TextStyle(fontSize: 12.0)),
+        child: Text(
+          'New Device',
+          style:
+              theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
+          textAlign: TextAlign.center,
+        ),
       );
     } else {
       interaction = IconButton(
@@ -282,10 +283,8 @@ Widget buildInteractiveDevice(BuildContext context, ConnectedDevice device,
           Text("Firmware", style: theme.textTheme.bodyMedium)
         ]);
   }
-
   children.add(interaction);
   children.add(Spacer(flex: 10));
-
   return DeviceBoxContainer(
       orientation: orientation,
       animation: animation,

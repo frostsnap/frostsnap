@@ -10,28 +10,33 @@ import 'package:frostsnapp/settings.dart';
 
 class DeviceSetup extends StatelessWidget {
   final DeviceId id;
-
   const DeviceSetup({super.key, required this.id});
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
         appBar: FsAppBar(
           title: const Text('Device Setup'),
         ),
-        body: Padding(
-            padding: EdgeInsets.all(10.0),
-            child: Column(
-              children: [
-                DeviceNameField(
-                    id: id,
-                    onNamed: (_) {
-                      if (context.mounted) {
-                        Navigator.pop(context);
-                      }
-                    }),
-              ],
-            )));
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 20),
+                  DeviceNameField(
+                      id: id,
+                      onNamed: (_) {
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                        }
+                      }),
+                ],
+              ),
+            ),
+          ),
+        ));
   }
 }
 

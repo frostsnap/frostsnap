@@ -470,11 +470,11 @@ Future<AccessStructureRef?> showCheckKeyGenDialog({
                 ),
                 Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                   Text('If they do not then '),
-                  TextButton(
+                  ElevatedButton(
                     onPressed: () {
                       coord.cancelProtocol();
                     },
-                    style: TextButton.styleFrom(
+                    style: ElevatedButton.styleFrom(
                         tapTargetSize: MaterialTapTargetSize
                             .shrinkWrap, // Reduce button tap target size
                         backgroundColor: Theme.of(context).colorScheme.error),

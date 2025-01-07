@@ -613,7 +613,7 @@ class DeleteWalletPage extends StatelessWidget {
                         content:
                             Text('The wallet has been successfully deleted.'),
                         actions: [
-                          TextButton(
+                          ElevatedButton(
                             onPressed: () {
                               Navigator.pop(context); // close popup
                               Navigator.pop(context); // close delete page

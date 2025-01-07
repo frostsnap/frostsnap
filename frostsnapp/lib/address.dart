@@ -50,7 +50,7 @@ class AddressPage extends StatelessWidget {
                 ),
               ),
             ),
-            TextButton(
+            ElevatedButton(
               onPressed: () => Navigator.pop(context),
               child: Text('Close'),
             ),
