@@ -35,6 +35,7 @@ pub struct FrostCoordinator {
     key_order: Vec<KeyId>,
     action_state: Option<CoordinatorState>,
     device_nonces: HashMap<DeviceId, DeviceNonces>,
+    signing_sessions: BTreeMap<KeyId, SigningSessionState>,
     mutations: VecDeque<Mutation>,
 }
 
@@ -140,6 +141,7 @@ impl FrostCoordinator {
             key_order: Default::default(),
             action_state: None,
             device_nonces: Default::default(),
+            signing_sessions: Default::default(),
             mutations: Default::default(),
         }
     }
@@ -330,6 +332,26 @@ impl FrostCoordinator {
             DeleteKey(key_id) => {
                 self.keys.remove(key_id);
                 self.key_order.retain(|entry| entry != key_id);
+            }
+            PersistedSigningSession(signing_session_state) => {
+                let key_id = signing_session_state
+                    .access_structure
+                    .master_appkey()
+                    .key_id();
+
+                let all_finished = signing_session_state.sessions.iter().all(|session| {
+                    session.signature_shares.len()
+                        == signing_session_state.access_structure.threshold()
+                });
+
+                if all_finished {
+                    if let None = self.signing_sessions.remove(&key_id) {
+                        panic!("we shouldve had a persisted session to remove")
+                    }
+                } else {
+                    self.signing_sessions
+                        .insert(key_id, signing_session_state.clone());
+                }
             }
         }
     }
@@ -537,8 +559,9 @@ impl FrostCoordinator {
                     .get(&from)
                     .expect("we don't know this device");
 
+                let device_nonces = self.device_nonces.clone();
                 let nonce_for_device =
-                    self.device_nonces
+                    device_nonces
                         .get(&from)
                         .ok_or(Error::coordinator_invalid_message(
                             message_kind,
@@ -606,9 +629,6 @@ impl FrostCoordinator {
                     session.signature_shares.len() == sign_state.access_structure.threshold()
                 });
 
-                // the coordinator may want to persist this so a signing session can be restored
-                outgoing.push(CoordinatorSend::SigningSessionStore(sign_state.clone()));
-
                 if all_finished {
                     let sessions = &sign_state.sessions;
 
@@ -633,11 +653,16 @@ impl FrostCoordinator {
                         .map(EncodedSignature::new)
                         .collect();
 
-                    self.action_state = None;
-
                     outgoing.push(CoordinatorSend::ToUser(CoordinatorToUserMessage::Signing(
                         CoordinatorToUserSigningMessage::Signed { signatures },
                     )));
+                }
+
+                let persisting_sign_state = sign_state.clone();
+                self.mutate(Mutation::PersistedSigningSession(persisting_sign_state));
+
+                if all_finished {
+                    self.action_state = None;
                 }
 
                 if new_nonces.start_index == nonce_for_device.replenish_start() {
@@ -967,6 +992,31 @@ impl FrostCoordinator {
             target_devices: signing_parties,
             sign_request,
         })
+    }
+
+    pub fn get_signing_session(&self, key_id: KeyId) -> Option<SigningSessionState> {
+        self.signing_sessions.get(&key_id).cloned()
+    }
+
+    pub fn continue_signing_session(
+        &mut self,
+        key_id: KeyId,
+    ) -> Result<SigningSessionState, StartSignError> {
+        if self.action_state.is_some() {
+            return Err(StartSignError::CantSignInState {
+                in_state: self.state_name(),
+            });
+        }
+
+        if let Some(signing_session) = self.signing_sessions.get(&key_id) {
+            self.action_state = Some(CoordinatorState::Signing {
+                sign_state: signing_session.clone(),
+            });
+
+            Ok(signing_session.clone())
+        } else {
+            panic!()
+        }
     }
 
     pub fn maybe_request_nonce_replenishment(
@@ -1589,6 +1639,7 @@ pub enum Mutation {
     },
     RecoverShare(RecoverShare),
     DeleteKey(KeyId),
+    PersistedSigningSession(SigningSessionState),
 }
 
 impl Mutation {
@@ -1625,6 +1676,7 @@ impl Gist for Mutation {
             NewShare { .. } => "NewShare",
             RecoverShare { .. } => "RecoverShare",
             DeleteKey(_) => "DeleteKey",
+            PersistedSigningSession(_) => "PersistedSigningSession",
         }
         .into()
     }
@@ -1638,7 +1690,6 @@ pub enum CoordinatorSend {
         destinations: BTreeSet<DeviceId>,
     },
     ToUser(CoordinatorToUserMessage),
-    SigningSessionStore(SigningSessionState),
 }
 
 #[derive(Debug, Clone)]
