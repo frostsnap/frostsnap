@@ -61,6 +61,7 @@ impl_display_debug_serialize! {
 }
 
 impl_fromstr_deserialize! {
+
     name => "device id",
     fn from_bytes(bytes: [u8;33]) -> DeviceId {
         DeviceId(bytes)
