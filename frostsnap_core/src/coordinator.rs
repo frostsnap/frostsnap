@@ -14,7 +14,6 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
-use core::num::NonZeroU32;
 use schnorr_fun::{
     frost::{
         self, chilldkg::encpedpop, CoordinatorSignSession, Frost, Nonce, PartyIndex, SharedKey,
@@ -694,46 +693,41 @@ impl FrostCoordinator {
 
     pub fn do_keygen(
         &mut self,
-        devices: &BTreeSet<DeviceId>,
-        threshold: u16,
-        key_name: String,
-        key_purpose: KeyPurpose,
+        do_keygen: DoKeyGen,
         rng: &mut impl rand_core::RngCore,
-    ) -> Result<Vec<CoordinatorSend>, ActionError> {
-        if devices.len() < threshold as usize {
+    ) -> Result<SendDokeygen, ActionError> {
+        let DoKeyGen {
+            device_to_share_index,
+            threshold,
+            key_name,
+            purpose,
+        } = &do_keygen;
+
+        let n_devices = device_to_share_index.len();
+
+        if n_devices < *threshold as usize {
             panic!(
                 "caller needs to ensure that threshold < devices.len(). Tried {}-of-{}",
-                threshold,
-                devices.len()
+                threshold, n_devices
             );
         }
         match &self.action_state {
             None => {
-                let device_to_share_index: BTreeMap<_, _> = devices
-                    .iter()
-                    .enumerate()
-                    .map(|(index, device_id)| {
-                        (
-                            *device_id,
-                            NonZeroU32::new(index as u32 + 1).expect("we added one"),
-                        )
-                    })
-                    .collect();
                 let share_receivers_enckeys = device_to_share_index
                     .iter()
                     .map(|(device, share_index)| (PartyIndex::from(*share_index), device.pubkey()))
                     .collect::<BTreeMap<_, _>>();
                 let schnorr = schnorr_fun::new_with_deterministic_nonces::<Sha256>();
                 let mut input_aggregator = encpedpop::Coordinator::new(
-                    threshold.into(),
-                    (devices.len() + 1) as u32,
+                    (*threshold).into(),
+                    (n_devices + 1) as u32,
                     &share_receivers_enckeys,
                 );
                 // We don't need to keep the _coordinator_inputter state since we are the one forming agg_input
                 //
                 let (_coordinator_inputter, input) = encpedpop::Contributor::gen_keygen_input(
                     &schnorr,
-                    threshold.into(),
+                    (*threshold).into(),
                     &share_receivers_enckeys,
                     0,
                     rng,
@@ -747,18 +741,10 @@ impl FrostCoordinator {
                         input_aggregator,
                         device_to_share_index: device_to_share_index.clone(),
                         pending_key_name: key_name.to_string(),
-                        purpose: key_purpose,
+                        purpose: *purpose,
                     }));
 
-                Ok(vec![CoordinatorSend::ToDevice {
-                    message: CoordinatorToDeviceMessage::DoKeyGen {
-                        device_to_share_index,
-                        threshold,
-                        key_name,
-                        purpose: key_purpose,
-                    },
-                    destinations: devices.clone(),
-                }])
+                Ok(SendDokeygen(do_keygen))
             }
             Some(action_state) => Err(ActionError::WrongState {
                 in_state: action_state.name(),
@@ -1678,6 +1664,21 @@ impl IntoIterator for StartSign {
         core::iter::once(CoordinatorSend::ToDevice {
             message: CoordinatorToDeviceMessage::RequestSign(self.sign_request),
             destinations: self.target_devices,
+        })
+    }
+}
+
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+pub struct SendDokeygen(pub DoKeyGen);
+
+impl IntoIterator for SendDokeygen {
+    type Item = CoordinatorSend;
+    type IntoIter = core::iter::Once<CoordinatorSend>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        core::iter::once(CoordinatorSend::ToDevice {
+            destinations: self.0.device_to_share_index.keys().cloned().collect(),
+            message: CoordinatorToDeviceMessage::DoKeyGen(self.0),
         })
     }
 }
