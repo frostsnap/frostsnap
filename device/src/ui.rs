@@ -125,6 +125,7 @@ pub enum Prompt {
     KeyGen {
         session_hash: SessionHash,
         key_name: String,
+        t_of_n: (u16, u16),
     },
     Signing(SignPrompt),
     NewName {

@@ -527,10 +527,12 @@ where
                                 key_id: _,
                                 session_hash,
                                 key_name,
+                                t_of_n,
                             } => {
                                 ui.set_workflow(ui::Workflow::prompt(ui::Prompt::KeyGen {
                                     session_hash,
                                     key_name,
+                                    t_of_n,
                                 }));
                             }
                             DeviceToUserMessage::SignatureRequest {

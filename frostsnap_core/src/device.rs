@@ -287,6 +287,7 @@ impl FrostSigner {
                     input_state,
                     key_name,
                     key_purpose,
+                    threshold,
                     ..
                 }),
                 CoordinatorToDeviceMessage::FinishKeyGen { agg_input },
@@ -326,6 +327,8 @@ impl FrostSigner {
                     .expect("this has been checked");
                 let key_id = KeyId::from_rootkey(rootkey);
 
+                let t_of_n = (*threshold, device_to_share_index.len() as u16);
+
                 self.action_state = Some(SignerState::KeyGenAck {
                     secret_share,
                     agg_input,
@@ -338,6 +341,7 @@ impl FrostSigner {
                         key_id,
                         session_hash,
                         key_name,
+                        t_of_n,
                     },
                 ))])
             }

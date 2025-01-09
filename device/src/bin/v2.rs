@@ -324,10 +324,11 @@ where
                     Prompt::KeyGen {
                         session_hash,
                         key_name,
-                        ..
+                        t_of_n,
                     } => {
                         self.display.show_keygen_check(
                             key_name,
+                            *t_of_n,
                             &format!(
                                 "{} {}",
                                 hex::encode(&session_hash.0[0..2]),
