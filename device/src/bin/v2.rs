@@ -20,6 +20,7 @@ use esp_hal::{
         timer::{self as timerledc, LSClockSource, TimerIFace},
         LSGlobalClkSource, Ledc, LowSpeed,
     },
+    peripherals::Peripherals,
     prelude::*,
     rng::Trng,
     spi::{
@@ -54,16 +55,44 @@ use micromath::F32Ext;
 use mipidsi::{error::Error, models::ST7789, options::ColorInversion};
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
-/// # Pin Configuration
-///
-/// GPIO21:     USB UART0 TX  (connect upstream)
-/// GPIO20:     USB UART0 RX  (connect upstream)
-///
-/// GPIO18:     JTAG/UART1 TX (connect downstream)
-/// GPIO19:     JTAG/UART1 RX (connect downstream)
-///
-/// GPIO0: Upstream detection
-/// GPIO10: Downstream detection
+// # Pin Configuration
+//
+// GPIO21:     USB UART0 TX  (connect upstream)
+// GPIO20:     USB UART0 RX  (connect upstream)
+//
+// GPIO18:     JTAG/UART1 TX (connect downstream)
+// GPIO19:     JTAG/UART1 RX (connect downstream)
+//
+// GPIO0: Upstream detection
+// GPIO10: Downstream detection
+
+macro_rules! init_display {
+    (peripherals: $peripherals:ident, delay: $delay:expr) => {{
+        let spi = Spi::new_with_config(
+            $peripherals.SPI2,
+            spiConfig {
+                frequency: 80.MHz(),
+                mode: SpiMode::Mode2,
+                ..spiConfig::default()
+            },
+        )
+        .with_sck($peripherals.GPIO8)
+        .with_mosi($peripherals.GPIO7);
+
+        let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, NoCs);
+        let di = SPIInterface::new(spi_device, Output::new($peripherals.GPIO9, Level::Low));
+
+        let display = mipidsi::Builder::new(ST7789, di)
+            .display_size(240, 280)
+            .display_offset(0, 20) // 240*280 panel
+            .invert_colors(ColorInversion::Inverted)
+            .reset_pin(Output::new($peripherals.GPIO6, Level::Low))
+            .init($delay)
+            .unwrap();
+
+        display
+    }};
+}
 
 #[entry]
 fn main() -> ! {
@@ -103,26 +132,8 @@ fn main() -> ! {
         })
         .unwrap();
 
-    let spi = Spi::new_with_config(
-        peripherals.SPI2,
-        spiConfig {
-            frequency: 80.MHz(),
-            mode: SpiMode::Mode2,
-            ..spiConfig::default()
-        },
-    )
-    .with_sck(peripherals.GPIO8)
-    .with_mosi(peripherals.GPIO7);
-    let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, NoCs);
-    let di = SPIInterface::new(spi_device, Output::new(peripherals.GPIO9, Level::Low));
-    let display = mipidsi::Builder::new(ST7789, di)
-        .display_size(240, 280)
-        .display_offset(0, 20) // 240*280 panel
-        .invert_colors(ColorInversion::Inverted)
-        .reset_pin(Output::new(peripherals.GPIO6, Level::Low))
-        .init(&mut delay)
-        .unwrap();
-    let mut display = graphics::Graphics::new(display).unwrap();
+    let display = init_display!(peripherals: peripherals, delay: &mut delay);
+    let mut display = graphics::Graphics::new(display);
 
     let i2c = I2c::new(
         peripherals.I2C0,
@@ -620,12 +631,9 @@ fn y_based_adjustment(y: i32) -> i32 {
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     use core::fmt::Write;
-    let peripherals = esp_hal::init({
-        let mut config = esp_hal::Config::default();
-        config.cpu_clock = CpuClock::max();
-        config
-    });
-
+    // XXX: Don't try and remove this steal. This is the only way to get the peripherals after start
+    // up.
+    let peripherals = unsafe { Peripherals::steal() };
     let mut bl = Output::new(peripherals.GPIO1, Level::Low);
 
     let mut delay = Delay::new();
@@ -642,27 +650,8 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         None => write!(&mut panic_buf, "{}", info),
     };
 
-    let spi = Spi::new_with_config(
-        peripherals.SPI2,
-        spiConfig {
-            frequency: 40.MHz(),
-            mode: SpiMode::Mode2,
-            ..spiConfig::default()
-        },
-    )
-    .with_sck(peripherals.GPIO8)
-    .with_mosi(peripherals.GPIO7);
-    let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, NoCs);
-    let di = SPIInterface::new(spi_device, Output::new(peripherals.GPIO9, Level::Low));
-    let mut display = mipidsi::Builder::new(ST7789, di)
-        .display_size(240, 280)
-        .display_offset(0, 20) // 240*280 panel
-        .invert_colors(ColorInversion::Inverted)
-        .reset_pin(Output::new(peripherals.GPIO6, Level::Low))
-        .init(&mut delay)
-        .unwrap();
+    let mut display = init_display!(peripherals: peripherals, delay: &mut delay);
     graphics::error_print(&mut display, panic_buf.as_str());
     bl.set_high();
-
     loop {}
 }
