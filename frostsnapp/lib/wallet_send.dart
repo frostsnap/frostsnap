@@ -21,11 +21,9 @@ class WalletSendPage extends StatelessWidget {
         title: const Text('Send Bitcoin'),
         centerTitle: true,
       ),
-      body: WalletSend(
-          onBroadcastNewTx: () => Navigator.popUntil(context, (route) {
-                return route is MaterialPageRoute &&
-                    route.builder(context) is WalletHome;
-              })),
+      body: WalletSend(onBroadcastNewTx: () {
+        Navigator.of(context).pop();
+      }),
       backgroundColor: theme.colorScheme.surfaceContainer,
     );
   }
@@ -76,7 +74,7 @@ class _WalletSendState extends State<WalletSend> {
         onPressed: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) {
             return LoadPsbtPage(
-              wallet: walletCtx.superWallet,
+              wallet: walletCtx.wallet,
             );
           }));
         },
