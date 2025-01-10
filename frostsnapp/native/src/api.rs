@@ -1053,6 +1053,10 @@ impl Coordinator {
     pub fn get_connected_device(&self, id: DeviceId) -> SyncReturn<Option<ConnectedDevice>> {
         SyncReturn(self.0.get_connected_device(id))
     }
+
+    pub fn wipe_device_data(&self, device_id: DeviceId) {
+        self.0.wipe_device_data(device_id);
+    }
 }
 
 #[derive(Clone)]

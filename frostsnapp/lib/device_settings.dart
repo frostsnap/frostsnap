@@ -46,14 +46,22 @@ class _DeviceSettingsState extends State<DeviceSettings> {
   void initState() {
     super.initState();
     _deviceRemoved = Completer();
-    _subscription = deviceListSubject.listen((event) {
+
+    deviceListSubject.listen((event) {
       setState(() {
         device = event.state.getDevice(id: widget.id);
       });
-      if (device == null) {
-        if (!_deviceRemoved.isCompleted) {
-          _deviceRemoved.complete();
-        }
+    });
+
+    deviceListSubject
+        .where((event) => event.changes.any((change) =>
+            change.kind == DeviceListChangeKind.Removed &&
+            deviceIdEquals(change.device.id, widget.id)))
+        .first
+        .then((_) {
+      _deviceRemoved.complete();
+      if (mounted) {
+        Navigator.pop(context);
       }
     });
   }
@@ -69,6 +77,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
     final theme = Theme.of(context);
     final Widget body;
     final keys = coord.keyState().keys;
+
     if (device == null) {
       body = Center(
           child: Column(children: [
@@ -160,11 +169,25 @@ class _DeviceSettingsState extends State<DeviceSettings> {
         ),
       ]);
 
+      final wipeDeviceSettings =
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Delete all device data, making it a blank new device.',
+            style: TextStyle()),
+        SizedBox(height: 8),
+        ElevatedButton(
+          onPressed: () async {
+            coord.wipeDeviceData(deviceId: device_.id);
+          },
+          child: Text("Wipe"),
+        ),
+      ]);
+
       final settings = SettingsSection(settings: [
         ("Name", DeviceNameField(id: device_.id, existingName: device_.name)),
         ("Key Shares", keyList),
         ("Nonces", NonceCounterDisplay(id: device_.id)),
-        ("Update Firmware", firmwareSettings)
+        ("Update Firmware", firmwareSettings),
+        ("Wipe Device", wipeDeviceSettings)
       ]);
 
       body = Column(children: [

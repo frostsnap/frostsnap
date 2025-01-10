@@ -144,6 +144,7 @@ pub enum CoordinatorSendBody {
     AnnounceAck,
     Cancel,
     Upgrade(CoordinatorUpgradeMessage),
+    DataWipe,
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
