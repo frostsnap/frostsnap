@@ -1,12 +1,13 @@
 extern crate alloc;
-use alloc::{format, string::String, vec::Vec};
+use alloc::{string::String, vec::Vec};
 use bincode::{
     de::read::Reader,
     enc::write::Writer,
     error::{DecodeError, EncodeError},
 };
-use embedded_storage::{nor_flash, ReadStorage, Storage};
-use esp_storage::{FlashStorage, FlashStorageError};
+use embedded_storage::nor_flash::{self, NorFlash};
+use esp_storage::FlashStorageError;
+use frostsnap_comms::BINCODE_CONFIG;
 use frostsnap_core::{device, schnorr_fun::fun::Scalar};
 
 const NVS_PARTITION_START: u32 = 0x3D0000;
@@ -15,11 +16,13 @@ const HEADER_LEN: usize = 256;
 const DATA_START: u32 = NVS_PARTITION_START + HEADER_LEN as u32;
 const MAGIC_BYTES_LEN: usize = 8;
 const MAGIC_BYTES: [u8; MAGIC_BYTES_LEN] = *b"fsheader";
+const WORD_SIZE: usize = core::mem::size_of::<u32>();
 
-pub struct DeviceStorage {
-    flash: FlashStorage,
-    pos: u32,
+pub struct DeviceStorage<S> {
+    flash: S,
+    word_pos: usize,
     write_buffer: Vec<u8>,
+    read_buffer: Vec<u8>,
 }
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
@@ -54,23 +57,22 @@ impl bincode::Decode for MagicBytes {
     }
 }
 
-impl DeviceStorage {
-    pub fn new(flash: FlashStorage) -> Self {
+impl<S: NorFlash<Error = FlashStorageError>> DeviceStorage<S> {
+    pub fn new(flash: S) -> Self {
+        assert_eq!(WORD_SIZE, S::WRITE_SIZE);
         Self {
             flash,
-            pos: DATA_START,
+            word_pos: DATA_START as usize / WORD_SIZE,
             // This is just the starting capacity
             write_buffer: Vec::with_capacity(1024),
+            read_buffer: Vec::with_capacity(1024),
         }
     }
 
     pub fn read_header(&mut self) -> Result<Option<Header>, FlashStorageError> {
         let mut header_bytes = [0u8; HEADER_LEN];
         self.flash.read(NVS_PARTITION_START, &mut header_bytes)?;
-        match bincode::decode_from_slice::<(MagicBytes, Header), _>(
-            &header_bytes,
-            bincode::config::standard(),
-        ) {
+        match bincode::decode_from_slice::<(MagicBytes, Header), _>(&header_bytes, BINCODE_CONFIG) {
             Ok(((_, header), _)) => Ok(Some(header)),
             Err(bincode::error::DecodeError::Other("invalid magic bytes")) => Ok(None),
             Err(e) => panic!("nvs: invalid header. {e}"),
@@ -79,55 +81,88 @@ impl DeviceStorage {
 
     pub fn write_header(&mut self, header: Header) -> Result<(), FlashStorageError> {
         let mut header_bytes = [0u8; HEADER_LEN];
-        bincode::encode_into_slice(
-            &(MagicBytes, header),
-            &mut header_bytes,
-            bincode::config::standard(),
-        )
-        .expect("header shouldn't be too long");
+        bincode::encode_into_slice(&(MagicBytes, header), &mut header_bytes, BINCODE_CONFIG)
+            .expect("header shouldn't be too long");
         self.flash.write(NVS_PARTITION_START, &header_bytes)
     }
 
+    /// The layout of the entries are word aligned and length prefixed. So the first entry has a
+    /// four byte little endian entry length (in words), and then the main body of the item bincode
+    /// encoded. Bincode doesn't care if it doesn't use all the bytes so there's no need to know
+    /// exactly where it ends.
     pub fn append(
         &mut self,
         changes: impl IntoIterator<Item = Change>,
-    ) -> Result<(), bincode::error::EncodeError> {
+    ) -> Result<(), FlashStorageError> {
         for change in changes.into_iter() {
-            bincode::encode_into_writer(
-                change,
-                BufWriter(&mut self.write_buffer),
-                bincode::config::standard(),
-            )?;
+            self.write_buffer.clear();
+            // placeholder for the length
+            self.write_buffer
+                .extend(core::iter::repeat_n(0x00, WORD_SIZE));
+            bincode::encode_into_writer(change, BufWriter(&mut self.write_buffer), BINCODE_CONFIG)
+                .expect("can bincode encode type to buffer");
+
+            let padding_needed = (WORD_SIZE - (self.write_buffer.len() % WORD_SIZE)) % WORD_SIZE;
+
+            self.write_buffer
+                .extend(core::iter::repeat_n(0xff, padding_needed));
+            assert_eq!(self.write_buffer.len() % WORD_SIZE, 0);
+
+            let word_length: u32 = (self.write_buffer.len() / WORD_SIZE)
+                .try_into()
+                .expect("flash item too large");
+
+            self.write_buffer[0..WORD_SIZE].copy_from_slice(
+                (word_length - 1/* don't include the length word */)
+                    .to_le_bytes()
+                    .as_slice(),
+            );
+            let byte_pos = (self.word_pos * WORD_SIZE) as u32;
+            nor_flash::NorFlash::write(&mut self.flash, byte_pos, &self.write_buffer[..])?;
+            self.word_pos += word_length as usize;
+            self.write_buffer.clear();
         }
-        if self.write_buffer.is_empty() {
-            return Ok(());
-        }
-        self.flash
-            .write(self.pos, &self.write_buffer[..])
-            .map_err(|e| {
-                bincode::error::EncodeError::OtherString(format!("flash write error: {:?}", e))
-            })?;
-        self.pos += self.write_buffer.len() as u32;
-        self.write_buffer.clear();
 
         Ok(())
     }
 
     pub fn iter(&mut self) -> impl Iterator<Item = Change> + '_ {
-        self.pos = DATA_START;
         core::iter::from_fn(move || {
-            let pos_before_read = self.pos;
-            match bincode::decode_from_reader(&mut *self, bincode::config::standard()) {
-                Ok(change) => Some(change),
-                Err(_) => {
-                    self.pos = pos_before_read;
-                    None
-                }
+            let mut length_buf = [0u8; WORD_SIZE];
+            let byte_pos = self.word_pos * WORD_SIZE;
+            if let Err(e) = self.flash.read(byte_pos as u32, &mut length_buf[..]) {
+                panic!(
+                    "failed to read {} bytes at {}: {e:?}",
+                    length_buf.len(),
+                    byte_pos
+                );
+            }
+            if length_buf == [0xff; WORD_SIZE] {
+                return None;
+            }
+            let word_length = u32::from_le_bytes(length_buf);
+            self.read_buffer.clear();
+            self.read_buffer.extend(core::iter::repeat_n(
+                0xff,
+                (word_length as usize) * WORD_SIZE,
+            ));
+            let body_byte_pos = byte_pos + WORD_SIZE;
+            self.flash
+                .read(body_byte_pos as u32, &mut self.read_buffer)
+                .expect("unabled to read entry from flash");
+            self.word_pos += word_length as usize + 1;
+            match bincode::decode_from_slice(&self.read_buffer[..], bincode::config::standard()) {
+                Ok((item, _)) => Some(item),
+                Err(e) => panic!(
+                    "failed to decode flash entry of length {}: {}",
+                    word_length as usize * WORD_SIZE,
+                    e
+                ),
             }
         })
     }
 
-    pub fn flash_mut(&mut self) -> &mut FlashStorage {
+    pub fn flash_mut(&mut self) -> &mut S {
         &mut self.flash
     }
 
@@ -137,16 +172,6 @@ impl DeviceStorage {
             NVS_PARTITION_START,
             NVS_PARTITION_START + _NVS_PARTITION_SIZE as u32,
         )
-    }
-}
-
-impl Reader for DeviceStorage {
-    fn read(&mut self, bytes: &mut [u8]) -> Result<(), DecodeError> {
-        self.flash
-            .read(self.pos, bytes)
-            .map_err(|e| DecodeError::OtherString(format!("Flash read error {:?}", e)))?;
-        self.pos += bytes.len() as u32;
-        Ok(())
     }
 }
 
