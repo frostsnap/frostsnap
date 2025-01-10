@@ -59,13 +59,11 @@ impl<DT> Graphics<DT>
 where
     DT: DrawTarget<Color = Rgb565, Error = Error> + OriginDimensions,
 {
-    pub fn new(display: DT) -> Result<Self, Error> {
-        let mut _self = Self {
+    pub fn new(display: DT) -> Self {
+        Self {
             framebuf: Box::new(Fb::new()),
             display,
-        };
-
-        Ok(_self)
+        }
     }
 
     pub fn flush(&mut self) {
