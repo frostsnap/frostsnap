@@ -12,6 +12,7 @@ import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/sign_message.dart';
 import 'package:frostsnapp/snackbar.dart';
 import 'package:frostsnapp/wallet.dart';
+import 'package:frostsnapp/wallet_send.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
@@ -158,7 +159,7 @@ Future<void> runPsbtSigningWorkflow(
   final signatures = await showSigningProgressDialog(
     context,
     signingStream,
-    describeEffect(effect),
+    describeEffect(context, effect),
   );
   if (signatures != null) {
     final signedPsbt = await unsignedTx.attachSignaturesToPsbt(
@@ -188,7 +189,9 @@ Future<void> saveOrBroadcastSignedPsbtDialog(
         final broadcastButton = ElevatedButton(
             onPressed: () async {
               final broadcasted = await showBroadcastConfirmDialog(context,
-                  wallet: wallet, tx: tx);
+                  masterAppkey: wallet.masterAppkey,
+                  tx: tx,
+                  superWallet: wallet.superWallet);
               if (broadcasted && context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(

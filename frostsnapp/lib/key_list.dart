@@ -11,6 +11,8 @@ import 'package:frostsnapp/snackbar.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/wallet.dart';
 import 'package:frostsnapp/either.dart';
+import 'package:frostsnapp/wallet_send.dart';
+
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'package:flutter/material.dart';
 import 'package:confetti/confetti.dart';
@@ -37,7 +39,7 @@ class KeyList extends StatelessWidget {
       return value;
     });
 
-    final showDevicesButton = ElevatedButton(
+    final showDevicesButton = FilledButton(
         onPressed: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) {
             return DeviceSettingsPage();
@@ -86,8 +88,8 @@ class KeyList extends StatelessWidget {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    ElevatedButton(
-                      child: const Text("New key"),
+                    FilledButton(
+                      child: const Text("New wallet"),
                       onPressed: () async {
                         final newId = await Navigator.push(context,
                             MaterialPageRoute(builder: (context) {
@@ -115,34 +117,51 @@ class RecoverableKeyCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final cardTheme = Theme.of(context).cardTheme;
-    final ShapeBorder cardShape = cardTheme.shape!;
+    final ShapeBorder cardShape = cardTheme.shape ??
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12.0),
+        );
+
     return Padding(
-        padding: cardTheme.margin!,
-        child: DottedBorder(
-          customPath: (size) {
-            final Rect rect = Rect.fromLTWH(0, 0, size.width, size.height);
-            return cardShape.getOuterPath(rect);
-          },
-          strokeWidth: 2,
-          dashPattern: const [8, 4],
-          color: Colors.black, // Customize the border color
-          child: Material(
-            color: Colors.transparent,
-            shadowColor: Colors.transparent,
-            shape: cardShape,
-            elevation: cardTheme.elevation ?? 1.0,
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(children: [
-                Text(
-                  recoverableKey.name,
-                  style: Theme.of(context).textTheme.titleMedium,
+      padding: const EdgeInsets.all(4.0),
+      child: DottedBorder(
+        customPath: (size) {
+          final Rect rect = Rect.fromLTWH(0, 0, size.width, size.height);
+          return cardShape.getOuterPath(rect);
+        },
+        strokeWidth: 2,
+        dashPattern: const [8, 4],
+        child: Material(
+          color: theme.colorScheme.surfaceContainerLowest,
+          shape: cardShape,
+          elevation: cardTheme.elevation ?? 1.0,
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Stack(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Column(
+                      children: [
+                        Text(
+                          recoverableKey.name,
+                          style: Theme.of(context).textTheme.titleMedium,
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 8),
+                        AccessStructureSummary(t: recoverableKey.threshold),
+                      ],
+                    )
+                  ],
                 ),
-                SizedBox(width: 8),
-                AccessStructureSummary(t: recoverableKey.threshold),
-                Spacer(),
-                ElevatedButton(
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: ElevatedButton(
                     onPressed: () async {
                       try {
                         coord.startRecovery(
@@ -153,11 +172,15 @@ class RecoverableKeyCard extends StatelessWidget {
                         }
                       }
                     },
-                    child: Text("recover"))
-              ]),
+                    child: const Text("Recover"),
+                  ),
+                ),
+              ],
             ),
           ),
-        ));
+        ),
+      ),
+    );
   }
 }
 
@@ -264,51 +287,28 @@ class KeyCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final mainAccessStructure = accessStructureSummaries[0];
-    final t = mainAccessStructure.$1;
-    final n = mainAccessStructure.$2;
+    final theme = Theme.of(context);
+    final (t, n) = accessStructureSummaries[0];
 
-    return Stack(alignment: Alignment.center, children: [
-      Card(
-          child: Padding(
+    return Card(
+      color: theme.colorScheme.secondaryContainer,
+      child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Row(children: [
-              Text(
-                keyName,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              SizedBox(width: 8),
-              AccessStructureSummary(t: t, n: n),
-            ]),
-            SizedBox(height: 10),
-            Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [KeyButtons(keyId: keyId!)])
+            Text(
+              keyName,
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 8),
+            AccessStructureSummary(t: t, n: n),
+            const SizedBox(height: 8),
+            KeyButtons(keyId: keyId!)
           ],
         ),
-      )),
-      Positioned(
-        top: 8,
-        right: 8,
-        child: IconButton(
-          onPressed: () async {
-            final superWallet = SuperWalletContext.of(context)!;
-            if (context.mounted) {
-              Navigator.push(context, MaterialPageRoute(builder: (context) {
-                return superWallet.tryWrapInWalletContext(
-                    keyId: keyId!, child: SettingsPage());
-              }));
-            }
-          },
-          icon: Icon(
-            Icons.settings,
-          ),
-        ),
       ),
-    ]);
+    );
   }
 }
 
@@ -333,14 +333,46 @@ class _KeyButtons extends State<KeyButtons> {
 
   @override
   Widget build(BuildContext context) {
-    final settingsCtx = SettingsContext.of(context)!;
-    final Widget continueSigning;
+    final theme = Theme.of(context);
     final frostKey = coord.getFrostKey(keyId: widget.keyId);
     final masterAppkey = frostKey?.masterAppkey();
     final bitcoinNetwork = frostKey?.bitcoinNetwork();
+    final settingsCtx = SettingsContext.of(context)!;
+    final Widget continueSigning;
+
+    final signButton = ElevatedButton(
+        onPressed: () {
+          if (frostKey != null) {
+            Navigator.push(context, MaterialPageRoute(builder: (context) {
+              return SignMessagePage(frostKey: frostKey);
+            }));
+          }
+        },
+        child: Text("Sign"));
+
+    final Widget walletButton = ElevatedButton(
+      onPressed: () async {
+        if (frostKey != null) {
+          final superWallet = SuperWalletContext.of(context)!;
+          Navigator.push(context, MaterialPageRoute(builder: (context) {
+            return superWallet.tryWrapInWalletContext(
+                keyId: api.masterAppkeyExtToKeyId(masterAppkey: masterAppkey!),
+                child: WalletHome());
+          }));
+        }
+      },
+      child: Badge(
+        label: Text(bitcoinNetwork?.name() ?? ""),
+        isLabelVisible: !(bitcoinNetwork?.isMainnet() ?? true),
+        alignment: AlignmentDirectional.bottomEnd,
+        textColor: theme.colorScheme.error,
+        backgroundColor: theme.colorScheme.surface,
+        child: Icon(Icons.currency_bitcoin),
+      ),
+    );
 
     if (restorableSignSession != null && masterAppkey != null) {
-      continueSigning = ElevatedButton(
+      continueSigning = FilledButton(
           onPressed: () async {
             final signingStream = coord
                 .tryRestoreSigningSession(keyId: widget.keyId)
@@ -356,9 +388,10 @@ class _KeyButtons extends State<KeyButtons> {
                 {
                   final wallet = settingsCtx.loadWallet(keyId: widget.keyId);
 
-                  if (context.mounted) {
+                  if (context.mounted && wallet != null) {
                     await signAndBroadcastWorkflowDialog(
-                      wallet: wallet!,
+                      masterAppkey: wallet.masterAppkey,
+                      superWallet: wallet.superWallet,
                       context: context,
                       signingStream: signingStream,
                       unsignedTx: unsignedTx,
@@ -376,51 +409,19 @@ class _KeyButtons extends State<KeyButtons> {
     } else {
       continueSigning = Container();
     }
-    final signButton = ElevatedButton(
-        onPressed: masterAppkey == null
-            ? null
-            : () {
-                Navigator.push(context, MaterialPageRoute(builder: (context) {
-                  return SignMessagePage(frostKey: frostKey!);
-                }));
-              },
-        child: Text("Sign"));
 
-    final Widget walletButton = ElevatedButton(
-      onPressed: masterAppkey == null
-          ? null
-          : () async {
-              if (context.mounted) {
-                final superWallet = SuperWalletContext.of(context)!;
-                Navigator.push(context, MaterialPageRoute(builder: (context) {
-                  return superWallet.tryWrapInWalletContext(
-                      keyId: api.masterAppkeyExtToKeyId(
-                          masterAppkey: masterAppkey),
-                      child: WalletHome());
-                }));
-              }
-            },
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text("₿"),
-          if (bitcoinNetwork != null && !bitcoinNetwork.isMainnet())
-            Text(
-              bitcoinNetwork.name(),
-              style:
-                  TextStyle(fontSize: 12, color: Colors.red), // Custom styling
-            ),
-        ],
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          signButton,
+          const SizedBox(width: 5),
+          walletButton,
+          const SizedBox(width: 5),
+          continueSigning,
+        ])
+      ],
     );
-
-    return Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-      signButton,
-      const SizedBox(width: 5),
-      if (bitcoinNetwork != null) walletButton,
-      const SizedBox(width: 5),
-      continueSigning,
-    ]);
   }
 }
 

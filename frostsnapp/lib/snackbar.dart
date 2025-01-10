@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/theme.dart';
 
 void showErrorSnackbarTop(BuildContext context, String errorMessage) {
+  final theme = Theme.of(context);
   final snackBar = SnackBar(
     content: Text(
       errorMessage,
-      style: TextStyle(
-        fontSize: 16.0,
-      ),
+      style: theme.textTheme.titleMedium,
     ),
-    backgroundColor: errorColor,
+    backgroundColor: theme.colorScheme.error,
     dismissDirection: DismissDirection.up,
     duration: Duration(seconds: 3), // Adjust the duration as needed
     behavior: SnackBarBehavior.floating, // Make the SnackBar float
@@ -24,13 +22,14 @@ void showErrorSnackbarTop(BuildContext context, String errorMessage) {
 }
 
 void showErrorSnackbarBottom(BuildContext context, String message) {
+  final theme = Theme.of(context);
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
       content: Text(
         message,
-        style: TextStyle(fontSize: 16.0),
+        style: theme.textTheme.titleMedium,
       ),
-      backgroundColor: errorColor,
+      backgroundColor: theme.colorScheme.error,
       behavior: SnackBarBehavior.floating,
     ),
   );

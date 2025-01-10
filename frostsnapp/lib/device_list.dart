@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:frostsnapp/device.dart';
 import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/device_setup.dart';
-import 'package:frostsnapp/theme.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'global.dart';
 
@@ -97,6 +96,7 @@ class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final orientation = effectiveOrientation(context);
 
     final noDevices = StreamBuilder(
@@ -107,7 +107,7 @@ class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
           } else {
             return Text(
               'No devices connected',
-              style: TextStyle(color: uninterestedColor, fontSize: 24.0),
+              style: theme.textTheme.titleMedium,
             );
           }
         });
@@ -227,23 +227,20 @@ class DeviceListWithIcons extends StatelessWidget {
 
 Widget buildInteractiveDevice(BuildContext context, ConnectedDevice device,
     Orientation orientation, Animation<double> animation) {
+  final theme = Theme.of(context);
   final List<Widget> children = [];
   final upToDate = device.firmwareDigest == coord.upgradeFirmwareDigest();
-
   if (device.name == null) {
     children.add(Spacer(flex: 6));
   } else {
     children.add(LabeledDeviceText(device.name!));
   }
-
   children.add(Spacer(flex: 3));
-
   final Widget interaction;
-
   if (upToDate) {
     if (device.name == null) {
       interaction = TextButton(
-        style: TextButton.styleFrom(
+        style: ElevatedButton.styleFrom(
             shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(4.0), // Rectangular shape
         )),
@@ -252,7 +249,12 @@ Widget buildInteractiveDevice(BuildContext context, ConnectedDevice device,
             return DeviceSetup(id: device.id);
           }));
         },
-        child: Text('New device', style: TextStyle(fontSize: 12.0)),
+        child: Text(
+          'New Device',
+          style:
+              theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
+          textAlign: TextAlign.center,
+        ),
       );
     } else {
       interaction = IconButton(
@@ -275,17 +277,14 @@ Widget buildInteractiveDevice(BuildContext context, ConnectedDevice device,
               FirmwareUpgradeDialog.show(context);
             },
             icon: Icon(Icons.upgrade),
-            color: awaitingColor,
           ),
-          SizedBox(height: 5.0),
-          Text("Upgrade", style: TextStyle(color: textColor, fontSize: 13.0)),
-          Text("Firmware", style: TextStyle(color: textColor, fontSize: 13.0))
+          SizedBox(height: 6.0),
+          Text("Upgrade", style: theme.textTheme.bodyMedium),
+          Text("Firmware", style: theme.textTheme.bodyMedium)
         ]);
   }
-
   children.add(interaction);
   children.add(Spacer(flex: 10));
-
   return DeviceBoxContainer(
       orientation: orientation,
       animation: animation,

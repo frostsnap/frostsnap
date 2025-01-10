@@ -12,7 +12,7 @@ import 'package:frostsnapp/hex.dart';
 import 'package:frostsnapp/show_backup.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/stream_ext.dart';
-import 'package:frostsnapp/theme.dart';
+import 'package:frostsnapp/progress_indicator.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class KeyNamePage extends StatefulWidget {
@@ -152,6 +152,8 @@ class DevicesPage extends StatelessWidget {
       body: StreamBuilder(
           stream: deviceListSubject,
           builder: (context, snapshot) {
+            final theme = Theme.of(context);
+
             if (!snapshot.hasData) {
               return FsProgressIndicator();
             }
@@ -170,7 +172,7 @@ class DevicesPage extends StatelessWidget {
             if (anyNeedUpgrade) {
               prompt =
                   Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Icon(Icons.warning, color: awaitingColor),
+                Icon(Icons.warning, color: theme.colorScheme.secondary),
                 SizedBox(width: 5.0),
                 Expanded(
                     child: Text(
@@ -205,10 +207,9 @@ class DevicesPage extends StatelessWidget {
                 Container(
                   // Wrap the bottom section in a Container with BoxDecoration
                   decoration: BoxDecoration(
-                    color: backgroundPrimaryColor,
+                    color: theme.colorScheme.surfaceContainer,
                     boxShadow: const [
                       BoxShadow(
-                        color: shadowColor,
                         spreadRadius: 1,
                         blurRadius: 8,
                         offset: Offset(0, 4), // Position of the shadow
@@ -469,14 +470,14 @@ Future<AccessStructureRef?> showCheckKeyGenDialog({
                 ),
                 Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                   Text('If they do not then '),
-                  TextButton(
+                  ElevatedButton(
                     onPressed: () {
                       coord.cancelProtocol();
                     },
-                    style: TextButton.styleFrom(
+                    style: ElevatedButton.styleFrom(
                         tapTargetSize: MaterialTapTargetSize
                             .shrinkWrap, // Reduce button tap target size
-                        backgroundColor: errorColor),
+                        backgroundColor: Theme.of(context).colorScheme.error),
                     child: Text(
                       'cancel',
                       style: TextStyle(fontWeight: FontWeight.bold),
