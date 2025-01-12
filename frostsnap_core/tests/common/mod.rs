@@ -31,7 +31,6 @@ pub enum Send {
         destinations: BTreeSet<DeviceId>,
         message: CoordinatorToDeviceMessage,
     },
-    CoordinatorSigningSession(SigningSessionState),
 }
 
 impl From<CoordinatorSend> for Send {
@@ -45,9 +44,6 @@ impl From<CoordinatorSend> for Send {
                 message,
             },
             CoordinatorSend::ToUser(v) => v.into(),
-            CoordinatorSend::SigningSessionStore(session_state) => {
-                Send::CoordinatorSigningSession(session_state)
-            }
         }
     }
 }
@@ -263,9 +259,6 @@ impl Run {
                                 .map(|v| Send::device_send(destination, v)),
                         );
                     }
-                }
-                Send::CoordinatorSigningSession(signing_session_state) => {
-                    env.sign_session_state_react_to_coordinator(self, signing_session_state);
                 }
             }
         }

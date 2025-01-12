@@ -54,7 +54,6 @@ pub struct FfiCoordinator {
     db: Arc<Mutex<rusqlite::Connection>>,
     device_names: Arc<Mutex<Persisted<DeviceNames>>>,
     coordinator: Arc<Mutex<Persisted<FrostCoordinator>>>,
-    signing_session: Arc<Mutex<Persisted<Option<SigningSessionState>>>>,
 }
 
 impl FfiCoordinator {
@@ -68,8 +67,6 @@ impl FfiCoordinator {
         let coordinator = Persisted::<FrostCoordinator>::new(&mut db_, ())?;
         event!(Level::DEBUG, "loading device names");
         let device_names = Persisted::<DeviceNames>::new(&mut db_, ())?;
-        event!(Level::DEBUG, "loading saved signing session");
-        let signing_session = Persisted::<Option<SigningSessionState>>::new(&mut db_, ())?;
 
         let usb_sender = usb_manager.usb_sender();
         let firmware_bin = usb_manager.upgrade_bin();
@@ -91,7 +88,6 @@ impl FfiCoordinator {
             db,
             coordinator: Arc::new(Mutex::new(coordinator)),
             device_names: Arc::new(Mutex::new(device_names)),
-            signing_session: Arc::new(Mutex::new(signing_session)),
         })
     }
 
@@ -113,7 +109,6 @@ impl FfiCoordinator {
         let device_names = self.device_names.clone();
         let usb_sender = self.usb_sender.clone();
         let firmware_upgrade_progress = self.firmware_upgrade_progress.clone();
-        let signing_session = self.signing_session.clone();
         let key_event_stream = self.key_event_stream.clone();
         let recoverable_keys = self.recoverable_keys.clone();
         let device_list = self.device_list.clone();
@@ -262,21 +257,21 @@ impl FfiCoordinator {
                         for message in to_storage {
                             match message {
                                 frostsnap_coordinator::UiToStorageMessage::ClearSigningSession => {
-                                    let result = signing_session.lock().unwrap().mutate(
-                                        &mut *db,
-                                        |session| {
-                                            *session = None;
-                                            Ok(((), session.clone()))
-                                        },
-                                    );
+                                    // let result = signing_session.lock().unwrap().mutate(
+                                    //     &mut *db,
+                                    //     |session| {
+                                    //         *session = None;
+                                    //         Ok(((), session.clone()))
+                                    //     },
+                                    // );
 
-                                    if let Err(e) = result {
-                                        event!(
-                                            Level::ERROR,
-                                            error = e.to_string(),
-                                            "failed to clear signing session on disk"
-                                        );
-                                    }
+                                    // if let Err(e) = result {
+                                    //     event!(
+                                    //         Level::ERROR,
+                                    //         error = e.to_string(),
+                                    //         "failed to clear signing session on disk"
+                                    //     );
+                                    // }
                                 }
                             }
                         }
@@ -429,23 +424,6 @@ impl FfiCoordinator {
                                 }
                             }
                         }
-                        CoordinatorSend::SigningSessionStore(state) => {
-                            let result = signing_session.lock().unwrap().staged_mutate(
-                                &mut *db,
-                                |signing_session| {
-                                    *signing_session = Some(state);
-                                    Ok(())
-                                },
-                            );
-
-                            if let Err(e) = result {
-                                event!(
-                                    Level::ERROR,
-                                    error = e.to_string(),
-                                    "failed to sign session progress"
-                                );
-                            }
-                        }
                     }
                 }
             }
@@ -570,14 +548,10 @@ impl FfiCoordinator {
         #[allow(unused)] /* we only have one key for now */ master_appkey: KeyId,
         sink: StreamSink<api::SigningState>,
     ) -> anyhow::Result<()> {
-        let signing_session_state = self.signing_session.lock().unwrap();
-        let signing_session_state = signing_session_state
-            .clone()
-            .ok_or(anyhow!("no signing session to restore"))?;
         let mut coordinator = self.coordinator.lock().unwrap();
-        coordinator
+        let signing_session_state = coordinator
             .MUTATE_NO_PERSIST()
-            .restore_sign_session(signing_session_state.clone());
+            .continue_signing_session(master_appkey)?;
 
         let mut dispatcher = frostsnap_coordinator::signing::SigningDispatcher::new_from_request(
             signing_session_state.request.clone(),
@@ -593,25 +567,61 @@ impl FfiCoordinator {
         self.start_protocol(dispatcher);
 
         Ok(())
+
+        // let signing_session_state = self.signing_session.lock().unwrap();
+        // let signing_session_state = signing_session_state
+        //     .clone()
+        //     .ok_or(anyhow!("no signing session to restore"))?;
+        // let mut coordinator = self.coordinator.lock().unwrap();
+        // coordinator
+        //     .MUTATE_NO_PERSIST()
+        //     .restore_sign_session(signing_session_state.clone());
+
+        // let mut dispatcher = frostsnap_coordinator::signing::SigningDispatcher::new_from_request(
+        //     signing_session_state.request.clone(),
+        //     signing_session_state.targets.clone(),
+        //     SinkWrap(sink),
+        // );
+
+        // for already_provided in signing_session_state.received_from() {
+        //     dispatcher.set_signature_received(already_provided);
+        // }
+
+        // dispatcher.emit_state();
+        // self.start_protocol(dispatcher);
     }
 
     pub fn persisted_sign_session_description(
         &self,
         key_id: KeyId,
     ) -> Option<api::SignTaskDescription> {
-        let session = self.signing_session.lock().unwrap().clone()?;
-        if session.access_structure.master_appkey().key_id() != key_id {
-            return None;
-        }
-        Some(match session.request.sign_task {
-            SignTask::Plain { message, .. } => api::SignTaskDescription::Plain { message },
-            SignTask::Nostr { .. } => todo!("nostr restoring not yet implemented"),
-            SignTask::BitcoinTransaction(task) => api::SignTaskDescription::Transaction {
-                unsigned_tx: api::UnsignedTx {
-                    template_tx: RustOpaque::new(task),
+        let coordinator = self.coordinator.lock().unwrap();
+        coordinator
+            .get_signing_session(key_id)
+            .map(|session| match session.request.sign_task {
+                SignTask::Plain { message, .. } => api::SignTaskDescription::Plain { message },
+                SignTask::Nostr { .. } => todo!("nostr restoring not yet implemented"),
+                SignTask::BitcoinTransaction(task) => api::SignTaskDescription::Transaction {
+                    unsigned_tx: api::UnsignedTx {
+                        template_tx: RustOpaque::new(task),
+                    },
                 },
-            },
-        })
+            })
+
+        // let session = self.signing_session.lock().unwrap().clone()?;
+
+        // event!(
+        //     Level::INFO,
+        //     "muh signing sesison: {} ",
+        //     format!(
+        //         "{} - {}",
+        //         session.access_structure.master_appkey().key_id(),
+        //         key_id
+        //     ),
+        // );
+        // if session.access_structure.master_appkey().key_id() != key_id {
+        //     return None;
+        // }
     }
 
     pub fn request_display_backup(
