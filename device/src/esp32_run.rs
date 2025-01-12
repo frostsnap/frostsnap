@@ -311,9 +311,7 @@ where
                                                     // core messages to figure out when we're going
                                                     // to be busy.
                                                     match &core_message {
-                                                        CoordinatorToDeviceMessage::DoKeyGen {
-                                                            ..
-                                                        } => ui.set_busy_task(ui::BusyTask::KeyGen),
+                                                        CoordinatorToDeviceMessage::DoKeyGen(..) => ui.set_busy_task(ui::BusyTask::KeyGen),
                                                         CoordinatorToDeviceMessage::FinishKeyGen {
                                                             ..
                                                         } => ui.set_busy_task(ui::BusyTask::VerifyingShare),

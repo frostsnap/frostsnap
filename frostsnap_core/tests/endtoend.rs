@@ -1,10 +1,10 @@
 use bitcoin::Address;
-use common::{TestDeviceKeygen, TEST_ENCRYPTION_KEY};
+use common::{TestDeviceKeyGen, TEST_ENCRYPTION_KEY};
 use frostsnap_core::bitcoin_transaction::{LocalSpk, TransactionTemplate};
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::message::{
     CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, CoordinatorToUserSigningMessage,
-    DeviceToUserMessage, EncodedSignature,
+    DeviceToUserMessage, DoKeyGen, EncodedSignature,
 };
 use frostsnap_core::tweak::BitcoinBip32Path;
 use frostsnap_core::KeyId;
@@ -137,7 +137,7 @@ impl common::Env for TestEnv {
                 self.keygen_checks.insert(from, session_hash);
                 let ack = run
                     .device(from)
-                    .keygen_ack(&mut TestDeviceKeygen, rng)
+                    .keygen_ack(&mut TestDeviceKeyGen, rng)
                     .unwrap();
                 run.extend_from_device(from, ack);
             }
@@ -146,13 +146,13 @@ impl common::Env for TestEnv {
                 master_appkey: _,
             } => {
                 self.sign_tasks.insert(from, sign_task);
-                let sign_ack = run.device(from).sign_ack(&mut TestDeviceKeygen).unwrap();
+                let sign_ack = run.device(from).sign_ack(&mut TestDeviceKeyGen).unwrap();
                 run.extend_from_device(from, sign_ack);
             }
             DeviceToUserMessage::DisplayBackupRequest { .. } => {
                 let backup_ack = run
                     .device(from)
-                    .display_backup_ack(&mut TestDeviceKeygen)
+                    .display_backup_ack(&mut TestDeviceKeyGen)
                     .unwrap();
                 run.extend_from_device(from, backup_ack);
             }
@@ -212,10 +212,12 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
     let keygen_init = run
         .coordinator
         .do_keygen(
-            &device_set,
-            threshold,
-            "my new key".to_string(),
-            KeyPurpose::Test,
+            DoKeyGen::new(
+                device_set.clone(),
+                threshold,
+                "my new key".to_string(),
+                KeyPurpose::Test,
+            ),
             &mut test_rng,
         )
         .unwrap();
@@ -312,10 +314,12 @@ fn test_display_backup() {
     let keygen_init = run
         .coordinator
         .do_keygen(
-            &device_set,
-            threshold,
-            "my key".to_string(),
-            KeyPurpose::Test,
+            DoKeyGen::new(
+                device_set,
+                threshold,
+                "my key".to_string(),
+                KeyPurpose::Test,
+            ),
             &mut test_rng,
         )
         .unwrap();
@@ -418,10 +422,12 @@ fn test_verify_address() {
     let keygen_init = run
         .coordinator
         .do_keygen(
-            &device_set,
-            threshold,
-            "my key".to_string(),
-            KeyPurpose::Bitcoin(bitcoin::Network::Signet),
+            DoKeyGen::new(
+                device_set,
+                threshold,
+                "my key".to_string(),
+                KeyPurpose::Bitcoin(bitcoin::Network::Signet),
+            ),
             &mut test_rng,
         )
         .unwrap();
@@ -451,10 +457,12 @@ fn when_we_abandon_a_sign_request_we_should_be_able_to_start_a_new_one() {
     let keygen_init = run
         .coordinator
         .do_keygen(
-            &device_set,
-            threshold,
-            "my key".to_string(),
-            KeyPurpose::Test,
+            DoKeyGen::new(
+                device_set.clone(),
+                threshold,
+                "my key".to_string(),
+                KeyPurpose::Test,
+            ),
             &mut test_rng,
         )
         .unwrap();
@@ -564,10 +572,12 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
     let keygen_init = run
         .coordinator
         .do_keygen(
-            &device_set,
-            threshold,
-            "my key".into(),
-            KeyPurpose::Bitcoin(bitcoin::Network::Signet),
+            DoKeyGen::new(
+                device_set.clone(),
+                threshold,
+                "my key".into(),
+                KeyPurpose::Bitcoin(bitcoin::Network::Signet),
+            ),
             &mut test_rng,
         )
         .unwrap();
@@ -633,10 +643,12 @@ fn check_share_for_valid_share_works() {
     let keygen_init = run
         .coordinator
         .do_keygen(
-            &device_set,
-            threshold,
-            "my key".into(),
-            KeyPurpose::Test,
+            DoKeyGen::new(
+                device_set.clone(),
+                threshold,
+                "my key".into(),
+                KeyPurpose::Test,
+            ),
             &mut test_rng,
         )
         .unwrap();
@@ -674,10 +686,12 @@ fn restore_a_share_by_connecting_devices_to_a_new_coordinator() {
     let keygen_init = run
         .coordinator
         .do_keygen(
-            &device_set,
-            threshold,
-            "my key".into(),
-            KeyPurpose::Test,
+            DoKeyGen::new(
+                device_set.clone(),
+                threshold,
+                "my key".into(),
+                KeyPurpose::Test,
+            ),
             &mut test_rng,
         )
         .unwrap();
@@ -744,10 +758,12 @@ fn delete_then_restore_a_share_by_connecting_devices_to_coordinator() {
     let keygen_init = run
         .coordinator
         .do_keygen(
-            &device_set,
-            threshold,
-            "my key".into(),
-            KeyPurpose::Test,
+            DoKeyGen::new(
+                device_set.clone(),
+                threshold,
+                "my key".into(),
+                KeyPurpose::Test,
+            ),
             &mut test_rng,
         )
         .unwrap();
