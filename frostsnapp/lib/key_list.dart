@@ -200,7 +200,10 @@ class RecoveringKeyCard extends StatelessWidget {
     final mainAccessStructure = accessStructureSummaries[0];
     final t = mainAccessStructure.$1;
     final n = mainAccessStructure.$2;
-    final ShapeBorder cardShape = cardTheme.shape!;
+    final ShapeBorder cardShape = cardTheme.shape ??
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12.0),
+        );
     final moreNeeded = t - n;
     String recoveryText = "";
     if (moreNeeded > 1) {
@@ -212,7 +215,7 @@ class RecoveringKeyCard extends StatelessWidget {
     }
 
     return Padding(
-        padding: cardTheme.margin!,
+        padding: cardTheme.margin ?? EdgeInsets.all(8.0),
         child: DottedBorder(
             customPath: (size) {
               final Rect rect = Rect.fromLTWH(0, 0, size.width, size.height);
