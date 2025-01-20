@@ -31,6 +31,7 @@ pub struct Run<'a, Rng, Ui, T, DownstreamDetectPin> {
     pub timer: &'a T,
     pub downstream_detect: gpio::Input<'a, DownstreamDetectPin>,
     pub sha256: Sha<'a>,
+    pub keygen: HmacKeyGen<'a>,
 }
 
 impl<Rng, Ui, T, DownstreamDetectPin> Run<'_, Rng, Ui, T, DownstreamDetectPin>
@@ -49,9 +50,9 @@ where
             timer,
             downstream_detect,
             mut sha256,
+            mut keygen,
         } = self;
 
-        let mut keygen = HmacKeyGen::new();
         let flash = FlashStorage::new();
         let mut flash = storage::DeviceStorage::new(flash);
         let ota_config = ota::OtaConfig::new(flash.flash_mut());
@@ -150,7 +151,7 @@ where
                     if now > next_write_magic_bytes_downstream {
                         next_write_magic_bytes_downstream = now
                             .checked_add_duration(Duration::millis(MAGIC_BYTES_PERIOD))
-                            .expect("won't overlfow");
+                            .expect("won't overflow");
                         downstream_serial
                             .write_magic_bytes()
                             .expect("couldn't write magic bytes downstream");

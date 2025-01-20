@@ -14,6 +14,7 @@ use embedded_hal as hal;
 use esp_hal::{
     delay::Delay,
     gpio::{Input, Level, Output, Pull},
+    hmac::Hmac,
     i2c::master::{Config as i2cConfig, I2c},
     ledc::{
         channel::{self, ChannelIFace},
@@ -45,6 +46,7 @@ use frostsnap_device::{
         widgets::{EnterShareIndexScreen, EnterShareScreen},
     },
     io::SerialInterface,
+    key_generator::HmacKeyGen,
     ui::{
         BusyTask, EnteringBackupStage, FirmwareUpgradeStatus, Prompt, SignPrompt, UiEvent,
         UserInteraction, WaitingFor, WaitingResponse, Workflow,
@@ -193,6 +195,8 @@ fn main() -> ! {
 
     let mut adc = peripherals.ADC1;
     let mut hal_rng = Trng::new(peripherals.RNG, &mut adc);
+    let hal_hmac = Hmac::new(peripherals.HMAC);
+    let keygen = HmacKeyGen::new(hal_hmac);
 
     let rng = {
         let mut chacha_seed = [0u8; 32];
@@ -220,6 +224,7 @@ fn main() -> ! {
         timer: &timer0,
         downstream_detect,
         sha256,
+        keygen,
     };
     run.run()
 }
