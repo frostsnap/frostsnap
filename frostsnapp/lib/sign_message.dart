@@ -191,10 +191,18 @@ Future<List<EncodedSignature>?> showSigningProgressDialog(
   Widget description,
 ) async {
   final stream = signingStream.toBehaviorSubject();
+  SignSessionId? sessionId;
 
   final finishedSigning = stream.asyncMap((event) {
     return event.finishedSignatures;
   }).firstWhere((signatures) => signatures.isNotEmpty);
+
+  stream.forEach((signingState) {
+    sessionId = signingState.sessionId;
+    for (final deviceId in signingState.connectedButNeedRequest) {
+      coord.requestDeviceSign(deviceId: deviceId, sessionId: sessionId!);
+    }
+  });
 
   final result = await showDeviceActionDialog(
       context: context,
@@ -212,6 +220,9 @@ Future<List<EncodedSignature>?> showSigningProgressDialog(
       });
 
   if (result == null) {
+    if (sessionId != null) {
+      coord.cancelSignSession(ssid: sessionId!);
+    }
     coord.cancelProtocol();
   }
   return result;

@@ -9,7 +9,6 @@ import 'package:frostsnapp/snackbar.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/wallet.dart';
 import 'package:frostsnapp/either.dart';
-import 'package:frostsnapp/wallet_send.dart';
 
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'package:flutter/material.dart';
@@ -273,7 +272,8 @@ class KeyCard extends StatelessWidget {
       color: theme.colorScheme.secondaryContainer,
       margin: EdgeInsets.all(0.0),
       child: ListTile(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
         onTap: onPressed(context),
         title: Text(keyName),
         subtitle: Row(
@@ -307,78 +307,59 @@ class KeyCard extends StatelessWidget {
   }
 }
 
-class KeyButtons extends StatefulWidget {
+class KeyButtons extends StatelessWidget {
   final KeyId keyId;
   const KeyButtons({super.key, required this.keyId});
 
   @override
-  State<KeyButtons> createState() => _KeyButtons();
-}
-
-class _KeyButtons extends State<KeyButtons> {
-  SignTaskDescription? restorableSignSession;
-
-  @override
-  void initState() {
-    super.initState();
-
-    restorableSignSession =
-        coord.persistedSignSessionDescription(keyId: widget.keyId);
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final frostKey = coord.getFrostKey(keyId: widget.keyId);
+    final theme = Theme.of(context);
+    final frostKey = coord.getFrostKey(keyId: keyId);
     final masterAppkey = frostKey?.masterAppkey();
-    final settingsCtx = SettingsContext.of(context)!;
-    final Widget continueSigning;
+    final bitcoinNetwork = frostKey?.bitcoinNetwork();
 
-    if (restorableSignSession != null && masterAppkey != null) {
-      continueSigning = FilledButton(
-          onPressed: () async {
-            final signingStream = coord
-                .tryRestoreSigningSession(keyId: widget.keyId)
-                .toBehaviorSubject();
+    final signButton = ElevatedButton(
+        onPressed: () {
+          if (frostKey != null) {
+            Navigator.push(context, MaterialPageRoute(builder: (context) {
+              return SignMessagePage(frostKey: frostKey);
+            }));
+          }
+        },
+        child: Text("Sign"));
 
-            switch (restorableSignSession!) {
-              case SignTaskDescription_Plain(:final message):
-                {
-                  await signMessageWorkflowDialog(
-                      context, signingStream, message);
-                }
-              case SignTaskDescription_Transaction(:final unsignedTx):
-                {
-                  final wallet = settingsCtx.loadWallet(keyId: widget.keyId);
+    final Widget walletButton = ElevatedButton(
+      onPressed: () async {
+        if (frostKey != null) {
+          final superWallet = SuperWalletContext.of(context)!;
+          Navigator.push(context, MaterialPageRoute(builder: (context) {
+            return superWallet.tryWrapInWalletContext(
+                keyId: api.masterAppkeyExtToKeyId(masterAppkey: masterAppkey!),
+                child: WalletHome());
+          }));
+        }
+      },
+      child: Badge(
+        label: Text(bitcoinNetwork?.name() ?? ""),
+        isLabelVisible: !(bitcoinNetwork?.isMainnet() ?? true),
+        alignment: AlignmentDirectional.bottomEnd,
+        textColor: theme.colorScheme.error,
+        backgroundColor: theme.colorScheme.surface,
+        child: Icon(Icons.currency_bitcoin),
+      ),
+    );
 
-                  if (context.mounted && wallet != null) {
-                    await signAndBroadcastWorkflowDialog(
-                      masterAppkey: wallet.masterAppkey,
-                      superWallet: wallet.superWallet,
-                      context: context,
-                      signingStream: signingStream,
-                      unsignedTx: unsignedTx,
-                    );
-                  }
-                }
-            }
-
-            setState(() {
-              restorableSignSession =
-                  coord.persistedSignSessionDescription(keyId: widget.keyId);
-            });
-          },
-          child: Text("Continue signing"));
-    } else {
-      continueSigning = Container();
-    }
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      mainAxisSize: MainAxisSize.min,
-      spacing: 4.0,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        continueSigning,
-        Icon(Icons.chevron_right),
+        Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              signButton,
+              const SizedBox(width: 5),
+              walletButton,
+            ])
       ],
     );
   }

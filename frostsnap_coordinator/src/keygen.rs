@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use crate::{Completion, Sink, UiProtocol, UiToStorageMessage};
+use crate::{Completion, Sink, UiProtocol};
 use frostsnap_comms::CoordinatorSendMessage;
 use frostsnap_core::{
     coordinator::FrostCoordinator,
@@ -109,12 +109,12 @@ impl UiProtocol for KeyGen {
         }
     }
 
-    fn poll(&mut self) -> (Vec<CoordinatorSendMessage>, Vec<UiToStorageMessage>) {
+    fn poll(&mut self) -> Vec<CoordinatorSendMessage> {
         if self.is_complete().is_some() {
-            return (vec![], vec![]);
+            return vec![];
         }
 
-        (core::mem::take(&mut self.keygen_messages), vec![])
+        core::mem::take(&mut self.keygen_messages)
     }
 
     fn connected(&mut self, _id: frostsnap_core::DeviceId) {

@@ -7,7 +7,7 @@ use frostsnap_core::{
 };
 use tracing::{event, Level};
 
-use crate::{Completion, Sink, UiProtocol, UiToStorageMessage};
+use crate::{Completion, Sink, UiProtocol};
 
 pub struct CheckShareProtocol {
     state: CheckShareState,
@@ -114,8 +114,8 @@ impl UiProtocol for CheckShareProtocol {
         }
     }
 
-    fn poll(&mut self) -> (Vec<CoordinatorSendMessage>, Vec<UiToStorageMessage>) {
-        (core::mem::take(&mut self.check_share_messages), vec![])
+    fn poll(&mut self) -> Vec<CoordinatorSendMessage> {
+        core::mem::take(&mut self.check_share_messages)
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

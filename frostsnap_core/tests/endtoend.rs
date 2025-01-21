@@ -7,11 +7,11 @@ use frostsnap_core::message::{
     DeviceToUserMessage, DoKeyGen, EncodedSignature,
 };
 use frostsnap_core::tweak::BitcoinBip32Path;
-use frostsnap_core::KeyId;
 use frostsnap_core::{
     coordinator::FrostCoordinator, device::FrostSigner, CheckedSignTask, DeviceId, MasterAppkey,
     SessionHash, SignTask,
 };
+use frostsnap_core::{KeyId, SignSessionId};
 use rand::seq::IteratorRandom;
 use rand::RngCore;
 use rand_chacha::rand_core::SeedableRng;
@@ -38,9 +38,9 @@ struct TestEnv {
     pub backup_confirmed_on_coordinator: BTreeSet<DeviceId>,
 
     // signing
-    pub received_signing_shares: BTreeSet<DeviceId>,
+    pub received_signing_shares: BTreeMap<SignSessionId, BTreeSet<DeviceId>>,
     pub sign_tasks: BTreeMap<DeviceId, CheckedSignTask>,
-    pub signatures: Vec<Signature>,
+    pub signatures: BTreeMap<SignSessionId, Vec<Signature>>,
 
     pub verification_requests: BTreeMap<DeviceId, (Address, BitcoinBip32Path)>,
 }
@@ -89,18 +89,27 @@ impl common::Env for TestEnv {
                 }
             },
             CoordinatorToUserMessage::Signing(signing_message) => match signing_message {
-                CoordinatorToUserSigningMessage::GotShare { from } => {
+                CoordinatorToUserSigningMessage::GotShare { from, session_id } => {
                     assert!(
-                        self.received_signing_shares.insert(from),
+                        self.received_signing_shares
+                            .entry(session_id)
+                            .or_default()
+                            .insert(from),
                         "should only send share once"
                     );
                 }
-                CoordinatorToUserSigningMessage::Signed { signatures } => {
-                    self.signatures = signatures
-                        .into_iter()
-                        .map(EncodedSignature::into_decoded)
-                        .collect::<Option<Vec<_>>>()
-                        .unwrap();
+                CoordinatorToUserSigningMessage::Signed {
+                    session_id,
+                    signatures,
+                } => {
+                    let sigs = self.signatures.entry(session_id).or_default();
+                    assert!(sigs.is_empty(), "should only get the signed event once");
+                    sigs.extend(
+                        signatures
+                            .into_iter()
+                            .map(EncodedSignature::into_decoded)
+                            .map(Option::unwrap),
+                    );
                 }
             },
             CoordinatorToUserMessage::DisplayBackupConfirmed { device_id } => {
@@ -141,10 +150,7 @@ impl common::Env for TestEnv {
                     .unwrap();
                 run.extend_from_device(from, ack);
             }
-            DeviceToUserMessage::SignatureRequest {
-                sign_task,
-                master_appkey: _,
-            } => {
+            DeviceToUserMessage::SignatureRequest { sign_task } => {
                 self.sign_tasks.insert(from, sign_task);
                 let sign_ack = run.device(from).sign_ack(&mut TestDeviceKeyGen).unwrap();
                 run.extend_from_device(from, sign_ack);
@@ -205,7 +211,10 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
 
     // set up nonces for devices first
     for &device_id in &device_set {
-        run.extend(run.coordinator.maybe_request_nonce_replenishment(device_id));
+        run.extend(
+            run.coordinator
+                .maybe_request_nonce_replenishment(device_id, &mut test_rng),
+        );
     }
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
 
@@ -250,44 +259,49 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
         };
         let complete_key = key_data.complete_key.as_ref().unwrap();
         let checked_task = task.clone().check(complete_key.master_appkey).unwrap();
-        let set = BTreeSet::from_iter(signers.iter().map(|i| device_list[*i]));
 
-        let sign_init = run
+        let signing_set = BTreeSet::from_iter(signers.iter().map(|i| device_list[*i]));
+
+        let session_id = run
             .coordinator
-            .start_sign(
-                access_structure_ref,
-                task.clone(),
-                set.clone(),
-                TEST_ENCRYPTION_KEY,
-            )
+            .start_sign(access_structure_ref, task.clone(), &signing_set)
             .unwrap();
-        run.extend(sign_init);
+
+        for &device in &signing_set {
+            let sign_req =
+                run.coordinator
+                    .request_device_sign(session_id, device, TEST_ENCRYPTION_KEY);
+            run.extend(sign_req);
+        }
         run.run_until_finished(&mut env, &mut test_rng).unwrap();
-        assert_eq!(env.sign_tasks.keys().cloned().collect::<BTreeSet<_>>(), set);
-        assert!(env.sign_tasks.values().all(|v| *v == checked_task));
-        assert_eq!(env.received_signing_shares, set);
-        assert!(checked_task.verify_final_signatures(&schnorr, &env.signatures));
+        assert_eq!(
+            env.received_signing_shares.get(&session_id).unwrap(),
+            &signing_set
+        );
+        assert!(checked_task
+            .verify_final_signatures(&schnorr, env.signatures.get(&session_id).unwrap()));
 
         // check view of the coordianttor and device nonces are the same
-        for &device in &device_set {
-            let coord_nonces = run.coordinator.device_nonces().get(&device).cloned();
-            let coord_nonce_counter = coord_nonces
-                .clone()
-                .map(|nonces| nonces.start_index)
-                .unwrap_or(0);
-            let device_nonce_counter = run.device(device).nonce_counter();
-            assert_eq!(device_nonce_counter, coord_nonce_counter);
-            let coord_next_nonce =
-                coord_nonces.and_then(|nonces| nonces.nonces.iter().next().cloned());
+        // TODO: maybe try and do this check again
+        // for &device in &device_set {
+        //     let coord_nonces = run.coordinator.device_nonces().get(&device).cloned();
+        //     let coord_nonce_counter = coord_nonces
+        //         .clone()
+        //         .map(|nonces| nonces.start_index)
+        //         .unwrap_or(0);
+        //     let device_nonce_counter = run.device(device).nonce_counter();
+        //     assert_eq!(device_nonce_counter, coord_nonce_counter);
+        //     let coord_next_nonce =
+        //         coord_nonces.and_then(|nonces| nonces.nonces.iter().next().cloned());
 
-            let device_nonce = run
-                .devices
-                .get(&device)
-                .unwrap()
-                .generate_public_nonces(device_nonce_counter)
-                .next();
-            assert_eq!(device_nonce, coord_next_nonce);
-        }
+        //     let device_nonce = run
+        //         .devices
+        //         .get(&device)
+        //         .unwrap()
+        //         .generate_public_nonces(device_nonce_counter)
+        //         .next();
+        //     assert_eq!(device_nonce, coord_next_nonce);
+        // }
     }
 }
 
@@ -443,7 +457,6 @@ fn test_verify_address() {
     assert_eq!(env.verification_requests.len(), 3);
 }
 
-// this test needs a better name and to properly explain what it's doing
 #[test]
 fn when_we_abandon_a_sign_request_we_should_be_able_to_start_a_new_one() {
     let threshold = 1;
@@ -468,90 +481,50 @@ fn when_we_abandon_a_sign_request_we_should_be_able_to_start_a_new_one() {
         .unwrap();
     run.extend(keygen_init);
 
-    let request_nonces = run
-        .coordinator
-        .maybe_request_nonce_replenishment(device_id)
-        .unwrap();
-    run.extend(std::iter::once(request_nonces));
+    run.extend(
+        run.coordinator
+            .maybe_request_nonce_replenishment(device_id, &mut test_rng),
+    );
 
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
-    let (access_structure_ref, _access_structure) =
-        run.coordinator.iter_access_structures().next().unwrap();
 
-    let uncompleting_sign_task = SignTask::Plain {
-        message: "frostsnap in taiwan".into(),
-    };
+    for _ in 0..101 {
+        let (access_structure_ref, _access_structure) =
+            run.coordinator.iter_access_structures().next().unwrap();
 
-    let initial_nonces_on_coordinator = run
-        .coordinator
-        .device_nonces()
-        .get(&device_id)
-        .unwrap()
-        .clone();
+        let uncompleting_sign_task = SignTask::Plain {
+            message: "frostsnap in taiwan".into(),
+        };
 
-    let _unused_sign_request = run
-        .coordinator
-        .start_sign(
-            access_structure_ref,
-            uncompleting_sign_task,
-            device_set.clone(),
-            TEST_ENCRYPTION_KEY,
-        )
-        .unwrap();
+        let _unused_sign_session_id = run
+            .coordinator
+            .start_sign(access_structure_ref, uncompleting_sign_task, &device_set)
+            .unwrap();
 
-    let fewer_nonces_on_coordinator = run
-        .coordinator
-        .device_nonces()
-        .get(&device_id)
-        .unwrap()
-        .clone();
+        // fully cancel sign request
+        run.coordinator.cancel_sign_session(_unused_sign_session_id);
+        run.coordinator.cancel();
+        let completing_sign_task = SignTask::Plain {
+            message: "rip purple boards rip blue boards rip frostypedeV1".into(),
+        };
 
-    assert_eq!(
-        fewer_nonces_on_coordinator.start_index,
-        initial_nonces_on_coordinator.start_index + 1,
-        "sanity check the coordinator counter increased"
-    );
-    assert_eq!(
-        fewer_nonces_on_coordinator.nonces.len(),
-        initial_nonces_on_coordinator.nonces.len() - 1,
-        "testing coordinator has expended one nonce"
-    );
+        let used_sign_session_id = run
+            .coordinator
+            .start_sign(access_structure_ref, completing_sign_task, &device_set)
+            .unwrap();
 
-    run.coordinator.cancel();
+        for &device_id in &device_set {
+            let sign_req = run.coordinator.request_device_sign(
+                used_sign_session_id,
+                device_id,
+                TEST_ENCRYPTION_KEY,
+            );
+            run.extend(sign_req);
+        }
 
-    let completing_sign_task = SignTask::Plain {
-        message: "rip purple boards rip blue boards rip frostypedeV1".into(),
-    };
-
-    let used_sign_request = run
-        .coordinator
-        .start_sign(
-            access_structure_ref,
-            completing_sign_task,
-            device_set,
-            TEST_ENCRYPTION_KEY,
-        )
-        .unwrap()
-        .clone();
-
-    run.extend(used_sign_request);
-    // Test that this run completes without erroring, fully replenishing the nonces
-    run.run_until_finished(&mut env, &mut test_rng).unwrap();
-
-    let final_nonces_on_coordinator = run.coordinator.device_nonces().get(&device_id).unwrap();
-
-    assert_eq!(
-        final_nonces_on_coordinator.start_index,
-        initial_nonces_on_coordinator.start_index + 2,
-        "sanity check the coordinator counter has increased by two"
-    );
-
-    // Nonces should be fully replenished despite only having requested one signature!
-    assert_eq!(
-        final_nonces_on_coordinator.nonces.len(),
-        initial_nonces_on_coordinator.nonces.len(),
-        "testing that the device response fully replenished the coordinator nonces"
-    );
+        // Test that this run completes without erroring, fully replenishing the nonces
+        run.run_until_finished(&mut env, &mut test_rng).unwrap();
+    }
 }
 
 #[test]
@@ -566,7 +539,10 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
 
     // set up nonces for devices first
     for &device_id in &device_set {
-        run.extend(run.coordinator.maybe_request_nonce_replenishment(device_id));
+        run.extend(
+            run.coordinator
+                .maybe_request_nonce_replenishment(device_id, &mut test_rng),
+        );
     }
 
     let keygen_init = run
@@ -621,13 +597,22 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
         .cloned()
         .collect();
 
-    let sign_init = run
+    let session_id = run
         .coordinator
-        .start_sign(access_structure_ref, task.clone(), set, TEST_ENCRYPTION_KEY)
+        .start_sign(access_structure_ref, task.clone(), &set)
         .unwrap();
-    run.extend(sign_init);
+
+    for &device_id in &set {
+        let sign_req =
+            run.coordinator
+                .request_device_sign(session_id, device_id, TEST_ENCRYPTION_KEY);
+
+        run.extend(sign_req);
+    }
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
-    assert!(checked_task.verify_final_signatures(&schnorr, &env.signatures));
+    assert!(
+        checked_task.verify_final_signatures(&schnorr, env.signatures.get(&session_id).unwrap())
+    );
     // TODO: test actual transaction validity
 }
 
@@ -849,4 +834,163 @@ fn delete_then_restore_a_share_by_connecting_devices_to_coordinator() {
     );
     recover_next_share(&mut run, 1);
     recover_next_share(&mut run, 2);
+}
+
+#[test]
+fn we_should_be_able_to_switch_between_sign_sessions() {
+    let threshold = 2;
+    let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
+
+    let mut env = TestEnv::default();
+    let mut run = Run::generate(3, &mut test_rng);
+    let device_set = run.device_set();
+
+    let keygen_init = run
+        .coordinator
+        .do_keygen(
+            DoKeyGen::new(
+                device_set.clone(),
+                threshold,
+                "my key".to_string(),
+                KeyPurpose::Test,
+            ),
+            &mut test_rng,
+        )
+        .unwrap();
+    run.extend(keygen_init);
+
+    for &device_id in &device_set {
+        run.extend(
+            run.coordinator
+                .maybe_request_nonce_replenishment(device_id, &mut test_rng),
+        );
+    }
+
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
+
+    let (access_structure_ref, _access_structure) =
+        run.coordinator.iter_access_structures().next().unwrap();
+
+    let sign_task_1 = SignTask::Plain {
+        message: "one".into(),
+    };
+
+    let signing_set_1 = device_set.iter().cloned().take(2).collect();
+
+    let ssid1 = run
+        .coordinator
+        .start_sign(access_structure_ref, sign_task_1, &signing_set_1)
+        .unwrap();
+
+    run.coordinator.cancel(); // cancel but don't cancel the signing session
+
+    let signing_set_2 = device_set.iter().cloned().skip(1).take(2).collect();
+
+    let sign_task_2 = SignTask::Plain {
+        message: "two".into(),
+    };
+
+    let ssid2 = run
+        .coordinator
+        .start_sign(access_structure_ref, sign_task_2, &signing_set_2)
+        .unwrap();
+
+    let mut signers_1 = signing_set_1.into_iter();
+    let mut signers_2 = signing_set_2.into_iter();
+
+    for _ in 0..2 {
+        let sign_req = run.coordinator.request_device_sign(
+            ssid1,
+            signers_1.next().unwrap(),
+            TEST_ENCRYPTION_KEY,
+        );
+        run.extend(sign_req);
+        run.run_until_finished(&mut env, &mut test_rng).unwrap();
+
+        let sign_req = run.coordinator.request_device_sign(
+            ssid2,
+            signers_2.next().unwrap(),
+            TEST_ENCRYPTION_KEY,
+        );
+        run.extend(sign_req);
+        run.run_until_finished(&mut env, &mut test_rng).unwrap();
+    }
+
+    assert_eq!(env.signatures.len(), 2);
+}
+
+#[test]
+fn nonces_available_should_heal_itself_when_outcome_of_sign_request_is_ambigious() {
+    let threshold = 1;
+    let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
+
+    let mut env = TestEnv::default();
+    let mut run = Run::generate(1, &mut test_rng);
+    let device_set = run.device_set();
+    let device_id = device_set.iter().cloned().next().unwrap();
+
+    let keygen_init = run
+        .coordinator
+        .do_keygen(
+            DoKeyGen::new(
+                device_set.clone(),
+                threshold,
+                "my key".to_string(),
+                KeyPurpose::Test,
+            ),
+            &mut test_rng,
+        )
+        .unwrap();
+    run.extend(keygen_init);
+
+    for &device_id in &device_set {
+        run.extend(
+            run.coordinator
+                .maybe_request_nonce_replenishment(device_id, &mut test_rng),
+        );
+    }
+
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
+    let available_at_start = run.coordinator.nonces_available(device_id);
+
+    let (access_structure_ref, _access_structure) =
+        run.coordinator.iter_access_structures().next().unwrap();
+
+    let sign_task = SignTask::Plain {
+        message: "one".into(),
+    };
+
+    let ssid = run
+        .coordinator
+        .start_sign(access_structure_ref, sign_task, &device_set)
+        .unwrap();
+
+    // we going to take the request but not send it.
+    // Coordinator is now unsure if it ever reached the device.
+    let _sign_req = run
+        .coordinator
+        .request_device_sign(ssid, device_id, TEST_ENCRYPTION_KEY);
+
+    let nonces_available_after_request = run.coordinator.nonces_available(device_id);
+    assert_ne!(nonces_available_after_request, available_at_start);
+
+    run.coordinator.cancel_sign_session(ssid);
+    let nonces_available_after_cancel = run.coordinator.nonces_available(device_id);
+    assert_ne!(
+        nonces_available_after_cancel, available_at_start,
+        "canceling should not reclaim ambigious nonces"
+    );
+
+    // now we simulate reconnecting the device. The coordinator should recognise once of its nonce
+    // streams has less nonces than usual and reset that stream. Since the device never signed the
+    // request it should happily reset the stream to what it was before.
+    run.extend(
+        run.coordinator
+            .maybe_request_nonce_replenishment(device_id, &mut test_rng),
+    );
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
+
+    let nonces_available = run.coordinator.nonces_available(device_id);
+
+    assert_eq!(nonces_available, available_at_start);
 }

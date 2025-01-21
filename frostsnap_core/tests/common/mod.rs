@@ -5,7 +5,7 @@ use frostsnap_core::message::{
 };
 use frostsnap_core::MessageResult;
 use frostsnap_core::{
-    coordinator::{CoordinatorSend, FrostCoordinator, SigningSessionState},
+    coordinator::{CoordinatorSend, FrostCoordinator},
     device::FrostSigner,
     DeviceId, SymmetricKey,
 };
@@ -31,7 +31,6 @@ pub enum Send {
         destinations: BTreeSet<DeviceId>,
         message: CoordinatorToDeviceMessage,
     },
-    CoordinatorSigningSession(SigningSessionState),
 }
 
 impl From<CoordinatorSend> for Send {
@@ -45,9 +44,6 @@ impl From<CoordinatorSend> for Send {
                 message,
             },
             CoordinatorSend::ToUser(v) => v.into(),
-            CoordinatorSend::SigningSessionStore(session_state) => {
-                Send::CoordinatorSigningSession(session_state)
-            }
         }
     }
 }
@@ -139,12 +135,6 @@ pub trait Env {
             }
             _ => { /* do nothing */ }
         }
-    }
-    fn sign_session_state_react_to_coordinator(
-        &mut self,
-        run: &mut Run,
-        message: SigningSessionState,
-    ) {
     }
 }
 
@@ -264,9 +254,6 @@ impl Run {
                         );
                     }
                 }
-                Send::CoordinatorSigningSession(signing_session_state) => {
-                    env.sign_session_state_react_to_coordinator(self, signing_session_state);
-                }
             }
         }
 
@@ -292,8 +279,9 @@ impl Run {
         for (device_id, device) in &mut self.devices {
             let mut device = device.clone();
             let _ = device.cancel_action();
-            let mutations = device.staged_mutations().drain(..);
+            let mutations = device.staged_mutations().drain(..).collect::<Vec<_>>();
             let start_device = self.start_devices.get_mut(device_id).unwrap();
+            *start_device.nonce_slots() = device.nonce_slots().clone();
             for mutation in mutations {
                 start_device.apply_mutation(&mutation);
             }

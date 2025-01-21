@@ -25,7 +25,7 @@ pub trait UiProtocol: Send + Any + 'static {
     /// connected. The UI protocol is currently the point that manages the effect of device
     /// connections and disconnections on the protocol so it is able to violate boundries here a bit
     /// and send out core messages.
-    fn poll(&mut self) -> (Vec<CoordinatorSendMessage>, Vec<UiToStorageMessage>);
+    fn poll(&mut self) -> Vec<CoordinatorSendMessage>;
 
     fn as_any(&self) -> &dyn Any;
     fn as_mut_any(&mut self) -> &mut dyn Any;
@@ -35,11 +35,4 @@ pub trait UiProtocol: Send + Any + 'static {
 pub enum Completion {
     Success,
     Abort { send_cancel_to_all_devices: bool },
-}
-
-#[derive(Clone, Debug)]
-pub enum UiToStorageMessage {
-    /// Clear the signing session. Note that the signing session is stored by core but the
-    /// application is left to decide when to clear it.
-    ClearSigningSession,
 }

@@ -3,7 +3,7 @@ use common::{DefaultTestEnv, TEST_ENCRYPTION_KEY};
 use frostsnap_core::coordinator::CoordinatorSend;
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::message::{
-    CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, DoKeyGen, SignRequest,
+    CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, DoKeyGen,
 };
 use frostsnap_core::SignTask;
 use rand_chacha::rand_core::SeedableRng;
@@ -79,14 +79,17 @@ fn keygen_maliciously_replace_public_poly() {
 /// Send different signing requests with the same nonces twice.
 /// The device should reject signing the second request.
 #[test]
-fn nonce_reuse() {
+fn send_sign_req_with_same_nonces_but_different_message() {
     let threshold = 1;
     let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
     let mut run = Run::generate(1, &mut test_rng);
     let device_set = run.device_set();
     // set up nonces for devices first
     for &device_id in &device_set {
-        run.extend(run.coordinator.maybe_request_nonce_replenishment(device_id));
+        run.extend(
+            run.coordinator
+                .maybe_request_nonce_replenishment(device_id, &mut test_rng),
+        );
     }
     run.run_until_finished(&mut DefaultTestEnv, &mut test_rng)
         .unwrap();
@@ -112,44 +115,36 @@ fn nonce_reuse() {
         message: "utxo.club!".into(),
     };
     let (access_structure_ref, _) = key_data.access_structures().next().unwrap().clone();
-    let sign_init = run
+    let session_id = run
         .coordinator
-        .start_sign(access_structure_ref, task1, device_set, TEST_ENCRYPTION_KEY)
+        .start_sign(access_structure_ref, task1, &device_set)
         .unwrap();
-    run.extend(sign_init);
+
+    let mut sign_req = None;
+    for device_id in &device_set {
+        sign_req = Some(run.coordinator.request_device_sign(
+            session_id,
+            *device_id,
+            TEST_ENCRYPTION_KEY,
+        ));
+        run.extend(sign_req.clone().unwrap());
+    }
     run.run_until_finished(&mut DefaultTestEnv, &mut test_rng)
         .unwrap();
 
-    let sign_req = run
-        .transcript
-        .iter()
-        .find_map(|m| match m {
-            Send::CoordinatorToDevice {
-                message: CoordinatorToDeviceMessage::RequestSign(sign_req),
-                ..
-            } => Some(sign_req),
-            _ => None,
-        })
-        .unwrap();
+    let mut sign_req = sign_req.unwrap();
+    sign_req.request_sign.group_sign_req.sign_task = SignTask::Plain {
+        message: "we lost track of first FROST txn on bitcoin mainnet @ bushbash 2022".into(),
+    };
 
-    // Receive a new sign request with the same nonces as the previous session
-    let new_sign_request = CoordinatorToDeviceMessage::RequestSign(SignRequest {
-        sign_task: SignTask::Plain {
-            message: "we lost track of first FROST txn on bitcoin mainnet @ bushbash 2022".into(),
-        },
-        ..sign_req.clone()
-    });
-    let sign_request_result = run
-        .devices
-        .values_mut()
-        .next()
-        .unwrap()
-        .recv_coordinator_message(new_sign_request, &mut test_rng);
+    run.extend(sign_req);
+    let sign_request_result = run.run_until_finished(&mut DefaultTestEnv, &mut test_rng);
 
     assert!(matches!(
         sign_request_result,
         Err(frostsnap_core::Error::InvalidMessage { .. })
     ));
+
     assert!(sign_request_result
         .expect_err("should be error")
         .to_string()

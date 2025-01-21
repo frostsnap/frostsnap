@@ -1,11 +1,14 @@
+use core::cell::RefCell;
+
 use crate::{
     efuse::EfuseHmacKeys,
+    flash_nonce_slot,
     io::SerialInterface,
     ota, storage,
     ui::{self, UiEvent, UserInteraction},
     DownstreamConnectionState, Duration, Instant, UpstreamConnection, UpstreamConnectionState,
 };
-use alloc::{boxed::Box, collections::VecDeque, string::ToString, vec::Vec};
+use alloc::{boxed::Box, collections::VecDeque, rc::Rc, string::ToString, vec::Vec};
 use esp_hal::{gpio, sha::Sha, timer};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{
@@ -52,41 +55,45 @@ where
             mut hmac_keys,
         } = self;
 
-        let flash = FlashStorage::new();
-        let mut flash = storage::DeviceStorage::new(flash);
-        let ota_config = ota::OtaConfig::new(flash.flash_mut());
-        let active_partition = ota_config.active_partition(flash.flash_mut());
-        let active_firmware_digest = active_partition.digest(flash.flash_mut(), &mut sha256);
+        let flash = Rc::new(RefCell::new(FlashStorage::new()));
+        let flash_nonce_slots = flash_nonce_slot::flash_nonce_slots(flash.clone());
+        let ota_config = ota::OtaFlash::new(flash.clone());
+        let mut app_flash = storage::DeviceStorage::new(flash.clone());
+        let active_partition = ota_config.active_partition();
+        let active_firmware_digest = active_partition.digest(&mut sha256);
         ui.set_busy_task(ui::BusyTask::Loading);
 
-        let (mut signer, mut name) =
-            match flash.read_header().expect("failed to read header from nvs") {
-                Some(header) => {
-                    let mut signer = FrostSigner::new(KeyPair::<Normal>::new(header.secret_key));
-                    let mut name: Option<alloc::string::String> = None;
+        let (mut signer, mut name) = match app_flash
+            .read_header()
+            .expect("failed to read header from nvs")
+        {
+            Some(header) => {
+                let mut signer =
+                    FrostSigner::new(KeyPair::<Normal>::new(header.secret_key), flash_nonce_slots);
+                let mut name: Option<alloc::string::String> = None;
 
-                    for change in flash.iter() {
-                        match change {
-                            storage::Change::Core(mutation) => {
-                                signer.apply_mutation(&mutation);
-                            }
-                            storage::Change::Name(name_update) => {
-                                name = Some(name_update);
-                            }
+                for change in app_flash.iter() {
+                    match change {
+                        storage::Change::Core(mutation) => {
+                            signer.apply_mutation(&mutation);
+                        }
+                        storage::Change::Name(name_update) => {
+                            name = Some(name_update);
                         }
                     }
-                    (signer, name)
                 }
-                None => {
-                    let secret_key = Scalar::random(&mut rng);
-                    let keypair = KeyPair::<Normal>::new(secret_key);
-                    flash
-                        .write_header(crate::storage::Header { secret_key })
-                        .unwrap();
-                    let signer = FrostSigner::new(keypair);
-                    (signer, None)
-                }
-            };
+                (signer, name)
+            }
+            None => {
+                let secret_key = Scalar::random(&mut rng);
+                let keypair = KeyPair::<Normal>::new(secret_key);
+                app_flash
+                    .write_header(crate::storage::Header { secret_key })
+                    .unwrap();
+                let signer = FrostSigner::new(keypair, flash_nonce_slots);
+                (signer, None)
+            }
+        };
         let device_id = signer.device_id();
         if let Some(name) = &name {
             ui.set_device_name(name.into());
@@ -277,7 +284,6 @@ where
                                                         let upstream_io =
                                                             upstream_serial.inner_mut();
                                                         upgrade.enter_upgrade_mode(
-                                                            flash.flash_mut(),
                                                             upstream_io,
                                                             if downstream_connection_state == DownstreamConnectionState::Established { Some(downstream_serial.inner_mut()) } else { None },
                                                             &mut ui,
@@ -339,8 +345,9 @@ where
                     }
 
                     if let Some(upgrade_) = &mut upgrade {
-                        let (message, workflow) = upgrade_.poll(flash.flash_mut());
+                        let (message, workflow) = upgrade_.poll();
                         upstream_connection.send_to_coordinator(message);
+
                         if let Some(workflow) = workflow {
                             ui.set_workflow(workflow);
                         }
@@ -407,7 +414,7 @@ where
                             CoordinatorToDeviceMessage::FinishKeyGen { .. } => {
                                 ui.set_busy_task(ui::BusyTask::VerifyingShare)
                             }
-                            CoordinatorToDeviceMessage::RequestNonces => {
+                            CoordinatorToDeviceMessage::OpenNonceStreams { .. } => {
                                 ui.set_busy_task(ui::BusyTask::GeneratingNonces);
                             }
                             _ => is_busy = false,
@@ -429,7 +436,6 @@ where
                             firmware_digest,
                         } => {
                             let upgrade_ = ota_config.start_upgrade(
-                                flash.flash_mut(),
                                 *size,
                                 *firmware_digest,
                                 active_firmware_digest,
@@ -450,7 +456,7 @@ where
                 if !staged_mutations.is_empty() {
                     let now = self.timer.now();
                     // ⚠ Apply any mutations made to flash before outputting anything to user or to coordinator
-                    flash
+                    app_flash
                         .append(staged_mutations.drain(..).map(storage::Change::Core))
                         .expect("writing core mutations failed");
                     let after = self.timer.now().checked_duration_since(now).unwrap();
@@ -504,12 +510,9 @@ where
                                     rand_seed,
                                 })
                             }
-                            DeviceToUserMessage::SignatureRequest {
-                                sign_task,
-                                master_appkey,
-                            } => {
+                            DeviceToUserMessage::SignatureRequest { sign_task } => {
                                 ui.set_workflow(ui::Workflow::prompt(ui::Prompt::Signing(
-                                    match sign_task.into_inner() {
+                                    match sign_task.sign_task {
                                         SignTask::Plain { message } => {
                                             ui::SignPrompt::Plain(message)
                                         }
@@ -518,7 +521,7 @@ where
                                         }
                                         SignTask::BitcoinTransaction(transaction) => {
                                             let network = signer
-                                                .wallet_network(master_appkey.key_id())
+                                                .wallet_network(sign_task.master_appkey.key_id())
                                                 .expect("asked to sign a bitcoin transaction that doesn't support bitcoin");
 
                                             let fee = transaction.fee().expect("transaction validity should have already been checked");
@@ -590,7 +593,7 @@ where
                     }
                     UiEvent::NameConfirm(ref new_name) => {
                         name = Some(new_name.into());
-                        flash
+                        app_flash
                             .append([storage::Change::Name(new_name.clone())])
                             .expect("flash write fail");
                         ui.set_device_name(new_name.into());
@@ -625,7 +628,7 @@ where
                         );
                     }
                     UiEvent::WipeDataConfirm => {
-                        flash.erase().expect("erasing flash storage failed");
+                        app_flash.erase().expect("erasing flash storage failed");
                         esp_hal::reset::software_reset();
                     }
                 }

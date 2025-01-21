@@ -59,5 +59,13 @@ impl<const N: usize, T: bincode::Encode + bincode::Decode> Ciphertext<N, T> {
     }
 }
 
+impl<const N: usize> Ciphertext<N, [u8; N]> {
+    pub fn random(encrption_key: SymmetricKey, rng: &mut impl rand_core::RngCore) -> Self {
+        let mut bytes = [0u8; N];
+        rng.fill_bytes(&mut bytes[..]);
+        Self::encrypt(encrption_key, &bytes, rng)
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct SymmetricKey(pub [u8; 32]);

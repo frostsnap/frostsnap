@@ -1,47 +1,57 @@
-use frostsnap_comms::{CoordinatorSendBody, CoordinatorSendMessage, Destination};
+use frostsnap_comms::CoordinatorSendMessage;
 use frostsnap_core::{
-    coordinator::StartSign,
-    message::{
-        CoordinatorToDeviceMessage, CoordinatorToUserMessage, CoordinatorToUserSigningMessage,
-        EncodedSignature, SignRequest,
-    },
-    DeviceId,
+    coordinator::{ActiveSignSession, CoordinatorSend, RequestDeviceSign},
+    message::{CoordinatorToUserMessage, CoordinatorToUserSigningMessage, EncodedSignature},
+    DeviceId, SignSessionId,
 };
 use std::collections::BTreeSet;
 use tracing::{event, Level};
 
-use crate::{Completion, UiProtocol, UiToStorageMessage};
+use crate::{Completion, UiProtocol};
 
 /// Keeps track of when
 pub struct SigningDispatcher {
-    need_to_send_to: BTreeSet<DeviceId>,
-    // FIXME: make accessors
-    pub request: SignRequest,
+    pub session_id: SignSessionId,
     pub finished_signatures: Option<Vec<EncodedSignature>>,
     pub targets: BTreeSet<DeviceId>,
     pub got_signatures: BTreeSet<DeviceId>,
     pub sink: Box<dyn crate::Sink<SigningState>>,
     pub aborted: Option<String>,
+    pub connected_but_need_request: BTreeSet<DeviceId>,
+    pub outbox_to_devices: Vec<CoordinatorSendMessage>,
 }
 
 impl SigningDispatcher {
-    pub fn new(start_sign: StartSign, sink: impl crate::Sink<SigningState> + 'static) -> Self {
-        Self::new_from_request(start_sign.sign_request, start_sign.target_devices, sink)
-    }
-
-    pub fn new_from_request(
-        request: SignRequest,
+    pub fn new(
         targets: BTreeSet<DeviceId>,
-        sink: impl crate::Sink<SigningState> + 'static,
+        session_id: SignSessionId,
+        sink: impl crate::Sink<SigningState>,
     ) -> Self {
         Self {
-            request,
             targets,
+            session_id,
             got_signatures: Default::default(),
-            need_to_send_to: Default::default(),
             finished_signatures: Default::default(),
             sink: Box::new(sink),
             aborted: None,
+            connected_but_need_request: Default::default(),
+            outbox_to_devices: Default::default(),
+        }
+    }
+
+    pub fn restore_signing_session(
+        active_sign_session: &ActiveSignSession,
+        sink: impl crate::Sink<SigningState>,
+    ) -> Self {
+        Self {
+            session_id: active_sign_session.session_id(),
+            got_signatures: active_sign_session.received_from().collect(),
+            targets: active_sign_session.init.nonces.keys().cloned().collect(),
+            finished_signatures: None,
+            sink: Box::new(sink),
+            aborted: None,
+            connected_but_need_request: Default::default(),
+            outbox_to_devices: Default::default(),
         }
     }
 
@@ -51,13 +61,26 @@ impl SigningDispatcher {
 
     pub fn emit_state(&mut self) {
         let state = SigningState {
+            session_id: self.session_id,
             got_shares: self.got_signatures.iter().cloned().collect(),
             needed_from: self.targets.iter().cloned().collect(),
             finished_signatures: self.finished_signatures.clone().unwrap_or_default(),
             aborted: self.aborted.clone(),
+            connected_but_need_request: self.connected_but_need_request.iter().cloned().collect(),
         };
 
         self.sink.send(state);
+    }
+
+    pub fn send_sign_request(&mut self, sign_req: RequestDeviceSign) {
+        if self.connected_but_need_request.remove(&sign_req.device_id) {
+            self.outbox_to_devices.push(
+                CoordinatorSend::from(sign_req)
+                    .try_into()
+                    .expect("sign_req goes to devices"),
+            );
+            self.emit_state();
+        }
     }
 }
 
@@ -65,12 +88,29 @@ impl UiProtocol for SigningDispatcher {
     fn process_to_user_message(&mut self, message: CoordinatorToUserMessage) {
         if let CoordinatorToUserMessage::Signing(message) = message {
             match message {
-                CoordinatorToUserSigningMessage::GotShare { from } => {
+                CoordinatorToUserSigningMessage::GotShare { from, session_id } => {
+                    if session_id != self.session_id {
+                        event!(
+                            Level::WARN,
+                            "received signature share from a different signing session"
+                        );
+                        return;
+                    }
                     if self.got_signatures.insert(from) {
                         self.emit_state()
                     }
                 }
-                CoordinatorToUserSigningMessage::Signed { signatures } => {
+                CoordinatorToUserSigningMessage::Signed {
+                    signatures,
+                    session_id,
+                } => {
+                    if session_id != self.session_id {
+                        event!(
+                            Level::WARN,
+                            "received signatures from a different singing session"
+                        );
+                        return;
+                    }
                     self.finished_signatures = Some(signatures);
                     event!(Level::INFO, "received signatures from all devices");
                     self.emit_state();
@@ -81,12 +121,14 @@ impl UiProtocol for SigningDispatcher {
     }
 
     fn disconnected(&mut self, device_id: DeviceId) {
-        self.need_to_send_to.remove(&device_id);
+        self.connected_but_need_request.remove(&device_id);
+        self.emit_state();
     }
 
     fn connected(&mut self, device_id: DeviceId) {
         if !self.got_signatures.contains(&device_id) && self.targets.contains(&device_id) {
-            self.need_to_send_to.insert(device_id);
+            self.connected_but_need_request.insert(device_id);
+            self.emit_state();
         }
     }
 
@@ -102,22 +144,8 @@ impl UiProtocol for SigningDispatcher {
         }
     }
 
-    fn poll(&mut self) -> (Vec<CoordinatorSendMessage>, Vec<UiToStorageMessage>) {
-        let mut to_devices = vec![];
-        let mut to_storage = vec![];
-        if !self.need_to_send_to.is_empty() {
-            event!(Level::INFO, "Sending sign request");
-            to_devices.push(CoordinatorSendMessage {
-                target_destinations: Destination::from(core::mem::take(&mut self.need_to_send_to)),
-                message_body: CoordinatorSendBody::Core(CoordinatorToDeviceMessage::RequestSign(
-                    self.request.clone(),
-                )),
-            });
-        }
-        if self.is_complete().is_some() {
-            to_storage.push(UiToStorageMessage::ClearSigningSession);
-        }
-        (to_devices, to_storage)
+    fn poll(&mut self) -> Vec<CoordinatorSendMessage> {
+        core::mem::take(&mut self.outbox_to_devices)
     }
 
     fn cancel(&mut self) {
@@ -136,9 +164,11 @@ impl UiProtocol for SigningDispatcher {
 
 #[derive(Clone, Debug)]
 pub struct SigningState {
+    pub session_id: SignSessionId,
     pub got_shares: Vec<DeviceId>,
     pub needed_from: Vec<DeviceId>,
     // for some reason FRB woudln't allow Option here to empty vec implies not being finished
     pub finished_signatures: Vec<EncodedSignature>,
     pub aborted: Option<String>,
+    pub connected_but_need_request: Vec<DeviceId>,
 }

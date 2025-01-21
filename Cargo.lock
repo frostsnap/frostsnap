@@ -704,6 +704,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1bfb12502f3fc46cca1bb51ac28df9d618d813cdc3d2f25b9fe775a34af26bb3"
 dependencies = [
  "generic-array",
+ "rand_core",
  "typenum",
 ]
 
@@ -1407,6 +1408,7 @@ dependencies = [
  "bitcoin",
  "chacha20",
  "chacha20poly1305",
+ "cipher",
  "rand",
  "rand_chacha",
  "rand_core",
@@ -2583,7 +2585,7 @@ checksum = "e86697c916019a8588c99b5fac3cead74ec0b4b819707a682fd4d23fa0ce1ba1"
 [[package]]
 name = "schnorr_fun"
 version = "0.10.0"
-source = "git+https://github.com/LLFourn/secp256kfun.git?rev=8132fbe806d9f306a9fb646f2147e5971bfea88d#8132fbe806d9f306a9fb646f2147e5971bfea88d"
+source = "git+https://github.com/LLFourn/secp256kfun.git?rev=35b5c12fd6ca730dfe74b95255a64997e26a369b#35b5c12fd6ca730dfe74b95255a64997e26a369b"
 dependencies = [
  "bech32",
  "secp256kfun",
@@ -2627,6 +2629,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "secp256k1"
+version = "0.30.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b50c5943d326858130af85e049f2661ba3c78b26589b8ab98e65e80ae44a1252"
+dependencies = [
+ "secp256k1-sys 0.10.0",
+ "serde",
+]
+
+[[package]]
 name = "secp256k1-sys"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2656,7 +2668,7 @@ dependencies = [
 [[package]]
 name = "secp256kfun"
 version = "0.10.0"
-source = "git+https://github.com/LLFourn/secp256kfun.git?rev=8132fbe806d9f306a9fb646f2147e5971bfea88d#8132fbe806d9f306a9fb646f2147e5971bfea88d"
+source = "git+https://github.com/LLFourn/secp256kfun.git?rev=35b5c12fd6ca730dfe74b95255a64997e26a369b#35b5c12fd6ca730dfe74b95255a64997e26a369b"
 dependencies = [
  "bincode",
  "digest",
@@ -2664,6 +2676,7 @@ dependencies = [
  "secp256k1 0.27.0",
  "secp256k1 0.28.2",
  "secp256k1 0.29.0",
+ "secp256k1 0.30.0",
  "secp256kfun_arithmetic_macros",
  "serde",
  "subtle-ng",
@@ -2672,7 +2685,7 @@ dependencies = [
 [[package]]
 name = "secp256kfun_arithmetic_macros"
 version = "0.1.0"
-source = "git+https://github.com/LLFourn/secp256kfun.git?rev=8132fbe806d9f306a9fb646f2147e5971bfea88d#8132fbe806d9f306a9fb646f2147e5971bfea88d"
+source = "git+https://github.com/LLFourn/secp256kfun.git?rev=35b5c12fd6ca730dfe74b95255a64997e26a369b#35b5c12fd6ca730dfe74b95255a64997e26a369b"
 dependencies = [
  "proc-macro2",
  "quote",

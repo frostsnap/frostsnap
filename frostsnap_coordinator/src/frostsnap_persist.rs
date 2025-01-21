@@ -1,7 +1,7 @@
 use crate::{
     frostsnap_core::{
         self,
-        coordinator::{FrostCoordinator, SigningSessionState},
+        coordinator::{ActiveSignSession, FrostCoordinator},
     },
     persist::{BincodeWrapper, Persist, TakeStaged},
 };
@@ -88,7 +88,7 @@ impl TakeStaged<VecDeque<coordinator::Mutation>> for FrostCoordinator {
     }
 }
 
-impl Persist<rusqlite::Connection> for Option<SigningSessionState> {
+impl Persist<rusqlite::Connection> for Option<ActiveSignSession> {
     type Update = Self;
     type InitParams = ();
 
@@ -105,7 +105,7 @@ impl Persist<rusqlite::Connection> for Option<SigningSessionState> {
 
         let signing_session_state =
             conn.query_row("SELECT state FROM fs_signing_session_state", [], |row| {
-                Ok(row.get::<_, BincodeWrapper<SigningSessionState>>(0)?.0)
+                Ok(row.get::<_, BincodeWrapper<ActiveSignSession>>(0)?.0)
             });
 
         let state = match signing_session_state {
@@ -133,8 +133,8 @@ impl Persist<rusqlite::Connection> for Option<SigningSessionState> {
     }
 }
 
-impl TakeStaged<Option<SigningSessionState>> for Option<SigningSessionState> {
-    fn take_staged_update(&mut self) -> Option<Option<SigningSessionState>> {
+impl TakeStaged<Option<ActiveSignSession>> for Option<ActiveSignSession> {
+    fn take_staged_update(&mut self) -> Option<Option<ActiveSignSession>> {
         Some(self.clone())
     }
 }

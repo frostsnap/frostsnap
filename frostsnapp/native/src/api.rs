@@ -29,7 +29,8 @@ pub use frostsnap_coordinator::{
 use frostsnap_coordinator::{DesktopSerial, UsbSerialManager};
 pub use frostsnap_core::message::EncodedSignature;
 pub use frostsnap_core::{
-    AccessStructureId, AccessStructureRef, DeviceId, KeyId, MasterAppkey, SessionHash, SignTask,
+    AccessStructureId, AccessStructureRef, DeviceId, KeyId, MasterAppkey, SessionHash,
+    SignSessionId, SignTask,
 };
 use lazy_static::lazy_static;
 pub use std::collections::BTreeMap;
@@ -929,7 +930,6 @@ impl Coordinator {
             devices.into_iter().collect(),
             SignTask::Plain { message },
             stream,
-            crate::TEMP_KEY,
         )?;
         Ok(())
     }
@@ -946,17 +946,12 @@ impl Coordinator {
             devices.into_iter().collect(),
             SignTask::BitcoinTransaction(unsigned_tx.template_tx.deref().clone()),
             stream,
-            crate::TEMP_KEY,
         )?;
         Ok(())
     }
 
-    pub fn nonces_available(&self, id: DeviceId) -> SyncReturn<usize> {
-        SyncReturn(self.0.nonces_left(id).unwrap_or(0))
-    }
-
-    pub fn current_nonce(&self, id: DeviceId) -> SyncReturn<u64> {
-        SyncReturn(self.0.current_nonce(id).unwrap_or(0))
+    pub fn nonces_available(&self, id: DeviceId) -> SyncReturn<u32> {
+        SyncReturn(self.0.nonces_available(id))
     }
 
     pub fn generate_new_key(
@@ -976,19 +971,12 @@ impl Coordinator {
         )
     }
 
-    pub fn persisted_sign_session_description(
-        &self,
-        key_id: KeyId,
-    ) -> SyncReturn<Option<SignTaskDescription>> {
-        SyncReturn(self.0.persisted_sign_session_description(key_id))
-    }
-
     pub fn try_restore_signing_session(
         &self,
-        key_id: KeyId,
+        session_id: SignSessionId,
         stream: StreamSink<SigningState>,
     ) -> Result<()> {
-        self.0.try_restore_signing_session(key_id, stream)
+        self.0.try_restore_signing_session(session_id, stream)
     }
 
     pub fn start_firmware_upgrade(
@@ -1044,6 +1032,15 @@ impl Coordinator {
         Ok(())
     }
 
+    pub fn request_device_sign(
+        &self,
+        device_id: DeviceId,
+        session_id: SignSessionId,
+    ) -> Result<()> {
+        self.0
+            .request_device_sign(device_id, session_id, crate::TEMP_KEY)
+    }
+
     pub fn get_access_structure(
         &self,
         as_ref: AccessStructureRef,
@@ -1088,6 +1085,10 @@ impl Coordinator {
 
     pub fn wipe_device_data(&self, device_id: DeviceId) {
         self.0.wipe_device_data(device_id);
+    }
+
+    pub fn cancel_sign_session(&self, ssid: SignSessionId) -> Result<()> {
+        self.0.cancel_sign_sesssion(ssid)
     }
 }
 
@@ -1257,15 +1258,15 @@ pub struct EffectOfTx {
     pub foreign_receiving_addresses: Vec<(String, u64)>,
 }
 
-pub enum SignTaskDescription {
-    Plain { message: String },
-    // Nostr {
-    //     #[bincode(with_serde)]
-    //     event: Box<crate::nostr::UnsignedEvent>,
-    //     master_appkey: MasterAppkey,
-    // }, // 1 nonce & sig
-    Transaction { unsigned_tx: UnsignedTx },
-}
+// pub enum SignTaskDescription {
+//     Plain { message: String },
+//     // Nostr {
+//     //     #[bincode(with_serde)]
+//     //     event: Box<crate::nostr::UnsignedEvent>,
+//     //     master_appkey: MasterAppkey,
+//     // }, // 1 nonce & sig
+//     Transaction { unsigned_tx: UnsignedTx },
+// }
 
 pub struct Psbt {
     pub inner: RustOpaque<BitcoinPsbt>,
@@ -1547,12 +1548,18 @@ pub struct _SessionHash(pub [u8; 32]);
 #[frb(mirror(EncodedSignature))]
 pub struct _EncodedSignature(pub [u8; 64]);
 
+#[frb(mirror(SignSessionId))]
+pub struct _SignSessionId(pub [u8; 32]);
+
 #[frb(mirror(SigningState))]
 pub struct _SigningState {
+    pub session_id: SignSessionId,
     pub got_shares: Vec<DeviceId>,
     pub needed_from: Vec<DeviceId>,
     // for some reason FRB woudln't allow Option here to empty vec implies not being finished
     pub finished_signatures: Vec<EncodedSignature>,
+    pub aborted: Option<String>,
+    pub connected_but_need_request: Vec<DeviceId>,
 }
 
 #[frb(mirror(KeyGenState))]

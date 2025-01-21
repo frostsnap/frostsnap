@@ -220,7 +220,6 @@ class NonceCounterDisplay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return KeyValueListWidget(data: {
-      'Current nonce': coord.currentNonce(id: id).toString(),
       'Nonces left': coord.noncesAvailable(id: id).toString(),
     });
   }

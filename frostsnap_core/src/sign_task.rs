@@ -18,8 +18,8 @@ pub enum SignTask {
 #[derive(Debug, Clone, PartialEq)]
 /// A sign task bound to a single key. We only support signing tasks with single keys for now.
 pub struct CheckedSignTask {
-    master_appkey: MasterAppkey,
-    sign_task: SignTask,
+    pub master_appkey: MasterAppkey,
+    pub sign_task: SignTask,
 }
 
 impl SignTask {
