@@ -49,7 +49,7 @@ use frostsnap_device::{
         BusyTask, EnteringBackupStage, FirmwareUpgradeStatus, Prompt, SignPrompt, UiEvent,
         UserInteraction, WaitingFor, WaitingResponse, Workflow,
     },
-    DownstreamConnectionState, Instant, UpstreamConnection,
+    DownstreamConnectionState, Instant, UpstreamConnectionState,
 };
 use micromath::F32Ext;
 use mipidsi::{error::Error, models::ST7789, options::ColorInversion};
@@ -246,7 +246,7 @@ pub struct FrostyUi<'t, T, DT, I2C, PINT, RST> {
     capsense: CST816S<I2C, PINT, RST>,
     last_touch: Option<(Point, Instant)>,
     downstream_connection_state: DownstreamConnectionState,
-    upstream_connection_state: Option<UpstreamConnection>,
+    upstream_connection_state: Option<UpstreamConnectionState>,
     workflow: Workflow,
     device_name: Option<String>,
     changes: bool,
@@ -306,7 +306,9 @@ where
                     }
                 },
             },
-            Workflow::UserPrompt { prompt, animation } => {
+            Workflow::UserPrompt {
+                prompt, animation, ..
+            } => {
                 match prompt {
                     Prompt::Signing(task) => match task {
                         SignPrompt::Bitcoin {
@@ -394,6 +396,7 @@ where
                         self.display.progress_bar(*progress);
                     }
                 },
+                BusyTask::GeneratingNonces => self.display.print("Generating nonces..."),
             },
             Workflow::Debug(string) => {
                 self.display
@@ -414,7 +417,7 @@ where
         }
 
         if let Some(upstream_connection) = self.upstream_connection_state {
-            self.display.upstream_state(upstream_connection.state);
+            self.display.upstream_state(upstream_connection);
         }
 
         self.display
@@ -446,7 +449,7 @@ where
         }
     }
 
-    fn set_upstream_connection_state(&mut self, state: frostsnap_device::UpstreamConnection) {
+    fn set_upstream_connection_state(&mut self, state: frostsnap_device::UpstreamConnectionState) {
         if Some(state) != self.upstream_connection_state {
             self.changes = true;
             self.upstream_connection_state = Some(state);
@@ -507,7 +510,11 @@ where
         };
 
         match self.workflow.borrow_mut() {
-            Workflow::UserPrompt { prompt, animation } => {
+            Workflow::UserPrompt {
+                prompt,
+                animation,
+                confirm_emitted,
+            } => {
                 let lift_up = if let Some((_, _, lift_up)) = current_touch {
                     lift_up
                 } else {
@@ -523,22 +530,26 @@ where
                             self.display.confirm_bar(progress);
                         }
                         AnimationProgress::Done => {
-                            let ui_event = match prompt {
-                                Prompt::KeyGen { .. } => UiEvent::KeyGenConfirm,
-                                Prompt::Signing(_) => UiEvent::SigningConfirm,
-                                Prompt::NewName { new_name, .. } => {
-                                    UiEvent::NameConfirm(new_name.clone())
-                                }
-                                Prompt::DisplayBackupRequest { .. } => {
-                                    UiEvent::BackupRequestConfirm
-                                }
-                                Prompt::ConfirmFirmwareUpgrade { .. } => UiEvent::UpgradeConfirm,
-                                Prompt::ConfirmLoadBackup(secret_share) => {
-                                    UiEvent::EnteredShareBackupConfirm(*secret_share)
-                                }
-                                Prompt::WipeDevice => UiEvent::WipeDataConfirm,
-                            };
-                            event = Some(ui_event);
+                            if !*confirm_emitted {
+                                event = Some(match prompt {
+                                    Prompt::KeyGen { .. } => UiEvent::KeyGenConfirm,
+                                    Prompt::Signing(_) => UiEvent::SigningConfirm,
+                                    Prompt::NewName { new_name, .. } => {
+                                        UiEvent::NameConfirm(new_name.clone())
+                                    }
+                                    Prompt::DisplayBackupRequest { .. } => {
+                                        UiEvent::BackupRequestConfirm
+                                    }
+                                    Prompt::ConfirmFirmwareUpgrade { .. } => {
+                                        UiEvent::UpgradeConfirm
+                                    }
+                                    Prompt::ConfirmLoadBackup(secret_share) => {
+                                        UiEvent::EnteredShareBackupConfirm(*secret_share)
+                                    }
+                                    Prompt::WipeDevice => UiEvent::WipeDataConfirm,
+                                });
+                                *confirm_emitted = true;
+                            }
                         }
                     }
                 }

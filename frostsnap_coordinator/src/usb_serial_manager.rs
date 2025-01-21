@@ -5,12 +5,12 @@ const USB_PID: u16 = 4097;
 use crate::PortOpenError;
 use crate::{FramedSerialPort, Serial};
 use anyhow::anyhow;
+use frostsnap_comms::ReceiveSerial;
 use frostsnap_comms::{
     CoordinatorSendBody, CoordinatorUpgradeMessage, Destination, DeviceSendBody, FirmwareDigest,
     FIRMWARE_IMAGE_SIZE, FIRMWARE_NEXT_CHUNK_READY_SIGNAL, FIRMWARE_UPGRADE_CHUNK_LEN,
 };
 use frostsnap_comms::{CoordinatorSendMessage, MAGIC_BYTES_PERIOD};
-use frostsnap_comms::{ReceiveSerial, Upstream};
 use frostsnap_core::message::DeviceToCoordinatorMessage;
 use frostsnap_core::{sha2, DeviceId, Gist};
 use std::collections::BTreeSet;
@@ -47,6 +47,8 @@ pub struct UsbSerialManager {
     outbox_sender: std::sync::mpsc::Sender<CoordinatorSendMessage>,
     /// The firmware binary provided to devices who are doing an upgrade
     firmware_bin: Option<FirmwareBin>,
+    /// Ports we should artificially disconnect next time
+    pending_disconnect_ports: HashSet<String>,
 }
 
 pub struct DevicePort {
@@ -77,6 +79,7 @@ impl UsbSerialManager {
             reverse_device_ports: Default::default(),
             registered_devices: Default::default(),
             device_names: Default::default(),
+            pending_disconnect_ports: Default::default(),
             port_outbox: receiver,
             outbox_sender: sender,
             firmware_bin,
@@ -128,6 +131,11 @@ impl UsbSerialManager {
         let span = span!(Level::DEBUG, "poll_ports");
         let _enter = span.enter();
         let mut device_changes = vec![];
+
+        for to_disconnect in core::mem::take(&mut self.pending_disconnect_ports) {
+            self.disconnect(&to_disconnect, &mut device_changes);
+        }
+
         let connected_now: HashSet<String> = self
             .serial_impl
             .available_ports()
@@ -160,37 +168,37 @@ impl UsbSerialManager {
             self.disconnect(&port, &mut device_changes);
         }
 
-        for serial_number in self.pending.drain().collect::<Vec<_>>() {
+        for port_name in self.pending.drain().collect::<Vec<_>>() {
             let device_port = self
                 .serial_impl
-                .open_device_port(&serial_number, frostsnap_comms::BAUDRATE)
+                .open_device_port(&port_name, frostsnap_comms::BAUDRATE)
                 .map(FramedSerialPort::new);
             match device_port {
                 Err(e) => match e {
                     PortOpenError::DeviceBusy => {
-                        if !self.ignored.contains(&serial_number) {
+                        if !self.ignored.contains(&port_name) {
                             event!(
                                 Level::ERROR,
-                                port = serial_number,
+                                port = port_name,
                                 "Could not open port because it's being used by another process"
                             );
-                            self.ignored.insert(serial_number.clone());
+                            self.ignored.insert(port_name.clone());
                         }
                     }
                     PortOpenError::Other(e) => {
                         event!(
                             Level::ERROR,
-                            port = serial_number,
+                            port = port_name,
                             error = e.to_string(),
                             "Failed to open port"
                         );
-                        self.pending.insert(serial_number);
+                        self.pending.insert(port_name);
                     }
                 },
                 Ok(device_port) => {
-                    event!(Level::DEBUG, port = serial_number, "Opened port");
+                    event!(Level::DEBUG, port = port_name, "Opened port");
                     self.awaiting_magic.insert(
-                        serial_number.clone(),
+                        port_name.clone(),
                         AwaitingMagic {
                             port: device_port,
                             last_wrote_magic_bytes: None,
@@ -200,14 +208,15 @@ impl UsbSerialManager {
             }
         }
 
-        for (serial_number, mut awaiting_magic) in self.awaiting_magic.drain().collect::<Vec<_>>() {
+        for (port_name, mut awaiting_magic) in self.awaiting_magic.drain().collect::<Vec<_>>() {
             let device_port = &mut awaiting_magic.port;
             match device_port.read_for_magic_bytes() {
-                Ok(true) => {
-                    event!(Level::DEBUG, port = serial_number, "Read magic bytes");
-                    self.ready.insert(serial_number, awaiting_magic.port);
+                Ok(Some(supported_features)) => {
+                    event!(Level::DEBUG, port = port_name, "Read magic bytes");
+                    device_port.set_conch_enabled(supported_features.conch_enabled);
+                    self.ready.insert(port_name, awaiting_magic.port);
                 }
-                Ok(false) => {
+                Ok(None) => {
                     let time_since_last_wrote_magic = awaiting_magic
                         .last_wrote_magic_bytes
                         .as_ref()
@@ -215,53 +224,53 @@ impl UsbSerialManager {
                         .unwrap_or(std::time::Duration::MAX);
 
                     if time_since_last_wrote_magic < COORDINATOR_MAGIC_BYTES_PERDIOD {
-                        self.awaiting_magic.insert(serial_number, awaiting_magic);
+                        self.awaiting_magic.insert(port_name, awaiting_magic);
                         continue;
                     }
 
                     match device_port.write_magic_bytes() {
                         Ok(_) => {
-                            event!(Level::DEBUG, port = serial_number, "Wrote magic bytes");
+                            event!(Level::DEBUG, port = port_name, "Wrote magic bytes");
                             awaiting_magic.last_wrote_magic_bytes = Some(std::time::Instant::now());
                             // we still need to read them so go again
-                            self.awaiting_magic.insert(serial_number, awaiting_magic);
+                            self.awaiting_magic.insert(port_name, awaiting_magic);
                         }
                         Err(e) => {
                             event!(
                                 Level::ERROR,
-                                port = serial_number,
+                                port = port_name,
                                 e = e.to_string(),
                                 "Failed to write magic bytes"
                             );
-                            self.disconnect(&serial_number, &mut device_changes);
+                            self.disconnect(&port_name, &mut device_changes);
                         }
                     }
                 }
                 Err(e) => {
                     event!(
                         Level::DEBUG,
-                        port = serial_number,
+                        port = port_name,
                         e = e.to_string(),
                         "failed to read magic bytes"
                     );
-                    self.disconnect(&serial_number, &mut device_changes);
+                    self.disconnect(&port_name, &mut device_changes);
                 }
             }
         }
 
         // Read all messages from ready devices
-        for serial_number in self.ready.keys().cloned().collect::<Vec<_>>() {
-            let decoded_message = {
-                let device_port = self.ready.get_mut(&serial_number).expect("must exist");
+        for port_name in self.ready.keys().cloned().collect::<Vec<_>>() {
+            let frame = {
+                let device_port = self.ready.get_mut(&port_name).expect("must exist");
                 match device_port.try_read_message() {
                     Err(e) => {
                         event!(
                             Level::ERROR,
-                            port = serial_number,
+                            port = port_name,
                             error = e.to_string(),
                             "failed to read message from port"
                         );
-                        self.disconnect(&serial_number, &mut device_changes);
+                        self.disconnect(&port_name, &mut device_changes);
                         continue;
                     }
                     Ok(None) => continue,
@@ -269,119 +278,135 @@ impl UsbSerialManager {
                 }
             };
 
-            event!(
-                Level::DEBUG,
-                port = serial_number,
-                gist = decoded_message.gist(),
-                "decoded message"
-            );
-
-            match decoded_message {
+            match frame {
                 ReceiveSerial::MagicBytes(_) => {
-                    event!(Level::ERROR, port = serial_number, "Unexpected magic bytes");
-                    self.disconnect(&serial_number, &mut device_changes);
+                    event!(Level::ERROR, port = port_name, "Unexpected magic bytes");
+                    self.disconnect(&port_name, &mut device_changes);
                 }
-                ReceiveSerial::Message(message) => match message.body {
-                    DeviceSendBody::NeedName => {
-                        device_changes.push(DeviceChange::NeedsName { id: message.from })
-                    }
-                    DeviceSendBody::DisconnectDownstream => {
-                        if let Some(device_list) = self.reverse_device_ports.get_mut(&serial_number)
-                        {
-                            if let Some((i, _)) = device_list
-                                .iter()
-                                .enumerate()
-                                .find(|(_, device_id)| **device_id == message.from)
-                            {
-                                let index_of_disconnection = i + 1;
-                                while device_list.len() > index_of_disconnection {
-                                    let device_id = device_list.pop().unwrap();
-                                    self.device_ports.remove(&device_id);
-                                    self.registered_devices.remove(&device_id);
-                                    device_changes
-                                        .push(DeviceChange::Disconnected { id: device_id });
+                ReceiveSerial::Message(message) => {
+                    match message.body.decode() {
+                        Err(e) => {
+                            event!(
+                                Level::WARN,
+                                from = message.from.to_string(),
+                                error = e.to_string(),
+                                "failed to decode encapsulated message - ignoring"
+                            );
+                        }
+                        Ok(decoded) => {
+                            event!(
+                                Level::DEBUG,
+                                port = port_name,
+                                gist = decoded.gist(),
+                                "decoded message"
+                            );
+
+                            match decoded {
+                                DeviceSendBody::NeedName => device_changes
+                                    .push(DeviceChange::NeedsName { id: message.from }),
+                                DeviceSendBody::DisconnectDownstream => {
+                                    if let Some(device_list) =
+                                        self.reverse_device_ports.get_mut(&port_name)
+                                    {
+                                        if let Some((i, _)) = device_list
+                                            .iter()
+                                            .enumerate()
+                                            .find(|(_, device_id)| **device_id == message.from)
+                                        {
+                                            let index_of_disconnection = i + 1;
+                                            while device_list.len() > index_of_disconnection {
+                                                let device_id = device_list.pop().unwrap();
+                                                self.device_ports.remove(&device_id);
+                                                self.registered_devices.remove(&device_id);
+                                                device_changes.push(DeviceChange::Disconnected {
+                                                    id: device_id,
+                                                });
+                                            }
+                                        }
+                                    }
+                                }
+                                DeviceSendBody::SetName { name } => {
+                                    let existing_name = self.device_names.get(&message.from);
+                                    if existing_name != Some(&name) {
+                                        device_changes.push(DeviceChange::NameChange {
+                                            id: message.from,
+                                            name,
+                                        });
+                                    }
+                                }
+                                DeviceSendBody::Announce { firmware_digest } => {
+                                    match self.device_ports.insert(
+                                        message.from,
+                                        DevicePort {
+                                            port: port_name.clone(),
+                                            firmware_digest,
+                                        },
+                                    ) {
+                                        Some(old_port_name) => {
+                                            self.reverse_device_ports
+                                                .entry(old_port_name.port)
+                                                .or_default()
+                                                .retain(|device_id| *device_id != message.from);
+                                        }
+                                        None => device_changes.push(DeviceChange::Connected {
+                                            id: message.from,
+                                            firmware_digest,
+                                            latest_firmware_digest: self.firmware_bin.map(
+                                                |mut firmware_bin| firmware_bin.cached_digest(),
+                                            ),
+                                        }),
+                                    }
+
+                                    self.outbox_sender
+                                        .send(CoordinatorSendMessage {
+                                            message_body: CoordinatorSendBody::AnnounceAck {},
+                                            target_destinations: Destination::from([message.from]),
+                                        })
+                                        .unwrap();
+
+                                    self.reverse_device_ports
+                                        .entry(port_name.clone())
+                                        .or_default()
+                                        .push(message.from);
+
+                                    event!(
+                                        Level::DEBUG,
+                                        port = port_name,
+                                        id = message.from.to_string(),
+                                        "Announced!"
+                                    );
+                                }
+                                DeviceSendBody::Debug { message: _ } => {
+                                    // XXX: We don't need to debug log this because we already debug log the gist of every message
+                                    // event!(
+                                    //     Level::DEBUG,
+                                    //     port = port_name,
+                                    //     from = message.from.to_string(),
+                                    //     name = self
+                                    //         .device_names
+                                    //         .get(&message.from)
+                                    //         .cloned()
+                                    //         .unwrap_or("<unknown>".into()),
+                                    //     dbg_message
+                                    // );
+                                }
+                                DeviceSendBody::Core(core_msg) => {
+                                    device_changes.push(DeviceChange::AppMessage(AppMessage {
+                                        from: message.from,
+                                        body: AppMessageBody::Core(core_msg),
+                                    }));
+                                }
+                                DeviceSendBody::AckUpgradeMode => {
+                                    device_changes.push(DeviceChange::AppMessage(AppMessage {
+                                        from: message.from,
+                                        body: AppMessageBody::AckUpgradeMode,
+                                    }))
                                 }
                             }
                         }
                     }
-                    DeviceSendBody::SetName { name } => {
-                        let existing_name = self.device_names.get(&message.from);
-                        if existing_name != Some(&name) {
-                            device_changes.push(DeviceChange::NameChange {
-                                id: message.from,
-                                name,
-                            });
-                        }
-                    }
-                    DeviceSendBody::Announce { firmware_digest } => {
-                        match self.device_ports.insert(
-                            message.from,
-                            DevicePort {
-                                port: serial_number.clone(),
-                                firmware_digest,
-                            },
-                        ) {
-                            Some(old_serial_number) => {
-                                self.reverse_device_ports
-                                    .entry(old_serial_number.port)
-                                    .or_default()
-                                    .retain(|device_id| *device_id != message.from);
-                            }
-                            None => device_changes.push(DeviceChange::Connected {
-                                id: message.from,
-                                firmware_digest,
-                                latest_firmware_digest: self
-                                    .firmware_bin
-                                    .map(|mut firmware_bin| firmware_bin.cached_digest()),
-                            }),
-                        }
-
-                        self.outbox_sender
-                            .send(CoordinatorSendMessage {
-                                message_body: CoordinatorSendBody::AnnounceAck {},
-                                target_destinations: Destination::from([message.from]),
-                            })
-                            .unwrap();
-
-                        self.reverse_device_ports
-                            .entry(serial_number.clone())
-                            .or_default()
-                            .push(message.from);
-
-                        event!(
-                            Level::DEBUG,
-                            port = serial_number,
-                            id = message.from.to_string(),
-                            "Announced!"
-                        );
-                    }
-                    DeviceSendBody::Debug { message: _ } => {
-                        // XXX: We don't need to debug log this because we already debug log the gist of every message
-                        // event!(
-                        //     Level::DEBUG,
-                        //     port = serial_number,
-                        //     from = message.from.to_string(),
-                        //     name = self
-                        //         .device_names
-                        //         .get(&message.from)
-                        //         .cloned()
-                        //         .unwrap_or("<unknown>".into()),
-                        //     dbg_message
-                        // );
-                    }
-                    DeviceSendBody::Core(core_msg) => {
-                        device_changes.push(DeviceChange::AppMessage(AppMessage {
-                            from: message.from,
-                            body: AppMessageBody::Core(core_msg),
-                        }));
-                    }
-                    DeviceSendBody::AckUpgradeMode => {
-                        device_changes.push(DeviceChange::AppMessage(AppMessage {
-                            from: message.from,
-                            body: AppMessageBody::AckUpgradeMode,
-                        }))
-                    }
-                },
+                }
+                _ => { /* unused */ }
             }
         }
 
@@ -444,27 +469,22 @@ impl UsbSerialManager {
                 }
             };
 
-            let mut wire_message = send.clone();
-            wire_message.target_destinations = wire_destinations;
+            let mut message = send.clone();
+            message.target_destinations = wire_destinations;
             let dest_span = tracing::span!(
                 Level::DEBUG,
                 "",
-                destinations = wire_message.target_destinations.gist()
+                destinations = message.target_destinations.gist()
             );
             let _dest_enter = dest_span.enter();
 
-            let wire_message = ReceiveSerial::<Upstream>::Message(wire_message);
-            let gist = wire_message.gist();
+            let gist = message.gist();
 
-            for serial_number in ports_to_send_on {
-                let span = tracing::span!(
-                    Level::INFO,
-                    "send on port",
-                    port = serial_number,
-                    gist = gist
-                );
+            for port_name in ports_to_send_on {
+                let span =
+                    tracing::span!(Level::INFO, "send on port", port = port_name, gist = gist);
                 let _enter = span.enter();
-                let port = match self.ready.get_mut(&serial_number) {
+                let port = match self.ready.get_mut(&port_name) {
                     Some(port) => port,
                     None => {
                         event!(
@@ -474,24 +494,26 @@ impl UsbSerialManager {
                         continue;
                     }
                 };
-                match port.send_message(&wire_message) {
-                    Err(e) => {
-                        event!(
-                            Level::ERROR,
-                            error = e.to_string(),
-                            "Failed to send message",
-                        );
-                        self.disconnect(&serial_number, &mut device_changes);
-                    }
-                    Ok(_) => {
-                        event!(
-                            Level::DEBUG,
-                            port = serial_number,
-                            gist = wire_message.gist(),
-                            "sent message"
-                        );
-                    }
+                event!(Level::DEBUG, message = message.gist(), "queueing message");
+                port.queue_send(message.clone());
+            }
+        }
+
+        // poll the ports to send any messages we just queued (or queued from earlier!).
+        // This is a separate step since we only send messages if we have the conch.
+        for port_name in self.ready.keys().cloned().collect::<Vec<_>>() {
+            let port = self.ready.get_mut(&port_name).expect("must exist");
+            match port.poll_send() {
+                Err(e) => {
+                    event!(
+                        Level::ERROR,
+                        port = port_name,
+                        error = e.to_string(),
+                        "Failed to poll sending",
+                    );
+                    self.disconnect(&port_name, &mut device_changes);
                 }
+                Ok(_) => { /* nothing to do */ }
             }
         }
 
@@ -541,11 +563,12 @@ impl UsbSerialManager {
         let mut iters = vec![];
 
         for (port_index, (port, io)) in self.ready.iter_mut().enumerate() {
-            let res = io.send_message(&ReceiveSerial::Message(CoordinatorSendMessage {
+            let res = io.raw_send(ReceiveSerial::Message(CoordinatorSendMessage {
                 target_destinations: Destination::All,
                 message_body: CoordinatorSendBody::Upgrade(
                     CoordinatorUpgradeMessage::EnterUpgradeMode,
-                ),
+                )
+                .into(),
             }));
 
             // give some time for devices to forward things and enter upgrade mode
@@ -583,7 +606,11 @@ impl UsbSerialManager {
                 match io.raw_read(&mut byte[..]) {
                     Ok(_) => {
                         if byte[0] != FIRMWARE_NEXT_CHUNK_READY_SIGNAL {
-                            event!(Level::ERROR, "downstream device wrote invalid signal byte")
+                            event!(
+                                Level::DEBUG,
+                                byte = byte[0].to_string(),
+                                "downstream device wrote invalid signal byte"
+                            );
                         }
                     }
                     Err(e) => {
@@ -600,6 +627,8 @@ impl UsbSerialManager {
                     ((port_index as u32 * n_chunks) + i as u32) as f32 / (total_chunks - 1) as f32
                 ))
             }));
+
+            self.pending_disconnect_ports.insert(port.to_string());
         }
 
         Ok(iters.into_iter().flatten())
