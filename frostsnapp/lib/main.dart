@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
 import 'package:frostsnapp/contexts.dart';
+import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/key_list.dart';
 import 'package:flutter/services.dart';
+import 'package:frostsnapp/keygen.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/serialport.dart';
 import 'package:frostsnapp/stream_ext.dart';
@@ -149,7 +152,7 @@ class _MyAppState extends State<MyApp> {
           theme: baseTheme.copyWith(
               colorScheme: colorScheme, textTheme: textTheme),
           home: widget.startupError == null
-              ? const MyHomePage(title: 'Frostsnapp')
+              ? const MyHomePage()
               : StartupErrorWidget(error: widget.startupError!),
           debugShowCheckedModeBanner: false,
         );
@@ -158,15 +161,55 @@ class _MyAppState extends State<MyApp> {
   }
 }
 
-class MyHomePage extends StatelessWidget {
-  const MyHomePage({super.key, required this.title});
-  final String title;
+class MyHomePage extends StatefulWidget {
+  const MyHomePage({super.key});
+
+  @override
+  State<MyHomePage> createState() => _MyHomePageState();
+}
+
+class _MyHomePageState extends State<MyHomePage> {
+  late final ConfettiController confettiController;
+
+  @override
+  void initState() {
+    super.initState();
+    confettiController = ConfettiController(duration: Duration(seconds: 2));
+  }
+
+  @override
+  void dispose() {
+    confettiController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: FsAppBar(title: Text("Wallets")),
-        body: Center(child: KeyListWithConfetti()));
+      appBar: FsAppBar(title: Text("Wallets"), centerTitle: false),
+      body: Center(child: KeyListWithConfetti(controller: confettiController)),
+      floatingActionButton: FloatingActionButton.extended(
+        icon: Icon(Icons.add),
+        label: Text('New Wallet'),
+        onPressed: () async {
+          final newId = await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => KeyNamePage()),
+          );
+          if (context.mounted && newId != null) confettiController.play();
+        },
+      ),
+      persistentFooterAlignment: AlignmentDirectional.centerStart,
+      persistentFooterButtons: [
+        TextButton(
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => DeviceSettingsPage()),
+          ),
+          child: Text('Show Devices'),
+        )
+      ],
+    );
   }
 }
 

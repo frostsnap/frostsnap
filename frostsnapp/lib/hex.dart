@@ -78,7 +78,7 @@ Widget chunkedAddressFormat(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: Text(
                       chunks[j],
-                      style: addressTextStyle.copyWith(
+                      style: monospaceTextStyle.copyWith(
                           fontSize: 20, color: textColor),
                     ),
                   ),

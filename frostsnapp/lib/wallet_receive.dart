@@ -158,7 +158,7 @@ class _WalletReceivePageState extends State<WalletReceivePage> {
           address.addressString,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
-          style: addressTextStyle,
+          style: monospaceTextStyle,
         ),
         subtitle: Text('# ${address.index}${address.used ? ' (Used)' : ''}'),
         onLongPress: copyAddress,

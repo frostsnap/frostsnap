@@ -119,8 +119,10 @@ class _WalletSendPageState extends State<WalletSendPage> {
     addressModel = AddressInputController();
     feeRateModel = FeeRateController(satsPerVB: 5.0);
 
-    amountAvaliable = AmountAvaliableController(feeRateController: feeRateModel);
-    amountModel = AmountInputController(amountAvailableController: amountAvaliable);
+    amountAvaliable =
+        AmountAvaliableController(feeRateController: feeRateModel);
+    amountModel =
+        AmountInputController(amountAvailableController: amountAvaliable);
 
     _initRecipientDoneButton();
     _initAmountDoneButton();
@@ -151,22 +153,6 @@ class _WalletSendPageState extends State<WalletSendPage> {
     }
   }
 
-  Widget completedCardLabel(BuildContext context, String text) => Text.rich(
-        TextSpan(
-          children: [
-            WidgetSpan(
-              child: Padding(
-                padding: const EdgeInsets.all(2.0),
-                child: Icon(Icons.edit_square, size: 14.0),
-              ),
-            ),
-            TextSpan(text: ' '),
-            TextSpan(text: text),
-          ],
-        ),
-        style: Theme.of(context).textTheme.labelLarge,
-      );
-
   Future<void>? _estimateFut;
 
   @override
@@ -178,7 +164,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
     final theme = Theme.of(context);
 
     final appBar = SliverPadding(
-      padding: EdgeInsets.symmetric(vertical: 0.0, horizontal: 0.0),
+      padding: EdgeInsets.symmetric(vertical: 0.0, horizontal: 4.0),
       sliver: SliverAppBar(
         title: Text('Send Bitcoin'),
         titleTextStyle: theme.textTheme.titleMedium,
@@ -215,7 +201,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
                   addressModel.formattedAddress,
                   textWidthBasis: TextWidthBasis.longestLine,
                   textAlign: TextAlign.right,
-                  style: addressTextStyle,
+                  style: monospaceTextStyle,
                 ),
               ),
             ),
@@ -379,7 +365,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
                   children: [
                     Text('Max:',
                         style: theme.textTheme.labelMedium
-                            ?.merge(balanceTextStyle)),
+                            ?.merge(monospaceTextStyle)),
                     ValueListenableBuilder(
                       valueListenable: amountAvaliable,
                       builder: (context, value, _) => SatoshiText(value: value),
@@ -520,6 +506,22 @@ class _WalletSendPageState extends State<WalletSendPage> {
       child: scrollView,
     );
   }
+
+  Widget completedCardLabel(BuildContext context, String text) => Text.rich(
+        TextSpan(
+          children: [
+            WidgetSpan(
+              child: Padding(
+                padding: const EdgeInsets.all(2.0),
+                child: Icon(Icons.edit_square, size: 14.0),
+              ),
+            ),
+            TextSpan(text: ' '),
+            TextSpan(text: text),
+          ],
+        ),
+        style: Theme.of(context).textTheme.labelLarge,
+      );
 
   showFeeRateDialog(BuildContext context) {
     final walletCtx = WalletContext.of(context);

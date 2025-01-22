@@ -232,22 +232,28 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
       ),
     );
 
-    final pullDownToRefresh = SizedBox(
-      height: 12.0,
-      width: 128.0,
-      child: Center(
-        child: ListenableBuilder(
-          listenable: widget.feeRateModel,
-          builder: (context, _) => AnimatedCrossFade(
-            firstChild: LinearProgressIndicator(
-              borderRadius: BorderRadius.circular(4.0),
+    final pullDownToRefresh = InkWell(
+      onTap: () => _onRefresh(context),
+      child: SizedBox(
+        height: 12.0,
+        width: 180.0,
+        child: Center(
+          child: ListenableBuilder(
+            listenable: widget.feeRateModel,
+            builder: (context, _) => AnimatedCrossFade(
+              firstChild: LinearProgressIndicator(
+                borderRadius: BorderRadius.circular(4.0),
+              ),
+              secondChild: Text(
+                'Pull down or tap to refresh.',
+                softWrap: true,
+                style: theme.textTheme.labelSmall,
+              ),
+              crossFadeState: widget.feeRateModel.estimateRunning
+                  ? CrossFadeState.showFirst
+                  : CrossFadeState.showSecond,
+              duration: Durations.medium2,
             ),
-            secondChild: Text('Pull down to refresh.',
-                softWrap: true, style: theme.textTheme.labelSmall),
-            crossFadeState: widget.feeRateModel.estimateRunning
-                ? CrossFadeState.showFirst
-                : CrossFadeState.showSecond,
-            duration: Durations.medium2,
           ),
         ),
       ),

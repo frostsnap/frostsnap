@@ -14,6 +14,7 @@ import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/show_backup.dart';
 import 'package:frostsnapp/snackbar.dart';
 import 'package:frostsnapp/progress_indicator.dart';
+import 'package:frostsnapp/theme.dart';
 
 class DeviceSettingsPage extends StatelessWidget {
   const DeviceSettingsPage({
@@ -141,9 +142,15 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                 fontSize: 16,
               )),
           Expanded(
-              child: Text(deviceFirmwareDigest,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 16))),
+            child: Text(
+              deviceFirmwareDigest,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 16,
+                fontFamily: monospaceTextStyle.fontFamily,
+              ),
+            ),
+          ),
         ]),
         SizedBox(height: 5),
         Row(
@@ -154,11 +161,14 @@ class _DeviceSettingsState extends State<DeviceSettings> {
                   fontSize: 16,
                 )),
             Expanded(
-                child: Text(
-                    coord.upgradeFirmwareDigest() ??
-                        "<app compiled without firmware>",
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 16))),
+              child: Text(
+                coord.upgradeFirmwareDigest() ??
+                    "<app compiled without firmware>",
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    fontSize: 16, fontFamily: monospaceTextStyle.fontFamily),
+              ),
+            ),
           ],
         ),
       ]);

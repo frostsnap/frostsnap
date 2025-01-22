@@ -150,7 +150,6 @@ class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
       itemBuilder: (context, index) {
         final id = devices[index];
         final name = coord.getDeviceName(id: id);
-
         onChanged(bool? value) {
           setState(() {
             if (value == true) {

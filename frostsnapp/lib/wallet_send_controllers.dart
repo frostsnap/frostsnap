@@ -98,7 +98,7 @@ class AddressInput extends StatelessWidget {
           controller: controller.controller,
           onSubmitted: onSubmitted,
           autofocus: autofocus,
-          style: TextStyle(fontFamily: addressTextStyle.fontFamily),
+          style: TextStyle(fontFamily: monospaceTextStyle.fontFamily),
           decoration: (decoration ?? InputDecoration()).copyWith(
             border: defaultTextInputBorder,
             hintText: 'bc1...',
@@ -274,6 +274,8 @@ class AmountAvaliableController extends ValueNotifier<int?> {
 
   @override
   void dispose() {
+    isDisposing = true;
+    _calculateAvaliableFut?.ignore();
     feeRateController.removeListener(onFeeRateChanged);
     super.dispose();
   }
@@ -296,11 +298,15 @@ class AmountAvaliableController extends ValueNotifier<int?> {
     recalculate();
   }
 
+  bool isDisposing = false;
+  Future? _calculateAvaliableFut;
+
   void recalculate() {
-    _calculateAvaliable().then((maybeNewValue) {
-      if (maybeNewValue == null) return;
-      var newValue = maybeNewValue;
-      if (newValue < 0) newValue = 0;
+    _calculateAvaliableFut?.ignore();
+    _calculateAvaliableFut = _calculateAvaliable();
+    _calculateAvaliableFut?.then((maybeNewValue) {
+      if (isDisposing || maybeNewValue == null) return;
+      var newValue = (maybeNewValue < 0) ? 0 : maybeNewValue;
       if (newValue == value) return;
       value = newValue;
     });
@@ -524,7 +530,7 @@ class AmountInput extends StatelessWidget {
       listenable: model,
       builder: (context, child) => TextField(
         controller: model.textEditingController,
-        style: TextStyle(fontFamily: balanceTextStyle.fontFamily),
+        style: TextStyle(fontFamily: monospaceTextStyle.fontFamily),
         decoration: (decoration ?? InputDecoration()).copyWith(
           errorText: model.error,
           hintText: model.unit.hintText,

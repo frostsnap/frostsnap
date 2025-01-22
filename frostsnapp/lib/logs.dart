@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:frostsnapp/theme.dart';
 
 class LogPane extends StatefulWidget {
   final Stream<String> logStream;
@@ -88,6 +89,7 @@ class _LogPane extends State<LogPane> {
                 controller: _scrollController,
                 child: SelectableText.rich(
                   TextSpan(children: logSpans),
+                  style: monospaceTextStyle,
                   dragStartBehavior: DragStartBehavior.down,
                 ),
               ),

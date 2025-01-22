@@ -13,6 +13,7 @@ import 'package:frostsnapp/show_backup.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/progress_indicator.dart';
+import 'package:frostsnapp/theme.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class KeyNamePage extends StatefulWidget {
@@ -463,6 +464,7 @@ Future<AccessStructureRef?> showCheckKeyGenDialog({
                       : toSpacedHex(Uint8List.fromList(
                           state.sessionHash!.field0.sublist(0, 4))),
                   style: TextStyle(
+                    fontFamily: monospaceTextStyle.fontFamily,
                     fontWeight: FontWeight.bold,
                     fontSize: 25,
                   ),

@@ -197,12 +197,14 @@ class FsAppBar extends StatelessWidget implements PreferredSizeWidget {
   final List<Widget> actions;
   final PreferredSizeWidget? bottom;
   final Color? backgroundColor;
+  final bool? centerTitle;
 
   const FsAppBar(
       {super.key,
       required this.title,
       this.bottom,
       this.backgroundColor,
+      this.centerTitle,
       this.actions = const []});
 
   @override
@@ -212,6 +214,7 @@ class FsAppBar extends StatelessWidget implements PreferredSizeWidget {
 
     return AppBar(
       title: title,
+      centerTitle: centerTitle,
       bottom: bottom,
       backgroundColor: backgroundColor,
       surfaceTintColor: backgroundColor,

@@ -3,9 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-final balanceTextStyle = GoogleFonts.notoSansMono();
-final addressTextStyle = GoogleFonts.notoSansMono();
-final txidTextStyle = GoogleFonts.notoSansMono();
+final monospaceTextStyle = GoogleFonts.notoSansMono();
 
 final blurFilter = ImageFilter.blur(sigmaX: 2.1, sigmaY: 2.1);
 

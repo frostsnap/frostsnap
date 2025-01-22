@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/global.dart';
+import 'package:frostsnapp/psbt.dart';
+import 'package:frostsnapp/sign_message.dart';
 import 'package:frostsnapp/theme.dart';
 import 'package:frostsnapp/wallet_receive.dart';
 import 'package:frostsnapp/wallet_send.dart';
@@ -70,14 +72,26 @@ class WalletHome extends StatelessWidget {
               ),
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: () => showModalBottomSheet(
-                    context: context,
-                    isScrollControlled: true,
-                    useSafeArea: true,
-                    isDismissible: true,
-                    showDragHandle: false,
-                    builder: (context) => walletCtx.wrap(WalletSendPage()),
-                  ),
+                  onPressed: () {
+                    final mediaSize = MediaQuery.sizeOf(context);
+                    if (mediaSize.width < 600) {
+                      showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        useSafeArea: true,
+                        isDismissible: true,
+                        showDragHandle: false,
+                        builder: (context) => walletCtx.wrap(WalletSendPage()),
+                      );
+                    } else {
+                      showDialog(
+                        context: context,
+                        builder: (context) => Dialog(
+                          child: walletCtx.wrap(WalletSendPage()),
+                        ),
+                      );
+                    }
+                  },
                   label: Text('Send'),
                   icon: Icon(Icons.north_east),
                   style: ElevatedButton.styleFrom(
@@ -133,14 +147,12 @@ class _FloatingProgress extends State<FloatingProgress>
     _progressFadeController =
         AnimationController(vsync: this, duration: Duration(seconds: 2));
     widget.progressStream.listen((event) {
-      setState(() {
-        progress = event;
-      });
+      if (!context.mounted) return;
+      setState(() => progress = event);
     }, onDone: () {
+      if (!context.mounted) return;
       // trigger rebuild to start the animation
-      setState(() {
-        _progressFadeController.forward();
-      });
+      setState(() => _progressFadeController.forward());
     });
   }
 
@@ -163,8 +175,6 @@ class _FloatingProgress extends State<FloatingProgress>
           duration: _progressFadeController.duration!,
           child: LinearProgressIndicator(
             value: progress,
-            //backgroundColor: backgroundSecondaryColor,
-            //valueColor: AlwaysStoppedAnimation<Color>(textPrimaryColor),
           ),
         ),
       ),
@@ -174,20 +184,6 @@ class _FloatingProgress extends State<FloatingProgress>
 
 class TxItem extends StatelessWidget {
   final Transaction transaction;
-  static const Map<int, String> monthMap = {
-    1: 'Jan',
-    2: 'Feb',
-    3: 'Mar',
-    4: 'Apr',
-    5: 'May',
-    6: 'Jun',
-    7: 'Jul',
-    8: 'Aug',
-    9: 'Sep',
-    10: 'Oct',
-    11: 'Nov',
-    12: 'Dec',
-  };
 
   const TxItem({super.key, required this.transaction});
 
@@ -253,7 +249,6 @@ class TxItem extends StatelessWidget {
       child: Icon(
         transaction.netValue > 0 ? Icons.south_east : Icons.north_east,
         color: iconColor,
-        //size: theme.textTheme.titleSmall?.fontSize,
       ),
     );
 
@@ -275,6 +270,8 @@ class TxItem extends StatelessWidget {
             showSign: true,
             style: theme.textTheme.bodyLarge
                 ?.copyWith(color: isConfirmed ? null : iconColor),
+            disabledColor:
+                isConfirmed ? null : theme.colorScheme.outlineVariant,
           ),
           onLongPress: () =>
               controller.isOpen ? controller.close() : controller.open(),
@@ -365,13 +362,16 @@ class _TxListState extends State<TxList> {
   @override
   void initState() {
     super.initState();
-    scrollController.addListener(() => atTopNotifier.value =
-        scrollController.offset <= 48.0); // medium: 48.0, large: 88.0
+    scrollController.addListener(() {
+      if (!context.mounted) return;
+      atTopNotifier.value = scrollController.offset <= 48.0;
+    }); // medium: 48.0, large: 88.0
   }
 
   @override
   void dispose() {
     scrollController.dispose();
+    atTopNotifier.dispose();
     super.dispose();
   }
 
@@ -382,6 +382,49 @@ class _TxListState extends State<TxList> {
     final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
 
     const scrolledUnderElevation = 1.0;
+
+    final appBarMenu = MenuAnchor(
+      menuChildren: [
+        MenuItemButton(
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => LoadPsbtPage(wallet: walletCtx.wallet),
+            ),
+          ),
+          leadingIcon: Icon(Icons.key),
+          child: Text('Sign PSBT'),
+        ),
+        MenuItemButton(
+          onPressed: (frostKey == null)
+              ? null
+              : () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => SignMessagePage(frostKey: frostKey),
+                    ),
+                  ),
+          leadingIcon: Icon(Icons.key),
+          child: Text('Sign Message'),
+        ),
+        Divider(),
+        MenuItemButton(
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => walletCtx.wrap(SettingsPage()),
+            ),
+          ),
+          leadingIcon: Icon(Icons.settings),
+          child: Text('Settings'),
+        ),
+      ],
+      builder: (_, controller, child) => IconButton(
+        onPressed: () =>
+            controller.isOpen ? controller.close() : controller.open(),
+        icon: Icon(Icons.more_vert),
+      ),
+    );
 
     return CustomScrollView(
       controller: scrollController,
@@ -401,17 +444,18 @@ class _TxListState extends State<TxList> {
                   final chainStatus = snap.data!;
                   return ChainStatusIcon(chainStatus: chainStatus);
                 }),
-            IconButton(
-              icon: Icon(Icons.settings),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => walletCtx.wrap(SettingsPage()),
-                  ),
-                );
-              },
-            ),
+            appBarMenu,
+            //IconButton(
+            //  icon: Icon(Icons.settings),
+            //  onPressed: () {
+            //    Navigator.push(
+            //      context,
+            //      MaterialPageRoute(
+            //        builder: (context) => walletCtx.wrap(SettingsPage()),
+            //      ),
+            //    );
+            //  },
+            //),
           ],
         ),
         PinnedHeaderSliver(
@@ -460,12 +504,22 @@ class UpdatingBalance extends StatefulWidget {
 class _UpdatingBalanceState extends State<UpdatingBalance> {
   int pendingIncomingBalance = 0;
   int avaliableBalance = 0;
+  late final StreamSubscription streamSub;
 
   @override
   void initState() {
     super.initState();
+    streamSub = widget.txStream.listen(onData);
+  }
 
-    widget.txStream.listen((txState) {
+  @override
+  void dispose() {
+    streamSub.cancel();
+    super.dispose();
+  }
+
+  void onData(TxState txState) {
+    if (context.mounted) {
       var pendingIncomingBalance = 0;
       var avaliableBalance = 0;
       for (final tx in txState.txs) {
@@ -479,13 +533,11 @@ class _UpdatingBalanceState extends State<UpdatingBalance> {
         pendingIncomingBalance += avaliableBalance;
         avaliableBalance = 0;
       }
-      if (context.mounted) {
-        setState(() {
-          this.pendingIncomingBalance = pendingIncomingBalance;
-          this.avaliableBalance = avaliableBalance;
-        });
-      }
-    });
+      setState(() {
+        this.pendingIncomingBalance = pendingIncomingBalance;
+        this.avaliableBalance = avaliableBalance;
+      });
+    }
   }
 
   @override
@@ -551,6 +603,7 @@ class _UpdatingBalanceState extends State<UpdatingBalance> {
                         value: pendingIncomingBalance,
                         showSign: true,
                         style: pendingBalanceTextStyle,
+                        disabledColor: theme.colorScheme.outlineVariant,
                       ),
                     ],
                   ),
@@ -574,6 +627,7 @@ class SatoshiText extends StatelessWidget {
   final bool hideLeadingWhitespace;
   final double letterSpacingReductionFactor;
   final TextStyle? style;
+  final Color? disabledColor;
   final TextAlign align;
 
   const SatoshiText({
@@ -583,6 +637,7 @@ class SatoshiText extends StatelessWidget {
     this.hideLeadingWhitespace = false,
     this.letterSpacingReductionFactor = 0.0,
     this.style,
+    this.disabledColor,
     this.align = TextAlign.right,
   }) : super(key: key);
 
@@ -594,7 +649,7 @@ class SatoshiText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final baseStyle = DefaultTextStyle.of(context).style.merge(style).copyWith(
-      fontFamily: balanceTextStyle.fontFamily,
+      fontFamily: monospaceTextStyle.fontFamily,
       fontFeatures: [
         FontFeature.slashedZero(),
         FontFeature.tabularFigures(),
@@ -612,8 +667,7 @@ class SatoshiText extends StatelessWidget {
     final activeStyle = TextStyle(letterSpacing: baseLetterSpacing);
     final inactiveStyle = TextStyle(
       letterSpacing: baseLetterSpacing,
-      // Reduce text opacity by `opacityChangeFactor` initially.
-      color: Theme.of(context).disabledColor,
+      color: disabledColor ?? Theme.of(context).disabledColor,
     );
 
     final value = this.value ?? 0;
