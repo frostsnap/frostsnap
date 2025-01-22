@@ -16,7 +16,9 @@ use frostsnap_coordinator::frostsnap_core::coordinator::{
     CoordAccessStructure, CoordFrostKey, CoordinatorSend,
 };
 use frostsnap_coordinator::frostsnap_core::device::KeyPurpose;
-use frostsnap_coordinator::frostsnap_core::message::{CoordinatorToUserMessage, RecoverShare};
+use frostsnap_coordinator::frostsnap_core::message::{
+    CoordinatorToUserMessage, DoKeyGen, RecoverShare,
+};
 use frostsnap_coordinator::frostsnap_core::SymmetricKey;
 use frostsnap_coordinator::frostsnap_persist::DeviceNames;
 use frostsnap_coordinator::persist::Persisted;
@@ -493,14 +495,13 @@ impl FfiCoordinator {
             .map(|device| device.id)
             .collect();
 
+        let do_keygen = DoKeyGen::new(devices, threshold, key_name, purpose);
+
         let ui_protocol = frostsnap_coordinator::keygen::KeyGen::new(
             SinkWrap(sink),
             self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
-            devices.clone(),
             currently_connected,
-            threshold,
-            key_name,
-            purpose,
+            do_keygen,
             &mut rand::thread_rng(),
         );
 

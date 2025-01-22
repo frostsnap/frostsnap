@@ -233,12 +233,12 @@ impl FrostSigner {
             }
             (
                 None,
-                DoKeyGen {
+                DoKeyGen(super::DoKeyGen {
                     device_to_share_index,
                     threshold,
                     key_name,
                     purpose: key_purpose,
-                },
+                }),
             ) => {
                 if !device_to_share_index.contains_key(&self.device_id()) {
                     return Ok(vec![]);
@@ -570,7 +570,7 @@ impl FrostSigner {
         &mut self,
         symm_key_gen: &mut impl DeviceSymmetricKeyGen,
         rng: &mut impl rand_core::RngCore,
-    ) -> Result<Vec<DeviceSend>, ActionError> {
+    ) -> Result<KeyGenAck, ActionError> {
         match self.action_state.take() {
             Some(SignerState::KeyGenAck {
                 agg_input,
@@ -623,9 +623,7 @@ impl FrostSigner {
                         ciphertext: encrypted_secret,
                     },
                 })));
-                Ok(vec![DeviceSend::ToCoordinator(Box::new(
-                    DeviceToCoordinatorMessage::KeyGenAck(session_hash),
-                ))])
+                Ok(KeyGenAck { session_hash })
             }
             action_state => {
                 self.action_state = action_state;
@@ -954,4 +952,24 @@ pub trait DeviceSymmetricKeyGen {
         party_index: PartyIndex,
         coord_key: CoordShareDecryptionContrib,
     ) -> SymmetricKey;
+}
+
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+pub struct KeyGenAck {
+    pub session_hash: SessionHash,
+}
+
+impl IntoIterator for KeyGenAck {
+    type Item = DeviceSend;
+    type IntoIter = core::iter::Once<DeviceSend>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        core::iter::once(DeviceSend::ToCoordinator(Box::new(self.into())))
+    }
+}
+
+impl From<KeyGenAck> for DeviceToCoordinatorMessage {
+    fn from(value: KeyGenAck) -> Self {
+        DeviceToCoordinatorMessage::KeyGenAck(value.session_hash)
+    }
 }

@@ -73,9 +73,9 @@ impl Send {
     }
 }
 
-pub struct TestDeviceKeygen;
+pub struct TestDeviceKeyGen;
 
-impl DeviceSymmetricKeyGen for TestDeviceKeygen {
+impl DeviceSymmetricKeyGen for TestDeviceKeyGen {
     fn get_share_encryption_key(
         &mut self,
         _key_id: frostsnap_core::KeyId,
@@ -116,18 +116,18 @@ pub trait Env {
             DeviceToUserMessage::CheckKeyGen { .. } => {
                 let ack = run
                     .device(from)
-                    .keygen_ack(&mut TestDeviceKeygen, rng)
+                    .keygen_ack(&mut TestDeviceKeyGen, rng)
                     .unwrap();
                 run.extend_from_device(from, ack);
             }
             DeviceToUserMessage::SignatureRequest { .. } => {
-                let sign_ack = run.device(from).sign_ack(&mut TestDeviceKeygen).unwrap();
+                let sign_ack = run.device(from).sign_ack(&mut TestDeviceKeyGen).unwrap();
                 run.extend_from_device(from, sign_ack);
             }
             DeviceToUserMessage::DisplayBackupRequest { .. } => {
                 let backup_ack = run
                     .device(from)
-                    .display_backup_ack(&mut TestDeviceKeygen)
+                    .display_backup_ack(&mut TestDeviceKeyGen)
                     .unwrap();
                 run.extend_from_device(from, backup_ack);
             }

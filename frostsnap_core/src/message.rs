@@ -7,7 +7,7 @@ use crate::{
 use crate::{DeviceId, SignTask};
 use alloc::{
     boxed::Box,
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     string::String,
 };
 use bitcoin::address::{Address, NetworkChecked};
@@ -30,12 +30,7 @@ pub enum DeviceSend {
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub enum CoordinatorToDeviceMessage {
-    DoKeyGen {
-        device_to_share_index: BTreeMap<DeviceId, NonZeroU32>,
-        threshold: u16,
-        key_name: String,
-        purpose: KeyPurpose,
-    },
+    DoKeyGen(DoKeyGen),
     FinishKeyGen {
         agg_input: encpedpop::AggKeygenInput,
     },
@@ -53,6 +48,41 @@ pub enum CoordinatorToDeviceMessage {
         derivation_index: u32,
     },
     RequestHeldShares,
+}
+
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+pub struct DoKeyGen {
+    pub device_to_share_index: BTreeMap<DeviceId, NonZeroU32>,
+    pub threshold: u16,
+    pub key_name: String,
+    pub purpose: KeyPurpose,
+}
+
+impl DoKeyGen {
+    pub fn new(
+        devices: BTreeSet<DeviceId>,
+        threshold: u16,
+        key_name: String,
+        purpose: KeyPurpose,
+    ) -> Self {
+        let device_to_share_index: BTreeMap<_, _> = devices
+            .iter()
+            .enumerate()
+            .map(|(index, device_id)| {
+                (
+                    *device_id,
+                    NonZeroU32::new(index as u32 + 1).expect("we added one"),
+                )
+            })
+            .collect();
+
+        Self {
+            device_to_share_index,
+            threshold,
+            key_name,
+            purpose,
+        }
+    }
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]

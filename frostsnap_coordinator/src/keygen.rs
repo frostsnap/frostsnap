@@ -4,8 +4,7 @@ use crate::{Completion, Sink, UiProtocol, UiToStorageMessage};
 use frostsnap_comms::CoordinatorSendMessage;
 use frostsnap_core::{
     coordinator::FrostCoordinator,
-    device::KeyPurpose,
-    message::{CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage},
+    message::{CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, DoKeyGen},
     AccessStructureRef, DeviceId, SessionHash,
 };
 use tracing::{event, Level};
@@ -18,33 +17,31 @@ pub struct KeyGen {
 }
 
 impl KeyGen {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         keygen_sink: impl Sink<KeyGenState> + 'static,
         coordinator: &mut FrostCoordinator,
-        devices: BTreeSet<DeviceId>,
         currently_connected: BTreeSet<DeviceId>,
-        threshold: u16,
-        key_name: String,
-        key_purpose: KeyPurpose,
+        do_keygen: DoKeyGen,
         rng: &mut impl rand_core::RngCore,
     ) -> Self {
         let mut self_ = Self {
             sink: Box::new(keygen_sink),
             state: KeyGenState {
-                devices: devices.clone().into_iter().collect(),
-                threshold: threshold.into(),
+                devices: do_keygen.device_to_share_index.keys().cloned().collect(),
+                threshold: do_keygen.threshold.into(),
                 ..Default::default()
             },
             keygen_messages: vec![],
             send_cancel_to_all: false,
         };
 
-        if !currently_connected.is_superset(&devices) {
+        if !currently_connected
+            .is_superset(&do_keygen.device_to_share_index.keys().cloned().collect())
+        {
             self_.abort("A selected device was disconnected".into(), false);
         }
 
-        match coordinator.do_keygen(&devices, threshold, key_name, key_purpose, rng) {
+        match coordinator.do_keygen(do_keygen, rng) {
             Ok(messages) => {
                 for message in messages {
                     self_.keygen_messages.push(
