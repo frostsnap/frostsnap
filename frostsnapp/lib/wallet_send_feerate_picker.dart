@@ -56,7 +56,6 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
   }
 
   _onRefresh(BuildContext context) async {
-    if (widget.feeRateModel.estimateRunning == true) return;
     await widget.feeRateModel
         .refreshEstimates(context, widget.walletContext, null);
   }
@@ -233,10 +232,12 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
     );
 
     final pullDownToRefresh = InkWell(
+      customBorder:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(4.0)),
       onTap: () => _onRefresh(context),
       child: SizedBox(
-        height: 12.0,
-        width: 180.0,
+        height: 32.0,
+        width: 192.0,
         child: Center(
           child: ListenableBuilder(
             listenable: widget.feeRateModel,

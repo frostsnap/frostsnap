@@ -161,11 +161,26 @@ enum AmountUnit {
 class FeeRateController with ChangeNotifier {
   double _satsPerVB;
   bool _estimateRunning = false;
+  Future<bool>? _estimateFut;
 
   FeeRateController({double satsPerVB = 5.0}) : _satsPerVB = satsPerVB;
 
+  @override
+  void dispose() {
+    _estimateFut?.ignore();
+    super.dispose();
+  }
+
   bool get estimateRunning => _estimateRunning;
   Future<bool> refreshEstimates(BuildContext context,
+      WalletContext walletContext, int? setFeeRateToTargetBlocks) async {
+    _estimateFut?.ignore();
+    _estimateFut =
+        _refreshEstimates(context, walletContext, setFeeRateToTargetBlocks);
+    return await _estimateFut!;
+  }
+
+  Future<bool> _refreshEstimates(BuildContext context,
       WalletContext walletContext, int? setFeeRateToTargetBlocks) async {
     if (context.mounted) {
       _estimateRunning = true;

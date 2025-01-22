@@ -141,6 +141,8 @@ class _WalletSendPageState extends State<WalletSendPage> {
     super.dispose();
   }
 
+  bool alreadyRefreshed = false;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -149,18 +151,16 @@ class _WalletSendPageState extends State<WalletSendPage> {
       if (walletCtx != null) {
         selectedDevicesModel.walletContext = walletCtx;
         amountAvaliable.walletContext = walletCtx;
+        if (!alreadyRefreshed) {
+          feeRateModel.refreshEstimates(context, walletCtx, 1);
+          alreadyRefreshed = true;
+        }
       }
     }
   }
 
-  Future<void>? _estimateFut;
-
   @override
   Widget build(BuildContext context) {
-    final walletContext = WalletContext.of(context);
-    if (walletContext == null) return SizedBox();
-    _estimateFut ??= feeRateModel.refreshEstimates(context, walletContext, 1);
-
     final theme = Theme.of(context);
 
     final appBar = SliverPadding(
