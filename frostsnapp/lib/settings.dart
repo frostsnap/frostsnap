@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnapp/address.dart';
 import 'package:frostsnapp/access_structures.dart';
+import 'package:frostsnapp/backup_workflow.dart';
 import 'package:frostsnapp/bullet_list.dart';
 import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/electrum_server_settings.dart';
@@ -81,6 +82,7 @@ class SettingsPage extends StatelessWidget {
     final walletCtx = WalletContext.of(context);
     final keyCtx = KeyContext.of(context);
     final logCtx = FrostsnapContext.of(context);
+
     return Scaffold(
       appBar: AppBar(title: Text('Settings')),
       body: Center(
@@ -114,6 +116,19 @@ class SettingsPage extends StatelessWidget {
                         return AccessPage();
                       },
                     ),
+                    if (walletCtx != null)
+                      SettingsItem(
+                        title: Text('Backup Checklist'),
+                        icon: Icons.assignment,
+                        bodyBuilder: (context) {
+                          final frostKey = walletCtx.wallet.frostKey();
+                          if (frostKey != null) {
+                            return BackupChecklist(
+                              accessStructure: frostKey.accessStructures()[0],
+                            );
+                          }
+                        },
+                      ),
                     SettingsItem(
                       title: Text('Check address'),
                       icon: Icons.policy,

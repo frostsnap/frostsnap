@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:frostsnapp/backup_workflow.dart';
 import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/psbt.dart';
@@ -24,6 +26,124 @@ class Wallet {
 
   KeyId keyId() {
     return api.masterAppkeyExtToKeyId(masterAppkey: masterAppkey);
+  }
+}
+
+class WalletHomeWithConfetti extends StatefulWidget {
+  final bool? newKey;
+  const WalletHomeWithConfetti({super.key, this.newKey});
+  @override
+  State<WalletHomeWithConfetti> createState() => _WalletHomeWithConfettiState();
+}
+
+class _WalletHomeWithConfettiState extends State<WalletHomeWithConfetti> {
+  late final ConfettiController confettiController;
+  // For new keys we don't want to show the banner until they dismiss the dialog
+  bool _showBackupWarningBanner = false;
+
+  @override
+  void initState() {
+    super.initState();
+    confettiController = ConfettiController(
+      duration: const Duration(seconds: 4),
+    );
+    _showBackupWarningBanner = widget.newKey != true;
+
+    if (widget.newKey == true) {
+      confettiController.play();
+      Future.delayed(const Duration(seconds: 1), () {
+        if (mounted) {
+          _showBackupDialog();
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    confettiController.dispose();
+    super.dispose();
+  }
+
+  void _showBackupDialog() {
+    final walletCtx = WalletContext.of(context)!;
+    final accessStructure =
+        walletCtx.wallet.frostKey()!.accessStructures().first;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: const [
+              Text(
+                'Wallet Created!',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              Icon(Icons.checklist, size: 40),
+            ],
+          ),
+          content: const Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Now let\'s secure this wallet by storing these devices in geographically separate locations.',
+              ),
+              SizedBox(height: 12),
+              Text(
+                'We will also create a backup for each device as an ultimate backup.',
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                setState(() => _showBackupWarningBanner = true);
+              },
+              child: const Text('Later'),
+            ),
+            FilledButton(
+              onPressed: () {
+                setState(() => _showBackupWarningBanner = true);
+                Navigator.of(context).pop();
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder:
+                        (context) => walletCtx.wrap(
+                          BackupChecklistPage(accessStructure: accessStructure),
+                        ),
+                  ),
+                );
+              },
+              child: const Text('Secure Wallet'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return BannerStateProvider(
+      showBanner: _showBackupWarningBanner,
+      child: Stack(
+        children: [
+          const WalletHome(),
+          Center(
+            child: ConfettiWidget(
+              confettiController: confettiController,
+              blastDirectionality: BlastDirectionality.explosive,
+              numberOfParticles: 100,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -362,7 +482,6 @@ class TxItem extends StatelessWidget {
 
 class TxList extends StatefulWidget {
   const TxList({super.key});
-
   @override
   State<TxList> createState() => _TxListState();
 }
@@ -389,6 +508,7 @@ class _TxListState extends State<TxList> {
 
   @override
   Widget build(BuildContext context) {
+    final frostsnapCtx = FrostsnapContext.of(context)!;
     final walletCtx = WalletContext.of(context)!;
     final settingsCtx = SettingsContext.of(context)!;
     final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
@@ -442,7 +562,6 @@ class _TxListState extends State<TxList> {
             icon: Icon(Icons.more_vert),
           ),
     );
-
     return CustomScrollView(
       controller: scrollController,
       physics: ClampingScrollPhysics(),
@@ -465,6 +584,11 @@ class _TxListState extends State<TxList> {
             appBarMenu,
           ],
         ),
+        if (frostKey != null)
+          BackupWarningBanner(
+            frostKey: frostKey,
+            backupManager: frostsnapCtx.backupManager,
+          ),
         PinnedHeaderSliver(
           child: UpdatingBalance(
             txStream: WalletContext.of(context)!.txStream,
@@ -741,5 +865,112 @@ Uri getBlockExplorer(BitcoinNetwork network) {
   } else {
     // TODO: handle testnet properly
     return Uri.parse("https://mempool.space/signet/");
+  }
+}
+
+class BannerStateProvider extends InheritedWidget {
+  final bool showBanner;
+
+  const BannerStateProvider({
+    required this.showBanner,
+    required Widget child,
+    Key? key,
+  }) : super(key: key, child: child);
+
+  static BannerStateProvider? of(BuildContext context) {
+    return context.dependOnInheritedWidgetOfExactType<BannerStateProvider>();
+  }
+
+  @override
+  bool updateShouldNotify(BannerStateProvider oldWidget) {
+    return showBanner != oldWidget.showBanner;
+  }
+}
+
+class BackupWarningBanner extends StatelessWidget {
+  final FrostKey frostKey;
+  final BackupManager backupManager;
+
+  const BackupWarningBanner({
+    required this.frostKey,
+    required this.backupManager,
+    super.key,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final backupManager = FrostsnapContext.of(context)!.backupManager;
+    final walletCtx = WalletContext.of(context)!;
+    final backupStream = walletCtx.backupStream;
+
+    final bannerState = BannerStateProvider.of(context);
+    // Don't show if we're in new key flow and haven't dismissed dialog
+    if (bannerState != null && !bannerState.showBanner) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+
+    return StreamBuilder<dynamic>(
+      stream: backupStream,
+      builder: (context, snapshot) {
+        final walletCtx = WalletContext.of(context)!;
+        final theme = Theme.of(context);
+
+        final showWarning =
+            !backupManager.isRunComplete(keyId: frostKey.keyId());
+
+        if (!showWarning) {
+          return const SliverToBoxAdapter(child: SizedBox.shrink());
+        }
+
+        return SliverToBoxAdapter(
+          child: Material(
+            color: theme.colorScheme.errorContainer,
+            child: InkWell(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder:
+                        (context) => walletCtx.wrap(
+                          BackupChecklistPage(
+                            accessStructure: frostKey.accessStructures()[0],
+                          ),
+                        ),
+                  ),
+                );
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16.0,
+                  vertical: 8.0,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.warning_rounded,
+                      color: theme.colorScheme.onErrorContainer,
+                    ),
+                    const SizedBox(width: 8.0),
+                    Expanded(
+                      child: Text(
+                        'Warning - this wallet has unfinished backups!',
+                        style: TextStyle(
+                          color: theme.colorScheme.onErrorContainer,
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      Icons.arrow_forward_ios,
+                      size: 16.0,
+                      color: theme.colorScheme.onErrorContainer,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 }
