@@ -9,6 +9,7 @@ use ui::UserInteraction;
 extern crate alloc;
 
 pub mod device_config;
+pub mod efuse;
 pub mod esp32_run;
 #[cfg(feature = "v2")]
 pub mod graphics;

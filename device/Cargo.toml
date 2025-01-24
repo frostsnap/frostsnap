@@ -6,10 +6,7 @@ edition = "2021"
 
 [features]
 default = ["v2"]
-v2 = [
-    "dep:display-interface-spi",
-    "dep:mipidsi",
-]
+v2 = ["dep:display-interface-spi", "dep:mipidsi"]
 mem_debug = []
 
 [dependencies]
@@ -38,6 +35,7 @@ embedded-iconoir = { version = "0.2.3", features = ["24px", "32px", "48px"] }
 fugit = "0.3.7"
 crc = "3"
 micromath = "*"
+reed-solomon = "0.2.1"
 
 [[bin]]
 name = "v2"

@@ -30,7 +30,7 @@ pub struct Run<'a, Rng, Ui, T, DownstreamDetectPin> {
     pub timer: &'a T,
     pub downstream_detect: gpio::Input<'a, DownstreamDetectPin>,
     pub sha256: Sha<'a>,
-    pub keygen: HmacKeyGen<'a>,
+    pub secret_gen: HmacKeyGen<'a>,
 }
 
 impl<Rng, Ui, T, DownstreamDetectPin> Run<'_, Rng, Ui, T, DownstreamDetectPin>
@@ -49,7 +49,7 @@ where
             timer,
             downstream_detect,
             mut sha256,
-            mut keygen,
+            mut secret_gen,
         } = self;
 
         let flash = FlashStorage::new();

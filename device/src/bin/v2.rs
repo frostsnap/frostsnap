@@ -39,7 +39,7 @@ use esp_hal::{
 use frostsnap_comms::Downstream;
 use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_device::{
-    esp32_run,
+    efuse, esp32_run,
     graphics::{
         self,
         animation::AnimationProgress,
@@ -195,14 +195,19 @@ fn main() -> ! {
 
     let mut adc = peripherals.ADC1;
     let mut hal_rng = Trng::new(peripherals.RNG, &mut adc);
-    let hal_hmac = Hmac::new(peripherals.HMAC);
-    let keygen = HmacKeyGen::new(hal_hmac);
+
+    let efuse = efuse::EfuseController::new(peripherals.EFUSE);
+    efuse
+        .initialize_hmac_key(&mut hal_rng)
+        .expect("Efuse init error");
 
     let rng = {
         let mut chacha_seed = [0u8; 32];
         hal_rng.read(&mut chacha_seed);
         ChaCha20Rng::from_seed(chacha_seed)
     };
+    let hal_hmac = Hmac::new(peripherals.HMAC);
+    let secret_gen = HmacKeyGen::new(hal_hmac);
 
     let ui = FrostyUi {
         display,
@@ -224,7 +229,7 @@ fn main() -> ! {
         timer: &timer0,
         downstream_detect,
         sha256,
-        keygen,
+        secret_gen,
     };
     run.run()
 }
