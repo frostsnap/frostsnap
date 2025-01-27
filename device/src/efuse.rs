@@ -13,24 +13,31 @@ impl EfuseController {
         Self { efuse }
     }
 
-    pub fn initialize_hmac_key(&self, rng: &mut impl RngCore) -> Result<(), EfuseError> {
-        let key: [u8; 32] = Efuse::read_field_le(hal_efuse::KEY1);
-        // Check if there's a key1 so we don't accidentally overwrite it
-        if key.iter().eq([0u8; 32].iter()) {
+    pub fn init_key(&self, key_number: u8, rng: &mut impl RngCore) -> Result<(), EfuseError> {
+        let efuse_field = match key_number {
+            0 => hal_efuse::KEY_PURPOSE_0,
+            1 => hal_efuse::KEY_PURPOSE_1,
+            2 => hal_efuse::KEY_PURPOSE_2,
+            3 => hal_efuse::KEY_PURPOSE_3,
+            4 => hal_efuse::KEY_PURPOSE_4,
+            5 => hal_efuse::KEY_PURPOSE_5,
+            _ => return Err(EfuseError::EfuseError),
+        };
+        let key: u8 = Efuse::read_field_le(efuse_field);
+        // Check if there's an existing key so we don't accidentally overwrite it
+        if key == 0 {
             let mut buff = [0x00_u8; 32];
             rng.fill_bytes(&mut buff);
 
             unsafe {
-                self.write_block(&buff, 5)?;
-                self.write_key_purpose(1, KeyPurpose::HmacUpstream)?;
+                self.write_block(&buff, key_number + 4)?;
+                self.write_key_purpose(key_number, KeyPurpose::HmacUpstream)?;
             }
         }
         Ok(())
     }
 
     /// # Safety
-    ///
-    /// Only write once to efuses
     unsafe fn write_key_purpose(
         &self,
         key_number: u8,
@@ -48,24 +55,42 @@ impl EfuseController {
             5 => buff[13] = kp << 4,
             _ => return Err(EfuseError::EfuseError),
         }
+
+        // We bundle every config in Block 0 to minimize write operations
+        // Todo: Write key purpose and rw flags for multiple keys
+        // Disable write to key block
+        let mut write_disable = 0x01_u32 << (23 + key_number);
+        // Disable write to key purpose
+        write_disable += 0x01_u32 << (8 + key_number);
+        buff[0..4].copy_from_slice(&write_disable.to_le_bytes());
+
+        #[cfg(feature = "efuse_protect")]
+        self.set_read_protect(key_number, &mut buff);
+
         self.write_block(&buff, 0)
     }
 
     /// # Safety
-    ///
-    /// Only write once to efuses
+    /// For disabling reading of efuse keys after efuse_debug
+    pub unsafe fn set_read_protect(&self, key_number: u8, buff: &mut [u8; 32]) {
+        // Disable read key
+        let read_disable = 0x01_u8 << key_number;
+        buff[4] = read_disable;
+    }
+
+    /// # Safety
     unsafe fn write_block(&self, data: &[u8; 32], block_number: u8) -> Result<(), EfuseError> {
         let efuse = &self.efuse;
 
         let mut to_burn: [u32; 11] = [0; 11];
 
         // Generate and write Reed-Solomon ECC
-        // Fuse controller ignores RS code for blocks 0 and 1
+        // Efuse controller ignores RS code for blocks 0 and 1
         let rs_enc = reed_solomon::Encoder::new(12);
-        let mut ecc = rs_enc.encode(data);
+        let ecc = rs_enc.encode(data);
 
         // Flip efuse words to little endian
-        for (i, word) in ecc.chunks_mut(4).enumerate() {
+        for (i, word) in ecc.chunks(4).enumerate() {
             let n = u32::from_le_bytes(word.try_into().unwrap());
             to_burn[i] = n;
         }
@@ -168,5 +193,6 @@ pub enum KeyPurpose {
 pub enum EfuseError {
     EfuseReadError,
     EfuseWriteError(u8),
+    EfuseBurned,
     EfuseError,
 }

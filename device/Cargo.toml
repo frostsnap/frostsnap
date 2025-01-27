@@ -8,6 +8,7 @@ edition = "2021"
 default = ["v2"]
 v2 = ["dep:display-interface-spi", "dep:mipidsi"]
 mem_debug = []
+efuse_protect = []
 
 [dependencies]
 frostsnap_core = { workspace = true }

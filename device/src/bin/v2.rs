@@ -39,7 +39,8 @@ use esp_hal::{
 use frostsnap_comms::Downstream;
 use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_device::{
-    efuse, esp32_run,
+    efuse::{self},
+    esp32_run,
     graphics::{
         self,
         animation::AnimationProgress,
@@ -197,9 +198,7 @@ fn main() -> ! {
     let mut hal_rng = Trng::new(peripherals.RNG, &mut adc);
 
     let efuse = efuse::EfuseController::new(peripherals.EFUSE);
-    efuse
-        .initialize_hmac_key(&mut hal_rng)
-        .expect("Efuse init error");
+    efuse.init_key(0, &mut hal_rng).expect("Efuse init error");
 
     let rng = {
         let mut chacha_seed = [0u8; 32];
