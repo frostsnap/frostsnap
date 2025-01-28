@@ -5,7 +5,7 @@ authors = ["nickfarrow <nick@nickfarrow.com>"]
 edition = "2021"
 
 [features]
-default = ["v2"]
+default = ["v2", "efuse_protect"]
 v2 = ["dep:display-interface-spi", "dep:mipidsi"]
 mem_debug = []
 efuse_protect = []
