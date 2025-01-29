@@ -805,6 +805,7 @@ impl FrostCoordinator {
         access_structure_ref: AccessStructureRef,
         sign_task: SignTask,
         signing_devices: &BTreeSet<DeviceId>,
+        rng: &mut impl rand_core::RngCore,
     ) -> Result<SignSessionId, StartSignError> {
         let AccessStructureRef {
             key_id,
@@ -893,6 +894,7 @@ impl FrostCoordinator {
                     app_shared_key.clone(),
                     sign_item.clone(),
                     indexed_nonces,
+                    rng,
                 )
             })
             .collect::<Vec<_>>();
@@ -1438,10 +1440,16 @@ impl SignSessionProgress {
         app_shared_key: Xpub<SharedKey>,
         sign_item: SignItem,
         nonces: BTreeMap<frost::PartyIndex, frost::Nonce>,
+        rng: &mut impl rand_core::RngCore,
     ) -> Self {
         let tweaked_key = sign_item.app_tweak.derive_xonly_key(&app_shared_key);
-        let sign_session =
-            frost.coordinator_sign_session(&tweaked_key, nonces, sign_item.schnorr_fun_message());
+        let sign_session = frost.randomized_coordinator_sign_session(
+            &tweaked_key,
+            nonces,
+            sign_item.schnorr_fun_message(),
+            rng,
+        );
+
         Self {
             sign_item,
             sign_session,
