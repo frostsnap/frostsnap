@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
 import 'package:frostsnapp/contexts.dart';
+import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/key_list.dart';
 import 'package:flutter/services.dart';
+import 'package:frostsnapp/keygen.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/serialport.dart';
 import 'package:frostsnapp/stream_ext.dart';
@@ -99,46 +102,114 @@ void main() async {
   }
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   final String? startupError;
 
   const MyApp({Key? key, this.startupError}) : super(key: key);
 
-  // This widget is the root of your application.
   @override
-  Widget build(BuildContext context) {
-    final colorScheme = ColorScheme.fromSeed(
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  late final Future<List<void>> googleFontsPending;
+  late final ColorScheme colorScheme;
+
+  @override
+  void initState() {
+    super.initState();
+    googleFontsPending = GoogleFonts.pendingFonts([
+      GoogleFonts.notoSansMono(),
+      GoogleFonts.notoSansTextTheme(),
+    ]);
+    colorScheme = ColorScheme.fromSeed(
       brightness: Brightness.dark,
       seedColor: Color(0xFF1595B2),
     );
-
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
       systemNavigationBarColor: colorScheme.surface,
     ));
+  }
 
-    return MaterialApp(
-      title: 'Frostsnapp',
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: colorScheme,
-      ),
-      home: startupError == null
-          ? const MyHomePage(title: 'Frostsnapp')
-          : StartupErrorWidget(error: startupError!),
-      debugShowCheckedModeBanner: false,
+  // This widget is the root of your application.
+  @override
+  Widget build(BuildContext context) {
+    final baseTheme = ThemeData(
+      useMaterial3: true,
+      colorScheme: colorScheme,
+    );
+
+    return FutureBuilder(
+      future: googleFontsPending,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return Center(child: CircularProgressIndicator());
+        }
+        final textTheme = GoogleFonts.notoSansTextTheme(baseTheme.textTheme);
+
+        return MaterialApp(
+          title: 'Frostsnapp',
+          theme: baseTheme.copyWith(
+              colorScheme: colorScheme, textTheme: textTheme),
+          home: widget.startupError == null
+              ? const MyHomePage()
+              : StartupErrorWidget(error: widget.startupError!),
+          debugShowCheckedModeBanner: false,
+        );
+      },
     );
   }
 }
 
-class MyHomePage extends StatelessWidget {
-  const MyHomePage({super.key, required this.title});
-  final String title;
+class MyHomePage extends StatefulWidget {
+  const MyHomePage({super.key});
+
+  @override
+  State<MyHomePage> createState() => _MyHomePageState();
+}
+
+class _MyHomePageState extends State<MyHomePage> {
+  late final ConfettiController confettiController;
+
+  @override
+  void initState() {
+    super.initState();
+    confettiController = ConfettiController(duration: Duration(seconds: 2));
+  }
+
+  @override
+  void dispose() {
+    confettiController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: FsAppBar(title: Text("Wallets")),
-        body: Center(child: KeyListWithConfetti()));
+      appBar: FsAppBar(title: Text("Wallets"), centerTitle: false),
+      body: Center(child: KeyListWithConfetti(controller: confettiController)),
+      floatingActionButton: FloatingActionButton.extended(
+        icon: Icon(Icons.add),
+        label: Text('New Wallet'),
+        onPressed: () async {
+          final newId = await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => KeyNamePage()),
+          );
+          if (context.mounted && newId != null) confettiController.play();
+        },
+      ),
+      persistentFooterAlignment: AlignmentDirectional.centerStart,
+      persistentFooterButtons: [
+        TextButton(
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => DeviceSettingsPage()),
+          ),
+          child: Text('Show Devices'),
+        )
+      ],
+    );
   }
 }
 
@@ -229,10 +300,7 @@ class _StartupErrorWidgetState extends State<StartupErrorWidget> {
                     borderRadius: BorderRadius.circular(4.0),
                     border: Border.all(),
                   ),
-                  child: SelectableText(
-                    _combinedErrorWithLogs,
-                    style: GoogleFonts.sourceCodePro(),
-                  ),
+                  child: SelectableText(_combinedErrorWithLogs),
                 ),
                 SizedBox(height: 20),
                 IconButton(

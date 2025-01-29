@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:frostsnapp/theme.dart';
 
 class LogPane extends StatefulWidget {
   final Stream<String> logStream;
@@ -88,10 +88,8 @@ class _LogPane extends State<LogPane> {
               child: SingleChildScrollView(
                 controller: _scrollController,
                 child: SelectableText.rich(
-                  TextSpan(
-                    children: logSpans,
-                  ),
-                  style: GoogleFonts.sourceCodePro(),
+                  TextSpan(children: logSpans),
+                  style: monospaceTextStyle,
                   dragStartBehavior: DragStartBehavior.down,
                 ),
               ),

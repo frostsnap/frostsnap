@@ -197,12 +197,14 @@ class FsAppBar extends StatelessWidget implements PreferredSizeWidget {
   final List<Widget> actions;
   final PreferredSizeWidget? bottom;
   final Color? backgroundColor;
+  final bool? centerTitle;
 
   const FsAppBar(
       {super.key,
       required this.title,
       this.bottom,
       this.backgroundColor,
+      this.centerTitle,
       this.actions = const []});
 
   @override
@@ -211,8 +213,8 @@ class FsAppBar extends StatelessWidget implements PreferredSizeWidget {
     final settingsCtx = SettingsContext.of(context)!;
 
     return AppBar(
-      centerTitle: true,
       title: title,
+      centerTitle: centerTitle,
       bottom: bottom,
       backgroundColor: backgroundColor,
       surfaceTintColor: backgroundColor,
@@ -506,13 +508,13 @@ class ChainStatusIcon extends StatelessWidget {
     switch (chainStatus.state) {
       case ChainStatusState.Connected:
         statusName = "Connected";
-        iconData = Icons.power;
+        iconData = Icons.link_rounded;
         iconColor = theme.colorScheme.primary;
         break;
       case ChainStatusState.Connecting:
       case ChainStatusState.Disconnected:
         statusName = "Disconnected";
-        iconData = Icons.power_off;
+        iconData = Icons.link_off_rounded;
         iconColor = theme.colorScheme.error;
         break;
     }
@@ -571,10 +573,12 @@ class DeleteWalletPage extends StatelessWidget {
                   child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Text(
-                          'Balance: ',
-                        ),
-                        UpdatingBalance(txStream: walletCtx.txStream),
+                        const Text('Balance: '),
+                        StreamBuilder(
+                            stream: walletCtx.txStream,
+                            builder: (context, snapshot) => SatoshiText(
+                                value: snapshot.data?.balance ?? 0)),
+                        //UpdatingBalance(txStream: walletCtx.txStream),
                       ])),
             SizedBox(height: 16),
             DefaultTextStyle(

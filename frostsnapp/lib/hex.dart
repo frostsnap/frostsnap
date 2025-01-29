@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:frostsnapp/theme.dart';
 
 String toHex(Uint8List data) {
   return data.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join('');
@@ -77,11 +78,8 @@ Widget chunkedAddressFormat(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: Text(
                       chunks[j],
-                      style: TextStyle(
-                        fontFamily: 'Courier',
-                        fontSize: 20,
-                        color: textColor,
-                      ),
+                      style: monospaceTextStyle.copyWith(
+                          fontSize: 20, color: textColor),
                     ),
                   ),
               ],

@@ -14,12 +14,14 @@ use futures::{
     channel::{mpsc, oneshot},
     executor::block_on,
     future::Either,
-    StreamExt,
+    stream::FuturesUnordered,
+    FutureExt, StreamExt,
 };
 use futures_rustls::{
     client::TlsStream, pki_types::ServerName, rustls::RootCertStore, TlsConnector,
 };
 use std::{
+    collections::{BTreeMap, BTreeSet},
     sync::{
         mpsc::{sync_channel, Receiver, SyncSender},
         Arc,
@@ -79,6 +81,7 @@ pub enum Message {
     ChangeUrlReq(ReqAndResponse<String, Result<()>>),
     MonitorDescriptor(KeychainId, Descriptor<DescriptorPublicKey>),
     BroadcastReq(ReqAndResponse<Transaction, Result<()>>),
+    EstimateFee(ReqAndResponse<BTreeSet<usize>, Result<BTreeMap<usize, bitcoin::FeeRate>>>),
     SetStatusSink(Box<dyn Sink<ChainStatus>>),
     Reconnect,
 }
@@ -115,6 +118,15 @@ impl ChainClient {
     pub fn broadcast(&self, transaction: bitcoin::Transaction) -> Result<()> {
         let (req, response) = ReqAndResponse::new(transaction);
         self.req_sender.send(Message::BroadcastReq(req)).unwrap();
+        response.recv()?
+    }
+
+    pub fn estimate_fee(
+        &self,
+        target_blocks: impl IntoIterator<Item = usize>,
+    ) -> Result<BTreeMap<usize, bitcoin::FeeRate>> {
+        let (req, response) = ReqAndResponse::new(target_blocks.into_iter().collect());
+        self.req_sender.send(Message::EstimateFee(req)).unwrap();
         response.recv()?
     }
 
@@ -281,6 +293,31 @@ impl ConnectionHandler {
                             let res = block_on(cmd_sender.broadcast_tx(request));
                             tracing::info!("Tx broadcast response: {:?}", res);
                             response.send(res);
+                        });
+                    }
+                    Message::EstimateFee(ReqAndResponse { request, response }) => {
+                        let cmd_sender = cmd_sender.clone();
+                        std::thread::spawn(move || {
+                            use bdk_electrum_c::electrum_c::request::EstimateFee;
+                            let mut futs = request
+                                .into_iter()
+                                .map(|number| {
+                                    let req = EstimateFee { number };
+                                    cmd_sender
+                                        .request(req)
+                                        .map(move |res_fut| (number, res_fut))
+                                })
+                                .collect::<FuturesUnordered<_>>();
+                            let resp = block_on(async move {
+                                let mut out = BTreeMap::<usize, bitcoin::FeeRate>::new();
+                                while let Some((req, res)) = futs.next().await {
+                                    if let Some(fee_rate) = res?.fee_rate {
+                                        out.insert(req, fee_rate);
+                                    }
+                                }
+                                anyhow::Result::Ok(out)
+                            });
+                            response.send(resp);
                         });
                     }
                     Message::SetStatusSink(sink) => {

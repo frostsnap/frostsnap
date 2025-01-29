@@ -3,9 +3,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
 import 'package:frostsnapp/access_structures.dart';
 import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/goal_progress.dart';
-import 'package:frostsnapp/keygen.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/snackbar.dart';
 import 'package:frostsnapp/stream_ext.dart';
@@ -22,15 +20,11 @@ import 'sign_message.dart';
 typedef KeyItem = Either<FrostKey, RecoverableKey>;
 
 class KeyList extends StatelessWidget {
-  final Function(AccessStructureRef)? onNewKey;
   final Function(BuildContext, FrostKey) itemBuilder;
   final Function(BuildContext, RecoverableKey) recoverableBuilder;
 
   const KeyList(
-      {super.key,
-      this.onNewKey,
-      required this.itemBuilder,
-      required this.recoverableBuilder});
+      {super.key, required this.itemBuilder, required this.recoverableBuilder});
 
   @override
   Widget build(BuildContext context) {
@@ -38,14 +32,6 @@ class KeyList extends StatelessWidget {
         coord.subKeyEvents().toBehaviorSubject().map((value) {
       return value;
     });
-
-    final showDevicesButton = FilledButton(
-        onPressed: () {
-          Navigator.push(context, MaterialPageRoute(builder: (context) {
-            return DeviceSettingsPage();
-          }));
-        },
-        child: Text("Show Devices"));
 
     final Stream<List<KeyItem>> keyStream = keyStateStream.map((keyState) {
       return keyState.keys.map((frostKey) {
@@ -55,59 +41,30 @@ class KeyList extends StatelessWidget {
       })).toList();
     });
 
-    final content = StreamBuilder(
+    return StreamBuilder(
         stream: keyStream,
         builder: (context, snap) {
-          var keys = [];
-
-          if (snap.hasData) {
-            keys = snap.data!;
-          }
-          final Widget list;
+          final keys = snap.data ?? [];
           if (keys.isEmpty) {
-            list = const Center(child: Text("You don't have any keys"));
+            return Center(child: Text("You don't have any keys"));
           } else {
-            list = ListView.builder(
+            return ListView.builder(
                 shrinkWrap: true,
+                padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
                 itemCount: keys.length,
                 itemBuilder: (context, index) {
                   final key = keys[index];
-                  return key.match(left: (frostKey) {
-                    return itemBuilder(context, frostKey);
-                  }, right: (recoverable) {
-                    return recoverableBuilder(context, recoverable);
-                  });
+                  return Padding(
+                    padding: EdgeInsets.only(bottom: 16.0),
+                    child: key.match(left: (frostKey) {
+                      return itemBuilder(context, frostKey);
+                    }, right: (recoverable) {
+                      return recoverableBuilder(context, recoverable);
+                    }),
+                  );
                 });
           }
-          return Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(child: list),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    FilledButton(
-                      child: const Text("New wallet"),
-                      onPressed: () async {
-                        final newId = await Navigator.push(context,
-                            MaterialPageRoute(builder: (context) {
-                          return KeyNamePage();
-                        }));
-                        if (newId != null) {
-                          onNewKey?.call(newId);
-                        }
-                      },
-                    ),
-                    SizedBox(width: 4),
-                    showDevicesButton
-                  ],
-                ),
-              ]);
         });
-
-    return Padding(padding: const EdgeInsets.only(bottom: 20), child: content);
   }
 }
 
@@ -280,36 +237,71 @@ class RecoveringKeyCard extends StatelessWidget {
 class KeyCard extends StatelessWidget {
   final String keyName;
   final KeyId? keyId;
+  late final FrostKey? frostKey;
   final List<(int, int)> accessStructureSummaries;
 
-  const KeyCard(
-      {super.key,
-      required this.keyName,
-      this.keyId,
-      this.accessStructureSummaries = const []});
+  KeyCard({
+    super.key,
+    required this.keyName,
+    this.keyId,
+    this.accessStructureSummaries = const [],
+  }) {
+    if (keyId != null) frostKey = coord.getFrostKey(keyId: keyId!);
+  }
+
+  Function()? onPressed(BuildContext context) {
+    final superWallet = SuperWalletContext.of(context);
+    if (superWallet == null || keyId == null || frostKey == null) return null;
+    return () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => superWallet.tryWrapInWalletContext(
+              keyId: keyId!,
+              child: WalletHome(),
+            ),
+          ),
+        );
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final (t, n) = accessStructureSummaries[0];
+    final network = frostKey?.bitcoinNetwork();
 
     return Card(
       color: theme.colorScheme.secondaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+      margin: EdgeInsets.all(0.0),
+      child: ListTile(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+        onTap: onPressed(context),
+        title: Text(keyName),
+        subtitle: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              keyName,
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
             AccessStructureSummary(t: t, n: n),
-            const SizedBox(height: 8),
-            KeyButtons(keyId: keyId!)
+            Card.outlined(),
           ],
         ),
+        leading: Badge(
+          isLabelVisible: !(network?.isMainnet() ?? true),
+          alignment: AlignmentDirectional.bottomStart,
+          textColor: theme.colorScheme.error,
+          backgroundColor: theme.colorScheme.surface,
+          label: Text(network?.name() ?? "", textAlign: TextAlign.center),
+          child: CircleAvatar(
+            backgroundColor: (network?.isMainnet() ?? false)
+                ? theme.colorScheme.primary
+                : theme.colorScheme.error,
+            foregroundColor: (network?.isMainnet() ?? false)
+                ? theme.colorScheme.onPrimary
+                : theme.colorScheme.onError,
+            child: Icon(Icons.currency_bitcoin_rounded),
+          ),
+        ),
+        trailing: KeyButtons(keyId: keyId!),
+        titleTextStyle: theme.textTheme.titleLarge,
+        contentPadding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
       ),
     );
   }
@@ -336,43 +328,10 @@ class _KeyButtons extends State<KeyButtons> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final frostKey = coord.getFrostKey(keyId: widget.keyId);
     final masterAppkey = frostKey?.masterAppkey();
-    final bitcoinNetwork = frostKey?.bitcoinNetwork();
     final settingsCtx = SettingsContext.of(context)!;
     final Widget continueSigning;
-
-    final signButton = ElevatedButton(
-        onPressed: () {
-          if (frostKey != null) {
-            Navigator.push(context, MaterialPageRoute(builder: (context) {
-              return SignMessagePage(frostKey: frostKey);
-            }));
-          }
-        },
-        child: Text("Sign"));
-
-    final Widget walletButton = ElevatedButton(
-      onPressed: () async {
-        if (frostKey != null) {
-          final superWallet = SuperWalletContext.of(context)!;
-          Navigator.push(context, MaterialPageRoute(builder: (context) {
-            return superWallet.tryWrapInWalletContext(
-                keyId: api.masterAppkeyExtToKeyId(masterAppkey: masterAppkey!),
-                child: WalletHome());
-          }));
-        }
-      },
-      child: Badge(
-        label: Text(bitcoinNetwork?.name() ?? ""),
-        isLabelVisible: !(bitcoinNetwork?.isMainnet() ?? true),
-        alignment: AlignmentDirectional.bottomEnd,
-        textColor: theme.colorScheme.error,
-        backgroundColor: theme.colorScheme.surface,
-        child: Icon(Icons.currency_bitcoin),
-      ),
-    );
 
     if (restorableSignSession != null && masterAppkey != null) {
       continueSigning = FilledButton(
@@ -413,100 +372,77 @@ class _KeyButtons extends State<KeyButtons> {
       continueSigning = Container();
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      spacing: 4.0,
       children: [
-        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          signButton,
-          const SizedBox(width: 5),
-          walletButton,
-          const SizedBox(width: 5),
-          continueSigning,
-        ])
+        continueSigning,
+        Icon(Icons.chevron_right),
       ],
     );
   }
 }
 
-class KeyListWithConfetti extends StatefulWidget {
-  const KeyListWithConfetti({super.key});
-
-  @override
-  State<StatefulWidget> createState() => _KeyListWithConfetti();
-}
-
-class _KeyListWithConfetti extends State<KeyListWithConfetti> {
-  late ConfettiController _confettiController;
-
-  @override
-  void initState() {
-    super.initState();
-    _confettiController = ConfettiController(duration: Duration(seconds: 2));
-  }
+class KeyListWithConfetti extends StatelessWidget {
+  final ConfettiController controller;
+  const KeyListWithConfetti({super.key, required this.controller});
 
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
         Positioned.fill(
-            child: KeyList(
-          itemBuilder: (context, key) {
-            final bool isRecovering = key
-                .accessStructureState()
-                .field0
-                .every((accs) => switch (accs) {
-                      AccessStructureState_Recovering() => true,
-                      AccessStructureState_Complete() => false,
-                    });
-            final accessStructureSummaries = key
-                .accessStructureState()
-                .field0
-                .map((accs) => switch (accs) {
-                      AccessStructureState_Recovering(:final field0) => (
-                          field0.threshold,
-                          field0.gotSharesFrom.length
-                        ),
-                      AccessStructureState_Complete(:final field0) => (
-                          field0.threshold(),
-                          field0.devices().length
-                        ),
-                    })
-                .toList();
+          child: KeyList(
+            itemBuilder: (context, key) {
+              final bool isRecovering = key
+                  .accessStructureState()
+                  .field0
+                  .every((accs) => switch (accs) {
+                        AccessStructureState_Recovering() => true,
+                        AccessStructureState_Complete() => false,
+                      });
+              final accessStructureSummaries = key
+                  .accessStructureState()
+                  .field0
+                  .map((accs) => switch (accs) {
+                        AccessStructureState_Recovering(:final field0) => (
+                            field0.threshold,
+                            field0.gotSharesFrom.length
+                          ),
+                        AccessStructureState_Complete(:final field0) => (
+                            field0.threshold(),
+                            field0.devices().length
+                          ),
+                      })
+                  .toList();
 
-            if (!isRecovering) {
-              return KeyCard(
-                keyName: key.keyName(),
-                keyId: key.keyId(),
-                accessStructureSummaries: accessStructureSummaries,
-              );
-            } else {
-              return RecoveringKeyCard(
-                keyName: key.keyName(),
-                keyId: key.keyId(),
-                accessStructureSummaries: accessStructureSummaries,
-              );
-            }
-          },
-          recoverableBuilder: (context, recoverableKey) {
-            return RecoverableKeyCard(recoverableKey: recoverableKey);
-          },
-          onNewKey: (masterAppkey) {
-            _confettiController.play();
-          },
-        )),
+              if (!isRecovering) {
+                return KeyCard(
+                  keyName: key.keyName(),
+                  keyId: key.keyId(),
+                  accessStructureSummaries: accessStructureSummaries,
+                );
+              } else {
+                return RecoveringKeyCard(
+                  keyName: key.keyName(),
+                  keyId: key.keyId(),
+                  accessStructureSummaries: accessStructureSummaries,
+                );
+              }
+            },
+            recoverableBuilder: (context, recoverableKey) {
+              return RecoverableKeyCard(recoverableKey: recoverableKey);
+            },
+          ),
+        ),
         Center(
           child: ConfettiWidget(
-              confettiController: _confettiController,
+              confettiController: controller,
               blastDirectionality: BlastDirectionality.explosive,
               numberOfParticles: 50),
         ),
       ],
     );
-  }
-
-  @override
-  void dispose() {
-    _confettiController.dispose();
-    super.dispose();
   }
 }

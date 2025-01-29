@@ -322,9 +322,9 @@ dependencies = [
 
 [[package]]
 name = "bdk_electrum_c"
-version = "0.7.0"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f35e64deafca421f03d1407bbba060e5113b3cbc1daff1fe7a76f3269ac2d05e"
+checksum = "5500433939a3eebe6749cb829028d8e0f9cf996837e406a96afcb092130515a3"
 dependencies = [
  "anyhow",
  "bdk_core",
