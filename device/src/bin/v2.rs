@@ -198,7 +198,16 @@ fn main() -> ! {
     let mut hal_rng = Trng::new(peripherals.RNG, &mut adc);
 
     let efuse = efuse::EfuseController::new(peripherals.EFUSE);
-    efuse.init_key(0, &mut hal_rng).expect("Efuse init error");
+
+    let do_read_protect = cfg!(feature = "read_protect_hmac_key");
+    efuse
+        .init_key(
+            0,
+            efuse::KeyPurpose::HmacUpstream,
+            do_read_protect,
+            &mut hal_rng,
+        )
+        .expect("Efuse init error");
 
     let rng = {
         let mut chacha_seed = [0u8; 32];

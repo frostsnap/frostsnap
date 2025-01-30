@@ -4,6 +4,12 @@ use esp_hal::peripherals::EFUSE;
 use rand_chacha::rand_core::RngCore;
 use reed_solomon;
 
+const KEY_BLOCKS_OFFSET: u8 = 4;
+const WR_DIS_KEY_OFFSET: u8 = 23;
+const WR_DIS_KP_OFFSET: u8 = 8;
+const READ_COMMAND: u16 = 0x5AA5;
+const WRITE_COMMAND: u16 = 0x5A5A;
+
 pub struct EfuseController {
     pub efuse: EFUSE,
 }
@@ -13,7 +19,13 @@ impl EfuseController {
         Self { efuse }
     }
 
-    pub fn init_key(&self, key_number: u8, rng: &mut impl RngCore) -> Result<(), EfuseError> {
+    pub fn init_key(
+        &self,
+        key_number: u8,
+        key_purpose: KeyPurpose,
+        read_protect: bool,
+        rng: &mut impl RngCore,
+    ) -> Result<(), EfuseError> {
         let efuse_field = match key_number {
             0 => hal_efuse::KEY_PURPOSE_0,
             1 => hal_efuse::KEY_PURPOSE_1,
@@ -30,8 +42,8 @@ impl EfuseController {
             rng.fill_bytes(&mut buff);
 
             unsafe {
-                self.write_block(&buff, key_number + 4)?;
-                self.write_key_purpose(key_number, KeyPurpose::HmacUpstream)?;
+                self.write_block(&buff, key_number + KEY_BLOCKS_OFFSET)?;
+                self.write_key_purpose(key_number, key_purpose, read_protect)?;
             }
         }
         Ok(())
@@ -42,6 +54,7 @@ impl EfuseController {
         &self,
         key_number: u8,
         key_purpose: KeyPurpose,
+        read_protect: bool,
     ) -> Result<(), EfuseError> {
         let mut buff = [0x00u8; 32];
 
@@ -59,20 +72,21 @@ impl EfuseController {
         // We bundle every config in Block 0 to minimize write operations
         // Todo: Write key purpose and rw flags for multiple keys
         // Disable write to key block
-        let mut write_disable = 0x01_u32 << (23 + key_number);
+        let mut write_disable: u32 = 0x01 << (WR_DIS_KEY_OFFSET + key_number);
         // Disable write to key purpose
-        write_disable += 0x01_u32 << (8 + key_number);
+        write_disable += 0x01 << (WR_DIS_KP_OFFSET + key_number);
         buff[0..4].copy_from_slice(&write_disable.to_le_bytes());
 
-        #[cfg(feature = "efuse_protect")]
-        self.set_read_protect(key_number, &mut buff);
+        if read_protect {
+            self.set_read_protect(key_number, &mut buff);
+        }
 
         self.write_block(&buff, 0)
     }
 
     /// # Safety
     /// For disabling reading of efuse keys after efuse_debug
-    pub unsafe fn set_read_protect(&self, key_number: u8, buff: &mut [u8; 32]) {
+    unsafe fn set_read_protect(&self, key_number: u8, buff: &mut [u8; 32]) {
         // Disable read key
         let read_disable = 0x01_u8 << key_number;
         buff[4] = read_disable;
@@ -124,7 +138,7 @@ impl EfuseController {
         let efuse = &self.efuse;
 
         // Send opcode, blknum and write command
-        efuse.conf().write(|w| w.op_code().bits(0x5A5A));
+        efuse.conf().write(|w| w.op_code().bits(WRITE_COMMAND));
 
         efuse
             .cmd()
@@ -168,7 +182,7 @@ impl EfuseController {
         let efuse = &self.efuse;
 
         // Send opcode and read command
-        efuse.conf().write(|w| w.op_code().bits(0x5AA5));
+        efuse.conf().write(|w| w.op_code().bits(READ_COMMAND));
         efuse.cmd().write(|w| w.read_cmd().set_bit());
 
         // Poll command register until read bit is cleared
