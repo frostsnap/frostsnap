@@ -100,7 +100,7 @@ class AddressInput extends StatelessWidget {
           autofocus: autofocus,
           style: TextStyle(fontFamily: monospaceTextStyle.fontFamily),
           decoration: (decoration ?? InputDecoration()).copyWith(
-            border: defaultTextInputBorder,
+            //border: defaultTextInputBorder,
             hintText: 'bc1...',
             errorText: controller.errorText,
             suffixIcon: controller.controller.text.isEmpty
@@ -117,7 +117,7 @@ class AddressInput extends StatelessWidget {
           enableSuggestions: false,
           smartQuotesType: SmartQuotesType.disabled,
           smartDashesType: SmartDashesType.disabled,
-          minLines: 1,
+          minLines: 2,
           maxLines: 4,
         );
       },
