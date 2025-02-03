@@ -14,7 +14,7 @@ use embedded_hal as hal;
 use esp_hal::{
     delay::Delay,
     gpio::{Input, Level, Output, Pull},
-    hmac::Hmac,
+    hmac::{self, Hmac},
     i2c::master::{Config as i2cConfig, I2c},
     ledc::{
         channel::{self, ChannelIFace},
@@ -200,6 +200,7 @@ fn main() -> ! {
     let efuse = efuse::EfuseController::new(peripherals.EFUSE);
 
     let do_read_protect = cfg!(feature = "read_protect_hmac_key");
+    // Share encryption key
     efuse
         .init_key(
             0,
@@ -208,14 +209,25 @@ fn main() -> ! {
             &mut hal_rng,
         )
         .expect("Efuse init error");
+    // ChaCha20Rng seed HMAC key
+    efuse
+        .init_key(
+            1,
+            efuse::KeyPurpose::HmacUpstream,
+            do_read_protect,
+            &mut hal_rng,
+        )
+        .expect("Efuse init error");
+
+    let hal_hmac = Hmac::new(peripherals.HMAC);
+    let mut secret_gen = HmacKeyGen::new(hal_hmac);
 
     let rng = {
-        let mut chacha_seed = [0u8; 32];
-        hal_rng.read(&mut chacha_seed);
+        let mut random = [0u8; 32];
+        hal_rng.read(&mut random);
+        let chacha_seed = secret_gen.hash(&random, hmac::KeyId::Key1).unwrap();
         ChaCha20Rng::from_seed(chacha_seed)
     };
-    let hal_hmac = Hmac::new(peripherals.HMAC);
-    let secret_gen = HmacKeyGen::new(hal_hmac);
 
     let ui = FrostyUi {
         display,

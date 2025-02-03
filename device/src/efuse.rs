@@ -85,7 +85,6 @@ impl EfuseController {
     }
 
     /// # Safety
-    /// For disabling reading of efuse keys after efuse_debug
     unsafe fn set_read_protect(&self, key_number: u8, buff: &mut [u8; 32]) {
         // Disable read key
         let read_disable = 0x01_u8 << key_number;

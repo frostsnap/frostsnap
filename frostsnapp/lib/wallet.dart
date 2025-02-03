@@ -56,7 +56,7 @@ class WalletHome extends StatelessWidget {
                       builder: (context) => walletCtx.wrap(WalletReceivePage()),
                     ),
                   ),
-                  label: Text('Recieve'),
+                  label: Text('Receive'),
                   icon: Icon(Icons.south_east),
                   style: ElevatedButton.styleFrom(
                     elevation: elevation,
