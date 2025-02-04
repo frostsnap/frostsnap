@@ -7,7 +7,7 @@ use crate::{FramedSerialPort, Serial};
 use anyhow::anyhow;
 use frostsnap_comms::ReceiveSerial;
 use frostsnap_comms::{
-    CoordinatorSendBody, CoordinatorUpgradeMessage, Destination, DeviceSendBody, FirmwareDigest,
+    CoordinatorSendBody, CoordinatorUpgradeMessage, Destination, DeviceSendBody, Sha256Digest,
     FIRMWARE_IMAGE_SIZE, FIRMWARE_NEXT_CHUNK_READY_SIGNAL, FIRMWARE_UPGRADE_CHUNK_LEN,
 };
 use frostsnap_comms::{CoordinatorSendMessage, MAGIC_BYTES_PERIOD};
@@ -53,7 +53,7 @@ pub struct UsbSerialManager {
 
 pub struct DevicePort {
     port: String,
-    firmware_digest: FirmwareDigest,
+    firmware_digest: Sha256Digest,
 }
 
 const COORDINATOR_MAGIC_BYTES_PERDIOD: std::time::Duration =
@@ -541,7 +541,7 @@ impl UsbSerialManager {
     }
 
     /// The firmware digest the device has declared it has
-    pub fn firmware_digest_for_device(&self, device_id: DeviceId) -> Option<FirmwareDigest> {
+    pub fn firmware_digest_for_device(&self, device_id: DeviceId) -> Option<Sha256Digest> {
         self.device_ports
             .get(&device_id)
             .map(|device_port| device_port.firmware_digest)
@@ -710,8 +710,8 @@ impl UsbSender {
 pub enum DeviceChange {
     Connected {
         id: DeviceId,
-        firmware_digest: FirmwareDigest,
-        latest_firmware_digest: Option<FirmwareDigest>,
+        firmware_digest: Sha256Digest,
+        latest_firmware_digest: Option<Sha256Digest>,
     },
     NeedsName {
         id: DeviceId,
@@ -745,7 +745,7 @@ pub enum AppMessageBody {
 #[derive(Clone, Copy)]
 pub struct FirmwareBin {
     bin: &'static [u8],
-    digest_cache: Option<FirmwareDigest>,
+    digest_cache: Option<Sha256Digest>,
 }
 
 impl FirmwareBin {
@@ -768,7 +768,7 @@ impl FirmwareBin {
         self.bin.len() as u32
     }
 
-    pub fn cached_digest(&mut self) -> FirmwareDigest {
+    pub fn cached_digest(&mut self) -> Sha256Digest {
         let digest_cache = self.digest_cache.take();
         let digest = digest_cache.unwrap_or_else(|| self.digest());
         self.digest_cache = Some(digest);
@@ -776,7 +776,7 @@ impl FirmwareBin {
     }
 
     /// Frostsnap firmware is padded to a device partition length because this makes it simpler to hash
-    pub fn digest(&self) -> FirmwareDigest {
+    pub fn digest(&self) -> Sha256Digest {
         use frostsnap_core::sha2::digest::Digest;
         let mut state = sha2::Sha256::default();
         state.update(self.bin);
@@ -787,6 +787,6 @@ impl FirmwareBin {
             state.update([0xff]);
         }
 
-        FirmwareDigest(state.finalize().into())
+        Sha256Digest(state.finalize().into())
     }
 }

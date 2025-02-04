@@ -1,14 +1,14 @@
-use core::cell::RefCell;
-
 use crate::{
     efuse::EfuseHmacKeys,
-    flash_nonce_slot,
+    flash::{Event, EventLog, FlashHeader},
     io::SerialInterface,
-    ota, storage,
+    ota,
+    partitions::PartitionExt,
     ui::{self, UiEvent, UserInteraction},
     DownstreamConnectionState, Duration, Instant, UpstreamConnection, UpstreamConnectionState,
 };
-use alloc::{boxed::Box, collections::VecDeque, rc::Rc, string::ToString, vec::Vec};
+use alloc::{boxed::Box, collections::VecDeque, string::ToString, vec::Vec};
+use core::cell::RefCell;
 use esp_hal::{gpio, sha::Sha, timer};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{
@@ -20,7 +20,6 @@ use frostsnap_core::{
     message::{
         CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, DeviceToUserMessage,
     },
-    schnorr_fun::fun::{marker::Normal, KeyPair, Scalar},
     SignTask,
 };
 use rand_chacha::rand_core::RngCore;
@@ -55,45 +54,49 @@ where
             mut hmac_keys,
         } = self;
 
-        let flash = Rc::new(RefCell::new(FlashStorage::new()));
-        let flash_nonce_slots = flash_nonce_slot::flash_nonce_slots(flash.clone());
-        let ota_config = ota::OtaFlash::new(flash.clone());
-        let mut app_flash = storage::DeviceStorage::new(flash.clone());
-        let active_partition = ota_config.active_partition();
-        let active_firmware_digest = active_partition.digest(&mut sha256);
         ui.set_busy_task(ui::BusyTask::Loading);
+        let flash = RefCell::new(FlashStorage::new());
+        let mut partitions = crate::partitions::Partitions::load(&flash);
+        let header_flash = FlashHeader::new(partitions.nvs.split_off_front(2));
+        let header = header_flash.read_or_init(&mut rng);
+        let _reserved = partitions.nvs.split_off_front(2);
 
-        let (mut signer, mut name) = match app_flash
-            .read_header()
-            .expect("failed to read header from nvs")
-        {
-            Some(header) => {
-                let mut signer =
-                    FrostSigner::new(KeyPair::<Normal>::new(header.secret_key), flash_nonce_slots);
-                let mut name: Option<alloc::string::String> = None;
-
-                for change in app_flash.iter() {
-                    match change {
-                        storage::Change::Core(mutation) => {
-                            signer.apply_mutation(&mutation);
-                        }
-                        storage::Change::Name(name_update) => {
-                            name = Some(name_update);
-                        }
-                    }
-                }
-                (signer, name)
-            }
-            None => {
-                let secret_key = Scalar::random(&mut rng);
-                let keypair = KeyPair::<Normal>::new(secret_key);
-                app_flash
-                    .write_header(crate::storage::Header { secret_key })
-                    .unwrap();
-                let signer = FrostSigner::new(keypair, flash_nonce_slots);
-                (signer, None)
-            }
+        let nonce_slots = {
+            // give half the remaining nvs over to nonces
+            let mut n_nonce_sectors = partitions.nvs.n_sectors().div_ceil(2);
+            // Make sure it's a multiple of 2
+            n_nonce_sectors = (n_nonce_sectors.div_ceil(2) * 2).max(16 /* but at least 16 */);
+            // each nonce slot requires 2 sectors so divide by 2 to get the number of slots
+            frostsnap_embedded::NonceAbSlot::load_slots(
+                partitions.nvs.split_off_front(n_nonce_sectors),
+            )
         };
+
+        // The event log gets the reset of the sectors
+        let mut event_log = EventLog::new(partitions.nvs);
+
+        let mut signer = FrostSigner::new(header.device_keypair(), nonce_slots);
+
+        let mut name = None;
+        for change in event_log.seek_iter() {
+            match change {
+                Ok(change) => match change {
+                    Event::Core(mutation) => {
+                        signer.apply_mutation(&mutation);
+                    }
+                    Event::Name(name_update) => {
+                        name = Some(name_update);
+                    }
+                },
+                Err(e) => {
+                    panic!("failed to read event: {e}");
+                }
+            }
+        }
+
+        let active_partition = partitions.ota.active_partition();
+        let active_firmware_digest = active_partition.sha256_digest(&mut sha256);
+
         let device_id = signer.device_id();
         if let Some(name) = &name {
             ui.set_device_name(name.into());
@@ -435,7 +438,7 @@ where
                             size,
                             firmware_digest,
                         } => {
-                            let upgrade_ = ota_config.start_upgrade(
+                            let upgrade_ = partitions.ota.start_upgrade(
                                 *size,
                                 *firmware_digest,
                                 active_firmware_digest,
@@ -456,8 +459,8 @@ where
                 if !staged_mutations.is_empty() {
                     let now = self.timer.now();
                     // ⚠ Apply any mutations made to flash before outputting anything to user or to coordinator
-                    app_flash
-                        .append(staged_mutations.drain(..).map(storage::Change::Core))
+                    event_log
+                        .append(staged_mutations.drain(..).map(Event::Core))
                         .expect("writing core mutations failed");
                     let after = self.timer.now().checked_duration_since(now).unwrap();
                     upstream_connection
@@ -593,8 +596,8 @@ where
                     }
                     UiEvent::NameConfirm(ref new_name) => {
                         name = Some(new_name.into());
-                        app_flash
-                            .append([storage::Change::Name(new_name.clone())])
+                        event_log
+                            .push(Event::Name(new_name.to_string()))
                             .expect("flash write fail");
                         ui.set_device_name(new_name.into());
                         upstream_connection.send_to_coordinator([DeviceSendBody::SetName {
@@ -628,7 +631,7 @@ where
                         );
                     }
                     UiEvent::WipeDataConfirm => {
-                        app_flash.erase().expect("erasing flash storage failed");
+                        partitions.nvs.erase_all().expect("failed to erase nvs");
                         esp_hal::reset::software_reset();
                     }
                 }

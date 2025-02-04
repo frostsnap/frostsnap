@@ -3,7 +3,7 @@ use crate::graphics::{
     widgets::{EnterShareIndexScreen, EnterShareScreen},
 };
 use alloc::string::{String, ToString};
-use frostsnap_comms::FirmwareDigest;
+use frostsnap_comms::Sha256Digest;
 use frostsnap_core::{schnorr_fun::frost::SecretShare, KeyId, SessionHash};
 
 pub trait UserInteraction {
@@ -150,7 +150,7 @@ pub enum Prompt {
         key_id: KeyId,
     },
     ConfirmFirmwareUpgrade {
-        firmware_digest: FirmwareDigest,
+        firmware_digest: Sha256Digest,
         size: u32,
     },
     ConfirmLoadBackup(SecretShare),
