@@ -39,7 +39,6 @@ class DeviceSettings extends StatefulWidget {
 }
 
 class _DeviceSettingsState extends State<DeviceSettings> {
-  late StreamSubscription _subscription;
   late Completer<void> _deviceRemoved;
   ConnectedDevice? device;
 
@@ -65,12 +64,6 @@ class _DeviceSettingsState extends State<DeviceSettings> {
         Navigator.pop(context);
       }
     });
-  }
-
-  @override
-  void dispose() {
-    _subscription.cancel();
-    super.dispose();
   }
 
   @override
