@@ -399,72 +399,50 @@ class _WalletSendPageState extends State<WalletSendPage> {
     final signersInputCard = Card.filled(
       color: mainCardColor,
       margin: EdgeInsets.all(0.0),
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          spacing: 12.0,
-          children: [
-            Padding(
-              padding: EdgeInsets.all(0.0),
-              child: Row(
-                spacing: 8.0,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Select Signers',
-                    style: theme.textTheme.labelMedium
-                        ?.copyWith(color: theme.colorScheme.primary),
-                  ),
-                  Text(
-                    '${selectedDevicesModel.threshold} required',
-                    style: theme.textTheme.labelMedium
-                        ?.copyWith(color: theme.dividerColor),
-                  ),
-                ],
-              ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          ListTile(
+            dense: true,
+            title: Text(
+              selectedDevicesModel.threshold == 1
+                  ? 'Select 1 Signer'
+                  : 'Select ${selectedDevicesModel.threshold} Signers',
+              style: TextStyle(color: theme.colorScheme.primary),
             ),
-            ListenableBuilder(
-              listenable: selectedDevicesModel,
-              builder: (context, child) => Column(
-                children: selectedDevicesModel.devices.map(
-                  (device) {
-                    if (device.nonces == 0) {
-                      selectedDevicesModel.deselect(device.id);
-                    }
-                    return ListTile(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8.0),
-                      ),
-                      leading: Icon(device.selected
-                          ? Icons.check_box
-                          : Icons.check_box_outline_blank),
-                      title: Text(device.name ?? '<unknown>'),
-                      trailing: device.nonces == 0
-                          ? Text(
-                              'no nonces remaining',
-                              style: TextStyle(color: theme.colorScheme.error),
-                            )
-                          : null,
-                      enabled: device.canSelect,
-                      selected: device.selected,
-                      onTap: () => device.selected
-                          ? selectedDevicesModel.deselect(device.id)
-                          : selectedDevicesModel.select(device.id),
-                    );
-                  },
-                ).toList(),
-              ),
+          ),
+          ListenableBuilder(
+            listenable: selectedDevicesModel,
+            builder: (context, child) => Column(
+              children: selectedDevicesModel.devices.map(
+                (device) {
+                  if (device.nonces == 0) {
+                    selectedDevicesModel.deselect(device.id);
+                  }
+                  return CheckboxListTile(
+                    value: device.selected,
+                    onChanged: device.canSelect
+                        ? (selected) => selected ?? false
+                            ? selectedDevicesModel.select(device.id)
+                            : selectedDevicesModel.deselect(device.id)
+                        : null,
+                    title: Text(device.name ?? '<unknown>'),
+                    subtitle: device.nonces == 0
+                        ? Text(
+                            'no nonces remaining',
+                            style: TextStyle(color: theme.colorScheme.error),
+                          )
+                        : null,
+                  );
+                },
+              ).toList(),
             ),
-            Row(
-              spacing: 8.0,
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                _signersDoneButton,
-              ],
-            ),
-          ],
-        ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: _signersDoneButton,
+          ),
+        ],
       ),
     );
 
