@@ -187,9 +187,9 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    final etaListCard = Card(
+    final etaListCard = Card.filled(
       margin: EdgeInsets.all(0.0),
-      color: theme.colorScheme.secondaryContainer,
+      color: theme.colorScheme.surfaceContainerHigh,
       child: ListenableBuilder(
           listenable: widget.feeRateModel,
           builder: (context, _) =>
@@ -262,7 +262,7 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
 
     final feeRateCard = Card(
       margin: EdgeInsets.all(0.0),
-      color: theme.colorScheme.secondaryContainer,
+      color: theme.colorScheme.surfaceContainerHigh,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12.0),
       ),
@@ -284,14 +284,17 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
 
     return Dialog(
       backgroundColor: Colors.transparent,
-      child: RefreshIndicator(
-        onRefresh: () async => _onRefresh(context),
-        child: SingleChildScrollView(
-          physics: AlwaysScrollableScrollPhysics(),
-          child: Column(
-            spacing: 12.0,
-            mainAxisSize: MainAxisSize.min,
-            children: columnWidgets,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: 580),
+        child: RefreshIndicator(
+          onRefresh: () async => _onRefresh(context),
+          child: SingleChildScrollView(
+            physics: AlwaysScrollableScrollPhysics(),
+            child: Column(
+              spacing: 12.0,
+              mainAxisSize: MainAxisSize.min,
+              children: columnWidgets,
+            ),
           ),
         ),
       ),

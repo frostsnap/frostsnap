@@ -87,7 +87,11 @@ class WalletHome extends StatelessWidget {
                       showDialog(
                         context: context,
                         builder: (context) => Dialog(
-                          child: walletCtx.wrap(WalletSendPage()),
+                          backgroundColor: theme.colorScheme.surfaceContainer,
+                          child: ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: 560),
+                            child: walletCtx.wrap(WalletSendPage()),
+                          ),
                         ),
                       );
                     }

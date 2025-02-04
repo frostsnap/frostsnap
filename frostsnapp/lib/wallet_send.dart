@@ -30,13 +30,6 @@ class WalletSendPage extends StatefulWidget {
 class _WalletSendPageState extends State<WalletSendPage> {
   static const sectionPadding = EdgeInsets.fromLTRB(16.0, 0.0, 16.0, 8.0);
 
-  final inputCardTopBorder = RoundedRectangleBorder(
-    borderRadius: BorderRadius.circular(12.0),
-  );
-  final inputCardBottomBorder = RoundedRectangleBorder(
-    borderRadius: BorderRadius.circular(12.0),
-  );
-
   late final CachedFuture<List<CameraDescription>> cameras;
 
   late final AddressInputController addressModel;
@@ -158,29 +151,10 @@ class _WalletSendPageState extends State<WalletSendPage> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildCompletedList(BuildContext context) {
     final theme = Theme.of(context);
 
-    final appBar = SliverPadding(
-      padding: EdgeInsets.symmetric(vertical: 0.0, horizontal: 0.0),
-      sliver: SliverAppBar(
-        title: Text('Send Bitcoin'),
-        titleTextStyle: theme.textTheme.titleMedium,
-        centerTitle: true,
-        backgroundColor: theme.colorScheme.surfaceContainerLow,
-        pinned: true,
-        stretch: true,
-        forceMaterialTransparency: true,
-        automaticallyImplyLeading: false,
-        leading: IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: Icon(Icons.close),
-        ),
-      ),
-    );
-
-    final completedInfoCard = AnimatedSize(
+    return AnimatedSize(
       duration: Durations.short4,
       curve: Curves.easeInOutCubicEmphasized,
       alignment: Alignment.topCenter,
@@ -190,7 +164,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
           if (pageIndex.index > SendPageIndex.recipient.index)
             ListTile(
               onTap: () => setState(() => pageIndex = SendPageIndex.recipient),
-              leading: completedCardLabel(context, 'To Recipient'),
+              leading: completedCardLabel(context, 'Recipient'),
               title: ListenableBuilder(
                 listenable: addressModel,
                 builder: (ctx, _) => Text(
@@ -239,7 +213,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
                   ),
                   title: SatoshiText(
                     value: unsignedTx?.fee(),
-                    style: TextStyle(color: theme.colorScheme.onErrorContainer),
+                    style: TextStyle(color: theme.colorScheme.error),
                   ),
                 ),
               ],
@@ -247,6 +221,29 @@ class _WalletSendPageState extends State<WalletSendPage> {
           if (pageIndex.index > SendPageIndex.recipient.index)
             SizedBox(height: 24.0),
         ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    final appBar = SliverPadding(
+      padding: EdgeInsets.symmetric(vertical: 0.0, horizontal: 0.0),
+      sliver: SliverAppBar(
+        title: Text('Send Bitcoin'),
+        titleTextStyle: theme.textTheme.titleMedium,
+        centerTitle: true,
+        backgroundColor: theme.colorScheme.surfaceContainerLow,
+        pinned: true,
+        stretch: true,
+        forceMaterialTransparency: true,
+        automaticallyImplyLeading: false,
+        leading: IconButton(
+          onPressed: () => Navigator.pop(context),
+          icon: Icon(Icons.close),
+        ),
       ),
     );
 
@@ -297,7 +294,6 @@ class _WalletSendPageState extends State<WalletSendPage> {
 
     final recipientInputCard = Card.filled(
       color: mainCardColor,
-      shape: inputCardTopBorder,
       margin: EdgeInsets.all(0.0),
       child: Padding(
         padding: EdgeInsets.all(12.0),
@@ -348,7 +344,6 @@ class _WalletSendPageState extends State<WalletSendPage> {
 
     final amountInputCard = Card.filled(
       color: mainCardColor,
-      shape: inputCardTopBorder,
       margin: EdgeInsets.all(0.0),
       child: Padding(
         padding: EdgeInsets.all(12.0),
@@ -455,7 +450,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              completedInfoCard,
+              _buildCompletedList(context),
               Padding(
                 padding: sectionPadding,
                 child: Column(
@@ -465,7 +460,6 @@ class _WalletSendPageState extends State<WalletSendPage> {
                     if (pageIndex == SendPageIndex.amount) amountInputCard,
                     if (pageIndex == SendPageIndex.sign) signersInputCard,
                     SizedBox(height: 12.0),
-                    //if (pageIndex.index < SendPageIndex.sign.index)
                     etaInputCard,
                   ],
                 ),
@@ -572,8 +566,13 @@ class _WalletSendPageState extends State<WalletSendPage> {
         builder: (context, snapshot) => BackdropFilter(
           filter: blurFilter,
           child: Dialog(
-            child:
-                SendScanBody(cameras: snapshot.data ?? [], initialSelected: 0),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: 580),
+              child: SendScanBody(
+                cameras: snapshot.data ?? [],
+                initialSelected: 0,
+              ),
+            ),
           ),
         ),
       ),
