@@ -1,6 +1,6 @@
 use crate::{
+    efuse::EfuseHmacKeys,
     io::SerialInterface,
-    key_generator::HmacKeyGen,
     ota, storage,
     ui::{self, UiEvent, UserInteraction},
     DownstreamConnectionState, Duration, Instant, UpstreamConnection, UpstreamConnectionState,
@@ -30,6 +30,7 @@ pub struct Run<'a, Rng, Ui, T, DownstreamDetectPin> {
     pub timer: &'a T,
     pub downstream_detect: gpio::Input<'a, DownstreamDetectPin>,
     pub sha256: Sha<'a>,
+    pub hmac_keys: EfuseHmacKeys<'a>,
 }
 
 impl<Rng, Ui, T, DownstreamDetectPin> Run<'_, Rng, Ui, T, DownstreamDetectPin>
@@ -48,9 +49,9 @@ where
             timer,
             downstream_detect,
             mut sha256,
+            mut hmac_keys,
         } = self;
 
-        let mut secret_gen = HmacKeyGen::new();
         let flash = FlashStorage::new();
         let mut flash = storage::DeviceStorage::new(flash);
         let ota_config = ota::OtaConfig::new(flash.flash_mut());
@@ -144,7 +145,7 @@ where
                     if now > next_write_magic_bytes_downstream {
                         next_write_magic_bytes_downstream = now
                             .checked_add_duration(Duration::millis(MAGIC_BYTES_PERIOD))
-                            .expect("won't overlfow");
+                            .expect("won't overflow");
                         downstream_serial
                             .write_magic_bytes()
                             .expect("couldn't write magic bytes downstream");
@@ -575,7 +576,7 @@ where
                     UiEvent::KeyGenConfirm => {
                         outbox.extend(
                             signer
-                                .keygen_ack(&mut secret_gen, &mut rng)
+                                .keygen_ack(&mut hmac_keys.share_encryption, &mut rng)
                                 .expect("state changed while confirming keygen"),
                         );
                     }
@@ -583,7 +584,7 @@ where
                         ui.set_busy_task(ui::BusyTask::Signing);
                         outbox.extend(
                             signer
-                                .sign_ack(&mut secret_gen)
+                                .sign_ack(&mut hmac_keys.share_encryption)
                                 .expect("state changed while acking sign"),
                         );
                     }
@@ -600,7 +601,7 @@ where
                     UiEvent::BackupRequestConfirm => {
                         outbox.extend(
                             signer
-                                .display_backup_ack(&mut secret_gen)
+                                .display_backup_ack(&mut hmac_keys.share_encryption)
                                 .expect("state changed while displaying backup"),
                         );
                     }

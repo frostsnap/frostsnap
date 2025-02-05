@@ -1,19 +1,21 @@
 #![no_std]
 
 use alloc::{collections::VecDeque, string::ToString};
+use esp_hal::sha;
 use frostsnap_comms::{DeviceSendBody, DeviceSendMessage};
 use frostsnap_core::DeviceId;
+use rand_core::SeedableRng;
 use ui::UserInteraction;
 
 #[macro_use]
 extern crate alloc;
 
 pub mod device_config;
+pub mod efuse;
 pub mod esp32_run;
 #[cfg(feature = "v2")]
 pub mod graphics;
 pub mod io;
-pub mod key_generator;
 pub mod ota;
 pub mod panic;
 pub mod storage;
@@ -117,3 +119,20 @@ pub enum DownstreamConnectionState {
 
 pub type Instant = fugit::Instant<u64, 1, 1_000_000>;
 pub type Duration = fugit::Duration<u64, 1, 1_000_000>;
+
+pub fn extract_entropy(
+    rng: &mut impl rand_core::RngCore,
+    sha256: &mut esp_hal::sha::Sha<'_>,
+    bytes: usize,
+) -> impl rand_core::RngCore {
+    pub use frostsnap_core::sha2::digest::FixedOutput;
+    let mut digest = sha256.start::<sha::Sha256>();
+    for _ in 0..(bytes.div_ceil(64)) {
+        let mut entropy = [0u8; 64];
+        rng.fill_bytes(&mut entropy);
+        digest.update(&entropy).expect("infallible");
+    }
+
+    let result = digest.finalize_fixed();
+    rand_chacha::ChaCha20Rng::from_seed(result.into())
+}
