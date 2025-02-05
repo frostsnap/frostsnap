@@ -1,7 +1,9 @@
 // use core::num::NonZeroU8;
 use esp_hal::efuse::{self as hal_efuse, Efuse};
+use esp_hal::hmac::{self, Hmac};
 use esp_hal::peripherals::EFUSE;
 use rand_chacha::rand_core::RngCore;
+use rand_core::SeedableRng;
 use reed_solomon;
 
 const KEY_BLOCKS_OFFSET: u8 = 4;
@@ -21,12 +23,12 @@ impl EfuseController {
 
     pub fn init_key(
         &self,
-        key_number: u8,
+        key_id: u8,
         key_purpose: KeyPurpose,
         read_protect: bool,
         rng: &mut impl RngCore,
     ) -> Result<(), EfuseError> {
-        let efuse_field = match key_number {
+        let efuse_field = match key_id {
             0 => hal_efuse::KEY_PURPOSE_0,
             1 => hal_efuse::KEY_PURPOSE_1,
             2 => hal_efuse::KEY_PURPOSE_2,
@@ -42,8 +44,8 @@ impl EfuseController {
             rng.fill_bytes(&mut buff);
 
             unsafe {
-                self.write_block(&buff, key_number + KEY_BLOCKS_OFFSET)?;
-                self.write_key_purpose(key_number, key_purpose, read_protect)?;
+                self.write_block(&buff, key_id + KEY_BLOCKS_OFFSET)?;
+                self.write_key_purpose(key_id, key_purpose, read_protect)?;
             }
         }
         Ok(())
@@ -189,6 +191,32 @@ impl EfuseController {
     }
 }
 
+pub struct EfuseHmacKeys<'a> {
+    pub share_encryption: EfuseHmacKey<'a>,
+    pub fixed_entropy: EfuseHmacKey<'a>,
+}
+
+impl<'a> EfuseHmacKeys<'a> {
+    pub fn load_or_init(
+        efuse: &EfuseController,
+        hmac: &'a core::cell::RefCell<Hmac<'a>>,
+        read_protect: bool,
+        rng: &mut impl RngCore,
+    ) -> Result<Self, EfuseError> {
+        let share_encryption_key_id = hmac::KeyId::Key0;
+        let fixed_entropy_key_id = hmac::KeyId::Key1;
+
+        for key_id in [share_encryption_key_id, fixed_entropy_key_id] {
+            efuse.init_key(key_id as u8, KeyPurpose::HmacUpstream, read_protect, rng)?;
+        }
+
+        Ok(EfuseHmacKeys {
+            share_encryption: EfuseHmacKey::new(hmac, share_encryption_key_id),
+            fixed_entropy: EfuseHmacKey::new(hmac, fixed_entropy_key_id),
+        })
+    }
+}
+
 #[derive(Debug)]
 pub enum KeyPurpose {
     User = 0,
@@ -208,4 +236,71 @@ pub enum EfuseError {
     EfuseWriteError(u8),
     EfuseBurned,
     EfuseError,
+}
+
+pub struct EfuseHmacKey<'a> {
+    hmac: &'a core::cell::RefCell<Hmac<'a>>,
+    hmac_key_id: hmac::KeyId,
+}
+
+impl<'a> EfuseHmacKey<'a> {
+    pub fn new(hmac: &'a core::cell::RefCell<Hmac<'a>>, hmac_key_id: hmac::KeyId) -> Self {
+        Self { hmac, hmac_key_id }
+    }
+
+    pub fn hash(
+        &mut self,
+        domain_separator: &'static str,
+        input: &[u8],
+    ) -> Result<[u8; 32], esp_hal::hmac::Error> {
+        let mut hmac = self.hmac.borrow_mut();
+        let mut output = [0u8; 32];
+        let mut remaining = input;
+
+        hmac.init();
+        nb::block!(hmac.configure(hmac::HmacPurpose::ToUser, self.hmac_key_id))?;
+
+        let len_byte = [domain_separator.len() as u8];
+        let _its_one_byte = nb::block!(hmac.update(&len_byte[..])).unwrap();
+        let mut ds_remaining = domain_separator.as_bytes();
+
+        while !ds_remaining.is_empty() {
+            ds_remaining = nb::block!(hmac.update(ds_remaining)).unwrap();
+        }
+
+        while !remaining.is_empty() {
+            remaining = nb::block!(hmac.update(remaining)).unwrap();
+        }
+
+        nb::block!(hmac.finalize(output.as_mut_slice())).unwrap();
+
+        Ok(output)
+    }
+
+    pub fn mix_in_rng(&mut self, rng: &mut impl RngCore) -> impl RngCore {
+        let mut entropy = [0u8; 64];
+        rng.fill_bytes(&mut entropy);
+        let chacha_seed = self.hash("mix-in-rng", &entropy).expect("entropy hash");
+        rand_chacha::ChaCha20Rng::from_seed(chacha_seed)
+    }
+}
+
+impl frostsnap_core::device::DeviceSymmetricKeyGen for EfuseHmacKey<'_> {
+    fn get_share_encryption_key(
+        &mut self,
+        key_id: frostsnap_core::KeyId,
+        access_structure_id: frostsnap_core::AccessStructureId,
+        party_index: frostsnap_core::schnorr_fun::frost::PartyIndex,
+        coord_key: frostsnap_core::CoordShareDecryptionContrib,
+    ) -> frostsnap_core::SymmetricKey {
+        let mut src = [0u8; 128];
+        src[..32].copy_from_slice(key_id.to_bytes().as_slice());
+        src[32..64].copy_from_slice(access_structure_id.to_bytes().as_slice());
+        src[64..96].copy_from_slice(party_index.to_bytes().as_slice());
+        src[96..128].copy_from_slice(coord_key.to_bytes().as_slice());
+
+        let output = self.hash("share-encryption", &src).unwrap();
+
+        frostsnap_core::SymmetricKey(output)
+    }
 }

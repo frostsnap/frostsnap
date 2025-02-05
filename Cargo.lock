@@ -1129,6 +1129,7 @@ dependencies = [
  "chrono",
  "critical-section",
  "delegate",
+ "digest",
  "document-features",
  "embassy-embedded-hal",
  "embassy-futures",
@@ -1445,6 +1446,7 @@ dependencies = [
  "mipidsi",
  "nb 1.1.0",
  "rand_chacha",
+ "rand_core",
  "reed-solomon",
  "u8g2-fonts",
 ]

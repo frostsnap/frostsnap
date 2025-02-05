@@ -14,7 +14,7 @@ use embedded_hal as hal;
 use esp_hal::{
     delay::Delay,
     gpio::{Input, Level, Output, Pull},
-    hmac::{self, Hmac},
+    hmac::Hmac,
     i2c::master::{Config as i2cConfig, I2c},
     ledc::{
         channel::{self, ChannelIFace},
@@ -39,7 +39,7 @@ use esp_hal::{
 use frostsnap_comms::Downstream;
 use frostsnap_core::schnorr_fun::fun::hex;
 use frostsnap_device::{
-    efuse::{self},
+    efuse::{self, EfuseHmacKeys},
     esp32_run,
     graphics::{
         self,
@@ -47,7 +47,6 @@ use frostsnap_device::{
         widgets::{EnterShareIndexScreen, EnterShareScreen},
     },
     io::SerialInterface,
-    key_generator::HmacKeyGen,
     ui::{
         BusyTask, EnteringBackupStage, FirmwareUpgradeStatus, Prompt, SignPrompt, UiEvent,
         UserInteraction, WaitingFor, WaitingResponse, Workflow,
@@ -56,7 +55,6 @@ use frostsnap_device::{
 };
 use micromath::F32Ext;
 use mipidsi::{error::Error, models::ST7789, options::ColorInversion};
-use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
 // # Pin Configuration
 //
@@ -192,42 +190,25 @@ fn main() -> ! {
         .unwrap();
         SerialInterface::new_uart(uart, &timer0)
     };
-    let sha256 = esp_hal::sha::Sha::new(peripherals.SHA);
+    let mut sha256 = esp_hal::sha::Sha::new(peripherals.SHA);
 
     let mut adc = peripherals.ADC1;
     let mut hal_rng = Trng::new(peripherals.RNG, &mut adc);
+    // extract more entropy from the trng that we theoretically need
+    let mut first_rng = frostsnap_device::extract_entropy(&mut hal_rng, &mut sha256, 1024);
 
     let efuse = efuse::EfuseController::new(peripherals.EFUSE);
 
     let do_read_protect = cfg!(feature = "read_protect_hmac_key");
-    // Share encryption key
-    efuse
-        .init_key(
-            0,
-            efuse::KeyPurpose::HmacUpstream,
-            do_read_protect,
-            &mut hal_rng,
-        )
-        .expect("Efuse init error");
-    // ChaCha20Rng seed HMAC key
-    efuse
-        .init_key(
-            1,
-            efuse::KeyPurpose::HmacUpstream,
-            do_read_protect,
-            &mut hal_rng,
-        )
-        .expect("Efuse init error");
 
-    let hal_hmac = Hmac::new(peripherals.HMAC);
-    let mut secret_gen = HmacKeyGen::new(hal_hmac);
+    let hal_hmac = core::cell::RefCell::new(Hmac::new(peripherals.HMAC));
+    let mut hmac_keys =
+        EfuseHmacKeys::load_or_init(&efuse, &hal_hmac, do_read_protect, &mut hal_rng)
+            .expect("should load efuse hmac keys");
 
-    let rng = {
-        let mut random = [0u8; 32];
-        hal_rng.read(&mut random);
-        let chacha_seed = secret_gen.hash(&random, hmac::KeyId::Key1).unwrap();
-        ChaCha20Rng::from_seed(chacha_seed)
-    };
+    // Don't use the hal_rng directly -- first mix in entropy from the HMAC efuse.
+    // TODO: maybe re-key the rng based on entropy from touces etc
+    let rng = hmac_keys.fixed_entropy.mix_in_rng(&mut first_rng);
 
     let ui = FrostyUi {
         display,
@@ -249,7 +230,7 @@ fn main() -> ! {
         timer: &timer0,
         downstream_detect,
         sha256,
-        secret_gen,
+        hmac_keys,
     };
     run.run()
 }
