@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:collection';
 
 import 'package:flutter/material.dart';
@@ -7,7 +8,6 @@ import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/theme.dart';
-import 'package:frostsnapp/wallet_send.dart';
 
 const satoshisInOneBtc = 100000000;
 
@@ -622,6 +622,9 @@ class SelectedDevicesController with ChangeNotifier {
             ));
   }
 
+  Iterable<DeviceModel> get selectedDevices =>
+      devices.where((device) => device.selected);
+
   int get threshold => (_frostKey == null)
       ? 0
       : _frostKey!.accessStructures()[accessStructureIndex].threshold();
@@ -631,23 +634,109 @@ class SelectedDevicesController with ChangeNotifier {
   void select(DeviceId id) => _selected.add(id) ? notifyListeners() : null;
   void deselect(DeviceId id) => _selected.remove(id) ? notifyListeners() : null;
 
-  void signAndBroadcast(
-      BuildContext context, UnsignedTx unsignedTx, VoidCallback? onBroadcast) {
-    if (_walletContext == null || _frostKey == null) return;
+  Stream<SigningState>? signingSessionStream(UnsignedTx unsignedTx) {
+    if (_walletContext == null || _frostKey == null) return null;
     final accessStructure = _frostKey!.accessStructures()[accessStructureIndex];
-    final signingStream = coord.startSigningTx(
+    return coord.startSigningTx(
       accessStructureRef: accessStructure.accessStructureRef(),
       unsignedTx: unsignedTx,
       devices: _selected.toList(),
     );
-    if (context.mounted) {
-      signAndBroadcastWorkflowDialog(
-          context: context,
-          signingStream: signingStream,
-          unsignedTx: unsignedTx,
-          superWallet: _walletContext!.wallet.superWallet,
-          masterAppkey: _walletContext!.masterAppkey,
-          onBroadcastNewTx: onBroadcast);
+  }
+}
+
+class DeviceSignatureModel {
+  final DeviceId id;
+  final bool hasSignature;
+  final bool isConnected;
+  late final String? name;
+
+  DeviceSignatureModel({
+    required this.id,
+    required this.hasSignature,
+    required this.isConnected,
+  }) {
+    name = coord.getDeviceName(id: id);
+  }
+}
+
+class SigningSessionController with ChangeNotifier {
+  late final StreamSubscription<DeviceListUpdate> _deviceStateSub;
+  StreamSubscription<SigningState>? _signingStateSub;
+  final HashSet<DeviceId> _connectedDevices = HashSet(
+    equals: (a, b) => a.field0.toString() == b.field0.toString(),
+    hashCode: (id) => id.field0.toString().hashCode,
+  );
+  UnsignedTx? _unsignedTx;
+  SignedTx? _signedTx;
+
+  SigningState? _state;
+
+  SigningSessionController() {
+    _deviceStateSub = deviceListSubject.listen((update) {
+      _connectedDevices.clear();
+      _connectedDevices.addAll(update.state.devices.map((device) => device.id));
+      notifyListeners();
+      maybeRequestDeviceSign();
+    });
+  }
+
+  @override
+  void dispose() async {
+    await _deviceStateSub.cancel();
+    cancel();
+    super.dispose();
+  }
+
+  Future<bool> init(UnsignedTx unsignedTx, Stream<SigningState> stream) async {
+    if (_unsignedTx != null || _signingStateSub != null) return false;
+    _unsignedTx = unsignedTx;
+    _signingStateSub = stream.listen((state) async {
+      if (state.gotShares.length == state.neededFrom.length &&
+          state.finishedSignatures.isNotEmpty &&
+          _unsignedTx != null) {
+        _signedTx =
+            await _unsignedTx!.complete(signatures: state.finishedSignatures);
+      }
+      _state = state;
+      notifyListeners();
+      maybeRequestDeviceSign();
+    });
+    return true;
+  }
+
+  void cancel() async {
+    if (_signingStateSub != null || _unsignedTx != null) {
+      await coord.cancelProtocol();
+      if (_state != null) {
+        await coord.cancelSignSession(ssid: _state!.sessionId);
+      }
+      _signingStateSub?.cancel();
+      _signingStateSub = null;
+      _unsignedTx = null;
+    }
+  }
+
+  SigningState? get state => _state;
+  SignedTx? get signedTx => _signedTx;
+
+  Iterable<DeviceSignatureModel>? mapDevices(Iterable<DeviceModel> devices) {
+    if (_state == null) return null;
+    return devices.map((device) => DeviceSignatureModel(
+          id: device.id,
+          hasSignature: _state!.gotShares.contains(device.id),
+          isConnected: _connectedDevices.contains(device.id),
+        ));
+  }
+
+  void maybeRequestDeviceSign() async {
+    if (_state != null) {
+      for (final neededFrom in _state!.connectedButNeedRequest) {
+        if (_connectedDevices.contains(neededFrom)) {
+          await coord.requestDeviceSign(
+              deviceId: neededFrom, sessionId: _state!.sessionId);
+        }
+      }
     }
   }
 }

@@ -16,6 +16,7 @@ import 'package:frostsnapp/wallet_send_scan.dart';
 enum SendPageIndex {
   recipient,
   amount,
+  signers,
   sign,
 }
 
@@ -39,6 +40,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
 
   UnsignedTx? unsignedTx;
   final selectedDevicesModel = SelectedDevicesController();
+  final signingSession = SigningSessionController();
 
   var pageIndex = SendPageIndex.recipient;
   late final ScrollController _scrollController;
@@ -128,6 +130,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
     feeRateModel.dispose();
     addressModel.dispose();
     selectedDevicesModel.dispose();
+    signingSession.dispose();
     if (widget.scrollController == null) _scrollController.dispose();
     _isAtEnd.dispose();
     super.dispose();
@@ -153,6 +156,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
 
   Widget _buildCompletedList(BuildContext context) {
     final theme = Theme.of(context);
+    final allowEdit = pageIndex.index < SendPageIndex.sign.index;
 
     return AnimatedSize(
       duration: Durations.short4,
@@ -163,6 +167,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
         children: [
           if (pageIndex.index > SendPageIndex.recipient.index)
             ListTile(
+              enabled: allowEdit,
               onTap: () => setState(() => pageIndex = SendPageIndex.recipient),
               leading: completedCardLabel(context, 'Recipient'),
               title: ListenableBuilder(
@@ -179,11 +184,13 @@ class _WalletSendPageState extends State<WalletSendPage> {
             Column(
               children: [
                 ListTile(
+                  enabled: allowEdit,
                   onTap: () => setState(() => pageIndex = SendPageIndex.amount),
                   leading: completedCardLabel(context, 'Amount'),
                   title: SatoshiText(value: amountModel.amount ?? 0),
                 ),
                 ListTile(
+                  enabled: allowEdit,
                   onTap: () => showFeeRateDialog(context),
                   leading: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -253,7 +260,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
       listenable: feeRateModel,
       builder: (context, _) {
         return TextButton.icon(
-          onPressed: pageIndex.index < SendPageIndex.sign.index
+          onPressed: pageIndex.index < SendPageIndex.signers.index
               ? () => showFeeRateDialog(context)
               : null,
           icon: Stack(
@@ -284,7 +291,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
                   ]),
                 ),
               ),
-              if (pageIndex.index < SendPageIndex.sign.index)
+              if (pageIndex.index < SendPageIndex.signers.index)
                 Flexible(child: Text('${feeRateModel.satsPerVB} sat/vB')),
             ],
           ),
@@ -399,38 +406,45 @@ class _WalletSendPageState extends State<WalletSendPage> {
         children: [
           ListTile(
             dense: true,
-            title: Text(
-              selectedDevicesModel.threshold == 1
-                  ? 'Select 1 Signer'
-                  : 'Select ${selectedDevicesModel.threshold} Signers',
-              style: TextStyle(color: theme.colorScheme.primary),
-            ),
+            title: Text('Select Signers'),
+            trailing: Text('${selectedDevicesModel.threshold} required'),
           ),
-          ListenableBuilder(
-            listenable: selectedDevicesModel,
-            builder: (context, child) => Column(
-              children: selectedDevicesModel.devices.map(
-                (device) {
-                  if (device.nonces == 0) {
-                    selectedDevicesModel.deselect(device.id);
-                  }
-                  return CheckboxListTile(
-                    value: device.selected,
-                    onChanged: device.canSelect
-                        ? (selected) => selected ?? false
-                            ? selectedDevicesModel.select(device.id)
-                            : selectedDevicesModel.deselect(device.id)
-                        : null,
-                    title: Text(device.name ?? '<unknown>'),
-                    subtitle: device.nonces == 0
-                        ? Text(
-                            'no nonces remaining',
-                            style: TextStyle(color: theme.colorScheme.error),
-                          )
-                        : null,
-                  );
-                },
-              ).toList(),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12.0),
+            child: Card.filled(
+              margin: EdgeInsets.all(0.0),
+              child: ListenableBuilder(
+                listenable: selectedDevicesModel,
+                builder: (context, child) => Column(
+                  children: selectedDevicesModel.devices.map(
+                    (device) {
+                      if (device.nonces == 0) {
+                        selectedDevicesModel.deselect(device.id);
+                      }
+                      return CheckboxListTile(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12.0),
+                        ),
+                        value: device.selected,
+                        onChanged: device.canSelect
+                            ? (selected) => selected ?? false
+                                ? selectedDevicesModel.select(device.id)
+                                : selectedDevicesModel.deselect(device.id)
+                            : null,
+                        secondary: Icon(Icons.key),
+                        title: Text(device.name ?? '<unknown>'),
+                        subtitle: device.nonces == 0
+                            ? Text(
+                                'no nonces remaining or too many signing sessions',
+                                style:
+                                    TextStyle(color: theme.colorScheme.error),
+                              )
+                            : null,
+                      );
+                    },
+                  ).toList(),
+                ),
+              ),
             ),
           ),
           Padding(
@@ -438,6 +452,96 @@ class _WalletSendPageState extends State<WalletSendPage> {
             child: _signersDoneButton,
           ),
         ],
+      ),
+    );
+
+    final signInputCard = Card.filled(
+      color: mainCardColor,
+      margin: EdgeInsets.all(0.0),
+      child: ListenableBuilder(
+        listenable: signingSession,
+        builder: (context, _) {
+          final signers =
+              signingSession.mapDevices(selectedDevicesModel.selectedDevices);
+          final signedTx = signingSession.signedTx;
+          if (signedTx != null) {
+            return Column(
+              children: [
+                const ListTile(
+                  dense: true,
+                  title: Text('Broadcast Transaction'),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                  child: Card.filled(
+                    margin: EdgeInsets.all(0.0),
+                    child: ListTile(
+                      leading: Text('Txid'),
+                      title: Text(
+                        signedTx.txid(),
+                        style: TextStyle(
+                          fontFamily: monospaceTextStyle.fontFamily,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: FilledButton(
+                    onPressed: () async {
+                      final walletCtx = WalletContext.of(context);
+                      if (walletCtx != null) {
+                        await walletCtx.wallet.superWallet.broadcastTx(
+                            masterAppkey: walletCtx.masterAppkey, tx: signedTx);
+                        nextPageOrPop(null);
+                      }
+                    },
+                    child: Text('Broadcast'),
+                  ),
+                ),
+              ],
+            );
+          }
+          return Column(
+            children: [
+              const ListTile(
+                dense: true,
+                title: Text('Sign Transaction'),
+                trailing: Text('Plug in these devices'),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12.0)
+                    .copyWith(bottom: 12.0),
+                child: Card.filled(
+                  child: signers == null
+                      ? Padding(
+                          padding: EdgeInsets.all(12.0),
+                          child: LinearProgressIndicator(
+                            borderRadius: BorderRadius.circular(4.0),
+                          ),
+                        )
+                      : Column(
+                          children: signers
+                              .map((device) => CheckboxListTile(
+                                    enabled: device.isConnected ||
+                                        device.hasSignature,
+                                    value: device.hasSignature,
+                                    onChanged: null,
+                                    secondary: Icon(
+                                      device.isConnected
+                                          ? Icons.key
+                                          : Icons.key_off,
+                                    ),
+                                    title: Text(device.name ?? '<no name>'),
+                                  ))
+                              .toList(),
+                        ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
 
@@ -458,7 +562,8 @@ class _WalletSendPageState extends State<WalletSendPage> {
                     if (pageIndex == SendPageIndex.recipient)
                       recipientInputCard,
                     if (pageIndex == SendPageIndex.amount) amountInputCard,
-                    if (pageIndex == SendPageIndex.sign) signersInputCard,
+                    if (pageIndex == SendPageIndex.signers) signersInputCard,
+                    if (pageIndex == SendPageIndex.sign) signInputCard,
                     SizedBox(height: 12.0),
                     etaInputCard,
                   ],
@@ -514,11 +619,10 @@ class _WalletSendPageState extends State<WalletSendPage> {
 
   signersDone(BuildContext context) {
     if (unsignedTx == null) return;
-    selectedDevicesModel.signAndBroadcast(
-      context,
-      unsignedTx!,
-      () => nextPageOrPop(null),
-    );
+    final stream = selectedDevicesModel.signingSessionStream(unsignedTx!);
+    if (stream == null) return;
+    signingSession.init(unsignedTx!, stream);
+    nextPageOrPop(null);
   }
 
   amountDone(BuildContext context) {
@@ -595,40 +699,25 @@ class _WalletSendPageState extends State<WalletSendPage> {
   }
 
   prevPageOrPop(Object? result) {
-    final SendPageIndex? prevIndex;
-    switch (pageIndex) {
-      case SendPageIndex.recipient:
-        prevIndex = null;
-      case SendPageIndex.amount:
-        prevIndex = SendPageIndex.recipient;
-      case SendPageIndex.sign:
-        prevIndex = SendPageIndex.amount;
-      //case SendPageIndex.broadcast:
-      //  prevIndex = SendPageIndex.sign;
-    }
-    if (prevIndex != null) {
-      setState(() => pageIndex = prevIndex!);
-      if (pageIndex == SendPageIndex.sign) scrollToTop();
-    } else {
+    if (pageIndex == SendPageIndex.sign) signingSession.cancel();
+    final prevIndex = pageIndex.index - 1;
+    if (prevIndex < 0) {
       Navigator.pop(context, result);
+    } else {
+      final prev = SendPageIndex.values[prevIndex];
+      setState(() => pageIndex = prev);
+      if (pageIndex == SendPageIndex.signers) scrollToTop();
     }
   }
 
   nextPageOrPop(Object? result) {
-    final SendPageIndex? nextIndex;
-    switch (pageIndex) {
-      case SendPageIndex.recipient:
-        nextIndex = SendPageIndex.amount;
-      case SendPageIndex.amount:
-        nextIndex = SendPageIndex.sign;
-      case SendPageIndex.sign:
-        nextIndex = null;
-    }
-    if (nextIndex != null) {
-      setState(() => pageIndex = nextIndex!);
-      if (pageIndex == SendPageIndex.sign) scrollToTop();
-    } else {
+    final nextIndex = pageIndex.index + 1;
+    if (nextIndex >= SendPageIndex.values.length) {
       Navigator.pop(context, result);
+    } else {
+      final prev = SendPageIndex.values[nextIndex];
+      setState(() => pageIndex = prev);
+      if (pageIndex == SendPageIndex.signers) scrollToTop();
     }
   }
 }
