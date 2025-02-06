@@ -196,9 +196,15 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                         segments.push(segment);
                     }
                 }
-                Ok(vec![DeviceSend::ToCoordinator(Box::new(
-                    DeviceToCoordinatorMessage::NonceResponse { segments },
-                ))])
+
+                let send = if !segments.is_empty() {
+                    Some(DeviceSend::ToCoordinator(Box::new(
+                        DeviceToCoordinatorMessage::NonceResponse { segments },
+                    )))
+                } else {
+                    None
+                };
+                Ok(FromIterator::from_iter(send))
             }
             (
                 None,
@@ -522,9 +528,15 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                 ))])
             }
             (_, CoordinatorToDeviceMessage::RequestHeldShares) => {
-                Ok(vec![DeviceSend::ToCoordinator(Box::new(
-                    DeviceToCoordinatorMessage::HeldShares(self.held_shares()),
-                ))])
+                let held_shares = self.held_shares();
+                let send = if !held_shares.is_empty() {
+                    Some(DeviceSend::ToCoordinator(Box::new(
+                        DeviceToCoordinatorMessage::HeldShares(held_shares),
+                    )))
+                } else {
+                    None
+                };
+                Ok(FromIterator::from_iter(send))
             }
             _ => Err(Error::signer_message_kind(&self.action_state, &message)),
         }
