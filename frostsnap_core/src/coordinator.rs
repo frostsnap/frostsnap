@@ -1361,7 +1361,6 @@ impl FrostCoordinator {
                 .iter()
                 .map(|session_progress| {
                     let sig = session_progress.sign_session.combine_signature_shares(
-                        session_progress.sign_session.final_nonce(),
                         session_progress
                             .signature_shares
                             .iter()

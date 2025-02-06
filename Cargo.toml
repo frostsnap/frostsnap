@@ -33,9 +33,6 @@ bdk_coin_select = { version = "0.3" }
 rand_core = "0.6"
 futures = "0.3.31"
 
-[patch.crates-io]
-schnorr_fun = { git = "https://github.com/LLFourn/secp256kfun.git", rev = "35b5c12fd6ca730dfe74b95255a64997e26a369b" }
-
 [profile.dev]
 # Rust debug is too slow.
 # For debug builds always builds with some optimization
