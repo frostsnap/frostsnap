@@ -1,4 +1,4 @@
-use crate::{Completion, FirmwareBin, Sink, UiProtocol, UiToStorageMessage};
+use crate::{Completion, FirmwareBin, Sink, UiProtocol};
 use frostsnap_comms::{CoordinatorSendBody, CoordinatorSendMessage, CoordinatorUpgradeMessage};
 use frostsnap_core::DeviceId;
 use std::collections::BTreeSet;
@@ -71,7 +71,7 @@ impl UiProtocol for FirmwareUpgradeProtocol {
         }
     }
 
-    fn poll(&mut self) -> (Vec<CoordinatorSendMessage>, Vec<UiToStorageMessage>) {
+    fn poll(&mut self) -> Vec<CoordinatorSendMessage> {
         let mut to_devices = vec![];
         if !self.sent_first_message {
             to_devices.push(CoordinatorSendMessage {
@@ -93,7 +93,7 @@ impl UiProtocol for FirmwareUpgradeProtocol {
             self.emit_state()
         }
 
-        (to_devices, vec![])
+        to_devices
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

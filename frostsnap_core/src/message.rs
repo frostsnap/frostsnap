@@ -1,23 +1,25 @@
 use crate::device::KeyPurpose;
+use crate::nonce_stream::CoordNonceStreamState;
 use crate::tweak::BitcoinBip32Path;
 use crate::{
-    AccessStructureId, AccessStructureRef, CheckedSignTask, CoordShareDecryptionContrib, Gist,
-    KeyId, MasterAppkey, SessionHash, ShareImage, Vec,
+    nonce_stream::NonceStreamSegment, AccessStructureId, AccessStructureRef, CheckedSignTask,
+    CoordShareDecryptionContrib, Gist, KeyId, MasterAppkey, SessionHash, ShareImage, SignSessionId,
+    SignTaskError, Vec,
 };
 use crate::{DeviceId, SignTask};
 use alloc::{
     boxed::Box,
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, BTreeSet},
     string::String,
 };
 use bitcoin::address::{Address, NetworkChecked};
 use core::num::NonZeroU32;
 use schnorr_fun::binonce;
-use schnorr_fun::frost::SecretShare;
 use schnorr_fun::frost::{chilldkg::encpedpop, PartyIndex};
+use schnorr_fun::frost::{SecretShare, SignatureShare};
 use schnorr_fun::fun::prelude::*;
-use schnorr_fun::fun::{Point, Scalar};
-use schnorr_fun::{binonce::Nonce, Signature};
+use schnorr_fun::fun::Point;
+use schnorr_fun::Signature;
 use sha2::digest::Update;
 use sha2::Digest;
 
@@ -34,8 +36,10 @@ pub enum CoordinatorToDeviceMessage {
     FinishKeyGen {
         agg_input: encpedpop::AggKeygenInput,
     },
-    RequestSign(SignRequest),
-    RequestNonces,
+    RequestSign(RequestSign),
+    OpenNonceStreams {
+        streams: Vec<CoordNonceStreamState>,
+    },
     DisplayBackup {
         key_id: KeyId,
         access_structure_id: AccessStructureId,
@@ -86,53 +90,34 @@ impl DoKeyGen {
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
-pub struct SignRequest {
-    pub nonces: BTreeMap<PartyIndex, SignRequestNonces>,
-    pub sign_task: SignTask,
-    /// The root key
-    pub rootkey: Point,
+pub struct GroupSignReq<ST = SignTask> {
+    pub parties: BTreeSet<PartyIndex>,
+    pub agg_nonces: Vec<binonce::Nonce<Zero>>,
+    pub sign_task: ST,
     pub access_structure_id: AccessStructureId,
-    pub coord_share_decryption_contrib: CoordShareDecryptionContrib,
 }
 
-impl SignRequest {
-    pub fn session_id(&self) -> [u8; 32] {
+impl<ST> GroupSignReq<ST> {
+    pub fn n_signatures(&self) -> usize {
+        self.agg_nonces.len()
+    }
+}
+
+impl GroupSignReq<SignTask> {
+    pub fn check(self, rootkey: Point) -> Result<GroupSignReq<CheckedSignTask>, SignTaskError> {
+        let master_appkey = MasterAppkey::derive_from_rootkey(rootkey);
+
+        Ok(GroupSignReq {
+            parties: self.parties,
+            agg_nonces: self.agg_nonces,
+            sign_task: self.sign_task.check(master_appkey)?,
+            access_structure_id: self.access_structure_id,
+        })
+    }
+
+    pub fn session_id(&self) -> SignSessionId {
         let bytes = bincode::encode_to_vec(self, bincode::config::standard()).unwrap();
-        sha2::Sha256::new().chain(bytes).finalize().into()
-    }
-
-    pub fn agg_nonce(&self, index: usize) -> binonce::Nonce<Zero> {
-        let nonces_at_index = self
-            .nonces
-            .values()
-            // NOTE: filter_map because don't care about other parties not having a nonce given for
-            // them. It's not a security issue.
-            .filter_map(|nonces| nonces.nonces.get(index).cloned());
-        binonce::Nonce::aggregate(nonces_at_index)
-    }
-
-    pub fn parties(&self) -> impl Iterator<Item = PartyIndex> + '_ {
-        self.nonces.keys().cloned()
-    }
-}
-
-#[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
-pub struct SignRequestNonces {
-    /// the nonces the device should sign with
-    pub nonces: Vec<Nonce>,
-    /// The index of the first nonce
-    pub start: u64,
-    /// How many nonces the coordiantor has remaining
-    pub nonces_remaining: u64,
-}
-
-impl SignRequest {
-    pub fn signer_indicies(&self) -> impl Iterator<Item = Scalar<Public, NonZero>> + '_ {
-        self.nonces.keys().cloned()
-    }
-
-    pub fn contains_signer_index(&self, id: Scalar<Public, NonZero>) -> bool {
-        self.nonces.contains_key(&id)
+        SignSessionId(sha2::Sha256::new().chain(bytes).finalize().into())
     }
 }
 
@@ -145,7 +130,7 @@ impl Gist for CoordinatorToDeviceMessage {
 impl CoordinatorToDeviceMessage {
     pub fn kind(&self) -> &'static str {
         match self {
-            CoordinatorToDeviceMessage::RequestNonces => "RequestNonces",
+            CoordinatorToDeviceMessage::OpenNonceStreams { .. } => "OpenNonceStreams",
             CoordinatorToDeviceMessage::DoKeyGen { .. } => "DoKeyGen",
             CoordinatorToDeviceMessage::FinishKeyGen { .. } => "FinishKeyGen",
             CoordinatorToDeviceMessage::RequestSign { .. } => "RequestSign",
@@ -159,12 +144,15 @@ impl CoordinatorToDeviceMessage {
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub enum DeviceToCoordinatorMessage {
-    NonceResponse(DeviceNonces),
+    NonceResponse {
+        segments: Vec<NonceStreamSegment>,
+    },
     KeyGenResponse(KeyGenResponse),
     KeyGenAck(SessionHash),
     SignatureShare {
-        signature_shares: Vec<Scalar<Public, Zero>>,
-        new_nonces: DeviceNonces,
+        session_id: SignSessionId,
+        signature_shares: Vec<SignatureShare>,
+        replenish_nonces: Option<NonceStreamSegment>,
     },
     DisplayBackupConfirmed,
     CheckShareBackup {
@@ -183,28 +171,6 @@ pub struct HeldShare {
 }
 
 pub type KeyGenResponse = encpedpop::KeygenInput;
-
-#[derive(
-    Debug,
-    Clone,
-    bincode::Encode,
-    bincode::Decode,
-    serde::Serialize,
-    serde::Deserialize,
-    Default,
-    PartialEq,
-)]
-pub struct DeviceNonces {
-    /// the nonce index of the first nonce in `nonces`
-    pub start_index: u64,
-    pub nonces: VecDeque<Nonce>,
-}
-
-impl DeviceNonces {
-    pub fn replenish_start(&self) -> u64 {
-        self.start_index + self.nonces.len() as u64
-    }
-}
 
 impl Gist for DeviceToCoordinatorMessage {
     fn gist(&self) -> String {
@@ -255,7 +221,7 @@ impl CoordinatorToUserMessage {
     }
 }
 
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, bincode::Encode, bincode::Decode, PartialEq)]
 /// An encoded signature that can pass ffi boundries easily
 pub struct EncodedSignature(pub [u8; 64]);
 
@@ -271,8 +237,14 @@ impl EncodedSignature {
 
 #[derive(Clone, Debug)]
 pub enum CoordinatorToUserSigningMessage {
-    GotShare { from: DeviceId },
-    Signed { signatures: Vec<EncodedSignature> },
+    GotShare {
+        session_id: SignSessionId,
+        from: DeviceId,
+    },
+    Signed {
+        session_id: SignSessionId,
+        signatures: Vec<EncodedSignature>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -299,7 +271,6 @@ pub enum DeviceToUserMessage {
     },
     SignatureRequest {
         sign_task: CheckedSignTask,
-        master_appkey: MasterAppkey,
     },
     Canceled {
         task: TaskKind,
@@ -333,4 +304,22 @@ pub enum TaskKind {
 pub struct RecoverShare {
     pub held_by: DeviceId,
     pub held_share: HeldShare,
+}
+
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq)]
+pub struct RequestSign {
+    /// Common public parts of the signing request
+    pub group_sign_req: GroupSignReq,
+    /// Private part of the signing request that only the device should be able to access
+    pub device_sign_req: DeviceSignReq,
+}
+
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq)]
+pub struct DeviceSignReq {
+    /// Not secret but device specific. No one needs to know this other than device.
+    pub nonces: CoordNonceStreamState,
+    /// the rootkey - semi secret. Should not be posted publicly. Only the device should receive this.
+    pub rootkey: Point,
+    /// The share decryption contribution from the coordinator.
+    pub coord_share_decryption_contrib: CoordShareDecryptionContrib,
 }

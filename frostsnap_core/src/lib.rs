@@ -3,9 +3,13 @@
 #[cfg(feature = "std")]
 #[macro_use]
 extern crate std;
+#[cfg(feature = "coordinator")]
+pub mod coord_nonces;
+pub mod device_nonces;
 mod macros;
 mod master_appkey;
 pub mod message;
+pub mod nonce_stream;
 pub mod nostr;
 pub mod tweak;
 
@@ -43,7 +47,7 @@ use alloc::{string::String, string::ToString, vec::Vec};
 // rexport hex module so serialization impl macros work outside this crate
 pub use schnorr_fun::fun::hex;
 
-const NONCE_BATCH_SIZE: u64 = 100;
+const NONCE_BATCH_SIZE: u32 = 10;
 
 #[derive(Clone, Copy, PartialEq, Hash, Eq, Ord, PartialOrd)]
 pub struct DeviceId(pub [u8; 33]);
@@ -279,9 +283,18 @@ fn prefix_hash(prefix: &'static str) -> sha2::Sha256 {
 pub struct CoordShareDecryptionContrib([u8; 32]);
 
 impl CoordShareDecryptionContrib {
-    pub fn from_root_shared_key(shared_key: &SharedKey<Normal, impl ZeroChoice>) -> Self {
+    /// Master shares are not protected by much. Devices holding master shares are designed to have
+    /// their backups stored right next them anyway. We nevertheless make the coordinator provide a
+    /// hash of the root polynomial. The main benefit is to force the device to be talking to a
+    /// coordinator that knows about the share. This prevents us from inadvertently introducing
+    /// "features" that can be engaged without actual knowledge of the main polynomial.
+    pub fn for_master_share(
+        device_id: DeviceId,
+        shared_key: &SharedKey<Normal, impl ZeroChoice>,
+    ) -> Self {
         Self(
             prefix_hash("SHARE_DECRYPTION")
+                .add(device_id.0)
                 .add(shared_key.point_polynomial())
                 .finalize_fixed()
                 .into(),
@@ -353,5 +366,21 @@ impl AccessStructureRef {
             key_id,
             access_structure_id: AccessStructureId([0xffu8; 32]),
         }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash)]
+pub struct SignSessionId(pub [u8; 32]);
+
+impl_display_debug_serialize! {
+    fn to_bytes(nonce_stream_id: &SignSessionId) -> [u8;32] {
+        nonce_stream_id.0
+    }
+}
+
+impl_fromstr_deserialize! {
+    name => "sign session id",
+    fn from_bytes(bytes: [u8;32]) -> SignSessionId {
+        SignSessionId(bytes)
     }
 }

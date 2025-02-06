@@ -1,40 +1,34 @@
+use crate::device_nonces::{self, ABSlot, ABSlots, MemoryNonceSlot, NonceStreamSlot};
 use crate::symmetric_encryption::{Ciphertext, SymmetricKey};
 use crate::tweak::{self, Xpub};
 use crate::{
     bitcoin_transaction, message::*, AccessStructureId, AccessStructureRef, ActionError,
     CheckedSignTask, CoordShareDecryptionContrib, Error, KeyId, MessageResult, SessionHash,
-    ShareImage, NONCE_BATCH_SIZE,
+    ShareImage,
 };
-use crate::{DeviceId, MasterAppkey};
+use crate::{DeviceId, SignSessionId};
 use alloc::boxed::Box;
 use alloc::string::ToString as _;
 use alloc::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, VecDeque},
     string::String,
     vec::Vec,
 };
 use core::num::NonZeroU32;
-use rand_chacha::ChaCha20Rng;
-use schnorr_fun::binonce;
 use schnorr_fun::frost::chilldkg::encpedpop;
 use schnorr_fun::frost::{PairedSecretShare, PartyIndex, SecretShare};
 use schnorr_fun::fun::KeyPair;
 use schnorr_fun::fun::{g, G};
-use schnorr_fun::{
-    binonce::{Nonce, NonceKeyPair},
-    frost::{self},
-    fun::{derive_nonce_rng, prelude::*, Tag},
-    nonce, Message,
-};
+use schnorr_fun::{frost, fun::prelude::*, Message};
 
 use sha2::Sha256;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct FrostSigner {
+pub struct FrostSigner<S = MemoryNonceSlot> {
     keypair: KeyPair,
     keys: BTreeMap<KeyId, KeyData>,
     action_state: Option<SignerState>,
-    nonce_counter: u64,
+    nonce_slots: device_nonces::ABSlots<S>,
     mutations: VecDeque<Mutation>,
 }
 
@@ -86,17 +80,13 @@ pub struct EncryptedSecretShare {
     pub ciphertext: Ciphertext<32, Scalar<Secret, Zero>>,
 }
 
-impl FrostSigner {
-    pub fn new_random(rng: &mut impl rand_core::RngCore) -> Self {
-        Self::new(KeyPair::<Normal>::new(Scalar::random(rng)))
-    }
-
-    pub fn new(keypair: KeyPair) -> Self {
+impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
+    pub fn new(keypair: KeyPair, nonce_slots: ABSlots<S>) -> Self {
         Self {
             keypair,
             keys: Default::default(),
             action_state: None,
-            nonce_counter: 0,
+            nonce_slots,
             mutations: Default::default(),
         }
     }
@@ -158,9 +148,6 @@ impl FrostSigner {
                         });
                 });
             }
-            ExpendNonce { nonce_counter } => {
-                self.nonce_counter = self.nonce_counter.max(*nonce_counter);
-            }
         }
     }
 
@@ -190,26 +177,6 @@ impl FrostSigner {
         DeviceId::new(self.keypair().public_key())
     }
 
-    fn generate_nonces(
-        &self,
-        // this is always the device key for now but because of lifetimes issues it has to be passed in
-        start: u64,
-    ) -> impl Iterator<Item = NonceKeyPair> + '_ {
-        let mut nonce_rng = derive_nonce_rng! {
-            nonce_gen => nonce::Deterministic::<Sha256>::default().tag(b"frostsnap/nonces"),
-            secret => self.keypair.secret_key(),
-            public => [b""],
-            seedable_rng => ChaCha20Rng
-        };
-
-        nonce_rng.set_word_pos((start * 16) as u128);
-        core::iter::from_fn(move || Some(NonceKeyPair::random(&mut nonce_rng)))
-    }
-
-    pub fn generate_public_nonces(&self, start: u64) -> impl Iterator<Item = Nonce> + '_ {
-        self.generate_nonces(start).map(|nonce| nonce.public())
-    }
-
     pub fn recv_coordinator_message(
         &mut self,
         message: CoordinatorToDeviceMessage,
@@ -217,18 +184,20 @@ impl FrostSigner {
     ) -> MessageResult<Vec<DeviceSend>> {
         use CoordinatorToDeviceMessage::*;
         match (&self.action_state, message.clone()) {
-            (_, RequestNonces) => {
-                let nonces = self
-                    .generate_nonces(self.nonce_counter)
-                    .take(NONCE_BATCH_SIZE as usize)
-                    .map(|nonce| nonce.public())
-                    .collect();
-
+            (_, OpenNonceStreams { streams }) => {
+                let mut segments = vec![];
+                for coord_stream_state in streams {
+                    let slot = self
+                        .nonce_slots
+                        .get_or_create(coord_stream_state.stream_id, rng);
+                    if let Some(segment) =
+                        slot.reconcile_coord_nonce_stream_state(coord_stream_state)
+                    {
+                        segments.push(segment);
+                    }
+                }
                 Ok(vec![DeviceSend::ToCoordinator(Box::new(
-                    DeviceToCoordinatorMessage::NonceResponse(DeviceNonces {
-                        start_index: self.nonce_counter,
-                        nonces,
-                    }),
+                    DeviceToCoordinatorMessage::NonceResponse { segments },
                 ))])
             }
             (
@@ -345,11 +314,31 @@ impl FrostSigner {
                     },
                 ))])
             }
-            (None, CoordinatorToDeviceMessage::RequestSign(sign_req)) => {
-                let rootkey = sign_req.rootkey;
+            (
+                None,
+                CoordinatorToDeviceMessage::RequestSign(self::RequestSign {
+                    group_sign_req,
+                    device_sign_req,
+                }),
+            ) => {
+                let session_id = group_sign_req.session_id();
+                let group_sign_req = group_sign_req
+                    .check(device_sign_req.rootkey)
+                    .map_err(|e| Error::signer_invalid_message(&message, e))?;
+                let GroupSignReq {
+                    parties,
+                    sign_task,
+                    access_structure_id,
+                    ..
+                } = &group_sign_req;
+
+                let DeviceSignReq {
+                    nonces: coord_req_nonces,
+                    rootkey,
+                    ..
+                } = device_sign_req;
+
                 let key_id = KeyId::from_rootkey(rootkey);
-                let access_structure_id = sign_req.access_structure_id;
-                let nonces = sign_req.nonces.clone();
                 let key_data = self
                     .keys
                     .get(&key_id)
@@ -365,9 +354,8 @@ impl FrostSigner {
                     })?
                     .clone();
 
-                let master_appkey = MasterAppkey::derive_from_rootkey(rootkey);
                 let access_structure_data =
-                    key_data.access_structures.get(&access_structure_id)
+                    key_data.access_structures.get(access_structure_id)
                         .ok_or_else( || {
                             Error::signer_invalid_message(
                                 &message,
@@ -376,9 +364,9 @@ impl FrostSigner {
                         })?.clone();
 
                 // XXX We only support signing one share at a time for now
-                let (party_index, encrypted_secret_share) = sign_req
-                    .parties()
-                    .find_map(|party| Some((party, access_structure_data.shares.get(&party)?)))
+                let (my_party_index, encrypted_secret_share) = parties
+                    .iter()
+                    .find_map(|party| Some((*party, *access_structure_data.shares.get(party)?)))
                     .ok_or_else(|| {
                         Error::signer_invalid_message(
                             &message,
@@ -386,66 +374,40 @@ impl FrostSigner {
                         )
                     })?;
 
-                let checked_sign_task = sign_req
-                    .sign_task
-                    .clone()
-                    .check(master_appkey)
-                    .map_err(|e| Error::signer_invalid_message(&message, e))?;
-
-                let my_nonces = nonces.get(&party_index).ok_or_else(|| {
+                let nonce_slot = self.nonce_slots.get(coord_req_nonces.stream_id).ok_or(
                     Error::signer_invalid_message(
                         &message,
-                        "this device was asked to sign but no nonces were provided",
-                    )
-                })?;
-
-                let n_signatures_requested = checked_sign_task.sign_items().len();
-                if my_nonces.nonces.len() != n_signatures_requested {
-                    return Err(Error::signer_invalid_message(&message, format!("Number of nonces ({}) was not the same as the number of signatures we were asked for {}", my_nonces.nonces.len(), n_signatures_requested)));
-                }
-
-                if self.nonce_counter > my_nonces.start {
-                    return Err(Error::signer_invalid_message(
-                        &message,
                         format!(
-                            "Attempt to reuse nonces! Expected nonce >= {} but got {}",
-                            self.nonce_counter, my_nonces.start
+                            "device did not have that nonce stream id {}",
+                            coord_req_nonces.stream_id
                         ),
-                    ));
+                    ),
+                )?;
+
+                if let Err(e) = nonce_slot.are_nonces_available(
+                    coord_req_nonces.index,
+                    group_sign_req.n_signatures().try_into().unwrap(),
+                ) {
+                    return Err(Error::signer_invalid_message(&message, e.to_string()));
                 }
 
-                let expected_nonces = self
-                    .generate_nonces(my_nonces.start)
-                    .take(my_nonces.nonces.len())
-                    .map(|nonce| nonce.public())
-                    .collect::<Vec<_>>();
-                if expected_nonces != my_nonces.nonces {
-                    return Err(Error::signer_invalid_message(
-                        &message,
-                        "Signing request nonces do not match expected",
-                    ));
-                }
-
-                let agg_nonces = (0..n_signatures_requested).map(|i| sign_req.agg_nonce(i));
-
-                self.action_state = Some(SignerState::AwaitingSignAck(Box::new(AwaitingSignAck {
-                    rootkey,
-                    access_structure_id,
-                    encrypted_secret_share: encrypted_secret_share.ciphertext,
-                    my_party_index: party_index,
-                    sign_task: checked_sign_task.clone(),
-                    agg_nonces: agg_nonces.collect(),
-                    parties: sign_req.parties().collect(),
-                    nonce_start_index: my_nonces.start,
-                    nonces_remaining: my_nonces.nonces_remaining,
-                    coord_share_decryption_contrib: sign_req.coord_share_decryption_contrib,
-                })));
-                Ok(vec![DeviceSend::ToUser(Box::new(
+                let messages = vec![DeviceSend::ToUser(Box::new(
                     DeviceToUserMessage::SignatureRequest {
-                        sign_task: checked_sign_task,
-                        master_appkey,
+                        sign_task: sign_task.clone(),
                     },
-                ))])
+                ))];
+
+                // we don't check anything more about nonces. The other error cases should be
+                // unreachable so we can panic after confirmation.
+                self.action_state = Some(SignerState::AwaitingSignAck(Box::new(AwaitingSignAck {
+                    group_sign_req,
+                    device_sign_req,
+                    my_party_index,
+                    encrypted_secret_share,
+                    session_id,
+                })));
+
+                Ok(messages)
             }
             (
                 None,
@@ -586,8 +548,10 @@ impl FrostSigner {
 
                 let access_structure_id =
                     AccessStructureId::from_app_poly(app_shared_key.key.point_polynomial());
-                let decryption_share_contrib =
-                    CoordShareDecryptionContrib::from_root_shared_key(&root_shared_key.key);
+                let decryption_share_contrib = CoordShareDecryptionContrib::for_master_share(
+                    self.device_id(),
+                    &root_shared_key.key,
+                );
                 let encryption_key = symm_key_gen.get_share_encryption_key(
                     key_id,
                     access_structure_id,
@@ -642,67 +606,38 @@ impl FrostSigner {
         match self.action_state.take() {
             Some(SignerState::AwaitingSignAck(boxed)) => {
                 let AwaitingSignAck {
-                    rootkey,
-                    access_structure_id,
+                    device_sign_req:
+                        DeviceSignReq {
+                            nonces: coord_nonce_state,
+                            rootkey,
+                            coord_share_decryption_contrib,
+                        },
+                    group_sign_req:
+                        GroupSignReq {
+                            parties,
+                            agg_nonces,
+                            sign_task,
+                            access_structure_id,
+                        },
                     encrypted_secret_share,
                     my_party_index,
-                    sign_task,
-                    agg_nonces,
-                    parties,
-                    nonce_start_index,
-                    nonces_remaining,
-                    coord_share_decryption_contrib,
+                    session_id,
                 } = *boxed;
                 let sign_items = sign_task.sign_items();
-
-                let new_nonces = {
-                    // ⚠ Update nonce counter. Overflow would allow nonce reuse.
-                    //
-                    // hacktuallly this doesn't prevent nonce reuse. You can still re-use the nonce at
-                    // u64::MAX. Leaving this bug in here intentionally to build test against later on.
-
-                    self.mutate(Mutation::ExpendNonce {
-                        nonce_counter: nonce_start_index.saturating_add(sign_items.len() as u64),
-                    });
-
-                    // This calculates the index after the last nonce the coordinator had. This is
-                    // where we want to start providing new nonces.
-                    let replenish_start = self.nonce_counter + nonces_remaining;
-                    // How many nonces we should give them from that point
-                    let replenish_amount = NONCE_BATCH_SIZE.saturating_sub(nonces_remaining);
-
-                    let replenish_nonces = self
-                        .generate_nonces(replenish_start)
-                        .take(replenish_amount as usize)
-                        .map(|nonce| nonce.public())
-                        .collect();
-
-                    DeviceNonces {
-                        start_index: replenish_start,
-                        nonces: replenish_nonces,
-                    }
-                };
-
-                let secret_nonces = self
-                    .generate_nonces(nonce_start_index)
-                    .take(sign_items.len());
-
-                let frost = frost::new_without_nonce_generation::<Sha256>();
-                let mut signature_shares = vec![];
-
                 let key_id = KeyId::from_rootkey(rootkey);
+
                 let symmetric_key = symm_key_gen.get_share_encryption_key(
                     key_id,
                     access_structure_id,
                     my_party_index,
                     coord_share_decryption_contrib,
                 );
-                let secret_share =
-                    encrypted_secret_share
-                        .decrypt(symmetric_key)
-                        .ok_or_else(|| {
-                            ActionError::StateInconsistent("couldn't decrypt secret share".into())
-                        })?;
+                let secret_share = encrypted_secret_share
+                    .ciphertext
+                    .decrypt(symmetric_key)
+                    .ok_or_else(|| {
+                        ActionError::StateInconsistent("couldn't decrypt secret share".into())
+                    })?;
                 let root_paired_secret_share =
                     Xpub::from_rootkey(PairedSecretShare::new_unchecked(
                         SecretShare {
@@ -713,30 +648,46 @@ impl FrostSigner {
                     ));
                 let app_paired_secret_share = root_paired_secret_share.rootkey_to_master_appkey();
 
-                for (signature_index, (sign_item, secret_nonce)) in
-                    sign_items.iter().zip(secret_nonces).enumerate()
-                {
-                    let derived_xonly_key = sign_item
-                        .app_tweak
-                        .derive_xonly_key(&app_paired_secret_share);
-                    let message = Message::raw(&sign_item.message[..]);
-                    let sign_session = frost.party_sign_session(
-                        derived_xonly_key.public_key(),
-                        parties.clone(),
-                        agg_nonces[signature_index],
-                        message,
-                    );
-                    let sig_share = sign_session.sign(&derived_xonly_key, secret_nonce);
+                let frost = frost::new_without_nonce_generation::<sha2::Sha256>();
 
-                    signature_shares.push(sig_share);
-                }
+                let sign_sessions =
+                    sign_items
+                        .iter()
+                        .enumerate()
+                        .map(|(signature_index, sign_item)| {
+                            let derived_xonly_key = sign_item
+                                .app_tweak
+                                .derive_xonly_key(&app_paired_secret_share);
+                            let message = Message::raw(&sign_item.message[..]);
+                            let session = frost.party_sign_session(
+                                derived_xonly_key.public_key(),
+                                parties.clone(),
+                                agg_nonces[signature_index],
+                                message,
+                            );
+
+                            (derived_xonly_key, session)
+                        });
+
+                let nonce_slot = self
+                    .nonce_slots
+                    .get(coord_nonce_state.stream_id)
+                    .expect("this was checked");
+
+                let (signature_shares, replenish_nonces) = nonce_slot
+                    .sign_guaranteeing_nonces_destroyed(
+                        session_id,
+                        coord_nonce_state,
+                        sign_sessions,
+                    );
 
                 self.action_state = None;
 
                 Ok(vec![DeviceSend::ToCoordinator(Box::new(
                     DeviceToCoordinatorMessage::SignatureShare {
+                        session_id,
                         signature_shares,
-                        new_nonces,
+                        replenish_nonces,
                     },
                 ))])
             }
@@ -860,23 +811,31 @@ impl FrostSigner {
         })
     }
 
-    pub fn nonce_counter(&self) -> u64 {
-        self.nonce_counter
+    /// This is for inspecting the state of the nonce slots for testing.
+    /// Never to be used in production.
+    pub fn nonce_slots(&mut self) -> &mut ABSlots<S> {
+        &mut self.nonce_slots
+    }
+}
+
+impl FrostSigner<MemoryNonceSlot> {
+    pub fn new_random(rng: &mut impl rand_core::RngCore) -> Self {
+        Self::new(
+            KeyPair::<Normal>::new(Scalar::random(rng)),
+            ABSlots::new(
+                (0..8).map(|_| ABSlot::new(MemoryNonceSlot::default(), MemoryNonceSlot::default())),
+            ),
+        )
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AwaitingSignAck {
-    pub rootkey: Point,
-    pub access_structure_id: AccessStructureId,
-    pub encrypted_secret_share: Ciphertext<32, Scalar<Secret, Zero>>,
+    pub group_sign_req: GroupSignReq<CheckedSignTask>,
+    pub device_sign_req: DeviceSignReq,
     pub my_party_index: PartyIndex,
-    pub sign_task: CheckedSignTask,
-    pub agg_nonces: Vec<binonce::Nonce<Zero>>,
-    pub parties: BTreeSet<PartyIndex>,
-    pub nonce_start_index: u64,
-    pub nonces_remaining: u64,
-    pub coord_share_decryption_contrib: CoordShareDecryptionContrib,
+    pub encrypted_secret_share: EncryptedSecretShare,
+    pub session_id: SignSessionId,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -939,9 +898,6 @@ pub enum Mutation {
         kind: AccessStructureKind,
     },
     SaveShare(Box<SaveShareMutation>),
-    ExpendNonce {
-        nonce_counter: u64,
-    },
 }
 
 pub trait DeviceSymmetricKeyGen {

@@ -6,7 +6,7 @@ use frostsnap_core::{
 };
 use tracing::{event, Level};
 
-use crate::{Completion, Sink, UiProtocol, UiToStorageMessage};
+use crate::{Completion, Sink, UiProtocol};
 
 #[derive(Clone, Debug, Default)]
 pub struct VerifyAddressProtocolState {
@@ -79,7 +79,7 @@ impl UiProtocol for VerifyAddressProtocol {
         );
     }
 
-    fn poll(&mut self) -> (Vec<CoordinatorSendMessage>, Vec<UiToStorageMessage>) {
+    fn poll(&mut self) -> Vec<CoordinatorSendMessage> {
         let mut messages = vec![];
         if !self.need_to_send_to.is_empty() {
             messages.push(CoordinatorSendMessage {
@@ -95,7 +95,7 @@ impl UiProtocol for VerifyAddressProtocol {
             });
         }
 
-        (messages, vec![])
+        messages
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

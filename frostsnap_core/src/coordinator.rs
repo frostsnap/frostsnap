@@ -1,11 +1,13 @@
 use crate::{
+    coord_nonces::{NonceCache, NotEnoughNonces},
     device::KeyPurpose,
     message::*,
+    nonce_stream::{CoordNonceStreamState, NonceStreamId, NonceStreamSegment},
     symmetric_encryption::{Ciphertext, SymmetricKey},
     tweak::Xpub,
     AccessStructureId, AccessStructureRef, ActionError, CoordShareDecryptionContrib, Error, Gist,
-    KeyId, MasterAppkey, MessageResult, SessionHash, ShareImage, SignItem, SignTask, SignTaskError,
-    NONCE_BATCH_SIZE,
+    KeyId, MasterAppkey, MessageResult, SessionHash, ShareImage, SignItem, SignSessionId, SignTask,
+    SignTaskError, NONCE_BATCH_SIZE,
 };
 use alloc::{
     borrow::ToOwned,
@@ -16,7 +18,8 @@ use alloc::{
 };
 use schnorr_fun::{
     frost::{
-        self, chilldkg::encpedpop, CoordinatorSignSession, Frost, Nonce, PartyIndex, SharedKey,
+        self, chilldkg::encpedpop, CoordinatorSignSession, Frost, PartyIndex, SharedKey,
+        SignatureShare,
     },
     fun::{poly, prelude::*},
     Schnorr, Signature,
@@ -27,15 +30,17 @@ use tracing::{event, Level};
 
 use crate::DeviceId;
 
-pub const MIN_NONCES_BEFORE_REQUEST: u64 = NONCE_BATCH_SIZE / 2;
+pub const MIN_NONCES_BEFORE_REQUEST: u32 = NONCE_BATCH_SIZE / 2;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FrostCoordinator {
     keys: BTreeMap<KeyId, CoordFrostKey>,
     key_order: Vec<KeyId>,
     action_state: Option<CoordinatorState>,
-    device_nonces: HashMap<DeviceId, DeviceNonces>,
+    nonce_cache: NonceCache,
     mutations: VecDeque<Mutation>,
+    active_signing_sessions: BTreeMap<SignSessionId, ActiveSignSession>,
+    finished_signing_sessions: BTreeMap<SignSessionId, FinishedSignSession>,
 }
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq)]
@@ -58,11 +63,13 @@ impl CompleteKey {
     pub fn coord_share_decryption_contrib(
         &self,
         access_structure_id: AccessStructureId,
+        device_id: DeviceId,
         encryption_key: SymmetricKey,
-    ) -> Option<CoordShareDecryptionContrib> {
+    ) -> Option<(Point, CoordShareDecryptionContrib)> {
         let root_shared_key = self.root_shared_key(access_structure_id, encryption_key)?;
-        Some(CoordShareDecryptionContrib::from_root_shared_key(
-            &root_shared_key,
+        Some((
+            root_shared_key.public_key(),
+            CoordShareDecryptionContrib::for_master_share(device_id, &root_shared_key),
         ))
     }
 
@@ -99,6 +106,7 @@ macro_rules! fail {
             $($fail)*
         );
         debug_assert!(false, $($fail)*);
+        return None;
     }};
 }
 
@@ -139,18 +147,21 @@ impl FrostCoordinator {
             keys: Default::default(),
             key_order: Default::default(),
             action_state: None,
-            device_nonces: Default::default(),
+            nonce_cache: Default::default(),
             mutations: Default::default(),
+            active_signing_sessions: Default::default(),
+            finished_signing_sessions: Default::default(),
         }
     }
 
     pub fn mutate(&mut self, mutation: Mutation) {
         event!(Level::DEBUG, gist = mutation.gist(), "mutating");
-        self.apply_mutation(&mutation);
-        self.mutations.push_back(mutation);
+        if let Some(reduced_mutation) = self.apply_mutation(&mutation) {
+            self.mutations.push_back(reduced_mutation);
+        }
     }
 
-    pub fn apply_mutation(&mut self, mutation: &Mutation) {
+    pub fn apply_mutation(&mut self, mutation: &Mutation) -> Option<Mutation> {
         fn ensure_key<'a>(
             coord: &'a mut FrostCoordinator,
             key_id: KeyId,
@@ -197,37 +208,6 @@ impl FrostCoordinator {
                     fail!("can't complete non existent key");
                 }
             }
-            NoncesUsed {
-                device_id,
-                nonce_counter,
-            } => {
-                let device_nonces = self.device_nonces.entry(*device_id).or_default();
-                debug_assert!(
-                    *nonce_counter > device_nonces.start_index,
-                    "NoncesUsed should use nonces but  nonce_counter={nonce_counter} <= start_index={}",
-                    device_nonces.start_index
-                );
-
-                let new_start_index = device_nonces.start_index.max(*nonce_counter);
-
-                while device_nonces.start_index < new_start_index {
-                    device_nonces
-                        .nonces
-                        .pop_front()
-                        .expect("NoncesUsed is invalid");
-                    device_nonces.start_index += 1;
-                }
-            }
-            ResetNonces { device_id, nonces } => {
-                self.device_nonces.insert(*device_id, nonces.clone());
-            }
-            NewNonces {
-                device_id,
-                new_nonces,
-            } => {
-                let device_nonces = self.device_nonces.entry(*device_id).or_default();
-                device_nonces.nonces.extend(new_nonces);
-            }
             NewAccessStructure { shared_key } => {
                 let access_structure_id =
                     AccessStructureId::from_app_poly(shared_key.key().point_polynomial());
@@ -273,7 +253,6 @@ impl FrostCoordinator {
                         Some(complete_key) => complete_key,
                         None => {
                             fail!("tried to add a share to incomplete key");
-                            return;
                         }
                     };
 
@@ -331,7 +310,71 @@ impl FrostCoordinator {
                 self.keys.remove(key_id);
                 self.key_order.retain(|entry| entry != key_id);
             }
+            NewNonces {
+                device_id,
+                nonce_segment,
+            } => {
+                match self
+                    .nonce_cache
+                    .extend_segment(*device_id, nonce_segment.clone())
+                {
+                    Ok(changed) => {
+                        if !changed {
+                            return None;
+                        }
+                    }
+                    Err(e) => debug_assert!(false, "{e}"),
+                }
+            }
+            NewSigningSession(signing_session_state) => {
+                self.active_signing_sessions.insert(
+                    signing_session_state.init.group_request.session_id(),
+                    signing_session_state.clone(),
+                );
+            }
+            GotSignatureSharesFromDevice {
+                session_id,
+                device_id,
+                signature_shares,
+            } => {
+                if let Some(session_state) = self.active_signing_sessions.get_mut(session_id) {
+                    for (progress, share) in session_state.progress.iter_mut().zip(signature_shares)
+                    {
+                        progress.signature_shares.insert(*device_id, *share);
+                    }
+                }
+            }
+            &ConsumesNonces {
+                device_id,
+                nonce_stream_id,
+                up_to_but_not_including,
+            } => {
+                if !self
+                    .nonce_cache
+                    .consume(device_id, nonce_stream_id, up_to_but_not_including)
+                {
+                    return None;
+                }
+            }
+            CloseSignSession {
+                session_id,
+                finished,
+            } => {
+                if let Some(session_state) = self.active_signing_sessions.remove(session_id) {
+                    if let Some(signatures) = finished {
+                        self.finished_signing_sessions.insert(
+                            *session_id,
+                            FinishedSignSession {
+                                init: session_state.init,
+                                signatures: signatures.clone(),
+                            },
+                        );
+                    }
+                }
+            }
         }
+
+        Some(mutation.clone())
     }
 
     pub fn take_staged_mutations(&mut self) -> VecDeque<Mutation> {
@@ -340,10 +383,6 @@ impl FrostCoordinator {
 
     pub fn staged_mutations(&self) -> &VecDeque<Mutation> {
         &self.mutations
-    }
-
-    pub fn restore_sign_session(&mut self, sign_state: SigningSessionState) {
-        self.action_state = Some(CoordinatorState::Signing { sign_state });
     }
 
     pub fn iter_keys(&self) -> impl Iterator<Item = &CoordFrostKey> + '_ {
@@ -371,11 +410,23 @@ impl FrostCoordinator {
     ) -> MessageResult<Vec<CoordinatorSend>> {
         let message_kind = message.kind();
         match (&mut self.action_state, message) {
-            (_, DeviceToCoordinatorMessage::NonceResponse(device_nonces)) => {
-                self.mutate(Mutation::ResetNonces {
-                    device_id: from,
-                    nonces: device_nonces,
-                });
+            (_, DeviceToCoordinatorMessage::NonceResponse { segments }) => {
+                for new_segment in segments {
+                    self.nonce_cache
+                        .check_can_extend(from, &new_segment)
+                        .map_err(|e| {
+                            Error::coordinator_invalid_message(
+                                message_kind,
+                                format!("couldn't extend nonces: {e}"),
+                            )
+                        })?;
+
+                    self.mutate(Mutation::NewNonces {
+                        device_id: from,
+                        nonce_segment: new_segment,
+                    });
+                }
+
                 Ok(vec![])
             }
             (_, DeviceToCoordinatorMessage::HeldShares(held_shares)) => {
@@ -520,50 +571,35 @@ impl FrostCoordinator {
                 Ok(outgoing)
             }
             (
-                Some(CoordinatorState::Signing { sign_state }),
+                _, // we don't care what state we're in. A valid signature share is a valid signature share.
                 DeviceToCoordinatorMessage::SignatureShare {
+                    session_id,
                     ref signature_shares,
-                    ref mut new_nonces,
+                    ref replenish_nonces,
                 },
             ) => {
-                let sessions = &mut sign_state.sessions;
+                let active_sign_session = self
+                    .active_signing_sessions
+                    .get(&session_id)
+                    .expect("inavariant");
+                let sessions = &active_sign_session.progress;
                 let n_signatures = sessions.len();
-                let frost = frost::new_without_nonce_generation::<Sha256>();
+                let access_structure_ref = active_sign_session.access_structure_ref();
+                let access_structure = self
+                    .get_access_structure(access_structure_ref)
+                    .expect("session exists access structure exists");
                 let mut outgoing = vec![];
-
-                let signer_index = sign_state
-                    .access_structure
-                    .device_to_share_index
-                    .get(&from)
-                    .expect("we don't know this device");
-
-                let nonce_for_device =
-                    self.device_nonces
-                        .get(&from)
-                        .ok_or(Error::coordinator_invalid_message(
-                            message_kind,
-                            "Signer is unknown",
-                        ))?;
-
-                // If there have been uncompleted sign requests, the device should replenish more
-                // nonces than required for this particular signing session.
-                if new_nonces.nonces.len() < n_signatures {
-                    return Err(Error::coordinator_invalid_message(
+                let signer_index = access_structure.device_to_share_index.get(&from).ok_or(
+                    Error::coordinator_invalid_message(
                         message_kind,
-                        format!(
-                            "Signer did not replenish enough nonces. Expected {n_signatures}, got {}",
-                            new_nonces.nonces.len()
-                        ),
-                    ));
-                }
+                        "got shares from signer who was not part of the access structure",
+                    ),
+                )?;
 
                 if signature_shares.len() != n_signatures {
                     return Err(Error::coordinator_invalid_message(message_kind, format!("signer did not provide the right number of signature shares. Got {}, expected {}", signature_shares.len(), sessions.len())));
                 }
 
-                // first we do a validation loop and then another loop to actually insert the
-                // signature shares so that we don't mutate self unless the entire message is
-                // valid.
                 for (session_progress, signature_share) in sessions.iter().zip(signature_shares) {
                     let session = &session_progress.sign_session;
                     let xonly_frost_key = &session_progress.tweaked_frost_key();
@@ -592,62 +628,29 @@ impl FrostCoordinator {
                 }
 
                 outgoing.push(CoordinatorSend::ToUser(CoordinatorToUserMessage::Signing(
-                    CoordinatorToUserSigningMessage::GotShare { from },
+                    CoordinatorToUserSigningMessage::GotShare { session_id, from },
                 )));
 
-                for (session_progress, signature_share) in sessions.iter_mut().zip(signature_shares)
-                {
-                    session_progress
-                        .signature_shares
-                        .insert(from, *signature_share);
-                }
-
-                let all_finished = sessions.iter().all(|session| {
-                    session.signature_shares.len() == sign_state.access_structure.threshold()
+                self.mutate(Mutation::GotSignatureSharesFromDevice {
+                    session_id,
+                    device_id: from,
+                    signature_shares: signature_shares.clone(),
                 });
 
-                // the coordinator may want to persist this so a signing session can be restored
-                outgoing.push(CoordinatorSend::SigningSessionStore(sign_state.clone()));
-
-                if all_finished {
-                    let sessions = &sign_state.sessions;
-
-                    let signatures = sessions
-                        .iter()
-                        .map(|session_progress| {
-                            let sig = session_progress.sign_session.combine_signature_shares(
-                                session_progress.sign_session.final_nonce(),
-                                session_progress
-                                    .signature_shares
-                                    .iter()
-                                    .map(|(_, &share)| share)
-                            );
-
-                            assert!(session_progress.verify_final_signature(
-                                &frost.schnorr,
-                                &sig,
-                            ), "we have verified the signature shares so combined should be correct");
-
-                            sig
-                        })
-                        .map(EncodedSignature::new)
-                        .collect();
-
-                    self.action_state = None;
-
-                    outgoing.push(CoordinatorSend::ToUser(CoordinatorToUserMessage::Signing(
-                        CoordinatorToUserSigningMessage::Signed { signatures },
-                    )));
+                if let Some(replenish_nonces) = replenish_nonces {
+                    self.mutate(Mutation::NewNonces {
+                        device_id: from,
+                        nonce_segment: replenish_nonces.clone(),
+                    });
                 }
 
-                if new_nonces.start_index == nonce_for_device.replenish_start() {
-                    self.mutate(Mutation::NewNonces {
-                        new_nonces: new_nonces.nonces.iter().cloned().collect(),
-                        device_id: from,
-                    });
-                } else {
-                    fail!("replenishment nonces returned by device were at the wrong index, got {}, expected {}",
-                          new_nonces.start_index, nonce_for_device.replenish_start());
+                if let Some(signatures) = self.complete_sign_session(session_id) {
+                    outgoing.push(CoordinatorSend::ToUser(CoordinatorToUserMessage::Signing(
+                        CoordinatorToUserSigningMessage::Signed {
+                            session_id,
+                            signatures,
+                        },
+                    )));
                 }
 
                 Ok(outgoing)
@@ -801,9 +804,8 @@ impl FrostCoordinator {
         &mut self,
         access_structure_ref: AccessStructureRef,
         sign_task: SignTask,
-        signing_parties: BTreeSet<DeviceId>,
-        encryption_key: SymmetricKey,
-    ) -> Result<StartSign, StartSignError> {
+        signing_devices: &BTreeSet<DeviceId>,
+    ) -> Result<SignSessionId, StartSignError> {
         let AccessStructureRef {
             key_id,
             access_structure_id,
@@ -830,13 +832,16 @@ impl FrostCoordinator {
             .access_structures
             .get(&access_structure_id)
             .ok_or(StartSignError::NoSuchAccessStructure)?;
+
+        for device in signing_devices {
+            if !access_structure.device_to_share_index.contains_key(device) {
+                return Err(StartSignError::DeviceNotPartOfKey { device_id: *device });
+            }
+        }
+
         let app_shared_key = access_structure.app_shared_key().clone();
 
-        let root_shared_key = complete_key
-            .root_shared_key(access_structure_id, encryption_key)
-            .ok_or(StartSignError::CouldntDecryptRootKey)?;
-
-        let selected = signing_parties.len();
+        let selected = signing_devices.len();
         if selected < access_structure.threshold() {
             return Err(StartSignError::NotEnoughDevicesSelected {
                 selected,
@@ -851,70 +856,36 @@ impl FrostCoordinator {
         let sign_items = checked_sign_task.sign_items();
         let n_signatures = sign_items.len();
 
-        // For the ToDevice message
-        let mut signing_nonces = BTreeMap::default();
-        let mut mutations = vec![];
+        let nonces_by_device = self
+            .nonce_cache
+            .new_signing_session(
+                signing_devices,
+                n_signatures,
+                &self.all_used_nonce_streams(),
+            )
+            .map_err(StartSignError::NotEnoughNoncesForDevice)?;
 
-        for &device_id in &signing_parties {
-            let share_index = access_structure
-                .device_to_share_index
-                .get(&device_id)
-                .ok_or(StartSignError::DeviceNotPartOfKey { device_id })?;
-            let nonces_for_device = match self.device_nonces.get(&device_id) {
-                Some(nonces_for_device) => nonces_for_device,
-                None => {
-                    return Err(StartSignError::NotEnoughNoncesForDevice {
-                        device_id,
-                        have: 0,
-                        need: n_signatures,
-                    })
-                }
-            };
-
-            let index_of_first_nonce = nonces_for_device.start_index;
-
-            if nonces_for_device.nonces.len() < n_signatures {
-                return Err(StartSignError::NotEnoughNoncesForDevice {
-                    device_id,
-                    have: nonces_for_device.nonces.len(),
-                    need: n_signatures,
-                });
-            }
-
-            let nonces_remaining = (nonces_for_device.nonces.len() - n_signatures) as u64;
-
-            let nonces = (0..n_signatures)
-                .map(|i| nonces_for_device.nonces[i])
-                .collect();
-
-            let new_nonce_counter = index_of_first_nonce
-                .checked_add(n_signatures as u64)
-                .expect("TODO: guarantee malicious device can't overflow this");
-
-            mutations.push(Mutation::NoncesUsed {
-                device_id,
-                nonce_counter: new_nonce_counter,
-            });
-
-            signing_nonces.insert(
-                *share_index,
-                SignRequestNonces {
-                    nonces,
-                    start: index_of_first_nonce,
-                    nonces_remaining,
-                },
-            );
-        }
+        let nonces_by_party = nonces_by_device
+            .iter()
+            .map(|(device_id, nonce_segment)| {
+                (
+                    *access_structure
+                        .device_to_share_index
+                        .get(device_id)
+                        .expect("checked already"),
+                    nonce_segment.segment.clone(),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
 
         let frost = frost::new_without_nonce_generation::<Sha256>();
-
         let sessions = sign_items
             .iter()
             .enumerate()
             .map(|(i, sign_item)| {
-                let indexed_nonces = signing_nonces
+                let indexed_nonces = nonces_by_party
                     .iter()
-                    .map(|(index, sign_req_nonces)| (*index, sign_req_nonces.nonces[i]))
+                    .map(|(party_index, nonce_segment)| (*party_index, nonce_segment.nonces[i]))
                     .collect();
 
                 SignSessionProgress::new(
@@ -924,55 +895,114 @@ impl FrostCoordinator {
                     indexed_nonces,
                 )
             })
+            .collect::<Vec<_>>();
+
+        let group_request = GroupSignReq {
+            sign_task: checked_sign_task.into_inner(),
+            parties: nonces_by_party.keys().cloned().collect(),
+            agg_nonces: sessions
+                .iter()
+                .map(|session| session.sign_session.agg_binonce())
+                .collect(),
+            access_structure_id,
+        };
+        let session_id = group_request.session_id();
+
+        let device_requests = nonces_by_device
+            .into_iter()
+            .map(|(device, nonce_segment)| (device, nonce_segment.coord_nonce_state()))
             .collect();
 
-        let sign_request = SignRequest {
-            sign_task: checked_sign_task.into_inner(),
-            nonces: signing_nonces.clone(),
-            access_structure_id,
-            rootkey: root_shared_key.public_key(),
-            coord_share_decryption_contrib: CoordShareDecryptionContrib::from_root_shared_key(
-                &root_shared_key,
-            ),
+        let start_sign = StartSign {
+            nonces: device_requests,
+            group_request,
         };
 
-        // Finally apply the mutations which will extinguish the nonces for the devices
-        for mutation in mutations {
-            self.mutate(mutation);
-        }
+        let local_session = ActiveSignSession {
+            progress: sessions,
+            init: start_sign.clone(),
+            key_id,
+        };
 
-        self.action_state = Some(CoordinatorState::Signing {
-            sign_state: SigningSessionState {
-                targets: signing_parties.clone(),
-                sessions,
-                request: sign_request.clone(),
-                access_structure: access_structure.clone(),
-            },
+        self.mutate(Mutation::NewSigningSession(local_session));
+
+        Ok(session_id)
+    }
+
+    pub fn request_device_sign(
+        &mut self,
+        session_id: SignSessionId,
+        device_id: DeviceId,
+        encryption_key: SymmetricKey,
+    ) -> RequestDeviceSign {
+        let active_sign_session = self
+            .active_signing_sessions
+            .get_mut(&session_id)
+            .expect("signing session doesn't exist");
+
+        let nonces_for_device = *active_sign_session
+            .init
+            .nonces
+            .get(&device_id)
+            .expect("device must be part of the signing session");
+
+        let key_id = active_sign_session.key_id;
+
+        let complete_key = self
+            .keys
+            .get(&key_id)
+            .expect("key exists")
+            .complete_key
+            .as_ref()
+            .expect("key is complete");
+
+        let group_sign_req = active_sign_session.init.group_request.clone();
+        let (rootkey, coord_share_decryption_contrib) = complete_key
+            .coord_share_decryption_contrib(
+                group_sign_req.access_structure_id,
+                device_id,
+                encryption_key,
+            )
+            .expect("must be able to decrypt rootkey");
+
+        self.mutate(Mutation::ConsumesNonces {
+            device_id,
+            nonce_stream_id: nonces_for_device.stream_id,
+            up_to_but_not_including: nonces_for_device
+                .index
+                .saturating_add(group_sign_req.n_signatures().try_into().unwrap()),
         });
 
-        Ok(StartSign {
-            target_devices: signing_parties,
-            sign_request,
-        })
+        let request_sign = RequestSign {
+            group_sign_req,
+            device_sign_req: DeviceSignReq {
+                nonces: nonces_for_device,
+                rootkey,
+                coord_share_decryption_contrib,
+            },
+        };
+
+        RequestDeviceSign {
+            device_id,
+            request_sign,
+        }
     }
 
     pub fn maybe_request_nonce_replenishment(
         &self,
         device_id: DeviceId,
-    ) -> Option<CoordinatorSend> {
-        let needs_replenishment = match self.device_nonces.get(&device_id) {
-            Some(device_nonces) => device_nonces.nonces.len() < MIN_NONCES_BEFORE_REQUEST as usize,
-            None => true,
-        };
-
-        if needs_replenishment {
-            Some(CoordinatorSend::ToDevice {
-                message: CoordinatorToDeviceMessage::RequestNonces,
-                destinations: FromIterator::from_iter([device_id]),
-            })
-        } else {
-            None
-        }
+        rng: &mut impl rand_core::RngCore,
+    ) -> impl IntoIterator<Item = CoordinatorSend> {
+        core::iter::once(CoordinatorSend::ToDevice {
+            message: CoordinatorToDeviceMessage::OpenNonceStreams {
+                streams: self
+                    .nonce_cache
+                    .generate_nonce_stream_opening_requests(device_id, 4, rng)
+                    .into_iter()
+                    .collect(),
+            },
+            destinations: [device_id].into(),
+        })
     }
 
     pub fn request_device_display_backup(
@@ -1013,8 +1043,8 @@ impl FrostCoordinator {
             .ok_or(ActionError::StateInconsistent(
                 "couldn't decrypt root key".into(),
             ))?;
-        let coord_share_decryption_contrib = complete_key
-            .coord_share_decryption_contrib(access_structure_id, encryption_key)
+        let (_, coord_share_decryption_contrib) = complete_key
+            .coord_share_decryption_contrib(access_structure_id, device_id, encryption_key)
             .ok_or(ActionError::StateInconsistent(
                 "couldn't decrypt root key".into(),
             ))?;
@@ -1127,8 +1157,9 @@ impl FrostCoordinator {
         let _state = self.action_state.take();
     }
 
-    pub fn device_nonces(&self) -> &HashMap<DeviceId, DeviceNonces> {
-        &self.device_nonces
+    pub fn nonces_available(&self, device_id: DeviceId) -> BTreeMap<NonceStreamId, u32> {
+        self.nonce_cache
+            .nonces_available(device_id, &self.all_used_nonce_streams())
     }
 
     pub fn get_access_structure(
@@ -1297,6 +1328,88 @@ impl FrostCoordinator {
             destinations: [id].into(),
         })
     }
+
+    pub fn all_used_nonce_streams(&self) -> BTreeSet<NonceStreamId> {
+        self.active_signing_sessions
+            .values()
+            .flat_map(|session| {
+                session
+                    .init
+                    .nonces
+                    .values()
+                    .map(|device_nonces| device_nonces.stream_id)
+            })
+            .collect()
+    }
+
+    pub fn complete_sign_session(
+        &mut self,
+        session_id: SignSessionId,
+    ) -> Option<Vec<EncodedSignature>> {
+        let this = &self;
+        let sign_state = this.active_signing_sessions.get(&session_id)?;
+        let sessions = &sign_state.progress;
+
+        let all_finished = sessions.iter().all(|session| {
+            session.signature_shares.len() == sign_state.init.group_request.parties.len()
+        });
+
+        if all_finished {
+            let sessions = &sign_state.progress;
+
+            let signatures: Vec<_> = sessions
+                .iter()
+                .map(|session_progress| {
+                    let sig = session_progress.sign_session.combine_signature_shares(
+                        session_progress.sign_session.final_nonce(),
+                        session_progress
+                            .signature_shares
+                            .iter()
+                            .map(|(_, &share)| share),
+                    );
+
+                    assert!(
+                        session_progress.verify_final_signature(
+                            &Schnorr::<sha2::Sha256, _>::verify_only(),
+                            &sig,
+                        ),
+                        "we have verified the signature shares so combined should be correct"
+                    );
+
+                    sig
+                })
+                .map(EncodedSignature::new)
+                .collect();
+
+            self.mutate(Mutation::CloseSignSession {
+                session_id,
+                finished: Some(signatures.clone()),
+            });
+
+            self.action_state = None;
+            Some(signatures)
+        } else {
+            None
+        }
+    }
+
+    pub fn cancel_sign_session(&mut self, session_id: SignSessionId) {
+        self.mutate(Mutation::CloseSignSession {
+            session_id,
+            finished: None,
+        })
+    }
+
+    pub fn cancel_all_signing_sessions(&mut self) {
+        while !self.active_signing_sessions().is_empty() {
+            let ssid = *self.active_signing_sessions().keys().next().unwrap();
+            self.cancel_sign_session(ssid);
+        }
+    }
+
+    pub fn active_signing_sessions(&self) -> &BTreeMap<SignSessionId, ActiveSignSession> {
+        &self.active_signing_sessions
+    }
 }
 
 impl CoordinatorState {
@@ -1306,7 +1419,6 @@ impl CoordinatorState {
                 KeyGenState::WaitingForResponses { .. } => "WaitingForResponses",
                 KeyGenState::WaitingForAcks { .. } => "WaitingForAcks",
             },
-            CoordinatorState::Signing { .. } => "Signing",
             CoordinatorState::DisplayBackup => "DisplayBackup",
             CoordinatorState::CheckingDeviceShare { .. } => "RestoringDeviceShare",
         }
@@ -1317,7 +1429,7 @@ impl CoordinatorState {
 pub struct SignSessionProgress {
     sign_item: SignItem,
     sign_session: CoordinatorSignSession,
-    signature_shares: BTreeMap<DeviceId, Scalar<Public, Zero>>,
+    signature_shares: BTreeMap<DeviceId, SignatureShare>,
     app_shared_key: Xpub<SharedKey>,
 }
 
@@ -1366,9 +1478,7 @@ impl SignSessionProgress {
 #[allow(clippy::large_enum_variant)]
 pub enum CoordinatorState {
     KeyGen(KeyGenState),
-    Signing {
-        sign_state: SigningSessionState,
-    },
+    //FIXME: This state probably shouldn't exist since there's nothing in it!
     DisplayBackup,
     CheckingDeviceShare {
         expected_image: ShareImage,
@@ -1377,22 +1487,38 @@ pub enum CoordinatorState {
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
-pub struct SigningSessionState {
-    pub targets: BTreeSet<DeviceId>,
-    pub sessions: Vec<SignSessionProgress>,
-    pub request: SignRequest,
-    pub access_structure: CoordAccessStructure,
+pub struct ActiveSignSession {
+    pub progress: Vec<SignSessionProgress>,
+    pub init: StartSign,
+    pub key_id: KeyId,
 }
 
-impl SigningSessionState {
-    pub fn received_from(&self) -> impl Iterator<Item = DeviceId> + '_ {
-        // all sessions make progress at the same time
-        self.sessions[0].received_from()
+impl ActiveSignSession {
+    pub fn access_structure_ref(&self) -> AccessStructureRef {
+        AccessStructureRef {
+            key_id: self.key_id,
+            access_structure_id: self.init.group_request.access_structure_id,
+        }
     }
 
-    pub fn session_id(&self) -> [u8; 32] {
-        self.request.session_id()
+    pub fn received_from(&self) -> impl Iterator<Item = DeviceId> + '_ {
+        // all sessions make progress at the same time
+        self.progress[0].received_from()
     }
+
+    pub fn has_received_from(&self, device_id: DeviceId) -> bool {
+        self.progress[0].signature_shares.contains_key(&device_id)
+    }
+
+    pub fn session_id(&self) -> SignSessionId {
+        self.init.group_request.session_id()
+    }
+}
+
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
+pub struct FinishedSignSession {
+    pub init: StartSign,
+    pub signatures: Vec<EncodedSignature>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1457,30 +1583,15 @@ impl CoordAccessStructure {
 
 #[derive(Debug, Clone)]
 pub enum StartSignError {
-    UnknownKey {
-        key_id: KeyId,
-    },
-    DeviceNotPartOfKey {
-        device_id: DeviceId,
-    },
-    NotEnoughDevicesSelected {
-        selected: usize,
-        threshold: usize,
-    },
-    CantSignInState {
-        in_state: &'static str,
-    },
-    NotEnoughNoncesForDevice {
-        device_id: DeviceId,
-        have: usize,
-        need: usize,
-    },
+    UnknownKey { key_id: KeyId },
+    DeviceNotPartOfKey { device_id: DeviceId },
+    NotEnoughDevicesSelected { selected: usize, threshold: usize },
+    CantSignInState { in_state: &'static str },
+    NotEnoughNoncesForDevice(NotEnoughNonces),
     SignTask(SignTaskError),
     NoSuchAccessStructure,
     CouldntDecryptRootKey,
-    KeyIsRecovering {
-        key_id: KeyId,
-    },
+    KeyIsRecovering { key_id: KeyId },
 }
 
 impl core::fmt::Display for StartSignError {
@@ -1499,17 +1610,7 @@ impl core::fmt::Display for StartSignError {
             StartSignError::CantSignInState { in_state } => {
                 write!(f, "Can't sign in state {}", in_state)
             }
-            StartSignError::NotEnoughNoncesForDevice {
-                device_id,
-                have,
-                need,
-            } => {
-                write!(
-                    f,
-                    "Not enough nonces for device {}, have {}, need {}",
-                    device_id, have, need,
-                )
-            }
+            StartSignError::NotEnoughNoncesForDevice(not_enough_nonces) => not_enough_nonces.fmt(f),
             StartSignError::DeviceNotPartOfKey { device_id } => {
                 write!(
                     f,
@@ -1555,20 +1656,6 @@ pub enum Mutation {
     NewAccessStructure {
         shared_key: Xpub<SharedKey>,
     },
-    NoncesUsed {
-        device_id: DeviceId,
-        /// if nonce_counter = x, then the coordinator expects x to be the next nonce used.
-        /// (anything < x has been used)
-        nonce_counter: u64,
-    },
-    ResetNonces {
-        device_id: DeviceId,
-        nonces: DeviceNonces,
-    },
-    NewNonces {
-        device_id: DeviceId,
-        new_nonces: Vec<Nonce>,
-    },
     NewShare {
         access_structure_ref: AccessStructureRef,
         device_id: DeviceId,
@@ -1576,6 +1663,25 @@ pub enum Mutation {
     },
     RecoverShare(RecoverShare),
     DeleteKey(KeyId),
+    NewNonces {
+        device_id: DeviceId,
+        nonce_segment: NonceStreamSegment,
+    },
+    NewSigningSession(ActiveSignSession),
+    ConsumesNonces {
+        device_id: DeviceId,
+        nonce_stream_id: NonceStreamId,
+        up_to_but_not_including: u32,
+    },
+    GotSignatureSharesFromDevice {
+        session_id: SignSessionId,
+        device_id: DeviceId,
+        signature_shares: Vec<SignatureShare>,
+    },
+    CloseSignSession {
+        session_id: SignSessionId,
+        finished: Option<Vec<EncodedSignature>>,
+    },
 }
 
 impl Mutation {
@@ -1603,15 +1709,17 @@ impl Gist for Mutation {
     fn gist(&self) -> String {
         use Mutation::*;
         match self {
-            NoncesUsed { .. } => "NoncesUsed",
             CompleteKey { .. } => "CompleteKey",
-            ResetNonces { .. } => "ResetNonces",
-            NewNonces { .. } => "NewNonces",
             NewAccessStructure { .. } => "NewAccessStructure",
             NewKey { .. } => "NewKey",
             NewShare { .. } => "NewShare",
             RecoverShare { .. } => "RecoverShare",
             DeleteKey(_) => "DeleteKey",
+            NewNonces { .. } => "NewNonces",
+            NewSigningSession { .. } => "NewSigningSession",
+            CloseSignSession { .. } => "CloseSignSession",
+            GotSignatureSharesFromDevice { .. } => "GotSignatureSharesFromDevice",
+            ConsumesNonces { .. } => "ConsumeNonces",
         }
         .into()
     }
@@ -1625,7 +1733,6 @@ pub enum CoordinatorSend {
         destinations: BTreeSet<DeviceId>,
     },
     ToUser(CoordinatorToUserMessage),
-    SigningSessionStore(SigningSessionState),
 }
 
 #[derive(Debug, Clone)]
@@ -1650,21 +1757,34 @@ impl IntoIterator for VerifyAddress {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq)]
 pub struct StartSign {
-    pub target_devices: BTreeSet<DeviceId>,
-    pub sign_request: SignRequest,
+    pub nonces: BTreeMap<DeviceId, CoordNonceStreamState>,
+    pub group_request: GroupSignReq,
 }
 
-impl IntoIterator for StartSign {
+#[derive(Debug, Clone, PartialEq)]
+pub struct RequestDeviceSign {
+    pub request_sign: RequestSign,
+    pub device_id: DeviceId,
+}
+
+impl From<RequestDeviceSign> for CoordinatorSend {
+    fn from(value: RequestDeviceSign) -> Self {
+        CoordinatorSend::ToDevice {
+            message: CoordinatorToDeviceMessage::RequestSign(value.request_sign),
+            destinations: [value.device_id].into(),
+        }
+    }
+}
+
+impl IntoIterator for RequestDeviceSign {
     type Item = CoordinatorSend;
+
     type IntoIter = core::iter::Once<CoordinatorSend>;
 
     fn into_iter(self) -> Self::IntoIter {
-        core::iter::once(CoordinatorSend::ToDevice {
-            message: CoordinatorToDeviceMessage::RequestSign(self.sign_request),
-            destinations: self.target_devices,
-        })
+        core::iter::once(self.into())
     }
 }
 

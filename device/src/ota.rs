@@ -2,7 +2,8 @@ use crate::{
     io::SerialIo,
     ui::{self, UserInteraction},
 };
-use alloc::boxed::Box;
+use alloc::{boxed::Box, rc::Rc};
+use core::cell::RefCell;
 use embedded_storage::{nor_flash, ReadStorage, Storage};
 use esp_hal::sha::{Sha, Sha256};
 use esp_storage::FlashStorage;
@@ -31,32 +32,35 @@ const SECTORS_PER_IMAGE: u32 = FIRMWARE_IMAGE_SIZE / SECTOR_SIZE;
 /// We switch the baudrate during OTA update to make it faster
 const OTA_UPDATE_BAUD: u32 = 921_600;
 
-#[derive(Debug, Clone, Copy)]
-pub struct OtaConfig {
+#[derive(Debug, Clone)]
+pub struct OtaFlash {
+    flash: Rc<RefCell<FlashStorage>>,
     otadata_offset: u32,
     factory_partition: Partition,
     ota_partitions: [Partition; 2],
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Default)]
 pub struct Partition {
     offset: u32,
     size: u32,
+    flash: Rc<RefCell<FlashStorage>>,
 }
 
 impl Partition {
-    pub fn erase_image_sector(&self, flash: &mut FlashStorage, sector: u32) {
+    pub fn erase_image_sector(&self, sector: u32) {
         if sector >= SECTORS_PER_IMAGE {
             panic!("tried to erase sector out of bounds");
         }
         let start = self.offset + sector * SECTOR_SIZE;
-        nor_flash::NorFlash::erase(flash, start, start + SECTOR_SIZE).unwrap();
+        nor_flash::NorFlash::erase(&mut *self.flash.borrow_mut(), start, start + SECTOR_SIZE)
+            .unwrap();
     }
 
-    pub fn digest(&self, flash: &mut FlashStorage, sha256: &mut Sha<'_>) -> FirmwareDigest {
+    pub fn digest(&self, sha256: &mut Sha<'_>) -> FirmwareDigest {
         let mut hasher = sha256.start::<Sha256>();
         for i in 0..(self.size / SECTOR_SIZE) {
-            let sector = self.get_sector(flash, i).unwrap();
+            let sector = self.get_sector(i).unwrap();
             let mut remaining = &sector[..];
             while !remaining.is_empty() {
                 remaining = block!(hasher.update(remaining)).unwrap();
@@ -67,16 +71,14 @@ impl Partition {
         digest
     }
 
-    pub fn get_sector(
-        &self,
-        flash: &mut FlashStorage,
-        sector: u32,
-    ) -> Result<[u8; SECTOR_SIZE as usize], &'static str> {
+    pub fn get_sector(&self, sector: u32) -> Result<[u8; SECTOR_SIZE as usize], &'static str> {
         if sector >= SECTORS_PER_IMAGE {
             return Err("requested sector is out of bounds");
         }
         let mut ret = [0u8; SECTOR_SIZE as usize];
-        flash
+
+        self.flash
+            .borrow_mut()
             .read(self.offset + sector * SECTOR_SIZE, &mut ret)
             .unwrap();
         Ok(ret)
@@ -84,90 +86,97 @@ impl Partition {
 
     pub fn write_sector(
         &self,
-        flash: &mut FlashStorage,
         sector: u32,
         bytes: &[u8; SECTOR_SIZE as usize],
     ) -> Result<(), &'static str> {
         if sector >= SECTORS_PER_IMAGE {
             return Err("can't write sector out of bounds");
         }
-        nor_flash::NorFlash::write(flash, self.offset + sector * SECTOR_SIZE, &bytes[..])
-            .expect("hardware specific error");
+        nor_flash::NorFlash::write(
+            &mut *self.flash.borrow_mut(),
+            self.offset + sector * SECTOR_SIZE,
+            &bytes[..],
+        )
+        .expect("hardware specific error");
         Ok(())
     }
 }
 
-impl OtaConfig {
-    pub fn new(flash: &mut impl ReadStorage) -> Self {
+impl OtaFlash {
+    pub fn new(flash: Rc<RefCell<FlashStorage>>) -> Self {
         let table = esp_partition_table::PartitionTable::new(0x8000, 10 * 32);
-        let mut otadata_offset = 0;
-        let mut ota_partitions = [Partition::default(); 2];
-        let mut factory_partition = Partition::default();
+        let mut otadata_offset = Default::default();
+        let mut ota_partitions: [_; 2] = Default::default();
+        let mut factory_partition = Default::default();
 
-        for row in table.iter_storage(flash, false) {
+        for row in table.iter_storage(&mut *flash.borrow_mut(), false) {
             let row = match row {
                 Ok(row) => row,
                 Err(_) => panic!("unable to read row of partition table"),
             };
             match row.name() {
                 "otadata" => {
-                    otadata_offset = row.offset;
+                    otadata_offset = Some(row.offset);
                 }
                 "ota_0" => {
-                    ota_partitions[0] = Partition {
-                        offset: row.offset,
-                        size: row.size as u32,
-                    };
+                    ota_partitions[0] = Some((row.offset, row.size));
                 }
                 "ota_1" => {
-                    ota_partitions[1] = Partition {
-                        offset: row.offset,
-                        size: row.size as u32,
-                    };
+                    ota_partitions[1] = Some((row.offset, row.size));
                 }
                 "factory" => {
-                    factory_partition = Partition {
-                        offset: row.offset,
-                        size: row.size as u32,
-                    };
+                    factory_partition = Some((row.offset, row.size));
                 }
                 _ => { /*ignore*/ }
             }
         }
 
-        assert!(ota_partitions
-            .iter()
-            .all(|parition| parition != &Default::default()));
-        assert_ne!(otadata_offset, Default::default());
-        assert_ne!(factory_partition, Default::default());
+        let factory_partition = factory_partition.unwrap();
 
         Self {
-            otadata_offset,
-            ota_partitions,
-            factory_partition,
+            otadata_offset: otadata_offset.unwrap(),
+            ota_partitions: [
+                Partition {
+                    offset: ota_partitions[0].unwrap().0,
+                    size: ota_partitions[0].unwrap().1 as u32,
+                    flash: flash.clone(),
+                },
+                Partition {
+                    offset: ota_partitions[1].unwrap().0,
+                    size: ota_partitions[1].unwrap().1 as u32,
+                    flash: flash.clone(),
+                },
+            ],
+            factory_partition: Partition {
+                offset: factory_partition.0,
+                size: factory_partition.1 as u32,
+                flash: flash.clone(),
+            },
+            flash: flash.clone(),
         }
     }
 
-    fn next_slot(&self, flash: &mut FlashStorage) -> u8 {
-        self.current_slot(flash)
+    fn next_slot(&self) -> u8 {
+        self.current_slot()
             .map(|(i, _, _)| (i + 1) % 2)
             .unwrap_or(0)
     }
 
-    pub fn active_partition(&self, flash: &mut FlashStorage) -> Partition {
-        match self.current_slot(flash) {
-            Some((slot, _, _)) => self.ota_partitions[slot as usize],
-            None => self.factory_partition,
+    pub fn active_partition(&self) -> Partition {
+        match self.current_slot() {
+            Some((slot, _, _)) => self.ota_partitions[slot as usize].clone(),
+            None => self.factory_partition.clone(),
         }
     }
 
-    pub fn current_slot(&self, flash: &mut FlashStorage) -> Option<(u8, u32, Option<OtaMetadata>)> {
+    pub fn current_slot(&self) -> Option<(u8, u32, Option<OtaMetadata>)> {
         let mut best_partition = None;
         let mut best_seq = 0;
         let mut best_metadata = None;
         for slot in 0u8..=1 {
             let mut bytes = [0u8; (ESP32_OTADATA_SIZE + FS_PARTITION_METADATA_SIZE) as usize];
-            flash
+            self.flash
+                .borrow_mut()
                 .read(self.otadata_offset + slot as u32 * SECTOR_SIZE, &mut bytes)
                 .unwrap();
             let seq = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
@@ -194,9 +203,10 @@ impl OtaConfig {
         Some((current_partition, best_seq, best_metadata))
     }
 
-    pub fn read_metadata_in_slot(&self, flash: &mut FlashStorage, slot: u8) -> Option<OtaMetadata> {
+    pub fn read_metadata_in_slot(&self, slot: u8) -> Option<OtaMetadata> {
         let mut bytes = [0u8; FS_PARTITION_METADATA_SIZE as usize];
-        flash
+        self.flash
+            .borrow_mut()
             .read(
                 self.otadata_offset + (slot as u32) * SECTOR_SIZE + ESP32_OTADATA_SIZE,
                 &mut bytes[..],
@@ -212,9 +222,9 @@ impl OtaConfig {
     }
 
     /// Write to the otadata parition to indicate that a different partition should be the main one.
-    fn switch_partition(&self, flash: &mut FlashStorage, slot: u8, metadata: Option<OtaMetadata>) {
+    fn switch_partition(&self, slot: u8, metadata: Option<OtaMetadata>) {
         // to select it the parition must be higher than the other one
-        let next_seq = match self.current_slot(flash) {
+        let next_seq = match self.current_slot() {
             Some((current_slot, seq, _)) => {
                 if slot == current_slot {
                     /* do nothing */
@@ -237,11 +247,13 @@ impl OtaConfig {
                 .expect("ota metadata could not be encoded");
         }
 
-        flash
+        self.flash
+            .borrow_mut()
             .write(self.otadata_offset + (slot as u32) * 4096, &bytes)
             .unwrap();
         let mut read = [0u8; ESP32_OTADATA_SIZE as usize + FS_PARTITION_METADATA_SIZE as usize];
-        flash
+        self.flash
+            .borrow_mut()
             .read(self.otadata_offset + (slot as u32) * 4096, &mut read)
             .unwrap();
 
@@ -250,13 +262,12 @@ impl OtaConfig {
 
     pub fn start_upgrade(
         &self,
-        flash: &mut FlashStorage,
         size: u32,
         expected_digest: FirmwareDigest,
         active_partition_digest: FirmwareDigest,
     ) -> FirmwareUpgradeMode {
-        let slot = self.next_slot(flash);
-        let partition = self.ota_partitions[slot as usize];
+        let slot = self.next_slot();
+        let partition = &self.ota_partitions[slot as usize];
         assert_eq!(
             partition.size, FIRMWARE_IMAGE_SIZE,
             "partition size and FIRMWARE_PAD_LENGTH must be the same"
@@ -273,7 +284,7 @@ impl OtaConfig {
             }
         } else {
             FirmwareUpgradeMode::Upgrading {
-                ota: *self,
+                ota: self.clone(),
                 ota_slot: slot,
                 expected_digest,
                 size,
@@ -286,7 +297,7 @@ impl OtaConfig {
 #[derive(Debug)]
 pub enum FirmwareUpgradeMode {
     Upgrading {
-        ota: OtaConfig,
+        ota: OtaFlash,
         ota_slot: u8,
         expected_digest: FirmwareDigest,
         size: u32,
@@ -306,10 +317,7 @@ pub enum State {
 }
 
 impl FirmwareUpgradeMode {
-    pub fn poll(
-        &mut self,
-        flash: &mut FlashStorage,
-    ) -> (Option<DeviceSendBody>, Option<ui::Workflow>) {
+    pub fn poll(&mut self) -> (Option<DeviceSendBody>, Option<ui::Workflow>) {
         match self {
             FirmwareUpgradeMode::Upgrading {
                 ota,
@@ -318,7 +326,7 @@ impl FirmwareUpgradeMode {
                 size,
                 state,
             } => {
-                let partition = ota.ota_partitions[*ota_slot as usize];
+                let partition = ota.ota_partitions[*ota_slot as usize].clone();
                 match state {
                     State::WaitingForConfirm { sent_prompt } if !*sent_prompt => {
                         *sent_prompt = true;
@@ -338,12 +346,12 @@ impl FirmwareUpgradeMode {
                             // it's faster to read and check if it's already erased than just to go
                             // and erase it
                             if partition
-                                .get_sector(flash, *seq)
+                                .get_sector(*seq)
                                 .unwrap()
                                 .iter()
                                 .any(|byte| *byte != 0xff)
                             {
-                                partition.erase_image_sector(flash, *seq);
+                                partition.erase_image_sector(*seq);
                             }
                             *seq += 1;
                             if *seq == SECTORS_PER_IMAGE {
@@ -409,7 +417,6 @@ impl FirmwareUpgradeMode {
 
     pub fn enter_upgrade_mode(
         &mut self,
-        flash: &mut FlashStorage,
         upstream_io: &mut SerialIo<'_>,
         mut downstream_io: Option<&mut SerialIo<'_>>,
         ui: &mut impl UserInteraction,
@@ -470,8 +477,8 @@ impl FirmwareUpgradeMode {
                             ..
                         } = &self
                         {
-                            let partition = ota.ota_partitions[*ota_slot as usize];
-                            partition.write_sector(flash, sector, &in_buf).unwrap();
+                            let partition = ota.ota_partitions[*ota_slot as usize].clone();
+                            partition.write_sector(sector, &in_buf).unwrap();
                             ui.set_workflow(ui::Workflow::BusyDoing(
                                 ui::BusyTask::FirmwareUpgrade(
                                     ui::FirmwareUpgradeStatus::Download {
@@ -526,11 +533,11 @@ impl FirmwareUpgradeMode {
             ..
         } = &self
         {
-            let partition = ota.ota_partitions[*ota_slot as usize];
-            let digest = partition.digest(flash, sha);
+            let partition = &ota.ota_partitions[*ota_slot as usize];
+            let digest = partition.digest(sha);
             if digest == *expected_digest {
                 let metadata = OtaMetadata {};
-                ota.switch_partition(flash, *ota_slot, Some(metadata));
+                ota.switch_partition(*ota_slot, Some(metadata));
             } else {
                 panic!(
                     "upgrade downloaded did not match intended digest. \nGot:\n{digest}\nExpected:\n{}",

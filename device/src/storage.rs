@@ -1,5 +1,7 @@
 extern crate alloc;
-use alloc::{string::String, vec::Vec};
+use core::cell::RefCell;
+
+use alloc::{rc::Rc, string::String, vec::Vec};
 use bincode::{
     de::read::Reader,
     enc::write::Writer,
@@ -10,8 +12,11 @@ use esp_storage::FlashStorageError;
 use frostsnap_comms::BINCODE_CONFIG;
 use frostsnap_core::{device, schnorr_fun::fun::Scalar};
 
+use crate::flash_nonce_slot::FLASH_NONCE_SLOTS_SIZE;
+
 const NVS_PARTITION_START: u32 = 0x3D0000;
-const _NVS_PARTITION_SIZE: usize = 0x30000;
+const NVS_PARTITION_SIZE: u32 = 0x30000;
+pub const APP_STORAGE_END: u32 = NVS_PARTITION_START + NVS_PARTITION_SIZE - FLASH_NONCE_SLOTS_SIZE;
 const HEADER_LEN: usize = 256;
 const DATA_START: u32 = NVS_PARTITION_START + HEADER_LEN as u32;
 const MAGIC_BYTES_LEN: usize = 8;
@@ -19,7 +24,7 @@ const MAGIC_BYTES: [u8; MAGIC_BYTES_LEN] = *b"fsheader";
 const WORD_SIZE: usize = core::mem::size_of::<u32>();
 
 pub struct DeviceStorage<S> {
-    flash: S,
+    flash: Rc<RefCell<S>>,
     word_pos: usize,
     write_buffer: Vec<u8>,
     read_buffer: Vec<u8>,
@@ -58,7 +63,7 @@ impl bincode::Decode for MagicBytes {
 }
 
 impl<S: NorFlash<Error = FlashStorageError>> DeviceStorage<S> {
-    pub fn new(flash: S) -> Self {
+    pub fn new(flash: Rc<RefCell<S>>) -> Self {
         assert_eq!(WORD_SIZE, S::WRITE_SIZE);
         Self {
             flash,
@@ -71,7 +76,9 @@ impl<S: NorFlash<Error = FlashStorageError>> DeviceStorage<S> {
 
     pub fn read_header(&mut self) -> Result<Option<Header>, FlashStorageError> {
         let mut header_bytes = [0u8; HEADER_LEN];
-        self.flash.read(NVS_PARTITION_START, &mut header_bytes)?;
+        self.flash
+            .borrow_mut()
+            .read(NVS_PARTITION_START, &mut header_bytes)?;
         match bincode::decode_from_slice::<(MagicBytes, Header), _>(&header_bytes, BINCODE_CONFIG) {
             Ok(((_, header), _)) => Ok(Some(header)),
             Err(bincode::error::DecodeError::Other("invalid magic bytes")) => Ok(None),
@@ -83,7 +90,9 @@ impl<S: NorFlash<Error = FlashStorageError>> DeviceStorage<S> {
         let mut header_bytes = [0u8; HEADER_LEN];
         bincode::encode_into_slice(&(MagicBytes, header), &mut header_bytes, BINCODE_CONFIG)
             .expect("header shouldn't be too long");
-        self.flash.write(NVS_PARTITION_START, &header_bytes)
+        self.flash
+            .borrow_mut()
+            .write(NVS_PARTITION_START, &header_bytes)
     }
 
     /// The layout of the entries are word aligned and length prefixed. So the first entry has a
@@ -118,7 +127,15 @@ impl<S: NorFlash<Error = FlashStorageError>> DeviceStorage<S> {
                     .as_slice(),
             );
             let byte_pos = (self.word_pos * WORD_SIZE) as u32;
-            nor_flash::NorFlash::write(&mut self.flash, byte_pos, &self.write_buffer[..])?;
+            let end_pos = byte_pos + self.write_buffer.len() as u32;
+            if end_pos > APP_STORAGE_END {
+                return Err(FlashStorageError::OutOfBounds);
+            }
+            nor_flash::NorFlash::write(
+                &mut *self.flash.borrow_mut(),
+                byte_pos,
+                &self.write_buffer[..],
+            )?;
             self.word_pos += word_length as usize;
             self.write_buffer.clear();
         }
@@ -130,7 +147,11 @@ impl<S: NorFlash<Error = FlashStorageError>> DeviceStorage<S> {
         core::iter::from_fn(move || {
             let mut length_buf = [0u8; WORD_SIZE];
             let byte_pos = self.word_pos * WORD_SIZE;
-            if let Err(e) = self.flash.read(byte_pos as u32, &mut length_buf[..]) {
+            if let Err(e) = self
+                .flash
+                .borrow_mut()
+                .read(byte_pos as u32, &mut length_buf[..])
+            {
                 panic!(
                     "failed to read {} bytes at {}: {e:?}",
                     length_buf.len(),
@@ -148,6 +169,7 @@ impl<S: NorFlash<Error = FlashStorageError>> DeviceStorage<S> {
             ));
             let body_byte_pos = byte_pos + WORD_SIZE;
             self.flash
+                .borrow_mut()
                 .read(body_byte_pos as u32, &mut self.read_buffer)
                 .expect("unabled to read entry from flash");
             self.word_pos += word_length as usize + 1;
@@ -162,15 +184,11 @@ impl<S: NorFlash<Error = FlashStorageError>> DeviceStorage<S> {
         })
     }
 
-    pub fn flash_mut(&mut self) -> &mut S {
-        &mut self.flash
-    }
-
     pub fn erase(&mut self) -> Result<(), FlashStorageError> {
         nor_flash::NorFlash::erase(
-            &mut self.flash,
+            &mut *self.flash.borrow_mut(),
             NVS_PARTITION_START,
-            NVS_PARTITION_START + _NVS_PARTITION_SIZE as u32,
+            NVS_PARTITION_START + NVS_PARTITION_SIZE,
         )
     }
 }

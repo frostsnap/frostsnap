@@ -3,7 +3,7 @@ use crate::device_list::DeviceList;
 use crate::sink_wrap::SinkWrap;
 use crate::TEMP_KEY;
 use anyhow::{anyhow, Result};
-use flutter_rust_bridge::{RustOpaque, StreamSink};
+use flutter_rust_bridge::{RustOpaque, StreamSink, SyncReturn};
 use frostsnap_coordinator::check_share::CheckShareState;
 use frostsnap_coordinator::firmware_upgrade::{
     FirmwareUpgradeConfirmState, FirmwareUpgradeProtocol,
@@ -11,7 +11,6 @@ use frostsnap_coordinator::firmware_upgrade::{
 use frostsnap_coordinator::frostsnap_comms::{
     CoordinatorSendBody, CoordinatorSendMessage, Destination, FirmwareDigest,
 };
-use frostsnap_coordinator::frostsnap_core;
 use frostsnap_coordinator::frostsnap_core::coordinator::{
     CoordAccessStructure, CoordFrostKey, CoordinatorSend,
 };
@@ -20,6 +19,7 @@ use frostsnap_coordinator::frostsnap_core::message::{
     CoordinatorToUserMessage, DoKeyGen, RecoverShare,
 };
 use frostsnap_coordinator::frostsnap_core::SymmetricKey;
+use frostsnap_coordinator::frostsnap_core::{self, SignSessionId};
 use frostsnap_coordinator::frostsnap_persist::DeviceNames;
 use frostsnap_coordinator::persist::Persisted;
 use frostsnap_coordinator::verify_address::VerifyAddressProtocol;
@@ -29,8 +29,7 @@ use frostsnap_coordinator::{
 use frostsnap_coordinator::{AppMessageBody, FirmwareBin, UiProtocol, UsbSender, UsbSerialManager};
 use frostsnap_coordinator::{Completion, DeviceChange};
 use frostsnap_core::{
-    coordinator::{FrostCoordinator, SigningSessionState},
-    AccessStructureRef, DeviceId, KeyId, SignTask,
+    coordinator::FrostCoordinator, AccessStructureRef, DeviceId, KeyId, SignTask,
 };
 use rand::thread_rng;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -56,7 +55,6 @@ pub struct FfiCoordinator {
     db: Arc<Mutex<rusqlite::Connection>>,
     device_names: Arc<Mutex<Persisted<DeviceNames>>>,
     coordinator: Arc<Mutex<Persisted<FrostCoordinator>>>,
-    signing_session: Arc<Mutex<Persisted<Option<SigningSessionState>>>>,
 }
 
 impl FfiCoordinator {
@@ -67,11 +65,15 @@ impl FfiCoordinator {
         let mut db_ = db.lock().unwrap();
 
         event!(Level::DEBUG, "loading core coordinator");
-        let coordinator = Persisted::<FrostCoordinator>::new(&mut db_, ())?;
+        let mut coordinator = Persisted::<FrostCoordinator>::new(&mut db_, ())?;
         event!(Level::DEBUG, "loading device names");
         let device_names = Persisted::<DeviceNames>::new(&mut db_, ())?;
-        event!(Level::DEBUG, "loading saved signing session");
-        let signing_session = Persisted::<Option<SigningSessionState>>::new(&mut db_, ())?;
+
+        // TODO: Make it possible to recover signing sessions.
+        coordinator.staged_mutate(&mut *db_, |coordinator| {
+            coordinator.cancel_all_signing_sessions();
+            Ok(())
+        })?;
 
         let usb_sender = usb_manager.usb_sender();
         let firmware_bin = usb_manager.upgrade_bin();
@@ -93,7 +95,6 @@ impl FfiCoordinator {
             db,
             coordinator: Arc::new(Mutex::new(coordinator)),
             device_names: Arc::new(Mutex::new(device_names)),
-            signing_session: Arc::new(Mutex::new(signing_session)),
         })
     }
 
@@ -115,7 +116,6 @@ impl FfiCoordinator {
         let device_names = self.device_names.clone();
         let usb_sender = self.usb_sender.clone();
         let firmware_upgrade_progress = self.firmware_upgrade_progress.clone();
-        let signing_session = self.signing_session.clone();
         let key_event_stream = self.key_event_stream.clone();
         let recoverable_keys = self.recoverable_keys.clone();
         let device_list = self.device_list.clone();
@@ -192,7 +192,10 @@ impl FfiCoordinator {
                                     // we only send some messages out if the device has up to date firmware
                                     if !connected_device.needs_firmware_upgrade().0 {
                                         coordinator_outbox.extend(
-                                            coordinator.maybe_request_nonce_replenishment(id),
+                                            coordinator.maybe_request_nonce_replenishment(
+                                                id,
+                                                &mut rand::thread_rng(),
+                                            ),
                                         );
                                         coordinator_outbox
                                             .extend(coordinator.request_held_shares(id));
@@ -256,31 +259,8 @@ impl FfiCoordinator {
                     }
 
                     if let Some(ui_protocol) = &mut *ui_protocol_loop {
-                        let (to_device, to_storage) = ui_protocol.poll();
-                        for message in to_device {
+                        for message in ui_protocol.poll() {
                             usb_sender.send(message);
-                        }
-
-                        for message in to_storage {
-                            match message {
-                                frostsnap_coordinator::UiToStorageMessage::ClearSigningSession => {
-                                    let result = signing_session.lock().unwrap().mutate(
-                                        &mut *db,
-                                        |session| {
-                                            *session = None;
-                                            Ok(((), session.clone()))
-                                        },
-                                    );
-
-                                    if let Err(e) = result {
-                                        event!(
-                                            Level::ERROR,
-                                            error = e.to_string(),
-                                            "failed to clear signing session on disk"
-                                        );
-                                    }
-                                }
-                            }
                         }
 
                         Self::try_finish_protocol(
@@ -431,23 +411,6 @@ impl FfiCoordinator {
                                 }
                             }
                         }
-                        CoordinatorSend::SigningSessionStore(state) => {
-                            let result = signing_session.lock().unwrap().staged_mutate(
-                                &mut *db,
-                                |signing_session| {
-                                    *signing_session = Some(state);
-                                    Ok(())
-                                },
-                            );
-
-                            if let Err(e) = result {
-                                event!(
-                                    Level::ERROR,
-                                    error = e.to_string(),
-                                    "failed to sign session progress"
-                                );
-                            }
-                        }
                     }
                 }
             }
@@ -520,22 +483,15 @@ impl FfiCoordinator {
             .collect()
     }
 
-    pub fn nonces_left(&self, id: DeviceId) -> Option<usize> {
+    pub fn nonces_available(&self, id: DeviceId) -> u32 {
         self.coordinator
             .lock()
             .unwrap()
-            .device_nonces()
-            .get(&id)
-            .map(|nonces| nonces.nonces.len())
-    }
-
-    pub fn current_nonce(&self, id: DeviceId) -> Option<u64> {
-        self.coordinator
-            .lock()
-            .unwrap()
-            .device_nonces()
-            .get(&id)
-            .map(|nonces| nonces.start_index)
+            .nonces_available(id)
+            .values()
+            .copied()
+            .max()
+            .unwrap_or(0)
     }
 
     pub fn start_signing(
@@ -544,19 +500,15 @@ impl FfiCoordinator {
         devices: BTreeSet<DeviceId>,
         task: SignTask,
         sink: StreamSink<api::SigningState>,
-        encryption_key: SymmetricKey,
     ) -> anyhow::Result<()> {
         let mut coordinator = self.coordinator.lock().unwrap();
-        let messages = coordinator.staged_mutate(&mut self.db.lock().unwrap(), |coordinator| {
-            Ok(coordinator.start_sign(
-                access_structure_ref,
-                task,
-                devices.clone(),
-                encryption_key,
-            )?)
-        })?;
+        let session_id = coordinator
+            .staged_mutate(&mut self.db.lock().unwrap(), |coordinator| {
+                Ok(coordinator.start_sign(access_structure_ref, task, &devices)?)
+            })?;
         let mut ui_protocol = frostsnap_coordinator::signing::SigningDispatcher::new(
-            messages.clone(),
+            devices,
+            session_id,
             SinkWrap(sink),
         );
 
@@ -566,29 +518,51 @@ impl FfiCoordinator {
         Ok(())
     }
 
+    pub fn request_device_sign(
+        &self,
+        device_id: DeviceId,
+        session_id: SignSessionId,
+        encryption_key: SymmetricKey,
+    ) -> anyhow::Result<()> {
+        let mut proto = self.ui_protocol.lock().unwrap();
+        let signing = proto
+            .as_mut()
+            .ok_or(anyhow!("No UI protocol running"))?
+            .as_mut_any()
+            .downcast_mut::<frostsnap_coordinator::signing::SigningDispatcher>()
+            .ok_or(anyhow!("somehow UI was not in KeyGen state"))?;
+
+        let mut db = self.db.lock().unwrap();
+
+        let sign_req = self
+            .coordinator
+            .lock()
+            .unwrap()
+            .staged_mutate(&mut *db, |coordinator| {
+                Ok(coordinator.request_device_sign(session_id, device_id, encryption_key))
+            })?;
+
+        signing.send_sign_request(sign_req);
+
+        Ok(())
+    }
+
     pub fn try_restore_signing_session(
         &self,
-        #[allow(unused)] /* we only have one key for now */ master_appkey: KeyId,
+        session_id: SignSessionId,
         sink: StreamSink<api::SigningState>,
     ) -> anyhow::Result<()> {
-        let signing_session_state = self.signing_session.lock().unwrap();
-        let signing_session_state = signing_session_state
-            .clone()
-            .ok_or(anyhow!("no signing session to restore"))?;
-        let mut coordinator = self.coordinator.lock().unwrap();
-        coordinator
-            .MUTATE_NO_PERSIST()
-            .restore_sign_session(signing_session_state.clone());
+        let coordinator = self.coordinator.lock().unwrap();
 
-        let mut dispatcher = frostsnap_coordinator::signing::SigningDispatcher::new_from_request(
-            signing_session_state.request.clone(),
-            signing_session_state.targets.clone(),
-            SinkWrap(sink),
-        );
-
-        for already_provided in signing_session_state.received_from() {
-            dispatcher.set_signature_received(already_provided);
-        }
+        let active_sign_session = coordinator
+            .active_signing_sessions()
+            .get(&session_id)
+            .ok_or(anyhow!("this signing session no longer exists"))?;
+        let mut dispatcher =
+            frostsnap_coordinator::signing::SigningDispatcher::restore_signing_session(
+                active_sign_session,
+                SinkWrap(sink),
+            );
 
         dispatcher.emit_state();
         self.start_protocol(dispatcher);
@@ -596,23 +570,18 @@ impl FfiCoordinator {
         Ok(())
     }
 
-    pub fn persisted_sign_session_description(
-        &self,
-        key_id: KeyId,
-    ) -> Option<api::SignTaskDescription> {
-        let session = self.signing_session.lock().unwrap().clone()?;
-        if session.access_structure.master_appkey().key_id() != key_id {
-            return None;
-        }
-        Some(match session.request.sign_task {
-            SignTask::Plain { message, .. } => api::SignTaskDescription::Plain { message },
-            SignTask::Nostr { .. } => todo!("nostr restoring not yet implemented"),
-            SignTask::BitcoinTransaction(task) => api::SignTaskDescription::Transaction {
-                unsigned_tx: api::UnsignedTx {
-                    template_tx: RustOpaque::new(task),
-                },
-            },
-        })
+    // TODO: create method to return some state of the sign sign session
+    pub fn active_signing_sessions(&self, key_id: KeyId) -> SyncReturn<Vec<SignSessionId>> {
+        SyncReturn(
+            self.coordinator
+                .lock()
+                .unwrap()
+                .active_signing_sessions()
+                .iter()
+                .filter(|(_, sign_session)| sign_session.key_id == key_id)
+                .map(|(ssid, _)| *ssid)
+                .collect(),
+        )
     }
 
     pub fn request_display_backup(
@@ -924,6 +893,23 @@ impl FfiCoordinator {
 
     pub fn wipe_device_data(&self, id: DeviceId) {
         self.usb_sender.wipe_device_data(id);
+    }
+
+    pub fn cancel_sign_sesssion(&self, ssid: SignSessionId) -> anyhow::Result<()> {
+        let mut db = self.db.lock().unwrap();
+        event!(
+            Level::INFO,
+            ssid = ssid.to_string(),
+            "canceling sign session"
+        );
+        self.coordinator
+            .lock()
+            .unwrap()
+            .staged_mutate(&mut *db, |coordinator| {
+                coordinator.cancel_sign_session(ssid);
+                Ok(())
+            })?;
+        Ok(())
     }
 }
 

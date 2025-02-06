@@ -4,7 +4,7 @@ use frostsnap_core::{
     SymmetricKey,
 };
 
-use crate::{Completion, Sink, UiProtocol, UiToStorageMessage};
+use crate::{Completion, Sink, UiProtocol};
 
 pub struct DisplayBackupProtocol {
     device_id: DeviceId,
@@ -82,8 +82,8 @@ impl UiProtocol for DisplayBackupProtocol {
         }
     }
 
-    fn poll(&mut self) -> (Vec<CoordinatorSendMessage>, Vec<UiToStorageMessage>) {
-        (core::mem::take(&mut self.messages), vec![])
+    fn poll(&mut self) -> Vec<CoordinatorSendMessage> {
+        core::mem::take(&mut self.messages)
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

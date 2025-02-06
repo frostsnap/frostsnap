@@ -20,7 +20,7 @@ pub use bdk_chain;
 pub mod frostsnap_persist;
 pub mod persist;
 
-pub trait Sink<M>: Send {
+pub trait Sink<M>: Send + 'static {
     fn send(&self, state: M);
     fn close(&self);
 }
