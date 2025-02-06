@@ -2584,8 +2584,9 @@ checksum = "e86697c916019a8588c99b5fac3cead74ec0b4b819707a682fd4d23fa0ce1ba1"
 
 [[package]]
 name = "schnorr_fun"
-version = "0.10.0"
-source = "git+https://github.com/LLFourn/secp256kfun.git?rev=35b5c12fd6ca730dfe74b95255a64997e26a369b#35b5c12fd6ca730dfe74b95255a64997e26a369b"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ca8c22cb9ac73a4f0f1807ed9cfb8ca16de23c0ec520fc9475816eb3d6e7c13"
 dependencies = [
  "bech32",
  "secp256kfun",
@@ -2667,8 +2668,9 @@ dependencies = [
 
 [[package]]
 name = "secp256kfun"
-version = "0.10.0"
-source = "git+https://github.com/LLFourn/secp256kfun.git?rev=35b5c12fd6ca730dfe74b95255a64997e26a369b#35b5c12fd6ca730dfe74b95255a64997e26a369b"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b39f4d955c99d8f7487ab89f2b7d296a05d2a9288687464ce9743027f41dbc3f"
 dependencies = [
  "bincode",
  "digest",
@@ -2685,7 +2687,8 @@ dependencies = [
 [[package]]
 name = "secp256kfun_arithmetic_macros"
 version = "0.1.0"
-source = "git+https://github.com/LLFourn/secp256kfun.git?rev=35b5c12fd6ca730dfe74b95255a64997e26a369b#35b5c12fd6ca730dfe74b95255a64997e26a369b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "91b7c385a72530ebfe6010ff476ad9e235743fb33408a360052bb706f1481e1e"
 dependencies = [
  "proc-macro2",
  "quote",
