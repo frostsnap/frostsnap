@@ -504,6 +504,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
             );
           }
           return Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               const ListTile(
                 dense: true,
@@ -511,9 +512,9 @@ class _WalletSendPageState extends State<WalletSendPage> {
                 trailing: Text('Plug in these devices'),
               ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12.0)
-                    .copyWith(bottom: 12.0),
+                padding: const EdgeInsets.symmetric(horizontal: 12.0),
                 child: Card.filled(
+                  margin: EdgeInsets.all(0.0),
                   child: signers == null
                       ? Padding(
                           padding: EdgeInsets.all(12.0),
@@ -537,6 +538,13 @@ class _WalletSendPageState extends State<WalletSendPage> {
                                   ))
                               .toList(),
                         ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: TextButton(
+                  onPressed: () => prevPageOrPop(null),
+                  child: Text('Cancel'),
                 ),
               ),
             ],

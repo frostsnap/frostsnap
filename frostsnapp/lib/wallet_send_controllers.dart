@@ -676,14 +676,14 @@ class SigningSessionController with ChangeNotifier {
     _deviceStateSub = deviceListSubject.listen((update) {
       _connectedDevices.clear();
       _connectedDevices.addAll(update.state.devices.map((device) => device.id));
-      notifyListeners();
+      if (hasListeners) notifyListeners();
       maybeRequestDeviceSign();
     });
   }
 
   @override
-  void dispose() async {
-    await _deviceStateSub.cancel();
+  void dispose() {
+    _deviceStateSub.cancel();
     cancel();
     super.dispose();
   }
@@ -699,7 +699,7 @@ class SigningSessionController with ChangeNotifier {
             await _unsignedTx!.complete(signatures: state.finishedSignatures);
       }
       _state = state;
-      notifyListeners();
+      if (hasListeners) notifyListeners();
       maybeRequestDeviceSign();
     });
     return true;
