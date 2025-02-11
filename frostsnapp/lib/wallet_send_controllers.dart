@@ -724,7 +724,8 @@ class SigningSessionController with ChangeNotifier {
     if (_state == null) return null;
     return devices.map((device) => DeviceSignatureModel(
           id: device.id,
-          hasSignature: _state!.gotShares.contains(device.id),
+          hasSignature: _state!.gotShares.any((thisId) =>
+              thisId.field0.toString() == device.id.field0.toString()),
           isConnected: _connectedDevices.contains(device.id),
         ));
   }
