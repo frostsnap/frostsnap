@@ -14,8 +14,6 @@ import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'package:flutter/material.dart';
 import 'package:confetti/confetti.dart';
 
-import 'sign_message.dart';
-
 typedef KeyItem = Either<FrostKey, RecoverableKey>;
 
 class KeyList extends StatelessWidget {
@@ -224,10 +222,6 @@ class RecoveringKeyCard extends StatelessWidget {
                               },
                               icon: Icon(Icons.cancel))
                         ]),
-                        SizedBox(height: 10),
-                        Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [KeyButtons(keyId: keyId!)]),
                       ]),
                 ))));
   }
@@ -299,68 +293,10 @@ class KeyCard extends StatelessWidget {
             child: Icon(Icons.currency_bitcoin_rounded),
           ),
         ),
-        trailing: KeyButtons(keyId: keyId!),
+        trailing: Icon(Icons.chevron_right),
         titleTextStyle: theme.textTheme.titleLarge,
         contentPadding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
       ),
-    );
-  }
-}
-
-class KeyButtons extends StatelessWidget {
-  final KeyId keyId;
-  const KeyButtons({super.key, required this.keyId});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final frostKey = coord.getFrostKey(keyId: keyId);
-    final masterAppkey = frostKey?.masterAppkey();
-    final bitcoinNetwork = frostKey?.bitcoinNetwork();
-
-    final signButton = ElevatedButton(
-        onPressed: () {
-          if (frostKey != null) {
-            Navigator.push(context, MaterialPageRoute(builder: (context) {
-              return SignMessagePage(frostKey: frostKey);
-            }));
-          }
-        },
-        child: Text("Sign"));
-
-    final Widget walletButton = ElevatedButton(
-      onPressed: () async {
-        if (frostKey != null) {
-          final superWallet = SuperWalletContext.of(context)!;
-          Navigator.push(context, MaterialPageRoute(builder: (context) {
-            return superWallet.tryWrapInWalletContext(
-                keyId: api.masterAppkeyExtToKeyId(masterAppkey: masterAppkey!),
-                child: WalletHome());
-          }));
-        }
-      },
-      child: Badge(
-        label: Text(bitcoinNetwork?.name() ?? ""),
-        isLabelVisible: !(bitcoinNetwork?.isMainnet() ?? true),
-        alignment: AlignmentDirectional.bottomEnd,
-        textColor: theme.colorScheme.error,
-        backgroundColor: theme.colorScheme.surface,
-        child: Icon(Icons.currency_bitcoin),
-      ),
-    );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              signButton,
-              const SizedBox(width: 5),
-              walletButton,
-            ])
-      ],
     );
   }
 }

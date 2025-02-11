@@ -445,17 +445,6 @@ class _TxListState extends State<TxList> {
                   return ChainStatusIcon(chainStatus: chainStatus);
                 }),
             appBarMenu,
-            //IconButton(
-            //  icon: Icon(Icons.settings),
-            //  onPressed: () {
-            //    Navigator.push(
-            //      context,
-            //      MaterialPageRoute(
-            //        builder: (context) => walletCtx.wrap(SettingsPage()),
-            //      ),
-            //    );
-            //  },
-            //),
           ],
         ),
         PinnedHeaderSliver(
