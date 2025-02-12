@@ -187,7 +187,7 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: FsAppBar(title: Text("Wallets"), centerTitle: false),
+      appBar: FsAppBar(title: Text("Wallets")),
       body: Center(child: KeyListWithConfetti(controller: confettiController)),
       floatingActionButton: FloatingActionButton.extended(
         icon: Icon(Icons.add),
