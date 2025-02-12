@@ -5,7 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 final monospaceTextStyle = GoogleFonts.notoSansMono();
 
-final blurFilter = ImageFilter.blur(sigmaX: 10, sigmaY: 10);
+final blurFilter = ImageFilter.blur(sigmaX: 2.1, sigmaY: 2.1);
 
 Color tintSurfaceContainer(
   BuildContext context,

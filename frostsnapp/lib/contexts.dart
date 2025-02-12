@@ -1,11 +1,13 @@
 import 'dart:collection';
 
+import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/wallet.dart';
+import 'package:frostsnapp/wallet_list_controller.dart';
 
 class FrostsnapContext extends InheritedWidget {
   final Stream<String> logStream;
@@ -41,9 +43,23 @@ class SuperWalletContext extends InheritedWidget {
     hashCode: (KeyId key) => key.field0.hashCode,
   );
 
+  final Map<KeyId, Stream<BackupRun>> backupStreams =
+      HashMap<KeyId, Stream<BackupRun>>(
+        equals: (KeyId a, KeyId b) => keyIdEquals(a, b),
+        hashCode: (KeyId key) => key.field0.hashCode,
+      );
+
   // Static method to allow easy access to the Foo instance
   static SuperWalletContext? of(BuildContext context) {
     return context.dependOnInheritedWidgetOfExactType<SuperWalletContext>();
+  }
+
+  Stream<BackupRun> backupStream(KeyId keyId) {
+    final stream = backupStreams[keyId];
+    if (stream != null) return stream;
+    backupStreams[keyId] =
+        appCtx.backupManager.backupStream(keyId: keyId).toBehaviorSubject();
+    return backupStreams[keyId]!;
   }
 
   (Wallet, Stream<TxState>)? txStateStream(KeyId keyId) {
@@ -99,8 +115,7 @@ class SuperWalletContext extends InheritedWidget {
       );
     }
 
-    final backupStream =
-        appCtx.backupManager.backupStream(keyId: keyId).toBehaviorSubject();
+    final backupStream = this.backupStream(keyId);
 
     return WalletContext(
       key: key,
@@ -184,4 +199,41 @@ class KeyContext extends InheritedWidget {
   bool updateShouldNotify(KeyContext oldWidget) {
     return false;
   }
+}
+
+class HomeContext extends InheritedWidget {
+  final GlobalKey<ScaffoldState> scaffoldKey;
+  final WalletListController walletListController;
+  final ConfettiController confettiController;
+  final ValueNotifier<bool> isShowingCreatedWalletDialog;
+
+  const HomeContext({
+    super.key,
+    required this.scaffoldKey,
+    required this.walletListController,
+    required this.confettiController,
+    required this.isShowingCreatedWalletDialog,
+    required Widget child,
+  }) : super(child: child);
+
+  static HomeContext? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<HomeContext>();
+
+  HomeContext wrap(Widget child) => HomeContext(
+    scaffoldKey: scaffoldKey,
+    walletListController: walletListController,
+    confettiController: confettiController,
+    isShowingCreatedWalletDialog: isShowingCreatedWalletDialog,
+    child: child,
+  );
+
+  WalletItem? openNewlyCreatedWallet(KeyId id) {
+    walletListController.selectedId = id;
+    scaffoldKey.currentState?.closeDrawer();
+    confettiController.play();
+    return walletListController.selected;
+  }
+
+  @override
+  bool updateShouldNotify(covariant InheritedWidget oldWidget) => false;
 }

@@ -578,7 +578,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
         },
       ),
     );
-
+    final mediaQuery = MediaQuery.of(context);
     final scrollView = CustomScrollView(
       controller: _scrollController,
       reverse: true,
@@ -590,7 +590,13 @@ class _WalletSendPageState extends State<WalletSendPage> {
             children: [
               _buildCompletedList(context),
               Padding(
-                padding: sectionPadding,
+                padding: sectionPadding.add(
+                  EdgeInsets.only(
+                    bottom:
+                        mediaQuery.viewInsets.bottom +
+                        mediaQuery.padding.bottom,
+                  ),
+                ),
                 child: Column(
                   children: [
                     if (pageIndex == SendPageIndex.recipient)
@@ -603,7 +609,6 @@ class _WalletSendPageState extends State<WalletSendPage> {
                   ],
                 ),
               ),
-              SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
             ],
           ),
         ),
