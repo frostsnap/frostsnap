@@ -23,7 +23,7 @@ maybe-gen:
     #!/bin/sh
     input=./native/src/api.rs;
     canary_file=./binding-rerun.sha256
-    if ! shasum -a256 --check $canary_file >/dev/null 2>&1 ; then
+    if ! shasum -a256 --check "$canary_file" >/dev/null 2>&1 ; then
        echo "$input changed so re-running bindgen">&2;
        just gen
     fi
