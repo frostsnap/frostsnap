@@ -21,6 +21,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: taiki-e/install-action@just
       - uses: ./.github/actions/fetch-cargo-deps
+      - uses: "./.github/actions/install-cargo-bins"
 
       # RISC-V toolchain cache
       - uses: actions/cache@v4
@@ -50,10 +51,11 @@ jobs:
 
       - run: just lint-device --release --locked
       - run: just build-device ${{ matrix.board }} --locked
+      - run: just save-image ${{ matrix.board }}
       - uses: "./.github/actions/upload-artifact"
         with:
-          name: frostsnap-${{ github.sha }}.elf
-          path: target/riscv32imc-unknown-none-elf/release/v2
+          name: frostsnap-${{ github.sha }}.bin
+          path: target/riscv32imc-unknown-none-elf/release/firmware.bin
 
   test-ordinary-libs:
     name: Test ordinary libraries
