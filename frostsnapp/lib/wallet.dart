@@ -2,10 +2,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnapp/contexts.dart';
+import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/global.dart';
+import 'package:frostsnapp/key_list.dart';
+import 'package:frostsnapp/keygen.dart';
 import 'package:frostsnapp/psbt.dart';
 import 'package:frostsnapp/sign_message.dart';
 import 'package:frostsnapp/theme.dart';
+import 'package:frostsnapp/wallet_list_controller.dart';
 import 'package:frostsnapp/wallet_receive.dart';
 import 'package:frostsnapp/wallet_send.dart';
 import 'package:frostsnapp/settings.dart';
@@ -28,100 +32,87 @@ class Wallet {
 }
 
 class WalletHome extends StatelessWidget {
-  const WalletHome({super.key});
+  final WalletListController walletListController;
+  final GlobalKey<ScaffoldState> scaffoldKey;
+  const WalletHome({
+    super.key,
+    required this.walletListController,
+    required this.scaffoldKey,
+  });
 
-  @override
-  Widget build(BuildContext context) {
-    final walletCtx = WalletContext.of(context)!;
+  Widget buildNoWalletBody(BuildContext context) {
     final theme = Theme.of(context);
-
-    const elevation = 3.0;
-    final txList = TxList();
-
-    return Scaffold(
-      extendBody: true,
-      resizeToAvoidBottomInset: false,
-      body: txList,
-      bottomNavigationBar: ClipRect(
-        child: BottomAppBar(
-          color: Colors.transparent,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: 16,
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed:
-                      () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder:
-                              (context) => walletCtx.wrap(WalletReceivePage()),
-                        ),
-                      ),
-                  label: Text('Receive'),
-                  icon: Icon(Icons.south_east),
-                  style: ElevatedButton.styleFrom(
-                    elevation: elevation,
-                    backgroundColor: ElevationOverlay.applySurfaceTint(
-                      theme.colorScheme.surfaceContainer,
-                      theme.colorScheme.primary,
-                      elevation,
-                    ),
-                    foregroundColor: theme.colorScheme.primary,
-                    iconColor: theme.colorScheme.primary,
-                  ),
-                ),
-              ),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    final mediaSize = MediaQuery.sizeOf(context);
-                    if (mediaSize.width < 600) {
-                      showModalBottomSheet(
-                        context: context,
-                        isScrollControlled: true,
-                        useSafeArea: true,
-                        isDismissible: true,
-                        showDragHandle: false,
-                        builder: (context) => walletCtx.wrap(WalletSendPage()),
-                      );
-                    } else {
-                      showDialog(
-                        context: context,
-                        builder:
-                            (context) => Dialog(
-                              backgroundColor:
-                                  theme.colorScheme.surfaceContainer,
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(maxWidth: 560),
-                                child: walletCtx.wrap(WalletSendPage()),
-                              ),
-                            ),
-                      );
-                    }
-                  },
-                  label: Text('Send'),
-                  icon: Icon(Icons.north_east),
-                  style: ElevatedButton.styleFrom(
-                    elevation: elevation,
-                    backgroundColor: ElevationOverlay.applySurfaceTint(
-                      theme.colorScheme.surfaceContainer,
-                      theme.colorScheme.error,
-                      elevation,
-                    ),
-                    foregroundColor: theme.colorScheme.error,
-                    iconColor: theme.colorScheme.error,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(28.0),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          spacing: 8.0,
+          children: [
+            Text('Nothing here.', style: theme.textTheme.titleLarge),
+            FilledButton(onPressed: () {}, child: Text('New Wallet')),
+          ],
         ),
       ),
     );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final body = ListenableBuilder(
+      listenable: walletListController,
+      builder: (context, _) {
+        if (walletListController.gotInitalData == false) {
+          return buildNoWalletBody(context);
+        } else {
+          return walletListController.selected?.tryWrapInWalletContext(
+                context: context,
+                child: TxList(),
+              ) ??
+              SizedBox();
+        }
+      },
+    );
+    final bottomBar = ListenableBuilder(
+      listenable: walletListController,
+      builder: (context, _) {
+        return walletListController.selected?.tryWrapInWalletContext(
+              context: context,
+              child: WalletBottomBar(),
+            ) ??
+            BottomAppBar(color: Colors.transparent);
+      },
+    );
+    final drawer = WalletDrawer(
+      controller: walletListController,
+      scaffoldKey: scaffoldKey,
+    );
+
+    final mediaSize = MediaQuery.sizeOf(context);
+    if (mediaSize.width < 840) {
+      return Scaffold(
+        key: scaffoldKey,
+        extendBody: true,
+        resizeToAvoidBottomInset: false,
+        drawer: drawer,
+        body: body,
+        bottomNavigationBar: bottomBar,
+      );
+    } else {
+      return Row(
+        children: [
+          drawer,
+          Flexible(
+            child: Scaffold(
+              key: scaffoldKey,
+              extendBody: true,
+              resizeToAvoidBottomInset: false,
+              body: body,
+              bottomNavigationBar: bottomBar,
+            ),
+          ),
+        ],
+      );
+    }
   }
 }
 
@@ -486,6 +477,330 @@ class _TxListState extends State<TxList> {
         ),
         SliverToBoxAdapter(child: SizedBox(height: 88.0)),
       ],
+    );
+  }
+}
+
+class WalletDrawer extends StatelessWidget {
+  final WalletListController controller;
+  final GlobalKey<ScaffoldState> scaffoldKey;
+  final bool isRounded;
+
+  const WalletDrawer({
+    super.key,
+    required this.controller,
+    required this.scaffoldKey,
+    this.isRounded = true,
+  });
+
+  /// Section header and divider padding as according to Material 3 specs.
+  static const padding = EdgeInsetsDirectional.symmetric(
+    horizontal: 28.0,
+    vertical: 16.0,
+  );
+
+  Widget buildWalletDestination(BuildContext context, WalletItem item) {
+    WidgetSpan buildTag(
+      BuildContext context, {
+      required String text,
+      Color? backgroundColor,
+      Color? foregroundColor,
+    }) {
+      final theme = Theme.of(context);
+      return WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: Card.filled(
+          color: backgroundColor?.withAlpha(128),
+          margin: const EdgeInsets.all(12.0),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
+            child: Text(
+              text,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: foregroundColor,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final theme = Theme.of(context);
+    return NavigationDrawerDestination(
+      icon: SizedBox.shrink(),
+      label: Text.rich(
+        TextSpan(
+          text: item.name,
+          children: [
+            if (!(item.network?.isMainnet() ?? true))
+              buildTag(
+                context,
+                text: item.network?.name() ?? '',
+                backgroundColor: theme.colorScheme.surfaceContainerLowest,
+                foregroundColor: theme.colorScheme.error,
+              ),
+          ],
+        ),
+        overflow: TextOverflow.fade,
+      ),
+    );
+  }
+
+  showRecoverWalletsDialog(BuildContext context) {
+    final theme = Theme.of(context);
+
+    final appBar = SliverAppBar(
+      title: Text('Recover Wallets'),
+      centerTitle: true,
+      backgroundColor: theme.colorScheme.surfaceContainerLow,
+      pinned: true,
+      stretch: true,
+      forceMaterialTransparency: true,
+      automaticallyImplyLeading: false,
+      leading: IconButton(
+        onPressed: () => Navigator.pop(context),
+        icon: Icon(Icons.close),
+      ),
+    );
+
+    final list = ListenableBuilder(
+      listenable: controller,
+      builder:
+          (context, _) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24.0,
+                  vertical: 8.0,
+                ),
+                child: Text(
+                  'Plug in devices to start.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              ...controller.recoverables.map(
+                (key) => Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 8.0,
+                    horizontal: 24.0,
+                  ),
+                  child: RecoverableKeyCard(recoverableKey: key),
+                ),
+              ),
+              SizedBox(height: 12 + MediaQuery.of(context).viewInsets.bottom),
+            ],
+          ),
+    );
+
+    final scrollView = CustomScrollView(
+      shrinkWrap: true,
+      physics: ClampingScrollPhysics(),
+      slivers: [
+        appBar,
+        SliverToBoxAdapter(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: 210),
+            child: Center(child: list),
+          ),
+        ),
+      ],
+    );
+
+    final mediaSize = MediaQuery.sizeOf(context);
+    if (mediaSize.width < 600) {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        isDismissible: true,
+        showDragHandle: false,
+        builder: (context) => scrollView,
+      );
+    } else {
+      showDialog(
+        context: context,
+        builder: (context) {
+          return Dialog(
+            backgroundColor: theme.colorScheme.surfaceContainer,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: 560),
+              child: scrollView,
+            ),
+          );
+        },
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        List<Widget> children = [];
+        if (controller.wallets.isNotEmpty) {
+          children.addAll([
+            Padding(
+              padding: padding,
+              child: Text(
+                'Wallets',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            ...controller.wallets.map(
+              (item) => buildWalletDestination(context, item),
+            ),
+          ]);
+        }
+
+        children.addAll([
+          SizedBox(height: 12.0),
+          NavigationDrawerDestination(
+            enabled: false,
+            icon: SizedBox.shrink(),
+            label: FilledButton.icon(
+              onPressed:
+                  () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => KeyNamePage()),
+                  ),
+              icon: Icon(Icons.add_circle),
+              label: Text('Create New'),
+            ),
+          ),
+          NavigationDrawerDestination(
+            enabled: false,
+            icon: SizedBox.shrink(),
+            label: TextButton.icon(
+              onPressed: () => showRecoverWalletsDialog(context),
+              icon: Icon(Icons.update),
+              label: Text(
+                (controller.recoverables.isEmpty)
+                    ? 'Recover'
+                    : 'Recover (${controller.recoverables.length})',
+              ),
+            ),
+          ),
+          NavigationDrawerDestination(
+            enabled: false,
+            icon: SizedBox.shrink(),
+            label: TextButton.icon(
+              onPressed:
+                  () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => DeviceSettingsPage(),
+                    ),
+                  ),
+              icon: Icon(Icons.devices),
+              label: Text('Devices'),
+            ),
+          ),
+        ]);
+
+        return NavigationDrawer(
+          onDestinationSelected: (index) {
+            controller.selectedIndex = index;
+            scaffoldKey.currentState?.closeDrawer();
+          },
+          selectedIndex: controller.selectedIndex,
+          children: children,
+        );
+      },
+    );
+  }
+}
+
+class WalletBottomBar extends StatelessWidget {
+  const WalletBottomBar({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final walletCtx = WalletContext.of(context)!;
+    final theme = Theme.of(context);
+    const elevation = 3.0;
+
+    return BottomAppBar(
+      color: Colors.transparent,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 16,
+        children: [
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed:
+                  () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => walletCtx.wrap(WalletReceivePage()),
+                    ),
+                  ),
+              label: Text('Receive'),
+              icon: Icon(Icons.south_east),
+              style: ElevatedButton.styleFrom(
+                elevation: elevation,
+                backgroundColor: ElevationOverlay.applySurfaceTint(
+                  theme.colorScheme.surfaceContainer,
+                  theme.colorScheme.primary,
+                  elevation,
+                ),
+                foregroundColor: theme.colorScheme.primary,
+                iconColor: theme.colorScheme.primary,
+              ),
+            ),
+          ),
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: () {
+                final mediaSize = MediaQuery.sizeOf(context);
+                if (mediaSize.width < 600) {
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    useSafeArea: true,
+                    isDismissible: true,
+                    showDragHandle: false,
+                    builder: (context) => walletCtx.wrap(WalletSendPage()),
+                  );
+                } else {
+                  showDialog(
+                    context: context,
+                    builder:
+                        (context) => Dialog(
+                          backgroundColor: theme.colorScheme.surfaceContainer,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(maxWidth: 560),
+                            child: walletCtx.wrap(WalletSendPage()),
+                          ),
+                        ),
+                  );
+                }
+              },
+              label: Text('Send'),
+              icon: Icon(Icons.north_east),
+              style: ElevatedButton.styleFrom(
+                elevation: elevation,
+                backgroundColor: ElevationOverlay.applySurfaceTint(
+                  theme.colorScheme.surfaceContainer,
+                  theme.colorScheme.error,
+                  elevation,
+                ),
+                foregroundColor: theme.colorScheme.error,
+                iconColor: theme.colorScheme.error,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(28.0),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

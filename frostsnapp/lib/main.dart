@@ -3,14 +3,13 @@ import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
 import 'package:frostsnapp/contexts.dart';
-import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/key_list.dart';
 import 'package:flutter/services.dart';
-import 'package:frostsnapp/keygen.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/serialport.dart';
 import 'package:frostsnapp/stream_ext.dart';
+import 'package:frostsnapp/wallet.dart';
+import 'package:frostsnapp/wallet_list_controller.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
@@ -171,46 +170,30 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   late final ConfettiController confettiController;
+  late final WalletListController walletListController;
+  late final GlobalKey<ScaffoldState> scaffoldKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
     confettiController = ConfettiController(duration: Duration(seconds: 2));
+    walletListController = WalletListController(
+      keyStream: coord.subKeyEvents(),
+    );
   }
 
   @override
   void dispose() {
     confettiController.dispose();
+    walletListController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: FsAppBar(title: Text("Wallets")),
-      body: Center(child: KeyListWithConfetti(controller: confettiController)),
-      floatingActionButton: FloatingActionButton.extended(
-        icon: Icon(Icons.add),
-        label: Text('New Wallet'),
-        onPressed: () async {
-          final newId = await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => KeyNamePage()),
-          );
-          if (context.mounted && newId != null) confettiController.play();
-        },
-      ),
-      persistentFooterAlignment: AlignmentDirectional.centerStart,
-      persistentFooterButtons: [
-        TextButton(
-          onPressed:
-              () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => DeviceSettingsPage()),
-              ),
-          child: Text('Show Devices'),
-        ),
-      ],
+    return WalletHome(
+      walletListController: walletListController,
+      scaffoldKey: scaffoldKey,
     );
   }
 }
