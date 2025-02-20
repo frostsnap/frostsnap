@@ -502,9 +502,14 @@ impl FfiCoordinator {
         sink: StreamSink<api::SigningState>,
     ) -> anyhow::Result<()> {
         let mut coordinator = self.coordinator.lock().unwrap();
-        let session_id = coordinator
-            .staged_mutate(&mut self.db.lock().unwrap(), |coordinator| {
-                Ok(coordinator.start_sign(access_structure_ref, task, &devices)?)
+        let session_id =
+            coordinator.staged_mutate(&mut self.db.lock().unwrap(), |coordinator| {
+                Ok(coordinator.start_sign(
+                    access_structure_ref,
+                    task,
+                    &devices,
+                    &mut rand::thread_rng(),
+                )?)
             })?;
         let mut ui_protocol = frostsnap_coordinator::signing::SigningDispatcher::new(
             devices,

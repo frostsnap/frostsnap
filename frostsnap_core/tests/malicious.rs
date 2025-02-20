@@ -117,7 +117,7 @@ fn send_sign_req_with_same_nonces_but_different_message() {
     let (access_structure_ref, _) = key_data.access_structures().next().unwrap().clone();
     let session_id = run
         .coordinator
-        .start_sign(access_structure_ref, task1, &device_set)
+        .start_sign(access_structure_ref, task1, &device_set, &mut test_rng)
         .unwrap();
 
     let mut sign_req = None;

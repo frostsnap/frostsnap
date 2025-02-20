@@ -264,7 +264,12 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
 
         let session_id = run
             .coordinator
-            .start_sign(access_structure_ref, task.clone(), &signing_set)
+            .start_sign(
+                access_structure_ref,
+                task.clone(),
+                &signing_set,
+                &mut test_rng,
+            )
             .unwrap();
 
         for &device in &signing_set {
@@ -498,7 +503,12 @@ fn when_we_abandon_a_sign_request_we_should_be_able_to_start_a_new_one() {
 
         let _unused_sign_session_id = run
             .coordinator
-            .start_sign(access_structure_ref, uncompleting_sign_task, &device_set)
+            .start_sign(
+                access_structure_ref,
+                uncompleting_sign_task,
+                &device_set,
+                &mut test_rng,
+            )
             .unwrap();
 
         // fully cancel sign request
@@ -510,7 +520,12 @@ fn when_we_abandon_a_sign_request_we_should_be_able_to_start_a_new_one() {
 
         let used_sign_session_id = run
             .coordinator
-            .start_sign(access_structure_ref, completing_sign_task, &device_set)
+            .start_sign(
+                access_structure_ref,
+                completing_sign_task,
+                &device_set,
+                &mut test_rng,
+            )
             .unwrap();
 
         for &device_id in &device_set {
@@ -599,7 +614,7 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
 
     let session_id = run
         .coordinator
-        .start_sign(access_structure_ref, task.clone(), &set)
+        .start_sign(access_structure_ref, task.clone(), &set, &mut test_rng)
         .unwrap();
 
     for &device_id in &set {
@@ -879,7 +894,12 @@ fn we_should_be_able_to_switch_between_sign_sessions() {
 
     let ssid1 = run
         .coordinator
-        .start_sign(access_structure_ref, sign_task_1, &signing_set_1)
+        .start_sign(
+            access_structure_ref,
+            sign_task_1,
+            &signing_set_1,
+            &mut test_rng,
+        )
         .unwrap();
 
     run.coordinator.cancel(); // cancel but don't cancel the signing session
@@ -892,7 +912,12 @@ fn we_should_be_able_to_switch_between_sign_sessions() {
 
     let ssid2 = run
         .coordinator
-        .start_sign(access_structure_ref, sign_task_2, &signing_set_2)
+        .start_sign(
+            access_structure_ref,
+            sign_task_2,
+            &signing_set_2,
+            &mut test_rng,
+        )
         .unwrap();
 
     let mut signers_1 = signing_set_1.into_iter();
@@ -962,7 +987,7 @@ fn nonces_available_should_heal_itself_when_outcome_of_sign_request_is_ambigious
 
     let ssid = run
         .coordinator
-        .start_sign(access_structure_ref, sign_task, &device_set)
+        .start_sign(access_structure_ref, sign_task, &device_set, &mut test_rng)
         .unwrap();
 
     // we going to take the request but not send it.
