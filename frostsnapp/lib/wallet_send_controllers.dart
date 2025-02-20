@@ -7,6 +7,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
 import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/global.dart';
+import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/theme.dart';
 
 const satoshisInOneBtc = 100000000;
@@ -594,10 +595,7 @@ class SelectedDevicesController with ChangeNotifier {
   WalletContext? _walletContext;
   FrostKey? _frostKey;
 
-  final HashSet<DeviceId> _selected = HashSet(
-    equals: (a, b) => a.field0.toString() == b.field0.toString(),
-    hashCode: (id) => id.field0.toString().hashCode,
-  );
+  final HashSet<DeviceId> _selected = deviceIdSet([]);
 
   SelectedDevicesController();
 
@@ -663,10 +661,7 @@ class DeviceSignatureModel {
 class SigningSessionController with ChangeNotifier {
   late final StreamSubscription<DeviceListUpdate> _deviceStateSub;
   StreamSubscription<SigningState>? _signingStateSub;
-  final HashSet<DeviceId> _connectedDevices = HashSet(
-    equals: (a, b) => a.field0.toString() == b.field0.toString(),
-    hashCode: (id) => id.field0.toString().hashCode,
-  );
+  final HashSet<DeviceId> _connectedDevices = deviceIdSet([]);
   UnsignedTx? _unsignedTx;
   SignedTx? _signedTx;
 
@@ -722,12 +717,15 @@ class SigningSessionController with ChangeNotifier {
 
   Iterable<DeviceSignatureModel>? mapDevices(Iterable<DeviceModel> devices) {
     if (_state == null) return null;
-    return devices.map((device) => DeviceSignatureModel(
-          id: device.id,
-          hasSignature: _state!.gotShares.any((thisId) =>
-              thisId.field0.toString() == device.id.field0.toString()),
-          isConnected: _connectedDevices.contains(device.id),
-        ));
+    return devices.map(
+      (device) => DeviceSignatureModel(
+        id: device.id,
+        hasSignature: _state!.gotShares.any(
+          (thisId) => deviceIdEquals(thisId, device.id),
+        ),
+        isConnected: _connectedDevices.contains(device.id),
+      ),
+    );
   }
 
   void maybeRequestDeviceSign() async {
