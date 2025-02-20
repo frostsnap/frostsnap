@@ -3,10 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/wallet_send_controllers.dart';
 
-enum FeeRatePage {
-  eta,
-  feerate,
-}
+enum FeeRatePage { eta, feerate }
 
 class FeeRatePickerDialog extends StatefulWidget {
   final WalletContext walletContext;
@@ -38,8 +35,9 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
     super.initState();
 
     final satsPerVB = widget.feeRateModel.satsPerVB;
-    _feeRateEditingController =
-        TextEditingController(text: satsPerVB.toString());
+    _feeRateEditingController = TextEditingController(
+      text: satsPerVB.toString(),
+    );
     _feeRateEditingController.addListener(_onChangedFeeRateInput);
     _tryCalculateFee();
   }
@@ -56,8 +54,11 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
   }
 
   _onRefresh(BuildContext context) async {
-    await widget.feeRateModel
-        .refreshEstimates(context, widget.walletContext, null);
+    await widget.feeRateModel.refreshEstimates(
+      context,
+      widget.walletContext,
+      null,
+    );
   }
 
   _onTapSubmitButton() {
@@ -117,10 +118,12 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
       if (context.mounted) setState(() => _feeAmount = fee);
     } catch (e) {
       if (context.mounted) {
-        setState(() => _feeAmountError = e
-            .toString()
-            .replaceAll('FrbAnyhowException(', '')
-            .replaceAll(')', ''));
+        setState(
+          () => _feeAmountError = e
+              .toString()
+              .replaceAll('FrbAnyhowException(', '')
+              .replaceAll(')', ''),
+        );
       }
     }
   }
@@ -191,13 +194,16 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
       margin: EdgeInsets.all(0.0),
       color: theme.colorScheme.surfaceContainerHigh,
       child: ListenableBuilder(
-          listenable: widget.feeRateModel,
-          builder: (context, _) =>
-              Column(children: _buildEtaTiles().toList().reversed.toList())),
+        listenable: widget.feeRateModel,
+        builder: (context, _) =>
+            Column(children: _buildEtaTiles().toList().reversed.toList()),
+      ),
     );
 
     final feeRateField = TextField(
       controller: _feeRateEditingController,
+      onSubmitted:
+          _feeRateEditingError == null ? (_) => _onTapSubmitButton() : null,
       // Highlight on tap.
       onTap: () => _feeRateEditingController.selection = TextSelection(
         baseOffset: 0,
@@ -232,8 +238,9 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
     );
 
     final pullDownToRefresh = InkWell(
-      customBorder:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(4.0)),
+      customBorder: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(4.0),
+      ),
       onTap: () => _onRefresh(context),
       child: SizedBox(
         height: 32.0,
@@ -263,9 +270,7 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
     final feeRateCard = Card(
       margin: EdgeInsets.all(0.0),
       color: theme.colorScheme.surfaceContainerHigh,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12.0),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
       child: Padding(
         padding: EdgeInsets.fromLTRB(8.0, 24.0, 8.0, 16.0),
         child: feeRateField,
@@ -276,10 +281,7 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
       pullDownToRefresh,
       etaListCard,
       feeRateCard,
-      Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [submitButton],
-      )
+      Row(mainAxisAlignment: MainAxisAlignment.end, children: [submitButton]),
     ];
 
     return Dialog(
