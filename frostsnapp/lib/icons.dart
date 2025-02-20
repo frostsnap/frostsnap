@@ -6,8 +6,12 @@ class SpinningSyncIcon extends StatefulWidget {
   final double? size;
   final IconData? iconData;
 
-  const SpinningSyncIcon(
-      {super.key, required this.spinStream, this.iconData, this.size});
+  const SpinningSyncIcon({
+    super.key,
+    required this.spinStream,
+    this.iconData,
+    this.size,
+  });
 
   factory SpinningSyncIcon.always({double? size, IconData? iconData}) {
     late final StreamController<bool> controller;
@@ -17,14 +21,19 @@ class SpinningSyncIcon extends StatefulWidget {
       },
     );
     return SpinningSyncIcon(
-        spinStream: controller.stream, iconData: iconData, size: size);
+      spinStream: controller.stream,
+      iconData: iconData,
+      size: size,
+    );
   }
 
   factory SpinningSyncIcon.until(Future<void> future, {double? size}) {
     late final StreamController<bool> controller;
-    controller = StreamController<bool>.broadcast(onListen: () {
-      controller.add(true);
-    });
+    controller = StreamController<bool>.broadcast(
+      onListen: () {
+        controller.add(true);
+      },
+    );
     future.whenComplete(() => controller.add(false));
     return SpinningSyncIcon(spinStream: controller.stream, size: size);
   }
@@ -41,18 +50,23 @@ class _SpinningSyncIconState extends State<SpinningSyncIcon>
   @override
   void initState() {
     super.initState();
-    _controller =
-        AnimationController(vsync: this, duration: Duration(seconds: 5));
+    _controller = AnimationController(
+      vsync: this,
+      duration: Duration(seconds: 5),
+    );
 
-    _subscription = widget.spinStream.listen((spinning) {
-      if (spinning) {
-        _startSpinning();
-      } else {
+    _subscription = widget.spinStream.listen(
+      (spinning) {
+        if (spinning) {
+          _startSpinning();
+        } else {
+          _stopSpinning();
+        }
+      },
+      onDone: () {
         _stopSpinning();
-      }
-    }, onDone: () {
-      _stopSpinning();
-    });
+      },
+    );
   }
 
   void _startSpinning() {
@@ -112,24 +126,23 @@ class _SpinningSyncButtonState extends State<SpinningSyncButton> {
   @override
   Widget build(BuildContext context) {
     return IconButton(
-      onPressed: _isAnimating
-          ? null
-          : () async {
-              setState(() {
-                _isAnimating = true;
-              });
-              _spinController.add(true);
-              await widget.onPressed();
-              _spinController.add(false);
-              if (mounted) {
+      onPressed:
+          _isAnimating
+              ? null
+              : () async {
                 setState(() {
-                  _isAnimating = false;
+                  _isAnimating = true;
                 });
-              }
-            },
-      icon: SpinningSyncIcon(
-        spinStream: _spinController.stream,
-      ),
+                _spinController.add(true);
+                await widget.onPressed();
+                _spinController.add(false);
+                if (mounted) {
+                  setState(() {
+                    _isAnimating = false;
+                  });
+                }
+              },
+      icon: SpinningSyncIcon(spinStream: _spinController.stream),
     );
   }
 }

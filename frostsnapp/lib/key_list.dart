@@ -20,48 +20,62 @@ class KeyList extends StatelessWidget {
   final Function(BuildContext, FrostKey) itemBuilder;
   final Function(BuildContext, RecoverableKey) recoverableBuilder;
 
-  const KeyList(
-      {super.key, required this.itemBuilder, required this.recoverableBuilder});
+  const KeyList({
+    super.key,
+    required this.itemBuilder,
+    required this.recoverableBuilder,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final keyStateStream =
-        coord.subKeyEvents().toBehaviorSubject().map((value) {
+    final keyStateStream = coord.subKeyEvents().toBehaviorSubject().map((
+      value,
+    ) {
       return value;
     });
 
     final Stream<List<KeyItem>> keyStream = keyStateStream.map((keyState) {
-      return keyState.keys.map((frostKey) {
-        return KeyItem.left(frostKey);
-      }).followedBy(keyState.recoverable.map((RecoverableKey recoverable) {
-        return KeyItem.right(recoverable);
-      })).toList();
+      return keyState.keys
+          .map((frostKey) {
+            return KeyItem.left(frostKey);
+          })
+          .followedBy(
+            keyState.recoverable.map((RecoverableKey recoverable) {
+              return KeyItem.right(recoverable);
+            }),
+          )
+          .toList();
     });
 
     return StreamBuilder(
-        stream: keyStream,
-        builder: (context, snap) {
-          final keys = snap.data ?? [];
-          if (keys.isEmpty) {
-            return Center(child: Text("You don't have any keys"));
-          } else {
-            return ListView.builder(
-                shrinkWrap: true,
-                padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                itemCount: keys.length,
-                itemBuilder: (context, index) {
-                  final key = keys[index];
-                  return Padding(
-                    padding: EdgeInsets.only(bottom: 16.0),
-                    child: key.match(left: (frostKey) {
-                      return itemBuilder(context, frostKey);
-                    }, right: (recoverable) {
-                      return recoverableBuilder(context, recoverable);
-                    }),
-                  );
-                });
-          }
-        });
+      stream: keyStream,
+      builder: (context, snap) {
+        final keys = snap.data ?? [];
+        if (keys.isEmpty) {
+          return Center(child: Text("You don't have any keys"));
+        } else {
+          return ListView.builder(
+            shrinkWrap: true,
+            padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            itemCount: keys.length,
+            itemBuilder: (context, index) {
+              final key = keys[index];
+              return Padding(
+                padding: EdgeInsets.only(bottom: 16.0),
+                child: key.match(
+                  left: (frostKey) {
+                    return itemBuilder(context, frostKey);
+                  },
+                  right: (recoverable) {
+                    return recoverableBuilder(context, recoverable);
+                  },
+                ),
+              );
+            },
+          );
+        }
+      },
+    );
   }
 }
 
@@ -73,10 +87,9 @@ class RecoverableKeyCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cardTheme = Theme.of(context).cardTheme;
-    final ShapeBorder cardShape = cardTheme.shape ??
-        RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12.0),
-        );
+    final ShapeBorder cardShape =
+        cardTheme.shape ??
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0));
 
     return Padding(
       padding: const EdgeInsets.all(4.0),
@@ -109,7 +122,7 @@ class RecoverableKeyCard extends StatelessWidget {
                         const SizedBox(height: 8),
                         AccessStructureSummary(t: recoverableKey.threshold),
                       ],
-                    )
+                    ),
                   ],
                 ),
                 Positioned(
@@ -119,7 +132,8 @@ class RecoverableKeyCard extends StatelessWidget {
                     onPressed: () async {
                       try {
                         coord.startRecovery(
-                            keyId: recoverableKey.accessStructureRef.keyId);
+                          keyId: recoverableKey.accessStructureRef.keyId,
+                        );
                       } on FrbAnyhowException catch (e) {
                         if (context.mounted) {
                           showErrorSnackbarBottom(context, e.anyhow);
@@ -142,11 +156,12 @@ class RecoveringKeyCard extends StatelessWidget {
   final String keyName;
   final KeyId? keyId;
   final List<(int, int)> accessStructureSummaries;
-  const RecoveringKeyCard(
-      {super.key,
-      this.keyId,
-      this.accessStructureSummaries = const [],
-      required this.keyName});
+  const RecoveringKeyCard({
+    super.key,
+    this.keyId,
+    this.accessStructureSummaries = const [],
+    required this.keyName,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -154,10 +169,9 @@ class RecoveringKeyCard extends StatelessWidget {
     final mainAccessStructure = accessStructureSummaries[0];
     final t = mainAccessStructure.$1;
     final n = mainAccessStructure.$2;
-    final ShapeBorder cardShape = cardTheme.shape ??
-        RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12.0),
-        );
+    final ShapeBorder cardShape =
+        cardTheme.shape ??
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0));
     final moreNeeded = t - n;
     String recoveryText = "";
     if (moreNeeded > 1) {
@@ -169,61 +183,80 @@ class RecoveringKeyCard extends StatelessWidget {
     }
 
     return Padding(
-        padding: cardTheme.margin ?? EdgeInsets.all(8.0),
-        child: DottedBorder(
-            customPath: (size) {
-              final Rect rect = Rect.fromLTWH(0, 0, size.width, size.height);
-              return cardShape.getOuterPath(rect);
-            },
-            strokeWidth: 2,
-            dashPattern: const [8, 4],
-            color: Colors.black, // Customize the border color
-            child: Material(
-                color: Colors.transparent,
-                shadowColor: Colors.transparent,
-                shape: cardShape,
-                elevation: cardTheme.elevation ?? 1.0,
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(children: [
-                          Text(
-                            keyName,
-                            style: Theme.of(context).textTheme.titleMedium,
+      padding: cardTheme.margin ?? EdgeInsets.all(8.0),
+      child: DottedBorder(
+        customPath: (size) {
+          final Rect rect = Rect.fromLTWH(0, 0, size.width, size.height);
+          return cardShape.getOuterPath(rect);
+        },
+        strokeWidth: 2,
+        dashPattern: const [8, 4],
+        color: Colors.black, // Customize the border color
+        child: Material(
+          color: Colors.transparent,
+          shadowColor: Colors.transparent,
+          shape: cardShape,
+          elevation: cardTheme.elevation ?? 1.0,
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      keyName,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    SizedBox(width: 8),
+                    AccessStructureSummary(t: t, n: n),
+                  ],
+                ),
+                SizedBox(height: 10),
+                Text(
+                  recoveryText,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall!.copyWith(fontStyle: FontStyle.italic),
+                ),
+                SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: AnimatedCustomProgressIndicator(
+                        progress: n,
+                        total: t,
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) {
+                              return KeyContext(
+                                keyId: keyId!,
+                                child: Scaffold(
+                                  body: DeleteWalletPage(),
+                                  appBar: AppBar(
+                                    title: Text("Cancel recovery"),
+                                  ),
+                                ),
+                              );
+                            },
                           ),
-                          SizedBox(width: 8),
-                          AccessStructureSummary(t: t, n: n),
-                        ]),
-                        SizedBox(height: 10),
-                        Text(recoveryText,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall!
-                                .copyWith(fontStyle: FontStyle.italic)),
-                        SizedBox(height: 10),
-                        Row(children: [
-                          Expanded(
-                              child: AnimatedCustomProgressIndicator(
-                                  progress: n, total: t)),
-                          IconButton(
-                              onPressed: () {
-                                Navigator.push(context,
-                                    MaterialPageRoute(builder: (context) {
-                                  return KeyContext(
-                                      keyId: keyId!,
-                                      child: Scaffold(
-                                        body: DeleteWalletPage(),
-                                        appBar: AppBar(
-                                            title: Text("Cancel recovery")),
-                                      ));
-                                }));
-                              },
-                              icon: Icon(Icons.cancel))
-                        ]),
-                      ]),
-                ))));
+                        );
+                      },
+                      icon: Icon(Icons.cancel),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -246,14 +279,15 @@ class KeyCard extends StatelessWidget {
     final superWallet = SuperWalletContext.of(context);
     if (superWallet == null || keyId == null || frostKey == null) return null;
     return () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => superWallet.tryWrapInWalletContext(
+      context,
+      MaterialPageRoute(
+        builder:
+            (context) => superWallet.tryWrapInWalletContext(
               keyId: keyId!,
               child: WalletHome(),
             ),
-          ),
-        );
+      ),
+    );
   }
 
   @override
@@ -266,16 +300,14 @@ class KeyCard extends StatelessWidget {
       color: theme.colorScheme.secondaryContainer,
       margin: EdgeInsets.all(0.0),
       child: ListTile(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12.0),
+        ),
         onTap: onPressed(context),
         title: Text(keyName),
         subtitle: Row(
           mainAxisSize: MainAxisSize.min,
-          children: [
-            AccessStructureSummary(t: t, n: n),
-            Card.outlined(),
-          ],
+          children: [AccessStructureSummary(t: t, n: n), Card.outlined()],
         ),
         leading: Badge(
           isLabelVisible: !(network?.isMainnet() ?? true),
@@ -284,12 +316,14 @@ class KeyCard extends StatelessWidget {
           backgroundColor: theme.colorScheme.surface,
           label: Text(network?.name() ?? "", textAlign: TextAlign.center),
           child: CircleAvatar(
-            backgroundColor: (network?.isMainnet() ?? false)
-                ? theme.colorScheme.primary
-                : theme.colorScheme.error,
-            foregroundColor: (network?.isMainnet() ?? false)
-                ? theme.colorScheme.onPrimary
-                : theme.colorScheme.onError,
+            backgroundColor:
+                (network?.isMainnet() ?? false)
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.error,
+            foregroundColor:
+                (network?.isMainnet() ?? false)
+                    ? theme.colorScheme.onPrimary
+                    : theme.colorScheme.onError,
             child: Icon(Icons.currency_bitcoin_rounded),
           ),
         ),
@@ -312,27 +346,29 @@ class KeyListWithConfetti extends StatelessWidget {
         Positioned.fill(
           child: KeyList(
             itemBuilder: (context, key) {
-              final bool isRecovering = key
-                  .accessStructureState()
-                  .field0
-                  .every((accs) => switch (accs) {
-                        AccessStructureState_Recovering() => true,
-                        AccessStructureState_Complete() => false,
-                      });
-              final accessStructureSummaries = key
-                  .accessStructureState()
-                  .field0
-                  .map((accs) => switch (accs) {
-                        AccessStructureState_Recovering(:final field0) => (
+              final bool isRecovering = key.accessStructureState().field0.every(
+                (accs) => switch (accs) {
+                  AccessStructureState_Recovering() => true,
+                  AccessStructureState_Complete() => false,
+                },
+              );
+              final accessStructureSummaries =
+                  key
+                      .accessStructureState()
+                      .field0
+                      .map(
+                        (accs) => switch (accs) {
+                          AccessStructureState_Recovering(:final field0) => (
                             field0.threshold,
-                            field0.gotSharesFrom.length
+                            field0.gotSharesFrom.length,
                           ),
-                        AccessStructureState_Complete(:final field0) => (
+                          AccessStructureState_Complete(:final field0) => (
                             field0.threshold(),
-                            field0.devices().length
+                            field0.devices().length,
                           ),
-                      })
-                  .toList();
+                        },
+                      )
+                      .toList();
 
               if (!isRecovering) {
                 return KeyCard(
@@ -355,9 +391,10 @@ class KeyListWithConfetti extends StatelessWidget {
         ),
         Center(
           child: ConfettiWidget(
-              confettiController: controller,
-              blastDirectionality: BlastDirectionality.explosive,
-              numberOfParticles: 50),
+            confettiController: controller,
+            blastDirectionality: BlastDirectionality.explosive,
+            numberOfParticles: 50,
+          ),
         ),
       ],
     );

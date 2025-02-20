@@ -11,16 +11,18 @@ class CirclePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = theme.colorScheme.primary
-      ..strokeWidth = 2.0
-      ..style = PaintingStyle.stroke;
+    final paint =
+        Paint()
+          ..color = theme.colorScheme.primary
+          ..strokeWidth = 2.0
+          ..style = PaintingStyle.stroke;
 
     canvas.drawArc(
       Rect.fromCenter(
-          center: Offset(size.width / 2, size.height / 2),
-          width: size.width,
-          height: size.height),
+        center: Offset(size.width / 2, size.height / 2),
+        width: size.width,
+        height: size.height,
+      ),
       -math.pi / 2, // Start from top
       2 * math.pi * progress, // Sweep angle
       false,

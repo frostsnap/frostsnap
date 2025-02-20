@@ -7,8 +7,11 @@ class SendScanBody extends StatefulWidget {
   final List<CameraDescription> cameras;
   final int initialSelected;
 
-  const SendScanBody(
-      {super.key, required this.cameras, this.initialSelected = 0});
+  const SendScanBody({
+    super.key,
+    required this.cameras,
+    this.initialSelected = 0,
+  });
 
   @override
   State<SendScanBody> createState() => _SendScanBodyState();
@@ -76,7 +79,8 @@ class _SendScanBodyState extends State<SendScanBody> {
   void onPop(BuildContext context, bool didPop, String? scanResult) async {
     if (didPop) return;
     await (controller?.stopImageStream() ?? Future.value()).then(
-        (_) => (context.mounted) ? Navigator.pop(context, scanResult) : null);
+      (_) => (context.mounted) ? Navigator.pop(context, scanResult) : null,
+    );
   }
 
   @override
@@ -85,20 +89,21 @@ class _SendScanBodyState extends State<SendScanBody> {
       initCamera(context);
     }
 
-    final cameraPreview = (widget.cameras.isEmpty)
-        ? AspectRatio(
-            aspectRatio: 1,
-            child: Center(child: Text('No cameras found.')),
-          )
-        : (controller == null)
+    final cameraPreview =
+        (widget.cameras.isEmpty)
             ? AspectRatio(
-                aspectRatio: 1,
-                child: Center(child: CircularProgressIndicator()),
-              )
+              aspectRatio: 1,
+              child: Center(child: Text('No cameras found.')),
+            )
+            : (controller == null)
+            ? AspectRatio(
+              aspectRatio: 1,
+              child: Center(child: CircularProgressIndicator()),
+            )
             : ClipRRect(
-                borderRadius: BorderRadius.circular(28.0),
-                child: CameraPreview(controller!),
-              );
+              borderRadius: BorderRadius.circular(28.0),
+              child: CameraPreview(controller!),
+            );
 
     final stack = Stack(
       children: [
@@ -134,8 +139,8 @@ class _SendScanBodyState extends State<SendScanBody> {
 
     return PopScope<String>(
       canPop: false,
-      onPopInvokedWithResult: (didPop, scanResult) =>
-          onPop(context, didPop, scanResult),
+      onPopInvokedWithResult:
+          (didPop, scanResult) => onPop(context, didPop, scanResult),
       child: stack,
     );
   }

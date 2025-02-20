@@ -10,22 +10,25 @@ class AccessStructureListWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView.builder(
-        shrinkWrap: true,
-        itemCount: accessStructures.length,
-        itemBuilder: (context, i) {
-          final accessStructure = accessStructures[i];
-          final widget = switch (accessStructure) {
-            AccessStructureState_Recovering(:final field0) =>
-              AccessStructureWidget(
-                  devices: field0.gotSharesFrom
+      shrinkWrap: true,
+      itemCount: accessStructures.length,
+      itemBuilder: (context, i) {
+        final accessStructure = accessStructures[i];
+        final widget = switch (accessStructure) {
+          AccessStructureState_Recovering(:final field0) =>
+            AccessStructureWidget(
+              devices:
+                  field0.gotSharesFrom
                       .map((device) => coord.getDeviceName(id: device) ?? "??")
                       .toList(),
-                  threshold: field0.threshold),
-            AccessStructureState_Complete(:final field0) =>
-              AccessStructureWidget.fromAccessStructure(field0)
-          };
-          return Center(child: widget);
-        });
+              threshold: field0.threshold,
+            ),
+          AccessStructureState_Complete(:final field0) =>
+            AccessStructureWidget.fromAccessStructure(field0),
+        };
+        return Center(child: widget);
+      },
+    );
   }
 }
 
@@ -33,16 +36,21 @@ class AccessStructureWidget extends StatelessWidget {
   final List<String> devices;
   final int threshold;
 
-  const AccessStructureWidget(
-      {super.key, required this.devices, required this.threshold});
+  const AccessStructureWidget({
+    super.key,
+    required this.devices,
+    required this.threshold,
+  });
 
   static AccessStructureWidget fromAccessStructure(
-      AccessStructure accessStructure) {
+    AccessStructure accessStructure,
+  ) {
     return AccessStructureWidget(
-      devices: accessStructure
-          .devices()
-          .map((id) => coord.getDeviceName(id: id) ?? "??")
-          .toList(),
+      devices:
+          accessStructure
+              .devices()
+              .map((id) => coord.getDeviceName(id: id) ?? "??")
+              .toList(),
       threshold: accessStructure.threshold(),
     );
   }
@@ -64,15 +72,16 @@ class AccessStructureWidget extends StatelessWidget {
           child: Wrap(
             spacing: 8,
             runSpacing: 4,
-            children: devices.map((device) {
-              return Chip(
-                label: Text(
-                  device,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                backgroundColor: theme.colorScheme.surfaceContainer,
-              );
-            }).toList(),
+            children:
+                devices.map((device) {
+                  return Chip(
+                    label: Text(
+                      device,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    backgroundColor: theme.colorScheme.surfaceContainer,
+                  );
+                }).toList(),
           ),
         ),
 
@@ -106,9 +115,6 @@ class AccessStructureSummary extends StatelessWidget {
   Widget build(BuildContext context) {
     final nText = n < t ? "?" : n.toString();
 
-    return Text(
-      "$t-of-$nText",
-      style: Theme.of(context).textTheme.titleSmall!,
-    );
+    return Text("$t-of-$nText", style: Theme.of(context).textTheme.titleSmall!);
   }
 }

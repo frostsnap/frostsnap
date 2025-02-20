@@ -16,8 +16,9 @@ class WalletReceivePage extends StatefulWidget {
 class _WalletReceivePageState extends State<WalletReceivePage> {
   final GlobalKey<AnimatedListState> _listKey = GlobalKey<AnimatedListState>();
   late List<Address> _addresses = [];
-  final ScrollController scrollController =
-      ScrollController(keepScrollOffset: false);
+  final ScrollController scrollController = ScrollController(
+    keepScrollOffset: false,
+  );
   bool fabIsExtended = true;
 
   @override
@@ -49,8 +50,9 @@ class _WalletReceivePageState extends State<WalletReceivePage> {
   Future<Address> _addAddress(BuildContext context) async {
     final walletCtx = WalletContext.of(context)!;
 
-    final nextAddressInfo = await walletCtx.superWallet
-        .nextAddress(masterAppkey: walletCtx.masterAppkey);
+    final nextAddressInfo = await walletCtx.superWallet.nextAddress(
+      masterAppkey: walletCtx.masterAppkey,
+    );
     final Address newAddress = nextAddressInfo;
 
     if (context.mounted) {
@@ -67,8 +69,9 @@ class _WalletReceivePageState extends State<WalletReceivePage> {
   @override
   Widget build(BuildContext context) {
     final walletCtx = WalletContext.of(context)!;
-    _addresses = walletCtx.superWallet
-        .addressesState(masterAppkey: walletCtx.masterAppkey);
+    _addresses = walletCtx.superWallet.addressesState(
+      masterAppkey: walletCtx.masterAppkey,
+    );
 
     final body = CustomScrollView(
       controller: scrollController,
@@ -79,8 +82,9 @@ class _WalletReceivePageState extends State<WalletReceivePage> {
           sliver: SliverList.builder(
             key: _listKey,
             itemCount: _addresses.length,
-            itemBuilder: (context, index) =>
-                _buildAddressItem(context, _addresses[index]),
+            itemBuilder:
+                (context, index) =>
+                    _buildAddressItem(context, _addresses[index]),
           ),
         ),
       ],
@@ -99,11 +103,7 @@ class _WalletReceivePageState extends State<WalletReceivePage> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => walletCtx.wrap(
-              AddressPage(
-                address: address,
-              ),
-            ),
+            builder: (context) => walletCtx.wrap(AddressPage(address: address)),
           ),
         );
       }
@@ -132,16 +132,18 @@ class _WalletReceivePageState extends State<WalletReceivePage> {
 
     openAddressPage() async {
       Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => walletCtx.wrap(AddressPage(address: address)),
-          ));
+        context,
+        MaterialPageRoute(
+          builder: (context) => walletCtx.wrap(AddressPage(address: address)),
+        ),
+      );
     }
 
     copyAddress() async {
       Clipboard.setData(ClipboardData(text: address.addressString));
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Address copied to clipboard')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Address copied to clipboard')));
     }
 
     return Card.filled(
@@ -152,8 +154,9 @@ class _WalletReceivePageState extends State<WalletReceivePage> {
       ),
       child: ListTile(
         isThreeLine: true,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.0)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16.0),
+        ),
         title: Text(
           address.addressString,
           maxLines: 2,

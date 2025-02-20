@@ -9,20 +9,22 @@ Future<T?> showDeviceActionDialog<T>({
   var failed = false;
   BuildContext? dialogContext;
 
-  complete?.then((result) {
-    if (dialogContext != null && dialogContext!.mounted) {
-      Navigator.pop(dialogContext!, result);
-    }
-  }).catchError((error) {
-    if (!failed && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("ERROR: $error")),
-      );
-      if (dialogContext != null && dialogContext!.mounted) {
-        Navigator.pop(dialogContext!);
-      }
-    }
-  });
+  complete
+      ?.then((result) {
+        if (dialogContext != null && dialogContext!.mounted) {
+          Navigator.pop(dialogContext!, result);
+        }
+      })
+      .catchError((error) {
+        if (!failed && context.mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text("ERROR: $error")));
+          if (dialogContext != null && dialogContext!.mounted) {
+            Navigator.pop(dialogContext!);
+          }
+        }
+      });
 
   final theme = Theme.of(context);
   final result = await showModalBottomSheet<T>(
@@ -42,10 +44,7 @@ Future<T?> showDeviceActionDialog<T>({
                 color: theme.colorScheme.surfaceContainer,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
                 boxShadow: const [
-                  BoxShadow(
-                    blurRadius: 10,
-                    offset: Offset(0, -2),
-                  ),
+                  BoxShadow(blurRadius: 10, offset: Offset(0, -2)),
                 ],
               ),
               child: ConstrainedBox(
@@ -91,25 +90,31 @@ class DialogHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainer,
-          border: Border(
-            bottom: BorderSide(
-              color: Theme.of(context).dividerColor, // Color of the divider
-              width: 1.0, // Thickness of the divider
-            ),
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainer,
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).dividerColor, // Color of the divider
+            width: 1.0, // Thickness of the divider
           ),
         ),
-        padding:
-            EdgeInsets.only(top: 15.0, bottom: 10.0, left: 25.0, right: 25.0),
-        child: DefaultTextStyle(
-            style: TextStyle(
-              fontSize: 18.0,
-              fontWeight: FontWeight.normal,
-              //color: textPrimaryColor,
-            ),
-            child: Align(alignment: Alignment.topCenter, child: child)));
+      ),
+      padding: EdgeInsets.only(
+        top: 15.0,
+        bottom: 10.0,
+        left: 25.0,
+        right: 25.0,
+      ),
+      child: DefaultTextStyle(
+        style: TextStyle(
+          fontSize: 18.0,
+          fontWeight: FontWeight.normal,
+          //color: textPrimaryColor,
+        ),
+        child: Align(alignment: Alignment.topCenter, child: child),
+      ),
+    );
   }
 }
 
@@ -122,27 +127,32 @@ class DialogFooter extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: theme
-              .colorScheme.surfaceContainer, // Background color of the header
-          border: Border(
-            top: BorderSide(
-              color: Theme.of(context).dividerColor, // Color of the divider
-              width: 1.0, // Thickness of the divider
-            ),
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color:
+            theme
+                .colorScheme
+                .surfaceContainer, // Background color of the header
+        border: Border(
+          top: BorderSide(
+            color: Theme.of(context).dividerColor, // Color of the divider
+            width: 1.0, // Thickness of the divider
           ),
         ),
-        padding: EdgeInsets.only(
-            top: 15.0,
-            bottom: 10.0,
-            left: 25.0,
-            right: 25.0), // Padding for the header
-        child: DefaultTextStyle(
-            style: TextStyle(
-              fontSize: 18.0, // Default text size
-              fontWeight: FontWeight.normal, // Default text weight
-            ), // The content passed to the header
-            child: Align(alignment: Alignment.topCenter, child: child)));
+      ),
+      padding: EdgeInsets.only(
+        top: 15.0,
+        bottom: 10.0,
+        left: 25.0,
+        right: 25.0,
+      ), // Padding for the header
+      child: DefaultTextStyle(
+        style: TextStyle(
+          fontSize: 18.0, // Default text size
+          fontWeight: FontWeight.normal, // Default text weight
+        ), // The content passed to the header
+        child: Align(alignment: Alignment.topCenter, child: child),
+      ),
+    );
   }
 }

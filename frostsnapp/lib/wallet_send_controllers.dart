@@ -39,7 +39,9 @@ class AddressInputController with ChangeNotifier {
   bool submit(WalletContext walletContext) {
     _lastSubmitted = controller.text;
     _errorText = api.validateDestinationAddressMethodBitcoinNetwork(
-        that: walletContext.network, address: controller.text);
+      that: walletContext.network,
+      address: controller.text,
+    );
     // We always notify listeners on submit (dont' check for changes) for simplicity and safety.
     notifyListeners();
     return _errorText == null;
@@ -104,12 +106,13 @@ class AddressInput extends StatelessWidget {
             //border: defaultTextInputBorder,
             hintText: 'bc1...',
             errorText: controller.errorText,
-            suffixIcon: controller.controller.text.isEmpty
-                ? null
-                : IconButton(
-                    onPressed: () => controller.controller.clear(),
-                    icon: Icon(Icons.clear),
-                  ),
+            suffixIcon:
+                controller.controller.text.isEmpty
+                    ? null
+                    : IconButton(
+                      onPressed: () => controller.controller.clear(),
+                      icon: Icon(Icons.clear),
+                    ),
           ),
           keyboardType: TextInputType.text,
           textCapitalization: TextCapitalization.none,
@@ -127,11 +130,7 @@ class AddressInput extends StatelessWidget {
 }
 
 enum AmountUnit {
-  satoshi(
-    suffixText: ' sat',
-    hintText: '0',
-    hasDecimal: false,
-  ),
+  satoshi(suffixText: ' sat', hintText: '0', hasDecimal: false),
   bitcoin(
     suffixText: ' \u20BF',
     //suffixText: ' bitcoin',
@@ -173,16 +172,25 @@ class FeeRateController with ChangeNotifier {
   }
 
   bool get estimateRunning => _estimateRunning;
-  Future<bool> refreshEstimates(BuildContext context,
-      WalletContext walletContext, int? setFeeRateToTargetBlocks) async {
+  Future<bool> refreshEstimates(
+    BuildContext context,
+    WalletContext walletContext,
+    int? setFeeRateToTargetBlocks,
+  ) async {
     _estimateFut?.ignore();
-    _estimateFut =
-        _refreshEstimates(context, walletContext, setFeeRateToTargetBlocks);
+    _estimateFut = _refreshEstimates(
+      context,
+      walletContext,
+      setFeeRateToTargetBlocks,
+    );
     return await _estimateFut!;
   }
 
-  Future<bool> _refreshEstimates(BuildContext context,
-      WalletContext walletContext, int? setFeeRateToTargetBlocks) async {
+  Future<bool> _refreshEstimates(
+    BuildContext context,
+    WalletContext walletContext,
+    int? setFeeRateToTargetBlocks,
+  ) async {
     if (context.mounted) {
       _estimateRunning = true;
       notifyListeners();
@@ -192,8 +200,9 @@ class FeeRateController with ChangeNotifier {
     try {
       // Map of feerate(sat/vB) to target blocks.
       var priorityMap = HashMap<int, int>();
-      final list = await walletContext.wallet.superWallet
-          .estimateFee(targetBlocks: Uint64List.fromList([1, 2, 3, 4, 5, 6]));
+      final list = await walletContext.wallet.superWallet.estimateFee(
+        targetBlocks: Uint64List.fromList([1, 2, 3, 4, 5, 6]),
+      );
       for (final elem in list) {
         final (target, feerate) = elem;
         final oldTarget = priorityMap[feerate];
@@ -203,8 +212,9 @@ class FeeRateController with ChangeNotifier {
       }
       if (context.mounted) {
         _priorityMap.clear();
-        _priorityMap.addEntries(priorityMap.entries
-            .map((e) => MapEntry(e.value, e.key.toDouble())));
+        _priorityMap.addEntries(
+          priorityMap.entries.map((e) => MapEntry(e.value, e.key.toDouble())),
+        );
         if (setFeeRateToTargetBlocks != null) {
           final feeRateAtTarget = _priorityMap[setFeeRateToTargetBlocks];
           if (feeRateAtTarget != null) {
@@ -345,15 +355,16 @@ class AmountInputController with ChangeNotifier {
     AmountUnit unit = AmountUnit.satoshi,
     int? amount,
     String? error,
-  })  : _unit = unit,
-        _amount = amount,
-        _textError = error {
+  }) : _unit = unit,
+       _amount = amount,
+       _textError = error {
     _amountAvailableController = amountAvailableController;
     _amountAvailableController.addListener(onAmountAvailableChanged);
 
     _textEditingController = TextEditingController();
-    _textEditingController
-        .addListener(() => amountText = _textEditingController.text);
+    _textEditingController.addListener(
+      () => amountText = _textEditingController.text,
+    );
   }
 
   @override
@@ -544,27 +555,28 @@ class AmountInput extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: model,
-      builder: (context, child) => TextField(
-        controller: model.textEditingController,
-        style: TextStyle(fontFamily: monospaceTextStyle.fontFamily),
-        decoration: (decoration ?? InputDecoration()).copyWith(
-          errorText: model.error,
-          hintText: model.unit.hintText,
-          suffixText: model.unit.suffixText,
-          suffixIcon: IconButton(
-            onPressed: onUnitButtonPressed,
-            icon: Icon(Icons.swap_vert),
+      builder:
+          (context, child) => TextField(
+            controller: model.textEditingController,
+            style: TextStyle(fontFamily: monospaceTextStyle.fontFamily),
+            decoration: (decoration ?? InputDecoration()).copyWith(
+              errorText: model.error,
+              hintText: model.unit.hintText,
+              suffixText: model.unit.suffixText,
+              suffixIcon: IconButton(
+                onPressed: onUnitButtonPressed,
+                icon: Icon(Icons.swap_vert),
+              ),
+              border: defaultTextInputBorder,
+            ),
+            keyboardType: TextInputType.numberWithOptions(
+              signed: false,
+              decimal: model.unit.hasDecimal,
+            ),
+            inputFormatters: [model.unit.formatter],
+            autofocus: true,
+            onSubmitted: onSubmitted,
           ),
-          border: defaultTextInputBorder,
-        ),
-        keyboardType: TextInputType.numberWithOptions(
-          signed: false,
-          decimal: model.unit.hasDecimal,
-        ),
-        inputFormatters: [model.unit.formatter],
-        autofocus: true,
-        onSubmitted: onSubmitted,
-      ),
     );
   }
 }
@@ -610,22 +622,22 @@ class SelectedDevicesController with ChangeNotifier {
   Iterable<DeviceModel> get devices {
     final isThresholdMet = this.isThresholdMet;
     if (_frostKey == null) return [];
-    return _frostKey!
-        .accessStructures()[accessStructureIndex]
-        .devices()
-        .map((id) => DeviceModel(
-              id: id,
-              selected: _selected.contains(id),
-              thresholdMet: isThresholdMet,
-            ));
+    return _frostKey!.accessStructures()[accessStructureIndex].devices().map(
+      (id) => DeviceModel(
+        id: id,
+        selected: _selected.contains(id),
+        thresholdMet: isThresholdMet,
+      ),
+    );
   }
 
   Iterable<DeviceModel> get selectedDevices =>
       devices.where((device) => device.selected);
 
-  int get threshold => (_frostKey == null)
-      ? 0
-      : _frostKey!.accessStructures()[accessStructureIndex].threshold();
+  int get threshold =>
+      (_frostKey == null)
+          ? 0
+          : _frostKey!.accessStructures()[accessStructureIndex].threshold();
   bool get isThresholdMet => _frostKey != null && _selected.length >= threshold;
   int get remaining => threshold - _selected.length;
 
@@ -690,8 +702,9 @@ class SigningSessionController with ChangeNotifier {
       if (state.gotShares.length == state.neededFrom.length &&
           state.finishedSignatures.isNotEmpty &&
           _unsignedTx != null) {
-        _signedTx =
-            await _unsignedTx!.complete(signatures: state.finishedSignatures);
+        _signedTx = await _unsignedTx!.complete(
+          signatures: state.finishedSignatures,
+        );
       }
       _state = state;
       if (hasListeners) notifyListeners();
@@ -733,7 +746,9 @@ class SigningSessionController with ChangeNotifier {
       for (final neededFrom in _state!.connectedButNeedRequest) {
         if (_connectedDevices.contains(neededFrom)) {
           await coord.requestDeviceSign(
-              deviceId: neededFrom, sessionId: _state!.sessionId);
+            deviceId: neededFrom,
+            sessionId: _state!.sessionId,
+          );
         }
       }
     }

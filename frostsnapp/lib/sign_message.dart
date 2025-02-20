@@ -20,12 +20,14 @@ class SignMessagePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: FsAppBar(title: const Text('Sign Message')),
-        body: Padding(
-          padding: EdgeInsets.all(8.0),
-          child: SignMessageForm(
-              frostKey: frostKey), // Specify the required number of devices
-        ));
+      appBar: FsAppBar(title: const Text('Sign Message')),
+      body: Padding(
+        padding: EdgeInsets.all(8.0),
+        child: SignMessageForm(
+          frostKey: frostKey,
+        ), // Specify the required number of devices
+      ),
+    );
   }
 }
 
@@ -64,12 +66,14 @@ class _SignMessageFormState extends State<SignMessageForm> {
     if (buttonReady) {
       submitButtonOnPressed = () async {
         final message = _messageController.text;
-        final signingStream = coord
-            .startSigning(
-                accessStructureRef: accessStructure.accessStructureRef(),
-                devices: selected.toList(),
-                message: message)
-            .toBehaviorSubject();
+        final signingStream =
+            coord
+                .startSigning(
+                  accessStructureRef: accessStructure.accessStructureRef(),
+                  devices: selected.toList(),
+                  message: message,
+                )
+                .toBehaviorSubject();
 
         await signMessageWorkflowDialog(context, signingStream, message);
         if (context.mounted) {
@@ -79,37 +83,39 @@ class _SignMessageFormState extends State<SignMessageForm> {
     }
 
     return Center(
-        child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        TextField(
-          controller: _messageController,
-          onChanged: (_) {
-            setState(() {});
-          },
-          decoration: InputDecoration(labelText: 'Message to sign'),
-        ),
-        SizedBox(height: 20.0),
-        Text(
-          'Select $threshold device${threshold > 1 ? "s" : ""} to sign with:',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 20.0),
-        ),
-        Expanded(
-          child: SigningDeviceSelector(
-            frostKey: widget.frostKey,
-            onChanged: (selectedDevices) => setState(() {
-              selected = selectedDevices;
-            }),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          TextField(
+            controller: _messageController,
+            onChanged: (_) {
+              setState(() {});
+            },
+            decoration: InputDecoration(labelText: 'Message to sign'),
           ),
-        ),
-        ElevatedButton(
-          onPressed: submitButtonOnPressed,
-          child: Text('Submit'),
-        ),
-      ],
-    ));
+          SizedBox(height: 20.0),
+          Text(
+            'Select $threshold device${threshold > 1 ? "s" : ""} to sign with:',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 20.0),
+          ),
+          Expanded(
+            child: SigningDeviceSelector(
+              frostKey: widget.frostKey,
+              onChanged:
+                  (selectedDevices) => setState(() {
+                    selected = selectedDevices;
+                  }),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: submitButtonOnPressed,
+            child: Text('Submit'),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -117,9 +123,11 @@ class SigningDeviceSelector extends StatefulWidget {
   final FrostKey frostKey;
   final Function(Set<DeviceId>)? onChanged;
 
-  const SigningDeviceSelector(
-      {Key? key, required this.frostKey, this.onChanged})
-      : super(key: key);
+  const SigningDeviceSelector({
+    Key? key,
+    required this.frostKey,
+    this.onChanged,
+  }) : super(key: key);
 
   @override
   State<SigningDeviceSelector> createState() => _SigningDeviceSelectorState();
@@ -163,22 +171,30 @@ class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
 
         final enoughNonces = coord.noncesAvailable(id: id) >= 1;
         return Padding(
-            padding: EdgeInsets.all(5),
-            child: CheckboxListTile(
-              title: Text(
-                  "${name ?? '<unknown>'}${enoughNonces ? '' : ' (not enough nonces)'}"),
-              value: selected.contains(id),
-              onChanged: enoughNonces ? onChanged : null,
-            ));
+          padding: EdgeInsets.all(5),
+          child: CheckboxListTile(
+            title: Text(
+              "${name ?? '<unknown>'}${enoughNonces ? '' : ' (not enough nonces)'}",
+            ),
+            value: selected.contains(id),
+            onChanged: enoughNonces ? onChanged : null,
+          ),
+        );
       },
     );
   }
 }
 
-Future<bool> signMessageWorkflowDialog(BuildContext context,
-    Stream<SigningState> signingStream, String message) async {
+Future<bool> signMessageWorkflowDialog(
+  BuildContext context,
+  Stream<SigningState> signingStream,
+  String message,
+) async {
   final signatures = await showSigningProgressDialog(
-      context, signingStream, Text("signing ‘$message’"));
+    context,
+    signingStream,
+    Text("signing ‘$message’"),
+  );
   if (signatures != null && context.mounted) {
     await _showSignatureDialog(context, signatures[0]);
   }
@@ -193,9 +209,11 @@ Future<List<EncodedSignature>?> showSigningProgressDialog(
   final stream = signingStream.toBehaviorSubject();
   SignSessionId? sessionId;
 
-  final finishedSigning = stream.asyncMap((event) {
-    return event.finishedSignatures;
-  }).firstWhere((signatures) => signatures.isNotEmpty);
+  final finishedSigning = stream
+      .asyncMap((event) {
+        return event.finishedSignatures;
+      })
+      .firstWhere((signatures) => signatures.isNotEmpty);
 
   stream.forEach((signingState) {
     sessionId = signingState.sessionId;
@@ -205,19 +223,25 @@ Future<List<EncodedSignature>?> showSigningProgressDialog(
   });
 
   final result = await showDeviceActionDialog(
-      context: context,
-      complete: finishedSigning,
-      builder: (context) {
-        return Column(children: [
+    context: context,
+    complete: finishedSigning,
+    builder: (context) {
+      return Column(
+        children: [
           DialogHeader(
-              child: Column(children: [
-            description,
-            SizedBox(height: 10),
-            Text("plug in each device")
-          ])),
-          DeviceSigningProgress(stream: stream)
-        ]);
-      });
+            child: Column(
+              children: [
+                description,
+                SizedBox(height: 10),
+                Text("plug in each device"),
+              ],
+            ),
+          ),
+          DeviceSigningProgress(stream: stream),
+        ],
+      );
+    },
+  );
 
   if (result == null) {
     if (sessionId != null) {
@@ -229,25 +253,32 @@ Future<List<EncodedSignature>?> showSigningProgressDialog(
 }
 
 Future<void> _showSignatureDialog(
-    BuildContext context, EncodedSignature signature) {
+  BuildContext context,
+  EncodedSignature signature,
+) {
   return showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-            title: Text("Signing success"),
-            content: SizedBox(
-                width: Platform.isAndroid ? double.maxFinite : 400.0,
-                child: Align(
-                    alignment: Alignment.center,
-                    child: Column(
-                      children: [
-                        Text("Here's your signature!"),
-                        SizedBox(height: 20),
-                        SelectableText(toHex(
-                            Uint8List.fromList(signature.field0.toList())))
-                      ],
-                    ))));
-      });
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        title: Text("Signing success"),
+        content: SizedBox(
+          width: Platform.isAndroid ? double.maxFinite : 400.0,
+          child: Align(
+            alignment: Alignment.center,
+            child: Column(
+              children: [
+                Text("Here's your signature!"),
+                SizedBox(height: 20),
+                SelectableText(
+                  toHex(Uint8List.fromList(signature.field0.toList())),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
 }
 
 class DeviceSigningProgress extends StatelessWidget {
@@ -258,45 +289,55 @@ class DeviceSigningProgress extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder(
-        stream: deviceListSubject.map((update) => update.state),
-        builder: (context, snapshot) {
-          final theme = Theme.of(context);
-          if (!snapshot.hasData) {
-            return CircularProgressIndicator();
-          }
-          final devicesPluggedIn = deviceIdSet(
-              snapshot.data!.devices.map((device) => device.id).toList());
-          return StreamBuilder<SigningState>(
-              stream: stream,
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) {
-                  return CircularProgressIndicator();
+      stream: deviceListSubject.map((update) => update.state),
+      builder: (context, snapshot) {
+        final theme = Theme.of(context);
+        if (!snapshot.hasData) {
+          return CircularProgressIndicator();
+        }
+        final devicesPluggedIn = deviceIdSet(
+          snapshot.data!.devices.map((device) => device.id).toList(),
+        );
+        return StreamBuilder<SigningState>(
+          stream: stream,
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return CircularProgressIndicator();
+            }
+            final state = snapshot.data!;
+            final gotShares = deviceIdSet(state.gotShares);
+            return ListView.builder(
+              physics: NeverScrollableScrollPhysics(),
+              shrinkWrap: true,
+              itemCount: state.neededFrom.length,
+              itemBuilder: (context, index) {
+                final Widget icon;
+                final id = state.neededFrom[index];
+                final name = coord.getDeviceName(id: id);
+                if (gotShares.contains(id)) {
+                  icon = AnimatedCheckCircle();
+                } else if (devicesPluggedIn.contains(id)) {
+                  icon = Icon(
+                    Icons.touch_app,
+                    color: theme.colorScheme.secondary,
+                    size: iconSize,
+                  );
+                } else {
+                  icon = Icon(
+                    Icons.circle_outlined,
+                    color: theme.colorScheme.onSurface,
+                    size: iconSize,
+                  );
                 }
-                final state = snapshot.data!;
-                final gotShares = deviceIdSet(state.gotShares);
-                return ListView.builder(
-                    physics: NeverScrollableScrollPhysics(),
-                    shrinkWrap: true,
-                    itemCount: state.neededFrom.length,
-                    itemBuilder: (context, index) {
-                      final Widget icon;
-                      final id = state.neededFrom[index];
-                      final name = coord.getDeviceName(id: id);
-                      if (gotShares.contains(id)) {
-                        icon = AnimatedCheckCircle();
-                      } else if (devicesPluggedIn.contains(id)) {
-                        icon = Icon(Icons.touch_app,
-                            color: theme.colorScheme.secondary, size: iconSize);
-                      } else {
-                        icon = Icon(Icons.circle_outlined,
-                            color: theme.colorScheme.onSurface, size: iconSize);
-                      }
-                      return ListTile(
-                        title: Text(name ?? "<unknown>"),
-                        trailing: SizedBox(height: iconSize, child: icon),
-                      );
-                    });
-              });
-        });
+                return ListTile(
+                  title: Text(name ?? "<unknown>"),
+                  trailing: SizedBox(height: iconSize, child: icon),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
   }
 }

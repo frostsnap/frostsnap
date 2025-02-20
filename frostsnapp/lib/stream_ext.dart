@@ -7,9 +7,10 @@ extension StreamToBehaviorSubjectExtension<T> on Stream<T> {
   /// [seedValue] is an optional initial value that the BehaviorSubject holds.
   BehaviorSubject<T> toBehaviorSubject({T? seedValue}) {
     // Initialize the BehaviorSubject with a seed value if provided
-    final BehaviorSubject<T> subject = seedValue != null
-        ? BehaviorSubject.seeded(seedValue)
-        : BehaviorSubject<T>();
+    final BehaviorSubject<T> subject =
+        seedValue != null
+            ? BehaviorSubject.seeded(seedValue)
+            : BehaviorSubject<T>();
 
     // Listen to the original stream and forward events to the BehaviorSubject
     listen(
@@ -27,9 +28,10 @@ extension StreamToBehaviorSubjectExtension<T> on Stream<T> {
   /// If [bufferSize] is not provided, the ReplaySubject will buffer all events.
   ReplaySubject<T> toReplaySubject({int? bufferSize}) {
     // Initialize the ReplaySubject with an optional buffer size
-    final ReplaySubject<T> subject = bufferSize != null
-        ? ReplaySubject<T>(maxSize: bufferSize)
-        : ReplaySubject<T>();
+    final ReplaySubject<T> subject =
+        bufferSize != null
+            ? ReplaySubject<T>(maxSize: bufferSize)
+            : ReplaySubject<T>();
 
     // Listen to the original stream and forward events to the ReplaySubject
     listen(

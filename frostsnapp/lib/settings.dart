@@ -23,11 +23,7 @@ class SettingsContext extends InheritedWidget {
   late final Stream<ElectrumSettings> electrumSettings;
   late final List<(BitcoinNetwork, Stream<ChainStatus>)> chainStatuses;
 
-  SettingsContext({
-    super.key,
-    required this.settings,
-    required super.child,
-  }) {
+  SettingsContext({super.key, required this.settings, required super.child}) {
     developerSettings = settings.subDeveloperSettings().toBehaviorSubject();
     electrumSettings = settings.subElectrumSettings().toBehaviorSubject();
     chainStatuses = [];
@@ -45,9 +41,10 @@ class SettingsContext extends InheritedWidget {
   }
 
   Stream<ChainStatus> chainStatusStream(BitcoinNetwork network) {
-    Stream<ChainStatus>? stream = chainStatuses.firstWhereOrNull((record) {
-      return record.$1.name() == network.name();
-    })?.$2;
+    Stream<ChainStatus>? stream =
+        chainStatuses.firstWhereOrNull((record) {
+          return record.$1.name() == network.name();
+        })?.$2;
 
     if (stream == null) {
       stream =
@@ -85,109 +82,127 @@ class SettingsPage extends StatelessWidget {
     final keyCtx = KeyContext.of(context);
     final logCtx = FrostsnapContext.of(context);
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Settings'),
-      ),
+      appBar: AppBar(title: Text('Settings')),
       body: Center(
-          child: Container(
-              constraints: BoxConstraints(maxWidth: 600),
-              child: ListView(
-                padding: const EdgeInsets.all(16.0),
-                children: [
-                  if (walletCtx != null || keyCtx != null)
-                    SettingsCategory(title: "Wallet", items: [
-                      if (walletCtx != null)
-                        SettingsItem(
-                            title: Text('External wallet'),
-                            icon: Icons.qr_code,
-                            bodyBuilder: (context) {
-                              final wallet = walletCtx.wallet;
-                              return ExportDescriptorPage(
-                                  walletDescriptor: walletCtx.network
-                                      .descriptorForKey(
-                                          masterAppkey: wallet.masterAppkey));
-                            }),
+        child: Container(
+          constraints: BoxConstraints(maxWidth: 600),
+          child: ListView(
+            padding: const EdgeInsets.all(16.0),
+            children: [
+              if (walletCtx != null || keyCtx != null)
+                SettingsCategory(
+                  title: "Wallet",
+                  items: [
+                    if (walletCtx != null)
                       SettingsItem(
-                          title: Text("Access"),
-                          icon: Icons.security,
-                          bodyBuilder: (context) {
-                            return AccessPage();
-                          }),
-                      SettingsItem(
-                          title: Text('Check address'),
-                          icon: Icons.policy,
-                          bodyBuilder: (context) {
-                            return CheckAddressPage();
-                          }),
-                      if (keyCtx != null)
-                        SettingsItem(
-                            title: Text(
-                                walletCtx == null
-                                    ? "Cancel recovery"
-                                    : "Delete wallet",
-                                style: TextStyle(color: Colors.redAccent)),
-                            icon: Icons.delete_forever,
-                            bodyBuilder: (context) {
-                              return DeleteWalletPage();
-                            },
-                            onClose: () {
-                              if (context.mounted) {
-                                Navigator.pop(context);
-                              }
-                            }),
-                    ]),
-                  SettingsCategory(
-                    title: 'General',
-                    items: [
-                      SettingsItem(
-                        title: Text('Theme'),
-                        icon: Icons.color_lens,
+                        title: Text('External wallet'),
+                        icon: Icons.qr_code,
                         bodyBuilder: (context) {
-                          return Todo(
-                              "theme settings like like currency denomination");
+                          final wallet = walletCtx.wallet;
+                          return ExportDescriptorPage(
+                            walletDescriptor: walletCtx.network
+                                .descriptorForKey(
+                                  masterAppkey: wallet.masterAppkey,
+                                ),
+                          );
                         },
                       ),
-                      SettingsItem(
-                        title: Text('Electrum server'),
-                        icon: Icons.cloud,
-                        bodyBuilder: (context) {
-                          return ElectrumServerSettingsPage();
-                        },
-                      ),
-                    ],
-                  ),
-                  SettingsCategory(title: 'Advanced', items: [
-                    if (logCtx != null)
-                      SettingsItem(
-                          title: Text("Logs"),
-                          icon: Icons.list_alt,
-                          bodyBuilder: (context) {
-                            return LogPane(logStream: logCtx.logStream);
-                          }),
                     SettingsItem(
-                        title: Text("Developer mode"),
-                        icon: Icons.developer_mode,
-                        builder: (context, title, icon) {
-                          final settingsCtx = SettingsContext.of(context)!;
-                          return StreamBuilder(
-                              stream: settingsCtx.developerSettings,
-                              builder: (context, snap) {
-                                return Tooltip(
-                                    message:
-                                        "enables wallets on Bitcoin test networks",
-                                    child: SwitchListTile(
-                                      title: title,
-                                      onChanged: (value) async {
-                                        await settingsCtx.settings
-                                            .setDeveloperMode(value: value);
-                                      },
-                                      value: snap.data?.developerMode ?? false,
-                                    ));
-                              });
-                        }),
-                  ]),
+                      title: Text("Access"),
+                      icon: Icons.security,
+                      bodyBuilder: (context) {
+                        return AccessPage();
+                      },
+                    ),
+                    SettingsItem(
+                      title: Text('Check address'),
+                      icon: Icons.policy,
+                      bodyBuilder: (context) {
+                        return CheckAddressPage();
+                      },
+                    ),
+                    if (keyCtx != null)
+                      SettingsItem(
+                        title: Text(
+                          walletCtx == null
+                              ? "Cancel recovery"
+                              : "Delete wallet",
+                          style: TextStyle(color: Colors.redAccent),
+                        ),
+                        icon: Icons.delete_forever,
+                        bodyBuilder: (context) {
+                          return DeleteWalletPage();
+                        },
+                        onClose: () {
+                          if (context.mounted) {
+                            Navigator.pop(context);
+                          }
+                        },
+                      ),
+                  ],
+                ),
+              SettingsCategory(
+                title: 'General',
+                items: [
+                  SettingsItem(
+                    title: Text('Theme'),
+                    icon: Icons.color_lens,
+                    bodyBuilder: (context) {
+                      return Todo(
+                        "theme settings like like currency denomination",
+                      );
+                    },
+                  ),
+                  SettingsItem(
+                    title: Text('Electrum server'),
+                    icon: Icons.cloud,
+                    bodyBuilder: (context) {
+                      return ElectrumServerSettingsPage();
+                    },
+                  ),
                 ],
-              ))),
+              ),
+              SettingsCategory(
+                title: 'Advanced',
+                items: [
+                  if (logCtx != null)
+                    SettingsItem(
+                      title: Text("Logs"),
+                      icon: Icons.list_alt,
+                      bodyBuilder: (context) {
+                        return LogPane(logStream: logCtx.logStream);
+                      },
+                    ),
+                  SettingsItem(
+                    title: Text("Developer mode"),
+                    icon: Icons.developer_mode,
+                    builder: (context, title, icon) {
+                      final settingsCtx = SettingsContext.of(context)!;
+                      return StreamBuilder(
+                        stream: settingsCtx.developerSettings,
+                        builder: (context, snap) {
+                          return Tooltip(
+                            message: "enables wallets on Bitcoin test networks",
+                            child: SwitchListTile(
+                              title: title,
+                              onChanged: (value) async {
+                                await settingsCtx.settings.setDeveloperMode(
+                                  value: value,
+                                );
+                              },
+                              value: snap.data?.developerMode ?? false,
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -199,13 +214,14 @@ class FsAppBar extends StatelessWidget implements PreferredSizeWidget {
   final Color? backgroundColor;
   final bool? centerTitle;
 
-  const FsAppBar(
-      {super.key,
-      required this.title,
-      this.bottom,
-      this.backgroundColor,
-      this.centerTitle,
-      this.actions = const []});
+  const FsAppBar({
+    super.key,
+    required this.title,
+    this.bottom,
+    this.backgroundColor,
+    this.centerTitle,
+    this.actions = const [],
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -222,24 +238,27 @@ class FsAppBar extends StatelessWidget implements PreferredSizeWidget {
         ...actions,
         if (walletCtx != null)
           StreamBuilder(
-              stream: settingsCtx.chainStatusStream(walletCtx.network),
-              builder: (context, snap) {
-                if (!snap.hasData) {
-                  return SizedBox();
-                }
-                final chainStatus = snap.data!;
-                return ChainStatusIcon(chainStatus: chainStatus);
-              }),
+            stream: settingsCtx.chainStatusStream(walletCtx.network),
+            builder: (context, snap) {
+              if (!snap.hasData) {
+                return SizedBox();
+              }
+              final chainStatus = snap.data!;
+              return ChainStatusIcon(chainStatus: chainStatus);
+            },
+          ),
         IconButton(
           icon: Icon(Icons.settings),
           onPressed: () {
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (context) {
-                Widget page = SettingsPage();
-                page = walletCtx?.wrap(page) ?? page;
-                return page;
-              }),
+              MaterialPageRoute(
+                builder: (context) {
+                  Widget page = SettingsPage();
+                  page = walletCtx?.wrap(page) ?? page;
+                  return page;
+                },
+              ),
             );
           },
         ),
@@ -280,41 +299,48 @@ class SettingsCategory extends StatelessWidget {
                 final walletContext = WalletContext.of(context);
                 final keyContext = KeyContext.of(context);
                 await Navigator.push(
-                    context,
-                    PageRouteBuilder(
-                      pageBuilder: (context, animation, secondaryAnimation) {
-                        Widget body =
-                            item.bodyBuilder?.call(context) ?? SizedBox();
-                        if (walletContext != null) {
-                          body = walletContext.wrap(body);
-                        } else if (keyContext != null) {
-                          body = keyContext.wrap(body);
-                        }
-                        return Scaffold(
-                          appBar: AppBar(title: item.title),
-                          body: body,
-                        );
-                      },
-                      transitionsBuilder:
-                          (context, animation, secondaryAnimation, child) {
-                        const begin = Offset(1.0, 0.0);
-                        const end = Offset.zero;
-                        const curve = Curves.ease;
+                  context,
+                  PageRouteBuilder(
+                    pageBuilder: (context, animation, secondaryAnimation) {
+                      Widget body =
+                          item.bodyBuilder?.call(context) ?? SizedBox();
+                      if (walletContext != null) {
+                        body = walletContext.wrap(body);
+                      } else if (keyContext != null) {
+                        body = keyContext.wrap(body);
+                      }
+                      return Scaffold(
+                        appBar: AppBar(title: item.title),
+                        body: body,
+                      );
+                    },
+                    transitionsBuilder: (
+                      context,
+                      animation,
+                      secondaryAnimation,
+                      child,
+                    ) {
+                      const begin = Offset(1.0, 0.0);
+                      const end = Offset.zero;
+                      const curve = Curves.ease;
 
-                        var tween = Tween(begin: begin, end: end)
-                            .chain(CurveTween(curve: curve));
+                      var tween = Tween(
+                        begin: begin,
+                        end: end,
+                      ).chain(CurveTween(curve: curve));
 
-                        return SlideTransition(
-                          position: animation.drive(tween),
-                          child: child,
-                        );
-                      },
-                    ));
+                      return SlideTransition(
+                        position: animation.drive(tween),
+                        child: child,
+                      );
+                    },
+                  ),
+                );
                 item.onClose?.call();
               },
             );
           }
-        })
+        }),
       ],
     );
   }
@@ -327,12 +353,13 @@ class SettingsItem {
   final Function(BuildContext, Widget title, IconData icon)? builder;
   final Function()? onClose;
 
-  SettingsItem(
-      {required this.title,
-      required this.icon,
-      this.onClose,
-      this.bodyBuilder,
-      this.builder});
+  SettingsItem({
+    required this.title,
+    required this.icon,
+    this.onClose,
+    this.bodyBuilder,
+    this.builder,
+  });
 }
 
 class ExportDescriptorPage extends StatefulWidget {
@@ -406,18 +433,22 @@ class _ExportDescriptorPageState extends State<ExportDescriptorPage>
           ),
           SizedBox(height: 10.0),
           SwitchListTile(
-              title: Text("Signing only mode"),
-              subtitle: Text(_signingOnly
+            title: Text("Signing only mode"),
+            subtitle: Text(
+              _signingOnly
                   ? "This app's wallet is disabled"
-                  : "This app is managing a wallet in addition to the external wallet"),
-              value: _signingOnly,
-              onChanged: _showQrCode
-                  ? (value) {
+                  : "This app is managing a wallet in addition to the external wallet",
+            ),
+            value: _signingOnly,
+            onChanged:
+                _showQrCode
+                    ? (value) {
                       setState(() {
                         _signingOnly = value;
                       });
                     }
-                  : null),
+                    : null,
+          ),
           SizedBox(height: 16.0),
           if (_showQrCode)
             FadeTransition(
@@ -451,10 +482,12 @@ class _ExportDescriptorPageState extends State<ExportDescriptorPage>
                     label: Text('Copy to Clipboard'),
                     onPressed: () {
                       Clipboard.setData(
-                          ClipboardData(text: widget.walletDescriptor));
+                        ClipboardData(text: widget.walletDescriptor),
+                      );
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                            content: Text('Descriptor copied to clipboard')),
+                          content: Text('Descriptor copied to clipboard'),
+                        ),
                       );
                     },
                   ),
@@ -479,7 +512,8 @@ class SetNetworkPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Todo(
-        "A page that lets you choose which network the wallet will be on");
+      "A page that lets you choose which network the wallet will be on",
+    );
   }
 }
 
@@ -525,10 +559,7 @@ class ChainStatusIcon extends StatelessWidget {
         children: [
           IconButton(
             iconSize: iconSize,
-            icon: Icon(
-              iconData,
-              color: iconColor,
-            ),
+            icon: Icon(iconData, color: iconColor),
             onPressed: onPressed,
           ),
           if (chainStatus.state == ChainStatusState.Connecting)
@@ -554,85 +585,99 @@ class DeleteWalletPage extends StatelessWidget {
     final walletName = frostKey.keyName();
 
     return Padding(
-        padding: EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // Wallet Name
-            Text(
-              walletCtx != null
-                  ? "DELETE ‘$walletName’?"
-                  : "Cancel recovery of ‘$walletName’?",
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            SizedBox(height: 8),
+      padding: EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Wallet Name
+          Text(
+            walletCtx != null
+                ? "DELETE ‘$walletName’?"
+                : "Cancel recovery of ‘$walletName’?",
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          SizedBox(height: 8),
 
-            if (walletCtx != null)
-              DefaultTextStyle(
-                  style: const TextStyle(fontSize: 24),
-                  child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Text('Balance: '),
-                        StreamBuilder(
-                            stream: walletCtx.txStream,
-                            builder: (context, snapshot) => SatoshiText(
-                                value: snapshot.data?.balance ?? 0)),
-                        //UpdatingBalance(txStream: walletCtx.txStream),
-                      ])),
-            SizedBox(height: 16),
+          if (walletCtx != null)
             DefaultTextStyle(
-                textAlign: TextAlign.left,
-                style: Theme.of(context).textTheme.bodyLarge!,
-                child: BulletList([
-                  walletCtx != null
-                      ? Text('This only deletes the wallet from this app.',
-                          softWrap: true)
-                      : Text('All recovery progress in this app will be lost'),
-                  Text('No secret keys will be deleted from devices',
-                      softWrap: true),
-                  Text(
-                      'The wallet will still be recoverable from the signing devices and/or backups',
-                      softWrap: true),
-                ])),
-            SizedBox(height: 24),
-            // Hold-to-Delete Button
-            Center(
-              child: HoldToDeleteButton(
-                buttonText: Text(
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                    softWrap: true,
-                    textAlign: TextAlign.center,
-                    walletCtx != null
-                        ? "Hold to Delete"
-                        : "Hold to Cancel Recovery"),
-                onComplete: () async {
-                  await coord.deleteKey(keyId: keyId);
-                  if (context.mounted) {
-                    showDialog(
-                      context: context,
-                      barrierDismissible: false,
-                      builder: (context) => AlertDialog(
-                        title: Text('Wallet Deleted'),
-                        content:
-                            Text('The wallet has been successfully deleted.'),
-                        actions: [
-                          ElevatedButton(
-                            onPressed: () {
-                              Navigator.pop(context); // close popup
-                              Navigator.pop(context); // close delete page
-                            },
-                            child: Text('OK'),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-                },
+              style: const TextStyle(fontSize: 24),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text('Balance: '),
+                  StreamBuilder(
+                    stream: walletCtx.txStream,
+                    builder:
+                        (context, snapshot) =>
+                            SatoshiText(value: snapshot.data?.balance ?? 0),
+                  ),
+                  //UpdatingBalance(txStream: walletCtx.txStream),
+                ],
               ),
             ),
-          ],
-        ));
+          SizedBox(height: 16),
+          DefaultTextStyle(
+            textAlign: TextAlign.left,
+            style: Theme.of(context).textTheme.bodyLarge!,
+            child: BulletList([
+              walletCtx != null
+                  ? Text(
+                    'This only deletes the wallet from this app.',
+                    softWrap: true,
+                  )
+                  : Text('All recovery progress in this app will be lost'),
+              Text(
+                'No secret keys will be deleted from devices',
+                softWrap: true,
+              ),
+              Text(
+                'The wallet will still be recoverable from the signing devices and/or backups',
+                softWrap: true,
+              ),
+            ]),
+          ),
+          SizedBox(height: 24),
+          // Hold-to-Delete Button
+          Center(
+            child: HoldToDeleteButton(
+              buttonText: Text(
+                style: TextStyle(fontWeight: FontWeight.bold),
+                softWrap: true,
+                textAlign: TextAlign.center,
+                walletCtx != null
+                    ? "Hold to Delete"
+                    : "Hold to Cancel Recovery",
+              ),
+              onComplete: () async {
+                await coord.deleteKey(keyId: keyId);
+                if (context.mounted) {
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder:
+                        (context) => AlertDialog(
+                          title: Text('Wallet Deleted'),
+                          content: Text(
+                            'The wallet has been successfully deleted.',
+                          ),
+                          actions: [
+                            ElevatedButton(
+                              onPressed: () {
+                                Navigator.pop(context); // close popup
+                                Navigator.pop(context); // close delete page
+                              },
+                              child: Text('OK'),
+                            ),
+                          ],
+                        ),
+                  );
+                }
+              },
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -640,10 +685,11 @@ class HoldToDeleteButton extends StatefulWidget {
   final VoidCallback onComplete;
   final Widget buttonText;
 
-  const HoldToDeleteButton(
-      {super.key,
-      required this.onComplete,
-      this.buttonText = const Text("Hold to Delete")});
+  const HoldToDeleteButton({
+    super.key,
+    required this.onComplete,
+    this.buttonText = const Text("Hold to Delete"),
+  });
 
   @override
   State<HoldToDeleteButton> createState() => _HoldToDeleteButtonState();
@@ -702,19 +748,21 @@ class _HoldToDeleteButtonState extends State<HoldToDeleteButton> {
         width: 120,
         height: 120,
         decoration: BoxDecoration(
-          color: _isPressed
-              ? theme.colorScheme.secondary
-              : theme.colorScheme.tertiary,
+          color:
+              _isPressed
+                  ? theme.colorScheme.secondary
+                  : theme.colorScheme.tertiary,
           shape: BoxShape.circle,
-          boxShadow: _isPressed
-              ? []
-              : [
-                  BoxShadow(
-                    color: Colors.black26,
-                    offset: Offset(0, 4),
-                    blurRadius: 4.0,
-                  ),
-                ],
+          boxShadow:
+              _isPressed
+                  ? []
+                  : [
+                    BoxShadow(
+                      color: Colors.black26,
+                      offset: Offset(0, 4),
+                      blurRadius: 4.0,
+                    ),
+                  ],
         ),
         child: Stack(
           alignment: Alignment.center,
@@ -745,15 +793,18 @@ class AccessPage extends StatelessWidget {
     final frostKey = keyCtx.frostKey();
 
     return Container(
-        padding: EdgeInsets.all(16.0),
-        child: Column(children: [
+      padding: EdgeInsets.all(16.0),
+      child: Column(
+        children: [
           Text(
             "The ‘${frostKey.keyName()}’ wallet can be spent by:",
             style: Theme.of(context).textTheme.titleMedium,
           ),
           AccessStructureListWidget(
             accessStructures: frostKey.accessStructureState().field0,
-          )
-        ]));
+          ),
+        ],
+      ),
+    );
   }
 }

@@ -40,63 +40,74 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
 
     if (Platform.isAndroid || Platform.isIOS) {
       scanPsbtButton = Padding(
-          padding: const EdgeInsets.symmetric(vertical: 5),
-          child: ElevatedButton(
-              onPressed: !enoughSelected
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: ElevatedButton(
+          onPressed:
+              !enoughSelected
                   ? null
                   : () async {
-                      WidgetsFlutterBinding.ensureInitialized();
-                      final cameras = await availableCameras();
+                    WidgetsFlutterBinding.ensureInitialized();
+                    final cameras = await availableCameras();
+                    if (context.mounted) {
+                      final psbtBytes = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) {
+                            return PsbtCameraReader(cameras: cameras);
+                          },
+                        ),
+                      );
                       if (context.mounted) {
-                        final psbtBytes = await Navigator.push(context,
-                            MaterialPageRoute(builder: (context) {
-                          return PsbtCameraReader(
-                            cameras: cameras,
-                          );
-                        }));
-                        if (context.mounted) {
-                          await runPsbtSigningWorkflow(context,
-                              psbtBytes: psbtBytes,
-                              selectedDevices: selectedDevices.toList(),
-                              accessStructureRef:
-                                  accessStructure.accessStructureRef(),
-                              wallet: widget.wallet);
-                        }
-                        if (context.mounted) {
-                          Navigator.pop(context);
-                        }
+                        await runPsbtSigningWorkflow(
+                          context,
+                          psbtBytes: psbtBytes,
+                          selectedDevices: selectedDevices.toList(),
+                          accessStructureRef:
+                              accessStructure.accessStructureRef(),
+                          wallet: widget.wallet,
+                        );
                       }
-                    },
-              child: Text("Scan 📷")));
+                      if (context.mounted) {
+                        Navigator.pop(context);
+                      }
+                    }
+                  },
+          child: Text("Scan 📷"),
+        ),
+      );
     } else {
       scanPsbtButton = null;
     }
 
     final loadPsbtFileButton = Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: ElevatedButton(
-          onPressed: !enoughSelected
-              ? null
-              : () async {
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: ElevatedButton(
+        onPressed:
+            !enoughSelected
+                ? null
+                : () async {
                   FilePickerResult? fileResult =
                       await FilePicker.platform.pickFiles();
                   if (fileResult != null) {
                     File file = File(fileResult.files.single.path!);
                     Uint8List psbtBytes = await file.readAsBytes();
                     if (context.mounted) {
-                      await runPsbtSigningWorkflow(context,
-                          wallet: widget.wallet,
-                          psbtBytes: psbtBytes,
-                          selectedDevices: selectedDevices.toList(),
-                          accessStructureRef:
-                              accessStructure.accessStructureRef());
+                      await runPsbtSigningWorkflow(
+                        context,
+                        wallet: widget.wallet,
+                        psbtBytes: psbtBytes,
+                        selectedDevices: selectedDevices.toList(),
+                        accessStructureRef:
+                            accessStructure.accessStructureRef(),
+                      );
                     }
                   } else {
                     // User canceled the file picker
                   }
                 },
-          child: Text("Open File 📂"),
-        ));
+        child: Text("Open File 📂"),
+      ),
+    );
 
     return Scaffold(
       appBar: FsAppBar(title: const Text('Sign PSBT')),
@@ -111,15 +122,14 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
               style: TextStyle(fontSize: 20.0),
             ),
             SigningDeviceSelector(
-                frostKey: frostKey,
-                onChanged: (selected) {
-                  setState(() {
-                    selectedDevices = selected;
-                  });
-                }),
-            Text(
-              'Load a PSBT:',
+              frostKey: frostKey,
+              onChanged: (selected) {
+                setState(() {
+                  selectedDevices = selected;
+                });
+              },
             ),
+            Text('Load a PSBT:'),
             scanPsbtButton ?? Container(),
             loadPsbtFileButton,
           ],
@@ -141,20 +151,25 @@ Future<void> runPsbtSigningWorkflow(
 
   try {
     psbt = api.psbtBytesToPsbt(psbtBytes: psbtBytes);
-    unsignedTx = wallet.superWallet
-        .psbtToUnsignedTx(psbt: psbt, masterAppkey: wallet.masterAppkey);
+    unsignedTx = wallet.superWallet.psbtToUnsignedTx(
+      psbt: psbt,
+      masterAppkey: wallet.masterAppkey,
+    );
   } catch (e) {
     showErrorSnackbarTop(context, "Error loading PSBT: $e");
     return;
   }
 
   final signingStream = coord.startSigningTx(
-      accessStructureRef: accessStructureRef,
-      unsignedTx: unsignedTx,
-      devices: selectedDevices);
+    accessStructureRef: accessStructureRef,
+    unsignedTx: unsignedTx,
+    devices: selectedDevices,
+  );
 
   final effect = unsignedTx.effect(
-      masterAppkey: wallet.masterAppkey, network: wallet.superWallet.network);
+    masterAppkey: wallet.masterAppkey,
+    network: wallet.superWallet.network,
+  );
 
   final signatures = await showSigningProgressDialog(
     context,
@@ -163,7 +178,9 @@ Future<void> runPsbtSigningWorkflow(
   );
   if (signatures != null) {
     final signedPsbt = await unsignedTx.attachSignaturesToPsbt(
-        signatures: signatures, psbt: psbt);
+      signatures: signatures,
+      psbt: psbt,
+    );
     final signedTx = await unsignedTx.complete(signatures: signatures);
 
     if (context.mounted) {
@@ -184,100 +201,112 @@ Future<void> saveOrBroadcastSignedPsbtDialog(
   required Psbt psbt,
 }) {
   return showDialog(
-      context: context,
-      builder: (context) {
-        final broadcastButton = ElevatedButton(
-            onPressed: () async {
-              final broadcasted = await showBroadcastConfirmDialog(context,
-                  masterAppkey: wallet.masterAppkey,
-                  tx: tx,
-                  superWallet: wallet.superWallet);
-              if (broadcasted && context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Broadcasted transaction!'),
-                  ),
-                );
-              }
+    context: context,
+    builder: (context) {
+      final broadcastButton = ElevatedButton(
+        onPressed: () async {
+          final broadcasted = await showBroadcastConfirmDialog(
+            context,
+            masterAppkey: wallet.masterAppkey,
+            tx: tx,
+            superWallet: wallet.superWallet,
+          );
+          if (broadcasted && context.mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text('Broadcasted transaction!')));
+          }
+        },
+        child: Text("Broadcast"),
+      );
+
+      final showQr = ElevatedButton(
+        onPressed: () async {
+          await showDialog(
+            context: context,
+            builder: (BuildContext context) {
+              return AnimatedQr(input: psbt.toBytes());
             },
-            child: Text("Broadcast"));
+          );
+        },
+        child: Text("Show QR"),
+      );
 
-        final showQr = ElevatedButton(
-          onPressed: () async {
-            await showDialog(
-              context: context,
-              builder: (BuildContext context) {
-                return AnimatedQr(input: psbt.toBytes());
-              },
-            );
-          },
-          child: Text("Show QR"),
-        );
+      final saveToFileButton = ElevatedButton(
+        onPressed: () async {
+          final outputFile = await FilePicker.platform.saveFile(
+            dialogTitle: 'Please select where to save the PSBT file:',
+            fileName: 'signed.psbt',
+          );
 
-        final saveToFileButton = ElevatedButton(
-            onPressed: () async {
-              final outputFile = await FilePicker.platform.saveFile(
-                dialogTitle: 'Please select where to save the PSBT file:',
-                fileName: 'signed.psbt',
-              );
+          if (outputFile == null) {
+            // user canceled the picker
+          } else {
+            final newFile = File(outputFile);
+            final psbtBytes = psbt.toBytes();
+            await newFile.writeAsBytes(psbtBytes);
+          }
+        },
+        child: Text("Save PSBT"),
+      );
 
-              if (outputFile == null) {
-                // user canceled the picker
-              } else {
-                final newFile = File(outputFile);
-                final psbtBytes = psbt.toBytes();
-                await newFile.writeAsBytes(psbtBytes);
-              }
-            },
-            child: Text("Save PSBT"));
-
-        return AlertDialog(
-            title: Text("Signed PSBT"),
-            content: SizedBox(
-                width: Platform.isAndroid ? double.maxFinite : 400.0,
-                child: Align(
-                    alignment: Alignment.center,
-                    child: Column(
-                      children: [
-                        broadcastButton,
-                        SizedBox(height: 20),
-                        if (!Platform.isAndroid) ...[
-                          saveToFileButton,
-                          SizedBox(height: 20),
-                        ],
-                        SizedBox(height: 20),
-                        showQr,
-                        SizedBox(height: 20),
-                        IconButton(
-                          icon: Icon(Icons.content_copy),
-                          onPressed: () {
-                            Clipboard.setData(ClipboardData(
-                                text: psbt
-                                    .toBytes()
-                                    .map((byte) =>
-                                        byte.toRadixString(16).padLeft(2, '0'))
-                                    .join()));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content:
-                                    Text('Error message copied to clipboard!'),
-                              ),
-                            );
-                          },
-                          tooltip: 'Copy to Clipboard',
-                        ),
-                      ],
-                    ))),
-            actions: [
-              ElevatedButton(
+      return AlertDialog(
+        title: Text("Signed PSBT"),
+        content: SizedBox(
+          width: Platform.isAndroid ? double.maxFinite : 400.0,
+          child: Align(
+            alignment: Alignment.center,
+            child: Column(
+              children: [
+                broadcastButton,
+                SizedBox(height: 20),
+                if (!Platform.isAndroid) ...[
+                  saveToFileButton,
+                  SizedBox(height: 20),
+                ],
+                SizedBox(height: 20),
+                showQr,
+                SizedBox(height: 20),
+                IconButton(
+                  icon: Icon(Icons.content_copy),
                   onPressed: () {
-                    if (context.mounted) {
-                      Navigator.pop(context, false);
-                    }
+                    Clipboard.setData(
+                      ClipboardData(
+                        text:
+                            psbt
+                                .toBytes()
+                                .map(
+                                  (byte) =>
+                                      byte.toRadixString(16).padLeft(2, '0'),
+                                )
+                                .join(),
+                      ),
+                    );
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error message copied to clipboard!'),
+                      ),
+                    );
                   },
-                  child: Text("Close"))
-            ]);
-      });
+                  tooltip: 'Copy to Clipboard',
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () {
+              if (context.mounted) {
+                Navigator.pop(context, false);
+              }
+            },
+            child: Text("Close"),
+          ),
+        ],
+      );
+    },
+  );
 }
 
 Future<void> savePsbt(BuildContext context, Psbt psbt) async {
@@ -302,9 +331,9 @@ Future<void> savePsbt(BuildContext context, Psbt psbt) async {
     await file.writeAsBytes(psbtBytes);
   } catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error saving PSBT: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error saving PSBT: $e')));
     }
   }
 }
@@ -328,9 +357,7 @@ class _AnimatedQrState extends State<AnimatedQr> {
   }
 
   Future<void> _initQrEncoder() async {
-    _qrEncoder = await api.newQrEncoder(
-      bytes: widget.input,
-    );
+    _qrEncoder = await api.newQrEncoder(bytes: widget.input);
     _updateQr();
   }
 
@@ -358,9 +385,7 @@ class _AnimatedQrState extends State<AnimatedQr> {
         children: [
           PrettyQrView(
             qrImage: qrImage,
-            decoration: const PrettyQrDecoration(
-              shape: PrettyQrSmoothSymbol(),
-            ),
+            decoration: const PrettyQrDecoration(shape: PrettyQrSmoothSymbol()),
           ),
         ],
       ),
@@ -371,7 +396,7 @@ class _AnimatedQrState extends State<AnimatedQr> {
           onPressed: () {
             Navigator.of(context).pop();
           },
-        )
+        ),
       ],
     );
   }

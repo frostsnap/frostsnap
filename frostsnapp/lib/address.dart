@@ -15,10 +15,7 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 class AddressPage extends StatelessWidget {
   final Address address;
 
-  const AddressPage({
-    super.key,
-    required this.address,
-  });
+  const AddressPage({super.key, required this.address});
 
   void _showQrDialog(BuildContext context) {
     final qrCode = QrCode(8, QrErrorCorrectLevel.L);
@@ -26,37 +23,39 @@ class AddressPage extends StatelessWidget {
     final qrImage = QrImage(qrCode);
     showDialog(
       context: context,
-      builder: (context) => Dialog(
-          child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Card(
-              color: Colors.white,
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: 450,
-                    maxHeight: 450,
-                  ),
-                  child: PrettyQrView(
-                    qrImage: qrImage,
-                    decoration: const PrettyQrDecoration(
-                      shape: PrettyQrSmoothSymbol(),
+      builder:
+          (context) => Dialog(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Card(
+                    color: Colors.white,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: 450,
+                          maxHeight: 450,
+                        ),
+                        child: PrettyQrView(
+                          qrImage: qrImage,
+                          decoration: const PrettyQrDecoration(
+                            shape: PrettyQrSmoothSymbol(),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text('Close'),
+                  ),
+                ],
               ),
             ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Close'),
-            ),
-          ],
-        ),
-      )),
+          ),
     );
   }
 
@@ -67,9 +66,7 @@ class AddressPage extends StatelessWidget {
     final textTheme = theme.textTheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Address'),
-      ),
+      appBar: AppBar(title: Text('Address')),
       body: Column(
         children: [
           Expanded(
@@ -78,20 +75,18 @@ class AddressPage extends StatelessWidget {
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
                   children: [
-                    Text(
-                      "Address",
-                      style: textTheme.titleMedium,
-                    ),
+                    Text("Address", style: textTheme.titleMedium),
                     Text(
                       "Derivation path: ${address.derivationPath}",
                       style: textTheme.bodySmall,
                     ),
                     SizedBox(height: 16),
                     GestureDetector(
-                      child: chunkedAddressFormat(address.addressString,
-                          backgroundColor:
-                              theme.colorScheme.surfaceContainerLow,
-                          textColor: theme.colorScheme.onSurface),
+                      child: chunkedAddressFormat(
+                        address.addressString,
+                        backgroundColor: theme.colorScheme.surfaceContainerLow,
+                        textColor: theme.colorScheme.onSurface,
+                      ),
                       onTap: () {
                         copyToClipboard(context, address.addressString);
                       },
@@ -102,8 +97,11 @@ class AddressPage extends StatelessWidget {
                       children: [
                         IconButton(
                           iconSize: 30.0,
-                          onPressed: () =>
-                              copyToClipboard(context, address.addressString),
+                          onPressed:
+                              () => copyToClipboard(
+                                context,
+                                address.addressString,
+                              ),
                           icon: Icon(Icons.copy),
                         ),
                         SizedBox(width: 16),
@@ -115,13 +113,15 @@ class AddressPage extends StatelessWidget {
                     ),
                     SizedBox(height: 32),
                     Text(
-                        "After giving this address to the sender you can verify it was securely transmitted by checking it against a device."),
+                      "After giving this address to the sender you can verify it was securely transmitted by checking it against a device.",
+                    ),
                     SizedBox(height: 8),
                     ElevatedButton(
                       onPressed: () async {
                         // copy regardless in case the user forgot
                         Clipboard.setData(
-                            ClipboardData(text: address.addressString));
+                          ClipboardData(text: address.addressString),
+                        );
                         await _showVerificationDialog(
                           context,
                           walletCtx.wallet.keyId(),
@@ -129,7 +129,7 @@ class AddressPage extends StatelessWidget {
                         );
                       },
                       child: Text('Verify Address'),
-                    )
+                    ),
                   ],
                 ),
               ),
@@ -142,13 +142,14 @@ class AddressPage extends StatelessWidget {
 }
 
 Future<void> _showVerificationDialog(
-    BuildContext context, KeyId keyId, int index) async {
-  final verifyAddressStream = coord
-      .verifyAddress(
-        keyId: keyId,
-        addressIndex: index,
-      )
-      .toBehaviorSubject();
+  BuildContext context,
+  KeyId keyId,
+  int index,
+) async {
+  final verifyAddressStream =
+      coord
+          .verifyAddress(keyId: keyId, addressIndex: index)
+          .toBehaviorSubject();
 
   await showDeviceActionDialog(
     context: context,
@@ -157,9 +158,7 @@ Future<void> _showVerificationDialog(
         children: [
           DialogHeader(
             child: Column(
-              children: const [
-                Text("Plug in a device to verify this address"),
-              ],
+              children: const [Text("Plug in a device to verify this address")],
             ),
           ),
           SizedBox(height: 16),
@@ -206,9 +205,9 @@ class VerifyAddressProgress extends StatelessWidget {
         if (!deviceListSnapshot.hasData) {
           return FsProgressIndicator();
         }
-        final devicesPluggedIn = deviceIdSet(deviceListSnapshot.data!.devices
-            .map((device) => device.id)
-            .toList());
+        final devicesPluggedIn = deviceIdSet(
+          deviceListSnapshot.data!.devices.map((device) => device.id).toList(),
+        );
 
         return StreamBuilder<VerifyAddressProtocolState>(
           stream: stream,
@@ -218,8 +217,9 @@ class VerifyAddressProgress extends StatelessWidget {
             }
             final state = verifyAddressSnapshot.data!;
 
-            bool targetConnected =
-                state.targetDevices.any((id) => devicesPluggedIn.contains(id));
+            bool targetConnected = state.targetDevices.any(
+              (id) => devicesPluggedIn.contains(id),
+            );
 
             final deviceProgress = ListView.builder(
               shrinkWrap: true,
@@ -230,11 +230,17 @@ class VerifyAddressProgress extends StatelessWidget {
 
                 Widget icon;
                 if (devicesPluggedIn.contains(id)) {
-                  icon = Icon(Icons.policy,
-                      color: theme.colorScheme.primaryFixed, size: iconSize);
+                  icon = Icon(
+                    Icons.policy,
+                    color: theme.colorScheme.primaryFixed,
+                    size: iconSize,
+                  );
                 } else {
-                  icon = Icon(Icons.circle_outlined,
-                      color: theme.colorScheme.onSurface, size: iconSize);
+                  icon = Icon(
+                    Icons.circle_outlined,
+                    color: theme.colorScheme.onSurface,
+                    size: iconSize,
+                  );
                 }
 
                 return ListTile(
@@ -244,45 +250,43 @@ class VerifyAddressProgress extends StatelessWidget {
               },
             );
 
-            return Column(children: [
-              deviceProgress,
-              if (targetConnected)
-                DialogFooter(
-                  child: Column(children: const [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          size: 20,
+            return Column(
+              children: [
+                deviceProgress,
+                if (targetConnected)
+                  DialogFooter(
+                    child: Column(
+                      children: const [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.info_outline, size: 20),
+                            SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                "Check that the sender can see the same address as shown on the device.",
+                              ),
+                            ),
+                          ],
                         ),
-                        SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            "Check that the sender can see the same address as shown on the device.",
-                          ),
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          size: 20,
-                        ),
-                        SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            "Two random chunks have been highlighted for convenience.",
-                          ),
+                        SizedBox(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.info_outline, size: 20),
+                            SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                "Two random chunks have been highlighted for convenience.",
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                  ]),
-                ),
-            ]);
+                  ),
+              ],
+            );
           },
         );
       },
@@ -291,9 +295,7 @@ class VerifyAddressProgress extends StatelessWidget {
 }
 
 class CheckAddressPage extends StatefulWidget {
-  const CheckAddressPage({
-    Key? key,
-  }) : super(key: key);
+  const CheckAddressPage({Key? key}) : super(key: key);
 
   @override
   State<CheckAddressPage> createState() => _CheckAddressPageState();
@@ -332,26 +334,26 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
 
     currentDepth += searchSize;
 
-    return SearchResult(
-      depth: currentDepth,
-      address: address,
-    );
+    return SearchResult(depth: currentDepth, address: address);
   }
 
   Widget _buildSearchResults(SearchResult? result) {
     if (result == null) return const SizedBox.shrink();
 
     final children = <Widget>[
-      Text(result.address != null
-          ? "Found!"
-          : "Address not found in first ${result.depth} addresses."),
+      Text(
+        result.address != null
+            ? "Found!"
+            : "Address not found in first ${result.depth} addresses.",
+      ),
       const SizedBox(height: 8),
     ];
 
     if (result.address != null) {
       children.addAll([
         Text(
-            "This address belongs to us at ${result.address?.derivationPath ?? ""}"),
+          "This address belongs to us at ${result.address?.derivationPath ?? ""}",
+        ),
         const SizedBox(height: 16),
         ElevatedButton(
           onPressed: () => _navigateToAddressPage(result.address!),
@@ -391,11 +393,7 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
   void _navigateToAddressPage(Address address) {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => AddressPage(
-          address: address,
-        ),
-      ),
+      MaterialPageRoute(builder: (context) => AddressPage(address: address)),
     );
   }
 
@@ -417,9 +415,7 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
                     controller: textInputController,
                     minLines: 2,
                     maxLines: 6,
-                    decoration: const InputDecoration(
-                      counterText: '',
-                    ),
+                    decoration: const InputDecoration(counterText: ''),
                   ),
                 ),
                 const SizedBox(height: 32),
@@ -466,8 +462,5 @@ class SearchResult {
   final int depth;
   final Address? address;
 
-  const SearchResult({
-    required this.depth,
-    required this.address,
-  });
+  const SearchResult({required this.depth, required this.address});
 }

@@ -22,23 +22,22 @@ class DeviceWidget extends StatelessWidget {
     const height = 122.0 * scale;
     const width = 100.0 * scale;
     return SizedBox(
-        width: width,
-        height: height,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            SvgPicture.string(
-              deviceSvg,
-              width: width,
-              height: height,
+      width: width,
+      height: height,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          SvgPicture.string(deviceSvg, width: width, height: height),
+          Padding(
+            padding: EdgeInsets.symmetric(
+              vertical: 10 * scale,
+              horizontal: 12 * scale,
             ),
-            Padding(
-              padding: EdgeInsets.symmetric(
-                  vertical: 10 * scale, horizontal: 12 * scale),
-              child: child,
-            ),
-          ],
-        ));
+            child: child,
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -53,8 +52,9 @@ class DevicePrompt extends StatelessWidget {
     return FittedBox(
       fit: BoxFit.contain,
       child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [icon, SizedBox(width: 4), Text(text)]),
+        mainAxisSize: MainAxisSize.min,
+        children: [icon, SizedBox(width: 4), Text(text)],
+      ),
     );
   }
 }

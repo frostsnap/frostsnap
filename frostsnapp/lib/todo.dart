@@ -29,9 +29,7 @@ class _TodoState extends State<Todo> {
       children: [
         ElevatedButton(
           onPressed: _toggleExpansion,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.deepOrange,
-          ),
+          style: ElevatedButton.styleFrom(backgroundColor: Colors.deepOrange),
           child: Text('TODO'),
         ),
         if (_isExpanded)

@@ -10,9 +10,9 @@ String toHex(Uint8List data) {
 
 String toSpacedHex(Uint8List data, {int chunkSize = 2}) {
   return splitIntoChunks(
-          data.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join(''),
-          chunkSize * 2)
-      .join(" ");
+    data.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join(''),
+    chunkSize * 2,
+  ).join(" ");
 }
 
 // Widget toHexBox(Uint8List bytes, Orientation orientation) {
@@ -55,19 +55,22 @@ Widget chunkedAddressFormat(
     alignment: Alignment.center,
     child: Container(
       padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: backgroundColor != null
-          ? BoxDecoration(
-              color: backgroundColor,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.white.withValues(alpha: 26)),
-            )
-          : null,
+      decoration:
+          backgroundColor != null
+              ? BoxDecoration(
+                color: backgroundColor,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.white.withValues(alpha: 26)),
+              )
+              : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          for (int i = 0;
-              i < chunks.length;
-              i += 3) // Group chunks in rows of 3
+          for (
+            int i = 0;
+            i < chunks.length;
+            i += 3
+          ) // Group chunks in rows of 3
             Row(
               mainAxisSize:
                   MainAxisSize.min, // Wraps the row tightly around the content
@@ -79,7 +82,9 @@ Widget chunkedAddressFormat(
                     child: Text(
                       chunks[j],
                       style: monospaceTextStyle.copyWith(
-                          fontSize: 20, color: textColor),
+                        fontSize: 20,
+                        color: textColor,
+                      ),
                     ),
                   ),
               ],

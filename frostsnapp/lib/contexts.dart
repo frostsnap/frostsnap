@@ -31,11 +31,7 @@ class FrostsnapContext extends InheritedWidget {
 class SuperWalletContext extends InheritedWidget {
   final Settings settings;
 
-  SuperWalletContext({
-    super.key,
-    required super.child,
-    required this.settings,
-  });
+  SuperWalletContext({super.key, required super.child, required this.settings});
 
   final Map<KeyId, Stream<TxState>> txStreams = HashMap<KeyId, Stream<TxState>>(
     equals: (KeyId a, KeyId b) => keyIdEquals(a, b),
@@ -65,17 +61,21 @@ class SuperWalletContext extends InheritedWidget {
     final wallet = Wallet(superWallet: superWallet, masterAppkey: masterAppkey);
 
     if (!txStreams.containsKey(keyId)) {
-      final stream = superWallet
-          .subTxState(masterAppkey: masterAppkey)
-          .toBehaviorSubject();
+      final stream =
+          superWallet
+              .subTxState(masterAppkey: masterAppkey)
+              .toBehaviorSubject();
       txStreams[keyId] = stream;
     }
 
     return (wallet, txStreams[keyId]!);
   }
 
-  Widget tryWrapInWalletContext(
-      {required KeyId keyId, required Widget child, Key? key}) {
+  Widget tryWrapInWalletContext({
+    required KeyId keyId,
+    required Widget child,
+    Key? key,
+  }) {
     final record = txStateStream(keyId);
 
     if (record == null) {
@@ -86,7 +86,11 @@ class SuperWalletContext extends InheritedWidget {
     final txStream = record.$2;
 
     return WalletContext(
-        key: key, wallet: wallet, txStream: txStream, child: child);
+      key: key,
+      wallet: wallet,
+      txStream: txStream,
+      child: child,
+    );
   }
 
   @override
@@ -106,12 +110,12 @@ class WalletContext extends InheritedWidget {
     required this.txStream,
     required Widget child,
   }) : super(
-          // a wallet context implies a key context so we wrap the child in one also
-          child: KeyContext(
-              keyId:
-                  api.masterAppkeyExtToKeyId(masterAppkey: wallet.masterAppkey),
-              child: child),
-        );
+         // a wallet context implies a key context so we wrap the child in one also
+         child: KeyContext(
+           keyId: api.masterAppkeyExtToKeyId(masterAppkey: wallet.masterAppkey),
+           child: child,
+         ),
+       );
 
   static WalletContext? of(BuildContext context) {
     return context.getInheritedWidgetOfExactType<WalletContext>();
@@ -119,11 +123,7 @@ class WalletContext extends InheritedWidget {
 
   /// so we can clone this context over a new widget tree
   WalletContext wrap(Widget child) {
-    return WalletContext(
-      wallet: wallet,
-      txStream: txStream,
-      child: child,
-    );
+    return WalletContext(wallet: wallet, txStream: txStream, child: child);
   }
 
   @override
@@ -141,11 +141,7 @@ class WalletContext extends InheritedWidget {
 class KeyContext extends InheritedWidget {
   final KeyId keyId;
 
-  const KeyContext({
-    super.key,
-    required super.child,
-    required this.keyId,
-  });
+  const KeyContext({super.key, required super.child, required this.keyId});
 
   static KeyContext? of(BuildContext context) {
     return context.getInheritedWidgetOfExactType<KeyContext>();

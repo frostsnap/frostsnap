@@ -7,24 +7,28 @@ import 'package:frostsnapp/device_setup.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'global.dart';
 
-typedef RemovedDeviceBuilder = Widget Function(
-    BuildContext context, ConnectedDevice device, Animation<double> animation);
+typedef RemovedDeviceBuilder =
+    Widget Function(
+      BuildContext context,
+      ConnectedDevice device,
+      Animation<double> animation,
+    );
 
-typedef DeviceBuilder = Widget Function(
-    BuildContext context,
-    ConnectedDevice device,
-    Orientation orientation,
-    Animation<double> animation);
+typedef DeviceBuilder =
+    Widget Function(
+      BuildContext context,
+      ConnectedDevice device,
+      Orientation orientation,
+      Animation<double> animation,
+    );
 
 const double iconSize = 20.0;
 
 class DeviceList extends StatefulWidget {
   final DeviceBuilder deviceBuilder;
 
-  const DeviceList({
-    Key? key,
-    this.deviceBuilder = buildInteractiveDevice,
-  }) : super(key: key);
+  const DeviceList({Key? key, this.deviceBuilder = buildInteractiveDevice})
+    : super(key: key);
 
   @override
   State<StatefulWidget> createState() => _DeviceListState();
@@ -54,15 +58,23 @@ class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
           switch (change.kind) {
             case DeviceListChangeKind.Added:
               {
-                deviceListKey.currentState!.insertItem(change.index,
-                    duration: const Duration(milliseconds: 800));
+                deviceListKey.currentState!.insertItem(
+                  change.index,
+                  duration: const Duration(milliseconds: 800),
+                );
               }
             case DeviceListChangeKind.Removed:
               {
-                deviceListKey.currentState!.removeItem(change.index,
-                    (BuildContext context, Animation<double> animation) {
-                  return widget.deviceBuilder(context, change.device,
-                      effectiveOrientation(context), animation);
+                deviceListKey.currentState!.removeItem(change.index, (
+                  BuildContext context,
+                  Animation<double> animation,
+                ) {
+                  return widget.deviceBuilder(
+                    context,
+                    change.device,
+                    effectiveOrientation(context),
+                    animation,
+                  );
                 });
               }
             case DeviceListChangeKind.Named:
@@ -100,40 +112,42 @@ class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
     final orientation = effectiveOrientation(context);
 
     final noDevices = StreamBuilder(
-        stream: deviceListSubject,
-        builder: (context, snapshot) {
-          if (!snapshot.hasData || snapshot.data!.state.devices.isNotEmpty) {
-            return SizedBox();
-          } else {
-            return Text(
-              'No devices connected',
-              style: theme.textTheme.titleMedium,
-            );
-          }
-        });
+      stream: deviceListSubject,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || snapshot.data!.state.devices.isNotEmpty) {
+          return SizedBox();
+        } else {
+          return Text(
+            'No devices connected',
+            style: theme.textTheme.titleMedium,
+          );
+        }
+      },
+    );
     final list = AnimatedList(
-        primary:
-            true, // I dunno but the scrollbar doesn't work unless you set this
-        padding: EdgeInsets.symmetric(vertical: 5),
-        shrinkWrap: true,
-        key: deviceListKey,
-        itemBuilder: (context, index, animation) {
-          final device = currentListState.devices[index];
-          return widget.deviceBuilder(context, device, orientation, animation);
-        },
-        initialItemCount: currentListState.devices.length,
-        scrollDirection: orientation == Orientation.landscape
-            ? Axis.horizontal
-            : Axis.vertical);
+      primary:
+          true, // I dunno but the scrollbar doesn't work unless you set this
+      padding: EdgeInsets.symmetric(vertical: 5),
+      shrinkWrap: true,
+      key: deviceListKey,
+      itemBuilder: (context, index, animation) {
+        final device = currentListState.devices[index];
+        return widget.deviceBuilder(context, device, orientation, animation);
+      },
+      initialItemCount: currentListState.devices.length,
+      scrollDirection:
+          orientation == Orientation.landscape
+              ? Axis.horizontal
+              : Axis.vertical,
+    );
 
     return Stack(
       children: [
-        Center(
-          child: noDevices,
-        ),
+        Center(child: noDevices),
         Align(
-            alignment: Alignment.topCenter,
-            child: Scrollbar(thumbVisibility: true, child: list))
+          alignment: Alignment.topCenter,
+          child: Scrollbar(thumbVisibility: true, child: list),
+        ),
       ],
     );
   }
@@ -144,21 +158,25 @@ class DeviceBoxContainer extends StatelessWidget {
   final Widget child;
   final Orientation orientation;
 
-  const DeviceBoxContainer(
-      {required this.child,
-      required this.orientation,
-      required this.animation,
-      super.key});
+  const DeviceBoxContainer({
+    required this.child,
+    required this.orientation,
+    required this.animation,
+    super.key,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final animationBegin = orientation == Orientation.landscape
-        ? const Offset(8.0, 0.0)
-        : const Offset(0.0, 8.0);
+    final animationBegin =
+        orientation == Orientation.landscape
+            ? const Offset(8.0, 0.0)
+            : const Offset(0.0, 8.0);
     return SlideTransition(
-        position: animation
-            .drive(Tween(begin: animationBegin, end: const Offset(0.0, 0.0))),
-        child: Center(child: DeviceWidget(child: child)));
+      position: animation.drive(
+        Tween(begin: animationBegin, end: const Offset(0.0, 0.0)),
+      ),
+      child: Center(child: DeviceWidget(child: child)),
+    );
   }
 }
 
@@ -171,12 +189,15 @@ class LabeledDeviceText extends StatelessWidget {
   Widget build(BuildContext context) {
     // put a SizedBox to keep the same height even if the FittedBox shrinks the width
     return SizedBox(
-        height: 25.0,
-        child: FittedBox(
-          fit: BoxFit.contain,
-          child: Text(name ?? "<unamed>",
-              style: TextStyle(fontWeight: FontWeight.bold)),
-        ));
+      height: 25.0,
+      child: FittedBox(
+        fit: BoxFit.contain,
+        child: Text(
+          name ?? "<unamed>",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
   }
 }
 
@@ -198,35 +219,43 @@ class DeviceListWithIcons extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DeviceList(
-      deviceBuilder: _builder,
-    );
+    return DeviceList(deviceBuilder: _builder);
   }
 
-  Widget _builder(BuildContext context, ConnectedDevice device,
-      Orientation orientation, Animation<double> animation) {
+  Widget _builder(
+    BuildContext context,
+    ConnectedDevice device,
+    Orientation orientation,
+    Animation<double> animation,
+  ) {
     final (overrideLabel, icon) = iconAssigner.call(context, device.id);
     final label = overrideLabel ?? LabeledDeviceText(device.name);
     return DeviceBoxContainer(
-        animation: animation,
-        orientation: orientation,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: icon != null
-              ? [
+      animation: animation,
+      orientation: orientation,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children:
+            icon != null
+                ? [
                   label,
                   SizedBox(height: 4),
                   SizedBox(height: iconSize, child: icon),
-                  SizedBox(height: 4)
+                  SizedBox(height: 4),
                 ]
-              : [label],
-        ));
+                : [label],
+      ),
+    );
   }
 }
 
-Widget buildInteractiveDevice(BuildContext context, ConnectedDevice device,
-    Orientation orientation, Animation<double> animation) {
+Widget buildInteractiveDevice(
+  BuildContext context,
+  ConnectedDevice device,
+  Orientation orientation,
+  Animation<double> animation,
+) {
   final theme = Theme.of(context);
   final List<Widget> children = [];
   final upToDate = device.firmwareDigest == coord.upgradeFirmwareDigest();
@@ -241,18 +270,25 @@ Widget buildInteractiveDevice(BuildContext context, ConnectedDevice device,
     if (device.name == null) {
       interaction = TextButton(
         style: ElevatedButton.styleFrom(
-            shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(4.0), // Rectangular shape
-        )),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(4.0), // Rectangular shape
+          ),
+        ),
         onPressed: () async {
-          await Navigator.push(context, MaterialPageRoute(builder: (context) {
-            return DeviceSetup(id: device.id);
-          }));
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) {
+                return DeviceSetup(id: device.id);
+              },
+            ),
+          );
         },
         child: Text(
           'New Device',
-          style:
-              theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
           textAlign: TextAlign.center,
         ),
       );
@@ -261,32 +297,36 @@ Widget buildInteractiveDevice(BuildContext context, ConnectedDevice device,
         icon: Icon(Icons.settings),
         onPressed: () {
           Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (context) => DeviceSettings(id: device.id)));
+            context,
+            MaterialPageRoute(
+              builder: (context) => DeviceSettings(id: device.id),
+            ),
+          );
         },
       );
     }
   } else {
     interaction = Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.max,
-        children: [
-          IconButton.outlined(
-            onPressed: () {
-              FirmwareUpgradeDialog.show(context);
-            },
-            icon: Icon(Icons.upgrade),
-          ),
-          SizedBox(height: 6.0),
-          Text("Upgrade", style: theme.textTheme.bodyMedium),
-          Text("Firmware", style: theme.textTheme.bodyMedium)
-        ]);
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.max,
+      children: [
+        IconButton.outlined(
+          onPressed: () {
+            FirmwareUpgradeDialog.show(context);
+          },
+          icon: Icon(Icons.upgrade),
+        ),
+        SizedBox(height: 6.0),
+        Text("Upgrade", style: theme.textTheme.bodyMedium),
+        Text("Firmware", style: theme.textTheme.bodyMedium),
+      ],
+    );
   }
   children.add(interaction);
   children.add(Spacer(flex: 10));
   return DeviceBoxContainer(
-      orientation: orientation,
-      animation: animation,
-      child: Column(mainAxisSize: MainAxisSize.max, children: children));
+    orientation: orientation,
+    animation: animation,
+    child: Column(mainAxisSize: MainAxisSize.max, children: children),
+  );
 }
