@@ -127,6 +127,16 @@ impl<'a, S: NorFlash> FlashPartition<'a, S> {
         .map_err(|e| e.kind())
     }
 
+    pub fn is_empty(&self) -> Result<bool, NorFlashErrorKind> {
+        for sector in 0..self.n_sectors {
+            let data = self.read_sector(sector)?;
+            if data.iter().any(|byte| *byte != 0xff) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
     pub fn set_offset(&mut self, offset: u32) {
         assert_eq!(offset % SECTOR_SIZE as u32, 0);
         self.offset_sector = offset / SECTOR_SIZE as u32;
