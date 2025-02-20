@@ -58,7 +58,16 @@ where
         let flash = RefCell::new(FlashStorage::new());
         let mut partitions = crate::partitions::Partitions::load(&flash);
         let header_flash = FlashHeader::new(partitions.nvs.split_off_front(2));
-        let header = header_flash.read_or_init(&mut rng);
+        let header = match header_flash.read_header() {
+            Some(header) => header,
+            None => {
+                if !partitions.nvs.is_empty().expect("checking NVS is empty") {
+                    panic!("the device appears to be new but the NVS is not blank. Maybe you're a developer who needs to manually erase the device?");
+                }
+                header_flash.init(&mut rng)
+            }
+        };
+
         let _reserved = partitions.nvs.split_off_front(2);
 
         let nonce_slots = {
