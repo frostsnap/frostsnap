@@ -384,3 +384,16 @@ impl_fromstr_deserialize! {
         SignSessionId(bytes)
     }
 }
+
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
+pub enum Versioned<T> {
+    V0(T),
+}
+
+impl<T: Clone> Versioned<&T> {
+    pub fn cloned(&self) -> Versioned<T> {
+        match self {
+            Versioned::V0(v) => Versioned::V0((*v).clone()),
+        }
+    }
+}

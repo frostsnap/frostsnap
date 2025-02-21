@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 use embedded_storage::nor_flash::NorFlash;
 use frostsnap_core::device_nonces::{AbSlots, NonceStreamSlot, SecretNonceSlot};
+use frostsnap_core::Versioned;
 
 use crate::{ab_write::AbSlot, FlashPartition};
 
@@ -18,11 +19,11 @@ impl<'a, S: NorFlash> NonceAbSlot<'a, S> {
 }
 
 impl<S: NorFlash> NonceStreamSlot for NonceAbSlot<'_, S> {
-    fn read_slot(&mut self) -> Option<SecretNonceSlot> {
+    fn read_slot_versioned(&mut self) -> Option<Versioned<SecretNonceSlot>> {
         self.0.read()
     }
 
-    fn write_slot(&mut self, value: &SecretNonceSlot) {
-        self.0.write(value);
+    fn write_slot_versioned(&mut self, value: Versioned<&SecretNonceSlot>) {
+        self.0.write(&value)
     }
 }

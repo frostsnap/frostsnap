@@ -13,18 +13,18 @@ use schnorr_fun::{
 
 use crate::{
     nonce_stream::{CoordNonceStreamState, NonceStreamId, NonceStreamSegment},
-    SignSessionId, NONCE_BATCH_SIZE,
+    SignSessionId, Versioned, NONCE_BATCH_SIZE,
 };
 
 type ChaChaSeed = [u8; 32];
 
 #[derive(Clone, Debug, PartialEq, bincode::Encode, bincode::Decode)]
 pub struct SecretNonceSlot {
-    //XXX: index must be first so we can decode it easily without decoding the whole thing
-    //XXX: index == u32::MAX is invalid because we use it to represent "uninitialized"
     pub index: u32,
     pub nonce_stream_id: NonceStreamId,
     pub ratchet_prg_seed: ChaChaSeed,
+    /// for clearing slots based on least recently used
+    pub last_used: u32,
     pub signing_state: Option<SigningState>,
 }
 
@@ -35,16 +35,26 @@ pub struct SigningState {
 }
 
 pub trait NonceStreamSlot {
-    fn read_slot(&mut self) -> Option<SecretNonceSlot>;
-    fn write_slot(&mut self, value: &SecretNonceSlot);
+    fn read_slot_versioned(&mut self) -> Option<Versioned<SecretNonceSlot>>;
+    fn write_slot_versioned(&mut self, value: Versioned<&SecretNonceSlot>);
+    fn read_slot(&mut self) -> Option<SecretNonceSlot> {
+        match self.read_slot_versioned()? {
+            Versioned::V0(v) => Some(v),
+        }
+    }
 
-    fn initialize(&mut self, stream_id: NonceStreamId, rng: &mut impl RngCore) {
+    fn write_slot(&mut self, value: &SecretNonceSlot) {
+        self.write_slot_versioned(Versioned::V0(value))
+    }
+
+    fn initialize(&mut self, stream_id: NonceStreamId, last_used: u32, rng: &mut impl RngCore) {
         let mut ratchet_prg_seed = ChaChaSeed::default();
         rng.fill_bytes(&mut ratchet_prg_seed[..]);
         let value = SecretNonceSlot {
             index: 0,
             nonce_stream_id: stream_id,
             ratchet_prg_seed,
+            last_used,
             signing_state: None,
         };
         self.write_slot(&value);
@@ -73,6 +83,7 @@ pub trait NonceStreamSlot {
         &mut self,
         session_id: SignSessionId,
         coord_nonce_state: CoordNonceStreamState,
+        last_used: u32,
         sessions: impl IntoIterator<Item = (PairedSecretShare<EvenY>, PartySignSession)>,
     ) -> (Vec<SignatureShare>, Option<NonceStreamSegment>) {
         let slot_value = self
@@ -126,6 +137,7 @@ pub trait NonceStreamSlot {
                 SecretNonceSlot {
                     nonce_stream_id: slot_value.nonce_stream_id,
                     index: next_index,
+                    last_used,
                     ratchet_prg_seed: next_prg_seed,
                     signing_state: Some(SigningState {
                         session_id,
@@ -155,42 +167,79 @@ pub trait NonceStreamSlot {
 #[derive(Clone, Debug, PartialEq)]
 pub struct AbSlots<S> {
     slots: Vec<S>,
+    last_used: u32,
 }
 
 impl<S: NonceStreamSlot> AbSlots<S> {
-    pub fn new(slots: impl IntoIterator<Item = S>) -> Self {
+    pub fn new(mut slots: Vec<S>) -> Self {
+        let last_used = slots
+            .iter_mut()
+            .filter_map(|slot| slot.read_slot().map(|v| v.last_used))
+            .max()
+            .unwrap_or(0);
         Self {
             slots: slots.into_iter().collect(),
+            last_used,
         }
     }
 
+    pub fn sign_guaranteeing_nonces_destroyed(
+        &mut self,
+        session_id: SignSessionId,
+        coord_nonce_state: CoordNonceStreamState,
+        sessions: impl IntoIterator<Item = (PairedSecretShare<EvenY>, PartySignSession)>,
+    ) -> Option<(Vec<SignatureShare>, Option<NonceStreamSegment>)> {
+        let last_used = self.last_used + 1;
+        let slot = self.get(coord_nonce_state.stream_id)?;
+        let out = slot.sign_guaranteeing_nonces_destroyed(
+            session_id,
+            coord_nonce_state,
+            last_used,
+            sessions,
+        );
+        self.last_used = last_used;
+        Some(out)
+    }
+
+    fn increment_last_used(&mut self) -> u32 {
+        self.last_used += 1;
+        self.last_used
+    }
+
     pub fn get_or_create(&mut self, stream_id: NonceStreamId, rng: &mut impl RngCore) -> &mut S {
+        // the algorithm is to find the first empty slot or to choose the one with the lowest `last_used`
         let mut i = 0;
+        let mut lowest_last_used = u32::MAX;
+        let mut idx_lowest_last_used = 0;
+        let last_used = self.increment_last_used();
         let found = loop {
+            if i >= self.slots.len() {
+                break None;
+            }
             let ab_slot = &mut self.slots[i];
-            match ab_slot.nonce_stream_id() {
-                Some(slot_nsid) => {
-                    if slot_nsid == stream_id {
+            let value = ab_slot.read_slot();
+            match value {
+                Some(value) => {
+                    if value.nonce_stream_id == stream_id {
                         break Some(i);
+                    } else if value.last_used < lowest_last_used {
+                        idx_lowest_last_used = i;
+                        lowest_last_used = value.last_used;
                     }
                 }
                 None => {
-                    ab_slot.initialize(stream_id, rng);
+                    ab_slot.initialize(stream_id, last_used, rng);
                     break Some(i);
                 }
             }
             i += 1;
-            if i >= self.slots.len() {
-                break None;
-            }
         };
 
         match found {
             Some(i) => &mut self.slots[i],
             None => {
-                let random_overwrite_idx = rng.next_u32() as usize % self.slots.len();
-                let ab_slot = &mut self.slots[random_overwrite_idx];
-                ab_slot.initialize(stream_id, rng);
+                let ab_slot = &mut self.slots[idx_lowest_last_used];
+                ab_slot.initialize(stream_id, last_used, rng);
                 ab_slot
             }
         }
@@ -294,16 +343,16 @@ impl SecretNonceSlot {
 
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct MemoryNonceSlot {
-    inner: Option<SecretNonceSlot>,
+    inner: Option<Versioned<SecretNonceSlot>>,
 }
 
 impl NonceStreamSlot for MemoryNonceSlot {
-    fn read_slot(&mut self) -> Option<SecretNonceSlot> {
+    fn read_slot_versioned(&mut self) -> Option<Versioned<SecretNonceSlot>> {
         self.inner.clone()
     }
 
-    fn write_slot(&mut self, value: &SecretNonceSlot) {
-        self.inner = Some(value.clone())
+    fn write_slot_versioned(&mut self, value: Versioned<&SecretNonceSlot>) {
+        self.inner = Some(value.cloned())
     }
 }
 
