@@ -12,7 +12,7 @@ use bincode::{de::read::Reader, enc::write::Writer, Decode, Encode};
 use core::marker::PhantomData;
 use frostsnap_core::{DeviceId, Gist};
 
-pub const BAUDRATE: u32 = 14_400;
+pub const BAUDRATE: u32 = 115_200;
 /// Magic bytes are 7 bytes in length so when the bincode prefixes it with `00` it is 8 bytes long.
 /// A nice round number here is desirable (but not strictly necessary) because TX and TX buffers
 /// will be some multiple of 8 and so it should overflow the ring buffers neatly.
