@@ -683,17 +683,14 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                             (derived_xonly_key, session)
                         });
 
-                let nonce_slot = self
+                let (signature_shares, replenish_nonces) = self
                     .nonce_slots
-                    .get(coord_nonce_state.stream_id)
-                    .expect("this was checked");
-
-                let (signature_shares, replenish_nonces) = nonce_slot
                     .sign_guaranteeing_nonces_destroyed(
                         session_id,
                         coord_nonce_state,
                         sign_sessions,
-                    );
+                    )
+                    .expect("nonce stream already checked to exist");
 
                 self.action_state = None;
 
@@ -836,7 +833,7 @@ impl FrostSigner<MemoryNonceSlot> {
     pub fn new_random(rng: &mut impl rand_core::RngCore) -> Self {
         Self::new(
             KeyPair::<Normal>::new(Scalar::random(rng)),
-            AbSlots::new((0..8).map(|_| MemoryNonceSlot::default())),
+            AbSlots::new((0..8).map(|_| MemoryNonceSlot::default()).collect()),
         )
     }
 }

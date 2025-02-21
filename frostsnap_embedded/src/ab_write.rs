@@ -34,7 +34,7 @@ impl<'a, S: NorFlash> AbSlot<'a, S> {
 
     pub fn write<T>(&self, value: &T)
     where
-        T: bincode::Encode + bincode::Decode,
+        T: bincode::Encode,
     {
         let (next_slot, next_index) = match self.current_slot_and_index() {
             Some((current_slot, current_index, _)) => {
@@ -59,7 +59,7 @@ impl<'a, S: NorFlash> AbSlot<'a, S> {
 
     pub fn read<T>(&self) -> Option<T>
     where
-        T: bincode::Encode + bincode::Decode,
+        T: bincode::Decode,
     {
         let current_slot = self.current_slot();
         let slot_value = self.slots[current_slot].read();
