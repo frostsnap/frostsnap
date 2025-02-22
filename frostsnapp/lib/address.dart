@@ -339,6 +339,7 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
   }
 
   Widget _buildSearchResults(SearchResult? result) {
+    final walletCtx = WalletContext.of(context)!;
     if (result == null) return const SizedBox.shrink();
 
     final children = <Widget>[
@@ -354,7 +355,15 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
             "This address belongs to us at ${result.address?.derivationPath ?? ""}"),
         const SizedBox(height: 16),
         ElevatedButton(
-          onPressed: () => _navigateToAddressPage(result.address!),
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) =>
+                    walletCtx.wrap(AddressPage(address: result.address!)),
+              ),
+            );
+          },
           child: const Text("Address info"),
         ),
       ]);
@@ -386,17 +395,6 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
     }
 
     return Column(children: children);
-  }
-
-  void _navigateToAddressPage(Address address) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => AddressPage(
-          address: address,
-        ),
-      ),
-    );
   }
 
   @override
