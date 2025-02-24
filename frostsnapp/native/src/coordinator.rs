@@ -9,7 +9,7 @@ use frostsnap_coordinator::firmware_upgrade::{
     FirmwareUpgradeConfirmState, FirmwareUpgradeProtocol,
 };
 use frostsnap_coordinator::frostsnap_comms::{
-    CoordinatorSendBody, CoordinatorSendMessage, Destination, FirmwareDigest,
+    CoordinatorSendBody, CoordinatorSendMessage, Destination, Sha256Digest,
 };
 use frostsnap_coordinator::frostsnap_core::coordinator::{
     CoordAccessStructure, CoordFrostKey, CoordinatorSend,
@@ -643,7 +643,7 @@ impl FfiCoordinator {
         Ok(())
     }
 
-    pub fn upgrade_firmware_digest(&self) -> Option<FirmwareDigest> {
+    pub fn upgrade_firmware_digest(&self) -> Option<Sha256Digest> {
         self.firmware_bin.map(|firmware_bin| firmware_bin.digest())
     }
 
