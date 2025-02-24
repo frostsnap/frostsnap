@@ -3518,8 +3518,3 @@ checksum = "73ab332fe2f6680068f3582b16a24f90ad7096d5d39b974d1c0aff0125116f02"
 dependencies = [
  "simd-adler32",
 ]
-
-[[patch.unused]]
-name = "schnorr_fun"
-version = "0.10.0"
-source = "git+https://github.com/LLFourn/secp256kfun.git?rev=1f739e0edfad08556de4e84244aa562452d15ba8#1f739e0edfad08556de4e84244aa562452d15ba8"
