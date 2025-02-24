@@ -11,46 +11,57 @@ import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/hex.dart';
 import 'package:frostsnapp/theme.dart';
 
-Future<void> doBackupWorkflow(BuildContext context,
-    {required List<DeviceId> devices,
-    required AccessStructure accessStructure}) async {
+Future<void> doBackupWorkflow(
+  BuildContext context, {
+  required List<DeviceId> devices,
+  required AccessStructure accessStructure,
+}) async {
   for (final deviceId in devices) {
     if (context.mounted) {
-      final confirmed = await showDeviceBackupDialog(context,
-          deviceId: deviceId,
-          accessStructureRef: accessStructure.accessStructureRef());
+      final confirmed = await showDeviceBackupDialog(
+        context,
+        deviceId: deviceId,
+        accessStructureRef: accessStructure.accessStructureRef(),
+      );
 
       if (confirmed && context.mounted) {
-        await showBackupInstructionsDialog(context,
-            accessStructure: accessStructure);
+        await showBackupInstructionsDialog(
+          context,
+          accessStructure: accessStructure,
+        );
       }
     }
     await coord.cancelProtocol();
   }
 }
 
-Future<bool> showDeviceBackupDialog(BuildContext context,
-    {required DeviceId deviceId,
-    required AccessStructureRef accessStructureRef}) async {
+Future<bool> showDeviceBackupDialog(
+  BuildContext context, {
+  required DeviceId deviceId,
+  required AccessStructureRef accessStructureRef,
+}) async {
   final result = await showDeviceActionDialog<bool>(
     context: context,
-    complete: coord
-        .displayBackup(id: deviceId, accessStructureRef: accessStructureRef)
-        .first,
+    complete:
+        coord
+            .displayBackup(id: deviceId, accessStructureRef: accessStructureRef)
+            .first,
     builder: (context) {
-      return Column(children: [
-        DialogHeader(child: Text("Confirm on device to show backup")),
-        DeviceListWithIcons(
-          iconAssigner: (context, id) {
-            if (deviceIdEquals(deviceId, id)) {
-              final Widget icon = ConfirmPrompt();
-              return (null, icon);
-            } else {
-              return (null, null);
-            }
-          },
-        ),
-      ]);
+      return Column(
+        children: [
+          DialogHeader(child: Text("Confirm on device to show backup")),
+          DeviceListWithIcons(
+            iconAssigner: (context, id) {
+              if (deviceIdEquals(deviceId, id)) {
+                final Widget icon = ConfirmPrompt();
+                return (null, icon);
+              } else {
+                return (null, null);
+              }
+            },
+          ),
+        ],
+      );
     },
   );
 
@@ -67,86 +78,92 @@ Future<void> showBackupInstructionsDialog(
     context: context,
     builder: (context) {
       return AlertDialog(
-          actions: [
-            ElevatedButton(
-              child: Text("I have written down my backup"),
-              onPressed: () {
-                Navigator.pop(context);
-              },
-            ),
-          ],
-          content: SizedBox(
-            width: Platform.isAndroid ? double.maxFinite : 400.0,
-            child: Align(
-              alignment: Alignment.center,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text.rich(TextSpan(
-                      text:
-                          "Write down each device's backup for this key onto separate pieces of paper. Each piece of paper should look like this with every ",
-                      children: const [
+        actions: [
+          ElevatedButton(
+            child: Text("I have written down my backup"),
+            onPressed: () {
+              Navigator.pop(context);
+            },
+          ),
+        ],
+        content: SizedBox(
+          width: Platform.isAndroid ? double.maxFinite : 400.0,
+          child: Align(
+            alignment: Alignment.center,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text.rich(
+                  TextSpan(
+                    text:
+                        "Write down each device's backup for this key onto separate pieces of paper. Each piece of paper should look like this with every ",
+                    children: const [
+                      TextSpan(
+                        text: 'X',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      TextSpan(
+                        text: ' replaced with the character shown on screen.',
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: 8),
+                Divider(),
+                Center(
+                  child: Text.rich(
+                    TextSpan(
+                      text: 'frost[',
+                      children: const <TextSpan>[
                         TextSpan(
                           text: 'X',
                           style: TextStyle(fontWeight: FontWeight.bold),
                         ),
-                        TextSpan(
-                          text: ' replaced with the character shown on screen.',
-                        )
-                      ])),
-                  SizedBox(height: 8),
-                  Divider(),
-                  Center(
-                    child: Text.rich(
-                      TextSpan(
-                        text: 'frost[',
-                        children: const <TextSpan>[
-                          TextSpan(
-                            text: 'X',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          TextSpan(
-                            text: ']',
-                          ),
-                        ],
-                      ),
+                        TextSpan(text: ']'),
+                      ],
                     ),
                   ),
-                  Center(
-                    child: Text(
-                      "xxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xx",
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleMedium
-                          ?.copyWith(fontFamily: monospaceTextStyle.fontFamily),
+                ),
+                Center(
+                  child: Text(
+                    "xxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xxxx\nxxxx xxxx xx",
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontFamily: monospaceTextStyle.fontFamily,
                     ),
                   ),
-                  Center(
-                      child: Text(
+                ),
+                Center(
+                  child: Text(
                     "Identifier: ${toSpacedHex(Uint8List.fromList(accessStructure.id().field0.sublist(0, 4)))}",
                     style: TextStyle(
                       fontSize: 18,
                       fontFamily: monospaceTextStyle.fontFamily,
                     ),
-                  )),
-                  Divider(),
-                  SizedBox(height: 16),
-                  Text(
-                      "Alongside each backup, also record the identifier above."),
-                  SizedBox(height: 8),
-                  Text(
-                      "This identifier is useful for knowing that these share backups belong to the same key and are compatibile."),
-                  SizedBox(height: 24),
-                  Text(
-                      "Any ${accessStructure.threshold()} of these backups will provide complete control over this key."),
-                  SizedBox(height: 8),
-                  Text(
-                      "You should store these backups securely in separate locations."),
-                ],
-              ),
+                  ),
+                ),
+                Divider(),
+                SizedBox(height: 16),
+                Text(
+                  "Alongside each backup, also record the identifier above.",
+                ),
+                SizedBox(height: 8),
+                Text(
+                  "This identifier is useful for knowing that these share backups belong to the same key and are compatibile.",
+                ),
+                SizedBox(height: 24),
+                Text(
+                  "Any ${accessStructure.threshold()} of these backups will provide complete control over this key.",
+                ),
+                SizedBox(height: 8),
+                Text(
+                  "You should store these backups securely in separate locations.",
+                ),
+              ],
             ),
-          ));
+          ),
+        ),
+      );
     },
   );
 }

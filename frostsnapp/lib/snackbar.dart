@@ -3,10 +3,7 @@ import 'package:flutter/material.dart';
 void showErrorSnackbarTop(BuildContext context, String errorMessage) {
   final theme = Theme.of(context);
   final snackBar = SnackBar(
-    content: Text(
-      errorMessage,
-      style: theme.textTheme.titleMedium,
-    ),
+    content: Text(errorMessage, style: theme.textTheme.titleMedium),
     backgroundColor: theme.colorScheme.error,
     dismissDirection: DismissDirection.up,
     duration: Duration(seconds: 3), // Adjust the duration as needed
@@ -25,10 +22,7 @@ void showErrorSnackbarBottom(BuildContext context, String message) {
   final theme = Theme.of(context);
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
-      content: Text(
-        message,
-        style: theme.textTheme.titleMedium,
-      ),
+      content: Text(message, style: theme.textTheme.titleMedium),
       backgroundColor: theme.colorScheme.error,
       behavior: SnackBarBehavior.floating,
     ),

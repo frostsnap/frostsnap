@@ -47,8 +47,9 @@ void main() async {
     final appDir = await getApplicationSupportDirectory();
     final appDirPath = appDir.path;
     if (Platform.isAndroid) {
-      final (coord_, settings_, ffiserial) =
-          await api.loadHostHandlesSerial(appDir: appDirPath);
+      final (coord_, settings_, ffiserial) = await api.loadHostHandlesSerial(
+        appDir: appDirPath,
+      );
       globalHostPortHandler = HostPortHandler(ffiserial);
       coord = coord_;
       settings = settings_;
@@ -126,18 +127,15 @@ class _MyAppState extends State<MyApp> {
       brightness: Brightness.dark,
       seedColor: Color(0xFF1595B2),
     );
-    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
-      systemNavigationBarColor: colorScheme.surface,
-    ));
+    SystemChrome.setSystemUIOverlayStyle(
+      SystemUiOverlayStyle(systemNavigationBarColor: colorScheme.surface),
+    );
   }
 
   // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
-    final baseTheme = ThemeData(
-      useMaterial3: true,
-      colorScheme: colorScheme,
-    );
+    final baseTheme = ThemeData(useMaterial3: true, colorScheme: colorScheme);
 
     return FutureBuilder(
       future: googleFontsPending,
@@ -150,10 +148,13 @@ class _MyAppState extends State<MyApp> {
         return MaterialApp(
           title: 'Frostsnapp',
           theme: baseTheme.copyWith(
-              colorScheme: colorScheme, textTheme: textTheme),
-          home: widget.startupError == null
-              ? const MyHomePage()
-              : StartupErrorWidget(error: widget.startupError!),
+            colorScheme: colorScheme,
+            textTheme: textTheme,
+          ),
+          home:
+              widget.startupError == null
+                  ? const MyHomePage()
+                  : StartupErrorWidget(error: widget.startupError!),
           debugShowCheckedModeBanner: false,
         );
       },
@@ -202,12 +203,13 @@ class _MyHomePageState extends State<MyHomePage> {
       persistentFooterAlignment: AlignmentDirectional.centerStart,
       persistentFooterButtons: [
         TextButton(
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => DeviceSettingsPage()),
-          ),
+          onPressed:
+              () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => DeviceSettingsPage()),
+              ),
           child: Text('Show Devices'),
-        )
+        ),
       ],
     );
   }
@@ -234,13 +236,11 @@ class _StartupErrorWidgetState extends State<StartupErrorWidget> {
       final logStream = FrostsnapContext.of(context)?.logStream;
 
       if (logStream != null) {
-        _subscription = logStream.listen(
-          (log) {
-            setState(() {
-              _logs.add(log);
-            });
-          },
-        );
+        _subscription = logStream.listen((log) {
+          setState(() {
+            _logs.add(log);
+          });
+        });
       }
     });
   }
@@ -268,9 +268,7 @@ class _StartupErrorWidgetState extends State<StartupErrorWidget> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Startup Error'),
-      ),
+      appBar: AppBar(title: Text('Startup Error')),
       body: Padding(
         padding: EdgeInsets.all(16.0),
         child: Center(
@@ -282,8 +280,9 @@ class _StartupErrorWidgetState extends State<StartupErrorWidget> {
               children: <Widget>[
                 Text(
                   'STARTUP ERROR',
-                  style: theme.textTheme.titleMedium
-                      ?.copyWith(color: theme.colorScheme.error),
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: theme.colorScheme.error,
+                  ),
                 ),
                 SizedBox(height: 8),
                 Text(
@@ -307,11 +306,13 @@ class _StartupErrorWidgetState extends State<StartupErrorWidget> {
                   icon: Icon(Icons.content_copy),
                   onPressed: () {
                     Clipboard.setData(
-                        ClipboardData(text: _combinedErrorWithLogs));
+                      ClipboardData(text: _combinedErrorWithLogs),
+                    );
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(
-                            "Copied! Only send this to the Frostsnap team."),
+                          "Copied! Only send this to the Frostsnap team.",
+                        ),
                       ),
                     );
                   },

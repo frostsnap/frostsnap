@@ -13,11 +13,7 @@ import 'package:frostsnapp/wallet_send_controllers.dart';
 import 'package:frostsnapp/wallet_send_feerate_picker.dart';
 import 'package:frostsnapp/wallet_send_scan.dart';
 
-enum SendPageIndex {
-  recipient,
-  amount,
-  sign,
-}
+enum SendPageIndex { recipient, amount, signers, sign }
 
 class WalletSendPage extends StatefulWidget {
   final ScrollController? scrollController;
@@ -28,15 +24,7 @@ class WalletSendPage extends StatefulWidget {
 }
 
 class _WalletSendPageState extends State<WalletSendPage> {
-  static const sectionPadding = EdgeInsets.fromLTRB(24.0, 8.0, 24.0, 16.0);
-  static const inputCardPadding = EdgeInsets.fromLTRB(8.0, 24.0, 8.0, 8.0);
-
-  final inputCardTopBorder = RoundedRectangleBorder(
-    borderRadius: BorderRadius.circular(12.0),
-  );
-  final inputCardBottomBorder = RoundedRectangleBorder(
-    borderRadius: BorderRadius.circular(12.0),
-  );
+  static const sectionPadding = EdgeInsets.fromLTRB(16.0, 0.0, 16.0, 8.0);
 
   late final CachedFuture<List<CameraDescription>> cameras;
 
@@ -47,6 +35,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
 
   UnsignedTx? unsignedTx;
   final selectedDevicesModel = SelectedDevicesController();
+  final signingSession = SigningSessionController();
 
   var pageIndex = SendPageIndex.recipient;
   late final ScrollController _scrollController;
@@ -56,12 +45,14 @@ class _WalletSendPageState extends State<WalletSendPage> {
   _initRecipientDoneButton() {
     _recipientDoneButton = ListenableBuilder(
       listenable: addressModel,
-      builder: (context, _) => IconButton.filled(
-        onPressed: addressModel.errorText != null
-            ? null
-            : () => recipientDone(context),
-        icon: Icon(Icons.done),
-      ),
+      builder:
+          (context, _) => IconButton.filled(
+            onPressed:
+                addressModel.errorText != null
+                    ? null
+                    : () => recipientDone(context),
+            icon: Icon(Icons.done),
+          ),
     );
   }
 
@@ -69,16 +60,17 @@ class _WalletSendPageState extends State<WalletSendPage> {
   _initAmountDoneButton() {
     _amountDoneButton = ListenableBuilder(
       listenable: amountModel,
-      builder: (context, _) => IconButton.filled(
-        // TODO: Create a getter for this.
-        onPressed: (amountModel.error != null ||
-                amountModel.amount == null ||
-                amountModel.textEditingController.text.isEmpty)
-            ? null
-            : () => amountDone(context),
-        icon: Icon(Icons.done),
-        //child: Text('Next'),
-      ),
+      builder:
+          (context, _) => IconButton.filled(
+            // TODO: Create a getter for this.
+            onPressed:
+                (amountModel.error != null ||
+                        amountModel.amount == null ||
+                        amountModel.textEditingController.text.isEmpty)
+                    ? null
+                    : () => amountDone(context),
+            icon: Icon(Icons.done),
+          ),
     );
   }
 
@@ -92,10 +84,12 @@ class _WalletSendPageState extends State<WalletSendPage> {
         final nextText =
             (isThresholdMet) ? 'Sign Transaction' : 'Select $remaining more';
         return FilledButton(
-            onPressed: (unsignedTx == null || !isThresholdMet)
-                ? null
-                : () => signersDone(context),
-            child: Text(nextText));
+          onPressed:
+              (unsignedTx == null || !isThresholdMet)
+                  ? null
+                  : () => signersDone(context),
+          child: Text(nextText),
+        );
       },
     );
   }
@@ -107,7 +101,8 @@ class _WalletSendPageState extends State<WalletSendPage> {
     _isAtEnd = ValueNotifier(true);
     _scrollController = widget.scrollController ?? ScrollController();
     _scrollController.addListener(() {
-      _isAtEnd.value = _scrollController.position.atEdge &&
+      _isAtEnd.value =
+          _scrollController.position.atEdge &&
           _scrollController.position.pixels ==
               _scrollController.position.maxScrollExtent;
     });
@@ -119,10 +114,12 @@ class _WalletSendPageState extends State<WalletSendPage> {
     addressModel = AddressInputController();
     feeRateModel = FeeRateController(satsPerVB: 5.0);
 
-    amountAvaliable =
-        AmountAvaliableController(feeRateController: feeRateModel);
-    amountModel =
-        AmountInputController(amountAvailableController: amountAvaliable);
+    amountAvaliable = AmountAvaliableController(
+      feeRateController: feeRateModel,
+    );
+    amountModel = AmountInputController(
+      amountAvailableController: amountAvaliable,
+    );
 
     _initRecipientDoneButton();
     _initAmountDoneButton();
@@ -136,6 +133,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
     feeRateModel.dispose();
     addressModel.dispose();
     selectedDevicesModel.dispose();
+    signingSession.dispose();
     if (widget.scrollController == null) _scrollController.dispose();
     _isAtEnd.dispose();
     super.dispose();
@@ -159,12 +157,91 @@ class _WalletSendPageState extends State<WalletSendPage> {
     }
   }
 
+  Widget _buildCompletedList(BuildContext context) {
+    final theme = Theme.of(context);
+    final allowEdit = pageIndex.index < SendPageIndex.sign.index;
+
+    return AnimatedSize(
+      duration: Durations.short4,
+      curve: Curves.easeInOutCubicEmphasized,
+      alignment: Alignment.topCenter,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (pageIndex.index > SendPageIndex.recipient.index)
+            ListTile(
+              enabled: allowEdit,
+              onTap: () => setState(() => pageIndex = SendPageIndex.recipient),
+              leading: completedCardLabel(context, 'Recipient'),
+              title: ListenableBuilder(
+                listenable: addressModel,
+                builder:
+                    (ctx, _) => Text(
+                      addressModel.formattedAddress,
+                      textWidthBasis: TextWidthBasis.longestLine,
+                      textAlign: TextAlign.right,
+                      style: monospaceTextStyle,
+                    ),
+              ),
+            ),
+          if (pageIndex.index > SendPageIndex.amount.index)
+            Column(
+              children: [
+                ListTile(
+                  enabled: allowEdit,
+                  onTap: () => setState(() => pageIndex = SendPageIndex.amount),
+                  leading: completedCardLabel(context, 'Amount'),
+                  title: SatoshiText(value: amountModel.amount ?? 0),
+                ),
+                ListTile(
+                  enabled: allowEdit,
+                  onTap: () => showFeeRateDialog(context),
+                  leading: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    spacing: 4.0,
+                    children: [
+                      completedCardLabel(context, 'Fee'),
+                      Flexible(
+                        child: Card(
+                          color: theme.colorScheme.secondaryContainer,
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(
+                              vertical: 2.0,
+                              horizontal: 6.0,
+                            ),
+                            child: Text(
+                              '${unsignedTx?.feerate()?.toStringAsFixed(1)} sat/vB',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.onSecondaryContainer,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  title: SatoshiText(
+                    value: unsignedTx?.fee(),
+                    style: TextStyle(color: theme.colorScheme.error),
+                  ),
+                ),
+              ],
+            ),
+          if (pageIndex.index > SendPageIndex.recipient.index)
+            SizedBox(height: 24.0),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
     final appBar = SliverPadding(
-      padding: EdgeInsets.symmetric(vertical: 0.0, horizontal: 4.0),
+      padding: EdgeInsets.symmetric(vertical: 0.0, horizontal: 0.0),
       sliver: SliverAppBar(
         title: Text('Send Bitcoin'),
         titleTextStyle: theme.textTheme.titleMedium,
@@ -181,135 +258,60 @@ class _WalletSendPageState extends State<WalletSendPage> {
       ),
     );
 
-    final completedInfoCard = AnimatedSize(
-      duration: Durations.short4,
-      curve: Curves.easeInOutCubicEmphasized,
-      alignment: Alignment.topCenter,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (pageIndex.index > SendPageIndex.recipient.index)
-            ListTile(
-              onTap: () => setState(() => pageIndex = SendPageIndex.recipient),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12.0),
-              ),
-              leading: completedCardLabel(context, 'Recipient'),
-              title: ListenableBuilder(
-                listenable: addressModel,
-                builder: (ctx, _) => Text(
-                  addressModel.formattedAddress,
-                  textWidthBasis: TextWidthBasis.longestLine,
-                  textAlign: TextAlign.right,
-                  style: monospaceTextStyle,
-                ),
-              ),
-            ),
-          if (pageIndex.index > SendPageIndex.amount.index)
-            ListTile(
-              onTap: () => setState(() => pageIndex = SendPageIndex.amount),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12.0),
-              ),
-              leading: completedCardLabel(context, 'Amount'),
-              title: SatoshiText(value: amountModel.amount ?? 0),
-            ),
-          if (pageIndex.index > SendPageIndex.amount.index)
-            ListTile(
-              onTap: () => showFeeRateDialog(context),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12.0),
-              ),
-              leading: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                spacing: 4.0,
-                children: [
-                  completedCardLabel(context, 'Fee'),
-                  Flexible(
-                    child: Card(
-                      color: theme.colorScheme.secondaryContainer,
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(
-                          vertical: 2.0,
-                          horizontal: 6.0,
-                        ),
-                        child: Text(
-                          '${unsignedTx?.feerate()?.toStringAsFixed(1)} sat/vB',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: theme.colorScheme.onSecondaryContainer,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              title: SatoshiText(
-                value: unsignedTx?.fee(),
-                style: TextStyle(color: theme.colorScheme.onErrorContainer),
-              ),
-            ),
-          if (pageIndex.index > SendPageIndex.recipient.index)
-            SizedBox(height: 24.0),
-        ],
-      ),
-    );
-
-    final Color mainCardColor = theme.colorScheme.surfaceContainerHighest;
+    final Color mainCardColor = theme.colorScheme.surfaceContainerHigh;
 
     final etaInputCard = ListenableBuilder(
       listenable: feeRateModel,
-      builder: (context, _) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          FilledButton.tonalIcon(
-            onPressed: () => showFeeRateDialog(context),
-            icon: Stack(
-              alignment: AlignmentDirectional.bottomCenter,
-              children: [
-                Icon(Icons.speed_rounded),
-                if (feeRateModel.estimateRunning)
-                  SizedBox(
-                    height: 2.0,
-                    width: 12.0,
-                    child: LinearProgressIndicator(),
-                  )
-              ],
-            ),
-            label: Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(text: '${feeRateModel.satsPerVB} '),
+      builder: (context, _) {
+        return TextButton.icon(
+          onPressed:
+              pageIndex.index < SendPageIndex.signers.index
+                  ? () => showFeeRateDialog(context)
+                  : null,
+          icon: Stack(
+            alignment: AlignmentDirectional.bottomCenter,
+            children: [
+              Icon(Icons.speed_rounded),
+              if (feeRateModel.estimateRunning)
+                SizedBox(
+                  height: 2.0,
+                  width: 12.0,
+                  child: LinearProgressIndicator(),
+                ),
+            ],
+          ),
+          label: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Flexible(
+                child: Text.rich(
                   TextSpan(
-                    text: 'sat/vB',
-                    style: TextStyle(
-                        fontSize: theme.textTheme.labelSmall!.fontSize),
+                    children: [
+                      TextSpan(text: 'Confirms in '),
+                      TextSpan(
+                        text:
+                            feeRateModel.targetTime == null
+                                ? '...'
+                                : '~${feeRateModel.targetTime} min',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
+              if (pageIndex.index < SendPageIndex.signers.index)
+                Flexible(child: Text('${feeRateModel.satsPerVB} sat/vB')),
+            ],
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0),
-            child: Text(
-                feeRateModel.targetTime == null
-                    ? 'unknown ETA'
-                    : '${feeRateModel.targetTime} min ETA',
-                style: theme.textTheme.labelSmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-          ),
-        ],
-      ),
+        );
+      },
     );
 
-    final recipientInputCard = Card(
+    final recipientInputCard = Card.filled(
       color: mainCardColor,
-      shape: inputCardTopBorder,
       margin: EdgeInsets.all(0.0),
       child: Padding(
-        padding: inputCardPadding, //inputCardPadding,
+        padding: EdgeInsets.all(12.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           spacing: 12.0,
@@ -318,11 +320,21 @@ class _WalletSendPageState extends State<WalletSendPage> {
               controller: addressModel,
               onSubmitted: (_) => recipientDone(context),
               decoration: InputDecoration(
-                errorMaxLines: 2,
+                filled: true,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8.0),
+                  borderSide: BorderSide.none,
+                ),
                 labelText: 'Recipient',
-                //counter: _recipientDoneButton,
-                counter: Row(
-                  mainAxisSize: MainAxisSize.min,
+                errorMaxLines: 2,
+              ),
+            ),
+            Row(
+              spacing: 8.0,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
                   spacing: 8.0,
                   children: [
                     TextButton.icon(
@@ -337,19 +349,19 @@ class _WalletSendPageState extends State<WalletSendPage> {
                     ),
                   ],
                 ),
-              ),
+                _recipientDoneButton,
+              ],
             ),
           ],
         ),
       ),
     );
 
-    final amountInputCard = Card(
+    final amountInputCard = Card.filled(
       color: mainCardColor,
-      shape: inputCardTopBorder,
       margin: EdgeInsets.all(0.0),
       child: Padding(
-        padding: inputCardPadding,
+        padding: EdgeInsets.all(12.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           spacing: 12.0,
@@ -358,34 +370,41 @@ class _WalletSendPageState extends State<WalletSendPage> {
               model: amountModel,
               onSubmitted: (_) => amountDone(context),
               decoration: InputDecoration(
+                filled: true,
                 errorMaxLines: 2,
                 labelText: 'Amount',
-                helper: Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Text('Max:',
-                        style: theme.textTheme.labelMedium
-                            ?.merge(monospaceTextStyle)),
-                    ValueListenableBuilder(
-                      valueListenable: amountAvaliable,
-                      builder: (context, value, _) => SatoshiText(value: value),
-                    ),
-                  ],
-                ),
-                counter: ListenableBuilder(
-                  listenable: Listenable.merge([amountModel, amountAvaliable]),
-                  builder: (context, _) => TextButton.icon(
-                    onPressed: (amountAvaliable.value == null ||
-                            amountAvaliable.value! == 0)
-                        ? null
-                        : () => amountModel.sendMax = !amountModel.sendMax,
-                    icon: Icon(amountModel.sendMax
-                        ? Icons.check_box
-                        : Icons.check_box_outline_blank),
-                    label: Text('Send Max'),
-                  ),
-                ),
               ),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                ListenableBuilder(
+                  listenable: Listenable.merge([amountModel, amountAvaliable]),
+                  builder:
+                      (context, _) => TextButton.icon(
+                        onPressed:
+                            (amountAvaliable.value == null ||
+                                    amountAvaliable.value! == 0)
+                                ? null
+                                : () =>
+                                    amountModel.sendMax = !amountModel.sendMax,
+                        label: Row(
+                          spacing: 4.0,
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('Send Max'),
+                            SatoshiText(value: amountAvaliable.value),
+                          ],
+                        ),
+                        icon: Icon(
+                          amountModel.sendMax
+                              ? Icons.check_box
+                              : Icons.check_box_outline_blank,
+                        ),
+                      ),
+                ),
+                _amountDoneButton,
+              ],
             ),
           ],
         ),
@@ -396,101 +415,199 @@ class _WalletSendPageState extends State<WalletSendPage> {
       color: mainCardColor,
       margin: EdgeInsets.all(0.0),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
+          ListTile(
+            dense: true,
+            title: Text('Select Signers'),
+            trailing: Text('${selectedDevicesModel.threshold} required'),
+          ),
           Padding(
-            padding: EdgeInsets.all(12.0),
-            child: Row(
-              spacing: 8.0,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Select Signers',
-                  style: theme.textTheme.labelMedium
-                      ?.copyWith(color: theme.colorScheme.primary),
-                ),
-                Text(
-                  '${selectedDevicesModel.threshold} required',
-                  style: theme.textTheme.labelMedium
-                      ?.copyWith(color: theme.dividerColor),
-                ),
-              ],
+            padding: const EdgeInsets.symmetric(horizontal: 12.0),
+            child: Card.filled(
+              margin: EdgeInsets.all(0.0),
+              child: ListenableBuilder(
+                listenable: selectedDevicesModel,
+                builder:
+                    (context, child) => Column(
+                      children:
+                          selectedDevicesModel.devices.map((device) {
+                            if (device.nonces == 0) {
+                              selectedDevicesModel.deselect(device.id);
+                            }
+                            return CheckboxListTile(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12.0),
+                              ),
+                              value: device.selected,
+                              onChanged:
+                                  device.canSelect
+                                      ? (selected) =>
+                                          selected ?? false
+                                              ? selectedDevicesModel.select(
+                                                device.id,
+                                              )
+                                              : selectedDevicesModel.deselect(
+                                                device.id,
+                                              )
+                                      : null,
+                              secondary: Icon(Icons.key),
+                              title: Text(device.name ?? '<unknown>'),
+                              subtitle:
+                                  device.nonces == 0
+                                      ? Text(
+                                        'no nonces remaining or too many signing sessions',
+                                        style: TextStyle(
+                                          color: theme.colorScheme.error,
+                                        ),
+                                      )
+                                      : null,
+                            );
+                          }).toList(),
+                    ),
+              ),
             ),
           ),
-          ListenableBuilder(
-            listenable: selectedDevicesModel,
-            builder: (context, child) => Column(
-              children: selectedDevicesModel.devices.map(
-                (device) {
-                  if (device.nonces == 0) {
-                    selectedDevicesModel.deselect(device.id);
-                  }
-                  return ListTile(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12.0),
-                    ),
-                    leading: Icon(device.selected
-                        ? Icons.check_box
-                        : Icons.check_box_outline_blank),
-                    title: Text(device.name ?? '<unknown>'),
-                    trailing: device.nonces == 0
-                        ? Text(
-                            'no nonces remaining',
-                            style: TextStyle(color: theme.colorScheme.error),
-                          )
-                        : null,
-                    enabled: device.canSelect,
-                    selected: device.selected,
-                    onTap: () => device.selected
-                        ? selectedDevicesModel.deselect(device.id)
-                        : selectedDevicesModel.select(device.id),
-                  );
-                },
-              ).toList(),
-            ),
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: _signersDoneButton,
           ),
         ],
       ),
     );
 
-    final footerButton = switch (pageIndex) {
-      SendPageIndex.recipient => _recipientDoneButton,
-      SendPageIndex.amount => _amountDoneButton,
-      SendPageIndex.sign => _signersDoneButton,
-    };
+    final signInputCard = Card.filled(
+      color: mainCardColor,
+      margin: EdgeInsets.all(0.0),
+      child: ListenableBuilder(
+        listenable: signingSession,
+        builder: (context, _) {
+          final signers = signingSession.mapDevices(
+            selectedDevicesModel.selectedDevices,
+          );
+          final signedTx = signingSession.signedTx;
+          if (signedTx != null) {
+            return Column(
+              children: [
+                const ListTile(
+                  dense: true,
+                  title: Text('Broadcast Transaction'),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                  child: Card.filled(
+                    margin: EdgeInsets.all(0.0),
+                    child: ListTile(
+                      leading: Text('Txid'),
+                      title: Text(
+                        signedTx.txid(),
+                        style: TextStyle(
+                          fontFamily: monospaceTextStyle.fontFamily,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: FilledButton(
+                    onPressed: () async {
+                      final walletCtx = WalletContext.of(context);
+                      if (walletCtx != null) {
+                        await walletCtx.wallet.superWallet.broadcastTx(
+                          masterAppkey: walletCtx.masterAppkey,
+                          tx: signedTx,
+                        );
+                        nextPageOrPop(null);
+                      }
+                    },
+                    child: Text('Broadcast'),
+                  ),
+                ),
+              ],
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              const ListTile(
+                dense: true,
+                title: Text('Sign Transaction'),
+                trailing: Text('Plug in these devices'),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                child: Card.filled(
+                  margin: EdgeInsets.all(0.0),
+                  child:
+                      signers == null
+                          ? Padding(
+                            padding: EdgeInsets.all(12.0),
+                            child: LinearProgressIndicator(
+                              borderRadius: BorderRadius.circular(4.0),
+                            ),
+                          )
+                          : Column(
+                            children:
+                                signers
+                                    .map(
+                                      (device) => CheckboxListTile(
+                                        enabled:
+                                            device.isConnected ||
+                                            device.hasSignature,
+                                        value: device.hasSignature,
+                                        onChanged: null,
+                                        secondary: Icon(
+                                          device.isConnected
+                                              ? Icons.key
+                                              : Icons.key_off,
+                                        ),
+                                        title: Text(device.name ?? '<no name>'),
+                                      ),
+                                    )
+                                    .toList(),
+                          ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: TextButton(
+                  onPressed: () => prevPageOrPop(null),
+                  child: Text('Cancel'),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
 
     final scrollView = CustomScrollView(
       controller: _scrollController,
       reverse: true,
       shrinkWrap: true,
       slivers: [
-        SliverPadding(
-          padding: sectionPadding.copyWith(
-              bottom: MediaQuery.of(context).viewInsets.bottom + 16.0),
-          sliver: SliverToBoxAdapter(
-            child: Column(
-              spacing: 0.0,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                completedInfoCard,
-                if (pageIndex == SendPageIndex.recipient) recipientInputCard,
-                if (pageIndex == SendPageIndex.amount) amountInputCard,
-                if (pageIndex == SendPageIndex.sign) signersInputCard,
-                SizedBox(height: 12.0),
-                Row(
-                  spacing: 12.0,
-                  mainAxisSize: MainAxisSize.max,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: CrossAxisAlignment.start,
+        SliverToBoxAdapter(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildCompletedList(context),
+              Padding(
+                padding: sectionPadding,
+                child: Column(
                   children: [
-                    (pageIndex.index < SendPageIndex.sign.index)
-                        ? etaInputCard
-                        : SizedBox(),
-                    footerButton,
+                    if (pageIndex == SendPageIndex.recipient)
+                      recipientInputCard,
+                    if (pageIndex == SendPageIndex.amount) amountInputCard,
+                    if (pageIndex == SendPageIndex.signers) signersInputCard,
+                    if (pageIndex == SendPageIndex.sign) signInputCard,
+                    SizedBox(height: 12.0),
+                    etaInputCard,
                   ],
                 ),
-              ],
-            ),
+              ),
+              SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
+            ],
           ),
         ),
         appBar,
@@ -507,21 +624,8 @@ class _WalletSendPageState extends State<WalletSendPage> {
     );
   }
 
-  Widget completedCardLabel(BuildContext context, String text) => Text.rich(
-        TextSpan(
-          children: [
-            WidgetSpan(
-              child: Padding(
-                padding: const EdgeInsets.all(2.0),
-                child: Icon(Icons.edit_square, size: 14.0),
-              ),
-            ),
-            TextSpan(text: ' '),
-            TextSpan(text: text),
-          ],
-        ),
-        style: Theme.of(context).textTheme.labelLarge,
-      );
+  Widget completedCardLabel(BuildContext context, String text) =>
+      Text(text, style: Theme.of(context).textTheme.labelLarge);
 
   showFeeRateDialog(BuildContext context) {
     final walletCtx = WalletContext.of(context);
@@ -550,11 +654,10 @@ class _WalletSendPageState extends State<WalletSendPage> {
 
   signersDone(BuildContext context) {
     if (unsignedTx == null) return;
-    selectedDevicesModel.signAndBroadcast(
-      context,
-      unsignedTx!,
-      () => nextPageOrPop(null),
-    );
+    final stream = selectedDevicesModel.signingSessionStream(unsignedTx!);
+    if (stream == null) return;
+    signingSession.init(unsignedTx!, stream);
+    nextPageOrPop(null);
   }
 
   amountDone(BuildContext context) {
@@ -574,8 +677,12 @@ class _WalletSendPageState extends State<WalletSendPage> {
         this.unsignedTx = unsignedTx;
         nextPageOrPop(null);
       },
-      onError: (e) => amountModel.customError =
-          e.toString().replaceFirst('FrbAnyhowException(', ''),
+      onError:
+          (e) =>
+              amountModel.customError = e.toString().replaceFirst(
+                'FrbAnyhowException(',
+                '',
+              ),
     );
   }
 
@@ -597,16 +704,23 @@ class _WalletSendPageState extends State<WalletSendPage> {
   recipientScan(BuildContext context) async {
     final addressResult = await showDialog<String>(
       context: context,
-      builder: (context) => FutureBuilder<List<CameraDescription>>(
-        future: cameras.value,
-        builder: (context, snapshot) => BackdropFilter(
-          filter: blurFilter,
-          child: Dialog(
-            child:
-                SendScanBody(cameras: snapshot.data ?? [], initialSelected: 0),
+      builder:
+          (context) => FutureBuilder<List<CameraDescription>>(
+            future: cameras.value,
+            builder:
+                (context, snapshot) => BackdropFilter(
+                  filter: blurFilter,
+                  child: Dialog(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: 580),
+                      child: SendScanBody(
+                        cameras: snapshot.data ?? [],
+                        initialSelected: 0,
+                      ),
+                    ),
+                  ),
+                ),
           ),
-        ),
-      ),
     );
     if (!context.mounted || addressResult == null) return;
     addressModel.controller.text = addressResult;
@@ -626,53 +740,41 @@ class _WalletSendPageState extends State<WalletSendPage> {
   }
 
   prevPageOrPop(Object? result) {
-    final SendPageIndex? prevIndex;
-    switch (pageIndex) {
-      case SendPageIndex.recipient:
-        prevIndex = null;
-      case SendPageIndex.amount:
-        prevIndex = SendPageIndex.recipient;
-      case SendPageIndex.sign:
-        prevIndex = SendPageIndex.amount;
-      //case SendPageIndex.broadcast:
-      //  prevIndex = SendPageIndex.sign;
-    }
-    if (prevIndex != null) {
-      setState(() => pageIndex = prevIndex!);
-      if (pageIndex == SendPageIndex.sign) scrollToTop();
-    } else {
+    if (pageIndex == SendPageIndex.sign) signingSession.cancel();
+    final prevIndex = pageIndex.index - 1;
+    if (prevIndex < 0) {
       Navigator.pop(context, result);
+    } else {
+      final prev = SendPageIndex.values[prevIndex];
+      setState(() => pageIndex = prev);
+      if (pageIndex == SendPageIndex.signers) scrollToTop();
     }
   }
 
   nextPageOrPop(Object? result) {
-    final SendPageIndex? nextIndex;
-    switch (pageIndex) {
-      case SendPageIndex.recipient:
-        nextIndex = SendPageIndex.amount;
-      case SendPageIndex.amount:
-        nextIndex = SendPageIndex.sign;
-      case SendPageIndex.sign:
-        nextIndex = null;
-    }
-    if (nextIndex != null) {
-      setState(() => pageIndex = nextIndex!);
-      if (pageIndex == SendPageIndex.sign) scrollToTop();
-    } else {
+    final nextIndex = pageIndex.index + 1;
+    if (nextIndex >= SendPageIndex.values.length) {
       Navigator.pop(context, result);
+    } else {
+      final prev = SendPageIndex.values[nextIndex];
+      setState(() => pageIndex = prev);
+      if (pageIndex == SendPageIndex.signers) scrollToTop();
     }
   }
 }
 
-Future<void> signAndBroadcastWorkflowDialog(
-    {required BuildContext context,
-    required Stream<SigningState> signingStream,
-    required UnsignedTx unsignedTx,
-    required SuperWallet superWallet,
-    required MasterAppkey masterAppkey,
-    Function()? onBroadcastNewTx}) async {
+Future<void> signAndBroadcastWorkflowDialog({
+  required BuildContext context,
+  required Stream<SigningState> signingStream,
+  required UnsignedTx unsignedTx,
+  required SuperWallet superWallet,
+  required MasterAppkey masterAppkey,
+  Function()? onBroadcastNewTx,
+}) async {
   final effect = unsignedTx.effect(
-      masterAppkey: masterAppkey, network: superWallet.network);
+    masterAppkey: masterAppkey,
+    network: superWallet.network,
+  );
 
   final signatures = await showSigningProgressDialog(
     context,
@@ -682,8 +784,12 @@ Future<void> signAndBroadcastWorkflowDialog(
   if (signatures != null) {
     final signedTx = await unsignedTx.complete(signatures: signatures);
     if (context.mounted) {
-      final wasBroadcast = await showBroadcastConfirmDialog(context,
-          masterAppkey: masterAppkey, tx: signedTx, superWallet: superWallet);
+      final wasBroadcast = await showBroadcastConfirmDialog(
+        context,
+        masterAppkey: masterAppkey,
+        tx: signedTx,
+        superWallet: superWallet,
+      );
       if (wasBroadcast) {
         onBroadcastNewTx?.call();
       }
@@ -699,32 +805,35 @@ class EffectTable extends StatelessWidget {
   Widget build(BuildContext context) {
     List<TableRow> transactionRows =
         effect.foreignReceivingAddresses.map((entry) {
-      final (address, value) = entry;
-      return TableRow(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Text('Send to $address'),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: SatoshiText.withSign(value: -value),
-          ),
-        ],
-      );
-    }).toList();
+          final (address, value) = entry;
+          return TableRow(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Text('Send to $address'),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: SatoshiText.withSign(value: -value),
+              ),
+            ],
+          );
+        }).toList();
 
     transactionRows.add(
       TableRow(
         children: [
           Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: effect.feerate != null
-                  ? Text("${effect.feerate!.toStringAsFixed(1)} (sats/vb))")
-                  : Text("unknown")),
+            padding: const EdgeInsets.all(8.0),
+            child:
+                effect.feerate != null
+                    ? Text("${effect.feerate!.toStringAsFixed(1)} (sats/vb))")
+                    : Text("unknown"),
+          ),
           Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: SatoshiText.withSign(value: -effect.fee)),
+            padding: const EdgeInsets.all(8.0),
+            child: SatoshiText.withSign(value: -effect.fee),
+          ),
         ],
       ),
     );
@@ -732,10 +841,7 @@ class EffectTable extends StatelessWidget {
     transactionRows.add(
       TableRow(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Text('Net value'),
-          ),
+          Padding(padding: const EdgeInsets.all(8.0), child: Text('Net value')),
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: SatoshiText.withSign(value: effect.netValue),
@@ -745,20 +851,13 @@ class EffectTable extends StatelessWidget {
     );
 
     final effectTable = Table(
-      columnWidths: const {
-        0: FlexColumnWidth(4),
-        1: FlexColumnWidth(2),
-      },
+      columnWidths: const {0: FlexColumnWidth(4), 1: FlexColumnWidth(2)},
       border: TableBorder.all(),
       children: transactionRows,
     );
 
     final effectWidget = Column(
-      children: [
-        describeEffect(context, effect),
-        Divider(),
-        effectTable,
-      ],
+      children: [describeEffect(context, effect), Divider(), effectTable],
     );
 
     return effectWidget;
@@ -766,8 +865,9 @@ class EffectTable extends StatelessWidget {
 }
 
 Widget describeEffect(BuildContext context, EffectOfTx effect) {
-  final style =
-      DefaultTextStyle.of(context).style.copyWith(fontWeight: FontWeight.w600);
+  final style = DefaultTextStyle.of(
+    context,
+  ).style.copyWith(fontWeight: FontWeight.w600);
   final Widget description;
 
   if (effect.foreignReceivingAddresses.length == 1) {
@@ -778,10 +878,7 @@ Widget describeEffect(BuildContext context, EffectOfTx effect) {
         Text('Sending '),
         SatoshiText(value: amount, style: style),
         Text(' to '),
-        Text(
-          dest,
-          style: style,
-        )
+        Text(dest, style: style),
       ],
     );
   } else if (effect.foreignReceivingAddresses.isEmpty) {
@@ -793,52 +890,59 @@ Widget describeEffect(BuildContext context, EffectOfTx effect) {
   return description;
 }
 
-Future<bool> showBroadcastConfirmDialog(BuildContext context,
-    {required MasterAppkey masterAppkey,
-    required SignedTx tx,
-    required SuperWallet superWallet}) async {
+Future<bool> showBroadcastConfirmDialog(
+  BuildContext context, {
+  required MasterAppkey masterAppkey,
+  required SignedTx tx,
+  required SuperWallet superWallet,
+}) async {
   final wasBroadcast = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        final effect =
-            tx.effect(masterAppkey: masterAppkey, network: superWallet.network);
-        final effectWidget = EffectTable(effect: effect);
-        return AlertDialog(
-            title: Text("Broadcast?"),
-            content: SizedBox(
-                width: Platform.isAndroid ? double.maxFinite : 400.0,
-                child: Align(
-                  alignment: Alignment.center,
-                  child: effectWidget,
-                )),
-            actions: [
-              ElevatedButton(
-                  onPressed: () {
-                    if (dialogContext.mounted) {
-                      Navigator.pop(dialogContext, false);
-                    }
-                  },
-                  child: Text("Cancel")),
-              ElevatedButton(
-                  onPressed: () async {
-                    try {
-                      await superWallet.broadcastTx(
-                          masterAppkey: masterAppkey, tx: tx);
-                      if (dialogContext.mounted) {
-                        Navigator.pop(context, true);
-                      }
-                    } catch (e) {
-                      if (dialogContext.mounted) {
-                        Navigator.pop(dialogContext, false);
-                        showErrorSnackbarTop(
-                            dialogContext, "Broadcast error: $e");
-                      }
-                    }
-                  },
-                  child: Text("Broadcast"))
-            ]);
-      });
+    context: context,
+    barrierDismissible: false,
+    builder: (dialogContext) {
+      final effect = tx.effect(
+        masterAppkey: masterAppkey,
+        network: superWallet.network,
+      );
+      final effectWidget = EffectTable(effect: effect);
+      return AlertDialog(
+        title: Text("Broadcast?"),
+        content: SizedBox(
+          width: Platform.isAndroid ? double.maxFinite : 400.0,
+          child: Align(alignment: Alignment.center, child: effectWidget),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () {
+              if (dialogContext.mounted) {
+                Navigator.pop(dialogContext, false);
+              }
+            },
+            child: Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              try {
+                await superWallet.broadcastTx(
+                  masterAppkey: masterAppkey,
+                  tx: tx,
+                );
+                if (dialogContext.mounted) {
+                  Navigator.pop(context, true);
+                }
+              } catch (e) {
+                if (dialogContext.mounted) {
+                  Navigator.pop(dialogContext, false);
+                  showErrorSnackbarTop(dialogContext, "Broadcast error: $e");
+                }
+              }
+            },
+            child: Text("Broadcast"),
+          ),
+        ],
+      );
+    },
+  );
 
   return wasBroadcast ?? false;
 }

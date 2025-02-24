@@ -79,11 +79,17 @@ class HostPortHandler {
   void scanDevices() async {
     if (ffiserial != null) {
       List<UsbDevice> devices = await UsbSerial.listDevices();
-      final List<PortDesc> portDescriptions = devices
-          .where((device) => device.vid != null && device.pid != null)
-          .map((device) => PortDesc(
-              id: device.deviceName, pid: device.pid!, vid: device.vid!))
-          .toList();
+      final List<PortDesc> portDescriptions =
+          devices
+              .where((device) => device.vid != null && device.pid != null)
+              .map(
+                (device) => PortDesc(
+                  id: device.deviceName,
+                  pid: device.pid!,
+                  vid: device.vid!,
+                ),
+              )
+              .toList();
       await ffiserial!.setAvailablePorts(ports: portDescriptions);
     }
   }
@@ -104,8 +110,9 @@ class SerialPort {
   static Future<SerialPort> open(String id, int baudRate) async {
     final deviceList = await UsbSerial.listDevices();
     final serialport = SerialPort();
-    final device =
-        deviceList.firstWhereOrNull((device) => device.deviceName == id);
+    final device = deviceList.firstWhereOrNull(
+      (device) => device.deviceName == id,
+    );
     if (device == null) {
       throw "Device $id is not connected";
     } else {

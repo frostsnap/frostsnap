@@ -31,8 +31,11 @@ lint-coordinator +ARGS="":
 lint-device +ARGS="":
     cd device && cargo clippy {{ARGS}} --all-features --bins -- -Dwarnings
 
-lint-app +ARGS="":
-    ( cd frostsnapp && flutter analyze {{ARGS}}; )
+dart-format-check-app:
+    ( cd frostsnapp; dart format --set-exit-if-changed --output=none $(find ./lib -type f -name "*.dart" -not -name "bridge_*") )
+
+lint-app +ARGS="": dart-format-check-app
+    ( cd frostsnapp; flutter analyze {{ARGS}} )
 
 fix-dart:
     ( cd frostsnapp && dart format . && dart fix --apply )

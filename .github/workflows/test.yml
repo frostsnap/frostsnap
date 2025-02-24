@@ -187,4 +187,5 @@ jobs:
           cache: true
 
       - uses: taiki-e/install-action@just
+      - run: dart format --version
       - run: just lint-app

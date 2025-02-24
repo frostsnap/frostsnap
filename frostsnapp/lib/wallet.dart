@@ -51,11 +51,13 @@ class WalletHome extends StatelessWidget {
             children: [
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => walletCtx.wrap(WalletReceivePage()),
-                    ),
-                  ),
+                  onPressed:
+                      () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder:
+                              (context) => walletCtx.wrap(WalletReceivePage()),
+                        ),
+                      ),
                   label: Text('Receive'),
                   icon: Icon(Icons.south_east),
                   style: ElevatedButton.styleFrom(
@@ -86,9 +88,15 @@ class WalletHome extends StatelessWidget {
                     } else {
                       showDialog(
                         context: context,
-                        builder: (context) => Dialog(
-                          child: walletCtx.wrap(WalletSendPage()),
-                        ),
+                        builder:
+                            (context) => Dialog(
+                              backgroundColor:
+                                  theme.colorScheme.surfaceContainer,
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(maxWidth: 560),
+                                child: walletCtx.wrap(WalletSendPage()),
+                              ),
+                            ),
                       );
                     }
                   },
@@ -120,9 +128,9 @@ class WalletHome extends StatelessWidget {
 void copyToClipboard(BuildContext context, String copyText) {
   Clipboard.setData(ClipboardData(text: copyText)).then((_) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Copied to clipboard!')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Copied to clipboard!')));
     }
   });
 }
@@ -144,16 +152,21 @@ class _FloatingProgress extends State<FloatingProgress>
   @override
   initState() {
     super.initState();
-    _progressFadeController =
-        AnimationController(vsync: this, duration: Duration(seconds: 2));
-    widget.progressStream.listen((event) {
-      if (!context.mounted) return;
-      setState(() => progress = event);
-    }, onDone: () {
-      if (!context.mounted) return;
-      // trigger rebuild to start the animation
-      setState(() => _progressFadeController.forward());
-    });
+    _progressFadeController = AnimationController(
+      vsync: this,
+      duration: Duration(seconds: 2),
+    );
+    widget.progressStream.listen(
+      (event) {
+        if (!context.mounted) return;
+        setState(() => progress = event);
+      },
+      onDone: () {
+        if (!context.mounted) return;
+        // trigger rebuild to start the animation
+        setState(() => _progressFadeController.forward());
+      },
+    );
   }
 
   @override
@@ -173,9 +186,7 @@ class _FloatingProgress extends State<FloatingProgress>
         child: AnimatedOpacity(
           opacity: _progressFadeController.isAnimating ? 0.0 : 1.0,
           duration: _progressFadeController.duration!,
-          child: LinearProgressIndicator(
-            value: progress,
-          ),
+          child: LinearProgressIndicator(value: progress),
         ),
       ),
     );
@@ -227,20 +238,22 @@ class TxItem extends StatelessWidget {
         blockCount - (transaction.confirmationTime?.height ?? blockCount);
 
     final nowDateTime = DateTime.now();
-    final dateTime = (timestamp != null)
-        ? DateTime.fromMillisecondsSinceEpoch(timestamp * 1000)
-        : DateTime.now();
+    final dateTime =
+        (timestamp != null)
+            ? DateTime.fromMillisecondsSinceEpoch(timestamp * 1000)
+            : DateTime.now();
     final dateTimeText = humanReadableTimeDifference(nowDateTime, dateTime);
 
     final isConfirmed = confirmations > 0;
     final isSend = transaction.netValue < 0;
 
     final iconColor = Color.lerp(
-        transaction.netValue > 0
-            ? theme.colorScheme.primary
-            : theme.colorScheme.error,
-        theme.disabledColor,
-        confirmations > 0 ? 0.0 : 1.0);
+      transaction.netValue > 0
+          ? theme.colorScheme.primary
+          : theme.colorScheme.error,
+      theme.disabledColor,
+      confirmations > 0 ? 0.0 : 1.0,
+    );
     final Widget icon = Badge(
       alignment: AlignmentDirectional.bottomEnd,
       label: Icon(Icons.hourglass_top_rounded, size: 12.0),
@@ -253,45 +266,42 @@ class TxItem extends StatelessWidget {
     );
 
     buildTile(MenuController controller) => ListTile(
-          title: Text(
-            isConfirmed
-                ? (isSend ? 'Sent' : 'Received')
-                : (isSend ? 'Sending...' : 'Receiving...'),
-            style: theme.textTheme.titleMedium
-                ?.copyWith(color: isConfirmed ? null : iconColor),
-          ),
-          subtitle: Text(
-            dateTimeText,
-            style: isConfirmed ? null : TextStyle(color: theme.disabledColor),
-          ),
-          leading: icon,
-          trailing: SatoshiText(
-            value: transaction.netValue,
-            showSign: true,
-            style: theme.textTheme.bodyLarge
-                ?.copyWith(color: isConfirmed ? null : iconColor),
-            disabledColor:
-                isConfirmed ? null : theme.colorScheme.outlineVariant,
-          ),
-          onLongPress: () =>
-              controller.isOpen ? controller.close() : controller.open(),
-        );
+      title: Text(
+        isConfirmed
+            ? (isSend ? 'Sent' : 'Received')
+            : (isSend ? 'Sending...' : 'Receiving...'),
+        style: theme.textTheme.titleMedium?.copyWith(
+          color: isConfirmed ? null : iconColor,
+        ),
+      ),
+      subtitle: Text(
+        dateTimeText,
+        style: isConfirmed ? null : TextStyle(color: theme.disabledColor),
+      ),
+      leading: icon,
+      trailing: SatoshiText(
+        value: transaction.netValue,
+        showSign: true,
+        style: theme.textTheme.bodyLarge?.copyWith(
+          color: isConfirmed ? null : iconColor,
+        ),
+        disabledColor: isConfirmed ? null : theme.colorScheme.outlineVariant,
+      ),
+      onLongPress:
+          () => controller.isOpen ? controller.close() : controller.open(),
+    );
 
     rebroadcastAction(BuildContext context) {
       walletContext.superWallet.rebroadcast(txid: txid);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Transaction rebroadcasted'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Transaction rebroadcasted')));
     }
 
     copyAction(BuildContext context) {
       Clipboard.setData(ClipboardData(text: transaction.txid()));
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Transaction ID copied to clipboard'),
-        ),
+        SnackBar(content: Text('Transaction ID copied to clipboard')),
       );
     }
 
@@ -315,17 +325,19 @@ class TxItem extends StatelessWidget {
                   softWrap: true,
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleSmall
-                      ?.copyWith(color: theme.disabledColor),
-                )
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: theme.disabledColor,
+                  ),
+                ),
               ],
             ),
           ),
         ),
         MenuItemButton(
           onPressed: () async {
-            final explorer =
-                getBlockExplorer(walletContext.superWallet.network);
+            final explorer = getBlockExplorer(
+              walletContext.superWallet.network,
+            );
             final url = explorer.replace(path: "${explorer.path}tx/$txid");
             await launchUrl(url);
           },
@@ -341,7 +353,7 @@ class TxItem extends StatelessWidget {
             onPressed: () => rebroadcastAction(context),
             leadingIcon: const Icon(Icons.publish),
             child: const Text('Rebroadcast'),
-          )
+          ),
       ],
       builder: (ctx, controller, _) => buildTile(controller),
     );
@@ -386,19 +398,21 @@ class _TxListState extends State<TxList> {
     final appBarMenu = MenuAnchor(
       menuChildren: [
         MenuItemButton(
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => LoadPsbtPage(wallet: walletCtx.wallet),
-            ),
-          ),
+          onPressed:
+              () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => LoadPsbtPage(wallet: walletCtx.wallet),
+                ),
+              ),
           leadingIcon: Icon(Icons.key),
           child: Text('Sign PSBT'),
         ),
         MenuItemButton(
-          onPressed: (frostKey == null)
-              ? null
-              : () => Navigator.push(
+          onPressed:
+              (frostKey == null)
+                  ? null
+                  : () => Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (context) => SignMessagePage(frostKey: frostKey),
@@ -409,21 +423,24 @@ class _TxListState extends State<TxList> {
         ),
         Divider(),
         MenuItemButton(
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => walletCtx.wrap(SettingsPage()),
-            ),
-          ),
+          onPressed:
+              () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => walletCtx.wrap(SettingsPage()),
+                ),
+              ),
           leadingIcon: Icon(Icons.settings),
           child: Text('Settings'),
         ),
       ],
-      builder: (_, controller, child) => IconButton(
-        onPressed: () =>
-            controller.isOpen ? controller.close() : controller.open(),
-        icon: Icon(Icons.more_vert),
-      ),
+      builder:
+          (_, controller, child) => IconButton(
+            onPressed:
+                () =>
+                    controller.isOpen ? controller.close() : controller.open(),
+            icon: Icon(Icons.more_vert),
+          ),
     );
 
     return CustomScrollView(
@@ -436,14 +453,15 @@ class _TxListState extends State<TxList> {
           scrolledUnderElevation: scrolledUnderElevation,
           actions: [
             StreamBuilder(
-                stream: settingsCtx.chainStatusStream(walletCtx.network),
-                builder: (context, snap) {
-                  if (!snap.hasData) {
-                    return SizedBox();
-                  }
-                  final chainStatus = snap.data!;
-                  return ChainStatusIcon(chainStatus: chainStatus);
-                }),
+              stream: settingsCtx.chainStatusStream(walletCtx.network),
+              builder: (context, snap) {
+                if (!snap.hasData) {
+                  return SizedBox();
+                }
+                final chainStatus = snap.data!;
+                return ChainStatusIcon(chainStatus: chainStatus);
+              },
+            ),
             appBarMenu,
           ],
         ),
@@ -461,8 +479,8 @@ class _TxListState extends State<TxList> {
             final transactions = snapshot.data?.txs ?? [];
             return SliverList.builder(
               itemCount: transactions.length,
-              itemBuilder: (context, index) =>
-                  TxItem(transaction: transactions[index]),
+              itemBuilder:
+                  (context, index) => TxItem(transaction: transactions[index]),
             );
           },
         ),
@@ -533,8 +551,9 @@ class _UpdatingBalanceState extends State<UpdatingBalance> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final balanceTextStyle = theme.textTheme.headlineLarge;
-    final pendingBalanceTextStyle =
-        theme.textTheme.bodyLarge?.copyWith(color: theme.disabledColor);
+    final pendingBalanceTextStyle = theme.textTheme.bodyLarge?.copyWith(
+      color: theme.disabledColor,
+    );
 
     final scrolledColor = ElevationOverlay.applySurfaceTint(
       theme.colorScheme.surfaceContainer,
@@ -547,66 +566,69 @@ class _UpdatingBalanceState extends State<UpdatingBalance> {
 
     final stack = ValueListenableBuilder(
       valueListenable: widget.atTopNotifier,
-      builder: (context, atTop, _) => Stack(children: [
-        Align(
-          alignment: Alignment.topCenter,
-          child: AnimatedContainer(
-            duration: duration,
-            curve: curve,
-            height: atTop ? widget.expandedHeight / 2 : 0,
-            color: atTop ? null : scrolledColor,
-          ),
-        ),
-        AnimatedAlign(
-          duration: duration,
-          curve: curve,
-          alignment: atTop ? Alignment.center : Alignment.topCenter,
-          child: Container(
-            color: atTop ? null : scrolledColor,
-            padding: EdgeInsets.symmetric(horizontal: 24.0)
-                .copyWith(bottom: atTop ? (widget.expandedHeight / 10) : 20.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.start,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SatoshiText(
-                  key: UniqueKey(),
-                  value: avaliableBalance,
-                  style:
-                      atTop ? balanceTextStyle : theme.textTheme.headlineSmall,
-                  showSign: false,
+      builder:
+          (context, atTop, _) => Stack(
+            children: [
+              Align(
+                alignment: Alignment.topCenter,
+                child: AnimatedContainer(
+                  duration: duration,
+                  curve: curve,
+                  height: atTop ? widget.expandedHeight / 2 : 0,
+                  color: atTop ? null : scrolledColor,
                 ),
-                if (pendingIncomingBalance > 0)
-                  Row(
+              ),
+              AnimatedAlign(
+                duration: duration,
+                curve: curve,
+                alignment: atTop ? Alignment.center : Alignment.topCenter,
+                child: Container(
+                  color: atTop ? null : scrolledColor,
+                  padding: EdgeInsets.symmetric(horizontal: 24.0).copyWith(
+                    bottom: atTop ? (widget.expandedHeight / 10) : 20.0,
+                  ),
+                  child: Column(
                     mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    crossAxisAlignment: CrossAxisAlignment.center,
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Icon(
-                        Icons.hourglass_top,
-                        size: pendingBalanceTextStyle?.fontSize,
-                        color: theme.disabledColor,
-                      ),
                       SatoshiText(
-                        value: pendingIncomingBalance,
-                        showSign: true,
-                        style: pendingBalanceTextStyle,
-                        disabledColor: theme.colorScheme.outlineVariant,
+                        key: UniqueKey(),
+                        value: avaliableBalance,
+                        style:
+                            atTop
+                                ? balanceTextStyle
+                                : theme.textTheme.headlineSmall,
+                        showSign: false,
                       ),
+                      if (pendingIncomingBalance > 0)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.hourglass_top,
+                              size: pendingBalanceTextStyle?.fontSize,
+                              color: theme.disabledColor,
+                            ),
+                            SatoshiText(
+                              value: pendingIncomingBalance,
+                              showSign: true,
+                              style: pendingBalanceTextStyle,
+                              disabledColor: theme.colorScheme.outlineVariant,
+                            ),
+                          ],
+                        ),
                     ],
                   ),
-              ],
-            ),
+                ),
+              ),
+            ],
           ),
-        ),
-      ]),
     );
 
-    return SizedBox(
-      height: widget.expandedHeight,
-      child: stack,
-    );
+    return SizedBox(height: widget.expandedHeight, child: stack);
   }
 }
 
@@ -630,27 +652,29 @@ class SatoshiText extends StatelessWidget {
     this.align = TextAlign.right,
   }) : super(key: key);
 
-  const SatoshiText.withSign({
-    Key? key,
-    required int value,
-  }) : this(key: key, value: value, showSign: true);
+  const SatoshiText.withSign({Key? key, required int value})
+    : this(key: key, value: value, showSign: true);
 
   @override
   Widget build(BuildContext context) {
-    final baseStyle = DefaultTextStyle.of(context).style.merge(style).copyWith(
-      fontFamily: monospaceTextStyle.fontFamily,
-      fontFeatures: [
-        FontFeature.slashedZero(),
-        FontFeature.tabularFigures(),
-      ],
-    );
+    final baseStyle = DefaultTextStyle.of(context).style
+        .merge(style)
+        .copyWith(
+          fontFamily: monospaceTextStyle.fontFamily,
+          fontFeatures: [
+            FontFeature.slashedZero(),
+            FontFeature.tabularFigures(),
+          ],
+        );
 
     // We reduce the line spacing by the percentage from the fontSize (as per design specs).
     const defaultWordSpacingFactor = 0.36; // 0.32
 
-    final baseLetterSpacing = (baseStyle.letterSpacing ?? 0.0) -
+    final baseLetterSpacing =
+        (baseStyle.letterSpacing ?? 0.0) -
         (baseStyle.fontSize ?? 0.0) * letterSpacingReductionFactor;
-    final wordSpacing = (baseStyle.letterSpacing ?? 0.0) -
+    final wordSpacing =
+        (baseStyle.letterSpacing ?? 0.0) -
         (baseStyle.fontSize ?? 0.0) * defaultWordSpacingFactor;
 
     final activeStyle = TextStyle(letterSpacing: baseLetterSpacing);
@@ -682,21 +706,24 @@ class SatoshiText extends StatelessWidget {
       return activeIndex;
     }();
 
-    final List<TextSpan> spans = unformatted.characters.indexed.map((elem) {
-      final (i, char) = elem;
-      if (char == ' ') {
-        return TextSpan(
-            text: ' ', style: TextStyle(letterSpacing: wordSpacing));
-      }
-      if (char == '+' || char == '-') {
-        return TextSpan(text: char, style: activeStyle);
-      }
-      if (i < activeIndex) {
-        return TextSpan(text: char, style: inactiveStyle);
-      } else {
-        return TextSpan(text: char, style: activeStyle);
-      }
-    }).toList();
+    final List<TextSpan> spans =
+        unformatted.characters.indexed.map((elem) {
+          final (i, char) = elem;
+          if (char == ' ') {
+            return TextSpan(
+              text: ' ',
+              style: TextStyle(letterSpacing: wordSpacing),
+            );
+          }
+          if (char == '+' || char == '-') {
+            return TextSpan(text: char, style: activeStyle);
+          }
+          if (i < activeIndex) {
+            return TextSpan(text: char, style: inactiveStyle);
+          } else {
+            return TextSpan(text: char, style: activeStyle);
+          }
+        }).toList();
 
     return Text.rich(
       TextSpan(children: spans),

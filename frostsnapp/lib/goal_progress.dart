@@ -89,10 +89,7 @@ class _AnimatedCustomProgressIndicatorState
       _animation = Tween<double>(
         begin: _oldPercentage,
         end: newPercentage,
-      ).animate(CurvedAnimation(
-        parent: _controller,
-        curve: Curves.easeInOut,
-      ));
+      ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
       _oldPercentage = newPercentage;
       _controller.forward(from: 0.0);
     }

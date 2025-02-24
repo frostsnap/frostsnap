@@ -14,29 +14,29 @@ class DeviceSetup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: FsAppBar(
-          title: const Text('Device Setup'),
-        ),
-        body: SafeArea(
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: 20),
-                  DeviceNameField(
-                      id: id,
-                      onNamed: (_) {
-                        if (context.mounted) {
-                          Navigator.pop(context);
-                        }
-                      }),
-                ],
-              ),
+      appBar: FsAppBar(title: const Text('Device Setup')),
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 20),
+                DeviceNameField(
+                  id: id,
+                  onNamed: (_) {
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                    }
+                  },
+                ),
+              ],
             ),
           ),
-        ));
+        ),
+      ),
+    );
   }
 }
 
@@ -45,8 +45,12 @@ class DeviceNameField extends StatefulWidget {
   final String? existingName;
   final Function(String)? onNamed;
 
-  const DeviceNameField(
-      {super.key, required this.id, this.existingName, this.onNamed});
+  const DeviceNameField({
+    super.key,
+    required this.id,
+    this.existingName,
+    this.onNamed,
+  });
 
   @override
   State<StatefulWidget> createState() => _DeviceNameField();
@@ -64,63 +68,71 @@ class _DeviceNameField extends State<DeviceNameField> {
         }
       },
       child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: 300, // Set the maximum width for the text box
+        constraints: BoxConstraints(
+          maxWidth: 300, // Set the maximum width for the text box
+        ),
+        child: TextField(
+          maxLength: 20,
+          decoration: InputDecoration(
+            icon: Icon(Icons.drive_file_rename_outline),
+            hintText:
+                widget.existingName == null
+                    ? 'What do you want name this device?'
+                    : "What should the new name be",
+            labelText:
+                widget.existingName == null
+                    ? 'Name'
+                    : "Rename “${widget.existingName}”",
           ),
-          child: TextField(
-            maxLength: 20,
-            decoration: InputDecoration(
-              icon: Icon(Icons.drive_file_rename_outline),
-              hintText: widget.existingName == null
-                  ? 'What do you want name this device?'
-                  : "What should the new name be",
-              labelText: widget.existingName == null
-                  ? 'Name'
-                  : "Rename “${widget.existingName}”",
-            ),
-            onSubmitted: (name) async {
-              final completeWhen = deviceListChangeStream
-                  .firstWhere((change) =>
+          onSubmitted: (name) async {
+            final completeWhen = deviceListChangeStream
+                .firstWhere(
+                  (change) =>
                       change.kind == DeviceListChangeKind.Named &&
-                      deviceIdEquals(widget.id, change.device.id))
-                  .then((change) {
-                widget.onNamed?.call(change.device.name!);
-                changed = false;
-                return;
-              });
-              coord.finishNaming(id: widget.id, name: name);
-              final result = await showDeviceActionDialog(
-                  context: context,
-                  complete: completeWhen,
-                  builder: (context) {
-                    return Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          DialogHeader(
-                            child: Text("Confirm name '$name' on device"),
-                          ),
-                          Expanded(child: DeviceListWithIcons(
-                              iconAssigner: (context, deviceId) {
-                            if (deviceIdEquals(deviceId, widget.id)) {
-                              final label = LabeledDeviceText("'$name'?");
-                              final icon = ConfirmPrompt();
-                              return (label, icon);
-                            } else {
-                              return (null, null);
-                            }
-                          }))
-                        ]);
-                  });
+                      deviceIdEquals(widget.id, change.device.id),
+                )
+                .then((change) {
+                  widget.onNamed?.call(change.device.name!);
+                  changed = false;
+                  return;
+                });
+            coord.finishNaming(id: widget.id, name: name);
+            final result = await showDeviceActionDialog(
+              context: context,
+              complete: completeWhen,
+              builder: (context) {
+                return Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    DialogHeader(child: Text("Confirm name '$name' on device")),
+                    Expanded(
+                      child: DeviceListWithIcons(
+                        iconAssigner: (context, deviceId) {
+                          if (deviceIdEquals(deviceId, widget.id)) {
+                            final label = LabeledDeviceText("'$name'?");
+                            final icon = ConfirmPrompt();
+                            return (label, icon);
+                          } else {
+                            return (null, null);
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
 
-              if (result == null) {
-                await coord.sendCancel(id: widget.id);
-              }
-            },
-            onChanged: (value) async {
-              changed = true;
-              await coord.updateNamePreview(id: widget.id, name: value);
-            },
-          )),
+            if (result == null) {
+              await coord.sendCancel(id: widget.id);
+            }
+          },
+          onChanged: (value) async {
+            changed = true;
+            await coord.updateNamePreview(id: widget.id, name: value);
+          },
+        ),
+      ),
     );
   }
 }

@@ -17,9 +17,7 @@ import 'package:frostsnapp/progress_indicator.dart';
 import 'package:frostsnapp/theme.dart';
 
 class DeviceSettingsPage extends StatelessWidget {
-  const DeviceSettingsPage({
-    super.key,
-  });
+  const DeviceSettingsPage({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -54,16 +52,20 @@ class _DeviceSettingsState extends State<DeviceSettings> {
     });
 
     deviceListSubject
-        .where((event) => event.changes.any((change) =>
-            change.kind == DeviceListChangeKind.Removed &&
-            deviceIdEquals(change.device.id, widget.id)))
+        .where(
+          (event) => event.changes.any(
+            (change) =>
+                change.kind == DeviceListChangeKind.Removed &&
+                deviceIdEquals(change.device.id, widget.id),
+          ),
+        )
         .first
         .then((_) {
-      _deviceRemoved.complete();
-      if (mounted) {
-        Navigator.pop(context);
-      }
-    });
+          _deviceRemoved.complete();
+          if (mounted) {
+            Navigator.pop(context);
+          }
+        });
   }
 
   @override
@@ -74,13 +76,16 @@ class _DeviceSettingsState extends State<DeviceSettings> {
 
     if (device == null) {
       body = Center(
-          child: Column(children: [
-        Text(
-          'Waiting for device to reconnect',
-          style: theme.textTheme.titleMedium,
+        child: Column(
+          children: [
+            Text(
+              'Waiting for device to reconnect',
+              style: theme.textTheme.titleMedium,
+            ),
+            FsProgressIndicator(),
+          ],
         ),
-        FsProgressIndicator(),
-      ]));
+      );
     } else {
       final device_ = device!;
       Widget keyList = ListView.builder(
@@ -92,30 +97,33 @@ class _DeviceSettingsState extends State<DeviceSettings> {
               key.accessStructures().elementAtOrNull(0)?.accessStructureRef();
           final keyName = key.keyName();
           return Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-              child: ListTile(
-                title: Text(
-                  keyName,
-                  style: const TextStyle(fontSize: 20.0),
-                ),
-                trailing: ElevatedButton(
-                  onPressed: accessStructureRef == null
-                      ? null
-                      : () async {
-                          Navigator.push(context,
-                              MaterialPageRoute(builder: (context) {
-                            return BackupSettingsPage(
-                              context: context,
-                              id: device_.id,
-                              deviceName: device_.name ?? "??",
-                              accessStructureRef: accessStructureRef,
-                              keyName: keyName,
-                            );
-                          }));
+            padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+            child: ListTile(
+              title: Text(keyName, style: const TextStyle(fontSize: 20.0)),
+              trailing: ElevatedButton(
+                onPressed:
+                    accessStructureRef == null
+                        ? null
+                        : () async {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) {
+                                return BackupSettingsPage(
+                                  context: context,
+                                  id: device_.id,
+                                  deviceName: device_.name ?? "??",
+                                  accessStructureRef: accessStructureRef,
+                                  keyName: keyName,
+                                );
+                              },
+                            ),
+                          );
                         },
-                  child: Text("Backup"),
-                ),
-              ));
+                child: Text("Backup"),
+              ),
+            ),
+          );
         },
       );
 
@@ -127,84 +135,89 @@ class _DeviceSettingsState extends State<DeviceSettings> {
       }
       final deviceFirmwareDigest = device_.firmwareDigest;
 
-      final firmwareSettings = Column(children: [
-        Row(children: <Widget>[
-          Text('Device firmware: ',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              )),
-          Expanded(
-            child: Text(
-              deviceFirmwareDigest,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 16,
-                fontFamily: monospaceTextStyle.fontFamily,
+      final firmwareSettings = Column(
+        children: [
+          Row(
+            children: <Widget>[
+              Text(
+                'Device firmware: ',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
-            ),
-          ),
-        ]),
-        SizedBox(height: 5),
-        Row(
-          children: <Widget>[
-            Text('Latest firmware: ',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                )),
-            Expanded(
-              child: Text(
-                coord.upgradeFirmwareDigest() ??
-                    "<app compiled without firmware>",
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    fontSize: 16, fontFamily: monospaceTextStyle.fontFamily),
+              Expanded(
+                child: Text(
+                  deviceFirmwareDigest,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontFamily: monospaceTextStyle.fontFamily,
+                  ),
+                ),
               ),
-            ),
-          ],
-        ),
-      ]);
-
-      final wipeDeviceSettings =
-          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Delete all device data, making it a blank new device.',
-            style: TextStyle()),
-        SizedBox(height: 8),
-        ElevatedButton(
-          onPressed: () async {
-            coord.wipeDeviceData(deviceId: device_.id);
-          },
-          child: Text("Wipe"),
-        ),
-      ]);
-
-      final settings = SettingsSection(settings: [
-        ("Name", DeviceNameField(id: device_.id, existingName: device_.name)),
-        ("Key Shares", keyList),
-        ("Nonces", NonceCounterDisplay(id: device_.id)),
-        ("Update Firmware", firmwareSettings),
-        ("Wipe Device", wipeDeviceSettings)
-      ]);
-
-      body = Column(children: [
-        Text(
-          device_.name!,
-          style: TextStyle(
-            fontSize: 32,
-            fontWeight: FontWeight.bold,
+            ],
           ),
-        ),
-        Expanded(child: settings)
-      ]);
+          SizedBox(height: 5),
+          Row(
+            children: <Widget>[
+              Text(
+                'Latest firmware: ',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              Expanded(
+                child: Text(
+                  coord.upgradeFirmwareDigest() ??
+                      "<app compiled without firmware>",
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontFamily: monospaceTextStyle.fontFamily,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+
+      final wipeDeviceSettings = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Delete all device data, making it a blank new device.',
+            style: TextStyle(),
+          ),
+          SizedBox(height: 8),
+          ElevatedButton(
+            onPressed: () async {
+              coord.wipeDeviceData(deviceId: device_.id);
+            },
+            child: Text("Wipe"),
+          ),
+        ],
+      );
+
+      final settings = SettingsSection(
+        settings: [
+          ("Name", DeviceNameField(id: device_.id, existingName: device_.name)),
+          ("Key Shares", keyList),
+          ("Nonces", NonceCounterDisplay(id: device_.id)),
+          ("Update Firmware", firmwareSettings),
+          ("Wipe Device", wipeDeviceSettings),
+        ],
+      );
+
+      body = Column(
+        children: [
+          Text(
+            device_.name!,
+            style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+          ),
+          Expanded(child: settings),
+        ],
+      );
     }
 
     return Scaffold(
-      appBar: FsAppBar(
-        title: Text(
-          "Device Settings",
-        ),
-      ),
+      appBar: FsAppBar(title: Text("Device Settings")),
       body: Padding(
         padding: EdgeInsets.only(left: 16, bottom: 16),
         child: body,
@@ -219,9 +232,9 @@ class NonceCounterDisplay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return KeyValueListWidget(data: {
-      'Nonces left': coord.noncesAvailable(id: id).toString(),
-    });
+    return KeyValueListWidget(
+      data: {'Nonces left': coord.noncesAvailable(id: id).toString()},
+    );
   }
 }
 
@@ -241,12 +254,7 @@ class SettingsSection extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text(
-                settings[index].$1,
-                style: TextStyle(
-                  fontSize: 32,
-                ),
-              ),
+              Text(settings[index].$1, style: TextStyle(fontSize: 32)),
               Divider(),
               Padding(
                 padding: const EdgeInsets.only(top: 8.0, bottom: 16.0),
@@ -268,10 +276,11 @@ class FirmwareUpgradeDialog extends StatefulWidget {
 
   static void show(BuildContext context) {
     showDeviceActionDialog(
-        context: context,
-        builder: (context) {
-          return FirmwareUpgradeDialog();
-        }).then((result) {
+      context: context,
+      builder: (context) {
+        return FirmwareUpgradeDialog();
+      },
+    ).then((result) {
       if (result == null) {
         coord.cancelProtocol();
       }
@@ -306,16 +315,18 @@ class _FirmwareUpgradeDialogState extends State<FirmwareUpgradeDialog> {
       if (newState.upgradeReadyToStart) {
         if (mounted && progress == null) {
           final progressStream = coord.enterFirmwareUpgradeMode();
-          progressStream.listen((progress_) {
-            setState(() => progress = progress_);
-          }).onDone(() {
-            if (mounted) {
-              if (progress != 1.0) {
-                showErrorSnackbarBottom(context, "Firmware upgrade failed");
-              }
-              Navigator.pop(context);
-            }
-          });
+          progressStream
+              .listen((progress_) {
+                setState(() => progress = progress_);
+              })
+              .onDone(() {
+                if (mounted) {
+                  if (progress != 1.0) {
+                    showErrorSnackbarBottom(context, "Firmware upgrade failed");
+                  }
+                  Navigator.pop(context);
+                }
+              });
         }
       }
     });
@@ -334,35 +345,46 @@ class _FirmwareUpgradeDialogState extends State<FirmwareUpgradeDialog> {
     }
     final confirmations = deviceIdSet(state!.confirmations);
     final needUpgrade = deviceIdSet(state!.needUpgrade);
-    final text = progress == null
-        ? "Confirm upgrade on devices"
-        : "Wait for upgrade to complete";
+    final text =
+        progress == null
+            ? "Confirm upgrade on devices"
+            : "Wait for upgrade to complete";
 
-    return Column(children: [
-      DialogHeader(child: Text(text)),
-      Expanded(child: DeviceListWithIcons(iconAssigner: (context, deviceId) {
-        Widget? icon;
+    return Column(
+      children: [
+        DialogHeader(child: Text(text)),
+        Expanded(
+          child: DeviceListWithIcons(
+            iconAssigner: (context, deviceId) {
+              Widget? icon;
 
-        if (needUpgrade.contains(deviceId)) {
-          if (progress == null) {
-            if (confirmations.contains(deviceId)) {
-              icon = AnimatedCheckCircle();
-            } else {
-              icon = ConfirmPrompt();
-            }
-          } else {
-            icon = Container(
-                padding: EdgeInsets.symmetric(vertical: 5.0, horizontal: 5.0),
-                child: LinearProgressIndicator(
-                  value: progress!,
-                  minHeight: 10.0,
-                ));
-          }
-        }
+              if (needUpgrade.contains(deviceId)) {
+                if (progress == null) {
+                  if (confirmations.contains(deviceId)) {
+                    icon = AnimatedCheckCircle();
+                  } else {
+                    icon = ConfirmPrompt();
+                  }
+                } else {
+                  icon = Container(
+                    padding: EdgeInsets.symmetric(
+                      vertical: 5.0,
+                      horizontal: 5.0,
+                    ),
+                    child: LinearProgressIndicator(
+                      value: progress!,
+                      minHeight: 10.0,
+                    ),
+                  );
+                }
+              }
 
-        return (null, icon);
-      }))
-    ]);
+              return (null, icon);
+            },
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -377,21 +399,22 @@ class KeyValueListWidget extends StatelessWidget {
       padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: data.entries.map((entry) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  entry.key,
-                  style: TextStyle(fontWeight: FontWeight.bold),
+        children:
+            data.entries.map((entry) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      entry.key,
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    Text(entry.value),
+                  ],
                 ),
-                Text(entry.value),
-              ],
-            ),
-          );
-        }).toList(),
+              );
+            }).toList(),
       ),
     );
   }
@@ -415,127 +438,136 @@ class BackupSettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(title: Text('Key Share Backup')),
-        body: Center(
-            child: Padding(
-                padding: EdgeInsets.all(8.0),
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Key:',
-                        textAlign: TextAlign.left,
-                        style: TextStyle(
-                          fontSize: 16,
-                        ),
-                      ),
-                      Text(
-                        keyName,
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                        textAlign: TextAlign.left,
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        'Device:',
-                        textAlign: TextAlign.left,
-                        style: TextStyle(
-                          fontSize: 16,
-                        ),
-                      ),
-                      Text(
-                        deviceName,
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                        textAlign: TextAlign.left,
-                      ),
-                      SizedBox(height: 24),
-                      Text(
-                        'Display this device\'s share backup for this key:',
-                        textAlign: TextAlign.left,
-                      ),
-                      SizedBox(height: 8),
-                      ElevatedButton(
-                        onPressed: () async {
-                          await doBackupWorkflow(context,
-                              devices: [id],
-                              accessStructure: coord.getAccessStructure(
-                                  asRef: accessStructureRef)!);
-                        },
-                        child: Text("Show Backup"),
-                      ),
-                      SizedBox(height: 24),
-                      Text(
-                          "Check this backup by re-entering it on the device:"),
-                      SizedBox(height: 8),
-                      ElevatedButton(
-                        onPressed: () async {
-                          final shareRestoreStream = coord
-                              .checkShareOnDevice(
-                                  deviceId: id,
-                                  accessStructureRef: accessStructureRef)
-                              .asBroadcastStream();
+      appBar: AppBar(title: Text('Key Share Backup')),
+      body: Center(
+        child: Padding(
+          padding: EdgeInsets.all(8.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Key:',
+                textAlign: TextAlign.left,
+                style: TextStyle(fontSize: 16),
+              ),
+              Text(
+                keyName,
+                style: TextStyle(fontWeight: FontWeight.bold),
+                textAlign: TextAlign.left,
+              ),
+              SizedBox(height: 8),
+              Text(
+                'Device:',
+                textAlign: TextAlign.left,
+                style: TextStyle(fontSize: 16),
+              ),
+              Text(
+                deviceName,
+                style: TextStyle(fontWeight: FontWeight.bold),
+                textAlign: TextAlign.left,
+              ),
+              SizedBox(height: 24),
+              Text(
+                'Display this device\'s share backup for this key:',
+                textAlign: TextAlign.left,
+              ),
+              SizedBox(height: 8),
+              ElevatedButton(
+                onPressed: () async {
+                  await doBackupWorkflow(
+                    context,
+                    devices: [id],
+                    accessStructure:
+                        coord.getAccessStructure(asRef: accessStructureRef)!,
+                  );
+                },
+                child: Text("Show Backup"),
+              ),
+              SizedBox(height: 24),
+              Text("Check this backup by re-entering it on the device:"),
+              SizedBox(height: 8),
+              ElevatedButton(
+                onPressed: () async {
+                  final shareRestoreStream =
+                      coord
+                          .checkShareOnDevice(
+                            deviceId: id,
+                            accessStructureRef: accessStructureRef,
+                          )
+                          .asBroadcastStream();
 
-                          final aborted = shareRestoreStream
-                              .firstWhere((state) => state.abort != null)
-                              .then((state) {
-                            if (context.mounted) {
-                              showErrorSnackbarBottom(context, state.abort!);
-                            }
-                            return null;
-                          });
+                  final aborted = shareRestoreStream
+                      .firstWhere((state) => state.abort != null)
+                      .then((state) {
+                        if (context.mounted) {
+                          showErrorSnackbarBottom(context, state.abort!);
+                        }
+                        return null;
+                      });
 
-                          final result = await showDeviceActionDialog<bool>(
-                            context: context,
-                            complete: aborted,
-                            builder: (BuildContext context) {
-                              return StreamBuilder(
-                                  stream: shareRestoreStream,
-                                  builder: (context, snapshot) {
-                                    final outcome = snapshot.data?.outcome;
-                                    return Column(children: [
-                                      DialogHeader(
-                                          child: Text(
-                                              "Enter the backup on the device.")),
-                                      Expanded(
-                                        child: DeviceListWithIcons(
-                                          iconAssigner: (context, deviceId) {
-                                            if (deviceIdEquals(deviceId, id)) {
-                                              final Widget icon = DevicePrompt(
-                                                  icon: Icon(Icons.keyboard),
-                                                  text: "");
-                                              return (null, icon);
-                                            } else {
-                                              return (null, null);
-                                            }
-                                          },
-                                        ),
-                                      ),
-                                      DialogFooter(
-                                          child: ElevatedButton(
-                                        onPressed: () {
-                                          Navigator.pop(context, outcome);
-                                        },
-                                        style: ElevatedButton.styleFrom(
-                                            backgroundColor: switch (outcome) {
-                                          true => Colors.green,
-                                          false => Colors.red,
-                                          null => null,
-                                        }),
-                                        child: Text(switch (outcome) {
-                                          true => "Your backup is valid",
-                                          false => "Your backup is invalid",
-                                          null => "Cancel"
-                                        }),
-                                      ))
-                                    ]);
-                                  });
-                            },
+                  final result = await showDeviceActionDialog<bool>(
+                    context: context,
+                    complete: aborted,
+                    builder: (BuildContext context) {
+                      return StreamBuilder(
+                        stream: shareRestoreStream,
+                        builder: (context, snapshot) {
+                          final outcome = snapshot.data?.outcome;
+                          return Column(
+                            children: [
+                              DialogHeader(
+                                child: Text("Enter the backup on the device."),
+                              ),
+                              Expanded(
+                                child: DeviceListWithIcons(
+                                  iconAssigner: (context, deviceId) {
+                                    if (deviceIdEquals(deviceId, id)) {
+                                      final Widget icon = DevicePrompt(
+                                        icon: Icon(Icons.keyboard),
+                                        text: "",
+                                      );
+                                      return (null, icon);
+                                    } else {
+                                      return (null, null);
+                                    }
+                                  },
+                                ),
+                              ),
+                              DialogFooter(
+                                child: ElevatedButton(
+                                  onPressed: () {
+                                    Navigator.pop(context, outcome);
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: switch (outcome) {
+                                      true => Colors.green,
+                                      false => Colors.red,
+                                      null => null,
+                                    },
+                                  ),
+                                  child: Text(switch (outcome) {
+                                    true => "Your backup is valid",
+                                    false => "Your backup is invalid",
+                                    null => "Cancel",
+                                  }),
+                                ),
+                              ),
+                            ],
                           );
-                          if (result == null) {
-                            coord.cancelProtocol();
-                          }
                         },
-                        child: Text('Check Backup'),
-                      )
-                    ]))));
+                      );
+                    },
+                  );
+                  if (result == null) {
+                    coord.cancelProtocol();
+                  }
+                },
+                child: Text('Check Backup'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

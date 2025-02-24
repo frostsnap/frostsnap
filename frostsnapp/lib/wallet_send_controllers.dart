@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:collection';
 
 import 'package:flutter/material.dart';
@@ -6,8 +7,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
 import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/global.dart';
+import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/theme.dart';
-import 'package:frostsnapp/wallet_send.dart';
 
 const satoshisInOneBtc = 100000000;
 
@@ -38,7 +39,9 @@ class AddressInputController with ChangeNotifier {
   bool submit(WalletContext walletContext) {
     _lastSubmitted = controller.text;
     _errorText = api.validateDestinationAddressMethodBitcoinNetwork(
-        that: walletContext.network, address: controller.text);
+      that: walletContext.network,
+      address: controller.text,
+    );
     // We always notify listeners on submit (dont' check for changes) for simplicity and safety.
     notifyListeners();
     return _errorText == null;
@@ -100,15 +103,16 @@ class AddressInput extends StatelessWidget {
           autofocus: autofocus,
           style: TextStyle(fontFamily: monospaceTextStyle.fontFamily),
           decoration: (decoration ?? InputDecoration()).copyWith(
-            border: defaultTextInputBorder,
+            //border: defaultTextInputBorder,
             hintText: 'bc1...',
             errorText: controller.errorText,
-            suffixIcon: controller.controller.text.isEmpty
-                ? null
-                : IconButton(
-                    onPressed: () => controller.controller.clear(),
-                    icon: Icon(Icons.clear),
-                  ),
+            suffixIcon:
+                controller.controller.text.isEmpty
+                    ? null
+                    : IconButton(
+                      onPressed: () => controller.controller.clear(),
+                      icon: Icon(Icons.clear),
+                    ),
           ),
           keyboardType: TextInputType.text,
           textCapitalization: TextCapitalization.none,
@@ -117,7 +121,7 @@ class AddressInput extends StatelessWidget {
           enableSuggestions: false,
           smartQuotesType: SmartQuotesType.disabled,
           smartDashesType: SmartDashesType.disabled,
-          minLines: 1,
+          minLines: 2,
           maxLines: 4,
         );
       },
@@ -126,11 +130,7 @@ class AddressInput extends StatelessWidget {
 }
 
 enum AmountUnit {
-  satoshi(
-    suffixText: ' sat',
-    hintText: '0',
-    hasDecimal: false,
-  ),
+  satoshi(suffixText: ' sat', hintText: '0', hasDecimal: false),
   bitcoin(
     suffixText: ' \u20BF',
     //suffixText: ' bitcoin',
@@ -172,16 +172,25 @@ class FeeRateController with ChangeNotifier {
   }
 
   bool get estimateRunning => _estimateRunning;
-  Future<bool> refreshEstimates(BuildContext context,
-      WalletContext walletContext, int? setFeeRateToTargetBlocks) async {
+  Future<bool> refreshEstimates(
+    BuildContext context,
+    WalletContext walletContext,
+    int? setFeeRateToTargetBlocks,
+  ) async {
     _estimateFut?.ignore();
-    _estimateFut =
-        _refreshEstimates(context, walletContext, setFeeRateToTargetBlocks);
+    _estimateFut = _refreshEstimates(
+      context,
+      walletContext,
+      setFeeRateToTargetBlocks,
+    );
     return await _estimateFut!;
   }
 
-  Future<bool> _refreshEstimates(BuildContext context,
-      WalletContext walletContext, int? setFeeRateToTargetBlocks) async {
+  Future<bool> _refreshEstimates(
+    BuildContext context,
+    WalletContext walletContext,
+    int? setFeeRateToTargetBlocks,
+  ) async {
     if (context.mounted) {
       _estimateRunning = true;
       notifyListeners();
@@ -191,8 +200,9 @@ class FeeRateController with ChangeNotifier {
     try {
       // Map of feerate(sat/vB) to target blocks.
       var priorityMap = HashMap<int, int>();
-      final list = await walletContext.wallet.superWallet
-          .estimateFee(targetBlocks: Uint64List.fromList([1, 2, 3, 4, 5, 6]));
+      final list = await walletContext.wallet.superWallet.estimateFee(
+        targetBlocks: Uint64List.fromList([1, 2, 3, 4, 5, 6]),
+      );
       for (final elem in list) {
         final (target, feerate) = elem;
         final oldTarget = priorityMap[feerate];
@@ -202,8 +212,9 @@ class FeeRateController with ChangeNotifier {
       }
       if (context.mounted) {
         _priorityMap.clear();
-        _priorityMap.addEntries(priorityMap.entries
-            .map((e) => MapEntry(e.value, e.key.toDouble())));
+        _priorityMap.addEntries(
+          priorityMap.entries.map((e) => MapEntry(e.value, e.key.toDouble())),
+        );
         if (setFeeRateToTargetBlocks != null) {
           final feeRateAtTarget = _priorityMap[setFeeRateToTargetBlocks];
           if (feeRateAtTarget != null) {
@@ -344,15 +355,16 @@ class AmountInputController with ChangeNotifier {
     AmountUnit unit = AmountUnit.satoshi,
     int? amount,
     String? error,
-  })  : _unit = unit,
-        _amount = amount,
-        _textError = error {
+  }) : _unit = unit,
+       _amount = amount,
+       _textError = error {
     _amountAvailableController = amountAvailableController;
     _amountAvailableController.addListener(onAmountAvailableChanged);
 
     _textEditingController = TextEditingController();
-    _textEditingController
-        .addListener(() => amountText = _textEditingController.text);
+    _textEditingController.addListener(
+      () => amountText = _textEditingController.text,
+    );
   }
 
   @override
@@ -543,27 +555,28 @@ class AmountInput extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: model,
-      builder: (context, child) => TextField(
-        controller: model.textEditingController,
-        style: TextStyle(fontFamily: monospaceTextStyle.fontFamily),
-        decoration: (decoration ?? InputDecoration()).copyWith(
-          errorText: model.error,
-          hintText: model.unit.hintText,
-          suffixText: model.unit.suffixText,
-          suffixIcon: IconButton(
-            onPressed: onUnitButtonPressed,
-            icon: Icon(Icons.swap_vert),
+      builder:
+          (context, child) => TextField(
+            controller: model.textEditingController,
+            style: TextStyle(fontFamily: monospaceTextStyle.fontFamily),
+            decoration: (decoration ?? InputDecoration()).copyWith(
+              errorText: model.error,
+              hintText: model.unit.hintText,
+              suffixText: model.unit.suffixText,
+              suffixIcon: IconButton(
+                onPressed: onUnitButtonPressed,
+                icon: Icon(Icons.swap_vert),
+              ),
+              border: defaultTextInputBorder,
+            ),
+            keyboardType: TextInputType.numberWithOptions(
+              signed: false,
+              decimal: model.unit.hasDecimal,
+            ),
+            inputFormatters: [model.unit.formatter],
+            autofocus: true,
+            onSubmitted: onSubmitted,
           ),
-          border: defaultTextInputBorder,
-        ),
-        keyboardType: TextInputType.numberWithOptions(
-          signed: false,
-          decimal: model.unit.hasDecimal,
-        ),
-        inputFormatters: [model.unit.formatter],
-        autofocus: true,
-        onSubmitted: onSubmitted,
-      ),
     );
   }
 }
@@ -594,10 +607,7 @@ class SelectedDevicesController with ChangeNotifier {
   WalletContext? _walletContext;
   FrostKey? _frostKey;
 
-  final HashSet<DeviceId> _selected = HashSet(
-    equals: (a, b) => a.field0.toString() == b.field0.toString(),
-    hashCode: (id) => id.field0.toString().hashCode,
-  );
+  final HashSet<DeviceId> _selected = deviceIdSet([]);
 
   SelectedDevicesController();
 
@@ -612,42 +622,135 @@ class SelectedDevicesController with ChangeNotifier {
   Iterable<DeviceModel> get devices {
     final isThresholdMet = this.isThresholdMet;
     if (_frostKey == null) return [];
-    return _frostKey!
-        .accessStructures()[accessStructureIndex]
-        .devices()
-        .map((id) => DeviceModel(
-              id: id,
-              selected: _selected.contains(id),
-              thresholdMet: isThresholdMet,
-            ));
+    return _frostKey!.accessStructures()[accessStructureIndex].devices().map(
+      (id) => DeviceModel(
+        id: id,
+        selected: _selected.contains(id),
+        thresholdMet: isThresholdMet,
+      ),
+    );
   }
 
-  int get threshold => (_frostKey == null)
-      ? 0
-      : _frostKey!.accessStructures()[accessStructureIndex].threshold();
+  Iterable<DeviceModel> get selectedDevices =>
+      devices.where((device) => device.selected);
+
+  int get threshold =>
+      (_frostKey == null)
+          ? 0
+          : _frostKey!.accessStructures()[accessStructureIndex].threshold();
   bool get isThresholdMet => _frostKey != null && _selected.length >= threshold;
   int get remaining => threshold - _selected.length;
 
   void select(DeviceId id) => _selected.add(id) ? notifyListeners() : null;
   void deselect(DeviceId id) => _selected.remove(id) ? notifyListeners() : null;
 
-  void signAndBroadcast(
-      BuildContext context, UnsignedTx unsignedTx, VoidCallback? onBroadcast) {
-    if (_walletContext == null || _frostKey == null) return;
+  Stream<SigningState>? signingSessionStream(UnsignedTx unsignedTx) {
+    if (_walletContext == null || _frostKey == null) return null;
     final accessStructure = _frostKey!.accessStructures()[accessStructureIndex];
-    final signingStream = coord.startSigningTx(
+    return coord.startSigningTx(
       accessStructureRef: accessStructure.accessStructureRef(),
       unsignedTx: unsignedTx,
       devices: _selected.toList(),
     );
-    if (context.mounted) {
-      signAndBroadcastWorkflowDialog(
-          context: context,
-          signingStream: signingStream,
-          unsignedTx: unsignedTx,
-          superWallet: _walletContext!.wallet.superWallet,
-          masterAppkey: _walletContext!.masterAppkey,
-          onBroadcastNewTx: onBroadcast);
+  }
+}
+
+class DeviceSignatureModel {
+  final DeviceId id;
+  final bool hasSignature;
+  final bool isConnected;
+  late final String? name;
+
+  DeviceSignatureModel({
+    required this.id,
+    required this.hasSignature,
+    required this.isConnected,
+  }) {
+    name = coord.getDeviceName(id: id);
+  }
+}
+
+class SigningSessionController with ChangeNotifier {
+  late final StreamSubscription<DeviceListUpdate> _deviceStateSub;
+  StreamSubscription<SigningState>? _signingStateSub;
+  final HashSet<DeviceId> _connectedDevices = deviceIdSet([]);
+  UnsignedTx? _unsignedTx;
+  SignedTx? _signedTx;
+
+  SigningState? _state;
+
+  SigningSessionController() {
+    _deviceStateSub = deviceListSubject.listen((update) {
+      _connectedDevices.clear();
+      _connectedDevices.addAll(update.state.devices.map((device) => device.id));
+      if (hasListeners) notifyListeners();
+      maybeRequestDeviceSign();
+    });
+  }
+
+  @override
+  void dispose() {
+    _deviceStateSub.cancel();
+    cancel();
+    super.dispose();
+  }
+
+  Future<bool> init(UnsignedTx unsignedTx, Stream<SigningState> stream) async {
+    if (_unsignedTx != null || _signingStateSub != null) return false;
+    _unsignedTx = unsignedTx;
+    _signingStateSub = stream.listen((state) async {
+      if (state.gotShares.length == state.neededFrom.length &&
+          state.finishedSignatures.isNotEmpty &&
+          _unsignedTx != null) {
+        _signedTx = await _unsignedTx!.complete(
+          signatures: state.finishedSignatures,
+        );
+      }
+      _state = state;
+      if (hasListeners) notifyListeners();
+      maybeRequestDeviceSign();
+    });
+    return true;
+  }
+
+  void cancel() async {
+    if (_signingStateSub != null || _unsignedTx != null) {
+      await coord.cancelProtocol();
+      if (_state != null) {
+        await coord.cancelSignSession(ssid: _state!.sessionId);
+      }
+      _signingStateSub?.cancel();
+      _signingStateSub = null;
+      _unsignedTx = null;
+    }
+  }
+
+  SigningState? get state => _state;
+  SignedTx? get signedTx => _signedTx;
+
+  Iterable<DeviceSignatureModel>? mapDevices(Iterable<DeviceModel> devices) {
+    if (_state == null) return null;
+    return devices.map(
+      (device) => DeviceSignatureModel(
+        id: device.id,
+        hasSignature: _state!.gotShares.any(
+          (thisId) => deviceIdEquals(thisId, device.id),
+        ),
+        isConnected: _connectedDevices.contains(device.id),
+      ),
+    );
+  }
+
+  void maybeRequestDeviceSign() async {
+    if (_state != null) {
+      for (final neededFrom in _state!.connectedButNeedRequest) {
+        if (_connectedDevices.contains(neededFrom)) {
+          await coord.requestDeviceSign(
+            deviceId: neededFrom,
+            sessionId: _state!.sessionId,
+          );
+        }
+      }
     }
   }
 }

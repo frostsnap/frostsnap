@@ -27,52 +27,56 @@ class _PsbtCameraReaderState extends State<PsbtCameraReader> {
     super.initState();
     ImageUtils imageUtils = ImageUtils();
     controller = CameraController(widget.cameras[0], ResolutionPreset.low);
-    controller.initialize().then((_) async {
-      if (!mounted) {
-        return;
-      }
-      setState(() {});
+    controller
+        .initialize()
+        .then((_) async {
+          if (!mounted) {
+            return;
+          }
+          setState(() {});
 
-      progress = 0;
-      final qrReader = await api.newQrReader();
-      var finishedDecoding = false;
-      controller.startImageStream((image) async {
-        final pngImage = await imageUtils.convertImagetoPng(image);
-        final status = await qrReader.decodeFromBytes(bytes: pngImage);
-        switch (status) {
-          case QrDecoderStatus_Progress(:final field0):
-            setState(() {
-              if (field0.sequenceCount > 0) {
-                progress = min(
-                    (field0.decodedFrames.toDouble()) /
-                        (field0.sequenceCount.toDouble() * 1.75),
-                    0.99);
-              } else {
-                progress = 0;
-              }
-            });
-          case QrDecoderStatus_Decoded(:final field0):
-            if (!finishedDecoding) {
-              finishedDecoding = true;
-              controller.stopImageStream();
-              setState(() {
-                progress = 1;
-              });
+          progress = 0;
+          final qrReader = await api.newQrReader();
+          var finishedDecoding = false;
+          controller.startImageStream((image) async {
+            final pngImage = await imageUtils.convertImagetoPng(image);
+            final status = await qrReader.decodeFromBytes(bytes: pngImage);
+            switch (status) {
+              case QrDecoderStatus_Progress(:final field0):
+                setState(() {
+                  if (field0.sequenceCount > 0) {
+                    progress = min(
+                      (field0.decodedFrames.toDouble()) /
+                          (field0.sequenceCount.toDouble() * 1.75),
+                      0.99,
+                    );
+                  } else {
+                    progress = 0;
+                  }
+                });
+              case QrDecoderStatus_Decoded(:final field0):
+                if (!finishedDecoding) {
+                  finishedDecoding = true;
+                  controller.stopImageStream();
+                  setState(() {
+                    progress = 1;
+                  });
 
-              if (mounted) {
-                Navigator.pop(context, field0);
-              }
+                  if (mounted) {
+                    Navigator.pop(context, field0);
+                  }
+                }
+                break;
+              case QrDecoderStatus_Failed(:final field0):
+                throw Exception(field0);
             }
-            break;
-          case QrDecoderStatus_Failed(:final field0):
-            throw Exception(field0);
-        }
-      });
-    }).catchError((Object e) {
-      if (mounted) {
-        showErrorSnackbarTop(context, "Error scanning QR: $e");
-      }
-    });
+          });
+        })
+        .catchError((Object e) {
+          if (mounted) {
+            showErrorSnackbarTop(context, "Error scanning QR: $e");
+          }
+        });
   }
 
   @override
@@ -84,31 +88,25 @@ class _PsbtCameraReaderState extends State<PsbtCameraReader> {
   @override
   Widget build(BuildContext context) {
     if (!controller.value.isInitialized) {
-      return Scaffold(
-        body: Center(
-          child: FsProgressIndicator(),
-        ),
-      );
+      return Scaffold(body: Center(child: FsProgressIndicator()));
     }
 
     return Scaffold(
-        appBar: FsAppBar(title: const Text('Scan PSBT')),
-        body: Padding(
-          padding: EdgeInsets.all(8.0),
-          child: Column(
-            children: [
-              CameraPreview(controller),
-              Padding(
-                padding: EdgeInsets.all(4.0),
-                child: LinearProgressIndicator(
-                  value: progress,
-                  minHeight: 8,
-                ),
-              ),
-              SizedBox(height: 8),
-              Text("${(progress * 100).round()}%")
-            ],
-          ),
-        ));
+      appBar: FsAppBar(title: const Text('Scan PSBT')),
+      body: Padding(
+        padding: EdgeInsets.all(8.0),
+        child: Column(
+          children: [
+            CameraPreview(controller),
+            Padding(
+              padding: EdgeInsets.all(4.0),
+              child: LinearProgressIndicator(value: progress, minHeight: 8),
+            ),
+            SizedBox(height: 8),
+            Text("${(progress * 100).round()}%"),
+          ],
+        ),
+      ),
+    );
   }
 }
