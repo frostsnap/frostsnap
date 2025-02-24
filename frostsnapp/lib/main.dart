@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
 import 'package:frostsnapp/contexts.dart';
@@ -41,24 +40,24 @@ void main() async {
 
   // wait for first message to appear so that logging is working before we carry on
   await logStream.first;
-  Settings? settings;
+  AppCtx? appCtx;
 
   try {
     final appDir = await getApplicationSupportDirectory();
     final appDirPath = appDir.path;
     if (Platform.isAndroid) {
-      final (coord_, settings_, ffiserial) = await api.loadHostHandlesSerial(
+      final (coord_, appCtx_, ffiserial) = await api.loadHostHandlesSerial(
         appDir: appDirPath,
       );
       globalHostPortHandler = HostPortHandler(ffiserial);
       coord = coord_;
-      settings = settings_;
+      appCtx = appCtx_;
       // check for devices that were plugged in before the app even started
       globalHostPortHandler.scanDevices();
     } else {
-      final (coord_, settings_) = await api.load(appDir: appDirPath);
+      final (coord_, appCtx_) = await api.load(appDir: appDirPath);
       coord = coord_;
-      settings = settings_;
+      appCtx = appCtx_;
       globalHostPortHandler = HostPortHandler(null);
     }
     coord.startThread();
@@ -92,15 +91,21 @@ void main() async {
       DeviceOrientation.portraitDown,
     ]);
 
-    Widget mainWidget = FrostsnapContext(logStream: logStream, child: MyApp());
-
-    if (settings != null) {
-      mainWidget = SettingsContext(settings: settings, child: mainWidget);
-      mainWidget = SuperWalletContext(settings: settings, child: mainWidget);
-    }
-
+    final mainWidget = buildMainWidget(appCtx!, logStream);
     runApp(mainWidget);
   }
+}
+
+Widget buildMainWidget(AppCtx appCtx, Stream<String> logStream) {
+  return FrostsnapContext(
+    appCtx: appCtx,
+    logStream: logStream,
+    backupManager: appCtx.backupManager,
+    child: SettingsContext(
+      settings: appCtx.settings,
+      child: SuperWalletContext(appCtx: appCtx, child: MyApp()),
+    ),
+  );
 }
 
 class MyApp extends StatefulWidget {
@@ -162,42 +167,22 @@ class _MyAppState extends State<MyApp> {
   }
 }
 
-class MyHomePage extends StatefulWidget {
+class MyHomePage extends StatelessWidget {
   const MyHomePage({super.key});
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  late final ConfettiController confettiController;
-
-  @override
-  void initState() {
-    super.initState();
-    confettiController = ConfettiController(duration: Duration(seconds: 2));
-  }
-
-  @override
-  void dispose() {
-    confettiController.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: FsAppBar(title: Text("Wallets"), centerTitle: false),
-      body: Center(child: KeyListWithConfetti(controller: confettiController)),
+      body: Center(child: ActiveAndRecoverableKeyList()),
       floatingActionButton: FloatingActionButton.extended(
         icon: Icon(Icons.add),
         label: Text('New Wallet'),
         onPressed: () async {
-          final newId = await Navigator.push(
+          await Navigator.push(
             context,
             MaterialPageRoute(builder: (context) => KeyNamePage()),
           );
-          if (context.mounted && newId != null) confettiController.play();
         },
       ),
       persistentFooterAlignment: AlignmentDirectional.centerStart,

@@ -3,17 +3,18 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/animated_check.dart';
+import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/device.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/hex.dart';
-import 'package:frostsnapp/show_backup.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/progress_indicator.dart';
 import 'package:frostsnapp/theme.dart';
+import 'package:frostsnapp/wallet.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class KeyNamePage extends StatefulWidget {
@@ -361,6 +362,7 @@ class _ThresholdPageState extends State<ThresholdPage> {
               alignment: Alignment.center,
               child: ElevatedButton.icon(
                 onPressed: () async {
+                  // Generate key
                   final stream =
                       coord
                           .generateNewKey(
@@ -373,34 +375,36 @@ class _ThresholdPageState extends State<ThresholdPage> {
                             network: widget.network,
                           )
                           .toBehaviorSubject();
+
                   final accessStructureRef = await showCheckKeyGenDialog(
                     context: context,
                     stream: stream,
                     network: widget.network,
                   );
 
-                  if (accessStructureRef != null && context.mounted) {
-                    final accessStructure =
-                        coord.getAccessStructure(asRef: accessStructureRef)!;
-                    await doBackupWorkflow(
-                      context,
-                      devices:
-                          widget.selectedDevices
-                              .map((device) => device.id)
-                              .toList(),
-                      accessStructure: accessStructure,
-                    );
-                  }
+                  if (!context.mounted) return;
 
                   if (accessStructureRef == null) {
                     coord.cancelProtocol();
-                    if (context.mounted) {
-                      Navigator.popUntil(context, (route) {
-                        return route.settings.name == "DevicesPage";
-                      });
-                    }
-                  } else if (context.mounted) {
-                    Navigator.pop(context, accessStructureRef);
+                    Navigator.popUntil(context, (route) {
+                      return route.settings.name == "DevicesPage";
+                    });
+                    return;
+                  }
+
+                  if (context.mounted) {
+                    final superWallet = SuperWalletContext.of(context)!;
+                    await Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(
+                        builder:
+                            (context) => superWallet.tryWrapInWalletContext(
+                              keyId: accessStructureRef.keyId,
+                              child: WalletHomeWithConfetti(newKey: true),
+                            ),
+                      ),
+                      (route) => route.isFirst,
+                    );
                   }
                 },
                 icon: Icon(Icons.check),

@@ -5,13 +5,11 @@ use frostsnap_core::{
 };
 
 use crate::{Completion, Sink, UiProtocol};
-
 pub struct DisplayBackupProtocol {
     device_id: DeviceId,
     abort: bool,
     messages: Vec<CoordinatorSendMessage>,
-    // bool indicates whether it compelted successfully.
-    // Only one message will be sent ATM
+    should_send: bool,
     sink: Box<dyn Sink<bool> + Send>,
 }
 
@@ -38,6 +36,7 @@ impl DisplayBackupProtocol {
             sink: Box::new(sink),
             abort: false,
             messages,
+            should_send: true,
         })
     }
 
@@ -55,7 +54,6 @@ impl UiProtocol for DisplayBackupProtocol {
     fn is_complete(&self) -> Option<Completion> {
         if self.abort {
             Some(Completion::Abort {
-                // get the devices to stop showing backup
                 send_cancel_to_all_devices: true,
             })
         } else {
@@ -63,7 +61,11 @@ impl UiProtocol for DisplayBackupProtocol {
         }
     }
 
-    fn connected(&mut self, _id: frostsnap_core::DeviceId) {}
+    fn connected(&mut self, id: frostsnap_core::DeviceId) {
+        if id == self.device_id {
+            self.should_send = true;
+        }
+    }
 
     fn disconnected(&mut self, id: frostsnap_core::DeviceId) {
         if self.device_id == id {
@@ -83,7 +85,12 @@ impl UiProtocol for DisplayBackupProtocol {
     }
 
     fn poll(&mut self) -> Vec<CoordinatorSendMessage> {
-        core::mem::take(&mut self.messages)
+        if !self.should_send {
+            return vec![];
+        }
+
+        self.should_send = false;
+        self.messages.clone()
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

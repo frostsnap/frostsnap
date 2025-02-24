@@ -26,7 +26,8 @@ pub use frostsnap_coordinator::{
     DeviceChange, PortDesc, Settings as RSettings,
 };
 
-use frostsnap_coordinator::{DesktopSerial, UsbSerialManager};
+pub use frostsnap_coordinator::backup_run::{BackupRun, BackupState};
+use frostsnap_coordinator::{BackupMutation, DesktopSerial, UsbSerialManager};
 pub use frostsnap_core::message::EncodedSignature;
 pub use frostsnap_core::{
     AccessStructureId, AccessStructureRef, DeviceId, KeyId, MasterAppkey, SessionHash,
@@ -42,6 +43,7 @@ pub use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 pub use std::sync::{Mutex, RwLock};
+use std::time::{SystemTime, UNIX_EPOCH};
 #[allow(unused)]
 use tracing::{event, span, Level};
 use tracing_subscriber::layer::SubscriberExt;
@@ -696,7 +698,7 @@ impl SuperWallet {
     }
 }
 
-pub fn load(app_dir: String) -> anyhow::Result<(Coordinator, Settings)> {
+pub fn load(app_dir: String) -> anyhow::Result<(Coordinator, AppCtx)> {
     let app_dir = PathBuf::from_str(&app_dir)?;
     let usb_manager = UsbSerialManager::new(Box::new(DesktopSerial), crate::FIRMWARE);
     _load(app_dir, usb_manager)
@@ -704,12 +706,12 @@ pub fn load(app_dir: String) -> anyhow::Result<(Coordinator, Settings)> {
 
 pub fn load_host_handles_serial(
     app_dir: String,
-) -> anyhow::Result<(Coordinator, Settings, FfiSerial)> {
+) -> anyhow::Result<(Coordinator, AppCtx, FfiSerial)> {
     let app_dir = PathBuf::from_str(&app_dir)?;
     let ffi_serial = FfiSerial::default();
     let usb_manager = UsbSerialManager::new(Box::new(ffi_serial.clone()), crate::FIRMWARE);
-    let (coord, settings) = _load(app_dir, usb_manager)?;
-    Ok((coord, settings, ffi_serial))
+    let (coord, app_state) = _load(app_dir, usb_manager)?;
+    Ok((coord, app_state, ffi_serial))
 }
 
 #[derive(Debug, Clone)]
@@ -815,10 +817,7 @@ impl From<network::Network> for BitcoinNetwork {
     }
 }
 
-fn _load(
-    app_dir: PathBuf,
-    usb_serial_manager: UsbSerialManager,
-) -> Result<(Coordinator, Settings)> {
+fn _load(app_dir: PathBuf, usb_serial_manager: UsbSerialManager) -> Result<(Coordinator, AppCtx)> {
     let db_file = app_dir.join("frostsnap.sqlite");
     event!(
         Level::INFO,
@@ -837,8 +836,13 @@ fn _load(
 
     let coordinator = FfiCoordinator::new(db.clone(), usb_serial_manager)?;
     let coordinator = Coordinator(RustOpaque::new(coordinator));
-    let settings = Settings::new(db.clone(), app_dir)?;
-    Ok((coordinator, settings))
+    let app_state = AppCtx {
+        settings: Settings::new(db.clone(), app_dir)?,
+        backup_manager: BackupManager::new(db.clone())?,
+    };
+    println!("loaded db");
+
+    Ok((coordinator, app_state))
 }
 
 #[derive(Debug, Clone)]
@@ -858,6 +862,11 @@ impl FfiSerial {
     pub fn set_available_ports(&self, ports: Vec<PortDesc>) {
         *self.available_ports.lock().unwrap() = ports
     }
+}
+
+pub struct AppCtx {
+    pub settings: Settings,
+    pub backup_manager: BackupManager,
 }
 
 pub struct Coordinator(pub RustOpaque<FfiCoordinator>);
@@ -1486,7 +1495,6 @@ impl Settings {
             })?;
 
         self.emit_electrum_settings();
-
         Ok(())
     }
 
@@ -1502,6 +1510,159 @@ impl Settings {
 
         chain_api.set_status_sink(Box::new(SinkWrap(sink)));
         Ok(())
+    }
+}
+
+pub struct BackupManager {
+    pub backup_state: RustOpaque<Mutex<Persisted<BackupState>>>,
+    pub backup_run_streams: RustOpaque<Mutex<BTreeMap<KeyId, StreamSink<BackupRun>>>>,
+    pub db: RustOpaque<Arc<Mutex<rusqlite::Connection>>>,
+}
+
+impl BackupManager {
+    fn new(db: Arc<Mutex<rusqlite::Connection>>) -> anyhow::Result<Self> {
+        let persisted_backup_state: Persisted<BackupState> = {
+            let mut db_ = db.lock().unwrap();
+            Persisted::new(&mut *db_, ())?
+        };
+
+        Ok(Self {
+            db: RustOpaque::new(db),
+            backup_state: RustOpaque::new(Mutex::new(persisted_backup_state)),
+            backup_run_streams: RustOpaque::new(Mutex::new(Default::default())),
+        })
+    }
+
+    pub fn maybe_start_backup_run(&self, access_structure: AccessStructure) -> Result<()> {
+        let key_id = access_structure.master_appkey().0.key_id();
+        let mut db = self.db.lock().unwrap();
+        self.backup_state
+            .lock()
+            .unwrap()
+            .mutate2(&mut *db, |state, mutations| {
+                let start_backup = !state.runs.contains_key(&key_id);
+                if start_backup {
+                    let devices = access_structure.devices().0;
+                    state.runs.insert(key_id, BackupRun::new(devices.clone()));
+                    mutations.push(BackupMutation::StartBackup { key_id, devices });
+                }
+
+                Ok(())
+            })?;
+        Ok(())
+    }
+
+    pub fn mark_backup_complete(&self, key_id: KeyId, device_id: DeviceId) -> Result<()> {
+        {
+            let mut db = self.db.lock().unwrap();
+            self.backup_state
+                .lock()
+                .unwrap()
+                .mutate2(&mut *db, |state, mutations| {
+                    if let Some(run) = state.runs.get_mut(&key_id) {
+                        let timestamp = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs() as u32;
+
+                        run.mark_device_complete(device_id);
+
+                        mutations.push(BackupMutation::MarkDeviceComplete {
+                            key_id,
+                            device_id,
+                            timestamp,
+                        });
+                    }
+
+                    Ok(())
+                })?;
+        }
+        self.backup_stream_emit(key_id)?;
+        Ok(())
+    }
+
+    pub fn is_device_complete(&self, key_id: KeyId, device_id: DeviceId) -> SyncReturn<bool> {
+        let backup_state = self.backup_state.lock().unwrap();
+        let complete = backup_state
+            .runs
+            .get(&key_id)
+            .map(|run| {
+                run.devices
+                    .iter()
+                    .any(|(d, timestamp)| *d == device_id && timestamp.is_some())
+            })
+            .unwrap_or(false);
+        SyncReturn(complete)
+    }
+
+    pub fn get_backup_run(&self, key_id: KeyId) -> SyncReturn<Option<BackupRun>> {
+        SyncReturn(self.backup_state.lock().unwrap().runs.get(&key_id).cloned())
+    }
+
+    pub fn is_run_complete(&self, key_id: KeyId) -> SyncReturn<bool> {
+        let complete = self
+            .backup_state
+            .lock()
+            .unwrap()
+            .runs
+            .get(&key_id)
+            .cloned()
+            .map(|run| run.is_run_complete())
+            .unwrap_or(false);
+        SyncReturn(complete)
+    }
+
+    pub fn backup_stream(&self, key_id: KeyId, new_stream: StreamSink<BackupRun>) -> Result<()> {
+        {
+            let mut streams = self.backup_run_streams.lock().unwrap();
+            streams.insert(key_id, new_stream);
+        }
+        self.backup_stream_emit(key_id)?;
+        Ok(())
+    }
+
+    pub fn backup_stream_emit(&self, key_id: KeyId) -> Result<()> {
+        let streams = self.backup_run_streams.lock().unwrap();
+        let stream = match streams.get(&key_id) {
+            Some(stream) => stream,
+            None => return Err(anyhow!("no backup stream found for key: {}", key_id)),
+        };
+
+        let backup_state = self.backup_state.lock().unwrap();
+        let run = backup_state
+            .runs
+            .get(&key_id)
+            .ok_or_else(|| anyhow!("no backup run found for key: {}", key_id))?;
+
+        let run_to_emit = run.clone();
+        stream.add(run_to_emit);
+        Ok(())
+    }
+
+    pub fn should_quick_backup_warn(&self, key_id: KeyId, device_id: DeviceId) -> SyncReturn<bool> {
+        let too_fast_warning_period = 5 * 60;
+        let current_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as u32;
+
+        let backup_state = self.backup_state.lock().unwrap();
+        let backup_run = backup_state.runs.get(&key_id);
+
+        let most_recent = backup_run.and_then(|run| {
+            run.devices
+                .iter()
+                .filter_map(|(dev_id, time)| time.map(|t| (*dev_id, t)))
+                .max_by_key(|&(_, time)| time)
+        });
+
+        match most_recent {
+            Some((last_device_id, timestamp)) => {
+                let elapsed = current_time - timestamp;
+                SyncReturn(elapsed < too_fast_warning_period && last_device_id != device_id)
+            }
+            None => SyncReturn(false),
+        }
     }
 }
 
@@ -1536,6 +1697,11 @@ impl DeveloperSettings {
             developer_mode: settings.developer_mode,
         }
     }
+}
+
+#[frb(mirror(BackupRun))]
+pub struct _BackupRun {
+    pub devices: Vec<(DeviceId, Option<u32>)>,
 }
 
 #[frb(mirror(AccessStructureId))]
