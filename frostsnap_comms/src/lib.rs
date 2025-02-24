@@ -18,7 +18,7 @@ pub const BAUDRATE: u32 = 115_200;
 /// will be some multiple of 8 and so it should overflow the ring buffers neatly.
 ///
 /// The last byte of magic bytes is used to signal features (by incrementing for new features).
-const MAGIC_BYTES_LEN: usize = 7;
+pub const MAGIC_BYTES_LEN: usize = 7;
 
 const MAGICBYTES_RECV_DOWNSTREAM: [u8; MAGIC_BYTES_LEN] =
     [0xff, 0xe4, 0x31, 0xb8, 0x02, 0x8b, 0x06];
@@ -225,7 +225,7 @@ impl From<CoordinatorSendMessage> for CoordinatorSendMessage<WireCoordinatorSend
 pub enum CoordinatorUpgradeMessage {
     PrepareUpgrade {
         size: u32,
-        firmware_digest: FirmwareDigest,
+        firmware_digest: Sha256Digest,
     },
     EnterUpgradeMode,
 }
@@ -271,45 +271,54 @@ pub struct Upstream;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Downstream;
 
-pub trait Direction {
+pub trait HasMagicBytes {
+    const MAGIC_BYTES: [u8; MAGIC_BYTES_LEN];
+    const VERSION_SIGNAL: MagicBytesVersion;
+}
+
+pub trait Direction: HasMagicBytes {
     type RecvType: bincode::Decode + bincode::Encode + for<'a> bincode::BorrowDecode<'a> + Gist;
     type Opposite: Direction;
-    const MAGIC_BYTES_RECV: [u8; MAGIC_BYTES_LEN];
-    const VERSION_SIGNAL: MagicBytesVersion;
+}
+
+impl HasMagicBytes for Upstream {
+    const VERSION_SIGNAL: MagicBytesVersion = 0;
+    const MAGIC_BYTES: [u8; MAGIC_BYTES_LEN] = MAGICBYTES_RECV_UPSTREAM;
 }
 
 impl Direction for Upstream {
     type RecvType = CoordinatorSendMessage<WireCoordinatorSendBody>;
     type Opposite = Downstream;
-    const VERSION_SIGNAL: MagicBytesVersion = 0;
-    const MAGIC_BYTES_RECV: [u8; MAGIC_BYTES_LEN] = MAGICBYTES_RECV_UPSTREAM;
+}
+
+impl HasMagicBytes for Downstream {
+    const VERSION_SIGNAL: MagicBytesVersion = 1;
+    const MAGIC_BYTES: [u8; MAGIC_BYTES_LEN] = MAGICBYTES_RECV_DOWNSTREAM;
 }
 
 impl Direction for Downstream {
     type RecvType = DeviceSendMessage<WireDeviceSendBody>;
     type Opposite = Upstream;
-    const VERSION_SIGNAL: MagicBytesVersion = 1;
-    const MAGIC_BYTES_RECV: [u8; MAGIC_BYTES_LEN] = MAGICBYTES_RECV_DOWNSTREAM;
 }
 
-impl<O: Direction> bincode::Encode for MagicBytes<O> {
+impl<O: HasMagicBytes> bincode::Encode for MagicBytes<O> {
     fn encode<E: bincode::enc::Encoder>(
         &self,
         encoder: &mut E,
     ) -> Result<(), bincode::error::EncodeError> {
-        let mut magic_bytes = O::MAGIC_BYTES_RECV;
+        let mut magic_bytes = O::MAGIC_BYTES;
         magic_bytes[magic_bytes.len() - 1] += O::VERSION_SIGNAL;
         encoder.writer().write(&magic_bytes)
     }
 }
 
-impl<O: Direction> bincode::Decode for MagicBytes<O> {
+impl<O: HasMagicBytes> bincode::Decode for MagicBytes<O> {
     fn decode<D: bincode::de::Decoder>(
         decoder: &mut D,
     ) -> Result<Self, bincode::error::DecodeError> {
         let mut bytes = [0u8; MAGIC_BYTES_LEN];
         decoder.reader().read(&mut bytes)?;
-        let expected = O::MAGIC_BYTES_RECV;
+        let expected = O::MAGIC_BYTES;
         let except_version_signal_byte = ..MAGIC_BYTES_LEN - 1;
         if bytes[except_version_signal_byte] == expected[except_version_signal_byte] {
             // We don't care about version signal here yet
@@ -317,7 +326,7 @@ impl<O: Direction> bincode::Decode for MagicBytes<O> {
         } else {
             Err(bincode::error::DecodeError::OtherString(format!(
                 "was expecting magic bytes {:02x?} but got {:02x?}",
-                O::MAGIC_BYTES_RECV,
+                O::MAGIC_BYTES,
                 bytes
             )))
         }
@@ -337,7 +346,7 @@ impl DeviceSupportedFeatures {
     }
 }
 
-impl<'de, O: Direction> bincode::BorrowDecode<'de> for MagicBytes<O> {
+impl<'de, O: HasMagicBytes> bincode::BorrowDecode<'de> for MagicBytes<O> {
     fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(
         decoder: &mut D,
     ) -> core::result::Result<Self, bincode::error::DecodeError> {
@@ -362,7 +371,7 @@ impl<B: Gist> Gist for DeviceSendMessage<B> {
 pub enum DeviceSendBody {
     Core(frostsnap_core::message::DeviceToCoordinatorMessage),
     Debug { message: String },
-    Announce { firmware_digest: FirmwareDigest },
+    Announce { firmware_digest: Sha256Digest },
     SetName { name: String },
     DisconnectDownstream,
     NeedName,
@@ -373,7 +382,7 @@ pub enum DeviceSendBody {
 pub enum WireDeviceSendBody {
     _Core,
     Debug { message: String },
-    Announce { firmware_digest: FirmwareDigest },
+    Announce { firmware_digest: Sha256Digest },
     SetName { name: String },
     DisconnectDownstream,
     NeedName,
@@ -450,7 +459,7 @@ pub fn make_progress_on_magic_bytes<D: Direction>(
     remaining: impl Iterator<Item = u8>,
     progress: usize,
 ) -> (usize, Option<MagicBytesVersion>) {
-    let magic_bytes = D::MAGIC_BYTES_RECV;
+    let magic_bytes = D::MAGIC_BYTES;
     _make_progress_on_magic_bytes(remaining, &magic_bytes, progress)
 }
 
@@ -476,7 +485,7 @@ fn _make_progress_on_magic_bytes(
 }
 
 pub fn find_and_remove_magic_bytes<D: Direction>(buff: &mut Vec<u8>) -> Option<MagicBytesVersion> {
-    let magic_bytes = D::MAGIC_BYTES_RECV;
+    let magic_bytes = D::MAGIC_BYTES;
     _find_and_remove_magic_bytes(buff, &magic_bytes[..])
 }
 
@@ -499,18 +508,18 @@ fn _find_and_remove_magic_bytes(
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct FirmwareDigest(pub [u8; 32]);
+pub struct Sha256Digest(pub [u8; 32]);
 
 frostsnap_core::impl_display_debug_serialize! {
-    fn to_bytes(digest: &FirmwareDigest) -> [u8;32] {
+    fn to_bytes(digest: &Sha256Digest) -> [u8;32] {
         digest.0
     }
 }
 
 frostsnap_core::impl_fromstr_deserialize! {
-    name => "firmware digest",
-    fn from_bytes(bytes: [u8;32]) -> FirmwareDigest {
-        FirmwareDigest(bytes)
+    name => "sha256 digest",
+    fn from_bytes(bytes: [u8;32]) -> Sha256Digest {
+        Sha256Digest(bytes)
     }
 }
 
