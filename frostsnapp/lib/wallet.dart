@@ -923,11 +923,10 @@ class BackupWarningBanner extends StatelessWidget {
         }
 
         return SliverToBoxAdapter(
-          child: Material(
-            color: theme.colorScheme.errorContainer,
-            child: InkWell(
-              onTap: () {
-                Navigator.push(
+          child: ListTile(
+            dense: true,
+            onTap:
+                () => Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder:
@@ -937,37 +936,13 @@ class BackupWarningBanner extends StatelessWidget {
                           ),
                         ),
                   ),
-                );
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16.0,
-                  vertical: 8.0,
                 ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.warning_rounded,
-                      color: theme.colorScheme.onErrorContainer,
-                    ),
-                    const SizedBox(width: 8.0),
-                    Expanded(
-                      child: Text(
-                        'Warning - this wallet has unfinished backups!',
-                        style: TextStyle(
-                          color: theme.colorScheme.onErrorContainer,
-                        ),
-                      ),
-                    ),
-                    Icon(
-                      Icons.arrow_forward_ios,
-                      size: 16.0,
-                      color: theme.colorScheme.onErrorContainer,
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            tileColor: theme.colorScheme.errorContainer,
+            iconColor: theme.colorScheme.onErrorContainer,
+            textColor: theme.colorScheme.onErrorContainer,
+            leading: Icon(Icons.warning_rounded),
+            trailing: Icon(Icons.chevron_right),
+            title: Text('This wallet has unfinished backups!'),
           ),
         );
       },
