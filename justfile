@@ -1,5 +1,5 @@
 default_board := "v2"
-coordinator_packages := "-p frostsnap_core -p frostsnap_coordinator -p frostsnap_comms -p native"
+ordinary_crates := "-p frostsnap_core -p frostsnap_coordinator -p frostsnap_comms -p native -p frostsnap_embedded"
 
 alias erase := erase-device
 
@@ -12,21 +12,20 @@ erase-device +ARGS="nvs":
 build-device BOARD=default_board +ARGS="":
     cd device && cargo build --release --features {{BOARD}} --bin {{BOARD}} {{ARGS}}
 
-test-coordinator +ARGS="":
-    cargo test {{ARGS}} {{coordinator_packages}}
+test-ordinary +ARGS="":
+    cargo test {{ARGS}} {{ordinary_crates}}
 
-test +ARGS="":
-   just test-coordinator {{ARGS}}
+test: test-ordinary
 
-check-coordinator +ARGS="":
-    cargo check {{coordinator_packages}} {{ARGS}} --all-features --tests --bins
+check-ordinary +ARGS="":
+    cargo check {{ordinary_crates}} {{ARGS}} --all-features --tests --bins
 
 check-device +ARGS="":
     cd device && cargo check {{ARGS}} --all-features --bins
 
-lint-coordinator +ARGS="":
-    cargo fmt {{coordinator_packages}} -- --check
-    cargo clippy {{coordinator_packages}} {{ARGS}} --all-features --tests --bins -- -Dwarnings
+lint-ordinary +ARGS="":
+    cargo fmt {{ordinary_crates}} -- --check
+    cargo clippy {{ordinary_crates}} {{ARGS}} --all-features --tests --bins -- -Dwarnings
 
 lint-device +ARGS="":
     cd device && cargo clippy {{ARGS}} --all-features --bins -- -Dwarnings
@@ -44,7 +43,7 @@ gen:
     just "frostsnapp/gen"
 
 fix: fix-dart
-    cargo clippy --fix --allow-dirty --allow-staged {{coordinator_packages}} --all-features --tests --bins
+    cargo clippy --fix --allow-dirty --allow-staged {{ordinary_crates}} --all-features --tests --bins
     ( cd device && cargo clippy --fix --allow-dirty --allow-staged --all-features --bins; )
     cargo fmt --all
 
@@ -53,5 +52,5 @@ run +ARGS="":
     just build-device
     just frostsnapp/run {{ARGS}}
 
-check: check-coordinator check-device
-lint: lint-coordinator lint-device lint-app
+check: check-ordinary check-device
+lint: lint-ordinary lint-device lint-app

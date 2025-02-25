@@ -1,4 +1,4 @@
-use crate::device_nonces::{self, ABSlot, ABSlots, MemoryNonceSlot, NonceStreamSlot};
+use crate::device_nonces::{self, AbSlots, MemoryNonceSlot, NonceStreamSlot};
 use crate::symmetric_encryption::{Ciphertext, SymmetricKey};
 use crate::tweak::{self, Xpub};
 use crate::{
@@ -28,7 +28,7 @@ pub struct FrostSigner<S = MemoryNonceSlot> {
     keypair: KeyPair,
     keys: BTreeMap<KeyId, KeyData>,
     action_state: Option<SignerState>,
-    nonce_slots: device_nonces::ABSlots<S>,
+    nonce_slots: device_nonces::AbSlots<S>,
     mutations: VecDeque<Mutation>,
 }
 
@@ -81,7 +81,7 @@ pub struct EncryptedSecretShare {
 }
 
 impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
-    pub fn new(keypair: KeyPair, nonce_slots: ABSlots<S>) -> Self {
+    pub fn new(keypair: KeyPair, nonce_slots: AbSlots<S>) -> Self {
         Self {
             keypair,
             keys: Default::default(),
@@ -196,9 +196,15 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                         segments.push(segment);
                     }
                 }
-                Ok(vec![DeviceSend::ToCoordinator(Box::new(
-                    DeviceToCoordinatorMessage::NonceResponse { segments },
-                ))])
+
+                let send = if !segments.is_empty() {
+                    Some(DeviceSend::ToCoordinator(Box::new(
+                        DeviceToCoordinatorMessage::NonceResponse { segments },
+                    )))
+                } else {
+                    None
+                };
+                Ok(FromIterator::from_iter(send))
             }
             (
                 None,
@@ -374,15 +380,17 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                         )
                     })?;
 
-                let nonce_slot = self.nonce_slots.get(coord_req_nonces.stream_id).ok_or(
-                    Error::signer_invalid_message(
+                let nonce_slot = self
+                    .nonce_slots
+                    .get(coord_req_nonces.stream_id)
+                    .and_then(|slot| slot.read_slot())
+                    .ok_or(Error::signer_invalid_message(
                         &message,
                         format!(
                             "device did not have that nonce stream id {}",
                             coord_req_nonces.stream_id
                         ),
-                    ),
-                )?;
+                    ))?;
 
                 if let Err(e) = nonce_slot.are_nonces_available(
                     coord_req_nonces.index,
@@ -520,9 +528,15 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                 ))])
             }
             (_, CoordinatorToDeviceMessage::RequestHeldShares) => {
-                Ok(vec![DeviceSend::ToCoordinator(Box::new(
-                    DeviceToCoordinatorMessage::HeldShares(self.held_shares()),
-                ))])
+                let held_shares = self.held_shares();
+                let send = if !held_shares.is_empty() {
+                    Some(DeviceSend::ToCoordinator(Box::new(
+                        DeviceToCoordinatorMessage::HeldShares(held_shares),
+                    )))
+                } else {
+                    None
+                };
+                Ok(FromIterator::from_iter(send))
             }
             _ => Err(Error::signer_message_kind(&self.action_state, &message)),
         }
@@ -813,7 +827,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
 
     /// This is for inspecting the state of the nonce slots for testing.
     /// Never to be used in production.
-    pub fn nonce_slots(&mut self) -> &mut ABSlots<S> {
+    pub fn nonce_slots(&mut self) -> &mut AbSlots<S> {
         &mut self.nonce_slots
     }
 }
@@ -822,9 +836,7 @@ impl FrostSigner<MemoryNonceSlot> {
     pub fn new_random(rng: &mut impl rand_core::RngCore) -> Self {
         Self::new(
             KeyPair::<Normal>::new(Scalar::random(rng)),
-            ABSlots::new(
-                (0..8).map(|_| ABSlot::new(MemoryNonceSlot::default(), MemoryNonceSlot::default())),
-            ),
+            AbSlots::new((0..8).map(|_| MemoryNonceSlot::default())),
         )
     }
 }

@@ -55,8 +55,8 @@ jobs:
           name: frostsnap-${{ github.sha }}.elf
           path: target/riscv32imc-unknown-none-elf/release/v2
 
-  test-coordinator-libs:
-    name: Test coordinator libraries
+  test-ordinary-libs:
+    name: Test ordinary libraries
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -69,10 +69,10 @@ jobs:
       - uses: "./.github/actions/generate-frb"
       - uses: "./.github/actions/cache-rust-target"
         with:
-          key: "test-coordinator-libs-v0"
+          key: "test-ordinary-libs-v0"
 
-      - run: just lint-coordinator --release --locked
-      - run: just test-coordinator --release --all-features --locked
+      - run: just lint-ordinary --release --locked
+      - run: just test-ordinary --release --all-features --locked
 
   app-build-android:
     name: "Build app for Android"

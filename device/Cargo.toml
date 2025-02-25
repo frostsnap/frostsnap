@@ -13,14 +13,16 @@ read_protect_hmac_key = []
 [dependencies]
 frostsnap_core = { workspace = true }
 frostsnap_comms = { workspace = true }
+frostsnap_embedded = { workspace = true }
 bitcoin.workspace = true
 esp-hal = { package = "esp-hal", version = "0.22.0", features = ["esp32c3", "digest"] }
+rand_core.workspace = true
 esp-alloc = "0.5.0"
 nb = "1"
 embedded-hal-nb = "1"
 embedded-hal-bus = "0.1.0"
-embedded-storage = "0.3.1"
-esp-storage = { version = "0.4.0", features = ["esp32c3", "nor-flash"] }
+embedded-storage.workspace = true
+esp-storage = { version = "0.4.0", features = ["esp32c3", "nor-flash", "bytewise-read"] }
 esp-partition-table = "0.1"
 bincode = { workspace = true }
 display-interface = { version = "0.5.0", optional = true }
@@ -30,7 +32,6 @@ embedded-graphics = "0.8.1"
 embedded-text = "0.7.0"
 u8g2-fonts = { version = "0.3.0", features = ["embedded_graphics_textstyle"] }
 rand_chacha = { workspace = true }
-rand_core.workspace = true
 cst816s = { git = "https://github.com/fxweidinger/cst816s", rev = "82f88186e94a94126b962d30b4c0129fd3c1c5f8" }
 embedded-hal = { version = "1.0" }
 embedded-iconoir = { version = "0.2.3", features = ["24px", "32px", "48px"] }
