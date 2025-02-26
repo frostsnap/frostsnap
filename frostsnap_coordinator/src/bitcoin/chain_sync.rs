@@ -141,11 +141,11 @@ impl ChainClient {
 
 pub const fn default_electrum_server(network: bitcoin::Network) -> &'static str {
     match network {
-        bitcoin::Network::Bitcoin => "ssl://electrum.blockstream.info:50002",
+        bitcoin::Network::Bitcoin => "tcp://electrum.frostsn.app:50001",
         // we're using the tcp:// version since ssl ain't working for some reason
         bitcoin::Network::Testnet => "tcp://electrum.blockstream.info:60001",
         bitcoin::Network::Regtest => "tcp://localhost:60401",
-        bitcoin::Network::Signet => "tcp://signet-electrumx.wakiyamap.dev:50001",
+        bitcoin::Network::Signet => "tcp://electrum.frostsn.app:60001",
         _ => panic!("Unknown network"),
     }
 }
