@@ -38,8 +38,6 @@ class WalletHomeWithConfetti extends StatefulWidget {
 
 class _WalletHomeWithConfettiState extends State<WalletHomeWithConfetti> {
   late final ConfettiController confettiController;
-  // For new keys we don't want to show the banner until they dismiss the dialog
-  bool _showBackupWarningBanner = false;
 
   @override
   void initState() {
@@ -47,7 +45,6 @@ class _WalletHomeWithConfettiState extends State<WalletHomeWithConfetti> {
     confettiController = ConfettiController(
       duration: const Duration(seconds: 4),
     );
-    _showBackupWarningBanner = widget.newKey != true;
 
     if (widget.newKey == true) {
       confettiController.play();
@@ -73,55 +70,57 @@ class _WalletHomeWithConfettiState extends State<WalletHomeWithConfetti> {
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) {
-        return AlertDialog(
-          title: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: const [
-              Text(
-                'Wallet Created!',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              Icon(Icons.checklist, size: 40),
-            ],
-          ),
-          content: const Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Now let\'s secure this wallet by storing these devices in geographically separate locations.',
-              ),
-              SizedBox(height: 12),
-              Text(
-                'We will also create a backup for each device as an ultimate backup.',
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                setState(() => _showBackupWarningBanner = true);
-              },
-              child: const Text('Later'),
+        return BackdropFilter(
+          filter: blurFilter,
+          child: AlertDialog(
+            title: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: const [
+                Text(
+                  'Wallet Created!',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                Icon(Icons.checklist, size: 40),
+              ],
             ),
-            FilledButton(
-              onPressed: () {
-                setState(() => _showBackupWarningBanner = true);
-                Navigator.of(context).pop();
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
+            content: const Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Now let\'s secure this wallet by storing these devices in geographically separate locations.',
+                ),
+                SizedBox(height: 12),
+                Text(
+                  'We will also create a backup for each device as an ultimate backup.',
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                },
+                child: const Text('Later'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  showBottomSheetOrDialog(
+                    context,
                     builder:
                         (context) => walletCtx.wrap(
-                          BackupChecklistPage(accessStructure: accessStructure),
+                          BackupChecklist(
+                            accessStructure: accessStructure,
+                            showAppBar: true,
+                          ),
                         ),
-                  ),
-                );
-              },
-              child: const Text('Secure Wallet'),
-            ),
-          ],
+                  );
+                },
+                child: const Text('Secure Wallet'),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -129,20 +128,17 @@ class _WalletHomeWithConfettiState extends State<WalletHomeWithConfetti> {
 
   @override
   Widget build(BuildContext context) {
-    return BannerStateProvider(
-      showBanner: _showBackupWarningBanner,
-      child: Stack(
-        children: [
-          const WalletHome(),
-          Center(
-            child: ConfettiWidget(
-              confettiController: confettiController,
-              blastDirectionality: BlastDirectionality.explosive,
-              numberOfParticles: 100,
-            ),
+    return Stack(
+      children: [
+        const WalletHome(),
+        Center(
+          child: ConfettiWidget(
+            confettiController: confettiController,
+            blastDirectionality: BlastDirectionality.explosive,
+            numberOfParticles: 100,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -194,32 +190,13 @@ class WalletHome extends StatelessWidget {
               ),
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: () {
-                    final mediaSize = MediaQuery.sizeOf(context);
-                    if (mediaSize.width < 600) {
-                      showModalBottomSheet(
-                        context: context,
-                        isScrollControlled: true,
-                        useSafeArea: true,
-                        isDismissible: true,
-                        showDragHandle: false,
+                  onPressed:
+                      () => showBottomSheetOrDialog(
+                        context,
                         builder: (context) => walletCtx.wrap(WalletSendPage()),
-                      );
-                    } else {
-                      showDialog(
-                        context: context,
-                        builder:
-                            (context) => Dialog(
-                              backgroundColor:
-                                  theme.colorScheme.surfaceContainer,
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(maxWidth: 560),
-                                child: walletCtx.wrap(WalletSendPage()),
-                              ),
-                            ),
-                      );
-                    }
-                  },
+                        dialogBackgroundColor:
+                            theme.colorScheme.surfaceContainer,
+                      ),
                   label: Text('Send'),
                   icon: Icon(Icons.north_east),
                   style: ElevatedButton.styleFrom(
@@ -868,25 +845,6 @@ Uri getBlockExplorer(BitcoinNetwork network) {
   }
 }
 
-class BannerStateProvider extends InheritedWidget {
-  final bool showBanner;
-
-  const BannerStateProvider({
-    required this.showBanner,
-    required Widget child,
-    Key? key,
-  }) : super(key: key, child: child);
-
-  static BannerStateProvider? of(BuildContext context) {
-    return context.dependOnInheritedWidgetOfExactType<BannerStateProvider>();
-  }
-
-  @override
-  bool updateShouldNotify(BannerStateProvider oldWidget) {
-    return showBanner != oldWidget.showBanner;
-  }
-}
-
 class BackupWarningBanner extends StatelessWidget {
   final FrostKey frostKey;
   final BackupManager backupManager;
@@ -899,53 +857,46 @@ class BackupWarningBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final backupManager = FrostsnapContext.of(context)!.backupManager;
     final walletCtx = WalletContext.of(context)!;
     final backupStream = walletCtx.backupStream;
+    final theme = Theme.of(context);
 
-    final bannerState = BannerStateProvider.of(context);
-    // Don't show if we're in new key flow and haven't dismissed dialog
-    if (bannerState != null && !bannerState.showBanner) {
-      return const SliverToBoxAdapter(child: SizedBox.shrink());
-    }
+    final banner = ListTile(
+      dense: true,
+      onTap: () => onTap(context, walletCtx),
+      tileColor: theme.colorScheme.errorContainer,
+      iconColor: theme.colorScheme.onErrorContainer,
+      textColor: theme.colorScheme.onErrorContainer,
+      leading: Icon(Icons.warning_rounded),
+      trailing: Icon(Icons.chevron_right),
+      title: Text('This wallet has unfinished backups!'),
+    );
 
-    return StreamBuilder<dynamic>(
-      stream: backupStream,
-      builder: (context, snapshot) {
-        final walletCtx = WalletContext.of(context)!;
-        final theme = Theme.of(context);
-
-        final showWarning =
-            !backupManager.isRunComplete(keyId: frostKey.keyId());
-
-        if (!showWarning) {
-          return const SliverToBoxAdapter(child: SizedBox.shrink());
-        }
-
-        return SliverToBoxAdapter(
-          child: ListTile(
-            dense: true,
-            onTap:
-                () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder:
-                        (context) => walletCtx.wrap(
-                          BackupChecklistPage(
-                            accessStructure: frostKey.accessStructures()[0],
-                          ),
-                        ),
-                  ),
-                ),
-            tileColor: theme.colorScheme.errorContainer,
-            iconColor: theme.colorScheme.onErrorContainer,
-            textColor: theme.colorScheme.onErrorContainer,
-            leading: Icon(Icons.warning_rounded),
-            trailing: Icon(Icons.chevron_right),
-            title: Text('This wallet has unfinished backups!'),
-          ),
-        );
-      },
+    return SliverToBoxAdapter(
+      child: StreamBuilder<BackupRun>(
+        stream: backupStream,
+        builder: (context, snapshot) {
+          final backupRun = snapshot.data;
+          final hideBanner = backupRun == null || isBackupDone(backupRun);
+          return hideBanner ? SizedBox.shrink() : banner;
+        },
+      ),
     );
   }
+
+  onTap(BuildContext context, WalletContext walletContext) {
+    showBottomSheetOrDialog(
+      context,
+      builder:
+          (context) => walletContext.wrap(
+            BackupChecklist(
+              accessStructure: frostKey.accessStructures()[0],
+              showAppBar: true,
+            ),
+          ),
+    );
+  }
+
+  bool isBackupDone(BackupRun backupRun) =>
+      backupRun.devices.every((elem) => elem.$2 != null);
 }
