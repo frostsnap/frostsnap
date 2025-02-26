@@ -200,7 +200,7 @@ pub enum State {
 }
 
 impl FirmwareUpgradeMode<'_> {
-    pub fn poll(&mut self) -> (Option<DeviceSendBody>, Option<ui::Workflow>) {
+    pub fn poll(&mut self, ui: &mut impl crate::ui::UserInteraction) -> Option<DeviceSendBody> {
         match self {
             FirmwareUpgradeMode::Upgrading {
                 ota,
@@ -213,13 +213,11 @@ impl FirmwareUpgradeMode<'_> {
                 match state {
                     State::WaitingForConfirm { sent_prompt } if !*sent_prompt => {
                         *sent_prompt = true;
-                        (
-                            None,
-                            Some(ui::Workflow::prompt(ui::Prompt::ConfirmFirmwareUpgrade {
-                                firmware_digest: *expected_digest,
-                                size: *size,
-                            })),
-                        )
+                        ui.set_workflow(ui::Workflow::prompt(ui::Prompt::ConfirmFirmwareUpgrade {
+                            firmware_digest: *expected_digest,
+                            size: *size,
+                        }));
+                        None
                     }
                     State::Erase { seq } => {
                         let mut finished = false;
@@ -243,38 +241,34 @@ impl FirmwareUpgradeMode<'_> {
                             }
                         }
 
-                        let status = Some(ui::FirmwareUpgradeStatus::Erase {
-                            progress: *seq as f32 / SECTORS_PER_IMAGE as f32,
-                        });
-
-                        let status = status.map(|status| {
-                            ui::Workflow::BusyDoing(ui::BusyTask::FirmwareUpgrade(status))
-                        });
+                        ui.set_workflow(ui::Workflow::FirmwareUpgrade(
+                            ui::FirmwareUpgradeStatus::Erase {
+                                progress: *seq as f32 / SECTORS_PER_IMAGE as f32,
+                            },
+                        ));
 
                         if finished {
                             *state = State::WaitingToEnterUpgradeMode;
-                            (Some(DeviceSendBody::AckUpgradeMode), status)
+                            Some(DeviceSendBody::AckUpgradeMode)
                         } else {
-                            (None, status)
+                            None
                         }
                     }
                     _ => {
                         /* waiting */
-                        (None, None)
+                        None
                     }
                 }
             }
             FirmwareUpgradeMode::Passive { sent_ack, .. } => {
                 if !*sent_ack {
                     *sent_ack = true;
-                    (
-                        Some(DeviceSendBody::AckUpgradeMode),
-                        Some(ui::Workflow::BusyDoing(ui::BusyTask::FirmwareUpgrade(
-                            ui::FirmwareUpgradeStatus::Passive,
-                        ))),
-                    )
+                    ui.set_workflow(ui::Workflow::FirmwareUpgrade(
+                        ui::FirmwareUpgradeStatus::Passive,
+                    ));
+                    Some(DeviceSendBody::AckUpgradeMode)
                 } else {
-                    (None, None)
+                    None
                 }
                 /* we will passively forward data for upgrade no need to prompt or do anything */
             }
@@ -362,12 +356,10 @@ impl FirmwareUpgradeMode<'_> {
                         {
                             let partition = ota.ota_partitions()[*ota_slot];
                             partition.nor_write_sector(sector, &in_buf).unwrap();
-                            ui.set_workflow(ui::Workflow::BusyDoing(
-                                ui::BusyTask::FirmwareUpgrade(
-                                    ui::FirmwareUpgradeStatus::Download {
-                                        progress: byte_count as f32 / *size as f32,
-                                    },
-                                ),
+                            ui.set_workflow(ui::Workflow::FirmwareUpgrade(
+                                ui::FirmwareUpgradeStatus::Download {
+                                    progress: byte_count as f32 / *size as f32,
+                                },
                             ));
                             ui.poll();
                         }

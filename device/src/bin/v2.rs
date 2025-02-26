@@ -220,6 +220,7 @@ fn main() -> ! {
         changes: false,
         last_touch: None,
         timer: &timer1,
+        busy_task: Default::default(),
     };
 
     let run = esp32_run::Run {
@@ -262,6 +263,7 @@ pub struct FrostyUi<'t, T, DT, I2C, PINT, RST> {
     device_name: Option<String>,
     changes: bool,
     timer: &'t Timer<T, Blocking>,
+    busy_task: Option<BusyTask>,
 }
 
 impl<T, DT, I2C, PINT, RST, CommE, PinE> FrostyUi<'_, T, DT, I2C, PINT, RST>
@@ -280,7 +282,32 @@ where
             .header(self.device_name.as_deref().unwrap_or("New Device"));
 
         match self.workflow.borrow_mut() {
-            Workflow::None => {}
+            Workflow::None => {
+                if let Some(busy_task) = &self.busy_task {
+                    match busy_task {
+                        BusyTask::KeyGen => self.display.print("Generating key.."),
+                        BusyTask::Signing => self.display.print("Signing.."),
+                        BusyTask::VerifyingShare => self.display.print("Verifying key.."),
+                        BusyTask::Loading => self.display.print("loading.."),
+                        BusyTask::GeneratingNonces => self.display.print("Generating nonces..."),
+                    }
+                }
+            }
+            Workflow::FirmwareUpgrade(status) => match status {
+                FirmwareUpgradeStatus::Passive => self.display.print("FORWARD MODE"),
+                FirmwareUpgradeStatus::Erase { progress } => {
+                    self.display.print(if *progress == 1.0 {
+                        "Ready to upgrade"
+                    } else {
+                        "Preparing upgrade.."
+                    });
+                    self.display.progress_bar(*progress);
+                }
+                FirmwareUpgradeStatus::Download { progress } => {
+                    self.display.print("Downloading firmware..");
+                    self.display.progress_bar(*progress);
+                }
+            },
             Workflow::NamingDevice {
                 old_name: existing_name,
                 new_name: current_name,
@@ -387,28 +414,6 @@ where
                 }
                 self.display.button();
             }
-            Workflow::BusyDoing(task) => match task {
-                BusyTask::KeyGen => self.display.print("Generating key.."),
-                BusyTask::Signing => self.display.print("Signing.."),
-                BusyTask::VerifyingShare => self.display.print("Verifying key.."),
-                BusyTask::Loading => self.display.print("loading.."),
-                BusyTask::FirmwareUpgrade(status) => match status {
-                    FirmwareUpgradeStatus::Passive => self.display.print("FORWARD MODE"),
-                    FirmwareUpgradeStatus::Erase { progress } => {
-                        self.display.print(if *progress == 1.0 {
-                            "Ready to upgrade"
-                        } else {
-                            "Preparing upgrade.."
-                        });
-                        self.display.progress_bar(*progress);
-                    }
-                    FirmwareUpgradeStatus::Download { progress } => {
-                        self.display.print("Downloading firmware..");
-                        self.display.progress_bar(*progress);
-                    }
-                },
-                BusyTask::GeneratingNonces => self.display.print("Generating nonces..."),
-            },
             Workflow::Debug(string) => {
                 self.display
                     .print(format!("{}: {}", self.timer.now(), string));
@@ -627,6 +632,19 @@ where
         }
 
         event
+    }
+
+    fn set_busy_task(&mut self, task: BusyTask) {
+        self.busy_task = Some(task);
+        // HACK: we only display busy task when workflow is None so poll only then to avoid triggering ui events.
+        if matches!(self.workflow, Workflow::None) {
+            let _event = self.poll().is_none();
+            assert!(_event, "no ui events can happen with None workflow");
+        }
+    }
+
+    fn clear_busy_task(&mut self) {
+        self.busy_task = None;
     }
 }
 
