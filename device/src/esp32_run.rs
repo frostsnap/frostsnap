@@ -136,6 +136,8 @@ where
         let mut ui_event_queue = VecDeque::default();
         let mut conch_is_downstream = false;
 
+        ui.clear_busy_task();
+
         loop {
             let mut has_conch = false;
             if soft_reset {
@@ -357,12 +359,8 @@ where
                     }
 
                     if let Some(upgrade_) = &mut upgrade {
-                        let (message, workflow) = upgrade_.poll();
+                        let message = upgrade_.poll(&mut ui);
                         upstream_connection.send_to_coordinator(message);
-
-                        if let Some(workflow) = workflow {
-                            ui.set_workflow(workflow);
-                        }
                     }
                 }
             }
@@ -418,7 +416,6 @@ where
                         // FIXME: It is very inelegant to be inspecting
                         // core messages to figure out when we're going
                         // to be busy.
-                        let mut is_busy = true;
                         match &core_message {
                             CoordinatorToDeviceMessage::DoKeyGen { .. } => {
                                 ui.set_busy_task(ui::BusyTask::KeyGen)
@@ -429,7 +426,7 @@ where
                             CoordinatorToDeviceMessage::OpenNonceStreams { .. } => {
                                 ui.set_busy_task(ui::BusyTask::GeneratingNonces);
                             }
-                            _ => is_busy = false,
+                            _ => {}
                         }
 
                         outbox.extend(
@@ -438,9 +435,7 @@ where
                                 .expect("failed to process coordinator message"),
                         );
 
-                        if is_busy {
-                            ui.clear_workflow();
-                        }
+                        ui.clear_busy_task();
                     }
                     CoordinatorSendBody::Upgrade(upgrade_message) => match upgrade_message {
                         CoordinatorUpgradeMessage::PrepareUpgrade {

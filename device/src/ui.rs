@@ -16,11 +16,9 @@ pub trait UserInteraction {
 
     fn set_workflow(&mut self, workflow: Workflow);
 
-    /// Use this when you want to redraw the UI right now
-    fn set_busy_task(&mut self, task: BusyTask) {
-        self.set_workflow(Workflow::BusyDoing(task));
-        assert!(self.poll().is_none(), "busy tasks cannot have ui events");
-    }
+    fn set_busy_task(&mut self, task: BusyTask);
+
+    fn clear_busy_task(&mut self);
 
     fn clear_workflow(&mut self) {
         self.set_workflow(Workflow::WaitingFor(WaitingFor::CoordinatorInstruction {
@@ -47,8 +45,8 @@ pub trait UserInteraction {
             | Workflow::DisplayBackup { .. }
             | Workflow::UserPrompt { .. }
             | Workflow::DisplayAddress { .. }
-            | Workflow::BusyDoing(_)
             | Workflow::EnteringBackup { .. }
+            | Workflow::FirmwareUpgrade(_)
             | Workflow::WaitingFor(_) => Workflow::WaitingFor(WaitingFor::CoordinatorInstruction {
                 completed_task: None,
             }),
@@ -82,7 +80,6 @@ pub enum WaitingResponse {
 pub enum Workflow {
     None,
     WaitingFor(WaitingFor),
-    BusyDoing(BusyTask),
     UserPrompt {
         prompt: Prompt,
         animation: AnimationState,
@@ -103,6 +100,7 @@ pub enum Workflow {
         bip32_path: String,
         rand_seed: u32,
     },
+    FirmwareUpgrade(FirmwareUpgradeStatus),
 }
 
 impl Workflow {
@@ -174,7 +172,6 @@ pub enum BusyTask {
     VerifyingShare,
     Loading,
     GeneratingNonces,
-    FirmwareUpgrade(FirmwareUpgradeStatus),
 }
 
 #[derive(Clone, Copy, Debug)]
