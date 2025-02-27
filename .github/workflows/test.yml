@@ -146,6 +146,8 @@ jobs:
         with:
           name: Frostsnapp-${{ github.sha }}-linux-x64
           path: frostsnapp/build/linux/x64/release/bundle
+      - name: Check Cargo.lock not dirty
+        run: git diff --exit-code Cargo.lock
 
   app-image:
     name: Package AppImage
