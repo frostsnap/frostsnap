@@ -29,8 +29,8 @@ pub use frostsnap_coordinator::{
 use frostsnap_coordinator::{DesktopSerial, UsbSerialManager};
 pub use frostsnap_core::message::EncodedSignature;
 pub use frostsnap_core::{
-    AccessStructureId, AccessStructureRef, DeviceId, KeyId, MasterAppkey, SessionHash,
-    SignSessionId, SignTask,
+    AccessStructureId, AccessStructureRef, DeviceId, KeyId, KeygenId, MasterAppkey, SessionHash,
+    SignSessionId, WireSignTask,
 };
 use lazy_static::lazy_static;
 pub use std::collections::BTreeMap;
@@ -265,7 +265,7 @@ impl From<frostsnap_core::coordinator::CoordAccessStructure> for AccessStructure
     }
 }
 impl AccessStructure {
-    pub fn threshold(&self) -> SyncReturn<usize> {
+    pub fn threshold(&self) -> SyncReturn<u16> {
         SyncReturn(self.0.threshold())
     }
 
@@ -928,7 +928,7 @@ impl Coordinator {
         self.0.start_signing(
             access_structure_ref,
             devices.into_iter().collect(),
-            SignTask::Plain { message },
+            WireSignTask::Test { message },
             stream,
         )?;
         Ok(())
@@ -944,7 +944,7 @@ impl Coordinator {
         self.0.start_signing(
             access_structure_ref,
             devices.into_iter().collect(),
-            SignTask::BitcoinTransaction(unsigned_tx.template_tx.deref().clone()),
+            WireSignTask::BitcoinTransaction(unsigned_tx.template_tx.deref().clone()),
             stream,
         )?;
         Ok(())
@@ -1017,8 +1017,8 @@ impl Coordinator {
         SyncReturn(self.0.get_device_name(id))
     }
 
-    pub fn final_keygen_ack(&self) -> Result<AccessStructureRef> {
-        self.0.final_keygen_ack()
+    pub fn final_keygen_ack(&self, keygen_id: KeygenId) -> Result<AccessStructureRef> {
+        self.0.final_keygen_ack(keygen_id)
     }
 
     pub fn check_share_on_device(
@@ -1538,6 +1538,9 @@ impl DeveloperSettings {
     }
 }
 
+#[frb(mirror(KeygenId))]
+pub struct _KeygenId(pub [u8; 16]);
+
 #[frb(mirror(AccessStructureId))]
 pub struct _AccessStructureId(pub [u8; 32]);
 
@@ -1580,6 +1583,7 @@ pub struct _KeyGenState {
     pub session_hash: Option<SessionHash>,
     pub finished: Option<AccessStructureRef>,
     pub aborted: Option<String>,
+    pub keygen_id: KeygenId,
 }
 
 #[frb(mirror(FirmwareUpgradeConfirmState))]
