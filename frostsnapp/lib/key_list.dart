@@ -6,74 +6,35 @@ import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/goal_progress.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/snackbar.dart';
-import 'package:frostsnapp/stream_ext.dart';
-import 'package:frostsnapp/wallet.dart';
 import 'package:frostsnapp/either.dart';
+import 'package:frostsnapp/wallet_list_controller.dart';
 
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'package:flutter/material.dart';
-import 'package:confetti/confetti.dart';
 
 typedef KeyItem = Either<FrostKey, RecoverableKey>;
 
 class KeyList extends StatelessWidget {
-  final Function(BuildContext, FrostKey) itemBuilder;
-  final Function(BuildContext, RecoverableKey) recoverableBuilder;
+  final Widget Function(BuildContext, RecoverableKey) recoverableBuilder;
+  final WalletListController controller;
 
   const KeyList({
     super.key,
-    required this.itemBuilder,
     required this.recoverableBuilder,
+    required this.controller,
   });
 
   @override
   Widget build(BuildContext context) {
-    final keyStateStream = coord.subKeyEvents().toBehaviorSubject().map((
-      value,
-    ) {
-      return value;
-    });
-
-    final Stream<List<KeyItem>> keyStream = keyStateStream.map((keyState) {
-      return keyState.keys
-          .map((frostKey) {
-            return KeyItem.left(frostKey);
-          })
-          .followedBy(
-            keyState.recoverable.map((RecoverableKey recoverable) {
-              return KeyItem.right(recoverable);
-            }),
-          )
-          .toList();
-    });
-
-    return StreamBuilder(
-      stream: keyStream,
-      builder: (context, snap) {
-        final keys = snap.data ?? [];
-        if (keys.isEmpty) {
-          return Center(child: Text("You don't have any keys"));
-        } else {
-          return ListView.builder(
-            shrinkWrap: true,
-            padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-            itemCount: keys.length,
-            itemBuilder: (context, index) {
-              final key = keys[index];
-              return Padding(
-                padding: EdgeInsets.only(bottom: 16.0),
-                child: key.match(
-                  left: (frostKey) {
-                    return itemBuilder(context, frostKey);
-                  },
-                  right: (recoverable) {
-                    return recoverableBuilder(context, recoverable);
-                  },
-                ),
-              );
-            },
-          );
-        }
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        return Column(
+          children:
+              controller.recoverables
+                  .map((key) => recoverableBuilder(context, key))
+                  .toList(),
+        );
       },
     );
   }
@@ -85,67 +46,33 @@ class RecoverableKeyCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cardTheme = Theme.of(context).cardTheme;
     final ShapeBorder cardShape =
-        cardTheme.shape ??
+        Theme.of(context).cardTheme.shape ??
         RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0));
 
-    return Padding(
-      padding: const EdgeInsets.all(4.0),
-      child: DottedBorder(
-        customPath: (size) {
-          final Rect rect = Rect.fromLTWH(0, 0, size.width, size.height);
-          return cardShape.getOuterPath(rect);
-        },
-        strokeWidth: 2,
-        dashPattern: const [8, 4],
-        child: Material(
-          color: theme.colorScheme.surfaceContainerLowest,
-          shape: cardShape,
-          elevation: cardTheme.elevation ?? 1.0,
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Stack(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Column(
-                      children: [
-                        Text(
-                          recoverableKey.name,
-                          style: Theme.of(context).textTheme.titleMedium,
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 8),
-                        AccessStructureSummary(t: recoverableKey.threshold),
-                      ],
-                    ),
-                  ],
-                ),
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      try {
-                        coord.startRecovery(
-                          keyId: recoverableKey.accessStructureRef.keyId,
-                        );
-                      } on FrbAnyhowException catch (e) {
-                        if (context.mounted) {
-                          showErrorSnackbarBottom(context, e.anyhow);
-                        }
-                      }
-                    },
-                    child: const Text("Recover"),
-                  ),
-                ),
-              ],
-            ),
-          ),
+    return DottedBorder(
+      customPath: (size) {
+        final Rect rect = Rect.fromLTWH(0, 0, size.width, size.height);
+        return cardShape.getOuterPath(rect);
+      },
+      strokeWidth: 2,
+      dashPattern: const [8, 4],
+      child: ListTile(
+        title: Text(recoverableKey.name),
+        subtitle: Text('${recoverableKey.threshold}-of-?'),
+        trailing: FilledButton(
+          onPressed: () async {
+            try {
+              coord.startRecovery(
+                keyId: recoverableKey.accessStructureRef.keyId,
+              );
+            } on FrbAnyhowException catch (e) {
+              if (context.mounted) {
+                showErrorSnackbarBottom(context, e.anyhow);
+              }
+            }
+          },
+          child: Text('Recover'),
         ),
       ),
     );
@@ -284,7 +211,8 @@ class KeyCard extends StatelessWidget {
         builder:
             (context) => superWallet.tryWrapInWalletContext(
               keyId: keyId!,
-              child: WalletHome(),
+              child: throw UnimplementedError(),
+              //child: WalletHome(),
             ),
       ),
     );
@@ -331,72 +259,6 @@ class KeyCard extends StatelessWidget {
         titleTextStyle: theme.textTheme.titleLarge,
         contentPadding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
       ),
-    );
-  }
-}
-
-class KeyListWithConfetti extends StatelessWidget {
-  final ConfettiController controller;
-  const KeyListWithConfetti({super.key, required this.controller});
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: KeyList(
-            itemBuilder: (context, key) {
-              final bool isRecovering = key.accessStructureState().field0.every(
-                (accs) => switch (accs) {
-                  AccessStructureState_Recovering() => true,
-                  AccessStructureState_Complete() => false,
-                },
-              );
-              final accessStructureSummaries =
-                  key
-                      .accessStructureState()
-                      .field0
-                      .map(
-                        (accs) => switch (accs) {
-                          AccessStructureState_Recovering(:final field0) => (
-                            field0.threshold,
-                            field0.gotSharesFrom.length,
-                          ),
-                          AccessStructureState_Complete(:final field0) => (
-                            field0.threshold(),
-                            field0.devices().length,
-                          ),
-                        },
-                      )
-                      .toList();
-
-              if (!isRecovering) {
-                return KeyCard(
-                  keyName: key.keyName(),
-                  keyId: key.keyId(),
-                  accessStructureSummaries: accessStructureSummaries,
-                );
-              } else {
-                return RecoveringKeyCard(
-                  keyName: key.keyName(),
-                  keyId: key.keyId(),
-                  accessStructureSummaries: accessStructureSummaries,
-                );
-              }
-            },
-            recoverableBuilder: (context, recoverableKey) {
-              return RecoverableKeyCard(recoverableKey: recoverableKey);
-            },
-          ),
-        ),
-        Center(
-          child: ConfettiWidget(
-            confettiController: controller,
-            blastDirectionality: BlastDirectionality.explosive,
-            numberOfParticles: 50,
-          ),
-        ),
-      ],
     );
   }
 }
