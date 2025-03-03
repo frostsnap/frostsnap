@@ -4,6 +4,7 @@ import 'package:frostsnapp/access_structures.dart';
 import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/goal_progress.dart';
+import 'package:frostsnapp/keygen.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/snackbar.dart';
 import 'package:frostsnapp/stream_ext.dart';
@@ -12,7 +13,6 @@ import 'package:frostsnapp/either.dart';
 
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'package:flutter/material.dart';
-import 'package:confetti/confetti.dart';
 
 typedef KeyItem = Either<FrostKey, RecoverableKey>;
 
@@ -280,12 +280,11 @@ class KeyCard extends StatelessWidget {
     if (superWallet == null || keyId == null || frostKey == null) return null;
     return () => Navigator.push(
       context,
-      MaterialPageRoute(
-        builder:
-            (context) => superWallet.tryWrapInWalletContext(
-              keyId: keyId!,
-              child: WalletHome(),
-            ),
+      createRoute(
+        superWallet.tryWrapInWalletContext(
+          keyId: keyId!,
+          child: WalletHomeWithConfetti(),
+        ),
       ),
     );
   }
@@ -335,9 +334,8 @@ class KeyCard extends StatelessWidget {
   }
 }
 
-class KeyListWithConfetti extends StatelessWidget {
-  final ConfettiController controller;
-  const KeyListWithConfetti({super.key, required this.controller});
+class ActiveAndRecoverableKeyList extends StatelessWidget {
+  const ActiveAndRecoverableKeyList({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -387,13 +385,6 @@ class KeyListWithConfetti extends StatelessWidget {
             recoverableBuilder: (context, recoverableKey) {
               return RecoverableKeyCard(recoverableKey: recoverableKey);
             },
-          ),
-        ),
-        Center(
-          child: ConfettiWidget(
-            confettiController: controller,
-            blastDirectionality: BlastDirectionality.explosive,
-            numberOfParticles: 50,
           ),
         ),
       ],

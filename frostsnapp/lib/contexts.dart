@@ -9,14 +9,17 @@ import 'package:frostsnapp/wallet.dart';
 
 class FrostsnapContext extends InheritedWidget {
   final Stream<String> logStream;
+  final BackupManager backupManager;
+  final AppCtx appCtx;
 
   const FrostsnapContext({
     Key? key,
     required this.logStream,
+    required this.backupManager,
+    required this.appCtx,
     required Widget child,
   }) : super(key: key, child: child);
 
-  // Static method to allow easy access to the Foo instance
   static FrostsnapContext? of(BuildContext context) {
     return context.dependOnInheritedWidgetOfExactType<FrostsnapContext>();
   }
@@ -29,9 +32,9 @@ class FrostsnapContext extends InheritedWidget {
 }
 
 class SuperWalletContext extends InheritedWidget {
-  final Settings settings;
+  final AppCtx appCtx;
 
-  SuperWalletContext({super.key, required super.child, required this.settings});
+  SuperWalletContext({super.key, required super.child, required this.appCtx});
 
   final Map<KeyId, Stream<TxState>> txStreams = HashMap<KeyId, Stream<TxState>>(
     equals: (KeyId a, KeyId b) => keyIdEquals(a, b),
@@ -49,17 +52,18 @@ class SuperWalletContext extends InheritedWidget {
       return null;
     }
     final bitcoinNetwork = frostKey.bitcoinNetwork();
-
     if (bitcoinNetwork == null) {
       return null;
     }
-    final superWallet = settings.getSuperWallet(network: bitcoinNetwork);
+
+    final superWallet = appCtx.settings.getSuperWallet(network: bitcoinNetwork);
     final masterAppkey = frostKey.masterAppkey();
     if (masterAppkey == null) {
       return null;
     }
     final wallet = Wallet(superWallet: superWallet, masterAppkey: masterAppkey);
 
+    // Get or create tx stream
     if (!txStreams.containsKey(keyId)) {
       final stream =
           superWallet
@@ -84,11 +88,25 @@ class SuperWalletContext extends InheritedWidget {
     }
     final wallet = record.$1;
     final txStream = record.$2;
+    final frostKey = wallet.frostKey();
+
+    if (frostKey != null) {
+      appCtx.backupManager.maybeStartBackupRun(
+        accessStructure:
+            frostKey
+                .accessStructures()
+                .first, // assuming one access structure for now.
+      );
+    }
+
+    final backupStream =
+        appCtx.backupManager.backupStream(keyId: keyId).toBehaviorSubject();
 
     return WalletContext(
       key: key,
       wallet: wallet,
       txStream: txStream,
+      backupStream: backupStream,
       child: child,
     );
   }
@@ -103,11 +121,13 @@ class SuperWalletContext extends InheritedWidget {
 class WalletContext extends InheritedWidget {
   final Wallet wallet;
   final Stream<TxState> txStream;
+  final Stream<BackupRun> backupStream;
 
   WalletContext({
     super.key,
     required this.wallet,
     required this.txStream,
+    required this.backupStream,
     required Widget child,
   }) : super(
          // a wallet context implies a key context so we wrap the child in one also
@@ -123,7 +143,12 @@ class WalletContext extends InheritedWidget {
 
   /// so we can clone this context over a new widget tree
   WalletContext wrap(Widget child) {
-    return WalletContext(wallet: wallet, txStream: txStream, child: child);
+    return WalletContext(
+      wallet: wallet,
+      txStream: txStream,
+      backupStream: backupStream,
+      child: child,
+    );
   }
 
   @override

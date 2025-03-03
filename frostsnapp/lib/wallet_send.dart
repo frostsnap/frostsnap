@@ -240,21 +240,18 @@ class _WalletSendPageState extends State<WalletSendPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    final appBar = SliverPadding(
-      padding: EdgeInsets.symmetric(vertical: 0.0, horizontal: 0.0),
-      sliver: SliverAppBar(
-        title: Text('Send Bitcoin'),
-        titleTextStyle: theme.textTheme.titleMedium,
-        centerTitle: true,
-        backgroundColor: theme.colorScheme.surfaceContainerLow,
-        pinned: true,
-        stretch: true,
-        forceMaterialTransparency: true,
-        automaticallyImplyLeading: false,
-        leading: IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: Icon(Icons.close),
-        ),
+    final appBar = SliverAppBar(
+      title: Text('Send Bitcoin'),
+      titleTextStyle: theme.textTheme.titleMedium,
+      centerTitle: true,
+      backgroundColor: theme.colorScheme.surfaceContainerLow,
+      pinned: true,
+      stretch: true,
+      forceMaterialTransparency: true,
+      automaticallyImplyLeading: false,
+      leading: IconButton(
+        onPressed: () => Navigator.pop(context),
+        icon: Icon(Icons.close),
       ),
     );
 
