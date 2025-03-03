@@ -53,6 +53,7 @@ fix: fix-dart
 
 run +ARGS="":
     just build-device
+    just save-image
     just frostsnapp/run {{ARGS}}
 
 check: check-ordinary check-device
