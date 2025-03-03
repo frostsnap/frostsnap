@@ -5,7 +5,7 @@ use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::message::{
     CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, DoKeyGen,
 };
-use frostsnap_core::SignTask;
+use frostsnap_core::WireSignTask;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
@@ -26,7 +26,13 @@ fn keygen_maliciously_replace_public_poly() {
     let keygen_init = run
         .coordinator
         .do_keygen(
-            DoKeyGen::new(device_set, 1, "test".into(), KeyPurpose::Test),
+            DoKeyGen::new(
+                device_set,
+                1,
+                "test".into(),
+                KeyPurpose::Test,
+                &mut test_rng,
+            ),
             &mut test_rng,
         )
         .unwrap();
@@ -80,38 +86,17 @@ fn keygen_maliciously_replace_public_poly() {
 /// The device should reject signing the second request.
 #[test]
 fn send_sign_req_with_same_nonces_but_different_message() {
-    let threshold = 1;
     let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
-    let mut run = Run::generate(1, &mut test_rng);
+    let mut run = Run::start_after_keygen_and_nonces(
+        1,
+        1,
+        &mut DefaultTestEnv,
+        &mut test_rng,
+        KeyPurpose::Test,
+    );
     let device_set = run.device_set();
-    // set up nonces for devices first
-    for &device_id in &device_set {
-        run.extend(
-            run.coordinator
-                .maybe_request_nonce_replenishment(device_id, &mut test_rng),
-        );
-    }
-    run.run_until_finished(&mut DefaultTestEnv, &mut test_rng)
-        .unwrap();
-
-    let keygen_init = run
-        .coordinator
-        .do_keygen(
-            DoKeyGen::new(
-                device_set.clone(),
-                threshold,
-                "my key".to_string(),
-                KeyPurpose::Test,
-            ),
-            &mut test_rng,
-        )
-        .unwrap();
-    run.extend(keygen_init);
-
-    run.run_until_finished(&mut DefaultTestEnv, &mut test_rng)
-        .unwrap();
     let key_data = run.coordinator.iter_keys().next().unwrap();
-    let task1 = SignTask::Plain {
+    let task1 = WireSignTask::Test {
         message: "utxo.club!".into(),
     };
     let (access_structure_ref, _) = key_data.access_structures().next().unwrap().clone();
@@ -133,7 +118,7 @@ fn send_sign_req_with_same_nonces_but_different_message() {
         .unwrap();
 
     let mut sign_req = sign_req.unwrap();
-    sign_req.request_sign.group_sign_req.sign_task = SignTask::Plain {
+    sign_req.request_sign.group_sign_req.sign_task = WireSignTask::Test {
         message: "we lost track of first FROST txn on bitcoin mainnet @ bushbash 2022".into(),
     };
 

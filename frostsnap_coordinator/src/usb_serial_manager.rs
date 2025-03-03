@@ -5,7 +5,7 @@ const USB_PID: u16 = 4097;
 use crate::PortOpenError;
 use crate::{FramedSerialPort, Serial};
 use anyhow::anyhow;
-use frostsnap_comms::ReceiveSerial;
+use frostsnap_comms::{CommsMisc, ReceiveSerial};
 use frostsnap_comms::{
     CoordinatorSendBody, CoordinatorUpgradeMessage, Destination, DeviceSendBody, Sha256Digest,
     FIRMWARE_IMAGE_SIZE, FIRMWARE_NEXT_CHUNK_READY_SIGNAL, FIRMWARE_UPGRADE_CHUNK_LEN,
@@ -396,10 +396,16 @@ impl UsbSerialManager {
                                         body: AppMessageBody::Core(core_msg),
                                     }));
                                 }
-                                DeviceSendBody::AckUpgradeMode => {
+                                DeviceSendBody::_LegacyAckUpgradeMode => {
                                     device_changes.push(DeviceChange::AppMessage(AppMessage {
                                         from: message.from,
-                                        body: AppMessageBody::AckUpgradeMode,
+                                        body: AppMessageBody::Misc(CommsMisc::AckUpgradeMode),
+                                    }))
+                                }
+                                DeviceSendBody::Misc(inner) => {
+                                    device_changes.push(DeviceChange::AppMessage(AppMessage {
+                                        from: message.from,
+                                        body: AppMessageBody::Misc(inner),
                                     }))
                                 }
                             }
@@ -739,7 +745,7 @@ pub struct AppMessage {
 #[derive(Debug, Clone)]
 pub enum AppMessageBody {
     Core(DeviceToCoordinatorMessage),
-    AckUpgradeMode,
+    Misc(CommsMisc),
 }
 
 #[derive(Clone, Copy)]

@@ -101,7 +101,10 @@ impl UiProtocol for CheckShareProtocol {
         &mut self,
         message: frostsnap_core::message::CoordinatorToUserMessage,
     ) {
-        if let CoordinatorToUserMessage::EnteredBackup { device_id, valid } = message {
+        if let CoordinatorToUserMessage::EnteredKnownBackup {
+            valid, device_id, ..
+        } = message
+        {
             if self.device_id == device_id {
                 self.state.outcome = Some(valid);
                 self.emit_state();

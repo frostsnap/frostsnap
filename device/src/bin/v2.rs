@@ -37,7 +37,7 @@ use esp_hal::{
     Blocking,
 };
 use frostsnap_comms::Downstream;
-use frostsnap_core::schnorr_fun::fun::hex;
+use frostsnap_core::{schnorr_fun::fun::hex, SignTask};
 use frostsnap_device::{
     efuse::{self, EfuseHmacKeys},
     esp32_run,
@@ -48,8 +48,8 @@ use frostsnap_device::{
     },
     io::SerialInterface,
     ui::{
-        BusyTask, EnteringBackupStage, FirmwareUpgradeStatus, Prompt, SignPrompt, UiEvent,
-        UserInteraction, WaitingFor, WaitingResponse, Workflow,
+        BusyTask, EnteringBackupStage, FirmwareUpgradeStatus, Prompt, UiEvent, UserInteraction,
+        WaitingFor, WaitingResponse, Workflow,
     },
     DownstreamConnectionState, Instant, UpstreamConnectionState,
 };
@@ -348,13 +348,22 @@ where
                 prompt, animation, ..
             } => {
                 match prompt {
-                    Prompt::Signing(task) => match task {
-                        SignPrompt::Bitcoin {
-                            fee,
-                            foreign_recipients,
+                    Prompt::Signing { phase } => match &phase.sign_task().inner {
+                        SignTask::Test { message } => {
+                            self.display.print(format!("Sign: {message}"))
+                        }
+                        SignTask::Nostr { event } => {
+                            self.display.print(format!("Sign nostr: {}", event.content))
+                        }
+                        SignTask::BitcoinTransaction {
+                            tx_template,
+                            network,
                         } => {
                             use core::fmt::Write;
                             let mut string = String::new();
+                            let prompt_data = tx_template.user_prompt(*network);
+                            let foreign_recipients = prompt_data.foreign_recipients;
+                            let fee = prompt_data.fee;
                             if foreign_recipients.is_empty() {
                                 write!(&mut string, "internal transfer").unwrap();
                             } else {
@@ -365,21 +374,12 @@ where
                             write!(&mut string, "fee: {fee}").unwrap();
                             self.display.print(string);
                         }
-                        SignPrompt::Plain(message) => {
-                            self.display.print(format!("Sign: {message}"))
-                        }
-                        SignPrompt::Nostr(message) => {
-                            self.display.print(format!("Sign nostr: {message}"))
-                        }
                     },
-                    Prompt::KeyGen {
-                        session_hash,
-                        key_name,
-                        t_of_n,
-                    } => {
+                    Prompt::KeyGen { phase } => {
+                        let session_hash = phase.session_hash();
                         self.display.show_keygen_check(
-                            key_name,
-                            *t_of_n,
+                            phase.key_name(),
+                            phase.t_of_n(),
                             &format!(
                                 "{} {}",
                                 hex::encode(&session_hash.0[0..2]),
@@ -394,9 +394,9 @@ where
                         )),
                         None => self.display.print(format!("Confirm name '{}'?", new_name)),
                     },
-                    Prompt::DisplayBackupRequest { key_name, .. } => self
+                    Prompt::DisplayBackupRequest { phase } => self
                         .display
-                        .print(format!("Display the backup for key '{key_name}'?")),
+                        .print(format!("Display the backup for key '{}'?", phase.key_name)),
                     Prompt::ConfirmFirmwareUpgrade {
                         firmware_digest,
                         size,
@@ -404,7 +404,7 @@ where
                         "Confirm firmware upgrade to: \n{firmware_digest}\nsize: {:.2}KB",
                         *size as f32 / 1000.0
                     )),
-                    Prompt::ConfirmLoadBackup(share_backup) => self
+                    Prompt::ConfirmLoadBackup { share_backup, .. } => self
                         .display
                         .show_backup(share_backup.to_bech32_backup(), false),
                     Prompt::WipeDevice => self.display.wipe_data_warning(),
@@ -525,12 +525,11 @@ where
             None => (None, None),
         };
 
-        match self.workflow.borrow_mut() {
-            Workflow::UserPrompt {
-                prompt,
-                animation,
-                confirm_emitted,
-            } => {
+        let mut workflow = self.take_workflow();
+        let mut workflow_finished = false;
+
+        match &mut workflow {
+            Workflow::UserPrompt { prompt, animation } => {
                 let lift_up = if let Some((_, _, lift_up)) = current_touch {
                     lift_up
                 } else {
@@ -546,43 +545,52 @@ where
                             self.display.confirm_bar(progress);
                         }
                         AnimationProgress::Done => {
-                            if !*confirm_emitted {
-                                event = Some(match prompt {
-                                    Prompt::KeyGen { .. } => UiEvent::KeyGenConfirm,
-                                    Prompt::Signing(_) => UiEvent::SigningConfirm,
-                                    Prompt::NewName { new_name, .. } => {
-                                        UiEvent::NameConfirm(new_name.clone())
+                            event = Some(match prompt {
+                                Prompt::KeyGen { phase } => UiEvent::KeyGenConfirm {
+                                    phase: phase.clone(),
+                                },
+                                Prompt::Signing { phase } => UiEvent::SigningConfirm {
+                                    phase: phase.clone(),
+                                },
+                                Prompt::NewName { new_name, .. } => {
+                                    UiEvent::NameConfirm(new_name.clone())
+                                }
+                                Prompt::DisplayBackupRequest { phase } => {
+                                    UiEvent::BackupRequestConfirm {
+                                        phase: phase.clone(),
                                     }
-                                    Prompt::DisplayBackupRequest { .. } => {
-                                        UiEvent::BackupRequestConfirm
-                                    }
-                                    Prompt::ConfirmFirmwareUpgrade { .. } => {
-                                        UiEvent::UpgradeConfirm
-                                    }
-                                    Prompt::ConfirmLoadBackup(secret_share) => {
-                                        UiEvent::EnteredShareBackupConfirm(*secret_share)
-                                    }
-                                    Prompt::WipeDevice => UiEvent::WipeDataConfirm,
-                                });
-                                *confirm_emitted = true;
-                            }
+                                }
+                                Prompt::ConfirmFirmwareUpgrade { .. } => UiEvent::UpgradeConfirm,
+                                Prompt::ConfirmLoadBackup {
+                                    phase,
+                                    share_backup,
+                                } => UiEvent::EnteredShareBackup {
+                                    phase: phase.clone(),
+                                    share_backup: *share_backup,
+                                },
+                                Prompt::WipeDevice => UiEvent::WipeDataConfirm,
+                            });
+
+                            workflow_finished = true;
                         }
                     }
                 }
             }
             Workflow::EnteringBackup(stage) => match stage {
-                EnteringBackupStage::Init => {
+                EnteringBackupStage::Init { phase } => {
                     *stage = EnteringBackupStage::ShareIndex {
+                        phase: phase.clone(),
                         screen: EnterShareIndexScreen::new(
                             self.display.display.bounding_box().size,
                         ),
                     };
                 }
-                EnteringBackupStage::ShareIndex { screen } => {
+                EnteringBackupStage::ShareIndex { phase, screen } => {
                     let mut next_screen = None;
                     if let Some((point, _, lift_up)) = current_touch {
                         if let Some(share_index) = screen.handle_touch(point, now, lift_up) {
                             next_screen = Some(EnteringBackupStage::Share {
+                                phase: phase.clone(),
                                 screen: EnterShareScreen::new(
                                     self.display.display.bounding_box().size,
                                     share_index,
@@ -595,7 +603,7 @@ where
                         *stage = next_screen;
                     }
                 }
-                EnteringBackupStage::Share { screen } => {
+                EnteringBackupStage::Share { phase, screen } => {
                     if let Some((point, gesture, lift_up)) = current_touch {
                         match gesture {
                             TouchGesture::SlideUp | TouchGesture::SlideDown => {
@@ -609,7 +617,13 @@ where
                                 if screen.is_finished() {
                                     match screen.try_create_share() {
                                         Ok(secret_share) => {
-                                            event = Some(UiEvent::EnteredShareBackup(secret_share));
+                                            self.set_workflow(Workflow::prompt(
+                                                Prompt::ConfirmLoadBackup {
+                                                    share_backup: secret_share,
+                                                    phase: phase.clone(),
+                                                },
+                                            ));
+                                            workflow_finished = true;
                                         }
                                         Err(_e) => {
                                             // for now we just make user keep going until they make it right
@@ -626,6 +640,10 @@ where
             _ => { /* no user actions to poll */ }
         }
 
+        if !workflow_finished {
+            self.workflow = workflow;
+        }
+
         if self.changes {
             self.changes = false;
             self.render();
@@ -635,6 +653,7 @@ where
     }
 
     fn set_busy_task(&mut self, task: BusyTask) {
+        self.changes = Some(task) == self.busy_task;
         self.busy_task = Some(task);
         // HACK: we only display busy task when workflow is None so poll only then to avoid triggering ui events.
         if matches!(self.workflow, Workflow::None) {

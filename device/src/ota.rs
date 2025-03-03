@@ -7,8 +7,8 @@ use alloc::boxed::Box;
 use bincode::config::{Fixint, LittleEndian};
 use esp_hal::sha::Sha;
 use frostsnap_comms::{
-    DeviceSendBody, Sha256Digest, BAUDRATE, FIRMWARE_IMAGE_SIZE, FIRMWARE_NEXT_CHUNK_READY_SIGNAL,
-    FIRMWARE_UPGRADE_CHUNK_LEN,
+    CommsMisc, DeviceSendBody, Sha256Digest, BAUDRATE, FIRMWARE_IMAGE_SIZE,
+    FIRMWARE_NEXT_CHUNK_READY_SIGNAL, FIRMWARE_UPGRADE_CHUNK_LEN,
 };
 use nb::block;
 
@@ -249,7 +249,7 @@ impl FirmwareUpgradeMode<'_> {
 
                         if finished {
                             *state = State::WaitingToEnterUpgradeMode;
-                            Some(DeviceSendBody::AckUpgradeMode)
+                            Some(DeviceSendBody::Misc(CommsMisc::AckUpgradeMode))
                         } else {
                             None
                         }
@@ -266,7 +266,7 @@ impl FirmwareUpgradeMode<'_> {
                     ui.set_workflow(ui::Workflow::FirmwareUpgrade(
                         ui::FirmwareUpgradeStatus::Passive,
                     ));
-                    Some(DeviceSendBody::AckUpgradeMode)
+                    Some(DeviceSendBody::Misc(CommsMisc::AckUpgradeMode))
                 } else {
                     None
                 }

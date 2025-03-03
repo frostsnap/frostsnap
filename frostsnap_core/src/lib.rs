@@ -15,9 +15,8 @@ pub mod tweak;
 
 use core::ops::RangeBounds;
 
-use device::SignerState;
 use schnorr_fun::{
-    frost::{chilldkg::encpedpop, PartyIndex, SharedKey},
+    frost::{self, chilldkg::encpedpop, PartyIndex, SharedKey},
     fun::{hash::HashAdd, prelude::*},
 };
 pub use sha2;
@@ -103,27 +102,6 @@ pub enum Error {
 
 impl Error {
     #[cfg(feature = "coordinator")]
-    pub fn coordinator_message_kind(
-        state: &Option<coordinator::CoordinatorState>,
-        kind: &'static str,
-    ) -> Self {
-        Self::MessageKind {
-            state: state.as_ref().map(|x| x.name()).unwrap_or("None"),
-            kind,
-        }
-    }
-
-    pub fn signer_message_kind(
-        state: &Option<SignerState>,
-        message: &CoordinatorToDeviceMessage,
-    ) -> Self {
-        Self::MessageKind {
-            state: state.as_ref().map(|x| x.name()).unwrap_or("None"),
-            kind: message.kind(),
-        }
-    }
-
-    #[cfg(feature = "coordinator")]
     pub fn coordinator_invalid_message(kind: &'static str, reason: impl ToString) -> Self {
         Self::InvalidMessage {
             kind,
@@ -182,21 +160,14 @@ pub enum DoKeyGenError {
 
 #[derive(Debug, Clone)]
 pub enum ActionError {
-    WrongState {
-        in_state: &'static str,
-        action: &'static str,
-    },
     StateInconsistent(String),
 }
 
 impl core::fmt::Display for ActionError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            ActionError::WrongState { in_state, action } => {
-                write!(f, "Can not {} while in {}", action, in_state)
-            }
             ActionError::StateInconsistent(error) => {
-                write!(f, "action state inconsistent: {error}")
+                write!(f, "state inconsistent: {error}")
             }
         }
     }
@@ -342,12 +313,20 @@ impl_fromstr_deserialize! {
     }
 }
 
-#[derive(Clone, Debug, bincode::Encode, bincode::Decode, Ord, PartialOrd, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, bincode::Encode, bincode::Decode, Ord, PartialOrd, PartialEq, Eq)]
 pub struct ShareImage {
     pub share_index: PartyIndex,
     pub point: Point<Normal, Public, Zero>,
 }
 
+impl ShareImage {
+    pub fn from_secret(secret_share: frost::SecretShare) -> Self {
+        Self {
+            share_index: secret_share.index,
+            point: g!(secret_share.share * G).normalize(),
+        }
+    }
+}
 // Uniquely identifies an access structure for a particular `master_appkey`.
 #[derive(
     Debug, Clone, Copy, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash, Ord, PartialOrd,
@@ -373,8 +352,8 @@ impl AccessStructureRef {
 pub struct SignSessionId(pub [u8; 32]);
 
 impl_display_debug_serialize! {
-    fn to_bytes(nonce_stream_id: &SignSessionId) -> [u8;32] {
-        nonce_stream_id.0
+    fn to_bytes(value: &SignSessionId) -> [u8;32] {
+        value.0
     }
 }
 
@@ -395,5 +374,23 @@ impl<T: Clone> Versioned<&T> {
         match self {
             Versioned::V0(v) => Versioned::V0((*v).clone()),
         }
+    }
+}
+
+/// short randomly sampled id for a coordinator to refer to a key generation session before the key
+/// generation is complete.
+#[derive(Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash, Default)]
+pub struct KeygenId(pub [u8; 16]);
+
+impl_display_debug_serialize! {
+    fn to_bytes(keygen_id: &KeygenId) -> [u8;16] {
+        keygen_id.0
+    }
+}
+
+impl_fromstr_deserialize! {
+    name => "key generation id",
+    fn from_bytes(bytes: [u8;16]) -> KeygenId {
+        KeygenId(bytes)
     }
 }

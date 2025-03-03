@@ -375,7 +375,24 @@ pub enum DeviceSendBody {
     SetName { name: String },
     DisconnectDownstream,
     NeedName,
+    _LegacyAckUpgradeMode, // Used by earliest devices
+    Misc(CommsMisc),
+}
+
+#[derive(Encode, Decode, Debug, Clone)]
+pub enum CommsMisc {
+    /// A device has ack'd going into upgrade mode.
     AckUpgradeMode,
+    /// Tells the coordinator that a device has confirmed to show it's backup.
+    /// core doesn't provide a way to tell the coordinator that showing the backup was confirmed so
+    /// we have this here.
+    DisplayBackupConfrimed,
+}
+
+impl Gist for CommsMisc {
+    fn gist(&self) -> String {
+        format!("{:?}", self)
+    }
 }
 
 #[derive(Encode, Decode, Debug, Clone, PartialEq)]
@@ -386,7 +403,7 @@ pub enum WireDeviceSendBody {
     SetName { name: String },
     DisconnectDownstream,
     NeedName,
-    AckUpgradeMode,
+    _LegacyAckUpgradeMode, // Used by earliest devices
     EncapsV0(EncapsBody),
 }
 
@@ -430,7 +447,7 @@ impl WireDeviceSendBody {
             WireDeviceSendBody::SetName { name } => DeviceSendBody::SetName { name },
             WireDeviceSendBody::DisconnectDownstream => DeviceSendBody::DisconnectDownstream,
             WireDeviceSendBody::NeedName => DeviceSendBody::NeedName,
-            WireDeviceSendBody::AckUpgradeMode => DeviceSendBody::AckUpgradeMode,
+            WireDeviceSendBody::_LegacyAckUpgradeMode => DeviceSendBody::_LegacyAckUpgradeMode,
             WireDeviceSendBody::EncapsV0(encaps) => {
                 let (msg, _) = bincode::decode_from_slice(encaps.0.as_ref(), BINCODE_CONFIG)?;
                 msg
@@ -444,11 +461,7 @@ impl Gist for DeviceSendBody {
         match self {
             DeviceSendBody::Core(msg) => msg.gist(),
             DeviceSendBody::Debug { message } => format!("debug: {message}"),
-            DeviceSendBody::DisconnectDownstream
-            | DeviceSendBody::NeedName
-            | DeviceSendBody::Announce { .. }
-            | DeviceSendBody::AckUpgradeMode { .. }
-            | DeviceSendBody::SetName { .. } => format!("{:?}", self),
+            _ => format!("{:?}", self),
         }
     }
 }

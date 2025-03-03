@@ -3,10 +3,10 @@ use crate::nonce_stream::CoordNonceStreamState;
 use crate::tweak::BitcoinBip32Path;
 use crate::{
     nonce_stream::NonceStreamSegment, AccessStructureId, AccessStructureRef, CheckedSignTask,
-    CoordShareDecryptionContrib, Gist, KeyId, MasterAppkey, SessionHash, ShareImage, SignSessionId,
-    SignTaskError, Vec,
+    CoordShareDecryptionContrib, Gist, KeygenId, MasterAppkey, SessionHash, ShareImage,
+    SignSessionId, SignTaskError, Vec,
 };
-use crate::{DeviceId, SignTask};
+use crate::{DeviceId, WireSignTask};
 use alloc::{
     boxed::Box,
     collections::{BTreeMap, BTreeSet},
@@ -15,8 +15,8 @@ use alloc::{
 use bitcoin::address::{Address, NetworkChecked};
 use core::num::NonZeroU32;
 use schnorr_fun::binonce;
+use schnorr_fun::frost::SignatureShare;
 use schnorr_fun::frost::{chilldkg::encpedpop, PartyIndex};
-use schnorr_fun::frost::{SecretShare, SignatureShare};
 use schnorr_fun::fun::prelude::*;
 use schnorr_fun::fun::Point;
 use schnorr_fun::Signature;
@@ -34,6 +34,7 @@ pub enum DeviceSend {
 pub enum CoordinatorToDeviceMessage {
     DoKeyGen(DoKeyGen),
     FinishKeyGen {
+        keygen_id: KeygenId,
         agg_input: encpedpop::AggKeygenInput,
     },
     RequestSign(RequestSign),
@@ -41,12 +42,11 @@ pub enum CoordinatorToDeviceMessage {
         streams: Vec<CoordNonceStreamState>,
     },
     DisplayBackup {
-        key_id: KeyId,
-        access_structure_id: AccessStructureId,
+        access_structure_ref: AccessStructureRef,
         coord_share_decryption_contrib: CoordShareDecryptionContrib,
         party_index: PartyIndex,
     },
-    CheckShareBackup,
+    LoadKnownBackup(Box<LoadKnownBackup>),
     VerifyAddress {
         master_appkey: MasterAppkey,
         derivation_index: u32,
@@ -56,6 +56,7 @@ pub enum CoordinatorToDeviceMessage {
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub struct DoKeyGen {
+    pub keygen_id: KeygenId,
     pub device_to_share_index: BTreeMap<DeviceId, NonZeroU32>,
     pub threshold: u16,
     pub key_name: String,
@@ -68,6 +69,7 @@ impl DoKeyGen {
         threshold: u16,
         key_name: String,
         purpose: KeyPurpose,
+        rng: &mut impl rand_core::RngCore, // for the keygen id
     ) -> Self {
         let device_to_share_index: BTreeMap<_, _> = devices
             .iter()
@@ -80,17 +82,30 @@ impl DoKeyGen {
             })
             .collect();
 
+        let mut id = [0u8; 16];
+        rng.fill_bytes(&mut id[..]);
+
         Self {
             device_to_share_index,
             threshold,
             key_name,
             purpose,
+            keygen_id: KeygenId::from_bytes(id),
         }
     }
 }
 
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+pub struct LoadKnownBackup {
+    pub access_structure_ref: AccessStructureRef,
+    pub key_name: String,
+    pub purpose: KeyPurpose,
+    pub threshold: u16,
+    pub share_image: ShareImage,
+}
+
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
-pub struct GroupSignReq<ST = SignTask> {
+pub struct GroupSignReq<ST = WireSignTask> {
     pub parties: BTreeSet<PartyIndex>,
     pub agg_nonces: Vec<binonce::Nonce<Zero>>,
     pub sign_task: ST,
@@ -103,14 +118,18 @@ impl<ST> GroupSignReq<ST> {
     }
 }
 
-impl GroupSignReq<SignTask> {
-    pub fn check(self, rootkey: Point) -> Result<GroupSignReq<CheckedSignTask>, SignTaskError> {
+impl GroupSignReq<WireSignTask> {
+    pub fn check(
+        self,
+        rootkey: Point,
+        purpose: KeyPurpose,
+    ) -> Result<GroupSignReq<CheckedSignTask>, SignTaskError> {
         let master_appkey = MasterAppkey::derive_from_rootkey(rootkey);
 
         Ok(GroupSignReq {
             parties: self.parties,
             agg_nonces: self.agg_nonces,
-            sign_task: self.sign_task.check(master_appkey)?,
+            sign_task: self.sign_task.check(master_appkey, purpose)?,
             access_structure_id: self.access_structure_id,
         })
     }
@@ -135,7 +154,7 @@ impl CoordinatorToDeviceMessage {
             CoordinatorToDeviceMessage::FinishKeyGen { .. } => "FinishKeyGen",
             CoordinatorToDeviceMessage::RequestSign { .. } => "RequestSign",
             CoordinatorToDeviceMessage::DisplayBackup { .. } => "DisplayBackup",
-            CoordinatorToDeviceMessage::CheckShareBackup { .. } => "CheckShareBackup",
+            CoordinatorToDeviceMessage::LoadKnownBackup { .. } => "LoadKnownBackup",
             CoordinatorToDeviceMessage::VerifyAddress { .. } => "VerifyAddress",
             CoordinatorToDeviceMessage::RequestHeldShares => "RequestHeldShares",
         }
@@ -148,17 +167,18 @@ pub enum DeviceToCoordinatorMessage {
         segments: Vec<NonceStreamSegment>,
     },
     KeyGenResponse(KeyGenResponse),
-    KeyGenAck(SessionHash),
+    KeyGenAck(KeyGenAck),
     SignatureShare {
         session_id: SignSessionId,
         signature_shares: Vec<SignatureShare>,
         replenish_nonces: Option<NonceStreamSegment>,
     },
-    DisplayBackupConfirmed,
-    CheckShareBackup {
-        share_image: ShareImage,
-    },
     HeldShares(Vec<HeldShare>),
+    LoadKnownBackupResult {
+        access_structure_ref: AccessStructureRef,
+        share_index: PartyIndex,
+        success: bool,
+    },
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
@@ -170,7 +190,11 @@ pub struct HeldShare {
     pub purpose: KeyPurpose,
 }
 
-pub type KeyGenResponse = encpedpop::KeygenInput;
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
+pub struct KeyGenResponse {
+    pub keygen_id: KeygenId,
+    pub input: encpedpop::KeygenInput,
+}
 
 impl Gist for DeviceToCoordinatorMessage {
     fn gist(&self) -> String {
@@ -184,10 +208,9 @@ impl DeviceToCoordinatorMessage {
         match self {
             NonceResponse { .. } => "NonceResponse",
             KeyGenResponse(_) => "KeyGenProvideShares",
-            KeyGenAck(_) => "KeyGenAck",
+            KeyGenAck { .. } => "KeyGenAck",
             SignatureShare { .. } => "SignatureShare",
-            DisplayBackupConfirmed => "DisplayBackupConfirmed",
-            CheckShareBackup { .. } => "CheckShareBackup",
+            LoadKnownBackupResult { .. } => "LoadKnownBackupResult",
             HeldShares(_) => "HeldShares",
         }
     }
@@ -195,13 +218,15 @@ impl DeviceToCoordinatorMessage {
 
 #[derive(Clone, Debug)]
 pub enum CoordinatorToUserMessage {
-    KeyGen(CoordinatorToUserKeyGenMessage),
-    Signing(CoordinatorToUserSigningMessage),
-    DisplayBackupConfirmed {
-        device_id: DeviceId,
+    KeyGen {
+        keygen_id: KeygenId,
+        inner: CoordinatorToUserKeyGenMessage,
     },
-    EnteredBackup {
+    Signing(CoordinatorToUserSigningMessage),
+    EnteredKnownBackup {
         device_id: DeviceId,
+        access_structure_ref: AccessStructureRef,
+        share_index: PartyIndex,
         /// whether it was a valid backup for this key
         valid: bool,
     },
@@ -212,10 +237,9 @@ impl CoordinatorToUserMessage {
     pub fn kind(&self) -> &'static str {
         use CoordinatorToUserMessage::*;
         match self {
-            KeyGen(_) => "KeyGen",
+            KeyGen { .. } => "KeyGen",
             Signing(_) => "Signing",
-            DisplayBackupConfirmed { .. } => "DisplayBackupConfirmed",
-            EnteredBackup { .. } => "EnteredBackup",
+            EnteredKnownBackup { .. } => "EnteredKnownBackup",
             PromptRecoverShare { .. } => "PromptRecoverAccessStructure",
         }
     }
@@ -261,30 +285,27 @@ pub enum CoordinatorToUserKeyGenMessage {
     },
 }
 
+/// Messages to the user often to ask them to confirm things. Often confirmations contain what we
+/// call a "phase" which is both the data that describes the action and what will be passed back
+/// into the core module once the action is confirmed to make progress.
 #[derive(Clone, Debug)]
 pub enum DeviceToUserMessage {
     CheckKeyGen {
-        key_id: KeyId,
-        session_hash: SessionHash,
-        key_name: String,
-        t_of_n: (u16, u16),
+        phase: Box<crate::device::KeyGenPhase2>,
     },
     SignatureRequest {
-        sign_task: CheckedSignTask,
-    },
-    Canceled {
-        task: TaskKind,
+        phase: Box<crate::device::SignPhase1>,
     },
     DisplayBackupRequest {
-        key_name: String,
-        key_id: KeyId,
+        phase: Box<crate::device::BackupDisplayPhase>,
     },
     DisplayBackup {
         key_name: String,
         backup: String,
     },
-    EnterBackup,
-    EnteredBackup(SecretShare),
+    EnterBackup {
+        phase: Box<crate::device::LoadKnownBackupPhase>,
+    },
     VerifyAddress {
         address: Address<NetworkChecked>,
         bip32_path: BitcoinBip32Path,
@@ -322,4 +343,25 @@ pub struct DeviceSignReq {
     pub rootkey: Point,
     /// The share decryption contribution from the coordinator.
     pub coord_share_decryption_contrib: CoordShareDecryptionContrib,
+}
+
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+pub struct KeyGenAck {
+    pub ack_session_hash: SessionHash,
+    pub keygen_id: KeygenId,
+}
+
+impl IntoIterator for KeyGenAck {
+    type Item = DeviceSend;
+    type IntoIter = core::iter::Once<DeviceSend>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        core::iter::once(DeviceSend::ToCoordinator(Box::new(self.into())))
+    }
+}
+
+impl From<KeyGenAck> for DeviceToCoordinatorMessage {
+    fn from(value: KeyGenAck) -> Self {
+        DeviceToCoordinatorMessage::KeyGenAck(value)
+    }
 }
