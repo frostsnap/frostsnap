@@ -51,8 +51,7 @@ fix: fix-dart
     cargo fmt --all
 
 
-run +ARGS="":
-    just build-device
+run +ARGS="": build-device save-image
     just frostsnapp/run {{ARGS}}
 
 check: check-ordinary check-device
