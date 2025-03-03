@@ -1,7 +1,12 @@
 use crate::{Completion, FirmwareBin, Sink, UiProtocol};
-use frostsnap_comms::{CoordinatorSendBody, CoordinatorSendMessage, CoordinatorUpgradeMessage};
+use frostsnap_core::Gist;
+
+use frostsnap_comms::{
+    CommsMisc, CoordinatorSendBody, CoordinatorSendMessage, CoordinatorUpgradeMessage,
+};
 use frostsnap_core::DeviceId;
 use std::collections::BTreeSet;
+use tracing::error;
 
 pub struct FirmwareUpgradeProtocol {
     state: FirmwareUpgradeConfirmState,
@@ -64,10 +69,20 @@ impl UiProtocol for FirmwareUpgradeProtocol {
         }
     }
 
-    fn process_upgrade_mode_ack(&mut self, from: DeviceId) {
-        if !self.state.confirmations.contains(&from) {
-            self.state.confirmations.push(from);
-            self.emit_state()
+    fn process_comms_message(&mut self, from: DeviceId, message: CommsMisc) {
+        match message {
+            CommsMisc::AckUpgradeMode => {
+                if !self.state.confirmations.contains(&from) {
+                    self.state.confirmations.push(from);
+                    self.emit_state()
+                }
+            }
+            _msg => {
+                error!(
+                    "unexpected comms message during firmware upgrade: {}",
+                    _msg.gist()
+                );
+            }
         }
     }
 

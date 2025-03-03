@@ -18,8 +18,8 @@ use frostsnap_coordinator::frostsnap_core::device::KeyPurpose;
 use frostsnap_coordinator::frostsnap_core::message::{
     CoordinatorToUserMessage, DoKeyGen, RecoverShare,
 };
-use frostsnap_coordinator::frostsnap_core::SymmetricKey;
 use frostsnap_coordinator::frostsnap_core::{self, SignSessionId};
+use frostsnap_coordinator::frostsnap_core::{KeygenId, SymmetricKey};
 use frostsnap_coordinator::frostsnap_persist::DeviceNames;
 use frostsnap_coordinator::persist::Persisted;
 use frostsnap_coordinator::verify_address::VerifyAddressProtocol;
@@ -29,7 +29,7 @@ use frostsnap_coordinator::{
 use frostsnap_coordinator::{AppMessageBody, FirmwareBin, UiProtocol, UsbSender, UsbSerialManager};
 use frostsnap_coordinator::{Completion, DeviceChange};
 use frostsnap_core::{
-    coordinator::FrostCoordinator, AccessStructureRef, DeviceId, KeyId, SignTask,
+    coordinator::FrostCoordinator, AccessStructureRef, DeviceId, KeyId, WireSignTask,
 };
 use rand::thread_rng;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -263,11 +263,7 @@ impl FfiCoordinator {
                             usb_sender.send(message);
                         }
 
-                        Self::try_finish_protocol(
-                            usb_sender.clone(),
-                            coordinator.MUTATE_NO_PERSIST(),
-                            &mut ui_protocol_loop,
-                        );
+                        Self::try_finish_protocol(usb_sender.clone(), &mut ui_protocol_loop);
                     }
                 };
 
@@ -302,9 +298,9 @@ impl FfiCoordinator {
                                 );
                             }
                         }
-                        AppMessageBody::AckUpgradeMode => {
+                        AppMessageBody::Misc(comms_misc) => {
                             if let Some(ui_protocol) = &mut *ui_protocol_loop {
-                                ui_protocol.process_upgrade_mode_ack(app_message.from);
+                                ui_protocol.process_comms_message(app_message.from, comms_misc);
                             }
                         }
                     }
@@ -458,7 +454,13 @@ impl FfiCoordinator {
             .map(|device| device.id)
             .collect();
 
-        let do_keygen = DoKeyGen::new(devices, threshold, key_name, purpose);
+        let do_keygen = DoKeyGen::new(
+            devices,
+            threshold,
+            key_name,
+            purpose,
+            &mut rand::thread_rng(),
+        );
 
         let ui_protocol = frostsnap_coordinator::keygen::KeyGen::new(
             SinkWrap(sink),
@@ -498,7 +500,7 @@ impl FfiCoordinator {
         &self,
         access_structure_ref: AccessStructureRef,
         devices: BTreeSet<DeviceId>,
-        task: SignTask,
+        task: WireSignTask,
         sink: StreamSink<api::SigningState>,
     ) -> anyhow::Result<()> {
         let mut coordinator = self.coordinator.lock().unwrap();
@@ -669,11 +671,7 @@ impl FfiCoordinator {
         if let Some(proto) = &mut *proto_opt {
             proto.cancel();
             assert!(
-                Self::try_finish_protocol(
-                    self.usb_sender.clone(),
-                    self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
-                    &mut proto_opt
-                ),
+                Self::try_finish_protocol(self.usb_sender.clone(), &mut proto_opt),
                 "protocol must be finished after cancel"
             );
         }
@@ -681,7 +679,6 @@ impl FfiCoordinator {
 
     fn try_finish_protocol(
         usb_sender: UsbSender,
-        coordinator: &mut FrostCoordinator,
         proto_opt: &mut Option<Box<dyn UiProtocol>>,
     ) -> bool {
         if let Some(proto) = proto_opt {
@@ -699,7 +696,6 @@ impl FfiCoordinator {
                         if send_cancel_to_all_devices {
                             usb_sender.send_cancel_all();
                         }
-                        coordinator.cancel();
                         *proto_opt = None;
                         return true;
                     }
@@ -734,12 +730,9 @@ impl FfiCoordinator {
         self.device_names.lock().unwrap().get(id)
     }
 
-    pub fn final_keygen_ack(&self) -> Result<AccessStructureRef> {
+    pub fn final_keygen_ack(&self, keygen_id: KeygenId) -> Result<AccessStructureRef> {
         let mut coordinator = self.coordinator.lock().unwrap();
         let mut db = self.db.lock().unwrap();
-        let accs_ref = coordinator.staged_mutate(&mut db, |coordinator| {
-            Ok(coordinator.final_keygen_ack(TEMP_KEY, &mut rand::thread_rng())?)
-        })?;
 
         let mut proto = self.ui_protocol.lock().unwrap();
         let keygen = proto
@@ -748,6 +741,10 @@ impl FfiCoordinator {
             .as_mut_any()
             .downcast_mut::<frostsnap_coordinator::keygen::KeyGen>()
             .ok_or(anyhow!("somehow UI was not in KeyGen state"))?;
+
+        let accs_ref = coordinator.staged_mutate(&mut db, |coordinator| {
+            Ok(coordinator.final_keygen_ack(keygen_id, TEMP_KEY, &mut rand::thread_rng())?)
+        })?;
 
         keygen.final_keygen_ack(accs_ref);
 
@@ -759,11 +756,7 @@ impl FfiCoordinator {
         }
 
         assert!(
-            Self::try_finish_protocol(
-                self.usb_sender.clone(),
-                coordinator.MUTATE_NO_PERSIST(),
-                &mut proto
-            ),
+            Self::try_finish_protocol(self.usb_sender.clone(), &mut proto),
             "keygen must be finished after we call final ack"
         );
         Ok(accs_ref)

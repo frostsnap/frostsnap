@@ -2,9 +2,15 @@ use crate::graphics::{
     animation::AnimationState,
     widgets::{EnterShareIndexScreen, EnterShareScreen},
 };
-use alloc::string::{String, ToString};
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+};
 use frostsnap_comms::Sha256Digest;
-use frostsnap_core::{schnorr_fun::frost::SecretShare, KeyId, SessionHash};
+use frostsnap_core::{
+    device::{BackupDisplayPhase, KeyGenPhase2, LoadKnownBackupPhase, SignPhase1},
+    schnorr_fun::frost::SecretShare,
+};
 
 pub trait UserInteraction {
     fn set_downstream_connection_state(&mut self, state: crate::DownstreamConnectionState);
@@ -83,7 +89,6 @@ pub enum Workflow {
     UserPrompt {
         prompt: Prompt,
         animation: AnimationState,
-        confirm_emitted: bool,
     },
     Debug(String),
     NamingDevice {
@@ -112,7 +117,6 @@ impl Workflow {
         Self::UserPrompt {
             prompt,
             animation: AnimationState::new(hold_duration),
-            confirm_emitted: false,
         }
     }
 }
@@ -120,9 +124,17 @@ impl Workflow {
 #[derive(Debug)]
 pub enum EnteringBackupStage {
     //HACK So the creator of the workflow doesn't have to construct the screen
-    Init,
-    ShareIndex { screen: EnterShareIndexScreen },
-    Share { screen: EnterShareScreen },
+    Init {
+        phase: Box<frostsnap_core::device::LoadKnownBackupPhase>,
+    },
+    ShareIndex {
+        phase: Box<frostsnap_core::device::LoadKnownBackupPhase>,
+        screen: EnterShareIndexScreen,
+    },
+    Share {
+        phase: Box<frostsnap_core::device::LoadKnownBackupPhase>,
+        screen: EnterShareScreen,
+    },
 }
 
 impl Default for Workflow {
@@ -134,38 +146,40 @@ impl Default for Workflow {
 #[derive(Clone, Debug)]
 pub enum Prompt {
     KeyGen {
-        session_hash: SessionHash,
-        key_name: String,
-        t_of_n: (u16, u16),
+        phase: Box<KeyGenPhase2>,
     },
-    Signing(SignPrompt),
+    Signing {
+        phase: Box<SignPhase1>,
+    },
     NewName {
         old_name: Option<String>,
         new_name: String,
     },
     DisplayBackupRequest {
-        key_name: String,
-        key_id: KeyId,
+        phase: Box<BackupDisplayPhase>,
     },
     ConfirmFirmwareUpgrade {
         firmware_digest: Sha256Digest,
         size: u32,
     },
-    ConfirmLoadBackup(SecretShare),
+    ConfirmLoadBackup {
+        share_backup: SecretShare,
+        phase: Box<frostsnap_core::device::LoadKnownBackupPhase>,
+    },
     WipeDevice,
 }
 
-#[derive(Clone, Debug)]
-pub enum SignPrompt {
-    Bitcoin {
-        fee: bitcoin::Amount,
-        foreign_recipients: alloc::vec::Vec<(bitcoin::Address, bitcoin::Amount)>,
-    },
-    Plain(String),
-    Nostr(String),
-}
+// #[derive(Clone, Debug)]
+// pub enum SignPrompt {
+//     Bitcoin {
+//         fee: bitcoin::Amount,
+//         foreign_recipients: alloc::vec::Vec<(bitcoin::Address, bitcoin::Amount)>,
+//     },
+//     Plain(String),
+//     Nostr(String),
+// }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum BusyTask {
     KeyGen,
     Signing,
@@ -183,12 +197,20 @@ pub enum FirmwareUpgradeStatus {
 
 #[derive(Clone, Debug)]
 pub enum UiEvent {
-    KeyGenConfirm,
-    SigningConfirm,
+    KeyGenConfirm {
+        phase: Box<KeyGenPhase2>,
+    },
+    SigningConfirm {
+        phase: Box<SignPhase1>,
+    },
     NameConfirm(String),
-    EnteredShareBackup(SecretShare),
-    EnteredShareBackupConfirm(SecretShare),
-    BackupRequestConfirm,
+    EnteredShareBackup {
+        phase: Box<LoadKnownBackupPhase>,
+        share_backup: SecretShare,
+    },
+    BackupRequestConfirm {
+        phase: Box<BackupDisplayPhase>,
+    },
     UpgradeConfirm,
     WipeDataConfirm,
 }
