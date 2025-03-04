@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:frostsnapp/backup_workflow.dart';
 import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/psbt.dart';
@@ -24,6 +26,120 @@ class Wallet {
 
   KeyId keyId() {
     return api.masterAppkeyExtToKeyId(masterAppkey: masterAppkey);
+  }
+}
+
+class WalletHomeWithConfetti extends StatefulWidget {
+  final bool? newKey;
+  const WalletHomeWithConfetti({super.key, this.newKey});
+  @override
+  State<WalletHomeWithConfetti> createState() => _WalletHomeWithConfettiState();
+}
+
+class _WalletHomeWithConfettiState extends State<WalletHomeWithConfetti> {
+  late final ConfettiController confettiController;
+
+  @override
+  void initState() {
+    super.initState();
+    confettiController = ConfettiController(
+      duration: const Duration(seconds: 4),
+    );
+
+    if (widget.newKey == true) {
+      confettiController.play();
+      Future.delayed(const Duration(seconds: 1), () {
+        if (mounted) {
+          _showBackupDialog();
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    confettiController.dispose();
+    super.dispose();
+  }
+
+  void _showBackupDialog() {
+    final walletCtx = WalletContext.of(context)!;
+    final accessStructure =
+        walletCtx.wallet.frostKey()!.accessStructures().first;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return BackdropFilter(
+          filter: blurFilter,
+          child: AlertDialog(
+            title: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: const [
+                Text(
+                  'Wallet Created!',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                Icon(Icons.checklist, size: 40),
+              ],
+            ),
+            content: const Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Now let\'s secure this wallet by storing these devices in geographically separate locations.',
+                ),
+                SizedBox(height: 12),
+                Text(
+                  'We will also create a backup for each device as an ultimate backup.',
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                },
+                child: const Text('Later'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  showBottomSheetOrDialog(
+                    context,
+                    builder:
+                        (context) => walletCtx.wrap(
+                          BackupChecklist(
+                            accessStructure: accessStructure,
+                            showAppBar: true,
+                          ),
+                        ),
+                  );
+                },
+                child: const Text('Secure Wallet'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        const WalletHome(),
+        Center(
+          child: ConfettiWidget(
+            confettiController: confettiController,
+            blastDirectionality: BlastDirectionality.explosive,
+            numberOfParticles: 100,
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -74,32 +190,13 @@ class WalletHome extends StatelessWidget {
               ),
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: () {
-                    final mediaSize = MediaQuery.sizeOf(context);
-                    if (mediaSize.width < 600) {
-                      showModalBottomSheet(
-                        context: context,
-                        isScrollControlled: true,
-                        useSafeArea: true,
-                        isDismissible: true,
-                        showDragHandle: false,
+                  onPressed:
+                      () => showBottomSheetOrDialog(
+                        context,
                         builder: (context) => walletCtx.wrap(WalletSendPage()),
-                      );
-                    } else {
-                      showDialog(
-                        context: context,
-                        builder:
-                            (context) => Dialog(
-                              backgroundColor:
-                                  theme.colorScheme.surfaceContainer,
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(maxWidth: 560),
-                                child: walletCtx.wrap(WalletSendPage()),
-                              ),
-                            ),
-                      );
-                    }
-                  },
+                        dialogBackgroundColor:
+                            theme.colorScheme.surfaceContainer,
+                      ),
                   label: Text('Send'),
                   icon: Icon(Icons.north_east),
                   style: ElevatedButton.styleFrom(
@@ -362,7 +459,6 @@ class TxItem extends StatelessWidget {
 
 class TxList extends StatefulWidget {
   const TxList({super.key});
-
   @override
   State<TxList> createState() => _TxListState();
 }
@@ -389,6 +485,7 @@ class _TxListState extends State<TxList> {
 
   @override
   Widget build(BuildContext context) {
+    final frostsnapCtx = FrostsnapContext.of(context)!;
     final walletCtx = WalletContext.of(context)!;
     final settingsCtx = SettingsContext.of(context)!;
     final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
@@ -442,7 +539,6 @@ class _TxListState extends State<TxList> {
             icon: Icon(Icons.more_vert),
           ),
     );
-
     return CustomScrollView(
       controller: scrollController,
       physics: ClampingScrollPhysics(),
@@ -465,6 +561,11 @@ class _TxListState extends State<TxList> {
             appBarMenu,
           ],
         ),
+        if (frostKey != null)
+          BackupWarningBanner(
+            frostKey: frostKey,
+            backupManager: frostsnapCtx.backupManager,
+          ),
         PinnedHeaderSliver(
           child: UpdatingBalance(
             txStream: WalletContext.of(context)!.txStream,
@@ -742,4 +843,60 @@ Uri getBlockExplorer(BitcoinNetwork network) {
     // TODO: handle testnet properly
     return Uri.parse("https://mempool.space/signet/");
   }
+}
+
+class BackupWarningBanner extends StatelessWidget {
+  final FrostKey frostKey;
+  final BackupManager backupManager;
+
+  const BackupWarningBanner({
+    required this.frostKey,
+    required this.backupManager,
+    super.key,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final walletCtx = WalletContext.of(context)!;
+    final backupStream = walletCtx.backupStream;
+    final theme = Theme.of(context);
+
+    final banner = ListTile(
+      dense: true,
+      onTap: () => onTap(context, walletCtx),
+      tileColor: theme.colorScheme.errorContainer,
+      iconColor: theme.colorScheme.onErrorContainer,
+      textColor: theme.colorScheme.onErrorContainer,
+      leading: Icon(Icons.warning_rounded),
+      trailing: Icon(Icons.chevron_right),
+      title: Text('This wallet has unfinished backups!'),
+    );
+
+    return SliverToBoxAdapter(
+      child: StreamBuilder<BackupRun>(
+        stream: backupStream,
+        builder: (context, snapshot) {
+          final backupRun = snapshot.data;
+          final hideBanner = backupRun == null || isBackupDone(backupRun);
+          return hideBanner ? SizedBox.shrink() : banner;
+        },
+      ),
+    );
+  }
+
+  onTap(BuildContext context, WalletContext walletContext) {
+    showBottomSheetOrDialog(
+      context,
+      builder:
+          (context) => walletContext.wrap(
+            BackupChecklist(
+              accessStructure: frostKey.accessStructures()[0],
+              showAppBar: true,
+            ),
+          ),
+    );
+  }
+
+  bool isBackupDone(BackupRun backupRun) =>
+      backupRun.devices.every((elem) => elem.$2 != null);
 }

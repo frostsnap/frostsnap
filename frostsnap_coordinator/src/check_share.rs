@@ -67,7 +67,7 @@ impl CheckShareProtocol {
 
 impl UiProtocol for CheckShareProtocol {
     fn cancel(&mut self) {
-        self.abort("loading share cancelled".to_string())
+        self.abort("Loading share cancelled".to_string())
     }
 
     fn is_complete(&self) -> Option<Completion> {

@@ -474,9 +474,9 @@ class BackupSettingsPage extends StatelessWidget {
               SizedBox(height: 8),
               ElevatedButton(
                 onPressed: () async {
-                  await doBackupWorkflow(
+                  await backupDeviceDialog(
                     context,
-                    devices: [id],
+                    deviceId: id,
                     accessStructure:
                         coord.getAccessStructure(asRef: accessStructureRef)!,
                   );
@@ -488,81 +488,15 @@ class BackupSettingsPage extends StatelessWidget {
               SizedBox(height: 8),
               ElevatedButton(
                 onPressed: () async {
-                  final shareRestoreStream =
-                      coord
-                          .checkShareOnDevice(
-                            deviceId: id,
-                            accessStructureRef: accessStructureRef,
-                          )
-                          .asBroadcastStream();
-
-                  final aborted = shareRestoreStream
-                      .firstWhere((state) => state.abort != null)
-                      .then((state) {
-                        if (context.mounted) {
-                          showErrorSnackbarBottom(context, state.abort!);
-                        }
-                        return null;
-                      });
-
-                  final result = await showDeviceActionDialog<bool>(
-                    context: context,
-                    complete: aborted,
-                    builder: (BuildContext context) {
-                      return StreamBuilder(
-                        stream: shareRestoreStream,
-                        builder: (context, snapshot) {
-                          final outcome = snapshot.data?.outcome;
-                          return Column(
-                            children: [
-                              DialogHeader(
-                                child: Text("Enter the backup on the device."),
-                              ),
-                              Expanded(
-                                child: DeviceListWithIcons(
-                                  iconAssigner: (context, deviceId) {
-                                    if (deviceIdEquals(deviceId, id)) {
-                                      final Widget icon = DevicePrompt(
-                                        icon: Icon(Icons.keyboard),
-                                        text: "",
-                                      );
-                                      return (null, icon);
-                                    } else {
-                                      return (null, null);
-                                    }
-                                  },
-                                ),
-                              ),
-                              DialogFooter(
-                                child: ElevatedButton(
-                                  onPressed: () {
-                                    Navigator.pop(context, outcome);
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: switch (outcome) {
-                                      true => Colors.green,
-                                      false => Colors.red,
-                                      null => null,
-                                    },
-                                  ),
-                                  child: Text(switch (outcome) {
-                                    true => "Your backup is valid",
-                                    false => "Your backup is invalid",
-                                    null => "Cancel",
-                                  }),
-                                ),
-                              ),
-                            ],
-                          );
-                        },
-                      );
-                    },
+                  await verifyBackup(
+                    context,
+                    id,
+                    coord
+                        .getAccessStructure(asRef: accessStructureRef)!
+                        .accessStructureRef(),
                   );
-                  if (result == null) {
-                    coord.cancelProtocol();
-                  }
                 },
-                child: Text('Check Backup'),
+                child: const Text("Verify Backup"),
               ),
             ],
           ),
