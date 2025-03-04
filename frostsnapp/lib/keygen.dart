@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/animated_check.dart';
@@ -393,18 +394,14 @@ class _ThresholdPageState extends State<ThresholdPage> {
                   }
 
                   if (context.mounted) {
-                    final superWallet = SuperWalletContext.of(context)!;
-                    await Navigator.pushAndRemoveUntil(
-                      context,
-                      MaterialPageRoute(
-                        builder:
-                            (context) => superWallet.tryWrapInWalletContext(
-                              keyId: accessStructureRef.keyId,
-                              child: WalletHomeWithConfetti(newKey: true),
-                            ),
-                      ),
-                      (route) => route.isFirst,
-                    );
+                    final homeCtx = HomeContext.of(context)!;
+                    Navigator.popUntil(context, (r) => r.isFirst);
+                    homeCtx.confettiController.play();
+                    final walletIndex = homeCtx.walletListController.wallets
+                        .indexWhere(
+                          (w) => keyIdEquals(w.id, accessStructureRef.keyId),
+                        );
+                    homeCtx.walletListController.selectedIndex = walletIndex;
                   }
                 },
                 icon: Icon(Icons.check),

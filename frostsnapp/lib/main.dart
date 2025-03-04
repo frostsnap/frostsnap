@@ -1,15 +1,15 @@
 import 'dart:async';
+import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
 import 'package:frostsnapp/contexts.dart';
-import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/key_list.dart';
 import 'package:flutter/services.dart';
-import 'package:frostsnapp/keygen.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/serialport.dart';
 import 'package:frostsnapp/stream_ext.dart';
+import 'package:frostsnapp/wallet.dart';
+import 'package:frostsnapp/wallet_list_controller.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
@@ -167,35 +167,54 @@ class _MyAppState extends State<MyApp> {
   }
 }
 
-class MyHomePage extends StatelessWidget {
+class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key});
 
   @override
+  State<MyHomePage> createState() => _MyHomePageState();
+}
+
+class _MyHomePageState extends State<MyHomePage> {
+  late final GlobalKey<ScaffoldState> scaffoldKey;
+  late final WalletListController walletListController;
+  late final ConfettiController confettiController;
+
+  @override
+  void initState() {
+    super.initState();
+    scaffoldKey = GlobalKey();
+    walletListController = WalletListController(
+      keyStream: coord.subKeyEvents(),
+    );
+    confettiController = ConfettiController(duration: Duration(seconds: 4));
+  }
+
+  @override
+  void dispose() {
+    confettiController.dispose();
+    walletListController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: FsAppBar(title: Text("Wallets"), centerTitle: false),
-      body: Center(child: ActiveAndRecoverableKeyList()),
-      floatingActionButton: FloatingActionButton.extended(
-        icon: Icon(Icons.add),
-        label: Text('New Wallet'),
-        onPressed: () async {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => KeyNamePage()),
-          );
-        },
+    return HomeContext(
+      scaffoldKey: scaffoldKey,
+      walletListController: walletListController,
+      confettiController: confettiController,
+      child: Stack(
+        alignment: AlignmentDirectional.center,
+        children: [
+          const WalletHome(),
+          Center(
+            child: ConfettiWidget(
+              confettiController: confettiController,
+              blastDirectionality: BlastDirectionality.explosive,
+              numberOfParticles: 101,
+            ),
+          ),
+        ],
       ),
-      persistentFooterAlignment: AlignmentDirectional.centerStart,
-      persistentFooterButtons: [
-        TextButton(
-          onPressed:
-              () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => DeviceSettingsPage()),
-              ),
-          child: Text('Show Devices'),
-        ),
-      ],
     );
   }
 }

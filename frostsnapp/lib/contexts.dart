@@ -1,11 +1,13 @@
 import 'dart:collection';
 
+import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/wallet.dart';
+import 'package:frostsnapp/wallet_list_controller.dart';
 
 class FrostsnapContext extends InheritedWidget {
   final Stream<String> logStream;
@@ -182,6 +184,29 @@ class KeyContext extends InheritedWidget {
 
   @override
   bool updateShouldNotify(KeyContext oldWidget) {
+    return false;
+  }
+}
+
+class HomeContext extends InheritedWidget {
+  final GlobalKey<ScaffoldState> scaffoldKey;
+  final WalletListController walletListController;
+  final ConfettiController confettiController;
+
+  const HomeContext({
+    super.key,
+    required this.scaffoldKey,
+    required this.walletListController,
+    required this.confettiController,
+    required Widget child,
+  }) : super(child: child);
+
+  static HomeContext? of(BuildContext context) {
+    return context.getInheritedWidgetOfExactType<HomeContext>();
+  }
+
+  @override
+  bool updateShouldNotify(covariant InheritedWidget oldWidget) {
     return false;
   }
 }
