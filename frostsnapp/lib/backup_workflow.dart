@@ -81,6 +81,8 @@ class BackupChecklist extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final walletCtx = WalletContext.of(context)!;
+    final frostKey = walletCtx.wallet.frostKey()!;
+    final accessStructure = frostKey.accessStructures().first;
     final backupStream = walletCtx.backupStream;
 
     final appBar = SliverAppBar(
@@ -100,10 +102,8 @@ class BackupChecklist extends StatelessWidget {
 
     final toBringList =
         [
-              'Your Frostsnap device',
-              Platform.isAndroid
-                  ? 'This phone'
-                  : Platform.isIOS
+              'The Frostsnap',
+              Platform.isAndroid || Platform.isIOS
                   ? 'This phone'
                   : 'This laptop',
               'A backup card',
@@ -121,42 +121,44 @@ class BackupChecklist extends StatelessWidget {
     final infoColumn = SliverToBoxAdapter(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'To secure this wallet, you will store your devices in several geographically separate locations.',
-              style: theme.textTheme.titleMedium,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'At each location, you will create a backup to store alongside your device.',
-              style: theme.textTheme.bodyLarge?.copyWith(
+        child: DefaultTextStyle(
+          style:
+              theme.textTheme.bodyLarge?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
+              ) ??
+              TextStyle(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Travel to the location where you will store each Frostsnap. Make sure to bring:',
               ),
-            ),
-            const SizedBox(height: 32),
-            Text(
-              'Make sure to bring:',
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+              const SizedBox(height: 16),
+              Card(
+                color: theme.colorScheme.surfaceContainerHighest,
+                margin: EdgeInsets.all(0.0),
+                child: Column(children: toBringList),
               ),
-            ),
-            const SizedBox(height: 16),
-            Card(
-              color: theme.colorScheme.surfaceContainerHighest,
-              margin: EdgeInsets.all(0.0),
-              child: Column(children: toBringList),
-            ),
-            const SizedBox(height: 32),
-            Text(
-              'Travel to separate locations to secure each device:',
-              style: theme.textTheme.bodyLarge?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+              const SizedBox(height: 16),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Icon(Icons.warning),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      "Anyone who can access any ${accessStructure.threshold()} of the ${accessStructure.devices().length} Frostsnaps in this wallet can take all its Bitcoin. Place them carefully.",
+                    ),
+                  ),
+                ],
               ),
-            ),
-            //const SizedBox(height: 24),
-          ],
+              const SizedBox(height: 16),
+              Text(
+                'When you arrive at each location press the button to show the backup:',
+              ),
+              //const SizedBox(height: 24),
+            ],
+          ),
         ),
       ),
     );
@@ -242,7 +244,8 @@ class BackupChecklist extends StatelessWidget {
                         onPressed:
                             () async =>
                                 await showThatWasQuickDialog(context, deviceId),
-                        child: const Text('Backup'),
+                        child:
+                            isCompleted ? const Text('Show') : Text("I'm here"),
                       ),
                       const SizedBox(width: 16),
                       Icon(
