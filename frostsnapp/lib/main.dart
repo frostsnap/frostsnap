@@ -1,15 +1,15 @@
 import 'dart:async';
+import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
 import 'package:frostsnapp/contexts.dart';
-import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/key_list.dart';
 import 'package:flutter/services.dart';
-import 'package:frostsnapp/keygen.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/serialport.dart';
 import 'package:frostsnapp/stream_ext.dart';
+import 'package:frostsnapp/wallet.dart';
+import 'package:frostsnapp/wallet_list_controller.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
@@ -90,6 +90,10 @@ void main() async {
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
     ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setSystemUIOverlayStyle(
+      SystemUiOverlayStyle(systemNavigationBarColor: Colors.transparent),
+    );
 
     final mainWidget = buildMainWidget(appCtx!, logStream);
     runApp(mainWidget);
@@ -132,9 +136,6 @@ class _MyAppState extends State<MyApp> {
       brightness: Brightness.dark,
       seedColor: Color(0xFF1595B2),
     );
-    SystemChrome.setSystemUIOverlayStyle(
-      SystemUiOverlayStyle(systemNavigationBarColor: colorScheme.surface),
-    );
   }
 
   // This widget is the root of your application.
@@ -167,35 +168,58 @@ class _MyAppState extends State<MyApp> {
   }
 }
 
-class MyHomePage extends StatelessWidget {
+class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key});
 
   @override
+  State<MyHomePage> createState() => _MyHomePageState();
+}
+
+class _MyHomePageState extends State<MyHomePage> {
+  late final GlobalKey<ScaffoldState> scaffoldKey;
+  late final WalletListController walletListController;
+  late final ConfettiController confettiController;
+  late final ValueNotifier<bool> isShowingCreatedWalletDialog;
+
+  @override
+  void initState() {
+    super.initState();
+    scaffoldKey = GlobalKey();
+    walletListController = WalletListController(
+      keyStream: coord.subKeyEvents(),
+    );
+    confettiController = ConfettiController(duration: Duration(seconds: 4));
+    isShowingCreatedWalletDialog = ValueNotifier(false);
+  }
+
+  @override
+  void dispose() {
+    confettiController.dispose();
+    walletListController.dispose();
+    isShowingCreatedWalletDialog.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: FsAppBar(title: Text("Wallets"), centerTitle: false),
-      body: Center(child: ActiveAndRecoverableKeyList()),
-      floatingActionButton: FloatingActionButton.extended(
-        icon: Icon(Icons.add),
-        label: Text('New Wallet'),
-        onPressed: () async {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => KeyNamePage()),
-          );
-        },
+    return HomeContext(
+      scaffoldKey: scaffoldKey,
+      walletListController: walletListController,
+      confettiController: confettiController,
+      isShowingCreatedWalletDialog: isShowingCreatedWalletDialog,
+      child: Stack(
+        alignment: AlignmentDirectional.center,
+        children: [
+          const WalletHome(),
+          Center(
+            child: ConfettiWidget(
+              confettiController: confettiController,
+              blastDirectionality: BlastDirectionality.explosive,
+              numberOfParticles: 101,
+            ),
+          ),
+        ],
       ),
-      persistentFooterAlignment: AlignmentDirectional.centerStart,
-      persistentFooterButtons: [
-        TextButton(
-          onPressed:
-              () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => DeviceSettingsPage()),
-              ),
-          child: Text('Show Devices'),
-        ),
-      ],
     );
   }
 }
