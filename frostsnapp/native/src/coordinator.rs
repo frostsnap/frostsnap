@@ -37,6 +37,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 use tracing::{event, span, Level};
+const N_NONCE_STREAMS: usize = 4;
 
 pub struct FfiCoordinator {
     usb_manager: Mutex<Option<UsbSerialManager>>,
@@ -194,6 +195,7 @@ impl FfiCoordinator {
                                         coordinator_outbox.extend(
                                             coordinator.maybe_request_nonce_replenishment(
                                                 id,
+                                                N_NONCE_STREAMS,
                                                 &mut rand::thread_rng(),
                                             ),
                                         );
@@ -562,7 +564,7 @@ impl FfiCoordinator {
         let coordinator = self.coordinator.lock().unwrap();
 
         let active_sign_session = coordinator
-            .active_signing_sessions()
+            .active_signing_sessions_by_ssid()
             .get(&session_id)
             .ok_or(anyhow!("this signing session no longer exists"))?;
         let mut dispatcher =
@@ -584,9 +586,8 @@ impl FfiCoordinator {
                 .lock()
                 .unwrap()
                 .active_signing_sessions()
-                .iter()
-                .filter(|(_, sign_session)| sign_session.key_id == key_id)
-                .map(|(ssid, _)| *ssid)
+                .filter(|sign_session| sign_session.key_id == key_id)
+                .map(|sign_session| sign_session.session_id())
                 .collect(),
         )
     }

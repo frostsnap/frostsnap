@@ -99,7 +99,11 @@ fn send_sign_req_with_same_nonces_but_different_message() {
     let task1 = WireSignTask::Test {
         message: "utxo.club!".into(),
     };
-    let (access_structure_ref, _) = key_data.access_structures().next().unwrap().clone();
+    let access_structure_ref = key_data
+        .access_structures()
+        .next()
+        .unwrap()
+        .access_structure_ref();
     let session_id = run
         .coordinator
         .start_sign(access_structure_ref, task1, &device_set, &mut test_rng)
