@@ -40,6 +40,7 @@ pub struct FrostCoordinator {
     nonce_cache: NonceCache,
     mutations: VecDeque<Mutation>,
     active_signing_sessions: BTreeMap<SignSessionId, ActiveSignSession>,
+    active_sign_session_order: Vec<SignSessionId>,
     finished_signing_sessions: BTreeMap<SignSessionId, FinishedSignSession>,
 }
 
@@ -290,9 +291,21 @@ impl FrostCoordinator {
                     );
                 }
             }
-            DeleteKey(key_id) => {
-                self.keys.remove(key_id);
-                self.key_order.retain(|entry| entry != key_id);
+            &DeleteKey(key_id) => {
+                self.keys.remove(&key_id)?;
+                self.key_order.retain(|&entry| entry != key_id);
+                let sessions_to_delete = self
+                    .active_signing_sessions
+                    .iter()
+                    .filter(|(_, session)| session.key_id == key_id)
+                    .map(|(&key_id, _)| key_id)
+                    .collect::<Vec<_>>();
+                for session_id in sessions_to_delete {
+                    self.apply_mutation(&Mutation::CloseSignSession {
+                        session_id,
+                        finished: None,
+                    });
+                }
             }
             NewNonces {
                 device_id,
@@ -311,10 +324,10 @@ impl FrostCoordinator {
                 }
             }
             NewSigningSession(signing_session_state) => {
-                self.active_signing_sessions.insert(
-                    signing_session_state.init.group_request.session_id(),
-                    signing_session_state.clone(),
-                );
+                let ssid = signing_session_state.init.group_request.session_id();
+                self.active_signing_sessions
+                    .insert(ssid, signing_session_state.clone());
+                self.active_sign_session_order.push(ssid);
             }
             GotSignatureSharesFromDevice {
                 session_id,
@@ -328,14 +341,15 @@ impl FrostCoordinator {
                     }
                 }
             }
-            &ConsumesNonces {
+            &SentSignReq {
+                session_id,
                 device_id,
-                nonce_stream_id,
-                up_to_but_not_including,
             } => {
                 if !self
-                    .nonce_cache
-                    .consume(device_id, nonce_stream_id, up_to_but_not_including)
+                    .active_signing_sessions
+                    .get_mut(&session_id)?
+                    .sent_req_to_device
+                    .insert(device_id)
                 {
                     return None;
                 }
@@ -344,16 +358,33 @@ impl FrostCoordinator {
                 session_id,
                 finished,
             } => {
-                if let Some(session_state) = self.active_signing_sessions.remove(session_id) {
-                    if let Some(signatures) = finished {
-                        self.finished_signing_sessions.insert(
-                            *session_id,
-                            FinishedSignSession {
-                                init: session_state.init,
-                                signatures: signatures.clone(),
-                            },
+                let (index, _) = self
+                    .active_sign_session_order
+                    .iter()
+                    .enumerate()
+                    .find(|(_, ssid)| *ssid == session_id)?;
+                self.active_sign_session_order.remove(index);
+                let session_state = self.active_signing_sessions.remove(session_id).unwrap();
+
+                for (device_id, nonce_segment) in &session_state.init.nonces {
+                    if session_state.sent_req_to_device.contains(device_id) {
+                        let state_after_signing = nonce_segment
+                            .after_signing(session_state.init.group_request.n_signatures());
+                        self.nonce_cache.consume(
+                            *device_id,
+                            state_after_signing.stream_id,
+                            state_after_signing.index,
                         );
                     }
+                }
+                if let Some(signatures) = finished {
+                    self.finished_signing_sessions.insert(
+                        *session_id,
+                        FinishedSignSession {
+                            init: session_state.init,
+                            signatures: signatures.clone(),
+                        },
+                    );
                 }
             }
         }
@@ -902,6 +933,7 @@ impl FrostCoordinator {
             progress: sessions,
             init: start_sign.clone(),
             key_id,
+            sent_req_to_device: Default::default(),
         };
 
         self.mutate(Mutation::NewSigningSession(local_session));
@@ -917,7 +949,7 @@ impl FrostCoordinator {
     ) -> RequestDeviceSign {
         let active_sign_session = self
             .active_signing_sessions
-            .get_mut(&session_id)
+            .get(&session_id)
             .expect("signing session doesn't exist");
 
         let nonces_for_device = *active_sign_session
@@ -945,12 +977,9 @@ impl FrostCoordinator {
             )
             .expect("must be able to decrypt rootkey");
 
-        self.mutate(Mutation::ConsumesNonces {
+        self.mutate(Mutation::SentSignReq {
             device_id,
-            nonce_stream_id: nonces_for_device.stream_id,
-            up_to_but_not_including: nonces_for_device
-                .index
-                .saturating_add(group_sign_req.n_signatures().try_into().unwrap()),
+            session_id,
         });
 
         let request_sign = RequestSign {
@@ -971,13 +1000,14 @@ impl FrostCoordinator {
     pub fn maybe_request_nonce_replenishment(
         &self,
         device_id: DeviceId,
+        desired_nonce_streams: usize,
         rng: &mut impl rand_core::RngCore,
     ) -> impl IntoIterator<Item = CoordinatorSend> {
         core::iter::once(CoordinatorSend::ToDevice {
             message: CoordinatorToDeviceMessage::OpenNonceStreams {
                 streams: self
                     .nonce_cache
-                    .generate_nonce_stream_opening_requests(device_id, 4, rng)
+                    .generate_nonce_stream_opening_requests(device_id, desired_nonce_streams, rng)
                     .into_iter()
                     .collect(),
             },
@@ -1367,14 +1397,18 @@ impl FrostCoordinator {
     }
 
     pub fn cancel_all_signing_sessions(&mut self) {
-        while !self.active_signing_sessions().is_empty() {
-            let ssid = *self.active_signing_sessions().keys().next().unwrap();
+        for ssid in self.active_sign_session_order.clone() {
             self.cancel_sign_session(ssid);
         }
     }
 
-    pub fn active_signing_sessions(&self) -> &BTreeMap<SignSessionId, ActiveSignSession> {
-        &self.active_signing_sessions
+    pub fn active_signing_sessions(&self) -> impl Iterator<Item = ActiveSignSession> + '_ {
+        self.active_sign_session_order.iter().map(|sid| {
+            self.active_signing_sessions
+                .get(sid)
+                .expect("invariant")
+                .clone()
+        })
     }
 
     pub fn active_signing_sessions_by_ssid(&self) -> &BTreeMap<SignSessionId, ActiveSignSession> {
@@ -1448,6 +1482,7 @@ pub struct ActiveSignSession {
     pub progress: Vec<SignSessionProgress>,
     pub init: StartSign,
     pub key_id: KeyId,
+    pub sent_req_to_device: BTreeSet<DeviceId>,
 }
 
 impl ActiveSignSession {
@@ -1630,10 +1665,9 @@ pub enum Mutation {
         nonce_segment: NonceStreamSegment,
     },
     NewSigningSession(ActiveSignSession),
-    ConsumesNonces {
+    SentSignReq {
+        session_id: SignSessionId,
         device_id: DeviceId,
-        nonce_stream_id: NonceStreamId,
-        up_to_but_not_including: u32,
     },
     GotSignatureSharesFromDevice {
         session_id: SignSessionId,
@@ -1681,7 +1715,7 @@ impl Gist for Mutation {
             NewSigningSession { .. } => "NewSigningSession",
             CloseSignSession { .. } => "CloseSignSession",
             GotSignatureSharesFromDevice { .. } => "GotSignatureSharesFromDevice",
-            ConsumesNonces { .. } => "ConsumeNonces",
+            SentSignReq { .. } => "SentSignReq",
         }
         .into()
     }

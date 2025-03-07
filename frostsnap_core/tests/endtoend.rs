@@ -206,6 +206,7 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
         threshold,
         &mut env,
         &mut test_rng,
+        1,
         KeyPurpose::Test,
     );
     let device_list = run.devices.keys().cloned().collect::<Vec<_>>();
@@ -409,7 +410,7 @@ fn when_we_abandon_a_sign_request_we_should_be_able_to_start_a_new_one() {
     let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
     let mut env = TestEnv::default();
     let mut run =
-        Run::start_after_keygen_and_nonces(1, 1, &mut env, &mut test_rng, KeyPurpose::Test);
+        Run::start_after_keygen_and_nonces(1, 1, &mut env, &mut test_rng, 1, KeyPurpose::Test);
 
     let device_set = run.device_set();
 
@@ -477,6 +478,7 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
         threshold,
         &mut env,
         &mut test_rng,
+        1,
         KeyPurpose::Bitcoin(bitcoin::Network::Bitcoin),
     );
     let device_set = run.device_set();
@@ -807,6 +809,7 @@ fn we_should_be_able_to_switch_between_sign_sessions() {
         threshold,
         &mut env,
         &mut test_rng,
+        2,
         KeyPurpose::Test,
     );
     let device_set = run.device_set();
@@ -880,7 +883,7 @@ fn nonces_available_should_heal_itself_when_outcome_of_sign_request_is_ambigious
 
     let mut env = TestEnv::default();
     let mut run =
-        Run::start_after_keygen_and_nonces(1, 1, &mut env, &mut test_rng, KeyPurpose::Test);
+        Run::start_after_keygen_and_nonces(1, 1, &mut env, &mut test_rng, 1, KeyPurpose::Test);
     let device_set = run.device_set();
     let device_id = device_set.iter().cloned().next().unwrap();
 
@@ -923,7 +926,7 @@ fn nonces_available_should_heal_itself_when_outcome_of_sign_request_is_ambigious
     // request it should happily reset the stream to what it was before.
     run.extend(
         run.coordinator
-            .maybe_request_nonce_replenishment(device_id, &mut test_rng),
+            .maybe_request_nonce_replenishment(device_id, 1, &mut test_rng),
     );
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
 

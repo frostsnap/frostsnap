@@ -261,6 +261,10 @@ impl<S: NonceStreamSlot> AbSlots<S> {
             .iter_mut()
             .filter_map(|slot| slot.nonce_stream_id())
     }
+
+    pub fn total_slots(&self) -> usize {
+        self.slots.len()
+    }
 }
 
 impl SecretNonceSlot {
