@@ -135,15 +135,7 @@ impl CoordFrostKey {
 
 impl FrostCoordinator {
     pub fn new() -> Self {
-        Self {
-            keys: Default::default(),
-            key_order: Default::default(),
-            nonce_cache: Default::default(),
-            mutations: Default::default(),
-            active_signing_sessions: Default::default(),
-            finished_signing_sessions: Default::default(),
-            pending_keygens: Default::default(),
-        }
+        Self::default()
     }
 
     pub fn mutate(&mut self, mutation: Mutation) {
