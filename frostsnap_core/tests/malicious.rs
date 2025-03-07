@@ -92,6 +92,7 @@ fn send_sign_req_with_same_nonces_but_different_message() {
         1,
         &mut DefaultTestEnv,
         &mut test_rng,
+        1,
         KeyPurpose::Test,
     );
     let device_set = run.device_set();

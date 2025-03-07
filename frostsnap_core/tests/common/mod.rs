@@ -142,10 +142,12 @@ pub trait Env {
     }
 }
 
+#[derive(Default)]
 pub struct DefaultTestEnv;
 
 impl Env for DefaultTestEnv {}
 
+#[derive(Clone)]
 pub struct Run {
     pub coordinator: FrostCoordinator,
     pub devices: BTreeMap<DeviceId, FrostSigner>,
@@ -155,19 +157,41 @@ pub struct Run {
     pub start_devices: BTreeMap<DeviceId, FrostSigner>,
 }
 
+impl core::fmt::Debug for Run {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Run")
+            .field("coordinator", &"..")
+            .field("devices", &self.device_set())
+            .field("message_queue", &self.message_queue)
+            .field("transcript", &self.transcript)
+            .field("start_coordinator", &"..")
+            .field("start_devices", &"..")
+            .finish()
+    }
+}
+
 impl Run {
-    pub fn generate(n_devices: usize, rng: &mut impl rand_core::RngCore) -> Self {
+    pub fn generate_with_nonce_slots(
+        n_devices: usize,
+        rng: &mut impl rand_core::RngCore,
+        nonce_slots: usize,
+    ) -> Self {
         Self::new(
             FrostCoordinator::new(),
             (0..n_devices)
                 .map(|_| {
-                    let signer = FrostSigner::new_random(rng);
+                    let signer = FrostSigner::new_random(rng, nonce_slots);
                     (signer.device_id(), signer)
                 })
                 .collect(),
         )
     }
 
+    pub fn generate(n_devices: usize, rng: &mut impl rand_core::RngCore) -> Self {
+        Self::generate_with_nonce_slots(n_devices, rng, 8)
+    }
+
+    #[allow(unused)]
     pub fn start_after_keygen(
         n_devices: usize,
         threshold: u16,
@@ -196,19 +220,22 @@ impl Run {
         run
     }
 
+    #[allow(unused)]
     pub fn start_after_keygen_and_nonces(
         n_devices: usize,
         threshold: u16,
         env: &mut impl Env,
         rng: &mut impl rand_core::RngCore,
+        n_nonce_streams: usize,
         purpose: KeyPurpose,
     ) -> Self {
         let mut run = Self::start_after_keygen(n_devices, threshold, env, rng, purpose);
         for device_id in run.device_set() {
-            run.extend(
-                run.coordinator
-                    .maybe_request_nonce_replenishment(device_id, rng),
-            );
+            run.extend(run.coordinator.maybe_request_nonce_replenishment(
+                device_id,
+                n_nonce_streams,
+                rng,
+            ));
         }
         run.run_until_finished(env, rng).unwrap();
 
@@ -233,6 +260,11 @@ impl Run {
     }
 
     pub fn device_set(&self) -> BTreeSet<DeviceId> {
+        self.devices.keys().cloned().collect()
+    }
+
+    #[allow(unused)]
+    pub fn device_vec(&self) -> Vec<DeviceId> {
         self.devices.keys().cloned().collect()
     }
 

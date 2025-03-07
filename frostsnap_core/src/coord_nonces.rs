@@ -40,7 +40,7 @@ impl NonceCache {
     }
 
     pub fn new_signing_session(
-        &mut self,
+        &self,
         devices: &BTreeSet<DeviceId>,
         n_nonces: usize,
         used_streams: &BTreeSet<NonceStreamId>,
@@ -48,7 +48,7 @@ impl NonceCache {
         let mut nonces_chosen: BTreeMap<DeviceId, SigningReqSubSegment> = BTreeMap::default();
 
         for &device in devices {
-            let by_device = self.by_device.entry(device).or_default();
+            let by_device = self.by_device.get(&device).into_iter().flatten();
             let mut nonces_available = 0;
             for (stream_id, stream_segment) in by_device {
                 if used_streams.contains(stream_id) {
@@ -77,6 +77,7 @@ impl NonceCache {
         Ok(nonces_chosen)
     }
 
+    /// Returns whether a change happened or not
     pub fn consume(
         &mut self,
         device_id: DeviceId,
@@ -125,7 +126,12 @@ impl NonceCache {
         rng: &mut impl rand_core::RngCore,
     ) -> impl IntoIterator<Item = CoordNonceStreamState> {
         let mut stream_ids = vec![];
-        let streams = self.by_device.get(&device_id).cloned().unwrap_or_default();
+        let streams = self
+            .by_device
+            .get(&device_id)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter();
         let new_streams_needed = min_streams.saturating_sub(streams.len());
         for _ in 0..new_streams_needed {
             stream_ids.push(CoordNonceStreamState {
