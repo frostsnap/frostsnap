@@ -235,7 +235,7 @@ pub enum AccessStructureState {
 
 impl AccessStructureListState {
     pub(crate) fn from_frost_key(frost_key: &CoordFrostKey) -> Self {
-        let complete = frost_key.access_structures().map(|(_, access_structure)| {
+        let complete = frost_key.access_structures().map(|access_structure| {
             AccessStructureState::Complete(AccessStructure::from(access_structure.clone()))
         });
         let recovering = frost_key.recovering_access_structures.iter().map(
@@ -919,8 +919,8 @@ impl Coordinator {
                 .flat_map(|frost_key| {
                     frost_key
                         .access_structures()
-                        .filter(|(_, access_structure)| access_structure.contains_device(device_id))
-                        .map(|(accsref, _)| accsref)
+                        .filter(|access_structure| access_structure.contains_device(device_id))
+                        .map(|access_structure| access_structure.access_structure_ref())
                         .collect::<Vec<_>>()
                 })
                 .collect(),

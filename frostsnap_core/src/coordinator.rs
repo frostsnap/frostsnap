@@ -122,22 +122,14 @@ impl CoordFrostKey {
             .cloned()
     }
 
-    pub fn access_structures(
-        &self,
-    ) -> impl Iterator<Item = (AccessStructureRef, CoordAccessStructure)> + '_ {
-        self.complete_key.iter().flat_map(|completed_key| {
-            completed_key.access_structures.iter().map(
-                |(&access_structure_id, access_structure)| {
-                    (
-                        AccessStructureRef {
-                            key_id: self.key_id,
-                            access_structure_id,
-                        },
-                        access_structure.clone(),
-                    )
-                },
-            )
-        })
+    pub fn access_structures(&self) -> impl Iterator<Item = CoordAccessStructure> + '_ {
+        self.complete_key
+            .iter()
+            .flat_map(|completed_key| completed_key.access_structures.values().cloned())
+    }
+
+    pub fn master_access_structure(&self) -> CoordAccessStructure {
+        self.access_structures().next().unwrap()
     }
 }
 
@@ -391,9 +383,7 @@ impl FrostCoordinator {
             .map(|key_id| self.keys.get(key_id).expect("invariant"))
     }
 
-    pub fn iter_access_structures(
-        &self,
-    ) -> impl Iterator<Item = (AccessStructureRef, CoordAccessStructure)> + '_ {
+    pub fn iter_access_structures(&self) -> impl Iterator<Item = CoordAccessStructure> + '_ {
         self.keys
             .iter()
             .flat_map(|(_, key_data)| key_data.access_structures())
@@ -1127,7 +1117,7 @@ impl FrostCoordinator {
         // verify on any device that knows about this key
         let target_devices: BTreeSet<_> = frost_key
             .access_structures()
-            .flat_map(|(_, accss)| {
+            .flat_map(|accss| {
                 accss
                     .device_to_share_index
                     .keys()
@@ -1392,6 +1382,10 @@ impl FrostCoordinator {
     }
 
     pub fn active_signing_sessions(&self) -> &BTreeMap<SignSessionId, ActiveSignSession> {
+        &self.active_signing_sessions
+    }
+
+    pub fn active_signing_sessions_by_ssid(&self) -> &BTreeMap<SignSessionId, ActiveSignSession> {
         &self.active_signing_sessions
     }
 
