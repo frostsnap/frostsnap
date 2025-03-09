@@ -10,7 +10,7 @@ FetchContent_Declare(
     Corrosion
     GIT_REPOSITORY https://github.com/AndrewGaspar/corrosion.git
     # llfourn fixed this so it wouldn't got to the internet all the time
-    GIT_TAG c05ee36baf65be673c0999855248a7a2dc1c1b6e
+    GIT_TAG b1fab721655c5c4b1b08a083d3cd29f163af75d0
 )
 
 FetchContent_MakeAvailable(Corrosion)
