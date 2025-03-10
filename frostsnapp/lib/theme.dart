@@ -34,7 +34,7 @@ Future<T?> showBottomSheetOrDialog<T>(
       useSafeArea: true,
       isDismissible: true,
       showDragHandle: false,
-      builder: (context) => builder(context),
+      builder: builder,
     );
   } else {
     return showDialog<T>(
@@ -44,7 +44,7 @@ Future<T?> showBottomSheetOrDialog<T>(
             backgroundColor: dialogBackgroundColor,
             child: ConstrainedBox(
               constraints: BoxConstraints(maxWidth: 560),
-              child: builder(context),
+              child: Builder(builder: builder),
             ),
           ),
     );

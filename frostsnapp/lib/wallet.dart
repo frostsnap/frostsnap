@@ -917,29 +917,10 @@ class WalletBottomBar extends StatelessWidget {
           Expanded(
             child: ElevatedButton.icon(
               onPressed: () {
-                final mediaSize = MediaQuery.sizeOf(context);
-                if (mediaSize.width < 600) {
-                  showModalBottomSheet(
-                    context: context,
-                    isScrollControlled: true,
-                    useSafeArea: true,
-                    isDismissible: true,
-                    showDragHandle: false,
-                    builder: (context) => walletCtx.wrap(WalletSendPage()),
-                  );
-                } else {
-                  showDialog(
-                    context: context,
-                    builder:
-                        (context) => Dialog(
-                          backgroundColor: theme.colorScheme.surfaceContainer,
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(maxWidth: 560),
-                            child: walletCtx.wrap(WalletSendPage()),
-                          ),
-                        ),
-                  );
-                }
+                showBottomSheetOrDialog(
+                  context,
+                  builder: (context) => walletCtx.wrap(WalletSendPage()),
+                );
               },
               label: Text('Send'),
               icon: Icon(Icons.north_east),
