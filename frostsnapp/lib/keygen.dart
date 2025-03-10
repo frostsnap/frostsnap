@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/animated_check.dart';
+import 'package:frostsnapp/backup_workflow.dart';
 import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/device.dart';
 import 'package:frostsnapp/device_action.dart';
@@ -14,7 +15,7 @@ import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/progress_indicator.dart';
 import 'package:frostsnapp/theme.dart';
-import 'package:frostsnapp/wallet.dart';
+import 'package:frostsnapp/wallet_list_controller.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class KeyNamePage extends StatefulWidget {
@@ -39,15 +40,18 @@ class _KeyNamePageState extends State<KeyNamePage> {
 
   @override
   Widget build(BuildContext context) {
+    final homeCtx = HomeContext.of(context)!;
     final nextPage =
         _keyNameController.text.isNotEmpty
             ? () async {
               final masterAppkey = await Navigator.push(
                 context,
                 createRoute(
-                  DevicesPage(
-                    keyName: _keyNameController.text,
-                    network: bitcoinNetwork,
+                  homeCtx.wrap(
+                    DevicesPage(
+                      keyName: _keyNameController.text,
+                      network: bitcoinNetwork,
+                    ),
                   ),
                 ),
               );
@@ -160,6 +164,7 @@ class DevicesPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final homeCtx = HomeContext.of(context)!;
     return Scaffold(
       appBar: FsAppBar(title: Text('Devices')),
       body: StreamBuilder(
@@ -218,6 +223,7 @@ class DevicesPage extends StatelessWidget {
             );
           }
 
+          final mediaQuery = MediaQuery.of(context);
           return Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -249,10 +255,12 @@ class DevicesPage extends StatelessWidget {
                                   final masterAppkey = await Navigator.push(
                                     context,
                                     createRoute(
-                                      ThresholdPage(
-                                        network: network,
-                                        keyName: keyName,
-                                        selectedDevices: devices,
+                                      homeCtx.wrap(
+                                        ThresholdPage(
+                                          network: network,
+                                          keyName: keyName,
+                                          selectedDevices: devices,
+                                        ),
                                       ),
                                     ),
                                   );
@@ -265,7 +273,7 @@ class DevicesPage extends StatelessWidget {
                         label: Text('Next'),
                       ),
                     ),
-                    SizedBox(height: 20),
+                    SizedBox(height: 20 + mediaQuery.padding.bottom),
                   ],
                 ),
               ),
@@ -386,25 +394,19 @@ class _ThresholdPageState extends State<ThresholdPage> {
 
                   if (accessStructureRef == null) {
                     coord.cancelProtocol();
-                    Navigator.popUntil(context, (route) {
-                      return route.settings.name == "DevicesPage";
-                    });
+                    Navigator.popUntil(context, (route) => route.isFirst);
                     return;
                   }
 
                   if (context.mounted) {
-                    final superWallet = SuperWalletContext.of(context)!;
-                    await Navigator.pushAndRemoveUntil(
-                      context,
-                      MaterialPageRoute(
-                        builder:
-                            (context) => superWallet.tryWrapInWalletContext(
-                              keyId: accessStructureRef.keyId,
-                              child: WalletHomeWithConfetti(newKey: true),
-                            ),
-                      ),
-                      (route) => route.isFirst,
+                    Navigator.popUntil(context, (r) => r.isFirst);
+                    final homeCtx = HomeContext.of(context)!;
+                    final walletItem = homeCtx.openNewlyCreatedWallet(
+                      accessStructureRef.keyId,
                     );
+                    if (walletItem != null) {
+                      showWalletCreatedDialog(context, walletItem);
+                    }
                   }
                 },
                 icon: Icon(Icons.check),
@@ -418,6 +420,73 @@ class _ThresholdPageState extends State<ThresholdPage> {
   }
 }
 
+void showWalletCreatedDialog(BuildContext context, WalletItem walletItem) {
+  final homeCtx = HomeContext.of(context)!;
+  final accessStructure = walletItem.key.accessStructures().first;
+  homeCtx.isShowingCreatedWalletDialog.value = true;
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (BuildContext context) {
+      return BackdropFilter(
+        filter: blurFilter,
+        child: AlertDialog(
+          title: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: const [
+              Text(
+                'Wallet Created!',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              Icon(Icons.checklist, size: 40),
+            ],
+          ),
+          content: const Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Now let\'s secure this wallet by storing these devices in geographically separate locations.',
+              ),
+              SizedBox(height: 12),
+              Text(
+                'We will also create a backup for each device as an ultimate backup.',
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                homeCtx.isShowingCreatedWalletDialog.value = false;
+              },
+              child: const Text('Later'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                homeCtx.isShowingCreatedWalletDialog.value = false;
+                showBottomSheetOrDialog(
+                  context,
+                  builder:
+                      (context) => walletItem.tryWrapInWalletContext(
+                        context: context,
+                        child: BackupChecklist(
+                          accessStructure: accessStructure,
+                          showAppBar: true,
+                        ),
+                      ),
+                );
+              },
+              child: const Text('Secure Wallet'),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
 // Utility function for creating the page transition
 Route createRoute(Widget page) {
   return PageRouteBuilder(
@@ -427,7 +496,7 @@ Route createRoute(Widget page) {
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
       const begin = Offset(1.0, 0.0);
       const end = Offset.zero;
-      const curve = Curves.easeInOut;
+      const curve = Curves.easeInOutCubicEmphasized;
 
       final tween = Tween(
         begin: begin,
@@ -579,6 +648,7 @@ Future<AccessStructureRef?> showCheckKeyGenDialog({
                               : null,
                       child: Text("Confirm"),
                     ),
+                    SizedBox(height: MediaQuery.of(context).padding.bottom),
                   ],
                 ),
               ),

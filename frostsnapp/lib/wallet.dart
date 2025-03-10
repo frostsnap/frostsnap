@@ -1,13 +1,18 @@
 import 'dart:async';
-import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnapp/backup_workflow.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
 import 'package:frostsnapp/contexts.dart';
+import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/global.dart';
+import 'package:frostsnapp/id_ext.dart';
+import 'package:frostsnapp/keygen.dart';
 import 'package:frostsnapp/psbt.dart';
 import 'package:frostsnapp/sign_message.dart';
+import 'package:frostsnapp/snackbar.dart';
 import 'package:frostsnapp/theme.dart';
+import 'package:frostsnapp/wallet_list_controller.dart';
 import 'package:frostsnapp/wallet_receive.dart';
 import 'package:frostsnapp/wallet_send.dart';
 import 'package:frostsnapp/settings.dart';
@@ -29,196 +34,124 @@ class Wallet {
   }
 }
 
-class WalletHomeWithConfetti extends StatefulWidget {
-  final bool? newKey;
-  const WalletHomeWithConfetti({super.key, this.newKey});
-  @override
-  State<WalletHomeWithConfetti> createState() => _WalletHomeWithConfettiState();
-}
+class WalletHome extends StatelessWidget {
+  const WalletHome({super.key});
 
-class _WalletHomeWithConfettiState extends State<WalletHomeWithConfetti> {
-  late final ConfettiController confettiController;
-
-  @override
-  void initState() {
-    super.initState();
-    confettiController = ConfettiController(
-      duration: const Duration(seconds: 4),
-    );
-
-    if (widget.newKey == true) {
-      confettiController.play();
-      Future.delayed(const Duration(seconds: 1), () {
-        if (mounted) {
-          _showBackupDialog();
-        }
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    confettiController.dispose();
-    super.dispose();
-  }
-
-  void _showBackupDialog() {
-    final walletCtx = WalletContext.of(context)!;
-    final accessStructure =
-        walletCtx.wallet.frostKey()!.accessStructures().first;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return BackdropFilter(
-          filter: blurFilter,
-          child: AlertDialog(
-            title: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: const [
-                Text(
-                  'Wallet Created!',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-                Icon(Icons.checklist, size: 40),
-              ],
-            ),
-            content: const Column(
+  Widget buildNoWalletBody(BuildContext context) {
+    final theme = Theme.of(context);
+    final homeCtx = HomeContext.of(context)!;
+    final walletListController = homeCtx.walletListController;
+    return CustomScrollView(
+      slivers: [
+        SliverAppBar(pinned: true),
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Column(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+              spacing: 20.0,
               children: [
-                Text(
-                  'Now let\'s secure this wallet by storing these devices in geographically separate locations.',
+                Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Text(
+                    'Let\'s Get Started',
+                    style: theme.textTheme.headlineLarge,
+                  ),
                 ),
-                SizedBox(height: 12),
-                Text(
-                  'We will also create a backup for each device as an ultimate backup.',
+                OutlinedButton.icon(
+                  onPressed:
+                      () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => homeCtx.wrap(KeyNamePage()),
+                        ),
+                      ),
+                  icon: Icon(Icons.add_circle),
+                  label: Text('Create Wallet'),
                 ),
+                TextButton.icon(
+                  onPressed:
+                      () => showRecoverWalletsDialog(
+                        context,
+                        walletListController,
+                      ),
+                  icon: Icon(Icons.history),
+                  label: Text(
+                    (walletListController.recoverables.isEmpty)
+                        ? 'Recover Wallet'
+                        : 'Recover Wallet (${walletListController.recoverables.length})',
+                  ),
+                ),
+                SizedBox(height: 100.0),
               ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-                child: const Text('Later'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  showBottomSheetOrDialog(
-                    context,
-                    builder:
-                        (context) => walletCtx.wrap(
-                          BackupChecklist(
-                            accessStructure: accessStructure,
-                            showAppBar: true,
-                          ),
-                        ),
-                  );
-                },
-                child: const Text('Secure Wallet'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        const WalletHome(),
-        Center(
-          child: ConfettiWidget(
-            confettiController: confettiController,
-            blastDirectionality: BlastDirectionality.explosive,
-            numberOfParticles: 100,
           ),
         ),
       ],
     );
   }
-}
-
-class WalletHome extends StatelessWidget {
-  const WalletHome({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final walletCtx = WalletContext.of(context)!;
-    final theme = Theme.of(context);
+    final homeCtx = HomeContext.of(context)!;
+    final walletListController = homeCtx.walletListController;
+    final scaffoldKey = homeCtx.scaffoldKey;
 
-    const elevation = 3.0;
-    final txList = TxList();
-
-    return Scaffold(
-      extendBody: true,
-      resizeToAvoidBottomInset: false,
-      body: txList,
-      bottomNavigationBar: ClipRect(
-        child: BottomAppBar(
-          color: Colors.transparent,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: 16,
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed:
-                      () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder:
-                              (context) => walletCtx.wrap(WalletReceivePage()),
-                        ),
-                      ),
-                  label: Text('Receive'),
-                  icon: Icon(Icons.south_east),
-                  style: ElevatedButton.styleFrom(
-                    elevation: elevation,
-                    backgroundColor: ElevationOverlay.applySurfaceTint(
-                      theme.colorScheme.surfaceContainer,
-                      theme.colorScheme.primary,
-                      elevation,
-                    ),
-                    foregroundColor: theme.colorScheme.primary,
-                    iconColor: theme.colorScheme.primary,
-                  ),
-                ),
-              ),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed:
-                      () => showBottomSheetOrDialog(
-                        context,
-                        builder: (context) => walletCtx.wrap(WalletSendPage()),
-                        dialogBackgroundColor:
-                            theme.colorScheme.surfaceContainer,
-                      ),
-                  label: Text('Send'),
-                  icon: Icon(Icons.north_east),
-                  style: ElevatedButton.styleFrom(
-                    elevation: elevation,
-                    backgroundColor: ElevationOverlay.applySurfaceTint(
-                      theme.colorScheme.surfaceContainer,
-                      theme.colorScheme.error,
-                      elevation,
-                    ),
-                    foregroundColor: theme.colorScheme.error,
-                    iconColor: theme.colorScheme.error,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(28.0),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    final body = ListenableBuilder(
+      listenable: walletListController,
+      builder: (context, _) {
+        return walletListController.wallets.isEmpty
+            ? buildNoWalletBody(context)
+            : walletListController.selected?.tryWrapInWalletContext(
+                  context: context,
+                  child: TxList(),
+                ) ??
+                SizedBox();
+      },
     );
+    final bottomBar = ListenableBuilder(
+      listenable: walletListController,
+      builder: (context, _) {
+        return walletListController.selected?.tryWrapInWalletContext(
+              context: context,
+              child: WalletBottomBar(),
+            ) ??
+            BottomAppBar(color: Colors.transparent);
+      },
+    );
+
+    final mediaSize = MediaQuery.sizeOf(context);
+    final isNarrowDisplay = mediaSize.width < 840;
+    final drawer = WalletDrawer(
+      scaffoldKey: scaffoldKey,
+      isRounded: isNarrowDisplay,
+    );
+
+    if (mediaSize.width < 840) {
+      return Scaffold(
+        key: scaffoldKey,
+        extendBody: true,
+        resizeToAvoidBottomInset: false,
+        drawer: drawer,
+        body: body,
+        bottomNavigationBar: bottomBar,
+      );
+    } else {
+      return Row(
+        children: [
+          drawer,
+          Flexible(
+            child: Scaffold(
+              key: scaffoldKey,
+              extendBody: true,
+              resizeToAvoidBottomInset: false,
+              body: body,
+              bottomNavigationBar: bottomBar,
+            ),
+          ),
+        ],
+      );
+    }
   }
 }
 
@@ -457,6 +390,153 @@ class TxItem extends StatelessWidget {
   }
 }
 
+startRecovery(BuildContext context, RecoverableKey recoverableKey) {
+  try {
+    coord.startRecovery(keyId: recoverableKey.accessStructureRef.keyId);
+  } on FrbAnyhowException catch (e) {
+    if (context.mounted) {
+      showErrorSnackbarBottom(context, e.anyhow);
+    }
+  }
+}
+
+showRecoverWalletsDialog(
+  BuildContext context,
+  WalletListController controller,
+) {
+  final theme = Theme.of(context);
+
+  final appBar = SliverAppBar(
+    title: Text('Recover Wallet'),
+    titleTextStyle: theme.textTheme.titleMedium,
+    centerTitle: true,
+    backgroundColor: theme.colorScheme.surfaceContainerLow,
+    pinned: true,
+    stretch: true,
+    forceMaterialTransparency: true,
+    automaticallyImplyLeading: false,
+    leading: IconButton(
+      onPressed: () => Navigator.pop(context),
+      icon: Icon(Icons.close),
+    ),
+  );
+
+  final list = ListenableBuilder(
+    listenable: controller,
+    builder: (context, _) {
+      var mediaQuery = MediaQuery.of(context);
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 24.0,
+              vertical: 8.0,
+            ),
+            child: Text(
+              'Plug in a device to recover from.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          ...controller.recovering
+              .where((key) => key.recoveringAccessIds.isNotEmpty)
+              .map((key) {
+                final accessId = key.recoveringAccessIds.first;
+                final threshold = key.thesholdFor(accessId) ?? 0;
+                final obtained = key.devicesFor(accessId)?.length ?? 0;
+
+                return Card.filled(
+                  margin: EdgeInsets.symmetric(vertical: 8.0, horizontal: 24.0),
+                  child: ListTile(
+                    title: Text(key.name),
+                    subtitle: Text(
+                      'Need to visit ${threshold - obtained} more device(s)',
+                    ),
+                    trailing: CircularProgressIndicator(
+                      value: obtained.toDouble() / threshold.toDouble(),
+                    ),
+                  ),
+                );
+              }),
+          ...controller.recoverables.map((recoverableKey) {
+            final canRecoverNow =
+                recoverableKey.sharesObtained >= recoverableKey.threshold;
+            return Card.filled(
+              margin: const EdgeInsets.symmetric(
+                vertical: 8.0,
+                horizontal: 24.0,
+              ),
+              child: ListTile(
+                title: Text(recoverableKey.name),
+                subtitle: Text(
+                  canRecoverNow ? "Recoverable now" : 'Ready to begin recovery',
+                ),
+                trailing:
+                    canRecoverNow
+                        ? FilledButton(
+                          onPressed:
+                              () => startRecovery(context, recoverableKey),
+                          child: Text('Recover'),
+                        )
+                        : OutlinedButton(
+                          onPressed:
+                              () => startRecovery(context, recoverableKey),
+                          child: Text('Begin'),
+                        ),
+              ),
+            );
+          }),
+          SizedBox(
+            height:
+                24 + mediaQuery.viewInsets.bottom + mediaQuery.padding.bottom,
+          ),
+        ],
+      );
+    },
+  );
+
+  final scrollView = CustomScrollView(
+    shrinkWrap: true,
+    physics: ClampingScrollPhysics(),
+    slivers: [
+      appBar,
+      SliverToBoxAdapter(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: 210),
+          child: Center(child: list),
+        ),
+      ),
+    ],
+  );
+
+  final mediaSize = MediaQuery.sizeOf(context);
+  if (mediaSize.width < 600) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      isDismissible: true,
+      showDragHandle: false,
+      builder: (context) => scrollView,
+    );
+  } else {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return Dialog(
+          backgroundColor: theme.colorScheme.surfaceContainer,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: 560),
+            child: scrollView,
+          ),
+        );
+      },
+    );
+  }
+}
+
 class TxList extends StatefulWidget {
   const TxList({super.key});
   @override
@@ -467,13 +547,24 @@ class _TxListState extends State<TxList> {
   final scrollController = ScrollController();
   final atTopNotifier = ValueNotifier(true);
 
+  /// Medium: 48.0, Large: 88.0
+  static const offSetTrigger = 48.0;
+
   @override
   void initState() {
     super.initState();
     scrollController.addListener(() {
       if (!context.mounted) return;
-      atTopNotifier.value = scrollController.offset <= 48.0;
+      atTopNotifier.value = scrollController.offset <= offSetTrigger;
     }); // medium: 48.0, large: 88.0
+  }
+
+  @override
+  void didUpdateWidget(covariant TxList oldWidget) {
+    if (scrollController.hasClients) {
+      atTopNotifier.value = scrollController.offset <= offSetTrigger;
+    }
+    super.didUpdateWidget(oldWidget);
   }
 
   @override
@@ -483,12 +574,20 @@ class _TxListState extends State<TxList> {
     super.dispose();
   }
 
+  KeyId? prevKey;
+
   @override
   Widget build(BuildContext context) {
-    final frostsnapCtx = FrostsnapContext.of(context)!;
     final walletCtx = WalletContext.of(context)!;
     final settingsCtx = SettingsContext.of(context)!;
     final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
+
+    // TODO: This is a hack to scroll to top everytime we switch wallets.
+    // There are better ways to do this but requires more involved changes.
+    if (prevKey == null || !keyIdEquals(walletCtx.keyId, prevKey!)) {
+      prevKey = walletCtx.keyId;
+      if (scrollController.hasClients) scrollController.jumpTo(0.0);
+    }
 
     const scrolledUnderElevation = 1.0;
 
@@ -539,6 +638,7 @@ class _TxListState extends State<TxList> {
             icon: Icon(Icons.more_vert),
           ),
     );
+
     return CustomScrollView(
       controller: scrollController,
       physics: ClampingScrollPhysics(),
@@ -561,21 +661,17 @@ class _TxListState extends State<TxList> {
             appBarMenu,
           ],
         ),
-        if (frostKey != null)
-          BackupWarningBanner(
-            frostKey: frostKey,
-            backupManager: frostsnapCtx.backupManager,
-          ),
+        if (frostKey != null) BackupWarningBanner(frostKey: frostKey),
         PinnedHeaderSliver(
           child: UpdatingBalance(
-            txStream: WalletContext.of(context)!.txStream,
+            txStream: walletCtx.txStream,
             atTopNotifier: atTopNotifier,
             scrolledUnderElevation: scrolledUnderElevation,
             expandedHeight: 144.0,
           ),
         ),
         StreamBuilder(
-          stream: WalletContext.of(context)!.txStream,
+          stream: walletCtx.txStream,
           builder: (context, snapshot) {
             final transactions = snapshot.data?.txs ?? [];
             return SliverList.builder(
@@ -587,6 +683,283 @@ class _TxListState extends State<TxList> {
         ),
         SliverToBoxAdapter(child: SizedBox(height: 88.0)),
       ],
+    );
+  }
+}
+
+class WalletDrawer extends StatelessWidget {
+  final GlobalKey<ScaffoldState> scaffoldKey;
+  final bool isRounded;
+
+  const WalletDrawer({
+    super.key,
+    required this.scaffoldKey,
+    this.isRounded = true,
+  });
+
+  /// Section header and divider padding as according to Material 3 specs.
+  static const padding = EdgeInsetsDirectional.symmetric(
+    horizontal: 28.0,
+    vertical: 16.0,
+  );
+
+  Widget buildWalletDestination(BuildContext context, WalletItem item) {
+    WidgetSpan buildTag(
+      BuildContext context, {
+      required String text,
+      Color? backgroundColor,
+      Color? foregroundColor,
+    }) {
+      final theme = Theme.of(context);
+      return WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: Card.filled(
+          color: backgroundColor?.withAlpha(128),
+          margin: const EdgeInsets.all(12.0),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
+            child: Text(
+              text,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: foregroundColor,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final theme = Theme.of(context);
+    return NavigationDrawerDestination(
+      icon: SizedBox.shrink(),
+      label: Text.rich(
+        TextSpan(
+          text: item.name,
+          children: [
+            if (!(item.network?.isMainnet() ?? true))
+              buildTag(
+                context,
+                text: item.network?.name() ?? '',
+                backgroundColor: theme.colorScheme.surfaceContainerLowest,
+                foregroundColor: theme.colorScheme.error,
+              ),
+          ],
+        ),
+        overflow: TextOverflow.fade,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final homeCtx = HomeContext.of(context)!;
+    final controller = homeCtx.walletListController;
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        List<Widget> children = [
+          AppBar(
+            title: Text('Wallets'),
+            titleTextStyle: theme.textTheme.titleMedium,
+            primary: false,
+            automaticallyImplyLeading: false,
+            forceMaterialTransparency: true,
+          ),
+        ];
+        if (controller.wallets.isEmpty) {
+          children.add(
+            NavigationDrawerDestination(
+              enabled: false,
+              icon: SizedBox(),
+              label: Text('Let\'s Get Started'),
+            ),
+          );
+        } else {
+          children.addAll([
+            ...controller.wallets.map(
+              (item) => buildWalletDestination(context, item),
+            ),
+            NavigationDrawerDestination(
+              icon: SizedBox.shrink(),
+              //label: SizedBox.shrink(),
+              label: SizedBox(width: 224, child: Divider()),
+              enabled: false,
+            ),
+          ]);
+        }
+
+        final List<(void Function(), bool, IconData, String)>
+        actionableDestinations = [
+          (
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => homeCtx.wrap(KeyNamePage()),
+              ),
+            ),
+            true,
+            Icons.add_circle,
+            'Create Wallet',
+          ),
+          (
+            () => showRecoverWalletsDialog(context, controller),
+            false,
+            Icons.update,
+            (controller.recoverables.isEmpty)
+                ? 'Recover Wallet'
+                : 'Recover Wallet (${controller.recoverables.length})',
+          ),
+          (
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => DeviceSettingsPage()),
+            ),
+            false,
+            Icons.devices,
+            'Devices',
+          ),
+          (
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => SettingsPage()),
+            ),
+            false,
+            Icons.settings,
+            'Settings',
+          ),
+        ];
+        children.addAll([
+          ...actionableDestinations.map((elem) {
+            final (onPressed, isFilled, iconData, textData) = elem;
+            final label = Text(textData);
+            final icon = Icon(iconData);
+            return NavigationDrawerDestination(
+              enabled: false,
+              icon: SizedBox.shrink(),
+              label:
+                  isFilled
+                      ? FilledButton.icon(
+                        onPressed: onPressed,
+                        icon: icon,
+                        label: label,
+                      )
+                      : TextButton.icon(
+                        onPressed: onPressed,
+                        icon: icon,
+                        label: label,
+                      ),
+            );
+          }),
+        ]);
+
+        final drawer = NavigationDrawer(
+          onDestinationSelected: (index) {
+            controller.selectedIndex = index;
+            scaffoldKey.currentState?.closeDrawer();
+          },
+          selectedIndex: controller.selectedIndex,
+          children: children,
+        );
+
+        return isRounded
+            ? drawer
+            : Container(
+              color: theme.colorScheme.surfaceContainerLow,
+              child: drawer,
+            );
+      },
+    );
+  }
+}
+
+class WalletBottomBar extends StatelessWidget {
+  const WalletBottomBar({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final walletCtx = WalletContext.of(context);
+    if (walletCtx == null) {
+      return SizedBox();
+    }
+    final theme = Theme.of(context);
+    const elevation = 3.0;
+
+    return BottomAppBar(
+      color: Colors.transparent,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 16,
+        children: [
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed:
+                  () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => walletCtx.wrap(WalletReceivePage()),
+                    ),
+                  ),
+              label: Text('Receive'),
+              icon: Icon(Icons.south_east),
+              style: ElevatedButton.styleFrom(
+                elevation: elevation,
+                backgroundColor: ElevationOverlay.applySurfaceTint(
+                  theme.colorScheme.surfaceContainer,
+                  theme.colorScheme.primary,
+                  elevation,
+                ),
+                foregroundColor: theme.colorScheme.primary,
+                iconColor: theme.colorScheme.primary,
+              ),
+            ),
+          ),
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: () {
+                final mediaSize = MediaQuery.sizeOf(context);
+                if (mediaSize.width < 600) {
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    useSafeArea: true,
+                    isDismissible: true,
+                    showDragHandle: false,
+                    builder: (context) => walletCtx.wrap(WalletSendPage()),
+                  );
+                } else {
+                  showDialog(
+                    context: context,
+                    builder:
+                        (context) => Dialog(
+                          backgroundColor: theme.colorScheme.surfaceContainer,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(maxWidth: 560),
+                            child: walletCtx.wrap(WalletSendPage()),
+                          ),
+                        ),
+                  );
+                }
+              },
+              label: Text('Send'),
+              icon: Icon(Icons.north_east),
+              style: ElevatedButton.styleFrom(
+                elevation: elevation,
+                backgroundColor: ElevationOverlay.applySurfaceTint(
+                  theme.colorScheme.surfaceContainer,
+                  theme.colorScheme.error,
+                  elevation,
+                ),
+                foregroundColor: theme.colorScheme.error,
+                iconColor: theme.colorScheme.error,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(28.0),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -612,7 +985,7 @@ class UpdatingBalance extends StatefulWidget {
 class _UpdatingBalanceState extends State<UpdatingBalance> {
   int pendingIncomingBalance = 0;
   int avaliableBalance = 0;
-  late final StreamSubscription streamSub;
+  StreamSubscription? streamSub;
 
   @override
   void initState() {
@@ -621,8 +994,16 @@ class _UpdatingBalanceState extends State<UpdatingBalance> {
   }
 
   @override
+  void didUpdateWidget(covariant UpdatingBalance oldWidget) {
+    // TODO; To make this more performant, we can check to see if the KeyId has changed.
+    streamSub?.cancel();
+    streamSub = widget.txStream.listen(onData);
+    super.didUpdateWidget(oldWidget);
+  }
+
+  @override
   void dispose() {
-    streamSub.cancel();
+    streamSub?.cancel();
     super.dispose();
   }
 
@@ -847,17 +1228,14 @@ Uri getBlockExplorer(BitcoinNetwork network) {
 
 class BackupWarningBanner extends StatelessWidget {
   final FrostKey frostKey;
-  final BackupManager backupManager;
 
-  const BackupWarningBanner({
-    required this.frostKey,
-    required this.backupManager,
-    super.key,
-  });
+  const BackupWarningBanner({required this.frostKey, super.key});
 
   @override
   Widget build(BuildContext context) {
+    final homeCtx = HomeContext.of(context)!;
     final walletCtx = WalletContext.of(context)!;
+    final showingDialog = homeCtx.isShowingCreatedWalletDialog;
     final backupStream = walletCtx.backupStream;
     final theme = Theme.of(context);
 
@@ -872,14 +1250,22 @@ class BackupWarningBanner extends StatelessWidget {
       title: Text('This wallet has unfinished backups!'),
     );
 
+    final streamedBanner = StreamBuilder<BackupRun>(
+      stream: backupStream,
+      builder: (context, snapshot) {
+        final backupRun = snapshot.data;
+        final hideBanner = backupRun == null || isBackupDone(backupRun);
+        return hideBanner ? SizedBox.shrink() : banner;
+      },
+    );
+
     return SliverToBoxAdapter(
-      child: StreamBuilder<BackupRun>(
-        stream: backupStream,
-        builder: (context, snapshot) {
-          final backupRun = snapshot.data;
-          final hideBanner = backupRun == null || isBackupDone(backupRun);
-          return hideBanner ? SizedBox.shrink() : banner;
-        },
+      child: ValueListenableBuilder(
+        valueListenable: showingDialog,
+        child: streamedBanner,
+        builder:
+            (context, isShowingDialog, streamedBanner) =>
+                isShowingDialog ? SizedBox.shrink() : streamedBanner!,
       ),
     );
   }
