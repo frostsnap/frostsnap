@@ -434,7 +434,7 @@ showRecoverWalletsDialog(
               vertical: 8.0,
             ),
             child: Text(
-              'Plug in devices to start recovery.',
+              'Plug in a device to recover from.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -446,12 +446,13 @@ showRecoverWalletsDialog(
                 final accessId = key.recoveringAccessIds.first;
                 final threshold = key.thesholdFor(accessId) ?? 0;
                 final obtained = key.devicesFor(accessId)?.length ?? 0;
+
                 return Card.filled(
                   margin: EdgeInsets.symmetric(vertical: 8.0, horizontal: 24.0),
                   child: ListTile(
                     title: Text(key.name),
                     subtitle: Text(
-                      '${threshold - obtained} more device(s) needed',
+                      'Need to visit ${threshold - obtained} more device(s)',
                     ),
                     trailing: CircularProgressIndicator(
                       value: obtained.toDouble() / threshold.toDouble(),
@@ -470,9 +471,7 @@ showRecoverWalletsDialog(
               child: ListTile(
                 title: Text(recoverableKey.name),
                 subtitle: Text(
-                  canRecoverNow
-                      ? 'Recoverable now'
-                      : '${recoverableKey.threshold - recoverableKey.sharesObtained} more device(s) needed',
+                  canRecoverNow ? "Recoverable now" : 'Ready to begin recovery',
                 ),
                 trailing:
                     canRecoverNow
@@ -484,7 +483,7 @@ showRecoverWalletsDialog(
                         : OutlinedButton(
                           onPressed:
                               () => startRecovery(context, recoverableKey),
-                          child: Text('Save'),
+                          child: Text('Begin'),
                         ),
               ),
             );
