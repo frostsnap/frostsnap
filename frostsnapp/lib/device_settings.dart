@@ -88,11 +88,20 @@ class _DeviceSettingsState extends State<DeviceSettings> {
       );
     } else {
       final device_ = device!;
+      final relevantDeviceKeys =
+          keys.where((key) {
+            final accessStructure = key.accessStructures().elementAtOrNull(0);
+            if (accessStructure == null) return false;
+
+            final devices = accessStructure.devices();
+            return devices.any((d) => deviceIdEquals(d, device_.id));
+          }).toList();
+
       Widget keyList = ListView.builder(
         shrinkWrap: true,
-        itemCount: keys.length,
+        itemCount: relevantDeviceKeys.length,
         itemBuilder: (context, index) {
-          final key = keys[index];
+          final key = relevantDeviceKeys[index];
           final accessStructureRef =
               key.accessStructures().elementAtOrNull(0)?.accessStructureRef();
           final keyName = key.keyName();
@@ -127,7 +136,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
         },
       );
 
-      if (keys.isEmpty) {
+      if (relevantDeviceKeys.isEmpty) {
         keyList = Text(
           'No keys on this device',
           style: theme.textTheme.titleMedium,
