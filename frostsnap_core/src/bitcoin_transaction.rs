@@ -285,6 +285,34 @@ impl TransactionTemplate {
                 _ => None,
             })
     }
+
+    pub fn user_prompt(&self, network: bitcoin::Network) -> PromptSignBitcoinTx {
+        let fee = bitcoin::Amount::from_sat(
+            self.fee()
+                .expect("transaction validity should have already been checked"),
+        );
+        let foreign_recipients = self
+            .foreign_recipients()
+            .map(|(spk, value)| {
+                (
+                    bitcoin::Address::from_script(spk, network)
+                        .expect("has address representation"),
+                    bitcoin::Amount::from_sat(value),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        PromptSignBitcoinTx {
+            foreign_recipients,
+            fee,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct PromptSignBitcoinTx {
+    pub foreign_recipients: Vec<(bitcoin::Address, bitcoin::Amount)>,
+    pub fee: bitcoin::Amount,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]

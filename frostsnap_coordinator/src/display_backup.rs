@@ -1,8 +1,7 @@
-use frostsnap_comms::CoordinatorSendMessage;
-use frostsnap_core::{
-    coordinator::FrostCoordinator, message::CoordinatorToUserMessage, AccessStructureRef, DeviceId,
-    SymmetricKey,
-};
+use frostsnap_comms::{CommsMisc, CoordinatorSendMessage};
+use frostsnap_core::Gist;
+use frostsnap_core::{coordinator::FrostCoordinator, AccessStructureRef, DeviceId, SymmetricKey};
+use tracing::error;
 
 use crate::{Completion, Sink, UiProtocol};
 pub struct DisplayBackupProtocol {
@@ -73,13 +72,18 @@ impl UiProtocol for DisplayBackupProtocol {
         }
     }
 
-    fn process_to_user_message(
-        &mut self,
-        message: frostsnap_core::message::CoordinatorToUserMessage,
-    ) {
-        if let CoordinatorToUserMessage::DisplayBackupConfirmed { device_id } = message {
-            if self.device_id == device_id {
-                self.sink.send(true);
+    fn process_comms_message(&mut self, from: DeviceId, message: CommsMisc) {
+        match message {
+            CommsMisc::DisplayBackupConfrimed => {
+                if self.device_id == from {
+                    self.sink.send(true);
+                }
+            }
+            _ => {
+                error!(
+                    "unexpected comms message receieved during display backup: {}",
+                    message.gist()
+                )
             }
         }
     }

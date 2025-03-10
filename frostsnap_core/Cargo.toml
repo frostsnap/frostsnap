@@ -22,6 +22,8 @@ rusqlite = { workspace = true, optional = true }
 
 [dev-dependencies]
 rand = "0.8"
+proptest-state-machine = "0.3"
+proptest = "1.6"
 
 [features]
 std = ["tracing?/std", "schnorr_fun/std"]

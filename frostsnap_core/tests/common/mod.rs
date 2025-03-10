@@ -1,14 +1,14 @@
-use frostsnap_core::device::DeviceSymmetricKeyGen;
+use frostsnap_core::device::{DeviceSymmetricKeyGen, KeyPurpose};
 use frostsnap_core::message::{
     CoordinatorToDeviceMessage, CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage,
-    DeviceSend, DeviceToCoordinatorMessage, DeviceToUserMessage,
+    DeviceSend, DeviceToCoordinatorMessage, DeviceToUserMessage, DoKeyGen,
 };
-use frostsnap_core::MessageResult;
 use frostsnap_core::{
     coordinator::{CoordinatorSend, FrostCoordinator},
     device::FrostSigner,
     DeviceId, SymmetricKey,
 };
+use frostsnap_core::{AccessStructureRef, MessageResult};
 use rand::RngCore;
 use schnorr_fun::frost::PartyIndex;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -74,8 +74,7 @@ pub struct TestDeviceKeyGen;
 impl DeviceSymmetricKeyGen for TestDeviceKeyGen {
     fn get_share_encryption_key(
         &mut self,
-        _key_id: frostsnap_core::KeyId,
-        _access_structure_id: frostsnap_core::AccessStructureId,
+        _access_structure_ref: AccessStructureRef,
         _party_index: PartyIndex,
         _coord_key: frostsnap_core::CoordShareDecryptionContrib,
     ) -> SymmetricKey {
@@ -92,11 +91,16 @@ pub trait Env {
         rng: &mut impl RngCore,
     ) {
         match message {
-            CoordinatorToUserMessage::KeyGen(CoordinatorToUserKeyGenMessage::KeyGenAck {
-                all_acks_received: true,
-                ..
-            }) => {
-                run.coordinator.final_keygen_ack(TEST_ENCRYPTION_KEY, rng);
+            CoordinatorToUserMessage::KeyGen {
+                keygen_id,
+                inner:
+                    CoordinatorToUserKeyGenMessage::KeyGenAck {
+                        all_acks_received: true,
+                        ..
+                    },
+            } => {
+                run.coordinator
+                    .final_keygen_ack(keygen_id, TEST_ENCRYPTION_KEY, rng);
             }
             _ => { /* nothing needs doing */ }
         }
@@ -109,26 +113,26 @@ pub trait Env {
         rng: &mut impl RngCore,
     ) {
         match message {
-            DeviceToUserMessage::CheckKeyGen { .. } => {
+            DeviceToUserMessage::CheckKeyGen { phase, .. } => {
                 let ack = run
                     .device(from)
-                    .keygen_ack(&mut TestDeviceKeyGen, rng)
+                    .keygen_ack(*phase, &mut TestDeviceKeyGen, rng)
                     .unwrap();
                 run.extend_from_device(from, ack);
             }
-            DeviceToUserMessage::SignatureRequest { .. } => {
-                let sign_ack = run.device(from).sign_ack(&mut TestDeviceKeyGen).unwrap();
+            DeviceToUserMessage::SignatureRequest { phase } => {
+                let sign_ack = run
+                    .device(from)
+                    .sign_ack(*phase, &mut TestDeviceKeyGen)
+                    .unwrap();
                 run.extend_from_device(from, sign_ack);
             }
-            DeviceToUserMessage::DisplayBackupRequest { .. } => {
+            DeviceToUserMessage::DisplayBackupRequest { phase } => {
                 let backup_ack = run
                     .device(from)
-                    .display_backup_ack(&mut TestDeviceKeyGen)
+                    .display_backup_ack(*phase, &mut TestDeviceKeyGen)
                     .unwrap();
                 run.extend_from_device(from, backup_ack);
-            }
-            DeviceToUserMessage::Canceled { .. } => {
-                panic!("no cancelling done");
             }
             DeviceToUserMessage::VerifyAddress { .. } => {
                 // we dont actually confirm on the device
@@ -138,10 +142,12 @@ pub trait Env {
     }
 }
 
+#[derive(Default)]
 pub struct DefaultTestEnv;
 
 impl Env for DefaultTestEnv {}
 
+#[derive(Clone)]
 pub struct Run {
     pub coordinator: FrostCoordinator,
     pub devices: BTreeMap<DeviceId, FrostSigner>,
@@ -151,18 +157,91 @@ pub struct Run {
     pub start_devices: BTreeMap<DeviceId, FrostSigner>,
 }
 
+impl core::fmt::Debug for Run {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Run")
+            .field("coordinator", &"..")
+            .field("devices", &self.device_set())
+            .field("message_queue", &self.message_queue)
+            .field("transcript", &self.transcript)
+            .field("start_coordinator", &"..")
+            .field("start_devices", &"..")
+            .finish()
+    }
+}
+
 impl Run {
-    pub fn generate(n_devices: usize, rng: &mut impl rand_core::RngCore) -> Self {
+    pub fn generate_with_nonce_slots(
+        n_devices: usize,
+        rng: &mut impl rand_core::RngCore,
+        nonce_slots: usize,
+    ) -> Self {
         Self::new(
             FrostCoordinator::new(),
             (0..n_devices)
                 .map(|_| {
-                    let signer = FrostSigner::new_random(rng);
+                    let signer = FrostSigner::new_random(rng, nonce_slots);
                     (signer.device_id(), signer)
                 })
                 .collect(),
         )
     }
+
+    pub fn generate(n_devices: usize, rng: &mut impl rand_core::RngCore) -> Self {
+        Self::generate_with_nonce_slots(n_devices, rng, 8)
+    }
+
+    #[allow(unused)]
+    pub fn start_after_keygen(
+        n_devices: usize,
+        threshold: u16,
+        env: &mut impl Env,
+        rng: &mut impl rand_core::RngCore,
+        purpose: KeyPurpose,
+    ) -> Self {
+        let mut run = Self::generate(n_devices, rng);
+        let keygen_init = run
+            .coordinator
+            .do_keygen(
+                DoKeyGen::new(
+                    run.devices.keys().cloned().collect(),
+                    threshold,
+                    "my new key".to_string(),
+                    purpose,
+                    rng,
+                ),
+                rng,
+            )
+            .unwrap();
+        run.extend(keygen_init);
+
+        run.run_until_finished(env, rng).unwrap();
+
+        run
+    }
+
+    #[allow(unused)]
+    pub fn start_after_keygen_and_nonces(
+        n_devices: usize,
+        threshold: u16,
+        env: &mut impl Env,
+        rng: &mut impl rand_core::RngCore,
+        n_nonce_streams: usize,
+        purpose: KeyPurpose,
+    ) -> Self {
+        let mut run = Self::start_after_keygen(n_devices, threshold, env, rng, purpose);
+        for device_id in run.device_set() {
+            run.extend(run.coordinator.maybe_request_nonce_replenishment(
+                device_id,
+                n_nonce_streams,
+                rng,
+            ));
+        }
+        run.run_until_finished(env, rng).unwrap();
+
+        run
+    }
+
     pub fn new(coordinator: FrostCoordinator, devices: BTreeMap<DeviceId, FrostSigner>) -> Self {
         Self {
             start_coordinator: coordinator.clone(),
@@ -181,6 +260,11 @@ impl Run {
     }
 
     pub fn device_set(&self) -> BTreeSet<DeviceId> {
+        self.devices.keys().cloned().collect()
+    }
+
+    #[allow(unused)]
+    pub fn device_vec(&self) -> Vec<DeviceId> {
         self.devices.keys().cloned().collect()
     }
 
@@ -270,7 +354,7 @@ impl Run {
             self.start_coordinator,
             {
                 let mut tmp = self.coordinator.clone();
-                tmp.cancel();
+                tmp.cancel_all_keygens();
                 tmp
             },
             "coordinator should be the same after applying mutations"
@@ -278,7 +362,7 @@ impl Run {
 
         for (device_id, device) in &mut self.devices {
             let mut device = device.clone();
-            let _ = device.cancel_action();
+            device.clear_tmp_data();
             let mutations = device.staged_mutations().drain(..).collect::<Vec<_>>();
             let start_device = self.start_devices.get_mut(device_id).unwrap();
             *start_device.nonce_slots() = device.nonce_slots().clone();

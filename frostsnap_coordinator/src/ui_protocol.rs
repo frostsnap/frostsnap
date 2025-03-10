@@ -19,7 +19,7 @@ pub trait UiProtocol: Send + Any + 'static {
     fn connected(&mut self, _id: DeviceId) {}
     fn disconnected(&mut self, id: DeviceId);
     fn process_to_user_message(&mut self, _message: CoordinatorToUserMessage) {}
-    fn process_upgrade_mode_ack(&mut self, _from: DeviceId) {}
+    fn process_comms_message(&mut self, _from: DeviceId, _message: frostsnap_comms::CommsMisc) {}
     /// `poll` allows the UiProtocol to communicate to the rest of the system.  The reason the ui protocol needs
     /// to do this is subtle: core messages may need to be sent out only when a device is next
     /// connected. The UI protocol is currently the point that manages the effect of device

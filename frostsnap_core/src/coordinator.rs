@@ -6,8 +6,8 @@ use crate::{
     symmetric_encryption::{Ciphertext, SymmetricKey},
     tweak::Xpub,
     AccessStructureId, AccessStructureRef, ActionError, CoordShareDecryptionContrib, Error, Gist,
-    KeyId, MasterAppkey, MessageResult, SessionHash, ShareImage, SignItem, SignSessionId, SignTask,
-    SignTaskError, NONCE_BATCH_SIZE,
+    KeyId, KeygenId, MasterAppkey, MessageResult, SessionHash, ShareImage, SignItem, SignSessionId,
+    SignTaskError, WireSignTask, NONCE_BATCH_SIZE,
 };
 use alloc::{
     borrow::ToOwned,
@@ -36,10 +36,11 @@ pub const MIN_NONCES_BEFORE_REQUEST: u32 = NONCE_BATCH_SIZE / 2;
 pub struct FrostCoordinator {
     keys: BTreeMap<KeyId, CoordFrostKey>,
     key_order: Vec<KeyId>,
-    action_state: Option<CoordinatorState>,
+    pending_keygens: HashMap<KeygenId, KeyGenState>,
     nonce_cache: NonceCache,
     mutations: VecDeque<Mutation>,
     active_signing_sessions: BTreeMap<SignSessionId, ActiveSignSession>,
+    active_sign_session_order: Vec<SignSessionId>,
     finished_signing_sessions: BTreeMap<SignSessionId, FinishedSignSession>,
 }
 
@@ -122,36 +123,20 @@ impl CoordFrostKey {
             .cloned()
     }
 
-    pub fn access_structures(
-        &self,
-    ) -> impl Iterator<Item = (AccessStructureRef, CoordAccessStructure)> + '_ {
-        self.complete_key.iter().flat_map(|completed_key| {
-            completed_key.access_structures.iter().map(
-                |(&access_structure_id, access_structure)| {
-                    (
-                        AccessStructureRef {
-                            key_id: self.key_id,
-                            access_structure_id,
-                        },
-                        access_structure.clone(),
-                    )
-                },
-            )
-        })
+    pub fn access_structures(&self) -> impl Iterator<Item = CoordAccessStructure> + '_ {
+        self.complete_key
+            .iter()
+            .flat_map(|completed_key| completed_key.access_structures.values().cloned())
+    }
+
+    pub fn master_access_structure(&self) -> CoordAccessStructure {
+        self.access_structures().next().unwrap()
     }
 }
 
 impl FrostCoordinator {
     pub fn new() -> Self {
-        Self {
-            keys: Default::default(),
-            key_order: Default::default(),
-            action_state: None,
-            nonce_cache: Default::default(),
-            mutations: Default::default(),
-            active_signing_sessions: Default::default(),
-            finished_signing_sessions: Default::default(),
-        }
+        Self::default()
     }
 
     pub fn mutate(&mut self, mutation: Mutation) {
@@ -306,9 +291,21 @@ impl FrostCoordinator {
                     );
                 }
             }
-            DeleteKey(key_id) => {
-                self.keys.remove(key_id);
-                self.key_order.retain(|entry| entry != key_id);
+            &DeleteKey(key_id) => {
+                self.keys.remove(&key_id)?;
+                self.key_order.retain(|&entry| entry != key_id);
+                let sessions_to_delete = self
+                    .active_signing_sessions
+                    .iter()
+                    .filter(|(_, session)| session.key_id == key_id)
+                    .map(|(&key_id, _)| key_id)
+                    .collect::<Vec<_>>();
+                for session_id in sessions_to_delete {
+                    self.apply_mutation(&Mutation::CloseSignSession {
+                        session_id,
+                        finished: None,
+                    });
+                }
             }
             NewNonces {
                 device_id,
@@ -327,10 +324,10 @@ impl FrostCoordinator {
                 }
             }
             NewSigningSession(signing_session_state) => {
-                self.active_signing_sessions.insert(
-                    signing_session_state.init.group_request.session_id(),
-                    signing_session_state.clone(),
-                );
+                let ssid = signing_session_state.init.group_request.session_id();
+                self.active_signing_sessions
+                    .insert(ssid, signing_session_state.clone());
+                self.active_sign_session_order.push(ssid);
             }
             GotSignatureSharesFromDevice {
                 session_id,
@@ -344,14 +341,15 @@ impl FrostCoordinator {
                     }
                 }
             }
-            &ConsumesNonces {
+            &SentSignReq {
+                session_id,
                 device_id,
-                nonce_stream_id,
-                up_to_but_not_including,
             } => {
                 if !self
-                    .nonce_cache
-                    .consume(device_id, nonce_stream_id, up_to_but_not_including)
+                    .active_signing_sessions
+                    .get_mut(&session_id)?
+                    .sent_req_to_device
+                    .insert(device_id)
                 {
                     return None;
                 }
@@ -360,16 +358,33 @@ impl FrostCoordinator {
                 session_id,
                 finished,
             } => {
-                if let Some(session_state) = self.active_signing_sessions.remove(session_id) {
-                    if let Some(signatures) = finished {
-                        self.finished_signing_sessions.insert(
-                            *session_id,
-                            FinishedSignSession {
-                                init: session_state.init,
-                                signatures: signatures.clone(),
-                            },
+                let (index, _) = self
+                    .active_sign_session_order
+                    .iter()
+                    .enumerate()
+                    .find(|(_, ssid)| *ssid == session_id)?;
+                self.active_sign_session_order.remove(index);
+                let session_state = self.active_signing_sessions.remove(session_id).unwrap();
+
+                for (device_id, nonce_segment) in &session_state.init.nonces {
+                    if session_state.sent_req_to_device.contains(device_id) {
+                        let state_after_signing = nonce_segment
+                            .after_signing(session_state.init.group_request.n_signatures());
+                        self.nonce_cache.consume(
+                            *device_id,
+                            state_after_signing.stream_id,
+                            state_after_signing.index,
                         );
                     }
+                }
+                if let Some(signatures) = finished {
+                    self.finished_signing_sessions.insert(
+                        *session_id,
+                        FinishedSignSession {
+                            init: session_state.init,
+                            signatures: signatures.clone(),
+                        },
+                    );
                 }
             }
         }
@@ -391,9 +406,7 @@ impl FrostCoordinator {
             .map(|key_id| self.keys.get(key_id).expect("invariant"))
     }
 
-    pub fn iter_access_structures(
-        &self,
-    ) -> impl Iterator<Item = (AccessStructureRef, CoordAccessStructure)> + '_ {
+    pub fn iter_access_structures(&self) -> impl Iterator<Item = CoordAccessStructure> + '_ {
         self.keys
             .iter()
             .flat_map(|(_, key_data)| key_data.access_structures())
@@ -409,8 +422,8 @@ impl FrostCoordinator {
         message: DeviceToCoordinatorMessage,
     ) -> MessageResult<Vec<CoordinatorSend>> {
         let message_kind = message.kind();
-        match (&mut self.action_state, message) {
-            (_, DeviceToCoordinatorMessage::NonceResponse { segments }) => {
+        match message {
+            DeviceToCoordinatorMessage::NonceResponse { segments } => {
                 for new_segment in segments {
                     self.nonce_cache
                         .check_can_extend(from, &new_segment)
@@ -429,7 +442,7 @@ impl FrostCoordinator {
 
                 Ok(vec![])
             }
-            (_, DeviceToCoordinatorMessage::HeldShares(held_shares)) => {
+            DeviceToCoordinatorMessage::HeldShares(held_shares) => {
                 let mut messages = vec![];
                 for held_share in held_shares {
                     let access_structure_ref = held_share.access_structure_ref;
@@ -468,116 +481,139 @@ impl FrostCoordinator {
                 }
                 Ok(messages)
             }
-            (
-                Some(CoordinatorState::KeyGen(KeyGenState::WaitingForResponses {
-                    input_aggregator,
-                    device_to_share_index,
-                    pending_key_name,
-                    purpose,
-                })),
-                DeviceToCoordinatorMessage::KeyGenResponse(new_shares),
-            ) => {
-                let share_index =
-                    device_to_share_index
-                        .get(&from)
-                        .ok_or(Error::coordinator_invalid_message(
-                            message_kind,
-                            "got share from device that was not part of keygen",
-                        ))?;
+            DeviceToCoordinatorMessage::KeyGenResponse(response) => {
+                let keygen_id = response.keygen_id;
+                match self.pending_keygens.get_mut(&keygen_id) {
+                    Some(KeyGenState::WaitingForResponses {
+                        input_aggregator,
+                        device_to_share_index,
+                        pending_key_name,
+                        purpose,
+                        ..
+                    }) => {
+                        let device_to_share_index = device_to_share_index.clone();
+                        let share_index = device_to_share_index.get(&from).ok_or(
+                            Error::coordinator_invalid_message(
+                                message_kind,
+                                "got share from device that was not part of keygen",
+                            ),
+                        )?;
 
-                input_aggregator
-                    .add_input(
-                        &schnorr_fun::new_with_deterministic_nonces::<Sha256>(),
-                        // we use the share index as the input generator index. The input
-                        // generator at index 0 is the coordinator itself.
-                        (*share_index).into(),
-                        new_shares,
-                    )
-                    .map_err(|e| Error::coordinator_invalid_message(message_kind, e))?;
+                        input_aggregator
+                            .add_input(
+                                &schnorr_fun::new_with_deterministic_nonces::<Sha256>(),
+                                // we use the share index as the input generator index. The input
+                                // generator at index 0 is the coordinator itself.
+                                (*share_index).into(),
+                                response.input,
+                            )
+                            .map_err(|e| Error::coordinator_invalid_message(message_kind, e))?;
 
-                let mut outgoing = vec![CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen(
-                    CoordinatorToUserKeyGenMessage::ReceivedShares { from },
-                ))];
+                        let mut outgoing =
+                            vec![CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen {
+                                keygen_id,
+                                inner: CoordinatorToUserKeyGenMessage::ReceivedShares { from },
+                            })];
 
-                if input_aggregator.is_finished() {
-                    let agg_input = input_aggregator.clone().finish().unwrap();
-                    let session_hash = SessionHash::from_agg_input(&agg_input);
-                    outgoing.push(CoordinatorSend::ToDevice {
-                        destinations: device_to_share_index.keys().cloned().collect(),
-                        message: CoordinatorToDeviceMessage::FinishKeyGen {
-                            agg_input: agg_input.clone(),
-                        },
-                    });
+                        if input_aggregator.is_finished() {
+                            let agg_input = input_aggregator.clone().finish().unwrap();
+                            let session_hash = SessionHash::from_agg_input(&agg_input);
+                            outgoing.push(CoordinatorSend::ToDevice {
+                                destinations: device_to_share_index.keys().cloned().collect(),
+                                message: CoordinatorToDeviceMessage::FinishKeyGen {
+                                    keygen_id,
+                                    agg_input: agg_input.clone(),
+                                },
+                            });
 
-                    outgoing.push(CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen(
-                        CoordinatorToUserKeyGenMessage::CheckKeyGen { session_hash },
-                    )));
+                            outgoing.push(CoordinatorSend::ToUser(
+                                CoordinatorToUserMessage::KeyGen {
+                                    keygen_id,
+                                    inner: CoordinatorToUserKeyGenMessage::CheckKeyGen {
+                                        session_hash,
+                                    },
+                                },
+                            ));
 
-                    self.action_state =
-                        Some(CoordinatorState::KeyGen(KeyGenState::WaitingForAcks {
-                            agg_input: agg_input.clone(),
-                            device_to_share_index: device_to_share_index
-                                .clone()
-                                .into_iter()
-                                .map(|(device, share_index)| {
-                                    (device, PartyIndex::from(share_index))
-                                })
-                                .collect(),
-                            acks: Default::default(),
-                            pending_key_name: pending_key_name.clone(),
-                            purpose: *purpose,
-                        }));
+                            let new_state = KeyGenState::WaitingForAcks {
+                                agg_input: agg_input.clone(),
+                                device_to_share_index: device_to_share_index
+                                    .into_iter()
+                                    .map(|(device, share_index)| {
+                                        (device, PartyIndex::from(share_index))
+                                    })
+                                    .collect(),
+                                acks: Default::default(),
+                                pending_key_name: pending_key_name.clone(),
+                                purpose: *purpose,
+                            };
+
+                            self.pending_keygens.insert(keygen_id, new_state);
+                        }
+                        Ok(outgoing)
+                    }
+                    _ => Err(Error::coordinator_invalid_message(
+                        message_kind,
+                        "keygen wasn't in WaitingForResponses state",
+                    )),
                 }
-
-                Ok(outgoing)
             }
-            (
-                Some(CoordinatorState::KeyGen(KeyGenState::WaitingForAcks {
-                    device_to_share_index,
-                    agg_input,
-                    acks,
-                    ..
-                })),
-                DeviceToCoordinatorMessage::KeyGenAck(acked_session_hash),
-            ) => {
+            DeviceToCoordinatorMessage::KeyGenAck(self::KeyGenAck {
+                keygen_id,
+                ack_session_hash,
+            }) => {
                 let mut outgoing = vec![];
-                let session_hash = SessionHash::from_agg_input(agg_input);
+                match self.pending_keygens.get_mut(&keygen_id) {
+                    Some(KeyGenState::WaitingForAcks {
+                        agg_input,
+                        device_to_share_index,
+                        acks,
+                        ..
+                    }) => {
+                        let session_hash = SessionHash::from_agg_input(agg_input);
 
-                if acked_session_hash != session_hash {
-                    return Err(Error::coordinator_invalid_message(
+                        if ack_session_hash != session_hash {
+                            return Err(Error::coordinator_invalid_message(
+                                message_kind,
+                                "Device acked wrong keygen session hash",
+                            ));
+                        }
+
+                        if !device_to_share_index.contains_key(&from) {
+                            return Err(Error::coordinator_invalid_message(
+                                message_kind,
+                                "Received ack from device not a member of keygen",
+                            ));
+                        }
+
+                        if acks.insert(from) {
+                            let all_acks_received = acks.len() == device_to_share_index.len();
+
+                            outgoing.push(CoordinatorSend::ToUser(
+                                CoordinatorToUserMessage::KeyGen {
+                                    inner: CoordinatorToUserKeyGenMessage::KeyGenAck {
+                                        from,
+                                        all_acks_received,
+                                    },
+                                    keygen_id,
+                                },
+                            ));
+                        }
+
+                        Ok(outgoing)
+                    }
+                    _ => Err(Error::coordinator_invalid_message(
                         message_kind,
-                        "Device acked wrong keygen session hash",
-                    ));
+                        "received ACK for keygen but coordinator wasn't wainting for ACKs",
+                    )),
                 }
-
-                if !device_to_share_index.contains_key(&from) {
-                    return Err(Error::coordinator_invalid_message(
-                        message_kind,
-                        "Received ack from device not a member of keygen",
-                    ));
-                }
-
-                if acks.insert(from) {
-                    let all_acks_received = acks.len() == device_to_share_index.len();
-
-                    outgoing.push(CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen(
-                        CoordinatorToUserKeyGenMessage::KeyGenAck {
-                            from,
-                            all_acks_received,
-                        },
-                    )));
-                }
-
-                Ok(outgoing)
             }
-            (
-                _, // we don't care what state we're in. A valid signature share is a valid signature share.
-                DeviceToCoordinatorMessage::SignatureShare {
-                    session_id,
-                    ref signature_shares,
-                    ref replenish_nonces,
-                },
-            ) => {
+
+            DeviceToCoordinatorMessage::SignatureShare {
+                session_id,
+                ref signature_shares,
+                ref replenish_nonces,
+            } => {
                 let active_sign_session = self
                     .active_signing_sessions
                     .get(&session_id)
@@ -655,42 +691,21 @@ impl FrostCoordinator {
 
                 Ok(outgoing)
             }
-            (state, DeviceToCoordinatorMessage::DisplayBackupConfirmed) => {
-                if let Some(CoordinatorState::DisplayBackup) = state {
-                    Ok(vec![CoordinatorSend::ToUser(
-                        CoordinatorToUserMessage::DisplayBackupConfirmed { device_id: from },
-                    )])
-                } else {
-                    // it's ok if a device acks a display backup after we're no longer looking at it
-                    // (it shouldn't happen unless the user is trying to make it happen!).
-                    Ok(vec![])
-                }
-            }
-            (
-                Some(CoordinatorState::CheckingDeviceShare {
-                    expected_image,
-                    device,
-                }),
-                DeviceToCoordinatorMessage::CheckShareBackup { share_image },
-            ) => {
-                if from != *device {
-                    return Err(Error::coordinator_invalid_message(
-                        message_kind,
-                        "unexpected device responded with backup",
-                    ));
-                }
-
+            DeviceToCoordinatorMessage::LoadKnownBackupResult {
+                access_structure_ref,
+                share_index,
+                success,
+            } => {
+                // XXX: We could sanity check this before sending it up
                 Ok(vec![CoordinatorSend::ToUser(
-                    CoordinatorToUserMessage::EnteredBackup {
+                    CoordinatorToUserMessage::EnteredKnownBackup {
                         device_id: from,
-                        valid: *expected_image == share_image,
+                        access_structure_ref,
+                        share_index,
+                        valid: success,
                     },
                 )])
             }
-            _ => Err(Error::coordinator_message_kind(
-                &self.action_state,
-                message_kind,
-            )),
         }
     }
 
@@ -704,7 +719,14 @@ impl FrostCoordinator {
             threshold,
             key_name,
             purpose,
+            keygen_id,
         } = &do_keygen;
+
+        if self.pending_keygens.contains_key(&do_keygen.keygen_id) {
+            return Err(ActionError::StateInconsistent(
+                "keygen with that id already in progress".into(),
+            ));
+        }
 
         let n_devices = device_to_share_index.len();
 
@@ -714,63 +736,58 @@ impl FrostCoordinator {
                 threshold, n_devices
             );
         }
-        match &self.action_state {
-            None => {
-                let share_receivers_enckeys = device_to_share_index
-                    .iter()
-                    .map(|(device, share_index)| (PartyIndex::from(*share_index), device.pubkey()))
-                    .collect::<BTreeMap<_, _>>();
-                let schnorr = schnorr_fun::new_with_deterministic_nonces::<Sha256>();
-                let mut input_aggregator = encpedpop::Coordinator::new(
-                    (*threshold).into(),
-                    (n_devices + 1) as u32,
-                    &share_receivers_enckeys,
-                );
-                // We don't need to keep the _coordinator_inputter state since we are the one forming agg_input
-                //
-                let (_coordinator_inputter, input) = encpedpop::Contributor::gen_keygen_input(
-                    &schnorr,
-                    (*threshold).into(),
-                    &share_receivers_enckeys,
-                    0,
-                    rng,
-                );
-                input_aggregator
-                    .add_input(&schnorr, 0, input)
-                    .expect("we just generated the input");
+        let share_receivers_enckeys = device_to_share_index
+            .iter()
+            .map(|(device, share_index)| (PartyIndex::from(*share_index), device.pubkey()))
+            .collect::<BTreeMap<_, _>>();
+        let schnorr = schnorr_fun::new_with_deterministic_nonces::<Sha256>();
+        let mut input_aggregator = encpedpop::Coordinator::new(
+            (*threshold).into(),
+            (n_devices + 1) as u32,
+            &share_receivers_enckeys,
+        );
+        // We don't need to keep the _coordinator_inputter state since we are the one forming agg_input
+        let (_coordinator_inputter, input) = encpedpop::Contributor::gen_keygen_input(
+            &schnorr,
+            (*threshold).into(),
+            &share_receivers_enckeys,
+            0,
+            rng,
+        );
+        input_aggregator
+            .add_input(&schnorr, 0, input)
+            .expect("we just generated the input");
 
-                self.action_state =
-                    Some(CoordinatorState::KeyGen(KeyGenState::WaitingForResponses {
-                        input_aggregator,
-                        device_to_share_index: device_to_share_index.clone(),
-                        pending_key_name: key_name.to_string(),
-                        purpose: *purpose,
-                    }));
+        self.pending_keygens.insert(
+            *keygen_id,
+            KeyGenState::WaitingForResponses {
+                keygen_id: *keygen_id,
+                input_aggregator,
+                device_to_share_index: device_to_share_index.clone(),
+                pending_key_name: key_name.to_string(),
+                purpose: *purpose,
+            },
+        );
 
-                Ok(SendDokeygen(do_keygen))
-            }
-            Some(action_state) => Err(ActionError::WrongState {
-                in_state: action_state.name(),
-                action: "do_keygen",
-            }),
-        }
+        Ok(SendDokeygen(do_keygen.clone()))
     }
 
     /// This is called when the user has checked every device agrees and finally confirms this with
     /// the coordinator.
     pub fn final_keygen_ack(
         &mut self,
+        keygen_id: KeygenId,
         encryption_key: SymmetricKey,
         rng: &mut impl rand_core::RngCore,
     ) -> Result<AccessStructureRef, ActionError> {
-        match &self.action_state {
-            Some(CoordinatorState::KeyGen(KeyGenState::WaitingForAcks {
+        match self.pending_keygens.get(&keygen_id) {
+            Some(KeyGenState::WaitingForAcks {
                 device_to_share_index,
                 agg_input,
                 acks,
                 pending_key_name,
                 purpose,
-            })) => {
+            }) => {
                 let all_acks = acks.len() == device_to_share_index.len();
                 if all_acks {
                     let root_shared_key = agg_input
@@ -785,7 +802,7 @@ impl FrostCoordinator {
                         *purpose,
                         rng,
                     );
-                    self.action_state = None;
+                    self.pending_keygens.remove(&keygen_id);
                     Ok(access_structure_ref)
                 } else {
                     Err(ActionError::StateInconsistent(
@@ -793,17 +810,14 @@ impl FrostCoordinator {
                     ))
                 }
             }
-            _ => Err(ActionError::WrongState {
-                in_state: self.state_name(),
-                action: "final_keygen_ack",
-            }),
+            _ => Err(ActionError::StateInconsistent("no such keygen".into())),
         }
     }
 
     pub fn start_sign(
         &mut self,
         access_structure_ref: AccessStructureRef,
-        sign_task: SignTask,
+        sign_task: WireSignTask,
         signing_devices: &BTreeSet<DeviceId>,
         rng: &mut impl rand_core::RngCore,
     ) -> Result<SignSessionId, StartSignError> {
@@ -811,12 +825,6 @@ impl FrostCoordinator {
             key_id,
             access_structure_id,
         } = access_structure_ref;
-        if self.action_state.is_some() {
-            // we're doing something else so it's an error to call this
-            return Err(StartSignError::CantSignInState {
-                in_state: self.state_name(),
-            });
-        }
 
         let key_data = self
             .keys
@@ -843,7 +851,7 @@ impl FrostCoordinator {
         let app_shared_key = access_structure.app_shared_key().clone();
 
         let selected = signing_devices.len();
-        if selected < access_structure.threshold() {
+        if selected < access_structure.threshold() as usize {
             return Err(StartSignError::NotEnoughDevicesSelected {
                 selected,
                 threshold: access_structure.threshold(),
@@ -851,7 +859,8 @@ impl FrostCoordinator {
         }
 
         let checked_sign_task = sign_task
-            .check(complete_key.master_appkey)
+            .clone()
+            .check(complete_key.master_appkey, key_data.purpose)
             .map_err(StartSignError::SignTask)?;
 
         let sign_items = checked_sign_task.sign_items();
@@ -900,7 +909,7 @@ impl FrostCoordinator {
             .collect::<Vec<_>>();
 
         let group_request = GroupSignReq {
-            sign_task: checked_sign_task.into_inner(),
+            sign_task,
             parties: nonces_by_party.keys().cloned().collect(),
             agg_nonces: sessions
                 .iter()
@@ -924,6 +933,7 @@ impl FrostCoordinator {
             progress: sessions,
             init: start_sign.clone(),
             key_id,
+            sent_req_to_device: Default::default(),
         };
 
         self.mutate(Mutation::NewSigningSession(local_session));
@@ -939,7 +949,7 @@ impl FrostCoordinator {
     ) -> RequestDeviceSign {
         let active_sign_session = self
             .active_signing_sessions
-            .get_mut(&session_id)
+            .get(&session_id)
             .expect("signing session doesn't exist");
 
         let nonces_for_device = *active_sign_session
@@ -967,12 +977,9 @@ impl FrostCoordinator {
             )
             .expect("must be able to decrypt rootkey");
 
-        self.mutate(Mutation::ConsumesNonces {
+        self.mutate(Mutation::SentSignReq {
             device_id,
-            nonce_stream_id: nonces_for_device.stream_id,
-            up_to_but_not_including: nonces_for_device
-                .index
-                .saturating_add(group_sign_req.n_signatures().try_into().unwrap()),
+            session_id,
         });
 
         let request_sign = RequestSign {
@@ -993,13 +1000,14 @@ impl FrostCoordinator {
     pub fn maybe_request_nonce_replenishment(
         &self,
         device_id: DeviceId,
+        desired_nonce_streams: usize,
         rng: &mut impl rand_core::RngCore,
     ) -> impl IntoIterator<Item = CoordinatorSend> {
         core::iter::once(CoordinatorSend::ToDevice {
             message: CoordinatorToDeviceMessage::OpenNonceStreams {
                 streams: self
                     .nonce_cache
-                    .generate_nonce_stream_opening_requests(device_id, 4, rng)
+                    .generate_nonce_stream_opening_requests(device_id, desired_nonce_streams, rng)
                     .into_iter()
                     .collect(),
             },
@@ -1038,13 +1046,6 @@ impl FrostCoordinator {
             .ok_or(ActionError::StateInconsistent(
                 "device does not have share in key".into(),
             ))?;
-        self.action_state = Some(CoordinatorState::DisplayBackup);
-        let rootkey = complete_key
-            .encrypted_rootkey
-            .decrypt(encryption_key)
-            .ok_or(ActionError::StateInconsistent(
-                "couldn't decrypt root key".into(),
-            ))?;
         let (_, coord_share_decryption_contrib) = complete_key
             .coord_share_decryption_contrib(access_structure_id, device_id, encryption_key)
             .ok_or(ActionError::StateInconsistent(
@@ -1052,8 +1053,7 @@ impl FrostCoordinator {
             ))?;
         Ok(vec![CoordinatorSend::ToDevice {
             message: CoordinatorToDeviceMessage::DisplayBackup {
-                key_id: KeyId::from_rootkey(rootkey),
-                access_structure_id,
+                access_structure_ref,
                 coord_share_decryption_contrib,
                 party_index,
             },
@@ -1071,12 +1071,17 @@ impl FrostCoordinator {
             key_id,
             access_structure_id,
         } = access_structure_ref;
-
-        let complete_key = self
+        let CoordFrostKey {
+            complete_key,
+            key_name,
+            purpose,
+            ..
+        } = self
             .keys
             .get(&key_id)
-            .ok_or(ActionError::StateInconsistent("no such key".into()))?
-            .complete_key
+            .ok_or(ActionError::StateInconsistent("no such key".into()))?;
+
+        let complete_key = complete_key
             .as_ref()
             .ok_or(ActionError::StateInconsistent(
                 "can't check share of a key that hasn't been restored".into(),
@@ -1102,12 +1107,14 @@ impl FrostCoordinator {
             share_index,
         };
 
-        self.action_state = Some(CoordinatorState::CheckingDeviceShare {
-            expected_image,
-            device,
-        });
         Ok(vec![CoordinatorSend::ToDevice {
-            message: CoordinatorToDeviceMessage::CheckShareBackup,
+            message: CoordinatorToDeviceMessage::LoadKnownBackup(Box::new(LoadKnownBackup {
+                access_structure_ref,
+                key_name: key_name.into(),
+                purpose: *purpose,
+                threshold: access_structure.threshold(),
+                share_image: expected_image,
+            })),
             destinations: BTreeSet::from_iter([device]),
         }])
     }
@@ -1132,7 +1139,7 @@ impl FrostCoordinator {
         // verify on any device that knows about this key
         let target_devices: BTreeSet<_> = frost_key
             .access_structures()
-            .flat_map(|(_, accss)| {
+            .flat_map(|accss| {
                 accss
                     .device_to_share_index
                     .keys()
@@ -1146,17 +1153,6 @@ impl FrostCoordinator {
             derivation_index,
             target_devices,
         })
-    }
-
-    pub fn state_name(&self) -> &'static str {
-        self.action_state
-            .as_ref()
-            .map(|x| x.name())
-            .unwrap_or("None")
-    }
-
-    pub fn cancel(&mut self) {
-        let _state = self.action_state.take();
     }
 
     pub fn nonces_available(&self, device_id: DeviceId) -> BTreeMap<NonceStreamId, u32> {
@@ -1387,7 +1383,6 @@ impl FrostCoordinator {
                 finished: Some(signatures.clone()),
             });
 
-            self.action_state = None;
             Some(signatures)
         } else {
             None
@@ -1402,14 +1397,30 @@ impl FrostCoordinator {
     }
 
     pub fn cancel_all_signing_sessions(&mut self) {
-        while !self.active_signing_sessions().is_empty() {
-            let ssid = *self.active_signing_sessions().keys().next().unwrap();
+        for ssid in self.active_sign_session_order.clone() {
             self.cancel_sign_session(ssid);
         }
     }
 
-    pub fn active_signing_sessions(&self) -> &BTreeMap<SignSessionId, ActiveSignSession> {
+    pub fn active_signing_sessions(&self) -> impl Iterator<Item = ActiveSignSession> + '_ {
+        self.active_sign_session_order.iter().map(|sid| {
+            self.active_signing_sessions
+                .get(sid)
+                .expect("invariant")
+                .clone()
+        })
+    }
+
+    pub fn active_signing_sessions_by_ssid(&self) -> &BTreeMap<SignSessionId, ActiveSignSession> {
         &self.active_signing_sessions
+    }
+
+    pub fn cancel_keygen(&mut self, keygen_id: KeygenId) {
+        let _ = self.pending_keygens.remove(&keygen_id);
+    }
+
+    pub fn cancel_all_keygens(&mut self) {
+        self.pending_keygens.clear()
     }
 }
 
@@ -1421,7 +1432,6 @@ impl CoordinatorState {
                 KeyGenState::WaitingForAcks { .. } => "WaitingForAcks",
             },
             CoordinatorState::DisplayBackup => "DisplayBackup",
-            CoordinatorState::CheckingDeviceShare { .. } => "RestoringDeviceShare",
         }
     }
 }
@@ -1487,10 +1497,6 @@ pub enum CoordinatorState {
     KeyGen(KeyGenState),
     //FIXME: This state probably shouldn't exist since there's nothing in it!
     DisplayBackup,
-    CheckingDeviceShare {
-        expected_image: ShareImage,
-        device: DeviceId,
-    },
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
@@ -1498,6 +1504,7 @@ pub struct ActiveSignSession {
     pub progress: Vec<SignSessionProgress>,
     pub init: StartSign,
     pub key_id: KeyId,
+    pub sent_req_to_device: BTreeSet<DeviceId>,
 }
 
 impl ActiveSignSession {
@@ -1531,6 +1538,7 @@ pub struct FinishedSignSession {
 #[derive(Clone, Debug, PartialEq)]
 pub enum KeyGenState {
     WaitingForResponses {
+        keygen_id: KeygenId,
         input_aggregator: encpedpop::Coordinator,
         device_to_share_index: BTreeMap<DeviceId, core::num::NonZeroU32>,
         pending_key_name: String,
@@ -1552,8 +1560,12 @@ pub struct CoordAccessStructure {
 }
 
 impl CoordAccessStructure {
-    pub fn threshold(&self) -> usize {
-        self.app_shared_key.key.threshold()
+    pub fn threshold(&self) -> u16 {
+        self.app_shared_key
+            .key
+            .threshold()
+            .try_into()
+            .expect("threshold too large")
     }
 
     pub fn access_structure_ref(&self) -> AccessStructureRef {
@@ -1592,7 +1604,7 @@ impl CoordAccessStructure {
 pub enum StartSignError {
     UnknownKey { key_id: KeyId },
     DeviceNotPartOfKey { device_id: DeviceId },
-    NotEnoughDevicesSelected { selected: usize, threshold: usize },
+    NotEnoughDevicesSelected { selected: usize, threshold: u16 },
     CantSignInState { in_state: &'static str },
     NotEnoughNoncesForDevice(NotEnoughNonces),
     SignTask(SignTaskError),
@@ -1675,10 +1687,9 @@ pub enum Mutation {
         nonce_segment: NonceStreamSegment,
     },
     NewSigningSession(ActiveSignSession),
-    ConsumesNonces {
+    SentSignReq {
+        session_id: SignSessionId,
         device_id: DeviceId,
-        nonce_stream_id: NonceStreamId,
-        up_to_but_not_including: u32,
     },
     GotSignatureSharesFromDevice {
         session_id: SignSessionId,
@@ -1726,7 +1737,7 @@ impl Gist for Mutation {
             NewSigningSession { .. } => "NewSigningSession",
             CloseSignSession { .. } => "CloseSignSession",
             GotSignatureSharesFromDevice { .. } => "GotSignatureSharesFromDevice",
-            ConsumesNonces { .. } => "ConsumeNonces",
+            SentSignReq { .. } => "SentSignReq",
         }
         .into()
     }
