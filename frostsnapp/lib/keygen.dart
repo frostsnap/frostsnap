@@ -639,8 +639,8 @@ Future<AccessStructureRef?> showCheckKeyGenDialog({
                       onPressed:
                           finished
                               ? () async {
-                                final accessStructureRef =
-                                    await coord.finalKeygenAck();
+                                final accessStructureRef = await coord
+                                    .finalKeygenAck(keygenId: state.keygenId);
                                 if (context.mounted) {
                                   Navigator.pop(context, accessStructureRef);
                                 }
