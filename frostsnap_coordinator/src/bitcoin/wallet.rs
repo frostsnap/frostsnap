@@ -240,6 +240,7 @@ impl CoordSuperWallet {
         txs.sort_unstable_by_key(|tx| core::cmp::Reverse(tx.chain_position));
         txs.into_iter()
             .filter_map(|canonical_tx| {
+                let txid = canonical_tx.tx_node.txid;
                 let confirmation_time = match canonical_tx.chain_position {
                     ChainPosition::Confirmed(conf_time) => Some(ConfirmationTime {
                         height: conf_time.block_id.height,
@@ -251,15 +252,39 @@ impl CoordSuperWallet {
                     &canonical_tx.tx_node.tx,
                     Self::key_index_range(master_appkey),
                 );
-
                 if net_value == SignedAmount::ZERO {
                     return None;
                 }
+                let fee = self
+                    .tx_graph
+                    .graph()
+                    .calculate_fee(&canonical_tx.tx_node)
+                    .map(Amount::to_sat)
+                    .ok();
+                let recipients = canonical_tx
+                    .tx_node
+                    .tx
+                    .output
+                    .iter()
+                    .enumerate()
+                    .map(|(vout, txout)| TxOutInfo {
+                        outpoint: bitcoin::OutPoint::new(txid, vout as u32),
+                        txout: txout.clone(),
+                        is_mine: self
+                            .tx_graph
+                            .index
+                            .index_of_spk(txout.script_pubkey.clone())
+                            .is_some(),
+                    })
+                    .collect();
                 Some(Transaction {
                     inner: canonical_tx.tx_node.tx.clone(),
                     confirmation_time,
                     net_value: net_value.to_sat(),
                     last_seen: canonical_tx.tx_node.last_seen_unconfirmed,
+                    txid,
+                    fee,
+                    recipients,
                 })
             })
             .collect()
@@ -672,6 +697,16 @@ pub struct Transaction {
     pub inner: Arc<bitcoin::Transaction>,
     pub confirmation_time: Option<ConfirmationTime>,
     pub last_seen: Option<u64>,
+    pub txid: Txid,
+    pub fee: Option<u64>,
+    pub recipients: Vec<TxOutInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TxOutInfo {
+    pub outpoint: bitcoin::OutPoint,
+    pub txout: bitcoin::TxOut,
+    pub is_mine: bool,
 }
 
 #[derive(Clone, Debug)]
