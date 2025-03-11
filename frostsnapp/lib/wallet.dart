@@ -506,6 +506,11 @@ class _TxListState extends State<TxList> {
         StreamBuilder(
           stream: walletCtx.txStream,
           builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return SliverToBoxAdapter(
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
             final transactions = snapshot.data?.txs ?? [];
             final chainTipHeight = walletCtx.wallet.superWallet.height();
             final now = DateTime.now();
