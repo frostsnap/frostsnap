@@ -85,7 +85,6 @@ class AddressInput extends StatelessWidget {
           style: TextStyle(fontFamily: monospaceTextStyle.fontFamily),
           decoration: (decoration ?? InputDecoration()).copyWith(
             //border: defaultTextInputBorder,
-            hintText: 'bc1...',
             errorText: controller.errorText,
             suffixIcon:
                 controller.controller.text.isEmpty
@@ -102,7 +101,7 @@ class AddressInput extends StatelessWidget {
           enableSuggestions: false,
           smartQuotesType: SmartQuotesType.disabled,
           smartDashesType: SmartDashesType.disabled,
-          minLines: 2,
+          minLines: 1,
           maxLines: 4,
         );
       },
@@ -542,7 +541,7 @@ class AmountInput extends StatelessWidget {
             style: TextStyle(fontFamily: monospaceTextStyle.fontFamily),
             decoration: (decoration ?? InputDecoration()).copyWith(
               errorText: model.error,
-              hintText: model.unit.hintText,
+              //hintText: model.unit.hintText,
               suffixText: model.unit.suffixText,
               suffixIcon: IconButton(
                 onPressed: onUnitButtonPressed,
