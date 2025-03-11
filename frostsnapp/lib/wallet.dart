@@ -100,13 +100,15 @@ class WalletHome extends StatelessWidget {
     final body = ListenableBuilder(
       listenable: walletListController,
       builder: (context, _) {
-        return walletListController.wallets.isEmpty
-            ? buildNoWalletBody(context)
-            : walletListController.selected?.tryWrapInWalletContext(
-                  context: context,
-                  child: TxList(),
-                ) ??
-                SizedBox();
+        return walletListController.gotInitalData
+            ? walletListController.wallets.isEmpty
+                ? buildNoWalletBody(context)
+                : walletListController.selected?.tryWrapInWalletContext(
+                      context: context,
+                      child: TxList(),
+                    ) ??
+                    SizedBox()
+            : Center(child: CircularProgressIndicator());
       },
     );
     final bottomBar = ListenableBuilder(
@@ -126,12 +128,11 @@ class WalletHome extends StatelessWidget {
       scaffoldKey: scaffoldKey,
       isRounded: isNarrowDisplay,
     );
-
-    if (mediaSize.width < 840) {
+    if (isNarrowDisplay) {
       return Scaffold(
         key: scaffoldKey,
         extendBody: true,
-        resizeToAvoidBottomInset: false,
+        resizeToAvoidBottomInset: true,
         drawer: drawer,
         body: body,
         bottomNavigationBar: bottomBar,
@@ -503,41 +504,43 @@ class _TxListState extends State<TxList> {
             expandedHeight: 144.0,
           ),
         ),
-        StreamBuilder(
-          stream: walletCtx.txStream,
-          builder: (context, snapshot) {
-            if (!snapshot.hasData) {
-              return SliverToBoxAdapter(
-                child: Center(child: CircularProgressIndicator()),
+        SliverSafeArea(
+          top: false,
+          sliver: StreamBuilder(
+            stream: walletCtx.txStream,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return SliverToBoxAdapter(
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              final transactions = snapshot.data?.txs ?? [];
+              final chainTipHeight = walletCtx.wallet.superWallet.height();
+              final now = DateTime.now();
+              return SliverList.builder(
+                itemCount: transactions.length,
+                itemBuilder: (context, index) {
+                  final txDetails = TxDetailsModel(
+                    tx: transactions[index],
+                    chainTipHeight: chainTipHeight,
+                    now: now,
+                  );
+                  return TxSentOrReceivedTile(
+                    txDetails: txDetails,
+                    onTap:
+                        () => showBottomSheetOrDialog(
+                          context,
+                          builder:
+                              (context) => walletCtx.wrap(
+                                TxDetailsPage(txDetails: txDetails),
+                              ),
+                        ),
+                  );
+                },
               );
-            }
-            final transactions = snapshot.data?.txs ?? [];
-            final chainTipHeight = walletCtx.wallet.superWallet.height();
-            final now = DateTime.now();
-            return SliverList.builder(
-              itemCount: transactions.length,
-              itemBuilder: (context, index) {
-                final txDetails = TxDetailsModel(
-                  tx: transactions[index],
-                  chainTipHeight: chainTipHeight,
-                  now: now,
-                );
-                return TxSentOrReceivedTile(
-                  txDetails: txDetails,
-                  onTap:
-                      () => showBottomSheetOrDialog(
-                        context,
-                        builder:
-                            (context) => walletCtx.wrap(
-                              TxDetailsPage(txDetails: txDetails),
-                            ),
-                      ),
-                );
-              },
-            );
-          },
+            },
+          ),
         ),
-        SliverToBoxAdapter(child: SizedBox(height: 88.0)),
       ],
     );
   }

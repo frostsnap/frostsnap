@@ -136,7 +136,9 @@ class WalletListController extends ChangeNotifier {
               .map((key) => WalletItem(key))
               .where((key) => key.isRecovering)
               .toList();
-      _selectedIndex = _wallets.isNotEmpty ? 0 : null;
+      if (_selectedIndex == null || _selectedIndex! >= _wallets.length) {
+        _selectedIndex = _wallets.isNotEmpty ? 0 : null;
+      }
       _recoverables = state.recoverable;
       if (hasListeners) notifyListeners();
     });
