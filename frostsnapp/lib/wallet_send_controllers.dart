@@ -181,7 +181,7 @@ class FeeRateController with ChangeNotifier {
       // Map of feerate(sat/vB) to target blocks.
       var priorityMap = HashMap<int, int>();
       final list = await walletContext.wallet.superWallet.estimateFee(
-        targetBlocks: Uint64List.fromList([1, 2, 3, 4, 5, 6]),
+        targetBlocks: Uint64List.fromList([1, 2, 3]),
       );
       for (final elem in list) {
         final (target, feerate) = elem;
