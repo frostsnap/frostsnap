@@ -91,7 +91,7 @@ impl TxOutInfo {
 
 pub struct Transaction {
     pub net_value: i64,
-    pub inner: RustOpaque<Arc<RTransaction>>,
+    pub inner: RustOpaque<RTransaction>,
     pub confirmation_time: Option<ConfirmationTime>,
     pub last_seen: Option<u64>,
     pub txid: String,
@@ -103,7 +103,7 @@ impl From<frostsnap_coordinator::bitcoin::wallet::Transaction> for Transaction {
     fn from(value: frostsnap_coordinator::bitcoin::wallet::Transaction) -> Self {
         Self {
             net_value: value.net_value,
-            inner: RustOpaque::new(value.inner),
+            inner: RustOpaque::from(value.inner),
             confirmation_time: value.confirmation_time,
             last_seen: value.last_seen,
             txid: value.txid.to_string(),
@@ -514,8 +514,8 @@ pub type WalletStreams = Mutex<BTreeMap<MasterAppkey, StreamSink<TxState>>>;
 
 #[derive(Clone)]
 pub struct SuperWallet {
-    pub inner: RustOpaque<Arc<Mutex<CoordSuperWallet>>>,
-    pub wallet_streams: RustOpaque<Arc<WalletStreams>>,
+    pub inner: RustOpaque<Mutex<CoordSuperWallet>>,
+    pub wallet_streams: RustOpaque<WalletStreams>,
     pub chain_sync: RustOpaque<ChainClient>,
     pub network: BitcoinNetwork,
 }
@@ -539,7 +539,7 @@ impl SuperWallet {
                 .with_context(|| format!("loading wallet from data in {}", db_file.display()))?;
 
         let wallet = SuperWallet {
-            inner: RustOpaque::new(Arc::new(Mutex::new(super_wallet))),
+            inner: RustOpaque::new(Mutex::new(super_wallet)),
             chain_sync: RustOpaque::new(chain_sync),
             wallet_streams: RustOpaque::new(Default::default()),
             network,
@@ -1442,8 +1442,8 @@ impl Settings {
             let (chain_api, conn_handler) = ChainClient::new();
             let super_wallet =
                 SuperWallet::load_or_new(&app_directory, bitcoin_network, chain_api.clone())?;
-            conn_handler.run(electrum_url, Arc::clone(&super_wallet.inner), {
-                let wallet_streams = Arc::clone(&super_wallet.wallet_streams);
+            conn_handler.run(electrum_url, super_wallet.inner.clone(), {
+                let wallet_streams = super_wallet.wallet_streams.clone();
                 move |master_appkey, txs| {
                     let wallet_streams = wallet_streams.lock().unwrap();
                     if let Some(stream) = wallet_streams.get(&master_appkey) {
