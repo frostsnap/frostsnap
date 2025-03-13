@@ -504,6 +504,82 @@ class _TxListState extends State<TxList> {
             expandedHeight: 144.0,
           ),
         ),
+        StreamBuilder(
+          stream: walletCtx.signingSessionSignals,
+          builder: (context, snapshot) {
+            final chainTipHeight = walletCtx.wallet.superWallet.height();
+            final now = DateTime.now();
+            final txToBroadcastTiles = coord
+                .unbroadcastedTxs(
+                  superWallet: walletCtx.wallet.superWallet,
+                  keyId: walletCtx.keyId,
+                )
+                .map((tx) {
+                  final txDetails = TxDetailsModel(
+                    tx: tx.tx,
+                    chainTipHeight: chainTipHeight,
+                    now: now,
+                  );
+                  return TxSentOrReceivedTile(
+                    onTap:
+                        () => showBottomSheetOrDialog(
+                          context,
+                          builder:
+                              (context) => walletCtx.wrap(
+                                TxDetailsPage.needsBroadcast(
+                                  txDetails: txDetails,
+                                  finishedSigningSessionId: tx.sessionId,
+                                ),
+                              ),
+                        ),
+                    txDetails: txDetails,
+                  );
+                });
+            final txToSignTiles = coord
+                .activeSigningSessions(keyId: walletCtx.keyId)
+                .map<(Transaction, SigningState)?>((state) {
+                  final signingState = state.state;
+                  final Transaction? tx = switch (state.details) {
+                    SigningDetails_Transaction(:final transaction) =>
+                      transaction,
+                    _ => null,
+                  };
+                  if (tx == null) return null;
+                  return (tx, signingState);
+                })
+                .nonNulls
+                .map((state) {
+                  final (tx, signingState) = state;
+                  final txDetails = TxDetailsModel(
+                    tx: tx,
+                    chainTipHeight: chainTipHeight,
+                    now: now,
+                  );
+                  return TxSentOrReceivedTile(
+                    onTap:
+                        () => showBottomSheetOrDialog(
+                          context,
+                          builder:
+                              (context) => walletCtx.wrap(
+                                TxDetailsPage.restoreSigning(
+                                  txDetails: txDetails,
+                                  signingSessionId: signingState.sessionId,
+                                ),
+                              ),
+                        ),
+                    txDetails: txDetails,
+                    signingState: signingState,
+                  );
+                });
+            return SliverVisibility(
+              visible:
+                  txToSignTiles.isNotEmpty || txToBroadcastTiles.isNotEmpty,
+              sliver: SliverList.list(
+                children: [...txToBroadcastTiles, ...txToSignTiles],
+              ),
+            );
+          },
+        ),
         SliverSafeArea(
           top: false,
           sliver: StreamBuilder(

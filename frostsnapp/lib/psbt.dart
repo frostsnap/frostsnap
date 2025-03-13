@@ -529,7 +529,7 @@ Future<bool> showBroadcastConfirmDialog(
               try {
                 await superWallet.broadcastTx(
                   masterAppkey: masterAppkey,
-                  tx: tx,
+                  tx: tx.signedTx,
                 );
                 if (dialogContext.mounted) {
                   Navigator.pop(context, true);

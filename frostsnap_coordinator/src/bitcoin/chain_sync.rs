@@ -117,6 +117,11 @@ impl ChainClient {
     }
 
     pub fn broadcast(&self, transaction: bitcoin::Transaction) -> Result<()> {
+        event!(
+            Level::DEBUG,
+            "WE ARE BROADCASTING {}",
+            transaction.compute_txid()
+        );
         let (req, response) = ReqAndResponse::new(transaction);
         self.req_sender.send(Message::BroadcastReq(req)).unwrap();
         response.recv()?

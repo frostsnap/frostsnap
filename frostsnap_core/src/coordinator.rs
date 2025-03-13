@@ -383,9 +383,13 @@ impl FrostCoordinator {
                         FinishedSignSession {
                             init: session_state.init,
                             signatures: signatures.clone(),
+                            key_id: session_state.key_id,
                         },
                     );
                 }
+            }
+            ForgetFinishedSignSession { session_id } => {
+                self.finished_signing_sessions.remove(session_id);
             }
         }
 
@@ -1396,6 +1400,15 @@ impl FrostCoordinator {
         })
     }
 
+    pub fn forget_finished_sign_session(
+        &mut self,
+        session_id: SignSessionId,
+    ) -> Option<FinishedSignSession> {
+        let session_to_delete = self.finished_signing_sessions.get(&session_id).cloned()?;
+        self.mutate(Mutation::ForgetFinishedSignSession { session_id });
+        Some(session_to_delete)
+    }
+
     pub fn cancel_all_signing_sessions(&mut self) {
         for ssid in self.active_sign_session_order.clone() {
             self.cancel_sign_session(ssid);
@@ -1413,6 +1426,10 @@ impl FrostCoordinator {
 
     pub fn active_signing_sessions_by_ssid(&self) -> &BTreeMap<SignSessionId, ActiveSignSession> {
         &self.active_signing_sessions
+    }
+
+    pub fn finished_signing_sessions(&self) -> &BTreeMap<SignSessionId, FinishedSignSession> {
+        &self.finished_signing_sessions
     }
 
     pub fn cancel_keygen(&mut self, keygen_id: KeygenId) {
@@ -1511,6 +1528,7 @@ impl ActiveSignSession {
 pub struct FinishedSignSession {
     pub init: StartSign,
     pub signatures: Vec<EncodedSignature>,
+    pub key_id: KeyId,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1678,6 +1696,9 @@ pub enum Mutation {
         session_id: SignSessionId,
         finished: Option<Vec<EncodedSignature>>,
     },
+    ForgetFinishedSignSession {
+        session_id: SignSessionId,
+    },
 }
 
 impl Mutation {
@@ -1714,6 +1735,7 @@ impl Gist for Mutation {
             NewNonces { .. } => "NewNonces",
             NewSigningSession { .. } => "NewSigningSession",
             CloseSignSession { .. } => "CloseSignSession",
+            ForgetFinishedSignSession { .. } => "ForgetFinishedSignSession",
             GotSignatureSharesFromDevice { .. } => "GotSignatureSharesFromDevice",
             SentSignReq { .. } => "SentSignReq",
         }
