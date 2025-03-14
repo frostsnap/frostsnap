@@ -169,16 +169,6 @@ pub enum Prompt {
     WipeDevice,
 }
 
-// #[derive(Clone, Debug)]
-// pub enum SignPrompt {
-//     Bitcoin {
-//         fee: bitcoin::Amount,
-//         foreign_recipients: alloc::vec::Vec<(bitcoin::Address, bitcoin::Amount)>,
-//     },
-//     Plain(String),
-//     Nostr(String),
-// }
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum BusyTask {
     KeyGen,

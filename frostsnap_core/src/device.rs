@@ -18,7 +18,6 @@ use core::num::NonZeroU32;
 use schnorr_fun::frost::chilldkg::encpedpop::{self};
 use schnorr_fun::frost::{PairedSecretShare, PartyIndex, SecretShare};
 use schnorr_fun::fun::KeyPair;
-use schnorr_fun::fun::{g, G};
 use schnorr_fun::{frost, fun::prelude::*};
 
 use sha2::Sha256;
@@ -920,7 +919,7 @@ impl LoadKnownBackup {
         let share_index = self.share_image.share_index;
         let access_structure_ref = self.access_structure_ref;
         let ok = share_backup.index == share_index
-            && g!(share_backup.share * G) == self.share_image.point;
+            && ShareImage::from_secret(share_backup) == self.share_image;
 
         if ok {
             Some(CompleteSecretShare {

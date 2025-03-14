@@ -468,13 +468,6 @@ impl FrostCoordinator {
                 }
                 Ok(messages)
             }
-            // Some(CoordinatorState::KeyGen(KeyGenState::WaitingForResponses {
-            //     keygen_id,
-            //     input_aggregator,
-            //     device_to_share_index,
-            //     pending_key_name,
-            //     purpose,
-            // })),
             DeviceToCoordinatorMessage::KeyGenResponse(response) => {
                 let keygen_id = response.keygen_id;
                 match self.pending_keygens.get_mut(&keygen_id) {
@@ -598,7 +591,7 @@ impl FrostCoordinator {
                     }
                     _ => Err(Error::coordinator_invalid_message(
                         message_kind,
-                        "received ACK for keygen but coordinator wasn't wainting for ACKs",
+                        "received ACK for keygen but this keygen wasn't in WaitingForAcks state",
                     )),
                 }
             }
@@ -1411,18 +1404,6 @@ impl FrostCoordinator {
     }
 }
 
-impl CoordinatorState {
-    pub fn name(&self) -> &'static str {
-        match self {
-            CoordinatorState::KeyGen(keygen_state) => match keygen_state {
-                KeyGenState::WaitingForResponses { .. } => "WaitingForResponses",
-                KeyGenState::WaitingForAcks { .. } => "WaitingForAcks",
-            },
-            CoordinatorState::DisplayBackup => "DisplayBackup",
-        }
-    }
-}
-
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
 pub struct SignSessionProgress {
     sign_item: SignItem,
@@ -1474,16 +1455,6 @@ impl SignSessionProgress {
         self.sign_item
             .verify_final_signature(schnorr, master_appkey, signature)
     }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-// There's usually only one instance of this enum.
-// Having it take up the max space doesn't matter.
-#[allow(clippy::large_enum_variant)]
-pub enum CoordinatorState {
-    KeyGen(KeyGenState),
-    //FIXME: This state probably shouldn't exist since there's nothing in it!
-    DisplayBackup,
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
