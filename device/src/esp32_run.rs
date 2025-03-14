@@ -7,12 +7,13 @@ use crate::{
     ui::{self, UiEvent, UserInteraction},
     DownstreamConnectionState, Duration, Instant, UpstreamConnection, UpstreamConnectionState,
 };
-use alloc::{boxed::Box, collections::VecDeque, string::ToString, vec::Vec};
+use alloc::{collections::VecDeque, string::ToString, vec::Vec};
 use core::cell::RefCell;
 use esp_hal::{gpio, sha::Sha, timer};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{
-    CoordinatorSendBody, CoordinatorUpgradeMessage, DeviceSendBody, ReceiveSerial, Upstream,
+    CommsMisc, CoordinatorSendBody, CoordinatorUpgradeMessage, DeviceSendBody, ReceiveSerial,
+    Upstream,
 };
 use frostsnap_comms::{Downstream, MAGIC_BYTES_PERIOD};
 use frostsnap_core::{
@@ -20,7 +21,6 @@ use frostsnap_core::{
     message::{
         CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, DeviceToUserMessage,
     },
-    SignTask,
 };
 use rand_chacha::rand_core::RngCore;
 
@@ -130,8 +130,6 @@ where
         let mut upstream_connection = UpstreamConnection::new(device_id);
 
         ui.set_upstream_connection_state(upstream_connection.state);
-        // HACK: During alpha testing we say direct to coordinator is always ready. Later on we can
-        // just have coordinator signal ready -- but that would break old devices atm.
         let mut upgrade: Option<ota::FirmwareUpgradeMode> = None;
         let mut ui_event_queue = VecDeque::default();
         let mut conch_is_downstream = false;
@@ -144,7 +142,7 @@ where
                 soft_reset = false;
                 conch_is_downstream = false;
                 magic_bytes_timeout_counter = 0;
-                let _ = signer.cancel_action();
+                signer.clear_tmp_data();
                 sends_user.clear();
                 downstream_connection_state = DownstreamConnectionState::Disconnected;
                 upstream_connection.set_state(UpstreamConnectionState::PowerOn, &mut ui);
@@ -377,21 +375,8 @@ where
             for message_body in inbox.drain(..) {
                 match &message_body {
                     CoordinatorSendBody::Cancel => {
-                        // FIXME: This is a mess -- can we redisign
-                        // things so the "core" component doesn't need
-                        // to know when it is canceled.
-                        //
-                        // We first ask the
-                        // core logic to cancel what it's doing
-                        let core_cancel = signer.cancel_action();
-                        if core_cancel.is_none() {
-                            // .. but if it's not doing anything then we
-                            // are probably cancelling something in the
-                            // ui
-                            ui.cancel();
-                        } else {
-                            outbox.extend(core_cancel);
-                        }
+                        signer.clear_tmp_data();
+                        ui.cancel();
                         upgrade = None;
                     }
                     CoordinatorSendBody::AnnounceAck => {
@@ -490,17 +475,8 @@ where
                     }
                     DeviceSend::ToUser(boxed) => {
                         match *boxed {
-                            DeviceToUserMessage::CheckKeyGen {
-                                key_id: _,
-                                session_hash,
-                                key_name,
-                                t_of_n,
-                            } => {
-                                ui.set_workflow(ui::Workflow::prompt(ui::Prompt::KeyGen {
-                                    session_hash,
-                                    key_name,
-                                    t_of_n,
-                                }));
+                            DeviceToUserMessage::CheckKeyGen { phase } => {
+                                ui.set_workflow(ui::Workflow::prompt(ui::Prompt::KeyGen { phase }));
                             }
                             DeviceToUserMessage::VerifyAddress {
                                 address,
@@ -517,57 +493,20 @@ where
                                     rand_seed,
                                 })
                             }
-                            DeviceToUserMessage::SignatureRequest { sign_task } => {
-                                ui.set_workflow(ui::Workflow::prompt(ui::Prompt::Signing(
-                                    match sign_task.sign_task {
-                                        SignTask::Plain { message } => {
-                                            ui::SignPrompt::Plain(message)
-                                        }
-                                        SignTask::Nostr { event } => {
-                                            ui::SignPrompt::Nostr(event.content)
-                                        }
-                                        SignTask::BitcoinTransaction(transaction) => {
-                                            let network = signer
-                                                .wallet_network(sign_task.master_appkey.key_id())
-                                                .expect("asked to sign a bitcoin transaction that doesn't support bitcoin");
-
-                                            let fee = transaction.fee().expect("transaction validity should have already been checked");
-                                            let foreign_recipients = transaction
-                                                .foreign_recipients()
-                                                .map(|(spk, value)| {
-                                                    (
-                                                        bitcoin::Address::from_script(spk, network)
-                                                            .expect("has address representation"),
-                                                        bitcoin::Amount::from_sat(value),
-                                                    )
-                                                })
-                                                .collect::<Vec<_>>();
-                                            ui::SignPrompt::Bitcoin {
-                                                foreign_recipients,
-                                                fee: bitcoin::Amount::from_sat(fee),
-                                            }
-                                        }
-                                    },
-                                )));
+                            DeviceToUserMessage::SignatureRequest { phase } => {
+                                ui.set_workflow(ui::Workflow::prompt(ui::Prompt::Signing {
+                                    phase,
+                                }));
                             }
-                            DeviceToUserMessage::DisplayBackupRequest { key_name, key_id } => ui
-                                .set_workflow(ui::Workflow::prompt(
-                                    ui::Prompt::DisplayBackupRequest { key_name, key_id },
-                                )),
-                            DeviceToUserMessage::Canceled { .. } => {
-                                ui.cancel();
-                            }
+                            DeviceToUserMessage::DisplayBackupRequest { phase } => ui.set_workflow(
+                                ui::Workflow::prompt(ui::Prompt::DisplayBackupRequest { phase }),
+                            ),
                             DeviceToUserMessage::DisplayBackup { key_name, backup } => {
                                 ui.set_workflow(ui::Workflow::DisplayBackup { key_name, backup });
                             }
-                            DeviceToUserMessage::EnterBackup => {
+                            DeviceToUserMessage::EnterBackup { phase } => {
                                 ui.set_workflow(ui::Workflow::EnteringBackup(
-                                    ui::EnteringBackupStage::Init,
-                                ));
-                            }
-                            DeviceToUserMessage::EnteredBackup(share_backup) => {
-                                ui.set_workflow(ui::Workflow::prompt(
-                                    ui::Prompt::ConfirmLoadBackup(share_backup),
+                                    ui::EnteringBackupStage::Init { phase },
                                 ));
                             }
                         };
@@ -583,18 +522,18 @@ where
                 )); // this is just the default
 
                 match ui_event {
-                    UiEvent::KeyGenConfirm => {
+                    UiEvent::KeyGenConfirm { phase } => {
                         outbox.extend(
                             signer
-                                .keygen_ack(&mut hmac_keys.share_encryption, &mut rng)
+                                .keygen_ack(*phase, &mut hmac_keys.share_encryption, &mut rng)
                                 .expect("state changed while confirming keygen"),
                         );
                     }
-                    UiEvent::SigningConfirm => {
+                    UiEvent::SigningConfirm { phase } => {
                         ui.set_busy_task(ui::BusyTask::Signing);
                         outbox.extend(
                             signer
-                                .sign_ack(&mut hmac_keys.share_encryption)
+                                .sign_ack(*phase, &mut hmac_keys.share_encryption)
                                 .expect("state changed while acking sign"),
                         );
                     }
@@ -608,12 +547,15 @@ where
                             name: new_name.into(),
                         }]);
                     }
-                    UiEvent::BackupRequestConfirm => {
+                    UiEvent::BackupRequestConfirm { phase } => {
                         outbox.extend(
                             signer
-                                .display_backup_ack(&mut hmac_keys.share_encryption)
+                                .display_backup_ack(*phase, &mut hmac_keys.share_encryption)
                                 .expect("state changed while displaying backup"),
                         );
+                        upstream_connection.send_to_coordinator([DeviceSendBody::Misc(
+                            CommsMisc::DisplayBackupConfrimed,
+                        )]);
                     }
                     UiEvent::UpgradeConfirm { .. } => {
                         if let Some(upgrade) = upgrade.as_mut() {
@@ -622,16 +564,12 @@ where
                         // special case where updrade will handle things from now on
                         switch_workflow = None;
                     }
-                    UiEvent::EnteredShareBackup(share_backup) => {
-                        outbox.push_back(DeviceSend::ToUser(Box::new(
-                            DeviceToUserMessage::EnteredBackup(share_backup),
-                        )))
-                    }
-                    UiEvent::EnteredShareBackupConfirm(share_backup) => {
+                    UiEvent::EnteredShareBackup {
+                        phase,
+                        share_backup,
+                    } => {
                         outbox.extend(
-                            signer
-                                .loaded_share_backup(share_backup)
-                                .expect("invalid state to restore share"),
+                            signer.tell_coordinator_about_backup_load_result(*phase, share_backup),
                         );
                     }
                     UiEvent::WipeDataConfirm => {

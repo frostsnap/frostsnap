@@ -1,11 +1,11 @@
-use crate::{bitcoin_transaction, tweak::AppTweak, MasterAppkey};
+use crate::{bitcoin_transaction, device::KeyPurpose, tweak::AppTweak, MasterAppkey};
 use alloc::{boxed::Box, string::String, vec::Vec};
 use bitcoin::hashes::Hash;
 use schnorr_fun::{fun::marker::*, Message, Schnorr, Signature};
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash)]
-pub enum SignTask {
-    Plain {
+pub enum WireSignTask {
+    Test {
         message: String,
     },
     Nostr {
@@ -16,18 +16,51 @@ pub enum SignTask {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-/// A sign task bound to a single key. We only support signing tasks with single keys for now.
-pub struct CheckedSignTask {
-    pub master_appkey: MasterAppkey,
-    pub sign_task: SignTask,
+pub enum SignTask {
+    Test {
+        message: String,
+    },
+    Nostr {
+        event: Box<crate::nostr::UnsignedEvent>,
+    },
+    BitcoinTransaction {
+        tx_template: bitcoin_transaction::TransactionTemplate,
+        network: bitcoin::Network,
+    },
 }
 
-impl SignTask {
-    pub fn check(self, master_appkey: MasterAppkey) -> Result<CheckedSignTask, SignTaskError> {
-        match &self {
-            SignTask::Plain { .. } | SignTask::Nostr { .. } => {}
-            SignTask::BitcoinTransaction(transaction) => {
-                let non_matching_key = transaction.inputs().iter().find_map(|input| {
+#[derive(Debug, Clone, PartialEq)]
+/// A sign task bound to a single key. We only support signing tasks with single keys for now.
+pub struct CheckedSignTask {
+    /// The appkey it the task was checked against. Indicates that for example, the Bitcoin
+    /// transaction was signing inputs whose public key was derived from this.
+    pub master_appkey: MasterAppkey,
+    pub inner: SignTask,
+}
+
+impl WireSignTask {
+    pub fn check(
+        self,
+        master_appkey: MasterAppkey,
+        purpose: KeyPurpose,
+    ) -> Result<CheckedSignTask, SignTaskError> {
+        let variant = match self {
+            WireSignTask::Test { message } => {
+                // We allow any kind of key to sign a test message
+                SignTask::Test { message }
+            }
+            WireSignTask::Nostr { event } => {
+                if !matches!(purpose, KeyPurpose::Nostr) {
+                    return Err(SignTaskError::WrongPurpose);
+                }
+                SignTask::Nostr { event }
+            }
+            WireSignTask::BitcoinTransaction(tx_template) => {
+                let network = match purpose {
+                    KeyPurpose::Bitcoin(network) => network,
+                    _ => return Err(SignTaskError::WrongPurpose),
+                };
+                let non_matching_key = tx_template.inputs().iter().find_map(|input| {
                     let owner = input.owner().local_owner()?;
                     if owner.master_appkey != master_appkey {
                         Some(owner.master_appkey)
@@ -43,21 +76,26 @@ impl SignTask {
                     });
                 }
 
-                if transaction.fee().is_none() {
+                if tx_template.fee().is_none() {
                     return Err(SignTaskError::InvalidBitcoinTransaction);
                 }
+
+                SignTask::BitcoinTransaction {
+                    tx_template,
+                    network,
+                }
             }
-        }
+        };
         Ok(CheckedSignTask {
             master_appkey,
-            sign_task: self,
+            inner: variant,
         })
     }
 }
 
 impl CheckedSignTask {
     pub fn into_inner(self) -> SignTask {
-        self.sign_task
+        self.inner
     }
 
     pub fn verify_final_signatures<NG>(
@@ -71,8 +109,8 @@ impl CheckedSignTask {
     }
 
     pub fn sign_items(&self) -> Vec<SignItem> {
-        match &self.sign_task {
-            SignTask::Plain { message } => vec![SignItem {
+        match &self.inner {
+            SignTask::Test { message } => vec![SignItem {
                 message: message.as_bytes().to_vec(),
                 app_tweak: AppTweak::TestMessage,
             }],
@@ -80,7 +118,7 @@ impl CheckedSignTask {
                 message: event.hash_bytes.clone(),
                 app_tweak: AppTweak::Nostr,
             }],
-            SignTask::BitcoinTransaction(transaction) => transaction
+            SignTask::BitcoinTransaction { tx_template, .. } => tx_template
                 .iter_sighashes_of_locally_owned_inputs()
                 .map(|(owner, sighash)| {
                     assert_eq!(
@@ -111,12 +149,16 @@ impl SignItem {
         signature: &Signature,
     ) -> bool {
         let derived_key = self.app_tweak.derive_xonly_key(&master_appkey.to_xpub());
+        self.schnorr_fun_message();
         schnorr.verify(&derived_key, self.schnorr_fun_message(), signature)
     }
 
     pub fn schnorr_fun_message(&self) -> schnorr_fun::Message<Public> {
-        // FIXME: This shouldn't be raw -- plain messages should do domain separation
-        Message::raw(&self.message[..])
+        match self.app_tweak {
+            AppTweak::TestMessage => Message::plain("frostsnap-test", &self.message[..]),
+            AppTweak::Bitcoin(_) => Message::raw(&self.message[..]),
+            AppTweak::Nostr => Message::raw(&self.message[..]),
+        }
     }
 }
 
@@ -126,6 +168,7 @@ pub enum SignTaskError {
         got: Box<MasterAppkey>,
         expected: Box<MasterAppkey>,
     },
+    WrongPurpose,
     InvalidBitcoinTransaction,
 }
 
@@ -139,6 +182,12 @@ impl core::fmt::Display for SignTaskError {
             ),
             SignTaskError::InvalidBitcoinTransaction => {
                 write!(f, "Bitcoin transaction input value was less than outputs")
+            }
+            SignTaskError::WrongPurpose => {
+                write!(
+                    f,
+                    "Coordinator tried to use key for something other than its intended purpose"
+                )
             }
         }
     }

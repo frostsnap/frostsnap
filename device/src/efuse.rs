@@ -2,6 +2,7 @@
 use esp_hal::efuse::{self as hal_efuse, Efuse};
 use esp_hal::hmac::{self, Hmac};
 use esp_hal::peripherals::EFUSE;
+use frostsnap_core::AccessStructureRef;
 use rand_chacha::rand_core::RngCore;
 use rand_core::SeedableRng;
 use reed_solomon;
@@ -288,14 +289,18 @@ impl<'a> EfuseHmacKey<'a> {
 impl frostsnap_core::device::DeviceSymmetricKeyGen for EfuseHmacKey<'_> {
     fn get_share_encryption_key(
         &mut self,
-        key_id: frostsnap_core::KeyId,
-        access_structure_id: frostsnap_core::AccessStructureId,
+        access_structure_ref: AccessStructureRef,
         party_index: frostsnap_core::schnorr_fun::frost::PartyIndex,
         coord_key: frostsnap_core::CoordShareDecryptionContrib,
     ) -> frostsnap_core::SymmetricKey {
         let mut src = [0u8; 128];
-        src[..32].copy_from_slice(key_id.to_bytes().as_slice());
-        src[32..64].copy_from_slice(access_structure_id.to_bytes().as_slice());
+        src[..32].copy_from_slice(access_structure_ref.key_id.to_bytes().as_slice());
+        src[32..64].copy_from_slice(
+            access_structure_ref
+                .access_structure_id
+                .to_bytes()
+                .as_slice(),
+        );
         src[64..96].copy_from_slice(party_index.to_bytes().as_slice());
         src[96..128].copy_from_slice(coord_key.to_bytes().as_slice());
 

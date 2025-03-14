@@ -5,9 +5,9 @@ use frostsnap_comms::CoordinatorSendMessage;
 use frostsnap_core::{
     coordinator::FrostCoordinator,
     message::{CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, DoKeyGen},
-    AccessStructureRef, DeviceId, SessionHash,
+    AccessStructureRef, DeviceId, KeygenId, SessionHash,
 };
-use tracing::{event, Level};
+use tracing::{error, event, Level};
 
 pub struct KeyGen {
     sink: Box<dyn Sink<KeyGenState>>,
@@ -29,6 +29,7 @@ impl KeyGen {
             state: KeyGenState {
                 devices: do_keygen.device_to_share_index.keys().cloned().collect(),
                 threshold: do_keygen.threshold.into(),
+                keygen_id: do_keygen.keygen_id,
                 ..Default::default()
             },
             keygen_messages: vec![],
@@ -91,17 +92,21 @@ impl UiProtocol for KeyGen {
     }
 
     fn process_to_user_message(&mut self, message: CoordinatorToUserMessage) {
-        if let CoordinatorToUserMessage::KeyGen(message) = message {
-            match message {
-                CoordinatorToUserKeyGenMessage::ReceivedShares { from } => {
-                    self.state.got_shares.push(from);
+        if let CoordinatorToUserMessage::KeyGen { keygen_id, inner } = message {
+            if keygen_id == self.state.keygen_id {
+                match inner {
+                    CoordinatorToUserKeyGenMessage::ReceivedShares { from } => {
+                        self.state.got_shares.push(from);
+                    }
+                    CoordinatorToUserKeyGenMessage::CheckKeyGen { session_hash } => {
+                        self.state.session_hash = Some(session_hash);
+                    }
+                    CoordinatorToUserKeyGenMessage::KeyGenAck { from, .. } => {
+                        self.state.session_acks.push(from);
+                    }
                 }
-                CoordinatorToUserKeyGenMessage::CheckKeyGen { session_hash } => {
-                    self.state.session_hash = Some(session_hash);
-                }
-                CoordinatorToUserKeyGenMessage::KeyGenAck { from, .. } => {
-                    self.state.session_acks.push(from);
-                }
+            } else {
+                error!("keygen message for a different keygen was sent during key generation");
             }
             self.emit_state();
         } else {
@@ -155,4 +160,5 @@ pub struct KeyGenState {
     pub session_hash: Option<SessionHash>,
     pub finished: Option<AccessStructureRef>,
     pub aborted: Option<String>,
+    pub keygen_id: KeygenId,
 }

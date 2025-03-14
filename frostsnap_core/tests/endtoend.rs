@@ -4,12 +4,12 @@ use frostsnap_core::bitcoin_transaction::{LocalSpk, TransactionTemplate};
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::message::{
     CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, CoordinatorToUserSigningMessage,
-    DeviceToUserMessage, DoKeyGen, EncodedSignature,
+    DeviceToUserMessage, EncodedSignature,
 };
 use frostsnap_core::tweak::BitcoinBip32Path;
 use frostsnap_core::{
-    coordinator::FrostCoordinator, device::FrostSigner, CheckedSignTask, DeviceId, MasterAppkey,
-    SessionHash, SignTask,
+    coordinator::FrostCoordinator, CheckedSignTask, DeviceId, MasterAppkey, SessionHash,
+    WireSignTask,
 };
 use frostsnap_core::{KeyId, SignSessionId};
 use rand::seq::IteratorRandom;
@@ -17,7 +17,7 @@ use rand::RngCore;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::frost::SecretShare;
-use schnorr_fun::fun::{g, G};
+use schnorr_fun::fun::{g, s, G};
 use schnorr_fun::{Schnorr, Signature};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -35,7 +35,7 @@ struct TestEnv {
 
     // backups
     pub backups: BTreeMap<DeviceId, (String, String)>,
-    pub backup_confirmed_on_coordinator: BTreeSet<DeviceId>,
+    pub valid_backups_on_coordinator: BTreeSet<DeviceId>,
 
     // signing
     pub received_signing_shares: BTreeMap<SignSessionId, BTreeSet<DeviceId>>,
@@ -43,6 +43,9 @@ struct TestEnv {
     pub signatures: BTreeMap<SignSessionId, Vec<Signature>>,
 
     pub verification_requests: BTreeMap<DeviceId, (Address, BitcoinBip32Path)>,
+
+    // options
+    pub enter_invalid_backup: bool,
 }
 
 impl common::Env for TestEnv {
@@ -53,14 +56,17 @@ impl common::Env for TestEnv {
         rng: &mut impl RngCore,
     ) {
         match message {
-            CoordinatorToUserMessage::KeyGen(keygen_message) => match keygen_message {
-                CoordinatorToUserKeyGenMessage::ReceivedShares { from } => {
+            CoordinatorToUserMessage::KeyGen {
+                keygen_id,
+                inner: keygen_message,
+            } => match keygen_message {
+                CoordinatorToUserKeyGenMessage::ReceivedShares { from, .. } => {
                     assert!(
                         self.received_keygen_shares.insert(from),
                         "should not have already received"
                     )
                 }
-                CoordinatorToUserKeyGenMessage::CheckKeyGen { session_hash } => {
+                CoordinatorToUserKeyGenMessage::CheckKeyGen { session_hash, .. } => {
                     assert!(
                         self.coordinator_check.replace(session_hash).is_none(),
                         "should not have already set this"
@@ -82,7 +88,7 @@ impl common::Env for TestEnv {
                         );
                         let access_structure_ref = run
                             .coordinator
-                            .final_keygen_ack(TEST_ENCRYPTION_KEY, rng)
+                            .final_keygen_ack(keygen_id, TEST_ENCRYPTION_KEY, rng)
                             .unwrap();
                         self.keygen_acks.insert(access_structure_ref.key_id);
                     }
@@ -112,11 +118,12 @@ impl common::Env for TestEnv {
                     );
                 }
             },
-            CoordinatorToUserMessage::DisplayBackupConfirmed { device_id } => {
-                self.backup_confirmed_on_coordinator.insert(device_id);
-            }
-            CoordinatorToUserMessage::EnteredBackup { valid, .. } => {
-                assert!(valid, "entered share was valid");
+            CoordinatorToUserMessage::EnteredKnownBackup {
+                valid, device_id, ..
+            } => {
+                if valid {
+                    self.valid_backups_on_coordinator.insert(device_id);
+                }
             }
             CoordinatorToUserMessage::PromptRecoverShare(recover_share) => {
                 run.coordinator
@@ -138,45 +145,42 @@ impl common::Env for TestEnv {
         rng: &mut impl RngCore,
     ) {
         match message {
-            DeviceToUserMessage::CheckKeyGen {
-                session_hash,
-                key_id: _,
-                ..
-            } => {
-                self.keygen_checks.insert(from, session_hash);
+            DeviceToUserMessage::CheckKeyGen { phase, .. } => {
+                self.keygen_checks.insert(from, phase.session_hash());
                 let ack = run
                     .device(from)
-                    .keygen_ack(&mut TestDeviceKeyGen, rng)
+                    .keygen_ack(*phase, &mut TestDeviceKeyGen, rng)
                     .unwrap();
                 run.extend_from_device(from, ack);
             }
-            DeviceToUserMessage::SignatureRequest { sign_task } => {
-                self.sign_tasks.insert(from, sign_task);
-                let sign_ack = run.device(from).sign_ack(&mut TestDeviceKeyGen).unwrap();
+            DeviceToUserMessage::SignatureRequest { phase } => {
+                self.sign_tasks.insert(from, phase.sign_task().clone());
+                let sign_ack = run
+                    .device(from)
+                    .sign_ack(*phase, &mut TestDeviceKeyGen)
+                    .unwrap();
                 run.extend_from_device(from, sign_ack);
             }
-            DeviceToUserMessage::DisplayBackupRequest { .. } => {
+            DeviceToUserMessage::DisplayBackupRequest { phase } => {
                 let backup_ack = run
                     .device(from)
-                    .display_backup_ack(&mut TestDeviceKeyGen)
+                    .display_backup_ack(*phase, &mut TestDeviceKeyGen)
                     .unwrap();
                 run.extend_from_device(from, backup_ack);
             }
             DeviceToUserMessage::DisplayBackup { key_name, backup } => {
                 self.backups.insert(from, (key_name, backup));
             }
-            DeviceToUserMessage::Canceled { .. } => {
-                panic!("no cancelling done");
-            }
-            DeviceToUserMessage::EnterBackup { .. } => {
+            DeviceToUserMessage::EnterBackup { phase } => {
                 let device = run.device(from);
                 let (_, backup) = self.backups.get(&from).unwrap();
-                let secret_share = SecretShare::from_bech32_backup(backup).unwrap();
-                let response = device.loaded_share_backup(secret_share).unwrap();
+                let mut secret_share = SecretShare::from_bech32_backup(backup).unwrap();
+                if self.enter_invalid_backup {
+                    secret_share.share += s!(42);
+                }
+                let response =
+                    device.tell_coordinator_about_backup_load_result(*phase, secret_share);
                 run.extend_from_device(from, response);
-            }
-            DeviceToUserMessage::EnteredBackup(_) => {
-                panic!("restoring backups untested")
             }
             DeviceToUserMessage::VerifyAddress {
                 address,
@@ -194,59 +198,32 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
     let n_parties = 3;
     let threshold = 2;
     let schnorr = Schnorr::<sha2::Sha256>::verify_only();
-    let coordinator = FrostCoordinator::new();
-    let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
-
-    let devices = (0..n_parties)
-        .map(|_| FrostSigner::new_random(&mut test_rng))
-        .map(|device| (device.device_id(), device))
-        .collect::<BTreeMap<_, _>>();
-
-    let device_set = devices.keys().cloned().collect::<BTreeSet<_>>();
-    let device_list = devices.keys().cloned().collect::<Vec<_>>();
     let mut env = TestEnv::default();
     let mut test_rng = ChaCha20Rng::from_seed([123u8; 32]);
 
-    let mut run = Run::new(coordinator, devices);
+    let mut run = Run::start_after_keygen_and_nonces(
+        n_parties,
+        threshold,
+        &mut env,
+        &mut test_rng,
+        KeyPurpose::Test,
+    );
+    let device_list = run.devices.keys().cloned().collect::<Vec<_>>();
 
-    // set up nonces for devices first
-    for &device_id in &device_set {
-        run.extend(
-            run.coordinator
-                .maybe_request_nonce_replenishment(device_id, &mut test_rng),
-        );
-    }
-    run.run_until_finished(&mut env, &mut test_rng).unwrap();
-
-    let keygen_init = run
-        .coordinator
-        .do_keygen(
-            DoKeyGen::new(
-                device_set.clone(),
-                threshold,
-                "my new key".to_string(),
-                KeyPurpose::Test,
-            ),
-            &mut test_rng,
-        )
-        .unwrap();
-    run.extend(keygen_init);
-
-    run.run_until_finished(&mut env, &mut test_rng).unwrap();
     let session_hash = env
         .coordinator_check
         .expect("coordinator should have seen session_hash");
     assert_eq!(
         env.keygen_checks.keys().cloned().collect::<BTreeSet<_>>(),
-        device_set
+        run.device_set()
     );
     assert!(
         env.keygen_checks.values().all(|v| *v == session_hash),
         "devices should have seen the same hash"
     );
 
-    assert_eq!(env.coordinator_got_keygen_acks, device_set);
-    assert_eq!(env.received_keygen_shares, device_set);
+    assert_eq!(env.coordinator_got_keygen_acks, run.device_set());
+    assert_eq!(env.received_keygen_shares, run.device_set());
     let key_data = run.coordinator.iter_keys().next().unwrap().clone();
     let (access_structure_ref, _) = key_data.access_structures().next().unwrap();
 
@@ -254,11 +231,14 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
         env.signatures.clear();
         env.sign_tasks.clear();
         env.received_signing_shares.clear();
-        let task = SignTask::Plain {
+        let task = WireSignTask::Test {
             message: message.into(),
         };
         let complete_key = key_data.complete_key.as_ref().unwrap();
-        let checked_task = task.clone().check(complete_key.master_appkey).unwrap();
+        let checked_task = task
+            .clone()
+            .check(complete_key.master_appkey, KeyPurpose::Test)
+            .unwrap();
 
         let signing_set = BTreeSet::from_iter(signers.iter().map(|i| device_list[*i]));
 
@@ -315,36 +295,18 @@ fn test_display_backup() {
     use rand::seq::SliceRandom;
     let n_parties = 3;
     let threshold = 2;
-    let coordinator = FrostCoordinator::new();
-    let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
-
-    let devices = (0..n_parties)
-        .map(|_| FrostSigner::new_random(&mut test_rng))
-        .map(|device| (device.device_id(), device))
-        .collect::<BTreeMap<_, _>>();
-
-    let device_set = devices.keys().cloned().collect::<BTreeSet<_>>();
-    let device_list = devices.keys().cloned().collect::<Vec<_>>();
     let mut env = TestEnv::default();
     let mut test_rng = ChaCha20Rng::from_seed([123u8; 32]);
 
-    let mut run = Run::new(coordinator, devices);
+    let mut run = Run::start_after_keygen(
+        n_parties,
+        threshold,
+        &mut env,
+        &mut test_rng,
+        KeyPurpose::Test,
+    );
+    let device_list = run.devices.keys().cloned().collect::<Vec<_>>();
 
-    let keygen_init = run
-        .coordinator
-        .do_keygen(
-            DoKeyGen::new(
-                device_set,
-                threshold,
-                "my key".to_string(),
-                KeyPurpose::Test,
-            ),
-            &mut test_rng,
-        )
-        .unwrap();
-    run.extend(keygen_init);
-
-    run.run_until_finished(&mut env, &mut test_rng).unwrap();
     let (access_structure_ref, access_structure) =
         run.coordinator.iter_access_structures().next().unwrap();
 
@@ -368,7 +330,6 @@ fn test_display_backup() {
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
 
     assert_eq!(env.backups.len(), 1);
-    assert_eq!(env.backup_confirmed_on_coordinator.len(), 1);
 
     let mut display_backup = run
         .coordinator
@@ -391,7 +352,6 @@ fn test_display_backup() {
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
 
     assert_eq!(env.backups.len(), 3);
-    assert_eq!(env.backup_confirmed_on_coordinator.len(), 3);
 
     let decoded_backups = env
         .backups
@@ -424,35 +384,17 @@ fn test_display_backup() {
 fn test_verify_address() {
     let n_parties = 3;
     let threshold = 2;
-    let coordinator = FrostCoordinator::new();
-    let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
-
-    let devices = (0..n_parties)
-        .map(|_| FrostSigner::new_random(&mut test_rng))
-        .map(|device| (device.device_id(), device))
-        .collect::<BTreeMap<_, _>>();
-
-    let device_set = devices.keys().cloned().collect::<BTreeSet<_>>();
     let mut env = TestEnv::default();
     let mut test_rng = ChaCha20Rng::from_seed([123u8; 32]);
 
-    let mut run = Run::new(coordinator, devices);
+    let mut run = Run::start_after_keygen(
+        n_parties,
+        threshold,
+        &mut env,
+        &mut test_rng,
+        KeyPurpose::Bitcoin(bitcoin::Network::Bitcoin),
+    );
 
-    let keygen_init = run
-        .coordinator
-        .do_keygen(
-            DoKeyGen::new(
-                device_set,
-                threshold,
-                "my key".to_string(),
-                KeyPurpose::Bitcoin(bitcoin::Network::Signet),
-            ),
-            &mut test_rng,
-        )
-        .unwrap();
-    run.extend(keygen_init);
-
-    run.run_until_finished(&mut env, &mut test_rng).unwrap();
     let key_data = run.coordinator.iter_keys().next().unwrap().clone();
 
     let verify_request = run.coordinator.verify_address(key_data.key_id, 0).unwrap();
@@ -464,40 +406,18 @@ fn test_verify_address() {
 
 #[test]
 fn when_we_abandon_a_sign_request_we_should_be_able_to_start_a_new_one() {
-    let threshold = 1;
     let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
-
     let mut env = TestEnv::default();
-    let mut run = Run::generate(1, &mut test_rng);
+    let mut run =
+        Run::start_after_keygen_and_nonces(1, 1, &mut env, &mut test_rng, KeyPurpose::Test);
+
     let device_set = run.device_set();
-    let device_id = *device_set.iter().next().unwrap();
-
-    let keygen_init = run
-        .coordinator
-        .do_keygen(
-            DoKeyGen::new(
-                device_set.clone(),
-                threshold,
-                "my key".to_string(),
-                KeyPurpose::Test,
-            ),
-            &mut test_rng,
-        )
-        .unwrap();
-    run.extend(keygen_init);
-
-    run.extend(
-        run.coordinator
-            .maybe_request_nonce_replenishment(device_id, &mut test_rng),
-    );
-
-    run.run_until_finished(&mut env, &mut test_rng).unwrap();
 
     for _ in 0..101 {
         let (access_structure_ref, _access_structure) =
             run.coordinator.iter_access_structures().next().unwrap();
 
-        let uncompleting_sign_task = SignTask::Plain {
+        let uncompleting_sign_task = WireSignTask::Test {
             message: "frostsnap in taiwan".into(),
         };
 
@@ -513,8 +433,7 @@ fn when_we_abandon_a_sign_request_we_should_be_able_to_start_a_new_one() {
 
         // fully cancel sign request
         run.coordinator.cancel_sign_session(_unused_sign_session_id);
-        run.coordinator.cancel();
-        let completing_sign_task = SignTask::Plain {
+        let completing_sign_task = WireSignTask::Test {
             message: "rip purple boards rip blue boards rip frostypedeV1".into(),
         };
 
@@ -548,33 +467,15 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
     let threshold = 2;
     let schnorr = Schnorr::<sha2::Sha256>::verify_only();
     let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
-    let mut run = Run::generate(n_parties, &mut test_rng);
     let mut env = TestEnv::default();
+    let mut run = Run::start_after_keygen_and_nonces(
+        n_parties,
+        threshold,
+        &mut env,
+        &mut test_rng,
+        KeyPurpose::Bitcoin(bitcoin::Network::Bitcoin),
+    );
     let device_set = run.device_set();
-
-    // set up nonces for devices first
-    for &device_id in &device_set {
-        run.extend(
-            run.coordinator
-                .maybe_request_nonce_replenishment(device_id, &mut test_rng),
-        );
-    }
-
-    let keygen_init = run
-        .coordinator
-        .do_keygen(
-            DoKeyGen::new(
-                device_set.clone(),
-                threshold,
-                "my key".into(),
-                KeyPurpose::Bitcoin(bitcoin::Network::Signet),
-            ),
-            &mut test_rng,
-        )
-        .unwrap();
-    run.extend(keygen_init);
-
-    run.run_until_finished(&mut env, &mut test_rng).unwrap();
 
     let (access_structure_ref, _access_structure) =
         run.coordinator.iter_access_structures().next().unwrap();
@@ -602,8 +503,14 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
         bitcoin::Amount::from_sat(1_337_000),
     );
 
-    let task = SignTask::BitcoinTransaction(tx_template);
-    let checked_task = task.clone().check(master_appkey).unwrap();
+    let task = WireSignTask::BitcoinTransaction(tx_template);
+    let checked_task = task
+        .clone()
+        .check(
+            master_appkey,
+            KeyPurpose::Bitcoin(bitcoin::Network::Bitcoin),
+        )
+        .unwrap();
 
     let set = device_set
         .iter()
@@ -636,24 +543,15 @@ fn check_share_for_valid_share_works() {
     let n_parties = 3;
     let threshold = 2;
     let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
-    let mut run = Run::generate(n_parties, &mut test_rng);
     let mut env = TestEnv::default();
+    let mut run = Run::start_after_keygen(
+        n_parties,
+        threshold,
+        &mut env,
+        &mut test_rng,
+        KeyPurpose::Test,
+    );
     let device_set = run.device_set();
-
-    let keygen_init = run
-        .coordinator
-        .do_keygen(
-            DoKeyGen::new(
-                device_set.clone(),
-                threshold,
-                "my key".into(),
-                KeyPurpose::Test,
-            ),
-            &mut test_rng,
-        )
-        .unwrap();
-    run.extend(keygen_init);
-    run.run_until_finished(&mut env, &mut test_rng).unwrap();
 
     let (access_structure_ref, _access_structure) =
         run.coordinator.iter_access_structures().next().unwrap();
@@ -672,6 +570,47 @@ fn check_share_for_valid_share_works() {
         run.extend(check_share);
         run.run_until_finished(&mut env, &mut test_rng).unwrap();
     }
+
+    assert_eq!(env.valid_backups_on_coordinator.len(), n_parties);
+}
+
+#[test]
+fn check_share_for_invalid_share_fails() {
+    let n_parties = 3;
+    let threshold = 2;
+    let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
+    let mut env = TestEnv {
+        enter_invalid_backup: true,
+        ..Default::default()
+    };
+    let mut run = Run::start_after_keygen(
+        n_parties,
+        threshold,
+        &mut env,
+        &mut test_rng,
+        KeyPurpose::Test,
+    );
+    let device_set = run.device_set();
+
+    let (access_structure_ref, _access_structure) =
+        run.coordinator.iter_access_structures().next().unwrap();
+
+    for device_id in device_set {
+        let display_backup = run
+            .coordinator
+            .request_device_display_backup(device_id, access_structure_ref, TEST_ENCRYPTION_KEY)
+            .unwrap();
+        run.extend(display_backup);
+        run.run_until_finished(&mut env, &mut test_rng).unwrap();
+        let check_share = run
+            .coordinator
+            .check_share(access_structure_ref, device_id, TEST_ENCRYPTION_KEY)
+            .unwrap();
+        run.extend(check_share);
+        run.run_until_finished(&mut env, &mut test_rng).unwrap();
+    }
+
+    assert_eq!(env.valid_backups_on_coordinator.len(), 0);
 }
 
 #[test]
@@ -679,24 +618,16 @@ fn restore_a_share_by_connecting_devices_to_a_new_coordinator() {
     let n_parties = 3;
     let threshold = 2;
     let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
-    let mut run = Run::generate(n_parties, &mut test_rng);
     let mut env = TestEnv::default();
+    let mut run = Run::start_after_keygen(
+        n_parties,
+        threshold,
+        &mut env,
+        &mut test_rng,
+        KeyPurpose::Test,
+    );
     let device_set = run.device_set();
 
-    let keygen_init = run
-        .coordinator
-        .do_keygen(
-            DoKeyGen::new(
-                device_set.clone(),
-                threshold,
-                "my key".into(),
-                KeyPurpose::Test,
-            ),
-            &mut test_rng,
-        )
-        .unwrap();
-    run.extend(keygen_init);
-    run.run_until_finished(&mut env, &mut test_rng).unwrap();
     run.check_mutations();
     let (access_structure_ref, access_structure) =
         run.coordinator.iter_access_structures().next().unwrap();
@@ -751,24 +682,16 @@ fn delete_then_restore_a_share_by_connecting_devices_to_coordinator() {
     let n_parties = 3;
     let threshold = 2;
     let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
-    let mut run = Run::generate(n_parties, &mut test_rng);
     let mut env = TestEnv::default();
+    let mut run = Run::start_after_keygen(
+        n_parties,
+        threshold,
+        &mut env,
+        &mut test_rng,
+        KeyPurpose::Test,
+    );
     let device_set = run.device_set();
 
-    let keygen_init = run
-        .coordinator
-        .do_keygen(
-            DoKeyGen::new(
-                device_set.clone(),
-                threshold,
-                "my key".into(),
-                KeyPurpose::Test,
-            ),
-            &mut test_rng,
-        )
-        .unwrap();
-    run.extend(keygen_init);
-    run.run_until_finished(&mut env, &mut test_rng).unwrap();
     run.check_mutations();
     let (access_structure_ref, access_structure) =
         run.coordinator.iter_access_structures().next().unwrap();
@@ -853,40 +776,24 @@ fn delete_then_restore_a_share_by_connecting_devices_to_coordinator() {
 
 #[test]
 fn we_should_be_able_to_switch_between_sign_sessions() {
+    let n_parties = 3;
     let threshold = 2;
     let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
 
     let mut env = TestEnv::default();
-    let mut run = Run::generate(3, &mut test_rng);
+    let mut run = Run::start_after_keygen_and_nonces(
+        n_parties,
+        threshold,
+        &mut env,
+        &mut test_rng,
+        KeyPurpose::Test,
+    );
     let device_set = run.device_set();
-
-    let keygen_init = run
-        .coordinator
-        .do_keygen(
-            DoKeyGen::new(
-                device_set.clone(),
-                threshold,
-                "my key".to_string(),
-                KeyPurpose::Test,
-            ),
-            &mut test_rng,
-        )
-        .unwrap();
-    run.extend(keygen_init);
-
-    for &device_id in &device_set {
-        run.extend(
-            run.coordinator
-                .maybe_request_nonce_replenishment(device_id, &mut test_rng),
-        );
-    }
-
-    run.run_until_finished(&mut env, &mut test_rng).unwrap();
 
     let (access_structure_ref, _access_structure) =
         run.coordinator.iter_access_structures().next().unwrap();
 
-    let sign_task_1 = SignTask::Plain {
+    let sign_task_1 = WireSignTask::Test {
         message: "one".into(),
     };
 
@@ -902,11 +809,9 @@ fn we_should_be_able_to_switch_between_sign_sessions() {
         )
         .unwrap();
 
-    run.coordinator.cancel(); // cancel but don't cancel the signing session
-
     let signing_set_2 = device_set.iter().cloned().skip(1).take(2).collect();
 
-    let sign_task_2 = SignTask::Plain {
+    let sign_task_2 = WireSignTask::Test {
         message: "two".into(),
     };
 
@@ -946,42 +851,20 @@ fn we_should_be_able_to_switch_between_sign_sessions() {
 
 #[test]
 fn nonces_available_should_heal_itself_when_outcome_of_sign_request_is_ambigious() {
-    let threshold = 1;
     let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
 
     let mut env = TestEnv::default();
-    let mut run = Run::generate(1, &mut test_rng);
+    let mut run =
+        Run::start_after_keygen_and_nonces(1, 1, &mut env, &mut test_rng, KeyPurpose::Test);
     let device_set = run.device_set();
     let device_id = device_set.iter().cloned().next().unwrap();
 
-    let keygen_init = run
-        .coordinator
-        .do_keygen(
-            DoKeyGen::new(
-                device_set.clone(),
-                threshold,
-                "my key".to_string(),
-                KeyPurpose::Test,
-            ),
-            &mut test_rng,
-        )
-        .unwrap();
-    run.extend(keygen_init);
-
-    for &device_id in &device_set {
-        run.extend(
-            run.coordinator
-                .maybe_request_nonce_replenishment(device_id, &mut test_rng),
-        );
-    }
-
-    run.run_until_finished(&mut env, &mut test_rng).unwrap();
     let available_at_start = run.coordinator.nonces_available(device_id);
 
     let (access_structure_ref, _access_structure) =
         run.coordinator.iter_access_structures().next().unwrap();
 
-    let sign_task = SignTask::Plain {
+    let sign_task = WireSignTask::Test {
         message: "one".into(),
     };
 
