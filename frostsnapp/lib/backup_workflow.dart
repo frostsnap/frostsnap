@@ -131,8 +131,10 @@ class BackupChecklist extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Travel to the location where you will store each Frostsnap. Make sure to bring:',
+                'Travel to the locations where you will store each Frostsnap.',
               ),
+              const SizedBox(height: 16),
+              Text('Make sure to bring:'),
               const SizedBox(height: 16),
               Card(
                 color: theme.colorScheme.surfaceContainerHighest,
@@ -147,7 +149,7 @@ class BackupChecklist extends StatelessWidget {
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      "Anyone who can access any ${accessStructure.threshold()} of the ${accessStructure.devices().length} Frostsnaps in this wallet can take all its Bitcoin. Place them carefully.",
+                      "Anyone who can access any ${accessStructure.threshold()} of the ${accessStructure.devices().length} Frostsnaps in this wallet can take all the Bitcoin. Secure them carefully.",
                     ),
                   ),
                 ],
@@ -156,7 +158,6 @@ class BackupChecklist extends StatelessWidget {
               Text(
                 'When you arrive at each location press the button to show the backup:',
               ),
-              //const SizedBox(height: 24),
             ],
           ),
         ),

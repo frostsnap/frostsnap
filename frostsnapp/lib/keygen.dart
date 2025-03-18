@@ -435,7 +435,7 @@ void showWalletCreatedDialog(BuildContext context, WalletItem walletItem) {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: const [
               Text(
-                'Frostsnap Distribution',
+                'Wallet created! Now let\'s secure it',
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
               Icon(Icons.checklist, size: 40),
@@ -446,12 +446,11 @@ void showWalletCreatedDialog(BuildContext context, WalletItem walletItem) {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Congratulations! Your multisig Bitcoin wallet was generated successfully and is almost ready to use.'
-                'Before receiving any Bitcoin, please complete the backup process.',
+                'Before receiving any Bitcoin, you should backup and distribute your Frostsnaps.',
               ),
               SizedBox(height: 16),
               Text(
-                'To secure your wallet, for each of your Frostsnaps you will have to:',
+                'With each of your Frostsnaps you will:',
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
               SizedBox(height: 8),
@@ -461,7 +460,9 @@ void showWalletCreatedDialog(BuildContext context, WalletItem walletItem) {
                   Icon(Icons.directions_walk),
                   SizedBox(width: 8),
                   Expanded(
-                    child: Text('Travel to where you want to store it.'),
+                    child: Text(
+                      'Travel to a location where you will store it.',
+                    ),
                   ),
                 ],
               ),
