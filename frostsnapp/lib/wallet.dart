@@ -16,7 +16,7 @@ import 'package:frostsnapp/wallet_list_controller.dart';
 import 'package:frostsnapp/wallet_receive.dart';
 import 'package:frostsnapp/wallet_send.dart';
 import 'package:frostsnapp/settings.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:frostsnapp/wallet_tx_details.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class Wallet {
@@ -100,13 +100,15 @@ class WalletHome extends StatelessWidget {
     final body = ListenableBuilder(
       listenable: walletListController,
       builder: (context, _) {
-        return walletListController.wallets.isEmpty
-            ? buildNoWalletBody(context)
-            : walletListController.selected?.tryWrapInWalletContext(
-                  context: context,
-                  child: TxList(),
-                ) ??
-                SizedBox();
+        return walletListController.gotInitalData
+            ? walletListController.wallets.isEmpty
+                ? buildNoWalletBody(context)
+                : walletListController.selected?.tryWrapInWalletContext(
+                      context: context,
+                      child: TxList(),
+                    ) ??
+                    SizedBox()
+            : Center(child: CircularProgressIndicator());
       },
     );
     final bottomBar = ListenableBuilder(
@@ -126,12 +128,11 @@ class WalletHome extends StatelessWidget {
       scaffoldKey: scaffoldKey,
       isRounded: isNarrowDisplay,
     );
-
-    if (mediaSize.width < 840) {
+    if (isNarrowDisplay) {
       return Scaffold(
         key: scaffoldKey,
         extendBody: true,
-        resizeToAvoidBottomInset: false,
+        resizeToAvoidBottomInset: true,
         drawer: drawer,
         body: body,
         bottomNavigationBar: bottomBar,
@@ -219,173 +220,6 @@ class _FloatingProgress extends State<FloatingProgress>
           child: LinearProgressIndicator(value: progress),
         ),
       ),
-    );
-  }
-}
-
-class TxItem extends StatelessWidget {
-  final Transaction transaction;
-
-  const TxItem({super.key, required this.transaction});
-
-  String humanReadableTimeDifference(DateTime currentTime, DateTime itemTime) {
-    final Duration difference = currentTime.difference(itemTime);
-
-    if (difference.inSeconds < 60) {
-      return 'Just now';
-    } else if (difference.inMinutes < 60) {
-      return '${difference.inMinutes} minute${difference.inMinutes > 1 ? 's' : ''} ago';
-    } else if (difference.inHours < 24) {
-      return '${difference.inHours} hour${difference.inHours > 1 ? 's' : ''} ago';
-    } else if (difference.inDays == 1) {
-      return 'Yesterday';
-    } else if (difference.inDays < 7) {
-      return '${difference.inDays} day${difference.inDays > 1 ? 's' : ''} ago';
-    } else if (difference.inDays < 30) {
-      final int weeks = (difference.inDays / 7).floor();
-      return '$weeks week${weeks > 1 ? 's' : ''} ago';
-    } else if (difference.inDays < 365) {
-      final int months = (difference.inDays / 30).floor();
-      return '$months month${months > 1 ? 's' : ''} ago';
-    } else {
-      final int years = (difference.inDays / 365).floor();
-      return '$years year${years > 1 ? 's' : ''} ago';
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final walletContext = WalletContext.of(context)!;
-
-    final theme = Theme.of(context);
-    final txid = transaction.txid();
-
-    final blockHeight = walletContext.superWallet.height();
-    final blockCount = blockHeight + 1;
-    final timestamp = transaction.timestamp();
-
-    final confirmations =
-        blockCount - (transaction.confirmationTime?.height ?? blockCount);
-
-    final nowDateTime = DateTime.now();
-    final dateTime =
-        (timestamp != null)
-            ? DateTime.fromMillisecondsSinceEpoch(timestamp * 1000)
-            : DateTime.now();
-    final dateTimeText = humanReadableTimeDifference(nowDateTime, dateTime);
-
-    final isConfirmed = confirmations > 0;
-    final isSend = transaction.netValue < 0;
-
-    final iconColor = Color.lerp(
-      transaction.netValue > 0
-          ? theme.colorScheme.primary
-          : theme.colorScheme.error,
-      theme.disabledColor,
-      confirmations > 0 ? 0.0 : 1.0,
-    );
-    final Widget icon = Badge(
-      alignment: AlignmentDirectional.bottomEnd,
-      label: Icon(Icons.hourglass_top_rounded, size: 12.0),
-      isLabelVisible: !isConfirmed,
-      backgroundColor: Colors.transparent,
-      child: Icon(
-        transaction.netValue > 0 ? Icons.south_east : Icons.north_east,
-        color: iconColor,
-      ),
-    );
-
-    buildTile(MenuController controller) => ListTile(
-      title: Text(
-        isConfirmed
-            ? (isSend ? 'Sent' : 'Received')
-            : (isSend ? 'Sending...' : 'Receiving...'),
-        style: theme.textTheme.titleMedium?.copyWith(
-          color: isConfirmed ? null : iconColor,
-        ),
-      ),
-      subtitle: Text(
-        dateTimeText,
-        style: isConfirmed ? null : TextStyle(color: theme.disabledColor),
-      ),
-      leading: icon,
-      trailing: SatoshiText(
-        value: transaction.netValue,
-        showSign: true,
-        style: theme.textTheme.bodyLarge?.copyWith(
-          color: isConfirmed ? null : iconColor,
-        ),
-        disabledColor: isConfirmed ? null : theme.colorScheme.outlineVariant,
-      ),
-      onLongPress:
-          () => controller.isOpen ? controller.close() : controller.open(),
-    );
-
-    rebroadcastAction(BuildContext context) {
-      walletContext.superWallet.rebroadcast(txid: txid);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Transaction rebroadcasted')));
-    }
-
-    copyAction(BuildContext context) {
-      Clipboard.setData(ClipboardData(text: transaction.txid()));
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Transaction ID copied to clipboard')),
-      );
-    }
-
-    final screenWidth = MediaQuery.of(context).size.width;
-
-    return MenuAnchor(
-      alignmentOffset: const Offset(32.0, -8.0),
-      menuChildren: [
-        MenuItemButton(
-          onPressed: () => copyAction(context),
-          leadingIcon: const Icon(Icons.copy),
-          child: SizedBox(
-            width: screenWidth * 2 / 3,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              spacing: 4.0,
-              children: [
-                Text('Copy Transaction ID'),
-                Text(
-                  txid,
-                  softWrap: true,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    color: theme.disabledColor,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        MenuItemButton(
-          onPressed: () async {
-            final explorer = getBlockExplorer(
-              walletContext.superWallet.network,
-            );
-            final url = explorer.replace(path: "${explorer.path}tx/$txid");
-            await launchUrl(url);
-          },
-          leadingIcon: SizedBox(
-            width: IconTheme.of(context).size ?? 24,
-            height: IconTheme.of(context).size ?? 24,
-            child: Image.asset('assets/icons/mempool.png'),
-          ),
-          child: Text('View in mempool.space'),
-        ),
-        if (transaction.confirmationTime == null)
-          MenuItemButton(
-            onPressed: () => rebroadcastAction(context),
-            leadingIcon: const Icon(Icons.publish),
-            child: const Text('Rebroadcast'),
-          ),
-      ],
-      builder: (ctx, controller, _) => buildTile(controller),
     );
   }
 }
@@ -670,18 +504,43 @@ class _TxListState extends State<TxList> {
             expandedHeight: 144.0,
           ),
         ),
-        StreamBuilder(
-          stream: walletCtx.txStream,
-          builder: (context, snapshot) {
-            final transactions = snapshot.data?.txs ?? [];
-            return SliverList.builder(
-              itemCount: transactions.length,
-              itemBuilder:
-                  (context, index) => TxItem(transaction: transactions[index]),
-            );
-          },
+        SliverSafeArea(
+          top: false,
+          sliver: StreamBuilder(
+            stream: walletCtx.txStream,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return SliverToBoxAdapter(
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              final transactions = snapshot.data?.txs ?? [];
+              final chainTipHeight = walletCtx.wallet.superWallet.height();
+              final now = DateTime.now();
+              return SliverList.builder(
+                itemCount: transactions.length,
+                itemBuilder: (context, index) {
+                  final txDetails = TxDetailsModel(
+                    tx: transactions[index],
+                    chainTipHeight: chainTipHeight,
+                    now: now,
+                  );
+                  return TxSentOrReceivedTile(
+                    txDetails: txDetails,
+                    onTap:
+                        () => showBottomSheetOrDialog(
+                          context,
+                          builder:
+                              (context) => walletCtx.wrap(
+                                TxDetailsPage(txDetails: txDetails),
+                              ),
+                        ),
+                  );
+                },
+              );
+            },
+          ),
         ),
-        SliverToBoxAdapter(child: SizedBox(height: 88.0)),
       ],
     );
   }
@@ -917,29 +776,10 @@ class WalletBottomBar extends StatelessWidget {
           Expanded(
             child: ElevatedButton.icon(
               onPressed: () {
-                final mediaSize = MediaQuery.sizeOf(context);
-                if (mediaSize.width < 600) {
-                  showModalBottomSheet(
-                    context: context,
-                    isScrollControlled: true,
-                    useSafeArea: true,
-                    isDismissible: true,
-                    showDragHandle: false,
-                    builder: (context) => walletCtx.wrap(WalletSendPage()),
-                  );
-                } else {
-                  showDialog(
-                    context: context,
-                    builder:
-                        (context) => Dialog(
-                          backgroundColor: theme.colorScheme.surfaceContainer,
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(maxWidth: 560),
-                            child: walletCtx.wrap(WalletSendPage()),
-                          ),
-                        ),
-                  );
-                }
+                showBottomSheetOrDialog(
+                  context,
+                  builder: (context) => walletCtx.wrap(WalletSendPage()),
+                );
               },
               label: Text('Send'),
               icon: Icon(Icons.north_east),

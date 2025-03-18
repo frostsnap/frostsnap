@@ -7,6 +7,7 @@ pub use crate::{FfiQrEncoder, FfiQrReader, QrDecoderStatus};
 use anyhow::{anyhow, Context, Result};
 pub use bitcoin::psbt::Psbt as BitcoinPsbt;
 pub use bitcoin::Network as RBitcoinNetwork;
+pub use bitcoin::ScriptBuf as RScriptBuf;
 pub use bitcoin::Transaction as RTransaction;
 use bitcoin::{network, Txid};
 use flutter_rust_bridge::{frb, RustOpaque, StreamSink, SyncReturn};
@@ -71,11 +72,31 @@ pub(crate) fn emit_event(event: PortEvent) -> Result<()> {
     Ok(())
 }
 
+pub struct TxOutInfo {
+    pub vout: u32,
+    pub amount: u64,
+    pub script_pubkey: RustOpaque<RScriptBuf>,
+    pub is_mine: bool,
+}
+
+impl TxOutInfo {
+    pub fn address(&self, network: BitcoinNetwork) -> SyncReturn<Option<String>> {
+        fn _address(info: &TxOutInfo, network: BitcoinNetwork) -> Option<String> {
+            let address = bitcoin::Address::from_script(&info.script_pubkey, *network.0).ok()?;
+            Some(address.to_string())
+        }
+        SyncReturn(_address(self, network))
+    }
+}
+
 pub struct Transaction {
     pub net_value: i64,
     pub inner: RustOpaque<Arc<RTransaction>>,
     pub confirmation_time: Option<ConfirmationTime>,
     pub last_seen: Option<u64>,
+    pub txid: String,
+    pub fee: Option<u64>,
+    pub recipients: Vec<TxOutInfo>,
 }
 
 impl From<frostsnap_coordinator::bitcoin::wallet::Transaction> for Transaction {
@@ -85,15 +106,23 @@ impl From<frostsnap_coordinator::bitcoin::wallet::Transaction> for Transaction {
             inner: RustOpaque::new(value.inner),
             confirmation_time: value.confirmation_time,
             last_seen: value.last_seen,
+            txid: value.txid.to_string(),
+            fee: value.fee,
+            recipients: value
+                .recipients
+                .into_iter()
+                .map(|r| TxOutInfo {
+                    vout: r.outpoint.vout as _,
+                    amount: r.txout.value.to_sat(),
+                    script_pubkey: RustOpaque::new(r.txout.script_pubkey),
+                    is_mine: r.is_mine,
+                })
+                .collect(),
         }
     }
 }
 
 impl Transaction {
-    pub fn txid(&self) -> SyncReturn<String> {
-        SyncReturn(self.inner.compute_txid().to_string())
-    }
-
     pub fn timestamp(&self) -> SyncReturn<Option<u64>> {
         SyncReturn(
             self.confirmation_time

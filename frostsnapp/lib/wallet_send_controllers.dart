@@ -51,26 +51,7 @@ class AddressInputController with ChangeNotifier {
 
   String? get address => (_errorText == null) ? controller.text : null;
 
-  String get formattedAddress {
-    final input = controller.text;
-    StringBuffer result = StringBuffer();
-
-    for (int i = 0; i < input.length; i++) {
-      result.write(input[i]);
-
-      // Add a space after every 4 characters
-      if ((i + 1) % 4 == 0) result.write(' ');
-    }
-
-    // Ensure the last group has exactly 4 characters by adding spaces
-    int remainder = input.length % 4;
-    if (remainder > 0) {
-      for (int i = 0; i < 4 - remainder; i++) {
-        result.write('\u00A0');
-      }
-    }
-    return result.toString();
-  }
+  String get formattedAddress => spacedHex(controller.text, spacing: 4);
 }
 
 final defaultTextInputBorder = OutlineInputBorder(
@@ -104,7 +85,6 @@ class AddressInput extends StatelessWidget {
           style: TextStyle(fontFamily: monospaceTextStyle.fontFamily),
           decoration: (decoration ?? InputDecoration()).copyWith(
             //border: defaultTextInputBorder,
-            hintText: 'bc1...',
             errorText: controller.errorText,
             suffixIcon:
                 controller.controller.text.isEmpty
@@ -121,7 +101,7 @@ class AddressInput extends StatelessWidget {
           enableSuggestions: false,
           smartQuotesType: SmartQuotesType.disabled,
           smartDashesType: SmartDashesType.disabled,
-          minLines: 2,
+          minLines: 1,
           maxLines: 4,
         );
       },
@@ -201,7 +181,7 @@ class FeeRateController with ChangeNotifier {
       // Map of feerate(sat/vB) to target blocks.
       var priorityMap = HashMap<int, int>();
       final list = await walletContext.wallet.superWallet.estimateFee(
-        targetBlocks: Uint64List.fromList([1, 2, 3, 4, 5, 6]),
+        targetBlocks: Uint64List.fromList([1, 2, 3]),
       );
       for (final elem in list) {
         final (target, feerate) = elem;
@@ -561,7 +541,7 @@ class AmountInput extends StatelessWidget {
             style: TextStyle(fontFamily: monospaceTextStyle.fontFamily),
             decoration: (decoration ?? InputDecoration()).copyWith(
               errorText: model.error,
-              hintText: model.unit.hintText,
+              //hintText: model.unit.hintText,
               suffixText: model.unit.suffixText,
               suffixIcon: IconButton(
                 onPressed: onUnitButtonPressed,

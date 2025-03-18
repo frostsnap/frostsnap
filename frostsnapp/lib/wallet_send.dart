@@ -255,7 +255,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
       ),
     );
 
-    final Color mainCardColor = theme.colorScheme.surfaceContainerHigh;
+    final Color mainCardColor = theme.colorScheme.surfaceContainerHighest;
 
     final etaInputCard = ListenableBuilder(
       listenable: feeRateModel,
@@ -322,7 +322,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
                   borderRadius: BorderRadius.circular(8.0),
                   borderSide: BorderSide.none,
                 ),
-                labelText: 'Recipient',
+                hintText: 'Recipient',
                 errorMaxLines: 2,
               ),
             ),
@@ -369,7 +369,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
               decoration: InputDecoration(
                 filled: true,
                 errorMaxLines: 2,
-                labelText: 'Amount',
+                hintText: 'Amount',
               ),
             ),
             Row(
@@ -419,51 +419,45 @@ class _WalletSendPageState extends State<WalletSendPage> {
             title: Text('Select Signers'),
             trailing: Text('${selectedDevicesModel.threshold} required'),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12.0),
-            child: Card.filled(
-              margin: EdgeInsets.all(0.0),
-              child: ListenableBuilder(
-                listenable: selectedDevicesModel,
-                builder:
-                    (context, child) => Column(
-                      children:
-                          selectedDevicesModel.devices.map((device) {
-                            if (device.nonces == 0) {
-                              selectedDevicesModel.deselect(device.id);
-                            }
-                            return CheckboxListTile(
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12.0),
-                              ),
-                              value: device.selected,
-                              onChanged:
-                                  device.canSelect
-                                      ? (selected) =>
-                                          selected ?? false
-                                              ? selectedDevicesModel.select(
-                                                device.id,
-                                              )
-                                              : selectedDevicesModel.deselect(
-                                                device.id,
-                                              )
-                                      : null,
-                              secondary: Icon(Icons.key),
-                              title: Text(device.name ?? '<unknown>'),
-                              subtitle:
-                                  device.nonces == 0
-                                      ? Text(
-                                        'no nonces remaining or too many signing sessions',
-                                        style: TextStyle(
-                                          color: theme.colorScheme.error,
-                                        ),
-                                      )
-                                      : null,
-                            );
-                          }).toList(),
-                    ),
-              ),
-            ),
+          ListenableBuilder(
+            listenable: selectedDevicesModel,
+            builder:
+                (context, child) => Column(
+                  children:
+                      selectedDevicesModel.devices.map((device) {
+                        if (device.nonces == 0) {
+                          selectedDevicesModel.deselect(device.id);
+                        }
+                        return CheckboxListTile(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12.0),
+                          ),
+                          value: device.selected,
+                          onChanged:
+                              device.canSelect
+                                  ? (selected) =>
+                                      selected ?? false
+                                          ? selectedDevicesModel.select(
+                                            device.id,
+                                          )
+                                          : selectedDevicesModel.deselect(
+                                            device.id,
+                                          )
+                                  : null,
+                          secondary: Icon(Icons.key),
+                          title: Text(device.name ?? '<unknown>'),
+                          subtitle:
+                              device.nonces == 0
+                                  ? Text(
+                                    'no nonces remaining or too many signing sessions',
+                                    style: TextStyle(
+                                      color: theme.colorScheme.error,
+                                    ),
+                                  )
+                                  : null,
+                        );
+                      }).toList(),
+                ),
           ),
           Padding(
             padding: const EdgeInsets.all(12.0),
@@ -532,40 +526,32 @@ class _WalletSendPageState extends State<WalletSendPage> {
                 title: Text('Sign Transaction'),
                 trailing: Text('Plug in these devices'),
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                child: Card.filled(
-                  margin: EdgeInsets.all(0.0),
-                  child:
-                      signers == null
-                          ? Padding(
-                            padding: EdgeInsets.all(12.0),
-                            child: LinearProgressIndicator(
-                              borderRadius: BorderRadius.circular(4.0),
-                            ),
-                          )
-                          : Column(
-                            children:
-                                signers
-                                    .map(
-                                      (device) => CheckboxListTile(
-                                        enabled:
-                                            device.isConnected ||
-                                            device.hasSignature,
-                                        value: device.hasSignature,
-                                        onChanged: null,
-                                        secondary: Icon(
-                                          device.isConnected
-                                              ? Icons.key
-                                              : Icons.key_off,
-                                        ),
-                                        title: Text(device.name ?? '<no name>'),
-                                      ),
-                                    )
-                                    .toList(),
-                          ),
-                ),
-              ),
+              signers == null
+                  ? Padding(
+                    padding: EdgeInsets.all(12.0),
+                    child: LinearProgressIndicator(
+                      borderRadius: BorderRadius.circular(4.0),
+                    ),
+                  )
+                  : Column(
+                    children:
+                        signers
+                            .map(
+                              (device) => CheckboxListTile(
+                                enabled:
+                                    device.isConnected || device.hasSignature,
+                                value: device.hasSignature,
+                                onChanged: null,
+                                secondary: Icon(
+                                  device.isConnected
+                                      ? Icons.key
+                                      : Icons.key_off,
+                                ),
+                                title: Text(device.name ?? '<no name>'),
+                              ),
+                            )
+                            .toList(),
+                  ),
               Padding(
                 padding: const EdgeInsets.all(12.0),
                 child: TextButton(
@@ -584,32 +570,32 @@ class _WalletSendPageState extends State<WalletSendPage> {
       reverse: true,
       shrinkWrap: true,
       slivers: [
-        SliverToBoxAdapter(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildCompletedList(context),
-              Padding(
-                padding: sectionPadding.add(
-                  EdgeInsets.only(
-                    bottom:
-                        mediaQuery.viewInsets.bottom +
-                        mediaQuery.padding.bottom,
+        SliverSafeArea(
+          sliver: SliverToBoxAdapter(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildCompletedList(context),
+                Padding(
+                  padding: sectionPadding.add(
+                    EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom),
+                  ),
+                  child: Column(
+                    children: [
+                      if (pageIndex == SendPageIndex.recipient)
+                        recipientInputCard,
+                      if (pageIndex == SendPageIndex.amount) amountInputCard,
+                      if (pageIndex == SendPageIndex.signers) signersInputCard,
+                      if (pageIndex == SendPageIndex.sign) signInputCard,
+                      Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12.0),
+                        child: etaInputCard,
+                      ),
+                    ],
                   ),
                 ),
-                child: Column(
-                  children: [
-                    if (pageIndex == SendPageIndex.recipient)
-                      recipientInputCard,
-                    if (pageIndex == SendPageIndex.amount) amountInputCard,
-                    if (pageIndex == SendPageIndex.signers) signersInputCard,
-                    if (pageIndex == SendPageIndex.sign) signInputCard,
-                    SizedBox(height: 12.0),
-                    etaInputCard,
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         appBar,
