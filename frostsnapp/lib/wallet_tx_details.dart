@@ -8,6 +8,7 @@ import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/theme.dart';
 import 'package:frostsnapp/wallet.dart';
+import 'package:glowy_borders/glowy_borders.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class TxDetailsModel {
@@ -439,20 +440,42 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
 
   Widget buildSignAndBroadcastCard(BuildContext context) {
     final theme = Theme.of(context);
-    final body = AnimatedCrossFade(
-      firstChild: buildSignaturesNeededColumn(context),
-      secondChild: buildBroadcastNeededColumn(context),
+    return AnimatedCrossFade(
+      firstChild: AnimatedGradientBorder(
+        stretchAlongAxis: true,
+        borderSize: 1.0,
+        glowSize: 5.0,
+        animationTime: 6,
+        borderRadius: BorderRadius.circular(12.0),
+        gradientColors: [
+          theme.colorScheme.outlineVariant,
+          theme.colorScheme.primary,
+          theme.colorScheme.secondary,
+          theme.colorScheme.tertiary,
+        ],
+        child: (Widget child) {
+          final theme = Theme.of(context);
+          return Card.filled(
+            margin: EdgeInsets.all(0.0),
+            color: theme.colorScheme.surfaceContainerHigh.withAlpha(250),
+            child: child,
+          );
+        }(buildSignaturesNeededColumn(context)),
+      ),
+      secondChild: (Widget child) {
+        final theme = Theme.of(context);
+        return Card.outlined(
+          margin: EdgeInsets.all(16.0),
+          color: theme.colorScheme.surfaceContainerHigh,
+          child: child,
+        );
+      }(buildBroadcastNeededColumn(context)),
       crossFadeState:
           (signingDone ?? true)
               ? CrossFadeState.showSecond
               : CrossFadeState.showFirst,
       duration: Durations.medium3,
       sizeCurve: Curves.easeInOutCubicEmphasized,
-    );
-    return Card.outlined(
-      margin: EdgeInsets.all(16.0),
-      color: theme.colorScheme.surfaceContainerHigh,
-      child: body,
     );
   }
 
