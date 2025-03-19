@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:collection';
 
+import 'package:collection/collection.dart';
+import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnapp/bridge_definitions.dart';
@@ -13,7 +15,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 class TxDetailsModel {
   /// The raw transaction.
-  final Transaction tx;
+  Transaction tx;
   final int chainTipHeight;
   final DateTime now;
 
@@ -22,6 +24,8 @@ class TxDetailsModel {
     required this.chainTipHeight,
     required this.now,
   });
+
+  update(Transaction tx) => this.tx = tx;
 
   int get netValue => tx.netValue;
 
@@ -98,7 +102,7 @@ class TxSentOrReceivedTile extends StatelessWidget {
             ? theme.colorScheme.primary
             : txDetails.isSend
             ? theme.colorScheme.onSurface
-            : Colors.green;
+            : Colors.green.harmonizeWith(theme.colorScheme.primary);
     final onSurfaceColor = Color.lerp(
       theme.colorScheme.onSurface,
       accentColor,
@@ -163,16 +167,28 @@ class TxDetailsPage extends StatefulWidget {
   final AccessStructureRef? accessStructureRef;
   final UnsignedTx? unsignedTx;
   final List<DeviceId>? devices;
+  final Stream<TxState> txStates;
 
-  const TxDetailsPage({super.key, required this.txDetails})
-    : signingSessionId = null,
-      finishedSigningSessionId = null,
-      accessStructureRef = null,
-      unsignedTx = null,
-      devices = null;
+  static Stream<void> txStatesFromCtx(BuildContext context) {
+    final a = WalletContext.of(context)!;
+    final stream = a.txStream.map<void>((_) => {});
+    return stream;
+    //a.txStream
+  }
+
+  const TxDetailsPage({
+    super.key,
+    required this.txStates,
+    required this.txDetails,
+  }) : signingSessionId = null,
+       finishedSigningSessionId = null,
+       accessStructureRef = null,
+       unsignedTx = null,
+       devices = null;
 
   const TxDetailsPage.needsBroadcast({
     super.key,
+    required this.txStates,
     required this.txDetails,
     required SignSessionId this.finishedSigningSessionId,
   }) : signingSessionId = null,
@@ -182,6 +198,7 @@ class TxDetailsPage extends StatefulWidget {
 
   const TxDetailsPage.restoreSigning({
     super.key,
+    required this.txStates,
     required this.txDetails,
     required SignSessionId this.signingSessionId,
   }) : finishedSigningSessionId = null,
@@ -191,6 +208,7 @@ class TxDetailsPage extends StatefulWidget {
 
   const TxDetailsPage.startSigning({
     super.key,
+    required this.txStates,
     required this.txDetails,
     required AccessStructureRef this.accessStructureRef,
     required UnsignedTx this.unsignedTx,
@@ -207,7 +225,9 @@ class TxDetailsPage extends StatefulWidget {
 }
 
 class _TxDetailsPageState extends State<TxDetailsPage> {
+  late TxDetailsModel txDetails;
   SignSessionId? ssid;
+  late final StreamSubscription<TxState> txStateSub;
   StreamSubscription<DeviceListUpdate>? devicesSub;
   StreamSubscription<SigningState>? signingSub;
   SigningState? signingState;
@@ -221,6 +241,11 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
       signingState == null
           ? null
           : signingState!.gotShares.length >= signingState!.neededFrom.length;
+
+  onTxStateData(TxState data) {
+    final tx = data.txs.firstWhereOrNull((tx) => tx.txid == txDetails.tx.txid);
+    if (tx != null && mounted) setState(() => txDetails.update(tx));
+  }
 
   onSigningSessionData(SigningState data) {
     for (final deviceId in data.connectedButNeedRequest) {
@@ -246,33 +271,40 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   @override
   void initState() {
     super.initState();
+
+    txDetails = widget.txDetails;
     ssid = widget.signingSessionId ?? widget.finishedSigningSessionId;
+
+    txStateSub = widget.txStates.listen(onTxStateData);
 
     if (widget.isSigning) {
       devicesSub = deviceListSubject.listen(onDeviceListData);
       broadcastDone = false;
-    }
-    if (widget.isRestoreSigning) {
-      signingSub = coord
-          .tryRestoreSigningSession(sessionId: widget.signingSessionId!)
-          .listen(onSigningSessionData);
-    } else if (widget.isStartSigning) {
-      signingSub = coord
-          .startSigningTx(
-            accessStructureRef: widget.accessStructureRef!,
-            unsignedTx: widget.unsignedTx!,
-            devices: widget.devices!,
-          )
-          .listen(onSigningSessionData);
+      if (widget.isRestoreSigning) {
+        signingSub = coord
+            .tryRestoreSigningSession(sessionId: widget.signingSessionId!)
+            .listen(onSigningSessionData);
+      } else if (widget.isStartSigning) {
+        signingSub = coord
+            .startSigningTx(
+              accessStructureRef: widget.accessStructureRef!,
+              unsignedTx: widget.unsignedTx!,
+              devices: widget.devices!,
+            )
+            .listen(onSigningSessionData);
+      }
     }
   }
 
   @override
   void dispose() {
     devicesSub?.cancel();
+    devicesSub = null;
     if (signingSub?.cancel() != null) {
       coord.cancelProtocol();
+      signingSub = null;
     }
+    txStateSub.cancel();
     super.dispose();
   }
 
@@ -312,7 +344,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       TxSentOrReceivedTile(
-                        txDetails: widget.txDetails,
+                        txDetails: txDetails,
                         signingState: signingState,
                         hideSubtitle: true,
                       ),
@@ -322,7 +354,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
               ),
               buildDetailsColumn(
                 context,
-                txDetails: widget.txDetails,
+                txDetails: txDetails,
                 dense: true,
                 showConfirmations: !widget.isSigning,
                 signingState: signingState,
@@ -332,8 +364,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
                 secondChild: buildSignAndBroadcastCard(context),
                 crossFadeState:
                     ((signingDone ?? true) &&
-                            (broadcastDone ??
-                                widget.txDetails.tx.timestamp() != null))
+                            (broadcastDone ?? txDetails.tx.timestamp() != null))
                         ? CrossFadeState.showFirst
                         : CrossFadeState.showSecond,
                 duration: Durations.medium3,
@@ -457,7 +488,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
           final theme = Theme.of(context);
           return Card.filled(
             margin: EdgeInsets.all(0.0),
-            color: theme.colorScheme.surfaceContainerHigh.withAlpha(250),
+            color: theme.colorScheme.surfaceContainerHigh,
             child: child,
           );
         }(buildSignaturesNeededColumn(context)),
@@ -538,7 +569,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   broadcast(BuildContext context) async {
     if (mounted) setState(() => isBroadcasting = true);
     final walletCtx = WalletContext.of(context)!;
-    final tx = await widget.txDetails.tx.withSignatures(
+    final tx = await txDetails.tx.withSignatures(
       signatures: signingState?.finishedSignatures ?? [],
     );
     final broadcastFut = walletCtx.wallet.superWallet
@@ -562,7 +593,17 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
           isBroadcasting = false;
           broadcastDone = true;
           signingState = null;
+          // TODO: For some reason, we are not getting the txState notification properly
+          // So we do this manually.
         });
+        await Future.delayed(
+          Durations.medium1,
+          () => onTxStateData(
+            walletCtx.wallet.superWallet.txState(
+              masterAppkey: walletCtx.masterAppkey,
+            ),
+          ),
+        );
       } else {
         setState(() => isBroadcasting = false);
       }
@@ -579,24 +620,19 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
           runSpacing: 8.0,
           alignment: WrapAlignment.end,
           children: [
-            if (!widget.txDetails.isConfirmed && (signingDone ?? true))
+            if (!txDetails.isConfirmed && (signingDone ?? true))
               ActionChip(
                 avatar: Icon(Icons.publish),
                 label: Text('Rebroadcast'),
                 onPressed:
-                    () => rebroadcastAction(
-                      context,
-                      txid: widget.txDetails.tx.txid,
-                    ),
+                    () => rebroadcastAction(context, txid: txDetails.tx.txid),
               ),
             ActionChip(
               avatar: Icon(Icons.open_in_new),
               label: Text('View in Explorer'),
               onPressed:
-                  () async => await explorerAction(
-                    context,
-                    txid: widget.txDetails.tx.txid,
-                  ),
+                  () async =>
+                      await explorerAction(context, txid: txDetails.tx.txid),
             ),
           ],
         ),
@@ -613,6 +649,7 @@ Widget buildDetailsColumn(
   SigningState? signingState,
 }) {
   final walletCtx = WalletContext.of(context)!;
+  final theme = Theme.of(context);
   return Column(
     children: [
       if (txDetails.isSend)
@@ -651,7 +688,25 @@ Widget buildDetailsColumn(
       if (txDetails.isSend)
         ListTile(
           dense: dense,
-          leading: Text('Fee'),
+          leading: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Fee '),
+              Card.filled(
+                color: theme.colorScheme.surfaceContainerHigh,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6.0,
+                    vertical: 2.0,
+                  ),
+                  child: Text(
+                    '${txDetails.tx.feerate()?.toStringAsFixed(1)} sat/vB',
+                    style: theme.textTheme.labelSmall,
+                  ),
+                ),
+              ),
+            ],
+          ),
           title:
               txDetails.tx.fee == null
                   ? Text('Unknown')

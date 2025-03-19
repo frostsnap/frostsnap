@@ -556,6 +556,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
       builder:
           (context) => walletCtx.wrap(
             TxDetailsPage.startSigning(
+              txStates: walletCtx.txStream,
               txDetails: txDetails,
               accessStructureRef: access.accessStructureRef(),
               unsignedTx: unsignedTx!,

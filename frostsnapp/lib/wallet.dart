@@ -527,6 +527,7 @@ class _TxListState extends State<TxList> {
                           builder:
                               (context) => walletCtx.wrap(
                                 TxDetailsPage.needsBroadcast(
+                                  txStates: walletCtx.txStream,
                                   txDetails: txDetails,
                                   finishedSigningSessionId: tx.sessionId,
                                 ),
@@ -562,6 +563,7 @@ class _TxListState extends State<TxList> {
                           builder:
                               (context) => walletCtx.wrap(
                                 TxDetailsPage.restoreSigning(
+                                  txStates: walletCtx.txStream,
                                   txDetails: txDetails,
                                   signingSessionId: signingState.sessionId,
                                 ),
@@ -608,7 +610,10 @@ class _TxListState extends State<TxList> {
                           context,
                           builder:
                               (context) => walletCtx.wrap(
-                                TxDetailsPage(txDetails: txDetails),
+                                TxDetailsPage(
+                                  txStates: walletCtx.txStream,
+                                  txDetails: txDetails,
+                                ),
                               ),
                         ),
                   );
