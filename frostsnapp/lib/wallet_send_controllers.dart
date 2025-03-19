@@ -671,7 +671,6 @@ class SigningSessionController with ChangeNotifier {
   @override
   void dispose() {
     _deviceStateSub.cancel();
-    cancel();
     super.dispose();
   }
 

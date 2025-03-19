@@ -123,7 +123,13 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   late final Future<List<void>> googleFontsPending;
-  late final ColorScheme colorScheme;
+  late ColorScheme colorScheme;
+
+  void _setColorTheme() =>
+      colorScheme = ColorScheme.fromSeed(
+        brightness: Brightness.dark,
+        seedColor: Color(0xFF1595B2),
+      );
 
   @override
   void initState() {
@@ -132,10 +138,13 @@ class _MyAppState extends State<MyApp> {
       GoogleFonts.notoSansMono(),
       GoogleFonts.notoSansTextTheme(),
     ]);
-    colorScheme = ColorScheme.fromSeed(
-      brightness: Brightness.dark,
-      seedColor: Color(0xFF1595B2),
-    );
+    _setColorTheme();
+  }
+
+  @override
+  void reassemble() {
+    super.reassemble();
+    _setColorTheme();
   }
 
   // This widget is the root of your application.
