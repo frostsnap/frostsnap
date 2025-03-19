@@ -64,12 +64,12 @@ pub struct DoKeyGen {
 }
 
 impl DoKeyGen {
-    pub fn new(
+    pub fn new_with_id(
         devices: BTreeSet<DeviceId>,
         threshold: u16,
         key_name: String,
         purpose: KeyPurpose,
-        rng: &mut impl rand_core::RngCore, // for the keygen id
+        keygen_id: KeygenId,
     ) -> Self {
         let device_to_share_index: BTreeMap<_, _> = devices
             .iter()
@@ -82,16 +82,35 @@ impl DoKeyGen {
             })
             .collect();
 
-        let mut id = [0u8; 16];
-        rng.fill_bytes(&mut id[..]);
-
         Self {
             device_to_share_index,
             threshold,
             key_name,
             purpose,
-            keygen_id: KeygenId::from_bytes(id),
+            keygen_id,
         }
+    }
+    pub fn new(
+        devices: BTreeSet<DeviceId>,
+        threshold: u16,
+        key_name: String,
+        purpose: KeyPurpose,
+        rng: &mut impl rand_core::RngCore, // for the keygen id
+    ) -> Self {
+        let mut id = [0u8; 16];
+        rng.fill_bytes(&mut id[..]);
+
+        Self::new_with_id(
+            devices,
+            threshold,
+            key_name,
+            purpose,
+            KeygenId::from_bytes(id),
+        )
+    }
+
+    pub fn devices(&self) -> BTreeSet<DeviceId> {
+        self.device_to_share_index.keys().cloned().collect()
     }
 }
 

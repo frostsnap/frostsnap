@@ -1,4 +1,5 @@
 use crate::device_nonces::{self, AbSlots, MemoryNonceSlot, NonceStreamSlot};
+use crate::nonce_stream::CoordNonceStreamState;
 use crate::symmetric_encryption::{Ciphertext, SymmetricKey};
 use crate::tweak::{self, Xpub};
 use crate::{
@@ -171,7 +172,7 @@ pub struct SignPhase1 {
     group_sign_req: GroupSignReq<CheckedSignTask>,
     device_sign_req: DeviceSignReq,
     encrypted_secret_share: EncryptedSecretShare,
-    session_id: SignSessionId,
+    pub session_id: SignSessionId,
 }
 
 impl SignPhase1 {
@@ -285,7 +286,18 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
         match message.clone() {
             OpenNonceStreams { streams } => {
                 let mut segments = vec![];
-                for coord_stream_state in streams {
+                // we need to order prioritize streams that already exist since not getting a
+                // response to this message the coordinator will think that everything is ok.
+                // Ignoring new requests is fine it just means they won't be opened.
+                let (existing, new): (Vec<_>, Vec<_>) = streams
+                    .iter()
+                    .partition(|stream| self.nonce_slots.get(stream.stream_id).is_some());
+                let ordered_streams = existing
+                    .into_iter()
+                    .chain::<Vec<CoordNonceStreamState>>(new)
+                    // If we take more than the total available we risk overwriting slots
+                    .take(self.nonce_slots.total_slots());
+                for coord_stream_state in ordered_streams {
                     let slot = self
                         .nonce_slots
                         .get_or_create(coord_stream_state.stream_id, rng);
@@ -864,10 +876,15 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
 }
 
 impl FrostSigner<MemoryNonceSlot> {
-    pub fn new_random(rng: &mut impl rand_core::RngCore) -> Self {
+    /// For testing only
+    pub fn new_random(rng: &mut impl rand_core::RngCore, nonce_streams: usize) -> Self {
         Self::new(
             KeyPair::<Normal>::new(Scalar::random(rng)),
-            AbSlots::new((0..8).map(|_| MemoryNonceSlot::default()).collect()),
+            AbSlots::new(
+                (0..nonce_streams)
+                    .map(|_| MemoryNonceSlot::default())
+                    .collect(),
+            ),
         )
     }
 }
