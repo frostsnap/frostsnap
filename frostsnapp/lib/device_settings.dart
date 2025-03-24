@@ -46,9 +46,9 @@ class _DeviceSettingsState extends State<DeviceSettings> {
     _deviceRemoved = Completer();
 
     deviceListSubject.listen((event) {
-      setState(() {
-        device = event.state.getDevice(id: widget.id);
-      });
+      if (mounted) {
+        setState(() => device = event.state.getDevice(id: widget.id));
+      }
     });
 
     deviceListSubject
