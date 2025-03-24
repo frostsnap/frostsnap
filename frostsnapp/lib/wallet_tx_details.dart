@@ -101,60 +101,86 @@ class TxSentOrReceivedTile extends StatelessWidget {
         isSigning
             ? theme.colorScheme.primary
             : txDetails.isSend
-            ? theme.colorScheme.onSurface
+            ? Colors.orange.harmonizeWith(theme.colorScheme.primary)
             : Colors.green.harmonizeWith(theme.colorScheme.primary);
-    final onSurfaceColor = Color.lerp(
-      theme.colorScheme.onSurface,
-      accentColor,
-      0.9,
-    );
-    final onSurfaceVariantColor = Color.lerp(
-      theme.colorScheme.onSurfaceVariant,
-      accentColor,
-      0.7,
-    );
-    final disabledColor = Color.lerp(theme.disabledColor, accentColor, 0.3);
 
     return ListTile(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
       onTap: onTap,
-      title: Text(
-        signingDone
-            ? needsBroadcast
-                ? 'Signed'
-                : txDetails.isSend
-                ? (txDetails.isConfirmed ? 'Sent' : 'Sending...')
-                : (txDetails.isConfirmed ? 'Received' : 'Receiving...')
-            : 'Signing...',
+      title: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Flexible(
+            child: Text(
+              signingDone
+                  ? needsBroadcast
+                      ? 'Signed'
+                      : txDetails.isSend
+                      ? (txDetails.isConfirmed ? 'Sent' : 'Sending...')
+                      : (txDetails.isConfirmed ? 'Received' : 'Receiving...')
+                  : 'Signing...',
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: SatoshiText(
+              value: txDetails.netValue,
+              showSign: true,
+              style: theme.textTheme.bodyLarge,
+            ),
+          ),
+        ],
       ),
       subtitle:
           hideSubtitle
               ? null
-              : Text(
-                signingDone
-                    ? needsBroadcast
-                        ? 'Tap to broadcast'
-                        : txDetails.lastUpdateString
-                    : 'Tap to resume',
+              : Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                mainAxisSize: MainAxisSize.max,
+                children: [
+                  Flexible(
+                    child: Text(
+                      signingDone
+                          ? txDetails.lastUpdateString
+                          : '${signingState!.neededFrom.length - signingState!.gotShares.length} signatures left',
+                      overflow: TextOverflow.fade,
+                    ),
+                  ),
+                  if (!signingDone || needsBroadcast)
+                    Flexible(
+                      child: Text(
+                        signingDone ? 'Tap to broadcast' : 'Tap to continue',
+                        style: TextStyle(color: theme.colorScheme.primary),
+                        textAlign: TextAlign.end,
+                      ),
+                    ),
+                ],
               ),
       leading: Badge(
         alignment: AlignmentDirectional.bottomEnd,
         label: Icon(
-          isSigning ? Icons.key : Icons.hourglass_top_rounded,
+          isSigning
+              ? Icons.key
+              : needsBroadcast
+              ? Icons.visibility_off
+              : Icons.hourglass_top_rounded,
           size: 12.0,
-          color: onSurfaceVariantColor,
+          color:
+              (isSigning || needsBroadcast)
+                  ? theme.colorScheme.outline
+                  : theme.colorScheme.onSurface,
         ),
         isLabelVisible: !txDetails.isConfirmed,
         backgroundColor: Colors.transparent,
         child: Icon(
           txDetails.isSend ? Icons.north_east : Icons.south_east,
-          color: onSurfaceColor,
+          color:
+              txDetails.isConfirmed
+                  ? accentColor
+                  : (isSigning || needsBroadcast)
+                  ? theme.colorScheme.outlineVariant
+                  : theme.colorScheme.onSurfaceVariant,
         ),
-      ),
-      trailing: SatoshiText(
-        value: txDetails.netValue,
-        showSign: true,
-        disabledColor: disabledColor,
-        style: theme.textTheme.bodyLarge?.copyWith(color: onSurfaceColor),
       ),
     );
   }
@@ -168,13 +194,6 @@ class TxDetailsPage extends StatefulWidget {
   final UnsignedTx? unsignedTx;
   final List<DeviceId>? devices;
   final Stream<TxState> txStates;
-
-  static Stream<void> txStatesFromCtx(BuildContext context) {
-    final a = WalletContext.of(context)!;
-    final stream = a.txStream.map<void>((_) => {});
-    return stream;
-    //a.txStream
-  }
 
   const TxDetailsPage({
     super.key,

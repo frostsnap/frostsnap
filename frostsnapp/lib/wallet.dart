@@ -825,61 +825,54 @@ class WalletBottomBar extends StatelessWidget {
     }
     final theme = Theme.of(context);
     const elevation = 3.0;
-
     return BottomAppBar(
       color: Colors.transparent,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        spacing: 16,
-        children: [
-          Expanded(
-            child: ElevatedButton.icon(
-              onPressed:
-                  () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => walletCtx.wrap(WalletReceivePage()),
-                    ),
+      child: Align(
+        alignment: AlignmentDirectional.center,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: 560),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: 16,
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed:
+                      () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder:
+                              (context) => walletCtx.wrap(WalletReceivePage()),
+                        ),
+                      ),
+                  label: Text('Receive'),
+                  icon: Icon(Icons.south_east),
+                  style: ElevatedButton.styleFrom(
+                    elevation: elevation,
+                    backgroundColor: theme.colorScheme.primaryContainer,
+                    foregroundColor: theme.colorScheme.onPrimaryContainer,
                   ),
-              label: Text('Receive'),
-              icon: Icon(Icons.south_east),
-              style: ElevatedButton.styleFrom(
-                elevation: elevation,
-                backgroundColor: ElevationOverlay.applySurfaceTint(
-                  theme.colorScheme.surfaceContainer,
-                  theme.colorScheme.primary,
-                  elevation,
-                ),
-                foregroundColor: theme.colorScheme.primary,
-                iconColor: theme.colorScheme.primary,
-              ),
-            ),
-          ),
-          Expanded(
-            child: ElevatedButton.icon(
-              onPressed: () {
-                showBottomSheetOrDialog(
-                  context,
-                  builder: (context) => walletCtx.wrap(WalletSendPage()),
-                );
-              },
-              label: Text('Send'),
-              icon: Icon(Icons.north_east),
-              style: ElevatedButton.styleFrom(
-                elevation: elevation,
-                backgroundColor: ElevationOverlay.applySurfaceTint(
-                  theme.colorScheme.surfaceContainer,
-                  theme.colorScheme.error,
-                  elevation,
-                ),
-                foregroundColor: theme.colorScheme.error,
-                iconColor: theme.colorScheme.error,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(28.0),
                 ),
               ),
-            ),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    showBottomSheetOrDialog(
+                      context,
+                      builder: (context) => walletCtx.wrap(WalletSendPage()),
+                    );
+                  },
+                  label: Text('Send'),
+                  icon: Icon(Icons.north_east),
+                  style: ElevatedButton.styleFrom(
+                    elevation: elevation,
+                    backgroundColor: theme.colorScheme.primaryContainer,
+                    foregroundColor: theme.colorScheme.onPrimaryContainer,
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
