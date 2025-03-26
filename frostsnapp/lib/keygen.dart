@@ -415,14 +415,13 @@ class _ThresholdPageState extends State<ThresholdPage> {
   }
 }
 
-void showWalletCreatedDialog(
+showWalletCreatedDialog(
   BuildContext context,
   AccessStructureRef accessStructureRef,
-) {
-  final homeCtx = HomeContext.of(context)!;
+) async {
   final accessStructure = coord.getAccessStructure(asRef: accessStructureRef)!;
-  homeCtx.isShowingCreatedWalletDialog.value = true;
-  showDialog(
+  final backupManager = FrostsnapContext.of(context)!.backupManager;
+  await showDialog(
     context: context,
     barrierDismissible: false,
     builder: (BuildContext context) {
@@ -456,14 +455,12 @@ void showWalletCreatedDialog(
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                homeCtx.isShowingCreatedWalletDialog.value = false;
               },
               child: const Text('Later'),
             ),
             FilledButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                homeCtx.isShowingCreatedWalletDialog.value = false;
                 showBottomSheetOrDialog(
                   context,
                   builder:
@@ -485,6 +482,7 @@ void showWalletCreatedDialog(
       );
     },
   );
+  await backupManager.startBackupRun(accessStructure: accessStructure);
 }
 
 // Utility function for creating the page transition

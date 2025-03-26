@@ -111,9 +111,10 @@ class WalletHome extends StatelessWidget {
         return switch (selected) {
           WalletItemKey item => item.tryWrapInWalletContext(
             context: context,
-            child: TxList(),
+            child: TxList(key: Key(item.frostKey.keyId().toHex())),
           ),
           WalletItemRestoration item => WalletRecoveryPage(
+            key: Key(item.restoringKey.restorationId.toHex()),
             restoringKey: item.restoringKey,
             onWalletRecovered: (accessStructureRef) {
               walletListController.selectWallet(accessStructureRef.keyId);
@@ -912,9 +913,7 @@ class BackupWarningBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final homeCtx = HomeContext.of(context)!;
     final walletCtx = WalletContext.of(context)!;
-    final showingDialog = homeCtx.isShowingCreatedWalletDialog;
     final backupStream = walletCtx.backupStream;
     final theme = Theme.of(context);
 
@@ -928,7 +927,6 @@ class BackupWarningBanner extends StatelessWidget {
       trailing: Icon(Icons.chevron_right),
       title: Text('This wallet has unfinished backups!'),
     );
-
     final streamedBanner = StreamBuilder<BackupRun>(
       stream: backupStream,
       builder: (context, snapshot) {
@@ -938,15 +936,7 @@ class BackupWarningBanner extends StatelessWidget {
       },
     );
 
-    return SliverToBoxAdapter(
-      child: ValueListenableBuilder(
-        valueListenable: showingDialog,
-        child: streamedBanner,
-        builder:
-            (context, isShowingDialog, streamedBanner) =>
-                isShowingDialog ? SizedBox.shrink() : streamedBanner!,
-      ),
-    );
+    return SliverToBoxAdapter(child: streamedBanner);
   }
 
   onTap(BuildContext context, WalletContext walletContext) {

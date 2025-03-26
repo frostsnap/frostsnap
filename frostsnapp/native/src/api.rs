@@ -25,15 +25,15 @@ use frostsnap_coordinator::frostsnap_core::device::KeyPurpose;
 use frostsnap_coordinator::frostsnap_core::message::HeldShare;
 pub use frostsnap_coordinator::verify_address::VerifyAddressProtocolState;
 pub use frostsnap_coordinator::{
-    check_share::CheckShareState, keygen::KeyGenState, persist::Persisted, signing::SigningState,
-    DeviceChange, PortDesc, Settings as RSettings,
+    check_share::CheckShareState, keygen::KeyGenState, persist::Persisted,
+    settings::Settings as RSettings, signing::SigningState, DeviceChange, PortDesc,
 };
 pub use frostsnap_core::coordinator::{
     RecoverShare as RRecoverShare, RestorationState as RRestorationState,
 };
 
-pub use frostsnap_coordinator::backup_run::{BackupRun, BackupState};
-use frostsnap_coordinator::{BackupMutation, DesktopSerial, UsbSerialManager};
+pub use frostsnap_coordinator::backup_run::BackupState;
+use frostsnap_coordinator::{DesktopSerial, UsbSerialManager};
 pub use frostsnap_core::message::EncodedSignature;
 pub use frostsnap_core::{
     AccessStructureId, AccessStructureRef, DeviceId, KeyId, KeygenId, MasterAppkey, RestorationId,
@@ -1613,22 +1613,21 @@ impl BackupManager {
         })
     }
 
-    pub fn maybe_start_backup_run(&self, access_structure: AccessStructure) -> Result<()> {
-        let key_id = access_structure.master_appkey().0.key_id();
-        let mut db = self.db.lock().unwrap();
-        self.backup_state
-            .lock()
-            .unwrap()
-            .mutate2(&mut *db, |state, mutations| {
-                let start_backup = !state.runs.contains_key(&key_id);
-                if start_backup {
+    pub fn start_backup_run(&self, access_structure: AccessStructure) -> Result<()> {
+        let access_structure_ref = access_structure.access_structure_ref().0;
+        {
+            let mut db = self.db.lock().unwrap();
+            self.backup_state
+                .lock()
+                .unwrap()
+                .mutate2(&mut *db, |state, mutations| {
                     let devices = access_structure.devices().0;
-                    state.runs.insert(key_id, BackupRun::new(devices.clone()));
-                    mutations.push(BackupMutation::StartBackup { key_id, devices });
-                }
+                    state.start_run(access_structure_ref, devices, mutations);
+                    Ok(())
+                })?;
+        }
 
-                Ok(())
-            })?;
+        self.backup_stream_emit(access_structure_ref.key_id)?;
         Ok(())
     }
 
@@ -1639,21 +1638,7 @@ impl BackupManager {
                 .lock()
                 .unwrap()
                 .mutate2(&mut *db, |state, mutations| {
-                    if let Some(run) = state.runs.get_mut(&key_id) {
-                        let timestamp = SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .unwrap()
-                            .as_secs() as u32;
-
-                        run.mark_device_complete(device_id);
-
-                        mutations.push(BackupMutation::MarkDeviceComplete {
-                            key_id,
-                            device_id,
-                            timestamp,
-                        });
-                    }
-
+                    state.mark_backup_complete(key_id, device_id, mutations);
                     Ok(())
                 })?;
         }
@@ -1661,41 +1646,35 @@ impl BackupManager {
         Ok(())
     }
 
-    pub fn is_device_complete(&self, key_id: KeyId, device_id: DeviceId) -> SyncReturn<bool> {
-        let backup_state = self.backup_state.lock().unwrap();
-        let complete = backup_state
-            .runs
-            .get(&key_id)
-            .map(|run| {
-                run.devices
-                    .iter()
-                    .any(|(d, timestamp)| *d == device_id && timestamp.is_some())
-            })
-            .unwrap_or(false);
-        SyncReturn(complete)
-    }
-
     pub fn get_backup_run(&self, key_id: KeyId) -> SyncReturn<Option<BackupRun>> {
-        SyncReturn(self.backup_state.lock().unwrap().runs.get(&key_id).cloned())
-    }
-
-    pub fn is_run_complete(&self, key_id: KeyId) -> SyncReturn<bool> {
-        let complete = self
-            .backup_state
-            .lock()
-            .unwrap()
-            .runs
-            .get(&key_id)
-            .cloned()
-            .map(|run| run.is_run_complete())
-            .unwrap_or(false);
-        SyncReturn(complete)
+        SyncReturn(
+            self.backup_state
+                .lock()
+                .unwrap()
+                .get_backup_run(key_id)
+                .map(|devices_map| BackupRun {
+                    devices: devices_map
+                        .iter()
+                        .map(|(&device_id, &timestamp)| (device_id, timestamp))
+                        .collect(),
+                }),
+        )
     }
 
     pub fn backup_stream(&self, key_id: KeyId, new_stream: StreamSink<BackupRun>) -> Result<()> {
+        event!(
+            Level::DEBUG,
+            key_id = key_id.to_string(),
+            "backup stream subscribed"
+        );
         {
             let mut streams = self.backup_run_streams.lock().unwrap();
-            streams.insert(key_id, new_stream);
+            if streams.insert(key_id, new_stream).is_some() {
+                event!(
+                    Level::WARN,
+                    "backup stream was replaced this is probably a bug"
+                );
+            }
         }
         self.backup_stream_emit(key_id)?;
         Ok(())
@@ -1708,14 +1687,14 @@ impl BackupManager {
             None => return Err(anyhow!("no backup stream found for key: {}", key_id)),
         };
 
-        let backup_state = self.backup_state.lock().unwrap();
-        let run = backup_state
-            .runs
-            .get(&key_id)
-            .ok_or_else(|| anyhow!("no backup run found for key: {}", key_id))?;
-
-        let run_to_emit = run.clone();
-        stream.add(run_to_emit);
+        if let Some(run) = self.get_backup_run(key_id).0 {
+            event!(
+                Level::DEBUG,
+                key_id = key_id.to_string(),
+                "backup stream emitted"
+            );
+            stream.add(run);
+        }
         Ok(())
     }
 
@@ -1727,14 +1706,15 @@ impl BackupManager {
             .as_secs() as u32;
 
         let backup_state = self.backup_state.lock().unwrap();
-        let backup_run = backup_state.runs.get(&key_id);
+        let backup_run = match backup_state.get_backup_run(key_id) {
+            Some(backup_run) => backup_run,
+            None => return SyncReturn(false),
+        };
 
-        let most_recent = backup_run.and_then(|run| {
-            run.devices
-                .iter()
-                .filter_map(|(dev_id, time)| time.map(|t| (*dev_id, t)))
-                .max_by_key(|&(_, time)| time)
-        });
+        let most_recent = backup_run
+            .iter()
+            .filter_map(|(dev_id, time)| time.map(|t| (*dev_id, t)))
+            .max_by_key(|&(_, time)| time);
 
         match most_recent {
             Some((last_device_id, timestamp)) => {
@@ -1779,10 +1759,19 @@ impl DeveloperSettings {
     }
 }
 
-#[frb(mirror(BackupRun))]
-pub struct _BackupRun {
+#[derive(Debug, Clone, PartialEq)]
+pub struct BackupRun {
     pub devices: Vec<(DeviceId, Option<u32>)>,
 }
+
+impl BackupRun {
+    pub fn is_run_complete(&self) -> bool {
+        self.devices
+            .iter()
+            .all(|(_, timestamp)| timestamp.is_some())
+    }
+}
+
 #[frb(mirror(KeygenId))]
 pub struct _KeygenId(pub [u8; 16]);
 

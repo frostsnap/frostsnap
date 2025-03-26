@@ -104,7 +104,6 @@ Widget buildMainWidget(AppCtx appCtx, Stream<String> logStream) {
   return FrostsnapContext(
     appCtx: appCtx,
     logStream: logStream,
-    backupManager: appCtx.backupManager,
     child: SettingsContext(
       settings: appCtx.settings,
       child: SuperWalletContext(appCtx: appCtx, child: MyApp()),
@@ -179,7 +178,6 @@ class _MyHomePageState extends State<MyHomePage> {
   late final GlobalKey<ScaffoldState> scaffoldKey;
   late final WalletListController walletListController;
   late final ConfettiController confettiController;
-  late final ValueNotifier<bool> isShowingCreatedWalletDialog;
 
   @override
   void initState() {
@@ -189,14 +187,12 @@ class _MyHomePageState extends State<MyHomePage> {
       keyStream: coord.subKeyEvents(),
     );
     confettiController = ConfettiController(duration: Duration(seconds: 4));
-    isShowingCreatedWalletDialog = ValueNotifier(false);
   }
 
   @override
   void dispose() {
     confettiController.dispose();
     walletListController.dispose();
-    isShowingCreatedWalletDialog.dispose();
     super.dispose();
   }
 
@@ -206,7 +202,6 @@ class _MyHomePageState extends State<MyHomePage> {
       scaffoldKey: scaffoldKey,
       walletListController: walletListController,
       confettiController: confettiController,
-      isShowingCreatedWalletDialog: isShowingCreatedWalletDialog,
       child: Stack(
         alignment: AlignmentDirectional.center,
         children: [
