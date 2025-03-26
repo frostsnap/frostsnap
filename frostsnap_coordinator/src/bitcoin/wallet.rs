@@ -3,11 +3,11 @@ use crate::persist::Persisted;
 use anyhow::{anyhow, Context, Result};
 use bdk_chain::{
     bitcoin::{self, bip32, Amount, Script, SignedAmount, Txid},
-    indexed_tx_graph,
+    indexed_tx_graph::{self, ChangeSet},
     indexer::keychain_txout::{self, KeychainTxOutIndex},
     local_chain,
     miniscript::{Descriptor, DescriptorPublicKey},
-    ChainPosition, CheckPoint, ConfirmationBlockTime, Indexer, Merge,
+    tx_graph, ChainPosition, CheckPoint, ConfirmationBlockTime, Indexer, Merge,
 };
 use frostsnap_core::{
     bitcoin_transaction::{self, LocalSpk},
@@ -147,6 +147,16 @@ impl CoordSuperWallet {
             .collect()
     }
 
+    pub fn address(&mut self, master_appkey: MasterAppkey, index: u32) -> Option<AddressInfo> {
+        self.lazily_initialize_key(master_appkey);
+        let keychain = BitcoinAccountKeychain::external();
+        let spk = self
+            .tx_graph
+            .index
+            .spk_at_index((master_appkey, keychain), index)?;
+        Some(self.address_info(master_appkey, &spk, index, keychain))
+    }
+
     fn address_info(
         &self,
         master_appkey: MasterAppkey,
@@ -182,6 +192,22 @@ impl CoordSuperWallet {
                 .ok_or(anyhow!("no more addresses on this keychain"))
         })?;
 
+        Ok(self.address_info(master_appkey, &spk, index, keychain))
+    }
+
+    pub fn next_unused_address(&mut self, master_appkey: MasterAppkey) -> Result<AddressInfo> {
+        self.lazily_initialize_key(master_appkey);
+        let keychain = BitcoinAccountKeychain::external();
+        let mut db = self.db.lock().unwrap();
+        let (index, spk) = self.tx_graph.mutate(&mut *db, |tx_graph| {
+            match tx_graph.index.next_unused_spk((master_appkey, keychain)) {
+                Some((spk, changeset)) => Ok((spk, changeset)),
+                _ => tx_graph
+                    .index
+                    .reveal_next_spk((master_appkey, keychain))
+                    .ok_or(anyhow!("no more addresses on this keychain")),
+            }
+        })?;
         Ok(self.address_info(master_appkey, &spk, index, keychain))
     }
 

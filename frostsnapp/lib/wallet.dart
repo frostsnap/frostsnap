@@ -839,12 +839,19 @@ class WalletBottomBar extends StatelessWidget {
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed:
-                      () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder:
-                              (context) => walletCtx.wrap(WalletReceivePage()),
-                        ),
+                      () => showBottomSheetOrDialog(
+                        context,
+                        builder:
+                            (context) => walletCtx.wrap(
+                              ReceivePage(wallet: walletCtx.wallet),
+                            ),
                       ),
+                  //onPressed:
+                  //    () => showBottomSheetOrDialog(
+                  //      context,
+                  //      builder:
+                  //          (context) => walletCtx.wrap(WalletReceivePage()),
+                  //    ),
                   label: Text('Receive'),
                   icon: Icon(Icons.south_east),
                   style: ElevatedButton.styleFrom(
@@ -856,12 +863,11 @@ class WalletBottomBar extends StatelessWidget {
               ),
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: () {
-                    showBottomSheetOrDialog(
-                      context,
-                      builder: (context) => walletCtx.wrap(WalletSendPage()),
-                    );
-                  },
+                  onPressed:
+                      () => showBottomSheetOrDialog(
+                        context,
+                        builder: (context) => walletCtx.wrap(WalletSendPage()),
+                      ),
                   label: Text('Send'),
                   icon: Icon(Icons.north_east),
                   style: ElevatedButton.styleFrom(

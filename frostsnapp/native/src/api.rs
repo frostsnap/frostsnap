@@ -613,6 +613,28 @@ impl SuperWallet {
             .map(Into::into)
     }
 
+    pub fn next_unused_address(&self, master_appkey: MasterAppkey) -> Result<Address> {
+        self.inner
+            .lock()
+            .unwrap()
+            .next_unused_address(master_appkey)
+            .map(Into::into)
+    }
+
+    pub fn address_state(
+        &self,
+        master_appkey: MasterAppkey,
+        index: u32,
+    ) -> SyncReturn<Option<Address>> {
+        SyncReturn(
+            self.inner
+                .lock()
+                .unwrap()
+                .address(master_appkey, index)
+                .map(Into::into),
+        )
+    }
+
     pub fn addresses_state(&self, master_appkey: MasterAppkey) -> SyncReturn<Vec<Address>> {
         SyncReturn(
             self.inner

@@ -242,9 +242,6 @@ class _WalletSendPageState extends State<WalletSendPage> {
       centerTitle: true,
       backgroundColor: theme.colorScheme.surfaceContainerLow,
       pinned: true,
-      stretch: true,
-      forceMaterialTransparency: true,
-      automaticallyImplyLeading: false,
       leading: IconButton(
         onPressed: () => Navigator.pop(context),
         icon: Icon(Icons.close),

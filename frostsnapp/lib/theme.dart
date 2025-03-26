@@ -39,6 +39,7 @@ Future<T?> showBottomSheetOrDialog<T>(
   if (mediaSize.width < 600) {
     return showModalBottomSheet<T>(
       context: context,
+      clipBehavior: Clip.hardEdge,
       backgroundColor: backgroundColor,
       isScrollControlled: true,
       useSafeArea: true,
@@ -52,6 +53,7 @@ Future<T?> showBottomSheetOrDialog<T>(
       builder:
           (context) => Dialog(
             backgroundColor: backgroundColor,
+            clipBehavior: Clip.hardEdge,
             child: ConstrainedBox(
               constraints: BoxConstraints(maxWidth: 560),
               child: Builder(builder: builder),
@@ -61,20 +63,30 @@ Future<T?> showBottomSheetOrDialog<T>(
   }
 }
 
-String spacedHex(String input, {int spacing = 4}) {
+String spacedHex(String input, {int groupSize = 4, int? groupsPerLine}) {
   StringBuffer result = StringBuffer();
 
   for (int i = 0; i < input.length; i++) {
     result.write(input[i]);
 
     // Add a space after every x characters
-    if ((i + 1) % spacing == 0) result.write(' ');
+    if ((i + 1) % groupSize == 0) {
+      if (groupsPerLine != null) {
+        if ((i + 1) % (groupSize * groupsPerLine) == 0) {
+          result.write('\n');
+        } else {
+          result.write(' ');
+        }
+      } else {
+        result.write(' ');
+      }
+    }
   }
 
   // Ensure the last group has exactly x characters by adding spaces
-  int remainder = input.length % spacing;
+  int remainder = input.length % groupSize;
   if (remainder > 0) {
-    for (int i = 0; i < spacing - remainder; i++) {
+    for (int i = 0; i < groupSize - remainder; i++) {
       result.write('\u00A0');
     }
   }

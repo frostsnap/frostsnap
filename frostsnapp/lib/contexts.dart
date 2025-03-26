@@ -189,8 +189,8 @@ class WalletContext extends InheritedWidget {
     return false;
   }
 
-  get superWallet => wallet.superWallet;
-  get masterAppkey => wallet.masterAppkey;
+  SuperWallet get superWallet => wallet.superWallet;
+  MasterAppkey get masterAppkey => wallet.masterAppkey;
   get keyId => api.masterAppkeyExtToKeyId(masterAppkey: wallet.masterAppkey);
   get network => wallet.superWallet.network;
 }
