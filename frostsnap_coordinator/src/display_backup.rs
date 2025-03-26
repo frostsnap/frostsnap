@@ -60,7 +60,7 @@ impl UiProtocol for DisplayBackupProtocol {
         }
     }
 
-    fn connected(&mut self, id: frostsnap_core::DeviceId) {
+    fn connected(&mut self, id: frostsnap_core::DeviceId, _is_blank: bool) {
         if id == self.device_id {
             self.should_send = true;
         }

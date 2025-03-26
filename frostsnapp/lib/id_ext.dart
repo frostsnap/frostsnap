@@ -19,3 +19,6 @@ bool deviceIdEquals(DeviceId lhs, DeviceId rhs) =>
 
 bool keyIdEquals(KeyId lhs, KeyId rhs) =>
     listEquals(lhs.field0.toList(), rhs.field0.toList());
+
+bool restorationIdEquals(RestorationId lhs, RestorationId rhs) =>
+    listEquals(lhs.field0.toList(), rhs.field0.toList());

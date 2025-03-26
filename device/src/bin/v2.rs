@@ -36,7 +36,7 @@ use esp_hal::{
     usb_serial_jtag::UsbSerialJtag,
     Blocking,
 };
-use frostsnap_comms::Downstream;
+use frostsnap_comms::{Downstream, Model};
 use frostsnap_core::{schnorr_fun::fun::hex, SignTask};
 use frostsnap_device::{
     efuse::{self, EfuseHmacKeys},
@@ -232,6 +232,7 @@ fn main() -> ! {
         downstream_detect,
         sha256,
         hmac_keys,
+        model: Model::Alpha { version: 1 },
     };
     run.run()
 }

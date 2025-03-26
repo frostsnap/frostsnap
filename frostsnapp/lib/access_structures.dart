@@ -3,7 +3,7 @@ import 'package:frostsnapp/bridge_definitions.dart';
 import 'package:frostsnapp/global.dart';
 
 class AccessStructureListWidget extends StatelessWidget {
-  final List<AccessStructureState> accessStructures;
+  final List<AccessStructure> accessStructures;
 
   const AccessStructureListWidget({super.key, required this.accessStructures});
 
@@ -14,18 +14,9 @@ class AccessStructureListWidget extends StatelessWidget {
       itemCount: accessStructures.length,
       itemBuilder: (context, i) {
         final accessStructure = accessStructures[i];
-        final widget = switch (accessStructure) {
-          AccessStructureState_Recovering(:final field0) =>
-            AccessStructureWidget(
-              devices:
-                  field0.gotSharesFrom
-                      .map((device) => coord.getDeviceName(id: device) ?? "??")
-                      .toList(),
-              threshold: field0.threshold,
-            ),
-          AccessStructureState_Complete(:final field0) =>
-            AccessStructureWidget.fromAccessStructure(field0),
-        };
+        final widget = AccessStructureWidget.fromAccessStructure(
+          accessStructure,
+        );
         return Center(child: widget);
       },
     );

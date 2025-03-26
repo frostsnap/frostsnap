@@ -12,8 +12,8 @@ use core::cell::RefCell;
 use esp_hal::{gpio, sha::Sha, timer};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{
-    CommsMisc, CoordinatorSendBody, CoordinatorUpgradeMessage, DeviceSendBody, ReceiveSerial,
-    Upstream,
+    CommsMisc, CoordinatorSendBody, CoordinatorUpgradeMessage, DeviceSendBody, Model,
+    ReceiveSerial, Upstream,
 };
 use frostsnap_comms::{Downstream, MAGIC_BYTES_PERIOD};
 use frostsnap_core::{
@@ -33,6 +33,7 @@ pub struct Run<'a, Rng, Ui, T, DownstreamDetectPin> {
     pub downstream_detect: gpio::Input<'a, DownstreamDetectPin>,
     pub sha256: Sha<'a>,
     pub hmac_keys: EfuseHmacKeys<'a>,
+    pub model: Model,
 }
 
 impl<Rng, Ui, T, DownstreamDetectPin> Run<'_, Rng, Ui, T, DownstreamDetectPin>
@@ -52,6 +53,7 @@ where
             downstream_detect,
             mut sha256,
             mut hmac_keys,
+            model,
         } = self;
 
         ui.set_busy_task(ui::BusyTask::Loading);
@@ -68,7 +70,7 @@ where
             }
         };
 
-        let _reserved = partitions.nvs.split_off_front(2);
+        let share_partition = partitions.nvs.split_off_front(2);
 
         let nonce_slots = {
             // give half the remaining nvs over to nonces
@@ -82,7 +84,7 @@ where
         };
 
         // The event log gets the reset of the sectors
-        let mut event_log = EventLog::new(partitions.nvs);
+        let mut event_log = EventLog::new(share_partition, partitions.nvs);
 
         let mut signer = FrostSigner::new(header.device_keypair(), nonce_slots);
 
@@ -250,7 +252,8 @@ where
                         upstream_serial
                             .write_magic_bytes()
                             .expect("failed to write magic bytes");
-                        upstream_connection.send_announcement(DeviceSendBody::Announce {
+                        upstream_connection.send_announcement(DeviceSendBody::Announce2 {
+                            model,
                             firmware_digest: active_firmware_digest,
                         });
                         upstream_connection.send_to_coordinator([match &name {
@@ -569,7 +572,7 @@ where
                         share_backup,
                     } => {
                         outbox.extend(
-                            signer.tell_coordinator_about_backup_load_result(*phase, share_backup),
+                            signer.tell_coordinator_about_backup_load_result(phase, share_backup),
                         );
                     }
                     UiEvent::WipeDataConfirm => {

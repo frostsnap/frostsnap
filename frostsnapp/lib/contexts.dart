@@ -74,9 +74,6 @@ class SuperWalletContext extends InheritedWidget {
 
     final superWallet = appCtx.settings.getSuperWallet(network: bitcoinNetwork);
     final masterAppkey = frostKey.masterAppkey();
-    if (masterAppkey == null) {
-      return null;
-    }
     final wallet = Wallet(superWallet: superWallet, masterAppkey: masterAppkey);
 
     // Get or create tx stream
@@ -227,11 +224,10 @@ class HomeContext extends InheritedWidget {
     child: child,
   );
 
-  WalletItem? openNewlyCreatedWallet(KeyId id) {
-    walletListController.selectedId = id;
+  openNewlyCreatedWallet(KeyId id) {
+    walletListController.selectWallet(id);
     scaffoldKey.currentState?.closeDrawer();
     confettiController.play();
-    return walletListController.selected;
   }
 
   @override

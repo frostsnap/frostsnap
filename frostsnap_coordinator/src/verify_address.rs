@@ -55,7 +55,7 @@ impl UiProtocol for VerifyAddressProtocol {
         self.is_complete.clone()
     }
 
-    fn connected(&mut self, id: frostsnap_core::DeviceId) {
+    fn connected(&mut self, id: frostsnap_core::DeviceId, _is_blank: bool) {
         if self.state.target_devices.contains(&id) {
             self.need_to_send_to.insert(id);
             self.emit_state()
@@ -70,7 +70,7 @@ impl UiProtocol for VerifyAddressProtocol {
 
     fn process_to_user_message(
         &mut self,
-        message: frostsnap_core::message::CoordinatorToUserMessage,
+        message: frostsnap_core::coordinator::CoordinatorToUserMessage,
     ) {
         event!(
             Level::ERROR,

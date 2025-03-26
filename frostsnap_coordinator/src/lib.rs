@@ -3,11 +3,14 @@ pub mod check_share;
 pub mod display_backup;
 pub mod firmware_upgrade;
 pub mod keygen;
+// mod restoration;
+pub mod enter_physical_backup;
 mod serial_port;
 pub mod signing;
 mod ui_protocol;
 mod usb_serial_manager;
 pub mod verify_address;
+pub mod wait_for_recovery_share;
 
 pub use frostsnap_comms;
 pub use frostsnap_core;

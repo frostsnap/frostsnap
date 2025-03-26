@@ -9,11 +9,11 @@ use proptest::{
 use std::collections::{BTreeMap, BTreeSet};
 
 use frostsnap_core::{
-    device::{KeyGenPhase2, KeyPurpose, SignPhase1},
-    message::{
+    coordinator::{
         CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, CoordinatorToUserSigningMessage,
-        DoKeyGen,
     },
+    device::{KeyGenPhase2, KeyPurpose, SignPhase1},
+    message::DoKeyGen,
     AccessStructureRef, DeviceId, KeygenId, SignSessionId, WireSignTask,
 };
 use proptest_state_machine::{

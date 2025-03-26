@@ -62,9 +62,6 @@ class SettingsContext extends InheritedWidget {
       return null;
     }
     final masterAppkey = frostKey.masterAppkey();
-    if (masterAppkey == null) {
-      return null;
-    }
     final network = frostKey.bitcoinNetwork();
     if (network == null) {
       return null;
@@ -816,7 +813,7 @@ class AccessPage extends StatelessWidget {
             style: Theme.of(context).textTheme.titleMedium,
           ),
           AccessStructureListWidget(
-            accessStructures: frostKey.accessStructureState().field0,
+            accessStructures: frostKey.accessStructures(),
           ),
         ],
       ),

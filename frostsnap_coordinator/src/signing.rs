@@ -1,7 +1,10 @@
 use frostsnap_comms::CoordinatorSendMessage;
 use frostsnap_core::{
-    coordinator::{ActiveSignSession, CoordinatorSend, RequestDeviceSign},
-    message::{CoordinatorToUserMessage, CoordinatorToUserSigningMessage, EncodedSignature},
+    coordinator::{
+        ActiveSignSession, CoordinatorSend, CoordinatorToUserMessage,
+        CoordinatorToUserSigningMessage, RequestDeviceSign,
+    },
+    message::EncodedSignature,
     DeviceId, SignSessionId,
 };
 use std::collections::BTreeSet;
@@ -125,7 +128,7 @@ impl UiProtocol for SigningDispatcher {
         self.emit_state();
     }
 
-    fn connected(&mut self, device_id: DeviceId) {
+    fn connected(&mut self, device_id: DeviceId, _is_blank: bool) {
         if !self.got_signatures.contains(&device_id) && self.targets.contains(&device_id) {
             self.connected_but_need_request.insert(device_id);
             self.emit_state();

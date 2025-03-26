@@ -18,26 +18,30 @@ pub use frostsnap_coordinator::bitcoin::{
     wallet::CoordSuperWallet,
 };
 pub use frostsnap_coordinator::firmware_upgrade::FirmwareUpgradeConfirmState;
+pub use frostsnap_coordinator::frostsnap_comms::Model;
 pub use frostsnap_coordinator::frostsnap_core;
 use frostsnap_coordinator::frostsnap_core::coordinator::CoordFrostKey;
 use frostsnap_coordinator::frostsnap_core::device::KeyPurpose;
+use frostsnap_coordinator::frostsnap_core::message::HeldShare;
 pub use frostsnap_coordinator::verify_address::VerifyAddressProtocolState;
 pub use frostsnap_coordinator::{
     check_share::CheckShareState, keygen::KeyGenState, persist::Persisted, signing::SigningState,
     DeviceChange, PortDesc, Settings as RSettings,
+};
+pub use frostsnap_core::coordinator::{
+    RecoverShare as RRecoverShare, RestorationState as RRestorationState,
 };
 
 pub use frostsnap_coordinator::backup_run::{BackupRun, BackupState};
 use frostsnap_coordinator::{BackupMutation, DesktopSerial, UsbSerialManager};
 pub use frostsnap_core::message::EncodedSignature;
 pub use frostsnap_core::{
-    AccessStructureId, AccessStructureRef, DeviceId, KeyId, KeygenId, MasterAppkey, SessionHash,
-    SignSessionId, WireSignTask,
+    AccessStructureId, AccessStructureRef, DeviceId, KeyId, KeygenId, MasterAppkey, RestorationId,
+    SessionHash, SignSessionId, WireSignTask,
 };
 use lazy_static::lazy_static;
 pub use std::collections::BTreeMap;
 pub use std::collections::HashMap;
-use std::collections::HashSet;
 use std::ops::Deref;
 use std::path::Path;
 pub use std::path::PathBuf;
@@ -146,6 +150,7 @@ pub struct ConnectedDevice {
     pub firmware_digest: String,
     pub latest_digest: Option<String>,
     pub id: DeviceId,
+    pub model: Model,
 }
 
 impl ConnectedDevice {
@@ -163,28 +168,24 @@ impl ConnectedDevice {
 #[derive(Clone, Debug)]
 pub struct KeyState {
     pub keys: Vec<FrostKey>,
-    pub recoverable: Vec<RecoverableKey>,
+    pub restoring: Vec<RestoringKey>,
 }
 
 #[derive(Clone, Debug)]
-pub struct RecoverableKey {
+pub struct RestoringKey {
+    pub restoration_id: RestorationId,
     pub name: String,
     pub threshold: u16,
-    pub access_structure_ref: AccessStructureRef,
-    pub shares_obtained: u16,
+    pub shares_obtained: Vec<DeviceId>,
+    pub bitcoin_network: Option<BitcoinNetwork>,
 }
 
 #[derive(Clone, Debug)]
 pub struct FrostKey(pub(crate) RustOpaque<frostsnap_core::coordinator::CoordFrostKey>);
 
 impl FrostKey {
-    pub fn master_appkey(&self) -> SyncReturn<Option<MasterAppkey>> {
-        SyncReturn(
-            self.0
-                .complete_key
-                .as_ref()
-                .map(|complete_key| complete_key.master_appkey),
-        )
+    pub fn master_appkey(&self) -> SyncReturn<MasterAppkey> {
+        SyncReturn(self.0.complete_key.master_appkey)
     }
 
     pub fn key_id(&self) -> SyncReturn<KeyId> {
@@ -199,24 +200,24 @@ impl FrostKey {
         SyncReturn(
             self.0
                 .complete_key
-                .iter()
-                .flat_map(|complete_key| {
-                    complete_key
-                        .access_structures
-                        .values()
-                        .cloned()
-                        .map(From::from)
-                })
+                .access_structures
+                .values()
+                .cloned()
+                .map(From::from)
                 .collect(),
         )
     }
 
-    pub fn is_complete(&self) -> SyncReturn<bool> {
-        SyncReturn(self.0.complete_key.is_some())
-    }
-
-    pub fn access_structure_state(&self) -> SyncReturn<AccessStructureListState> {
-        SyncReturn(AccessStructureListState::from_frost_key(&self.0))
+    pub fn get_access_structure(
+        &self,
+        access_structure_id: AccessStructureId,
+    ) -> Option<AccessStructure> {
+        self.0
+            .complete_key
+            .access_structures
+            .get(&access_structure_id)
+            .cloned()
+            .map(From::from)
     }
 
     pub fn bitcoin_network(&self) -> SyncReturn<Option<BitcoinNetwork>> {
@@ -226,57 +227,6 @@ impl FrostKey {
                 .bitcoin_network()
                 .map(|network| network.into()),
         )
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct RecoveringAccessStructure {
-    pub access_structure_id: AccessStructureId,
-    pub threshold: u16,
-    pub got_shares_from: Vec<DeviceId>,
-}
-
-impl RecoveringAccessStructure {
-    fn from_core(
-        access_structure_id: AccessStructureId,
-        recovering_access_structure: frostsnap_core::coordinator::RecoveringAccessStructure,
-    ) -> Self {
-        RecoveringAccessStructure {
-            access_structure_id,
-            threshold: recovering_access_structure.threshold,
-            got_shares_from: recovering_access_structure
-                .share_images
-                .iter()
-                .map(|(_, (device_id, _))| *device_id)
-                .collect::<HashSet<DeviceId>>()
-                .into_iter()
-                .collect(),
-        }
-    }
-}
-
-pub struct AccessStructureListState(pub Vec<AccessStructureState>);
-
-pub enum AccessStructureState {
-    Recovering(RecoveringAccessStructure),
-    Complete(AccessStructure),
-}
-
-impl AccessStructureListState {
-    pub(crate) fn from_frost_key(frost_key: &CoordFrostKey) -> Self {
-        let complete = frost_key.access_structures().map(|access_structure| {
-            AccessStructureState::Complete(AccessStructure::from(access_structure.clone()))
-        });
-        let recovering = frost_key.recovering_access_structures.iter().map(
-            |(access_structure_id, recovering_access_structure)| {
-                AccessStructureState::Recovering(RecoveringAccessStructure::from_core(
-                    *access_structure_id,
-                    recovering_access_structure.clone(),
-                ))
-            },
-        );
-
-        AccessStructureListState(complete.chain(recovering).collect())
     }
 }
 
@@ -328,6 +278,12 @@ pub struct _PortDesc {
     pub id: String,
     pub vid: u16,
     pub pid: u16,
+}
+
+#[frb(mirror(Model))]
+pub enum _Model {
+    Alpha { version: u8 },
+    Frontier { version: u8 },
 }
 
 #[derive(Debug)]
@@ -1094,12 +1050,6 @@ impl Coordinator {
         SyncReturn(self.0.get_frost_key(key_id).map(FrostKey::from))
     }
 
-    pub fn start_recovery(&self, key_id: KeyId) -> Result<()> {
-        self.0.start_recovery(key_id)?;
-
-        Ok(())
-    }
-
     pub fn delete_key(&self, key_id: KeyId) -> Result<()> {
         self.0.delete_key(key_id)
     }
@@ -1127,6 +1077,107 @@ impl Coordinator {
 
     pub fn cancel_sign_session(&self, ssid: SignSessionId) -> Result<()> {
         self.0.cancel_sign_sesssion(ssid)
+    }
+
+    pub fn wait_for_recovery_share(
+        &self,
+        sink: StreamSink<WaitForRecoveryShareState>,
+    ) -> Result<()> {
+        self.0.wait_for_recovery_share(SinkWrap(sink));
+        Ok(())
+    }
+
+    pub fn start_restoring_wallet_from_device_share(
+        &self,
+        recover_share: RecoverShare,
+    ) -> Result<RestorationId> {
+        self.0
+            .start_restoring_wallet_from_device_share(recover_share.0.deref().clone())
+    }
+
+    pub fn continue_restoring_wallet_from_device_share(
+        &self,
+        restoration_id: RestorationId,
+        recover_share: RecoverShare,
+    ) -> Result<()> {
+        self.0.continue_restoring_wallet_from_device_share(
+            restoration_id,
+            recover_share.0.deref().clone(),
+        )
+    }
+
+    pub fn check_share_compatible(
+        &self,
+        restoration_id: RestorationId,
+        recover_share: RecoverShare,
+    ) -> SyncReturn<ShareCompatibility> {
+        use frostsnap_core::coordinator::RestoreRecoverShareError::*;
+        SyncReturn(
+            match self
+                .0
+                .inner()
+                .check_recover_share_compatible_with_restoration(restoration_id, &recover_share.0)
+            {
+                Ok(_) => ShareCompatibility::Compatible,
+                Err(e) => match e {
+                    NameMismatch => ShareCompatibility::NameMismatch,
+                    AcccessStructureMismatch | UnknownRestorationId | PurposeNotCompatible => {
+                        ShareCompatibility::Incompatible
+                    }
+                    AlreadyGotThisShare => ShareCompatibility::AlreadyGotIt,
+                },
+            },
+        )
+    }
+
+    pub fn finish_restoring(&self, restoration_id: RestorationId) -> Result<AccessStructureRef> {
+        self.0.finish_restoring(restoration_id, crate::TEMP_KEY)
+    }
+
+    pub fn get_restoration_state(
+        &self,
+        restoration_id: RestorationId,
+    ) -> SyncReturn<Option<RestorationState>> {
+        SyncReturn(
+            self.0
+                .get_restoration_state(restoration_id)
+                .map(RustOpaque::new)
+                .map(RestorationState),
+        )
+    }
+
+    pub fn cancel_restoration(&self, restoration_id: RestorationId) -> Result<()> {
+        self.0.cancel_restoration(restoration_id)
+    }
+}
+
+pub enum ShareCompatibility {
+    Compatible,
+    AlreadyGotIt,
+    Incompatible,
+    NameMismatch,
+}
+
+pub struct WaitForRecoveryShareState {
+    pub candidates: Vec<RecoverShare>,
+    pub connected: Vec<DeviceId>,
+}
+
+impl From<frostsnap_coordinator::wait_for_recovery_share::WaitForRecoveryShareState>
+    for WaitForRecoveryShareState
+{
+    fn from(
+        value: frostsnap_coordinator::wait_for_recovery_share::WaitForRecoveryShareState,
+    ) -> Self {
+        WaitForRecoveryShareState {
+            candidates: value
+                .candidates
+                .into_iter()
+                .map(RustOpaque::new)
+                .map(RecoverShare)
+                .collect(),
+            connected: value.connected.into_iter().collect(),
+        }
     }
 }
 
@@ -1818,6 +1869,65 @@ pub enum _ChainStatusState {
 pub struct _VerifyAddressProtocolState {
     pub target_devices: Vec<DeviceId>,
 }
+
+pub struct RecoverShare(pub RustOpaque<RRecoverShare>);
+
+impl RecoverShare {
+    pub fn threshold(&self) -> SyncReturn<u16> {
+        SyncReturn(self.0.held_share.threshold)
+    }
+
+    pub fn device_id(&self) -> SyncReturn<DeviceId> {
+        SyncReturn(self.0.held_by)
+    }
+
+    pub fn bitcoin_network(&self) -> SyncReturn<Option<BitcoinNetwork>> {
+        SyncReturn(self.0.held_share.purpose.bitcoin_network().map(From::from))
+    }
+
+    pub fn key_name(&self) -> SyncReturn<String> {
+        SyncReturn(self.0.held_share.key_name.clone())
+    }
+}
+
+pub struct RestorationState(pub RustOpaque<RRestorationState>);
+
+impl RestorationState {
+    pub fn get_already_recovered_share(
+        &self,
+        device_id: DeviceId,
+    ) -> SyncReturn<Option<RecoverShare>> {
+        SyncReturn(
+            match self
+                .0
+                .access_structure
+                .share_images
+                .get(&device_id)
+                .cloned()
+            {
+                Some(share_image) => Some(RecoverShare(RustOpaque::new(
+                    frostsnap_core::coordinator::RecoverShare {
+                        held_by: device_id,
+                        held_share: HeldShare {
+                            access_structure_ref: match self.0.access_structure_ref {
+                                Some(access_structure_ref) => access_structure_ref,
+                                None => return SyncReturn(None),
+                            },
+                            share_image,
+                            threshold: self.0.access_structure.threshold,
+                            key_name: self.0.key_name.clone(),
+                            purpose: self.0.key_purpose,
+                        },
+                    },
+                ))),
+                None => None,
+            },
+        )
+    }
+}
+
+#[frb(mirror(RestorationId))]
+pub struct _Restorattionid([u8; 16]);
 
 // XXX: bugs in flutter_rust_bridge mean that sometimes the right code doesn't get emitted unless
 // you use it as an argument.

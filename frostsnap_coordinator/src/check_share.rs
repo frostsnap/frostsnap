@@ -2,8 +2,8 @@ use std::borrow::BorrowMut;
 
 use frostsnap_comms::CoordinatorSendMessage;
 use frostsnap_core::{
-    coordinator::FrostCoordinator, message::CoordinatorToUserMessage, AccessStructureRef, DeviceId,
-    SymmetricKey,
+    coordinator::{CoordinatorToUserMessage, FrostCoordinator},
+    AccessStructureRef, DeviceId, SymmetricKey,
 };
 use tracing::{event, Level};
 
@@ -84,8 +84,6 @@ impl UiProtocol for CheckShareProtocol {
         }
     }
 
-    fn connected(&mut self, _id: frostsnap_core::DeviceId) {}
-
     fn disconnected(&mut self, id: frostsnap_core::DeviceId) {
         if self.device_id == id {
             event!(
@@ -99,7 +97,7 @@ impl UiProtocol for CheckShareProtocol {
 
     fn process_to_user_message(
         &mut self,
-        message: frostsnap_core::message::CoordinatorToUserMessage,
+        message: frostsnap_core::coordinator::CoordinatorToUserMessage,
     ) {
         if let CoordinatorToUserMessage::EnteredKnownBackup {
             valid, device_id, ..

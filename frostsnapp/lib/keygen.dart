@@ -15,7 +15,6 @@ import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/progress_indicator.dart';
 import 'package:frostsnapp/theme.dart';
-import 'package:frostsnapp/wallet_list_controller.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class KeyNamePage extends StatefulWidget {
@@ -401,12 +400,8 @@ class _ThresholdPageState extends State<ThresholdPage> {
                   if (context.mounted) {
                     Navigator.popUntil(context, (r) => r.isFirst);
                     final homeCtx = HomeContext.of(context)!;
-                    final walletItem = homeCtx.openNewlyCreatedWallet(
-                      accessStructureRef.keyId,
-                    );
-                    if (walletItem != null) {
-                      showWalletCreatedDialog(context, walletItem);
-                    }
+                    homeCtx.openNewlyCreatedWallet(accessStructureRef.keyId);
+                    showWalletCreatedDialog(context, accessStructureRef);
                   }
                 },
                 icon: Icon(Icons.check),
@@ -420,9 +415,12 @@ class _ThresholdPageState extends State<ThresholdPage> {
   }
 }
 
-void showWalletCreatedDialog(BuildContext context, WalletItem walletItem) {
+void showWalletCreatedDialog(
+  BuildContext context,
+  AccessStructureRef accessStructureRef,
+) {
   final homeCtx = HomeContext.of(context)!;
-  final accessStructure = walletItem.key.accessStructures().first;
+  final accessStructure = coord.getAccessStructure(asRef: accessStructureRef)!;
   homeCtx.isShowingCreatedWalletDialog.value = true;
   showDialog(
     context: context,
@@ -469,8 +467,10 @@ void showWalletCreatedDialog(BuildContext context, WalletItem walletItem) {
                 showBottomSheetOrDialog(
                   context,
                   builder:
-                      (context) => walletItem.tryWrapInWalletContext(
-                        context: context,
+                      (context) => SuperWalletContext.of(
+                        context,
+                      )!.tryWrapInWalletContext(
+                        keyId: accessStructureRef.keyId,
                         child: BackupChecklist(
                           accessStructure: accessStructure,
                           showAppBar: true,

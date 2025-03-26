@@ -1,10 +1,12 @@
 use frostsnap_core::device::{DeviceSymmetricKeyGen, KeyPurpose};
 use frostsnap_core::message::{
-    CoordinatorToDeviceMessage, CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage,
-    DeviceSend, DeviceToCoordinatorMessage, DeviceToUserMessage, DoKeyGen,
+    CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, DeviceToUserMessage,
+    DoKeyGen,
 };
 use frostsnap_core::{
-    coordinator::{CoordinatorSend, FrostCoordinator},
+    coordinator::{
+        CoordinatorSend, CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, FrostCoordinator,
+    },
     device::FrostSigner,
     DeviceId, SymmetricKey,
 };

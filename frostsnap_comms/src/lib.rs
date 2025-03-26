@@ -82,6 +82,15 @@ pub struct CoordinatorSendMessage<B = CoordinatorSendBody> {
     pub message_body: B,
 }
 
+impl CoordinatorSendMessage {
+    pub fn to(device_id: DeviceId, body: CoordinatorSendBody) -> Self {
+        Self {
+            target_destinations: Destination::Particular([device_id].into()),
+            message_body: body,
+        }
+    }
+}
+
 #[cfg(feature = "coordinator")]
 impl TryFrom<frostsnap_core::coordinator::CoordinatorSend>
     for CoordinatorSendMessage<CoordinatorSendBody>
@@ -370,13 +379,29 @@ impl<B: Gist> Gist for DeviceSendMessage<B> {
 #[derive(Encode, Decode, Debug, Clone)]
 pub enum DeviceSendBody {
     Core(frostsnap_core::message::DeviceToCoordinatorMessage),
-    Debug { message: String },
-    Announce { firmware_digest: Sha256Digest },
-    SetName { name: String },
+    Debug {
+        message: String,
+    },
+    Announce {
+        firmware_digest: Sha256Digest,
+    },
+    SetName {
+        name: String,
+    },
     DisconnectDownstream,
     NeedName,
     _LegacyAckUpgradeMode, // Used by earliest devices
     Misc(CommsMisc),
+    Announce2 {
+        model: Model,
+        firmware_digest: Sha256Digest,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Encode, Decode, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Model {
+    Alpha { version: u8 },
+    Frontier { version: u8 },
 }
 
 #[derive(Encode, Decode, Debug, Clone)]

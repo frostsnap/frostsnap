@@ -6,7 +6,7 @@ use crate::{
     CoordShareDecryptionContrib, Gist, KeygenId, MasterAppkey, SessionHash, ShareImage,
     SignSessionId, SignTaskError, Vec,
 };
-use crate::{DeviceId, WireSignTask};
+use crate::{DeviceId, RestorationId, WireSignTask};
 use alloc::{
     boxed::Box,
     collections::{BTreeMap, BTreeSet},
@@ -46,7 +46,10 @@ pub enum CoordinatorToDeviceMessage {
         coord_share_decryption_contrib: CoordShareDecryptionContrib,
         party_index: PartyIndex,
     },
-    LoadKnownBackup(Box<LoadKnownBackup>),
+    LoadKnownPhysical(Box<LoadKnownBackup>),
+    LoadPhysicalBackup {
+        restoration_id: RestorationId,
+    },
     VerifyAddress {
         master_appkey: MasterAppkey,
         derivation_index: u32,
@@ -173,9 +176,10 @@ impl CoordinatorToDeviceMessage {
             CoordinatorToDeviceMessage::FinishKeyGen { .. } => "FinishKeyGen",
             CoordinatorToDeviceMessage::RequestSign { .. } => "RequestSign",
             CoordinatorToDeviceMessage::DisplayBackup { .. } => "DisplayBackup",
-            CoordinatorToDeviceMessage::LoadKnownBackup { .. } => "LoadKnownBackup",
+            CoordinatorToDeviceMessage::LoadKnownPhysical { .. } => "LoadKnownBackup",
             CoordinatorToDeviceMessage::VerifyAddress { .. } => "VerifyAddress",
             CoordinatorToDeviceMessage::RequestHeldShares => "RequestHeldShares",
+            CoordinatorToDeviceMessage::LoadPhysicalBackup { .. } => "LoadUnknownBackup",
         }
     }
 }
@@ -198,6 +202,7 @@ pub enum DeviceToCoordinatorMessage {
         share_index: PartyIndex,
         success: bool,
     },
+    LoadBackupResult(Box<EnteredPhysicalBackup>),
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
@@ -231,37 +236,15 @@ impl DeviceToCoordinatorMessage {
             SignatureShare { .. } => "SignatureShare",
             LoadKnownBackupResult { .. } => "LoadKnownBackupResult",
             HeldShares(_) => "HeldShares",
+            LoadBackupResult { .. } => "LoadUnknownBackupResult",
         }
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum CoordinatorToUserMessage {
-    KeyGen {
-        keygen_id: KeygenId,
-        inner: CoordinatorToUserKeyGenMessage,
-    },
-    Signing(CoordinatorToUserSigningMessage),
-    EnteredKnownBackup {
-        device_id: DeviceId,
-        access_structure_ref: AccessStructureRef,
-        share_index: PartyIndex,
-        /// whether it was a valid backup for this key
-        valid: bool,
-    },
-    PromptRecoverShare(Box<RecoverShare>),
-}
-
-impl CoordinatorToUserMessage {
-    pub fn kind(&self) -> &'static str {
-        use CoordinatorToUserMessage::*;
-        match self {
-            KeyGen { .. } => "KeyGen",
-            Signing(_) => "Signing",
-            EnteredKnownBackup { .. } => "EnteredKnownBackup",
-            PromptRecoverShare { .. } => "PromptRecoverAccessStructure",
-        }
-    }
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+pub struct EnteredPhysicalBackup {
+    pub restoration_id: RestorationId,
+    pub share_image: ShareImage,
 }
 
 #[derive(Clone, Debug, Copy, bincode::Encode, bincode::Decode, PartialEq)]
@@ -277,33 +260,6 @@ impl EncodedSignature {
         Signature::from_bytes(self.0)
     }
 }
-
-#[derive(Clone, Debug)]
-pub enum CoordinatorToUserSigningMessage {
-    GotShare {
-        session_id: SignSessionId,
-        from: DeviceId,
-    },
-    Signed {
-        session_id: SignSessionId,
-        signatures: Vec<EncodedSignature>,
-    },
-}
-
-#[derive(Clone, Debug)]
-pub enum CoordinatorToUserKeyGenMessage {
-    ReceivedShares {
-        from: DeviceId,
-    },
-    CheckKeyGen {
-        session_hash: SessionHash,
-    },
-    KeyGenAck {
-        from: DeviceId,
-        all_acks_received: bool,
-    },
-}
-
 /// Messages to the user often to ask them to confirm things. Often confirmations contain what we
 /// call a "phase" which is both the data that describes the action and what will be passed back
 /// into the core module once the action is confirmed to make progress.
@@ -323,7 +279,7 @@ pub enum DeviceToUserMessage {
         backup: String,
     },
     EnterBackup {
-        phase: Box<crate::device::LoadKnownBackupPhase>,
+        phase: crate::device::LoadBackupPhase,
     },
     VerifyAddress {
         address: Address<NetworkChecked>,
@@ -338,12 +294,6 @@ pub enum TaskKind {
     DisplayBackup,
     CheckBackup,
     VerifyAddress,
-}
-
-#[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
-pub struct RecoverShare {
-    pub held_by: DeviceId,
-    pub held_share: HeldShare,
 }
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq)]
