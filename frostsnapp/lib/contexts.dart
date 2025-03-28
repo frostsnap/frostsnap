@@ -1,5 +1,3 @@
-import 'dart:collection';
-
 import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/ffi.dart';
@@ -11,13 +9,11 @@ import 'package:frostsnapp/wallet_list_controller.dart';
 
 class FrostsnapContext extends InheritedWidget {
   final Stream<String> logStream;
-  final BackupManager backupManager;
   final AppCtx appCtx;
 
   const FrostsnapContext({
     Key? key,
     required this.logStream,
-    required this.backupManager,
     required this.appCtx,
     required Widget child,
   }) : super(key: key, child: child);
@@ -31,6 +27,8 @@ class FrostsnapContext extends InheritedWidget {
     // we never change the log stream
     return false;
   }
+
+  BackupManager get backupManager => appCtx.backupManager;
 }
 
 class SuperWalletContext extends InheritedWidget {
@@ -38,16 +36,8 @@ class SuperWalletContext extends InheritedWidget {
 
   SuperWalletContext({super.key, required super.child, required this.appCtx});
 
-  final Map<KeyId, Stream<TxState>> txStreams = HashMap<KeyId, Stream<TxState>>(
-    equals: (KeyId a, KeyId b) => keyIdEquals(a, b),
-    hashCode: (KeyId key) => key.field0.hashCode,
-  );
-
-  final Map<KeyId, Stream<BackupRun>> backupStreams =
-      HashMap<KeyId, Stream<BackupRun>>(
-        equals: (KeyId a, KeyId b) => keyIdEquals(a, b),
-        hashCode: (KeyId key) => key.field0.hashCode,
-      );
+  final Map<KeyId, Stream<TxState>> txStreams = keyIdMap();
+  final Map<KeyId, Stream<BackupRun>> backupStreams = keyIdMap();
 
   // Static method to allow easy access to the Foo instance
   static SuperWalletContext? of(BuildContext context) {
@@ -59,6 +49,7 @@ class SuperWalletContext extends InheritedWidget {
     if (stream != null) return stream;
     backupStreams[keyId] =
         appCtx.backupManager.backupStream(keyId: keyId).toBehaviorSubject();
+
     return backupStreams[keyId]!;
   }
 
@@ -74,9 +65,6 @@ class SuperWalletContext extends InheritedWidget {
 
     final superWallet = appCtx.settings.getSuperWallet(network: bitcoinNetwork);
     final masterAppkey = frostKey.masterAppkey();
-    if (masterAppkey == null) {
-      return null;
-    }
     final wallet = Wallet(superWallet: superWallet, masterAppkey: masterAppkey);
 
     // Get or create tx stream
@@ -104,17 +92,6 @@ class SuperWalletContext extends InheritedWidget {
     }
     final wallet = record.$1;
     final txStream = record.$2;
-    final frostKey = wallet.frostKey();
-
-    if (frostKey != null) {
-      appCtx.backupManager.maybeStartBackupRun(
-        accessStructure:
-            frostKey
-                .accessStructures()
-                .first, // assuming one access structure for now.
-      );
-    }
-
     final backupStream = this.backupStream(keyId);
 
     return WalletContext(
@@ -195,6 +172,8 @@ class KeyContext extends InheritedWidget {
     return coord.getFrostKey(keyId: keyId)!;
   }
 
+  String get name => frostKey().keyName();
+
   @override
   bool updateShouldNotify(KeyContext oldWidget) {
     return false;
@@ -205,14 +184,12 @@ class HomeContext extends InheritedWidget {
   final GlobalKey<ScaffoldState> scaffoldKey;
   final WalletListController walletListController;
   final ConfettiController confettiController;
-  final ValueNotifier<bool> isShowingCreatedWalletDialog;
 
   const HomeContext({
     super.key,
     required this.scaffoldKey,
     required this.walletListController,
     required this.confettiController,
-    required this.isShowingCreatedWalletDialog,
     required Widget child,
   }) : super(child: child);
 
@@ -223,15 +200,13 @@ class HomeContext extends InheritedWidget {
     scaffoldKey: scaffoldKey,
     walletListController: walletListController,
     confettiController: confettiController,
-    isShowingCreatedWalletDialog: isShowingCreatedWalletDialog,
     child: child,
   );
 
-  WalletItem? openNewlyCreatedWallet(KeyId id) {
-    walletListController.selectedId = id;
+  openNewlyCreatedWallet(KeyId id) {
+    walletListController.selectWallet(id);
     scaffoldKey.currentState?.closeDrawer();
     confettiController.play();
-    return walletListController.selected;
   }
 
   @override

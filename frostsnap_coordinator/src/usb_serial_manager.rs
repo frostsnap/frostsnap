@@ -5,7 +5,7 @@ const USB_PID: u16 = 4097;
 use crate::PortOpenError;
 use crate::{FramedSerialPort, Serial};
 use anyhow::anyhow;
-use frostsnap_comms::{CommsMisc, ReceiveSerial};
+use frostsnap_comms::{CommsMisc, Model, ReceiveSerial};
 use frostsnap_comms::{
     CoordinatorSendBody, CoordinatorUpgradeMessage, Destination, DeviceSendBody, Sha256Digest,
     FIRMWARE_IMAGE_SIZE, FIRMWARE_NEXT_CHUNK_READY_SIGNAL, FIRMWARE_UPGRADE_CHUNK_LEN,
@@ -335,45 +335,25 @@ impl UsbSerialManager {
                                     }
                                 }
                                 DeviceSendBody::Announce { firmware_digest } => {
-                                    match self.device_ports.insert(
+                                    self.handle_announce(
+                                        &port_name,
                                         message.from,
-                                        DevicePort {
-                                            port: port_name.clone(),
-                                            firmware_digest,
-                                        },
-                                    ) {
-                                        Some(old_port_name) => {
-                                            self.reverse_device_ports
-                                                .entry(old_port_name.port)
-                                                .or_default()
-                                                .retain(|device_id| *device_id != message.from);
-                                        }
-                                        None => device_changes.push(DeviceChange::Connected {
-                                            id: message.from,
-                                            firmware_digest,
-                                            latest_firmware_digest: self.firmware_bin.map(
-                                                |mut firmware_bin| firmware_bin.cached_digest(),
-                                            ),
-                                        }),
-                                    }
+                                        firmware_digest,
+                                        Model::Alpha { version: 0 },
+                                        &mut device_changes,
+                                    );
+                                }
 
-                                    self.outbox_sender
-                                        .send(CoordinatorSendMessage {
-                                            message_body: CoordinatorSendBody::AnnounceAck {},
-                                            target_destinations: Destination::from([message.from]),
-                                        })
-                                        .unwrap();
-
-                                    self.reverse_device_ports
-                                        .entry(port_name.clone())
-                                        .or_default()
-                                        .push(message.from);
-
-                                    event!(
-                                        Level::DEBUG,
-                                        port = port_name,
-                                        id = message.from.to_string(),
-                                        "Announced!"
+                                DeviceSendBody::Announce2 {
+                                    model,
+                                    firmware_digest,
+                                } => {
+                                    self.handle_announce(
+                                        &port_name,
+                                        message.from,
+                                        firmware_digest,
+                                        model,
+                                        &mut device_changes,
                                     );
                                 }
                                 DeviceSendBody::Debug { message: _ } => {
@@ -524,6 +504,57 @@ impl UsbSerialManager {
         }
 
         device_changes
+    }
+
+    fn handle_announce(
+        &mut self,
+        port_name: &str,
+        from: DeviceId,
+        firmware_digest: Sha256Digest,
+        model: Model,
+        device_changes: &mut Vec<DeviceChange>,
+    ) {
+        match self.device_ports.insert(
+            from,
+            DevicePort {
+                port: port_name.to_string(),
+                firmware_digest,
+            },
+        ) {
+            Some(old_port_name) => {
+                self.reverse_device_ports
+                    .entry(old_port_name.port)
+                    .or_default()
+                    .retain(|device_id| *device_id != from);
+            }
+            None => device_changes.push(DeviceChange::Connected {
+                id: from,
+                firmware_digest,
+                latest_firmware_digest: self
+                    .firmware_bin
+                    .map(|mut firmware_bin| firmware_bin.cached_digest()),
+                model,
+            }),
+        }
+
+        self.outbox_sender
+            .send(CoordinatorSendMessage {
+                message_body: CoordinatorSendBody::AnnounceAck {},
+                target_destinations: Destination::from([from]),
+            })
+            .unwrap();
+
+        self.reverse_device_ports
+            .entry(port_name.to_string())
+            .or_default()
+            .push(from);
+
+        event!(
+            Level::DEBUG,
+            port = port_name,
+            id = from.to_string(),
+            "Announced!"
+        );
     }
 
     pub fn registered_devices(&self) -> &BTreeSet<DeviceId> {
@@ -718,6 +749,7 @@ pub enum DeviceChange {
         id: DeviceId,
         firmware_digest: Sha256Digest,
         latest_firmware_digest: Option<Sha256Digest>,
+        model: Model,
     },
     NeedsName {
         id: DeviceId,

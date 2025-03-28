@@ -3,8 +3,8 @@ use std::collections::BTreeSet;
 use crate::{Completion, Sink, UiProtocol};
 use frostsnap_comms::CoordinatorSendMessage;
 use frostsnap_core::{
-    coordinator::FrostCoordinator,
-    message::{CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, DoKeyGen},
+    coordinator::{CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, FrostCoordinator},
+    message::DoKeyGen,
     AccessStructureRef, DeviceId, KeygenId, SessionHash,
 };
 use tracing::{error, event, Level};
@@ -120,10 +120,6 @@ impl UiProtocol for KeyGen {
         }
 
         core::mem::take(&mut self.keygen_messages)
-    }
-
-    fn connected(&mut self, _id: frostsnap_core::DeviceId) {
-        // generally a bad idea to connect devices during keygen but nothing needs to be done per se.
     }
 
     fn disconnected(&mut self, id: frostsnap_core::DeviceId) {

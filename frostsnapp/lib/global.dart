@@ -6,14 +6,21 @@ import 'serialport.dart';
 late Coordinator coord;
 late HostPortHandler globalHostPortHandler;
 
-/// Gets new updates from the device list
-Stream<DeviceListUpdate> deviceListUpdateStream =
-    coord.subDeviceEvents().asBroadcastStream();
+class GlobalStreams {
+  /// Gets new updates from the device list
+  static final Stream<DeviceListUpdate> deviceListUpdateStream =
+      coord.subDeviceEvents().asBroadcastStream();
 
-/// Stream of device list changes. Only emits when there is a change.
-Stream<DeviceListChange> deviceListChangeStream = deviceListUpdateStream
-    .asyncExpand((update) => Stream.fromIterable(update.changes));
+  /// Stream of device list changes. Only emits when there is a change.
+  static final Stream<DeviceListChange> deviceListChangeStream =
+      deviceListUpdateStream.asyncExpand(
+        (update) => Stream.fromIterable(update.changes),
+      );
 
-/// DeviceListUpdates as a behavior subject
-Stream<DeviceListUpdate> deviceListSubject =
-    deviceListUpdateStream.toBehaviorSubject();
+  /// DeviceListUpdates as a behavior subject
+  static final Stream<DeviceListUpdate> deviceListSubject =
+      deviceListUpdateStream.toBehaviorSubject();
+
+  static final Stream<KeyState> keyStateSubject =
+      coord.subKeyEvents().toBehaviorSubject();
+}

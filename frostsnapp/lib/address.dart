@@ -200,7 +200,7 @@ class VerifyAddressProgress extends StatelessWidget {
     final theme = Theme.of(context);
 
     return StreamBuilder<DeviceListState>(
-      stream: deviceListSubject.map((update) => update.state),
+      stream: GlobalStreams.deviceListSubject.map((update) => update.state),
       builder: (context, deviceListSnapshot) {
         if (!deviceListSnapshot.hasData) {
           return FsProgressIndicator();

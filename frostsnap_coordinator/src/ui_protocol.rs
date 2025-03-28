@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use frostsnap_comms::CoordinatorSendMessage;
-use frostsnap_core::{message::CoordinatorToUserMessage, DeviceId};
+use frostsnap_core::{coordinator::CoordinatorToUserMessage, DeviceId};
 
 /// A UiProtocol is a layer between the protocol the devices and the coordinator are executing e.g.
 /// keygen, signing etc and the actual UI. Applications intercept frostsnap_core's
@@ -16,7 +16,7 @@ pub trait UiProtocol: Send + Any + 'static {
     }
     fn cancel(&mut self);
     fn is_complete(&self) -> Option<Completion>;
-    fn connected(&mut self, _id: DeviceId) {}
+    fn connected(&mut self, _id: DeviceId, _is_blank: bool) {}
     fn disconnected(&mut self, id: DeviceId);
     fn process_to_user_message(&mut self, _message: CoordinatorToUserMessage) {}
     fn process_comms_message(&mut self, _from: DeviceId, _message: frostsnap_comms::CommsMisc) {}

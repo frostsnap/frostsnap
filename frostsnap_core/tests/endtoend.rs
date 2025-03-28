@@ -2,16 +2,16 @@ use bitcoin::Address;
 use common::{TestDeviceKeyGen, TEST_ENCRYPTION_KEY};
 use frostsnap_core::bitcoin_transaction::{LocalSpk, TransactionTemplate};
 use frostsnap_core::device::KeyPurpose;
-use frostsnap_core::message::{
-    CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, CoordinatorToUserSigningMessage,
-    DeviceToUserMessage, EncodedSignature,
-};
+use frostsnap_core::message::{DeviceToUserMessage, EncodedSignature};
 use frostsnap_core::tweak::BitcoinBip32Path;
 use frostsnap_core::{
-    coordinator::FrostCoordinator, CheckedSignTask, DeviceId, MasterAppkey, SessionHash,
-    WireSignTask,
+    coordinator::{
+        CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, CoordinatorToUserSigningMessage,
+        FrostCoordinator,
+    },
+    CheckedSignTask, DeviceId, MasterAppkey, SessionHash, WireSignTask,
 };
-use frostsnap_core::{KeyId, SignSessionId};
+use frostsnap_core::{KeyId, RestorationId, SignSessionId};
 use rand::seq::IteratorRandom;
 use rand::RngCore;
 use rand_chacha::rand_core::SeedableRng;
@@ -126,13 +126,39 @@ impl common::Env for TestEnv {
                 }
             }
             CoordinatorToUserMessage::PromptRecoverShare(recover_share) => {
-                run.coordinator
-                    .recover_share_and_maybe_recover_access_structure(
+                if run
+                    .coordinator
+                    .get_access_structure(recover_share.held_share.access_structure_ref)
+                    .is_some()
+                {
+                    run.coordinator
+                        .recover_share(*recover_share, TEST_ENCRYPTION_KEY)
+                        .unwrap();
+                    return;
+                }
+
+                let existing_restoration = run.coordinator.restoring().find(|state| {
+                    state.access_structure_ref
+                        == Some(recover_share.held_share.access_structure_ref)
+                });
+
+                match existing_restoration {
+                    Some(existing_restoration) => run
+                        .coordinator
+                        .add_recovery_share_to_restoration(
+                            existing_restoration.restoration_id,
+                            *recover_share,
+                        )
+                        .unwrap(),
+                    None => run.coordinator.start_restoring_key_from_recover_share(
                         *recover_share,
-                        TEST_ENCRYPTION_KEY,
-                        rng,
-                    )
-                    .unwrap();
+                        RestorationId::new(rng),
+                    ),
+                }
+            }
+            CoordinatorToUserMessage::PromptRecoverPhysicalBackup(entered_physical_backup) => {
+                run.coordinator
+                    .finish_restore_physical_backup(*entered_physical_backup);
             }
         }
     }
@@ -179,7 +205,7 @@ impl common::Env for TestEnv {
                     secret_share.share += s!(42);
                 }
                 let response =
-                    device.tell_coordinator_about_backup_load_result(*phase, secret_share);
+                    device.tell_coordinator_about_backup_load_result(phase, secret_share);
                 run.extend_from_device(from, response);
             }
             DeviceToUserMessage::VerifyAddress {
@@ -206,6 +232,7 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
         threshold,
         &mut env,
         &mut test_rng,
+        1,
         KeyPurpose::Test,
     );
     let device_list = run.devices.keys().cloned().collect::<Vec<_>>();
@@ -225,7 +252,11 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
     assert_eq!(env.coordinator_got_keygen_acks, run.device_set());
     assert_eq!(env.received_keygen_shares, run.device_set());
     let key_data = run.coordinator.iter_keys().next().unwrap().clone();
-    let (access_structure_ref, _) = key_data.access_structures().next().unwrap();
+    let access_structure_ref = key_data
+        .access_structures()
+        .next()
+        .unwrap()
+        .access_structure_ref();
 
     for (message, signers) in [("johnmcafee47", [0, 1]), ("pyramid schmee", [1, 2])] {
         env.signatures.clear();
@@ -234,7 +265,7 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
         let task = WireSignTask::Test {
             message: message.into(),
         };
-        let complete_key = key_data.complete_key.as_ref().unwrap();
+        let complete_key = key_data.complete_key.clone();
         let checked_task = task
             .clone()
             .check(complete_key.master_appkey, KeyPurpose::Test)
@@ -307,8 +338,12 @@ fn test_display_backup() {
     );
     let device_list = run.devices.keys().cloned().collect::<Vec<_>>();
 
-    let (access_structure_ref, access_structure) =
-        run.coordinator.iter_access_structures().next().unwrap();
+    let access_structure_ref = run
+        .coordinator
+        .iter_access_structures()
+        .next()
+        .unwrap()
+        .access_structure_ref();
 
     assert_eq!(
         env.backups.len(),
@@ -319,11 +354,7 @@ fn test_display_backup() {
     env.backups = BTreeMap::new(); // clear backups so we can request one again for a party
     let display_backup = run
         .coordinator
-        .request_device_display_backup(
-            device_list[0],
-            access_structure.access_structure_ref(),
-            TEST_ENCRYPTION_KEY,
-        )
+        .request_device_display_backup(device_list[0], access_structure_ref, TEST_ENCRYPTION_KEY)
         .unwrap();
 
     run.extend(display_backup);
@@ -333,17 +364,13 @@ fn test_display_backup() {
 
     let mut display_backup = run
         .coordinator
-        .request_device_display_backup(
-            device_list[1],
-            access_structure.access_structure_ref(),
-            TEST_ENCRYPTION_KEY,
-        )
+        .request_device_display_backup(device_list[1], access_structure_ref, TEST_ENCRYPTION_KEY)
         .unwrap();
     display_backup.extend(
         run.coordinator
             .request_device_display_backup(
                 device_list[2],
-                access_structure.access_structure_ref(),
+                access_structure_ref,
                 TEST_ENCRYPTION_KEY,
             )
             .unwrap(),
@@ -376,7 +403,7 @@ fn test_display_backup() {
         .unwrap();
     assert_eq!(
         MasterAppkey::derive_from_rootkey(g!(interpolated_joint_secret * G).normalize()),
-        key_data.complete_key.as_ref().unwrap().master_appkey
+        key_data.complete_key.master_appkey
     );
 }
 
@@ -409,13 +436,17 @@ fn when_we_abandon_a_sign_request_we_should_be_able_to_start_a_new_one() {
     let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
     let mut env = TestEnv::default();
     let mut run =
-        Run::start_after_keygen_and_nonces(1, 1, &mut env, &mut test_rng, KeyPurpose::Test);
+        Run::start_after_keygen_and_nonces(1, 1, &mut env, &mut test_rng, 1, KeyPurpose::Test);
 
     let device_set = run.device_set();
 
     for _ in 0..101 {
-        let (access_structure_ref, _access_structure) =
-            run.coordinator.iter_access_structures().next().unwrap();
+        let access_structure_ref = run
+            .coordinator
+            .iter_access_structures()
+            .next()
+            .unwrap()
+            .access_structure_ref();
 
         let uncompleting_sign_task = WireSignTask::Test {
             message: "frostsnap in taiwan".into(),
@@ -473,19 +504,24 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
         threshold,
         &mut env,
         &mut test_rng,
+        1,
         KeyPurpose::Bitcoin(bitcoin::Network::Bitcoin),
     );
     let device_set = run.device_set();
 
-    let (access_structure_ref, _access_structure) =
-        run.coordinator.iter_access_structures().next().unwrap();
+    let access_structure_ref = run
+        .coordinator
+        .iter_access_structures()
+        .next()
+        .unwrap()
+        .access_structure_ref();
     let key_data = run
         .coordinator
         .get_frost_key(access_structure_ref.key_id)
         .unwrap();
     let mut tx_template = TransactionTemplate::new();
 
-    let master_appkey = key_data.complete_key.as_ref().unwrap().master_appkey;
+    let master_appkey = key_data.complete_key.master_appkey;
 
     tx_template.push_imaginary_owned_input(
         LocalSpk {
@@ -553,8 +589,12 @@ fn check_share_for_valid_share_works() {
     );
     let device_set = run.device_set();
 
-    let (access_structure_ref, _access_structure) =
-        run.coordinator.iter_access_structures().next().unwrap();
+    let access_structure_ref = run
+        .coordinator
+        .iter_access_structures()
+        .next()
+        .unwrap()
+        .access_structure_ref();
 
     for device_id in device_set {
         let display_backup = run
@@ -592,8 +632,12 @@ fn check_share_for_invalid_share_fails() {
     );
     let device_set = run.device_set();
 
-    let (access_structure_ref, _access_structure) =
-        run.coordinator.iter_access_structures().next().unwrap();
+    let access_structure_ref = run
+        .coordinator
+        .iter_access_structures()
+        .next()
+        .unwrap()
+        .access_structure_ref();
 
     for device_id in device_set {
         let display_backup = run
@@ -629,8 +673,7 @@ fn restore_a_share_by_connecting_devices_to_a_new_coordinator() {
     let device_set = run.device_set();
 
     run.check_mutations();
-    let (access_structure_ref, access_structure) =
-        run.coordinator.iter_access_structures().next().unwrap();
+    let access_structure = run.coordinator.iter_access_structures().next().unwrap();
 
     // replace coordinator with a fresh one that doesn't know about the key
     run.replace_coordiantor(FrostCoordinator::new());
@@ -643,13 +686,24 @@ fn restore_a_share_by_connecting_devices_to_a_new_coordinator() {
     }
 
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
-    let (restored_access_structure_ref, restored_access_structure) = run
+    let restoration = run.coordinator.restoring().next().unwrap();
+    run.coordinator
+        .finish_restoring(
+            restoration.restoration_id,
+            TEST_ENCRYPTION_KEY,
+            &mut test_rng,
+        )
+        .unwrap();
+    let restored_access_structure = run
         .coordinator
         .iter_access_structures()
         .next()
         .expect("two devices should have been enough to restore the share");
 
-    assert_eq!(restored_access_structure_ref, access_structure_ref);
+    assert_eq!(
+        restored_access_structure.access_structure_ref(),
+        access_structure.access_structure_ref()
+    );
     assert_eq!(
         restored_access_structure.device_to_share_indicies().len(),
         2
@@ -659,7 +713,7 @@ fn restore_a_share_by_connecting_devices_to_a_new_coordinator() {
     let messages = run.coordinator.request_held_shares(final_device);
     run.extend(messages);
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
-    let (_, restored_access_structure) = run
+    let restored_access_structure = run
         .coordinator
         .iter_access_structures()
         .next()
@@ -667,7 +721,7 @@ fn restore_a_share_by_connecting_devices_to_a_new_coordinator() {
 
     assert_eq!(
         run.coordinator
-            .get_frost_key(access_structure_ref.key_id)
+            .get_frost_key(access_structure.access_structure_ref().key_id)
             .unwrap()
             .purpose,
         KeyPurpose::Test,
@@ -681,20 +735,15 @@ fn restore_a_share_by_connecting_devices_to_a_new_coordinator() {
 fn delete_then_restore_a_share_by_connecting_devices_to_coordinator() {
     let n_parties = 3;
     let threshold = 2;
-    let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
+    let mut rng = ChaCha20Rng::from_seed([42u8; 32]);
     let mut env = TestEnv::default();
-    let mut run = Run::start_after_keygen(
-        n_parties,
-        threshold,
-        &mut env,
-        &mut test_rng,
-        KeyPurpose::Test,
-    );
+    let mut run =
+        Run::start_after_keygen(n_parties, threshold, &mut env, &mut rng, KeyPurpose::Test);
     let device_set = run.device_set();
 
     run.check_mutations();
-    let (access_structure_ref, access_structure) =
-        run.coordinator.iter_access_structures().next().unwrap();
+    let access_structure = run.coordinator.iter_access_structures().next().unwrap();
+    let access_structure_ref = access_structure.access_structure_ref();
 
     run.coordinator.delete_key(access_structure_ref.key_id);
 
@@ -704,74 +753,68 @@ fn delete_then_restore_a_share_by_connecting_devices_to_coordinator() {
         None
     );
 
-    let mut recover_next_share = |run: &mut Run, i: usize| {
+    let mut recover_next_share = |run: &mut Run, i: usize, rng: &mut ChaCha20Rng| {
         let device_id = device_set.iter().cloned().skip(i).take(1).next().unwrap();
         let messages = run.coordinator.request_held_shares(device_id);
         run.extend(messages);
-        run.run_until_finished(&mut env, &mut test_rng).unwrap();
+        run.run_until_finished(&mut env, rng).unwrap();
     };
 
-    recover_next_share(&mut run, 0);
+    recover_next_share(&mut run, 0, &mut rng);
     assert!(
         !run.coordinator.staged_mutations().is_empty(),
         "recovering share should mutate something"
     );
     run.check_mutations(); // this clears mutations
 
-    recover_next_share(&mut run, 0);
+    recover_next_share(&mut run, 0, &mut rng);
 
     assert!(
         run.coordinator.staged_mutations().is_empty(),
         "recovering share again should not mutate"
     );
 
-    let coord_key = run
+    let restoration = run
         .coordinator
-        .iter_keys()
+        .restoring()
         .next()
         .expect("one device should be enough to restore the key");
+    let restoration_id = restoration.restoration_id;
 
-    assert_eq!(coord_key.complete_key, None);
-    assert_eq!(coord_key.key_id, access_structure_ref.key_id);
+    assert!(!restoration.access_structure.is_finished());
+    assert_eq!(restoration.access_structure_ref, Some(access_structure_ref));
 
-    recover_next_share(&mut run, 1);
+    recover_next_share(&mut run, 1, &mut rng);
 
     assert!(
         !run.coordinator.staged_mutations().is_empty(),
         "recovering share should mutate something"
     );
 
-    let (restored_access_structure_ref, restored_access_structure) = run
+    let restoration = run
         .coordinator
-        .iter_access_structures()
-        .next()
-        .expect("two devices should have restored the access structure");
+        .get_restoration_state(restoration_id)
+        .unwrap();
 
-    assert_eq!(restored_access_structure_ref, access_structure_ref);
-    assert_eq!(
-        restored_access_structure.device_to_share_indicies().len(),
-        2
-    );
+    assert!(restoration.access_structure.is_finished());
+    run.coordinator
+        .finish_restoring(restoration.restoration_id, TEST_ENCRYPTION_KEY, &mut rng)
+        .unwrap();
 
-    recover_next_share(&mut run, 2);
+    recover_next_share(&mut run, 2, &mut rng);
 
-    let (_, restored_access_structure) = run
-        .coordinator
-        .iter_access_structures()
-        .next()
-        .expect("should still be restored");
-
+    let restored_access_structure = run.coordinator.iter_access_structures().next().unwrap();
     assert_eq!(restored_access_structure, access_structure);
 
     run.check_mutations();
 
-    recover_next_share(&mut run, 0);
+    recover_next_share(&mut run, 0, &mut rng);
     assert!(
         run.coordinator.staged_mutations().is_empty(),
         "receiving same shares again should not mutate"
     );
-    recover_next_share(&mut run, 1);
-    recover_next_share(&mut run, 2);
+    recover_next_share(&mut run, 1, &mut rng);
+    recover_next_share(&mut run, 2, &mut rng);
 }
 
 #[test]
@@ -786,12 +829,17 @@ fn we_should_be_able_to_switch_between_sign_sessions() {
         threshold,
         &mut env,
         &mut test_rng,
+        2,
         KeyPurpose::Test,
     );
     let device_set = run.device_set();
 
-    let (access_structure_ref, _access_structure) =
-        run.coordinator.iter_access_structures().next().unwrap();
+    let access_structure_ref = run
+        .coordinator
+        .iter_access_structures()
+        .next()
+        .unwrap()
+        .access_structure_ref();
 
     let sign_task_1 = WireSignTask::Test {
         message: "one".into(),
@@ -855,14 +903,18 @@ fn nonces_available_should_heal_itself_when_outcome_of_sign_request_is_ambigious
 
     let mut env = TestEnv::default();
     let mut run =
-        Run::start_after_keygen_and_nonces(1, 1, &mut env, &mut test_rng, KeyPurpose::Test);
+        Run::start_after_keygen_and_nonces(1, 1, &mut env, &mut test_rng, 1, KeyPurpose::Test);
     let device_set = run.device_set();
     let device_id = device_set.iter().cloned().next().unwrap();
 
     let available_at_start = run.coordinator.nonces_available(device_id);
 
-    let (access_structure_ref, _access_structure) =
-        run.coordinator.iter_access_structures().next().unwrap();
+    let access_structure_ref = run
+        .coordinator
+        .iter_access_structures()
+        .next()
+        .unwrap()
+        .access_structure_ref();
 
     let sign_task = WireSignTask::Test {
         message: "one".into(),
@@ -894,7 +946,7 @@ fn nonces_available_should_heal_itself_when_outcome_of_sign_request_is_ambigious
     // request it should happily reset the stream to what it was before.
     run.extend(
         run.coordinator
-            .maybe_request_nonce_replenishment(device_id, &mut test_rng),
+            .maybe_request_nonce_replenishment(device_id, 1, &mut test_rng),
     );
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
 

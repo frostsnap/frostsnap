@@ -8,7 +8,7 @@ use alloc::{
 };
 use frostsnap_comms::Sha256Digest;
 use frostsnap_core::{
-    device::{BackupDisplayPhase, KeyGenPhase2, LoadKnownBackupPhase, SignPhase1},
+    device::{BackupDisplayPhase, KeyGenPhase2, LoadBackupPhase, SignPhase1},
     schnorr_fun::frost::SecretShare,
 };
 
@@ -125,14 +125,14 @@ impl Workflow {
 pub enum EnteringBackupStage {
     //HACK So the creator of the workflow doesn't have to construct the screen
     Init {
-        phase: Box<frostsnap_core::device::LoadKnownBackupPhase>,
+        phase: LoadBackupPhase,
     },
     ShareIndex {
-        phase: Box<frostsnap_core::device::LoadKnownBackupPhase>,
+        phase: LoadBackupPhase,
         screen: EnterShareIndexScreen,
     },
     Share {
-        phase: Box<frostsnap_core::device::LoadKnownBackupPhase>,
+        phase: LoadBackupPhase,
         screen: EnterShareScreen,
     },
 }
@@ -164,7 +164,7 @@ pub enum Prompt {
     },
     ConfirmLoadBackup {
         share_backup: SecretShare,
-        phase: Box<frostsnap_core::device::LoadKnownBackupPhase>,
+        phase: LoadBackupPhase,
     },
     WipeDevice,
 }
@@ -195,7 +195,7 @@ pub enum UiEvent {
     },
     NameConfirm(String),
     EnteredShareBackup {
-        phase: Box<LoadKnownBackupPhase>,
+        phase: LoadBackupPhase,
         share_backup: SecretShare,
     },
     BackupRequestConfirm {
