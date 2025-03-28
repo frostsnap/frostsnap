@@ -1344,27 +1344,55 @@ impl FrostCoordinator {
     }
 
     /// Recovers a share to an existing access structure
-    pub fn recover_share(&mut self, recover_share: RecoverShare) -> Result<(), RecoverShareError> {
-        let access_structure_ref = recover_share.held_share.access_structure_ref;
-        if let Some(existing) =
-            self.get_access_structure(recover_share.held_share.access_structure_ref)
-        {
-            if existing
-                .device_to_share_index
-                .contains_key(&recover_share.held_by)
-            {
-                return Err(RecoverShareError::AlreadyGotThisShare);
-            }
+    pub fn recover_share(
+        &mut self,
+        recover_share: RecoverShare,
+        encryption_key: SymmetricKey,
+    ) -> Result<(), RecoverShareError> {
+        self.check_recover_share_compatible_with_key(recover_share.clone(), encryption_key)?;
 
-            self.mutate(Mutation::NewShare {
-                access_structure_ref,
-                device_id: recover_share.held_by,
-                share_index: recover_share.held_share.share_image.share_index,
-            });
-            Ok(())
-        } else {
-            Err(RecoverShareError::NoSuchAccessStructure)
+        self.mutate(Mutation::NewShare {
+            access_structure_ref: recover_share.held_share.access_structure_ref,
+            device_id: recover_share.held_by,
+            share_index: recover_share.held_share.share_image.share_index,
+        });
+
+        Ok(())
+    }
+
+    pub fn check_recover_share_compatible_with_key(
+        &self,
+        recover_share: RecoverShare,
+        encryption_key: SymmetricKey,
+    ) -> Result<(), RecoverShareError> {
+        let access_structure_ref = recover_share.held_share.access_structure_ref;
+        let frost_key = self
+            .get_frost_key(access_structure_ref.key_id)
+            .ok_or(RecoverShareError::NoSuchAccessStructure)?;
+        let access_structure = self
+            .get_access_structure(recover_share.held_share.access_structure_ref)
+            .ok_or(RecoverShareError::NoSuchAccessStructure)?;
+
+        if access_structure
+            .device_to_share_index
+            .contains_key(&recover_share.held_by)
+        {
+            return Err(RecoverShareError::AlreadyGotThisShare);
         }
+
+        let root_shared_key = frost_key
+            .complete_key
+            .root_shared_key(access_structure_ref.access_structure_id, encryption_key)
+            .ok_or(RecoverShareError::DecryptionError)?;
+
+        let share_image = recover_share.held_share.share_image;
+
+        let expected_image = root_shared_key.share_image(share_image.share_index);
+
+        if expected_image != share_image.point {
+            return Err(RecoverShareError::ShareImageIsWrong);
+        }
+        Ok(())
     }
 
     fn mutate_new_key(
@@ -1853,6 +1881,10 @@ pub enum RecoverShareError {
     AlreadyGotThisShare,
     /// The access structure for the share isn't known to the coordinator
     NoSuchAccessStructure,
+    /// Share image is wrong
+    ShareImageIsWrong,
+    /// The application provided the wrong decryption key so we couldn't verify the new key share.
+    DecryptionError,
 }
 
 impl fmt::Display for RecoverShareError {
@@ -1865,6 +1897,12 @@ impl fmt::Display for RecoverShareError {
                 f,
                 "The access structure for the share isn't known to the coordinator"
             ),
+            RecoverShareError::ShareImageIsWrong => {
+                write!(f, "The share image was not what was expected")
+            }
+            RecoverShareError::DecryptionError => {
+                write!(f, "The application provided the wrong decryption key so we couldn't verify the new key share.")
+            }
         }
     }
 }

@@ -131,7 +131,9 @@ impl common::Env for TestEnv {
                     .get_access_structure(recover_share.held_share.access_structure_ref)
                     .is_some()
                 {
-                    run.coordinator.recover_share(*recover_share).unwrap();
+                    run.coordinator
+                        .recover_share(*recover_share, TEST_ENCRYPTION_KEY)
+                        .unwrap();
                     return;
                 }
 

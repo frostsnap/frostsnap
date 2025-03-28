@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:collection/collection.dart';
@@ -46,7 +48,7 @@ class WalletRecoveryPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 20),
                 Text(
-                  'Keys obtained:',
+                  'Keys restored:',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 10),
@@ -77,7 +79,7 @@ class WalletRecoveryPage extends StatelessWidget {
                 Center(
                   child: ElevatedButton.icon(
                     icon: const Icon(Icons.add),
-                    label: const Text('Add another key'),
+                    label: const Text('restore another key'),
                     style: ElevatedButton.styleFrom(
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(20),
@@ -150,8 +152,11 @@ Future<RestorationId?> startWalletRecoveryFlowDialog(
 }
 
 class WalletRecoveryFlow extends StatefulWidget {
+  // We're continuing a restoration session
   final RestorationId? continuing;
-  const WalletRecoveryFlow({super.key, this.continuing});
+  // We're recovering a share for a key that already exists
+  final AccessStructureRef? existing;
+  const WalletRecoveryFlow({super.key, this.continuing, this.existing});
 
   @override
   _WalletRecoveryFlowState createState() => _WalletRecoveryFlowState();
@@ -168,54 +173,40 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
 
     switch (currentStep) {
       case 'wait_device':
-        child = _PlugInPromptView();
-        coord.waitForRecoveryShare().listen((waitForRecoverShareState) {
-          final connectedDevices = waitForRecoverShareState.connected;
-          var detectedShare = waitForRecoverShareState.candidates.firstOrNull;
-
-          // if we've got nothing detected we might have a device that we've
-          // alredy recovered from. If so we get the "detectedShare" from our
-          // existing state.
-          if (connectedDevices.isNotEmpty &&
-              widget.continuing != null &&
-              detectedShare == null) {
-            final restoringState =
-                coord.getRestorationState(restorationId: widget.continuing!)!;
-            detectedShare = connectedDevices
-                .map((connected) {
-                  return restoringState.getAlreadyRecoveredShare(
-                    deviceId: connected,
-                  );
-                })
-                .firstWhereOrNull((recoverShare) => recoverShare != null);
-          }
-
-          if (detectedShare != null && mounted) {
-            setState(() {
-              candidate = detectedShare;
-              if (widget.continuing == null) {
-                compatibility = ShareCompatibility.Compatible;
-              } else {
-                compatibility = coord.checkShareCompatible(
-                  restorationId: widget.continuing!,
-                  recoverShare: detectedShare!,
-                );
-              }
-              currentStep = 'candidate_ready';
-            });
-          }
-        });
+        child = _PlugInPromptView(
+          continuing: widget.continuing,
+          existing: widget.existing,
+          onCandidateDetected: (detectedShare, compatibility) {
+            if (mounted) {
+              setState(() {
+                candidate = detectedShare;
+                this.compatibility = compatibility;
+                currentStep = 'candidate_ready';
+              });
+            }
+          },
+        );
         break;
       case 'candidate_ready':
         child = _CandidateReadyView(
           candidate: candidate!,
           compatibility: compatibility!,
           continuing: widget.continuing,
+          existing: widget.existing,
         );
         break;
       default:
+        final MethodChoiceKind kind;
+        if (widget.continuing != null) {
+          kind = MethodChoiceKind.ContinueRecovery;
+        } else if (widget.existing != null) {
+          kind = MethodChoiceKind.AddToWallet;
+        } else {
+          kind = MethodChoiceKind.StartRecovery;
+        }
+
         child = _ChooseMethodView(
-          continuing: widget.continuing,
+          kind: kind,
           onDeviceChosen: () {
             setState(() => currentStep = 'wait_device');
           },
@@ -244,30 +235,50 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
   }
 }
 
-class _ChooseMethodView extends StatelessWidget {
-  final VoidCallback onDeviceChosen;
-  final RestorationId? continuing;
+enum MethodChoiceKind { StartRecovery, ContinueRecovery, AddToWallet }
 
-  const _ChooseMethodView({required this.onDeviceChosen, this.continuing});
+class _ChooseMethodView extends StatelessWidget {
+  final VoidCallback? onDeviceChosen;
+  final MethodChoiceKind kind;
+
+  const _ChooseMethodView({required this.kind, this.onDeviceChosen});
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final String title;
+    final String subtitle;
+
+    switch (kind) {
+      case MethodChoiceKind.StartRecovery:
+        title = "Start wallet recovery";
+        subtitle =
+            'To start, what kind of key are you starting the wallet recovery from?';
+        break;
+      case MethodChoiceKind.ContinueRecovery:
+        title = 'Continue wallet recovery';
+        subtitle = 'Where is the next key coming from?';
+        break;
+
+      case MethodChoiceKind.AddToWallet:
+        title = "Add key to wallet";
+        subtitle =
+            "⚠ For now, Frostsnap only supports adding keys that were originally part of the wallet when it was created";
+        break;
+    }
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          continuing != null
-              ? 'Continue wallet recovery'
-              : 'Start wallet recovery',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          title,
+          style: theme.textTheme.titleLarge,
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 10),
         Text(
-          continuing != null
-              ? 'Where is the next key coming from?'
-              : 'To start, what kind of key are you starting the wallet recovery from?',
+          subtitle,
           style: TextStyle(fontSize: 14),
           textAlign: TextAlign.center,
         ),
@@ -310,7 +321,76 @@ class _ChooseMethodView extends StatelessWidget {
   }
 }
 
-class _PlugInPromptView extends StatelessWidget {
+class _PlugInPromptView extends StatefulWidget {
+  final RestorationId? continuing;
+  final AccessStructureRef? existing;
+  final void Function(RecoverShare candidate, ShareCompatibility compatibility)
+  onCandidateDetected;
+
+  const _PlugInPromptView({
+    Key? key,
+    this.continuing,
+    this.existing,
+    required this.onCandidateDetected,
+  }) : super(key: key);
+
+  @override
+  State<_PlugInPromptView> createState() => _PlugInPromptViewState();
+}
+
+class _PlugInPromptViewState extends State<_PlugInPromptView> {
+  StreamSubscription? _subscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _subscription = coord.waitForRecoveryShare().listen((
+      waitForRecoverShareState,
+    ) {
+      final connectedDevices = waitForRecoverShareState.connected;
+      var detectedShare = waitForRecoverShareState.candidates.firstOrNull;
+
+      // If nothing is detected, we might have already recovered from a device.
+      if (connectedDevices.isNotEmpty &&
+          widget.continuing != null &&
+          detectedShare == null) {
+        final restoringState =
+            coord.getRestorationState(restorationId: widget.continuing!)!;
+        detectedShare = connectedDevices
+            .map(
+              (connected) =>
+                  restoringState.getAlreadyRecoveredShare(deviceId: connected),
+            )
+            .firstWhereOrNull((recoverShare) => recoverShare != null);
+      }
+
+      if (detectedShare != null && mounted) {
+        final ShareCompatibility compatibility;
+
+        if (widget.continuing != null) {
+          compatibility = coord.restorationCheckShareCompatible(
+            restorationId: widget.continuing!,
+            recoverShare: detectedShare,
+          );
+        } else if (widget.existing != null) {
+          compatibility = coord.checkRecoverShareCompatible(
+            recoverShare: detectedShare,
+          );
+        } else {
+          compatibility = ShareCompatibility.Compatible;
+        }
+
+        widget.onCandidateDetected(detectedShare, compatibility);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -336,11 +416,13 @@ class _CandidateReadyView extends StatelessWidget {
   final RecoverShare candidate;
   final ShareCompatibility compatibility;
   final RestorationId? continuing;
+  final AccessStructureRef? existing;
 
   const _CandidateReadyView({
     required this.candidate,
     required this.compatibility,
     this.continuing,
+    this.existing,
   });
 
   @override
@@ -359,7 +441,7 @@ class _CandidateReadyView extends StatelessWidget {
         message =
             'Found key "$deviceName" for wallet “${candidate.keyName()}”!';
         buttonText =
-            continuing != null
+            continuing != null || existing != null
                 ? 'Add key to ${candidate.keyName()}'
                 : 'Begin recovering ${candidate.keyName()}';
         buttonAction = () async {
@@ -368,6 +450,11 @@ class _CandidateReadyView extends StatelessWidget {
               restorationId: continuing!,
               recoverShare: candidate,
             );
+            if (context.mounted) {
+              Navigator.pop(context);
+            }
+          } else if (existing != null) {
+            await coord.recoverShare(recoverShare: candidate);
             if (context.mounted) {
               Navigator.pop(context);
             }

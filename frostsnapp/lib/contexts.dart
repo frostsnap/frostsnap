@@ -172,6 +172,8 @@ class KeyContext extends InheritedWidget {
     return coord.getFrostKey(keyId: keyId)!;
   }
 
+  String get name => frostKey().keyName();
+
   @override
   bool updateShouldNotify(KeyContext oldWidget) {
     return false;

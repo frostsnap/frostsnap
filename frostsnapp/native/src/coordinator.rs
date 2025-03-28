@@ -781,6 +781,29 @@ impl FfiCoordinator {
         Ok(())
     }
 
+    pub fn recover_share(
+        &self,
+        recover_share: RecoverShare,
+        encryption_key: SymmetricKey,
+    ) -> Result<()> {
+        {
+            {
+                let mut db = self.db.lock().unwrap();
+                let mut coordinator = self.coordinator.lock().unwrap();
+                coordinator.staged_mutate(&mut *db, |coordinator| {
+                    coordinator.recover_share(recover_share, encryption_key)?;
+                    Ok(())
+                })?;
+            }
+
+            if let Some(stream) = &*self.key_event_stream.lock().unwrap() {
+                stream.add(self.key_state());
+            }
+
+            Ok(())
+        }
+    }
+
     pub fn get_restoration_state(&self, restoration_id: RestorationId) -> Option<RestorationState> {
         self.coordinator
             .lock()

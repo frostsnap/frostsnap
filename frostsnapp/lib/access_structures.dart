@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/bridge_definitions.dart';
 import 'package:frostsnapp/global.dart';
+import 'package:frostsnapp/restoration.dart';
 
 class AccessStructureListWidget extends StatelessWidget {
   final List<AccessStructure> accessStructures;
@@ -14,47 +15,33 @@ class AccessStructureListWidget extends StatelessWidget {
       itemCount: accessStructures.length,
       itemBuilder: (context, i) {
         final accessStructure = accessStructures[i];
-        final widget = AccessStructureWidget.fromAccessStructure(
-          accessStructure,
+        return Center(
+          child: AccessStructureWidget(accessStructure: accessStructure),
         );
-        return Center(child: widget);
       },
     );
   }
 }
 
 class AccessStructureWidget extends StatelessWidget {
-  final List<String> devices;
-  final int threshold;
+  final AccessStructure accessStructure;
 
-  const AccessStructureWidget({
-    super.key,
-    required this.devices,
-    required this.threshold,
-  });
-
-  static AccessStructureWidget fromAccessStructure(
-    AccessStructure accessStructure,
-  ) {
-    return AccessStructureWidget(
-      devices:
-          accessStructure
-              .devices()
-              .map((id) => coord.getDeviceName(id: id) ?? "??")
-              .toList(),
-      threshold: accessStructure.threshold(),
-    );
-  }
+  const AccessStructureWidget({super.key, required this.accessStructure});
 
   @override
   Widget build(BuildContext context) {
+    final devices =
+        accessStructure
+            .devices()
+            .map((id) => coord.getDeviceName(id: id) ?? "??")
+            .toList();
+    final threshold = accessStructure.threshold();
     final theme = Theme.of(context);
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        // Rectangle with border and chips inside
         Container(
-          margin: const EdgeInsets.only(top: 20), // Space for the label
+          margin: const EdgeInsets.only(top: 20),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             border: Border.all(color: theme.colorScheme.secondary),
@@ -63,31 +50,38 @@ class AccessStructureWidget extends StatelessWidget {
           child: Wrap(
             spacing: 8,
             runSpacing: 4,
-            children:
-                devices.map((device) {
-                  return Chip(
-                    label: Text(
-                      device,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    backgroundColor: theme.colorScheme.surfaceContainer,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              ...devices.map(
+                (device) => Chip(
+                  label: Text(
+                    device,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  backgroundColor: theme.colorScheme.surfaceContainer,
+                ),
+              ),
+              IconButton.filledTonal(
+                onPressed: () async {
+                  await startAddKeyToAcessStructureDialog(
+                    context,
+                    accessStructure.accessStructureRef(),
                   );
-                }).toList(),
+                },
+                icon: const Icon(Icons.add),
+              ),
+            ],
           ),
         ),
-
-        // Text label that "breaks" the border
         Positioned(
-          top: 10,
+          top: 4,
           left: 16,
           child: Container(
-            color: theme.colorScheme.surfaceContainer, // Match background
+            color: theme.scaffoldBackgroundColor,
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Text(
-              threshold == devices.length
-                  ? "all $threshold of"
-                  : "any $threshold of",
-              style: Theme.of(context).textTheme.bodySmall,
+              "any $threshold of",
+              style: Theme.of(context).textTheme.titleLarge,
             ),
           ),
         ),
@@ -105,7 +99,18 @@ class AccessStructureSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final nText = n < t ? "?" : n.toString();
-
     return Text("$t-of-$nText", style: Theme.of(context).textTheme.titleSmall!);
   }
+}
+
+Future<RestorationId?> startAddKeyToAcessStructureDialog(
+  BuildContext context,
+  AccessStructureRef accessStructureRef,
+) async {
+  final restorationId = await showDialog(
+    context: context,
+    builder: (context) => WalletRecoveryFlow(existing: accessStructureRef),
+  );
+  coord.cancelProtocol();
+  return restorationId;
 }

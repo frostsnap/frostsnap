@@ -20,7 +20,7 @@ pub use frostsnap_coordinator::bitcoin::{
 pub use frostsnap_coordinator::firmware_upgrade::FirmwareUpgradeConfirmState;
 pub use frostsnap_coordinator::frostsnap_comms::Model;
 pub use frostsnap_coordinator::frostsnap_core;
-use frostsnap_coordinator::frostsnap_core::coordinator::CoordFrostKey;
+use frostsnap_coordinator::frostsnap_core::coordinator::{CoordFrostKey, RecoverShareError};
 use frostsnap_coordinator::frostsnap_core::device::KeyPurpose;
 use frostsnap_coordinator::frostsnap_core::message::HeldShare;
 pub use frostsnap_coordinator::verify_address::VerifyAddressProtocolState;
@@ -1106,7 +1106,7 @@ impl Coordinator {
         )
     }
 
-    pub fn check_share_compatible(
+    pub fn restoration_check_share_compatible(
         &self,
         restoration_id: RestorationId,
         recover_share: RecoverShare,
@@ -1148,6 +1148,34 @@ impl Coordinator {
 
     pub fn cancel_restoration(&self, restoration_id: RestorationId) -> Result<()> {
         self.0.cancel_restoration(restoration_id)
+    }
+
+    pub fn check_recover_share_compatible(
+        &self,
+        recover_share: RecoverShare,
+    ) -> SyncReturn<ShareCompatibility> {
+        let res = self.0.inner().check_recover_share_compatible_with_key(
+            recover_share.0.deref().clone(),
+            crate::TEMP_KEY,
+        );
+
+        SyncReturn(match res {
+            Ok(_) => ShareCompatibility::Compatible,
+            Err(e) => match e {
+                RecoverShareError::AlreadyGotThisShare => ShareCompatibility::AlreadyGotIt,
+                RecoverShareError::NoSuchAccessStructure => ShareCompatibility::Incompatible,
+                RecoverShareError::ShareImageIsWrong => ShareCompatibility::Incompatible,
+                RecoverShareError::DecryptionError => {
+                    event!(Level::ERROR, "share decryption error");
+                    ShareCompatibility::Incompatible
+                }
+            },
+        })
+    }
+
+    pub fn recover_share(&self, recover_share: RecoverShare) -> Result<()> {
+        self.0
+            .recover_share(recover_share.0.deref().clone(), crate::TEMP_KEY)
     }
 }
 
