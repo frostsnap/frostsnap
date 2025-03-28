@@ -44,7 +44,7 @@ class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     currentListState = coord.deviceListState();
-    _subscription = deviceListUpdateStream.listen((update) async {
+    _subscription = GlobalStreams.deviceListUpdateStream.listen((update) async {
       if (update.state.stateId != currentListState.stateId + 1) {
         // our states are out of sync somehow -- reset the list.
         //
@@ -112,7 +112,7 @@ class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
     final orientation = effectiveOrientation(context);
 
     final noDevices = StreamBuilder(
-      stream: deviceListSubject,
+      stream: GlobalStreams.deviceListSubject,
       builder: (context, snapshot) {
         if (!snapshot.hasData || snapshot.data!.state.devices.isNotEmpty) {
           return SizedBox();

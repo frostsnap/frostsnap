@@ -75,7 +75,7 @@ void main() async {
     runApp(MyApp(startupError: startupError));
   } else {
     // we want to stop the app from sleeping on mobile if there's a device plugged in.
-    deviceListSubject.forEach((update) {
+    GlobalStreams.deviceListSubject.forEach((update) {
       if (Platform.isLinux) {
         return; // not supported by wakelock
       }
@@ -184,7 +184,7 @@ class _MyHomePageState extends State<MyHomePage> {
     super.initState();
     scaffoldKey = GlobalKey();
     walletListController = WalletListController(
-      keyStream: coord.subKeyEvents(),
+      keyStream: GlobalStreams.keyStateSubject,
     );
     confettiController = ConfettiController(duration: Duration(seconds: 4));
   }

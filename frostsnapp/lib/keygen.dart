@@ -167,7 +167,7 @@ class DevicesPage extends StatelessWidget {
     return Scaffold(
       appBar: FsAppBar(title: Text('Devices')),
       body: StreamBuilder(
-        stream: deviceListSubject,
+        stream: GlobalStreams.deviceListSubject,
         builder: (context, snapshot) {
           final theme = Theme.of(context);
 
