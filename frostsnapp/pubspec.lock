@@ -437,6 +437,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.2"
+  glowy_borders:
+    dependency: "direct main"
+    description:
+      name: glowy_borders
+      sha256: a0ace5b193047deab00ed2646065b0ef91bf1efef5b3579851bcc6bc7e0748b4
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.2"
   google_fonts:
     dependency: "direct main"
     description:

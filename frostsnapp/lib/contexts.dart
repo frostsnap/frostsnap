@@ -38,16 +38,20 @@ class SuperWalletContext extends InheritedWidget {
 
   SuperWalletContext({super.key, required super.child, required this.appCtx});
 
-  final Map<KeyId, Stream<TxState>> txStreams = HashMap<KeyId, Stream<TxState>>(
-    equals: (KeyId a, KeyId b) => keyIdEquals(a, b),
-    hashCode: (KeyId key) => key.field0.hashCode,
+  final Map<KeyId, Stream<TxState>> _txStreams = HashMap(
+    equals: keyIdEquals,
+    hashCode: (key) => key.field0.hashCode,
   );
 
-  final Map<KeyId, Stream<BackupRun>> backupStreams =
-      HashMap<KeyId, Stream<BackupRun>>(
-        equals: (KeyId a, KeyId b) => keyIdEquals(a, b),
-        hashCode: (KeyId key) => key.field0.hashCode,
-      );
+  final Map<KeyId, Stream<void>> _signingSessionSignals = HashMap(
+    equals: keyIdEquals,
+    hashCode: (key) => key.field0.hashCode,
+  );
+
+  final Map<KeyId, Stream<BackupRun>> _backupStreams = HashMap(
+    equals: keyIdEquals,
+    hashCode: (key) => key.field0.hashCode,
+  );
 
   // Static method to allow easy access to the Foo instance
   static SuperWalletContext? of(BuildContext context) {
@@ -55,11 +59,19 @@ class SuperWalletContext extends InheritedWidget {
   }
 
   Stream<BackupRun> backupStream(KeyId keyId) {
-    final stream = backupStreams[keyId];
+    final stream = _backupStreams[keyId];
     if (stream != null) return stream;
-    backupStreams[keyId] =
+    _backupStreams[keyId] =
         appCtx.backupManager.backupStream(keyId: keyId).toBehaviorSubject();
-    return backupStreams[keyId]!;
+    return _backupStreams[keyId]!;
+  }
+
+  Stream<void> signingSessionSignalStream(KeyId keyId) {
+    var stream = _signingSessionSignals[keyId];
+    if (stream != null) return stream;
+    stream = coord.subSigningSessionSignals(keyId: keyId);
+    _signingSessionSignals[keyId] = stream;
+    return stream;
   }
 
   (Wallet, Stream<TxState>)? txStateStream(KeyId keyId) {
@@ -80,15 +92,15 @@ class SuperWalletContext extends InheritedWidget {
     final wallet = Wallet(superWallet: superWallet, masterAppkey: masterAppkey);
 
     // Get or create tx stream
-    if (!txStreams.containsKey(keyId)) {
+    if (!_txStreams.containsKey(keyId)) {
       final stream =
           superWallet
               .subTxState(masterAppkey: masterAppkey)
               .toBehaviorSubject();
-      txStreams[keyId] = stream;
+      _txStreams[keyId] = stream;
     }
 
-    return (wallet, txStreams[keyId]!);
+    return (wallet, _txStreams[keyId]!);
   }
 
   Widget tryWrapInWalletContext({
@@ -116,12 +128,14 @@ class SuperWalletContext extends InheritedWidget {
     }
 
     final backupStream = this.backupStream(keyId);
+    final signingSessionSignals = signingSessionSignalStream(keyId);
 
     return WalletContext(
       key: key,
       wallet: wallet,
       txStream: txStream,
       backupStream: backupStream,
+      signingSessionSignals: signingSessionSignals,
       child: child,
     );
   }
@@ -137,12 +151,14 @@ class WalletContext extends InheritedWidget {
   final Wallet wallet;
   final Stream<TxState> txStream;
   final Stream<BackupRun> backupStream;
+  final Stream<void> signingSessionSignals;
 
   WalletContext({
     super.key,
     required this.wallet,
     required this.txStream,
     required this.backupStream,
+    required this.signingSessionSignals,
     required Widget child,
   }) : super(
          // a wallet context implies a key context so we wrap the child in one also
@@ -162,6 +178,7 @@ class WalletContext extends InheritedWidget {
       wallet: wallet,
       txStream: txStream,
       backupStream: backupStream,
+      signingSessionSignals: signingSessionSignals,
       child: child,
     );
   }
