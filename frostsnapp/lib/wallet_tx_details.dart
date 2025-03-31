@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:frostsnapp/bridge_definitions.dart';
 import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/global.dart';
+import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/theme.dart';
 import 'package:frostsnapp/wallet.dart';
 import 'package:glowy_borders/glowy_borders.dart';
@@ -251,10 +252,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   StreamSubscription<SigningState>? signingSub;
   SigningState? signingState;
   bool? broadcastDone;
-  Set<DeviceId> connectedDevices = HashSet(
-    equals: (a, b) => a.field0.toString() == b.field0.toString(),
-    hashCode: (id) => id.field0.toString().hashCode,
-  );
+  Set<DeviceId> connectedDevices = deviceIdSet([]);
 
   bool? get signingDone =>
       signingState == null
