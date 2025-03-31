@@ -2,17 +2,18 @@ import 'dart:collection';
 
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
 import 'package:frostsnapp/bridge_definitions.dart';
 import 'package:frostsnapp/contexts.dart';
-import 'package:frostsnapp/address.dart';
-import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/id_ext.dart';
+import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/theme.dart';
 import 'package:frostsnapp/wallet.dart';
 import 'package:frostsnapp/wallet_tx_details.dart';
+import 'package:glowy_borders/glowy_borders.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
+import 'package:rxdart/rxdart.dart';
+
+import 'global.dart';
 
 class AddressList extends StatefulWidget {
   final ScrollController? scrollController;
@@ -33,10 +34,8 @@ class AddressList extends StatefulWidget {
 }
 
 class _AddressListState extends State<AddressList> {
-  late bool _showUsed;
   List<Address> _addresses = [];
-  List<Address> _freshAddresses = [];
-  List<Address> get addresses => _showUsed ? _addresses : _freshAddresses;
+  List<Address> get addresses => _addresses;
 
   final _firstAddrKey = GlobalKey();
   late final ScrollController? _scrollController;
@@ -49,25 +48,37 @@ class _AddressListState extends State<AddressList> {
       final addresses = walletCtx.superWallet.addressesState(
         masterAppkey: walletCtx.masterAppkey,
       );
-      final freshAddresses = addresses.where((a) => !a.used).toList();
       if (mounted) {
         setState(() {
           _addresses = addresses;
-          _freshAddresses = freshAddresses;
           if (andSetState != null) andSetState();
         });
       }
     }
   }
 
+  void deriveNewAddress(BuildContext context) async {
+    final walletCtx = WalletContext.of(context)!;
+
+    await walletCtx.superWallet.nextAddress(
+      masterAppkey: walletCtx.masterAppkey,
+    );
+    if (context.mounted) {
+      update(context);
+      await scrollController.animateTo(
+        0.0,
+        duration: Durations.long4,
+        curve: Curves.easeInOutCubicEmphasized,
+      );
+    }
+  }
+
   @override
   void initState() {
     super.initState();
-    if (widget.scrollController == null) {
-      _scrollController = ScrollController();
-    }
+    _scrollController =
+        widget.scrollController == null ? ScrollController() : null;
 
-    _showUsed = widget.showUsed;
     update(context);
 
     // Scroll to the given derivation index (if requested).
@@ -100,102 +111,58 @@ class _AddressListState extends State<AddressList> {
 
   @override
   dispose() {
-    _scrollController?.dispose();
+    if (_scrollController != null) _scrollController.dispose();
     super.dispose();
   }
 
   Widget buildAddressItem(BuildContext context, Address addr, {Key? key}) {
     final theme = Theme.of(context);
-    return Card.filled(
+    return ListTile(
       key: key,
-      clipBehavior: Clip.hardEdge,
-      color:
-          addr.used
-              ? Colors.transparent
-              : theme.colorScheme.surfaceContainerHighest,
-      margin: EdgeInsets.only(bottom: 16.0),
-      child: ListTile(
-        onTap: () {
-          Navigator.pop(context);
-          widget.onTap(context, addr);
-        },
-        leading: Text(
-          '#${addr.index}',
-          style: theme.textTheme.labelLarge?.copyWith(
-            decoration: addr.used ? TextDecoration.lineThrough : null,
-            color:
-                addr.used
-                    ? theme.colorScheme.onSurfaceVariant
-                    : theme.colorScheme.primary,
-            fontFamily: monospaceTextStyle.fontFamily,
-          ),
+      onTap: () {
+        Navigator.pop(context);
+        widget.onTap(context, addr);
+      },
+      tileColor:
+          widget.scrollToDerivationIndex != null &&
+                  widget.scrollToDerivationIndex == addr.index
+              ? theme.colorScheme.surfaceContainerHighest
+              : null,
+      leading: Text(
+        '#${addr.index}',
+        style: theme.textTheme.labelLarge?.copyWith(
+          decoration: addr.used ? TextDecoration.lineThrough : null,
+          color:
+              addr.used
+                  ? theme.colorScheme.onSurfaceVariant
+                  : theme.colorScheme.primary,
+          fontFamily: monospaceTextStyle.fontFamily,
         ),
-        trailing: Icon(Icons.chevron_right),
-        title: Text(
-          spacedHex(addr.addressString),
-          style: monospaceTextStyle.copyWith(
-            color: addr.used ? theme.colorScheme.onSurfaceVariant : null,
-          ),
-          overflow: TextOverflow.ellipsis,
-          maxLines: 2,
+      ),
+      trailing: Icon(Icons.chevron_right),
+      title: Text(
+        spacedHex(addr.addressString),
+        style: monospaceTextStyle.copyWith(
+          decoration: addr.used ? TextDecoration.lineThrough : null,
+          color: addr.used ? theme.colorScheme.onSurfaceVariant : null,
         ),
+        overflow: TextOverflow.ellipsis,
+        maxLines: 2,
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    final appBar = SliverAppBar(
-      title: Text('Pick address'),
-      titleTextStyle: theme.textTheme.titleMedium,
-      centerTitle: true,
-      backgroundColor: theme.colorScheme.surfaceContainerLow,
-      pinned: true,
-      leading: IconButton(
-        onPressed: () => Navigator.pop(context),
-        icon: Icon(Icons.close),
-      ),
-      bottom: PreferredSize(
-        preferredSize: Size.fromHeight(76.0),
-        child: Card.filled(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24.0),
-          ),
-          color: theme.colorScheme.secondaryContainer,
-          margin: const EdgeInsets.symmetric(
-            horizontal: 16.0,
-          ).copyWith(bottom: 12.0),
-          clipBehavior: Clip.hardEdge,
-          child: SwitchListTile(
-            value: _showUsed,
-            onChanged: (v) => update(context, andSetState: () => _showUsed = v),
-            title: Text('Show used'),
-            contentPadding: EdgeInsets.only(
-              left: 20.0,
-              right: 16.0,
-              top: 4.0,
-              bottom: 4.0,
-            ),
-          ),
-        ),
-      ),
-    );
-
     var first = true;
     return CustomScrollView(
       controller: scrollController,
       shrinkWrap: true,
       physics: ClampingScrollPhysics(),
       slivers: [
-        appBar,
         SliverSafeArea(
           sliver: SliverPadding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16.0,
-              vertical: 8.0,
-            ),
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
             sliver: SliverList.list(
               children:
                   addresses
@@ -222,6 +189,8 @@ class _AddressListState extends State<AddressList> {
   }
 }
 
+enum ReceivePageFocus { share, verify, awaitTx }
+
 class ReceivePage extends StatefulWidget {
   final ScrollController? scrollController;
   final Wallet wallet;
@@ -239,9 +208,49 @@ class ReceivePage extends StatefulWidget {
 }
 
 class _ReceiverPageState extends State<ReceivePage> {
+  BehaviorSubject<VerifyAddressProtocolState>? _verifyStream;
+
+  ReceivePageFocus _focus = ReceivePageFocus.share;
+  ReceivePageFocus get focus => _focus;
+  set focus(ReceivePageFocus v) {
+    if (v == _focus || _address == null) return;
+    if (v == ReceivePageFocus.verify) {
+      final stream =
+          coord
+              .verifyAddress(
+                keyId: widget.wallet.keyId(),
+                addressIndex: _address!.index,
+              )
+              .toBehaviorSubject();
+      setState(() {
+        _isShared = true;
+        _verifyStream = stream;
+        _focus = v;
+      });
+      return;
+    }
+    if (_verifyStream != null) coord.cancelProtocol();
+    setState(() {
+      _verifyStream = null;
+      _focus = v;
+    });
+  }
+
+  bool _isShared = false;
+  bool get isShared => _isShared;
+  set isShared(bool v) => setState(() => _isShared = v);
+
   Address? _address;
   bool get isReady => _address != null;
   Wallet get wallet => widget.wallet;
+
+  static const tilePadding = EdgeInsets.symmetric(horizontal: 20);
+  static const tileShape = RoundedRectangleBorder(
+    borderRadius: BorderRadius.all(Radius.circular(12)),
+  );
+  static const sectionPadding = EdgeInsets.fromLTRB(20, 0, 20, 20);
+  static const sectionHideDuration = Durations.medium4;
+  static const sectionHideCurve = Curves.easeInOutCubicEmphasized;
 
   QrImage addressQrImage(Address address) {
     final qrCode = QrCode(8, QrErrorCorrectLevel.L);
@@ -257,12 +266,26 @@ class _ReceiverPageState extends State<ReceivePage> {
     (index != null) ? updateToIndex(index) : updateToNextUnused();
   }
 
+  @override
+  void dispose() {
+    super.dispose();
+    if (_focus == ReceivePageFocus.verify) {
+      coord.cancelProtocol();
+    }
+  }
+
   void updateToIndex(int index) {
     final addr = wallet.superWallet.addressState(
       masterAppkey: wallet.masterAppkey,
       index: index,
     );
-    if (mounted) setState(() => _address = addr);
+    focus = ReceivePageFocus.share;
+    if (mounted) {
+      setState(() {
+        _address = addr;
+        _isShared = false;
+      });
+    }
   }
 
   void updateToNextUnused() async {
@@ -272,499 +295,431 @@ class _ReceiverPageState extends State<ReceivePage> {
     if (mounted) setState(() => _address = addr);
   }
 
-  Widget buildStep1(BuildContext context, Address address) {
-    final theme = Theme.of(context);
-    return Card.filled(
-      clipBehavior: Clip.hardEdge,
-      color: theme.colorScheme.surfaceContainerHigh,
-      margin: EdgeInsets.symmetric(horizontal: 16.0).copyWith(bottom: 16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            dense: true,
-            leading: CircleAvatar(
-              radius: 12.0,
-              backgroundColor: theme.colorScheme.surfaceContainerLowest,
-              child: Text('1.', style: theme.textTheme.titleSmall),
-            ),
-            title: Text('Share address', textAlign: TextAlign.start),
-            subtitle: Text(
-              'Derivation path: ${address.derivationPath}',
-              style: monospaceTextStyle,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16.0,
-            ).copyWith(bottom: 16.0, top: 4.0),
-            child: Row(
-              spacing: 16.0,
-              children: [
-                Expanded(
-                  child: AspectRatio(
-                    aspectRatio: 1.0,
-                    child: Card.filled(
-                      color: Colors.white,
-                      margin: EdgeInsets.all(0.0),
-                      clipBehavior: Clip.hardEdge,
-                      child: InkWell(
-                        onTap: () {
-                          print('aaa');
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: PrettyQrView(
-                            qrImage: addressQrImage(address),
-                            decoration: const PrettyQrDecoration(
-                              shape: PrettyQrSmoothSymbol(color: Colors.black),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: AspectRatio(
-                    aspectRatio: 1.0,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(8.0),
-                      onTap:
-                          () => copyAction(
-                            context,
-                            'Address',
-                            address.addressString,
-                          ),
-                      child: Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: FittedBox(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              spacing: 12.0,
-                              children: [
-                                Text(
-                                  spacedHex(
-                                    address.addressString,
-                                    groupsPerLine: 3,
-                                  ),
-                                  style: monospaceTextStyle,
-                                  softWrap: false,
-                                  textAlign: TextAlign.end,
-                                ),
-                                Icon(Icons.copy, size: 20.0),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget buildStep2(BuildContext context, Address address) {
-    final Map<DeviceId, String> devices = LinkedHashMap(
-      equals: deviceIdEquals,
-      hashCode: (a) => Object.hashAll(a.field0),
-    );
-
-    final frostKey = wallet.frostKey();
-    if (frostKey != null) {
-      for (final access in frostKey.accessStructures()) {
-        devices.addEntries(
-          access.devices().map(
-            (id) => MapEntry(id, coord.getDeviceName(id: id) ?? '<no-name>'),
-          ),
-        );
-      }
-    }
-
-    deviceListSubject;
-
-    final theme = Theme.of(context);
-    return Card.filled(
-      color: theme.colorScheme.surfaceContainerHigh,
-      clipBehavior: Clip.hardEdge,
-      margin: EdgeInsets.symmetric(horizontal: 16.0).copyWith(bottom: 12.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            dense: true,
-            leading: CircleAvatar(
-              radius: 12.0,
-              backgroundColor: theme.colorScheme.surfaceContainerLowest,
-              child: Text('2.', style: theme.textTheme.titleSmall),
-            ),
-            title: Text('Verify address', textAlign: TextAlign.start),
-            subtitle: Text('Plug in any of these devices'),
-          ),
-          StreamBuilder(
-            stream: deviceListSubject,
-            builder: (context, snapshot) {
-              final data = snapshot.data;
-              if (data == null) {
-                return SizedBox();
-              }
-              final connected = deviceIdSet(
-                data.state.devices.map((d) => d.id).toList(),
-              );
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisSize: MainAxisSize.min,
-                children:
-                    devices.entries.map((entry) {
-                      final isConnected = connected.contains(entry.key);
-                      return ListTile(
-                        dense: true,
-                        enabled: isConnected,
-                        title: Text(entry.value, style: monospaceTextStyle),
-                        trailing: Text(
-                          isConnected ? 'Connected' : 'Disconnected',
-                          style: TextStyle(
-                            color:
-                                isConnected
-                                    ? Theme.of(context).colorScheme.primary
-                                    : null,
-                          ),
-                        ),
-                      );
-                    }).toList(),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    //final appBar = SliverAppBar(
-    //  title: Text('Receive bitcoin'),
-    //  titleTextStyle: theme.textTheme.titleMedium,
-    //  centerTitle: true,
-    //  backgroundColor: theme.colorScheme.surfaceContainerLow,
-    //  pinned: true,
-    //  leading: IconButton(
-    //    onPressed: () => Navigator.pop(context),
-    //    icon: Icon(Icons.close),
-    //  ),
-    //  actions: [
-    //    TextButton.icon(
-    //      onPressed:
-    //          isReady ? () => openAddressPicker(context, _address!) : null,
-    //      label: Text(
-    //        '#${_address?.index}',
-    //        textAlign: TextAlign.end,
-    //        style: monospaceTextStyle,
-    //      ),
-    //      icon: Icon(Icons.arrow_drop_down),
-    //    ),
-    //  ],
-    //  actionsPadding: EdgeInsets.symmetric(horizontal: 12.0),
-    //);
-
     return CustomScrollView(
       controller: widget.scrollController,
       shrinkWrap: true,
       physics: ClampingScrollPhysics(),
       slivers: [
-        //appBar,
-        if (isReady) SliverToBoxAdapter(child: buildStep1(context, _address!)),
-        if (isReady) SliverToBoxAdapter(child: buildStep2(context, _address!)),
-        if (isReady)
-          SliverSafeArea(
-            sliver: SliverPadding(
-              padding: EdgeInsets.symmetric(horizontal: 16.0),
-              sliver: SliverToBoxAdapter(
-                child: TextButton.icon(
-                  onPressed: () {},
-                  icon: Icon(Icons.done),
-                  label: Text('Mark as used'),
+        SliverToBoxAdapter(child: buildShareCard(context)),
+        SliverToBoxAdapter(child: buildVerifyCard(context)),
+        SliverToBoxAdapter(child: buildAwaitTxCard(context)),
+        SliverSafeArea(
+          sliver: SliverPadding(padding: EdgeInsets.only(bottom: 4)),
+        ),
+      ],
+    );
+  }
+
+  Widget buildPickAddressButton(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: 16),
+      child: Align(
+        alignment: AlignmentDirectional.center,
+        child: OutlinedButton.icon(
+          onPressed:
+              _address == null
+                  ? null
+                  : () => openAddressPicker(context, _address!),
+          label: Text('#${_address?.index}', style: monospaceTextStyle),
+          icon: Icon(Icons.arrow_drop_down_rounded),
+        ),
+      ),
+    );
+  }
+
+  Widget buildShareCard(BuildContext context) {
+    final isFocused = focus == ReceivePageFocus.share;
+
+    final theme = Theme.of(context);
+    final header = ListTile(
+      shape: tileShape,
+      title: Text('Share address'),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!isFocused && isShared) Text('Shared'),
+          TextButton.icon(
+            onPressed:
+                _address == null
+                    ? null
+                    : () => openAddressPicker(context, _address!),
+            label: Text('#${_address?.index}', style: monospaceTextStyle),
+            icon: Icon(Icons.arrow_drop_down_rounded),
+          ),
+        ],
+      ),
+      // trailing: (!isFocused && isShared) ? Text('Shared') : null,
+      contentPadding: tilePadding.copyWith(right: 8),
+      onTap: switch (focus) {
+        ReceivePageFocus.share => null,
+        _ => () => focus = ReceivePageFocus.share,
+      },
+    );
+    final addressText = Text(
+      spacedHex(_address?.addressString ?? ''),
+      style: theme.textTheme.labelLarge?.copyWith(
+        fontFamily: monospaceTextStyle.fontFamily,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+      textAlign: TextAlign.center,
+    );
+
+    shaderCallback(Rect bounds) => RadialGradient(
+      center: Alignment.center,
+      radius: 1.5,
+      colors: [
+        Colors.transparent, // Transparent at the edges
+        theme.colorScheme.onSurfaceVariant,
+      ],
+      stops: const [0.0, 1.0],
+    ).createShader(bounds);
+
+    final cardBody = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Stack(
+          alignment: AlignmentDirectional.center,
+          children: [
+            Padding(
+              padding: tilePadding,
+              child:
+                  isShared
+                      ? ShaderMask(
+                        shaderCallback: shaderCallback,
+                        child: ImageFiltered(
+                          imageFilter: blurFilter,
+                          enabled: isShared,
+                          child: addressText,
+                        ),
+                      )
+                      : addressText,
+            ),
+            if (isShared)
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Text(
+                  'Address shared',
+                  style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                ),
+              ),
+          ],
+        ),
+        Padding(
+          padding: EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+          child: Row(
+            spacing: 12,
+            children: [
+              Expanded(
+                child: FilledButton.tonalIcon(
+                  onPressed:
+                      _address == null
+                          ? null
+                          : () => copyAddress(context, _address!),
+                  label: Text('Copy'),
+                  icon: Icon(Icons.copy_rounded),
+                ),
+              ),
+              Expanded(
+                child: FilledButton.tonalIcon(
+                  onPressed:
+                      _address == null
+                          ? null
+                          : () async => showAddressQr(context, _address!),
+                  label: Text('QR Code'),
+                  icon: Icon(Icons.qr_code_2_rounded),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    final activeCard = Card.outlined(
+      margin: sectionPadding,
+      color: theme.colorScheme.surfaceContainerHigh,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [header, cardBody],
+      ),
+    );
+    final inactiveCard = Card.outlined(
+      // We cannot control the size of the `AnimatedGradientBorder` of the verify card.
+      margin: focus == ReceivePageFocus.verify ? tilePadding : sectionPadding,
+      color: theme.colorScheme.surfaceContainerLow,
+      child: Column(mainAxisSize: MainAxisSize.min, children: [header]),
+    );
+    return AnimatedCrossFade(
+      firstChild: activeCard,
+      secondChild: inactiveCard,
+      crossFadeState:
+          isFocused ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+      duration: sectionHideDuration,
+      sizeCurve: sectionHideCurve,
+    );
+  }
+
+  Widget buildVerifyCard(BuildContext context) {
+    final isFocused = focus == ReceivePageFocus.verify;
+
+    final theme = Theme.of(context);
+    final activeCard = AnimatedGradientBorder(
+      borderSize: 1,
+      glowSize: 6,
+      animationTime: 6,
+      borderRadius: BorderRadius.circular(12.0),
+      gradientColors: [
+        theme.colorScheme.outlineVariant,
+        theme.colorScheme.primary,
+        theme.colorScheme.secondary,
+        theme.colorScheme.tertiary,
+      ],
+      child: Card.filled(
+        margin: EdgeInsets.zero,
+        color: theme.colorScheme.surfaceContainerHigh,
+        child:
+            _verifyStream == null
+                ? null
+                : StreamBuilder(
+                  stream: _verifyStream,
+                  builder: (context, targetDevicesSnapshot) {
+                    final targetDevices = deviceIdSet(
+                      targetDevicesSnapshot.data?.targetDevices ?? [],
+                    );
+
+                    final dismissButton = OutlinedButton(
+                      onPressed: () => focus = ReceivePageFocus.awaitTx,
+                      child: Text('Dismiss'),
+                    );
+
+                    return StreamBuilder(
+                      stream: deviceListSubject,
+                      builder: (context, deviceListSnapshot) {
+                        final connectedDevices = deviceIdSet(
+                          deviceListSnapshot.data?.state.devices
+                                  .map((dev) => dev.id)
+                                  .toList() ??
+                              [],
+                        );
+
+                        final displayingDevices = targetDevices.intersection(
+                          connectedDevices,
+                        );
+
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            ListTile(
+                              shape: tileShape,
+                              title: Text('Verify on device'),
+                              subtitle:
+                                  displayingDevices.isEmpty
+                                      ? Text('Plug in a device to continue.')
+                                      : Text(
+                                        'Verify that the pasted or scanned address matches the device display.',
+                                      ),
+                              isThreeLine: displayingDevices.isNotEmpty,
+                              contentPadding: tilePadding,
+                              minVerticalPadding: 16,
+                            ),
+                            Padding(
+                              padding: sectionPadding,
+                              child: dismissButton,
+                            ),
+                          ],
+                        );
+                      },
+                    );
+                  },
+                ),
+      ),
+    );
+    final inactiveCard = Card.outlined(
+      margin: sectionPadding,
+      color: theme.colorScheme.surfaceContainerLow,
+      child: ListTile(
+        shape: tileShape,
+        title: Text('Verify on device'),
+        //trailing: Icon(Icons.expand_more_rounded),
+        contentPadding: tilePadding,
+        onTap: () => focus = ReceivePageFocus.verify,
+      ),
+    );
+    return AnimatedSize(
+      clipBehavior: Clip.none,
+      alignment: AlignmentDirectional.topCenter,
+      duration: sectionHideDuration,
+      curve: sectionHideCurve,
+      child: isFocused ? activeCard : inactiveCard,
+    );
+  }
+
+  Widget buildAwaitTxCard(BuildContext context) {
+    final thisAddr = _address?.addressString;
+    final walletCtx = WalletContext.of(context)!;
+    final isFocused = focus == ReceivePageFocus.awaitTx;
+    final theme = Theme.of(context);
+    return StreamBuilder(
+      stream: walletCtx.txStream,
+      builder: (context, snapshot) {
+        final now = DateTime.now();
+        final chainTipHeight = walletCtx.wallet.superWallet.height();
+        final relevantTxs =
+            (snapshot.data?.txs ?? []).where((tx) {
+              if (thisAddr == null) return false;
+              final hasReceivedToThisAddress = tx.recipients
+                  .map((a) => a.address(network: walletCtx.network))
+                  .nonNulls
+                  .any((addr) => thisAddr == addr);
+              return hasReceivedToThisAddress;
+            }).toList();
+        final txTiles = relevantTxs.map((tx) {
+          final txDetails = TxDetailsModel(
+            tx: tx,
+            chainTipHeight: chainTipHeight,
+            now: now,
+          );
+          return TxSentOrReceivedTile(
+            txDetails: txDetails,
+            onTap:
+                () => showBottomSheetOrDialog(
+                  context,
+                  titleText: 'Transaction Details',
+                  builder:
+                      (context, scrollController) => walletCtx.wrap(
+                        TxDetailsPage(
+                          scrollController: scrollController,
+                          txStates: walletCtx.txStream,
+                          txDetails: txDetails,
+                        ),
+                      ),
+                ),
+          );
+        });
+
+        final detailsText = Text(switch (relevantTxs.length) {
+          1 => '1 transaction received',
+          _ => '${relevantTxs.length} transactions received',
+        });
+
+        final header = ListTile(
+          shape: tileShape,
+          contentPadding: tilePadding,
+          title: Text('Payments'),
+          subtitle: isFocused ? detailsText : null,
+          trailing: isFocused ? null : detailsText,
+          onTap: isFocused ? null : () => focus = ReceivePageFocus.awaitTx,
+        );
+        final activeCard = Card.outlined(
+          margin: sectionPadding,
+          color: theme.colorScheme.surfaceContainerHigh,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              header,
+              ...txTiles,
+              if (relevantTxs.isEmpty)
+                Padding(
+                  padding: EdgeInsets.fromLTRB(24, 4, 24, 24),
+                  child: Text(
+                    'Waiting for transactions...',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: theme.colorScheme.outline),
+                  ),
+                ),
+            ],
+          ),
+        );
+        final inactiveCard = Card.outlined(
+          margin: isFocused ? tilePadding : sectionPadding,
+          color: theme.colorScheme.surfaceContainerLow,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [header]),
+        );
+        return AnimatedCrossFade(
+          firstChild: activeCard,
+          secondChild: inactiveCard,
+          crossFadeState:
+              isFocused ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+          duration: sectionHideDuration,
+          sizeCurve: sectionHideCurve,
+        );
+      },
+    );
+  }
+
+  void copyAddress(BuildContext context, Address address) {
+    copyAction(context, 'Address', address.addressString);
+    isShared = true;
+    focus = ReceivePageFocus.verify;
+  }
+
+  void showAddressQr(BuildContext context, Address address) async {
+    if (mounted) focus = ReceivePageFocus.share;
+    final theme = Theme.of(context).copyWith(
+      colorScheme: ColorScheme.fromSeed(
+        brightness: Brightness.light,
+        seedColor: seedColor,
+      ),
+    );
+    final img = addressQrImage(address);
+    final isScanned = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return BackdropFilter(
+          filter: blurFilter,
+          child: Theme(
+            data: theme,
+            child: Dialog(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: 580),
+                child: Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    spacing: 16,
+                    children: [
+                      AspectRatio(
+                        aspectRatio: 1,
+                        child: PrettyQrView(qrImage: img),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: Text('Done'),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-      ],
+        );
+      },
     );
+    if (isScanned ?? false) {
+      if (mounted) isShared = true;
+      if (mounted) focus = ReceivePageFocus.verify;
+    }
   }
 
   void openAddressPicker(BuildContext context, Address address) {
     final walletCtx = WalletContext.of(context)!;
     showBottomSheetOrDialog(
       context,
-      titleText: '',
+      titleText: 'Pick Address',
       builder: (context, scrollController) {
         return walletCtx.wrap(
           AddressList(
             onTap: (context, addr) => updateToIndex(addr.index),
             showUsed: address.used,
-
             scrollToDerivationIndex: address.index,
+            scrollController: scrollController,
           ),
         );
       },
-    );
-  }
-}
-
-class WalletReceivePage extends StatefulWidget {
-  const WalletReceivePage({super.key});
-
-  @override
-  State<WalletReceivePage> createState() => _WalletReceivePageState();
-}
-
-class _WalletReceivePageState extends State<WalletReceivePage> {
-  final GlobalKey<AnimatedListState> _listKey = GlobalKey<AnimatedListState>();
-  late List<Address> _addresses = [];
-  final ScrollController scrollController = ScrollController(
-    keepScrollOffset: false,
-  );
-  bool fabIsExtended = true;
-
-  @override
-  void initState() {
-    super.initState();
-    scrollController.addListener(() {
-      if (scrollController.offset < 6.0) {
-        setState(() => fabIsExtended = true);
-      } else if (scrollController.position.userScrollDirection ==
-              ScrollDirection.reverse &&
-          fabIsExtended) {
-        // Shrink FAB when scrolling down
-        setState(() => fabIsExtended = false);
-      } else if (scrollController.position.userScrollDirection ==
-              ScrollDirection.forward &&
-          !fabIsExtended) {
-        // Extend FAB when scrolling up
-        setState(() => fabIsExtended = true);
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    scrollController.dispose();
-    super.dispose();
-  }
-
-  Future<Address> _addAddress(BuildContext context) async {
-    final walletCtx = WalletContext.of(context)!;
-
-    final nextAddressInfo = await walletCtx.superWallet.nextAddress(
-      masterAppkey: walletCtx.masterAppkey,
-    );
-    final Address newAddress = nextAddressInfo;
-
-    if (context.mounted) {
-      if (context.mounted) {
-        setState(() {
-          _addresses.insert(0, newAddress);
-          _listKey.currentState?.insertItem(0);
-        });
-      }
-    }
-    return nextAddressInfo;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final walletCtx = WalletContext.of(context)!;
-    _addresses = walletCtx.superWallet.addressesState(
-      masterAppkey: walletCtx.masterAppkey,
-    );
-
-    final freshAddrs = _addresses.where((addr) => !addr.used).toList();
-
-    final body = CustomScrollView(
-      controller: scrollController,
-      reverse: true,
-      slivers: [
-        SliverToBoxAdapter(child: SizedBox(height: 80)),
-        SliverSafeArea(
-          sliver: SliverList.builder(
-            key: _listKey,
-            itemCount: _addresses.length,
-            itemBuilder:
-                (context, index) =>
-                    _buildAddressItem(context, _addresses[index]),
-          ),
-        ),
-      ],
-    );
-
-    newAddressAction() async {
-      final address = await _addAddress(context);
-      if (context.mounted) {
-        await scrollController.animateTo(
-          0.0,
-          duration: Durations.long1,
-          curve: Curves.easeInOutCubicEmphasized,
-        );
-      }
-      if (context.mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => walletCtx.wrap(AddressPage(address: address)),
-          ),
-        );
-      }
-    }
-
-    final theme = Theme.of(context);
-
-    final appBar = SliverAppBar(
-      flexibleSpace: FlexibleSpaceBar(
-        title: Text('Receive', style: theme.textTheme.titleMedium),
-        centerTitle: true,
-        background: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadiusDirectional.only(
-              topStart: Radius.circular(24.0),
-              topEnd: Radius.circular(24.0),
-            ),
-            //borderRadius: BorderRadius.circular(24.0),
-            color: theme.colorScheme.surfaceContainerLow,
-          ),
-        ),
-      ),
-      pinned: true,
-      forceMaterialTransparency: true,
-      automaticallyImplyLeading: false,
-      leading: IconButton(
-        onPressed: () => Navigator.pop(context),
-        icon: Icon(Icons.close),
-      ),
-    );
-
-    final scrollView = CustomScrollView(
-      controller: scrollController,
-      shrinkWrap: true,
-      slivers: [
-        appBar,
-        PinnedHeaderSliver(
-          child: Padding(
-            padding: const EdgeInsets.only(
-              left: 16.0,
-              right: 16.0,
-              bottom: 12.0,
-            ),
-            child: OutlinedButton(
-              onPressed: () async => await _addAddress(context),
-              child: Text('New Address'),
-            ),
-          ),
-        ),
-        SliverSafeArea(
-          sliver: SliverList.builder(
-            itemCount: freshAddrs.length,
-            itemBuilder: (context, index) {
-              final addr = freshAddrs[index];
-              return Card.filled(
-                clipBehavior: Clip.hardEdge,
-                margin: EdgeInsets.only(left: 16.0, right: 16.0, bottom: 12.0),
-                child: ListTile(
-                  onTap: () {},
-                  leading: Text(
-                    '#${addr.index}',
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: theme.colorScheme.primary,
-                      fontFamily: monospaceTextStyle.fontFamily,
-                    ),
-                  ),
-                  trailing: Icon(Icons.chevron_right),
-                  title: Text(
-                    spacedHex(addr.addressString),
-                    style: monospaceTextStyle,
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 2,
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-    //final a = SwitchListTile(value: value, onChanged: onChanged);
-
-    return scrollView;
-
-    //return Scaffold(
-    //  appBar: AppBar(title: const Text('Receive Bitcoin'), centerTitle: true),
-    //  body: body,
-    //  floatingActionButton: FloatingActionButton.extended(
-    //    extendedIconLabelSpacing: fabIsExtended ? 8 : 0,
-    //    extendedPadding: fabIsExtended ? null : const EdgeInsets.all(16),
-    //    icon: Icon(Icons.add),
-    //    label: AnimatedSize(
-    //      curve: Curves.easeInOutCubicEmphasized,
-    //      duration: Durations.long1,
-    //      child: Text(fabIsExtended ? 'New Address' : ''),
-    //    ),
-    //    onPressed: newAddressAction,
-    //  ),
-    //);
-  }
-
-  Widget _buildAddressItem(BuildContext context, Address address) {
-    final walletCtx = WalletContext.of(context)!;
-    final theme = Theme.of(context);
-
-    openAddressPage() async {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => walletCtx.wrap(AddressPage(address: address)),
-        ),
-      );
-    }
-
-    copyAddress() async {
-      Clipboard.setData(ClipboardData(text: address.addressString));
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Address copied to clipboard')));
-    }
-
-    return Card.filled(
-      color: ElevationOverlay.applySurfaceTint(
-        theme.colorScheme.surface,
-        theme.colorScheme.surfaceTint,
-        address.used ? 0.0 : 6.0,
-      ),
-      child: ListTile(
-        isThreeLine: true,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16.0),
-        ),
-        title: Text(
-          address.addressString,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: monospaceTextStyle,
-        ),
-        subtitle: Text('# ${address.index}${address.used ? ' (Used)' : ''}'),
-        onLongPress: copyAddress,
-        onTap: openAddressPage,
-        trailing: Icon(Icons.policy),
-      ),
     );
   }
 }

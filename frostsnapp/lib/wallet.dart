@@ -850,15 +850,12 @@ class WalletBottomBar extends StatelessWidget {
                         titleText: 'Receive',
                         builder:
                             (context, scrollController) => walletCtx.wrap(
-                              ReceivePage(wallet: walletCtx.wallet),
+                              ReceivePage(
+                                wallet: walletCtx.wallet,
+                                scrollController: scrollController,
+                              ),
                             ),
                       ),
-                  //onPressed:
-                  //    () => showBottomSheetOrDialog(
-                  //      context,
-                  //      builder:
-                  //          (context) => walletCtx.wrap(WalletReceivePage()),
-                  //    ),
                   label: Text('Receive'),
                   icon: Icon(Icons.south_east),
                   style: ElevatedButton.styleFrom(
@@ -1211,7 +1208,7 @@ class BackupWarningBanner extends StatelessWidget {
       builder:
           (context, scrollController) => walletContext.wrap(
             BackupChecklist(
-            scrollController: scrollController,
+              scrollController: scrollController,
               accessStructure: frostKey.accessStructures()[0],
               showAppBar: false,
             ),

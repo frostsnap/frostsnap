@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 final monospaceTextStyle = GoogleFonts.notoSansMono();
-
 final blurFilter = ImageFilter.blur(sigmaX: 2.1, sigmaY: 2.1);
+const seedColor = Color(0xFF1595B2);
 
 Color tintSurfaceContainer(
   BuildContext context, {
@@ -124,7 +124,8 @@ String spacedHex(String input, {int groupSize = 4, int? groupsPerLine}) {
 }
 
 class TopBar extends StatefulWidget implements PreferredSizeWidget {
-  static const headerPadding = EdgeInsets.fromLTRB(24, 4, 24, 16);
+  static const headerPadding = EdgeInsets.fromLTRB(20, 0, 20, 16);
+  static const animationDuration = Durations.short3;
 
   final String? titleText;
   final bool isDialog;
@@ -217,7 +218,7 @@ class _TopBarState extends State<TopBar> {
               scrollController.hasClients && scrollController.offset > 0
                   ? CrossFadeState.showFirst
                   : CrossFadeState.showSecond,
-          duration: Durations.medium1,
+          duration: TopBar.animationDuration,
         );
       },
     );
