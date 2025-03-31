@@ -188,6 +188,7 @@ class TxSentOrReceivedTile extends StatelessWidget {
 }
 
 class TxDetailsPage extends StatefulWidget {
+  final ScrollController? scrollController;
   final TxDetailsModel txDetails;
   final SignSessionId? signingSessionId;
   final SignSessionId? finishedSigningSessionId;
@@ -198,6 +199,7 @@ class TxDetailsPage extends StatefulWidget {
 
   const TxDetailsPage({
     super.key,
+    this.scrollController,
     required this.txStates,
     required this.txDetails,
   }) : signingSessionId = null,
@@ -208,6 +210,7 @@ class TxDetailsPage extends StatefulWidget {
 
   const TxDetailsPage.needsBroadcast({
     super.key,
+    this.scrollController,
     required this.txStates,
     required this.txDetails,
     required SignSessionId this.finishedSigningSessionId,
@@ -218,6 +221,7 @@ class TxDetailsPage extends StatefulWidget {
 
   const TxDetailsPage.restoreSigning({
     super.key,
+    this.scrollController,
     required this.txStates,
     required this.txDetails,
     required SignSessionId this.signingSessionId,
@@ -228,6 +232,7 @@ class TxDetailsPage extends StatefulWidget {
 
   const TxDetailsPage.startSigning({
     super.key,
+    this.scrollController,
     required this.txStates,
     required this.txDetails,
     required AccessStructureRef this.accessStructureRef,
@@ -331,21 +336,22 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return CustomScrollView(
+      controller: widget.scrollController,
       shrinkWrap: true,
       physics: ClampingScrollPhysics(),
       slivers: [
-        SliverAppBar(
-          title: Text('Transaction'),
-          titleTextStyle: theme.textTheme.titleMedium,
-          centerTitle: true,
-          forceMaterialTransparency: true,
-          leading: IconButton(
-            onPressed: () => Navigator.pop(context),
-            icon: Icon(Icons.close),
-          ),
-          actionsPadding: EdgeInsets.symmetric(horizontal: 10.0),
-          automaticallyImplyLeading: false,
-        ),
+        //SliverAppBar(
+        //  title: Text('Transaction'),
+        //  titleTextStyle: theme.textTheme.titleMedium,
+        //  centerTitle: true,
+        //  forceMaterialTransparency: true,
+        //  leading: IconButton(
+        //    onPressed: () => Navigator.pop(context),
+        //    icon: Icon(Icons.close),
+        //  ),
+        //  actionsPadding: EdgeInsets.symmetric(horizontal: 10.0),
+        //  automaticallyImplyLeading: false,
+        //),
         SliverSafeArea(
           sliver: SliverList(
             delegate: SliverChildListDelegate.fixed([

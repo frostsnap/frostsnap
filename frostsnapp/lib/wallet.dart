@@ -524,9 +524,11 @@ class _TxListState extends State<TxList> {
                     onTap:
                         () => showBottomSheetOrDialog(
                           context,
+                          titleText: 'Transaction Details',
                           builder:
-                              (context) => walletCtx.wrap(
+                              (context, scrollController) => walletCtx.wrap(
                                 TxDetailsPage.needsBroadcast(
+                                  scrollController: scrollController,
                                   txStates: walletCtx.txStream,
                                   txDetails: txDetails,
                                   finishedSigningSessionId: tx.sessionId,
@@ -561,9 +563,11 @@ class _TxListState extends State<TxList> {
                     onTap:
                         () => showBottomSheetOrDialog(
                           context,
+                          titleText: 'Transaction Details',
                           builder:
-                              (context) => walletCtx.wrap(
+                              (context, scrollController) => walletCtx.wrap(
                                 TxDetailsPage.restoreSigning(
+                                  scrollController: scrollController,
                                   txStates: walletCtx.txStream,
                                   txDetails: txDetails,
                                   signingSessionId: signingState.sessionId,
@@ -609,9 +613,11 @@ class _TxListState extends State<TxList> {
                     onTap:
                         () => showBottomSheetOrDialog(
                           context,
+                          titleText: 'Transaction Details',
                           builder:
-                              (context) => walletCtx.wrap(
+                              (context, scrollController) => walletCtx.wrap(
                                 TxDetailsPage(
+                                  scrollController: scrollController,
                                   txStates: walletCtx.txStream,
                                   txDetails: txDetails,
                                 ),
@@ -841,8 +847,9 @@ class WalletBottomBar extends StatelessWidget {
                   onPressed:
                       () => showBottomSheetOrDialog(
                         context,
+                        titleText: 'Receive',
                         builder:
-                            (context) => walletCtx.wrap(
+                            (context, scrollController) => walletCtx.wrap(
                               ReceivePage(wallet: walletCtx.wallet),
                             ),
                       ),
@@ -866,7 +873,13 @@ class WalletBottomBar extends StatelessWidget {
                   onPressed:
                       () => showBottomSheetOrDialog(
                         context,
-                        builder: (context) => walletCtx.wrap(WalletSendPage()),
+                        titleText: 'Send',
+                        builder:
+                            (context, scrollController) => walletCtx.wrap(
+                              WalletSendPage(
+                                scrollController: scrollController,
+                              ),
+                            ),
                       ),
                   label: Text('Send'),
                   icon: Icon(Icons.north_east),
@@ -1194,11 +1207,13 @@ class BackupWarningBanner extends StatelessWidget {
   onTap(BuildContext context, WalletContext walletContext) {
     showBottomSheetOrDialog(
       context,
+      titleText: 'Backup Checklist',
       builder:
-          (context) => walletContext.wrap(
+          (context, scrollController) => walletContext.wrap(
             BackupChecklist(
+            scrollController: scrollController,
               accessStructure: frostKey.accessStructures()[0],
-              showAppBar: true,
+              showAppBar: false,
             ),
           ),
     );

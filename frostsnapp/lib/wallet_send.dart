@@ -236,17 +236,17 @@ class _WalletSendPageState extends State<WalletSendPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    final appBar = SliverAppBar(
-      title: Text('Send Bitcoin'),
-      titleTextStyle: theme.textTheme.titleMedium,
-      centerTitle: true,
-      backgroundColor: theme.colorScheme.surfaceContainerLow,
-      pinned: true,
-      leading: IconButton(
-        onPressed: () => Navigator.pop(context),
-        icon: Icon(Icons.close),
-      ),
-    );
+    //final appBar = SliverAppBar(
+    //  title: Text('Send Bitcoin'),
+    //  titleTextStyle: theme.textTheme.titleMedium,
+    //  centerTitle: true,
+    //  backgroundColor: theme.colorScheme.surfaceContainerLow,
+    //  pinned: true,
+    //  leading: IconButton(
+    //    onPressed: () => Navigator.pop(context),
+    //    icon: Icon(Icons.close),
+    //  ),
+    //);
 
     final etaInputCard = ListenableBuilder(
       listenable: feeRateModel,
@@ -491,7 +491,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
             ),
           ),
         ),
-        appBar,
+        //appBar,
       ],
     );
 
@@ -550,8 +550,9 @@ class _WalletSendPageState extends State<WalletSendPage> {
     nextPageOrPop(null);
     await showBottomSheetOrDialog(
       context,
+      titleText: 'Transaction Details',
       builder:
-          (context) => walletCtx.wrap(
+          (context, scrollController) => walletCtx.wrap(
             TxDetailsPage.startSigning(
               txStates: walletCtx.txStream,
               txDetails: txDetails,

@@ -8,10 +8,12 @@ import 'package:frostsnapp/show_backup.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class BackupChecklist extends StatelessWidget {
+  final ScrollController? scrollController;
   final AccessStructure accessStructure;
   final bool showAppBar;
   const BackupChecklist({
     super.key,
+    this.scrollController,
     required this.accessStructure,
     this.showAppBar = false,
   });
@@ -285,6 +287,7 @@ class BackupChecklist extends StatelessWidget {
     );
 
     return CustomScrollView(
+      controller: scrollController,
       shrinkWrap: true,
       physics: ClampingScrollPhysics(),
       slivers: [if (showAppBar) appBar, infoColumn, devicesColumn],

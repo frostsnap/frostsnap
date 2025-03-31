@@ -15,6 +15,7 @@ import 'package:frostsnapp/wallet_tx_details.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 class AddressList extends StatefulWidget {
+  final ScrollController? scrollController;
   final bool showUsed;
   final Function(BuildContext, Address) onTap;
   final int? scrollToDerivationIndex;
@@ -24,6 +25,7 @@ class AddressList extends StatefulWidget {
     required this.onTap,
     this.showUsed = false,
     this.scrollToDerivationIndex,
+    this.scrollController,
   });
 
   @override
@@ -37,7 +39,9 @@ class _AddressListState extends State<AddressList> {
   List<Address> get addresses => _showUsed ? _addresses : _freshAddresses;
 
   final _firstAddrKey = GlobalKey();
-  final _scrollController = ScrollController();
+  late final ScrollController? _scrollController;
+  ScrollController get scrollController =>
+      widget.scrollController ?? _scrollController!;
 
   void update(BuildContext context, {void Function()? andSetState}) {
     final walletCtx = WalletContext.of(context);
@@ -59,6 +63,10 @@ class _AddressListState extends State<AddressList> {
   @override
   void initState() {
     super.initState();
+    if (widget.scrollController == null) {
+      _scrollController = ScrollController();
+    }
+
     _showUsed = widget.showUsed;
     update(context);
 
@@ -80,14 +88,20 @@ class _AddressListState extends State<AddressList> {
                 ?.$1 ??
             0;
         final targetOffset =
-            _scrollController.offset + targetIndex * addrItemHeight;
-        _scrollController.animateTo(
+            scrollController.offset + targetIndex * addrItemHeight;
+        scrollController.animateTo(
           targetOffset,
           duration: Durations.long4,
           curve: Curves.easeInOutCubicEmphasized,
         );
       });
     }
+  }
+
+  @override
+  dispose() {
+    _scrollController?.dispose();
+    super.dispose();
   }
 
   Widget buildAddressItem(BuildContext context, Address addr, {Key? key}) {
@@ -171,7 +185,7 @@ class _AddressListState extends State<AddressList> {
 
     var first = true;
     return CustomScrollView(
-      controller: _scrollController,
+      controller: scrollController,
       shrinkWrap: true,
       physics: ClampingScrollPhysics(),
       slivers: [
@@ -209,10 +223,16 @@ class _AddressListState extends State<AddressList> {
 }
 
 class ReceivePage extends StatefulWidget {
+  final ScrollController? scrollController;
   final Wallet wallet;
   final int? derivationIndex;
 
-  const ReceivePage({super.key, required this.wallet, this.derivationIndex});
+  const ReceivePage({
+    super.key,
+    this.scrollController,
+    required this.wallet,
+    this.derivationIndex,
+  });
 
   @override
   State<ReceivePage> createState() => _ReceiverPageState();
@@ -433,36 +453,37 @@ class _ReceiverPageState extends State<ReceivePage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    final appBar = SliverAppBar(
-      title: Text('Receive bitcoin'),
-      titleTextStyle: theme.textTheme.titleMedium,
-      centerTitle: true,
-      backgroundColor: theme.colorScheme.surfaceContainerLow,
-      pinned: true,
-      leading: IconButton(
-        onPressed: () => Navigator.pop(context),
-        icon: Icon(Icons.close),
-      ),
-      actions: [
-        TextButton.icon(
-          onPressed:
-              isReady ? () => openAddressPicker(context, _address!) : null,
-          label: Text(
-            '#${_address?.index}',
-            textAlign: TextAlign.end,
-            style: monospaceTextStyle,
-          ),
-          icon: Icon(Icons.arrow_drop_down),
-        ),
-      ],
-      actionsPadding: EdgeInsets.symmetric(horizontal: 12.0),
-    );
+    //final appBar = SliverAppBar(
+    //  title: Text('Receive bitcoin'),
+    //  titleTextStyle: theme.textTheme.titleMedium,
+    //  centerTitle: true,
+    //  backgroundColor: theme.colorScheme.surfaceContainerLow,
+    //  pinned: true,
+    //  leading: IconButton(
+    //    onPressed: () => Navigator.pop(context),
+    //    icon: Icon(Icons.close),
+    //  ),
+    //  actions: [
+    //    TextButton.icon(
+    //      onPressed:
+    //          isReady ? () => openAddressPicker(context, _address!) : null,
+    //      label: Text(
+    //        '#${_address?.index}',
+    //        textAlign: TextAlign.end,
+    //        style: monospaceTextStyle,
+    //      ),
+    //      icon: Icon(Icons.arrow_drop_down),
+    //    ),
+    //  ],
+    //  actionsPadding: EdgeInsets.symmetric(horizontal: 12.0),
+    //);
 
     return CustomScrollView(
+      controller: widget.scrollController,
       shrinkWrap: true,
       physics: ClampingScrollPhysics(),
       slivers: [
-        appBar,
+        //appBar,
         if (isReady) SliverToBoxAdapter(child: buildStep1(context, _address!)),
         if (isReady) SliverToBoxAdapter(child: buildStep2(context, _address!)),
         if (isReady)
@@ -486,11 +507,13 @@ class _ReceiverPageState extends State<ReceivePage> {
     final walletCtx = WalletContext.of(context)!;
     showBottomSheetOrDialog(
       context,
-      builder: (context) {
+      titleText: '',
+      builder: (context, scrollController) {
         return walletCtx.wrap(
           AddressList(
             onTap: (context, addr) => updateToIndex(addr.index),
             showUsed: address.used,
+
             scrollToDerivationIndex: address.index,
           ),
         );
