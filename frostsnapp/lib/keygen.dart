@@ -435,7 +435,7 @@ void showWalletCreatedDialog(BuildContext context, WalletItem walletItem) {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: const [
               Text(
-                'Wallet Created!',
+                'Wallet created! Now let\'s secure it',
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
               Icon(Icons.checklist, size: 40),
@@ -446,11 +446,49 @@ void showWalletCreatedDialog(BuildContext context, WalletItem walletItem) {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Now let\'s secure this wallet by storing these devices in geographically separate locations.',
+                'Before receiving any Bitcoin, you should backup and distribute your Frostsnaps.',
               ),
-              SizedBox(height: 12),
+              SizedBox(height: 16),
               Text(
-                'We will also create a backup for each device as an ultimate backup.',
+                'With each of your Frostsnaps you will:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.directions_walk),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Travel to a location where you will store it.',
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.edit),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Record the backup on the provided backup sheet (~5 mins).',
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.lock),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text('Securely store the Frostsnap and its backup.'),
+                  ),
+                ],
               ),
             ],
           ),
