@@ -538,15 +538,16 @@ class _TxListState extends State<TxList> {
                 });
             final txToSignTiles = coord
                 .activeSigningSessions(keyId: walletCtx.keyId)
-                .map<(Transaction, SigningState)?>((state) {
-                  final signingState = state.state;
-                  final Transaction? tx = switch (state.details) {
+                .map<(Transaction, SigningState)?>((session) {
+                  final Transaction? tx = switch (session.details(
+                    masterAppkey: walletCtx.masterAppkey,
+                  )) {
                     SigningDetails_Transaction(:final transaction) =>
                       transaction,
                     _ => null,
                   };
                   if (tx == null) return null;
-                  return (tx, signingState);
+                  return (tx, session.state());
                 })
                 .nonNulls
                 .map((state) {

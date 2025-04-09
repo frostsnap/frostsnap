@@ -20,7 +20,6 @@ pub struct SigningDispatcher {
     pub aborted: Option<String>,
     pub connected_but_need_request: BTreeSet<DeviceId>,
     pub outbox_to_devices: Vec<CoordinatorSendMessage>,
-    pub emit_callback: Box<dyn Fn(KeyId) + Send + Sync>,
 }
 
 impl SigningDispatcher {
@@ -29,9 +28,7 @@ impl SigningDispatcher {
         key_id: KeyId,
         session_id: SignSessionId,
         sink: impl crate::Sink<SigningState>,
-        callback: impl Fn(KeyId) + Send + Sync + 'static,
     ) -> Self {
-        callback(key_id);
         Self {
             targets,
             key_id,
@@ -42,14 +39,12 @@ impl SigningDispatcher {
             aborted: None,
             connected_but_need_request: Default::default(),
             outbox_to_devices: Default::default(),
-            emit_callback: Box::new(callback),
         }
     }
 
     pub fn restore_signing_session(
         active_sign_session: &ActiveSignSession,
         sink: impl crate::Sink<SigningState>,
-        callback: impl Fn(KeyId) + Send + Sync + 'static,
     ) -> Self {
         Self {
             key_id: active_sign_session.key_id,
@@ -61,7 +56,6 @@ impl SigningDispatcher {
             aborted: None,
             connected_but_need_request: Default::default(),
             outbox_to_devices: Default::default(),
-            emit_callback: Box::new(callback),
         }
     }
 
@@ -78,7 +72,6 @@ impl SigningDispatcher {
             aborted: self.aborted.clone(),
             connected_but_need_request: self.connected_but_need_request.iter().cloned().collect(),
         };
-        (*self.emit_callback)(self.key_id);
         self.sink.send(state);
     }
 

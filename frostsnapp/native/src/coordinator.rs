@@ -3,8 +3,7 @@ use crate::device_list::DeviceList;
 use crate::sink_wrap::SinkWrap;
 use crate::TEMP_KEY;
 use anyhow::{anyhow, Result};
-use bitcoin::hex::DisplayHex;
-use flutter_rust_bridge::{RustOpaque, StreamSink, SyncReturn};
+use flutter_rust_bridge::{RustOpaque, StreamSink};
 use frostsnap_coordinator::check_share::CheckShareState;
 use frostsnap_coordinator::firmware_upgrade::{
     FirmwareUpgradeConfirmState, FirmwareUpgradeProtocol,
@@ -12,30 +11,33 @@ use frostsnap_coordinator::firmware_upgrade::{
 use frostsnap_coordinator::frostsnap_comms::{
     CoordinatorSendBody, CoordinatorSendMessage, Destination, Sha256Digest,
 };
-use frostsnap_coordinator::frostsnap_core::bitcoin_transaction::RootOwner;
 use frostsnap_coordinator::frostsnap_core::coordinator::{
-    CoordAccessStructure, CoordFrostKey, CoordinatorSend, StartSign,
+    CoordAccessStructure, CoordFrostKey, CoordinatorSend,
 };
 use frostsnap_coordinator::frostsnap_core::device::KeyPurpose;
 use frostsnap_coordinator::frostsnap_core::message::{
     CoordinatorToUserMessage, DoKeyGen, RecoverShare,
 };
 use frostsnap_coordinator::frostsnap_core::KeygenId;
+use frostsnap_coordinator::frostsnap_core::SymmetricKey;
 use frostsnap_coordinator::frostsnap_core::{self, SignSessionId};
-use frostsnap_coordinator::frostsnap_core::{MasterAppkey, SymmetricKey};
 use frostsnap_coordinator::frostsnap_persist::DeviceNames;
 use frostsnap_coordinator::persist::Persisted;
+use frostsnap_coordinator::signing::SigningState;
 use frostsnap_coordinator::verify_address::VerifyAddressProtocol;
 use frostsnap_coordinator::{
     check_share::CheckShareProtocol, display_backup::DisplayBackupProtocol,
 };
-use frostsnap_coordinator::{AppMessageBody, FirmwareBin, UiProtocol, UsbSender, UsbSerialManager};
+use frostsnap_coordinator::{
+    AppMessageBody, FirmwareBin, Sink, UiProtocol, UsbSender, UsbSerialManager,
+};
 use frostsnap_coordinator::{Completion, DeviceChange};
 use frostsnap_core::{
     coordinator::FrostCoordinator, AccessStructureRef, DeviceId, KeyId, WireSignTask,
 };
 use rand::thread_rng;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -45,7 +47,7 @@ const N_NONCE_STREAMS: usize = 4;
 pub struct FfiCoordinator {
     usb_manager: Mutex<Option<UsbSerialManager>>,
     key_event_stream: Arc<Mutex<Option<StreamSink<api::KeyState>>>>,
-    signing_session_signals: Arc<Mutex<HashMap<KeyId, StreamSink<()>>>>,
+    signing_session_signals: Arc<Mutex<HashMap<KeyId, Signal>>>,
     thread_handle: Mutex<Option<JoinHandle<()>>>,
     ui_protocol: Arc<Mutex<Option<Box<dyn UiProtocol>>>>,
     usb_sender: UsbSender,
@@ -61,6 +63,8 @@ pub struct FfiCoordinator {
     device_names: Arc<Mutex<Persisted<DeviceNames>>>,
     coordinator: Arc<Mutex<Persisted<FrostCoordinator>>>,
 }
+
+type Signal = Box<dyn Sink<()>>;
 
 impl FfiCoordinator {
     pub fn new(
@@ -502,7 +506,7 @@ impl FfiCoordinator {
         access_structure_ref: AccessStructureRef,
         devices: BTreeSet<DeviceId>,
         task: WireSignTask,
-        sink: StreamSink<api::SigningState>,
+        sink: impl Sink<SigningState>,
     ) -> anyhow::Result<()> {
         let mut coordinator = self.coordinator.lock().unwrap();
         let session_id =
@@ -514,19 +518,19 @@ impl FfiCoordinator {
                     &mut rand::thread_rng(),
                 )?)
             })?;
+
+        let signals = self.signing_session_signals.clone();
+        let sink = sink.inspect(move |_| {
+            if let Some(signal_sink) = signals.lock().unwrap().get(&access_structure_ref.key_id) {
+                signal_sink.send(());
+            }
+        });
+
         let mut ui_protocol = frostsnap_coordinator::signing::SigningDispatcher::new(
             devices,
             access_structure_ref.key_id,
             session_id,
-            SinkWrap(sink),
-            {
-                let signing_session_signals = self.signing_session_signals.clone();
-                move |key_id| {
-                    if let Some(sink) = signing_session_signals.lock().unwrap().get(&key_id) {
-                        sink.add(());
-                    }
-                }
-            },
+            sink,
         );
         ui_protocol.emit_state();
         self.start_protocol(ui_protocol);
@@ -566,7 +570,7 @@ impl FfiCoordinator {
     pub fn try_restore_signing_session(
         &self,
         session_id: SignSessionId,
-        sink: StreamSink<api::SigningState>,
+        sink: impl Sink<SigningState>,
     ) -> anyhow::Result<()> {
         let coordinator = self.coordinator.lock().unwrap();
 
@@ -574,197 +578,25 @@ impl FfiCoordinator {
             .active_signing_sessions_by_ssid()
             .get(&session_id)
             .ok_or(anyhow!("this signing session no longer exists"))?;
+
+        let key_id = active_sign_session.key_id;
+
+        let signals = self.signing_session_signals.clone();
+        let sink = sink.inspect(move |_| {
+            if let Some(signal_sink) = signals.lock().unwrap().get(&key_id) {
+                signal_sink.send(());
+            }
+        });
+
         let mut dispatcher =
             frostsnap_coordinator::signing::SigningDispatcher::restore_signing_session(
                 active_sign_session,
-                SinkWrap(sink),
-                {
-                    let signing_session_signals = self.signing_session_signals.clone();
-                    move |key_id| {
-                        if let Some(sink) = signing_session_signals.lock().unwrap().get(&key_id) {
-                            sink.add(());
-                        }
-                    }
-                },
+                sink,
             );
 
         dispatcher.emit_state();
         self.start_protocol(dispatcher);
         Ok(())
-    }
-
-    fn _active_signing_session_details(
-        master_appkey: MasterAppkey,
-        session_id: SignSessionId,
-        session_init: &StartSign,
-        got_shares: impl IntoIterator<Item = DeviceId>,
-    ) -> Option<api::DetailedSigningState> {
-        let state = api::SigningState {
-            session_id,
-            got_shares: got_shares.into_iter().collect(),
-            needed_from: session_init.nonces.keys().copied().collect(),
-            finished_signatures: Vec::new(),
-            aborted: None,
-            connected_but_need_request: Default::default(),
-        };
-        let details = match session_init.group_request.sign_task.clone() {
-            WireSignTask::Test { message } => api::SigningDetails::Message { message },
-            WireSignTask::Nostr { event } => api::SigningDetails::Nostr {
-                id: event.id,
-                content: event.content,
-                hash_bytes: event.hash_bytes.to_lower_hex_string(),
-            },
-            WireSignTask::BitcoinTransaction(tx_temp) => {
-                let raw_tx = tx_temp.to_rust_bitcoin_tx();
-                let txid = raw_tx.compute_txid();
-                let net_value = tx_temp
-                    .net_value()
-                    .get(&RootOwner::Local(master_appkey))
-                    .copied()
-                    .unwrap_or(0);
-                api::SigningDetails::Transaction {
-                    transaction: api::Transaction {
-                        net_value,
-                        inner: RustOpaque::new(raw_tx),
-                        confirmation_time: None,
-                        last_seen: None,
-                        txid: txid.to_string(),
-                        fee: tx_temp.fee(),
-                        recipients: tx_temp
-                            .outputs()
-                            .iter()
-                            .enumerate()
-                            .map(|(vout, output)| api::TxOutInfo {
-                                vout: vout as _,
-                                amount: output.value,
-                                script_pubkey: RustOpaque::new(output.owner().spk()),
-                                is_mine: match output.owner().local_owner_key() {
-                                    Some(this_appkey) => this_appkey == master_appkey,
-                                    None => false,
-                                },
-                            })
-                            .collect(),
-                    },
-                }
-            }
-        };
-        Some(api::DetailedSigningState { state, details })
-    }
-
-    pub fn active_signing_session(
-        &self,
-        session_id: SignSessionId,
-    ) -> SyncReturn<Option<api::DetailedSigningState>> {
-        let coord = self.coordinator.lock().unwrap();
-        SyncReturn(|| -> Option<api::DetailedSigningState> {
-            let session = coord.active_signing_sessions_by_ssid().get(&session_id)?;
-            let master_appkey = coord
-                .get_frost_key(session.key_id)?
-                .complete_key
-                .as_ref()?
-                .master_appkey;
-            Self::_active_signing_session_details(
-                master_appkey,
-                session_id,
-                &session.init,
-                session.received_from(),
-            )
-        }())
-    }
-
-    pub fn active_signing_sessions(
-        &self,
-        key_id: KeyId,
-    ) -> SyncReturn<Vec<api::DetailedSigningState>> {
-        let coord = self.coordinator.lock().unwrap();
-        let sessions = coord
-            .active_signing_sessions()
-            .filter(|session| session.key_id == key_id)
-            .filter_map(|session| -> Option<api::DetailedSigningState> {
-                Self::_active_signing_session_details(
-                    coord
-                        .get_frost_key(key_id)?
-                        .complete_key
-                        .as_ref()?
-                        .master_appkey,
-                    session.session_id(),
-                    &session.init,
-                    session.received_from(),
-                )
-            });
-        SyncReturn(sessions.collect())
-    }
-
-    pub fn unbroadcasted_txs(
-        &self,
-        super_wallet: api::SuperWallet,
-        key_id: KeyId,
-    ) -> SyncReturn<Vec<api::SignedTxDetails>> {
-        let coord = self.coordinator.lock().unwrap();
-        let super_wallet = &*super_wallet.inner.lock().unwrap();
-        let txs = coord
-            .finished_signing_sessions()
-            .iter()
-            .filter(|(_, session)| dbg!(session.key_id == key_id))
-            .inspect(|&(&id, _)| event!(Level::DEBUG, "Found finished signing session: {}", id))
-            .filter_map(|(_, session)| match &session.init.group_request.sign_task {
-                WireSignTask::BitcoinTransaction(tx_temp) => {
-                    let mut raw_tx = tx_temp.to_rust_bitcoin_tx();
-                    let txid = raw_tx.compute_txid();
-                    // Filter out txs that are already broadcasted.
-                    if super_wallet.get_tx(txid).is_some() {
-                        return None;
-                    }
-                    for (txin, signature) in raw_tx.input.iter_mut().zip(&session.signatures) {
-                        let schnorr_sig = bitcoin::taproot::Signature {
-                            signature: bitcoin::secp256k1::schnorr::Signature::from_slice(
-                                &signature.0,
-                            )
-                            .unwrap(),
-                            sighash_type: bitcoin::sighash::TapSighashType::Default,
-                        };
-                        let witness = bitcoin::Witness::from_slice(&[schnorr_sig.to_vec()]);
-                        txin.witness = witness;
-                    }
-                    let master_appkey = coord
-                        .get_frost_key(key_id)?
-                        .complete_key
-                        .as_ref()?
-                        .master_appkey;
-                    let net_value = tx_temp
-                        .net_value()
-                        .get(&RootOwner::Local(master_appkey))
-                        .copied()
-                        .unwrap_or(0);
-                    Some(api::SignedTxDetails {
-                        session_id: session.init.group_request.session_id(),
-                        tx: api::Transaction {
-                            net_value,
-                            inner: RustOpaque::new(raw_tx),
-                            confirmation_time: None,
-                            last_seen: None,
-                            txid: txid.to_string(),
-                            fee: tx_temp.fee(),
-                            recipients: tx_temp
-                                .outputs()
-                                .iter()
-                                .enumerate()
-                                .map(|(vout, output)| api::TxOutInfo {
-                                    vout: vout as _,
-                                    amount: output.value,
-                                    script_pubkey: RustOpaque::new(output.owner().spk()),
-                                    is_mine: match output.owner().local_owner_key() {
-                                        Some(this_appkey) => this_appkey == master_appkey,
-                                        None => false,
-                                    },
-                                })
-                                .collect(),
-                        },
-                    })
-                }
-                _ => dbg!(None),
-            });
-        SyncReturn(txs.collect())
     }
 
     pub fn request_display_backup(
@@ -1070,51 +902,65 @@ impl FfiCoordinator {
     }
 
     pub fn cancel_sign_session(&self, ssid: SignSessionId) -> anyhow::Result<()> {
-        let mut db = self.db.lock().unwrap();
-        event!(
-            Level::INFO,
-            ssid = ssid.to_string(),
-            "canceling sign session"
-        );
-        let mut coord = self.coordinator.lock().unwrap();
-        coord.staged_mutate(&mut *db, |coordinator| {
-            coordinator.cancel_sign_session(ssid);
-            Ok(())
-        })?;
-        if let Some(session) = coord.active_signing_sessions_by_ssid().get(&ssid) {
-            let key_id = session.access_structure_ref().key_id;
-            if let Some(sink) = self.signing_session_signals.lock().unwrap().get(&key_id) {
-                sink.add(());
-            }
+        let session = {
+            let mut db = self.db.lock().unwrap();
+            event!(
+                Level::INFO,
+                ssid = ssid.to_string(),
+                "canceling sign session"
+            );
+            let mut coord = self.coordinator.lock().unwrap();
+            let session = coord.active_signing_sessions_by_ssid().get(&ssid).cloned();
+            coord.staged_mutate(&mut *db, |coordinator| {
+                coordinator.cancel_sign_session(ssid);
+                Ok(())
+            })?;
+            session
+        };
+        if let Some(session) = session {
+            let key_id = session.key_id;
+            self.emit_signing_signal(key_id);
         }
         Ok(())
     }
 
     pub fn forget_finished_sign_session(&self, ssid: SignSessionId) -> anyhow::Result<()> {
-        let mut db = self.db.lock().unwrap();
-        event!(
-            Level::INFO,
-            ssid = ssid.to_string(),
-            "forgetting finished sign session"
-        );
-        let mut coord = self.coordinator.lock().unwrap();
-        let deleted_session = coord.staged_mutate(&mut *db, |coordinator| {
-            Ok(coordinator.forget_finished_sign_session(ssid))
-        })?;
+        let deleted_session = {
+            let mut db = self.db.lock().unwrap();
+            event!(
+                Level::INFO,
+                ssid = ssid.to_string(),
+                "forgetting finished sign session"
+            );
+            let mut coord = self.coordinator.lock().unwrap();
+            coord.staged_mutate(&mut *db, |coordinator| {
+                Ok(coordinator.forget_finished_sign_session(ssid))
+            })?
+        };
+
         if let Some(session) = deleted_session {
-            let signals = self.signing_session_signals.lock().unwrap();
-            if let Some(signal_sink) = signals.get(&session.key_id) {
-                signal_sink.add(());
-            }
+            self.emit_signing_signal(session.key_id);
         }
+
         Ok(())
     }
 
-    pub fn sub_signing_session_signals(&self, key_id: KeyId, new_stream: StreamSink<()>) {
+    pub fn sub_signing_session_signals(&self, key_id: KeyId, new_stream: impl Sink<()>) {
         let mut signal_streams = self.signing_session_signals.lock().unwrap();
-        if let Some(old_steam) = signal_streams.insert(key_id, new_stream) {
+        if let Some(old_steam) = signal_streams.insert(key_id, Box::new(new_stream)) {
             old_steam.close();
         }
+    }
+
+    pub fn emit_signing_signal(&self, key_id: KeyId) {
+        let signal_streams = self.signing_session_signals.lock().unwrap();
+        if let Some(stream) = signal_streams.get(&key_id) {
+            stream.send(())
+        }
+    }
+
+    pub fn inner(&self) -> impl Deref<Target = Persisted<FrostCoordinator>> + '_ {
+        self.coordinator.lock().unwrap()
     }
 }
 
