@@ -70,7 +70,7 @@ class _AnimatedCheckCircleState extends State<AnimatedCheckCircle>
     return Stack(
       alignment: Alignment.center,
       children: [
-        Icon(Icons.check, size: widget.size, color: theme.primaryColor),
+        Icon(Icons.check, size: widget.size, color: theme.colorScheme.primary),
         AnimatedBuilder(
           animation: _controller,
           builder: (context, child) {

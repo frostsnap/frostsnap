@@ -1,10 +1,10 @@
 import 'dart:async';
-import 'dart:collection';
 
 import 'package:collection/collection.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:frostsnapp/animated_check.dart';
 import 'package:frostsnapp/bridge_definitions.dart';
 import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/global.dart';
@@ -102,7 +102,7 @@ class TxSentOrReceivedTile extends StatelessWidget {
         isSigning
             ? theme.colorScheme.primary
             : txDetails.isSend
-            ? Colors.orange.harmonizeWith(theme.colorScheme.primary)
+            ? Colors.redAccent.harmonizeWith(theme.colorScheme.primary)
             : Colors.green.harmonizeWith(theme.colorScheme.primary);
 
     return ListTile(
@@ -117,7 +117,7 @@ class TxSentOrReceivedTile extends StatelessWidget {
                   ? needsBroadcast
                       ? 'Signed'
                       : txDetails.isSend
-                      ? (txDetails.isConfirmed ? 'Sent' : 'Sending...')
+                      ? (txDetails.isConfirmed ? 'Confirmed' : 'Confirming...')
                       : (txDetails.isConfirmed ? 'Received' : 'Receiving...')
                   : 'Signing...',
             ),
@@ -418,31 +418,29 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
           ],
         ),
       ),
-      ...((signingState?.neededFrom) ?? [])
-          .where(
-            (deviceId) =>
-                !((signingState?.gotShares) ?? [])
-                    .map((id) => id.field0.toString())
-                    .contains(deviceId.field0.toString()),
-          )
-          .map((deviceId) {
-            final deviceName = coord.getDeviceName(id: deviceId) ?? '<no-name>';
-            final isConnected = connectedDevices.contains(deviceId);
-            return ListTile(
-              //dense: true,
-              enabled: isConnected,
-              title: Text(deviceName),
-              trailing: Text(
-                isConnected ? 'Requesting Signature' : 'Disconnected',
-                style: TextStyle(
-                  color:
-                      isConnected
-                          ? Theme.of(context).colorScheme.primary
-                          : null,
-                ),
-              ),
-            );
-          }),
+      ...((signingState?.neededFrom) ?? []).map((deviceId) {
+        final deviceName = coord.getDeviceName(id: deviceId) ?? '<no-name>';
+        final isConnected = connectedDevices.contains(deviceId);
+        final Widget trailing;
+        if (signingState!.gotShares.any(
+          (gotSharesFrom) => deviceIdEquals(deviceId, gotSharesFrom),
+        )) {
+          trailing = AnimatedCheckCircle();
+        } else {
+          trailing = Text(
+            isConnected ? 'Requesting Signature' : 'Disconnected',
+            style: TextStyle(
+              color: isConnected ? Theme.of(context).colorScheme.primary : null,
+            ),
+          );
+        }
+        return ListTile(
+          //dense: true,
+          enabled: isConnected,
+          title: Text(deviceName),
+          trailing: trailing,
+        );
+      }),
       Divider(height: 0.0),
       Align(
         alignment: AlignmentDirectional.centerStart,
