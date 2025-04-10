@@ -661,6 +661,28 @@ impl SuperWallet {
             .map(|address_info| address_info.into())
     }
 
+    pub fn mark_address_shared(
+        &self,
+        master_appkey: MasterAppkey,
+        derivation_index: u32,
+    ) -> Result<bool> {
+        self.inner
+            .lock()
+            .unwrap()
+            .mark_address_shared(master_appkey, derivation_index)
+    }
+
+    pub fn unmark_address_shared(
+        &self,
+        master_appkey: MasterAppkey,
+        derivation_index: u32,
+    ) -> Result<bool> {
+        self.inner
+            .lock()
+            .unwrap()
+            .unmark_address_shared(master_appkey, derivation_index)
+    }
+
     pub fn rebroadcast(&self, txid: String) {
         let txid = Txid::from_str(&txid).expect("Txid must be valid");
         let super_wallet = self.inner.lock().unwrap();
@@ -1451,16 +1473,20 @@ pub struct Address {
     pub index: u32,
     pub address_string: String,
     pub used: bool,
+    pub shared: bool,
+    pub fresh: bool,
     pub external: bool,
     pub derivation_path: String,
 }
 
 impl From<frostsnap_coordinator::bitcoin::wallet::AddressInfo> for Address {
     fn from(value: frostsnap_coordinator::bitcoin::wallet::AddressInfo) -> Self {
-        Self {
+        let address = Self {
             index: value.index,
             address_string: value.address.to_string(),
             used: value.used,
+            shared: value.shared,
+            fresh: value.fresh,
             external: value.external,
             derivation_path: value
                 .derivation_path
@@ -1468,7 +1494,8 @@ impl From<frostsnap_coordinator::bitcoin::wallet::AddressInfo> for Address {
                 .map(u32::to_string)
                 .collect::<Vec<_>>()
                 .join("/"),
-        }
+        };
+        address
     }
 }
 
