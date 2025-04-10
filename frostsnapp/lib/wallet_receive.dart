@@ -42,9 +42,12 @@ class _AddressListState extends State<AddressList> {
   ScrollController get scrollController =>
       widget.scrollController ?? _scrollController!;
 
-  void update(BuildContext context, {void Function()? andSetState}) {
+  void update(BuildContext context, {void Function()? andSetState}) async {
     final walletCtx = WalletContext.of(context);
     if (walletCtx != null) {
+      await walletCtx.superWallet.nextUnusedAddress(
+        masterAppkey: walletCtx.masterAppkey,
+      );
       final addresses = walletCtx.superWallet.addressesState(
         masterAppkey: walletCtx.masterAppkey,
       );
@@ -117,6 +120,21 @@ class _AddressListState extends State<AddressList> {
 
   Widget buildAddressItem(BuildContext context, Address addr, {Key? key}) {
     final theme = Theme.of(context);
+    final usedTag = Card.outlined(
+      color: Colors.transparent,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+        child: Text('Used', style: TextStyle(color: theme.colorScheme.error)),
+      ),
+    );
+    final freshTag = Card.outlined(
+      color: Colors.transparent,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+        child: Text('Fresh', style: TextStyle(color: Colors.greenAccent)),
+      ),
+    );
+
     return ListTile(
       key: key,
       onTap: () {
@@ -133,22 +151,30 @@ class _AddressListState extends State<AddressList> {
         style: theme.textTheme.labelLarge?.copyWith(
           decoration: addr.used ? TextDecoration.lineThrough : null,
           color:
-              addr.used
-                  ? theme.colorScheme.onSurfaceVariant
-                  : theme.colorScheme.primary,
+              addr.used ? theme.colorScheme.primary : theme.colorScheme.primary,
           fontFamily: monospaceTextStyle.fontFamily,
         ),
       ),
-      trailing: Icon(Icons.chevron_right),
       title: Text(
         spacedHex(addr.addressString),
         style: monospaceTextStyle.copyWith(
-          decoration: addr.used ? TextDecoration.lineThrough : null,
           color: addr.used ? theme.colorScheme.onSurfaceVariant : null,
         ),
         overflow: TextOverflow.ellipsis,
-        maxLines: 2,
       ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        spacing: 4,
+        children: [
+          switch ((addr.used, addr.shared)) {
+            (true, _) => usedTag,
+            (_, true) => SizedBox(),
+            (false, false) => freshTag,
+          },
+          Icon(Icons.chevron_right_rounded),
+        ],
+      ),
+      contentPadding: EdgeInsets.symmetric(horizontal: 20),
     );
   }
 
@@ -223,7 +249,6 @@ class _ReceiverPageState extends State<ReceivePage> {
               )
               .toBehaviorSubject();
       setState(() {
-        _isShared = true;
         _verifyStream = stream;
         _focus = v;
       });
@@ -236,9 +261,9 @@ class _ReceiverPageState extends State<ReceivePage> {
     });
   }
 
-  bool _isShared = false;
-  bool get isShared => _isShared;
-  set isShared(bool v) => setState(() => _isShared = v);
+  bool get isShared => _address?.shared ?? false;
+  bool get isUsed => _address?.used ?? false;
+  bool get isFresh => _address?.fresh ?? false;
 
   Address? _address;
   bool get isReady => _address != null;
@@ -279,20 +304,18 @@ class _ReceiverPageState extends State<ReceivePage> {
       masterAppkey: wallet.masterAppkey,
       index: index,
     );
-    focus = ReceivePageFocus.share;
-    if (mounted) {
-      setState(() {
-        _address = addr;
-        _isShared = false;
-      });
-    }
+    if (mounted) setState(() => _address = addr);
   }
 
   void updateToNextUnused() async {
     final addr = await wallet.superWallet.nextUnusedAddress(
       masterAppkey: wallet.masterAppkey,
     );
-    if (mounted) setState(() => _address = addr);
+    if (mounted) {
+      setState(() {
+        _address = addr;
+      });
+    }
   }
 
   @override
@@ -312,46 +335,35 @@ class _ReceiverPageState extends State<ReceivePage> {
     );
   }
 
-  Widget buildPickAddressButton(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: 16),
-      child: Align(
-        alignment: AlignmentDirectional.center,
-        child: OutlinedButton.icon(
-          onPressed:
-              _address == null
-                  ? null
-                  : () => openAddressPicker(context, _address!),
-          label: Text('#${_address?.index}', style: monospaceTextStyle),
-          icon: Icon(Icons.arrow_drop_down_rounded),
-        ),
-      ),
-    );
-  }
-
   Widget buildShareCard(BuildContext context) {
     final isFocused = focus == ReceivePageFocus.share;
 
     final theme = Theme.of(context);
+    final subtitle = Text(isShared ? 'Shared address' : 'Fresh address');
     final header = ListTile(
       shape: tileShape,
-      title: Text('Share address'),
+      contentPadding: tilePadding.copyWith(right: 8),
+      title: Text('Share'),
+      subtitle: isFocused ? subtitle : null,
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (!isFocused && isShared) Text('Shared'),
+          if (!isFocused) subtitle,
           TextButton.icon(
             onPressed:
                 _address == null
                     ? null
                     : () => openAddressPicker(context, _address!),
-            label: Text('#${_address?.index}', style: monospaceTextStyle),
+            label: Text(
+              '#${_address?.index}',
+              style: monospaceTextStyle.copyWith(
+                decoration: isUsed ? TextDecoration.lineThrough : null,
+              ),
+            ),
             icon: Icon(Icons.arrow_drop_down_rounded),
           ),
         ],
       ),
-      // trailing: (!isFocused && isShared) ? Text('Shared') : null,
-      contentPadding: tilePadding.copyWith(right: 8),
       onTap: switch (focus) {
         ReceivePageFocus.share => null,
         _ => () => focus = ReceivePageFocus.share,
@@ -363,49 +375,13 @@ class _ReceiverPageState extends State<ReceivePage> {
         fontFamily: monospaceTextStyle.fontFamily,
         color: theme.colorScheme.onSurfaceVariant,
       ),
-      textAlign: TextAlign.center,
+      textAlign: TextAlign.start,
     );
-
-    shaderCallback(Rect bounds) => RadialGradient(
-      center: Alignment.center,
-      radius: 1.5,
-      colors: [
-        Colors.transparent, // Transparent at the edges
-        theme.colorScheme.onSurfaceVariant,
-      ],
-      stops: const [0.0, 1.0],
-    ).createShader(bounds);
 
     final cardBody = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Stack(
-          alignment: AlignmentDirectional.center,
-          children: [
-            Padding(
-              padding: tilePadding,
-              child:
-                  isShared
-                      ? ShaderMask(
-                        shaderCallback: shaderCallback,
-                        child: ImageFiltered(
-                          imageFilter: blurFilter,
-                          enabled: isShared,
-                          child: addressText,
-                        ),
-                      )
-                      : addressText,
-            ),
-            if (isShared)
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Text(
-                  'Address shared',
-                  style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
-                ),
-              ),
-          ],
-        ),
+        Padding(padding: tilePadding, child: addressText),
         Padding(
           padding: EdgeInsets.symmetric(vertical: 12, horizontal: 20),
           child: Row(
@@ -513,7 +489,7 @@ class _ReceiverPageState extends State<ReceivePage> {
                           children: [
                             ListTile(
                               shape: tileShape,
-                              title: Text('Verify on device'),
+                              title: Text('Verify'),
                               subtitle:
                                   displayingDevices.isEmpty
                                       ? Text('Plug in a device to continue.')
@@ -541,8 +517,7 @@ class _ReceiverPageState extends State<ReceivePage> {
       color: theme.colorScheme.surfaceContainerLow,
       child: ListTile(
         shape: tileShape,
-        title: Text('Verify on device'),
-        //trailing: Icon(Icons.expand_more_rounded),
+        title: Text('Verify'),
         contentPadding: tilePadding,
         onTap: () => focus = ReceivePageFocus.verify,
       ),
@@ -599,17 +574,16 @@ class _ReceiverPageState extends State<ReceivePage> {
           );
         });
 
-        final detailsText = Text(switch (relevantTxs.length) {
+        final subtitle = Text(switch (relevantTxs.length) {
           1 => '1 transaction received',
           _ => '${relevantTxs.length} transactions received',
         });
-
         final header = ListTile(
           shape: tileShape,
           contentPadding: tilePadding,
-          title: Text('Payments'),
-          subtitle: isFocused ? detailsText : null,
-          trailing: isFocused ? null : detailsText,
+          title: Text('Receive'),
+          subtitle: isFocused ? subtitle : null,
+          trailing: isFocused ? null : subtitle,
           onTap: isFocused ? null : () => focus = ReceivePageFocus.awaitTx,
         );
         final activeCard = Card.outlined(
@@ -650,9 +624,18 @@ class _ReceiverPageState extends State<ReceivePage> {
     );
   }
 
+  void markAddressShared(BuildContext context, Address address) async {
+    final walletCtx = WalletContext.of(context)!;
+    await walletCtx.superWallet.markAddressShared(
+      masterAppkey: walletCtx.masterAppkey,
+      derivationIndex: address.index,
+    );
+    updateToIndex(address.index);
+  }
+
   void copyAddress(BuildContext context, Address address) {
     copyAction(context, 'Address', address.addressString);
-    isShared = true;
+    markAddressShared(context, address);
     focus = ReceivePageFocus.verify;
   }
 
@@ -700,7 +683,7 @@ class _ReceiverPageState extends State<ReceivePage> {
       },
     );
     if (isScanned ?? false) {
-      if (mounted) isShared = true;
+      if (context.mounted) markAddressShared(context, address);
       if (mounted) focus = ReceivePageFocus.verify;
     }
   }
