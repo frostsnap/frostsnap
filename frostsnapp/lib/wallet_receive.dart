@@ -358,25 +358,18 @@ class _ReceiverPageState extends State<ReceivePage> {
       shape: tileShape,
       contentPadding: tilePadding.copyWith(right: 8),
       title: Text('Share'),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        spacing: 12,
-        children: [
-          Text(isShared ? 'Shared' : 'Fresh'),
-          OutlinedButton.icon(
-            onPressed:
-                _address == null
-                    ? null
-                    : () => openAddressPicker(context, _address!),
-            label: Text(
-              '#${_address?.index}',
-              style: monospaceTextStyle.copyWith(
-                decoration: isUsed ? TextDecoration.lineThrough : null,
-              ),
-            ),
-            icon: Icon(Icons.arrow_drop_down_rounded),
+      trailing: TextButton.icon(
+        onPressed:
+            _address == null
+                ? null
+                : () => openAddressPicker(context, _address!),
+        label: Text(
+          '#${_address?.index}',
+          style: monospaceTextStyle.copyWith(
+            decoration: isUsed ? TextDecoration.lineThrough : null,
           ),
-        ],
+        ),
+        icon: Icon(Icons.arrow_drop_down_rounded),
       ),
       onTap: switch (focus) {
         ReceivePageFocus.share => null,
@@ -396,8 +389,8 @@ class _ReceiverPageState extends State<ReceivePage> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Padding(
-          padding: tilePadding,
-          child: AspectRatio(aspectRatio: 4, child: Center(child: addressText)),
+          padding: tilePadding.copyWith(top: 20, bottom: 20),
+          child: addressText,
         ),
         Padding(
           padding: EdgeInsets.symmetric(vertical: 12, horizontal: 20),
@@ -511,17 +504,17 @@ class _ReceiverPageState extends State<ReceivePage> {
                               minVerticalPadding: 16,
                             ),
                             Padding(
-                              padding: sectionPadding,
-                              child: AspectRatio(
-                                aspectRatio: 6,
-                                child: Text(
-                                  displayingDevices.isEmpty
-                                      ? 'Plug in a device to continue.'
-                                      : 'Verify that the pasted or scanned address matches the device display.',
-                                  softWrap: true,
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                  ),
+                              padding: sectionPadding.copyWith(
+                                top: 20,
+                                bottom: 36,
+                              ),
+                              child: Text(
+                                displayingDevices.isEmpty
+                                    ? 'Plug in a device to continue.'
+                                    : 'Verify that the pasted or scanned address matches the device display.',
+                                softWrap: true,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
                                 ),
                               ),
                             ),
@@ -621,7 +614,7 @@ class _ReceiverPageState extends State<ReceivePage> {
               ...txTiles,
               if (relevantTxs.isEmpty)
                 Padding(
-                  padding: EdgeInsets.fromLTRB(24, 4, 24, 24),
+                  padding: EdgeInsets.fromLTRB(24, 0, 24, 24),
                   child: AspectRatio(
                     aspectRatio: 4,
                     child: Center(
