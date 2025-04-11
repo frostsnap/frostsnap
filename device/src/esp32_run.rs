@@ -557,7 +557,7 @@ where
                             CommsMisc::DisplayBackupConfrimed,
                         )]);
                     }
-                    UiEvent::UpgradeConfirm { .. } => {
+                    UiEvent::UpgradeConfirm => {
                         if let Some(upgrade) = upgrade.as_mut() {
                             upgrade.upgrade_confirm();
                         }

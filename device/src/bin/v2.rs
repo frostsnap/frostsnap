@@ -704,7 +704,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         Some(location) => write!(
             &mut panic_buf,
             "{}:{} {}",
-            location.file().split('/').last().unwrap_or(""),
+            location.file().split('/').next_back().unwrap_or(""),
             location.line(),
             info
         ),

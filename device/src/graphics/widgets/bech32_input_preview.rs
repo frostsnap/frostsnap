@@ -18,7 +18,7 @@ const N_CHARACTERS: usize = 15 * 4 - 2;
 const GAP_WIDTH: u32 = 10;
 const FRAMEBUFFER_WIDTH: u32 = Bech32Framebuf::position_for_character(N_CHARACTERS);
 const FONT_SIZE: Size = Size::new(16, 24);
-const N_CHUNKS: usize = (N_CHARACTERS + 3) / 4;
+const N_CHUNKS: usize = N_CHARACTERS.div_ceil(4);
 
 #[derive(Debug)]
 pub struct Bech32InputPreview {
@@ -223,8 +223,10 @@ impl Bech32Framebuf {
 
         let window_start = self.current_position.saturating_sub(width) as usize;
         let window_width = width.min(self.current_position);
-        let left_padding = core::iter::repeat(COLORS.background)
-            .take(width.saturating_sub(self.current_position) as usize);
+        let left_padding = core::iter::repeat_n(
+            COLORS.background,
+            width.saturating_sub(self.current_position) as usize,
+        );
         let fb = &self.framebuffer;
         let color = self.color;
         let iterator = (0..target.bounding_box().size.height).flat_map(|y| {
