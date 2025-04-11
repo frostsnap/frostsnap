@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:collection';
 
 import 'package:collection/collection.dart';
@@ -206,12 +207,14 @@ enum ReceivePageFocus { share, verify, awaitTx }
 class ReceivePage extends StatefulWidget {
   final ScrollController? scrollController;
   final Wallet wallet;
+  final Stream<TxState> txStream;
   final int? derivationIndex;
 
   const ReceivePage({
     super.key,
     this.scrollController,
     required this.wallet,
+    required this.txStream,
     this.derivationIndex,
   });
 
@@ -220,6 +223,9 @@ class ReceivePage extends StatefulWidget {
 }
 
 class _ReceiverPageState extends State<ReceivePage> {
+  late final StreamSubscription txStreamSub;
+  List<Transaction> allTxs = [];
+
   BehaviorSubject<VerifyAddressProtocolState>? _verifyStream;
 
   ReceivePageFocus _focus = ReceivePageFocus.share;
@@ -273,8 +279,25 @@ class _ReceiverPageState extends State<ReceivePage> {
   void initState() {
     super.initState();
 
-    final index = widget.derivationIndex;
-    (index != null) ? updateToIndex(index) : updateToNextUnused();
+    final startIndex = widget.derivationIndex;
+    (startIndex != null) ? updateToIndex(startIndex) : updateToNextUnused();
+
+    txStreamSub = widget.txStream.listen((txState) {
+      if (context.mounted) {
+        Address? addr;
+        final index = _address?.index;
+        if (index != null) {
+          addr = wallet.superWallet.addressState(
+            masterAppkey: wallet.masterAppkey,
+            index: index,
+          );
+        }
+        setState(() {
+          allTxs = txState.txs;
+          if (addr != null) _address = addr;
+        });
+      }
+    });
   }
 
   @override
@@ -283,6 +306,7 @@ class _ReceiverPageState extends State<ReceivePage> {
     if (_focus == ReceivePageFocus.verify) {
       coord.cancelProtocol();
     }
+    txStreamSub.cancel();
   }
 
   void updateToIndex(int index, {ReceivePageFocus? next}) {
@@ -328,19 +352,18 @@ class _ReceiverPageState extends State<ReceivePage> {
 
   Widget buildShareCard(BuildContext context) {
     final isFocused = focus == ReceivePageFocus.share;
-
     final theme = Theme.of(context);
-    final subtitle = Text(isShared ? 'Shared address' : 'Fresh address');
+
     final header = ListTile(
       shape: tileShape,
       contentPadding: tilePadding.copyWith(right: 8),
       title: Text('Share'),
-      subtitle: isFocused ? subtitle : null,
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
+        spacing: 12,
         children: [
-          if (!isFocused) subtitle,
-          TextButton.icon(
+          Text(isShared ? 'Shared' : 'Fresh'),
+          OutlinedButton.icon(
             onPressed:
                 _address == null
                     ? null
@@ -372,7 +395,10 @@ class _ReceiverPageState extends State<ReceivePage> {
     final cardBody = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Padding(padding: tilePadding, child: addressText),
+        Padding(
+          padding: tilePadding,
+          child: AspectRatio(aspectRatio: 4, child: Center(child: addressText)),
+        ),
         Padding(
           padding: EdgeInsets.symmetric(vertical: 12, horizontal: 20),
           child: Row(
@@ -481,15 +507,23 @@ class _ReceiverPageState extends State<ReceivePage> {
                             ListTile(
                               shape: tileShape,
                               title: Text('Verify'),
-                              subtitle:
-                                  displayingDevices.isEmpty
-                                      ? Text('Plug in a device to continue.')
-                                      : Text(
-                                        'Verify that the pasted or scanned address matches the device display.',
-                                      ),
-                              isThreeLine: displayingDevices.isNotEmpty,
                               contentPadding: tilePadding,
                               minVerticalPadding: 16,
+                            ),
+                            Padding(
+                              padding: sectionPadding,
+                              child: AspectRatio(
+                                aspectRatio: 6,
+                                child: Text(
+                                  displayingDevices.isEmpty
+                                      ? 'Plug in a device to continue.'
+                                      : 'Verify that the pasted or scanned address matches the device display.',
+                                  softWrap: true,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
                             ),
                             Padding(
                               padding: sectionPadding,
@@ -528,89 +562,94 @@ class _ReceiverPageState extends State<ReceivePage> {
     final walletCtx = WalletContext.of(context)!;
     final isFocused = focus == ReceivePageFocus.awaitTx;
     final theme = Theme.of(context);
-    return StreamBuilder(
-      stream: walletCtx.txStream,
-      builder: (context, snapshot) {
-        final now = DateTime.now();
-        final chainTipHeight = walletCtx.wallet.superWallet.height();
-        final relevantTxs =
-            (snapshot.data?.txs ?? []).where((tx) {
-              if (thisAddr == null || thisSpk == null) return false;
-              final netSpent = tx.netSpentValueForSpk(spk: thisSpk);
-              final netCreated = tx.netCreatedValueForSpk(spk: thisSpk);
-              return ((netSpent ?? 0) > 0 || netCreated > 0);
-            }).toList();
-        final txTiles = relevantTxs.map((tx) {
-          final txDetails = TxDetailsModel(
-            tx: tx,
-            chainTipHeight: chainTipHeight,
-            now: now,
-          );
-          return TxSentOrReceivedTile(
-            txDetails: txDetails,
-            onTap:
-                () => showBottomSheetOrDialog(
-                  context,
-                  titleText: 'Transaction Details',
-                  builder:
-                      (context, scrollController) => walletCtx.wrap(
-                        TxDetailsPage(
-                          scrollController: scrollController,
-                          txStates: walletCtx.txStream,
-                          txDetails: txDetails,
-                        ),
-                      ),
-                ),
-          );
-        });
+    final now = DateTime.now();
+    final chainTipHeight = walletCtx.wallet.superWallet.height();
 
-        final subtitle = Text(switch (relevantTxs.length) {
-          1 => '1 transaction received',
-          _ => '${relevantTxs.length} transactions received',
-        });
-        final header = ListTile(
-          shape: tileShape,
-          contentPadding: tilePadding,
-          title: Text('Receive'),
-          subtitle: isFocused ? subtitle : null,
-          trailing: isFocused ? null : subtitle,
-          onTap: isFocused ? null : () => focus = ReceivePageFocus.awaitTx,
-        );
-        final activeCard = Card.outlined(
-          margin: sectionPadding,
-          color: theme.colorScheme.surfaceContainerHigh,
-          child: Column(
+    final relevantTxs =
+        allTxs.where((tx) {
+          if (thisAddr == null || thisSpk == null) return false;
+          final netSpent = tx.netSpentValueForSpk(spk: thisSpk) ?? 0;
+          final netCreated = tx.netCreatedValueForSpk(spk: thisSpk);
+          return (netSpent > 0 || netCreated > 0);
+        }).toList();
+    final txTiles = relevantTxs.map((tx) {
+      final txDetails = TxDetailsModel(
+        tx: tx,
+        chainTipHeight: chainTipHeight,
+        now: now,
+      );
+      return TxSentOrReceivedTile(
+        txDetails: txDetails,
+        onTap:
+            () => showBottomSheetOrDialog(
+              context,
+              titleText: 'Transaction Details',
+              builder:
+                  (context, scrollController) => walletCtx.wrap(
+                    TxDetailsPage(
+                      scrollController: scrollController,
+                      txStates: walletCtx.txStream,
+                      txDetails: txDetails,
+                    ),
+                  ),
+            ),
+      );
+    });
+    final subtitle = Text(switch (relevantTxs.length) {
+      1 => '1 transaction',
+      _ => '${relevantTxs.length} transactions',
+    });
+    final header = ListTile(
+      shape: tileShape,
+      contentPadding: tilePadding,
+      title: Text('Receive'),
+      trailing: subtitle,
+      onTap: isFocused ? null : () => focus = ReceivePageFocus.awaitTx,
+    );
+    final activeCard = Card.outlined(
+      margin: sectionPadding,
+      color: theme.colorScheme.surfaceContainerHigh,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          header,
+          Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.start,
             children: [
-              header,
               ...txTiles,
               if (relevantTxs.isEmpty)
                 Padding(
                   padding: EdgeInsets.fromLTRB(24, 4, 24, 24),
-                  child: Text(
-                    'Waiting for transactions...',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: theme.colorScheme.outline),
+                  child: AspectRatio(
+                    aspectRatio: 4,
+                    child: Center(
+                      child: Text(
+                        'Waiting for transactions...',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: theme.colorScheme.outline),
+                      ),
+                    ),
                   ),
                 ),
             ],
           ),
-        );
-        final inactiveCard = Card.outlined(
-          margin: isFocused ? tilePadding : sectionPadding,
-          color: theme.colorScheme.surfaceContainerLow,
-          child: Column(mainAxisSize: MainAxisSize.min, children: [header]),
-        );
-        return AnimatedCrossFade(
-          firstChild: activeCard,
-          secondChild: inactiveCard,
-          crossFadeState:
-              isFocused ? CrossFadeState.showFirst : CrossFadeState.showSecond,
-          duration: sectionHideDuration,
-          sizeCurve: sectionHideCurve,
-        );
-      },
+        ],
+      ),
+    );
+    final inactiveCard = Card.outlined(
+      margin: isFocused ? tilePadding : sectionPadding,
+      color: theme.colorScheme.surfaceContainerLow,
+      child: Column(mainAxisSize: MainAxisSize.min, children: [header]),
+    );
+    return AnimatedCrossFade(
+      firstChild: activeCard,
+      secondChild: inactiveCard,
+      crossFadeState:
+          isFocused ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+      duration: sectionHideDuration,
+      sizeCurve: sectionHideCurve,
     );
   }
 

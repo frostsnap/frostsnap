@@ -850,6 +850,7 @@ class WalletBottomBar extends StatelessWidget {
                             (context, scrollController) => walletCtx.wrap(
                               ReceivePage(
                                 wallet: walletCtx.wallet,
+                                txStream: walletCtx.txStream,
                                 scrollController: scrollController,
                               ),
                             ),
