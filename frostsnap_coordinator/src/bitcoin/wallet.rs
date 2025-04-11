@@ -6,7 +6,7 @@ use super::{
 use crate::persist::Persisted;
 use anyhow::{anyhow, Context, Result};
 use bdk_chain::{
-    bitcoin::{self, bip32, Amount, OutPoint, Script, SignedAmount, Txid},
+    bitcoin::{self, bip32, Amount, OutPoint, Script, ScriptBuf, TxOut, Txid},
     indexed_tx_graph::{self},
     indexer::keychain_txout::{self, KeychainTxOutIndex},
     local_chain,
@@ -23,6 +23,7 @@ use frostsnap_core::{
     tweak::BitcoinAccount,
 };
 use std::{
+    collections::{HashMap, HashSet},
     ops::RangeBounds,
     str::FromStr,
     sync::{Arc, Mutex},
@@ -92,6 +93,27 @@ impl CoordSuperWallet {
 
     pub fn get_tx(&self, txid: Txid) -> Option<Arc<bitcoin::Transaction>> {
         self.tx_graph.graph().get_tx(txid)
+    }
+
+    pub fn get_txout(&self, outpoint: OutPoint) -> Option<bitcoin::TxOut> {
+        self.tx_graph.graph().get_txout(outpoint).cloned()
+    }
+
+    pub fn get_prevouts(
+        &self,
+        outpoints: impl Iterator<Item = OutPoint>,
+    ) -> HashMap<OutPoint, TxOut> {
+        outpoints
+            .into_iter()
+            .filter_map(|op| Some((op, self.get_txout(op)?)))
+            .collect()
+    }
+
+    pub fn is_spk_mine(&self, master_appkey: MasterAppkey, spk: ScriptBuf) -> bool {
+        self.tx_graph
+            .index
+            .index_of_spk(spk)
+            .is_some_and(|((key, _), _)| *key == master_appkey)
     }
 
     fn descriptors_for_key(
@@ -354,6 +376,7 @@ impl CoordSuperWallet {
         txs.sort_unstable_by_key(|tx| core::cmp::Reverse(tx.chain_position));
         txs.into_iter()
             .filter_map(|canonical_tx| {
+                let inner = canonical_tx.tx_node.tx.clone();
                 let txid = canonical_tx.tx_node.txid;
                 let confirmation_time = match canonical_tx.chain_position {
                     ChainPosition::Confirmed(conf_time) => Some(ConfirmationTime {
@@ -362,47 +385,28 @@ impl CoordSuperWallet {
                     }),
                     _ => None,
                 };
-                let net_value = self.tx_graph.index.net_value(
-                    &canonical_tx.tx_node.tx,
-                    Self::key_index_range(master_appkey),
-                );
-                if net_value == SignedAmount::ZERO {
-                    return None;
-                }
-                let fee = self
-                    .tx_graph
-                    .graph()
-                    .calculate_fee(&canonical_tx.tx_node)
-                    .map(Amount::to_sat)
-                    .ok();
-                let recipients = canonical_tx
-                    .tx_node
-                    .tx
+                let last_seen = canonical_tx.tx_node.last_seen_unconfirmed;
+                let prevouts =
+                    self.get_prevouts(inner.input.iter().map(|txin| txin.previous_output));
+                let is_mine = inner
                     .output
                     .iter()
-                    .enumerate()
-                    .map(|(vout, txout)| {
-                        let is_mine = self
-                            .tx_graph
-                            .index
-                            .index_of_spk(txout.script_pubkey.clone())
-                            .is_some_and(|((key, _), _)| *key == master_appkey);
-                        TxOutInfo {
-                            outpoint: bitcoin::OutPoint::new(txid, vout as u32),
-                            txout: txout.clone(),
-                            is_mine,
-                        }
+                    .chain(prevouts.values())
+                    .map(|txout| txout.script_pubkey.clone())
+                    .filter(|spk| self.is_spk_mine(master_appkey, spk.clone()))
+                    .collect::<HashSet<ScriptBuf>>();
+                if is_mine.is_empty() {
+                    None
+                } else {
+                    Some(Transaction {
+                        inner,
+                        txid,
+                        confirmation_time,
+                        last_seen,
+                        prevouts,
+                        is_mine,
                     })
-                    .collect();
-                Some(Transaction {
-                    inner: canonical_tx.tx_node.tx.clone(),
-                    confirmation_time,
-                    net_value: net_value.to_sat(),
-                    last_seen: canonical_tx.tx_node.last_seen_unconfirmed,
-                    txid,
-                    fee,
-                    recipients,
-                })
+                }
             })
             .collect()
     }
@@ -812,20 +816,14 @@ pub struct AddressInfo {
 
 #[derive(Clone, Debug)]
 pub struct Transaction {
-    pub net_value: i64,
     pub inner: Arc<bitcoin::Transaction>,
+    pub txid: Txid,
+
     pub confirmation_time: Option<ConfirmationTime>,
     pub last_seen: Option<u64>,
-    pub txid: Txid,
-    pub fee: Option<u64>,
-    pub recipients: Vec<TxOutInfo>,
-}
 
-#[derive(Debug, Clone)]
-pub struct TxOutInfo {
-    pub outpoint: bitcoin::OutPoint,
-    pub txout: bitcoin::TxOut,
-    pub is_mine: bool,
+    pub prevouts: HashMap<OutPoint, TxOut>,
+    pub is_mine: HashSet<ScriptBuf>,
 }
 
 #[derive(Clone, Debug)]

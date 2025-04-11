@@ -548,7 +548,7 @@ class ChainStatusIcon extends StatelessWidget {
 
     if (chainStatus.state == ChainStatusState.Connected) {
       onPressed = () {
-        WalletContext.of(context)?.superWallet?.reconnect();
+        WalletContext.of(context)?.superWallet.reconnect();
       };
     } else {
       onPressed = null;

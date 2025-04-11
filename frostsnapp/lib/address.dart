@@ -19,7 +19,7 @@ class AddressPage extends StatelessWidget {
 
   void _showQrDialog(BuildContext context) {
     final qrCode = QrCode(8, QrErrorCorrectLevel.L);
-    qrCode.addData(address.addressString);
+    qrCode.addData(address.address());
     final qrImage = QrImage(qrCode);
     showDialog(
       context: context,
@@ -83,12 +83,12 @@ class AddressPage extends StatelessWidget {
                     SizedBox(height: 16),
                     GestureDetector(
                       child: chunkedAddressFormat(
-                        address.addressString,
+                        address.address(),
                         backgroundColor: theme.colorScheme.surfaceContainerLow,
                         textColor: theme.colorScheme.onSurface,
                       ),
                       onTap: () {
-                        copyToClipboard(context, address.addressString);
+                        copyToClipboard(context, address.address());
                       },
                     ),
                     SizedBox(height: 16),
@@ -98,10 +98,7 @@ class AddressPage extends StatelessWidget {
                         IconButton(
                           iconSize: 30.0,
                           onPressed:
-                              () => copyToClipboard(
-                                context,
-                                address.addressString,
-                              ),
+                              () => copyToClipboard(context, address.address()),
                           icon: Icon(Icons.copy),
                         ),
                         SizedBox(width: 16),
@@ -120,7 +117,7 @@ class AddressPage extends StatelessWidget {
                       onPressed: () async {
                         // copy regardless in case the user forgot
                         Clipboard.setData(
-                          ClipboardData(text: address.addressString),
+                          ClipboardData(text: address.address()),
                         );
                         await _showVerificationDialog(
                           context,

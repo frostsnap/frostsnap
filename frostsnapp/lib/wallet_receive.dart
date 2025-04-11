@@ -127,13 +127,6 @@ class _AddressListState extends State<AddressList> {
         child: Text('Used', style: TextStyle(color: theme.colorScheme.error)),
       ),
     );
-    final freshTag = Card.outlined(
-      color: Colors.transparent,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-        child: Text('Fresh', style: TextStyle(color: Colors.greenAccent)),
-      ),
-    );
 
     return ListTile(
       key: key,
@@ -156,7 +149,7 @@ class _AddressListState extends State<AddressList> {
         ),
       ),
       title: Text(
-        spacedHex(addr.addressString),
+        spacedHex(addr.address()),
         style: monospaceTextStyle.copyWith(
           color: addr.used ? theme.colorScheme.onSurfaceVariant : null,
         ),
@@ -165,14 +158,7 @@ class _AddressListState extends State<AddressList> {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         spacing: 4,
-        children: [
-          switch ((addr.used, addr.shared)) {
-            (true, _) => usedTag,
-            (_, true) => SizedBox(),
-            (false, false) => freshTag,
-          },
-          Icon(Icons.chevron_right_rounded),
-        ],
+        children: [if (addr.used) usedTag, Icon(Icons.chevron_right_rounded)],
       ),
       contentPadding: EdgeInsets.symmetric(horizontal: 20),
     );
@@ -279,7 +265,7 @@ class _ReceiverPageState extends State<ReceivePage> {
 
   QrImage addressQrImage(Address address) {
     final qrCode = QrCode(8, QrErrorCorrectLevel.L);
-    qrCode.addData(address.addressString);
+    qrCode.addData(address.address());
     return QrImage(qrCode);
   }
 
@@ -299,12 +285,17 @@ class _ReceiverPageState extends State<ReceivePage> {
     }
   }
 
-  void updateToIndex(int index) {
+  void updateToIndex(int index, {ReceivePageFocus? next}) {
     final addr = wallet.superWallet.addressState(
       masterAppkey: wallet.masterAppkey,
       index: index,
     );
-    if (mounted) setState(() => _address = addr);
+    if (mounted) {
+      setState(() {
+        _address = addr;
+        if (next != null) _focus = next;
+      });
+    }
   }
 
   void updateToNextUnused() async {
@@ -370,7 +361,7 @@ class _ReceiverPageState extends State<ReceivePage> {
       },
     );
     final addressText = Text(
-      spacedHex(_address?.addressString ?? ''),
+      spacedHex(_address?.address() ?? ''),
       style: theme.textTheme.labelLarge?.copyWith(
         fontFamily: monospaceTextStyle.fontFamily,
         color: theme.colorScheme.onSurfaceVariant,
@@ -532,7 +523,8 @@ class _ReceiverPageState extends State<ReceivePage> {
   }
 
   Widget buildAwaitTxCard(BuildContext context) {
-    final thisAddr = _address?.addressString;
+    final thisAddr = _address?.address();
+    final thisSpk = _address?.spk();
     final walletCtx = WalletContext.of(context)!;
     final isFocused = focus == ReceivePageFocus.awaitTx;
     final theme = Theme.of(context);
@@ -543,12 +535,10 @@ class _ReceiverPageState extends State<ReceivePage> {
         final chainTipHeight = walletCtx.wallet.superWallet.height();
         final relevantTxs =
             (snapshot.data?.txs ?? []).where((tx) {
-              if (thisAddr == null) return false;
-              final hasReceivedToThisAddress = tx.recipients
-                  .map((a) => a.address(network: walletCtx.network))
-                  .nonNulls
-                  .any((addr) => thisAddr == addr);
-              return hasReceivedToThisAddress;
+              if (thisAddr == null || thisSpk == null) return false;
+              final netSpent = tx.netSpentValueForSpk(spk: thisSpk);
+              final netCreated = tx.netCreatedValueForSpk(spk: thisSpk);
+              return ((netSpent ?? 0) > 0 || netCreated > 0);
             }).toList();
         final txTiles = relevantTxs.map((tx) {
           final txDetails = TxDetailsModel(
@@ -634,7 +624,7 @@ class _ReceiverPageState extends State<ReceivePage> {
   }
 
   void copyAddress(BuildContext context, Address address) {
-    copyAction(context, 'Address', address.addressString);
+    copyAction(context, 'Address', address.address());
     markAddressShared(context, address);
     focus = ReceivePageFocus.verify;
   }
@@ -696,7 +686,9 @@ class _ReceiverPageState extends State<ReceivePage> {
       builder: (context, scrollController) {
         return walletCtx.wrap(
           AddressList(
-            onTap: (context, addr) => updateToIndex(addr.index),
+            onTap:
+                (context, addr) =>
+                    updateToIndex(addr.index, next: ReceivePageFocus.share),
             showUsed: address.used,
             scrollToDerivationIndex: address.index,
             scrollController: scrollController,

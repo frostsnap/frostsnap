@@ -5,11 +5,15 @@ use crate::sink_wrap::SinkWrap;
 pub use crate::FfiCoordinator;
 pub use crate::{FfiQrEncoder, FfiQrReader, QrDecoderStatus};
 use anyhow::{anyhow, Context, Result};
+pub use bitcoin::address::NetworkChecked as RNetworkChecked;
 use bitcoin::hex::DisplayHex as _;
 pub use bitcoin::psbt::Psbt as BitcoinPsbt;
+pub use bitcoin::Address as RAddress;
 pub use bitcoin::Network as RBitcoinNetwork;
+pub use bitcoin::OutPoint as ROutPoint;
 pub use bitcoin::ScriptBuf as RScriptBuf;
 pub use bitcoin::Transaction as RTransaction;
+pub use bitcoin::TxOut as RTxOut;
 use bitcoin::{network, Txid};
 use flutter_rust_bridge::{frb, RustOpaque, StreamSink, SyncReturn};
 use frostsnap_coordinator::bitcoin::chain_sync::{default_electrum_server, SUPPORTED_NETWORKS};
@@ -20,7 +24,6 @@ pub use frostsnap_coordinator::bitcoin::{
 };
 pub use frostsnap_coordinator::firmware_upgrade::FirmwareUpgradeConfirmState;
 pub use frostsnap_coordinator::frostsnap_core;
-use frostsnap_coordinator::frostsnap_core::bitcoin_transaction::RootOwner;
 use frostsnap_coordinator::frostsnap_core::coordinator::CoordFrostKey;
 use frostsnap_coordinator::frostsnap_core::device::KeyPurpose;
 pub use frostsnap_coordinator::verify_address::VerifyAddressProtocolState;
@@ -39,7 +42,7 @@ pub use frostsnap_core::{
 use lazy_static::lazy_static;
 pub use std::collections::BTreeMap;
 pub use std::collections::HashMap;
-use std::collections::HashSet;
+pub use std::collections::HashSet;
 use std::ops::Deref;
 use std::path::Path;
 pub use std::path::PathBuf;
@@ -94,39 +97,112 @@ impl TxOutInfo {
 
 #[derive(Debug, Clone)]
 pub struct Transaction {
-    pub net_value: i64,
     pub inner: RustOpaque<RTransaction>,
+    pub txid: String,
     pub confirmation_time: Option<ConfirmationTime>,
     pub last_seen: Option<u64>,
-    pub txid: String,
-    pub fee: Option<u64>,
-    pub recipients: Vec<TxOutInfo>,
+    pub prevouts: RustOpaque<HashMap<ROutPoint, RTxOut>>,
+    pub is_mine: RustOpaque<HashSet<RScriptBuf>>,
 }
 
 impl From<frostsnap_coordinator::bitcoin::wallet::Transaction> for Transaction {
     fn from(value: frostsnap_coordinator::bitcoin::wallet::Transaction) -> Self {
         Self {
-            net_value: value.net_value,
             inner: RustOpaque::from(value.inner),
+            txid: value.txid.to_string(),
             confirmation_time: value.confirmation_time,
             last_seen: value.last_seen,
-            txid: value.txid.to_string(),
-            fee: value.fee,
-            recipients: value
-                .recipients
-                .into_iter()
-                .map(|r| TxOutInfo {
-                    vout: r.outpoint.vout as _,
-                    amount: r.txout.value.to_sat(),
-                    script_pubkey: RustOpaque::new(r.txout.script_pubkey),
-                    is_mine: r.is_mine,
-                })
-                .collect(),
+            prevouts: RustOpaque::new(value.prevouts),
+            is_mine: RustOpaque::new(value.is_mine),
         }
     }
 }
 
 impl Transaction {
+    /// Sum of spent outputs.
+    ///
+    /// Returns null if any prevout is missing.
+    pub fn net_spent_value(
+        &self,
+        filter: Option<RustOpaque<HashSet<RScriptBuf>>>,
+    ) -> SyncReturn<Option<u64>> {
+        SyncReturn((|| -> Option<u64> {
+            let prevouts = self
+                .inner
+                .input
+                .iter()
+                .map(|txin| self.prevouts.get(&txin.previous_output))
+                .collect::<Option<Vec<_>>>()?;
+            Some(
+                prevouts
+                    .into_iter()
+                    .filter(|prevout| {
+                        match &filter {
+                            Some(filter) => filter.contains(&prevout.script_pubkey),
+                            // No filter.
+                            None => true,
+                        }
+                    })
+                    .map(|prevout| prevout.value.to_sat())
+                    .sum(),
+            )
+        })())
+    }
+
+    /// Sum of created outputs.
+    pub fn net_created_value(
+        &self,
+        filter: Option<RustOpaque<HashSet<RScriptBuf>>>,
+    ) -> SyncReturn<u64> {
+        SyncReturn(
+            self.inner
+                .output
+                .iter()
+                .filter(|txout| {
+                    match &filter {
+                        Some(filter) => filter.contains(&txout.script_pubkey),
+                        // No filter.
+                        None => true,
+                    }
+                })
+                .map(|txout| txout.value.to_sat())
+                .sum(),
+        )
+    }
+
+    pub fn net_spent_value_for_spk(&self, spk: RustOpaque<RScriptBuf>) -> SyncReturn<Option<u64>> {
+        self.net_spent_value(Some(RustOpaque::new([spk.as_script().to_owned()].into())))
+    }
+
+    pub fn net_created_value_for_spk(&self, spk: RustOpaque<RScriptBuf>) -> SyncReturn<u64> {
+        self.net_created_value(Some(RustOpaque::new([spk.as_script().to_owned()].into())))
+    }
+
+    /// Net effect on our owned balance.
+    pub fn net_balance_effect(&self) -> SyncReturn<Option<i64>> {
+        SyncReturn((|| -> Option<i64> {
+            let spent: i64 = self
+                .net_spent_value(Some(self.is_mine.clone()))
+                .0?
+                .try_into()
+                .expect("net spent value must convert to i64");
+            let received: i64 = self
+                .net_created_value(Some(self.is_mine.clone()))
+                .0
+                .try_into()
+                .expect("net created value must convert to i64");
+            Some(received.saturating_sub(spent))
+        })())
+    }
+
+    pub fn fee(&self) -> SyncReturn<Option<u64>> {
+        SyncReturn((|| -> Option<u64> {
+            let spent = self.net_spent_value(None).0?;
+            let received = self.net_created_value(None).0;
+            Some(spent.saturating_sub(received))
+        })())
+    }
+
     pub fn timestamp(&self) -> SyncReturn<Option<u64>> {
         SyncReturn(
             self.confirmation_time
@@ -139,8 +215,24 @@ impl Transaction {
     /// Feerate in sats/vbyte.
     pub fn feerate(&self) -> SyncReturn<Option<f64>> {
         SyncReturn(|| -> Option<f64> {
-            Some(((self.fee?) as f64) / (self.inner.vsize() as f64))
+            Some(((self.fee().0?) as f64) / (self.inner.vsize() as f64))
         }())
+    }
+
+    pub fn recipients(&self) -> SyncReturn<Vec<TxOutInfo>> {
+        SyncReturn(
+            self.inner
+                .output
+                .iter()
+                .zip(0_u32..)
+                .map(|(txout, vout)| TxOutInfo {
+                    vout,
+                    amount: txout.value.to_sat(),
+                    script_pubkey: RustOpaque::new(txout.script_pubkey.clone()),
+                    is_mine: self.is_mine.contains(&txout.script_pubkey),
+                })
+                .collect(),
+        )
     }
 
     /// Return a transaction with the following signatures added.
@@ -1150,39 +1242,29 @@ impl Coordinator {
                         let witness = bitcoin::Witness::from_slice(&[schnorr_sig.to_vec()]);
                         txin.witness = witness;
                     }
-                    let master_appkey = coord
-                        .get_frost_key(key_id)?
-                        .complete_key
-                        .as_ref()?
-                        .master_appkey;
-                    let net_value = tx_temp
-                        .net_value()
-                        .get(&RootOwner::Local(master_appkey))
-                        .copied()
-                        .unwrap_or(0);
+                    let is_mine = tx_temp
+                        .iter_locally_owned_inputs()
+                        .map(|(_, _, spk)| spk.spk())
+                        .chain(
+                            tx_temp
+                                .iter_locally_owned_outputs()
+                                .map(|(_, _, spk)| spk.spk()),
+                        )
+                        .collect::<HashSet<RScriptBuf>>();
+                    let prevouts = tx_temp
+                        .inputs()
+                        .iter()
+                        .map(|input| (input.outpoint(), input.txout()))
+                        .collect::<HashMap<bitcoin::OutPoint, bitcoin::TxOut>>();
                     Some(SignedTxDetails {
                         session_id: session.init.group_request.session_id(),
                         tx: Transaction {
-                            net_value,
                             inner: RustOpaque::new(raw_tx),
+                            txid: txid.to_string(),
                             confirmation_time: None,
                             last_seen: None,
-                            txid: txid.to_string(),
-                            fee: tx_temp.fee(),
-                            recipients: tx_temp
-                                .outputs()
-                                .iter()
-                                .enumerate()
-                                .map(|(vout, output)| TxOutInfo {
-                                    vout: vout as _,
-                                    amount: output.value,
-                                    script_pubkey: RustOpaque::new(output.owner().spk()),
-                                    is_mine: match output.owner().local_owner_key() {
-                                        Some(this_appkey) => this_appkey == master_appkey,
-                                        None => false,
-                                    },
-                                })
-                                .collect(),
+                            prevouts: RustOpaque::new(prevouts),
+                            is_mine: RustOpaque::new(is_mine),
                         },
                     })
                 }
@@ -1371,38 +1453,64 @@ impl UnsignedTx {
         }
     }
 
-    pub fn details(&self, master_appkey: MasterAppkey) -> SyncReturn<Transaction> {
-        use frostsnap_core::bitcoin_transaction::RootOwner;
+    pub fn details(
+        &self,
+        super_wallet: SuperWallet,
+        master_appkey: MasterAppkey,
+    ) -> SyncReturn<Transaction> {
+        let super_wallet = super_wallet.inner.lock().unwrap();
         let tx_temp = &*self.template_tx;
         let raw_tx = tx_temp.to_rust_bitcoin_tx();
         let txid = raw_tx.compute_txid();
-        let net_value = tx_temp
-            .net_value()
-            .get(&RootOwner::Local(master_appkey))
-            .copied()
-            .unwrap_or(0);
+        // let net_value = tx_temp
+        //     .net_value()
+        //     .get(&RootOwner::Local(master_appkey))
+        //     .copied()
+        //     .unwrap_or(0);
         SyncReturn(Transaction {
-            net_value,
-            inner: RustOpaque::new(raw_tx),
+            txid: txid.to_string(),
             confirmation_time: None,
             last_seen: None,
-            txid: txid.to_string(),
-            fee: tx_temp.fee(),
-            recipients: tx_temp
-                .outputs()
-                .iter()
-                .enumerate()
-                .map(|(vout, output)| TxOutInfo {
-                    vout: vout as _,
-                    amount: output.value,
-                    script_pubkey: RustOpaque::new(output.owner().spk()),
-                    is_mine: match output.owner().local_owner_key() {
-                        Some(this_appkey) => this_appkey == master_appkey,
-                        None => false,
-                    },
-                })
-                .collect(),
+            prevouts: RustOpaque::new(
+                super_wallet.get_prevouts(raw_tx.input.iter().map(|txin| txin.previous_output)),
+            ),
+            is_mine: RustOpaque::new(
+                raw_tx
+                    .output
+                    .iter()
+                    .chain(
+                        super_wallet
+                            .get_prevouts(raw_tx.input.iter().map(|txin| txin.previous_output))
+                            .values(),
+                    )
+                    .map(|txout| txout.script_pubkey.clone())
+                    .filter(|spk| super_wallet.is_spk_mine(master_appkey, spk.clone()))
+                    .collect::<HashSet<RScriptBuf>>(),
+            ),
+            inner: RustOpaque::new(raw_tx),
         })
+        // SyncReturn(Transaction {
+        //     net_value,
+        //     inner: RustOpaque::new(raw_tx),
+        //     confirmation_time: None,
+        //     last_seen: None,
+        //     txid: txid.to_string(),
+        //     fee: tx_temp.fee(),
+        //     recipients: tx_temp
+        //         .outputs()
+        //         .iter()
+        //         .enumerate()
+        //         .map(|(vout, output)| TxOutInfo {
+        //             vout: vout as _,
+        //             amount: output.value,
+        //             script_pubkey: RustOpaque::new(output.owner().spk()),
+        //             is_mine: match output.owner().local_owner_key() {
+        //                 Some(this_appkey) => this_appkey == master_appkey,
+        //                 None => false,
+        //             },
+        //         })
+        //         .collect(),
+        // })
     }
 
     pub fn complete(&self, signatures: Vec<EncodedSignature>) -> SignedTx {
@@ -1470,24 +1578,24 @@ impl UnsignedTx {
 
 #[derive(Clone, Debug)]
 pub struct Address {
+    pub inner: RustOpaque<RAddress<RNetworkChecked>>,
     pub index: u32,
-    pub address_string: String,
     pub used: bool,
     pub shared: bool,
     pub fresh: bool,
-    pub external: bool,
+    pub is_external: bool,
     pub derivation_path: String,
 }
 
 impl From<frostsnap_coordinator::bitcoin::wallet::AddressInfo> for Address {
     fn from(value: frostsnap_coordinator::bitcoin::wallet::AddressInfo) -> Self {
         let address = Self {
+            inner: RustOpaque::new(value.address),
             index: value.index,
-            address_string: value.address.to_string(),
             used: value.used,
             shared: value.shared,
             fresh: value.fresh,
-            external: value.external,
+            is_external: value.external,
             derivation_path: value
                 .derivation_path
                 .iter()
@@ -1499,20 +1607,64 @@ impl From<frostsnap_coordinator::bitcoin::wallet::AddressInfo> for Address {
     }
 }
 
+impl Address {
+    pub fn address(&self) -> SyncReturn<String> {
+        SyncReturn(self.inner.to_string())
+    }
+
+    pub fn spk(&self) -> SyncReturn<RustOpaque<RScriptBuf>> {
+        SyncReturn(RustOpaque::new(self.inner.script_pubkey()))
+    }
+}
+
 pub struct TxState {
     pub txs: Vec<Transaction>,
-    pub balance: u64,
+    pub balance: i64,
+    pub untrusted_pending_balance: i64,
 }
 
 impl From<Vec<frostsnap_coordinator::bitcoin::wallet::Transaction>> for TxState {
     fn from(txs: Vec<frostsnap_coordinator::bitcoin::wallet::Transaction>) -> Self {
-        Self {
-            balance: txs
-                .iter()
-                .fold(0i64, |acc, tx| acc + tx.net_value)
+        let txs = txs
+            .into_iter()
+            .map(From::from)
+            .collect::<Vec<Transaction>>();
+
+        let mut balance = 0_i64;
+        let mut untrusted_pending_balance = 0_i64;
+
+        for tx in &txs {
+            let filter = Some(tx.is_mine.clone());
+            let net_spent: i64 = tx
+                .net_spent_value(filter.clone())
+                .0
+                .unwrap_or(0)
                 .try_into()
-                .unwrap_or(0),
-            txs: txs.into_iter().map(From::from).collect(),
+                .expect("spent value must fit into i64");
+            let net_created: i64 = tx
+                .net_created_value(filter)
+                .0
+                .try_into()
+                .expect("created value must fit into i64");
+            if net_spent == 0 && tx.confirmation_time.is_none() {
+                untrusted_pending_balance += net_created;
+            } else {
+                balance += net_created;
+                balance -= net_spent;
+            }
+        }
+
+        // Workaround as we are too lazy to exclude spends from unconfirmed as
+        // `untrusted_pending_balance`.
+        if balance < 0 {
+            untrusted_pending_balance += balance;
+            balance = 0;
+        }
+
+        Self {
+            balance,
+            untrusted_pending_balance,
+            txs,
         }
     }
 }
@@ -2021,7 +2173,7 @@ impl ActiveSignSession {
 
         SyncReturn(state)
     }
-    pub fn details(&self, master_appkey: MasterAppkey) -> SyncReturn<SigningDetails> {
+    pub fn details(&self) -> SyncReturn<SigningDetails> {
         let session_init = &self.0.init;
 
         let res = match session_init.group_request.sign_task.clone() {
@@ -2034,33 +2186,28 @@ impl ActiveSignSession {
             WireSignTask::BitcoinTransaction(tx_temp) => {
                 let raw_tx = tx_temp.to_rust_bitcoin_tx();
                 let txid = raw_tx.compute_txid();
-                let net_value = tx_temp
-                    .net_value()
-                    .get(&RootOwner::Local(master_appkey))
-                    .copied()
-                    .unwrap_or(0);
+                let is_mine = tx_temp
+                    .iter_locally_owned_inputs()
+                    .map(|(_, _, spk)| spk.spk())
+                    .chain(
+                        tx_temp
+                            .iter_locally_owned_outputs()
+                            .map(|(_, _, spk)| spk.spk()),
+                    )
+                    .collect::<HashSet<RScriptBuf>>();
+                let prevouts = tx_temp
+                    .inputs()
+                    .iter()
+                    .map(|input| (input.outpoint(), input.txout()))
+                    .collect::<HashMap<bitcoin::OutPoint, bitcoin::TxOut>>();
                 SigningDetails::Transaction {
                     transaction: Transaction {
-                        net_value,
                         inner: RustOpaque::new(raw_tx),
+                        txid: txid.to_string(),
                         confirmation_time: None,
                         last_seen: None,
-                        txid: txid.to_string(),
-                        fee: tx_temp.fee(),
-                        recipients: tx_temp
-                            .outputs()
-                            .iter()
-                            .enumerate()
-                            .map(|(vout, output)| TxOutInfo {
-                                vout: vout as _,
-                                amount: output.value,
-                                script_pubkey: RustOpaque::new(output.owner().spk()),
-                                is_mine: match output.owner().local_owner_key() {
-                                    Some(this_appkey) => this_appkey == master_appkey,
-                                    None => false,
-                                },
-                            })
-                            .collect(),
+                        prevouts: RustOpaque::new(prevouts),
+                        is_mine: RustOpaque::new(is_mine),
                     },
                 }
             }

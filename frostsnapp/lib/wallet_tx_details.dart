@@ -28,7 +28,7 @@ class TxDetailsModel {
 
   update(Transaction tx) => this.tx = tx;
 
-  int get netValue => tx.netValue;
+  int get netValue => tx.netBalanceEffect() ?? 0;
 
   /// Number of blocks in our view of the best chain.
   int get chainLength => chainTipHeight + 1;
@@ -37,7 +37,7 @@ class TxDetailsModel {
   int get confirmations =>
       chainLength - (tx.confirmationTime?.height ?? chainLength);
   bool get isConfirmed => confirmations > 0;
-  bool get isSend => tx.netValue < 0;
+  bool get isSend => (tx.netBalanceEffect() ?? 0) < 0;
 
   /// Human-readable string of the last update. This is either the confirmation time or when we last
   /// saw the tx in the mempool.
@@ -671,10 +671,11 @@ Widget buildDetailsColumn(
 }) {
   final walletCtx = WalletContext.of(context)!;
   final theme = Theme.of(context);
+  final fee = txDetails.tx.fee();
   return Column(
     children: [
       if (txDetails.isSend)
-        ...txDetails.tx.recipients.where((info) => !info.isMine).map((info) {
+        ...txDetails.tx.recipients().where((info) => !info.isMine).map((info) {
           final address = info.address(network: walletCtx.network);
           return Column(
             children: [
@@ -728,11 +729,8 @@ Widget buildDetailsColumn(
               ),
             ],
           ),
-          title:
-              txDetails.tx.fee == null
-                  ? Text('Unknown')
-                  : SatoshiText(value: txDetails.tx.fee),
-          onTap: () => copyAction(context, 'Fee amount', '${txDetails.tx.fee}'),
+          title: fee == null ? Text('Unknown') : SatoshiText(value: fee),
+          onTap: () => copyAction(context, 'Fee amount', '$fee'),
         ),
       if (showConfirmations)
         ListTile(

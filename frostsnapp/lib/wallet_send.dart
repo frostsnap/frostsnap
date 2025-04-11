@@ -540,7 +540,10 @@ class _WalletSendPageState extends State<WalletSendPage> {
     final access = walletCtx.wallet.frostKey()!.accessStructures()[0];
     final chainTipHeight = walletCtx.wallet.superWallet.height();
     final now = DateTime.now();
-    final tx = unsignedTx?.details(masterAppkey: walletCtx.masterAppkey);
+    final tx = unsignedTx?.details(
+      superWallet: walletCtx.superWallet,
+      masterAppkey: walletCtx.masterAppkey,
+    );
     if (tx == null) return;
     final txDetails = TxDetailsModel(
       tx: tx,
