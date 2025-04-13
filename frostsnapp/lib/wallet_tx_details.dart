@@ -399,8 +399,8 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     children: [
       ListTile(
         //dense: true,
-        title: Text('Signature(s) Needed'),
-        subtitle: Text('Connect device(s) to finish signing'),
+        title: Text('Signatures Needed'),
+        subtitle: Text('Connect a device to sign'),
         trailing: Stack(
           alignment: AlignmentDirectional.center,
           children: [
@@ -428,7 +428,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
           trailing = AnimatedCheckCircle();
         } else {
           trailing = Text(
-            isConnected ? 'Requesting Signature' : 'Disconnected',
+            isConnected ? 'Requesting Signature' : '',
             style: TextStyle(
               color: isConnected ? Theme.of(context).colorScheme.primary : null,
             ),
