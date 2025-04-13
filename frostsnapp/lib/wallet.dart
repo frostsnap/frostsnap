@@ -504,6 +504,85 @@ class _TxListState extends State<TxList> {
             expandedHeight: 144.0,
           ),
         ),
+        StreamBuilder(
+          stream: walletCtx.signingSessionSignals,
+          builder: (context, snapshot) {
+            final chainTipHeight = walletCtx.wallet.superWallet.height();
+            final now = DateTime.now();
+            final txToBroadcastTiles = coord
+                .unbroadcastedTxs(
+                  superWallet: walletCtx.wallet.superWallet,
+                  keyId: walletCtx.keyId,
+                )
+                .map((tx) {
+                  final txDetails = TxDetailsModel(
+                    tx: tx.tx,
+                    chainTipHeight: chainTipHeight,
+                    now: now,
+                  );
+                  return TxSentOrReceivedTile(
+                    onTap:
+                        () => showBottomSheetOrDialog(
+                          context,
+                          builder:
+                              (context) => walletCtx.wrap(
+                                TxDetailsPage.needsBroadcast(
+                                  txStates: walletCtx.txStream,
+                                  txDetails: txDetails,
+                                  finishedSigningSessionId: tx.sessionId,
+                                ),
+                              ),
+                        ),
+                    txDetails: txDetails,
+                  );
+                });
+            final txToSignTiles = coord
+                .activeSigningSessions(keyId: walletCtx.keyId)
+                .map<(Transaction, SigningState)?>((session) {
+                  final Transaction? tx = switch (session.details(
+                    masterAppkey: walletCtx.masterAppkey,
+                  )) {
+                    SigningDetails_Transaction(:final transaction) =>
+                      transaction,
+                    _ => null,
+                  };
+                  if (tx == null) return null;
+                  return (tx, session.state());
+                })
+                .nonNulls
+                .map((state) {
+                  final (tx, signingState) = state;
+                  final txDetails = TxDetailsModel(
+                    tx: tx,
+                    chainTipHeight: chainTipHeight,
+                    now: now,
+                  );
+                  return TxSentOrReceivedTile(
+                    onTap:
+                        () => showBottomSheetOrDialog(
+                          context,
+                          builder:
+                              (context) => walletCtx.wrap(
+                                TxDetailsPage.restoreSigning(
+                                  txStates: walletCtx.txStream,
+                                  txDetails: txDetails,
+                                  signingSessionId: signingState.sessionId,
+                                ),
+                              ),
+                        ),
+                    txDetails: txDetails,
+                    signingState: signingState,
+                  );
+                });
+            return SliverVisibility(
+              visible:
+                  txToSignTiles.isNotEmpty || txToBroadcastTiles.isNotEmpty,
+              sliver: SliverList.list(
+                children: [...txToBroadcastTiles, ...txToSignTiles],
+              ),
+            );
+          },
+        ),
         SliverSafeArea(
           top: false,
           sliver: StreamBuilder(
@@ -532,7 +611,10 @@ class _TxListState extends State<TxList> {
                           context,
                           builder:
                               (context) => walletCtx.wrap(
-                                TxDetailsPage(txDetails: txDetails),
+                                TxDetailsPage(
+                                  txStates: walletCtx.txStream,
+                                  txDetails: txDetails,
+                                ),
                               ),
                         ),
                   );
@@ -744,61 +826,54 @@ class WalletBottomBar extends StatelessWidget {
     }
     final theme = Theme.of(context);
     const elevation = 3.0;
-
     return BottomAppBar(
       color: Colors.transparent,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        spacing: 16,
-        children: [
-          Expanded(
-            child: ElevatedButton.icon(
-              onPressed:
-                  () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => walletCtx.wrap(WalletReceivePage()),
-                    ),
+      child: Align(
+        alignment: AlignmentDirectional.center,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: 560),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: 16,
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed:
+                      () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder:
+                              (context) => walletCtx.wrap(WalletReceivePage()),
+                        ),
+                      ),
+                  label: Text('Receive'),
+                  icon: Icon(Icons.south_east),
+                  style: ElevatedButton.styleFrom(
+                    elevation: elevation,
+                    backgroundColor: theme.colorScheme.primaryContainer,
+                    foregroundColor: theme.colorScheme.onPrimaryContainer,
                   ),
-              label: Text('Receive'),
-              icon: Icon(Icons.south_east),
-              style: ElevatedButton.styleFrom(
-                elevation: elevation,
-                backgroundColor: ElevationOverlay.applySurfaceTint(
-                  theme.colorScheme.surfaceContainer,
-                  theme.colorScheme.primary,
-                  elevation,
-                ),
-                foregroundColor: theme.colorScheme.primary,
-                iconColor: theme.colorScheme.primary,
-              ),
-            ),
-          ),
-          Expanded(
-            child: ElevatedButton.icon(
-              onPressed: () {
-                showBottomSheetOrDialog(
-                  context,
-                  builder: (context) => walletCtx.wrap(WalletSendPage()),
-                );
-              },
-              label: Text('Send'),
-              icon: Icon(Icons.north_east),
-              style: ElevatedButton.styleFrom(
-                elevation: elevation,
-                backgroundColor: ElevationOverlay.applySurfaceTint(
-                  theme.colorScheme.surfaceContainer,
-                  theme.colorScheme.error,
-                  elevation,
-                ),
-                foregroundColor: theme.colorScheme.error,
-                iconColor: theme.colorScheme.error,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(28.0),
                 ),
               ),
-            ),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    showBottomSheetOrDialog(
+                      context,
+                      builder: (context) => walletCtx.wrap(WalletSendPage()),
+                    );
+                  },
+                  label: Text('Send'),
+                  icon: Icon(Icons.north_east),
+                  style: ElevatedButton.styleFrom(
+                    elevation: elevation,
+                    backgroundColor: theme.colorScheme.primaryContainer,
+                    foregroundColor: theme.colorScheme.onPrimaryContainer,
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

@@ -5,6 +5,7 @@ use crate::sink_wrap::SinkWrap;
 pub use crate::FfiCoordinator;
 pub use crate::{FfiQrEncoder, FfiQrReader, QrDecoderStatus};
 use anyhow::{anyhow, Context, Result};
+use bitcoin::hex::DisplayHex as _;
 pub use bitcoin::psbt::Psbt as BitcoinPsbt;
 pub use bitcoin::Network as RBitcoinNetwork;
 pub use bitcoin::ScriptBuf as RScriptBuf;
@@ -19,6 +20,7 @@ pub use frostsnap_coordinator::bitcoin::{
 };
 pub use frostsnap_coordinator::firmware_upgrade::FirmwareUpgradeConfirmState;
 pub use frostsnap_coordinator::frostsnap_core;
+use frostsnap_coordinator::frostsnap_core::bitcoin_transaction::RootOwner;
 use frostsnap_coordinator::frostsnap_core::coordinator::CoordFrostKey;
 use frostsnap_coordinator::frostsnap_core::device::KeyPurpose;
 pub use frostsnap_coordinator::verify_address::VerifyAddressProtocolState;
@@ -31,8 +33,8 @@ pub use frostsnap_coordinator::backup_run::{BackupRun, BackupState};
 use frostsnap_coordinator::{BackupMutation, DesktopSerial, UsbSerialManager};
 pub use frostsnap_core::message::EncodedSignature;
 pub use frostsnap_core::{
-    AccessStructureId, AccessStructureRef, DeviceId, KeyId, KeygenId, MasterAppkey, SessionHash,
-    SignSessionId, WireSignTask,
+    coordinator::ActiveSignSession as RActiveSignSession, AccessStructureId, AccessStructureRef,
+    DeviceId, KeyId, KeygenId, MasterAppkey, SessionHash, SignSessionId, WireSignTask,
 };
 use lazy_static::lazy_static;
 pub use std::collections::BTreeMap;
@@ -72,6 +74,7 @@ pub(crate) fn emit_event(event: PortEvent) -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug, Clone)]
 pub struct TxOutInfo {
     pub vout: u32,
     pub amount: u64,
@@ -89,9 +92,10 @@ impl TxOutInfo {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Transaction {
     pub net_value: i64,
-    pub inner: RustOpaque<Arc<RTransaction>>,
+    pub inner: RustOpaque<RTransaction>,
     pub confirmation_time: Option<ConfirmationTime>,
     pub last_seen: Option<u64>,
     pub txid: String,
@@ -103,7 +107,7 @@ impl From<frostsnap_coordinator::bitcoin::wallet::Transaction> for Transaction {
     fn from(value: frostsnap_coordinator::bitcoin::wallet::Transaction) -> Self {
         Self {
             net_value: value.net_value,
-            inner: RustOpaque::new(value.inner),
+            inner: RustOpaque::from(value.inner),
             confirmation_time: value.confirmation_time,
             last_seen: value.last_seen,
             txid: value.txid.to_string(),
@@ -130,6 +134,28 @@ impl Transaction {
                 .map(|t| t.time)
                 .or(self.last_seen),
         )
+    }
+
+    /// Feerate in sats/vbyte.
+    pub fn feerate(&self) -> SyncReturn<Option<f64>> {
+        SyncReturn(|| -> Option<f64> {
+            Some(((self.fee?) as f64) / (self.inner.vsize() as f64))
+        }())
+    }
+
+    /// Return a transaction with the following signatures added.
+    pub fn with_signatures(&self, signatures: Vec<EncodedSignature>) -> RustOpaque<RTransaction> {
+        let mut tx = (*self.inner).clone();
+        for (txin, signature) in tx.input.iter_mut().zip(signatures) {
+            let schnorr_sig = bitcoin::taproot::Signature {
+                signature: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.0)
+                    .unwrap(),
+                sighash_type: bitcoin::sighash::TapSighashType::Default,
+            };
+            let witness = bitcoin::Witness::from_slice(&[schnorr_sig.to_vec()]);
+            txin.witness = witness;
+        }
+        RustOpaque::new(tx)
     }
 }
 
@@ -514,8 +540,8 @@ pub type WalletStreams = Mutex<BTreeMap<MasterAppkey, StreamSink<TxState>>>;
 
 #[derive(Clone)]
 pub struct SuperWallet {
-    pub inner: RustOpaque<Arc<Mutex<CoordSuperWallet>>>,
-    pub wallet_streams: RustOpaque<Arc<WalletStreams>>,
+    pub inner: RustOpaque<Mutex<CoordSuperWallet>>,
+    pub wallet_streams: RustOpaque<WalletStreams>,
     pub chain_sync: RustOpaque<ChainClient>,
     pub network: BitcoinNetwork,
 }
@@ -539,7 +565,7 @@ impl SuperWallet {
                 .with_context(|| format!("loading wallet from data in {}", db_file.display()))?;
 
         let wallet = SuperWallet {
-            inner: RustOpaque::new(Arc::new(Mutex::new(super_wallet))),
+            inner: RustOpaque::new(Mutex::new(super_wallet)),
             chain_sync: RustOpaque::new(chain_sync),
             wallet_streams: RustOpaque::new(Default::default()),
             network,
@@ -675,16 +701,20 @@ impl SuperWallet {
         )
     }
 
-    pub fn broadcast_tx(&self, master_appkey: MasterAppkey, tx: SignedTx) -> Result<()> {
-        match self.chain_sync.broadcast(tx.signed_tx.deref().clone()) {
+    pub fn broadcast_tx(
+        &self,
+        master_appkey: MasterAppkey,
+        tx: RustOpaque<RTransaction>,
+    ) -> Result<()> {
+        match self.chain_sync.broadcast((*tx).clone()) {
             Ok(_) => {
                 event!(
                     Level::INFO,
-                    tx = tx.signed_tx.compute_txid().to_string(),
+                    tx = tx.compute_txid().to_string(),
                     "transaction successfully broadcast"
                 );
                 let mut inner = self.inner.lock().unwrap();
-                inner.broadcast_success(tx.signed_tx.deref().to_owned());
+                inner.broadcast_success((*tx).to_owned());
                 let wallet_streams = self.wallet_streams.lock().unwrap();
                 if let Some(stream) = wallet_streams.get(&master_appkey) {
                     let txs = inner.list_transactions(master_appkey);
@@ -696,11 +726,11 @@ impl SuperWallet {
                 use bitcoin::consensus::Encodable;
                 use frostsnap_core::schnorr_fun::fun::hex;
                 let mut buf = vec![];
-                tx.signed_tx.consensus_encode(&mut buf).unwrap();
+                tx.consensus_encode(&mut buf).unwrap();
                 let hex_tx = hex::encode(&buf);
                 event!(
                     Level::ERROR,
-                    tx = tx.signed_tx.compute_txid().to_string(),
+                    tx = tx.compute_txid().to_string(),
                     hex = hex_tx,
                     error = e.to_string(),
                     "unable to broadcast"
@@ -961,13 +991,13 @@ impl Coordinator {
         access_structure_ref: AccessStructureRef,
         devices: Vec<DeviceId>,
         message: String,
-        stream: StreamSink<SigningState>,
+        sink: StreamSink<SigningState>,
     ) -> Result<()> {
         self.0.start_signing(
             access_structure_ref,
             devices.into_iter().collect(),
             WireSignTask::Test { message },
-            stream,
+            SinkWrap(sink),
         )?;
         Ok(())
     }
@@ -977,13 +1007,13 @@ impl Coordinator {
         access_structure_ref: AccessStructureRef,
         unsigned_tx: UnsignedTx,
         devices: Vec<DeviceId>,
-        stream: StreamSink<SigningState>,
+        sink: StreamSink<SigningState>,
     ) -> Result<()> {
         self.0.start_signing(
             access_structure_ref,
             devices.into_iter().collect(),
             WireSignTask::BitcoinTransaction(unsigned_tx.template_tx.deref().clone()),
-            stream,
+            SinkWrap(sink),
         )?;
         Ok(())
     }
@@ -1012,9 +1042,109 @@ impl Coordinator {
     pub fn try_restore_signing_session(
         &self,
         session_id: SignSessionId,
-        stream: StreamSink<SigningState>,
+        sink: StreamSink<SigningState>,
     ) -> Result<()> {
-        self.0.try_restore_signing_session(session_id, stream)
+        self.0
+            .try_restore_signing_session(session_id, SinkWrap(sink))
+    }
+
+    pub fn active_signing_session(
+        &self,
+        session_id: SignSessionId,
+    ) -> SyncReturn<Option<ActiveSignSession>> {
+        SyncReturn(
+            self.0
+                .inner()
+                .active_signing_sessions_by_ssid()
+                .get(&session_id)
+                .cloned()
+                .map(RustOpaque::new)
+                .map(ActiveSignSession),
+        )
+    }
+
+    pub fn active_signing_sessions(&self, key_id: KeyId) -> SyncReturn<Vec<ActiveSignSession>> {
+        SyncReturn(
+            self.0
+                .inner()
+                .active_signing_sessions()
+                .filter(|session| session.key_id == key_id)
+                .map(RustOpaque::new)
+                .map(ActiveSignSession)
+                .collect(),
+        )
+    }
+
+    pub fn unbroadcasted_txs(
+        &self,
+        super_wallet: SuperWallet,
+        key_id: KeyId,
+    ) -> SyncReturn<Vec<SignedTxDetails>> {
+        let coord = self.0.inner();
+        let super_wallet = &*super_wallet.inner.lock().unwrap();
+        let txs = coord
+            .finished_signing_sessions()
+            .iter()
+            .filter(|(_, session)| session.key_id == key_id)
+            .inspect(|&(&id, _)| event!(Level::DEBUG, "Found finished signing session: {}", id))
+            .filter_map(|(_, session)| match &session.init.group_request.sign_task {
+                WireSignTask::BitcoinTransaction(tx_temp) => {
+                    let mut raw_tx = tx_temp.to_rust_bitcoin_tx();
+                    let txid = raw_tx.compute_txid();
+                    // Filter out txs that are already broadcasted.
+                    if super_wallet.get_tx(txid).is_some() {
+                        return None;
+                    }
+                    for (txin, signature) in raw_tx.input.iter_mut().zip(&session.signatures) {
+                        let schnorr_sig = bitcoin::taproot::Signature {
+                            signature: bitcoin::secp256k1::schnorr::Signature::from_slice(
+                                &signature.0,
+                            )
+                            .unwrap(),
+                            sighash_type: bitcoin::sighash::TapSighashType::Default,
+                        };
+                        let witness = bitcoin::Witness::from_slice(&[schnorr_sig.to_vec()]);
+                        txin.witness = witness;
+                    }
+                    let master_appkey = coord
+                        .get_frost_key(key_id)?
+                        .complete_key
+                        .as_ref()?
+                        .master_appkey;
+                    let net_value = tx_temp
+                        .net_value()
+                        .get(&RootOwner::Local(master_appkey))
+                        .copied()
+                        .unwrap_or(0);
+                    Some(SignedTxDetails {
+                        session_id: session.init.group_request.session_id(),
+                        tx: Transaction {
+                            net_value,
+                            inner: RustOpaque::new(raw_tx),
+                            confirmation_time: None,
+                            last_seen: None,
+                            txid: txid.to_string(),
+                            fee: tx_temp.fee(),
+                            recipients: tx_temp
+                                .outputs()
+                                .iter()
+                                .enumerate()
+                                .map(|(vout, output)| TxOutInfo {
+                                    vout: vout as _,
+                                    amount: output.value,
+                                    script_pubkey: RustOpaque::new(output.owner().spk()),
+                                    is_mine: match output.owner().local_owner_key() {
+                                        Some(this_appkey) => this_appkey == master_appkey,
+                                        None => false,
+                                    },
+                                })
+                                .collect(),
+                        },
+                    })
+                }
+                _ => None,
+            });
+        SyncReturn(txs.collect())
     }
 
     pub fn start_firmware_upgrade(
@@ -1126,7 +1256,15 @@ impl Coordinator {
     }
 
     pub fn cancel_sign_session(&self, ssid: SignSessionId) -> Result<()> {
-        self.0.cancel_sign_sesssion(ssid)
+        self.0.cancel_sign_session(ssid)
+    }
+
+    pub fn forget_finished_sign_session(&self, ssid: SignSessionId) -> Result<()> {
+        self.0.forget_finished_sign_session(ssid)
+    }
+
+    pub fn sub_signing_session_signals(&self, key_id: KeyId, sink: StreamSink<()>) {
+        self.0.sub_signing_session_signals(key_id, SinkWrap(sink))
     }
 }
 
@@ -1187,6 +1325,40 @@ impl UnsignedTx {
         Psbt {
             inner: RustOpaque::new(signed_psbt),
         }
+    }
+
+    pub fn details(&self, master_appkey: MasterAppkey) -> SyncReturn<Transaction> {
+        use frostsnap_core::bitcoin_transaction::RootOwner;
+        let tx_temp = &*self.template_tx;
+        let raw_tx = tx_temp.to_rust_bitcoin_tx();
+        let txid = raw_tx.compute_txid();
+        let net_value = tx_temp
+            .net_value()
+            .get(&RootOwner::Local(master_appkey))
+            .copied()
+            .unwrap_or(0);
+        SyncReturn(Transaction {
+            net_value,
+            inner: RustOpaque::new(raw_tx),
+            confirmation_time: None,
+            last_seen: None,
+            txid: txid.to_string(),
+            fee: tx_temp.fee(),
+            recipients: tx_temp
+                .outputs()
+                .iter()
+                .enumerate()
+                .map(|(vout, output)| TxOutInfo {
+                    vout: vout as _,
+                    amount: output.value,
+                    script_pubkey: RustOpaque::new(output.owner().spk()),
+                    is_mine: match output.owner().local_owner_key() {
+                        Some(this_appkey) => this_appkey == master_appkey,
+                        None => false,
+                    },
+                })
+                .collect(),
+        })
     }
 
     pub fn complete(&self, signatures: Vec<EncodedSignature>) -> SignedTx {
@@ -1442,8 +1614,8 @@ impl Settings {
             let (chain_api, conn_handler) = ChainClient::new();
             let super_wallet =
                 SuperWallet::load_or_new(&app_directory, bitcoin_network, chain_api.clone())?;
-            conn_handler.run(electrum_url, Arc::clone(&super_wallet.inner), {
-                let wallet_streams = Arc::clone(&super_wallet.wallet_streams);
+            conn_handler.run(electrum_url, super_wallet.inner.clone(), {
+                let wallet_streams = super_wallet.wallet_streams.clone();
                 move |master_appkey, txs| {
                     let wallet_streams = wallet_streams.lock().unwrap();
                     if let Some(stream) = wallet_streams.get(&master_appkey) {
@@ -1765,6 +1937,93 @@ pub struct _SigningState {
     pub finished_signatures: Vec<EncodedSignature>,
     pub aborted: Option<String>,
     pub connected_but_need_request: Vec<DeviceId>,
+}
+
+#[derive(Debug, Clone)]
+pub enum SigningDetails {
+    Message {
+        message: String,
+    },
+    Transaction {
+        transaction: Transaction,
+    },
+    Nostr {
+        id: String,
+        content: String,
+        hash_bytes: String,
+    },
+}
+
+pub struct ActiveSignSession(pub RustOpaque<RActiveSignSession>);
+
+impl ActiveSignSession {
+    pub fn state(&self) -> SyncReturn<SigningState> {
+        let session_id = self.0.session_id();
+        let session_init = &self.0.init;
+        let got_shares = self.0.received_from();
+        let state = SigningState {
+            session_id,
+            got_shares: got_shares.into_iter().collect(),
+            needed_from: session_init.nonces.keys().copied().collect(),
+            finished_signatures: Vec::new(),
+            aborted: None,
+            connected_but_need_request: Default::default(),
+        };
+
+        SyncReturn(state)
+    }
+    pub fn details(&self, master_appkey: MasterAppkey) -> SyncReturn<SigningDetails> {
+        let session_init = &self.0.init;
+
+        let res = match session_init.group_request.sign_task.clone() {
+            WireSignTask::Test { message } => SigningDetails::Message { message },
+            WireSignTask::Nostr { event } => SigningDetails::Nostr {
+                id: event.id,
+                content: event.content,
+                hash_bytes: event.hash_bytes.to_lower_hex_string(),
+            },
+            WireSignTask::BitcoinTransaction(tx_temp) => {
+                let raw_tx = tx_temp.to_rust_bitcoin_tx();
+                let txid = raw_tx.compute_txid();
+                let net_value = tx_temp
+                    .net_value()
+                    .get(&RootOwner::Local(master_appkey))
+                    .copied()
+                    .unwrap_or(0);
+                SigningDetails::Transaction {
+                    transaction: Transaction {
+                        net_value,
+                        inner: RustOpaque::new(raw_tx),
+                        confirmation_time: None,
+                        last_seen: None,
+                        txid: txid.to_string(),
+                        fee: tx_temp.fee(),
+                        recipients: tx_temp
+                            .outputs()
+                            .iter()
+                            .enumerate()
+                            .map(|(vout, output)| TxOutInfo {
+                                vout: vout as _,
+                                amount: output.value,
+                                script_pubkey: RustOpaque::new(output.owner().spk()),
+                                is_mine: match output.owner().local_owner_key() {
+                                    Some(this_appkey) => this_appkey == master_appkey,
+                                    None => false,
+                                },
+                            })
+                            .collect(),
+                    },
+                }
+            }
+        };
+        SyncReturn(res)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SignedTxDetails {
+    pub session_id: SignSessionId,
+    pub tx: Transaction,
 }
 
 #[frb(mirror(KeyGenState))]

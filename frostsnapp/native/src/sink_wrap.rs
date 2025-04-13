@@ -11,9 +11,9 @@ pub struct SinkWrap<T>(pub StreamSink<T>);
 
 macro_rules! bridge_sink {
     ($type:ty) => {
-        impl frostsnap_coordinator::Sink<$type> for SinkWrap<$type> {
-            fn send(&self, state: $type) {
-                self.0.add(state);
+        impl<A: Into<$type> + Send + 'static> frostsnap_coordinator::Sink<A> for SinkWrap<$type> {
+            fn send(&self, state: A) {
+                self.0.add(state.into());
             }
 
             fn close(&self) {
@@ -30,3 +30,4 @@ bridge_sink!(SigningState);
 bridge_sink!(CheckShareState);
 bridge_sink!(bool);
 bridge_sink!(ChainStatus);
+bridge_sink!(());

@@ -8,17 +8,24 @@ final monospaceTextStyle = GoogleFonts.notoSansMono();
 final blurFilter = ImageFilter.blur(sigmaX: 2.1, sigmaY: 2.1);
 
 Color tintSurfaceContainer(
-  BuildContext context,
-  Color tint,
-  double? elevation,
-) {
-  final theme = Theme.of(context);
-  return ElevationOverlay.applySurfaceTint(
-    theme.colorScheme.surfaceContainer,
-    tint,
-    elevation ?? 3.0,
-  );
-}
+  BuildContext context, {
+  required Color tint,
+  double elevation = 3.0,
+}) => ElevationOverlay.applySurfaceTint(
+  Theme.of(context).colorScheme.surfaceContainer,
+  tint,
+  elevation,
+);
+
+Color tintOnSurface(
+  BuildContext context, {
+  required Color tint,
+  double elevation = 3.0,
+}) => ElevationOverlay.applySurfaceTint(
+  Theme.of(context).colorScheme.onSurface,
+  tint,
+  elevation,
+);
 
 Future<T?> showBottomSheetOrDialog<T>(
   BuildContext context, {

@@ -2,7 +2,7 @@ use frostsnap_comms::CoordinatorSendMessage;
 use frostsnap_core::{
     coordinator::{ActiveSignSession, CoordinatorSend, RequestDeviceSign},
     message::{CoordinatorToUserMessage, CoordinatorToUserSigningMessage, EncodedSignature},
-    DeviceId, SignSessionId,
+    DeviceId, KeyId, SignSessionId,
 };
 use std::collections::BTreeSet;
 use tracing::{event, Level};
@@ -11,6 +11,7 @@ use crate::{Completion, UiProtocol};
 
 /// Keeps track of when
 pub struct SigningDispatcher {
+    pub key_id: KeyId,
     pub session_id: SignSessionId,
     pub finished_signatures: Option<Vec<EncodedSignature>>,
     pub targets: BTreeSet<DeviceId>,
@@ -24,11 +25,13 @@ pub struct SigningDispatcher {
 impl SigningDispatcher {
     pub fn new(
         targets: BTreeSet<DeviceId>,
+        key_id: KeyId,
         session_id: SignSessionId,
         sink: impl crate::Sink<SigningState>,
     ) -> Self {
         Self {
             targets,
+            key_id,
             session_id,
             got_signatures: Default::default(),
             finished_signatures: Default::default(),
@@ -44,6 +47,7 @@ impl SigningDispatcher {
         sink: impl crate::Sink<SigningState>,
     ) -> Self {
         Self {
+            key_id: active_sign_session.key_id,
             session_id: active_sign_session.session_id(),
             got_signatures: active_sign_session.received_from().collect(),
             targets: active_sign_session.init.nonces.keys().cloned().collect(),
@@ -68,7 +72,6 @@ impl SigningDispatcher {
             aborted: self.aborted.clone(),
             connected_but_need_request: self.connected_but_need_request.iter().cloned().collect(),
         };
-
         self.sink.send(state);
     }
 

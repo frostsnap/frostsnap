@@ -3,7 +3,7 @@ use crate::device_list::DeviceList;
 use crate::sink_wrap::SinkWrap;
 use crate::TEMP_KEY;
 use anyhow::{anyhow, Result};
-use flutter_rust_bridge::{RustOpaque, StreamSink, SyncReturn};
+use flutter_rust_bridge::{RustOpaque, StreamSink};
 use frostsnap_coordinator::check_share::CheckShareState;
 use frostsnap_coordinator::firmware_upgrade::{
     FirmwareUpgradeConfirmState, FirmwareUpgradeProtocol,
@@ -18,21 +18,26 @@ use frostsnap_coordinator::frostsnap_core::device::KeyPurpose;
 use frostsnap_coordinator::frostsnap_core::message::{
     CoordinatorToUserMessage, DoKeyGen, RecoverShare,
 };
+use frostsnap_coordinator::frostsnap_core::KeygenId;
+use frostsnap_coordinator::frostsnap_core::SymmetricKey;
 use frostsnap_coordinator::frostsnap_core::{self, SignSessionId};
-use frostsnap_coordinator::frostsnap_core::{KeygenId, SymmetricKey};
 use frostsnap_coordinator::frostsnap_persist::DeviceNames;
 use frostsnap_coordinator::persist::Persisted;
+use frostsnap_coordinator::signing::SigningState;
 use frostsnap_coordinator::verify_address::VerifyAddressProtocol;
 use frostsnap_coordinator::{
     check_share::CheckShareProtocol, display_backup::DisplayBackupProtocol,
 };
-use frostsnap_coordinator::{AppMessageBody, FirmwareBin, UiProtocol, UsbSender, UsbSerialManager};
+use frostsnap_coordinator::{
+    AppMessageBody, FirmwareBin, Sink, UiProtocol, UsbSender, UsbSerialManager,
+};
 use frostsnap_coordinator::{Completion, DeviceChange};
 use frostsnap_core::{
     coordinator::FrostCoordinator, AccessStructureRef, DeviceId, KeyId, WireSignTask,
 };
 use rand::thread_rng;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -42,6 +47,7 @@ const N_NONCE_STREAMS: usize = 4;
 pub struct FfiCoordinator {
     usb_manager: Mutex<Option<UsbSerialManager>>,
     key_event_stream: Arc<Mutex<Option<StreamSink<api::KeyState>>>>,
+    signing_session_signals: Arc<Mutex<HashMap<KeyId, Signal>>>,
     thread_handle: Mutex<Option<JoinHandle<()>>>,
     ui_protocol: Arc<Mutex<Option<Box<dyn UiProtocol>>>>,
     usb_sender: UsbSender,
@@ -58,6 +64,8 @@ pub struct FfiCoordinator {
     coordinator: Arc<Mutex<Persisted<FrostCoordinator>>>,
 }
 
+type Signal = Box<dyn Sink<()>>;
+
 impl FfiCoordinator {
     pub fn new(
         db: Arc<Mutex<rusqlite::Connection>>,
@@ -66,15 +74,9 @@ impl FfiCoordinator {
         let mut db_ = db.lock().unwrap();
 
         event!(Level::DEBUG, "loading core coordinator");
-        let mut coordinator = Persisted::<FrostCoordinator>::new(&mut db_, ())?;
+        let coordinator = Persisted::<FrostCoordinator>::new(&mut db_, ())?;
         event!(Level::DEBUG, "loading device names");
         let device_names = Persisted::<DeviceNames>::new(&mut db_, ())?;
-
-        // TODO: Make it possible to recover signing sessions.
-        coordinator.staged_mutate(&mut *db_, |coordinator| {
-            coordinator.cancel_all_signing_sessions();
-            Ok(())
-        })?;
 
         let usb_sender = usb_manager.usb_sender();
         let firmware_bin = usb_manager.upgrade_bin();
@@ -86,6 +88,7 @@ impl FfiCoordinator {
             usb_manager,
             thread_handle: Default::default(),
             key_event_stream: Default::default(),
+            signing_session_signals: Default::default(),
             ui_protocol: Default::default(),
             firmware_upgrade_progress: Default::default(),
             recoverable_keys: Default::default(),
@@ -503,7 +506,7 @@ impl FfiCoordinator {
         access_structure_ref: AccessStructureRef,
         devices: BTreeSet<DeviceId>,
         task: WireSignTask,
-        sink: StreamSink<api::SigningState>,
+        sink: impl Sink<SigningState>,
     ) -> anyhow::Result<()> {
         let mut coordinator = self.coordinator.lock().unwrap();
         let session_id =
@@ -515,12 +518,20 @@ impl FfiCoordinator {
                     &mut rand::thread_rng(),
                 )?)
             })?;
+
+        let signals = self.signing_session_signals.clone();
+        let sink = sink.inspect(move |_| {
+            if let Some(signal_sink) = signals.lock().unwrap().get(&access_structure_ref.key_id) {
+                signal_sink.send(());
+            }
+        });
+
         let mut ui_protocol = frostsnap_coordinator::signing::SigningDispatcher::new(
             devices,
+            access_structure_ref.key_id,
             session_id,
-            SinkWrap(sink),
+            sink,
         );
-
         ui_protocol.emit_state();
         self.start_protocol(ui_protocol);
 
@@ -559,7 +570,7 @@ impl FfiCoordinator {
     pub fn try_restore_signing_session(
         &self,
         session_id: SignSessionId,
-        sink: StreamSink<api::SigningState>,
+        sink: impl Sink<SigningState>,
     ) -> anyhow::Result<()> {
         let coordinator = self.coordinator.lock().unwrap();
 
@@ -567,29 +578,25 @@ impl FfiCoordinator {
             .active_signing_sessions_by_ssid()
             .get(&session_id)
             .ok_or(anyhow!("this signing session no longer exists"))?;
+
+        let key_id = active_sign_session.key_id;
+
+        let signals = self.signing_session_signals.clone();
+        let sink = sink.inspect(move |_| {
+            if let Some(signal_sink) = signals.lock().unwrap().get(&key_id) {
+                signal_sink.send(());
+            }
+        });
+
         let mut dispatcher =
             frostsnap_coordinator::signing::SigningDispatcher::restore_signing_session(
                 active_sign_session,
-                SinkWrap(sink),
+                sink,
             );
 
         dispatcher.emit_state();
         self.start_protocol(dispatcher);
-
         Ok(())
-    }
-
-    // TODO: create method to return some state of the sign sign session
-    pub fn active_signing_sessions(&self, key_id: KeyId) -> SyncReturn<Vec<SignSessionId>> {
-        SyncReturn(
-            self.coordinator
-                .lock()
-                .unwrap()
-                .active_signing_sessions()
-                .filter(|sign_session| sign_session.key_id == key_id)
-                .map(|sign_session| sign_session.session_id())
-                .collect(),
-        )
     }
 
     pub fn request_display_backup(
@@ -894,21 +901,66 @@ impl FfiCoordinator {
         self.usb_sender.wipe_device_data(id);
     }
 
-    pub fn cancel_sign_sesssion(&self, ssid: SignSessionId) -> anyhow::Result<()> {
-        let mut db = self.db.lock().unwrap();
-        event!(
-            Level::INFO,
-            ssid = ssid.to_string(),
-            "canceling sign session"
-        );
-        self.coordinator
-            .lock()
-            .unwrap()
-            .staged_mutate(&mut *db, |coordinator| {
+    pub fn cancel_sign_session(&self, ssid: SignSessionId) -> anyhow::Result<()> {
+        let session = {
+            let mut db = self.db.lock().unwrap();
+            event!(
+                Level::INFO,
+                ssid = ssid.to_string(),
+                "canceling sign session"
+            );
+            let mut coord = self.coordinator.lock().unwrap();
+            let session = coord.active_signing_sessions_by_ssid().get(&ssid).cloned();
+            coord.staged_mutate(&mut *db, |coordinator| {
                 coordinator.cancel_sign_session(ssid);
                 Ok(())
             })?;
+            session
+        };
+        if let Some(session) = session {
+            let key_id = session.key_id;
+            self.emit_signing_signal(key_id);
+        }
         Ok(())
+    }
+
+    pub fn forget_finished_sign_session(&self, ssid: SignSessionId) -> anyhow::Result<()> {
+        let deleted_session = {
+            let mut db = self.db.lock().unwrap();
+            event!(
+                Level::INFO,
+                ssid = ssid.to_string(),
+                "forgetting finished sign session"
+            );
+            let mut coord = self.coordinator.lock().unwrap();
+            coord.staged_mutate(&mut *db, |coordinator| {
+                Ok(coordinator.forget_finished_sign_session(ssid))
+            })?
+        };
+
+        if let Some(session) = deleted_session {
+            self.emit_signing_signal(session.key_id);
+        }
+
+        Ok(())
+    }
+
+    pub fn sub_signing_session_signals(&self, key_id: KeyId, new_stream: impl Sink<()>) {
+        let mut signal_streams = self.signing_session_signals.lock().unwrap();
+        if let Some(old_steam) = signal_streams.insert(key_id, Box::new(new_stream)) {
+            old_steam.close();
+        }
+    }
+
+    pub fn emit_signing_signal(&self, key_id: KeyId) {
+        let signal_streams = self.signing_session_signals.lock().unwrap();
+        if let Some(stream) = signal_streams.get(&key_id) {
+            stream.send(())
+        }
+    }
+
+    pub fn inner(&self) -> impl Deref<Target = Persisted<FrostCoordinator>> + '_ {
+        self.coordinator.lock().unwrap()
     }
 }
 

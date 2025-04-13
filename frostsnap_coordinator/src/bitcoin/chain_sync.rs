@@ -22,6 +22,7 @@ use futures_rustls::{
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
+    ops::Deref,
     sync::{
         mpsc::{sync_channel, Receiver, SyncSender},
         Arc,
@@ -116,6 +117,11 @@ impl ChainClient {
     }
 
     pub fn broadcast(&self, transaction: bitcoin::Transaction) -> Result<()> {
+        event!(
+            Level::DEBUG,
+            "WE ARE BROADCASTING {}",
+            transaction.compute_txid()
+        );
         let (req, response) = ReqAndResponse::new(transaction);
         self.req_sender.send(Message::BroadcastReq(req)).unwrap();
         response.recv()?
@@ -168,14 +174,16 @@ impl Iterator for UpdateIter {
 }
 
 impl ConnectionHandler {
-    pub fn run(
+    pub fn run<SW>(
         self,
         url: String,
-        super_wallet: Arc<std::sync::Mutex<CoordSuperWallet>>,
+        super_wallet: SW,
         mut update_action: impl FnMut(MasterAppkey, Vec<crate::bitcoin::wallet::Transaction>)
             + Send
             + 'static,
-    ) {
+    ) where
+        SW: Deref<Target = std::sync::Mutex<CoordSuperWallet>> + Clone + Send + 'static,
+    {
         let super_wallet_ = super_wallet.lock().unwrap();
         let lookahead = super_wallet_.lookahead();
         let (mut emitter, cmd_sender, mut update_recv) =

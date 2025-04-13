@@ -267,14 +267,17 @@ impl CoordSuperWallet {
                     .output
                     .iter()
                     .enumerate()
-                    .map(|(vout, txout)| TxOutInfo {
-                        outpoint: bitcoin::OutPoint::new(txid, vout as u32),
-                        txout: txout.clone(),
-                        is_mine: self
+                    .map(|(vout, txout)| {
+                        let is_mine = self
                             .tx_graph
                             .index
                             .index_of_spk(txout.script_pubkey.clone())
-                            .is_some(),
+                            .is_some_and(|((key, _), _)| *key == master_appkey);
+                        TxOutInfo {
+                            outpoint: bitcoin::OutPoint::new(txid, vout as u32),
+                            txout: txout.clone(),
+                            is_mine,
+                        }
                     })
                     .collect();
                 Some(Transaction {
