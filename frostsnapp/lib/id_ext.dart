@@ -13,6 +13,9 @@ HashSet<DeviceId> deviceIdSet(Iterable<DeviceId> devices) {
   return set;
 }
 
+HashMap<DeviceId, T> deviceIdMap<T>() =>
+    HashMap<DeviceId, T>(equals: deviceIdEquals, hashCode: deviceIdHashCode);
+
 HashMap<KeyId, T> keyIdMap<T>() =>
     HashMap<KeyId, T>(equals: keyIdEquals, hashCode: keyIdHashCode);
 
