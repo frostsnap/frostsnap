@@ -28,7 +28,7 @@ class TxDetailsModel {
 
   update(Transaction tx) => this.tx = tx;
 
-  int get netValue => tx.netBalanceEffect() ?? 0;
+  int get netValue => tx.balanceDelta() ?? 0;
 
   /// Number of blocks in our view of the best chain.
   int get chainLength => chainTipHeight + 1;
@@ -37,7 +37,7 @@ class TxDetailsModel {
   int get confirmations =>
       chainLength - (tx.confirmationTime?.height ?? chainLength);
   bool get isConfirmed => confirmations > 0;
-  bool get isSend => (tx.netBalanceEffect() ?? 0) < 0;
+  bool get isSend => (tx.balanceDelta() ?? 0) < 0;
 
   /// Human-readable string of the last update. This is either the confirmation time or when we last
   /// saw the tx in the mempool.

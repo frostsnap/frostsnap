@@ -342,7 +342,7 @@ class _ReceiverPageState extends State<ReceivePage> {
       slivers: [
         SliverToBoxAdapter(child: buildShareCard(context)),
         SliverToBoxAdapter(child: buildVerifyCard(context)),
-        SliverToBoxAdapter(child: buildAwaitTxCard(context)),
+        SliverToBoxAdapter(child: activityCard(context)),
         SliverSafeArea(
           sliver: SliverPadding(padding: EdgeInsets.only(bottom: 4)),
         ),
@@ -549,7 +549,7 @@ class _ReceiverPageState extends State<ReceivePage> {
     );
   }
 
-  Widget buildAwaitTxCard(BuildContext context) {
+  Widget activityCard(BuildContext context) {
     final thisAddr = _address?.address();
     final thisSpk = _address?.spk();
     final walletCtx = WalletContext.of(context)!;
@@ -561,9 +561,9 @@ class _ReceiverPageState extends State<ReceivePage> {
     final relevantTxs =
         allTxs.where((tx) {
           if (thisAddr == null || thisSpk == null) return false;
-          final netSpent = tx.netSpentValueForSpk(spk: thisSpk) ?? 0;
-          final netCreated = tx.netCreatedValueForSpk(spk: thisSpk);
-          return (netSpent > 0 || netCreated > 0);
+          final netSpent = (tx.sumInputsSpendingSpk(spk: thisSpk) ?? 0);
+          final netReceived = tx.sumOutputsToSpk(spk: thisSpk);
+          return (netSpent > 0 || netReceived > 0);
         }).toList();
     final txTiles = relevantTxs.map((tx) {
       final txDetails = TxDetailsModel(
@@ -595,7 +595,7 @@ class _ReceiverPageState extends State<ReceivePage> {
     final header = ListTile(
       shape: tileShape,
       contentPadding: tilePadding,
-      title: Text('Receive'),
+      title: Text('Activity'),
       trailing: subtitle,
       onTap: isFocused ? null : () => focus = ReceivePageFocus.awaitTx,
     );

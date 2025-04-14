@@ -119,87 +119,105 @@ impl From<frostsnap_coordinator::bitcoin::wallet::Transaction> for Transaction {
 }
 
 impl Transaction {
-    /// Sum of spent outputs.
-    ///
-    /// Returns null if any prevout is missing.
-    pub fn net_spent_value(
-        &self,
-        filter: Option<RustOpaque<HashSet<RScriptBuf>>>,
-    ) -> SyncReturn<Option<u64>> {
-        SyncReturn((|| -> Option<u64> {
-            let prevouts = self
-                .inner
-                .input
-                .iter()
-                .map(|txin| self.prevouts.get(&txin.previous_output))
-                .collect::<Option<Vec<_>>>()?;
-            Some(
-                prevouts
-                    .into_iter()
-                    .filter(|prevout| {
-                        match &filter {
-                            Some(filter) => filter.contains(&prevout.script_pubkey),
-                            // No filter.
-                            None => true,
-                        }
-                    })
-                    .map(|prevout| prevout.value.to_sat())
-                    .sum(),
-            )
-        })())
-    }
-
-    /// Sum of created outputs.
-    pub fn net_created_value(
-        &self,
-        filter: Option<RustOpaque<HashSet<RScriptBuf>>>,
-    ) -> SyncReturn<u64> {
-        SyncReturn(
-            self.inner
-                .output
-                .iter()
-                .filter(|txout| {
+    /// Computes the sum of all inputs, or only those whose previous output script pubkey is in
+    /// `filter`, if provided. The result is `None` if any input is missing a previous output.
+    fn _sum_inputs(&self, filter: Option<&HashSet<RScriptBuf>>) -> Option<u64> {
+        let prevouts = self
+            .inner
+            .input
+            .iter()
+            .map(|txin| self.prevouts.get(&txin.previous_output))
+            .collect::<Option<Vec<_>>>()?;
+        Some(
+            prevouts
+                .into_iter()
+                .filter(|prevout| {
                     match &filter {
-                        Some(filter) => filter.contains(&txout.script_pubkey),
+                        Some(filter) => filter.contains(prevout.script_pubkey.as_script()),
                         // No filter.
                         None => true,
                     }
                 })
-                .map(|txout| txout.value.to_sat())
+                .map(|prevout| prevout.value.to_sat())
                 .sum(),
         )
     }
 
-    pub fn net_spent_value_for_spk(&self, spk: RustOpaque<RScriptBuf>) -> SyncReturn<Option<u64>> {
-        self.net_spent_value(Some(RustOpaque::new([spk.as_script().to_owned()].into())))
+    /// Computes the sum of all outputs, or only those whose script pubkey is in `filter`, if
+    /// provided.
+    fn _sum_outputs(&self, filter: Option<&HashSet<RScriptBuf>>) -> u64 {
+        self.inner
+            .output
+            .iter()
+            .filter(|txout| {
+                match &filter {
+                    Some(filter) => filter.contains(txout.script_pubkey.as_script()),
+                    // No filter.
+                    None => true,
+                }
+            })
+            .map(|txout| txout.value.to_sat())
+            .sum()
     }
 
-    pub fn net_created_value_for_spk(&self, spk: RustOpaque<RScriptBuf>) -> SyncReturn<u64> {
-        self.net_created_value(Some(RustOpaque::new([spk.as_script().to_owned()].into())))
+    /// Computes the total value of all inputs. Returns `None` if any input is missing a previous
+    /// output.
+    pub fn sum_inputs(&self) -> SyncReturn<Option<u64>> {
+        SyncReturn(self._sum_inputs(None))
     }
 
-    /// Net effect on our owned balance.
-    pub fn net_balance_effect(&self) -> SyncReturn<Option<i64>> {
+    /// Computes the sum of all outputs.
+    pub fn sum_outputs(&self) -> SyncReturn<u64> {
+        SyncReturn(self._sum_outputs(None))
+    }
+
+    /// Computes the total value of inputs we own. Returns `None` if any owned input is missing a
+    /// previous output.
+    pub fn sum_owned_inputs(&self) -> SyncReturn<Option<u64>> {
+        SyncReturn(self._sum_inputs(Some(&self.is_mine)))
+    }
+
+    /// Computes the total value of outputs we own.
+    pub fn sum_owned_outputs(&self) -> SyncReturn<u64> {
+        SyncReturn(self._sum_outputs(Some(&self.is_mine)))
+    }
+
+    /// Computes the total value of inputs that spend a previous output with the given `spk`.
+    ///
+    /// Returns `None` if any input is missing a previous output.
+    pub fn sum_inputs_spending_spk(&self, spk: RustOpaque<RScriptBuf>) -> SyncReturn<Option<u64>> {
+        SyncReturn(self._sum_inputs(Some(&[spk.as_script().to_owned()].into())))
+    }
+
+    /// Computes the total value of outputs that send to the given script pubkey.
+    pub fn sum_outputs_to_spk(&self, spk: RustOpaque<RScriptBuf>) -> SyncReturn<u64> {
+        SyncReturn(self._sum_outputs(Some(&[spk.as_script().to_owned()].into())))
+    }
+
+    /// Computes the net change in our owned balance: owned outputs minus owned inputs.
+    ///
+    /// Returns `None` if any owned input is missing a previous output.
+    pub fn balance_delta(&self) -> SyncReturn<Option<i64>> {
         SyncReturn((|| -> Option<i64> {
-            let spent: i64 = self
-                .net_spent_value(Some(self.is_mine.clone()))
-                .0?
+            let owned_inputs_sum: i64 = self
+                ._sum_inputs(Some(&self.is_mine))?
                 .try_into()
                 .expect("net spent value must convert to i64");
-            let received: i64 = self
-                .net_created_value(Some(self.is_mine.clone()))
-                .0
+            let owned_outputs_sum: i64 = self
+                ._sum_outputs(Some(&self.is_mine))
                 .try_into()
                 .expect("net created value must convert to i64");
-            Some(received.saturating_sub(spent))
+            Some(owned_outputs_sum.saturating_sub(owned_inputs_sum))
         })())
     }
 
+    /// Computes the transaction fee as the difference between total input and output value.
+    /// Returns `None` if any input is missing a previous output.
     pub fn fee(&self) -> SyncReturn<Option<u64>> {
         SyncReturn((|| -> Option<u64> {
-            let spent = self.net_spent_value(None).0?;
-            let received = self.net_created_value(None).0;
-            Some(spent.saturating_sub(received))
+            let inputs_sum = self._sum_inputs(None)?;
+            let outputs_sum = self._sum_outputs(None);
+            Some(outputs_sum.saturating_sub(inputs_sum))
         })())
     }
 
@@ -1462,11 +1480,6 @@ impl UnsignedTx {
         let tx_temp = &*self.template_tx;
         let raw_tx = tx_temp.to_rust_bitcoin_tx();
         let txid = raw_tx.compute_txid();
-        // let net_value = tx_temp
-        //     .net_value()
-        //     .get(&RootOwner::Local(master_appkey))
-        //     .copied()
-        //     .unwrap_or(0);
         SyncReturn(Transaction {
             txid: txid.to_string(),
             confirmation_time: None,
@@ -1489,28 +1502,6 @@ impl UnsignedTx {
             ),
             inner: RustOpaque::new(raw_tx),
         })
-        // SyncReturn(Transaction {
-        //     net_value,
-        //     inner: RustOpaque::new(raw_tx),
-        //     confirmation_time: None,
-        //     last_seen: None,
-        //     txid: txid.to_string(),
-        //     fee: tx_temp.fee(),
-        //     recipients: tx_temp
-        //         .outputs()
-        //         .iter()
-        //         .enumerate()
-        //         .map(|(vout, output)| TxOutInfo {
-        //             vout: vout as _,
-        //             amount: output.value,
-        //             script_pubkey: RustOpaque::new(output.owner().spk()),
-        //             is_mine: match output.owner().local_owner_key() {
-        //                 Some(this_appkey) => this_appkey == master_appkey,
-        //                 None => false,
-        //             },
-        //         })
-        //         .collect(),
-        // })
     }
 
     pub fn complete(&self, signatures: Vec<EncodedSignature>) -> SignedTx {
@@ -1634,16 +1625,14 @@ impl From<Vec<frostsnap_coordinator::bitcoin::wallet::Transaction>> for TxState 
         let mut untrusted_pending_balance = 0_i64;
 
         for tx in &txs {
-            let filter = Some(tx.is_mine.clone());
+            let filter = Some(&*tx.is_mine);
             let net_spent: i64 = tx
-                .net_spent_value(filter.clone())
-                .0
+                ._sum_inputs(filter)
                 .unwrap_or(0)
                 .try_into()
                 .expect("spent value must fit into i64");
             let net_created: i64 = tx
-                .net_created_value(filter)
-                .0
+                ._sum_outputs(filter)
                 .try_into()
                 .expect("created value must fit into i64");
             if net_spent == 0 && tx.confirmation_time.is_none() {

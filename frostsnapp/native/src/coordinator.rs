@@ -3,8 +3,7 @@ use crate::device_list::DeviceList;
 use crate::sink_wrap::SinkWrap;
 use crate::TEMP_KEY;
 use anyhow::{anyhow, Result};
-use bitcoin::ScriptBuf;
-use flutter_rust_bridge::{RustOpaque, StreamSink, SyncReturn};
+use flutter_rust_bridge::{RustOpaque, StreamSink};
 use frostsnap_coordinator::check_share::CheckShareState;
 use frostsnap_coordinator::firmware_upgrade::{
     FirmwareUpgradeConfirmState, FirmwareUpgradeProtocol,
@@ -37,7 +36,7 @@ use frostsnap_core::{
     coordinator::FrostCoordinator, AccessStructureRef, DeviceId, KeyId, WireSignTask,
 };
 use rand::thread_rng;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -598,69 +597,6 @@ impl FfiCoordinator {
         dispatcher.emit_state();
         self.start_protocol(dispatcher);
         Ok(())
-    }
-
-    pub fn unbroadcasted_txs(
-        &self,
-        super_wallet: api::SuperWallet,
-        key_id: KeyId,
-    ) -> SyncReturn<Vec<api::SignedTxDetails>> {
-        let coord = self.coordinator.lock().unwrap();
-        let super_wallet = &*super_wallet.inner.lock().unwrap();
-        let txs = coord
-            .finished_signing_sessions()
-            .iter()
-            .filter(|(_, session)| dbg!(session.key_id == key_id))
-            .inspect(|&(&id, _)| event!(Level::DEBUG, "Found finished signing session: {}", id))
-            .filter_map(|(_, session)| match &session.init.group_request.sign_task {
-                WireSignTask::BitcoinTransaction(tx_temp) => {
-                    let mut raw_tx = tx_temp.to_rust_bitcoin_tx();
-                    let txid = raw_tx.compute_txid();
-                    // Filter out txs that are already broadcasted.
-                    if super_wallet.get_tx(txid).is_some() {
-                        return None;
-                    }
-                    for (txin, signature) in raw_tx.input.iter_mut().zip(&session.signatures) {
-                        let schnorr_sig = bitcoin::taproot::Signature {
-                            signature: bitcoin::secp256k1::schnorr::Signature::from_slice(
-                                &signature.0,
-                            )
-                            .unwrap(),
-                            sighash_type: bitcoin::sighash::TapSighashType::Default,
-                        };
-                        let witness = bitcoin::Witness::from_slice(&[schnorr_sig.to_vec()]);
-                        txin.witness = witness;
-                    }
-
-                    let is_mine = tx_temp
-                        .iter_locally_owned_inputs()
-                        .map(|(_, _, spk)| spk.spk())
-                        .chain(
-                            tx_temp
-                                .iter_locally_owned_outputs()
-                                .map(|(_, _, spk)| spk.spk()),
-                        )
-                        .collect::<HashSet<ScriptBuf>>();
-                    let prevouts = tx_temp
-                        .inputs()
-                        .iter()
-                        .map(|input| (input.outpoint(), input.txout()))
-                        .collect::<HashMap<bitcoin::OutPoint, bitcoin::TxOut>>();
-                    Some(api::SignedTxDetails {
-                        session_id: session.init.group_request.session_id(),
-                        tx: api::Transaction {
-                            inner: RustOpaque::new(raw_tx),
-                            txid: txid.to_string(),
-                            confirmation_time: None,
-                            last_seen: None,
-                            prevouts: RustOpaque::new(prevouts),
-                            is_mine: RustOpaque::new(is_mine),
-                        },
-                    })
-                }
-                _ => dbg!(None),
-            });
-        SyncReturn(txs.collect())
     }
 
     pub fn request_display_backup(
