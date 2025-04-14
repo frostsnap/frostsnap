@@ -5,6 +5,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/bridge_definitions.dart';
 import 'package:frostsnapp/contexts.dart';
+import 'package:frostsnapp/device_action_fullscreen_dialog.dart';
 import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/theme.dart';
@@ -205,6 +206,11 @@ class _ReceiverPageState extends State<ReceivePage> {
   List<Transaction> allTxs = [];
 
   BehaviorSubject<VerifyAddressProtocolState>? _verifyStream;
+  final actionDialogController = FullscreenActionDialogController(
+    title: 'Verify address on device',
+    subtitle:
+        'Check that the pasted or scanned address matches the device display.',
+  );
 
   ReceivePageFocus _focus = ReceivePageFocus.share;
   ReceivePageFocus get focus => _focus;
@@ -276,11 +282,12 @@ class _ReceiverPageState extends State<ReceivePage> {
 
   @override
   void dispose() {
-    super.dispose();
     if (_focus == ReceivePageFocus.verify) {
       coord.cancelProtocol();
     }
     txStreamSub.cancel();
+    actionDialogController.dispose();
+    super.dispose();
   }
 
   void updateToIndex(int index, {ReceivePageFocus? next}) {
@@ -453,6 +460,22 @@ class _ReceiverPageState extends State<ReceivePage> {
                         final displayingDevices = targetDevices.intersection(
                           connectedDevices,
                         );
+                        for (var deviceId in displayingDevices) {
+                          actionDialogController.addActionNeeded(
+                            context,
+                            deviceId,
+                          );
+                        }
+                        actionDialogController.actionsNeeded
+                            .toList()
+                            .whereNot(
+                              (deviceId) =>
+                                  displayingDevices.contains(deviceId),
+                            )
+                            .forEach(
+                              (deviceId) => actionDialogController
+                                  .removeActionNeeded(deviceId),
+                            );
 
                         return Column(
                           mainAxisSize: MainAxisSize.min,
