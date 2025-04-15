@@ -144,8 +144,8 @@ class _AddressListState extends State<AddressList> {
         '#${addr.index}',
         style: theme.textTheme.labelLarge?.copyWith(
           decoration: addr.used ? TextDecoration.lineThrough : null,
-          color:
-              addr.used ? theme.colorScheme.primary : theme.colorScheme.primary,
+          color: theme.colorScheme.primary,
+          decorationThickness: addr.used ? 3.0 : null,
           fontFamily: monospaceTextStyle.fontFamily,
         ),
       ),
@@ -367,6 +367,7 @@ class _ReceiverPageState extends State<ReceivePage> {
           '#${_address?.index}',
           style: monospaceTextStyle.copyWith(
             decoration: isUsed ? TextDecoration.lineThrough : null,
+            decorationThickness: isUsed ? 3.0 : null,
           ),
         ),
         icon: Icon(Icons.arrow_drop_down_rounded),
@@ -476,7 +477,7 @@ class _ReceiverPageState extends State<ReceivePage> {
 
                     final dismissButton = OutlinedButton(
                       onPressed: () => focus = ReceivePageFocus.awaitTx,
-                      child: Text('Dismiss'),
+                      child: Text('Skip'),
                     );
 
                     return StreamBuilder(
@@ -508,14 +509,48 @@ class _ReceiverPageState extends State<ReceivePage> {
                                 top: 20,
                                 bottom: 36,
                               ),
-                              child: Text(
-                                displayingDevices.isEmpty
-                                    ? 'Plug in a device to continue.'
-                                    : 'Verify that the pasted or scanned address matches the device display.',
-                                softWrap: true,
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                spacing: 16,
+                                children:
+                                    displayingDevices.isEmpty
+                                        ? [
+                                          Text(
+                                            'Plug in a device to verify the address on a device screen.',
+                                            softWrap: true,
+                                            style: theme.textTheme.bodyMedium
+                                                ?.copyWith(
+                                                  color:
+                                                      theme
+                                                          .colorScheme
+                                                          .onSurfaceVariant,
+                                                ),
+                                          ),
+                                        ]
+                                        : [
+                                          Text(
+                                            'Check that the sender can see the same address as shown on the device.',
+                                            softWrap: true,
+                                            style: theme.textTheme.bodyMedium
+                                                ?.copyWith(
+                                                  color:
+                                                      theme
+                                                          .colorScheme
+                                                          .onSurfaceVariant,
+                                                ),
+                                          ),
+                                          Text(
+                                            "Two random chunks have been highlighted for convenience.",
+                                            softWrap: true,
+                                            style: theme.textTheme.bodyMedium
+                                                ?.copyWith(
+                                                  color:
+                                                      theme
+                                                          .colorScheme
+                                                          .onSurfaceVariant,
+                                                ),
+                                          ),
+                                        ],
                               ),
                             ),
                             Padding(
@@ -670,7 +705,7 @@ class _ReceiverPageState extends State<ReceivePage> {
       ),
     );
     final img = addressQrImage(address);
-    final isScanned = await showDialog<bool>(
+    await showDialog<bool>(
       context: context,
       builder: (context) {
         return BackdropFilter(
@@ -692,7 +727,7 @@ class _ReceiverPageState extends State<ReceivePage> {
                         child: PrettyQrView(qrImage: img),
                       ),
                       FilledButton(
-                        onPressed: () => Navigator.pop(context, true),
+                        onPressed: () => Navigator.pop(context),
                         child: Text('Done'),
                       ),
                     ],
@@ -704,17 +739,15 @@ class _ReceiverPageState extends State<ReceivePage> {
         );
       },
     );
-    if (isScanned ?? false) {
-      if (context.mounted) markAddressShared(context, address);
-      if (mounted) focus = ReceivePageFocus.verify;
-    }
+    if (context.mounted) markAddressShared(context, address);
+    if (mounted) focus = ReceivePageFocus.verify;
   }
 
   void openAddressPicker(BuildContext context, Address address) {
     final walletCtx = WalletContext.of(context)!;
     showBottomSheetOrDialog(
       context,
-      titleText: 'Pick Address',
+      titleText: 'Receive Addresses',
       builder: (context, scrollController) {
         return walletCtx.wrap(
           AddressList(
