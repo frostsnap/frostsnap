@@ -51,8 +51,8 @@ pub enum ReceiveSerial<D: Direction> {
     /// You can only send messages if you have the conch. Also devices should only do work if no one
     /// downstream of them has the conch.
     Conch,
+    Reset,
     // to allow devices to ignore messages they don't understand
-    Unused9,
     Unused8,
     Unused7,
     Unused6,
