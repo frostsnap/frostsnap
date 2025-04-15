@@ -1,6 +1,6 @@
 use frostsnap_core::device::{DeviceSymmetricKeyGen, DeviceToUserMessage, KeyPurpose};
 use frostsnap_core::message::{
-    CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, DoKeyGen,
+    keygen, CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage,
 };
 use frostsnap_core::{
     coordinator::{
@@ -100,8 +100,11 @@ pub trait Env {
                         ..
                     },
             } => {
-                run.coordinator
-                    .final_keygen_ack(keygen_id, TEST_ENCRYPTION_KEY, rng);
+                let send_finalize_keygen = run
+                    .coordinator
+                    .finalize_keygen(keygen_id, TEST_ENCRYPTION_KEY, rng)
+                    .unwrap();
+                run.extend(send_finalize_keygen);
             }
             _ => { /* nothing needs doing */ }
         }
@@ -114,6 +117,7 @@ pub trait Env {
         rng: &mut impl RngCore,
     ) {
         match message {
+            DeviceToUserMessage::FinalizeKeyGen => {}
             DeviceToUserMessage::CheckKeyGen { phase, .. } => {
                 let ack = run
                     .device(from)
@@ -217,8 +221,8 @@ impl Run {
         let mut run = Self::generate(n_devices, rng);
         let keygen_init = run
             .coordinator
-            .do_keygen(
-                DoKeyGen::new(
+            .begin_keygen(
+                keygen::Begin::new(
                     run.devices.keys().cloned().collect(),
                     threshold,
                     "my new key".to_string(),
@@ -228,6 +232,7 @@ impl Run {
                 rng,
             )
             .unwrap();
+        let keygen_id = keygen_init.0.keygen_id;
         run.extend(keygen_init);
 
         run.run_until_finished(env, rng).unwrap();

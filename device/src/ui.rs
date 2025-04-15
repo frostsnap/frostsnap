@@ -13,6 +13,7 @@ use frostsnap_core::{
         KeyGenPhase2, SignPhase1,
     },
     schnorr_fun::frost::SecretShare,
+    SessionHash,
 };
 
 pub trait UserInteraction {
@@ -72,6 +73,12 @@ const LONG_HOLD_TO_CONFIRM_TIME_MS: crate::Duration = crate::Duration::millis(60
 
 #[derive(Clone, Debug)]
 pub enum WaitingFor {
+    /// Waiting for the coord to say "Hey, finalize!"
+    WaitingForKeyGenFinalize {
+        key_name: String,
+        t_of_n: (u16, u16),
+        session_hash: SessionHash,
+    },
     /// Looking for upstream device
     LookingForUpstream { jtag: bool },
     /// Waiting for the announce ack

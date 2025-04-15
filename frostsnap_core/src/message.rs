@@ -22,6 +22,9 @@ use schnorr_fun::Signature;
 use sha2::digest::Update;
 use sha2::Digest;
 
+pub mod keygen;
+pub use keygen::Keygen;
+
 #[derive(Clone, Debug)]
 #[must_use]
 pub enum DeviceSend {
@@ -31,11 +34,7 @@ pub enum DeviceSend {
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, Kind)]
 pub enum CoordinatorToDeviceMessage {
-    DoKeyGen(DoKeyGen),
-    FinishKeyGen {
-        keygen_id: KeygenId,
-        agg_input: encpedpop::AggKeygenInput,
-    },
+    KeyGen(keygen::Keygen),
     RequestSign(Box<RequestSign>),
     OpenNonceStreams {
         streams: Vec<CoordNonceStreamState>,
@@ -46,66 +45,6 @@ pub enum CoordinatorToDeviceMessage {
         master_appkey: MasterAppkey,
         derivation_index: u32,
     },
-}
-
-#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
-pub struct DoKeyGen {
-    pub keygen_id: KeygenId,
-    pub device_to_share_index: BTreeMap<DeviceId, NonZeroU32>,
-    pub threshold: u16,
-    pub key_name: String,
-    pub purpose: KeyPurpose,
-}
-
-impl DoKeyGen {
-    pub fn new_with_id(
-        devices: BTreeSet<DeviceId>,
-        threshold: u16,
-        key_name: String,
-        purpose: KeyPurpose,
-        keygen_id: KeygenId,
-    ) -> Self {
-        let device_to_share_index: BTreeMap<_, _> = devices
-            .iter()
-            .enumerate()
-            .map(|(index, device_id)| {
-                (
-                    *device_id,
-                    NonZeroU32::new(index as u32 + 1).expect("we added one"),
-                )
-            })
-            .collect();
-
-        Self {
-            device_to_share_index,
-            threshold,
-            key_name,
-            purpose,
-            keygen_id,
-        }
-    }
-    pub fn new(
-        devices: BTreeSet<DeviceId>,
-        threshold: u16,
-        key_name: String,
-        purpose: KeyPurpose,
-        rng: &mut impl rand_core::RngCore, // for the keygen id
-    ) -> Self {
-        let mut id = [0u8; 16];
-        rng.fill_bytes(&mut id[..]);
-
-        Self::new_with_id(
-            devices,
-            threshold,
-            key_name,
-            purpose,
-            KeygenId::from_bytes(id),
-        )
-    }
-
-    pub fn devices(&self) -> BTreeSet<DeviceId> {
-        self.device_to_share_index.keys().cloned().collect()
-    }
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, Kind)]
@@ -186,6 +125,7 @@ pub enum DeviceToCoordinatorMessage {
     },
     KeyGenResponse(KeyGenResponse),
     KeyGenAck(KeyGenAck),
+    // KeyGenFinalized,
     SignatureShare {
         session_id: SignSessionId,
         signature_shares: Vec<SignatureShare>,
