@@ -1,9 +1,13 @@
-use super::{chain_sync::ChainClient, multi_x_descriptor_for_account};
+use super::{
+    chain_sync::ChainClient,
+    multi_x_descriptor_for_account,
+    wallet_reserved_spks::{self, ReservedSpks},
+};
 use crate::persist::Persisted;
 use anyhow::{anyhow, Context, Result};
 use bdk_chain::{
-    bitcoin::{self, bip32, Amount, Script, SignedAmount, Txid},
-    indexed_tx_graph,
+    bitcoin::{self, bip32, Amount, OutPoint, Script, ScriptBuf, TxOut, Txid},
+    indexed_tx_graph::{self},
     indexer::keychain_txout::{self, KeychainTxOutIndex},
     local_chain,
     miniscript::{Descriptor, DescriptorPublicKey},
@@ -19,6 +23,7 @@ use frostsnap_core::{
     tweak::BitcoinAccount,
 };
 use std::{
+    collections::{HashMap, HashSet},
     ops::RangeBounds,
     str::FromStr,
     sync::{Arc, Mutex},
@@ -26,16 +31,19 @@ use std::{
 use tracing::{event, Level};
 
 pub type KeychainId = (MasterAppkey, BitcoinAccountKeychain);
+pub type WalletIndexer = KeychainTxOutIndex<KeychainId>;
 pub type WalletIndexedTxGraph =
-    indexed_tx_graph::IndexedTxGraph<ConfirmationBlockTime, KeychainTxOutIndex<KeychainId>>;
+    indexed_tx_graph::IndexedTxGraph<ConfirmationBlockTime, WalletIndexer>;
 pub type WalletIndexedTxGraphChangeSet =
     indexed_tx_graph::ChangeSet<ConfirmationBlockTime, keychain_txout::ChangeSet>;
+pub type ReservedSpksChangeSet = wallet_reserved_spks::ChangeSet;
 
 /// Wallet that manages all the frostsnap keys on the same network in a single transaction graph
 pub struct CoordSuperWallet {
     tx_graph: Persisted<WalletIndexedTxGraph>,
     chain: Persisted<local_chain::LocalChain>,
     chain_client: ChainClient,
+    reserved_spks: Persisted<ReservedSpks>,
     pub network: bitcoin::Network,
     db: Arc<Mutex<rusqlite::Connection>>,
 }
@@ -48,7 +56,6 @@ impl CoordSuperWallet {
     ) -> anyhow::Result<Self> {
         event!(Level::INFO, "initializing wallet");
         let mut db_ = db.lock().unwrap();
-
         let tx_graph =
             Persisted::new(&mut *db_, ()).context("loading transaction from the database")?;
         let chain = Persisted::new(
@@ -56,12 +63,15 @@ impl CoordSuperWallet {
             bitcoin::constants::genesis_block(network).block_hash(),
         )
         .context("loading chain from database")?;
-
+        let reserved_spks =
+            Persisted::new(&mut *db_, ()).context("loading reserved spks from the database")?;
         drop(db_);
+
         Ok(Self {
             tx_graph,
             chain,
             chain_client,
+            reserved_spks,
             db,
             network,
         })
@@ -83,6 +93,27 @@ impl CoordSuperWallet {
 
     pub fn get_tx(&self, txid: Txid) -> Option<Arc<bitcoin::Transaction>> {
         self.tx_graph.graph().get_tx(txid)
+    }
+
+    pub fn get_txout(&self, outpoint: OutPoint) -> Option<bitcoin::TxOut> {
+        self.tx_graph.graph().get_txout(outpoint).cloned()
+    }
+
+    pub fn get_prevouts(
+        &self,
+        outpoints: impl Iterator<Item = OutPoint>,
+    ) -> HashMap<OutPoint, TxOut> {
+        outpoints
+            .into_iter()
+            .filter_map(|op| Some((op, self.get_txout(op)?)))
+            .collect()
+    }
+
+    pub fn is_spk_mine(&self, master_appkey: MasterAppkey, spk: ScriptBuf) -> bool {
+        self.tx_graph
+            .index
+            .index_of_spk(spk)
+            .is_some_and(|((key, _), _)| *key == master_appkey)
     }
 
     fn descriptors_for_key(
@@ -147,6 +178,16 @@ impl CoordSuperWallet {
             .collect()
     }
 
+    pub fn address(&mut self, master_appkey: MasterAppkey, index: u32) -> Option<AddressInfo> {
+        self.lazily_initialize_key(master_appkey);
+        let keychain = BitcoinAccountKeychain::external();
+        let spk = self
+            .tx_graph
+            .index
+            .spk_at_index((master_appkey, keychain), index)?;
+        Some(self.address_info(master_appkey, &spk, index, keychain))
+    }
+
     fn address_info(
         &self,
         master_appkey: MasterAppkey,
@@ -154,16 +195,26 @@ impl CoordSuperWallet {
         index: u32,
         keychain: BitcoinAccountKeychain,
     ) -> AddressInfo {
+        let keychain = (master_appkey, keychain);
+        let got_index = self
+            .tx_graph
+            .index
+            .outpoints()
+            .range(((keychain, index), OutPoint::null())..)
+            .next()
+            .map(|(ki, _)| *ki);
+        let used = got_index == Some((keychain, index));
+        let shared = used || self.reserved_spks.contains(spk);
+        let fresh = !shared;
         AddressInfo {
             index,
             address: bitcoin::Address::from_script(spk, self.network).expect("has address form"),
             external: true,
-            used: self
-                .tx_graph
-                .index
-                .is_used((master_appkey, keychain), index),
+            used,
+            shared,
+            fresh,
             derivation_path: BitcoinBip32Path {
-                account_keychain: keychain,
+                account_keychain: keychain.1,
                 index,
             }
             .path_segments_from_bitcoin_appkey()
@@ -183,6 +234,91 @@ impl CoordSuperWallet {
         })?;
 
         Ok(self.address_info(master_appkey, &spk, index, keychain))
+    }
+
+    pub fn next_unused_address(&mut self, master_appkey: MasterAppkey) -> Result<AddressInfo> {
+        self.lazily_initialize_key(master_appkey);
+        let reserved_spks = self.reserved_spks.as_ref();
+        let keychain = BitcoinAccountKeychain::external();
+        let (index, spk) = {
+            let mut db = self.db.lock().unwrap();
+            self.tx_graph.mutate(&mut *db, |tx_graph| {
+                let mut changeset = WalletIndexedTxGraphChangeSet::default();
+                loop {
+                    let ((i, spk), changes) = tx_graph
+                        .index
+                        .next_unused_spk((master_appkey, keychain))
+                        .ok_or(anyhow!(
+                            "exhausted derivation indices for {}'s external keychain",
+                            master_appkey
+                        ))?;
+                    changeset.merge(changes.into());
+                    if reserved_spks.contains(&spk) {
+                        tx_graph.index.mark_used((master_appkey, keychain), i);
+                        println!("contains spk!");
+                        continue;
+                    }
+                    return Ok(((i, spk), changeset));
+                }
+            })?
+        };
+        Ok(self.address_info(master_appkey, &spk, index, keychain))
+    }
+
+    pub fn mark_address_shared(
+        &mut self,
+        master_appkey: MasterAppkey,
+        derivation_index: u32,
+    ) -> Result<bool> {
+        self.lazily_initialize_key(master_appkey);
+        let keychain = BitcoinAccountKeychain::external();
+        let mut db = self.db.lock().unwrap();
+        self.tx_graph
+            .multi(&mut self.reserved_spks)
+            .mutate(&mut db, |tx_graph, reserved_spks| {
+                let mut tx_graph_changeset = WalletIndexedTxGraphChangeSet::default();
+                let mut reserved_spks_changeset = ReservedSpksChangeSet::default();
+                match tx_graph
+                    .index
+                    .reveal_to_target((master_appkey, keychain), derivation_index)
+                {
+                    Some((_, changeset)) => tx_graph_changeset.merge(changeset.into()),
+                    None => return Ok((false, (tx_graph_changeset, reserved_spks_changeset))),
+                }
+                let spk = match tx_graph
+                    .index
+                    .spk_at_index((master_appkey, keychain), derivation_index)
+                {
+                    Some(spk) => spk,
+                    None => return Ok((false, (tx_graph_changeset, reserved_spks_changeset))),
+                };
+                reserved_spks_changeset.merge(reserved_spks.reserve(spk));
+                let reserved = reserved_spks_changeset.is_empty();
+                Ok((reserved, (tx_graph_changeset, reserved_spks_changeset)))
+            })
+    }
+
+    pub fn unmark_address_shared(
+        &mut self,
+        master_appkey: MasterAppkey,
+        derivation_index: u32,
+    ) -> Result<bool> {
+        self.lazily_initialize_key(master_appkey);
+        let keychain = BitcoinAccountKeychain::external();
+        let spk = match self
+            .tx_graph
+            .index
+            .spk_at_index((master_appkey, keychain), derivation_index)
+        {
+            Some(spk) => spk,
+            None => return Ok(false),
+        };
+        let mut db = self.db.lock().unwrap();
+        self.reserved_spks.mutate(&mut db, |reserved_spks| {
+            let changeset = reserved_spks.unreserve(spk);
+            let is_changed = !changeset.is_empty();
+            Ok((is_changed, changeset))
+        })
     }
 
     pub fn search_for_address(
@@ -240,6 +376,7 @@ impl CoordSuperWallet {
         txs.sort_unstable_by_key(|tx| core::cmp::Reverse(tx.chain_position));
         txs.into_iter()
             .filter_map(|canonical_tx| {
+                let inner = canonical_tx.tx_node.tx.clone();
                 let txid = canonical_tx.tx_node.txid;
                 let confirmation_time = match canonical_tx.chain_position {
                     ChainPosition::Confirmed(conf_time) => Some(ConfirmationTime {
@@ -248,47 +385,28 @@ impl CoordSuperWallet {
                     }),
                     _ => None,
                 };
-                let net_value = self.tx_graph.index.net_value(
-                    &canonical_tx.tx_node.tx,
-                    Self::key_index_range(master_appkey),
-                );
-                if net_value == SignedAmount::ZERO {
-                    return None;
-                }
-                let fee = self
-                    .tx_graph
-                    .graph()
-                    .calculate_fee(&canonical_tx.tx_node)
-                    .map(Amount::to_sat)
-                    .ok();
-                let recipients = canonical_tx
-                    .tx_node
-                    .tx
+                let last_seen = canonical_tx.tx_node.last_seen_unconfirmed;
+                let prevouts =
+                    self.get_prevouts(inner.input.iter().map(|txin| txin.previous_output));
+                let is_mine = inner
                     .output
                     .iter()
-                    .enumerate()
-                    .map(|(vout, txout)| {
-                        let is_mine = self
-                            .tx_graph
-                            .index
-                            .index_of_spk(txout.script_pubkey.clone())
-                            .is_some_and(|((key, _), _)| *key == master_appkey);
-                        TxOutInfo {
-                            outpoint: bitcoin::OutPoint::new(txid, vout as u32),
-                            txout: txout.clone(),
-                            is_mine,
-                        }
+                    .chain(prevouts.values())
+                    .map(|txout| txout.script_pubkey.clone())
+                    .filter(|spk| self.is_spk_mine(master_appkey, spk.clone()))
+                    .collect::<HashSet<ScriptBuf>>();
+                if is_mine.is_empty() {
+                    None
+                } else {
+                    Some(Transaction {
+                        inner,
+                        txid,
+                        confirmation_time,
+                        last_seen,
+                        prevouts,
+                        is_mine,
                     })
-                    .collect();
-                Some(Transaction {
-                    inner: canonical_tx.tx_node.tx.clone(),
-                    confirmation_time,
-                    net_value: net_value.to_sat(),
-                    last_seen: canonical_tx.tx_node.last_seen_unconfirmed,
-                    txid,
-                    fee,
-                    recipients,
-                })
+                }
             })
             .collect()
     }
@@ -691,25 +809,21 @@ pub struct AddressInfo {
     pub address: bitcoin::Address,
     pub external: bool,
     pub used: bool,
+    pub shared: bool,
+    pub fresh: bool,
     pub derivation_path: Vec<u32>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Transaction {
-    pub net_value: i64,
     pub inner: Arc<bitcoin::Transaction>,
+    pub txid: Txid,
+
     pub confirmation_time: Option<ConfirmationTime>,
     pub last_seen: Option<u64>,
-    pub txid: Txid,
-    pub fee: Option<u64>,
-    pub recipients: Vec<TxOutInfo>,
-}
 
-#[derive(Debug, Clone)]
-pub struct TxOutInfo {
-    pub outpoint: bitcoin::OutPoint,
-    pub txout: bitcoin::TxOut,
-    pub is_mine: bool,
+    pub prevouts: HashMap<OutPoint, TxOut>,
+    pub is_mine: HashSet<ScriptBuf>,
 }
 
 #[derive(Clone, Debug)]

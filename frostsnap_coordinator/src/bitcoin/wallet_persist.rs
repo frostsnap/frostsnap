@@ -1,6 +1,9 @@
 use std::collections::btree_map;
 
-use super::wallet::{WalletIndexedTxGraph, WalletIndexedTxGraphChangeSet};
+use super::{
+    wallet::{WalletIndexedTxGraph, WalletIndexedTxGraphChangeSet},
+    wallet_reserved_spks::{self, ReservedSpks},
+};
 use crate::persist::Persist;
 use anyhow::Result;
 use bdk_chain::{
@@ -8,6 +11,30 @@ use bdk_chain::{
     local_chain::{self, LocalChain},
     ConfirmationBlockTime,
 };
+
+impl Persist<rusqlite::Connection> for ReservedSpks {
+    type Update = wallet_reserved_spks::ChangeSet;
+    type InitParams = ();
+
+    fn initialize(conn: &mut rusqlite::Connection, _: Self::InitParams) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        let db_tx = conn.transaction()?;
+        wallet_reserved_spks::ChangeSet::init_sqlite_tables(&db_tx)?;
+        let changeset = wallet_reserved_spks::ChangeSet::from_sqlite(&db_tx)?;
+        let reserved_spks = Self::from_changeset(changeset);
+        db_tx.commit()?;
+        Ok(reserved_spks)
+    }
+
+    fn persist_update(conn: &mut rusqlite::Connection, update: Self::Update) -> Result<()> {
+        let db_tx = conn.transaction()?;
+        update.persist_to_sqlite(&db_tx)?;
+        db_tx.commit()?;
+        Ok(())
+    }
+}
 
 impl Persist<rusqlite::Connection> for WalletIndexedTxGraph {
     type Update = WalletIndexedTxGraphChangeSet;

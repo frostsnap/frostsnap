@@ -51,7 +51,7 @@ class AddressInputController with ChangeNotifier {
 
   String? get address => (_errorText == null) ? controller.text : null;
 
-  String get formattedAddress => spacedHex(controller.text, spacing: 4);
+  String get formattedAddress => spacedHex(controller.text, groupSize: 4);
 }
 
 final defaultTextInputBorder = OutlineInputBorder(

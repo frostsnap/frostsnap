@@ -237,6 +237,13 @@ impl TransactionTemplate {
             .filter_map(|(i, input)| Some((i, input, input.owner.local_owner()?)))
     }
 
+    pub fn iter_locally_owned_outputs(&self) -> impl Iterator<Item = (usize, &Output, &LocalSpk)> {
+        self.outputs
+            .iter()
+            .enumerate()
+            .filter_map(|(i, output)| Some((i, output, output.owner.local_owner()?)))
+    }
+
     pub fn fee(&self) -> Option<u64> {
         self.inputs
             .iter()
@@ -350,6 +357,9 @@ pub struct Input {
 }
 
 impl Input {
+    pub fn outpoint(&self) -> OutPoint {
+        self.outpoint
+    }
     pub fn txout(&self) -> TxOut {
         TxOut {
             value: bitcoin::Amount::from_sat(self.value),

@@ -506,14 +506,17 @@ void showWalletCreatedDialog(BuildContext context, WalletItem walletItem) {
                 homeCtx.isShowingCreatedWalletDialog.value = false;
                 showBottomSheetOrDialog(
                   context,
+                  titleText: 'Backup Checklist',
                   builder:
-                      (context) => walletItem.tryWrapInWalletContext(
-                        context: context,
-                        child: BackupChecklist(
-                          accessStructure: accessStructure,
-                          showAppBar: true,
-                        ),
-                      ),
+                      (context, scrollController) =>
+                          walletItem.tryWrapInWalletContext(
+                            context: context,
+                            child: BackupChecklist(
+                              scrollController: scrollController,
+                              accessStructure: accessStructure,
+                              showAppBar: false,
+                            ),
+                          ),
                 );
               },
               child: const Text('Secure Wallet'),

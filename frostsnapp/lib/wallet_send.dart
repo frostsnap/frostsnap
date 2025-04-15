@@ -236,21 +236,6 @@ class _WalletSendPageState extends State<WalletSendPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    final appBar = SliverAppBar(
-      title: Text('Send Bitcoin'),
-      titleTextStyle: theme.textTheme.titleMedium,
-      centerTitle: true,
-      backgroundColor: theme.colorScheme.surfaceContainerLow,
-      pinned: true,
-      stretch: true,
-      forceMaterialTransparency: true,
-      automaticallyImplyLeading: false,
-      leading: IconButton(
-        onPressed: () => Navigator.pop(context),
-        icon: Icon(Icons.close),
-      ),
-    );
-
     final etaInputCard = ListenableBuilder(
       listenable: feeRateModel,
       builder: (context, _) {
@@ -494,7 +479,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
             ),
           ),
         ),
-        appBar,
+        //appBar,
       ],
     );
 
@@ -543,7 +528,10 @@ class _WalletSendPageState extends State<WalletSendPage> {
     final access = walletCtx.wallet.frostKey()!.accessStructures()[0];
     final chainTipHeight = walletCtx.wallet.superWallet.height();
     final now = DateTime.now();
-    final tx = unsignedTx?.details(masterAppkey: walletCtx.masterAppkey);
+    final tx = unsignedTx?.details(
+      superWallet: walletCtx.superWallet,
+      masterAppkey: walletCtx.masterAppkey,
+    );
     if (tx == null) return;
     final txDetails = TxDetailsModel(
       tx: tx,
@@ -553,8 +541,9 @@ class _WalletSendPageState extends State<WalletSendPage> {
     nextPageOrPop(null);
     await showBottomSheetOrDialog(
       context,
+      titleText: 'Transaction Details',
       builder:
-          (context) => walletCtx.wrap(
+          (context, scrollController) => walletCtx.wrap(
             TxDetailsPage.startSigning(
               txStates: walletCtx.txStream,
               txDetails: txDetails,
