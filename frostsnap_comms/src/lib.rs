@@ -70,6 +70,7 @@ impl<D: Direction> Gist for ReceiveSerial<D> {
             ReceiveSerial::MagicBytes(_) => "MagicBytes".into(),
             ReceiveSerial::Message(msg) => msg.gist(),
             ReceiveSerial::Conch => "Conch".into(),
+            ReceiveSerial::Reset => "Reset".into(),
             _ => "Unused".into(),
         }
     }

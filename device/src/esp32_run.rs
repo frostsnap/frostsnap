@@ -221,6 +221,9 @@ where
                                         .expect("failed to write conch upstream");
                                 }
                                 ReceiveSerial::Reset => {
+                                    upstream_connection.send_to_coordinator([
+                                        DeviceSendBody::DisconnectDownstream,
+                                    ]);
                                     downstream_connection_state =
                                         DownstreamConnectionState::Disconnected;
                                     break;

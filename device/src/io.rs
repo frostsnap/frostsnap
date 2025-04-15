@@ -135,7 +135,7 @@ where
             &mut *self,
             BINCODE_CONFIG,
         )?;
-        self.io.nb_flush();
+        self.flush();
 
         Ok(())
     }

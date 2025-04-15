@@ -406,6 +406,7 @@ impl UsbSerialManager {
                     }
                 }
                 ReceiveSerial::Reset => {
+                    event!(Level::DEBUG, port = port_name, "Read reset downstream!");
                     self.disconnect(&port_name, &mut device_changes);
                 }
                 _ => { /* unused */ }
@@ -586,6 +587,8 @@ impl UsbSerialManager {
                 continue;
             }
 
+            io.wait_for_conch()?;
+
             event!(Level::INFO, port = port, "starting writing firmware");
             let mut chunks = firmware_bin
                 .bin
@@ -603,8 +606,8 @@ impl UsbSerialManager {
                     );
                     return Some(Err(e.into()));
                 }
-                let mut byte = [0u8; 1];
 
+                let mut byte = [0u8; 1];
                 match io.raw_read(&mut byte[..]) {
                     Ok(_) => {
                         if byte[0] != FIRMWARE_NEXT_CHUNK_READY_SIGNAL {
@@ -625,6 +628,7 @@ impl UsbSerialManager {
                         return Some(Err(e.into()));
                     }
                 }
+
                 Some(Ok(
                     ((port_index as u32 * n_chunks) + i as u32) as f32 / (total_chunks - 1) as f32
                 ))
