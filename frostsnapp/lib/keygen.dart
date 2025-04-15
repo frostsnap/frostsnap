@@ -15,7 +15,6 @@ import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/progress_indicator.dart';
 import 'package:frostsnapp/theme.dart';
-import 'package:frostsnapp/wallet_list_controller.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class KeyNamePage extends StatefulWidget {
@@ -168,7 +167,7 @@ class DevicesPage extends StatelessWidget {
     return Scaffold(
       appBar: FsAppBar(title: Text('Devices')),
       body: StreamBuilder(
-        stream: deviceListSubject,
+        stream: GlobalStreams.deviceListSubject,
         builder: (context, snapshot) {
           final theme = Theme.of(context);
 
@@ -401,12 +400,8 @@ class _ThresholdPageState extends State<ThresholdPage> {
                   if (context.mounted) {
                     Navigator.popUntil(context, (r) => r.isFirst);
                     final homeCtx = HomeContext.of(context)!;
-                    final walletItem = homeCtx.openNewlyCreatedWallet(
-                      accessStructureRef.keyId,
-                    );
-                    if (walletItem != null) {
-                      showWalletCreatedDialog(context, walletItem);
-                    }
+                    homeCtx.openNewlyCreatedWallet(accessStructureRef.keyId);
+                    showWalletCreatedDialog(context, accessStructureRef);
                   }
                 },
                 icon: Icon(Icons.check),
@@ -420,11 +415,13 @@ class _ThresholdPageState extends State<ThresholdPage> {
   }
 }
 
-void showWalletCreatedDialog(BuildContext context, WalletItem walletItem) {
-  final homeCtx = HomeContext.of(context)!;
-  final accessStructure = walletItem.key.accessStructures().first;
-  homeCtx.isShowingCreatedWalletDialog.value = true;
-  showDialog(
+showWalletCreatedDialog(
+  BuildContext context,
+  AccessStructureRef accessStructureRef,
+) async {
+  final accessStructure = coord.getAccessStructure(asRef: accessStructureRef)!;
+  final backupManager = FrostsnapContext.of(context)!.backupManager;
+  await showDialog(
     context: context,
     barrierDismissible: false,
     builder: (BuildContext context) {
@@ -496,19 +493,19 @@ void showWalletCreatedDialog(BuildContext context, WalletItem walletItem) {
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                homeCtx.isShowingCreatedWalletDialog.value = false;
               },
               child: const Text('Later'),
             ),
             FilledButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                homeCtx.isShowingCreatedWalletDialog.value = false;
                 showBottomSheetOrDialog(
                   context,
                   builder:
-                      (context) => walletItem.tryWrapInWalletContext(
-                        context: context,
+                      (context) => SuperWalletContext.of(
+                        context,
+                      )!.tryWrapInWalletContext(
+                        keyId: accessStructureRef.keyId,
                         child: BackupChecklist(
                           accessStructure: accessStructure,
                           showAppBar: true,
@@ -523,6 +520,7 @@ void showWalletCreatedDialog(BuildContext context, WalletItem walletItem) {
       );
     },
   );
+  await backupManager.startBackupRun(accessStructure: accessStructure);
 }
 
 // Utility function for creating the page transition

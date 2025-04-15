@@ -45,13 +45,11 @@ class _DeviceSettingsState extends State<DeviceSettings> {
     super.initState();
     _deviceRemoved = Completer();
 
-    deviceListSubject.listen((event) {
-      if (mounted) {
-        setState(() => device = event.state.getDevice(id: widget.id));
-      }
+    GlobalStreams.deviceListSubject.listen((event) {
+      setState(() => device = event.state.getDevice(id: widget.id));
     });
 
-    deviceListSubject
+    GlobalStreams.deviceListSubject
         .where(
           (event) => event.changes.any(
             (change) =>

@@ -85,7 +85,7 @@ class _DeviceNameField extends State<DeviceNameField> {
                     : "Rename “${widget.existingName}”",
           ),
           onSubmitted: (name) async {
-            final completeWhen = deviceListChangeStream
+            final completeWhen = GlobalStreams.deviceListChangeStream
                 .firstWhere(
                   (change) =>
                       change.kind == DeviceListChangeKind.Named &&

@@ -114,6 +114,7 @@ impl FramedSerialPort {
     pub fn raw_write(&mut self, bytes: &[u8]) -> Result<(), std::io::Error> {
         let io_device = self.inner.get_mut();
         io_device.write_all(bytes)?;
+        io_device.flush().unwrap();
         Ok(())
     }
 
@@ -174,6 +175,10 @@ impl FramedSerialPort {
 
         Ok(())
     }
+
+    pub fn flush(&mut self) {
+        self.inner.get_mut().flush().unwrap();
+    }
 }
 
 use std::time::Duration;
@@ -204,6 +209,7 @@ impl Serial for DesktopSerial {
             // have in case a device is bisbehaving. Note: 10ms is too low and leads to errors when
             // writing.
             .timeout(Duration::from_millis(5_000))
+            .preserve_dtr_on_open()
             .open()
             .map_err(|e| {
                 if e.to_string() == "Device or resource busy" {

@@ -1,13 +1,16 @@
 use frostsnap_comms::CoordinatorSendMessage;
 use frostsnap_core::{
-    coordinator::{ActiveSignSession, CoordinatorSend, RequestDeviceSign},
-    message::{CoordinatorToUserMessage, CoordinatorToUserSigningMessage, EncodedSignature},
+    coordinator::{
+        ActiveSignSession, CoordinatorSend, CoordinatorToUserMessage,
+        CoordinatorToUserSigningMessage, RequestDeviceSign,
+    },
+    message::EncodedSignature,
     DeviceId, KeyId, SignSessionId,
 };
 use std::collections::BTreeSet;
 use tracing::{event, Level};
 
-use crate::{Completion, UiProtocol};
+use crate::{Completion, DeviceMode, UiProtocol};
 
 /// Keeps track of when
 pub struct SigningDispatcher {
@@ -128,8 +131,11 @@ impl UiProtocol for SigningDispatcher {
         self.emit_state();
     }
 
-    fn connected(&mut self, device_id: DeviceId) {
-        if !self.got_signatures.contains(&device_id) && self.targets.contains(&device_id) {
+    fn connected(&mut self, device_id: DeviceId, state: DeviceMode) {
+        if !self.got_signatures.contains(&device_id)
+            && self.targets.contains(&device_id)
+            && state == DeviceMode::Ready
+        {
             self.connected_but_need_request.insert(device_id);
             self.emit_state();
         }

@@ -1414,6 +1414,7 @@ dependencies = [
  "chacha20",
  "chacha20poly1305",
  "cipher",
+ "frostsnap_macros",
  "proptest",
  "proptest-state-machine",
  "rand",
@@ -1470,6 +1471,15 @@ dependencies = [
  "frostsnap_core",
  "proptest",
  "rand_core",
+]
+
+[[package]]
+name = "frostsnap_macros"
+version = "0.0.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]

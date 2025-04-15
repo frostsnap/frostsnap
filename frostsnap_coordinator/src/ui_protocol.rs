@@ -1,7 +1,8 @@
 use std::any::Any;
 
 use frostsnap_comms::CoordinatorSendMessage;
-use frostsnap_core::{message::CoordinatorToUserMessage, DeviceId};
+use frostsnap_core::{coordinator::CoordinatorToUserMessage, DeviceId, Gist as _};
+use tracing::{event, Level};
 
 /// A UiProtocol is a layer between the protocol the devices and the coordinator are executing e.g.
 /// keygen, signing etc and the actual UI. Applications intercept frostsnap_core's
@@ -16,9 +17,15 @@ pub trait UiProtocol: Send + Any + 'static {
     }
     fn cancel(&mut self);
     fn is_complete(&self) -> Option<Completion>;
-    fn connected(&mut self, _id: DeviceId) {}
+    fn connected(&mut self, _id: DeviceId, _state: DeviceMode) {}
     fn disconnected(&mut self, id: DeviceId);
-    fn process_to_user_message(&mut self, _message: CoordinatorToUserMessage) {}
+    fn process_to_user_message(&mut self, message: CoordinatorToUserMessage) {
+        event!(
+            Level::DEBUG,
+            gist = message.gist(),
+            "to user message not processed"
+        );
+    }
     fn process_comms_message(&mut self, _from: DeviceId, _message: frostsnap_comms::CommsMisc) {}
     /// `poll` allows the UiProtocol to communicate to the rest of the system.  The reason the ui protocol needs
     /// to do this is subtle: core messages may need to be sent out only when a device is next
@@ -35,4 +42,11 @@ pub trait UiProtocol: Send + Any + 'static {
 pub enum Completion {
     Success,
     Abort { send_cancel_to_all_devices: bool },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Ord, PartialOrd)]
+pub enum DeviceMode {
+    Blank,
+    Recovery,
+    Ready,
 }

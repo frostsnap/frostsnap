@@ -3,7 +3,7 @@ use frostsnap_core::Gist;
 use frostsnap_core::{coordinator::FrostCoordinator, AccessStructureRef, DeviceId, SymmetricKey};
 use tracing::error;
 
-use crate::{Completion, Sink, UiProtocol};
+use crate::{Completion, DeviceMode, Sink, UiProtocol};
 pub struct DisplayBackupProtocol {
     device_id: DeviceId,
     abort: bool,
@@ -60,7 +60,7 @@ impl UiProtocol for DisplayBackupProtocol {
         }
     }
 
-    fn connected(&mut self, id: frostsnap_core::DeviceId) {
+    fn connected(&mut self, id: frostsnap_core::DeviceId, _state: DeviceMode) {
         if id == self.device_id {
             self.should_send = true;
         }

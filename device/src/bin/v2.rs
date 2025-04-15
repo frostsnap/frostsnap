@@ -36,7 +36,7 @@ use esp_hal::{
     usb_serial_jtag::UsbSerialJtag,
     Blocking,
 };
-use frostsnap_comms::Downstream;
+use frostsnap_comms::{Downstream, Model};
 use frostsnap_core::{schnorr_fun::fun::hex, SignTask};
 use frostsnap_device::{
     efuse::{self, EfuseHmacKeys},
@@ -232,6 +232,7 @@ fn main() -> ! {
         downstream_detect,
         sha256,
         hmac_keys,
+        model: Model::Alpha { version: 1 },
     };
     run.run()
 }
@@ -309,14 +310,11 @@ where
                 }
             },
             Workflow::NamingDevice {
-                old_name: existing_name,
-                new_name: current_name,
-            } => match existing_name {
-                Some(existing_name) => self
-                    .display
-                    .print(format!("Renaming {}:\n> {}", existing_name, current_name)),
-                None => self.display.print(format!("Naming:\n> {}", current_name)),
-            },
+                old_name: _,
+                new_name,
+            } => {
+                self.display.ready_screen(new_name);
+            }
             Workflow::WaitingFor(waiting_for) => match waiting_for {
                 WaitingFor::LookingForUpstream { jtag } => {
                     if *jtag {

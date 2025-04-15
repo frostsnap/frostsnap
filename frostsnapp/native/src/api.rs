@@ -19,27 +19,35 @@ pub use frostsnap_coordinator::bitcoin::{
     wallet::CoordSuperWallet,
 };
 pub use frostsnap_coordinator::firmware_upgrade::FirmwareUpgradeConfirmState;
+pub use frostsnap_coordinator::frostsnap_comms::Model;
 pub use frostsnap_coordinator::frostsnap_core;
 use frostsnap_coordinator::frostsnap_core::bitcoin_transaction::RootOwner;
-use frostsnap_coordinator::frostsnap_core::coordinator::CoordFrostKey;
-use frostsnap_coordinator::frostsnap_core::device::KeyPurpose;
+use frostsnap_coordinator::frostsnap_core::message::HeldShare;
+use frostsnap_coordinator::frostsnap_core::{
+    coordinator::{restoration::RecoverShareError, CoordFrostKey},
+    device::KeyPurpose,
+};
 pub use frostsnap_coordinator::verify_address::VerifyAddressProtocolState;
 pub use frostsnap_coordinator::{
-    check_share::CheckShareState, keygen::KeyGenState, persist::Persisted, signing::SigningState,
-    DeviceChange, PortDesc, Settings as RSettings,
+    keygen::KeyGenState, persist::Persisted, settings::Settings as RSettings,
+    signing::SigningState, DeviceChange, PortDesc,
+};
+pub use frostsnap_core::coordinator::restoration::{
+    PhysicalBackupPhase as RPhysicalBackupPhase, RecoverShare as RRecoverShare,
+    RestorationState as RRestorationState,
 };
 
-pub use frostsnap_coordinator::backup_run::{BackupRun, BackupState};
-use frostsnap_coordinator::{BackupMutation, DesktopSerial, UsbSerialManager};
+pub use frostsnap_coordinator::backup_run::BackupState;
+use frostsnap_coordinator::{DesktopSerial, DeviceMode, UsbSerialManager};
 pub use frostsnap_core::message::EncodedSignature;
 pub use frostsnap_core::{
     coordinator::ActiveSignSession as RActiveSignSession, AccessStructureId, AccessStructureRef,
-    DeviceId, KeyId, KeygenId, MasterAppkey, SessionHash, SignSessionId, WireSignTask,
+    DeviceId, KeyId, KeygenId, MasterAppkey, RestorationId, SessionHash, SignSessionId,
+    WireSignTask,
 };
 use lazy_static::lazy_static;
 pub use std::collections::BTreeMap;
 pub use std::collections::HashMap;
-use std::collections::HashSet;
 use std::ops::Deref;
 use std::path::Path;
 pub use std::path::PathBuf;
@@ -172,6 +180,8 @@ pub struct ConnectedDevice {
     pub firmware_digest: String,
     pub latest_digest: Option<String>,
     pub id: DeviceId,
+    pub model: Model,
+    pub recovery_mode: bool,
 }
 
 impl ConnectedDevice {
@@ -184,33 +194,39 @@ impl ConnectedDevice {
         // know that the device needs a firmware upgrade (even if we can't give it to them).
         SyncReturn(Some(self.firmware_digest.as_str()) != self.latest_digest.as_deref())
     }
+
+    pub(crate) fn device_mode(&self) -> DeviceMode {
+        if self.name.is_none() {
+            DeviceMode::Blank
+        } else if self.recovery_mode {
+            DeviceMode::Recovery
+        } else {
+            DeviceMode::Ready
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct KeyState {
     pub keys: Vec<FrostKey>,
-    pub recoverable: Vec<RecoverableKey>,
+    pub restoring: Vec<RestoringKey>,
 }
 
 #[derive(Clone, Debug)]
-pub struct RecoverableKey {
+pub struct RestoringKey {
+    pub restoration_id: RestorationId,
     pub name: String,
     pub threshold: u16,
-    pub access_structure_ref: AccessStructureRef,
-    pub shares_obtained: u16,
+    pub shares_obtained: Vec<DeviceId>,
+    pub bitcoin_network: Option<BitcoinNetwork>,
 }
 
 #[derive(Clone, Debug)]
 pub struct FrostKey(pub(crate) RustOpaque<frostsnap_core::coordinator::CoordFrostKey>);
 
 impl FrostKey {
-    pub fn master_appkey(&self) -> SyncReturn<Option<MasterAppkey>> {
-        SyncReturn(
-            self.0
-                .complete_key
-                .as_ref()
-                .map(|complete_key| complete_key.master_appkey),
-        )
+    pub fn master_appkey(&self) -> SyncReturn<MasterAppkey> {
+        SyncReturn(self.0.complete_key.master_appkey)
     }
 
     pub fn key_id(&self) -> SyncReturn<KeyId> {
@@ -225,24 +241,24 @@ impl FrostKey {
         SyncReturn(
             self.0
                 .complete_key
-                .iter()
-                .flat_map(|complete_key| {
-                    complete_key
-                        .access_structures
-                        .values()
-                        .cloned()
-                        .map(From::from)
-                })
+                .access_structures
+                .values()
+                .cloned()
+                .map(From::from)
                 .collect(),
         )
     }
 
-    pub fn is_complete(&self) -> SyncReturn<bool> {
-        SyncReturn(self.0.complete_key.is_some())
-    }
-
-    pub fn access_structure_state(&self) -> SyncReturn<AccessStructureListState> {
-        SyncReturn(AccessStructureListState::from_frost_key(&self.0))
+    pub fn get_access_structure(
+        &self,
+        access_structure_id: AccessStructureId,
+    ) -> Option<AccessStructure> {
+        self.0
+            .complete_key
+            .access_structures
+            .get(&access_structure_id)
+            .cloned()
+            .map(From::from)
     }
 
     pub fn bitcoin_network(&self) -> SyncReturn<Option<BitcoinNetwork>> {
@@ -252,57 +268,6 @@ impl FrostKey {
                 .bitcoin_network()
                 .map(|network| network.into()),
         )
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct RecoveringAccessStructure {
-    pub access_structure_id: AccessStructureId,
-    pub threshold: u16,
-    pub got_shares_from: Vec<DeviceId>,
-}
-
-impl RecoveringAccessStructure {
-    fn from_core(
-        access_structure_id: AccessStructureId,
-        recovering_access_structure: frostsnap_core::coordinator::RecoveringAccessStructure,
-    ) -> Self {
-        RecoveringAccessStructure {
-            access_structure_id,
-            threshold: recovering_access_structure.threshold,
-            got_shares_from: recovering_access_structure
-                .share_images
-                .iter()
-                .map(|(_, (device_id, _))| *device_id)
-                .collect::<HashSet<DeviceId>>()
-                .into_iter()
-                .collect(),
-        }
-    }
-}
-
-pub struct AccessStructureListState(pub Vec<AccessStructureState>);
-
-pub enum AccessStructureState {
-    Recovering(RecoveringAccessStructure),
-    Complete(AccessStructure),
-}
-
-impl AccessStructureListState {
-    pub(crate) fn from_frost_key(frost_key: &CoordFrostKey) -> Self {
-        let complete = frost_key.access_structures().map(|access_structure| {
-            AccessStructureState::Complete(AccessStructure::from(access_structure.clone()))
-        });
-        let recovering = frost_key.recovering_access_structures.iter().map(
-            |(access_structure_id, recovering_access_structure)| {
-                AccessStructureState::Recovering(RecoveringAccessStructure::from_core(
-                    *access_structure_id,
-                    recovering_access_structure.clone(),
-                ))
-            },
-        );
-
-        AccessStructureListState(complete.chain(recovering).collect())
     }
 }
 
@@ -354,6 +319,12 @@ pub struct _PortDesc {
     pub id: String,
     pub vid: u16,
     pub pid: u16,
+}
+
+#[frb(mirror(Model))]
+pub enum _Model {
+    Alpha { version: u8 },
+    Frontier { version: u8 },
 }
 
 #[derive(Debug)]
@@ -509,6 +480,7 @@ pub enum DeviceListChangeKind {
     Added,
     Removed,
     Named,
+    RecoveryMode,
 }
 
 #[derive(Clone, Debug)]
@@ -1106,11 +1078,7 @@ impl Coordinator {
                         let witness = bitcoin::Witness::from_slice(&[schnorr_sig.to_vec()]);
                         txin.witness = witness;
                     }
-                    let master_appkey = coord
-                        .get_frost_key(key_id)?
-                        .complete_key
-                        .as_ref()?
-                        .master_appkey;
+                    let master_appkey = coord.get_frost_key(key_id)?.complete_key.master_appkey;
                     let net_value = tx_temp
                         .net_value()
                         .get(&RootOwner::Local(master_appkey))
@@ -1189,17 +1157,6 @@ impl Coordinator {
         self.0.final_keygen_ack(keygen_id)
     }
 
-    pub fn check_share_on_device(
-        &self,
-        device_id: DeviceId,
-        access_structure_ref: AccessStructureRef,
-        sink: StreamSink<CheckShareState>,
-    ) -> Result<()> {
-        self.0
-            .check_share_on_device(device_id, access_structure_ref, sink, crate::TEMP_KEY)?;
-        Ok(())
-    }
-
     pub fn request_device_sign(
         &self,
         device_id: DeviceId,
@@ -1222,12 +1179,6 @@ impl Coordinator {
 
     pub fn get_frost_key(&self, key_id: KeyId) -> SyncReturn<Option<FrostKey>> {
         SyncReturn(self.0.get_frost_key(key_id).map(FrostKey::from))
-    }
-
-    pub fn start_recovery(&self, key_id: KeyId) -> Result<()> {
-        self.0.start_recovery(key_id)?;
-
-        Ok(())
     }
 
     pub fn delete_key(&self, key_id: KeyId) -> Result<()> {
@@ -1265,6 +1216,202 @@ impl Coordinator {
 
     pub fn sub_signing_session_signals(&self, key_id: KeyId, sink: StreamSink<()>) {
         self.0.sub_signing_session_signals(key_id, SinkWrap(sink))
+    }
+
+    pub fn wait_for_recovery_share(
+        &self,
+        sink: StreamSink<WaitForRecoveryShareState>,
+    ) -> Result<()> {
+        self.0.wait_for_recovery_share(SinkWrap(sink));
+        Ok(())
+    }
+
+    pub fn start_restoring_wallet(
+        &self,
+        name: String,
+        threshold: u16,
+        network: BitcoinNetwork,
+    ) -> Result<RestorationId> {
+        self.0
+            .start_restoring_wallet(name, threshold, KeyPurpose::Bitcoin(*network.0))
+    }
+
+    pub fn start_restoring_wallet_from_device_share(
+        &self,
+        recover_share: RecoverShare,
+    ) -> Result<RestorationId> {
+        self.0
+            .start_restoring_wallet_from_device_share(recover_share.0.deref().clone())
+    }
+
+    pub fn continue_restoring_wallet_from_device_share(
+        &self,
+        restoration_id: RestorationId,
+        recover_share: RecoverShare,
+    ) -> Result<()> {
+        self.0.continue_restoring_wallet_from_device_share(
+            restoration_id,
+            recover_share.0.deref().clone(),
+        )
+    }
+
+    pub fn restoration_check_share_compatible(
+        &self,
+        restoration_id: RestorationId,
+        recover_share: RecoverShare,
+    ) -> SyncReturn<ShareCompatibility> {
+        use frostsnap_core::coordinator::restoration::RestoreRecoverShareError::*;
+        SyncReturn(
+            match self
+                .0
+                .inner()
+                .check_recover_share_compatible_with_restoration(restoration_id, &recover_share.0)
+            {
+                Ok(_) => ShareCompatibility::Compatible,
+                Err(e) => match e {
+                    NameMismatch => ShareCompatibility::NameMismatch,
+                    AcccessStructureMismatch | UnknownRestorationId | PurposeNotCompatible => {
+                        ShareCompatibility::Incompatible
+                    }
+                    AlreadyGotThisShare => ShareCompatibility::AlreadyGotIt,
+                },
+            },
+        )
+    }
+
+    pub fn finish_restoring(&self, restoration_id: RestorationId) -> Result<AccessStructureRef> {
+        self.0.finish_restoring(restoration_id, crate::TEMP_KEY)
+    }
+
+    pub fn get_restoration_state(
+        &self,
+        restoration_id: RestorationId,
+    ) -> SyncReturn<Option<RestorationState>> {
+        SyncReturn(
+            self.0
+                .get_restoration_state(restoration_id)
+                .map(RustOpaque::new)
+                .map(RestorationState),
+        )
+    }
+
+    pub fn cancel_restoration(&self, restoration_id: RestorationId) -> Result<()> {
+        self.0.cancel_restoration(restoration_id)
+    }
+
+    pub fn check_recover_share_compatible(
+        &self,
+        recover_share: RecoverShare,
+    ) -> SyncReturn<ShareCompatibility> {
+        let res = self.0.inner().check_recover_share_compatible_with_key(
+            recover_share.0.deref().clone(),
+            crate::TEMP_KEY,
+        );
+
+        SyncReturn(match res {
+            Ok(_) => ShareCompatibility::Compatible,
+            Err(e) => match e {
+                RecoverShareError::AlreadyGotThisShare => ShareCompatibility::AlreadyGotIt,
+                RecoverShareError::NoSuchAccessStructure => ShareCompatibility::Incompatible,
+                RecoverShareError::ShareImageIsWrong => ShareCompatibility::Incompatible,
+                RecoverShareError::DecryptionError => {
+                    event!(Level::ERROR, "share decryption error");
+                    ShareCompatibility::Incompatible
+                }
+            },
+        })
+    }
+
+    pub fn recover_share(&self, recover_share: RecoverShare) -> Result<()> {
+        self.0
+            .recover_share(recover_share.0.deref().clone(), crate::TEMP_KEY)
+    }
+
+    pub fn tell_device_to_enter_physical_backup(
+        &self,
+        restoration_id: RestorationId,
+        device_id: DeviceId,
+        sink: StreamSink<EnterPhysicalBackupState>,
+    ) -> Result<()> {
+        self.0.tell_device_to_enter_physical_backup(
+            restoration_id,
+            device_id,
+            true,
+            SinkWrap(sink),
+        )?;
+        Ok(())
+    }
+
+    pub fn tell_device_to_enter_physical_backup_for_check(
+        &self,
+        device_id: DeviceId,
+        sink: StreamSink<EnterPhysicalBackupState>,
+    ) -> Result<()> {
+        let restoration_id = RestorationId::new(&mut rand::thread_rng());
+        self.0.tell_device_to_enter_physical_backup(
+            restoration_id,
+            device_id,
+            false,
+            SinkWrap(sink),
+        )?;
+
+        Ok(())
+    }
+
+    pub fn check_physical_backup(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        phase: PhysicalBackupPhase,
+    ) -> SyncReturn<bool> {
+        SyncReturn(
+            self.0
+                .inner()
+                .check_physical_backup(access_structure_ref, (*phase.0).clone(), crate::TEMP_KEY)
+                .is_ok(),
+        )
+    }
+
+    pub fn exit_recovery_mode(&self, device_id: DeviceId) {
+        self.0.exit_recovery_mode(device_id, crate::TEMP_KEY);
+    }
+}
+
+pub enum ShareCompatibility {
+    Compatible,
+    AlreadyGotIt,
+    Incompatible,
+    NameMismatch,
+}
+
+pub struct WaitForRecoveryShareState {
+    pub recoverable: Vec<RecoverShare>,
+    pub already_got: Vec<RecoverShare>,
+    pub connected: Vec<DeviceId>,
+    pub blank: Vec<DeviceId>,
+}
+
+impl From<frostsnap_coordinator::wait_for_recovery_share::WaitForRecoveryShareState>
+    for WaitForRecoveryShareState
+{
+    fn from(
+        value: frostsnap_coordinator::wait_for_recovery_share::WaitForRecoveryShareState,
+    ) -> Self {
+        WaitForRecoveryShareState {
+            recoverable: value
+                .recoverable
+                .into_iter()
+                .map(RustOpaque::new)
+                .map(RecoverShare)
+                .collect(),
+            already_got: value
+                .already_got
+                .into_iter()
+                .map(RustOpaque::new)
+                .map(RecoverShare)
+                .collect(),
+            connected: value.connected.into_iter().collect(),
+            blank: value.blank.into_iter().collect(),
+        }
     }
 }
 
@@ -1734,22 +1881,21 @@ impl BackupManager {
         })
     }
 
-    pub fn maybe_start_backup_run(&self, access_structure: AccessStructure) -> Result<()> {
-        let key_id = access_structure.master_appkey().0.key_id();
-        let mut db = self.db.lock().unwrap();
-        self.backup_state
-            .lock()
-            .unwrap()
-            .mutate2(&mut *db, |state, mutations| {
-                let start_backup = !state.runs.contains_key(&key_id);
-                if start_backup {
+    pub fn start_backup_run(&self, access_structure: AccessStructure) -> Result<()> {
+        let access_structure_ref = access_structure.access_structure_ref().0;
+        {
+            let mut db = self.db.lock().unwrap();
+            self.backup_state
+                .lock()
+                .unwrap()
+                .mutate2(&mut *db, |state, mutations| {
                     let devices = access_structure.devices().0;
-                    state.runs.insert(key_id, BackupRun::new(devices.clone()));
-                    mutations.push(BackupMutation::StartBackup { key_id, devices });
-                }
+                    state.start_run(access_structure_ref, devices, mutations);
+                    Ok(())
+                })?;
+        }
 
-                Ok(())
-            })?;
+        self.backup_stream_emit(access_structure_ref.key_id)?;
         Ok(())
     }
 
@@ -1760,21 +1906,7 @@ impl BackupManager {
                 .lock()
                 .unwrap()
                 .mutate2(&mut *db, |state, mutations| {
-                    if let Some(run) = state.runs.get_mut(&key_id) {
-                        let timestamp = SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .unwrap()
-                            .as_secs() as u32;
-
-                        run.mark_device_complete(device_id);
-
-                        mutations.push(BackupMutation::MarkDeviceComplete {
-                            key_id,
-                            device_id,
-                            timestamp,
-                        });
-                    }
-
+                    state.mark_backup_complete(key_id, device_id, mutations);
                     Ok(())
                 })?;
         }
@@ -1782,41 +1914,29 @@ impl BackupManager {
         Ok(())
     }
 
-    pub fn is_device_complete(&self, key_id: KeyId, device_id: DeviceId) -> SyncReturn<bool> {
-        let backup_state = self.backup_state.lock().unwrap();
-        let complete = backup_state
-            .runs
-            .get(&key_id)
-            .map(|run| {
-                run.devices
-                    .iter()
-                    .any(|(d, timestamp)| *d == device_id && timestamp.is_some())
-            })
-            .unwrap_or(false);
-        SyncReturn(complete)
-    }
+    pub fn get_backup_run(&self, key_id: KeyId) -> SyncReturn<BackupRun> {
+        let backup_run = self.backup_state.lock().unwrap().get_backup_run(key_id);
+        let backup_run = BackupRun {
+            devices: backup_run.into_iter().collect(),
+        };
 
-    pub fn get_backup_run(&self, key_id: KeyId) -> SyncReturn<Option<BackupRun>> {
-        SyncReturn(self.backup_state.lock().unwrap().runs.get(&key_id).cloned())
-    }
-
-    pub fn is_run_complete(&self, key_id: KeyId) -> SyncReturn<bool> {
-        let complete = self
-            .backup_state
-            .lock()
-            .unwrap()
-            .runs
-            .get(&key_id)
-            .cloned()
-            .map(|run| run.is_run_complete())
-            .unwrap_or(false);
-        SyncReturn(complete)
+        return SyncReturn(backup_run);
     }
 
     pub fn backup_stream(&self, key_id: KeyId, new_stream: StreamSink<BackupRun>) -> Result<()> {
+        event!(
+            Level::DEBUG,
+            key_id = key_id.to_string(),
+            "backup stream subscribed"
+        );
         {
             let mut streams = self.backup_run_streams.lock().unwrap();
-            streams.insert(key_id, new_stream);
+            if streams.insert(key_id, new_stream).is_some() {
+                event!(
+                    Level::WARN,
+                    "backup stream was replaced this is probably a bug"
+                );
+            }
         }
         self.backup_stream_emit(key_id)?;
         Ok(())
@@ -1829,14 +1949,7 @@ impl BackupManager {
             None => return Err(anyhow!("no backup stream found for key: {}", key_id)),
         };
 
-        let backup_state = self.backup_state.lock().unwrap();
-        let run = backup_state
-            .runs
-            .get(&key_id)
-            .ok_or_else(|| anyhow!("no backup run found for key: {}", key_id))?;
-
-        let run_to_emit = run.clone();
-        stream.add(run_to_emit);
+        stream.add(self.get_backup_run(key_id).0);
         Ok(())
     }
 
@@ -1848,14 +1961,12 @@ impl BackupManager {
             .as_secs() as u32;
 
         let backup_state = self.backup_state.lock().unwrap();
-        let backup_run = backup_state.runs.get(&key_id);
+        let backup_run = backup_state.get_backup_run(key_id);
 
-        let most_recent = backup_run.and_then(|run| {
-            run.devices
-                .iter()
-                .filter_map(|(dev_id, time)| time.map(|t| (*dev_id, t)))
-                .max_by_key(|&(_, time)| time)
-        });
+        let most_recent = backup_run
+            .iter()
+            .filter_map(|(dev_id, time)| time.map(|t| (*dev_id, t)))
+            .max_by_key(|&(_, time)| time);
 
         match most_recent {
             Some((last_device_id, timestamp)) => {
@@ -1900,10 +2011,19 @@ impl DeveloperSettings {
     }
 }
 
-#[frb(mirror(BackupRun))]
-pub struct _BackupRun {
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct BackupRun {
     pub devices: Vec<(DeviceId, Option<u32>)>,
 }
+
+impl BackupRun {
+    pub fn is_run_complete(&self) -> bool {
+        self.devices
+            .iter()
+            .all(|(_, timestamp)| timestamp.is_some())
+    }
+}
+
 #[frb(mirror(KeygenId))]
 pub struct _KeygenId(pub [u8; 16]);
 
@@ -2054,12 +2174,6 @@ pub struct _AccessStructureRef {
     pub access_structure_id: AccessStructureId,
 }
 
-#[frb(mirror(CheckShareState))]
-pub struct _CheckShareState {
-    outcome: Option<bool>,
-    abort: Option<String>,
-}
-
 #[frb(mirror(ChainStatus))]
 pub struct _ChainStatus {
     pub electrum_url: String,
@@ -2077,6 +2191,89 @@ pub enum _ChainStatusState {
 pub struct _VerifyAddressProtocolState {
     pub target_devices: Vec<DeviceId>,
 }
+
+pub struct RecoverShare(pub RustOpaque<RRecoverShare>);
+
+impl RecoverShare {
+    pub fn threshold(&self) -> SyncReturn<u16> {
+        SyncReturn(self.0.held_share.threshold)
+    }
+
+    pub fn device_id(&self) -> SyncReturn<DeviceId> {
+        SyncReturn(self.0.held_by)
+    }
+
+    pub fn bitcoin_network(&self) -> SyncReturn<Option<BitcoinNetwork>> {
+        SyncReturn(self.0.held_share.purpose.bitcoin_network().map(From::from))
+    }
+
+    pub fn key_name(&self) -> SyncReturn<String> {
+        SyncReturn(self.0.held_share.key_name.clone())
+    }
+}
+
+pub struct RestorationState(pub RustOpaque<RRestorationState>);
+
+impl RestorationState {
+    pub fn get_already_recovered_share(
+        &self,
+        device_id: DeviceId,
+    ) -> SyncReturn<Option<RecoverShare>> {
+        SyncReturn(
+            match self
+                .0
+                .access_structure
+                .share_images
+                .get(&device_id)
+                .cloned()
+            {
+                Some(share_image) => Some(RecoverShare(RustOpaque::new(
+                    frostsnap_core::coordinator::restoration::RecoverShare {
+                        held_by: device_id,
+                        held_share: HeldShare {
+                            access_structure_ref: match self.0.access_structure_ref {
+                                Some(access_structure_ref) => access_structure_ref,
+                                None => return SyncReturn(None),
+                            },
+                            share_image,
+                            threshold: self.0.access_structure.threshold,
+                            key_name: self.0.key_name.clone(),
+                            purpose: self.0.key_purpose,
+                        },
+                    },
+                ))),
+                None => None,
+            },
+        )
+    }
+}
+
+pub struct PhysicalBackupPhase(pub RustOpaque<RPhysicalBackupPhase>);
+
+pub struct EnterPhysicalBackupState {
+    pub restoration_id: RestorationId,
+    pub device_id: DeviceId,
+    pub abort: Option<String>,
+    pub entered: Option<PhysicalBackupPhase>,
+    pub saved: Option<bool>,
+}
+
+impl From<frostsnap_coordinator::enter_physical_backup::EnterPhysicalBackupState>
+    for EnterPhysicalBackupState
+{
+    fn from(value: frostsnap_coordinator::enter_physical_backup::EnterPhysicalBackupState) -> Self {
+        EnterPhysicalBackupState {
+            restoration_id: value.restoration_id,
+            device_id: value.device_id,
+            abort: value.abort,
+            entered: value.entered.map(RustOpaque::new).map(PhysicalBackupPhase),
+            saved: value.saved,
+        }
+    }
+}
+
+#[frb(mirror(RestorationId))]
+pub struct _Restorattionid([u8; 16]);
 
 // XXX: bugs in flutter_rust_bridge mean that sometimes the right code doesn't get emitted unless
 // you use it as an argument.

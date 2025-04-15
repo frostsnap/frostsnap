@@ -5,7 +5,7 @@ use crate::tweak::{self, Xpub};
 use crate::{
     bitcoin_transaction, message::*, AccessStructureId, AccessStructureRef, ActionError,
     CheckedSignTask, CoordShareDecryptionContrib, Error, KeyId, KeygenId, MessageResult,
-    SessionHash, ShareImage,
+    RestorationId, SessionHash, ShareImage,
 };
 use crate::{DeviceId, SignSessionId};
 use alloc::boxed::Box;
@@ -20,8 +20,10 @@ use schnorr_fun::frost::chilldkg::encpedpop::{self};
 use schnorr_fun::frost::{PairedSecretShare, PartyIndex, SecretShare};
 use schnorr_fun::fun::KeyPair;
 use schnorr_fun::{frost, fun::prelude::*};
-
 use sha2::Sha256;
+mod device_to_user;
+pub mod restoration;
+pub use device_to_user::*;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct FrostSigner<S = MemoryNonceSlot> {
@@ -30,7 +32,7 @@ pub struct FrostSigner<S = MemoryNonceSlot> {
     nonce_slots: device_nonces::AbSlots<S>,
     mutations: VecDeque<Mutation>,
     keygen_phase1: BTreeMap<KeygenId, KeyGenPhase1>,
-    tmp_loaded_backups: Vec<CompleteSecretShare>,
+    restoration: restoration::State,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -38,6 +40,9 @@ pub struct KeyData {
     access_structures: BTreeMap<AccessStructureId, AccessStructureData>,
     purpose: KeyPurpose,
     key_name: String,
+    /// Do we know that the `KeyId` is genuinely the one associated with the secret shares we have?
+    /// This point is subjective but this device is meant to be able to
+    verified: bool,
 }
 
 /// In case we add access structures with more restricted properties later on
@@ -156,17 +161,6 @@ impl KeyGenPhase2 {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct BackupDisplayPhase {
-    pub access_structure_ref: AccessStructureRef,
-    pub party_index: PartyIndex,
-    pub encrypted_secret_share: Ciphertext<32, Scalar<Secret, Zero>>,
-    pub coord_share_decryption_contrib: CoordShareDecryptionContrib,
-    pub key_name: String,
-}
-
-pub type LoadKnownBackupPhase = LoadKnownBackup;
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct SignPhase1 {
     group_sign_req: GroupSignReq<CheckedSignTask>,
@@ -189,68 +183,87 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
             nonce_slots,
             mutations: Default::default(),
             keygen_phase1: Default::default(),
-            tmp_loaded_backups: Default::default(),
+            restoration: Default::default(),
         }
     }
 
     pub fn mutate(&mut self, mutation: Mutation) {
-        self.apply_mutation(&mutation);
-        self.mutations.push_back(mutation);
+        if let Some(mutation) = self.apply_mutation(mutation) {
+            self.mutations.push_back(mutation);
+        }
     }
 
-    pub fn apply_mutation(&mut self, mutation: &Mutation) {
+    pub fn apply_mutation(&mut self, mutation: Mutation) -> Option<Mutation> {
         use Mutation::*;
         match mutation {
             NewKey {
                 key_id,
-                key_name,
+                ref key_name,
                 purpose,
             } => {
                 self.keys.insert(
-                    *key_id,
+                    key_id,
                     KeyData {
-                        purpose: *purpose,
+                        purpose,
                         access_structures: Default::default(),
                         key_name: key_name.into(),
+                        verified: false,
                     },
                 );
             }
             NewAccessStructure {
-                key_id,
+                access_structure_ref,
                 kind,
-                access_structure_id,
                 threshold,
             } => {
-                self.keys.entry(*key_id).and_modify(|key_data| {
-                    key_data.access_structures.insert(
-                        *access_structure_id,
-                        AccessStructureData {
-                            kind: *kind,
-                            threshold: *threshold,
-                            shares: Default::default(),
-                        },
-                    );
-                });
+                self.keys
+                    .entry(access_structure_ref.key_id)
+                    .and_modify(|key_data| {
+                        key_data.access_structures.insert(
+                            access_structure_ref.access_structure_id,
+                            AccessStructureData {
+                                kind,
+                                threshold,
+                                shares: Default::default(),
+                            },
+                        );
+                    });
             }
-            SaveShare(boxed) => {
+            SaveShare(ref boxed) => {
                 let SaveShareMutation {
-                    key_id,
-                    access_structure_id,
+                    access_structure_ref,
                     encrypted_secret_share,
                 } = boxed.as_ref();
-                self.keys.entry(*key_id).and_modify(|key_data| {
-                    key_data
-                        .access_structures
-                        .entry(*access_structure_id)
-                        .and_modify(|access_structure_data| {
-                            access_structure_data.shares.insert(
-                                encrypted_secret_share.share_image.share_index,
-                                *encrypted_secret_share,
-                            );
-                        });
-                });
+                self.keys
+                    .entry(access_structure_ref.key_id)
+                    .and_modify(|key_data| {
+                        key_data
+                            .access_structures
+                            .entry(access_structure_ref.access_structure_id)
+                            .and_modify(|access_structure_data| {
+                                access_structure_data.shares.insert(
+                                    encrypted_secret_share.share_image.share_index,
+                                    *encrypted_secret_share,
+                                );
+                            });
+                    });
+            }
+            Restoration(restoration_mutation) => {
+                return self
+                    .restoration
+                    .apply_mutation_restoration(restoration_mutation)
+                    .map(Mutation::Restoration);
+            }
+            VerifyKey { ref key_id } => {
+                let key_data = self.keys.get_mut(key_id)?;
+                if key_data.verified {
+                    return None;
+                }
+                key_data.verified = true;
             }
         }
+
+        Some(mutation)
     }
 
     pub fn staged_mutations(&mut self) -> &mut VecDeque<Mutation> {
@@ -261,12 +274,9 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
         self.keygen_phase1.clear();
     }
 
-    pub fn clear_loaded_backups(&mut self) {
-        self.tmp_loaded_backups.clear();
-    }
     pub fn clear_tmp_data(&mut self) {
         self.clear_unfinished_keygens();
-        self.clear_loaded_backups();
+        self.restoration.clear_tmp_data();
     }
 
     pub fn keypair(&self) -> &KeyPair {
@@ -489,67 +499,13 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                     },
                 ))])
             }
-            DisplayBackup {
-                access_structure_ref,
-                coord_share_decryption_contrib,
-                party_index,
-            } => {
-                let AccessStructureRef {
-                    key_id,
-                    access_structure_id,
-                } = access_structure_ref;
-                let key_data = self.keys.get(&key_id).ok_or(Error::signer_invalid_message(
-                    &message,
-                    format!(
-                        "signer doesn't have a share for this key: {}",
-                        self.keys
-                            .keys()
-                            .map(|key| key.to_string())
-                            .collect::<Vec<_>>()
-                            .join(",")
-                    ),
-                ))?;
-
-                let access_structure_data = key_data
-                    .access_structures
-                    .get(&access_structure_id)
-                    .ok_or_else(|| {
-                        Error::signer_invalid_message(
-                            &message,
-                            "no such access structure on this device",
-                        )
-                    })?;
-
-                let encrypted_secret_share = access_structure_data
-                    .shares
-                    .get(&party_index)
-                    .ok_or_else(|| {
-                        Error::signer_invalid_message(
-                            &message,
-                            "access structure exists but this device doesn't have that share",
-                        )
-                    })?
-                    .ciphertext;
-                let phase = BackupDisplayPhase {
-                    access_structure_ref,
-                    party_index,
-                    encrypted_secret_share,
-                    coord_share_decryption_contrib,
-                    key_name: key_data.key_name.clone(),
-                };
-                Ok(vec![DeviceSend::ToUser(Box::new(
-                    DeviceToUserMessage::DisplayBackupRequest {
-                        phase: Box::new(phase),
-                    },
-                ))])
-            }
             VerifyAddress {
                 master_appkey,
                 derivation_index,
             } => {
                 let key_id = master_appkey.key_id();
                 // check we actually know about this key
-                let _key_data = self
+                let key_data = self
                     .keys
                     .get(&key_id)
                     .ok_or_else(|| {
@@ -559,6 +515,13 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                         )
                     })?
                     .clone();
+
+                if !key_data.verified {
+                    return Err(Error::signer_message_error(
+                        &message,
+                        "device has not verified this key so can't verify addresses for it".to_string(),
+                    ));
+                }
 
                 let bip32_path = tweak::BitcoinBip32Path {
                     account_keychain: tweak::BitcoinAccountKeychain::external(),
@@ -583,22 +546,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                     },
                 ))])
             }
-            LoadKnownBackup(load_known_backup) => Ok(vec![DeviceSend::ToUser(Box::new(
-                DeviceToUserMessage::EnterBackup {
-                    phase: load_known_backup,
-                },
-            ))]),
-            RequestHeldShares => {
-                let held_shares = self.held_shares();
-                let send = if !held_shares.is_empty() {
-                    Some(DeviceSend::ToCoordinator(Box::new(
-                        DeviceToCoordinatorMessage::HeldShares(held_shares),
-                    )))
-                } else {
-                    None
-                };
-                Ok(send.into_iter().collect())
-            }
+            Restoration(message) => self.recv_restoration_message(message, rng),
         }
     }
 
@@ -623,8 +571,11 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
         // than letting the coordinator send it to the device to protect against malicious
         // coordinators. A coordinator could provide garbage for example and then the device would
         // never be able to decrypt its share again.
-        let decryption_share_contrib =
-            CoordShareDecryptionContrib::for_master_share(self.device_id(), &root_shared_key.key);
+        let decryption_share_contrib = CoordShareDecryptionContrib::for_master_share(
+            self.device_id(),
+            secret_share.index(),
+            &root_shared_key.key,
+        );
 
         let session_hash = SessionHash::from_agg_input(&agg_input);
         let threshold = app_shared_key
@@ -644,7 +595,13 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
             secret_share: *secret_share.secret_share(),
         };
 
-        self.save_complete_share(complete_share, symm_key_gen, decryption_share_contrib, rng);
+        self.save_complete_share(
+            complete_share,
+            symm_key_gen,
+            decryption_share_contrib,
+            true,
+            rng,
+        );
 
         Ok(KeyGenAck {
             ack_session_hash: session_hash,
@@ -737,41 +694,12 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
         ))])
     }
 
-    pub fn display_backup_ack(
-        &mut self,
-        phase: BackupDisplayPhase,
-        symm_keygen: &mut impl DeviceSymmetricKeyGen,
-    ) -> Result<Vec<DeviceSend>, ActionError> {
-        let key_data = self
-            .keys
-            .get(&phase.access_structure_ref.key_id)
-            .expect("key must exist");
-        let encryption_key = symm_keygen.get_share_encryption_key(
-            phase.access_structure_ref,
-            phase.party_index,
-            phase.coord_share_decryption_contrib,
-        );
-        let secret_share = phase.encrypted_secret_share.decrypt(encryption_key).ok_or(
-            ActionError::StateInconsistent("could not decrypt secret share".into()),
-        )?;
-        let backup = SecretShare {
-            index: phase.party_index,
-            share: secret_share,
-        }
-        .to_bech32_backup();
-        Ok(vec![DeviceSend::ToUser(Box::new(
-            DeviceToUserMessage::DisplayBackup {
-                key_name: key_data.key_name.clone(),
-                backup,
-            },
-        ))])
-    }
-
     pub fn save_complete_share(
         &mut self,
         complete_share: CompleteSecretShare,
         symm_keygen: &mut impl DeviceSymmetricKeyGen,
         coord_contrib: CoordShareDecryptionContrib,
+        verified: bool,
         rng: &mut impl rand_core::RngCore,
     ) {
         let CompleteSecretShare {
@@ -782,11 +710,6 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
             secret_share,
         } = complete_share;
 
-        let AccessStructureRef {
-            key_id,
-            access_structure_id,
-        } = access_structure_ref;
-
         let encrypted_secret_share = EncryptedSecretShare::encrypt(
             secret_share,
             access_structure_ref,
@@ -796,69 +719,28 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
         );
 
         self.mutate(Mutation::NewKey {
-            key_id,
+            key_id: access_structure_ref.key_id,
             key_name,
             purpose,
         });
+        if verified {
+            self.mutate(Mutation::VerifyKey {
+                key_id: access_structure_ref.key_id,
+            });
+        }
         self.mutate(Mutation::NewAccessStructure {
-            key_id,
-            access_structure_id,
+            access_structure_ref,
             threshold,
             kind: AccessStructureKind::Master,
         });
         self.mutate(Mutation::SaveShare(Box::new(SaveShareMutation {
-            key_id,
-            access_structure_id,
+            access_structure_ref,
             encrypted_secret_share,
         })));
     }
 
-    pub fn tell_coordinator_about_backup_load_result(
-        &mut self,
-        phase: LoadKnownBackupPhase,
-        secret_share: SecretShare,
-    ) -> impl IntoIterator<Item = DeviceSend> {
-        let share_index = phase.share_image.share_index;
-        let access_structure_ref = phase.access_structure_ref;
-        let ok = match phase.check_entered_backup(secret_share) {
-            Some(complete_share) => {
-                self.tmp_loaded_backups.push(complete_share);
-                true
-            }
-            None => false,
-        };
-
-        core::iter::once(DeviceSend::ToCoordinator(Box::new(
-            DeviceToCoordinatorMessage::LoadKnownBackupResult {
-                access_structure_ref,
-                share_index,
-                success: ok,
-            },
-        )))
-    }
-
-    pub fn held_shares(&self) -> Vec<HeldShare> {
-        let mut held_shares = vec![];
-
-        for (key_id, key_data) in &self.keys {
-            for (access_structure_id, access_structure) in &key_data.access_structures {
-                for share in access_structure.shares.values() {
-                    if access_structure.kind == AccessStructureKind::Master {
-                        held_shares.push(HeldShare {
-                            key_name: key_data.key_name.clone(),
-                            share_image: share.share_image,
-                            access_structure_ref: AccessStructureRef {
-                                access_structure_id: *access_structure_id,
-                                key_id: *key_id,
-                            },
-                            threshold: access_structure.threshold,
-                            purpose: key_data.purpose,
-                        });
-                    }
-                }
-            }
-        }
-        held_shares
+    pub fn mark_key_verified(&mut self, key_id: KeyId) {
+        self.mutate(Mutation::VerifyKey { key_id });
     }
 
     pub fn wallet_network(&self, key_id: KeyId) -> Option<bitcoin::Network> {
@@ -872,6 +754,20 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
     /// Never to be used in production.
     pub fn nonce_slots(&mut self) -> &mut AbSlots<S> {
         &mut self.nonce_slots
+    }
+
+    pub fn get_encrypted_share(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        share_index: PartyIndex,
+    ) -> Option<EncryptedSecretShare> {
+        self.keys
+            .get(&access_structure_ref.key_id)?
+            .access_structures
+            .get(&access_structure_ref.access_structure_id)?
+            .shares
+            .get(&share_index)
+            .cloned()
     }
 }
 
@@ -891,8 +787,7 @@ impl FrostSigner<MemoryNonceSlot> {
 
 #[derive(Clone, Debug, PartialEq, bincode::Encode, bincode::Decode)]
 pub struct SaveShareMutation {
-    pub key_id: KeyId,
-    pub access_structure_id: AccessStructureId,
+    pub access_structure_ref: AccessStructureRef,
     pub encrypted_secret_share: EncryptedSecretShare,
 }
 
@@ -904,12 +799,15 @@ pub enum Mutation {
         purpose: KeyPurpose,
     },
     NewAccessStructure {
-        key_id: KeyId,
-        access_structure_id: AccessStructureId,
+        access_structure_ref: AccessStructureRef,
         threshold: u16,
         kind: AccessStructureKind,
     },
+    VerifyKey {
+        key_id: KeyId,
+    },
     SaveShare(Box<SaveShareMutation>),
+    Restoration(restoration::RestorationMutation),
 }
 
 pub trait DeviceSymmetricKeyGen {
@@ -930,24 +828,8 @@ pub struct CompleteSecretShare {
     pub secret_share: SecretShare,
 }
 
-impl LoadKnownBackup {
-    pub fn check_entered_backup(self, share_backup: SecretShare) -> Option<CompleteSecretShare> {
-        // could return self in Err but didn't because clippy.
-        let share_index = self.share_image.share_index;
-        let access_structure_ref = self.access_structure_ref;
-        let ok = share_backup.index == share_index
-            && ShareImage::from_secret(share_backup) == self.share_image;
-
-        if ok {
-            Some(CompleteSecretShare {
-                access_structure_ref,
-                key_name: self.key_name,
-                purpose: self.purpose,
-                threshold: self.threshold,
-                secret_share: share_backup,
-            })
-        } else {
-            None
-        }
-    }
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
+pub struct IncompleteSecretShare {
+    pub secret_share: SecretShare,
+    pub restoration_id: RestorationId,
 }

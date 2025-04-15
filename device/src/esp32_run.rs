@@ -12,15 +12,13 @@ use core::cell::RefCell;
 use esp_hal::{gpio, sha::Sha, timer};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{
-    CommsMisc, CoordinatorSendBody, CoordinatorUpgradeMessage, DeviceSendBody, ReceiveSerial,
-    Upstream,
+    CommsMisc, CoordinatorSendBody, CoordinatorUpgradeMessage, DeviceSendBody, Model,
+    ReceiveSerial, Upstream,
 };
 use frostsnap_comms::{Downstream, MAGIC_BYTES_PERIOD};
 use frostsnap_core::{
-    device::FrostSigner,
-    message::{
-        CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, DeviceToUserMessage,
-    },
+    device::{DeviceToUserMessage, FrostSigner},
+    message::{CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage},
 };
 use rand_chacha::rand_core::RngCore;
 
@@ -33,6 +31,7 @@ pub struct Run<'a, Rng, Ui, T, DownstreamDetectPin> {
     pub downstream_detect: gpio::Input<'a, DownstreamDetectPin>,
     pub sha256: Sha<'a>,
     pub hmac_keys: EfuseHmacKeys<'a>,
+    pub model: Model,
 }
 
 impl<Rng, Ui, T, DownstreamDetectPin> Run<'_, Rng, Ui, T, DownstreamDetectPin>
@@ -52,12 +51,14 @@ where
             downstream_detect,
             mut sha256,
             mut hmac_keys,
+            model,
         } = self;
 
         ui.set_busy_task(ui::BusyTask::Loading);
         let flash = RefCell::new(FlashStorage::new());
-        let mut partitions = crate::partitions::Partitions::load(&flash);
-        let header_flash = FlashHeader::new(partitions.nvs.split_off_front(2));
+        let partitions = crate::partitions::Partitions::load(&flash);
+        let mut nvs_parition = partitions.nvs.clone();
+        let header_flash = FlashHeader::new(nvs_parition.split_off_front(2));
         let header = match header_flash.read_header() {
             Some(header) => header,
             None => {
@@ -68,7 +69,7 @@ where
             }
         };
 
-        let _reserved = partitions.nvs.split_off_front(2);
+        let share_partition = nvs_parition.split_off_front(2);
 
         let nonce_slots = {
             // give half the remaining nvs over to nonces
@@ -77,12 +78,12 @@ where
             n_nonce_sectors = (n_nonce_sectors.div_ceil(2) * 2).max(16 /* but at least 16 */);
             // each nonce slot requires 2 sectors so divide by 2 to get the number of slots
             frostsnap_embedded::NonceAbSlot::load_slots(
-                partitions.nvs.split_off_front(n_nonce_sectors),
+                nvs_parition.split_off_front(n_nonce_sectors),
             )
         };
 
         // The event log gets the reset of the sectors
-        let mut event_log = EventLog::new(partitions.nvs);
+        let mut event_log = EventLog::new(share_partition, nvs_parition);
 
         let mut signer = FrostSigner::new(header.device_keypair(), nonce_slots);
 
@@ -91,7 +92,7 @@ where
             match change {
                 Ok(change) => match change {
                     Event::Core(mutation) => {
-                        signer.apply_mutation(&mutation);
+                        signer.apply_mutation(mutation);
                     }
                     Event::Name(name_update) => {
                         name = Some(name_update);
@@ -250,7 +251,8 @@ where
                         upstream_serial
                             .write_magic_bytes()
                             .expect("failed to write magic bytes");
-                        upstream_connection.send_announcement(DeviceSendBody::Announce {
+                        upstream_connection.send_announcement(DeviceSendBody::Announce2 {
+                            model,
                             firmware_digest: active_firmware_digest,
                         });
                         upstream_connection.send_to_coordinator([match &name {
@@ -301,7 +303,7 @@ where
                                                             &mut ui,
                                                             &mut sha256,
                                                         );
-                                                        esp_hal::reset::software_reset();
+                                                        reset(&mut upstream_serial);
                                                     } else {
                                                         panic!("upgrade cannot start because we were not warned about it")
                                                     }
@@ -498,16 +500,35 @@ where
                                     phase,
                                 }));
                             }
-                            DeviceToUserMessage::DisplayBackupRequest { phase } => ui.set_workflow(
-                                ui::Workflow::prompt(ui::Prompt::DisplayBackupRequest { phase }),
-                            ),
-                            DeviceToUserMessage::DisplayBackup { key_name, backup } => {
-                                ui.set_workflow(ui::Workflow::DisplayBackup { key_name, backup });
-                            }
-                            DeviceToUserMessage::EnterBackup { phase } => {
-                                ui.set_workflow(ui::Workflow::EnteringBackup(
-                                    ui::EnteringBackupStage::Init { phase },
-                                ));
+                            DeviceToUserMessage::Restoration(to_user_restoration) => {
+                                use frostsnap_core::device::restoration::ToUserRestoration::*;
+                                match to_user_restoration {
+                                    DisplayBackupRequest { phase } => {
+                                        ui.set_workflow(ui::Workflow::prompt(
+                                            ui::Prompt::DisplayBackupRequest { phase },
+                                        ));
+                                    }
+                                    DisplayBackup { key_name, backup } => {
+                                        ui.set_workflow(ui::Workflow::DisplayBackup {
+                                            key_name,
+                                            backup,
+                                        });
+                                    }
+                                    EnterBackup { phase } => {
+                                        ui.set_workflow(ui::Workflow::EnteringBackup(
+                                            ui::EnteringBackupStage::Init { phase },
+                                        ));
+                                    }
+                                    ConsolidateBackup(phase) => {
+                                        // XXX: We don't tell the user about this message and just automatically confirm it.
+                                        // There isn't really anything they could do to actually verify to confirm it but since
+                                        signer.exit_recovery_mode(
+                                            &mut hmac_keys.share_encryption,
+                                            phase,
+                                            &mut rng,
+                                        );
+                                    }
+                                }
                             }
                         };
                     }
@@ -569,12 +590,12 @@ where
                         share_backup,
                     } => {
                         outbox.extend(
-                            signer.tell_coordinator_about_backup_load_result(*phase, share_backup),
+                            signer.tell_coordinator_about_backup_load_result(phase, share_backup),
                         );
                     }
                     UiEvent::WipeDataConfirm => {
                         partitions.nvs.erase_all().expect("failed to erase nvs");
-                        esp_hal::reset::software_reset();
+                        reset(&mut upstream_serial);
                     }
                 }
 
@@ -598,4 +619,9 @@ where
             }
         }
     }
+}
+
+fn reset<'a, T: timer::Timer>(upstream_serial: &mut SerialInterface<'a, T, Upstream>) {
+    let _ = upstream_serial.send_reset_signal();
+    esp_hal::reset::software_reset();
 }

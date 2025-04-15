@@ -49,7 +49,7 @@ impl Persist<rusqlite::Connection> for FrostCoordinator {
 
         for mutation in row_iter {
             let mutation = mutation.context("failed to decode an fs_coordinator_mutation")?;
-            coordinator.apply_mutation(&mutation);
+            let _ = coordinator.apply_mutation(mutation);
         }
 
         Ok(coordinator)
