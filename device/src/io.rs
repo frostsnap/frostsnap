@@ -129,6 +129,17 @@ where
         Ok(())
     }
 
+    pub fn send_reset_signal(&mut self) -> Result<(), bincode::error::EncodeError> {
+        bincode::encode_into_writer(
+            ReceiveSerial::<D::Opposite>::Reset,
+            &mut *self,
+            BINCODE_CONFIG,
+        )?;
+        self.io.nb_flush();
+
+        Ok(())
+    }
+
     /// Blocking flush
     pub fn flush(&mut self) {
         self.io.flush()
