@@ -86,9 +86,6 @@ class SuperWalletContext extends InheritedWidget {
 
     final superWallet = appCtx.settings.getSuperWallet(network: bitcoinNetwork);
     final masterAppkey = frostKey.masterAppkey();
-    if (masterAppkey == null) {
-      return null;
-    }
     final wallet = Wallet(superWallet: superWallet, masterAppkey: masterAppkey);
 
     // Get or create tx stream

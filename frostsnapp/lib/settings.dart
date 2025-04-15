@@ -62,9 +62,6 @@ class SettingsContext extends InheritedWidget {
       return null;
     }
     final masterAppkey = frostKey.masterAppkey();
-    if (masterAppkey == null) {
-      return null;
-    }
     final network = frostKey.bitcoinNetwork();
     if (network == null) {
       return null;
