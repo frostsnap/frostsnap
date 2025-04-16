@@ -18,6 +18,7 @@ pub struct EnterPhysicalBackup {
     saved: Option<bool>,
     sent_save: bool,
     abort: Option<String>,
+    finished: bool,
 }
 
 impl EnterPhysicalBackup {
@@ -37,6 +38,7 @@ impl EnterPhysicalBackup {
             saved: if should_save { Some(false) } else { None },
             sent_save: false,
             abort: None,
+            finished: false,
         }
     }
 
@@ -47,6 +49,7 @@ impl EnterPhysicalBackup {
             entered: self.entered.clone(),
             saved: self.saved,
             abort: self.abort.clone(),
+            finished: self.finished,
         })
     }
 }
@@ -57,7 +60,7 @@ impl UiProtocol for EnterPhysicalBackup {
     }
 
     fn is_complete(&self) -> Option<crate::Completion> {
-        if self.entered.is_some() && self.saved != Some(false) {
+        if self.finished {
             Some(crate::Completion::Success)
         } else if self.abort.is_some() {
             Some(crate::Completion::Abort {
@@ -82,7 +85,7 @@ impl UiProtocol for EnterPhysicalBackup {
             return vec![CoordinatorSendMessage::to(
                 self.chosen_device,
                 CoordinatorSendBody::Core(CoordinatorToDeviceMessage::Restoration(
-                    CoordinatorRestoration::Load {
+                    CoordinatorRestoration::EnterPhysicalBackup {
                         restoration_id: self.restoration_id,
                     },
                 )),
@@ -96,7 +99,7 @@ impl UiProtocol for EnterPhysicalBackup {
             return vec![CoordinatorSendMessage::to(
                 self.chosen_device,
                 CoordinatorSendBody::Core(CoordinatorToDeviceMessage::Restoration(
-                    CoordinatorRestoration::Save {
+                    CoordinatorRestoration::SavePhysicalBackup {
                         restoration_id: self.restoration_id,
                     },
                 )),
@@ -129,6 +132,9 @@ impl UiProtocol for EnterPhysicalBackup {
                 && physical_backup_phase.backup.restoration_id == self.restoration_id =>
             {
                 self.entered = Some(*physical_backup_phase);
+                if self.saved != Some(false) {
+                    self.finished = true;
+                }
                 self.emit_state();
             }
             CoordinatorToUserMessage::Restoration(
@@ -139,6 +145,7 @@ impl UiProtocol for EnterPhysicalBackup {
                 },
             ) if device_id == self.chosen_device && restoration_id == self.restoration_id => {
                 self.saved = Some(true);
+                self.finished = true;
                 self.emit_state();
             }
             message => event!(
@@ -158,4 +165,5 @@ pub struct EnterPhysicalBackupState {
     /// null if the user is entering the backup not to save but to check it
     pub saved: Option<bool>,
     pub abort: Option<String>,
+    pub finished: bool,
 }

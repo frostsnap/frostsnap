@@ -12,6 +12,7 @@ use frostsnap_coordinator::firmware_upgrade::{
 use frostsnap_coordinator::frostsnap_comms::{
     CoordinatorSendBody, CoordinatorSendMessage, Destination, Sha256Digest,
 };
+use frostsnap_coordinator::frostsnap_core::coordinator::restoration::PhysicalBackupPhase;
 use frostsnap_coordinator::frostsnap_core::coordinator::{
     CoordAccessStructure, CoordFrostKey, CoordinatorSend,
 };
@@ -178,22 +179,19 @@ impl FfiCoordinator {
                 // be deadlocked.
                 let device_changes = usb_manager.poll_ports();
                 let mut coordinator = coordinator_loop.lock().unwrap();
-                let mut ui_protocol_loop = ui_protocol.lock().unwrap();
                 let mut coordinator_outbox = VecDeque::default();
                 let mut messages_from_devices = vec![];
                 let mut db = db_loop.lock().unwrap();
-                let mut device_list = device_list.lock().unwrap();
+                let mut ui_protocol_loop = ui_protocol.lock().unwrap();
 
                 // process new messages from devices
                 {
+                    let mut device_list = device_list.lock().unwrap();
                     for change in device_changes {
                         device_list.consume_manager_event(change.clone());
                         match change {
                             DeviceChange::Registered { id, .. } => {
                                 if coordinator.has_backups_that_need_to_be_consolidated(id) {
-                                    // We have a logic carve out for going from "recovery mode" to
-                                    // normal mode. We don't want the coordinator to interact with
-                                    // any other ui protocols until it's out of recovery
                                     device_list.set_recovery_mode(id, true);
                                 }
                                 if let Some(protocol) = &mut *ui_protocol_loop {
@@ -264,14 +262,6 @@ impl FfiCoordinator {
                             device_list_stream.add(device_list.take_update());
                         }
                     }
-
-                    if let Some(ui_protocol) = &mut *ui_protocol_loop {
-                        for message in ui_protocol.poll() {
-                            usb_sender.send(message);
-                        }
-
-                        Self::try_finish_protocol(usb_sender.clone(), &mut ui_protocol_loop);
-                    }
                 };
 
                 for app_message in messages_from_devices {
@@ -313,6 +303,9 @@ impl FfiCoordinator {
                     }
                 }
 
+                drop(coordinator);
+                drop(db);
+
                 while let Some(message) = coordinator_outbox.pop_front() {
                     match message {
                         CoordinatorSend::ToDevice {
@@ -338,6 +331,16 @@ impl FfiCoordinator {
                             }
                         }
                     }
+                }
+
+                // poll the ui protocol first before locking anything else because of the potential
+                // for dead locks with callbacks activated on stream items trying to lock things.
+                if let Some(ui_protocol) = &mut *ui_protocol_loop {
+                    for message in ui_protocol.poll() {
+                        usb_sender.send(message);
+                    }
+
+                    Self::try_finish_protocol(usb_sender.clone(), &mut ui_protocol_loop);
                 }
             }
         });
@@ -586,6 +589,8 @@ impl FfiCoordinator {
         for device in self.device_list.lock().unwrap().devices() {
             protocol.connected(device.id, device.device_mode());
         }
+        event!(Level::INFO, "TMP {}", protocol.name());
+
         let new_name = protocol.name();
         if let Some(mut prev) = self.ui_protocol.lock().unwrap().replace(Box::new(protocol)) {
             event!(
@@ -596,6 +601,8 @@ impl FfiCoordinator {
             );
             prev.cancel();
         }
+
+        event!(Level::INFO, "Started UI protocol");
     }
 
     pub fn cancel_protocol(&self) {
@@ -966,26 +973,72 @@ impl FfiCoordinator {
             stream.send(())
         }
     }
-    pub fn tell_device_to_enter_physical_backup(
+
+    pub fn tell_device_to_enter_physical_backup_and_save(
         &self,
         restoration_id: RestorationId,
         device_id: DeviceId,
-        save_backup: bool,
         sink: impl Sink<EnterPhysicalBackupState>,
     ) -> Result<()> {
         let device_list = self.device_list.clone();
+        let coordinator = self.coordinator.clone();
+        let key_event_stream = self.key_event_stream.clone();
         let sink = sink.inspect(move |state| {
-            // When the physical backup has been saved on the device this means the device has
-            // entered recovery mode.
             if state.saved == Some(true) {
+                // When the physical backup has been saved on the device this means the device has
+                // entered recovery mode.
                 device_list
                     .lock()
                     .unwrap()
                     .set_recovery_mode(device_id, true);
+
+                let coordinator = coordinator.lock().unwrap();
+                let state = key_state(&coordinator);
+                if let Some(key_event_stream) = &*key_event_stream.lock().unwrap() {
+                    key_event_stream.add(state);
+                }
             }
         });
-        let proto = EnterPhysicalBackup::new(sink, restoration_id, device_id, save_backup);
+        let proto = EnterPhysicalBackup::new(sink, restoration_id, device_id, true);
         self.start_protocol(proto);
+        Ok(())
+    }
+
+    pub fn tell_device_to_enter_physical_backup(
+        &self,
+        device_id: DeviceId,
+        sink: impl Sink<EnterPhysicalBackupState>,
+    ) -> Result<()> {
+        let restoration_id = RestorationId::new(&mut rand::thread_rng());
+        let proto = EnterPhysicalBackup::new(sink, restoration_id, device_id, false);
+        self.start_protocol(proto);
+        Ok(())
+    }
+
+    /// This is for telling a device that a physical backup it just entered is
+    pub fn tell_device_to_consolidate_physical_backup(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        phase: PhysicalBackupPhase,
+        encryption_key: SymmetricKey,
+    ) -> Result<()> {
+        let mut coordinator = self.coordinator.lock().unwrap();
+        let msgs = coordinator
+            .MUTATE_NO_PERSIST()
+            .tell_device_to_consolidate_physical_backup(
+                phase,
+                access_structure_ref,
+                encryption_key,
+            )?
+            .into_iter()
+            .map(|msg| CoordinatorSendMessage::try_from(msg).unwrap());
+
+        for msg in msgs {
+            self.usb_sender.send(msg);
+        }
+        // NOTE: We're not waiting for the consolidation ack here. Persisted mutations will happen
+        // occur once we get the ack. The caller doesn't really care as long as the consolidation
+        // succeeds (hopefully) eventually.
         Ok(())
     }
 
@@ -995,7 +1048,7 @@ impl FfiCoordinator {
 
         if let Some(device) = device_list.get_device(device_id) {
             let msgs = coord
-                .consolidate_physical_backups(device_id, encryption_key)
+                .consolidate_pending_physical_backups(device_id, encryption_key)
                 .into_iter()
                 .map(|msg| CoordinatorSendMessage::try_from(msg).unwrap());
 
@@ -1003,9 +1056,10 @@ impl FfiCoordinator {
                 self.usb_sender.send(msg);
             }
 
-            // NOTE: We don't wait for the device to confirm that they have exited recovery mode because
-            // we expect everything to go well after we have sent the messages.
-            // Internally thought the core coordinator will mark that device as having left recovery mode.
+            // NOTE: We don't wait for the device to confirm that they have exited recovery mode
+            // because we expect everything to go well after we have sent the messages. Internally
+            // thought the core coordinator will mark that device as having left recovery mode only
+            // once it's confirmed.
             device_list.set_recovery_mode(device_id, false);
 
             // We finally connect the device properly!

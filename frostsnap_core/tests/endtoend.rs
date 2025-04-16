@@ -1,7 +1,7 @@
 use bitcoin::Address;
 use common::{TestDeviceKeyGen, TEST_ENCRYPTION_KEY};
 use frostsnap_core::bitcoin_transaction::{LocalSpk, TransactionTemplate};
-use frostsnap_core::coordinator::restoration::PhysicalBackupPhase;
+use frostsnap_core::coordinator::restoration::{PhysicalBackupPhase, RecoverShare};
 use frostsnap_core::device::{self, DeviceToUserMessage, KeyPurpose};
 use frostsnap_core::message::EncodedSignature;
 use frostsnap_core::tweak::BitcoinBip32Path;
@@ -37,6 +37,7 @@ struct TestEnv {
     // backups
     pub backups: BTreeMap<DeviceId, (String, String)>,
     pub physical_backups_entered: Vec<PhysicalBackupPhase>,
+    pub physical_backups_saved: usize,
 
     // signing
     pub received_signing_shares: BTreeMap<SignSessionId, BTreeSet<DeviceId>>,
@@ -122,42 +123,54 @@ impl common::Env for TestEnv {
             CoordinatorToUserMessage::Restoration(msg) => {
                 use frostsnap_core::coordinator::restoration::ToUserRestoration::*;
                 match msg {
-                    PromptRecoverShare(recover_share) => {
-                        if run
-                            .coordinator
-                            .get_access_structure(recover_share.held_share.access_structure_ref)
-                            .is_some()
-                        {
-                            run.coordinator
-                                .recover_share(*recover_share, TEST_ENCRYPTION_KEY)
-                                .unwrap();
-                            return;
-                        }
-
-                        let existing_restoration = run.coordinator.restoring().find(|state| {
-                            state.access_structure_ref
-                                == Some(recover_share.held_share.access_structure_ref)
-                        });
-
-                        match existing_restoration {
-                            Some(existing_restoration) => run
+                    GotHeldShares {
+                        held_by,
+                        recoverable,
+                        ..
+                    } => {
+                        for held_share in recoverable {
+                            let recover_share = RecoverShare {
+                                held_by,
+                                held_share: held_share.clone(),
+                            };
+                            if run
                                 .coordinator
-                                .add_recovery_share_to_restoration(
-                                    existing_restoration.restoration_id,
-                                    *recover_share,
-                                )
-                                .unwrap(),
-                            None => run.coordinator.start_restoring_key_from_recover_share(
-                                *recover_share,
-                                RestorationId::new(rng),
-                            ),
+                                .get_access_structure(held_share.access_structure_ref)
+                                .is_some()
+                            {
+                                run.coordinator
+                                    .recover_share(recover_share.clone(), TEST_ENCRYPTION_KEY)
+                                    .unwrap();
+                            } else {
+                                let existing_restoration =
+                                    run.coordinator.restoring().find(|state| {
+                                        state.access_structure_ref
+                                            == Some(held_share.access_structure_ref)
+                                    });
+
+                                match existing_restoration {
+                                    Some(existing_restoration) => run
+                                        .coordinator
+                                        .add_recovery_share_to_restoration(
+                                            existing_restoration.restoration_id,
+                                            recover_share,
+                                        )
+                                        .unwrap(),
+                                    None => run.coordinator.start_restoring_key_from_recover_share(
+                                        recover_share,
+                                        RestorationId::new(rng),
+                                    ),
+                                }
+                            }
                         }
+
+                        return;
                     }
                     PhysicalBackupEntered(physical_backup_phase) => {
                         self.physical_backups_entered.push(*physical_backup_phase);
                     }
                     PhysicalBackupSaved { .. } => {
-                        todo!()
+                        self.physical_backups_saved += 1;
                     }
                 }
             }
@@ -213,11 +226,14 @@ impl common::Env for TestEnv {
                         run.extend_from_device(from, backup_ack);
                     }
                     ConsolidateBackup(phase) => {
-                        let ack =
-                            run.device(from)
-                                .exit_recovery_mode(&mut TestDeviceKeyGen, phase, rng);
+                        let ack = run.device(from).finish_consolidation(
+                            &mut TestDeviceKeyGen,
+                            phase,
+                            rng,
+                        );
                         run.extend_from_device(from, ack);
                     }
+                    SavedBackup { .. } => { /* informational */ }
                 }
             }
             DeviceToUserMessage::VerifyAddress {

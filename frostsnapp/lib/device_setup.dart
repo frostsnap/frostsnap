@@ -62,11 +62,6 @@ class _DeviceNameField extends State<DeviceNameField> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      onPopInvokedWithResult: (didPop, result) {
-        if (changed) {
-          coord.sendCancel(id: widget.id);
-        }
-      },
       child: ConstrainedBox(
         constraints: BoxConstraints(
           maxWidth: 300, // Set the maximum width for the text box
@@ -97,7 +92,7 @@ class _DeviceNameField extends State<DeviceNameField> {
                   return;
                 });
             coord.finishNaming(id: widget.id, name: name);
-            final result = await showDeviceActionDialog(
+            await showDeviceActionDialog(
               context: context,
               complete: completeWhen,
               builder: (context) {
@@ -122,10 +117,6 @@ class _DeviceNameField extends State<DeviceNameField> {
                 );
               },
             );
-
-            if (result == null) {
-              await coord.sendCancel(id: widget.id);
-            }
           },
           onChanged: (value) async {
             changed = true;

@@ -101,39 +101,13 @@ class _KeyNamePageState extends State<KeyNamePage> {
               stream: settingsCtx.developerSettings,
               builder: (context, snap) {
                 if (snap.data?.developerMode == true) {
-                  return Column(
-                    children: [
-                      SizedBox(height: 20),
-                      Text("(developer) Choose the network:"),
-                      SizedBox(height: 10),
-                      DropdownButton<String>(
-                        hint: Text('Chose a network'),
-                        value: bitcoinNetwork.name(),
-                        onChanged: (String? network) {
-                          setState(() {
-                            if (network != null) {
-                              bitcoinNetwork =
-                                  BitcoinNetwork.fromString(
-                                    bridge: api,
-                                    string: network,
-                                  )!;
-                            }
-                          });
-                        },
-                        items:
-                            BitcoinNetwork.supportedNetworks(bridge: api).map((
-                              network,
-                            ) {
-                              final name = network.name();
-                              return DropdownMenuItem<String>(
-                                value: name,
-                                child: Text(
-                                  name == "bitcoin" ? "Bitcoin (BTC)" : name,
-                                ),
-                              );
-                            }).toList(),
-                      ),
-                    ],
+                  return BitcoinNetworkChooser(
+                    value: bitcoinNetwork,
+                    onChanged: (BitcoinNetwork network) {
+                      setState(() {
+                        bitcoinNetwork = network;
+                      });
+                    },
                   );
                 } else {
                   return SizedBox();

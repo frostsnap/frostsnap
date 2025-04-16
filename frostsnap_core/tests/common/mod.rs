@@ -139,9 +139,11 @@ pub trait Env {
                         run.extend_from_device(from, backup_ack);
                     }
                     ConsolidateBackup(phase) => {
-                        let ack =
-                            run.device(from)
-                                .exit_recovery_mode(&mut TestDeviceKeyGen, phase, rng);
+                        let ack = run.device(from).finish_consolidation(
+                            &mut TestDeviceKeyGen,
+                            phase,
+                            rng,
+                        );
                         run.extend_from_device(from, ack);
                     }
                     _ => { /* do nothing */ }

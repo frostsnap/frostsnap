@@ -57,8 +57,8 @@ where
         ui.set_busy_task(ui::BusyTask::Loading);
         let flash = RefCell::new(FlashStorage::new());
         let partitions = crate::partitions::Partitions::load(&flash);
-        let mut nvs_parition = partitions.nvs.clone();
-        let header_flash = FlashHeader::new(nvs_parition.split_off_front(2));
+        let mut nvs_partition = partitions.nvs.clone();
+        let header_flash = FlashHeader::new(nvs_partition.split_off_front(2));
         let header = match header_flash.read_header() {
             Some(header) => header,
             None => {
@@ -69,21 +69,21 @@ where
             }
         };
 
-        let share_partition = nvs_parition.split_off_front(2);
+        let share_partition = nvs_partition.split_off_front(2);
 
         let nonce_slots = {
             // give half the remaining nvs over to nonces
-            let mut n_nonce_sectors = partitions.nvs.n_sectors().div_ceil(2);
+            let mut n_nonce_sectors = nvs_partition.n_sectors().div_ceil(2);
             // Make sure it's a multiple of 2
             n_nonce_sectors = (n_nonce_sectors.div_ceil(2) * 2).max(16 /* but at least 16 */);
             // each nonce slot requires 2 sectors so divide by 2 to get the number of slots
             frostsnap_embedded::NonceAbSlot::load_slots(
-                nvs_parition.split_off_front(n_nonce_sectors),
+                nvs_partition.split_off_front(n_nonce_sectors),
             )
         };
 
         // The event log gets the reset of the sectors
-        let mut event_log = EventLog::new(share_partition, nvs_parition);
+        let mut event_log = EventLog::new(share_partition, nvs_partition);
 
         let mut signer = FrostSigner::new(header.device_keypair(), nonce_slots);
 
@@ -102,6 +102,10 @@ where
                     panic!("failed to read event: {e}");
                 }
             }
+        }
+
+        if !signer.saved_backups().is_empty() {
+            ui.set_recovery_mode(true);
         }
 
         let active_partition = partitions.ota.active_partition();
@@ -508,6 +512,7 @@ where
                                             ui::Prompt::DisplayBackupRequest { phase },
                                         ));
                                     }
+
                                     DisplayBackup { key_name, backup } => {
                                         ui.set_workflow(ui::Workflow::DisplayBackup {
                                             key_name,
@@ -519,14 +524,18 @@ where
                                             ui::EnteringBackupStage::Init { phase },
                                         ));
                                     }
+                                    SavedBackup { restoration_id: _ } => {
+                                        ui.set_recovery_mode(true);
+                                    }
                                     ConsolidateBackup(phase) => {
                                         // XXX: We don't tell the user about this message and just automatically confirm it.
                                         // There isn't really anything they could do to actually verify to confirm it but since
-                                        signer.exit_recovery_mode(
+                                        outbox.extend(signer.finish_consolidation(
                                             &mut hmac_keys.share_encryption,
                                             phase,
                                             &mut rng,
-                                        );
+                                        ));
+                                        ui.set_recovery_mode(false);
                                     }
                                 }
                             }
@@ -621,7 +630,7 @@ where
     }
 }
 
-fn reset<'a, T: timer::Timer>(upstream_serial: &mut SerialInterface<'a, T, Upstream>) {
+fn reset<T: timer::Timer>(upstream_serial: &mut SerialInterface<'_, T, Upstream>) {
     let _ = upstream_serial.send_reset_signal();
     esp_hal::reset::software_reset();
 }

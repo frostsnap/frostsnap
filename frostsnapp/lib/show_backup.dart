@@ -113,7 +113,7 @@ Future<bool?> verifyBackup(
 ) async {
   final backupEntry =
       coord
-          .tellDeviceToEnterPhysicalBackupForCheck(deviceId: deviceId)
+          .tellDeviceToEnterPhysicalBackup(deviceId: deviceId)
           .asBroadcastStream();
 
   final aborted = backupEntry.firstWhere((state) => state.abort != null).then((

@@ -27,6 +27,8 @@ pub trait UserInteraction {
 
     fn set_busy_task(&mut self, task: BusyTask);
 
+    fn set_recovery_mode(&mut self, value: bool);
+
     fn clear_busy_task(&mut self);
 
     fn clear_workflow(&mut self) {

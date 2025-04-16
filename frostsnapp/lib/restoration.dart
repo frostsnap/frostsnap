@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:frostsnapp/device_setup.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:collection/collection.dart';
+import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/snackbar.dart';
 import 'ffi.dart';
 
@@ -152,6 +153,7 @@ class WalletRecoveryFlow extends StatefulWidget {
 }
 
 class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
+  late final MethodChoiceKind kind;
   String currentStep = 'start';
   RecoverShare? candidate;
   ShareCompatibility? compatibility;
@@ -160,6 +162,11 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
   String? walletName;
   int? threshold;
   String? error;
+
+  @override
+  void initState() {
+    super.initState();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -208,11 +215,31 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           },
         );
       case 'enter_backup':
+        final stream = switch (kind) {
+          MethodChoiceKind.ContinueRecovery => coord
+              .tellDeviceToEnterPhysicalBackupAndSave(
+                restorationId: widget.continuing!,
+                deviceId: blankDevice!.id,
+              ),
+          MethodChoiceKind.StartRecovery => coord
+              .tellDeviceToEnterPhysicalBackupAndSave(
+                restorationId: manuallyEntered!,
+                deviceId: blankDevice!.id,
+              ),
+          MethodChoiceKind.AddToWallet => coord.tellDeviceToEnterPhysicalBackup(
+            deviceId: blankDevice!.id,
+          ),
+        };
         child = _EnterBackupView(
-          deviceId: blankDevice!.id,
-          restorationId: widget.continuing ?? manuallyEntered!,
-          onBackupSaved: (backupPhase) async {
+          stream: stream,
+          onFinished: (backupPhase) async {
             try {
+              if (kind == MethodChoiceKind.AddToWallet) {
+                await coord.tellDeviceToConsolidatePhysicalBackup(
+                  accessStructureRef: widget.existing!,
+                  phase: backupPhase,
+                );
+              }
               setState(() {
                 currentStep = "physical_backup_success";
               });
@@ -277,7 +304,6 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         );
         break;
       default:
-        final MethodChoiceKind kind;
         if (widget.continuing != null) {
           kind = MethodChoiceKind.ContinueRecovery;
         } else if (widget.existing != null) {
@@ -293,10 +319,12 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           },
           onPhysicalBackupChosen: () {
             setState(() {
-              if (widget.continuing == null) {
-                currentStep = "enter_restoration_details";
-              } else {
-                currentStep = 'wait_physical_backup_device';
+              switch (kind) {
+                case MethodChoiceKind.StartRecovery:
+                  currentStep = "enter_restoration_details";
+                  break;
+                default:
+                  currentStep = 'wait_physical_backup_device';
               }
             });
           },
@@ -463,7 +491,7 @@ class _PlugInBlankViewState extends State<_PlugInBlankView> {
         Icon(Icons.cancel, color: theme.colorScheme.error, size: 48),
         SizedBox(height: 16),
         Text(
-          "The device “${connectedDevice!.name!}” you've plugged in is not blank.\nYou must erase it first to use it.",
+          "The device “${connectedDevice!.name!}” you've plugged in is not blank.\nYou must erase it first to input a physical backup on it.",
           textAlign: TextAlign.center,
           style: theme.textTheme.titleMedium,
         ),
@@ -504,6 +532,7 @@ class _EnterWalletNameView extends StatefulWidget {
 class _EnterWalletNameViewState extends State<_EnterWalletNameView> {
   final _formKey = GlobalKey<FormState>();
   final _walletNameController = TextEditingController();
+  BitcoinNetwork bitcoinNetwork = BitcoinNetwork.mainnet(bridge: api);
   bool _isButtonEnabled = false;
 
   @override
@@ -534,6 +563,8 @@ class _EnterWalletNameViewState extends State<_EnterWalletNameView> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final developerMode =
+        SettingsContext.of(context)!.settings.isInDeveloperMode();
 
     return Form(
       key: _formKey,
@@ -569,6 +600,15 @@ class _EnterWalletNameViewState extends State<_EnterWalletNameView> {
               return null;
             },
           ),
+          if (developerMode) ...[
+            SizedBox(height: 16),
+            BitcoinNetworkChooser(
+              value: bitcoinNetwork,
+              onChanged: (network) {
+                setState(() => bitcoinNetwork = network);
+              },
+            ),
+          ],
           const SizedBox(height: 24),
           ElevatedButton.icon(
             icon: const Icon(Icons.arrow_forward),
@@ -677,10 +717,7 @@ class _EnterThresholdViewState extends State<_EnterThresholdView> {
 class _EnterDeviceNameView extends StatelessWidget {
   final Function(String)? onDeviceName;
   final DeviceId deviceId;
-  const _EnterDeviceNameView({
-    required this.deviceId,
-    this.onDeviceName,
-  });
+  const _EnterDeviceNameView({required this.deviceId, this.onDeviceName});
 
   @override
   Widget build(BuildContext context) {
@@ -708,16 +745,14 @@ class _EnterDeviceNameView extends StatelessWidget {
 }
 
 class _EnterBackupView extends StatefulWidget {
-  final RestorationId restorationId;
-  final DeviceId deviceId;
-  final Function(PhysicalBackupPhase)? onBackupSaved;
+  final Stream<EnterPhysicalBackupState> stream;
+  final Function(PhysicalBackupPhase)? onFinished;
   final Function(String)? onError;
 
   const _EnterBackupView({
     Key? key,
-    required this.deviceId,
-    required this.restorationId,
-    this.onBackupSaved,
+    required this.stream,
+    this.onFinished,
     this.onError,
   }) : super(key: key);
 
@@ -731,19 +766,14 @@ class _EnterBackupViewState extends State<_EnterBackupView> {
   @override
   void initState() {
     super.initState();
-    _subscription = coord
-        .tellDeviceToEnterPhysicalBackup(
-          restorationId: widget.restorationId,
-          deviceId: widget.deviceId,
-        )
-        .listen((state) {
-          if (state.saved == true) {
-            widget.onBackupSaved?.call(state.entered!);
-          }
-          if (state.abort != null) {
-            widget.onError?.call(state.abort!);
-          }
-        });
+    _subscription = widget.stream.listen((state) {
+      if (state.finished == true) {
+        widget.onFinished?.call(state.entered!);
+      }
+      if (state.abort != null) {
+        widget.onError?.call(state.abort!);
+      }
+    });
   }
 
   @override

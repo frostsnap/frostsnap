@@ -1442,6 +1442,7 @@ pub enum Mutation {
     ForgetFinishedSignSession {
         session_id: SignSessionId,
     },
+    #[delegate_kind]
     Restoration(restoration::RestorationMutation),
 }
 

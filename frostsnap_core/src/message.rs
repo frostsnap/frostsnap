@@ -110,10 +110,10 @@ impl DoKeyGen {
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, Kind)]
 pub enum CoordinatorRestoration {
-    Load {
+    EnterPhysicalBackup {
         restoration_id: RestorationId,
     },
-    Save {
+    SavePhysicalBackup {
         restoration_id: RestorationId,
     },
     /// Consolidate the saved secret share backup into a properly encrypted backup.
@@ -197,7 +197,7 @@ pub enum DeviceToCoordinatorMessage {
 pub enum DeviceRestoration {
     PhysicalLoaded(EnteredPhysicalBackup),
     PhysicalSaved(EnteredPhysicalBackup),
-    ExitedRecoveryMode { restoration_id: RestorationId },
+    FinishedConsolidation { restoration_id: RestorationId },
     HeldShares(Vec<HeldShare>),
 }
 
@@ -222,7 +222,7 @@ impl Gist for DeviceToCoordinatorMessage {
     }
 }
 
-#[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
+#[derive(Clone, Copy, Debug, bincode::Encode, bincode::Decode, PartialEq)]
 pub struct EnteredPhysicalBackup {
     pub restoration_id: RestorationId,
     pub share_image: ShareImage,

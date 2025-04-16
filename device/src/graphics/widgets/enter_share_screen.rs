@@ -24,7 +24,33 @@ impl EnterShareScreen {
         );
         let input_display_rect =
             Rectangle::new(Point::zero(), Size::new(area.width, preview_height as u32));
-        let backup_input_preview = Bech32InputPreview::new(input_display_rect.size, 15 * 4 - 2);
+        let mut backup_input_preview = Bech32InputPreview::new(input_display_rect.size, 15 * 4 - 2);
+
+        // grey
+        let _chars_grey = [
+            '8', 'J', 'N', 'Z', '7', 'Q', '7', 'J', 'E', 'C', '7', '2', 'E', '5', 'V', '8', 'Q',
+            'A', 'Q', 'T', 'W', 'W', '4', 'J', 'W', 'K', 'T', 'G', 'P', 'U', '4', 'K', '5', 'X',
+            '2', 'N', 'J', 'S', '5', 'J', 'M', 'Y', '7', 'C', 'H', 'Q', 'H', '5', 'C', 'V', 'U',
+            'Q', '7', '7', 'U', '8', 'Z', 'H',
+        ];
+
+        let _chars_black = [
+            '4', 'T', 'P', 'W', '9', 'D', '8', 'F', 'F', 'H', 'U', 'F', 'A', 'M', 'N', 'A', 'N',
+            'W', 'F', 'V', 'E', 'W', '9', 'Q', 'S', '0', '7', '3', 'J', 'L', 'X', 'D', 'T', 'S',
+            'N', '3', 'T', 'L', '7', 'K', 'N', 'Q', 'K', 'G', 'Y', '0', '0', 'T', '6', 'G', '4',
+            'Q', '2', '5', 'K', 'E', 'N', 'H',
+        ];
+
+        let _chars_blue = [
+            'R', 'R', '0', 'E', 'V', 'E', '0', 'L', 'E', 'K', '6', 'F', 'Z', 'Z', 'M', '5', '9',
+            'L', 'J', 'W', 'Y', 'D', '5', 'W', 'J', 'W', '5', 'S', 'X', '2', '0', 'A', 'V', 'A',
+            'C', '9', '9', 'Q', '2', '6', 'S', 'J', '7', 'W', 'C', '2', '9', 'V', 'N', 'L', 'D',
+            'S', 'F', 'W', 'S', 'W', 'G', 'Y',
+        ];
+
+        for v in _chars_blue {
+            backup_input_preview.add_character(v);
+        }
 
         let bech32_keyboard = Bech32Keyboard::new(keyboard_rect.size.height);
 

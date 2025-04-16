@@ -916,6 +916,7 @@ impl Coordinator {
     }
 
     pub fn send_cancel(&self, id: DeviceId) {
+        event!(Level::WARN, "dart sent cancel");
         self.0.send_cancel(id);
     }
 
@@ -1327,34 +1328,41 @@ impl Coordinator {
             .recover_share(recover_share.0.deref().clone(), crate::TEMP_KEY)
     }
 
-    pub fn tell_device_to_enter_physical_backup(
+    pub fn tell_device_to_enter_physical_backup_and_save(
         &self,
         restoration_id: RestorationId,
         device_id: DeviceId,
         sink: StreamSink<EnterPhysicalBackupState>,
     ) -> Result<()> {
-        self.0.tell_device_to_enter_physical_backup(
+        self.0.tell_device_to_enter_physical_backup_and_save(
             restoration_id,
             device_id,
-            true,
             SinkWrap(sink),
         )?;
         Ok(())
     }
 
-    pub fn tell_device_to_enter_physical_backup_for_check(
+    pub fn tell_device_to_enter_physical_backup(
         &self,
         device_id: DeviceId,
         sink: StreamSink<EnterPhysicalBackupState>,
     ) -> Result<()> {
-        let restoration_id = RestorationId::new(&mut rand::thread_rng());
-        self.0.tell_device_to_enter_physical_backup(
-            restoration_id,
-            device_id,
-            false,
-            SinkWrap(sink),
-        )?;
+        self.0
+            .tell_device_to_enter_physical_backup(device_id, SinkWrap(sink))?;
 
+        Ok(())
+    }
+
+    pub fn tell_device_to_consolidate_physical_backup(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        phase: PhysicalBackupPhase,
+    ) -> anyhow::Result<()> {
+        self.0.tell_device_to_consolidate_physical_backup(
+            access_structure_ref,
+            (*phase.0).clone(),
+            crate::TEMP_KEY,
+        )?;
         Ok(())
     }
 
@@ -1373,6 +1381,10 @@ impl Coordinator {
 
     pub fn exit_recovery_mode(&self, device_id: DeviceId) {
         self.0.exit_recovery_mode(device_id, crate::TEMP_KEY);
+    }
+
+    pub fn tmp_restoration_id(&self) -> SyncReturn<RestorationId> {
+        SyncReturn(RestorationId::new(&mut rand::thread_rng()))
     }
 }
 
@@ -1823,6 +1835,10 @@ impl Settings {
         Ok(())
     }
 
+    pub fn is_in_developer_mode(&self) -> SyncReturn<bool> {
+        SyncReturn(self.settings.lock().unwrap().developer_mode)
+    }
+
     pub fn check_and_set_electrum_server(
         &self,
         network: BitcoinNetwork,
@@ -2256,6 +2272,7 @@ pub struct EnterPhysicalBackupState {
     pub abort: Option<String>,
     pub entered: Option<PhysicalBackupPhase>,
     pub saved: Option<bool>,
+    pub finished: bool,
 }
 
 impl From<frostsnap_coordinator::enter_physical_backup::EnterPhysicalBackupState>
@@ -2268,6 +2285,7 @@ impl From<frostsnap_coordinator::enter_physical_backup::EnterPhysicalBackupState
             abort: value.abort,
             entered: value.entered.map(RustOpaque::new).map(PhysicalBackupPhase),
             saved: value.saved,
+            finished: value.finished,
         }
     }
 }
