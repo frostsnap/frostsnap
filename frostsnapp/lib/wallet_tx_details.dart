@@ -340,18 +340,6 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
       shrinkWrap: true,
       physics: ClampingScrollPhysics(),
       slivers: [
-        //SliverAppBar(
-        //  title: Text('Transaction'),
-        //  titleTextStyle: theme.textTheme.titleMedium,
-        //  centerTitle: true,
-        //  forceMaterialTransparency: true,
-        //  leading: IconButton(
-        //    onPressed: () => Navigator.pop(context),
-        //    icon: Icon(Icons.close),
-        //  ),
-        //  actionsPadding: EdgeInsets.symmetric(horizontal: 10.0),
-        //  automaticallyImplyLeading: false,
-        //),
         SliverSafeArea(
           sliver: SliverList(
             delegate: SliverChildListDelegate.fixed([

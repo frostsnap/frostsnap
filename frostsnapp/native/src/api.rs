@@ -1572,8 +1572,7 @@ pub struct Address {
     pub inner: RustOpaque<RAddress<RNetworkChecked>>,
     pub index: u32,
     pub used: bool,
-    pub shared: bool,
-    pub fresh: bool,
+    pub revealed: bool,
     pub is_external: bool,
     pub derivation_path: String,
 }
@@ -1584,8 +1583,7 @@ impl From<frostsnap_coordinator::bitcoin::wallet::AddressInfo> for Address {
             inner: RustOpaque::new(value.address),
             index: value.index,
             used: value.used,
-            shared: value.shared,
-            fresh: value.fresh,
+            revealed: value.revealed,
             is_external: value.external,
             derivation_path: value
                 .derivation_path

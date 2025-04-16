@@ -236,18 +236,6 @@ class _WalletSendPageState extends State<WalletSendPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    //final appBar = SliverAppBar(
-    //  title: Text('Send Bitcoin'),
-    //  titleTextStyle: theme.textTheme.titleMedium,
-    //  centerTitle: true,
-    //  backgroundColor: theme.colorScheme.surfaceContainerLow,
-    //  pinned: true,
-    //  leading: IconButton(
-    //    onPressed: () => Navigator.pop(context),
-    //    icon: Icon(Icons.close),
-    //  ),
-    //);
-
     final etaInputCard = ListenableBuilder(
       listenable: feeRateModel,
       builder: (context, _) {
@@ -491,7 +479,6 @@ class _WalletSendPageState extends State<WalletSendPage> {
             ),
           ),
         ),
-        //appBar,
       ],
     );
 

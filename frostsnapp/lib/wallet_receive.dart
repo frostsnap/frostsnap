@@ -253,9 +253,8 @@ class _ReceiverPageState extends State<ReceivePage> {
     });
   }
 
-  bool get isShared => _address?.shared ?? false;
+  bool get isRevealed => _address?.revealed ?? false;
   bool get isUsed => _address?.used ?? false;
-  bool get isFresh => _address?.fresh ?? false;
 
   Address? _address;
   bool get isReady => _address != null;
@@ -705,32 +704,37 @@ class _ReceiverPageState extends State<ReceivePage> {
       ),
     );
     final img = addressQrImage(address);
-    await showDialog<bool>(
+    await showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (context) {
         return BackdropFilter(
           filter: blurFilter,
           child: Theme(
             data: theme,
-            child: Dialog(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: 580),
-                child: Padding(
-                  padding: EdgeInsets.all(20),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    spacing: 16,
-                    children: [
-                      AspectRatio(
-                        aspectRatio: 1,
-                        child: PrettyQrView(qrImage: img),
-                      ),
-                      FilledButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: Text('Done'),
-                      ),
-                    ],
+            child: PopScope(
+              canPop: false,
+              child: Dialog(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: 580),
+                  child: Padding(
+                    padding: EdgeInsets.all(20),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      spacing: 16,
+                      children: [
+                        AspectRatio(
+                          aspectRatio: 1,
+                          child: PrettyQrView(qrImage: img),
+                        ),
+                        SizedBox(height: 16),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: Text('Done'),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

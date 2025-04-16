@@ -9,6 +9,7 @@ use rusqlite::named_params;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct ChangeSet {
+    // index, skp, reserved/unreserved
     spks: BTreeSet<(u64, ScriptBuf, bool)>,
 }
 
@@ -94,18 +95,22 @@ impl ChangeSet {
     pub fn from_sqlite(db_tx: &rusqlite::Transaction) -> rusqlite::Result<Self> {
         let mut changeset = Self::default();
         let mut select_statement = db_tx.prepare(&format!(
-            "SELECT spk, seq FROM {}",
+            "SELECT spk, seq, reserved FROM {}",
             Self::RESERVED_SPKS_TABLE_NAME,
         ))?;
         let row_iter = select_statement.query_map([], |row| {
             Ok((
                 row.get::<_, Impl<ScriptBuf>>("spk")?,
                 row.get::<_, u64>("seq")?,
+                row.get::<_, bool>("reserved")?,
             ))
         })?;
         for row in row_iter {
-            let (Impl(spk), seq) = row?;
-            changeset.spks.insert((seq, spk, true));
+            let (Impl(spk), seq, res) = row?;
+            // select spks that have been reserved
+            if res {
+                changeset.spks.insert((seq, spk, res));
+            }
         }
         Ok(changeset)
     }

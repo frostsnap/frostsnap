@@ -204,15 +204,13 @@ impl CoordSuperWallet {
             .next()
             .map(|(ki, _)| *ki);
         let used = got_index == Some((keychain, index));
-        let shared = used || self.reserved_spks.contains(spk);
-        let fresh = !shared;
+        let revealed = used || self.reserved_spks.contains(spk);
         AddressInfo {
             index,
             address: bitcoin::Address::from_script(spk, self.network).expect("has address form"),
             external: true,
             used,
-            shared,
-            fresh,
+            revealed,
             derivation_path: BitcoinBip32Path {
                 account_keychain: keychain.1,
                 index,
@@ -278,13 +276,12 @@ impl CoordSuperWallet {
             .mutate(&mut db, |tx_graph, reserved_spks| {
                 let mut tx_graph_changeset = WalletIndexedTxGraphChangeSet::default();
                 let mut reserved_spks_changeset = ReservedSpksChangeSet::default();
-                match tx_graph
+                let (_, changeset) = tx_graph
                     .index
                     .reveal_to_target((master_appkey, keychain), derivation_index)
-                {
-                    Some((_, changeset)) => tx_graph_changeset.merge(changeset.into()),
-                    None => return Ok((false, (tx_graph_changeset, reserved_spks_changeset))),
-                }
+                    .ok_or(anyhow!("keychain doesn't exist"))?;
+                tx_graph_changeset.merge(changeset.into());
+
                 let spk = match tx_graph
                     .index
                     .spk_at_index((master_appkey, keychain), derivation_index)
@@ -809,8 +806,7 @@ pub struct AddressInfo {
     pub address: bitcoin::Address,
     pub external: bool,
     pub used: bool,
-    pub shared: bool,
-    pub fresh: bool,
+    pub revealed: bool,
     pub derivation_path: Vec<u32>,
 }
 
