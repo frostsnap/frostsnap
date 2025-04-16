@@ -268,6 +268,17 @@ class _ReceiverPageState extends State<ReceivePage> {
   static const sectionHideDuration = Durations.medium4;
   static const sectionHideCurve = Curves.easeInOutCubicEmphasized;
 
+  void maybeFocusOnActivity(Address? addr) {
+    final relevantTxs =
+        addr != null
+            ? allTxs.where((tx) => tx.involvesSpk(spk: addr.spk())).toList()
+            : [];
+
+    if (relevantTxs.isNotEmpty) {
+      focus = ReceivePageFocus.awaitTx;
+    }
+  }
+
   QrImage addressQrImage(Address address) {
     final qrCode = QrCode(8, QrErrorCorrectLevel.L);
     qrCode.addData(address.address());
@@ -291,9 +302,11 @@ class _ReceiverPageState extends State<ReceivePage> {
             index: index,
           );
         }
+
         setState(() {
           allTxs = txState.txs;
           if (addr != null) _address = addr;
+          maybeFocusOnActivity(addr);
         });
       }
     });
@@ -317,6 +330,7 @@ class _ReceiverPageState extends State<ReceivePage> {
       setState(() {
         _address = addr;
         if (next != null) _focus = next;
+        maybeFocusOnActivity(addr);
       });
     }
   }
@@ -510,6 +524,7 @@ class _ReceiverPageState extends State<ReceivePage> {
                               ),
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
                                 spacing: 16,
                                 children:
                                     displayingDevices.isEmpty
@@ -584,7 +599,6 @@ class _ReceiverPageState extends State<ReceivePage> {
   }
 
   Widget activityCard(BuildContext context) {
-    final thisAddr = _address?.address();
     final thisSpk = _address?.spk();
     final walletCtx = WalletContext.of(context)!;
     final isFocused = focus == ReceivePageFocus.awaitTx;
@@ -593,12 +607,10 @@ class _ReceiverPageState extends State<ReceivePage> {
     final chainTipHeight = walletCtx.wallet.superWallet.height();
 
     final relevantTxs =
-        allTxs.where((tx) {
-          if (thisAddr == null || thisSpk == null) return false;
-          final netSpent = (tx.sumInputsSpendingSpk(spk: thisSpk) ?? 0);
-          final netReceived = tx.sumOutputsToSpk(spk: thisSpk);
-          return (netSpent > 0 || netReceived > 0);
-        }).toList();
+        thisSpk != null
+            ? allTxs.where((tx) => tx.involvesSpk(spk: thisSpk)).toList()
+            : [];
+
     final txTiles = relevantTxs.map((tx) {
       final txDetails = TxDetailsModel(
         tx: tx,

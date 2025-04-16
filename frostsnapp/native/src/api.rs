@@ -119,6 +119,23 @@ impl From<frostsnap_coordinator::bitcoin::wallet::Transaction> for Transaction {
 }
 
 impl Transaction {
+    pub fn involves_spk(&self, spk: RustOpaque<RScriptBuf>) -> SyncReturn<bool> {
+        let related_input = self.inner.input.iter().any(|txin| {
+            self.prevouts
+                .get(&txin.previous_output)
+                .map(|prevout| *prevout.script_pubkey.as_script() == *spk)
+                .unwrap_or(false)
+        });
+
+        let related_output = self
+            .inner
+            .output
+            .iter()
+            .any(|txout| *txout.script_pubkey.as_script() == *spk);
+
+        SyncReturn(related_output || related_input)
+    }
+
     /// Computes the sum of all inputs, or only those whose previous output script pubkey is in
     /// `filter`, if provided. The result is `None` if any input is missing a previous output.
     fn _sum_inputs(&self, filter: Option<&HashSet<RScriptBuf>>) -> Option<u64> {
