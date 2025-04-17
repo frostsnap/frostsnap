@@ -167,6 +167,16 @@ impl State {
             })
             .unwrap_or(false)
     }
+
+    pub fn clear_up_key_deletion(&mut self, key_id: KeyId) {
+        for pending in self.pending_physical_consolidations.values_mut() {
+            pending.retain(|pending| pending.access_structure_ref.key_id != key_id);
+        }
+        self.pending_physical_consolidations
+            .retain(|_, v| !v.is_empty());
+        self.tmp_waiting_consolidate
+            .retain(|_, v| v.access_structure_ref.key_id != key_id);
+    }
 }
 
 impl FrostCoordinator {

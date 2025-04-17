@@ -110,7 +110,7 @@ class WalletRecoveryPage extends StatelessWidget {
                     const SizedBox(width: 10),
                     FilledButton.icon(
                       icon: const Icon(Icons.check_circle),
-                      label: const Text('Finish'),
+                      label: const Text('Restore'),
                       onPressed:
                           canFinish
                               ? () async {
@@ -160,12 +160,20 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
   ConnectedDevice? blankDevice;
   RestorationId? manuallyEntered;
   String? walletName;
+  BitcoinNetwork? bitcoinNetwork;
   int? threshold;
   String? error;
 
   @override
   void initState() {
     super.initState();
+    if (widget.continuing != null) {
+      kind = MethodChoiceKind.ContinueRecovery;
+    } else if (widget.existing != null) {
+      kind = MethodChoiceKind.AddToWallet;
+    } else {
+      kind = MethodChoiceKind.StartRecovery;
+    }
   }
 
   @override
@@ -260,9 +268,10 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         break;
       case 'enter_restoration_details':
         child = _EnterWalletNameView(
-          onWalletNameEntered: (walletName) {
+          onWalletNameEntered: (walletName, bitcoinNetwork) {
             setState(() {
               this.walletName = walletName;
+              this.bitcoinNetwork = bitcoinNetwork;
               currentStep = 'enter_threshold';
             });
           },
@@ -272,6 +281,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
       case 'enter_threshold':
         child = _EnterThresholdView(
           walletName: walletName!,
+          network: bitcoinNetwork!,
           onThresholdEntered: (threshold, restorationId) {
             setState(() {
               this.threshold = threshold;
@@ -304,14 +314,6 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         );
         break;
       default:
-        if (widget.continuing != null) {
-          kind = MethodChoiceKind.ContinueRecovery;
-        } else if (widget.existing != null) {
-          kind = MethodChoiceKind.AddToWallet;
-        } else {
-          kind = MethodChoiceKind.StartRecovery;
-        }
-
         child = _ChooseMethodView(
           kind: kind,
           onDeviceChosen: () {
@@ -376,7 +378,7 @@ class _ChooseMethodView extends StatelessWidget {
       case MethodChoiceKind.StartRecovery:
         title = "Start wallet recovery";
         subtitle =
-            'To start, what kind of key are you starting the wallet recovery from?';
+            'What kind of key are you starting the wallet recovery from?';
         break;
       case MethodChoiceKind.ContinueRecovery:
         title = 'Continue wallet recovery';
@@ -402,7 +404,7 @@ class _ChooseMethodView extends StatelessWidget {
         const SizedBox(height: 10),
         Text(
           subtitle,
-          style: TextStyle(fontSize: 14),
+          style: theme.textTheme.titleMedium,
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 20),
@@ -413,10 +415,14 @@ class _ChooseMethodView extends StatelessWidget {
           ),
           clipBehavior: Clip.hardEdge,
           child: ListTile(
-            leading: const Icon(Icons.devices, size: 30),
-            title: const Text('An existing wallet key'),
+            minTileHeight: 80,
+            leading: const ImageIcon(
+              AssetImage('assets/icons/device2.png'),
+              size: 30.0,
+            ),
+            title: const Text('Existing key'),
             subtitle: const Text(
-              "I have a Frostsnap device with a key for the wallet",
+              "I have a Frostsnap which already has a key for the wallet",
             ),
             onTap: onDeviceChosen,
           ),
@@ -429,10 +435,11 @@ class _ChooseMethodView extends StatelessWidget {
           ),
           clipBehavior: Clip.hardEdge,
           child: ListTile(
+            minTileHeight: 80,
             leading: const Icon(Icons.description, size: 30),
-            title: const Text('A physical backup'),
+            title: const Text('Physical backup'),
             subtitle: const Text(
-              'I have a key backup recorded on physical bit of paper or metal and a blank device I want to load it on to',
+              'I have a physically recorded backup and blank Frostsnap device',
             ),
             onTap: onPhysicalBackupChosen,
           ),
@@ -520,7 +527,7 @@ class _PlugInBlankViewState extends State<_PlugInBlankView> {
 }
 
 class _EnterWalletNameView extends StatefulWidget {
-  final Function(String walletName) onWalletNameEntered;
+  final Function(String walletName, BitcoinNetwork network) onWalletNameEntered;
 
   const _EnterWalletNameView({Key? key, required this.onWalletNameEntered})
     : super(key: key);
@@ -549,7 +556,7 @@ class _EnterWalletNameViewState extends State<_EnterWalletNameView> {
 
   void _submitForm() {
     if (_isButtonEnabled && _formKey.currentState!.validate()) {
-      widget.onWalletNameEntered(_walletNameController.text);
+      widget.onWalletNameEntered(_walletNameController.text, bitcoinNetwork);
     }
   }
 
@@ -623,12 +630,14 @@ class _EnterWalletNameViewState extends State<_EnterWalletNameView> {
 
 class _EnterThresholdView extends StatefulWidget {
   final String walletName;
+  final BitcoinNetwork network;
   final Function(int threshold, RestorationId restorationId) onThresholdEntered;
 
   const _EnterThresholdView({
     Key? key,
     required this.walletName,
     required this.onThresholdEntered,
+    required this.network,
   }) : super(key: key);
 
   @override
@@ -701,7 +710,7 @@ class _EnterThresholdViewState extends State<_EnterThresholdView> {
                 final restorationId = await coord.startRestoringWallet(
                   name: widget.walletName,
                   threshold: _threshold,
-                  network: BitcoinNetwork.mainnet(bridge: api),
+                  network: widget.network,
                 );
 
                 widget.onThresholdEntered(_threshold, restorationId);
@@ -915,6 +924,21 @@ class _PlugInPromptViewState extends State<_PlugInPromptView> {
       );
     }
 
+    final prompt;
+
+    if (widget.continuing != null) {
+      final name =
+          coord
+              .getRestorationState(restorationId: widget.continuing!)!
+              .keyName();
+      prompt = 'Plug in a Frostsnap to continue recovering "$name"';
+    } else if (widget.existing != null) {
+      final name = coord.getFrostKey(keyId: widget.existing!.keyId)!.keyName();
+      prompt = 'Plug in a Frostsnap to add it to "$name"';
+    } else {
+      prompt = 'Plug in your Frostsnap device\nto begin wallet recovery';
+    }
+
     return Column(
       key: const ValueKey('plugInPrompt'),
       mainAxisSize: MainAxisSize.min,
@@ -923,7 +947,7 @@ class _PlugInPromptViewState extends State<_PlugInPromptView> {
         Icon(Icons.usb, size: 48, color: Colors.grey),
         SizedBox(height: 16),
         Text(
-          'Plug in your Frostsnap device\nto begin wallet recovery',
+          prompt,
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 18),
         ),
@@ -966,10 +990,15 @@ class _CandidateReadyView extends StatelessWidget {
     VoidCallback buttonAction;
 
     switch (compatibility) {
-      case ShareCompatibility.Compatible:
+      case ShareCompatibility.Compatible ||
+          // we ignore the problem of different wallet names on the shares for now.
+          // This happens when you eneter a physical backup and enter a different
+          // name for the wallet than devices you later try to add to the wallet.
+          // We just carry on in a SNAFU like manner for now.
+          ShareCompatibility.NameMismatch:
         icon = const Icon(Icons.check_circle, size: 48, color: Colors.green);
         message =
-            'Found key "$deviceName" for wallet “${candidate.keyName()}”!';
+            'The key "$deviceName" can be added to "${candidate.keyName()}"!';
         buttonText =
             continuing != null || existing != null
                 ? 'Add key to ${candidate.keyName()}'
@@ -1010,13 +1039,6 @@ class _CandidateReadyView extends StatelessWidget {
         icon = const Icon(Icons.error, size: 48, color: Colors.red);
         message =
             'This key "$deviceName" is part of a different wallet called "${candidate.keyName()}"';
-        buttonText = 'Close';
-        buttonAction = () => Navigator.pop(context);
-        break;
-
-      case ShareCompatibility.NameMismatch:
-        icon = const Icon(Icons.warning, size: 48, color: Colors.orange);
-        message = 'Key name mismatch for "$deviceName".';
         buttonText = 'Close';
         buttonAction = () => Navigator.pop(context);
         break;

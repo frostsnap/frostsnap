@@ -274,6 +274,7 @@ impl FrostCoordinator {
             DeleteKey(key_id) => {
                 self.keys.remove(&key_id)?;
                 self.key_order.retain(|&entry| entry != key_id);
+                self.restoration.clear_up_key_deletion(key_id);
                 let sessions_to_delete = self
                     .active_signing_sessions
                     .iter()

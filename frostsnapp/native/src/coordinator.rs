@@ -789,11 +789,27 @@ impl FfiCoordinator {
     pub fn continue_restoring_wallet_from_device_share(
         &self,
         restoration_id: RestorationId,
-        recover_share: RecoverShare,
+        mut recover_share: RecoverShare,
     ) -> Result<()> {
         {
             let mut db = self.db.lock().unwrap();
             let mut coordinator = self.coordinator.lock().unwrap();
+            let restoration_state = coordinator
+                .get_restoration_state(restoration_id)
+                .ok_or(anyhow!("non-existent restoration"))?;
+
+            let held_share = &mut recover_share.held_share;
+
+            // HACK: We overwrite the name of the device share here to contrive compatibility.
+            if restoration_state.key_name != held_share.key_name {
+                held_share.key_name = restoration_state.key_name.clone();
+                event!(
+                    Level::WARN,
+                    recovery_name = restoration_state.key_name,
+                    device_name = held_share.key_name,
+                    "had to rename restoration share"
+                );
+            }
             coordinator.staged_mutate(&mut *db, |coordinator| {
                 coordinator.add_recovery_share_to_restoration(restoration_id, recover_share)?;
                 Ok(())
@@ -1046,7 +1062,7 @@ impl FfiCoordinator {
         let coord = self.coordinator.lock().unwrap();
         let mut device_list = self.device_list.lock().unwrap();
 
-        if let Some(device) = device_list.get_device(device_id) {
+        if device_list.get_device(device_id).is_some() {
             let msgs = coord
                 .consolidate_pending_physical_backups(device_id, encryption_key)
                 .into_iter()
@@ -1064,7 +1080,7 @@ impl FfiCoordinator {
 
             // We finally connect the device properly!
             if let Some(ui_protocol) = &mut *self.ui_protocol.lock().unwrap() {
-                ui_protocol.connected(device_id, device.device_mode());
+                ui_protocol.connected(device_id, DeviceMode::Ready);
             }
         }
     }

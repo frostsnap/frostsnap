@@ -22,7 +22,6 @@ pub use frostsnap_coordinator::firmware_upgrade::FirmwareUpgradeConfirmState;
 pub use frostsnap_coordinator::frostsnap_comms::Model;
 pub use frostsnap_coordinator::frostsnap_core;
 use frostsnap_coordinator::frostsnap_core::bitcoin_transaction::RootOwner;
-use frostsnap_coordinator::frostsnap_core::message::HeldShare;
 use frostsnap_coordinator::frostsnap_core::{
     coordinator::{restoration::RecoverShareError, CoordFrostKey},
     device::KeyPurpose,
@@ -2231,36 +2230,8 @@ impl RecoverShare {
 pub struct RestorationState(pub RustOpaque<RRestorationState>);
 
 impl RestorationState {
-    pub fn get_already_recovered_share(
-        &self,
-        device_id: DeviceId,
-    ) -> SyncReturn<Option<RecoverShare>> {
-        SyncReturn(
-            match self
-                .0
-                .access_structure
-                .share_images
-                .get(&device_id)
-                .cloned()
-            {
-                Some(share_image) => Some(RecoverShare(RustOpaque::new(
-                    frostsnap_core::coordinator::restoration::RecoverShare {
-                        held_by: device_id,
-                        held_share: HeldShare {
-                            access_structure_ref: match self.0.access_structure_ref {
-                                Some(access_structure_ref) => access_structure_ref,
-                                None => return SyncReturn(None),
-                            },
-                            share_image,
-                            threshold: self.0.access_structure.threshold,
-                            key_name: self.0.key_name.clone(),
-                            purpose: self.0.key_purpose,
-                        },
-                    },
-                ))),
-                None => None,
-            },
-        )
+    pub fn key_name(&self) -> SyncReturn<String> {
+        SyncReturn(self.0.key_name.clone())
     }
 }
 

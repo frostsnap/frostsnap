@@ -89,31 +89,6 @@ impl BackupState {
         }
     }
 
-    // pub fn mark_all_complete(
-    //     &mut self,
-    //     access_structure_ref: AccessStructureRef,
-    //     mutations: &mut Vec<Mutation>,
-    // ) {
-    //     let timestamp = SystemTime::now()
-    //         .duration_since(UNIX_EPOCH)
-    //         .unwrap()
-    //         .as_secs() as u32;
-    //     if let Some(run) = self.runs.get(&access_structure_ref).cloned(){
-    //         for (&device_id, opt) in run.iter() {
-    //             if opt.is_none() {
-    //                 self.mutate(
-    //                     Mutation::MarkDeviceComplete {
-    //                         access_structure_ref,
-    //                         device_id,
-    //                         timestamp,
-    //                     },
-    //                     mutations,
-    //                 );
-    //             }
-    //         }
-    //     }
-    // }
-
     /// We want the API to assume there's only one access structure for key for now so we have this
     /// hack. If/when we want to have backups for other access structures then we can do that and
     /// change the API here.

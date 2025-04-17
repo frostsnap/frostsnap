@@ -56,7 +56,7 @@ class SuperWalletContext extends InheritedWidget {
   Stream<void> signingSessionSignalStream(KeyId keyId) {
     var stream = _signingSessionSignals[keyId];
     if (stream != null) return stream;
-    stream = coord.subSigningSessionSignals(keyId: keyId);
+    stream = coord.subSigningSessionSignals(keyId: keyId).toBehaviorSubject();
     _signingSessionSignals[keyId] = stream;
     return stream;
   }
