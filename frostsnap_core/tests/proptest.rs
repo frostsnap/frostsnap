@@ -9,11 +9,11 @@ use proptest::{
 use std::collections::{BTreeMap, BTreeSet};
 
 use frostsnap_core::{
-    device::{KeyGenPhase2, KeyPurpose, SignPhase1},
-    message::{
+    coordinator::{
         CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, CoordinatorToUserSigningMessage,
-        DoKeyGen,
     },
+    device::{DeviceToUserMessage, KeyGenPhase2, KeyPurpose, SignPhase1},
+    message::DoKeyGen,
     AccessStructureRef, DeviceId, KeygenId, SignSessionId, WireSignTask,
 };
 use proptest_state_machine::{
@@ -532,31 +532,37 @@ impl Env for ProptestEnv {
         &mut self,
         run: &mut Run,
         from: DeviceId,
-        message: frostsnap_core::message::DeviceToUserMessage,
+        message: DeviceToUserMessage,
         _rng: &mut impl RngCore,
     ) {
+        use DeviceToUserMessage::*;
         match message {
-            frostsnap_core::message::DeviceToUserMessage::CheckKeyGen { phase, .. } => {
+            CheckKeyGen { phase, .. } => {
                 let pending = self.device_keygen_acks.entry(phase.keygen_id).or_default();
                 pending.insert(from, *phase);
             }
-            frostsnap_core::message::DeviceToUserMessage::SignatureRequest { phase } => {
+            SignatureRequest { phase } => {
                 self.sign_reqs
                     .entry(phase.session_id)
                     .or_default()
                     .insert(from, *phase);
             }
-            frostsnap_core::message::DeviceToUserMessage::DisplayBackupRequest { phase } => {
-                let backup_ack = run
-                    .device(from)
-                    .display_backup_ack(*phase, &mut TestDeviceKeyGen)
-                    .unwrap();
-                run.extend_from_device(from, backup_ack);
+            Restoration(msg) => {
+                use frostsnap_core::device::restoration::ToUserRestoration::*;
+                match msg {
+                    DisplayBackupRequest { phase } => {
+                        let backup_ack = run
+                            .device(from)
+                            .display_backup_ack(*phase, &mut TestDeviceKeyGen)
+                            .unwrap();
+                        run.extend_from_device(from, backup_ack);
+                    }
+                    _ => { /* ignore */ }
+                }
             }
-            frostsnap_core::message::DeviceToUserMessage::VerifyAddress { .. } => {
+            VerifyAddress { .. } => {
                 // we dont actually confirm on the device
             }
-            _ => { /* do nothing */ }
         }
     }
 }

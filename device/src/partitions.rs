@@ -9,6 +9,7 @@ use frostsnap_embedded::FlashPartition;
 
 pub type EspFlashPartition<'a> = FlashPartition<'a, FlashStorage>;
 
+#[derive(Clone)]
 pub struct Partitions<'a> {
     pub ota: OtaPartitions<'a>,
     pub nvs: EspFlashPartition<'a>,

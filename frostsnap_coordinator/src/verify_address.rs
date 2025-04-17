@@ -6,7 +6,7 @@ use frostsnap_core::{
 };
 use tracing::{event, Level};
 
-use crate::{Completion, Sink, UiProtocol};
+use crate::{Completion, DeviceMode, Sink, UiProtocol};
 
 #[derive(Clone, Debug, Default)]
 pub struct VerifyAddressProtocolState {
@@ -55,8 +55,8 @@ impl UiProtocol for VerifyAddressProtocol {
         self.is_complete.clone()
     }
 
-    fn connected(&mut self, id: frostsnap_core::DeviceId) {
-        if self.state.target_devices.contains(&id) {
+    fn connected(&mut self, id: frostsnap_core::DeviceId, state: DeviceMode) {
+        if self.state.target_devices.contains(&id) && state == DeviceMode::Ready {
             self.need_to_send_to.insert(id);
             self.emit_state()
         }
@@ -70,7 +70,7 @@ impl UiProtocol for VerifyAddressProtocol {
 
     fn process_to_user_message(
         &mut self,
-        message: frostsnap_core::message::CoordinatorToUserMessage,
+        message: frostsnap_core::coordinator::CoordinatorToUserMessage,
     ) {
         event!(
             Level::ERROR,

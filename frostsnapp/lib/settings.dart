@@ -10,6 +10,7 @@ import 'package:frostsnapp/bullet_list.dart';
 import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/electrum_server_settings.dart';
 import 'package:frostsnapp/global.dart';
+import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/logs.dart';
 import 'package:frostsnapp/todo.dart';
 import 'package:frostsnapp/wallet.dart';
@@ -62,9 +63,6 @@ class SettingsContext extends InheritedWidget {
       return null;
     }
     final masterAppkey = frostKey.masterAppkey();
-    if (masterAppkey == null) {
-      return null;
-    }
     final network = frostKey.bitcoinNetwork();
     if (network == null) {
       return null;
@@ -110,10 +108,10 @@ class SettingsPage extends StatelessWidget {
                         },
                       ),
                     SettingsItem(
-                      title: Text("Access"),
-                      icon: Icons.security,
+                      title: Text("Keys"),
+                      icon: Icons.key_sharp,
                       bodyBuilder: (context) {
-                        return AccessPage();
+                        return KeysSettings();
                       },
                     ),
                     if (walletCtx != null)
@@ -799,27 +797,81 @@ class _HoldToDeleteButtonState extends State<HoldToDeleteButton> {
   }
 }
 
-class AccessPage extends StatelessWidget {
-  const AccessPage({super.key});
+class KeysSettings extends StatelessWidget {
+  const KeysSettings({super.key});
 
   @override
   Widget build(BuildContext context) {
     final keyCtx = KeyContext.of(context)!;
-    final frostKey = keyCtx.frostKey();
+    final keyName = keyCtx.name;
+    final keyId = keyCtx.keyId;
 
     return Container(
       padding: EdgeInsets.all(16.0),
       child: Column(
         children: [
           Text(
-            "The ‘${frostKey.keyName()}’ wallet can be spent by:",
-            style: Theme.of(context).textTheme.titleMedium,
+            "The ‘$keyName’ wallet can be unlocked with:",
+            style: Theme.of(context).textTheme.headlineMedium,
           ),
-          AccessStructureListWidget(
-            accessStructures: frostKey.accessStructureState().field0,
+          StreamBuilder(
+            stream: GlobalStreams.keyStateSubject,
+            builder: (context, snap) {
+              if (!snap.hasData) return SizedBox();
+              final frostKey = snap.data!.keys.firstWhereOrNull(
+                (frostkey) => keyIdEquals(frostkey.keyId(), keyId),
+              );
+              final accessStructures = frostKey?.accessStructures();
+              return AccessStructureListWidget(
+                accessStructures: accessStructures ?? [],
+              );
+            },
           ),
         ],
       ),
+    );
+  }
+}
+
+class BitcoinNetworkChooser extends StatelessWidget {
+  final BitcoinNetwork value;
+  final ValueChanged<BitcoinNetwork> onChanged;
+
+  const BitcoinNetworkChooser({
+    Key? key,
+    required this.value,
+    required this.onChanged,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const SizedBox(height: 20),
+        const Text("(developer) Choose the network:"),
+        const SizedBox(height: 10),
+        DropdownButton<String>(
+          hint: const Text('Choose a network'),
+          value: value.name(),
+          onChanged: (String? newValue) {
+            if (newValue != null) {
+              final network =
+                  BitcoinNetwork.fromString(string: newValue, bridge: api)!;
+              onChanged(network);
+            }
+          },
+          items:
+              BitcoinNetwork.supportedNetworks(bridge: api).map((network) {
+                final name = network.name();
+                return DropdownMenuItem<String>(
+                  value: name,
+                  child: Text(
+                    name == "bitcoin" ? "Bitcoin (BTC)" : network.name(),
+                  ),
+                );
+              }).toList(),
+        ),
+      ],
     );
   }
 }

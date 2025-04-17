@@ -289,7 +289,7 @@ class DeviceSigningProgress extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder(
-      stream: deviceListSubject.map((update) => update.state),
+      stream: GlobalStreams.deviceListSubject.map((update) => update.state),
       builder: (context, snapshot) {
         final theme = Theme.of(context);
         if (!snapshot.hasData) {

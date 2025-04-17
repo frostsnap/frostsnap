@@ -75,7 +75,16 @@ void main() async {
     runApp(MyApp(startupError: startupError));
   } else {
     // we want to stop the app from sleeping on mobile if there's a device plugged in.
-    deviceListSubject.forEach((update) {
+    GlobalStreams.deviceListSubject.forEach((update) {
+      final recoveringDevices = update.state.devices.where(
+        (device) => device.recoveryMode,
+      );
+
+      // we don't notify the user about exiting recovery mode atm we just do it.
+      for (var device in recoveringDevices) {
+        coord.exitRecoveryMode(deviceId: device.id);
+      }
+
       if (Platform.isLinux) {
         return; // not supported by wakelock
       }
@@ -104,7 +113,6 @@ Widget buildMainWidget(AppCtx appCtx, Stream<String> logStream) {
   return FrostsnapContext(
     appCtx: appCtx,
     logStream: logStream,
-    backupManager: appCtx.backupManager,
     child: SettingsContext(
       settings: appCtx.settings,
       child: SuperWalletContext(appCtx: appCtx, child: MyApp()),
@@ -115,7 +123,7 @@ Widget buildMainWidget(AppCtx appCtx, Stream<String> logStream) {
 class MyApp extends StatefulWidget {
   final String? startupError;
 
-  const MyApp({Key? key, this.startupError}) : super(key: key);
+  const MyApp({super.key, this.startupError});
 
   @override
   State<MyApp> createState() => _MyAppState();
@@ -188,24 +196,21 @@ class _MyHomePageState extends State<MyHomePage> {
   late final GlobalKey<ScaffoldState> scaffoldKey;
   late final WalletListController walletListController;
   late final ConfettiController confettiController;
-  late final ValueNotifier<bool> isShowingCreatedWalletDialog;
 
   @override
   void initState() {
     super.initState();
     scaffoldKey = GlobalKey();
     walletListController = WalletListController(
-      keyStream: coord.subKeyEvents(),
+      keyStream: GlobalStreams.keyStateSubject,
     );
     confettiController = ConfettiController(duration: Duration(seconds: 4));
-    isShowingCreatedWalletDialog = ValueNotifier(false);
   }
 
   @override
   void dispose() {
     confettiController.dispose();
     walletListController.dispose();
-    isShowingCreatedWalletDialog.dispose();
     super.dispose();
   }
 
@@ -215,7 +220,6 @@ class _MyHomePageState extends State<MyHomePage> {
       scaffoldKey: scaffoldKey,
       walletListController: walletListController,
       confettiController: confettiController,
-      isShowingCreatedWalletDialog: isShowingCreatedWalletDialog,
       child: Stack(
         alignment: AlignmentDirectional.center,
         children: [

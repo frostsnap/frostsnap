@@ -94,7 +94,7 @@ impl UiProtocol for FirmwareUpgradeProtocol {
                 message_body: CoordinatorSendBody::Upgrade(
                     CoordinatorUpgradeMessage::PrepareUpgrade {
                         size: self.firmware_bin.size(),
-                        firmware_digest: self.firmware_bin.digest(),
+                        firmware_digest: self.firmware_bin.cached_digest(),
                     },
                 ),
             });

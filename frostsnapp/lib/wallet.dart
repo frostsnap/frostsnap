@@ -2,15 +2,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnapp/backup_workflow.dart';
-import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
 import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/keygen.dart';
 import 'package:frostsnapp/psbt.dart';
+import 'package:frostsnapp/restoration.dart';
 import 'package:frostsnapp/sign_message.dart';
-import 'package:frostsnapp/snackbar.dart';
 import 'package:frostsnapp/theme.dart';
 import 'package:frostsnapp/wallet_list_controller.dart';
 import 'package:frostsnapp/wallet_receive.dart';
@@ -40,7 +39,6 @@ class WalletHome extends StatelessWidget {
   Widget buildNoWalletBody(BuildContext context) {
     final theme = Theme.of(context);
     final homeCtx = HomeContext.of(context)!;
-    final walletListController = homeCtx.walletListController;
     return CustomScrollView(
       slivers: [
         SliverAppBar(pinned: true),
@@ -70,17 +68,18 @@ class WalletHome extends StatelessWidget {
                   label: Text('Create Wallet'),
                 ),
                 TextButton.icon(
-                  onPressed:
-                      () => showRecoverWalletsDialog(
-                        context,
-                        walletListController,
-                      ),
+                  onPressed: () async {
+                    final restorationId = await startWalletRecoveryFlowDialog(
+                      context,
+                    );
+                    if (restorationId != null) {
+                      homeCtx.walletListController.selectRecoveringWallet(
+                        restorationId,
+                      );
+                    }
+                  },
                   icon: Icon(Icons.history),
-                  label: Text(
-                    (walletListController.recoverables.isEmpty)
-                        ? 'Recover Wallet'
-                        : 'Recover Wallet (${walletListController.recoverables.length})',
-                  ),
+                  label: Text('Recover Wallet'),
                 ),
                 SizedBox(height: 100.0),
               ],
@@ -100,25 +99,40 @@ class WalletHome extends StatelessWidget {
     final body = ListenableBuilder(
       listenable: walletListController,
       builder: (context, _) {
-        return walletListController.gotInitalData
-            ? walletListController.wallets.isEmpty
-                ? buildNoWalletBody(context)
-                : walletListController.selected?.tryWrapInWalletContext(
-                      context: context,
-                      child: TxList(),
-                    ) ??
-                    SizedBox()
-            : Center(child: CircularProgressIndicator());
+        if (!walletListController.gotInitialData) {
+          return Center(child: CircularProgressIndicator());
+        }
+
+        final selected = walletListController.selected;
+        if (selected == null) {
+          return buildNoWalletBody(context);
+        }
+
+        return switch (selected) {
+          WalletItemKey item => item.tryWrapInWalletContext(
+            context: context,
+            child: TxList(key: Key(item.frostKey.keyId().toHex())),
+          ),
+          WalletItemRestoration item => WalletRecoveryPage(
+            key: Key(item.restoringKey.restorationId.toHex()),
+            restoringKey: item.restoringKey,
+            onWalletRecovered: (accessStructureRef) {
+              walletListController.selectWallet(accessStructureRef.keyId);
+            },
+          ),
+        };
       },
     );
     final bottomBar = ListenableBuilder(
       listenable: walletListController,
       builder: (context, _) {
-        return walletListController.selected?.tryWrapInWalletContext(
-              context: context,
-              child: WalletBottomBar(),
-            ) ??
-            BottomAppBar(color: Colors.transparent);
+        return switch (walletListController.selected) {
+          WalletItemKey item => item.tryWrapInWalletContext(
+            context: context,
+            child: WalletBottomBar(),
+          ),
+          _ => BottomAppBar(color: Colors.transparent),
+        };
       },
     );
 
@@ -220,153 +234,6 @@ class _FloatingProgress extends State<FloatingProgress>
           child: LinearProgressIndicator(value: progress),
         ),
       ),
-    );
-  }
-}
-
-startRecovery(BuildContext context, RecoverableKey recoverableKey) {
-  try {
-    coord.startRecovery(keyId: recoverableKey.accessStructureRef.keyId);
-  } on FrbAnyhowException catch (e) {
-    if (context.mounted) {
-      showErrorSnackbarBottom(context, e.anyhow);
-    }
-  }
-}
-
-showRecoverWalletsDialog(
-  BuildContext context,
-  WalletListController controller,
-) {
-  final theme = Theme.of(context);
-
-  final appBar = SliverAppBar(
-    title: Text('Recover Wallet'),
-    titleTextStyle: theme.textTheme.titleMedium,
-    centerTitle: true,
-    backgroundColor: theme.colorScheme.surfaceContainerLow,
-    pinned: true,
-    stretch: true,
-    forceMaterialTransparency: true,
-    automaticallyImplyLeading: false,
-    leading: IconButton(
-      onPressed: () => Navigator.pop(context),
-      icon: Icon(Icons.close),
-    ),
-  );
-
-  final list = ListenableBuilder(
-    listenable: controller,
-    builder: (context, _) {
-      var mediaQuery = MediaQuery.of(context);
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 24.0,
-              vertical: 8.0,
-            ),
-            child: Text(
-              'Plug in a device to recover from.',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          ...controller.recovering
-              .where((key) => key.recoveringAccessIds.isNotEmpty)
-              .map((key) {
-                final accessId = key.recoveringAccessIds.first;
-                final threshold = key.thesholdFor(accessId) ?? 0;
-                final obtained = key.devicesFor(accessId)?.length ?? 0;
-
-                return Card.filled(
-                  margin: EdgeInsets.symmetric(vertical: 8.0, horizontal: 24.0),
-                  child: ListTile(
-                    title: Text(key.name),
-                    subtitle: Text(
-                      'Need to visit ${threshold - obtained} more device(s)',
-                    ),
-                    trailing: CircularProgressIndicator(
-                      value: obtained.toDouble() / threshold.toDouble(),
-                    ),
-                  ),
-                );
-              }),
-          ...controller.recoverables.map((recoverableKey) {
-            final canRecoverNow =
-                recoverableKey.sharesObtained >= recoverableKey.threshold;
-            return Card.filled(
-              margin: const EdgeInsets.symmetric(
-                vertical: 8.0,
-                horizontal: 24.0,
-              ),
-              child: ListTile(
-                title: Text(recoverableKey.name),
-                subtitle: Text(
-                  canRecoverNow ? "Recoverable now" : 'Ready to begin recovery',
-                ),
-                trailing:
-                    canRecoverNow
-                        ? FilledButton(
-                          onPressed:
-                              () => startRecovery(context, recoverableKey),
-                          child: Text('Recover'),
-                        )
-                        : OutlinedButton(
-                          onPressed:
-                              () => startRecovery(context, recoverableKey),
-                          child: Text('Begin'),
-                        ),
-              ),
-            );
-          }),
-          SizedBox(
-            height:
-                24 + mediaQuery.viewInsets.bottom + mediaQuery.padding.bottom,
-          ),
-        ],
-      );
-    },
-  );
-
-  final scrollView = CustomScrollView(
-    shrinkWrap: true,
-    physics: ClampingScrollPhysics(),
-    slivers: [
-      appBar,
-      SliverToBoxAdapter(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: 210),
-          child: Center(child: list),
-        ),
-      ),
-    ],
-  );
-
-  final mediaSize = MediaQuery.sizeOf(context);
-  if (mediaSize.width < 600) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      isDismissible: true,
-      showDragHandle: false,
-      builder: (context) => scrollView,
-    );
-  } else {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return Dialog(
-          backgroundColor: theme.colorScheme.surfaceContainer,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: 560),
-            child: scrollView,
-          ),
-        );
-      },
     );
   }
 }
@@ -645,46 +512,14 @@ class WalletDrawer extends StatelessWidget {
   );
 
   Widget buildWalletDestination(BuildContext context, WalletItem item) {
-    WidgetSpan buildTag(
-      BuildContext context, {
-      required String text,
-      Color? backgroundColor,
-      Color? foregroundColor,
-    }) {
-      final theme = Theme.of(context);
-      return WidgetSpan(
-        alignment: PlaceholderAlignment.middle,
-        child: Card.filled(
-          color: backgroundColor?.withAlpha(128),
-          margin: const EdgeInsets.all(12.0),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
-            child: Text(
-              text,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: foregroundColor,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    final theme = Theme.of(context);
     return NavigationDrawerDestination(
-      icon: SizedBox.shrink(),
+      icon: item.icon ?? SizedBox.shrink(),
       label: Text.rich(
         TextSpan(
           text: item.name,
           children: [
             if (!(item.network?.isMainnet() ?? true))
-              buildTag(
-                context,
-                text: item.network?.name() ?? '',
-                backgroundColor: theme.colorScheme.surfaceContainerLowest,
-                foregroundColor: theme.colorScheme.error,
-              ),
+              buildTag(context, text: item.network?.name() ?? ''),
           ],
         ),
         overflow: TextOverflow.fade,
@@ -745,12 +580,17 @@ class WalletDrawer extends StatelessWidget {
             'Create Wallet',
           ),
           (
-            () => showRecoverWalletsDialog(context, controller),
+            () async {
+              final restorationId = await startWalletRecoveryFlowDialog(
+                context,
+              );
+              if (restorationId != null) {
+                controller.selectRecoveringWallet(restorationId);
+              }
+            },
             false,
             Icons.update,
-            (controller.recoverables.isEmpty)
-                ? 'Recover Wallet'
-                : 'Recover Wallet (${controller.recoverables.length})',
+            'Recover Wallet',
           ),
           (
             () => Navigator.push(
@@ -1148,9 +988,7 @@ class BackupWarningBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final homeCtx = HomeContext.of(context)!;
     final walletCtx = WalletContext.of(context)!;
-    final showingDialog = homeCtx.isShowingCreatedWalletDialog;
     final backupStream = walletCtx.backupStream;
     final theme = Theme.of(context);
 
@@ -1164,7 +1002,6 @@ class BackupWarningBanner extends StatelessWidget {
       trailing: Icon(Icons.chevron_right),
       title: Text('This wallet has unfinished backups!'),
     );
-
     final streamedBanner = StreamBuilder<BackupRun>(
       stream: backupStream,
       builder: (context, snapshot) {
@@ -1174,15 +1011,7 @@ class BackupWarningBanner extends StatelessWidget {
       },
     );
 
-    return SliverToBoxAdapter(
-      child: ValueListenableBuilder(
-        valueListenable: showingDialog,
-        child: streamedBanner,
-        builder:
-            (context, isShowingDialog, streamedBanner) =>
-                isShowingDialog ? SizedBox.shrink() : streamedBanner!,
-      ),
-    );
+    return SliverToBoxAdapter(child: streamedBanner);
   }
 
   onTap(BuildContext context, WalletContext walletContext) {

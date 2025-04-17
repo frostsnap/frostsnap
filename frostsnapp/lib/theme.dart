@@ -80,3 +80,24 @@ String spacedHex(String input, {int spacing = 4}) {
   }
   return result.toString();
 }
+
+WidgetSpan buildTag(BuildContext context, {required String text}) {
+  final theme = Theme.of(context);
+  return WidgetSpan(
+    alignment: PlaceholderAlignment.middle,
+    child: Card.filled(
+      color: theme.colorScheme.surfaceContainerLowest.withAlpha(128),
+      margin: const EdgeInsets.all(12.0),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
+        child: Text(
+          text,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.error,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+    ),
+  );
+}

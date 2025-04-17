@@ -21,7 +21,7 @@ pub const COLORS: Palette = Palette {
     secondary: Rgb565::new(11, 27, 16),
     success: Rgb565::new(13, 52, 14),
     info: Rgb565::CYAN,
-    warning: Rgb565::CSS_ORANGE,
+    warning: Rgb565::CSS_RED,
     error: Rgb565::RED,
     background: Rgb565::BLACK,
     disabled: Rgb565::CSS_DARK_GRAY,

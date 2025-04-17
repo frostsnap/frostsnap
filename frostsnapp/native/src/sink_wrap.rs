@@ -1,9 +1,10 @@
 use flutter_rust_bridge::StreamSink;
 use frostsnap_coordinator::{
-    bitcoin::chain_sync::ChainStatus, check_share::CheckShareState,
-    firmware_upgrade::FirmwareUpgradeConfirmState, keygen::KeyGenState, signing::SigningState,
-    verify_address::VerifyAddressProtocolState,
+    bitcoin::chain_sync::ChainStatus, firmware_upgrade::FirmwareUpgradeConfirmState,
+    keygen::KeyGenState, signing::SigningState, verify_address::VerifyAddressProtocolState,
 };
+
+use crate::api;
 
 // we need to wrap it so we can impl it on foreign FRB type. You can't do a single generic impl. Try
 // it if you don't believe me.
@@ -27,7 +28,8 @@ bridge_sink!(KeyGenState);
 bridge_sink!(FirmwareUpgradeConfirmState);
 bridge_sink!(VerifyAddressProtocolState);
 bridge_sink!(SigningState);
-bridge_sink!(CheckShareState);
 bridge_sink!(bool);
 bridge_sink!(ChainStatus);
 bridge_sink!(());
+bridge_sink!(api::WaitForRecoveryShareState);
+bridge_sink!(api::EnterPhysicalBackupState);
