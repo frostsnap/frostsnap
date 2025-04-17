@@ -782,17 +782,6 @@ impl SuperWallet {
             .mark_address_shared(master_appkey, derivation_index)
     }
 
-    pub fn unmark_address_shared(
-        &self,
-        master_appkey: MasterAppkey,
-        derivation_index: u32,
-    ) -> Result<bool> {
-        self.inner
-            .lock()
-            .unwrap()
-            .unmark_address_shared(master_appkey, derivation_index)
-    }
-
     pub fn rebroadcast(&self, txid: String) {
         let txid = Txid::from_str(&txid).expect("Txid must be valid");
         let super_wallet = self.inner.lock().unwrap();
