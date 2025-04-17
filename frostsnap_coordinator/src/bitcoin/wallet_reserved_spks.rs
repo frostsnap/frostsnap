@@ -1,135 +1,148 @@
-use std::collections::{BTreeSet, HashSet};
+use crate::persist::{Persist, ToStringWrapper};
+use bdk_chain::bitcoin::bip32::DerivationPath;
+use frostsnap_core::{tweak::BitcoinBip32Path, Gist, KeyId};
+use rusqlite::params;
+use std::collections::BTreeMap;
+use tracing::{event, Level};
 
-use bdk_chain::{
-    bitcoin::{Script, ScriptBuf},
-    rusqlite_impl::migrate_schema,
-    Impl, Merge,
-};
-use rusqlite::named_params;
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
-pub struct ChangeSet {
-    // index, skp, reserved/unreserved
-    spks: BTreeSet<(u64, ScriptBuf, bool)>,
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct AddressMetadata {
+    addresses: BTreeMap<(KeyId, DerivationPath), Option<String>>,
 }
 
-impl Merge for ChangeSet {
-    fn merge(&mut self, other: Self) {
-        self.spks.merge(other.spks);
-    }
-
-    fn is_empty(&self) -> bool {
-        self.spks.is_empty()
-    }
-}
-
-/// Reserves spks.
 #[derive(Debug, Clone)]
-pub struct ReservedSpks {
-    spks: HashSet<ScriptBuf>,
-    /// So that our changesets can be fully monotone.
-    next_seq: u64,
+pub enum Mutation {
+    Reveal {
+        key_and_path: (KeyId, DerivationPath),
+        label: Option<String>,
+    },
 }
 
-impl ReservedSpks {
-    /// Create from changeset.
-    pub fn from_changeset(changeset: ChangeSet) -> Self {
-        let next_seq = changeset.spks.last().map_or(0, |(seq, _, _)| *seq + 1);
-        let mut spks = HashSet::with_capacity(changeset.spks.len());
-        for (_, spk, is_add) in changeset.spks {
-            if is_add {
-                spks.insert(spk)
-            } else {
-                spks.remove(&spk)
-            };
+impl Gist for Mutation {
+    fn gist(&self) -> String {
+        match self {
+            Mutation::Reveal { .. } => "Reveal",
         }
-        Self { spks, next_seq }
-    }
-
-    pub fn contains(&self, spk: impl AsRef<Script>) -> bool {
-        self.spks.contains(spk.as_ref())
-    }
-
-    pub fn reserve(&mut self, spk: ScriptBuf) -> ChangeSet {
-        let mut changeset = ChangeSet::default();
-        if self.spks.insert(spk.clone()) {
-            let seq = self.next_seq;
-            self.next_seq += 1;
-            changeset.spks.insert((seq, spk, true));
-        }
-        changeset
-    }
-
-    pub fn unreserve(&mut self, spk: impl AsRef<Script>) -> ChangeSet {
-        let mut changeset = ChangeSet::default();
-        if self.spks.remove(spk.as_ref()) {
-            let seq = self.next_seq;
-            self.next_seq += 1;
-            changeset.spks.insert((seq, spk.as_ref().to_owned(), false));
-        }
-        changeset
+        .to_string()
     }
 }
 
-impl ChangeSet {
-    /// Schema name for the changeset.
-    pub const SCHEMA_NAME: &'static str = "fs_reserved_spks";
-    /// Name for table that stores reserved spks.
-    pub const RESERVED_SPKS_TABLE_NAME: &'static str = "fs_reserved_spks";
-
-    pub fn schema_v0() -> String {
-        format!(
-            "CREATE TABLE {} ( \
-            spk BLOB PRIMARY KEY NOT NULL, \
-            seq INTEGER NOT NULL DEFAULT 0, \
-            reserved INTEGER NOT NULL DEFAULT 0 CHECK (reserved in (0, 1))
-            ) STRICT",
-            Self::RESERVED_SPKS_TABLE_NAME,
-        )
+impl AddressMetadata {
+    fn apply_mutation(&mut self, mutation: &Mutation) -> bool {
+        match mutation {
+            Mutation::Reveal {
+                key_and_path,
+                label,
+            } => self
+                .addresses
+                .insert(key_and_path.clone(), label.clone())
+                .is_none(),
+        }
     }
 
-    pub fn init_sqlite_tables(db_tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
-        migrate_schema(db_tx, Self::SCHEMA_NAME, &[&[&Self::schema_v0()]])
+    fn mutate(&mut self, mutation: Mutation, mutations: &mut Vec<Mutation>) {
+        if self.apply_mutation(&mutation) {
+            event!(Level::DEBUG, gist = mutation.gist(), "mutating");
+            mutations.push(mutation);
+        }
     }
 
-    pub fn from_sqlite(db_tx: &rusqlite::Transaction) -> rusqlite::Result<Self> {
-        let mut changeset = Self::default();
-        let mut select_statement = db_tx.prepare(&format!(
-            "SELECT spk, seq, reserved FROM {}",
-            Self::RESERVED_SPKS_TABLE_NAME,
-        ))?;
-        let row_iter = select_statement.query_map([], |row| {
+    pub fn reveal(
+        &mut self,
+        key_id: KeyId,
+        bip32_path: BitcoinBip32Path,
+        label: Option<String>,
+        mutations: &mut Vec<Mutation>,
+    ) {
+        self.mutate(
+            Mutation::Reveal {
+                key_and_path: (key_id, bip32_path.into()),
+                label,
+            },
+            mutations,
+        );
+    }
+
+    pub fn is_revealed(&self, key_id: KeyId, bip32_path: BitcoinBip32Path) -> bool {
+        self.addresses.contains_key(&(key_id, bip32_path.into()))
+    }
+}
+
+impl Persist<rusqlite::Connection> for AddressMetadata {
+    type Update = Vec<Mutation>;
+    type InitParams = ();
+
+    fn initialize(conn: &mut rusqlite::Connection, _: ()) -> anyhow::Result<Self> {
+        conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS address_metadata (
+                key_id TEXT NOT NULL,
+                path TEXT NOT NULL,
+                label TEXT,
+                PRIMARY KEY (key_id, path)
+            )
+            "#,
+            [],
+        )?;
+
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT key_id, path, label
+            FROM address_metadata
+            "#,
+        )?;
+
+        let rows = stmt.query_map([], |row| {
             Ok((
-                row.get::<_, Impl<ScriptBuf>>("spk")?,
-                row.get::<_, u64>("seq")?,
-                row.get::<_, bool>("reserved")?,
+                row.get::<_, ToStringWrapper<KeyId>>(0)?.0,
+                row.get::<_, ToStringWrapper<DerivationPath>>(1)?,
+                row.get::<_, Option<String>>(2)?,
             ))
         })?;
-        for row in row_iter {
-            let (Impl(spk), seq, res) = row?;
-            // select spks that have been reserved
-            if res {
-                changeset.spks.insert((seq, spk, res));
-            }
+
+        let mut state = AddressMetadata::default();
+        for row in rows.into_iter() {
+            let (key_id, path, label) = row?;
+
+            state.apply_mutation(&Mutation::Reveal {
+                key_and_path: (key_id, path.0),
+                label,
+            });
         }
-        Ok(changeset)
+
+        Ok(state)
     }
 
-    pub fn persist_to_sqlite(&self, db_tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
-        let mut upsert_statement = db_tx.prepare_cached(&format!(
-            "INSERT INTO {}(spk, seq, reserved) VALUES(:spk, :seq, :reserved) \
-                ON CONFLICT(spk) DO UPDATE SET seq=excluded.seq, reserved=excluded.reserved \
-                WHERE excluded.seq >= {}.seq",
-            Self::RESERVED_SPKS_TABLE_NAME,
-            Self::RESERVED_SPKS_TABLE_NAME,
-        ))?;
-        for (seq, spk, reserved) in &self.spks {
-            upsert_statement.execute(named_params! {
-                ":spk": Impl(spk.clone()),
-                ":seq": *seq,
-                ":reserved": *reserved,
-            })?;
+    fn persist_update(
+        conn: &mut rusqlite::Connection,
+        update: Vec<Mutation>,
+    ) -> anyhow::Result<()> {
+        let tx = conn.transaction()?;
+
+        for mutation in update {
+            match mutation {
+                Mutation::Reveal {
+                    key_and_path,
+                    label,
+                } => {
+                    let (key_id, derivation_path) = key_and_path;
+
+                    tx.execute(
+                        r#"
+                        INSERT OR REPLACE INTO address_metadata (key_id, path, label)
+                        VALUES (?1, ?2, ?3)
+                        "#,
+                        params![
+                            ToStringWrapper(key_id),
+                            ToStringWrapper(derivation_path),
+                            label
+                        ],
+                    )?;
+                }
+            }
         }
+
+        tx.commit()?;
         Ok(())
     }
 }

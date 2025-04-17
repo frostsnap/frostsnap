@@ -60,6 +60,18 @@ impl BitcoinBip32Path {
     }
 }
 
+impl From<BitcoinBip32Path> for DerivationPath {
+    fn from(bip32_path: BitcoinBip32Path) -> Self {
+        DerivationPath::from_normal_path_segments(
+            bip32_path
+                .account_keychain
+                .account
+                .path_segments_from_bitcoin_appkey()
+                .chain(core::iter::once(bip32_path.index)),
+        )
+    }
+}
+
 #[derive(
     Clone, Copy, Debug, PartialEq, bincode::Encode, bincode::Decode, Eq, Hash, PartialOrd, Ord,
 )]
