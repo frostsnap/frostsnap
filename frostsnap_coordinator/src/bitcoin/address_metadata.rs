@@ -5,8 +5,12 @@ use rusqlite::params;
 use std::collections::BTreeMap;
 use tracing::{event, Level};
 
+// Presence of an address in this struct is used to identify whether
+// an address has been "shared" i.e. reserved. So that when users next
+// press receive it will show them a different address.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AddressMetadata {
+    // key_id, derivation, label (not yet used)
     addresses: BTreeMap<(KeyId, DerivationPath), Option<String>>,
 }
 

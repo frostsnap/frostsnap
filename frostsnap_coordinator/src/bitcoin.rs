@@ -1,7 +1,7 @@
+mod address_metadata;
 pub mod chain_sync;
 pub mod wallet;
 mod wallet_persist;
-mod wallet_reserved_spks;
 
 use bdk_chain::{
     bitcoin::{

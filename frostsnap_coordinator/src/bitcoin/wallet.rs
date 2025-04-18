@@ -1,5 +1,5 @@
 use super::{
-    chain_sync::ChainClient, multi_x_descriptor_for_account, wallet_reserved_spks::AddressMetadata,
+    address_metadata::AddressMetadata, chain_sync::ChainClient, multi_x_descriptor_for_account,
 };
 use crate::persist::Persisted;
 use anyhow::{anyhow, Context, Result};
