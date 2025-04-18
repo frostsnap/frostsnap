@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/serialport.dart';
 import 'package:frostsnapp/stream_ext.dart';
+import 'package:frostsnapp/theme.dart';
 import 'package:frostsnapp/wallet.dart';
 import 'package:frostsnapp/wallet_list_controller.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -128,7 +129,7 @@ class _MyAppState extends State<MyApp> {
   void _setColorTheme() =>
       colorScheme = ColorScheme.fromSeed(
         brightness: Brightness.dark,
-        seedColor: Color(0xFF1595B2),
+        seedColor: seedColor,
       );
 
   @override

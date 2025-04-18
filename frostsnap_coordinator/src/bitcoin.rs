@@ -1,3 +1,4 @@
+mod address_metadata;
 pub mod chain_sync;
 pub mod wallet;
 mod wallet_persist;

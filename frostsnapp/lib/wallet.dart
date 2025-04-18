@@ -524,9 +524,11 @@ class _TxListState extends State<TxList> {
                     onTap:
                         () => showBottomSheetOrDialog(
                           context,
+                          titleText: 'Transaction Details',
                           builder:
-                              (context) => walletCtx.wrap(
+                              (context, scrollController) => walletCtx.wrap(
                                 TxDetailsPage.needsBroadcast(
+                                  scrollController: scrollController,
                                   txStates: walletCtx.txStream,
                                   txDetails: txDetails,
                                   finishedSigningSessionId: tx.sessionId,
@@ -539,9 +541,7 @@ class _TxListState extends State<TxList> {
             final txToSignTiles = coord
                 .activeSigningSessions(keyId: walletCtx.keyId)
                 .map<(Transaction, SigningState)?>((session) {
-                  final Transaction? tx = switch (session.details(
-                    masterAppkey: walletCtx.masterAppkey,
-                  )) {
+                  final Transaction? tx = switch (session.details()) {
                     SigningDetails_Transaction(:final transaction) =>
                       transaction,
                     _ => null,
@@ -561,9 +561,11 @@ class _TxListState extends State<TxList> {
                     onTap:
                         () => showBottomSheetOrDialog(
                           context,
+                          titleText: 'Transaction Details',
                           builder:
-                              (context) => walletCtx.wrap(
+                              (context, scrollController) => walletCtx.wrap(
                                 TxDetailsPage.restoreSigning(
+                                  scrollController: scrollController,
                                   txStates: walletCtx.txStream,
                                   txDetails: txDetails,
                                   signingSessionId: signingState.sessionId,
@@ -609,9 +611,11 @@ class _TxListState extends State<TxList> {
                     onTap:
                         () => showBottomSheetOrDialog(
                           context,
+                          titleText: 'Transaction Details',
                           builder:
-                              (context) => walletCtx.wrap(
+                              (context, scrollController) => walletCtx.wrap(
                                 TxDetailsPage(
+                                  scrollController: scrollController,
                                   txStates: walletCtx.txStream,
                                   txDetails: txDetails,
                                 ),
@@ -839,11 +843,17 @@ class WalletBottomBar extends StatelessWidget {
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed:
-                      () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder:
-                              (context) => walletCtx.wrap(WalletReceivePage()),
-                        ),
+                      () => showBottomSheetOrDialog(
+                        context,
+                        titleText: 'Receive',
+                        builder:
+                            (context, scrollController) => walletCtx.wrap(
+                              ReceivePage(
+                                wallet: walletCtx.wallet,
+                                txStream: walletCtx.txStream,
+                                scrollController: scrollController,
+                              ),
+                            ),
                       ),
                   label: Text('Receive'),
                   icon: Icon(Icons.south_east),
@@ -856,12 +866,17 @@ class WalletBottomBar extends StatelessWidget {
               ),
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: () {
-                    showBottomSheetOrDialog(
-                      context,
-                      builder: (context) => walletCtx.wrap(WalletSendPage()),
-                    );
-                  },
+                  onPressed:
+                      () => showBottomSheetOrDialog(
+                        context,
+                        titleText: 'Send',
+                        builder:
+                            (context, scrollController) => walletCtx.wrap(
+                              WalletSendPage(
+                                scrollController: scrollController,
+                              ),
+                            ),
+                      ),
                   label: Text('Send'),
                   icon: Icon(Icons.north_east),
                   style: ElevatedButton.styleFrom(
@@ -924,22 +939,9 @@ class _UpdatingBalanceState extends State<UpdatingBalance> {
 
   void onData(TxState txState) {
     if (context.mounted) {
-      var pendingIncomingBalance = 0;
-      var avaliableBalance = 0;
-      for (final tx in txState.txs) {
-        if (tx.confirmationTime == null && tx.netValue > 0) {
-          pendingIncomingBalance += tx.netValue;
-        } else {
-          avaliableBalance += tx.netValue;
-        }
-      }
-      if (avaliableBalance < 0) {
-        pendingIncomingBalance += avaliableBalance;
-        avaliableBalance = 0;
-      }
       setState(() {
-        this.pendingIncomingBalance = pendingIncomingBalance;
-        this.avaliableBalance = avaliableBalance;
+        pendingIncomingBalance = txState.untrustedPendingBalance;
+        avaliableBalance = txState.balance;
       });
     }
   }
@@ -1188,11 +1190,13 @@ class BackupWarningBanner extends StatelessWidget {
   onTap(BuildContext context, WalletContext walletContext) {
     showBottomSheetOrDialog(
       context,
+      titleText: 'Backup Checklist',
       builder:
-          (context) => walletContext.wrap(
+          (context, scrollController) => walletContext.wrap(
             BackupChecklist(
+              scrollController: scrollController,
               accessStructure: frostKey.accessStructures()[0],
-              showAppBar: true,
+              showAppBar: false,
             ),
           ),
     );

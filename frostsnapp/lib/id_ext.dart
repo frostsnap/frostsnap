@@ -4,18 +4,24 @@ import 'dart:collection';
 import 'package:flutter/foundation.dart';
 import 'package:frostsnapp/bridge_definitions.dart';
 
-HashSet<DeviceId> deviceIdSet(List<DeviceId> devices) {
+HashSet<DeviceId> deviceIdSet(Iterable<DeviceId> devices) {
   final set = HashSet<DeviceId>(
-    equals: (a, b) => deviceIdEquals(a, b),
-    hashCode: (a) => Object.hashAll(a.field0),
+    equals: deviceIdEquals,
+    hashCode: deviceIdHashCode,
   );
-
   set.addAll(devices);
   return set;
 }
+
+HashMap<KeyId, T> keyIdMap<T>() =>
+    HashMap<KeyId, T>(equals: keyIdEquals, hashCode: keyIdHashCode);
 
 bool deviceIdEquals(DeviceId lhs, DeviceId rhs) =>
     listEquals(lhs.field0.toList(), rhs.field0.toList());
 
 bool keyIdEquals(KeyId lhs, KeyId rhs) =>
     listEquals(lhs.field0.toList(), rhs.field0.toList());
+
+int deviceIdHashCode(DeviceId id) => Object.hashAll(id.field0);
+
+int keyIdHashCode(KeyId id) => Object.hashAll(id.field0);
