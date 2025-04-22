@@ -519,7 +519,8 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                 if !key_data.verified {
                     return Err(Error::signer_message_error(
                         &message,
-                        "device has not verified this key so can't verify addresses for it".to_string(),
+                        "device has not verified this key so can't verify addresses for it"
+                            .to_string(),
                     ));
                 }
 

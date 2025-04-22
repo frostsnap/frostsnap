@@ -737,6 +737,26 @@ impl UsbSender {
             })
             .expect("receiver exists");
     }
+
+    pub fn send_from_core(
+        &self,
+        messages: impl IntoIterator<Item = frostsnap_core::coordinator::CoordinatorSend>,
+    ) {
+        for message in messages {
+            match CoordinatorSendMessage::try_from(message) {
+                Ok(m) => {
+                    self.sender.send(m).expect("receiver exists");
+                }
+                Err(e) => {
+                    event!(
+                        Level::WARN,
+                        error = e.to_string(),
+                        "tried to send a non-usb message over usb"
+                    );
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -1327,20 +1327,6 @@ impl Coordinator {
             .recover_share(recover_share.0.deref().clone(), crate::TEMP_KEY)
     }
 
-    pub fn tell_device_to_enter_physical_backup_and_save(
-        &self,
-        restoration_id: RestorationId,
-        device_id: DeviceId,
-        sink: StreamSink<EnterPhysicalBackupState>,
-    ) -> Result<()> {
-        self.0.tell_device_to_enter_physical_backup_and_save(
-            restoration_id,
-            device_id,
-            SinkWrap(sink),
-        )?;
-        Ok(())
-    }
-
     pub fn tell_device_to_enter_physical_backup(
         &self,
         device_id: DeviceId,
@@ -1352,6 +1338,15 @@ impl Coordinator {
         Ok(())
     }
 
+    pub fn tell_device_to_save_physical_backup(
+        &self,
+        phase: PhysicalBackupPhase,
+        restoration_id: RestorationId,
+    ) {
+        self.0
+            .tell_device_to_save_physical_backup(*phase.0, restoration_id)
+    }
+
     pub fn tell_device_to_consolidate_physical_backup(
         &self,
         access_structure_ref: AccessStructureRef,
@@ -1359,7 +1354,7 @@ impl Coordinator {
     ) -> anyhow::Result<()> {
         self.0.tell_device_to_consolidate_physical_backup(
             access_structure_ref,
-            (*phase.0).clone(),
+            *phase.0,
             crate::TEMP_KEY,
         )?;
         Ok(())
@@ -1373,7 +1368,7 @@ impl Coordinator {
         SyncReturn(
             self.0
                 .inner()
-                .check_physical_backup(access_structure_ref, (*phase.0).clone(), crate::TEMP_KEY)
+                .check_physical_backup(access_structure_ref, *phase.0, crate::TEMP_KEY)
                 .is_ok(),
         )
     }
@@ -1935,7 +1930,7 @@ impl BackupManager {
             devices: backup_run.into_iter().collect(),
         };
 
-        return SyncReturn(backup_run);
+        SyncReturn(backup_run)
     }
 
     pub fn backup_stream(&self, key_id: KeyId, new_stream: StreamSink<BackupRun>) -> Result<()> {
@@ -2207,6 +2202,9 @@ pub struct _VerifyAddressProtocolState {
     pub target_devices: Vec<DeviceId>,
 }
 
+#[frb(mirror(RestorationId))]
+pub struct _RestorattionId([u8; 16]);
+
 pub struct RecoverShare(pub RustOpaque<RRecoverShare>);
 
 impl RecoverShare {
@@ -2238,12 +2236,10 @@ impl RestorationState {
 pub struct PhysicalBackupPhase(pub RustOpaque<RPhysicalBackupPhase>);
 
 pub struct EnterPhysicalBackupState {
-    pub restoration_id: RestorationId,
     pub device_id: DeviceId,
     pub abort: Option<String>,
     pub entered: Option<PhysicalBackupPhase>,
-    pub saved: Option<bool>,
-    pub finished: bool,
+    pub saved: bool,
 }
 
 impl From<frostsnap_coordinator::enter_physical_backup::EnterPhysicalBackupState>
@@ -2251,18 +2247,13 @@ impl From<frostsnap_coordinator::enter_physical_backup::EnterPhysicalBackupState
 {
     fn from(value: frostsnap_coordinator::enter_physical_backup::EnterPhysicalBackupState) -> Self {
         EnterPhysicalBackupState {
-            restoration_id: value.restoration_id,
             device_id: value.device_id,
             abort: value.abort,
             entered: value.entered.map(RustOpaque::new).map(PhysicalBackupPhase),
             saved: value.saved,
-            finished: value.finished,
         }
     }
 }
-
-#[frb(mirror(RestorationId))]
-pub struct _Restorattionid([u8; 16]);
 
 // XXX: bugs in flutter_rust_bridge mean that sometimes the right code doesn't get emitted unless
 // you use it as an argument.

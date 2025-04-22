@@ -12,7 +12,7 @@ use frostsnap_core::{
     },
     CheckedSignTask, DeviceId, MasterAppkey, SessionHash, WireSignTask,
 };
-use frostsnap_core::{KeyId, RestorationId, SignSessionId};
+use frostsnap_core::{EnterPhysicalId, KeyId, RestorationId, SignSessionId};
 use rand::seq::IteratorRandom;
 use rand::RngCore;
 use rand_chacha::rand_core::SeedableRng;
@@ -163,8 +163,6 @@ impl common::Env for TestEnv {
                                 }
                             }
                         }
-
-                        return;
                     }
                     PhysicalBackupEntered(physical_backup_phase) => {
                         self.physical_backups_entered.push(*physical_backup_phase);
@@ -616,7 +614,7 @@ fn check_share_for_valid_share_works() {
         KeyPurpose::Test,
     );
     let device_set = run.device_set();
-    let restoration_id = RestorationId::new(&mut test_rng);
+    let enter_physical_id = EnterPhysicalId::new(&mut test_rng);
 
     let access_structure_ref = run
         .coordinator
@@ -634,7 +632,7 @@ fn check_share_for_valid_share_works() {
         run.run_until_finished(&mut env, &mut test_rng).unwrap();
         let enter_backup = run
             .coordinator
-            .tell_device_to_load_physical_backup(restoration_id, device_id);
+            .tell_device_to_load_physical_backup(enter_physical_id, device_id);
         run.extend(enter_backup);
         run.run_until_finished(&mut env, &mut test_rng).unwrap();
     }
@@ -664,7 +662,7 @@ fn check_share_for_invalid_share_fails() {
         &mut test_rng,
         KeyPurpose::Test,
     );
-    let restoration_id = RestorationId::new(&mut test_rng);
+    let enter_physical_id = EnterPhysicalId::new(&mut test_rng);
     let device_set = run.device_set();
 
     let access_structure_ref = run
@@ -683,7 +681,7 @@ fn check_share_for_invalid_share_fails() {
         run.run_until_finished(&mut env, &mut test_rng).unwrap();
         let enter_backup = run
             .coordinator
-            .tell_device_to_load_physical_backup(restoration_id, device_id);
+            .tell_device_to_load_physical_backup(enter_physical_id, device_id);
         run.extend(enter_backup);
         run.run_until_finished(&mut env, &mut test_rng).unwrap();
     }

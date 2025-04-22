@@ -6,8 +6,8 @@ use crate::{
     symmetric_encryption::{Ciphertext, SymmetricKey},
     tweak::Xpub,
     AccessStructureId, AccessStructureRef, ActionError, CoordShareDecryptionContrib, DeviceId,
-    Error, Gist, KeyId, KeygenId, Kind, MasterAppkey, MessageResult, RestorationId, SessionHash,
-    ShareImage, SignItem, SignSessionId, SignTaskError, WireSignTask, NONCE_BATCH_SIZE,
+    Error, Gist, KeyId, KeygenId, Kind, MasterAppkey, MessageResult, SessionHash, ShareImage,
+    SignItem, SignSessionId, SignTaskError, WireSignTask, NONCE_BATCH_SIZE,
 };
 use alloc::{
     borrow::ToOwned,

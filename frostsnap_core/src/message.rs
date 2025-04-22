@@ -5,7 +5,7 @@ use crate::{
     CoordShareDecryptionContrib, Gist, KeygenId, MasterAppkey, SessionHash, ShareImage,
     SignSessionId, SignTaskError, Vec,
 };
-use crate::{DeviceId, Kind, RestorationId, WireSignTask};
+use crate::{DeviceId, EnterPhysicalId, Kind, WireSignTask};
 use alloc::{
     boxed::Box,
     collections::{BTreeMap, BTreeSet},
@@ -111,10 +111,10 @@ impl DoKeyGen {
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, Kind)]
 pub enum CoordinatorRestoration {
     EnterPhysicalBackup {
-        restoration_id: RestorationId,
+        enter_physical_id: EnterPhysicalId,
     },
     SavePhysicalBackup {
-        restoration_id: RestorationId,
+        share_image: ShareImage,
     },
     /// Consolidate the saved secret share backup into a properly encrypted backup.
     Consolidate(Box<ConsolidateBackup>),
@@ -128,7 +128,6 @@ pub enum CoordinatorRestoration {
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
 pub struct ConsolidateBackup {
-    pub restoration_id: RestorationId,
     pub share_index: PartyIndex,
     pub root_shared_key: SharedKey,
     pub key_name: String,
@@ -196,8 +195,11 @@ pub enum DeviceToCoordinatorMessage {
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, Kind)]
 pub enum DeviceRestoration {
     PhysicalLoaded(EnteredPhysicalBackup),
-    PhysicalSaved(EnteredPhysicalBackup),
-    FinishedConsolidation { restoration_id: RestorationId },
+    PhysicalSaved(ShareImage),
+    FinishedConsolidation {
+        access_structure_ref: AccessStructureRef,
+        share_index: PartyIndex,
+    },
     HeldShares(Vec<HeldShare>),
 }
 
@@ -224,7 +226,7 @@ impl Gist for DeviceToCoordinatorMessage {
 
 #[derive(Clone, Copy, Debug, bincode::Encode, bincode::Decode, PartialEq)]
 pub struct EnteredPhysicalBackup {
-    pub restoration_id: RestorationId,
+    pub enter_physical_id: EnterPhysicalId,
     pub share_image: ShareImage,
 }
 

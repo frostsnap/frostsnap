@@ -57,7 +57,7 @@ where
         ui.set_busy_task(ui::BusyTask::Loading);
         let flash = RefCell::new(FlashStorage::new());
         let partitions = crate::partitions::Partitions::load(&flash);
-        let mut nvs_partition = partitions.nvs.clone();
+        let mut nvs_partition = partitions.nvs;
         let header_flash = FlashHeader::new(nvs_partition.split_off_front(2));
         let header = match header_flash.read_header() {
             Some(header) => header,
@@ -524,7 +524,7 @@ where
                                             ui::EnteringBackupStage::Init { phase },
                                         ));
                                     }
-                                    SavedBackup { restoration_id: _ } => {
+                                    SavedBackup { .. } => {
                                         ui.set_recovery_mode(true);
                                     }
                                     ConsolidateBackup(phase) => {

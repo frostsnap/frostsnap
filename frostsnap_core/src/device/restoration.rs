@@ -1,10 +1,12 @@
+use crate::EnterPhysicalId;
+
 use super::*;
 use alloc::fmt::Debug;
 
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct State {
-    tmp_loaded_backups: BTreeMap<RestorationId, SecretShare>,
-    saved_shares_incomplete: BTreeMap<RestorationId, SecretShare>,
+    tmp_loaded_backups: BTreeMap<ShareImage, SecretShare>,
+    saved_shares_incomplete: BTreeMap<ShareImage, SecretShare>,
 }
 
 impl State {
@@ -13,16 +15,14 @@ impl State {
         mutation: RestorationMutation,
     ) -> Option<RestorationMutation> {
         use RestorationMutation::*;
-        match &mutation {
-            Save(incomplete_secret_share) => {
-                self.saved_shares_incomplete.insert(
-                    incomplete_secret_share.restoration_id,
-                    incomplete_secret_share.secret_share,
-                );
+        match mutation {
+            Save(secret_share) => {
+                self.saved_shares_incomplete
+                    .insert(ShareImage::from_secret(secret_share), secret_share);
             }
-            &Clear(restoration_id) => {
-                self.tmp_loaded_backups.remove(&restoration_id);
-                self.saved_shares_incomplete.remove(&restoration_id)?;
+            UnSave(share_image) => {
+                self.tmp_loaded_backups.remove(&share_image);
+                self.saved_shares_incomplete.remove(&share_image)?;
             }
         }
         Some(mutation)
@@ -41,34 +41,28 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
     ) -> MessageResult<Vec<DeviceSend>> {
         use ToUserRestoration::*;
         match &message {
-            &CoordinatorRestoration::EnterPhysicalBackup { restoration_id } => {
+            &CoordinatorRestoration::EnterPhysicalBackup { enter_physical_id } => {
                 Ok(vec![DeviceSend::ToUser(Box::new(
                     DeviceToUserMessage::Restoration(EnterBackup {
-                        phase: LoadBackupPhase { restoration_id },
+                        phase: LoadBackupPhase { enter_physical_id },
                     }),
                 ))])
             }
-            &CoordinatorRestoration::SavePhysicalBackup { restoration_id } => {
-                if let Some(secret_share) =
-                    self.restoration.tmp_loaded_backups.remove(&restoration_id)
+            &CoordinatorRestoration::SavePhysicalBackup { share_image } => {
+                if let Some(secret_share) = self.restoration.tmp_loaded_backups.remove(&share_image)
                 {
                     self.mutate(Mutation::Restoration(RestorationMutation::Save(
-                        IncompleteSecretShare {
-                            secret_share,
-                            restoration_id,
-                        },
+                        secret_share,
                     )));
+                    let share_image = ShareImage::from_secret(secret_share);
 
                     Ok(vec![
                         DeviceSend::ToUser(Box::new(DeviceToUserMessage::Restoration(
-                            ToUserRestoration::SavedBackup { restoration_id },
+                            ToUserRestoration::SavedBackup { share_image },
                         ))),
                         DeviceSend::ToCoordinator(Box::new(
                             DeviceToCoordinatorMessage::Restoration(
-                                DeviceRestoration::PhysicalSaved(EnteredPhysicalBackup {
-                                    restoration_id,
-                                    share_image: ShareImage::from_secret(secret_share),
-                                }),
+                                DeviceRestoration::PhysicalSaved(share_image),
                             ),
                         )),
                     ])
@@ -83,16 +77,18 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
                 let root_shared_key = &consolidate.root_shared_key;
                 let access_structure_ref =
                     AccessStructureRef::from_root_shared_key(root_shared_key);
+                let share_image = ShareImage {
+                    share_index: consolidate.share_index,
+                    point: root_shared_key
+                        .share_image(consolidate.share_index)
+                        .normalize(),
+                };
 
                 let secret_share = self
                     .restoration
                     .saved_shares_incomplete
-                    .get(&consolidate.restoration_id)
-                    .or_else(|| {
-                        self.restoration
-                            .tmp_loaded_backups
-                            .get(&consolidate.restoration_id)
-                    })
+                    .get(&share_image)
+                    .or_else(|| self.restoration.tmp_loaded_backups.get(&share_image))
                     .cloned();
 
                 if let Some(secret_share) = secret_share {
@@ -125,7 +121,6 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
                             DeviceToUserMessage::Restoration(ToUserRestoration::ConsolidateBackup(
                                 ConsolidatePhase {
                                     complete_share,
-                                    restoration_id: consolidate.restoration_id,
                                     coord_contrib,
                                 },
                             )),
@@ -140,11 +135,12 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
                         "unrecognized restoration",
                     ))
                 } else {
-                    // we've already consolidated it so just ignore
+                    // we've already consolidated it so just answer afirmatively
                     Ok(vec![DeviceSend::ToCoordinator(Box::new(
                         DeviceToCoordinatorMessage::Restoration(
                             DeviceRestoration::FinishedConsolidation {
-                                restoration_id: consolidate.restoration_id,
+                                access_structure_ref,
+                                share_index: consolidate.share_index,
                             },
                         ),
                     ))])
@@ -253,17 +249,17 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
         secret_share: SecretShare,
     ) -> impl IntoIterator<Item = DeviceSend> {
         let mut ret = vec![];
-        let restoration_id = phase.restoration_id;
-
-        self.restoration
-            .tmp_loaded_backups
-            .insert(restoration_id, secret_share);
+        let enter_physical_id = phase.enter_physical_id;
 
         let share_image = ShareImage::from_secret(secret_share);
+        self.restoration
+            .tmp_loaded_backups
+            .insert(share_image, secret_share);
+
         ret.push(DeviceSend::ToCoordinator(Box::new(
             DeviceToCoordinatorMessage::Restoration(DeviceRestoration::PhysicalLoaded(
                 EnteredPhysicalBackup {
-                    restoration_id,
+                    enter_physical_id,
                     share_image,
                 },
             )),
@@ -296,7 +292,7 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
         held_shares
     }
 
-    pub fn saved_backups(&self) -> &BTreeMap<RestorationId, SecretShare> {
+    pub fn saved_backups(&self) -> &BTreeMap<ShareImage, SecretShare> {
         &self.restoration.saved_shares_incomplete
     }
 
@@ -306,8 +302,10 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
         phase: ConsolidatePhase,
         rng: &mut impl rand_core::RngCore,
     ) -> impl IntoIterator<Item = DeviceSend> {
-        self.mutate(Mutation::Restoration(RestorationMutation::Clear(
-            phase.restoration_id,
+        let share_image = ShareImage::from_secret(phase.complete_share.secret_share);
+        let access_structure_ref = phase.complete_share.access_structure_ref;
+        self.mutate(Mutation::Restoration(RestorationMutation::UnSave(
+            share_image,
         )));
 
         self.save_complete_share(
@@ -320,7 +318,8 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
 
         vec![DeviceSend::ToCoordinator(Box::new(
             DeviceToCoordinatorMessage::Restoration(DeviceRestoration::FinishedConsolidation {
-                restoration_id: phase.restoration_id,
+                share_index: share_image.share_index,
+                access_structure_ref,
             }),
         ))]
     }
@@ -328,14 +327,14 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq)]
 pub enum RestorationMutation {
-    Save(IncompleteSecretShare),
-    Clear(RestorationId),
+    Save(SecretShare),
+    UnSave(ShareImage),
 }
 
 #[derive(Debug, Clone)]
 pub enum ToUserRestoration {
     EnterBackup { phase: LoadBackupPhase },
-    SavedBackup { restoration_id: RestorationId },
+    SavedBackup { share_image: ShareImage },
     ConsolidateBackup(ConsolidatePhase),
     DisplayBackupRequest { phase: Box<BackupDisplayPhase> },
     DisplayBackup { key_name: String, backup: String },
@@ -344,7 +343,6 @@ pub enum ToUserRestoration {
 #[derive(Debug, Clone)]
 pub struct ConsolidatePhase {
     pub complete_share: CompleteSecretShare,
-    pub restoration_id: RestorationId,
     pub coord_contrib: CoordShareDecryptionContrib,
 }
 
@@ -359,5 +357,5 @@ pub struct BackupDisplayPhase {
 
 #[derive(Clone, Debug)]
 pub struct LoadBackupPhase {
-    pub restoration_id: RestorationId,
+    pub enter_physical_id: EnterPhysicalId,
 }

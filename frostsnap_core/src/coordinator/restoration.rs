@@ -1,5 +1,5 @@
 use super::*;
-use crate::fail;
+use crate::{fail, EnterPhysicalId, RestorationId};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RestorationState {
@@ -21,11 +21,12 @@ pub struct RecoverShare {
 pub struct State {
     pub(super) restorations: BTreeMap<RestorationId, restoration::RestorationState>,
     /// This is where we remember consolidations we need to do from restorations we've finished.
-    pub(super) pending_physical_consolidations:
-        BTreeMap<DeviceId, Vec<PendingPhysicalConsolidation>>,
+    pub(super) pending_physical_consolidations: BTreeSet<PendingPhysicalConsolidation>,
     /// For when we ask a device to enter a backup and we plan to immediately consolidate it because
     /// we already know the access structure.
-    tmp_waiting_consolidate: BTreeMap<(RestorationId, DeviceId), PendingPhysicalConsolidation>,
+    tmp_waiting_consolidate: BTreeSet<PendingPhysicalConsolidation>,
+
+    tmp_waiting_save: BTreeMap<(DeviceId, ShareImage), RestorationId>,
 }
 
 impl State {
@@ -88,13 +89,8 @@ impl State {
                     return None;
                 }
             }
-            DeviceFinishedPhysicalRestoration {
-                restoration_id,
-                device_id,
-            } => {
-                if let Some(pending) = self.pending_physical_consolidations.get_mut(&device_id) {
-                    pending.retain(|pending| pending.restoration_id != restoration_id);
-                } else {
+            DeviceFinishedPhysicalConsolidation(ref consolidation) => {
+                if self.pending_physical_consolidations.remove(consolidation) {
                     fail!("pending physical restoration did not exist");
                 }
             }
@@ -125,10 +121,7 @@ impl State {
                 if let Some(mut restoration) = self.restorations.remove(&restoration_id) {
                     for device_id in restoration.physical_shares {
                         self.pending_physical_consolidations
-                            .entry(device_id)
-                            .or_default()
-                            .push(PendingPhysicalConsolidation {
-                                restoration_id,
+                            .insert(PendingPhysicalConsolidation {
                                 device_id,
                                 access_structure_ref,
                                 share_index: restoration
@@ -169,13 +162,11 @@ impl State {
     }
 
     pub fn clear_up_key_deletion(&mut self, key_id: KeyId) {
-        for pending in self.pending_physical_consolidations.values_mut() {
-            pending.retain(|pending| pending.access_structure_ref.key_id != key_id);
-        }
         self.pending_physical_consolidations
-            .retain(|_, v| !v.is_empty());
+            .retain(|consolidation| consolidation.access_structure_ref.key_id != key_id);
+
         self.tmp_waiting_consolidate
-            .retain(|_, v| v.access_structure_ref.key_id != key_id);
+            .retain(|consolidation| consolidation.access_structure_ref.key_id != key_id);
     }
 }
 
@@ -207,12 +198,12 @@ impl FrostCoordinator {
 
     pub fn tell_device_to_load_physical_backup(
         &self,
-        restoration_id: RestorationId,
+        enter_physical_id: EnterPhysicalId,
         device_id: DeviceId,
     ) -> impl IntoIterator<Item = CoordinatorSend> {
         vec![CoordinatorSend::ToDevice {
             message: CoordinatorToDeviceMessage::Restoration(
-                CoordinatorRestoration::EnterPhysicalBackup { restoration_id },
+                CoordinatorRestoration::EnterPhysicalBackup { enter_physical_id },
             ),
             destinations: [device_id].into(),
         }]
@@ -253,16 +244,20 @@ impl FrostCoordinator {
     }
 
     pub fn tell_device_to_save_physical_backup(
-        &self,
+        &mut self,
         phase: PhysicalBackupPhase,
+        restoration_id: RestorationId,
     ) -> impl IntoIterator<Item = CoordinatorSend> {
+        self.restoration
+            .tmp_waiting_save
+            .insert((phase.from, phase.backup.share_image), restoration_id);
         let PhysicalBackupPhase {
-            backup: EnteredPhysicalBackup { restoration_id, .. },
+            backup: EnteredPhysicalBackup { share_image, .. },
             from,
         } = phase;
         vec![CoordinatorSend::ToDevice {
             message: CoordinatorToDeviceMessage::Restoration(
-                CoordinatorRestoration::EnterPhysicalBackup { restoration_id },
+                CoordinatorRestoration::SavePhysicalBackup { share_image },
             ),
             destinations: [from].into(),
         }]
@@ -281,7 +276,7 @@ impl FrostCoordinator {
         let PhysicalBackupPhase {
             backup:
                 EnteredPhysicalBackup {
-                    restoration_id,
+                    enter_physical_id: _,
                     share_image,
                 },
             from,
@@ -297,7 +292,6 @@ impl FrostCoordinator {
         let message = CoordinatorSend::ToDevice {
             message: CoordinatorToDeviceMessage::Restoration(CoordinatorRestoration::Consolidate(
                 Box::new(ConsolidateBackup {
-                    restoration_id,
                     share_index: share_image.share_index,
                     root_shared_key,
                     key_name: frost_key.key_name.clone(),
@@ -307,15 +301,13 @@ impl FrostCoordinator {
             destinations: [from].into(),
         };
 
-        self.restoration.tmp_waiting_consolidate.insert(
-            (restoration_id, from),
-            PendingPhysicalConsolidation {
-                restoration_id,
+        self.restoration
+            .tmp_waiting_consolidate
+            .insert(PendingPhysicalConsolidation {
                 device_id: from,
                 access_structure_ref,
                 share_index: share_image.share_index,
-            },
-        );
+            });
 
         Ok(vec![message])
     }
@@ -545,54 +537,67 @@ impl FrostCoordinator {
                     ),
                 )]);
             }
-            DeviceRestoration::PhysicalSaved(entered_physical_backup) => {
-                if self
+            DeviceRestoration::PhysicalSaved(share_image) => {
+                if let Some(restoration_id) = self
                     .restoration
-                    .restorations
-                    .contains_key(&entered_physical_backup.restoration_id)
+                    .tmp_waiting_save
+                    .remove(&(from, share_image))
                 {
-                    let restoration_id = entered_physical_backup.restoration_id;
-                    // XXX: If we could this is where we would validate the share.
                     self.mutate(Mutation::Restoration(
                         RestorationMutation::RestorationProgressPhysical {
                             restoration_id,
                             device_id: from,
-                            share_image: entered_physical_backup.share_image,
+                            share_image,
                         },
                     ));
+
                     return Ok(vec![CoordinatorSend::ToUser(
                         CoordinatorToUserMessage::Restoration(
                             ToUserRestoration::PhysicalBackupSaved {
                                 device_id: from,
                                 restoration_id,
-                                share_index: entered_physical_backup.share_image.share_index,
+                                share_index: share_image.share_index,
                             },
                         ),
                     )]);
+                } else {
+                    return Err(Error::coordinator_invalid_message(
+                        message.kind(),
+                        "coordinator not waiting for that share to be saved",
+                    ));
                 }
             }
-            DeviceRestoration::FinishedConsolidation { restoration_id } => {
+            DeviceRestoration::FinishedConsolidation {
+                access_structure_ref,
+                share_index,
+            } => {
+                let consolidation = PendingPhysicalConsolidation {
+                    device_id: from,
+                    access_structure_ref,
+                    share_index,
+                };
                 // we have to distinguish between two types of finished consolidations:
                 //
                 // 1. We've just asked the device to enter a backup for a access structure we knew about when we asked them
                 // 2. We asked them earlier to enter it before we have restored the access structure
                 // and now we've connected the device again we need to consolidate before we use it.
-                if let Some(pending) = self
+                if self
                     .restoration
                     .tmp_waiting_consolidate
-                    .remove(&(restoration_id, from))
+                    .remove(&consolidation)
                 {
                     self.mutate(Mutation::NewShare {
-                        access_structure_ref: pending.access_structure_ref,
+                        access_structure_ref,
                         device_id: from,
-                        share_index: pending.share_index,
+                        share_index,
                     });
-                } else {
+                } else if self
+                    .restoration
+                    .pending_physical_consolidations
+                    .contains(&consolidation)
+                {
                     self.mutate(Mutation::Restoration(
-                        RestorationMutation::DeviceFinishedPhysicalRestoration {
-                            restoration_id,
-                            device_id: from,
-                        },
+                        RestorationMutation::DeviceFinishedPhysicalConsolidation(consolidation),
                     ));
                 }
             }
@@ -629,9 +634,8 @@ impl FrostCoordinator {
     pub fn has_backups_that_need_to_be_consolidated(&self, device_id: DeviceId) -> bool {
         self.restoration
             .pending_physical_consolidations
-            .get(&device_id)
-            .map(|consolidations| !consolidations.is_empty())
-            .unwrap_or(false)
+            .iter()
+            .any(|consolidation| consolidation.device_id == device_id)
     }
 
     pub fn consolidate_pending_physical_backups(
@@ -642,9 +646,8 @@ impl FrostCoordinator {
         let consolidations = self
             .restoration
             .pending_physical_consolidations
-            .get(&device_id)
-            .cloned()
-            .unwrap_or_default();
+            .iter()
+            .filter(|pending| pending.device_id == device_id);
 
         let mut messages = vec![];
 
@@ -659,7 +662,6 @@ impl FrostCoordinator {
             messages.push(CoordinatorSend::ToDevice {
                 message: CoordinatorToDeviceMessage::Restoration(
                     CoordinatorRestoration::Consolidate(Box::new(ConsolidateBackup {
-                        restoration_id: consolidation.restoration_id,
                         share_index: consolidation.share_index,
                         root_shared_key,
                         key_name: frost_key.key_name.clone(),
@@ -747,10 +749,7 @@ pub enum RestorationMutation {
         /// the restoration has become this access structure
         access_structure_ref: AccessStructureRef,
     },
-    DeviceFinishedPhysicalRestoration {
-        restoration_id: RestorationId,
-        device_id: DeviceId,
-    },
+    DeviceFinishedPhysicalConsolidation(PendingPhysicalConsolidation),
     CancelRestoration {
         restoration_id: RestorationId,
     },
@@ -777,9 +776,8 @@ impl From<ToUserRestoration> for CoordinatorToUserMessage {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd, bincode::Encode, bincode::Decode)]
 pub struct PendingPhysicalConsolidation {
-    pub restoration_id: RestorationId,
     pub device_id: DeviceId,
     pub access_structure_ref: AccessStructureRef,
     pub share_index: PartyIndex,

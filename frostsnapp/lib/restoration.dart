@@ -158,7 +158,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
   RecoverShare? candidate;
   ShareCompatibility? compatibility;
   ConnectedDevice? blankDevice;
-  RestorationId? manuallyEntered;
+  RestorationId? restorationId;
   String? walletName;
   BitcoinNetwork? bitcoinNetwork;
   int? threshold;
@@ -169,6 +169,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
     super.initState();
     if (widget.continuing != null) {
       kind = MethodChoiceKind.ContinueRecovery;
+      restorationId = widget.continuing!;
     } else if (widget.existing != null) {
       kind = MethodChoiceKind.AddToWallet;
     } else {
@@ -223,21 +224,9 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           },
         );
       case 'enter_backup':
-        final stream = switch (kind) {
-          MethodChoiceKind.ContinueRecovery => coord
-              .tellDeviceToEnterPhysicalBackupAndSave(
-                restorationId: widget.continuing!,
-                deviceId: blankDevice!.id,
-              ),
-          MethodChoiceKind.StartRecovery => coord
-              .tellDeviceToEnterPhysicalBackupAndSave(
-                restorationId: manuallyEntered!,
-                deviceId: blankDevice!.id,
-              ),
-          MethodChoiceKind.AddToWallet => coord.tellDeviceToEnterPhysicalBackup(
-            deviceId: blankDevice!.id,
-          ),
-        };
+        final stream = coord.tellDeviceToEnterPhysicalBackup(
+          deviceId: blankDevice!.id,
+        );
         child = _EnterBackupView(
           stream: stream,
           onFinished: (backupPhase) async {
@@ -246,6 +235,18 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                 await coord.tellDeviceToConsolidatePhysicalBackup(
                   accessStructureRef: widget.existing!,
                   phase: backupPhase,
+                );
+              } else {
+                // Create a new restoration ID
+                final restorationId = await coord.startRestoringWallet(
+                  name: walletName!,
+                  threshold: threshold!,
+                  network: bitcoinNetwork!,
+                );
+
+                await coord.tellDeviceToSavePhysicalBackup(
+                  phase: backupPhase,
+                  restorationId: restorationId,
                 );
               }
               setState(() {
@@ -282,10 +283,9 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         child = _EnterThresholdView(
           walletName: walletName!,
           network: bitcoinNetwork!,
-          onThresholdEntered: (threshold, restorationId) {
+          onThresholdEntered: (threshold) {
             setState(() {
               this.threshold = threshold;
-              manuallyEntered = restorationId;
               currentStep = 'wait_physical_backup_device';
             });
           },
@@ -631,7 +631,7 @@ class _EnterWalletNameViewState extends State<_EnterWalletNameView> {
 class _EnterThresholdView extends StatefulWidget {
   final String walletName;
   final BitcoinNetwork network;
-  final Function(int threshold, RestorationId restorationId) onThresholdEntered;
+  final Function(int threshold) onThresholdEntered;
 
   const _EnterThresholdView({
     Key? key,
@@ -706,14 +706,7 @@ class _EnterThresholdViewState extends State<_EnterThresholdView> {
             label: const Text('Begin Recovery'),
             onPressed: () async {
               if (_formKey.currentState!.validate()) {
-                // Create a new restoration ID
-                final restorationId = await coord.startRestoringWallet(
-                  name: widget.walletName,
-                  threshold: _threshold,
-                  network: widget.network,
-                );
-
-                widget.onThresholdEntered(_threshold, restorationId);
+                widget.onThresholdEntered(_threshold);
               }
             },
           ),
@@ -776,7 +769,7 @@ class _EnterBackupViewState extends State<_EnterBackupView> {
   void initState() {
     super.initState();
     _subscription = widget.stream.listen((state) {
-      if (state.finished == true) {
+      if (state.entered != null) {
         widget.onFinished?.call(state.entered!);
       }
       if (state.abort != null) {
@@ -924,7 +917,7 @@ class _PlugInPromptViewState extends State<_PlugInPromptView> {
       );
     }
 
-    final prompt;
+    final String prompt;
 
     if (widget.continuing != null) {
       final name =

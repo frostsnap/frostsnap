@@ -2,7 +2,7 @@ use frostsnap_comms::{CoordinatorSendBody, CoordinatorSendMessage};
 use frostsnap_core::{
     coordinator::{restoration, CoordinatorToUserMessage},
     message::{CoordinatorRestoration, CoordinatorToDeviceMessage},
-    DeviceId, Gist, RestorationId,
+    DeviceId, EnterPhysicalId, Gist,
 };
 use tracing::{event, Level};
 
@@ -10,46 +10,36 @@ use crate::{DeviceMode, Sink, UiProtocol};
 
 pub struct EnterPhysicalBackup {
     sink: Box<dyn Sink<EnterPhysicalBackupState>>,
+    enter_physical_id: EnterPhysicalId,
     chosen_device: DeviceId,
-    restoration_id: RestorationId,
     sent_req: bool,
     connected: bool,
     entered: Option<restoration::PhysicalBackupPhase>,
-    saved: Option<bool>,
-    sent_save: bool,
+    saved: bool,
     abort: Option<String>,
-    finished: bool,
 }
 
 impl EnterPhysicalBackup {
-    pub fn new(
-        sink: impl Sink<EnterPhysicalBackupState>,
-        restoration_id: RestorationId,
-        chosen_device: DeviceId,
-        should_save: bool,
-    ) -> Self {
+    pub fn new(sink: impl Sink<EnterPhysicalBackupState>, chosen_device: DeviceId) -> Self {
+        let enter_physical_id = EnterPhysicalId::new(&mut rand::thread_rng());
         Self {
             sink: Box::new(sink),
-            restoration_id,
+            enter_physical_id,
             chosen_device,
             sent_req: false,
             connected: false,
             entered: None,
-            saved: if should_save { Some(false) } else { None },
-            sent_save: false,
+            saved: false,
             abort: None,
-            finished: false,
         }
     }
 
     pub fn emit_state(&self) {
         self.sink.send(EnterPhysicalBackupState {
-            restoration_id: self.restoration_id,
             device_id: self.chosen_device,
-            entered: self.entered.clone(),
+            entered: self.entered,
             saved: self.saved,
             abort: self.abort.clone(),
-            finished: self.finished,
         })
     }
 }
@@ -60,7 +50,7 @@ impl UiProtocol for EnterPhysicalBackup {
     }
 
     fn is_complete(&self) -> Option<crate::Completion> {
-        if self.finished {
+        if self.saved {
             Some(crate::Completion::Success)
         } else if self.abort.is_some() {
             Some(crate::Completion::Abort {
@@ -86,21 +76,7 @@ impl UiProtocol for EnterPhysicalBackup {
                 self.chosen_device,
                 CoordinatorSendBody::Core(CoordinatorToDeviceMessage::Restoration(
                     CoordinatorRestoration::EnterPhysicalBackup {
-                        restoration_id: self.restoration_id,
-                    },
-                )),
-            )];
-        }
-
-        if !self.sent_save && self.connected && self.saved == Some(false) && self.entered.is_some()
-        {
-            self.sent_save = true;
-
-            return vec![CoordinatorSendMessage::to(
-                self.chosen_device,
-                CoordinatorSendBody::Core(CoordinatorToDeviceMessage::Restoration(
-                    CoordinatorRestoration::SavePhysicalBackup {
-                        restoration_id: self.restoration_id,
+                        enter_physical_id: self.enter_physical_id,
                     },
                 )),
             )];
@@ -129,23 +105,15 @@ impl UiProtocol for EnterPhysicalBackup {
             CoordinatorToUserMessage::Restoration(
                 restoration::ToUserRestoration::PhysicalBackupEntered(physical_backup_phase),
             ) if physical_backup_phase.from == self.chosen_device
-                && physical_backup_phase.backup.restoration_id == self.restoration_id =>
+                && physical_backup_phase.backup.enter_physical_id == self.enter_physical_id =>
             {
                 self.entered = Some(*physical_backup_phase);
-                if self.saved != Some(false) {
-                    self.finished = true;
-                }
                 self.emit_state();
             }
             CoordinatorToUserMessage::Restoration(
-                restoration::ToUserRestoration::PhysicalBackupSaved {
-                    device_id,
-                    restoration_id,
-                    ..
-                },
-            ) if device_id == self.chosen_device && restoration_id == self.restoration_id => {
-                self.saved = Some(true);
-                self.finished = true;
+                restoration::ToUserRestoration::PhysicalBackupSaved { device_id, .. },
+            ) if device_id == self.chosen_device => {
+                self.saved = true;
                 self.emit_state();
             }
             message => event!(
@@ -159,11 +127,9 @@ impl UiProtocol for EnterPhysicalBackup {
 
 #[derive(Debug, Clone)]
 pub struct EnterPhysicalBackupState {
-    pub restoration_id: RestorationId,
     pub device_id: DeviceId,
     pub entered: Option<restoration::PhysicalBackupPhase>,
     /// null if the user is entering the backup not to save but to check it
-    pub saved: Option<bool>,
+    pub saved: bool,
     pub abort: Option<String>,
-    pub finished: bool,
 }

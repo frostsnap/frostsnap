@@ -990,45 +990,65 @@ impl FfiCoordinator {
         }
     }
 
-    pub fn tell_device_to_enter_physical_backup_and_save(
-        &self,
-        restoration_id: RestorationId,
-        device_id: DeviceId,
-        sink: impl Sink<EnterPhysicalBackupState>,
-    ) -> Result<()> {
-        let device_list = self.device_list.clone();
-        let coordinator = self.coordinator.clone();
-        let key_event_stream = self.key_event_stream.clone();
-        let sink = sink.inspect(move |state| {
-            if state.saved == Some(true) {
-                // When the physical backup has been saved on the device this means the device has
-                // entered recovery mode.
-                device_list
-                    .lock()
-                    .unwrap()
-                    .set_recovery_mode(device_id, true);
+    // pub fn tell_device_to_enter_physical_backup(
+    //     &self,
+    //     restoration_id: RestorationId,
+    //     device_id: DeviceId,
+    //     sink: impl Sink<EnterPhysicalBackupState>,
+    // ) -> Result<()> {
+    //     let device_list = self.device_list.clone();
+    //     let coordinator = self.coordinator.clone();
+    //     let key_event_stream = self.key_event_stream.clone();
+    //     let sink = sink.inspect(move |state| {
+    //         if state.saved == Some(true) {
+    //             // When the physical backup has been saved on the device this means the device has
+    //             // entered recovery mode.
+    //             device_list
+    //                 .lock()
+    //                 .unwrap()
+    //                 .set_recovery_mode(device_id, true);
 
-                let coordinator = coordinator.lock().unwrap();
-                let state = key_state(&coordinator);
-                if let Some(key_event_stream) = &*key_event_stream.lock().unwrap() {
-                    key_event_stream.add(state);
-                }
-            }
-        });
-        let proto = EnterPhysicalBackup::new(sink, restoration_id, device_id, true);
-        self.start_protocol(proto);
-        Ok(())
-    }
+    //             let coordinator = coordinator.lock().unwrap();
+    //             let state = key_state(&coordinator);
+    //             if let Some(key_event_stream) = &*key_event_stream.lock().unwrap() {
+    //                 key_event_stream.add(state);
+    //             }
+    //         }
+    //     });
+    //     let proto = EnterPhysicalBackup::new(sink, restoration_id, device_id, true);
+    //     self.start_protocol(proto);
+    //     Ok(())
+    // }
 
     pub fn tell_device_to_enter_physical_backup(
         &self,
         device_id: DeviceId,
         sink: impl Sink<EnterPhysicalBackupState>,
     ) -> Result<()> {
-        let restoration_id = RestorationId::new(&mut rand::thread_rng());
-        let proto = EnterPhysicalBackup::new(sink, restoration_id, device_id, false);
+        let proto = EnterPhysicalBackup::new(sink, device_id);
         self.start_protocol(proto);
         Ok(())
+    }
+
+    pub fn tell_device_to_save_physical_backup(
+        &self,
+        phase: PhysicalBackupPhase,
+        restoration_id: RestorationId,
+    ) {
+        let mut coord = self.coordinator.lock().unwrap();
+        let messages = coord
+            .MUTATE_NO_PERSIST()
+            .tell_device_to_save_physical_backup(phase, restoration_id);
+        self.usb_sender.send_from_core(messages);
+
+        self.device_list
+            .lock()
+            .unwrap()
+            .set_recovery_mode(phase.from, true);
+        let state = key_state(&coord);
+        if let Some(key_event_stream) = &*self.key_event_stream.lock().unwrap() {
+            key_event_stream.add(state);
+        }
     }
 
     /// This is for telling a device that a physical backup it just entered is

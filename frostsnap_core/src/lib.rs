@@ -435,3 +435,28 @@ impl_fromstr_deserialize! {
         RestorationId(bytes)
     }
 }
+
+/// short randomly sampled id for a coordinator to refer to a physical backup entry it asked a device to do.
+#[derive(Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash, Default)]
+pub struct EnterPhysicalId(pub [u8; 16]);
+
+impl EnterPhysicalId {
+    pub fn new(rng: &mut impl rand_core::RngCore) -> Self {
+        let mut bytes = [0u8; 16];
+        rng.fill_bytes(&mut bytes);
+        Self(bytes)
+    }
+}
+
+impl_display_debug_serialize! {
+    fn to_bytes(val: &EnterPhysicalId) -> [u8;16] {
+        val.0
+    }
+}
+
+impl_fromstr_deserialize! {
+    name => "restoration id",
+    fn from_bytes(bytes: [u8;16]) -> EnterPhysicalId {
+        EnterPhysicalId(bytes)
+    }
+}
