@@ -28,7 +28,7 @@ impl<'a> Partitions<'a> {
         }
     }
     pub fn load(flash: &'a RefCell<FlashStorage>) -> Self {
-        let table = esp_partition_table::PartitionTable::new(0x8000, 10 * 32);
+        let table = esp_partition_table::PartitionTable::new(0xb000, 10 * 32);
 
         let mut self_ = Self::new(flash);
 
