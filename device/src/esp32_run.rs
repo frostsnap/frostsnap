@@ -41,7 +41,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
         ref mut jtag,
         ref mut upstream_detect,
         ref mut downstream_detect,
-        rsa: _,
+        ref mut rsa,
     } = resources;
 
     // Read device header and keypair from NVS
@@ -316,6 +316,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                                                         ui,
                                                         sha256,
                                                         timer,
+                                                        rsa,
                                                     );
                                                     reset(&mut upstream_serial);
                                                 } else {
