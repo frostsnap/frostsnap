@@ -21,7 +21,7 @@ build +ARGS="":
    (cd frostsnapp; just build {{ARGS}})
 
 save-image BOARD=default_board +ARGS="":
-    espflash save-image --chip=esp32c3 target/riscv32imc-unknown-none-elf/release/{{BOARD}} target/riscv32imc-unknown-none-elf/release/firmware.bin {{ARGS}}
+    espflash save-image --chip=esp32c3 target/riscv32imc-unknown-none-elf/release/{{BOARD}} target/riscv32imc-unknown-none-elf/release/unsigned-firmware.bin {{ARGS}}
 
 test-ordinary +ARGS="":
     cargo test {{ARGS}} {{ordinary_crates}}

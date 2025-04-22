@@ -6,3 +6,4 @@ target/
 .vscode
 /riscv
 *.hex
+*.pem
