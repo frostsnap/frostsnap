@@ -22,6 +22,7 @@ pub mod panic;
 pub mod partitions;
 pub mod peripherals;
 pub mod resources;
+pub mod secure_boot;
 pub mod stack_guard;
 pub mod ui;
 pub mod ui_impl;

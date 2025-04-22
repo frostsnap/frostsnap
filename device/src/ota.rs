@@ -1,13 +1,16 @@
 use crate::{
     io::SerialIo,
     partitions::{EspFlashPartition, PartitionExt},
+    secure_boot,
     ui::{self, UserInteraction},
 };
 use alloc::boxed::Box;
 use bincode::config::{Fixint, LittleEndian};
+use esp_hal::rsa::Rsa;
 use esp_hal::sha::Sha;
 use esp_hal::time::Duration;
 use esp_hal::timer;
+use esp_hal::Blocking;
 use frostsnap_comms::{
     CommsMisc, DeviceSendBody, Sha256Digest, BAUDRATE, FIRMWARE_NEXT_CHUNK_READY_SIGNAL,
     FIRMWARE_UPGRADE_CHUNK_LEN,
@@ -244,7 +247,6 @@ impl FirmwareUpgradeMode<'_> {
                                 break;
                             }
                         }
-
                         ui.set_workflow(ui::Workflow::FirmwareUpgrade(
                             ui::FirmwareUpgradeStatus::Erase {
                                 progress: *seq as f32 / last_sector_index as f32,
@@ -303,6 +305,7 @@ impl FirmwareUpgradeMode<'_> {
         ui: &mut impl UserInteraction,
         sha: &mut Sha<'_>,
         timer: &T,
+        rsa: &mut Rsa<Blocking>,
     ) {
         match self {
             FirmwareUpgradeMode::Upgrading { state, .. } => {
@@ -429,6 +432,11 @@ impl FirmwareUpgradeMode<'_> {
                     expected_digest
                 );
             }
+
+            if secure_boot::is_secure_boot_enabled() {
+                secure_boot::verify_secure_boot(partition, rsa, sha).unwrap();
+            }
+
             ota.switch_partition(*ota_slot, OtaMetadata {});
         }
     }

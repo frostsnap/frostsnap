@@ -1,9 +1,12 @@
+[target.riscv32imc-unknown-none-elf]
+# "just flash" uses this cargo runner to flash non-secure boot devices
+# The default espflash bootloader won't work because we changed the partition table offset
+# to accommodate the larger secure boot enabled bootloader
+runner = "espflash flash --baud 921600 --partition-table partitions.csv --bootloader bootloader-dev.bin"
+
 [build]
 target = "riscv32imc-unknown-none-elf"
 rustflags = ["-C", "link-arg=-Tlinkall.x"]
-
-[target.riscv32imc-unknown-none-elf]
-runner = "espflash flash --baud 921600 --partition-table partitions.csv --bootloader bootloader-dev.bin"
 
 [profile.release]
 debug = 0

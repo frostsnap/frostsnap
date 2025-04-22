@@ -1386,8 +1386,7 @@ dependencies = [
 [[package]]
 name = "esp-build"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b94a4b8d74e7cc7baabcca5b2277b41877e039ad9cd49959d48ef94dac7eab4b"
+source = "git+https://github.com/frostsnap/esp-hal?branch=ds#6ecaa2eb75d4d97de877c18d13bfd07d251da971"
 dependencies = [
  "quote",
  "syn 2.0.104",
@@ -1396,8 +1395,9 @@ dependencies = [
 
 [[package]]
 name = "esp-build"
-version = "0.1.0"
-source = "git+https://github.com/frostsnap/esp-hal?branch=ds#6ecaa2eb75d4d97de877c18d13bfd07d251da971"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "837020ff95fbf4c15c206541dda7994f1bbe6e1505e36a6a5ecb51fdb61656d7"
 dependencies = [
  "quote",
  "syn 2.0.104",
@@ -1438,10 +1438,10 @@ dependencies = [
  "embedded-io",
  "embedded-io-async",
  "enumset",
- "esp-build 0.1.0 (git+https://github.com/frostsnap/esp-hal?branch=ds)",
+ "esp-build 0.1.0",
  "esp-config",
  "esp-hal-procmacros",
- "esp-metadata",
+ "esp-metadata 0.4.0",
  "esp-riscv-rt",
  "esp32c3",
  "fugit",
@@ -1451,7 +1451,7 @@ dependencies = [
  "rand_core",
  "riscv",
  "serde",
- "strum",
+ "strum 0.26.3",
  "ufmt-write",
  "void",
  "xtensa-lx-rt",
@@ -1480,7 +1480,19 @@ dependencies = [
  "anyhow",
  "basic-toml",
  "serde",
- "strum",
+ "strum 0.26.3",
+]
+
+[[package]]
+name = "esp-metadata"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0154d59933c2419ef25a01938517cc6969f47b6af53ebb34c279393aa20d9654"
+dependencies = [
+ "anyhow",
+ "basic-toml",
+ "serde",
+ "strum 0.27.2",
 ]
 
 [[package]]
@@ -1505,13 +1517,15 @@ dependencies = [
 
 [[package]]
 name = "esp-storage"
-version = "0.4.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "661aebceb62e0caadd7e6bddd88b2d891c3b08cea4eb5afe96ef697674ccda5c"
+checksum = "5b6502654e5750e8162e66512d7e8d84f7eb51d17ec6aa7e0da95cd102769425"
 dependencies = [
  "critical-section",
+ "document-features",
  "embedded-storage",
- "esp-build 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "esp-build 0.3.0",
+ "esp-metadata 0.7.0",
 ]
 
 [[package]]
@@ -4169,7 +4183,16 @@ version = "0.26.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fec0f0aef304996cf250b31b5a10dee7980c85da9d759361292b8bca5a18f06"
 dependencies = [
- "strum_macros",
+ "strum_macros 0.26.4",
+]
+
+[[package]]
+name = "strum"
+version = "0.27.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af23d6f6c1a224baef9d3f61e287d2761385a5b88fdab4eb4c6f11aeb54c4bcf"
+dependencies = [
+ "strum_macros 0.27.2",
 ]
 
 [[package]]
@@ -4182,6 +4205,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "rustversion",
+ "syn 2.0.104",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.27.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7695ce3845ea4b33927c055a39dc438a45b059f7c1b3d91d38d10355fb8cbca7"
+dependencies = [
+ "heck 0.5.0",
+ "proc-macro2",
+ "quote",
  "syn 2.0.104",
 ]
 
@@ -5191,7 +5226,7 @@ dependencies = [
  "minijinja",
  "r0",
  "serde",
- "strum",
+ "strum 0.26.3",
  "toml",
  "xtensa-lx",
  "xtensa-lx-rt-proc-macros",
