@@ -37,7 +37,6 @@ struct TestEnv {
     // backups
     pub backups: BTreeMap<DeviceId, (String, String)>,
     pub physical_backups_entered: Vec<PhysicalBackupPhase>,
-    pub physical_backups_saved: usize,
 
     // signing
     pub received_signing_shares: BTreeMap<SignSessionId, BTreeSet<DeviceId>>,
@@ -167,9 +166,7 @@ impl common::Env for TestEnv {
                     PhysicalBackupEntered(physical_backup_phase) => {
                         self.physical_backups_entered.push(*physical_backup_phase);
                     }
-                    PhysicalBackupSaved { .. } => {
-                        self.physical_backups_saved += 1;
-                    }
+                    _ => { /* ignored */ }
                 }
             }
         }

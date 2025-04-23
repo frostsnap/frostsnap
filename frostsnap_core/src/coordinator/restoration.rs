@@ -90,7 +90,7 @@ impl State {
                 }
             }
             DeviceFinishedPhysicalConsolidation(ref consolidation) => {
-                if self.pending_physical_consolidations.remove(consolidation) {
+                if !self.pending_physical_consolidations.remove(consolidation) {
                     fail!("pending physical restoration did not exist");
                 }
             }
@@ -528,14 +528,14 @@ impl FrostCoordinator {
                 // it's not a good idea becuase atm it's valid to ask a device to enter a backup
                 // when you're not keeping track of the restoration id for the purpose of doing a
                 // backup check.
-                return Ok(vec![CoordinatorSend::ToUser(
+                Ok(vec![CoordinatorSend::ToUser(
                     CoordinatorToUserMessage::Restoration(
                         ToUserRestoration::PhysicalBackupEntered(Box::new(PhysicalBackupPhase {
                             backup: entered_physical_backup,
                             from,
                         })),
                     ),
-                )]);
+                )])
             }
             DeviceRestoration::PhysicalSaved(share_image) => {
                 if let Some(restoration_id) = self
@@ -551,7 +551,7 @@ impl FrostCoordinator {
                         },
                     ));
 
-                    return Ok(vec![CoordinatorSend::ToUser(
+                    Ok(vec![CoordinatorSend::ToUser(
                         CoordinatorToUserMessage::Restoration(
                             ToUserRestoration::PhysicalBackupSaved {
                                 device_id: from,
@@ -559,12 +559,12 @@ impl FrostCoordinator {
                                 share_index: share_image.share_index,
                             },
                         ),
-                    )]);
+                    )])
                 } else {
-                    return Err(Error::coordinator_invalid_message(
+                    Err(Error::coordinator_invalid_message(
                         message.kind(),
                         "coordinator not waiting for that share to be saved",
-                    ));
+                    ))
                 }
             }
             DeviceRestoration::FinishedConsolidation {
@@ -599,7 +599,22 @@ impl FrostCoordinator {
                     self.mutate(Mutation::Restoration(
                         RestorationMutation::DeviceFinishedPhysicalConsolidation(consolidation),
                     ));
+                } else {
+                    return Err(Error::coordinator_invalid_message(
+                        message.kind(),
+                        "not waiting for device to consolidate",
+                    ));
                 }
+
+                Ok(vec![CoordinatorSend::ToUser(
+                    CoordinatorToUserMessage::Restoration(
+                        ToUserRestoration::FinishedConsolidation {
+                            device_id: from,
+                            access_structure_ref,
+                            share_index,
+                        },
+                    ),
+                )])
             }
             DeviceRestoration::HeldShares(held_shares) => {
                 let mut already_got = vec![];
@@ -617,18 +632,16 @@ impl FrostCoordinator {
                         recoverable.push(held_share);
                     }
                 }
-                return Ok(vec![CoordinatorSend::ToUser(
+                Ok(vec![CoordinatorSend::ToUser(
                     ToUserRestoration::GotHeldShares {
                         held_by: from,
                         already_got,
                         recoverable,
                     }
                     .into(),
-                )]);
+                )])
             }
         }
-
-        Ok(vec![])
     }
 
     pub fn has_backups_that_need_to_be_consolidated(&self, device_id: DeviceId) -> bool {
@@ -766,6 +779,11 @@ pub enum ToUserRestoration {
     PhysicalBackupSaved {
         device_id: DeviceId,
         restoration_id: RestorationId,
+        share_index: PartyIndex,
+    },
+    FinishedConsolidation {
+        device_id: DeviceId,
+        access_structure_ref: AccessStructureRef,
         share_index: PartyIndex,
     },
 }

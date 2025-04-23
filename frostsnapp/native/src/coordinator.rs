@@ -12,13 +12,15 @@ use frostsnap_coordinator::firmware_upgrade::{
 use frostsnap_coordinator::frostsnap_comms::{
     CoordinatorSendBody, CoordinatorSendMessage, Destination, Sha256Digest,
 };
-use frostsnap_coordinator::frostsnap_core::coordinator::restoration::PhysicalBackupPhase;
+use frostsnap_coordinator::frostsnap_core::coordinator::restoration::{
+    PhysicalBackupPhase, ToUserRestoration,
+};
 use frostsnap_coordinator::frostsnap_core::coordinator::{
-    CoordAccessStructure, CoordFrostKey, CoordinatorSend,
+    CoordAccessStructure, CoordFrostKey, CoordinatorSend, CoordinatorToUserMessage,
 };
 use frostsnap_coordinator::frostsnap_core::device::KeyPurpose;
 use frostsnap_coordinator::frostsnap_core::{
-    self, message::DoKeyGen, Kind as _, RestorationId, SignSessionId,
+    self, message::DoKeyGen, Gist as _, Kind as _, RestorationId, SignSessionId,
 };
 use frostsnap_coordinator::frostsnap_core::{KeygenId, SymmetricKey};
 use frostsnap_coordinator::frostsnap_persist::DeviceNames;
@@ -30,6 +32,7 @@ use frostsnap_coordinator::wait_for_recovery_share::{
 };
 use frostsnap_coordinator::{
     AppMessageBody, DeviceMode, FirmwareBin, Sink, UiProtocol, UsbSender, UsbSerialManager,
+    WaitForToUserMessage,
 };
 use frostsnap_coordinator::{Completion, DeviceChange};
 use frostsnap_core::{
@@ -802,13 +805,13 @@ impl FfiCoordinator {
 
             // HACK: We overwrite the name of the device share here to contrive compatibility.
             if restoration_state.key_name != held_share.key_name {
-                held_share.key_name = restoration_state.key_name.clone();
                 event!(
                     Level::WARN,
                     recovery_name = restoration_state.key_name,
                     device_name = held_share.key_name,
                     "had to rename restoration share"
                 );
+                held_share.key_name = restoration_state.key_name.clone();
             }
             coordinator.staged_mutate(&mut *db, |coordinator| {
                 coordinator.add_recovery_share_to_restoration(restoration_id, recover_share)?;
@@ -857,17 +860,28 @@ impl FfiCoordinator {
         restoration_id: RestorationId,
         encryption_key: SymmetricKey,
     ) -> Result<AccessStructureRef> {
-        let assid = {
+        let (assid, needs_consolidation) = {
             let mut db = self.db.lock().unwrap();
             let mut coordinator = self.coordinator.lock().unwrap();
-            coordinator.staged_mutate(&mut *db, |coordinator| {
+            let restoration_state = coordinator
+                .get_restoration_state(restoration_id)
+                .ok_or(anyhow!("can't finish restoration that doesn't exist"))?;
+            let needs_consolidation = restoration_state.physical_shares;
+            let assid = coordinator.staged_mutate(&mut *db, |coordinator| {
                 Ok(coordinator.finish_restoring(
                     restoration_id,
                     encryption_key,
                     &mut rand::thread_rng(),
                 )?)
-            })?
+            })?;
+
+            (assid, needs_consolidation)
         };
+
+        for device_id in needs_consolidation {
+            // NOTE: This will only work for the devices that are plugged in otherwise it's a noop
+            self.exit_recovery_mode(device_id, encryption_key);
+        }
 
         if let Some(stream) = &*self.key_event_stream.lock().unwrap() {
             stream.add(self.key_state());
@@ -990,92 +1004,143 @@ impl FfiCoordinator {
         }
     }
 
-    // pub fn tell_device_to_enter_physical_backup(
-    //     &self,
-    //     restoration_id: RestorationId,
-    //     device_id: DeviceId,
-    //     sink: impl Sink<EnterPhysicalBackupState>,
-    // ) -> Result<()> {
-    //     let device_list = self.device_list.clone();
-    //     let coordinator = self.coordinator.clone();
-    //     let key_event_stream = self.key_event_stream.clone();
-    //     let sink = sink.inspect(move |state| {
-    //         if state.saved == Some(true) {
-    //             // When the physical backup has been saved on the device this means the device has
-    //             // entered recovery mode.
-    //             device_list
-    //                 .lock()
-    //                 .unwrap()
-    //                 .set_recovery_mode(device_id, true);
-
-    //             let coordinator = coordinator.lock().unwrap();
-    //             let state = key_state(&coordinator);
-    //             if let Some(key_event_stream) = &*key_event_stream.lock().unwrap() {
-    //                 key_event_stream.add(state);
-    //             }
-    //         }
-    //     });
-    //     let proto = EnterPhysicalBackup::new(sink, restoration_id, device_id, true);
-    //     self.start_protocol(proto);
-    //     Ok(())
-    // }
-
     pub fn tell_device_to_enter_physical_backup(
         &self,
         device_id: DeviceId,
         sink: impl Sink<EnterPhysicalBackupState>,
     ) -> Result<()> {
+        let device_list = self.device_list.clone();
+        let coordinator = self.coordinator.clone();
+        let key_event_stream = self.key_event_stream.clone();
+        let sink = sink.inspect(move |state| {
+            if state.saved {
+                // When/if the physical backup has been saved on the device this means the device
+                // has entered recovery mode. We need to set recovery mode so that the device can be
+                // brought out of recovery mode when the time comes.
+                device_list
+                    .lock()
+                    .unwrap()
+                    .set_recovery_mode(device_id, true);
+
+                let coordinator = coordinator.lock().unwrap();
+                // We need to update the recovering key's state the ui gets updated
+                let state = key_state(&coordinator);
+                if let Some(key_event_stream) = &*key_event_stream.lock().unwrap() {
+                    key_event_stream.add(state);
+                }
+            }
+        });
         let proto = EnterPhysicalBackup::new(sink, device_id);
         self.start_protocol(proto);
         Ok(())
     }
 
+    // XXX: Cannot be called during another UI protocol
     pub fn tell_device_to_save_physical_backup(
         &self,
         phase: PhysicalBackupPhase,
         restoration_id: RestorationId,
     ) {
-        let mut coord = self.coordinator.lock().unwrap();
-        let messages = coord
-            .MUTATE_NO_PERSIST()
-            .tell_device_to_save_physical_backup(phase, restoration_id);
-        self.usb_sender.send_from_core(messages);
+        {
+            let mut coord = self.coordinator.lock().unwrap();
+            let messages = coord
+                .MUTATE_NO_PERSIST()
+                .tell_device_to_save_physical_backup(phase, restoration_id);
+            self.usb_sender.send_from_core(messages);
+        }
 
-        self.device_list
-            .lock()
-            .unwrap()
-            .set_recovery_mode(phase.from, true);
-        let state = key_state(&coord);
-        if let Some(key_event_stream) = &*self.key_event_stream.lock().unwrap() {
-            key_event_stream.add(state);
+        // hook into to user messages to see when it is successfully saved
+        let success = self.wait_for_to_user_message([phase.from], move |to_user| {
+            if let &CoordinatorToUserMessage::Restoration(
+                ToUserRestoration::PhysicalBackupSaved {
+                    device_id,
+                    restoration_id: rid,
+                    share_index,
+                },
+            ) = &to_user
+            {
+                return device_id == phase.from
+                    && rid == restoration_id
+                    && share_index == phase.backup.share_image.share_index;
+            }
+            event!(
+                Level::WARN,
+                gist = to_user.gist(),
+                "got unexpected to user message while waiting for device to save"
+            );
+            false
+        });
+        if success {
+            self.device_list
+                .lock()
+                .unwrap()
+                .set_recovery_mode(phase.from, true);
+
+            self.emit_key_state();
         }
     }
 
-    /// This is for telling a device that a physical backup it just entered is
+    /// This is for telling a device that a physical backup it just entered is ready to be used
+    /// right away.
+    // XXX: Cannot be called during another UI protocol
     pub fn tell_device_to_consolidate_physical_backup(
         &self,
         access_structure_ref: AccessStructureRef,
         phase: PhysicalBackupPhase,
         encryption_key: SymmetricKey,
     ) -> Result<()> {
-        let mut coordinator = self.coordinator.lock().unwrap();
-        let msgs = coordinator
-            .MUTATE_NO_PERSIST()
-            .tell_device_to_consolidate_physical_backup(
-                phase,
-                access_structure_ref,
-                encryption_key,
-            )?
-            .into_iter()
-            .map(|msg| CoordinatorSendMessage::try_from(msg).unwrap());
+        let msgs = {
+            let mut coordinator = self.coordinator.lock().unwrap();
+            coordinator
+                .MUTATE_NO_PERSIST()
+                .tell_device_to_consolidate_physical_backup(
+                    phase,
+                    access_structure_ref,
+                    encryption_key,
+                )?
+        };
 
-        for msg in msgs {
-            self.usb_sender.send(msg);
+        self.usb_sender.send_from_core(msgs);
+
+        // hook into to user messages to see when it is successfully consolidated
+        let success = self.wait_for_to_user_message([phase.from], move |to_user| {
+            if let &CoordinatorToUserMessage::Restoration(
+                ToUserRestoration::FinishedConsolidation {
+                    device_id,
+                    access_structure_ref: assid,
+                    share_index,
+                },
+            ) = &to_user
+            {
+                return device_id == phase.from
+                    && assid == access_structure_ref
+                    && share_index == phase.backup.share_image.share_index;
+            }
+            event!(
+                Level::WARN,
+                gist = to_user.gist(),
+                "got unexpected to user message while waiting for consolidation"
+            );
+            false
+        });
+
+        if success {
+            self.emit_key_state();
         }
-        // NOTE: We're not waiting for the consolidation ack here. Persisted mutations will happen
-        // occur once we get the ack. The caller doesn't really care as long as the consolidation
-        // succeeds (hopefully) eventually.
+
         Ok(())
+    }
+
+    fn wait_for_to_user_message(
+        &self,
+        devices: impl IntoIterator<Item = DeviceId>,
+        f: impl FnMut(CoordinatorToUserMessage) -> bool + Send + 'static,
+    ) -> bool {
+        let (proto, waiter) = WaitForToUserMessage::new(devices, f);
+        self.start_protocol(proto);
+        let result = waiter.recv().expect("unreachable");
+        *self.ui_protocol.lock().unwrap() = None;
+        result
     }
 
     pub fn exit_recovery_mode(&self, device_id: DeviceId, encryption_key: SymmetricKey) {
@@ -1083,25 +1148,31 @@ impl FfiCoordinator {
         let mut device_list = self.device_list.lock().unwrap();
 
         if device_list.get_device(device_id).is_some() {
-            let msgs = coord
-                .consolidate_pending_physical_backups(device_id, encryption_key)
-                .into_iter()
-                .map(|msg| CoordinatorSendMessage::try_from(msg).unwrap());
+            let msgs = coord.consolidate_pending_physical_backups(device_id, encryption_key);
+            self.usb_sender.send_from_core(msgs);
 
-            for msg in msgs {
-                self.usb_sender.send(msg);
-            }
-
-            // NOTE: We don't wait for the device to confirm that they have exited recovery mode
-            // because we expect everything to go well after we have sent the messages. Internally
-            // thought the core coordinator will mark that device as having left recovery mode only
-            // once it's confirmed.
+            // NOTE: We don't wait for the device to confirm that it finished consolidation which is
+            // a little hacky. The reason is that it's hard to hook into the ToUserMessage that
+            // confirms consolidation in the context this is called (which may have an existing UI
+            // protocol being run like signing).
+            //
+            // If we wanted to improve this the proper way is probably to create a "stack" of UI
+            // protocols so we could go into one that waits for the right ToUserMessage here and
+            // then pop it off and return to the previous ui protocol.
             device_list.set_recovery_mode(device_id, false);
 
             // We finally connect the device properly!
             if let Some(ui_protocol) = &mut *self.ui_protocol.lock().unwrap() {
                 ui_protocol.connected(device_id, DeviceMode::Ready);
             }
+        }
+    }
+
+    pub fn emit_key_state(&self) {
+        let coord = self.coordinator.lock().unwrap();
+        let state = key_state(&coord);
+        if let Some(key_event_stream) = &*self.key_event_stream.lock().unwrap() {
+            key_event_stream.add(state);
         }
     }
 }

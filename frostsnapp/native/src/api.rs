@@ -1058,7 +1058,6 @@ impl Coordinator {
             .finished_signing_sessions()
             .iter()
             .filter(|(_, session)| session.key_id == key_id)
-            .inspect(|&(&id, _)| event!(Level::DEBUG, "Found finished signing session: {}", id))
             .filter_map(|(_, session)| match &session.init.group_request.sign_task {
                 WireSignTask::BitcoinTransaction(tx_temp) => {
                     let mut raw_tx = tx_temp.to_rust_bitcoin_tx();
@@ -2230,6 +2229,14 @@ pub struct RestorationState(pub RustOpaque<RRestorationState>);
 impl RestorationState {
     pub fn key_name(&self) -> SyncReturn<String> {
         SyncReturn(self.0.key_name.clone())
+    }
+
+    pub fn threshold(&self) -> SyncReturn<u16> {
+        SyncReturn(self.0.access_structure.threshold)
+    }
+
+    pub fn bitcoin_network(&self) -> SyncReturn<Option<BitcoinNetwork>> {
+        SyncReturn(self.0.key_purpose.bitcoin_network().map(From::from))
     }
 }
 

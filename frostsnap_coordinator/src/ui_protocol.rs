@@ -15,10 +15,10 @@ pub trait UiProtocol: Send + Any + 'static {
     fn name(&self) -> &'static str {
         core::any::type_name_of_val(self)
     }
-    fn cancel(&mut self);
+    fn cancel(&mut self) {}
     fn is_complete(&self) -> Option<Completion>;
     fn connected(&mut self, _id: DeviceId, _state: DeviceMode) {}
-    fn disconnected(&mut self, id: DeviceId);
+    fn disconnected(&mut self, _id: DeviceId) {}
     fn process_to_user_message(&mut self, message: CoordinatorToUserMessage) {
         event!(
             Level::DEBUG,

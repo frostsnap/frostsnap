@@ -49,6 +49,10 @@ class WalletRecoveryPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 20),
                 Text(
+                  "Minimum ${restoringKey.threshold} keys needed to restore.",
+                ),
+                const SizedBox(height: 10),
+                Text(
                   'Keys restored:',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
@@ -170,6 +174,11 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
     if (widget.continuing != null) {
       kind = MethodChoiceKind.ContinueRecovery;
       restorationId = widget.continuing!;
+      final state = coord.getRestorationState(restorationId: restorationId!)!;
+      threshold = state.threshold();
+      walletName = state.keyName();
+      bitcoinNetwork =
+          state.bitcoinNetwork() ?? BitcoinNetwork.mainnet(bridge: api);
     } else if (widget.existing != null) {
       kind = MethodChoiceKind.AddToWallet;
     } else {
@@ -237,16 +246,14 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                   phase: backupPhase,
                 );
               } else {
-                // Create a new restoration ID
-                final restorationId = await coord.startRestoringWallet(
+                restorationId ??= await coord.startRestoringWallet(
                   name: walletName!,
                   threshold: threshold!,
                   network: bitcoinNetwork!,
                 );
-
                 await coord.tellDeviceToSavePhysicalBackup(
                   phase: backupPhase,
-                  restorationId: restorationId,
+                  restorationId: restorationId!,
                 );
               }
               setState(() {
@@ -764,12 +771,14 @@ class _EnterBackupView extends StatefulWidget {
 
 class _EnterBackupViewState extends State<_EnterBackupView> {
   StreamSubscription? _subscription;
+  bool saved = false;
 
   @override
   void initState() {
     super.initState();
-    _subscription = widget.stream.listen((state) {
+    _subscription = widget.stream.listen((state) async {
       if (state.entered != null) {
+        await _subscription?.cancel();
         widget.onFinished?.call(state.entered!);
       }
       if (state.abort != null) {
@@ -888,7 +897,7 @@ class _PlugInPromptViewState extends State<_PlugInPromptView> {
           SizedBox(height: 16),
           // Warning text for the alreadyGot error case
           Text(
-            "That device “${coord.getDeviceName(id: alreadyGot!.deviceId())}” is already part of the wallet “${alreadyGot!.keyName()}”",
+            "The connected device “${coord.getDeviceName(id: alreadyGot!.deviceId())}” is already part of the wallet “${alreadyGot!.keyName()}”",
             style: theme.textTheme.bodyLarge,
             textAlign: TextAlign.center,
           ),
@@ -987,15 +996,19 @@ class _CandidateReadyView extends StatelessWidget {
           // we ignore the problem of different wallet names on the shares for now.
           // This happens when you eneter a physical backup and enter a different
           // name for the wallet than devices you later try to add to the wallet.
-          // We just carry on in a SNAFU like manner for now.
+          // We just carry on with the cosmetic SNAFU.
           ShareCompatibility.NameMismatch:
         icon = const Icon(Icons.check_circle, size: 48, color: Colors.green);
-        message =
-            'The key "$deviceName" can be added to "${candidate.keyName()}"!';
-        buttonText =
-            continuing != null || existing != null
-                ? 'Add key to ${candidate.keyName()}'
-                : 'Start recovery';
+
+        if (continuing != null || existing != null) {
+          message =
+              'The key "$deviceName" can be added to "${candidate.keyName()}"!';
+          buttonText = 'Add key to ${candidate.keyName()}';
+        } else {
+          message =
+              'The key "$deviceName" is part of a wallet called "${candidate.keyName()}"!';
+          buttonText = 'Start recovery';
+        }
         buttonAction = () async {
           if (continuing != null) {
             await coord.continueRestoringWalletFromDeviceShare(

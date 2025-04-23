@@ -10,6 +10,8 @@ mod ui_protocol;
 mod usb_serial_manager;
 pub mod verify_address;
 pub mod wait_for_recovery_share;
+mod wait_for_to_user_message;
+pub use wait_for_to_user_message::*;
 
 pub use frostsnap_comms;
 pub use frostsnap_core;
