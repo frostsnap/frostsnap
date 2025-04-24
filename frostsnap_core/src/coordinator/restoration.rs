@@ -7,7 +7,7 @@ pub struct RestorationState {
     pub key_name: String,
     pub access_structure_ref: Option<AccessStructureRef>,
     pub access_structure: RecoveringAccessStructure,
-    pub physical_shares: BTreeSet<DeviceId>,
+    pub need_to_consolidate: BTreeSet<DeviceId>,
     pub key_purpose: KeyPurpose,
 }
 
@@ -21,10 +21,10 @@ pub struct RecoverShare {
 pub struct State {
     pub(super) restorations: BTreeMap<RestorationId, restoration::RestorationState>,
     /// This is where we remember consolidations we need to do from restorations we've finished.
-    pub(super) pending_physical_consolidations: BTreeSet<PendingPhysicalConsolidation>,
+    pub(super) pending_physical_consolidations: BTreeSet<PendingConsolidation>,
     /// For when we ask a device to enter a backup and we plan to immediately consolidate it because
     /// we already know the access structure.
-    tmp_waiting_consolidate: BTreeSet<PendingPhysicalConsolidation>,
+    tmp_waiting_consolidate: BTreeSet<PendingConsolidation>,
 
     tmp_waiting_save: BTreeMap<(DeviceId, ShareImage), RestorationId>,
 }
@@ -52,7 +52,7 @@ impl State {
                             threshold,
                             share_images: Default::default(),
                         },
-                        physical_shares: Default::default(),
+                        need_to_consolidate: Default::default(),
                         key_purpose,
                     },
                 );
@@ -73,12 +73,19 @@ impl State {
                         return None;
                     }
 
-                    if let Some(existing) = state.access_structure_ref {
-                        if existing != access_structure_ref {
-                            fail!("access_structure_ref didn't match");
+                    match (state.access_structure_ref, access_structure_ref) {
+                        (Some(existing), Some(new)) => {
+                            if existing != new {
+                                fail!("access_structure_ref didn't match");
+                            }
+                        }
+                        (None, Some(new)) => {
+                            state.access_structure_ref = Some(new);
+                        }
+                        (_, None) => {
+                            state.need_to_consolidate.insert(device_id);
                         }
                     }
-                    state.access_structure_ref = Some(access_structure_ref);
                 } else {
                     fail!("restoration id didn't exist")
                 }
@@ -89,29 +96,9 @@ impl State {
                     return None;
                 }
             }
-            DeviceFinishedPhysicalConsolidation(ref consolidation) => {
-                if !self.pending_physical_consolidations.remove(consolidation) {
+            DeviceFinishedConsolidation(consolidation) => {
+                if !self.pending_physical_consolidations.remove(&consolidation) {
                     fail!("pending physical restoration did not exist");
-                }
-            }
-            RestorationProgressPhysical {
-                restoration_id,
-                device_id,
-                share_image,
-            } => {
-                if let Some(state) = self.restorations.get_mut(&restoration_id) {
-                    let already_existing = state
-                        .access_structure
-                        .share_images
-                        .insert(device_id, share_image);
-
-                    if already_existing == Some(share_image) {
-                        return None;
-                    }
-
-                    state.physical_shares.insert(device_id);
-                } else {
-                    fail!("restoration id didn't exist")
                 }
             }
             FinishRestoration {
@@ -119,9 +106,9 @@ impl State {
                 access_structure_ref,
             } => {
                 if let Some(mut restoration) = self.restorations.remove(&restoration_id) {
-                    for device_id in restoration.physical_shares {
+                    for device_id in restoration.need_to_consolidate {
                         self.pending_physical_consolidations
-                            .insert(PendingPhysicalConsolidation {
+                            .insert(PendingConsolidation {
                                 device_id,
                                 access_structure_ref,
                                 share_index: restoration
@@ -132,6 +119,12 @@ impl State {
                                     .share_index,
                             });
                     }
+                }
+            }
+            DeviceNeedsConsolidation(consolidation) => {
+                let already_exists = self.pending_physical_consolidations.insert(consolidation);
+                if already_exists {
+                    return None;
                 }
             }
         }
@@ -251,13 +244,22 @@ impl FrostCoordinator {
         self.restoration
             .tmp_waiting_save
             .insert((phase.from, phase.backup.share_image), restoration_id);
+        let state = match self.get_restoration_state(restoration_id) {
+            Some(state) => state,
+            None => return vec![],
+        };
         let PhysicalBackupPhase {
             backup: EnteredPhysicalBackup { share_image, .. },
             from,
         } = phase;
         vec![CoordinatorSend::ToDevice {
             message: CoordinatorToDeviceMessage::Restoration(
-                CoordinatorRestoration::SavePhysicalBackup { share_image },
+                CoordinatorRestoration::SavePhysicalBackup {
+                    share_image,
+                    key_name: state.key_name,
+                    threshold: state.access_structure.threshold,
+                    purpose: state.key_purpose,
+                },
             ),
             destinations: [from].into(),
         }]
@@ -303,7 +305,7 @@ impl FrostCoordinator {
 
         self.restoration
             .tmp_waiting_consolidate
-            .insert(PendingPhysicalConsolidation {
+            .insert(PendingConsolidation {
                 device_id: from,
                 access_structure_ref,
                 share_index: share_image.share_index,
@@ -350,10 +352,10 @@ impl FrostCoordinator {
                     return Err(RestoreRecoverShareError::PurposeNotCompatible);
                 }
 
-                if let Some(access_structure_ref) = restoration.access_structure_ref {
-                    if access_structure_ref != recover_share.held_share.access_structure_ref {
-                        return Err(RestoreRecoverShareError::AcccessStructureMismatch);
-                    }
+                let got = recover_share.held_share.access_structure_ref;
+                let expected = restoration.access_structure_ref;
+                if got.is_some() && expected.is_some() && got != expected {
+                    return Err(RestoreRecoverShareError::AcccessStructureMismatch);
                 }
 
                 if restoration.key_name != recover_share.held_share.key_name {
@@ -435,31 +437,54 @@ impl FrostCoordinator {
     /// Recovers a share to an existing access structure
     pub fn recover_share(
         &mut self,
+        access_structure_ref: AccessStructureRef,
         recover_share: RecoverShare,
         encryption_key: SymmetricKey,
     ) -> Result<(), RecoverShareError> {
-        self.check_recover_share_compatible_with_key(recover_share.clone(), encryption_key)?;
+        self.check_recover_share_compatible_with_key(
+            access_structure_ref,
+            recover_share.clone(),
+            encryption_key,
+        )?;
+
+        let share_index = recover_share.held_share.share_image.share_index;
 
         self.mutate(Mutation::NewShare {
-            access_structure_ref: recover_share.held_share.access_structure_ref,
+            access_structure_ref,
             device_id: recover_share.held_by,
-            share_index: recover_share.held_share.share_image.share_index,
+            share_index,
         });
+
+        if recover_share.held_share.access_structure_ref.is_none() {
+            self.mutate(Mutation::Restoration(
+                RestorationMutation::DeviceNeedsConsolidation(PendingConsolidation {
+                    device_id: recover_share.held_by,
+                    access_structure_ref,
+                    share_index,
+                }),
+            ))
+        }
 
         Ok(())
     }
 
     pub fn check_recover_share_compatible_with_key(
         &self,
+        access_structure_ref: AccessStructureRef,
         recover_share: RecoverShare,
         encryption_key: SymmetricKey,
     ) -> Result<(), RecoverShareError> {
-        let access_structure_ref = recover_share.held_share.access_structure_ref;
+        let access_structure = self
+            .get_access_structure(access_structure_ref)
+            .ok_or(RecoverShareError::NoSuchAccessStructure)?;
+
+        if let Some(got) = recover_share.held_share.access_structure_ref {
+            if got != access_structure_ref {
+                return Err(RecoverShareError::AccessStructureMismatch);
+            }
+        }
         let frost_key = self
             .get_frost_key(access_structure_ref.key_id)
-            .ok_or(RecoverShareError::NoSuchAccessStructure)?;
-        let access_structure = self
-            .get_access_structure(recover_share.held_share.access_structure_ref)
             .ok_or(RecoverShareError::NoSuchAccessStructure)?;
 
         if access_structure
@@ -497,9 +522,10 @@ impl FrostCoordinator {
     ) {
         let held_share = recover_share.held_share;
         assert!(!self.restoration.restorations.contains_key(&restoration_id));
-        assert!(self
-            .get_access_structure(held_share.access_structure_ref)
-            .is_none());
+        if let Some(access_structure_ref) = held_share.access_structure_ref {
+            assert!(self.get_access_structure(access_structure_ref).is_none());
+        }
+
         self.mutate(Mutation::Restoration(RestorationMutation::NewRestoration {
             restoration_id,
             key_name: held_share.key_name,
@@ -544,10 +570,11 @@ impl FrostCoordinator {
                     .remove(&(from, share_image))
                 {
                     self.mutate(Mutation::Restoration(
-                        RestorationMutation::RestorationProgressPhysical {
+                        RestorationMutation::RestorationProgress {
                             restoration_id,
                             device_id: from,
                             share_image,
+                            access_structure_ref: None,
                         },
                     ));
 
@@ -571,7 +598,7 @@ impl FrostCoordinator {
                 access_structure_ref,
                 share_index,
             } => {
-                let consolidation = PendingPhysicalConsolidation {
+                let consolidation = PendingConsolidation {
                     device_id: from,
                     access_structure_ref,
                     share_index,
@@ -597,7 +624,7 @@ impl FrostCoordinator {
                     .contains(&consolidation)
                 {
                     self.mutate(Mutation::Restoration(
-                        RestorationMutation::DeviceFinishedPhysicalConsolidation(consolidation),
+                        RestorationMutation::DeviceFinishedConsolidation(consolidation),
                     ));
                 } else {
                     return Err(Error::coordinator_invalid_message(
@@ -621,12 +648,16 @@ impl FrostCoordinator {
                 let mut recoverable = vec![];
                 for held_share in held_shares {
                     let access_structure_ref = held_share.access_structure_ref;
+                    let knows_about_share = match access_structure_ref {
+                        Some(access_structure_ref) => self.knows_about_share(
+                            from,
+                            access_structure_ref,
+                            held_share.share_image.share_index,
+                        ),
+                        None => false,
+                    };
 
-                    if self.knows_about_share(
-                        from,
-                        access_structure_ref,
-                        held_share.share_image.share_index,
-                    ) {
+                    if knows_about_share {
                         already_got.push(held_share);
                     } else {
                         recoverable.push(held_share);
@@ -746,26 +777,22 @@ pub enum RestorationMutation {
         threshold: u16,
         key_purpose: KeyPurpose,
     },
-    RestorationProgressPhysical {
-        restoration_id: RestorationId,
-        device_id: DeviceId,
-        share_image: ShareImage,
-    },
     RestorationProgress {
         restoration_id: RestorationId,
         device_id: DeviceId,
-        access_structure_ref: AccessStructureRef,
         share_image: ShareImage,
+        access_structure_ref: Option<AccessStructureRef>,
     },
     FinishRestoration {
         restoration_id: RestorationId,
         /// the restoration has become this access structure
         access_structure_ref: AccessStructureRef,
     },
-    DeviceFinishedPhysicalConsolidation(PendingPhysicalConsolidation),
+    DeviceFinishedConsolidation(PendingConsolidation),
     CancelRestoration {
         restoration_id: RestorationId,
     },
+    DeviceNeedsConsolidation(PendingConsolidation),
 }
 
 #[derive(Clone, Debug)]
@@ -794,8 +821,10 @@ impl From<ToUserRestoration> for CoordinatorToUserMessage {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd, bincode::Encode, bincode::Decode)]
-pub struct PendingPhysicalConsolidation {
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, Ord, PartialOrd, bincode::Encode, bincode::Decode,
+)]
+pub struct PendingConsolidation {
     pub device_id: DeviceId,
     pub access_structure_ref: AccessStructureRef,
     pub share_index: PartyIndex,
@@ -919,6 +948,8 @@ pub enum RecoverShareError {
     AlreadyGotThisShare,
     /// The access structure for the share isn't known to the coordinator
     NoSuchAccessStructure,
+    /// Access structure for this share wasn't the same as the one you were trying to recover to
+    AccessStructureMismatch,
     /// Share image is wrong
     ShareImageIsWrong,
     /// The application provided the wrong decryption key so we couldn't verify the new key share.
@@ -940,6 +971,12 @@ impl fmt::Display for RecoverShareError {
             }
             RecoverShareError::DecryptionError => {
                 write!(f, "The application provided the wrong decryption key so we couldn't verify the new key share.")
+            }
+            RecoverShareError::AccessStructureMismatch => {
+                write!(
+                    f,
+                    "The recoverable share is for a different access structure"
+                )
             }
         }
     }

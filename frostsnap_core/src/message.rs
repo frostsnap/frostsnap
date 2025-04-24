@@ -115,6 +115,9 @@ pub enum CoordinatorRestoration {
     },
     SavePhysicalBackup {
         share_image: ShareImage,
+        key_name: String,
+        purpose: KeyPurpose,
+        threshold: u16,
     },
     /// Consolidate the saved secret share backup into a properly encrypted backup.
     Consolidate(Box<ConsolidateBackup>),
@@ -205,7 +208,7 @@ pub enum DeviceRestoration {
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
 pub struct HeldShare {
-    pub access_structure_ref: AccessStructureRef,
+    pub access_structure_ref: Option<AccessStructureRef>,
     pub share_image: ShareImage,
     pub threshold: u16,
     pub key_name: String,

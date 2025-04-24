@@ -855,13 +855,22 @@ class _PlugInPromptViewState extends State<_PlugInPromptView> {
           );
         } else if (widget.existing != null) {
           compatibility = coord.checkRecoverShareCompatible(
+            accessStructureRef: widget.existing!,
             recoverShare: detectedShare,
           );
         } else {
           compatibility = ShareCompatibility.Compatible;
         }
 
-        widget.onCandidateDetected(detectedShare, compatibility);
+        if (compatibility == ShareCompatibility.AlreadyGotIt) {
+          // keep searching if we've already got the share as part of the restoration.
+          // You might be wondering why
+          setState(() {
+            alreadyGot = detectedShare;
+          });
+        } else {
+          widget.onCandidateDetected(detectedShare, compatibility);
+        }
       } else {
         setState(() {
           alreadyGot = waitForRecoverShareState.alreadyGot.firstOrNull;
@@ -1019,7 +1028,10 @@ class _CandidateReadyView extends StatelessWidget {
               Navigator.pop(context);
             }
           } else if (existing != null) {
-            await coord.recoverShare(recoverShare: candidate);
+            await coord.recoverShare(
+              accessStructureRef: existing!,
+              recoverShare: candidate,
+            );
             if (context.mounted) {
               Navigator.pop(context);
             }

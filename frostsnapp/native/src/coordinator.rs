@@ -827,18 +827,26 @@ impl FfiCoordinator {
 
     pub fn recover_share(
         &self,
+        access_structure_ref: AccessStructureRef,
         recover_share: RecoverShare,
         encryption_key: SymmetricKey,
     ) -> Result<()> {
         {
+            let held_by = recover_share.held_by;
             {
                 let mut db = self.db.lock().unwrap();
                 let mut coordinator = self.coordinator.lock().unwrap();
                 coordinator.staged_mutate(&mut *db, |coordinator| {
-                    coordinator.recover_share(recover_share, encryption_key)?;
+                    coordinator.recover_share(
+                        access_structure_ref,
+                        recover_share,
+                        encryption_key,
+                    )?;
                     Ok(())
                 })?;
             }
+
+            self.exit_recovery_mode(held_by, encryption_key);
 
             if let Some(stream) = &*self.key_event_stream.lock().unwrap() {
                 stream.add(self.key_state());
@@ -866,7 +874,7 @@ impl FfiCoordinator {
             let restoration_state = coordinator
                 .get_restoration_state(restoration_id)
                 .ok_or(anyhow!("can't finish restoration that doesn't exist"))?;
-            let needs_consolidation = restoration_state.physical_shares;
+            let needs_consolidation = restoration_state.need_to_consolidate;
             let assid = coordinator.staged_mutate(&mut *db, |coordinator| {
                 Ok(coordinator.finish_restoring(
                     restoration_id,
@@ -1081,7 +1089,7 @@ impl FfiCoordinator {
     }
 
     /// This is for telling a device that a physical backup it just entered is ready to be used
-    /// right away.
+    /// right away. It never enters recovery mode.
     // XXX: Cannot be called during another UI protocol
     pub fn tell_device_to_consolidate_physical_backup(
         &self,
@@ -1143,6 +1151,7 @@ impl FfiCoordinator {
         result
     }
 
+    /// i.e. do a consolidation
     pub fn exit_recovery_mode(&self, device_id: DeviceId, encryption_key: SymmetricKey) {
         let coord = self.coordinator.lock().unwrap();
         let mut device_list = self.device_list.lock().unwrap();

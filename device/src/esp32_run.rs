@@ -524,7 +524,7 @@ where
                                             ui::EnteringBackupStage::Init { phase },
                                         ));
                                     }
-                                    SavedBackup { .. } => {
+                                    BackupSaved { .. } => {
                                         ui.set_recovery_mode(true);
                                     }
                                     ConsolidateBackup(phase) => {

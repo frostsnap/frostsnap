@@ -1300,9 +1300,11 @@ impl Coordinator {
 
     pub fn check_recover_share_compatible(
         &self,
+        access_structure_ref: AccessStructureRef,
         recover_share: RecoverShare,
     ) -> SyncReturn<ShareCompatibility> {
         let res = self.0.inner().check_recover_share_compatible_with_key(
+            access_structure_ref,
             recover_share.0.deref().clone(),
             crate::TEMP_KEY,
         );
@@ -1317,13 +1319,21 @@ impl Coordinator {
                     event!(Level::ERROR, "share decryption error");
                     ShareCompatibility::Incompatible
                 }
+                RecoverShareError::AccessStructureMismatch => ShareCompatibility::Incompatible,
             },
         })
     }
 
-    pub fn recover_share(&self, recover_share: RecoverShare) -> Result<()> {
-        self.0
-            .recover_share(recover_share.0.deref().clone(), crate::TEMP_KEY)
+    pub fn recover_share(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        recover_share: RecoverShare,
+    ) -> Result<()> {
+        self.0.recover_share(
+            access_structure_ref,
+            recover_share.0.deref().clone(),
+            crate::TEMP_KEY,
+        )
     }
 
     pub fn tell_device_to_enter_physical_backup(

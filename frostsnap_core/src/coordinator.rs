@@ -139,6 +139,10 @@ impl RecoveringAccessStructure {
             None
         }
     }
+
+    pub fn has_got_share(&self, device_id: DeviceId, share_image: ShareImage) -> bool {
+        self.share_images.get(&device_id).copied() == Some(share_image)
+    }
 }
 
 #[cfg(feature = "coordinator")]
@@ -1166,19 +1170,17 @@ impl FrostCoordinator {
             .get(&access_structure_ref.key_id)
             .and_then(|coord_key| {
                 let access_structure_id = access_structure_ref.access_structure_id;
-                Some(
-                    coord_key
-                        .get_access_structure(access_structure_id)?
-                        .contains_device(device_id),
-                )
+                let existing_index = coord_key
+                    .get_access_structure(access_structure_id)?
+                    .device_to_share_index
+                    .get(&device_id)
+                    .copied();
+
+                Some(existing_index == Some(index))
             })
             .unwrap_or(false);
 
-        let is_restoring = self
-            .restoration
-            .is_restoring(device_id, access_structure_ref, index);
-
-        already_got_under_key || is_restoring
+        already_got_under_key
     }
 
     pub fn root_shared_key(

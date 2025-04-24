@@ -127,38 +127,57 @@ impl common::Env for TestEnv {
                         recoverable,
                         ..
                     } => {
+                        // This logic here is just about doing something sensible in the context of a test.
+                        // We start a new restoration if we get a new share but don't already know about it.
                         for held_share in recoverable {
                             let recover_share = RecoverShare {
                                 held_by,
                                 held_share: held_share.clone(),
                             };
-                            if run
-                                .coordinator
-                                .get_access_structure(held_share.access_structure_ref)
-                                .is_some()
-                            {
-                                run.coordinator
-                                    .recover_share(recover_share.clone(), TEST_ENCRYPTION_KEY)
-                                    .unwrap();
-                            } else {
-                                let existing_restoration =
-                                    run.coordinator.restoring().find(|state| {
-                                        state.access_structure_ref
-                                            == Some(held_share.access_structure_ref)
-                                    });
 
-                                match existing_restoration {
-                                    Some(existing_restoration) => run
+                            match held_share.access_structure_ref {
+                                Some(access_structure_ref)
+                                    if run
                                         .coordinator
-                                        .add_recovery_share_to_restoration(
-                                            existing_restoration.restoration_id,
-                                            recover_share,
+                                        .get_access_structure(access_structure_ref)
+                                        .is_some() =>
+                                {
+                                    run.coordinator
+                                        .recover_share(
+                                            access_structure_ref,
+                                            recover_share.clone(),
+                                            TEST_ENCRYPTION_KEY,
                                         )
-                                        .unwrap(),
-                                    None => run.coordinator.start_restoring_key_from_recover_share(
-                                        recover_share,
-                                        RestorationId::new(rng),
-                                    ),
+                                        .unwrap();
+                                }
+                                _ => {
+                                    let existing_restoration =
+                                        run.coordinator.restoring().find(|state| {
+                                            state.access_structure_ref
+                                                == held_share.access_structure_ref
+                                        });
+
+                                    match existing_restoration {
+                                        Some(existing_restoration) => {
+                                            if !existing_restoration.access_structure.has_got_share(
+                                                recover_share.held_by,
+                                                recover_share.held_share.share_image,
+                                            ) {
+                                                run.coordinator
+                                                    .add_recovery_share_to_restoration(
+                                                        existing_restoration.restoration_id,
+                                                        recover_share,
+                                                    )
+                                                    .unwrap();
+                                            }
+                                        }
+                                        None => {
+                                            run.coordinator.start_restoring_key_from_recover_share(
+                                                recover_share,
+                                                RestorationId::new(rng),
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -228,7 +247,7 @@ impl common::Env for TestEnv {
                         );
                         run.extend_from_device(from, ack);
                     }
-                    SavedBackup { .. } => { /* informational */ }
+                    BackupSaved { .. } => { /* informational */ }
                 }
             }
             DeviceToUserMessage::VerifyAddress {
@@ -767,7 +786,7 @@ fn restore_a_share_by_connecting_devices_to_a_new_coordinator() {
 }
 
 #[test]
-fn delete_then_restore_a_share_by_connecting_devices_to_coordinator() {
+fn delete_then_restore_a_key_by_connecting_devices_to_coordinator() {
     let n_parties = 3;
     let threshold = 2;
     let mut rng = ChaCha20Rng::from_seed([42u8; 32]);

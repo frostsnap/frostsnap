@@ -6,7 +6,7 @@ use alloc::fmt::Debug;
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct State {
     tmp_loaded_backups: BTreeMap<ShareImage, SecretShare>,
-    saved_shares_incomplete: BTreeMap<ShareImage, SecretShare>,
+    saved_backups: BTreeMap<ShareImage, SavedBackup>,
 }
 
 impl State {
@@ -15,14 +15,16 @@ impl State {
         mutation: RestorationMutation,
     ) -> Option<RestorationMutation> {
         use RestorationMutation::*;
-        match mutation {
-            Save(secret_share) => {
-                self.saved_shares_incomplete
-                    .insert(ShareImage::from_secret(secret_share), secret_share);
+        match &mutation {
+            Save(saved_backup) => {
+                self.saved_backups.insert(
+                    ShareImage::from_secret(saved_backup.secret_share),
+                    saved_backup.clone(),
+                );
             }
             UnSave(share_image) => {
-                self.tmp_loaded_backups.remove(&share_image);
-                self.saved_shares_incomplete.remove(&share_image)?;
+                self.tmp_loaded_backups.remove(share_image);
+                self.saved_backups.remove(share_image)?;
             }
         }
         Some(mutation)
@@ -48,17 +50,32 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
                     }),
                 ))])
             }
-            &CoordinatorRestoration::SavePhysicalBackup { share_image } => {
+            &CoordinatorRestoration::SavePhysicalBackup {
+                share_image,
+                threshold,
+                purpose,
+                ref key_name,
+            } => {
                 if let Some(secret_share) = self.restoration.tmp_loaded_backups.remove(&share_image)
                 {
                     self.mutate(Mutation::Restoration(RestorationMutation::Save(
-                        secret_share,
+                        self::SavedBackup {
+                            secret_share,
+                            threshold,
+                            purpose,
+                            key_name: key_name.clone(),
+                        },
                     )));
                     let share_image = ShareImage::from_secret(secret_share);
 
                     Ok(vec![
                         DeviceSend::ToUser(Box::new(DeviceToUserMessage::Restoration(
-                            ToUserRestoration::SavedBackup { share_image },
+                            ToUserRestoration::BackupSaved {
+                                share_image,
+                                key_name: key_name.clone(),
+                                purpose,
+                                threshold,
+                            },
                         ))),
                         DeviceSend::ToCoordinator(Box::new(
                             DeviceToCoordinatorMessage::Restoration(
@@ -86,10 +103,13 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
 
                 let secret_share = self
                     .restoration
-                    .saved_shares_incomplete
+                    .saved_backups
                     .get(&share_image)
+                    // XXX: We drop all the extra metadata and just extract the secret share.
+                    // This data was always more of a hint about what was on the physical backup.
+                    .map(|saved_backup| &saved_backup.secret_share)
                     .or_else(|| self.restoration.tmp_loaded_backups.get(&share_image))
-                    .cloned();
+                    .copied();
 
                 if let Some(secret_share) = secret_share {
                     let expected_image = root_shared_key.share_image(secret_share.index);
@@ -278,10 +298,10 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
                         held_shares.push(HeldShare {
                             key_name: key_data.key_name.clone(),
                             share_image: share.share_image,
-                            access_structure_ref: AccessStructureRef {
+                            access_structure_ref: Some(AccessStructureRef {
                                 access_structure_id: *access_structure_id,
                                 key_id: *key_id,
-                            },
+                            }),
                             threshold: access_structure.threshold,
                             purpose: key_data.purpose,
                         });
@@ -289,11 +309,22 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
                 }
             }
         }
+
+        for (&share_image, saved_backup) in &self.restoration.saved_backups {
+            held_shares.push(HeldShare {
+                key_name: saved_backup.key_name.clone(),
+                access_structure_ref: None,
+                share_image,
+                threshold: saved_backup.threshold,
+                purpose: saved_backup.purpose,
+            });
+        }
+
         held_shares
     }
 
-    pub fn saved_backups(&self) -> &BTreeMap<ShareImage, SecretShare> {
-        &self.restoration.saved_shares_incomplete
+    pub fn saved_backups(&self) -> &BTreeMap<ShareImage, SavedBackup> {
+        &self.restoration.saved_backups
     }
 
     pub fn finish_consolidation(
@@ -327,17 +358,29 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq)]
 pub enum RestorationMutation {
-    Save(SecretShare),
+    Save(SavedBackup),
     UnSave(ShareImage),
 }
 
 #[derive(Debug, Clone)]
 pub enum ToUserRestoration {
-    EnterBackup { phase: LoadBackupPhase },
-    SavedBackup { share_image: ShareImage },
+    EnterBackup {
+        phase: LoadBackupPhase,
+    },
+    BackupSaved {
+        share_image: ShareImage,
+        key_name: String,
+        purpose: KeyPurpose,
+        threshold: u16,
+    },
     ConsolidateBackup(ConsolidatePhase),
-    DisplayBackupRequest { phase: Box<BackupDisplayPhase> },
-    DisplayBackup { key_name: String, backup: String },
+    DisplayBackupRequest {
+        phase: Box<BackupDisplayPhase>,
+    },
+    DisplayBackup {
+        key_name: String,
+        backup: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -358,4 +401,12 @@ pub struct BackupDisplayPhase {
 #[derive(Clone, Debug)]
 pub struct LoadBackupPhase {
     pub enter_physical_id: EnterPhysicalId,
+}
+
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
+pub struct SavedBackup {
+    pub secret_share: SecretShare,
+    pub threshold: u16,
+    pub purpose: KeyPurpose,
+    pub key_name: String,
 }
