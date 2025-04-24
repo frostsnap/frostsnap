@@ -1,9 +1,6 @@
 use alloc::{boxed::Box, string::String};
 use embedded_storage::nor_flash::NorFlash;
-use frostsnap_core::{
-    device::{self, SaveShareMutation},
-    schnorr_fun::frost::SecretShare,
-};
+use frostsnap_core::device::{self, SaveShareMutation};
 use frostsnap_embedded::{AbSlot, FlashPartition, NorFlashLog};
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
@@ -12,10 +9,23 @@ pub enum Event {
     Name(String),
 }
 
-#[derive(Debug, Clone, bincode::Encode, bincode::Decode, Default)]
-pub struct ShareSlot {
-    pub saved_share: Option<SaveShareMutation>,
-    pub recovering_share: Option<SecretShare>,
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+pub enum ShareSlot {
+    SecretShare(SaveShareMutation),
+    SavedBackup(device::restoration::SavedBackup),
+}
+
+impl ShareSlot {
+    pub fn into_mutations(self) -> impl IntoIterator<Item = device::Mutation> {
+        core::iter::once(match self {
+            ShareSlot::SecretShare(save_share_mutation) => {
+                device::Mutation::SaveShare(Box::new(save_share_mutation))
+            }
+            ShareSlot::SavedBackup(saved_backup) => device::Mutation::Restoration(
+                device::restoration::RestorationMutation::Save(saved_backup),
+            ),
+        })
+    }
 }
 
 pub struct EventLog<'a, S> {
@@ -38,14 +48,19 @@ impl<'a, S: NorFlash> EventLog<'a, S> {
     }
 
     pub fn push(&mut self, value: Event) -> Result<(), bincode::error::EncodeError> {
-        match &value {
+        match value {
+            // For these mutations (which contain secret shares of some type) we don't write them to
+            // the log we write them to
             Event::Core(device::Mutation::SaveShare(save_share_mutation)) => {
-                self.share_slot.write(&ShareSlot {
-                    saved_share: Some(*save_share_mutation.clone()),
-                    ..Default::default()
-                });
+                self.share_slot
+                    .write(&ShareSlot::SecretShare(*save_share_mutation));
             }
-            _ => {
+            Event::Core(device::Mutation::Restoration(
+                device::restoration::RestorationMutation::Save(saved_backup),
+            )) => {
+                self.share_slot.write(&ShareSlot::SavedBackup(saved_backup));
+            }
+            value => {
                 self.log.push(value)?;
             }
         }
@@ -55,13 +70,14 @@ impl<'a, S: NorFlash> EventLog<'a, S> {
     pub fn seek_iter(
         &mut self,
     ) -> impl Iterator<Item = Result<Event, bincode::error::DecodeError>> + use<'_, 'a, S> {
-        self.log
-            .seek_iter::<Event>()
-            .chain(self.share_slot.read::<ShareSlot>().and_then(|share_slot| {
-                Some(Ok(Event::Core(device::Mutation::SaveShare(Box::new(
-                    share_slot.saved_share?,
-                )))))
-            }))
+        self.log.seek_iter::<Event>().chain(
+            self.share_slot
+                .read::<ShareSlot>()
+                .into_iter()
+                .flat_map(|share_slot| share_slot.into_mutations())
+                .map(Event::Core)
+                .map(Ok),
+        )
     }
 
     pub fn append(
@@ -72,9 +88,5 @@ impl<'a, S: NorFlash> EventLog<'a, S> {
             self.push(item)?;
         }
         Ok(())
-    }
-
-    pub fn read_share_slot(&self) -> Option<ShareSlot> {
-        self.share_slot.read()
     }
 }
