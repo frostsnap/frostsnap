@@ -217,7 +217,7 @@ impl Transaction {
         SyncReturn((|| -> Option<u64> {
             let inputs_sum = self._sum_inputs(None)?;
             let outputs_sum = self._sum_outputs(None);
-            Some(outputs_sum.saturating_sub(inputs_sum))
+            Some(inputs_sum.saturating_sub(outputs_sum))
         })())
     }
 
