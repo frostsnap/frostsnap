@@ -872,6 +872,7 @@ class _EnterDeviceNameView extends StatelessWidget {
         const SizedBox(height: 16),
         DeviceNameField(
           id: deviceId,
+          mode: DeviceNameMode.rename,
           onNamed: (name) {
             onDeviceName?.call(name);
           },

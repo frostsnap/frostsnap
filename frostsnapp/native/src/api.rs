@@ -2180,12 +2180,13 @@ impl BackupManager {
 
     pub fn backup_stream_emit(&self, key_id: KeyId) -> Result<()> {
         let streams = self.backup_run_streams.lock().unwrap();
-        let stream = match streams.get(&key_id) {
-            Some(stream) => stream,
-            None => return Err(anyhow!("no backup stream found for key: {}", key_id)),
+        match streams.get(&key_id) {
+            Some(stream) => {
+                stream.add(self.get_backup_run(key_id).0);
+            }
+            None => { /* no one's listening yet*/ }
         };
 
-        stream.add(self.get_backup_run(key_id).0);
         Ok(())
     }
 
