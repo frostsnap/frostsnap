@@ -46,34 +46,12 @@ class _AddressListState extends State<AddressList> {
   void update(BuildContext context, {void Function()? andSetState}) async {
     final walletCtx = WalletContext.of(context);
     if (walletCtx != null) {
-      await walletCtx.superWallet.nextUnusedAddress(
-        masterAppkey: walletCtx.masterAppkey,
-      );
-      final addresses = walletCtx.superWallet.addressesState(
-        masterAppkey: walletCtx.masterAppkey,
-      );
       if (mounted) {
         setState(() {
-          _addresses = addresses;
+          _addresses = walletCtx.wallet.addressesState();
           if (andSetState != null) andSetState();
         });
       }
-    }
-  }
-
-  void deriveNewAddress(BuildContext context) async {
-    final walletCtx = WalletContext.of(context)!;
-
-    await walletCtx.superWallet.nextAddress(
-      masterAppkey: walletCtx.masterAppkey,
-    );
-    if (context.mounted) {
-      update(context);
-      await scrollController.animateTo(
-        0.0,
-        duration: Durations.long4,
-        curve: Curves.easeInOutCubicEmphasized,
-      );
     }
   }
 
@@ -278,18 +256,15 @@ class _ReceiverPageState extends State<ReceivePage> {
   void initState() {
     super.initState();
 
-    final startIndex = widget.derivationIndex;
-    (startIndex != null) ? updateToIndex(startIndex) : updateToNextUnused();
+    final startIndex = widget.derivationIndex ?? wallet.nextAddress().index;
+    updateToIndex(startIndex);
 
     txStreamSub = widget.txStream.listen((txState) {
       if (context.mounted) {
         Address? addr;
         final index = _address?.index;
         if (index != null) {
-          addr = wallet.superWallet.addressState(
-            masterAppkey: wallet.masterAppkey,
-            index: index,
-          );
+          addr = wallet.addressState(index);
         }
         setState(() {
           allTxs = txState.txs;
@@ -309,25 +284,11 @@ class _ReceiverPageState extends State<ReceivePage> {
   }
 
   void updateToIndex(int index, {ReceivePageFocus? next}) {
-    final addr = wallet.superWallet.addressState(
-      masterAppkey: wallet.masterAppkey,
-      index: index,
-    );
+    final addr = wallet.addressState(index);
     if (mounted) {
       setState(() {
         _address = addr;
         if (next != null) _focus = next;
-      });
-    }
-  }
-
-  void updateToNextUnused() async {
-    final addr = await wallet.superWallet.nextUnusedAddress(
-      masterAppkey: wallet.masterAppkey,
-    );
-    if (mounted) {
-      setState(() {
-        _address = addr;
       });
     }
   }
@@ -682,10 +643,7 @@ class _ReceiverPageState extends State<ReceivePage> {
 
   void markAddressShared(BuildContext context, Address address) async {
     final walletCtx = WalletContext.of(context)!;
-    await walletCtx.superWallet.markAddressShared(
-      masterAppkey: walletCtx.masterAppkey,
-      derivationIndex: address.index,
-    );
+    await walletCtx.wallet.markAddressShared(address.index);
     updateToIndex(address.index);
   }
 

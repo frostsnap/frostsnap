@@ -715,22 +715,15 @@ impl SuperWallet {
         self.chain_sync.reconnect();
     }
 
-    pub fn next_address(&self, master_appkey: MasterAppkey) -> Result<Address> {
-        self.inner
-            .lock()
-            .unwrap()
-            .next_address(master_appkey)
-            .map(Into::into)
+    pub fn next_address(&self, master_appkey: MasterAppkey) -> SyncReturn<Address> {
+        SyncReturn(
+            self.inner
+                .lock()
+                .unwrap()
+                .next_address(master_appkey)
+                .into(),
+        )
     }
-
-    pub fn next_unused_address(&self, master_appkey: MasterAppkey) -> Result<Address> {
-        self.inner
-            .lock()
-            .unwrap()
-            .next_unused_address(master_appkey)
-            .map(Into::into)
-    }
-
     pub fn address_state(
         &self,
         master_appkey: MasterAppkey,

@@ -32,6 +32,25 @@ class Wallet {
   KeyId keyId() {
     return api.masterAppkeyExtToKeyId(masterAppkey: masterAppkey);
   }
+
+  Address nextAddress() {
+    return superWallet.nextAddress(masterAppkey: masterAppkey);
+  }
+
+  Address? addressState(int index) {
+    return superWallet.addressState(masterAppkey: masterAppkey, index: index);
+  }
+
+  List<Address> addressesState() {
+    return superWallet.addressesState(masterAppkey: masterAppkey);
+  }
+
+  markAddressShared(int index) async {
+    return superWallet.markAddressShared(
+      masterAppkey: masterAppkey,
+      derivationIndex: index,
+    );
+  }
 }
 
 class WalletHome extends StatelessWidget {
