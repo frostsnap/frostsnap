@@ -759,7 +759,7 @@ class _ReceiverPageState extends State<ReceivePage> {
                     children: [
                       TextSpan(
                         text:
-                            "Confirm their address matches the address on the device's screen. Make sure the two ",
+                            "Confirm they have the same address as shown on the device's screen.\nMake sure the two ",
                       ),
                       TextSpan(
                         text: "highlighted",
@@ -782,7 +782,7 @@ class _ReceiverPageState extends State<ReceivePage> {
               SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  "Do not send the Bitcoin if it doesn't match.",
+                  "Do not send the bitcoin if it doesn't match.",
                   softWrap: true,
                 ),
               ),
