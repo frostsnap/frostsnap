@@ -6,20 +6,18 @@ import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/theme.dart';
 
 class FullscreenActionDialogController extends ChangeNotifier {
-  String? _title;
-  String? _subtitle;
+  String? title;
+  Function(BuildContext)? body;
   final Set<DeviceId> _actionNeeded = deviceIdSet([]);
+  Function(BuildContext)? dismissButton;
+  Function()? onDismissed;
 
-  FullscreenActionDialogController({String? title, String? subtitle})
-    : _title = title,
-      _subtitle = subtitle;
-
-  setContent(String title, String subtitle) {
-    if (title == _title && subtitle == _subtitle) return;
-    _title = title;
-    _subtitle = subtitle;
-    _safeNotify();
-  }
+  FullscreenActionDialogController({
+    this.title,
+    this.body,
+    this.dismissButton,
+    this.onDismissed,
+  });
 
   addActionNeeded(BuildContext context, DeviceId deviceId) {
     final hadActionsNeeded = _actionNeeded.isNotEmpty;
@@ -35,8 +33,6 @@ class FullscreenActionDialogController extends ChangeNotifier {
     if (_actionNeeded.remove(deviceId)) _safeNotify();
   }
 
-  String? get title => _title;
-  String? get subtitle => _subtitle;
   bool get hasActionsNeeded => _actionNeeded.isNotEmpty;
   Iterable<DeviceId> get actionsNeeded => _actionNeeded;
 
@@ -73,98 +69,122 @@ void showCannotDismissDialog(BuildContext context) async {
   );
 }
 
-Widget buildFullscreenActionDialog(
+Future<T?> showFullscreenActionDialog<T>(
   BuildContext context, {
-  String? title,
-  String? subtitle,
-}) {
-  final theme = Theme.of(context);
-  return Dialog.fullscreen(
-    backgroundColor: theme.colorScheme.surface.withAlpha(200),
-    child: Padding(
-      padding: EdgeInsets.all(20),
-      child: Column(
-        mainAxisSize: MainAxisSize.max,
-        spacing: 20,
-        children: [
-          Expanded(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: 580),
+  required FullscreenActionDialogController controller,
+}) async {
+  // Use
+  final res = await showGeneralDialog<T>(
+    context: context,
+    barrierDismissible: false,
+    barrierColor: Colors.black54, // same as default
+    barrierLabel: '', // for accessibility
+    transitionDuration: const Duration(milliseconds: 500),
+    pageBuilder: (ctx, animation, secondary) {
+      // build your exact same dialog tree here
+      final dialog = ListenableBuilder(
+        listenable: controller,
+        builder: (ctx, _) {
+          if (!controller.hasActionsNeeded) {
+            Navigator.pop(ctx);
+          }
+          final theme = Theme.of(ctx);
+          return Dialog.fullscreen(
+            backgroundColor: theme.colorScheme.surface.withAlpha(200),
+            child: Scaffold(
+              backgroundColor: Colors.transparent,
+              appBar: AppBar(
+                elevation: 0,
+                forceMaterialTransparency: true,
+                leading:
+                    controller.onDismissed != null
+                        ? IconButton(
+                          icon: Icon(
+                            Icons.close,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                          onPressed: () => Navigator.pop(ctx),
+                        )
+                        : null,
+              ),
+              body: Padding(
+                padding: EdgeInsets.all(20),
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
+                  mainAxisSize: MainAxisSize.max,
+                  spacing: 20,
                   children: [
-                    SvgPicture.string(
-                      DeviceWidget.deviceSvg,
-                      width: 162,
-                      height: 134,
-                      colorFilter: ColorFilter.mode(
-                        theme.colorScheme.onSurface,
-                        BlendMode.srcATop,
+                    Spacer(flex: 10),
+                    Center(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: 580),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SvgPicture.string(
+                              DeviceWidget.deviceSvg,
+                              width: 162,
+                              height: 134,
+                              colorFilter: ColorFilter.mode(
+                                theme.colorScheme.onSurface,
+                                BlendMode.srcATop,
+                              ),
+                            ),
+                            SizedBox(height: 32),
+                            if (controller.title != null)
+                              Text(
+                                controller.title!,
+                                style: theme.textTheme.headlineSmall,
+                                textAlign: TextAlign.center,
+                              ),
+                            SizedBox(height: 20),
+                            if (controller.body != null)
+                              DefaultTextStyle(
+                                style: theme.textTheme.bodyLarge!,
+                                child: controller.body!.call(ctx),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
-                    SizedBox(height: 32),
-                    if (title != null)
+                    Spacer(flex: 3),
+                    if (controller.dismissButton == null) ...[
+                      Spacer(flex: 3),
                       Text(
-                        title,
-                        style: theme.textTheme.headlineSmall,
+                        'complete the action on the device or unplug it',
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                         textAlign: TextAlign.center,
                       ),
-                    SizedBox(height: 20),
-                    if (subtitle != null)
-                      Text(
-                        subtitle,
-                        style: theme.textTheme.bodyLarge,
-                        textAlign: TextAlign.center,
-                      ),
+                    ],
+                    if (controller.dismissButton != null) ...[
+                      Center(child: controller.dismissButton!(context)),
+                      Spacer(flex: 3),
+                    ],
                   ],
                 ),
               ),
             ),
-          ),
-          Text(
-            'To dismiss this screen, unplug the device.',
-            style: theme.textTheme.labelLarge?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-void showFullscreenActionDialog(
-  BuildContext context, {
-  required FullscreenActionDialogController controller,
-}) async {
-  await showDialog(
-    context: context,
-    barrierDismissible: false,
-    builder: (context) {
-      final dialog = ListenableBuilder(
-        listenable: controller,
-        builder: (context, _) {
-          if (!controller.hasActionsNeeded) {
-            Navigator.pop(context);
-          }
-          return buildFullscreenActionDialog(
-            context,
-            title: controller.title,
-            subtitle: controller.subtitle,
           );
         },
       );
 
       return PopScope(
-        canPop: false,
+        canPop: controller.onDismissed != null,
         onPopInvokedWithResult: (didPop, result) {
           if (didPop) return;
-          showCannotDismissDialog(context);
+          showCannotDismissDialog(ctx);
         },
         child: BackdropFilter(filter: blurFilter, child: dialog),
       );
     },
+    transitionBuilder: (ctx, animation, secondary, child) {
+      // fade in from 0→1 over 1 second
+      return FadeTransition(opacity: animation, child: child);
+    },
   );
+
+  controller.onDismissed?.call();
+
+  return res;
 }
