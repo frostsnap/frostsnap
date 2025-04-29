@@ -6,6 +6,7 @@ use bdk_chain::{
     bitcoin::{
         self,
         bip32::{ChildNumber, DerivationPath},
+        ScriptBuf,
     },
     miniscript::{
         descriptor::{DerivPaths, DescriptorMultiXKey, Wildcard},
@@ -13,7 +14,7 @@ use bdk_chain::{
     },
 };
 use frostsnap_core::{
-    tweak::{AppTweakKind, BitcoinAccount, DerivationPathExt, Keychain},
+    tweak::{AppTweakKind, BitcoinAccount, BitcoinBip32Path, DerivationPathExt, Keychain},
     MasterAppkey,
 };
 use wallet::KeychainId;
@@ -61,6 +62,17 @@ pub fn descriptor_for_account_keychain(
         .into_single_descriptors()
         .expect("infallible")
         .remove(idx)
+}
+
+fn peek_spk(approot: MasterAppkey, path: BitcoinBip32Path) -> ScriptBuf {
+    let descriptor = descriptor_for_account_keychain(
+        (approot, path.account_keychain),
+        bitcoin::NetworkKind::Main,
+    );
+    descriptor
+        .at_derivation_index(path.index)
+        .expect("infallible")
+        .script_pubkey()
 }
 
 #[cfg(test)]
