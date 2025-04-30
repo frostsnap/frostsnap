@@ -475,13 +475,15 @@ showWalletCreatedDialog(
                 Navigator.of(context).pop();
                 showBottomSheetOrDialog(
                   context,
+                  titleText: 'Backup Checklist',
                   builder:
-                      (context) => SuperWalletContext.of(
+                      (context, scrollController) => SuperWalletContext.of(
                         context,
                       )!.tryWrapInWalletContext(
                         keyId: accessStructureRef.keyId,
                         child: BackupChecklist(
                           accessStructure: accessStructure,
+                          scrollController: scrollController,
                           showAppBar: true,
                         ),
                       ),

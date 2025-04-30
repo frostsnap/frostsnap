@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:frostsnapp/animated_check.dart';
 import 'package:frostsnapp/bridge_definitions.dart';
 import 'package:frostsnapp/contexts.dart';
+import 'package:frostsnapp/device_action_fullscreen_dialog.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/theme.dart';
@@ -28,7 +29,7 @@ class TxDetailsModel {
 
   update(Transaction tx) => this.tx = tx;
 
-  int get netValue => tx.netValue;
+  int get netValue => tx.balanceDelta() ?? 0;
 
   /// Number of blocks in our view of the best chain.
   int get chainLength => chainTipHeight + 1;
@@ -37,7 +38,7 @@ class TxDetailsModel {
   int get confirmations =>
       chainLength - (tx.confirmationTime?.height ?? chainLength);
   bool get isConfirmed => confirmations > 0;
-  bool get isSend => tx.netValue < 0;
+  bool get isSend => (tx.balanceDelta() ?? 0) < 0;
 
   /// Human-readable string of the last update. This is either the confirmation time or when we last
   /// saw the tx in the mempool.
@@ -188,6 +189,7 @@ class TxSentOrReceivedTile extends StatelessWidget {
 }
 
 class TxDetailsPage extends StatefulWidget {
+  final ScrollController? scrollController;
   final TxDetailsModel txDetails;
   final SignSessionId? signingSessionId;
   final SignSessionId? finishedSigningSessionId;
@@ -198,6 +200,7 @@ class TxDetailsPage extends StatefulWidget {
 
   const TxDetailsPage({
     super.key,
+    this.scrollController,
     required this.txStates,
     required this.txDetails,
   }) : signingSessionId = null,
@@ -208,6 +211,7 @@ class TxDetailsPage extends StatefulWidget {
 
   const TxDetailsPage.needsBroadcast({
     super.key,
+    this.scrollController,
     required this.txStates,
     required this.txDetails,
     required SignSessionId this.finishedSigningSessionId,
@@ -218,6 +222,7 @@ class TxDetailsPage extends StatefulWidget {
 
   const TxDetailsPage.restoreSigning({
     super.key,
+    this.scrollController,
     required this.txStates,
     required this.txDetails,
     required SignSessionId this.signingSessionId,
@@ -228,6 +233,7 @@ class TxDetailsPage extends StatefulWidget {
 
   const TxDetailsPage.startSigning({
     super.key,
+    this.scrollController,
     required this.txStates,
     required this.txDetails,
     required AccessStructureRef this.accessStructureRef,
@@ -254,6 +260,10 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   bool? broadcastDone;
   Set<DeviceId> connectedDevices = deviceIdSet([]);
 
+  final actionDialogController = FullscreenActionDialogController(
+    title: 'Confirm transaction on device',
+  );
+
   bool? get signingDone =>
       signingState == null
           ? null
@@ -267,6 +277,10 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   onSigningSessionData(SigningState data) {
     for (final deviceId in data.connectedButNeedRequest) {
       coord.requestDeviceSign(deviceId: deviceId, sessionId: data.sessionId);
+      actionDialogController.addActionNeeded(context, deviceId);
+    }
+    for (final deviceId in data.gotShares) {
+      actionDialogController.removeActionNeeded(deviceId);
     }
     if (mounted) {
       setState(() {
@@ -282,6 +296,14 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
         connectedDevices.clear();
         connectedDevices.addAll(data.state.devices.map((device) => device.id));
       });
+      // Remove dialogs of devices that are no longer connected.
+      actionDialogController.actionsNeeded
+          // Collect first to avoid reading/writing at the same time.
+          .toList()
+          .whereNot((deviceId) => connectedDevices.contains(deviceId))
+          .forEach(
+            (deviceId) => actionDialogController.removeActionNeeded(deviceId),
+          );
     }
   }
 
@@ -322,6 +344,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
       signingSub = null;
     }
     txStateSub.cancel();
+    actionDialogController.dispose();
     super.dispose();
   }
 
@@ -331,21 +354,10 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return CustomScrollView(
+      controller: widget.scrollController,
       shrinkWrap: true,
       physics: ClampingScrollPhysics(),
       slivers: [
-        SliverAppBar(
-          title: Text('Transaction'),
-          titleTextStyle: theme.textTheme.titleMedium,
-          centerTitle: true,
-          forceMaterialTransparency: true,
-          leading: IconButton(
-            onPressed: () => Navigator.pop(context),
-            icon: Icon(Icons.close),
-          ),
-          actionsPadding: EdgeInsets.symmetric(horizontal: 10.0),
-          automaticallyImplyLeading: false,
-        ),
         SliverSafeArea(
           sliver: SliverList(
             delegate: SliverChildListDelegate.fixed([
@@ -665,10 +677,11 @@ Widget buildDetailsColumn(
 }) {
   final walletCtx = WalletContext.of(context)!;
   final theme = Theme.of(context);
+  final fee = txDetails.tx.fee();
   return Column(
     children: [
       if (txDetails.isSend)
-        ...txDetails.tx.recipients.where((info) => !info.isMine).map((info) {
+        ...txDetails.tx.recipients().where((info) => !info.isMine).map((info) {
           final address = info.address(network: walletCtx.network);
           return Column(
             children: [
@@ -722,11 +735,8 @@ Widget buildDetailsColumn(
               ),
             ],
           ),
-          title:
-              txDetails.tx.fee == null
-                  ? Text('Unknown')
-                  : SatoshiText(value: txDetails.tx.fee),
-          onTap: () => copyAction(context, 'Fee amount', '${txDetails.tx.fee}'),
+          title: fee == null ? Text('Unknown') : SatoshiText(value: fee),
+          onTap: () => copyAction(context, 'Fee amount', '$fee'),
         ),
       if (showConfirmations)
         ListTile(

@@ -37,8 +37,8 @@ class SuperWalletContext extends InheritedWidget {
   SuperWalletContext({super.key, required super.child, required this.appCtx});
 
   final Map<KeyId, Stream<TxState>> _txStreams = keyIdMap();
-  final Map<KeyId, Stream<BackupRun>> _backupStreams = keyIdMap();
   final Map<KeyId, Stream<void>> _signingSessionSignals = keyIdMap();
+  final Map<KeyId, Stream<BackupRun>> _backupStreams = keyIdMap();
 
   // Static method to allow easy access to the Foo instance
   static SuperWalletContext? of(BuildContext context) {
@@ -162,8 +162,8 @@ class WalletContext extends InheritedWidget {
     return false;
   }
 
-  get superWallet => wallet.superWallet;
-  get masterAppkey => wallet.masterAppkey;
+  SuperWallet get superWallet => wallet.superWallet;
+  MasterAppkey get masterAppkey => wallet.masterAppkey;
   get keyId => api.masterAppkeyExtToKeyId(masterAppkey: wallet.masterAppkey);
   get network => wallet.superWallet.network;
 }
