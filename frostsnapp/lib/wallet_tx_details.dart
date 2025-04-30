@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:frostsnapp/animated_check.dart';
 import 'package:frostsnapp/bridge_definitions.dart';
 import 'package:frostsnapp/contexts.dart';
+import 'package:frostsnapp/device_action_fullscreen_dialog.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/theme.dart';
@@ -259,6 +260,10 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   bool? broadcastDone;
   Set<DeviceId> connectedDevices = deviceIdSet([]);
 
+  final actionDialogController = FullscreenActionDialogController(
+    title: 'Confirm transaction on device',
+  );
+
   bool? get signingDone =>
       signingState == null
           ? null
@@ -272,6 +277,10 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   onSigningSessionData(SigningState data) {
     for (final deviceId in data.connectedButNeedRequest) {
       coord.requestDeviceSign(deviceId: deviceId, sessionId: data.sessionId);
+      actionDialogController.addActionNeeded(context, deviceId);
+    }
+    for (final deviceId in data.gotShares) {
+      actionDialogController.removeActionNeeded(deviceId);
     }
     if (mounted) {
       setState(() {
@@ -287,6 +296,14 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
         connectedDevices.clear();
         connectedDevices.addAll(data.state.devices.map((device) => device.id));
       });
+      // Remove dialogs of devices that are no longer connected.
+      actionDialogController.actionsNeeded
+          // Collect first to avoid reading/writing at the same time.
+          .toList()
+          .whereNot((deviceId) => connectedDevices.contains(deviceId))
+          .forEach(
+            (deviceId) => actionDialogController.removeActionNeeded(deviceId),
+          );
     }
   }
 
@@ -327,6 +344,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
       signingSub = null;
     }
     txStateSub.cancel();
+    actionDialogController.dispose();
     super.dispose();
   }
 

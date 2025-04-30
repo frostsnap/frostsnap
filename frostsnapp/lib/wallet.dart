@@ -259,21 +259,6 @@ showRecoverWalletsDialog(
 ) {
   final theme = Theme.of(context);
 
-  final appBar = SliverAppBar(
-    title: Text('Recover Wallet'),
-    titleTextStyle: theme.textTheme.titleMedium,
-    centerTitle: true,
-    backgroundColor: theme.colorScheme.surfaceContainerLow,
-    pinned: true,
-    stretch: true,
-    forceMaterialTransparency: true,
-    automaticallyImplyLeading: false,
-    leading: IconButton(
-      onPressed: () => Navigator.pop(context),
-      icon: Icon(Icons.close),
-    ),
-  );
-
   final list = ListenableBuilder(
     listenable: controller,
     builder: (context, _) {
@@ -350,44 +335,24 @@ showRecoverWalletsDialog(
     },
   );
 
-  final scrollView = CustomScrollView(
-    shrinkWrap: true,
-    physics: ClampingScrollPhysics(),
-    slivers: [
-      appBar,
-      SliverToBoxAdapter(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: 210),
-          child: Center(child: list),
+  showBottomSheetOrDialog(
+    context,
+    builder:
+        (context, controller) => CustomScrollView(
+          controller: controller,
+          shrinkWrap: true,
+          slivers: [
+            // appBar,
+            SliverToBoxAdapter(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: 210),
+                child: Center(child: list),
+              ),
+            ),
+          ],
         ),
-      ),
-    ],
+    titleText: 'Recover Wallet',
   );
-
-  final mediaSize = MediaQuery.sizeOf(context);
-  if (mediaSize.width < 600) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      isDismissible: true,
-      showDragHandle: false,
-      builder: (context) => scrollView,
-    );
-  } else {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return Dialog(
-          backgroundColor: theme.colorScheme.surfaceContainer,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: 560),
-            child: scrollView,
-          ),
-        );
-      },
-    );
-  }
 }
 
 class TxList extends StatefulWidget {

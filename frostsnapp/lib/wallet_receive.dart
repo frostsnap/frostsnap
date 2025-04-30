@@ -5,6 +5,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/bridge_definitions.dart';
 import 'package:frostsnapp/contexts.dart';
+import 'package:frostsnapp/device_action_fullscreen_dialog.dart';
 import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/theme.dart';
@@ -205,6 +206,8 @@ class _ReceiverPageState extends State<ReceivePage> {
   List<Transaction> allTxs = [];
 
   BehaviorSubject<VerifyAddressProtocolState>? _verifyStream;
+  late final FullscreenActionDialogController fullscreenDialogController;
+  bool verificationSuccess = false;
 
   ReceivePageFocus _focus = ReceivePageFocus.share;
   ReceivePageFocus get focus => _focus;
@@ -256,6 +259,20 @@ class _ReceiverPageState extends State<ReceivePage> {
   void initState() {
     super.initState();
 
+    fullscreenDialogController = FullscreenActionDialogController(
+      title: 'Verify address on device',
+      body: _dialogBodyBuilder,
+      dismissButton: _dismissButtonBuilder,
+      onDismissed: () {
+        if (verificationSuccess) {
+          focus = ReceivePageFocus.awaitTx;
+        } else {
+          focus = ReceivePageFocus.share;
+        }
+        verificationSuccess = false;
+      },
+    );
+
     final startIndex = widget.derivationIndex ?? wallet.nextAddress().index;
     updateToIndex(startIndex);
 
@@ -276,11 +293,12 @@ class _ReceiverPageState extends State<ReceivePage> {
 
   @override
   void dispose() {
-    super.dispose();
     if (_focus == ReceivePageFocus.verify) {
       coord.cancelProtocol();
     }
     txStreamSub.cancel();
+    fullscreenDialogController.dispose();
+    super.dispose();
   }
 
   void updateToIndex(int index, {ReceivePageFocus? next}) {
@@ -453,6 +471,24 @@ class _ReceiverPageState extends State<ReceivePage> {
                         final displayingDevices = targetDevices.intersection(
                           connectedDevices,
                         );
+                        for (var deviceId in displayingDevices) {
+                          fullscreenDialogController.addActionNeeded(
+                            context,
+                            deviceId,
+                          );
+                        }
+
+                        // collect the list first because we're going to mutate it
+                        fullscreenDialogController.actionsNeeded
+                            .toList()
+                            .whereNot(
+                              (deviceId) =>
+                                  displayingDevices.contains(deviceId),
+                            )
+                            .forEach(
+                              (deviceId) => fullscreenDialogController
+                                  .removeActionNeeded(deviceId),
+                            );
 
                         return Column(
                           mainAxisSize: MainAxisSize.min,
@@ -469,48 +505,12 @@ class _ReceiverPageState extends State<ReceivePage> {
                                 top: 20,
                                 bottom: 36,
                               ),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                spacing: 16,
-                                children:
-                                    displayingDevices.isEmpty
-                                        ? [
-                                          Text(
-                                            'Plug in a device to verify the address on a device screen.',
-                                            softWrap: true,
-                                            style: theme.textTheme.bodyMedium
-                                                ?.copyWith(
-                                                  color:
-                                                      theme
-                                                          .colorScheme
-                                                          .onSurfaceVariant,
-                                                ),
-                                          ),
-                                        ]
-                                        : [
-                                          Text(
-                                            'Check that the sender can see the same address as shown on the device.',
-                                            softWrap: true,
-                                            style: theme.textTheme.bodyMedium
-                                                ?.copyWith(
-                                                  color:
-                                                      theme
-                                                          .colorScheme
-                                                          .onSurfaceVariant,
-                                                ),
-                                          ),
-                                          Text(
-                                            "Two random chunks have been highlighted for convenience.",
-                                            softWrap: true,
-                                            style: theme.textTheme.bodyMedium
-                                                ?.copyWith(
-                                                  color:
-                                                      theme
-                                                          .colorScheme
-                                                          .onSurfaceVariant,
-                                                ),
-                                          ),
-                                        ],
+                              child: Text(
+                                'Plug in a device to verify the address on a device screen.',
+                                softWrap: true,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
                               ),
                             ),
                             Padding(
@@ -722,6 +722,84 @@ class _ReceiverPageState extends State<ReceivePage> {
           ),
         );
       },
+    );
+  }
+
+  Widget _dialogBodyBuilder(BuildContext context) {
+    final theme = Theme.of(context);
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start, // left-align all rows
+        children: [
+          Row(
+            crossAxisAlignment:
+                CrossAxisAlignment.start, // align icon & text top
+            children: const [
+              Icon(Icons.send),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  "Give the address you have scanned/copied to the sender.",
+                  softWrap: true,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment:
+                CrossAxisAlignment.start, // align icon & text top
+            children: [
+              Icon(Icons.visibility),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text:
+                            "Confirm they have the same address as shown on the device's screen.\nMake sure the two ",
+                      ),
+                      TextSpan(
+                        text: "highlighted",
+                        style: TextStyle(color: theme.colorScheme.primary),
+                      ),
+                      TextSpan(text: " chunks are present."),
+                    ],
+                  ),
+                  softWrap: true,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment:
+                CrossAxisAlignment.start, // align icon & text top
+            children: const [
+              Icon(Icons.block),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  "Do not send the bitcoin if it doesn't match.",
+                  softWrap: true,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dismissButtonBuilder(BuildContext ctx) {
+    return OutlinedButton(
+      onPressed: () {
+        verificationSuccess = true;
+        Navigator.pop(ctx);
+      },
+      child: Text("The sender has the correct address"),
     );
   }
 }
