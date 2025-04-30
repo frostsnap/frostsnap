@@ -51,8 +51,8 @@ pub enum ReceiveSerial<D: Direction> {
     /// You can only send messages if you have the conch. Also devices should only do work if no one
     /// downstream of them has the conch.
     Conch,
-    // to allow devices to ignore messages they don't understand
     Reset,
+    // to allow devices to ignore messages they don't understand
     Unused8,
     Unused7,
     Unused6,
@@ -70,6 +70,7 @@ impl<D: Direction> Gist for ReceiveSerial<D> {
             ReceiveSerial::MagicBytes(_) => "MagicBytes".into(),
             ReceiveSerial::Message(msg) => msg.gist(),
             ReceiveSerial::Conch => "Conch".into(),
+            ReceiveSerial::Reset => "Reset".into(),
             _ => "Unused".into(),
         }
     }
