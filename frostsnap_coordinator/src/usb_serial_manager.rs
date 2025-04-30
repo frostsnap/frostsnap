@@ -406,6 +406,7 @@ impl UsbSerialManager {
                     }
                 }
                 ReceiveSerial::Reset => {
+                    event!(Level::DEBUG, port = port_name, "Read reset downstream!");
                     self.disconnect(&port_name, &mut device_changes);
                 }
                 _ => { /* unused */ }
@@ -585,6 +586,8 @@ impl UsbSerialManager {
                 );
                 continue;
             }
+
+            io.wait_for_conch()?;
 
             event!(Level::INFO, port = port, "starting writing firmware");
             let mut chunks = firmware_bin
