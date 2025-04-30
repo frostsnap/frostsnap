@@ -12,8 +12,8 @@ use core::cell::RefCell;
 use esp_hal::{gpio, sha::Sha, timer};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{
-    CommsMisc, CoordinatorSendBody, CoordinatorUpgradeMessage, DeviceSendBody, Model,
-    ReceiveSerial, Upstream,
+    CommsMisc, CoordinatorSendBody, CoordinatorUpgradeMessage, DeviceSendBody, ReceiveSerial,
+    Upstream,
 };
 use frostsnap_comms::{Downstream, MAGIC_BYTES_PERIOD};
 use frostsnap_core::{
@@ -31,7 +31,6 @@ pub struct Run<'a, Rng, Ui, T, DownstreamDetectPin> {
     pub downstream_detect: gpio::Input<'a, DownstreamDetectPin>,
     pub sha256: Sha<'a>,
     pub hmac_keys: EfuseHmacKeys<'a>,
-    pub model: Model,
 }
 
 impl<Rng, Ui, T, DownstreamDetectPin> Run<'_, Rng, Ui, T, DownstreamDetectPin>
@@ -51,7 +50,6 @@ where
             downstream_detect,
             mut sha256,
             mut hmac_keys,
-            model,
         } = self;
 
         ui.set_busy_task(ui::BusyTask::Loading);
@@ -255,8 +253,7 @@ where
                         upstream_serial
                             .write_magic_bytes()
                             .expect("failed to write magic bytes");
-                        upstream_connection.send_announcement(DeviceSendBody::Announce2 {
-                            model,
+                        upstream_connection.send_announcement(DeviceSendBody::Announce {
                             firmware_digest: active_firmware_digest,
                         });
                         upstream_connection.send_to_coordinator([match &name {

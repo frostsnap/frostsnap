@@ -5,7 +5,7 @@ const USB_PID: u16 = 4097;
 use crate::PortOpenError;
 use crate::{FramedSerialPort, Serial};
 use anyhow::anyhow;
-use frostsnap_comms::{CommsMisc, Model, ReceiveSerial};
+use frostsnap_comms::{CommsMisc, ReceiveSerial};
 use frostsnap_comms::{
     CoordinatorSendBody, CoordinatorUpgradeMessage, Destination, DeviceSendBody, Sha256Digest,
     FIRMWARE_IMAGE_SIZE, FIRMWARE_NEXT_CHUNK_READY_SIGNAL, FIRMWARE_UPGRADE_CHUNK_LEN,
@@ -332,20 +332,6 @@ impl UsbSerialManager {
                                         &port_name,
                                         message.from,
                                         firmware_digest,
-                                        Model::Alpha { version: 0 },
-                                        &mut device_changes,
-                                    );
-                                }
-
-                                DeviceSendBody::Announce2 {
-                                    model,
-                                    firmware_digest,
-                                } => {
-                                    self.handle_announce(
-                                        &port_name,
-                                        message.from,
-                                        firmware_digest,
-                                        model,
                                         &mut device_changes,
                                     );
                                 }
@@ -507,7 +493,6 @@ impl UsbSerialManager {
         port_name: &str,
         from: DeviceId,
         firmware_digest: Sha256Digest,
-        model: Model,
         device_changes: &mut Vec<DeviceChange>,
     ) {
         match self.device_ports.insert(
@@ -529,7 +514,6 @@ impl UsbSerialManager {
                 latest_firmware_digest: self
                     .firmware_bin
                     .map(|mut firmware_bin| firmware_bin.cached_digest()),
-                model,
             }),
         }
 
@@ -765,7 +749,6 @@ pub enum DeviceChange {
         id: DeviceId,
         firmware_digest: Sha256Digest,
         latest_firmware_digest: Option<Sha256Digest>,
-        model: Model,
     },
     NeedsName {
         id: DeviceId,

@@ -52,14 +52,12 @@ impl DeviceList {
                 id,
                 firmware_digest,
                 latest_firmware_digest,
-                model,
             } => {
                 let connected = self.connected.entry(id).or_insert(api::ConnectedDevice {
                     firmware_digest: Default::default(),
                     latest_digest: Default::default(),
                     name: None,
                     id,
-                    model,
                     recovery_mode: false,
                 });
 

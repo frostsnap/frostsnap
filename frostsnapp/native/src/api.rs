@@ -23,7 +23,6 @@ pub use frostsnap_coordinator::bitcoin::{
     wallet::CoordSuperWallet,
 };
 pub use frostsnap_coordinator::firmware_upgrade::FirmwareUpgradeConfirmState;
-pub use frostsnap_coordinator::frostsnap_comms::Model;
 pub use frostsnap_coordinator::frostsnap_core;
 use frostsnap_coordinator::frostsnap_core::{
     coordinator::{restoration::RecoverShareError, CoordFrostKey},
@@ -290,7 +289,6 @@ pub struct ConnectedDevice {
     pub firmware_digest: String,
     pub latest_digest: Option<String>,
     pub id: DeviceId,
-    pub model: Model,
     pub recovery_mode: bool,
 }
 
@@ -429,12 +427,6 @@ pub struct _PortDesc {
     pub id: String,
     pub vid: u16,
     pub pid: u16,
-}
-
-#[frb(mirror(Model))]
-pub enum _Model {
-    Alpha { version: u8 },
-    Frontier { version: u8 },
 }
 
 #[derive(Debug)]
