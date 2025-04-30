@@ -220,6 +220,14 @@ where
                                         .write_conch()
                                         .expect("failed to write conch upstream");
                                 }
+                                ReceiveSerial::Reset => {
+                                    upstream_connection.send_to_coordinator([
+                                        DeviceSendBody::DisconnectDownstream,
+                                    ]);
+                                    downstream_connection_state =
+                                        DownstreamConnectionState::Disconnected;
+                                    break;
+                                }
                                 _ => { /* unused */ }
                             };
                         }
@@ -267,6 +275,8 @@ where
                     while let Some(received_message) = upstream_serial.receive() {
                         match received_message {
                             Ok(received_message) => {
+                                // Do this here because it needs to be set to false if it was
+                                // previously true.
                                 last_message_was_magic_bytes =
                                     matches!(received_message, ReceiveSerial::MagicBytes(_));
                                 match received_message {
@@ -301,7 +311,7 @@ where
                                                             &mut ui,
                                                             &mut sha256,
                                                         );
-                                                        esp_hal::reset::software_reset();
+                                                        reset(&mut upstream_serial);
                                                     } else {
                                                         panic!("upgrade cannot start because we were not warned about it")
                                                     }
@@ -326,6 +336,7 @@ where
                                         has_conch = true;
                                         conch_is_downstream = false;
                                     }
+                                    ReceiveSerial::Reset => { /* upstream doesn't send this */ }
                                     _ => { /* unused */ }
                                 }
                             }
@@ -574,7 +585,7 @@ where
                     }
                     UiEvent::WipeDataConfirm => {
                         partitions.nvs.erase_all().expect("failed to erase nvs");
-                        esp_hal::reset::software_reset();
+                        reset(&mut upstream_serial);
                     }
                 }
 
@@ -598,4 +609,9 @@ where
             }
         }
     }
+}
+
+fn reset<T: timer::Timer>(upstream_serial: &mut SerialInterface<'_, T, Upstream>) {
+    let _ = upstream_serial.send_reset_signal();
+    esp_hal::reset::software_reset();
 }

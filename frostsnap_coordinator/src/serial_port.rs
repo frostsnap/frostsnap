@@ -101,11 +101,13 @@ impl FramedSerialPort {
 
         match &message {
             ReceiveSerial::MagicBytes(_) => { /* magic bytes doesn't count as a message */ }
-            _ => {
+            ReceiveSerial::Message(_) | ReceiveSerial::Conch => {
+                // if we receive a message we count it as the conch
                 use frostsnap_core::Gist;
                 self.has_sent_conch = false;
                 event!(Level::TRACE, gist = message.gist(), "GOT CONCH");
             }
+            _ => { /* other messages (like reset are not a conch) */ }
         };
 
         Ok(Some(message))
@@ -140,6 +142,15 @@ impl FramedSerialPort {
             self.conch_enabled = enabled;
             self.has_sent_conch = false;
         }
+    }
+
+    pub fn wait_for_conch(&mut self) -> Result<(), bincode::error::DecodeError> {
+        if self.conch_enabled && !self.has_conch() {
+            while !self.has_conch() {
+                let _ = self.try_read_message()?;
+            }
+        }
+        Ok(())
     }
 
     pub fn raw_send(

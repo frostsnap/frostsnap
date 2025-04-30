@@ -47,8 +47,6 @@ pub struct UsbSerialManager {
     outbox_sender: std::sync::mpsc::Sender<CoordinatorSendMessage>,
     /// The firmware binary provided to devices who are doing an upgrade
     firmware_bin: Option<FirmwareBin>,
-    /// Ports we should artificially disconnect next time
-    pending_disconnect_ports: HashSet<String>,
 }
 
 pub struct DevicePort {
@@ -79,7 +77,6 @@ impl UsbSerialManager {
             reverse_device_ports: Default::default(),
             registered_devices: Default::default(),
             device_names: Default::default(),
-            pending_disconnect_ports: Default::default(),
             port_outbox: receiver,
             outbox_sender: sender,
             firmware_bin,
@@ -131,10 +128,6 @@ impl UsbSerialManager {
         let span = span!(Level::DEBUG, "poll_ports");
         let _enter = span.enter();
         let mut device_changes = vec![];
-
-        for to_disconnect in core::mem::take(&mut self.pending_disconnect_ports) {
-            self.disconnect(&to_disconnect, &mut device_changes);
-        }
 
         let connected_now: HashSet<String> = self
             .serial_impl
@@ -412,6 +405,10 @@ impl UsbSerialManager {
                         }
                     }
                 }
+                ReceiveSerial::Reset => {
+                    event!(Level::DEBUG, port = port_name, "Read reset downstream!");
+                    self.disconnect(&port_name, &mut device_changes);
+                }
                 _ => { /* unused */ }
             }
         }
@@ -590,6 +587,8 @@ impl UsbSerialManager {
                 continue;
             }
 
+            io.wait_for_conch()?;
+
             event!(Level::INFO, port = port, "starting writing firmware");
             let mut chunks = firmware_bin
                 .bin
@@ -633,8 +632,6 @@ impl UsbSerialManager {
                     ((port_index as u32 * n_chunks) + i as u32) as f32 / (total_chunks - 1) as f32
                 ))
             }));
-
-            self.pending_disconnect_ports.insert(port.to_string());
         }
 
         Ok(iters.into_iter().flatten())
