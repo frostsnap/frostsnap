@@ -1,6 +1,6 @@
 use crate::{
     efuse::EfuseHmacKeys,
-    flash::{Event, EventLog, FlashHeader},
+    flash::{FlashHeader, Mutation, MutationLog},
     io::SerialInterface,
     ota,
     partitions::PartitionExt,
@@ -83,18 +83,18 @@ where
         };
 
         // The event log gets the reset of the sectors
-        let mut event_log = EventLog::new(share_partition, nvs_partition);
+        let mut mutation_log = MutationLog::new(share_partition, nvs_partition);
 
         let mut signer = FrostSigner::new(header.device_keypair(), nonce_slots);
 
         let mut name = None;
-        for change in event_log.seek_iter() {
+        for change in mutation_log.seek_iter() {
             match change {
                 Ok(change) => match change {
-                    Event::Core(mutation) => {
+                    Mutation::Core(mutation) => {
                         signer.apply_mutation(mutation);
                     }
-                    Event::Name(name_update) => {
+                    Mutation::Name(name_update) => {
                         name = Some(name_update);
                     }
                 },
@@ -454,8 +454,8 @@ where
                 if !staged_mutations.is_empty() {
                     let now = self.timer.now();
                     // ⚠ Apply any mutations made to flash before outputting anything to user or to coordinator
-                    event_log
-                        .append(staged_mutations.drain(..).map(Event::Core))
+                    mutation_log
+                        .append(staged_mutations.drain(..).map(Mutation::Core))
                         .expect("writing core mutations failed");
                     let after = self.timer.now().checked_duration_since(now).unwrap();
                     upstream_connection
@@ -569,8 +569,8 @@ where
                     }
                     UiEvent::NameConfirm(ref new_name) => {
                         name = Some(new_name.into());
-                        event_log
-                            .push(Event::Name(new_name.to_string()))
+                        mutation_log
+                            .push(Mutation::Name(new_name.to_string()))
                             .expect("flash write fail");
                         ui.set_device_name(new_name.into());
                         upstream_connection.send_to_coordinator([DeviceSendBody::SetName {

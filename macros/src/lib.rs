@@ -35,11 +35,11 @@ pub fn derive_kind(input: TokenStream) -> TokenStream {
                 },
                 _ => {
                     // Generate an error if the attribute is applied to a variant that is not a newtype
-                    return syn::Error::new_spanned(
+                    syn::Error::new_spanned(
                         variant_ident,
                         "delegate_kind attribute can only be applied to newtype variants (tuple struct with exactly one field)"
                     )
-                    .to_compile_error();
+                    .to_compile_error()
                 }
             }
         } else {

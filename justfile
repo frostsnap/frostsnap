@@ -1,5 +1,5 @@
 default_board := "v2"
-ordinary_crates := "-p frostsnap_core -p frostsnap_coordinator -p frostsnap_comms -p native -p frostsnap_embedded"
+ordinary_crates := "-p frostsnap_core -p frostsnap_coordinator -p frostsnap_comms -p native -p frostsnap_embedded -p frostsnap_macros"
 
 alias erase := erase-device
 
@@ -40,7 +40,7 @@ lint-app +ARGS="": dart-format-check-app
     ( cd frostsnapp; flutter analyze {{ARGS}} )
 
 fix-dart:
-    ( cd frostsnapp && dart format . && dart fix --apply )
+    ( cd frostsnapp && dart format . && dart fix --apply && flutter analyze )
 
 gen:
     just "frostsnapp/gen"

@@ -46,7 +46,7 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
             &CoordinatorRestoration::EnterPhysicalBackup { enter_physical_id } => {
                 Ok(vec![DeviceSend::ToUser(Box::new(
                     DeviceToUserMessage::Restoration(EnterBackup {
-                        phase: LoadBackupPhase { enter_physical_id },
+                        phase: EnterBackupPhase { enter_physical_id },
                     }),
                 ))])
             }
@@ -265,7 +265,7 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
 
     pub fn tell_coordinator_about_backup_load_result(
         &mut self,
-        phase: LoadBackupPhase,
+        phase: EnterBackupPhase,
         secret_share: SecretShare,
     ) -> impl IntoIterator<Item = DeviceSend> {
         let mut ret = vec![];
@@ -277,7 +277,7 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
             .insert(share_image, secret_share);
 
         ret.push(DeviceSend::ToCoordinator(Box::new(
-            DeviceToCoordinatorMessage::Restoration(DeviceRestoration::PhysicalLoaded(
+            DeviceToCoordinatorMessage::Restoration(DeviceRestoration::PhysicalEntered(
                 EnteredPhysicalBackup {
                     enter_physical_id,
                     share_image,
@@ -365,7 +365,7 @@ pub enum RestorationMutation {
 #[derive(Debug, Clone)]
 pub enum ToUserRestoration {
     EnterBackup {
-        phase: LoadBackupPhase,
+        phase: EnterBackupPhase,
     },
     BackupSaved {
         share_image: ShareImage,
@@ -399,7 +399,7 @@ pub struct BackupDisplayPhase {
 }
 
 #[derive(Clone, Debug)]
-pub struct LoadBackupPhase {
+pub struct EnterBackupPhase {
     pub enter_physical_id: EnterPhysicalId,
 }
 

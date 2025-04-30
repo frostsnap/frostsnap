@@ -1,4 +1,4 @@
-use frostsnap_comms::{CoordinatorSendBody, CoordinatorSendMessage, Destination};
+use frostsnap_comms::{CoordinatorSendBody, CoordinatorSendMessage};
 use frostsnap_core::{
     coordinator::{
         restoration::{self, RecoverShare},
@@ -46,6 +46,7 @@ impl UiProtocol for WaitForRecoveryShare {
                 send_cancel_to_all_devices: false,
             })
         } else {
+            // No explicit completion, you just cancel when you're done.
             None
         }
     }
@@ -71,12 +72,12 @@ impl UiProtocol for WaitForRecoveryShare {
             .collect::<Vec<_>>();
 
         for device_id in need_to_send_to {
-            out.push(CoordinatorSendMessage {
-                target_destinations: Destination::Particular([device_id].into()),
-                message_body: CoordinatorSendBody::Core(CoordinatorToDeviceMessage::Restoration(
+            out.push(CoordinatorSendMessage::to(
+                device_id,
+                CoordinatorSendBody::Core(CoordinatorToDeviceMessage::Restoration(
                     CoordinatorRestoration::RequestHeldShares,
                 )),
-            });
+            ));
             self.sent_request_to.insert(device_id);
         }
         out

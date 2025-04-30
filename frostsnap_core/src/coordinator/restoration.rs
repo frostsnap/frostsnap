@@ -549,7 +549,7 @@ impl FrostCoordinator {
         message: DeviceRestoration,
     ) -> MessageResult<Vec<CoordinatorSend>> {
         match message {
-            DeviceRestoration::PhysicalLoaded(entered_physical_backup) => {
+            DeviceRestoration::PhysicalEntered(entered_physical_backup) => {
                 //XXX: We could check if a restoration id exists before sending out the message but
                 // it's not a good idea becuase atm it's valid to ask a device to enter a backup
                 // when you're not keeping track of the restoration id for the purpose of doing a

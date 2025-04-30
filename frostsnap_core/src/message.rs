@@ -197,7 +197,7 @@ pub enum DeviceToCoordinatorMessage {
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, Kind)]
 pub enum DeviceRestoration {
-    PhysicalLoaded(EnteredPhysicalBackup),
+    PhysicalEntered(EnteredPhysicalBackup),
     PhysicalSaved(ShareImage),
     FinishedConsolidation {
         access_structure_ref: AccessStructureRef,

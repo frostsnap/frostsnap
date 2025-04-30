@@ -404,7 +404,7 @@ where
                         "Confirm firmware upgrade to: \n{firmware_digest}\nsize: {:.2}KB",
                         *size as f32 / 1000.0
                     )),
-                    Prompt::ConfirmLoadBackup { share_backup, .. } => self
+                    Prompt::ConfirmEnterBackup { share_backup, .. } => self
                         .display
                         .show_backup(share_backup.to_bech32_backup(), false),
                     Prompt::WipeDevice => self.display.wipe_data_warning(),
@@ -561,7 +561,7 @@ where
                                     }
                                 }
                                 Prompt::ConfirmFirmwareUpgrade { .. } => UiEvent::UpgradeConfirm,
-                                Prompt::ConfirmLoadBackup {
+                                Prompt::ConfirmEnterBackup {
                                     phase,
                                     share_backup,
                                 } => UiEvent::EnteredShareBackup {
@@ -618,7 +618,7 @@ where
                                     match screen.try_create_share() {
                                         Ok(secret_share) => {
                                             self.set_workflow(Workflow::prompt(
-                                                Prompt::ConfirmLoadBackup {
+                                                Prompt::ConfirmEnterBackup {
                                                     share_backup: secret_share,
                                                     phase: phase.clone(),
                                                 },

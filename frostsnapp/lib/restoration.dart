@@ -126,10 +126,12 @@ class WalletRecoveryPage extends StatelessWidget {
                                       );
                                   onWalletRecovered(accessStructureRef);
                                 } catch (e) {
-                                  showErrorSnackbarBottom(
-                                    context,
-                                    "failed to recover wallet: $e",
-                                  );
+                                  if (context.mounted) {
+                                    showErrorSnackbarBottom(
+                                      context,
+                                      "failed to recover wallet: $e",
+                                    );
+                                  }
                                 }
                               }
                               : null,
@@ -153,7 +155,7 @@ class WalletRecoveryFlow extends StatefulWidget {
   const WalletRecoveryFlow({super.key, this.continuing, this.existing});
 
   @override
-  _WalletRecoveryFlowState createState() => _WalletRecoveryFlowState();
+  State<WalletRecoveryFlow> createState() => _WalletRecoveryFlowState();
 }
 
 class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
@@ -172,7 +174,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
   void initState() {
     super.initState();
     if (widget.continuing != null) {
-      kind = MethodChoiceKind.ContinueRecovery;
+      kind = MethodChoiceKind.continueRecovery;
       restorationId = widget.continuing!;
       final state = coord.getRestorationState(restorationId: restorationId!)!;
       threshold = state.threshold();
@@ -180,9 +182,9 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
       bitcoinNetwork =
           state.bitcoinNetwork() ?? BitcoinNetwork.mainnet(bridge: api);
     } else if (widget.existing != null) {
-      kind = MethodChoiceKind.AddToWallet;
+      kind = MethodChoiceKind.addToWallet;
     } else {
-      kind = MethodChoiceKind.StartRecovery;
+      kind = MethodChoiceKind.startRecovery;
     }
   }
 
@@ -240,7 +242,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           stream: stream,
           onFinished: (backupPhase) async {
             try {
-              if (kind == MethodChoiceKind.AddToWallet) {
+              if (kind == MethodChoiceKind.addToWallet) {
                 await coord.tellDeviceToConsolidatePhysicalBackup(
                   accessStructureRef: widget.existing!,
                   phase: backupPhase,
@@ -329,7 +331,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           onPhysicalBackupChosen: () {
             setState(() {
               switch (kind) {
-                case MethodChoiceKind.StartRecovery:
+                case MethodChoiceKind.startRecovery:
                   currentStep = "enter_restoration_details";
                   break;
                 default:
@@ -362,7 +364,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
   }
 }
 
-enum MethodChoiceKind { StartRecovery, ContinueRecovery, AddToWallet }
+enum MethodChoiceKind { startRecovery, continueRecovery, addToWallet }
 
 class _ChooseMethodView extends StatelessWidget {
   final VoidCallback? onDeviceChosen;
@@ -382,17 +384,17 @@ class _ChooseMethodView extends StatelessWidget {
     final String subtitle;
 
     switch (kind) {
-      case MethodChoiceKind.StartRecovery:
+      case MethodChoiceKind.startRecovery:
         title = "Start wallet recovery";
         subtitle =
             'What kind of key are you starting the wallet recovery from?';
         break;
-      case MethodChoiceKind.ContinueRecovery:
+      case MethodChoiceKind.continueRecovery:
         title = 'Continue wallet recovery';
         subtitle = 'Where is the next key coming from?';
         break;
 
-      case MethodChoiceKind.AddToWallet:
+      case MethodChoiceKind.addToWallet:
         title = "Add key to wallet";
         subtitle =
             "⚠ For now, Frostsnap only supports adding keys that were originally part of the wallet when it was created";
