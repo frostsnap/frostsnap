@@ -51,13 +51,15 @@ where
         }
     }
 
-    fn process_to_user_message(&mut self, message: CoordinatorToUserMessage) {
-        if (self.callback)(message) {
+    fn process_to_user_message(&mut self, message: CoordinatorToUserMessage) -> bool {
+        let res = (self.callback)(message);
+        if res {
             self.finished.get_or_insert(true);
             if let Some(sender) = self.sender.take() {
                 sender.send(true).unwrap();
             }
         }
+        res
     }
 
     fn poll(&mut self) -> Vec<frostsnap_comms::CoordinatorSendMessage> {

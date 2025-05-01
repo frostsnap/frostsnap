@@ -99,7 +99,7 @@ impl UiProtocol for WaitForRecoveryShare {
         self.emit_state();
     }
 
-    fn process_to_user_message(&mut self, message: CoordinatorToUserMessage) {
+    fn process_to_user_message(&mut self, message: CoordinatorToUserMessage) -> bool {
         if let CoordinatorToUserMessage::Restoration(
             restoration::ToUserRestoration::GotHeldShares {
                 held_by,
@@ -121,6 +121,9 @@ impl UiProtocol for WaitForRecoveryShare {
                     held_share,
                 }));
             self.emit_state();
+            true
+        } else {
+            false
         }
     }
 }

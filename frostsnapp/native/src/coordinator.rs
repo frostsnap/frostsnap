@@ -19,10 +19,8 @@ use frostsnap_coordinator::frostsnap_core::coordinator::{
     CoordAccessStructure, CoordFrostKey, CoordinatorSend, CoordinatorToUserMessage,
 };
 use frostsnap_coordinator::frostsnap_core::device::KeyPurpose;
-use frostsnap_coordinator::frostsnap_core::{
-    self, message::DoKeyGen, Gist as _, Kind as _, RestorationId, SignSessionId,
-};
-use frostsnap_coordinator::frostsnap_core::{KeygenId, SymmetricKey};
+use frostsnap_coordinator::frostsnap_core::{self, message::DoKeyGen};
+use frostsnap_coordinator::frostsnap_core::{KeygenId, RestorationId, SignSessionId, SymmetricKey};
 use frostsnap_coordinator::frostsnap_persist::DeviceNames;
 use frostsnap_coordinator::persist::Persisted;
 use frostsnap_coordinator::signing::SigningState;
@@ -30,11 +28,11 @@ use frostsnap_coordinator::verify_address::VerifyAddressProtocol;
 use frostsnap_coordinator::wait_for_recovery_share::{
     WaitForRecoveryShare, WaitForRecoveryShareState,
 };
+use frostsnap_coordinator::DeviceChange;
 use frostsnap_coordinator::{
-    AppMessageBody, DeviceMode, FirmwareBin, Sink, UiProtocol, UsbSender, UsbSerialManager,
-    WaitForToUserMessage,
+    AppMessageBody, DeviceMode, FirmwareBin, Sink, UiProtocol, UiStack, UsbSender,
+    UsbSerialManager, WaitForToUserMessage,
 };
-use frostsnap_coordinator::{Completion, DeviceChange};
 use frostsnap_core::{
     coordinator::{
         restoration::{RecoverShare, RestorationState},
@@ -55,7 +53,7 @@ pub struct FfiCoordinator {
     key_event_stream: Arc<Mutex<Option<StreamSink<api::KeyState>>>>,
     signing_session_signals: Arc<Mutex<HashMap<KeyId, Signal>>>,
     thread_handle: Mutex<Option<JoinHandle<()>>>,
-    ui_protocol: Arc<Mutex<Option<Box<dyn UiProtocol>>>>,
+    ui_stack: Arc<Mutex<UiStack>>,
     usb_sender: UsbSender,
     firmware_bin: Option<FirmwareBin>,
     firmware_upgrade_progress: Arc<Mutex<Option<StreamSink<f32>>>>,
@@ -94,7 +92,7 @@ impl FfiCoordinator {
             thread_handle: Default::default(),
             key_event_stream: Default::default(),
             signing_session_signals: Default::default(),
-            ui_protocol: Default::default(),
+            ui_stack: Default::default(),
             firmware_upgrade_progress: Default::default(),
             device_list: Default::default(),
             device_list_stream: Default::default(),
@@ -123,7 +121,7 @@ impl FfiCoordinator {
             .take()
             .expect("can only start once");
         let coordinator_loop = self.coordinator.clone();
-        let ui_protocol = self.ui_protocol.clone();
+        let ui_stack = self.ui_stack.clone();
         let db_loop = self.db.clone();
         let device_names = self.device_names.clone();
         let usb_sender = self.usb_sender.clone();
@@ -185,7 +183,7 @@ impl FfiCoordinator {
                 let mut coordinator_outbox = VecDeque::default();
                 let mut messages_from_devices = vec![];
                 let mut db = db_loop.lock().unwrap();
-                let mut ui_protocol_loop = ui_protocol.lock().unwrap();
+                let mut ui_stack = ui_stack.lock().unwrap();
 
                 // process new messages from devices
                 {
@@ -197,15 +195,14 @@ impl FfiCoordinator {
                                 if coordinator.has_backups_that_need_to_be_consolidated(id) {
                                     device_list.set_recovery_mode(id, true);
                                 }
-                                if let Some(protocol) = &mut *ui_protocol_loop {
-                                    protocol.connected(
-                                        id,
-                                        device_list
-                                            .get_device(id)
-                                            .expect("it was just registered")
-                                            .device_mode(),
-                                    );
-                                }
+
+                                ui_stack.connected(
+                                    id,
+                                    device_list
+                                        .get_device(id)
+                                        .expect("it was just registered")
+                                        .device_mode(),
+                                );
 
                                 if let Some(connected_device) = device_list.get_device(id) {
                                     // we only send some messages out if the device has up to date firmware
@@ -221,9 +218,7 @@ impl FfiCoordinator {
                                 }
                             }
                             DeviceChange::Disconnected { id } => {
-                                if let Some(protocol) = &mut *ui_protocol_loop {
-                                    protocol.disconnected(id);
-                                }
+                                ui_stack.disconnected(id);
                             }
                             DeviceChange::NameChange { id, name } => {
                                 let mut device_names = device_names.lock().unwrap();
@@ -252,9 +247,7 @@ impl FfiCoordinator {
                                 messages_from_devices.push(message.clone());
                             }
                             DeviceChange::NeedsName { id } => {
-                                if let Some(protocol) = &mut *ui_protocol_loop {
-                                    protocol.connected(id, DeviceMode::Blank);
-                                }
+                                ui_stack.connected(id, DeviceMode::Blank);
                             }
                             _ => { /* ignore rest */ }
                         }
@@ -299,9 +292,7 @@ impl FfiCoordinator {
                             }
                         }
                         AppMessageBody::Misc(comms_misc) => {
-                            if let Some(ui_protocol) = &mut *ui_protocol_loop {
-                                ui_protocol.process_comms_message(app_message.from, comms_misc);
-                            }
+                            ui_stack.process_comms_message(app_message.from, comms_misc);
                         }
                     }
                 }
@@ -323,27 +314,21 @@ impl FfiCoordinator {
                             usb_sender.send(send_message);
                         }
                         CoordinatorSend::ToUser(msg) => {
-                            if let Some(ui_protocol) = &mut *ui_protocol_loop {
-                                ui_protocol.process_to_user_message(msg);
-                            } else {
-                                event!(
-                                    Level::WARN,
-                                    kind = msg.kind(),
-                                    "ignoring protocol message we have no ui protoocl to handle"
-                                );
-                            }
+                            ui_stack.process_to_user_message(msg);
                         }
                     }
                 }
 
                 // poll the ui protocol first before locking anything else because of the potential
                 // for dead locks with callbacks activated on stream items trying to lock things.
-                if let Some(ui_protocol) = &mut *ui_protocol_loop {
-                    for message in ui_protocol.poll() {
-                        usb_sender.send(message);
-                    }
+                for message in ui_stack.poll() {
+                    usb_sender.send(message);
+                }
 
-                    Self::try_finish_protocol(usb_sender.clone(), &mut ui_protocol_loop);
+                if ui_stack.clean_finished() {
+                    // the UI stack ahs told us we need to cancel all since one of the protocols
+                    // completed with an abort.
+                    usb_sender.send_cancel_all();
                 }
             }
         });
@@ -475,12 +460,10 @@ impl FfiCoordinator {
         session_id: SignSessionId,
         encryption_key: SymmetricKey,
     ) -> anyhow::Result<()> {
-        let mut proto = self.ui_protocol.lock().unwrap();
-        let signing = proto
-            .as_mut()
-            .ok_or(anyhow!("No UI protocol running"))?
-            .as_mut_any()
-            .downcast_mut::<frostsnap_coordinator::signing::SigningDispatcher>()
+        let mut ui_stack = self.ui_stack.lock().unwrap();
+
+        let signing = ui_stack
+            .get_mut::<frostsnap_coordinator::signing::SigningDispatcher>()
             .ok_or(anyhow!("somehow UI was not in KeyGen state"))?;
 
         let mut db = self.db.lock().unwrap();
@@ -588,68 +571,18 @@ impl FfiCoordinator {
     }
 
     fn start_protocol<P: UiProtocol + Send + 'static>(&self, mut protocol: P) {
-        event!(Level::INFO, "Starting UI protocol {}", protocol.name());
         for device in self.device_list.lock().unwrap().devices() {
             protocol.connected(device.id, device.device_mode());
         }
-        event!(Level::INFO, "TMP {}", protocol.name());
 
-        let new_name = protocol.name();
-        if let Some(mut prev) = self.ui_protocol.lock().unwrap().replace(Box::new(protocol)) {
-            event!(
-                Level::WARN,
-                prev = prev.name(),
-                new = new_name,
-                "previous protocol wasn't shut down cleanly"
-            );
-            prev.cancel();
-        }
-
-        event!(Level::INFO, "Started UI protocol");
+        let mut stack = self.ui_stack.lock().unwrap();
+        stack.push(protocol);
     }
 
     pub fn cancel_protocol(&self) {
-        let mut proto_opt = self.ui_protocol.lock().unwrap();
-        if let Some(proto) = &mut *proto_opt {
-            proto.cancel();
-            assert!(
-                Self::try_finish_protocol(self.usb_sender.clone(), &mut proto_opt),
-                "protocol must be finished after cancel"
-            );
+        if self.ui_stack.lock().unwrap().cancel_all() {
+            self.usb_sender.send_cancel_all();
         }
-    }
-
-    fn try_finish_protocol(
-        usb_sender: UsbSender,
-        proto_opt: &mut Option<Box<dyn UiProtocol>>,
-    ) -> bool {
-        if let Some(proto) = proto_opt {
-            if let Some(completion) = proto.is_complete() {
-                event!(
-                    Level::INFO,
-                    "UI Protocol {} completed with {:?}",
-                    proto.name(),
-                    completion
-                );
-                match completion {
-                    Completion::Abort {
-                        send_cancel_to_all_devices,
-                    } => {
-                        if send_cancel_to_all_devices {
-                            usb_sender.send_cancel_all();
-                        }
-                        *proto_opt = None;
-                        return true;
-                    }
-                    Completion::Success => {
-                        *proto_opt = None;
-                        return true;
-                    }
-                }
-            }
-        }
-
-        false
     }
 
     pub fn enter_firmware_upgrade_mode(&self, sink: StreamSink<f32>) -> Result<()> {
@@ -675,13 +608,9 @@ impl FfiCoordinator {
     pub fn final_keygen_ack(&self, keygen_id: KeygenId) -> Result<AccessStructureRef> {
         let mut coordinator = self.coordinator.lock().unwrap();
         let mut db = self.db.lock().unwrap();
-
-        let mut proto = self.ui_protocol.lock().unwrap();
-        let keygen = proto
-            .as_mut()
-            .ok_or(anyhow!("No UI protocol running"))?
-            .as_mut_any()
-            .downcast_mut::<frostsnap_coordinator::keygen::KeyGen>()
+        let mut ui_stack = self.ui_stack.lock().unwrap();
+        let keygen = ui_stack
+            .get_mut::<frostsnap_coordinator::keygen::KeyGen>()
             .ok_or(anyhow!("somehow UI was not in KeyGen state"))?;
 
         let accs_ref = coordinator.staged_mutate(&mut db, |coordinator| {
@@ -694,10 +623,6 @@ impl FfiCoordinator {
             stream.add(key_state(&coordinator));
         }
 
-        assert!(
-            Self::try_finish_protocol(self.usb_sender.clone(), &mut proto),
-            "keygen must be finished after we call final ack"
-        );
         Ok(accs_ref)
     }
 
@@ -1058,7 +983,7 @@ impl FfiCoordinator {
         }
 
         // hook into to user messages to see when it is successfully saved
-        let success = self.wait_for_to_user_message([phase.from], move |to_user| {
+        let success = self.block_for_to_user_message([phase.from], move |to_user| {
             if let &CoordinatorToUserMessage::Restoration(
                 ToUserRestoration::PhysicalBackupSaved {
                     device_id,
@@ -1071,11 +996,6 @@ impl FfiCoordinator {
                     && rid == restoration_id
                     && share_index == phase.backup.share_image.share_index;
             }
-            event!(
-                Level::WARN,
-                gist = to_user.gist(),
-                "got unexpected to user message while waiting for device to save"
-            );
             false
         });
         if success {
@@ -1111,7 +1031,7 @@ impl FfiCoordinator {
         self.usb_sender.send_from_core(msgs);
 
         // hook into to user messages to see when it is successfully consolidated
-        let success = self.wait_for_to_user_message([phase.from], move |to_user| {
+        let success = self.block_for_to_user_message([phase.from], move |to_user| {
             if let &CoordinatorToUserMessage::Restoration(
                 ToUserRestoration::FinishedConsolidation {
                     device_id,
@@ -1124,11 +1044,6 @@ impl FfiCoordinator {
                     && assid == access_structure_ref
                     && share_index == phase.backup.share_image.share_index;
             }
-            event!(
-                Level::WARN,
-                gist = to_user.gist(),
-                "got unexpected to user message while waiting for consolidation"
-            );
             false
         });
 
@@ -1139,41 +1054,54 @@ impl FfiCoordinator {
         Ok(())
     }
 
-    fn wait_for_to_user_message(
+    fn block_for_to_user_message(
         &self,
         devices: impl IntoIterator<Item = DeviceId>,
         f: impl FnMut(CoordinatorToUserMessage) -> bool + Send + 'static,
     ) -> bool {
         let (proto, waiter) = WaitForToUserMessage::new(devices, f);
         self.start_protocol(proto);
-        let result = waiter.recv().expect("unreachable");
-        *self.ui_protocol.lock().unwrap() = None;
-        result
+
+        waiter.recv().expect("unreachable")
     }
 
     /// i.e. do a consolidation
     pub fn exit_recovery_mode(&self, device_id: DeviceId, encryption_key: SymmetricKey) {
-        let coord = self.coordinator.lock().unwrap();
-        let mut device_list = self.device_list.lock().unwrap();
+        if self
+            .device_list
+            .lock()
+            .unwrap()
+            .get_device(device_id)
+            .is_none()
+        {
+            return;
+        }
 
-        if device_list.get_device(device_id).is_some() {
-            let msgs = coord.consolidate_pending_physical_backups(device_id, encryption_key);
-            self.usb_sender.send_from_core(msgs);
+        let msgs = {
+            let coord = self.coordinator.lock().unwrap();
+            coord.consolidate_pending_physical_backups(device_id, encryption_key)
+        };
 
-            // NOTE: We don't wait for the device to confirm that it finished consolidation which is
-            // a little hacky. The reason is that it's hard to hook into the ToUserMessage that
-            // confirms consolidation in the context this is called (which may have an existing UI
-            // protocol being run like signing).
-            //
-            // If we wanted to improve this the proper way is probably to create a "stack" of UI
-            // protocols so we could go into one that waits for the right ToUserMessage here and
-            // then pop it off and return to the previous ui protocol.
-            device_list.set_recovery_mode(device_id, false);
+        self.usb_sender.send_from_core(msgs);
 
-            // We finally connect the device properly!
-            if let Some(ui_protocol) = &mut *self.ui_protocol.lock().unwrap() {
-                ui_protocol.connected(device_id, DeviceMode::Ready);
-            }
+        let success = self.block_for_to_user_message([device_id], move |to_user| match to_user {
+            CoordinatorToUserMessage::Restoration(ToUserRestoration::FinishedConsolidation {
+                device_id: got,
+                ..
+            }) => device_id == got,
+            _ => false,
+        });
+
+        if success {
+            self.device_list
+                .lock()
+                .unwrap()
+                .set_recovery_mode(device_id, false);
+
+            self.ui_stack
+                .lock()
+                .unwrap()
+                .connected(device_id, DeviceMode::Ready);
         }
     }
 

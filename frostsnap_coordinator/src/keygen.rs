@@ -7,7 +7,7 @@ use frostsnap_core::{
     message::DoKeyGen,
     AccessStructureRef, DeviceId, KeygenId, SessionHash,
 };
-use tracing::{error, event, Level};
+use tracing::{event, Level};
 
 pub struct KeyGen {
     sink: Box<dyn Sink<KeyGenState>>,
@@ -91,26 +91,26 @@ impl UiProtocol for KeyGen {
         }
     }
 
-    fn process_to_user_message(&mut self, message: CoordinatorToUserMessage) {
+    fn process_to_user_message(&mut self, message: CoordinatorToUserMessage) -> bool {
         if let CoordinatorToUserMessage::KeyGen { keygen_id, inner } = message {
-            if keygen_id == self.state.keygen_id {
-                match inner {
-                    CoordinatorToUserKeyGenMessage::ReceivedShares { from } => {
-                        self.state.got_shares.push(from);
-                    }
-                    CoordinatorToUserKeyGenMessage::CheckKeyGen { session_hash } => {
-                        self.state.session_hash = Some(session_hash);
-                    }
-                    CoordinatorToUserKeyGenMessage::KeyGenAck { from, .. } => {
-                        self.state.session_acks.push(from);
-                    }
+            if keygen_id != self.state.keygen_id {
+                return false;
+            }
+            match inner {
+                CoordinatorToUserKeyGenMessage::ReceivedShares { from } => {
+                    self.state.got_shares.push(from);
                 }
-            } else {
-                error!("keygen message for a different keygen was sent during key generation");
+                CoordinatorToUserKeyGenMessage::CheckKeyGen { session_hash } => {
+                    self.state.session_hash = Some(session_hash);
+                }
+                CoordinatorToUserKeyGenMessage::KeyGenAck { from, .. } => {
+                    self.state.session_acks.push(from);
+                }
             }
             self.emit_state();
+            true
         } else {
-            event!(Level::ERROR, "Non keygen message sent during keygen");
+            false
         }
     }
 

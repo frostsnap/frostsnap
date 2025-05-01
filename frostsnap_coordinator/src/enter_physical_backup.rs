@@ -2,9 +2,8 @@ use frostsnap_comms::{CoordinatorSendBody, CoordinatorSendMessage};
 use frostsnap_core::{
     coordinator::{restoration, CoordinatorToUserMessage},
     message::{CoordinatorRestoration, CoordinatorToDeviceMessage},
-    DeviceId, EnterPhysicalId, Gist,
+    DeviceId, EnterPhysicalId,
 };
-use tracing::{event, Level};
 
 use crate::{DeviceMode, Sink, UiProtocol};
 
@@ -100,7 +99,7 @@ impl UiProtocol for EnterPhysicalBackup {
         self.emit_state();
     }
 
-    fn process_to_user_message(&mut self, message: CoordinatorToUserMessage) {
+    fn process_to_user_message(&mut self, message: CoordinatorToUserMessage) -> bool {
         match message {
             CoordinatorToUserMessage::Restoration(
                 restoration::ToUserRestoration::PhysicalBackupEntered(physical_backup_phase),
@@ -109,18 +108,16 @@ impl UiProtocol for EnterPhysicalBackup {
             {
                 self.entered = Some(*physical_backup_phase);
                 self.emit_state();
+                true
             }
             CoordinatorToUserMessage::Restoration(
                 restoration::ToUserRestoration::PhysicalBackupSaved { device_id, .. },
             ) if device_id == self.chosen_device => {
                 self.saved = true;
                 self.emit_state();
+                true
             }
-            message => event!(
-                Level::WARN,
-                gist = message.gist(),
-                "unexpected message during entering backup"
-            ),
+            _ => false,
         }
     }
 }

@@ -91,16 +91,12 @@ impl SigningDispatcher {
 }
 
 impl UiProtocol for SigningDispatcher {
-    fn process_to_user_message(&mut self, message: CoordinatorToUserMessage) {
+    fn process_to_user_message(&mut self, message: CoordinatorToUserMessage) -> bool {
         if let CoordinatorToUserMessage::Signing(message) = message {
             match message {
                 CoordinatorToUserSigningMessage::GotShare { from, session_id } => {
                     if session_id != self.session_id {
-                        event!(
-                            Level::WARN,
-                            "received signature share from a different signing session"
-                        );
-                        return;
+                        return false;
                     }
                     if self.got_signatures.insert(from) {
                         self.emit_state()
@@ -111,11 +107,7 @@ impl UiProtocol for SigningDispatcher {
                     session_id,
                 } => {
                     if session_id != self.session_id {
-                        event!(
-                            Level::WARN,
-                            "received signatures from a different singing session"
-                        );
-                        return;
+                        return false;
                     }
                     self.finished_signatures = Some(signatures);
                     event!(Level::INFO, "received signatures from all devices");
@@ -123,6 +115,9 @@ impl UiProtocol for SigningDispatcher {
                     self.sink.close();
                 }
             }
+            true
+        } else {
+            false
         }
     }
 
