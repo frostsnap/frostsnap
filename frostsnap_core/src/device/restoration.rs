@@ -339,13 +339,7 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
             share_image,
         )));
 
-        self.save_complete_share(
-            phase.complete_share,
-            symm_keygen,
-            phase.coord_contrib,
-            false,
-            rng,
-        );
+        self.save_complete_share(phase.complete_share, symm_keygen, phase.coord_contrib, rng);
 
         vec![DeviceSend::ToCoordinator(Box::new(
             DeviceToCoordinatorMessage::Restoration(DeviceRestoration::FinishedConsolidation {

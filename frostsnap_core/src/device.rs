@@ -254,13 +254,6 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                     .apply_mutation_restoration(restoration_mutation)
                     .map(Mutation::Restoration);
             }
-            VerifyKey { ref key_id } => {
-                let key_data = self.keys.get_mut(key_id)?;
-                if key_data.verified {
-                    return None;
-                }
-                key_data.verified = true;
-            }
         }
 
         Some(mutation)
@@ -505,7 +498,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
             } => {
                 let key_id = master_appkey.key_id();
                 // check we actually know about this key
-                let key_data = self
+                let _key_data = self
                     .keys
                     .get(&key_id)
                     .ok_or_else(|| {
@@ -515,14 +508,6 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                         )
                     })?
                     .clone();
-
-                if !key_data.verified {
-                    return Err(Error::signer_message_error(
-                        &message,
-                        "device has not verified this key so can't verify addresses for it"
-                            .to_string(),
-                    ));
-                }
 
                 let bip32_path = tweak::BitcoinBip32Path {
                     account_keychain: tweak::BitcoinAccountKeychain::external(),
@@ -596,13 +581,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
             secret_share: *secret_share.secret_share(),
         };
 
-        self.save_complete_share(
-            complete_share,
-            symm_key_gen,
-            decryption_share_contrib,
-            true,
-            rng,
-        );
+        self.save_complete_share(complete_share, symm_key_gen, decryption_share_contrib, rng);
 
         Ok(KeyGenAck {
             ack_session_hash: session_hash,
@@ -700,7 +679,6 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
         complete_share: CompleteSecretShare,
         symm_keygen: &mut impl DeviceSymmetricKeyGen,
         coord_contrib: CoordShareDecryptionContrib,
-        verified: bool,
         rng: &mut impl rand_core::RngCore,
     ) {
         let CompleteSecretShare {
@@ -724,11 +702,6 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
             key_name,
             purpose,
         });
-        if verified {
-            self.mutate(Mutation::VerifyKey {
-                key_id: access_structure_ref.key_id,
-            });
-        }
         self.mutate(Mutation::NewAccessStructure {
             access_structure_ref,
             threshold,
@@ -738,10 +711,6 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
             access_structure_ref,
             encrypted_secret_share,
         })));
-    }
-
-    pub fn mark_key_verified(&mut self, key_id: KeyId) {
-        self.mutate(Mutation::VerifyKey { key_id });
     }
 
     pub fn wallet_network(&self, key_id: KeyId) -> Option<bitcoin::Network> {
@@ -803,9 +772,6 @@ pub enum Mutation {
         access_structure_ref: AccessStructureRef,
         threshold: u16,
         kind: AccessStructureKind,
-    },
-    VerifyKey {
-        key_id: KeyId,
     },
     SaveShare(Box<SaveShareMutation>),
     Restoration(restoration::RestorationMutation),
