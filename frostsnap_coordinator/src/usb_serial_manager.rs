@@ -519,10 +519,10 @@ impl UsbSerialManager {
         }
 
         self.outbox_sender
-            .send(CoordinatorSendMessage {
-                message_body: CoordinatorSendBody::AnnounceAck {},
-                target_destinations: Destination::from([from]),
-            })
+            .send(CoordinatorSendMessage::to(
+                from,
+                CoordinatorSendBody::AnnounceAck,
+            ))
             .unwrap();
 
         self.reverse_device_ports
@@ -609,7 +609,6 @@ impl UsbSerialManager {
                 .bin
                 .chunks(FIRMWARE_UPGRADE_CHUNK_LEN as usize)
                 .enumerate();
-            // let last = chunks.len() - 1;
 
             iters.push(core::iter::from_fn(move || {
                 let (i, chunk) = chunks.next()?;
@@ -672,21 +671,19 @@ impl UsbSender {
 
     pub fn send_cancel(&self, device_id: DeviceId) {
         self.sender
-            .send(CoordinatorSendMessage {
-                target_destinations: frostsnap_comms::Destination::Particular([device_id].into()),
-                message_body: frostsnap_comms::CoordinatorSendBody::Cancel,
-            })
+            .send(CoordinatorSendMessage::to(
+                device_id,
+                frostsnap_comms::CoordinatorSendBody::Cancel,
+            ))
             .expect("receiver exists");
     }
 
     pub fn update_name_preview(&self, device_id: DeviceId, name: &str) {
         self.sender
-            .send(CoordinatorSendMessage {
-                target_destinations: [device_id].into(),
-                message_body: CoordinatorSendBody::Naming(frostsnap_comms::NameCommand::Preview(
-                    name.into(),
-                )),
-            })
+            .send(CoordinatorSendMessage::to(
+                device_id,
+                CoordinatorSendBody::Naming(frostsnap_comms::NameCommand::Preview(name.into())),
+            ))
             .expect("receiver exists");
     }
 
@@ -698,12 +695,10 @@ impl UsbSender {
             "Named device"
         );
         self.sender
-            .send(CoordinatorSendMessage {
-                target_destinations: [device_id].into(),
-                message_body: CoordinatorSendBody::Naming(frostsnap_comms::NameCommand::Finish(
-                    name.into(),
-                )),
-            })
+            .send(CoordinatorSendMessage::to(
+                device_id,
+                CoordinatorSendBody::Naming(frostsnap_comms::NameCommand::Finish(name.into())),
+            ))
             .expect("receiver exists");
     }
 
@@ -718,10 +713,10 @@ impl UsbSender {
             "Wiping device"
         );
         self.sender
-            .send(CoordinatorSendMessage {
-                target_destinations: [device_id].into(),
-                message_body: CoordinatorSendBody::DataWipe,
-            })
+            .send(CoordinatorSendMessage::to(
+                device_id,
+                CoordinatorSendBody::DataWipe,
+            ))
             .expect("receiver exists");
     }
 

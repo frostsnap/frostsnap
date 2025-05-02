@@ -126,7 +126,6 @@ impl UiProtocol for EnterPhysicalBackup {
 pub struct EnterPhysicalBackupState {
     pub device_id: DeviceId,
     pub entered: Option<restoration::PhysicalBackupPhase>,
-    /// null if the user is entering the backup not to save but to check it
     pub saved: bool,
     pub abort: Option<String>,
 }

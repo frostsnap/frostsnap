@@ -152,7 +152,7 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
                 {
                     Err(Error::signer_invalid_message(
                         &message,
-                        "unrecognized restoration",
+                        "we can't consolidate a share we don't know about",
                     ))
                 } else {
                     // we've already consolidated it so just answer afirmatively

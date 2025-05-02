@@ -1,9 +1,8 @@
 pub mod backup_run;
 pub mod display_backup;
+pub mod enter_physical_backup;
 pub mod firmware_upgrade;
 pub mod keygen;
-// mod restoration;
-pub mod enter_physical_backup;
 mod serial_port;
 pub mod signing;
 mod ui_protocol;

@@ -119,6 +119,8 @@ impl State {
                                     .share_index,
                             });
                     }
+                } else {
+                    fail!("no restoration to finish with this restoration_id");
                 }
             }
             DeviceNeedsConsolidation(consolidation) => {
@@ -386,10 +388,8 @@ impl FrostCoordinator {
             .interpolate()
             .ok_or(RestorationError::NotEnoughShares)?;
 
-        let access_structure_ref = AccessStructureRef::from_root_shared_key(&root_shared_key);
-
-        let expected_threshold = state.access_structure.threshold;
         let got_threshold = root_shared_key.threshold();
+        let expected_threshold = state.access_structure.threshold;
 
         if expected_threshold as usize != got_threshold {
             return Err(RestorationError::ThresholdDoesntMatch {
@@ -398,6 +398,8 @@ impl FrostCoordinator {
             });
         }
 
+        let access_structure_ref = AccessStructureRef::from_root_shared_key(&root_shared_key);
+        // if we already know about this access structure, then check the interpolation matches
         if let Some(expected_access_structure_ref) = state.access_structure_ref {
             if access_structure_ref != expected_access_structure_ref {
                 return Err(RestorationError::InterpolationDoesntMatch);
