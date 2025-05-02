@@ -440,12 +440,12 @@ where
 
         if recovery_mode {
             Text::with_alignment(
-                "RECOVERY MODE",
+                "Restoration Mode",
                 Point::new(
                     (body.size().width / 2) as i32,
                     (body.size().height / 3) as i32,
                 ),
-                U8g2TextStyle::new(FONT_LARGE, COLORS.warning),
+                U8g2TextStyle::new(FONT_MED, COLORS.warning),
                 Alignment::Center,
             )
             .draw(&mut body)
