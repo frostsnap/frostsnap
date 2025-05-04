@@ -842,47 +842,51 @@ class _PlugInPromptViewState extends State<_PlugInPromptView> {
   late StreamSubscription _subscription;
   bool blankDeviceInserted = false;
   RecoverShare? alreadyGot;
+  final Set<DeviceId> _processedDeviceIds = {};
 
   @override
   void initState() {
     super.initState();
-
     _subscription = coord.waitForRecoveryShare().listen((
       waitForRecoverShareState,
     ) {
-      var detectedShare = waitForRecoverShareState.recoverable.firstOrNull;
-
-      if (detectedShare != null) {
-        final ShareCompatibility compatibility;
-
-        if (widget.continuing != null) {
-          compatibility = coord.restorationCheckShareCompatible(
-            restorationId: widget.continuing!,
-            recoverShare: detectedShare,
-          );
-        } else if (widget.existing != null) {
-          compatibility = coord.checkRecoverShareCompatible(
-            accessStructureRef: widget.existing!,
-            recoverShare: detectedShare,
-          );
-        } else {
-          compatibility = ShareCompatibility.Compatible;
-        }
-
-        if (compatibility == ShareCompatibility.AlreadyGotIt) {
-          // keep searching if we've already got the share as part of the restoration.
-          // You might be wondering why
-          setState(() {
-            alreadyGot = detectedShare;
-          });
-        } else {
-          widget.onCandidateDetected(detectedShare, compatibility);
-        }
-      } else {
+      if (waitForRecoverShareState.recoverable.isEmpty) {
         setState(() {
           alreadyGot = waitForRecoverShareState.alreadyGot.firstOrNull;
           blankDeviceInserted = waitForRecoverShareState.blank.isNotEmpty;
         });
+      } else {
+        for (var detectedShare in waitForRecoverShareState.recoverable) {
+          DeviceId deviceId = detectedShare.deviceId();
+          if (_processedDeviceIds.contains(deviceId)) {
+            continue;
+          }
+
+          _processedDeviceIds.add(deviceId);
+
+          final ShareCompatibility compatibility;
+          if (widget.continuing != null) {
+            compatibility = coord.restorationCheckShareCompatible(
+              restorationId: widget.continuing!,
+              recoverShare: detectedShare,
+            );
+          } else if (widget.existing != null) {
+            compatibility = coord.checkRecoverShareCompatible(
+              accessStructureRef: widget.existing!,
+              recoverShare: detectedShare,
+            );
+          } else {
+            compatibility = ShareCompatibility.Compatible;
+          }
+
+          if (compatibility == ShareCompatibility.AlreadyGotIt) {
+            setState(() {
+              alreadyGot = detectedShare;
+            });
+          } else {
+            widget.onCandidateDetected(detectedShare, compatibility);
+          }
+        }
       }
     });
   }
