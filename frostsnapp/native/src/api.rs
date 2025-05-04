@@ -1391,10 +1391,14 @@ impl Coordinator {
                 Ok(_) => ShareCompatibility::Compatible,
                 Err(e) => match e {
                     NameMismatch => ShareCompatibility::NameMismatch,
-                    AcccessStructureMismatch | UnknownRestorationId | PurposeNotCompatible => {
-                        ShareCompatibility::Incompatible
+                    AcccessStructureMismatch
+                    | UnknownRestorationId
+                    | PurposeNotCompatible
+                    | AlreadyGotShareIndex => ShareCompatibility::Incompatible,
+                    AlreadyGotDeviceShare => ShareCompatibility::AlreadyGotDeviceShare,
+                    AlreadyGotThisShare(already_held_by) => {
+                        ShareCompatibility::DuplicateShare { already_held_by }
                     }
-                    AlreadyGotThisShare => ShareCompatibility::AlreadyGotIt,
                 },
             },
         )
@@ -1434,7 +1438,9 @@ impl Coordinator {
         SyncReturn(match res {
             Ok(_) => ShareCompatibility::Compatible,
             Err(e) => match e {
-                RecoverShareError::AlreadyGotThisShare => ShareCompatibility::AlreadyGotIt,
+                RecoverShareError::AlreadyGotDeviceShare => {
+                    ShareCompatibility::AlreadyGotDeviceShare
+                }
                 RecoverShareError::NoSuchAccessStructure => ShareCompatibility::Incompatible,
                 RecoverShareError::ShareImageIsWrong => ShareCompatibility::Incompatible,
                 RecoverShareError::DecryptionError => {
@@ -1515,14 +1521,14 @@ impl Coordinator {
 
 pub enum ShareCompatibility {
     Compatible,
-    AlreadyGotIt,
+    AlreadyGotDeviceShare,
+    DuplicateShare { already_held_by: DeviceId },
     Incompatible,
     NameMismatch,
 }
 
 pub struct WaitForRecoveryShareState {
     pub recoverable: Vec<RecoverShare>,
-    pub already_got: Vec<RecoverShare>,
     pub connected: Vec<DeviceId>,
     pub blank: Vec<DeviceId>,
 }
@@ -1536,12 +1542,6 @@ impl From<frostsnap_coordinator::wait_for_recovery_share::WaitForRecoveryShareSt
         WaitForRecoveryShareState {
             recoverable: value
                 .recoverable
-                .into_iter()
-                .map(RustOpaque::new)
-                .map(RecoverShare)
-                .collect(),
-            already_got: value
-                .already_got
                 .into_iter()
                 .map(RustOpaque::new)
                 .map(RecoverShare)

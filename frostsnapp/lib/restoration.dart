@@ -852,7 +852,6 @@ class _PlugInPromptViewState extends State<_PlugInPromptView> {
     ) {
       if (waitForRecoverShareState.recoverable.isEmpty) {
         setState(() {
-          alreadyGot = waitForRecoverShareState.alreadyGot.firstOrNull;
           blankDeviceInserted = waitForRecoverShareState.blank.isNotEmpty;
         });
       } else {
@@ -876,10 +875,10 @@ class _PlugInPromptViewState extends State<_PlugInPromptView> {
               recoverShare: detectedShare,
             );
           } else {
-            compatibility = ShareCompatibility.Compatible;
+            compatibility = ShareCompatibility_Compatible();
           }
 
-          if (compatibility == ShareCompatibility.AlreadyGotIt) {
+          if (compatibility == ShareCompatibility_AlreadyGotDeviceShare()) {
             setState(() {
               alreadyGot = detectedShare;
             });
@@ -1012,12 +1011,12 @@ class _CandidateReadyView extends StatelessWidget {
     VoidCallback buttonAction;
 
     switch (compatibility) {
-      case ShareCompatibility.Compatible ||
+      case ShareCompatibility_Compatible() ||
           // we ignore the problem of different wallet names on the shares for now.
           // This happens when you eneter a physical backup and enter a different
           // name for the wallet than devices you later try to add to the wallet.
           // We just carry on with the cosmetic SNAFU.
-          ShareCompatibility.NameMismatch:
+          ShareCompatibility_NameMismatch():
         icon = const Icon(Icons.check_circle, size: 48, color: Colors.green);
 
         if (continuing != null || existing != null) {
@@ -1057,14 +1056,23 @@ class _CandidateReadyView extends StatelessWidget {
         };
         break;
 
-      case ShareCompatibility.AlreadyGotIt:
+      case ShareCompatibility_AlreadyGotDeviceShare():
         icon = const Icon(Icons.info, size: 48, color: Colors.blue);
         message = 'You’ve already recovered "$deviceName".';
         buttonText = 'Close';
         buttonAction = () => Navigator.pop(context);
         break;
 
-      case ShareCompatibility.Incompatible:
+      case ShareCompatibility_DuplicateShare(:final alreadyHeldBy):
+        final alreadyHeldDeviceName = coord.getDeviceName(id: alreadyHeldBy);
+        icon = const Icon(Icons.info, size: 48, color: Colors.blue);
+        message =
+            'The share on $deviceName is a duplicate, the same share already exists on $alreadyHeldDeviceName';
+        buttonText = 'Close';
+        buttonAction = () => Navigator.pop(context);
+        break;
+
+      case ShareCompatibility_Incompatible():
         icon = const Icon(Icons.error, size: 48, color: Colors.red);
         message =
             'This key "$deviceName" is part of a different wallet called "${candidate.keyName()}"';

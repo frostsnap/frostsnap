@@ -341,14 +341,42 @@ impl FrostCoordinator {
     ) -> Result<(), RestoreRecoverShareError> {
         match self.restoration.restorations.get(&restoration_id) {
             Some(restoration) => {
-                let already_existing = restoration
-                    .access_structure
-                    .share_images
-                    .get(&recover_share.held_by);
+                let already_existing_shares = &restoration.access_structure.share_images;
 
-                if already_existing == Some(&recover_share.held_share.share_image) {
-                    return Err(RestoreRecoverShareError::AlreadyGotThisShare);
+                // first check whether we already have begun to restore a share for this device
+                if already_existing_shares
+                    .keys()
+                    .cloned()
+                    .any(|already_restoring_device| {
+                        already_restoring_device == recover_share.held_by
+                    })
+                {
+                    return Err(RestoreRecoverShareError::AlreadyGotDeviceShare);
                 }
+
+                // then we'll check that another device doesn't have this share
+                if let Some((already_held_by, _)) =
+                    already_existing_shares
+                        .iter()
+                        .find(|(_, already_restoring_share)| {
+                            **already_restoring_share == recover_share.held_share.share_image
+                        })
+                {
+                    return Err(RestoreRecoverShareError::AlreadyGotThisShare(
+                        *already_held_by,
+                    ));
+                }
+
+                // and finally, check we haven't loaded a share with same index (silly user)
+                if already_existing_shares
+                    .iter()
+                    .map(|(_, existing_share)| existing_share.share_index)
+                    .any(|existing_index| {
+                        existing_index == recover_share.held_share.share_image.share_index
+                    })
+                {
+                    return Err(RestoreRecoverShareError::AlreadyGotShareIndex);
+                };
 
                 if restoration.key_purpose != recover_share.held_share.purpose {
                     return Err(RestoreRecoverShareError::PurposeNotCompatible);
@@ -493,7 +521,7 @@ impl FrostCoordinator {
             .device_to_share_index
             .contains_key(&recover_share.held_by)
         {
-            return Err(RecoverShareError::AlreadyGotThisShare);
+            return Err(RecoverShareError::AlreadyGotDeviceShare);
         }
 
         let root_shared_key = frost_key
@@ -646,7 +674,6 @@ impl FrostCoordinator {
                 )])
             }
             DeviceRestoration::HeldShares(held_shares) => {
-                let mut already_got = vec![];
                 let mut recoverable = vec![];
                 for held_share in held_shares {
                     let access_structure_ref = held_share.access_structure_ref;
@@ -659,16 +686,13 @@ impl FrostCoordinator {
                         None => false,
                     };
 
-                    if knows_about_share {
-                        already_got.push(held_share);
-                    } else {
+                    if !knows_about_share {
                         recoverable.push(held_share);
                     }
                 }
                 Ok(vec![CoordinatorSend::ToUser(
                     ToUserRestoration::GotHeldShares {
                         held_by: from,
-                        already_got,
                         recoverable,
                     }
                     .into(),
@@ -801,7 +825,6 @@ pub enum RestorationMutation {
 pub enum ToUserRestoration {
     GotHeldShares {
         held_by: DeviceId,
-        already_got: Vec<HeldShare>,
         recoverable: Vec<HeldShare>,
     },
     PhysicalBackupEntered(Box<PhysicalBackupPhase>),
@@ -912,8 +935,12 @@ pub enum RestoreRecoverShareError {
     PurposeNotCompatible,
     /// Access structure doesn't match one of the other shares
     AcccessStructureMismatch,
-    /// Already got this share
-    AlreadyGotThisShare,
+    /// Already got this share on another device
+    AlreadyGotThisShare(DeviceId),
+    /// Already got a share from this device
+    AlreadyGotDeviceShare,
+    /// Already got share with this index
+    AlreadyGotShareIndex,
 }
 
 impl fmt::Display for RestoreRecoverShareError {
@@ -928,14 +955,20 @@ impl fmt::Display for RestoreRecoverShareError {
             RestoreRecoverShareError::AcccessStructureMismatch => {
                 write!(f, "Access structure doesn't match one of the other shares")
             }
-            RestoreRecoverShareError::AlreadyGotThisShare => {
-                write!(f, "Already got this share")
+            RestoreRecoverShareError::AlreadyGotThisShare(already_held_by) => {
+                write!(f, "Already got this share on {already_held_by}")
             }
             RestoreRecoverShareError::NameMismatch => {
                 write!(
                     f,
                     "The name of the key being restored and the one in the share is not the same"
                 )
+            }
+            RestoreRecoverShareError::AlreadyGotDeviceShare => {
+                write!(f, "We already have a share for this device")
+            }
+            RestoreRecoverShareError::AlreadyGotShareIndex => {
+                write!(f, "We already have a share for this device")
             }
         }
     }
@@ -946,8 +979,8 @@ impl std::error::Error for RestoreRecoverShareError {}
 
 #[derive(Debug, Clone)]
 pub enum RecoverShareError {
-    /// The coordinator already knows about this share
-    AlreadyGotThisShare,
+    /// The coordinator already knows about a share for this device
+    AlreadyGotDeviceShare,
     /// The access structure for the share isn't known to the coordinator
     NoSuchAccessStructure,
     /// Access structure for this share wasn't the same as the one you were trying to recover to
@@ -961,8 +994,11 @@ pub enum RecoverShareError {
 impl fmt::Display for RecoverShareError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RecoverShareError::AlreadyGotThisShare => {
-                write!(f, "The coordinator already knows about this share")
+            RecoverShareError::AlreadyGotDeviceShare => {
+                write!(
+                    f,
+                    "The coordinator already associates a share with this device"
+                )
             }
             RecoverShareError::NoSuchAccessStructure => write!(
                 f,
