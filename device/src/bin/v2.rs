@@ -721,5 +721,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     let mut display = init_display!(peripherals: peripherals, delay: &mut delay);
     graphics::error_print(&mut display, panic_buf.as_str());
     bl.set_high();
+
+    // switch OTA partition to factory/last good one 
     loop {}
 }
