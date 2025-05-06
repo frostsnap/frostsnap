@@ -1044,7 +1044,6 @@ impl Coordinator {
     }
 
     pub fn send_cancel(&self, id: DeviceId) {
-        event!(Level::WARN, "dart sent cancel");
         self.0.send_cancel(id);
     }
 
