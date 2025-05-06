@@ -27,7 +27,7 @@ class WalletRecoveryPage extends StatelessWidget {
             ? (sharesNeeded == 1
                 ? '1 more key needed'
                 : '$sharesNeeded more keys needed')
-            : 'You\'ve got enough keys to restore the wallet but you can continue adding more';
+            : 'You have enough keys to restore the wallet. You can continue recovering more devices if you have more backups available, or add them at later time under settings.';
 
     return CustomScrollView(
       slivers: [
@@ -49,7 +49,7 @@ class WalletRecoveryPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 20),
                 Text(
-                  "Minimum ${restoringKey.threshold} keys needed to restore.",
+                  "At least ${restoringKey.threshold} keys are needed to restore this wallet.",
                 ),
                 const SizedBox(height: 10),
                 Text(
@@ -84,7 +84,7 @@ class WalletRecoveryPage extends StatelessWidget {
                 Center(
                   child: ElevatedButton.icon(
                     icon: const Icon(Icons.add),
-                    label: const Text('restore another key'),
+                    label: const Text('Restore another key'),
                     style: ElevatedButton.styleFrom(
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(20),
@@ -431,7 +431,7 @@ class _ChooseMethodView extends StatelessWidget {
             ),
             title: const Text('Existing key'),
             subtitle: const Text(
-              "I have a Frostsnap which already has a key for the wallet",
+              "I have a Frostsnap which already has a key for the wallet.",
             ),
             onTap: onDeviceChosen,
           ),
@@ -448,7 +448,7 @@ class _ChooseMethodView extends StatelessWidget {
             leading: const Icon(Icons.description, size: 30),
             title: const Text('Physical backup'),
             subtitle: const Text(
-              'I have a physically recorded backup and blank Frostsnap device',
+              'I have a physically recorded backup and blank Frostsnap device.',
             ),
             onTap: onPhysicalBackupChosen,
           ),
@@ -507,7 +507,7 @@ class _PlugInBlankViewState extends State<_PlugInBlankView> {
         Icon(Icons.cancel, color: theme.colorScheme.error, size: 48),
         SizedBox(height: 16),
         Text(
-          "The device “${connectedDevice!.name!}” you've plugged in is not blank.\nYou must erase it first to input a physical backup on it.",
+          "The device “${connectedDevice!.name!}” you've plugged in is not blank.\nYou must erase the device before loading a physical backup onto it.",
           textAlign: TextAlign.center,
           style: theme.textTheme.titleMedium,
         ),
@@ -518,7 +518,7 @@ class _PlugInBlankViewState extends State<_PlugInBlankView> {
         Icon(Icons.usb, size: 48),
         SizedBox(height: 16),
         Text(
-          'Plug in a blank Frostsnap device to restore the physical backup onto',
+          'Plug in a blank Frostsnap device to restore the physical backup onto.',
           textAlign: TextAlign.center,
           style: theme.textTheme.titleMedium,
         ),
@@ -595,7 +595,7 @@ class _EnterWalletNameViewState extends State<_EnterWalletNameView> {
           ),
           const SizedBox(height: 16),
           Text(
-            "Enter the same name that is recorded on the physical backup. If it's been lost or damaged you may enter another name.",
+            "Enter the same name that is recorded on the physical backup. If it has been lost or damaged you may enter another name.",
             style: theme.textTheme.bodyMedium,
             textAlign: TextAlign.center,
           ),
@@ -674,7 +674,7 @@ class _EnterThresholdViewState extends State<_EnterThresholdView> {
           ),
           const SizedBox(height: 16),
           Text(
-            "Enter the threshold that's recorded on the backup. If it's been lost or damaged try and guess it!",
+            "Enter the threshold that's recorded on the backup.",
             style: theme.textTheme.bodyMedium,
             textAlign: TextAlign.center,
           ),
@@ -737,11 +737,16 @@ class _EnterDeviceNameView extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text("Name the device", style: theme.textTheme.headlineLarge),
+        Text(
+          "Name This Device",
+          style: theme.textTheme.titleLarge,
+          textAlign: TextAlign.center,
+        ),
         const SizedBox(height: 16),
         Text(
-          "Give this device a name. If in doubt you can use the name written on the backup or make up a new one. You can always rename it later",
+          "If in doubt you can use the name written on the backup or make up a new one. You can always rename it later.",
           style: theme.textTheme.bodyMedium,
+          textAlign: TextAlign.center,
         ),
         const SizedBox(height: 16),
         DeviceNameField(
