@@ -737,6 +737,6 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     graphics::error_print(&mut display, panic_buf.as_str());
     bl.set_high();
 
-    // switch OTA partition to factory/last good one 
+    // switch OTA partition to ota_0/last good one 
     loop {}
 }

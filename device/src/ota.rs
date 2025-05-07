@@ -17,7 +17,6 @@ pub struct OtaPartitions<'a> {
     pub otadata: EspFlashPartition<'a>,
     pub ota_0: EspFlashPartition<'a>,
     pub ota_1: EspFlashPartition<'a>,
-    pub factory: EspFlashPartition<'a>,
 }
 
 /// CRC used by out bootloader (and incidentally python's binutils crc32 function when passed 0xFFFFFFFF as the init).
@@ -70,7 +69,7 @@ impl<'a> OtaPartitions<'a> {
     pub fn active_partition(&self) -> EspFlashPartition<'a> {
         match self.current_slot() {
             Some((slot, _)) => self.ota_partitions()[slot],
-            None => self.factory,
+            None => self.ota_0,
         }
     }
 

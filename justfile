@@ -6,7 +6,7 @@ ordinary_crates := "-p frostsnap_core -p frostsnap_coordinator -p frostsnap_comm
 alias erase := erase-device
 
 flash BOARD=default_board +ARGS="":
-    cd device && cargo run --release --features {{BOARD}} --bin {{BOARD}} -- --erase-parts otadata,factory {{ARGS}}
+    cd device && cargo run --release --features {{BOARD}} --bin {{BOARD}} -- --erase-parts otadata,ota_0 {{ARGS}}
 
 erase-device +ARGS="nvs":
     cd device && espflash erase-parts --partition-table partitions.csv {{ARGS}}
@@ -19,6 +19,7 @@ build +ARGS="":
 
 save-image BOARD=default_board +ARGS="":
     espflash save-image --chip=esp32c3 target/riscv32imc-unknown-none-elf/release/{{BOARD}} target/riscv32imc-unknown-none-elf/release/unsigned-firmware.bin {{ARGS}}
+    espsecure.py sign_data -v 2 -k device/secure_boot_signing_key.pem -o target/riscv32imc-unknown-none-elf/release/firmware.bin target/riscv32imc-unknown-none-elf/release/unsigned-firmware.bin
 
 test-ordinary +ARGS="":
     cargo test {{ARGS}} {{ordinary_crates}}
