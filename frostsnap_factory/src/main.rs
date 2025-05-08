@@ -12,11 +12,7 @@ use num_traits::identities::{One, Zero};
 use num_traits::ToPrimitive;
 use rand::RngCore as _;
 use rsa::traits::PublicKeyParts as _;
-use rsa::{
-    pkcs8::{DecodePrivateKey, EncodePublicKey, LineEnding},
-    traits::PrivateKeyParts as _,
-    RsaPrivateKey, RsaPublicKey,
-};
+use rsa::{pkcs8::DecodePrivateKey, traits::PrivateKeyParts as _, RsaPrivateKey, RsaPublicKey};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::error::Error;
@@ -152,14 +148,69 @@ fn main() -> ! {
     }
 }
 
+fn raw_exponent_rsa_sign(padded_int: BigUint, private_key: &RsaPrivateKey) -> BigUint {
+    let d = BigUint::from_bytes_be(&private_key.d().to_bytes_be());
+    let n = BigUint::from_bytes_be(&private_key.n().to_bytes_be());
+    let signature_int = padded_int.modpow(&d, &n);
+
+    signature_int
+}
+
+fn esp_32_test_vec_sign(message: &[u8], private_key: &RsaPrivateKey) -> BigUint {
+    let message_int = BigUint::from_bytes_be(message);
+
+    let mask = (BigUint::from(1u32) << ETS_DS_MAX_BITS) - BigUint::from(1u32);
+    let masked_message = message_int & mask;
+    let sig = raw_exponent_rsa_sign(masked_message, private_key);
+    sig
+}
+
+fn pad_message_for_rsa(message_digest: &[u8], private_key: &RsaPrivateKey) -> BigUint {
+    let padding = rsa::Pkcs1v15Sign::new::<sha2::Sha256>();
+
+    // manually apply padding
+    let key_size = private_key.size();
+    let mut padded_block = vec![0; key_size];
+
+    // PKCS#1 v1.5 format: 0x00 || 0x01 || PS || 0x00 || T
+    padded_block[0] = 0x00;
+    padded_block[1] = 0x01;
+
+    // Get the prefix (ASN.1 DigestInfo)
+    let prefix = padding.prefix.as_ref();
+
+    // Calculate padding length
+    let padding_len = key_size - prefix.len() - message_digest.len() - 3;
+
+    // Fill with 0xFF bytes
+    for i in 0..padding_len {
+        padded_block[2 + i] = 0xFF;
+    }
+
+    // Add 0x00 separator
+    padded_block[2 + padding_len] = 0x00;
+
+    // Add prefix (ASN.1 DigestInfo)
+    let prefix_offset = 3 + padding_len;
+    padded_block[prefix_offset..(prefix_offset + prefix.len())].copy_from_slice(prefix);
+
+    // add message digest
+    let digest_offset = prefix_offset + prefix.len();
+    padded_block[digest_offset..(digest_offset + message_digest.len())]
+        .copy_from_slice(&message_digest);
+
+    BigUint::from_bytes_be(&padded_block)
+}
+
 fn generate_ds_key() -> Esp32DsKey {
     let rsa_pcks8 = hex::decode("308206fe020100300d06092a864886f70d0101010500048206e8308206e40201000282018100b54f19ed638645a102068fb9b9a73312bd98692fcb0bd2e197f350fb427f46d6ea4ada1f585ff250564d8aca4b4efcfec9d8996b893b09bee8427ece2af1c47c9e9b8c827503c276c63e59dfc455f9fcee8c286afae480d666b2571b6c04af586a7355f43787665495389b97071e83d21e9273f9aba533d99512043e107f7cc2e148646dc7370572252cce4477951a90b7eafc5bcfc2967c3efc675168e40abcec6f495f7b3061315604dcea89b99bd9e1f7fd90c1701311eb37769d554042a12eaf620740da90e635407440fb8a2ce15919c5080f309a6edc88a0785bd8e60cb9642af2bbc740cbcdce8b3af183f327d8cd20126fe0812d73fd90ff0b990ba81ed2c88cd53b88b08c64f04a2988768d3ed7527f10ce63edfdb9c3ee64d1d6fdcc8e703a6dbbf653d40965a975c6b350b07092246b0e8954ff3e421b78ceb866898154e23628c35abd51abc0ceea02e00d79e7ab8107c14cc113d065758c9cc1d684080282be9c630d8666cf6cf7ac387238c4e15d3e131a53aecd90712b9b0b0203010001028201800eac51fd02c1729acc570099b7707f1dcf51e982b0818aa059939ba45750da9da3af741b4ba3d4309e93699de3de06c9389cfabeed07bb4b03c6a1e18885dc1b791b3de75995f8ce73a3c727e8b3f69125886ff04726bd55dca6268e35bde3fceea72fe272fe0110eba9fda4343375829dee71f6ace6a7f2be1c365359881fc386723d37c9d810ecedc799ad33d4fc25e5cf32d0dc0308fa66d48c28abfef7442bdef91c023f10ebea64bc063a7d8178997a3594af504fd2c840f5acacf7658ce7f78a087a8624428c196e28ee2d10f7872866c609fae8d0e162c4c536243ff36ddfe105186c79365964cf964a2a374ab41f72a3fb05510a8862e6e93158668ac51654ff97b8fb5b629ace66020a54c0d985f3066e0c1940865af9bf84aa231be0f74bc28303a960cc78cb09c55fb2af6654e64581214241f743492c546dc624acbaf46df0923971b058a5f33fd76427e4926a382e17e723437784f899fcf616d848c7f62d6202a7e0b6e1e7c86601db4357344ff3b9744269c3f1af90eabc910281c100da7642ebc740bef3fff065f14f63d594a9a118d894a7a2cc80d175f7062eb94bba6e569ae88724d3a351269680bb4b788f1d3c63f122e3efff6756f015dc506c94b6704aac8fa5abceedb94ecaf9e2dbe21c20202e7ff084df71d57dd6cdff5f89f7d90586e24d7e4dd37de66a6d0387e9296fb546e4b79a555d472b3516bbc2f96973e5ad14312134cfb92d5421239008a0ea662d98ee45e29a0616473f7e73022080429592bd3aaaf97b2a174feeecc74a755c2fb9c3db56d0a9c175a1cddb0281c100d4768c9dbeac5327df307e2d39ce32d86b9c85ade8e87301b74d8ce3eea6177feeb41c6c48fa72059a6bd749a362277596badd8e1fd13f72d16c67bb02e2aec57f1199e9c787d1c91bac6fdf9e69f3c68dde618ca5499e2313e540abb9ea1420cd75c219e4259eeee76236c388005566501fdb367b07fd51c9584461135bb4796653fac83f07e88dee1c026dbeb292b71b303be273b622bb51712b68986bd41b57ca203e41b5c0a46ff6d41b92f2c63431405d7a591f5e3509181e713e3ea6910281c100d737183854e418fa21927fab598dbd9426043988ebf1b5b507d6d202d849616c142ead0d10b44a7860750ab1cc0237987e4ccbf89d4ec504e334b7f5ef634aab9d5999884735807da06e9b56df298bef1872a2c77167c2d7f3949e40c943c92822b05351598f49ce7af73619af90d3a0a9f793401fa624a65b2078833d5ab7009e5adfbd4d640dfe6b9b940eeec972d26b5db36d93d00c3436c78be598ad19724d8f1d2bfb54432d2fd075208334d0e8dc7022ebfd6c61618cc625e61b6f9a6f0281c1008fbb638593e8a098e8b4b5a782e3ac221d2ad684c07c00d1b8600e6064a2986343e935114c8da17588f24bc2d575219cbb4bcf76c6af986ce4a0a1cc32378864b38204cdd2de5f5dde0ad9e43e170f83d3960e08480975a1e563c24c6a89a0f4500aca3519d319a225869be5cbabee1a393a53e29778e036e42f8292e9b5b0723077bfc09863913ff3459f9efed36fcdcfe6e19c610b6693b2950cf8c5a4ace9928a7b25a2ee8254bc2a0f745805457129a0919ca38e44fd3c19c4fe774d8b010281c0234c8c6b35da1e4111234ec11f8485902e09ff199511eedf3c8ccfd800552811d795f8014c9ae2253534cb50f563f66de07a68fbc14eba9d82123e706623e26e50a48848c066ef7110ef43e757941701eab825033754883267a4dabb628af4069d8cd6d423ec763f54f26baac010315808e654c495d6c694a2b33936250d7407d37f835e12676b6cbffbc97fda2409f2b243348bbcaf21120d1310184731aa61609b2ee181b7379e4e920dd9e7bf7007b2ba01e89466701145268a36c80515b3").unwrap();
     let priv_key = RsaPrivateKey::from_pkcs8_der(&rsa_pcks8).unwrap();
+    println!("{:?}", priv_key);
     let pub_key = RsaPublicKey::from(&priv_key);
-    println!(
-        "{}",
-        pub_key.to_public_key_pem(LineEnding::default()).unwrap()
-    );
+    // println!(
+    //     "{}",
+    //     pub_key.to_public_key_pem(LineEnding::default()).unwrap()
+    // );
     let hmac_key = [
         0x54, 0xde, 0x64, 0x8e, 0xcd, 0x6a, 0x3e, 0x0e, 0xd3, 0xc5, 0x99, 0x5b, 0xdb, 0xdf, 0xd0,
         0xc5, 0xf7, 0x44, 0x3f, 0x24, 0xdd, 0xca, 0x01, 0x7d, 0x36, 0xef, 0x68, 0x21, 0x75, 0xd6,
@@ -175,6 +226,43 @@ fn generate_ds_key() -> Esp32DsKey {
         0xb8, 0xb4, 0x69, 0x18, 0x28, 0xa3, 0x91, 0xd9, 0xd6, 0x62, 0x85, 0x8c, 0xc9, 0x79, 0x48,
         0x86,
     ];
+
+    // SIGNING TESTS
+    let message = hex::decode("354691f19b05c1da1571ea69fa0b4874d699a89cd525d6a5a8f6a43129fd7ee0590098518560268da96aeee6e34c73e608e8d4b71ffa0b0fabd72b065dc154633d6b2a19670b983b0f6b8bebc4f88b9d42aa0618ac161f2f3f5706330c0c118e31249d95298faf8fd54950b77020df103eb192a3f9a4318b551311d3633b86cf661c3cd5d78157560d9260a87e96e705d16cfaa259d2e4b9a5dea9c7fef18bb2dc66f273f403bbecda974617bf2fa69ba4b394af904720bbf8a76a648f476e49dcc7aa885bfeae7ad79aaf6311d6535ab4191a9aeb5ee28e3c500433c7814ab24711dab2482b9991cf7c8977e7566df834fab9921f94c1b08a3c1473487fd73add0029febdeb1045c94d538b53ab1a4c7c81de0352b33d96fded278e966c0272d4f97f6e1050ce446e3a2edca4a7c0089c0476e01c6988eea643f03a3009944d9184e04f3b521e0f210ee09543387645eaa8809164ede54f959055611a74f6cd9d7eeef7884c30bd7891a82a93ebe946282309589110e3d77f217bec62ffe23b").unwrap();
+
+    // // Reproduce ESP32 Test Vectors
+    let sig = esp_32_test_vec_sign(&message, &priv_key);
+    let sig_vec = big_number_to_words(&sig);
+    let sig_arr = vec_to_fixed(&sig_vec, DS_MAX_WORDS);
+    println!("Signature (esp32 test vector format):");
+    for &word in &sig_arr {
+        print!("0x{:08x}, ", word);
+    }
+    println!("\n");
+
+    println!(
+        "Signature hex big endian:\n{}\n",
+        hex::encode(&sig.to_bytes_be())
+    );
+
+    // Normal RSA signing
+    let message_digest = sha2::Sha256::digest(message);
+    let padded_message = pad_message_for_rsa(&message_digest, &priv_key);
+    let sig = raw_exponent_rsa_sign(padded_message, &priv_key);
+    let standard_signature = sig.to_bytes_be();
+    println!(
+        "Standard-compliant signature (hex):\n{}",
+        hex::encode(&standard_signature)
+    );
+
+    // Verify
+    let padding = rsa::Pkcs1v15Sign::new::<Sha256>();
+    let verified = pub_key
+        .verify(padding, &message_digest, &standard_signature)
+        .is_ok();
+    println!("Standard signature verification: {}", verified);
+
+    // FINISH SIGNING TESTS
 
     let plaintext_data = EspDsPData::new(&priv_key).unwrap();
 
