@@ -162,6 +162,8 @@ fn main() -> ! {
 
     let efuse = efuse::EfuseController::new(peripherals.EFUSE);
     let hal_hmac = core::cell::RefCell::new(Hmac::new(peripherals.HMAC));
+    let ds = peripherals.DS;
+    let mut jtag = UsbSerialJtag::new(peripherals.USB_DEVICE);
 
     let (final_rng, hmac_keys) = factory::run_factory(
         &mut display,
@@ -170,46 +172,46 @@ fn main() -> ! {
         &hal_hmac,
         hal_rng,
         &mut sha256,
+        &mut jtag,
+        &timer0,
+        ds,
     );
+
+    let jtag_iface = SerialInterface::new_jtag(&mut jtag, &timer0);
 
     let mut display = graphics::Graphics::new(display);
 
     display.header("Frostsnap");
     display.flush();
 
+    let serial_conf = uart::Config {
+        baudrate: frostsnap_comms::BAUDRATE,
+        ..Default::default()
+    };
     let detect_device_upstream = upstream_detect.is_low();
+    let mut uart_upstream = Uart::new_with_config(
+        peripherals.UART1,
+        serial_conf,
+        peripherals.GPIO18,
+        peripherals.GPIO19,
+    )
+    .unwrap();
     let upstream_serial = if detect_device_upstream {
-        let serial_conf = uart::Config {
-            baudrate: frostsnap_comms::BAUDRATE,
-            ..Default::default()
-        };
-        SerialInterface::new_uart(
-            Uart::new_with_config(
-                peripherals.UART1,
-                serial_conf,
-                peripherals.GPIO18,
-                peripherals.GPIO19,
-            )
-            .unwrap(),
-            &timer0,
-        )
+        SerialInterface::new_uart(&mut uart_upstream, &timer0)
     } else {
-        SerialInterface::new_jtag(UsbSerialJtag::new(peripherals.USB_DEVICE), &timer0)
+        jtag_iface
     };
-    let downstream_serial: SerialInterface<_, Downstream> = {
-        let serial_conf = uart::Config {
-            baudrate: frostsnap_comms::BAUDRATE,
-            ..Default::default()
-        };
-        let uart = Uart::new_with_config(
-            peripherals.UART0,
-            serial_conf,
-            peripherals.GPIO21,
-            peripherals.GPIO20,
-        )
-        .unwrap();
-        SerialInterface::new_uart(uart, &timer0)
-    };
+
+    let mut downstream_uart = Uart::new_with_config(
+        peripherals.UART0,
+        serial_conf,
+        peripherals.GPIO21,
+        peripherals.GPIO20,
+    )
+    .unwrap();
+
+    let downstream_serial: SerialInterface<_, Downstream> =
+        SerialInterface::new_uart(&mut downstream_uart, &timer0);
 
     let ui = FrostyUi {
         display,
@@ -235,7 +237,8 @@ fn main() -> ! {
         sha256,
         hmac_keys,
     };
-    run.run()
+    run.run();
+    unreachable!("run will never stop!");
 }
 
 /// Dummy CS pin for our display
