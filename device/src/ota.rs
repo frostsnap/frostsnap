@@ -294,8 +294,8 @@ impl FirmwareUpgradeMode<'_> {
 
     pub fn enter_upgrade_mode(
         &mut self,
-        upstream_io: &mut SerialIo<'_>,
-        mut downstream_io: Option<&mut SerialIo<'_>>,
+        upstream_io: &mut SerialIo<'_, '_>,
+        mut downstream_io: Option<&mut SerialIo<'_, '_>>,
         ui: &mut impl UserInteraction,
         sha: &mut Sha<'_>,
     ) {
@@ -314,7 +314,7 @@ impl FirmwareUpgradeMode<'_> {
         };
 
         upstream_io.change_baud(OTA_UPDATE_BAUD);
-        if let Some(downstream_io) = downstream_io.as_mut() {
+        if let Some(downstream_io) = &mut downstream_io {
             downstream_io.change_baud(OTA_UPDATE_BAUD);
         }
 
@@ -335,7 +335,7 @@ impl FirmwareUpgradeMode<'_> {
                     i += 1;
                     byte_count += 1;
                     finished_writing = byte_count == upgrade_size;
-                    if let Some(downstream_io) = downstream_io.as_mut() {
+                    if let Some(downstream_io) = &mut downstream_io {
                         block!(downstream_io.write_byte_nb(byte)).unwrap();
                     }
 
@@ -370,7 +370,7 @@ impl FirmwareUpgradeMode<'_> {
             }
 
             if !finished_writing {
-                if let Some(downstream_io) = downstream_io.as_mut() {
+                if let Some(downstream_io) = &mut downstream_io {
                     while let Ok(byte) = downstream_io.read_byte() {
                         assert!(
                             byte == FIRMWARE_NEXT_CHUNK_READY_SIGNAL,
@@ -390,14 +390,14 @@ impl FirmwareUpgradeMode<'_> {
 
         ui.poll();
 
-        if let Some(downstream_io) = downstream_io.as_mut() {
+        if let Some(downstream_io) = &mut downstream_io {
             downstream_io.flush();
         }
 
         // change it back to the original baudrate but keep in mind that the devices are meant to
         // restart after the upgrade.
         upstream_io.change_baud(BAUDRATE);
-        if let Some(downstream_io) = downstream_io.as_mut() {
+        if let Some(downstream_io) = &mut downstream_io {
             downstream_io.change_baud(BAUDRATE);
         }
 
