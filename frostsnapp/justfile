@@ -20,7 +20,7 @@ run +ARGS="": maybe-gen
 maybe-gen:
     #!/bin/sh
     if ! sha256sum --check {{CANARY}} >/dev/null 2>&1 ; then
-       echo "$input changed so re-running bindgen">&2;
+       echo "{{CANARY}} changed so re-running bindgen">&2;
        just gen
     fi
 
