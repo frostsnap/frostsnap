@@ -13,7 +13,7 @@ num-bigint-dig = "0.8"
 num-traits = "0.2"
 aes = "0.8"
 cbc = "0.1"
-sha2 = "0.10"
+sha2 = { version = "0.10", features = ["oid"] }
 hmac = "0.12"
 frostsnap_coordinator.workspace = true
 tracing.workspace = true
