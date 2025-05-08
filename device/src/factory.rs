@@ -89,30 +89,39 @@ where
     let factory_entropy = read_message!(upstream, FactorySend::InitEntropy);
 
     let mut rng = extract_entropy(&mut rng, sha256, 1024, &factory_entropy[..]);
-    text_display!(display, "Got enttropy");
+    text_display!(display, "Got entropy");
     upstream.send(DeviceFactorySend::InitEntropyOk).unwrap();
 
     let set_ds_key = read_message!(upstream, FactorySend::SetEsp32DsKey);
 
     if !EfuseController::is_key_written(RSA_EFUSE_KEY_SLOT) {
-        efuse
-            .set_efuse_key(
-                RSA_EFUSE_KEY_SLOT,
-                KeyPurpose::Ds,
-                false,
-                set_ds_key.hmac_key,
-            )
-            .unwrap();
+        // efuse
+        //     .set_efuse_key(
+        //         RSA_EFUSE_KEY_SLOT,
+        //         KeyPurpose::Ds,
+        //         false,
+        //         set_ds_key.hmac_key,
+        //     )
+        //     .unwrap();
 
         // 1. write efuse (done)
         // 2. write blob (maybe)
         // 3. pass blob and message to RSA peripheral to sign
         // 4. check signature
     }
+    // let message_int = BigUint::from_bytes_be(&message);
+    // let d = BigUint::from_bytes_be(&priv_key.d().to_bytes_be());
+    // let n = BigUint::from_bytes_be(&priv_key.n().to_bytes_be());
+    // let result_int = message_int.modpow(&d, &n);
+
+    // let sig_vec = big_number_to_words(&result_int);
+    // let sig_arr = vec_to_fixed(&sig_vec, DS_MAX_WORDS);
 
     let value = efuse.read_efuse(RSA_EFUSE_KEY_SLOT).unwrap();
-
-    panic!("{}", frostsnap_core::schnorr_fun::fun::hex::encode(&value));
+    panic!(
+        "muh efuse {}",
+        frostsnap_core::schnorr_fun::fun::hex::encode(&value)
+    );
 
     loop {}
 
