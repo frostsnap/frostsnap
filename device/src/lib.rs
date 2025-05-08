@@ -1,10 +1,8 @@
 #![no_std]
 
 use alloc::{collections::VecDeque, string::ToString};
-use esp_hal::sha;
 use frostsnap_comms::{DeviceSendBody, DeviceSendMessage};
 use frostsnap_core::DeviceId;
-use rand_core::SeedableRng;
 use ui::UserInteraction;
 
 #[macro_use]
@@ -13,6 +11,7 @@ extern crate alloc;
 pub mod device_config;
 pub mod efuse;
 pub mod esp32_run;
+pub mod factory;
 pub mod flash;
 #[cfg(feature = "v2")]
 pub mod graphics;
@@ -121,19 +120,35 @@ pub enum DownstreamConnectionState {
 pub type Instant = fugit::Instant<u64, 1, 1_000_000>;
 pub type Duration = fugit::Duration<u64, 1, 1_000_000>;
 
-pub fn extract_entropy(
-    rng: &mut impl rand_core::RngCore,
-    sha256: &mut esp_hal::sha::Sha<'_>,
-    bytes: usize,
-) -> impl rand_core::RngCore {
-    pub use frostsnap_core::sha2::digest::FixedOutput;
-    let mut digest = sha256.start::<sha::Sha256>();
-    for _ in 0..(bytes.div_ceil(64)) {
-        let mut entropy = [0u8; 64];
-        rng.fill_bytes(&mut entropy);
-        digest.update(&entropy).expect("infallible");
-    }
+use micromath::F32Ext;
+/// Converts a non‑calibrated point into a calibrated point.
+/// The calibration adjusts the y‑coordinate based on the x and y values.
+pub fn calibrate_point(
+    point: embedded_graphics::prelude::Point,
+) -> embedded_graphics::prelude::Point {
+    let corrected_y = point.y + x_based_adjustment(point.x) + y_based_adjustment(point.y);
+    embedded_graphics::prelude::Point::new(point.x, corrected_y)
+}
 
-    let result = digest.finalize_fixed();
-    rand_chacha::ChaCha20Rng::from_seed(result.into())
+// DO NOT TOUCH the calibration functions below!
+fn x_based_adjustment(x: i32) -> i32 {
+    let x = x as f32;
+    let corrected = 1.3189e-14 * x.powi(7) - 2.1879e-12 * x.powi(6) - 7.6483e-10 * x.powi(5)
+        + 3.2578e-8 * x.powi(4)
+        + 6.4233e-5 * x.powi(3)
+        - 1.2229e-2 * x.powi(2)
+        + 0.8356 * x
+        - 20.0;
+    (-corrected) as i32
+}
+
+fn y_based_adjustment(y: i32) -> i32 {
+    if y > 170 {
+        return 0;
+    }
+    let y = y as f32;
+    let corrected =
+        -5.5439e-07 * y.powi(4) + 1.7576e-04 * y.powi(3) - 1.5104e-02 * y.powi(2) - 2.3443e-02 * y
+            + 40.0;
+    (-corrected) as i32
 }
