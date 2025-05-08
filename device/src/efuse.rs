@@ -28,18 +28,7 @@ impl EfuseController {
         read_protect: bool,
         rng: &mut impl RngCore,
     ) -> Result<(), EfuseError> {
-        let efuse_field = match key_id {
-            0 => hal_efuse::KEY_PURPOSE_0,
-            1 => hal_efuse::KEY_PURPOSE_1,
-            2 => hal_efuse::KEY_PURPOSE_2,
-            3 => hal_efuse::KEY_PURPOSE_3,
-            4 => hal_efuse::KEY_PURPOSE_4,
-            5 => hal_efuse::KEY_PURPOSE_5,
-            _ => return Err(EfuseError::EfuseError),
-        };
-        let key: u8 = Efuse::read_field_le(efuse_field);
-        // Check if there's an existing key so we don't accidentally overwrite it
-        if key == 0 {
+        if !Self::is_key_written(key_id) {
             let mut buff = [0x00_u8; 32];
             rng.fill_bytes(&mut buff);
 
@@ -48,7 +37,26 @@ impl EfuseController {
                 self.write_key_purpose(key_id, key_purpose, read_protect)?;
             }
         }
+
         Ok(())
+    }
+
+    fn key_purpose(key_id: u8) -> KeyPurpose {
+        let efuse_field = match key_id {
+            0 => hal_efuse::KEY_PURPOSE_0,
+            1 => hal_efuse::KEY_PURPOSE_1,
+            2 => hal_efuse::KEY_PURPOSE_2,
+            3 => hal_efuse::KEY_PURPOSE_3,
+            4 => hal_efuse::KEY_PURPOSE_4,
+            5 => hal_efuse::KEY_PURPOSE_5,
+            _ => panic!("invalid efuse integer"),
+        };
+        let field_value: u8 = Efuse::read_field_le(efuse_field);
+        KeyPurpose::try_from(field_value).expect("key purpose was invalid")
+    }
+
+    pub fn is_key_written(key_id: u8) -> bool {
+        Self::key_purpose(key_id) != KeyPurpose::User
     }
 
     /// # Safety
@@ -197,27 +205,39 @@ pub struct EfuseHmacKeys<'a> {
 }
 
 impl<'a> EfuseHmacKeys<'a> {
+    const ENCRYPTION_KEYID: hmac::KeyId = hmac::KeyId::Key0;
+    const FIXED_ENTROPY_KEYID: hmac::KeyId = hmac::KeyId::Key1;
+    const HMAC_KEYIDS: [hmac::KeyId; 2] = [Self::ENCRYPTION_KEYID, Self::FIXED_ENTROPY_KEYID];
+
+    pub fn has_been_initialized() -> bool {
+        for key_id in Self::HMAC_KEYIDS {
+            if !EfuseController::is_key_written(key_id as u8) {
+                return false;
+            }
+        }
+
+        true
+    }
     pub fn load_or_init(
         efuse: &EfuseController,
         hmac: &'a core::cell::RefCell<Hmac<'a>>,
         read_protect: bool,
         rng: &mut impl RngCore,
     ) -> Result<Self, EfuseError> {
-        let share_encryption_key_id = hmac::KeyId::Key0;
-        let fixed_entropy_key_id = hmac::KeyId::Key1;
-
-        for key_id in [share_encryption_key_id, fixed_entropy_key_id] {
+        for key_id in Self::HMAC_KEYIDS {
             efuse.init_key(key_id as u8, KeyPurpose::HmacUpstream, read_protect, rng)?;
         }
 
+        assert!(Self::has_been_initialized());
+
         Ok(EfuseHmacKeys {
-            share_encryption: EfuseHmacKey::new(hmac, share_encryption_key_id),
-            fixed_entropy: EfuseHmacKey::new(hmac, fixed_entropy_key_id),
+            share_encryption: EfuseHmacKey::new(hmac, Self::ENCRYPTION_KEYID),
+            fixed_entropy: EfuseHmacKey::new(hmac, Self::FIXED_ENTROPY_KEYID),
         })
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum KeyPurpose {
     User = 0,
     Aes128 = 4,
@@ -228,6 +248,25 @@ pub enum KeyPurpose {
     SecureBootDigest0 = 9,
     SecureBootDigest1 = 10,
     SecureBootDigest2 = 11,
+}
+
+impl TryFrom<u8> for KeyPurpose {
+    type Error = ();
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(KeyPurpose::User),
+            4 => Ok(KeyPurpose::Aes128),
+            5 => Ok(KeyPurpose::HmacDownstream),
+            6 => Ok(KeyPurpose::JtagHmacDownstream),
+            7 => Ok(KeyPurpose::Ds),
+            8 => Ok(KeyPurpose::HmacUpstream),
+            9 => Ok(KeyPurpose::SecureBootDigest0),
+            10 => Ok(KeyPurpose::SecureBootDigest1),
+            11 => Ok(KeyPurpose::SecureBootDigest2),
+            _ => Err(()),
+        }
+    }
 }
 
 #[derive(Debug)]
