@@ -1,6 +1,5 @@
 // use core::num::NonZeroU8;
 use esp_hal::efuse::{self as hal_efuse, Efuse};
-use esp_hal::hmac::{self, Hmac};
 use esp_hal::peripherals::EFUSE;
 use frostsnap_core::AccessStructureRef;
 use rand_chacha::rand_core::RngCore;
@@ -22,21 +21,36 @@ impl EfuseController {
         Self { efuse }
     }
 
-    pub fn init_key(
+    pub fn randomly_init_key(
         &self,
         key_id: u8,
         key_purpose: KeyPurpose,
         read_protect: bool,
         rng: &mut impl RngCore,
-    ) -> Result<(), EfuseError> {
+    ) -> Result<Option<[u8; 32]>, EfuseError> {
         if !Self::is_key_written(key_id) {
-            let mut buff = [0x00_u8; 32];
-            rng.fill_bytes(&mut buff);
+            let mut buf = [0x00_u8; 32];
+            rng.fill_bytes(&mut buf);
+            self.set_efuse_key(key_id, key_purpose, read_protect, buf);
+            return Ok(Some(buf));
+        }
 
-            unsafe {
-                self.write_block(&buff, key_id + KEY_BLOCKS_OFFSET)?;
-                self.write_key_purpose(key_id, key_purpose, read_protect)?;
-            }
+        Ok(None)
+    }
+
+    pub fn set_efuse_key(
+        &self,
+        key_id: u8,
+        key_purpose: KeyPurpose,
+        read_protect: bool,
+        value: [u8; 32],
+    ) -> Result<(), EfuseError> {
+        if Self::is_key_written(key_id) {
+            return Err(EfuseError::EfuseAlreadyBurned);
+        }
+        unsafe {
+            self.write_block(&value, key_id + KEY_BLOCKS_OFFSET)?;
+            self.write_key_purpose(key_id, key_purpose, read_protect)?;
         }
 
         Ok(())
@@ -58,6 +72,21 @@ impl EfuseController {
 
     pub fn is_key_written(key_id: u8) -> bool {
         Self::key_purpose(key_id) != KeyPurpose::User
+    }
+
+    pub fn read_efuse(&self, key_id: u8) -> Result<[u8; 32], EfuseError> {
+        let field = match key_id {
+            0 => hal_efuse::KEY0,
+            1 => hal_efuse::KEY1,
+            2 => hal_efuse::KEY2,
+            3 => hal_efuse::KEY3,
+            4 => hal_efuse::KEY4,
+            5 => hal_efuse::KEY5,
+            _ => panic!("invalid efuse integer"),
+        };
+        let bytes: [u8; 32] = Efuse::read_field_le::<[u8; 32]>(field);
+
+        Ok(bytes)
     }
 
     /// # Safety
@@ -206,9 +235,10 @@ pub struct EfuseHmacKeys<'a> {
 }
 
 impl<'a> EfuseHmacKeys<'a> {
-    const ENCRYPTION_KEYID: hmac::KeyId = hmac::KeyId::Key0;
-    const FIXED_ENTROPY_KEYID: hmac::KeyId = hmac::KeyId::Key1;
-    const HMAC_KEYIDS: [hmac::KeyId; 2] = [Self::ENCRYPTION_KEYID, Self::FIXED_ENTROPY_KEYID];
+    const ENCRYPTION_KEYID: esp_hal::hmac::KeyId = esp_hal::hmac::KeyId::Key0;
+    const FIXED_ENTROPY_KEYID: esp_hal::hmac::KeyId = esp_hal::hmac::KeyId::Key1;
+    const HMAC_KEYIDS: [esp_hal::hmac::KeyId; 2] =
+        [Self::ENCRYPTION_KEYID, Self::FIXED_ENTROPY_KEYID];
 
     pub fn has_been_initialized() -> bool {
         for key_id in Self::HMAC_KEYIDS {
@@ -221,12 +251,31 @@ impl<'a> EfuseHmacKeys<'a> {
     }
     pub fn load_or_init(
         efuse: &EfuseController,
-        hmac: &'a core::cell::RefCell<Hmac<'a>>,
+        hmac: &'a core::cell::RefCell<esp_hal::hmac::Hmac<'a>>,
         read_protect: bool,
         rng: &mut impl RngCore,
     ) -> Result<Self, EfuseError> {
         for key_id in Self::HMAC_KEYIDS {
-            efuse.init_key(key_id as u8, KeyPurpose::HmacUpstream, read_protect, rng)?;
+            if let Some(written_key) = efuse.randomly_init_key(
+                key_id as u8,
+                KeyPurpose::HmacUpstream,
+                read_protect,
+                rng,
+            )? {
+                use hmac::Mac as _;
+                let mut tmp_hmac = EfuseHmacKey::new(hmac, key_id);
+                let domain_sep = "factory-test";
+                let input = [42u8; 33];
+                let output = tmp_hmac.hash(domain_sep, input.as_slice()).unwrap();
+                type HmacSha256 = hmac::Hmac<sha2::Sha256>;
+                let mut mac = HmacSha256::new_from_slice(&written_key[..])
+                    .expect("HMAC can take key of any size");
+                mac.update(&[domain_sep.len() as u8]);
+                mac.update(domain_sep.as_bytes());
+                mac.update(input.as_slice());
+                let expected_output = mac.finalize().into_bytes();
+                assert_eq!(expected_output, output.into());
+            }
         }
 
         assert!(Self::has_been_initialized());
@@ -274,17 +323,20 @@ impl TryFrom<u8> for KeyPurpose {
 pub enum EfuseError {
     EfuseReadError,
     EfuseWriteError(u8),
-    EfuseBurned,
+    EfuseAlreadyBurned,
     EfuseError,
 }
 
 pub struct EfuseHmacKey<'a> {
-    hmac: &'a core::cell::RefCell<Hmac<'a>>,
-    hmac_key_id: hmac::KeyId,
+    hmac: &'a core::cell::RefCell<esp_hal::hmac::Hmac<'a>>,
+    hmac_key_id: esp_hal::hmac::KeyId,
 }
 
 impl<'a> EfuseHmacKey<'a> {
-    pub fn new(hmac: &'a core::cell::RefCell<Hmac<'a>>, hmac_key_id: hmac::KeyId) -> Self {
+    pub fn new(
+        hmac: &'a core::cell::RefCell<esp_hal::hmac::Hmac<'a>>,
+        hmac_key_id: esp_hal::hmac::KeyId,
+    ) -> Self {
         Self { hmac, hmac_key_id }
     }
 
@@ -298,7 +350,7 @@ impl<'a> EfuseHmacKey<'a> {
         let mut remaining = input;
 
         hmac.init();
-        nb::block!(hmac.configure(hmac::HmacPurpose::ToUser, self.hmac_key_id))?;
+        nb::block!(hmac.configure(esp_hal::hmac::HmacPurpose::ToUser, self.hmac_key_id))?;
 
         let len_byte = [domain_separator.len() as u8];
         let _its_one_byte = nb::block!(hmac.update(&len_byte[..])).unwrap();

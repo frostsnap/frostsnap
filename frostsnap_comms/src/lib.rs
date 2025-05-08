@@ -5,6 +5,7 @@ extern crate std;
 
 #[macro_use]
 extern crate alloc;
+pub mod factory;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 use alloc::{collections::BTreeSet, string::String};

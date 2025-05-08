@@ -23,8 +23,8 @@ use frostsnap_core::{
 use rand_chacha::rand_core::RngCore;
 
 pub struct Run<'a, Rng, Ui, T, DownstreamDetectPin> {
-    pub upstream_serial: SerialInterface<'a, T, Upstream>,
-    pub downstream_serial: SerialInterface<'a, T, Downstream>,
+    pub upstream_serial: SerialInterface<'a, 'a, T, Upstream>,
+    pub downstream_serial: SerialInterface<'a, 'a, T, Downstream>,
     pub rng: Rng,
     pub ui: Ui,
     pub timer: &'a T,
@@ -40,7 +40,7 @@ where
     T: timer::Timer,
     Rng: RngCore,
 {
-    pub fn run(self) -> ! {
+    pub fn run(self) {
         let Run {
             mut upstream_serial,
             mut downstream_serial,
@@ -319,6 +319,7 @@ where
                                                             timer
                                                         );
                                                         reset(&mut upstream_serial);
+                                                        return;
                                                     } else {
                                                         panic!("upgrade cannot start because we were not warned about it")
                                                     }
@@ -660,7 +661,9 @@ where
     }
 }
 
-fn reset<T: timer::Timer>(upstream_serial: &mut SerialInterface<'_, T, Upstream>) {
+fn reset<'a, 'b, 'c, T: timer::Timer>(
+    upstream_serial: &'c mut SerialInterface<'a, 'b, T, Upstream>,
+) {
     let _ = upstream_serial.send_reset_signal();
     esp_hal::reset::software_reset();
 }
