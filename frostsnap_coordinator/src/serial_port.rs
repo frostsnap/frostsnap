@@ -1,10 +1,10 @@
 use frostsnap_comms::{
-    CoordinatorSendMessage, DeviceSupportedFeatures, Downstream, MagicBytes, ReceiveSerial,
-    Upstream, BINCODE_CONFIG,
+    DeviceSupportedFeatures, Direction, Downstream, MagicBytes, ReceiveSerial, BINCODE_CONFIG,
 };
 pub use serialport;
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read};
+use std::marker::PhantomData;
 use tracing::{event, Level};
 
 pub type SerialPort = Box<dyn serialport::SerialPort>;
@@ -21,9 +21,19 @@ pub trait Serial: Send {
     ) -> Result<SerialPort, PortOpenError>;
 }
 
+#[derive(Debug)]
 pub enum PortOpenError {
     DeviceBusy,
     Other(Box<dyn std::error::Error + Send + Sync>),
+}
+
+impl core::fmt::Display for PortOpenError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PortOpenError::DeviceBusy => write!(f, "device is busy"),
+            PortOpenError::Other(error) => write!(f, "{error}"),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -33,15 +43,16 @@ pub struct PortDesc {
     pub pid: u16,
 }
 
-pub struct FramedSerialPort {
+pub struct FramedSerialPort<D: Direction = Downstream> {
     conch_enabled: bool,
     magic_bytes_progress: usize,
     has_sent_conch: bool,
     inner: BufReader<SerialPort>,
-    send_queue: VecDeque<CoordinatorSendMessage>,
+    send_queue: VecDeque<<D::Opposite as Direction>::RecvType>,
+    directions: PhantomData<D>,
 }
 
-impl FramedSerialPort {
+impl<D: Direction> FramedSerialPort<D> {
     pub fn new(port: SerialPort) -> Self {
         Self {
             inner: BufReader::new(port),
@@ -49,6 +60,7 @@ impl FramedSerialPort {
             conch_enabled: false,
             magic_bytes_progress: 0,
             send_queue: Default::default(),
+            directions: Default::default(),
         }
     }
 
@@ -68,7 +80,7 @@ impl FramedSerialPort {
         }
         self.inner.fill_buf()?;
         let mut consumed = 0;
-        let (progress, found) = frostsnap_comms::make_progress_on_magic_bytes::<Downstream>(
+        let (progress, found) = frostsnap_comms::make_progress_on_magic_bytes::<D>(
             self.inner
                 .buffer()
                 .iter()
@@ -82,17 +94,19 @@ impl FramedSerialPort {
         Ok(supported_features)
     }
 
-    pub fn queue_send(&mut self, message: CoordinatorSendMessage) {
+    pub fn queue_send(&mut self, message: <D::Opposite as Direction>::RecvType) {
         self.send_queue.push_back(message);
     }
 
     pub fn write_magic_bytes(&mut self) -> Result<(), bincode::error::EncodeError> {
-        self.raw_send(ReceiveSerial::<Upstream>::MagicBytes(MagicBytes::default()))
+        self.raw_send(ReceiveSerial::<D::Opposite>::MagicBytes(
+            MagicBytes::default(),
+        ))
     }
 
     pub fn try_read_message(
         &mut self,
-    ) -> Result<Option<ReceiveSerial<Downstream>>, bincode::error::DecodeError> {
+    ) -> Result<Option<ReceiveSerial<D>>, bincode::error::DecodeError> {
         if !self.anything_to_read() && self.inner.buffer().is_empty() {
             return Ok(None);
         }
@@ -126,7 +140,7 @@ impl FramedSerialPort {
 
     pub fn discard_all_messages(&mut self) -> Result<(), bincode::error::DecodeError> {
         while self.anything_to_read() || !self.inner.buffer().is_empty() {
-            let _message: ReceiveSerial<Downstream> =
+            let _message: ReceiveSerial<D> =
                 bincode::decode_from_reader(&mut self.inner, BINCODE_CONFIG)?;
         }
 
@@ -155,7 +169,7 @@ impl FramedSerialPort {
 
     pub fn raw_send(
         &mut self,
-        frame: ReceiveSerial<Upstream>,
+        frame: ReceiveSerial<D::Opposite>,
     ) -> Result<(), bincode::error::EncodeError> {
         bincode::encode_into_std_write(frame, self.inner.get_mut(), BINCODE_CONFIG)?;
         Ok(())
@@ -168,18 +182,13 @@ impl FramedSerialPort {
 
         if let Some(message) = self.send_queue.pop_front() {
             use frostsnap_core::Gist;
-            event!(
-                Level::DEBUG,
-                to = message.target_destinations.gist(),
-                gist = message.message_body.gist(),
-                "sending message"
-            );
-            self.raw_send(ReceiveSerial::<Upstream>::Message(message.into()))?;
+            event!(Level::DEBUG, gist = message.gist(), "sending message");
+            self.raw_send(ReceiveSerial::<D::Opposite>::Message(message))?;
         }
 
         if self.conch_enabled && !self.has_sent_conch {
             event!(Level::TRACE, "SENDING CONCH");
-            self.raw_send(ReceiveSerial::<Upstream>::Conch)?;
+            self.raw_send(ReceiveSerial::<D::Opposite>::Conch)?;
             self.has_sent_conch = true;
         }
 
