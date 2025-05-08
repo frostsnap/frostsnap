@@ -7,6 +7,8 @@ members = [
     "frostsnap_comms",
     "frostsnapp/native",
     "frostsnap_embedded",
+    "frostsnapp/native",
+    "frostsnap_factory",
 ]
 resolver = "2"
 
@@ -35,6 +37,8 @@ bdk_coin_select = { version = "0.3" }
 rand_core = "0.6"
 futures = "0.3.31"
 embedded-storage = "0.3.1"
+rand = "0.8"
+tracing-subscriber = { version = "0.3" }
 
 [profile.dev]
 # Rust debug is too slow.
