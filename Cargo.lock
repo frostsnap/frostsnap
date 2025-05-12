@@ -1198,10 +1198,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "esp-build"
+version = "0.1.0"
+source = "git+https://github.com/frostsnap/esp-hal?branch=ds#6ecaa2eb75d4d97de877c18d13bfd07d251da971"
+dependencies = [
+ "quote",
+ "syn 2.0.96",
+ "termcolor",
+]
+
+[[package]]
 name = "esp-config"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7584e4cd1dac06201fd92fff1c84b396be5458ac4d93e9457e7a89b1b42c60e"
+source = "git+https://github.com/frostsnap/esp-hal?branch=ds#6ecaa2eb75d4d97de877c18d13bfd07d251da971"
 dependencies = [
  "document-features",
 ]
@@ -1209,8 +1218,7 @@ dependencies = [
 [[package]]
 name = "esp-hal"
 version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a5605e1518d63f7bf9fbd9885e61d2896060d2e4f28954736bdd74da911b676"
+source = "git+https://github.com/frostsnap/esp-hal?branch=ds#6ecaa2eb75d4d97de877c18d13bfd07d251da971"
 dependencies = [
  "basic-toml",
  "bitfield 0.17.0",
@@ -1233,7 +1241,7 @@ dependencies = [
  "embedded-io",
  "embedded-io-async",
  "enumset",
- "esp-build",
+ "esp-build 0.1.0 (git+https://github.com/frostsnap/esp-hal?branch=ds)",
  "esp-config",
  "esp-hal-procmacros",
  "esp-metadata",
@@ -1255,8 +1263,7 @@ dependencies = [
 [[package]]
 name = "esp-hal-procmacros"
 version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69a9a8706b7d1182b56335d196e70eeb04e2b70f4b8db96432898bd3c2bdb91e"
+source = "git+https://github.com/frostsnap/esp-hal?branch=ds#6ecaa2eb75d4d97de877c18d13bfd07d251da971"
 dependencies = [
  "darling",
  "document-features",
@@ -1271,8 +1278,7 @@ dependencies = [
 [[package]]
 name = "esp-metadata"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9972bbb21dcafe430b87f92efc7a788978a2d17cf8f572d104beeb48602482a"
+source = "git+https://github.com/frostsnap/esp-hal?branch=ds#6ecaa2eb75d4d97de877c18d13bfd07d251da971"
 dependencies = [
  "anyhow",
  "basic-toml",
@@ -1293,8 +1299,7 @@ dependencies = [
 [[package]]
 name = "esp-riscv-rt"
 version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94aca65db6157aa5f42d9df6595b21462f28207ca4230b799aa3620352ef6a72"
+source = "git+https://github.com/frostsnap/esp-hal?branch=ds#6ecaa2eb75d4d97de877c18d13bfd07d251da971"
 dependencies = [
  "document-features",
  "riscv",
@@ -1309,7 +1314,7 @@ checksum = "661aebceb62e0caadd7e6bddd88b2d891c3b08cea4eb5afe96ef697674ccda5c"
 dependencies = [
  "critical-section",
  "embedded-storage",
- "esp-build",
+ "esp-build 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1515,6 +1520,7 @@ dependencies = [
  "micromath",
  "mipidsi",
  "nb 1.1.0",
+ "num-bigint",
  "rand_chacha",
  "rand_core",
  "reed-solomon",
@@ -2156,6 +2162,16 @@ checksum = "77a8165726e8236064dbb45459242600304b42a5ea24ee2948e18e023bf7ba84"
 dependencies = [
  "overload",
  "winapi",
+]
+
+[[package]]
+name = "num-bigint"
+version = "0.4.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5e44f723f1133c9deac646763579fdb3ac745e418f2a7af9cd0c431da1f20b9"
+dependencies = [
+ "num-integer",
+ "num-traits",
 ]
 
 [[package]]
@@ -4117,8 +4133,7 @@ dependencies = [
 [[package]]
 name = "xtensa-lx-rt"
 version = "0.17.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c0307d03dadbf95633942e13901984f2059df4c963367348168cbd21c962669"
+source = "git+https://github.com/frostsnap/esp-hal?branch=ds#6ecaa2eb75d4d97de877c18d13bfd07d251da971"
 dependencies = [
  "anyhow",
  "bare-metal 1.0.0",
@@ -4136,8 +4151,7 @@ dependencies = [
 [[package]]
 name = "xtensa-lx-rt-proc-macros"
 version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11277b1e4cbb7ffe44678c668518b249c843c81df249b8f096701757bc50d7ee"
+source = "git+https://github.com/frostsnap/esp-hal?branch=ds#6ecaa2eb75d4d97de877c18d13bfd07d251da971"
 dependencies = [
  "darling",
  "proc-macro2",
