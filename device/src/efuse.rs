@@ -31,7 +31,7 @@ impl EfuseController {
         if !Self::is_key_written(key_id) {
             let mut buf = [0x00_u8; 32];
             rng.fill_bytes(&mut buf);
-            self.set_efuse_key(key_id, key_purpose, read_protect, buf);
+            self.set_efuse_key(key_id, key_purpose, read_protect, buf)?;
             return Ok(Some(buf));
         }
 
