@@ -1,3 +1,4 @@
+use crate::ds::ds_sign;
 use cst816s::CST816S;
 use embedded_graphics::{
     mono_font::{ascii::*, MonoTextStyle},
@@ -7,8 +8,7 @@ use embedded_graphics::{
 };
 use embedded_hal as hal;
 use embedded_text::{alignment::HorizontalAlignment, style::TextBoxStyleBuilder, TextBox};
-
-use esp_hal::{hmac::Hmac, timer, usb_serial_jtag::UsbSerialJtag, Blocking};
+use esp_hal::{hmac::Hmac, peripherals::DS, timer, usb_serial_jtag::UsbSerialJtag, Blocking};
 use frostsnap_comms::{factory::*, ReceiveSerial};
 use rand_core::SeedableRng;
 
@@ -19,7 +19,7 @@ use crate::{
     io::SerialInterface,
 };
 
-const RSA_EFUSE_KEY_SLOT: u8 = 2;
+const RSA_EFUSE_KEY_SLOT: u8 = 4;
 
 macro_rules! text_display {
     ($display:ident, $text:expr) => {
@@ -66,6 +66,7 @@ pub fn run_factory<'a, 'b, S, I2C, PINT, RST, T>(
     sha256: &mut esp_hal::sha::Sha<'_>,
     jtag: &'b mut UsbSerialJtag<'a, Blocking>,
     timer: &'a T,
+    ds: DS,
 ) -> (impl rand_core::RngCore, EfuseHmacKeys<'a>)
 where
     I2C: hal::i2c::I2c,
@@ -92,36 +93,32 @@ where
     text_display!(display, "Got entropy");
     upstream.send(DeviceFactorySend::InitEntropyOk).unwrap();
 
-    let set_ds_key = read_message!(upstream, FactorySend::SetEsp32DsKey);
+    let Esp32DsKey {
+        encrypted_params,
+        hmac_key,
+    } = read_message!(upstream, FactorySend::SetEsp32DsKey);
 
     if !EfuseController::is_key_written(RSA_EFUSE_KEY_SLOT) {
-        // efuse
-        //     .set_efuse_key(
-        //         RSA_EFUSE_KEY_SLOT,
-        //         KeyPurpose::Ds,
-        //         false,
-        //         set_ds_key.hmac_key,
-        //     )
-        //     .unwrap();
-
-        // 1. write efuse (done)
-        // 2. write blob (maybe)
-        // 3. pass blob and message to RSA peripheral to sign
-        // 4. check signature
+        efuse
+            .set_efuse_key(RSA_EFUSE_KEY_SLOT, KeyPurpose::Ds, false, hmac_key)
+            .unwrap();
     }
-    // let message_int = BigUint::from_bytes_be(&message);
-    // let d = BigUint::from_bytes_be(&priv_key.d().to_bytes_be());
-    // let n = BigUint::from_bytes_be(&priv_key.n().to_bytes_be());
-    // let result_int = message_int.modpow(&d, &n);
 
-    // let sig_vec = big_number_to_words(&result_int);
-    // let sig_arr = vec_to_fixed(&sig_vec, DS_MAX_WORDS);
+    // esp32 test vector
+    let challenge = frostsnap_core::hex::decode("354691f19b05c1da1571ea69fa0b4874d699a89cd525d6a5a8f6a43129fd7ee0590098518560268da96aeee6e34c73e608e8d4b71ffa0b0fabd72b065dc154633d6b2a19670b983b0f6b8bebc4f88b9d42aa0618ac161f2f3f5706330c0c118e31249d95298faf8fd54950b77020df103eb192a3f9a4318b551311d3633b86cf661c3cd5d78157560d9260a87e96e705d16cfaa259d2e4b9a5dea9c7fef18bb2dc66f273f403bbecda974617bf2fa69ba4b394af904720bbf8a76a648f476e49dcc7aa885bfeae7ad79aaf6311d6535ab4191a9aeb5ee28e3c500433c7814ab24711dab2482b9991cf7c8977e7566df834fab9921f94c1b08a3c1473487fd73add0029febdeb1045c94d538b53ab1a4c7c81de0352b33d96fded278e966c0272d4f97f6e1050ce446e3a2edca4a7c0089c0476e01c6988eea643f03a3009944d9184e04f3b521e0f210ee09543387645eaa8809164ede54f959055611a74f6cd9d7eeef7884c30bd7891a82a93ebe946282309589110e3d77f217bec62ffe23b").unwrap();
+    let signature = ds_sign(ds, encrypted_params, challenge);
 
-    let value = efuse.read_efuse(RSA_EFUSE_KEY_SLOT).unwrap();
-    panic!(
-        "muh efuse {}",
-        frostsnap_core::schnorr_fun::fun::hex::encode(&value)
-    );
+    let debug_hex = signature
+        .iter()
+        .map(|byte| format!("{:02x}", byte))
+        .collect::<alloc::string::String>();
+    text_display!(display, &format!("Sig: {}", debug_hex));
+
+    // let value = efuse.read_efuse(RSA_EFUSE_KEY_SLOT).unwrap();
+    // panic!(
+    //     "efuse {}",
+    //     frostsnap_core::schnorr_fun::fun::hex::encode(&value)
+    // );
 
     loop {}
 
