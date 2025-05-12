@@ -160,6 +160,7 @@ fn main() -> ! {
 
     let efuse = efuse::EfuseController::new(peripherals.EFUSE);
     let hal_hmac = core::cell::RefCell::new(Hmac::new(peripherals.HMAC));
+    let ds = peripherals.DS;
     let mut jtag = UsbSerialJtag::new(peripherals.USB_DEVICE);
 
     let (final_rng, hmac_keys) = factory::run_factory(
@@ -171,6 +172,7 @@ fn main() -> ! {
         &mut sha256,
         &mut jtag,
         &timer0,
+        ds,
     );
 
     let jtag_iface = SerialInterface::new_jtag(&mut jtag, &timer0);
