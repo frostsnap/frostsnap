@@ -11,6 +11,8 @@ jobs:
   build-device-firmware:
     name: Build Device Firmware
     runs-on: ubuntu-latest
+    env:
+      RISCV_VERSION: "2024.09.03-nightly"
     strategy:
       matrix:
         board: ["v2"]
@@ -22,22 +24,10 @@ jobs:
       - uses: taiki-e/install-action@just
       - uses: ./.github/actions/fetch-cargo-deps
       - uses: "./.github/actions/install-cargo-bins"
-
-      # RISC-V toolchain cache
-      - uses: actions/cache@v4
-        id: cache-riscv
-        with:
-          path: device/riscv
-          key: ${{ runner.os }}-riscv-toolchain-2024.09.03-v1
-
       - name: Setup | RISCV GCC
-        if: steps.cache-riscv.outputs.cache-hit != 'true'
-        run: |
-          wget -nv https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2024.09.03/riscv32-elf-ubuntu-22.04-gcc-nightly-2024.09.03-nightly.tar.gz
-          tar -zxf riscv32-elf-ubuntu-22.04-gcc-nightly-2024.09.03-nightly.tar.gz
-
+        run: just fetch-riscv ${{env.RISCV_VERSION}}
       - name: Add RISC-V GCC to PATH
-        run: echo "PATH=$PATH:${GITHUB_WORKSPACE}/device/riscv/bin" >> $GITHUB_ENV
+        run: echo "PATH=$PATH:${GITHUB_WORKSPACE}/riscv/bin" >> $GITHUB_ENV
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -161,14 +151,8 @@ jobs:
         with:
           name: Frostsnapp-${{ github.sha }}-linux-x64
           path: frostsnapp/build/linux/x64/release/bundle
-      - run: |
-          sudo apt-get update
-          sudo apt-get install -y fakeroot libgtk-3-bin zsync
-
-      - run: sudo pip3 install --upgrade appimage-builder
-
       - uses: taiki-e/install-action@just
-      - run: just frostsnapp/build-appimage --skip-tests
+      - run: just frostsnapp/build-appimage
 
       - name: Upload AppImage
         uses: "./.github/actions/upload-artifact"
@@ -176,7 +160,7 @@ jobs:
           friendly: Frostsnapp.AppImage
           description: "AppImage for x86_64 Linux"
           name: Frostsnapp-${{ github.sha }}-x64.AppImage
-          path: frostsnapp/Frostsnapp-latest-x86_64.AppImage
+          path: frostsnapp/Frostsnapp-x86_64.AppImage
 
   flutter-analyze:
     name: Flutter Analyze
