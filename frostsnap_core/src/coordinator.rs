@@ -5,9 +5,10 @@ use crate::{
     nonce_stream::{CoordNonceStreamState, NonceStreamId, NonceStreamSegment},
     symmetric_encryption::{Ciphertext, SymmetricKey},
     tweak::Xpub,
-    AccessStructureId, AccessStructureRef, ActionError, CoordShareDecryptionContrib, DeviceId,
-    Error, Gist, KeyId, KeygenId, Kind, MasterAppkey, MessageResult, SessionHash, ShareImage,
-    SignItem, SignSessionId, SignTaskError, WireSignTask, NONCE_BATCH_SIZE,
+    AccessStructureId, AccessStructureKind, AccessStructureRef, ActionError,
+    CoordShareDecryptionContrib, DeviceId, Error, Gist, KeyId, KeygenId, Kind, MasterAppkey,
+    MessageResult, SessionHash, ShareImage, SignItem, SignSessionId, SignTaskError, WireSignTask,
+    NONCE_BATCH_SIZE,
 };
 use alloc::{
     borrow::ToOwned,
@@ -222,7 +223,10 @@ impl FrostCoordinator {
             } => {
                 ensure_key(self, complete_key.clone(), key_name, purpose);
             }
-            NewAccessStructure { ref shared_key } => {
+            NewAccessStructure {
+                ref shared_key,
+                kind,
+            } => {
                 let access_structure_id =
                     AccessStructureId::from_app_poly(shared_key.key().point_polynomial());
                 let appkey = MasterAppkey::from_xpub_unchecked(shared_key);
@@ -230,11 +234,21 @@ impl FrostCoordinator {
 
                 match self.keys.get_mut(&key_id) {
                     Some(key_data) => {
+                        let exists = key_data
+                            .complete_key
+                            .access_structures
+                            .contains_key(&access_structure_id);
+
+                        if exists {
+                            return None;
+                        }
+
                         key_data.complete_key.access_structures.insert(
                             access_structure_id,
                             CoordAccessStructure {
                                 app_shared_key: shared_key.clone(),
                                 device_to_share_index: Default::default(),
+                                kind,
                             },
                         );
                     }
@@ -1031,6 +1045,7 @@ impl FrostCoordinator {
 
         self.mutate(Mutation::NewAccessStructure {
             shared_key: app_shared_key,
+            kind: AccessStructureKind::Master,
         });
 
         for (device_id, share_index) in device_to_share_index {
@@ -1309,6 +1324,7 @@ pub enum KeyGenState {
 pub struct CoordAccessStructure {
     app_shared_key: Xpub<SharedKey>,
     device_to_share_index: BTreeMap<DeviceId, PartyIndex>,
+    kind: crate::AccessStructureKind,
 }
 
 impl CoordAccessStructure {
@@ -1417,6 +1433,7 @@ pub enum Mutation {
     },
     NewAccessStructure {
         shared_key: Xpub<SharedKey>,
+        kind: AccessStructureKind,
     },
     NewShare {
         access_structure_ref: AccessStructureRef,
@@ -1453,7 +1470,7 @@ impl Mutation {
     pub fn tied_to_key(&self) -> Option<KeyId> {
         Some(match self {
             Mutation::NewKey { complete_key, .. } => complete_key.master_appkey.key_id(),
-            Mutation::NewAccessStructure { shared_key } => {
+            Mutation::NewAccessStructure { shared_key, .. } => {
                 MasterAppkey::from_xpub_unchecked(shared_key).key_id()
             }
             Mutation::NewShare {

@@ -3,9 +3,9 @@ use crate::nonce_stream::CoordNonceStreamState;
 use crate::symmetric_encryption::{Ciphertext, SymmetricKey};
 use crate::tweak::{self, Xpub};
 use crate::{
-    bitcoin_transaction, message::*, AccessStructureId, AccessStructureRef, ActionError,
-    CheckedSignTask, CoordShareDecryptionContrib, Error, KeyId, KeygenId, MessageResult,
-    RestorationId, SessionHash, ShareImage,
+    bitcoin_transaction, message::*, AccessStructureId, AccessStructureKind, AccessStructureRef,
+    ActionError, CheckedSignTask, CoordShareDecryptionContrib, Error, KeyId, KeygenId,
+    MessageResult, RestorationId, SessionHash, ShareImage,
 };
 use crate::{DeviceId, SignSessionId};
 use alloc::boxed::Box;
@@ -43,12 +43,6 @@ pub struct KeyData {
     /// Do we know that the `KeyId` is genuinely the one associated with the secret shares we have?
     /// This point is subjective but this device is meant to be able to
     verified: bool,
-}
-
-/// In case we add access structures with more restricted properties later on
-#[derive(Clone, Copy, Debug, PartialEq, bincode::Decode, bincode::Encode)]
-pub enum AccessStructureKind {
-    Master,
 }
 
 /// So the coordindator can recognise which keys are relevant to it

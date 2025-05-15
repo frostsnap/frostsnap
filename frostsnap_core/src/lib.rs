@@ -460,3 +460,9 @@ impl_fromstr_deserialize! {
         EnterPhysicalId(bytes)
     }
 }
+
+/// In case we add access structures with more restricted properties later on
+#[derive(Clone, Copy, Debug, PartialEq, bincode::Decode, bincode::Encode)]
+pub enum AccessStructureKind {
+    Master,
+}
