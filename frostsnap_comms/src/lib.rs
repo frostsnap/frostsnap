@@ -212,12 +212,12 @@ impl From<CoordinatorSendBody> for WireCoordinatorSendBody {
     fn from(value: CoordinatorSendBody) -> Self {
         use CoordinatorSendBody::*;
         match value {
-            Core(_) | Naming(_) | DataWipe => WireCoordinatorSendBody::EncapsV0(EncapsBody(
-                bincode::encode_to_vec(value, BINCODE_CONFIG).expect("encoding is infallible"),
-            )),
             AnnounceAck => WireCoordinatorSendBody::AnnounceAck,
             Cancel => WireCoordinatorSendBody::Cancel,
             Upgrade(upgrade) => WireCoordinatorSendBody::Upgrade(upgrade),
+            _ => WireCoordinatorSendBody::EncapsV0(EncapsBody(
+                bincode::encode_to_vec(value, BINCODE_CONFIG).expect("encoding is infallible"),
+            )),
         }
     }
 }
