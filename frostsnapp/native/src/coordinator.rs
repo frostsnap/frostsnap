@@ -54,7 +54,7 @@ pub struct FfiCoordinator {
     signing_session_signals: Arc<Mutex<HashMap<KeyId, Signal>>>,
     thread_handle: Mutex<Option<JoinHandle<()>>>,
     ui_stack: Arc<Mutex<UiStack>>,
-    usb_sender: UsbSender,
+    pub(crate) usb_sender: UsbSender,
     firmware_bin: Option<FirmwareBin>,
     firmware_upgrade_progress: Arc<Mutex<Option<StreamSink<f32>>>>,
 

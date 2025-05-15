@@ -42,17 +42,11 @@ class SettingsContext extends InheritedWidget {
     return false;
   }
 
-  Stream<ChainStatus> chainStatusStream(BitcoinNetwork network) {
-    Stream<ChainStatus>? stream =
+  Stream<ChainStatus>? chainStatusStream(BitcoinNetwork network) {
+    final stream =
         chainStatuses.firstWhereOrNull((record) {
           return record.$1.name() == network.name();
         })?.$2;
-
-    if (stream == null) {
-      stream =
-          settings.subscribeChainStatus(network: network).toBehaviorSubject();
-      chainStatuses.add((network, stream));
-    }
 
     return stream;
   }

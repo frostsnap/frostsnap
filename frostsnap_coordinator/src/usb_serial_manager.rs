@@ -289,6 +289,7 @@ impl UsbSerialManager {
                         Ok(decoded) => {
                             event!(
                                 Level::DEBUG,
+                                from = message.from.to_string(),
                                 port = port_name,
                                 gist = decoded.gist(),
                                 "decoded message"
@@ -717,6 +718,15 @@ impl UsbSender {
                 device_id,
                 CoordinatorSendBody::DataWipe,
             ))
+            .expect("receiver exists");
+    }
+
+    pub fn wipe_all(&self) {
+        self.sender
+            .send(CoordinatorSendMessage {
+                target_destinations: Destination::All,
+                message_body: CoordinatorSendBody::DataWipe,
+            })
             .expect("receiver exists");
     }
 

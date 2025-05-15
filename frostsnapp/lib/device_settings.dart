@@ -37,33 +37,33 @@ class DeviceSettings extends StatefulWidget {
 }
 
 class _DeviceSettingsState extends State<DeviceSettings> {
-  late Completer<void> _deviceRemoved;
+  late StreamSubscription _sub;
   ConnectedDevice? device;
 
   @override
   void initState() {
     super.initState();
-    _deviceRemoved = Completer();
 
-    GlobalStreams.deviceListSubject.listen((event) {
+    _sub = GlobalStreams.deviceListSubject.listen((event) {
       setState(() => device = event.state.getDevice(id: widget.id));
-    });
 
-    GlobalStreams.deviceListSubject
-        .where(
-          (event) => event.changes.any(
-            (change) =>
-                change.kind == DeviceListChangeKind.Removed &&
-                deviceIdEquals(change.device.id, widget.id),
-          ),
-        )
-        .first
-        .then((_) {
-          _deviceRemoved.complete();
-          if (mounted) {
-            Navigator.pop(context);
-          }
-        });
+      final unplugged = event.changes.any(
+        (change) =>
+            change.kind == DeviceListChangeKind.Removed &&
+            deviceIdEquals(change.device.id, widget.id),
+      );
+      if (unplugged) {
+        if (mounted) {
+          Navigator.pop(context);
+        }
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+    _sub.cancel();
   }
 
   @override
@@ -198,6 +198,13 @@ class _DeviceSettingsState extends State<DeviceSettings> {
               coord.wipeDeviceData(deviceId: device_.id);
             },
             child: Text("Wipe"),
+          ),
+          SizedBox(height: 8),
+          ElevatedButton(
+            onPressed: () async {
+              coord.wipeAllDevices();
+            },
+            child: Text("Wipe All"),
           ),
         ],
       );

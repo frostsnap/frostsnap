@@ -1327,6 +1327,10 @@ impl Coordinator {
         self.0.wipe_device_data(device_id);
     }
 
+    pub fn wipe_all_devices(&self) {
+        self.0.usb_sender.wipe_all()
+    }
+
     pub fn cancel_sign_session(&self, ssid: SignSessionId) -> Result<()> {
         self.0.cancel_sign_session(ssid)
     }
