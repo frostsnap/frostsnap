@@ -75,17 +75,18 @@ void main() async {
   if (startupError != null) {
     runApp(MyApp(startupError: startupError));
   } else {
-    // we want to stop the app from sleeping on mobile if there's a device plugged in.
     GlobalStreams.deviceListSubject.forEach((update) {
-      final recoveringDevices = update.state.devices.where(
-        (device) => device.recoveryMode,
-      );
-
-      // we don't notify the user about exiting recovery mode atm we just do it.
-      for (var device in recoveringDevices) {
-        coord.exitRecoveryMode(deviceId: device.id);
+      // If we detect a device that's in recovery mode we should tell it to exit
+      // ASAP. Right now we don't confirm with the user this action but maybe in
+      // the future we will.
+      for (var change in update.changes) {
+        if (change.kind == DeviceListChangeKind.RecoveryMode &&
+            change.device.recoveryMode) {
+          coord.exitRecoveryMode(deviceId: change.device.id);
+        }
       }
 
+      // we want to stop the app from sleeping on mobile if there's a device plugged in.
       if (Platform.isLinux) {
         return; // not supported by wakelock
       }

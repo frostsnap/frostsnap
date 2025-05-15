@@ -1067,22 +1067,31 @@ impl FfiCoordinator {
 
     /// i.e. do a consolidation
     pub fn exit_recovery_mode(&self, device_id: DeviceId, encryption_key: SymmetricKey) {
-        if self
-            .device_list
-            .lock()
-            .unwrap()
-            .get_device(device_id)
-            .is_none()
-        {
-            return;
-        }
+        let device = match self.device_list.lock().unwrap().get_device(device_id) {
+            Some(device) => device,
+            None => return,
+        };
 
         let msgs = {
             let coord = self.coordinator.lock().unwrap();
-            coord.consolidate_pending_physical_backups(device_id, encryption_key)
+            coord
+                .consolidate_pending_physical_backups(device_id, encryption_key)
+                .into_iter()
+                .collect::<Vec<_>>()
         };
 
+        if msgs.is_empty() {
+            return;
+        }
+
         self.usb_sender.send_from_core(msgs);
+
+        event!(
+            Level::INFO,
+            id = device_id.to_string(),
+            name = device.name,
+            "asking device to exit recovery mode"
+        );
 
         let success = self.block_for_to_user_message([device_id], move |to_user| match to_user {
             CoordinatorToUserMessage::Restoration(ToUserRestoration::FinishedConsolidation {
@@ -1093,6 +1102,13 @@ impl FfiCoordinator {
         });
 
         if success {
+            event!(
+                Level::INFO,
+                id = device_id.to_string(),
+                name = device.name,
+                "device exited recovery mode"
+            );
+
             self.device_list
                 .lock()
                 .unwrap()
@@ -1102,6 +1118,13 @@ impl FfiCoordinator {
                 .lock()
                 .unwrap()
                 .connected(device_id, DeviceMode::Ready);
+        } else {
+            event!(
+                Level::ERROR,
+                id = device_id.to_string(),
+                name = device.name,
+                "device failed to exist recovery mode"
+            );
         }
     }
 
