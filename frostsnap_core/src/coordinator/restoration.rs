@@ -645,35 +645,13 @@ impl FrostCoordinator {
                     ),
                 )])
             }
-            DeviceRestoration::HeldShares(held_shares) => {
-                let mut already_got = vec![];
-                let mut recoverable = vec![];
-                for held_share in held_shares {
-                    let access_structure_ref = held_share.access_structure_ref;
-                    let knows_about_share = match access_structure_ref {
-                        Some(access_structure_ref) => self.knows_about_share(
-                            from,
-                            access_structure_ref,
-                            held_share.share_image.share_index,
-                        ),
-                        None => false,
-                    };
-
-                    if knows_about_share {
-                        already_got.push(held_share);
-                    } else {
-                        recoverable.push(held_share);
-                    }
+            DeviceRestoration::HeldShares(held_shares) => Ok(vec![CoordinatorSend::ToUser(
+                ToUserRestoration::GotHeldShares {
+                    held_by: from,
+                    shares: held_shares,
                 }
-                Ok(vec![CoordinatorSend::ToUser(
-                    ToUserRestoration::GotHeldShares {
-                        held_by: from,
-                        already_got,
-                        recoverable,
-                    }
-                    .into(),
-                )])
-            }
+                .into(),
+            )]),
         }
     }
 
@@ -801,8 +779,7 @@ pub enum RestorationMutation {
 pub enum ToUserRestoration {
     GotHeldShares {
         held_by: DeviceId,
-        already_got: Vec<HeldShare>,
-        recoverable: Vec<HeldShare>,
+        shares: Vec<HeldShare>,
     },
     PhysicalBackupEntered(Box<PhysicalBackupPhase>),
     PhysicalBackupSaved {

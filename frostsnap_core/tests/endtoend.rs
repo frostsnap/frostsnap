@@ -123,13 +123,11 @@ impl common::Env for TestEnv {
                 use frostsnap_core::coordinator::restoration::ToUserRestoration::*;
                 match msg {
                     GotHeldShares {
-                        held_by,
-                        recoverable,
-                        ..
+                        held_by, shares, ..
                     } => {
                         // This logic here is just about doing something sensible in the context of a test.
                         // We start a new restoration if we get a new share but don't already know about it.
-                        for held_share in recoverable {
+                        for held_share in shares {
                             let recover_share = RecoverShare {
                                 held_by,
                                 held_share: held_share.clone(),
@@ -142,13 +140,19 @@ impl common::Env for TestEnv {
                                         .get_access_structure(access_structure_ref)
                                         .is_some() =>
                                 {
-                                    run.coordinator
-                                        .recover_share(
-                                            access_structure_ref,
-                                            recover_share.clone(),
-                                            TEST_ENCRYPTION_KEY,
-                                        )
-                                        .unwrap();
+                                    if !run.coordinator.knows_about_share(
+                                        held_by,
+                                        access_structure_ref,
+                                        held_share.share_image.share_index,
+                                    ) {
+                                        run.coordinator
+                                            .recover_share(
+                                                access_structure_ref,
+                                                recover_share.clone(),
+                                                TEST_ENCRYPTION_KEY,
+                                            )
+                                            .unwrap();
+                                    }
                                 }
                                 _ => {
                                     let existing_restoration =

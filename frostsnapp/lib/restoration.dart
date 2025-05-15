@@ -850,39 +850,38 @@ class _PlugInPromptViewState extends State<_PlugInPromptView> {
     _subscription = coord.waitForRecoveryShare().listen((
       waitForRecoverShareState,
     ) {
-      var detectedShare = waitForRecoverShareState.recoverable.firstOrNull;
+      ShareCompatibility? compatibility;
+      RecoverShare? found;
 
-      if (detectedShare != null) {
-        final ShareCompatibility compatibility;
+      if (waitForRecoverShareState.shares.isNotEmpty) {
+        for (final detectedShare in waitForRecoverShareState.shares) {
+          if (widget.continuing != null) {
+            compatibility = coord.restorationCheckShareCompatible(
+              restorationId: widget.continuing!,
+              recoverShare: detectedShare,
+            );
+          } else if (widget.existing != null) {
+            compatibility = coord.checkRecoverShareCompatible(
+              accessStructureRef: widget.existing!,
+              recoverShare: detectedShare,
+            );
+          } else {
+            compatibility = ShareCompatibility.Compatible;
+          }
 
-        if (widget.continuing != null) {
-          compatibility = coord.restorationCheckShareCompatible(
-            restorationId: widget.continuing!,
-            recoverShare: detectedShare,
-          );
-        } else if (widget.existing != null) {
-          compatibility = coord.checkRecoverShareCompatible(
-            accessStructureRef: widget.existing!,
-            recoverShare: detectedShare,
-          );
-        } else {
-          compatibility = ShareCompatibility.Compatible;
-        }
-
-        if (compatibility == ShareCompatibility.AlreadyGotIt) {
-          // keep searching if we've already got the share as part of the restoration.
-          // You might be wondering why
-          setState(() {
-            alreadyGot = detectedShare;
-          });
-        } else {
-          widget.onCandidateDetected(detectedShare, compatibility);
+          if (compatibility == ShareCompatibility.Compatible) {
+            found = detectedShare;
+            break;
+          }
         }
       } else {
         setState(() {
-          alreadyGot = waitForRecoverShareState.alreadyGot.firstOrNull;
           blankDeviceInserted = waitForRecoverShareState.blank.isNotEmpty;
         });
+      }
+
+      if (found != null) {
+        widget.onCandidateDetected(found, compatibility!);
       }
     });
   }

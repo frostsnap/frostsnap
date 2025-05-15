@@ -1525,8 +1525,7 @@ pub enum ShareCompatibility {
 }
 
 pub struct WaitForRecoveryShareState {
-    pub recoverable: Vec<RecoverShare>,
-    pub already_got: Vec<RecoverShare>,
+    pub shares: Vec<RecoverShare>,
     pub connected: Vec<DeviceId>,
     pub blank: Vec<DeviceId>,
 }
@@ -1538,14 +1537,8 @@ impl From<frostsnap_coordinator::wait_for_recovery_share::WaitForRecoveryShareSt
         value: frostsnap_coordinator::wait_for_recovery_share::WaitForRecoveryShareState,
     ) -> Self {
         WaitForRecoveryShareState {
-            recoverable: value
-                .recoverable
-                .into_iter()
-                .map(RustOpaque::new)
-                .map(RecoverShare)
-                .collect(),
-            already_got: value
-                .already_got
+            shares: value
+                .shares
                 .into_iter()
                 .map(RustOpaque::new)
                 .map(RecoverShare)

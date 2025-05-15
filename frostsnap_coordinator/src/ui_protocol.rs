@@ -172,8 +172,8 @@ impl UiStack {
         self.protocols.push(Box::new(protocol));
         event!(
             Level::INFO,
-            stack_len = self.protocols.len(),
             name = name,
+            stack_len = self.protocols.len(),
             "Added UI protocol to stack"
         );
     }

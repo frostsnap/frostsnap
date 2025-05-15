@@ -55,9 +55,9 @@ impl UiProtocol for WaitForRecoveryShare {
         self.state.connected.remove(&id);
         self.state.blank.remove(&id);
         self.sent_request_to.remove(&id);
-        for list in [&mut self.state.recoverable, &mut self.state.already_got] {
-            list.retain(|candidate| candidate.held_by != id);
-        }
+        self.state
+            .shares
+            .retain(|candidate| candidate.held_by != id);
 
         self.emit_state();
     }
@@ -101,22 +101,12 @@ impl UiProtocol for WaitForRecoveryShare {
 
     fn process_to_user_message(&mut self, message: CoordinatorToUserMessage) -> bool {
         if let CoordinatorToUserMessage::Restoration(
-            restoration::ToUserRestoration::GotHeldShares {
-                held_by,
-                already_got,
-                recoverable,
-            },
+            restoration::ToUserRestoration::GotHeldShares { held_by, shares },
         ) = message
         {
             self.state
-                .recoverable
-                .extend(recoverable.into_iter().map(|held_share| RecoverShare {
-                    held_by,
-                    held_share,
-                }));
-            self.state
-                .already_got
-                .extend(already_got.into_iter().map(|held_share| RecoverShare {
+                .shares
+                .extend(shares.into_iter().map(|held_share| RecoverShare {
                     held_by,
                     held_share,
                 }));
@@ -130,8 +120,7 @@ impl UiProtocol for WaitForRecoveryShare {
 
 #[derive(Clone, Debug, Default)]
 pub struct WaitForRecoveryShareState {
-    pub recoverable: Vec<RecoverShare>,
-    pub already_got: Vec<RecoverShare>,
+    pub shares: Vec<RecoverShare>,
     pub connected: BTreeSet<DeviceId>,
     pub blank: BTreeSet<DeviceId>,
 }
