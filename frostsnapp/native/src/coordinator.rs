@@ -697,9 +697,18 @@ impl FfiCoordinator {
         &self,
         recover_share: RecoverShare,
     ) -> Result<RestorationId> {
+        let mut coordinator = self.coordinator.lock().unwrap();
+
+        if let Some(access_structure_ref) = recover_share.held_share.access_structure_ref {
+            if coordinator
+                .get_access_structure(access_structure_ref)
+                .is_some()
+            {
+                return Err(anyhow!("we already know about this access structure"));
+            }
+        }
         let restoration_id = {
             let mut db = self.db.lock().unwrap();
-            let mut coordinator = self.coordinator.lock().unwrap();
             coordinator.staged_mutate(&mut *db, |coordinator| {
                 let restoration_id = RestorationId::new(&mut rand::thread_rng());
                 coordinator.start_restoring_key_from_recover_share(recover_share, restoration_id);

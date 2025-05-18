@@ -1024,32 +1024,40 @@ class _CandidateReadyView extends StatelessWidget {
               'The key "$deviceName" is part of a wallet called "${candidate.keyName()}"!';
           buttonText = 'Start recovery';
         }
-        buttonAction = () async {
-          if (continuing != null) {
-            await coord.continueRestoringWalletFromDeviceShare(
-              restorationId: continuing!,
-              recoverShare: candidate,
-            );
-            if (context.mounted) {
-              Navigator.pop(context);
-            }
-          } else if (existing != null) {
-            await coord.recoverShare(
-              accessStructureRef: existing!,
-              recoverShare: candidate,
-            );
-            if (context.mounted) {
-              Navigator.pop(context);
-            }
-          } else {
-            final restorationId = await coord
-                .startRestoringWalletFromDeviceShare(recoverShare: candidate);
 
+        buttonAction = () async {
+          try {
+            if (continuing != null) {
+              await coord.continueRestoringWalletFromDeviceShare(
+                restorationId: continuing!,
+                recoverShare: candidate,
+              );
+              if (context.mounted) {
+                Navigator.pop(context);
+              }
+            } else if (existing != null) {
+              await coord.recoverShare(
+                accessStructureRef: existing!,
+                recoverShare: candidate,
+              );
+              if (context.mounted) {
+                Navigator.pop(context);
+              }
+            } else {
+              final restorationId = await coord
+                  .startRestoringWalletFromDeviceShare(recoverShare: candidate);
+
+              if (context.mounted) {
+                Navigator.pop(context, restorationId);
+              }
+            }
+          } catch (e) {
             if (context.mounted) {
-              Navigator.pop(context, restorationId);
+              showErrorSnackbarBottom(context, "failed to recover wallet: $e");
             }
           }
         };
+
         break;
 
       case ShareCompatibility.AlreadyGotIt:
