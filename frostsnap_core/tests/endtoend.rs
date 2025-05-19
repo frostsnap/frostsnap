@@ -163,10 +163,13 @@ impl common::Env for TestEnv {
 
                                     match existing_restoration {
                                         Some(existing_restoration) => {
-                                            if !existing_restoration.access_structure.has_got_share(
-                                                recover_share.held_by,
-                                                recover_share.held_share.share_image,
-                                            ) {
+                                            if !existing_restoration
+                                                .access_structure
+                                                .has_got_share_image(
+                                                    recover_share.held_by,
+                                                    recover_share.held_share.share_image,
+                                                )
+                                            {
                                                 run.coordinator
                                                     .add_recovery_share_to_restoration(
                                                         existing_restoration.restoration_id,
@@ -839,7 +842,7 @@ fn delete_then_restore_a_key_by_connecting_devices_to_coordinator() {
         .expect("one device should be enough to restore the key");
     let restoration_id = restoration.restoration_id;
 
-    assert!(!restoration.access_structure.is_finished());
+    assert!(!restoration.access_structure.is_restorable());
     assert_eq!(restoration.access_structure_ref, Some(access_structure_ref));
 
     recover_next_share(&mut run, 1, &mut rng);
@@ -854,7 +857,7 @@ fn delete_then_restore_a_key_by_connecting_devices_to_coordinator() {
         .get_restoration_state(restoration_id)
         .unwrap();
 
-    assert!(restoration.access_structure.is_finished());
+    assert!(restoration.access_structure.is_restorable());
     run.coordinator
         .finish_restoring(restoration.restoration_id, TEST_ENCRYPTION_KEY, &mut rng)
         .unwrap();

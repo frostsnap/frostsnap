@@ -697,17 +697,17 @@ impl FfiCoordinator {
         &self,
         recover_share: RecoverShare,
     ) -> Result<RestorationId> {
-        let mut coordinator = self.coordinator.lock().unwrap();
-
-        if let Some(access_structure_ref) = recover_share.held_share.access_structure_ref {
-            if coordinator
-                .get_access_structure(access_structure_ref)
-                .is_some()
-            {
-                return Err(anyhow!("we already know about this access structure"));
-            }
-        }
         let restoration_id = {
+            let mut coordinator = self.coordinator.lock().unwrap();
+
+            if let Some(access_structure_ref) = recover_share.held_share.access_structure_ref {
+                if coordinator
+                    .get_access_structure(access_structure_ref)
+                    .is_some()
+                {
+                    return Err(anyhow!("we already know about this access structure"));
+                }
+            }
             let mut db = self.db.lock().unwrap();
             coordinator.staged_mutate(&mut *db, |coordinator| {
                 let restoration_id = RestorationId::new(&mut rand::thread_rng());
@@ -1137,6 +1137,23 @@ impl FfiCoordinator {
         }
     }
 
+    pub fn delete_restoration_share(
+        &self,
+        restoration_id: RestorationId,
+        device_id: DeviceId,
+    ) -> Result<()> {
+        {
+            let mut coord = self.coordinator.lock().unwrap();
+            let mut db = self.db.lock().unwrap();
+            coord.staged_mutate(&mut *db, |coord| {
+                coord.delete_restoration_share(restoration_id, device_id);
+                Ok(())
+            })?;
+        }
+        self.emit_key_state();
+        Ok(())
+    }
+
     pub fn emit_key_state(&self) {
         let coord = self.coordinator.lock().unwrap();
         let state = key_state(&coord);
@@ -1155,17 +1172,16 @@ fn key_state(coordinator: &FrostCoordinator) -> api::KeyState {
 
     let restoring = coordinator
         .restoring()
-        .map(|restoring| api::RestoringKey {
-            restoration_id: restoring.restoration_id,
-            name: restoring.key_name,
-            threshold: restoring.access_structure.threshold,
-            shares_obtained: restoring
-                .access_structure
-                .share_images
-                .keys()
-                .copied()
-                .collect(),
-            bitcoin_network: restoring.key_purpose.bitcoin_network().map(From::from),
+        .map(|restoring| {
+            let status = restoring.status();
+            api::RestoringKey {
+                problem: status.problem(),
+                shares_obtained: status.shares,
+                restoration_id: restoring.restoration_id,
+                name: restoring.key_name,
+                threshold: restoring.access_structure.threshold,
+                bitcoin_network: restoring.key_purpose.bitcoin_network().map(From::from),
+            }
         })
         .collect();
 

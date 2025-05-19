@@ -66,9 +66,10 @@ impl EnterShareScreen {
                     }
 
                     for (magic_string, backup) in [
-                        ("0000", TEST_BACKUP_1),
-                        ("2222", TEST_BACKUP_2),
-                        ("3333", TEST_BACKUP_3),
+                        ("00000", TEST_BACKUP_1),
+                        ("00002", TEST_BACKUP_1A),
+                        ("22220", TEST_BACKUP_2),
+                        ("33330", TEST_BACKUP_3),
                     ] {
                         if self.backup_input_preview.get_input() == magic_string {
                             self.backup_input_preview.clear();
@@ -154,4 +155,12 @@ const TEST_BACKUP_3: [char; 58] = [
     '9', '0', '7', 'L', 'Q', '7', 'P', '9', 'S', 'Z', 'A', 'E', 'R', 'Z', 'J', 'K', 'N', 'L', '8',
     'U', '6', 'C', 'V', 'C', 'R', 'U', '4', '2', '8', 'G', 'A', 'T', 'S', '9', 'Q', 'K', 'L', 'N',
     'E',
+];
+
+/// incompatible with the other shares
+const TEST_BACKUP_1A: [char; 58] = [
+    'R', 'R', '0', 'E', 'V', 'E', '0', 'L', 'E', 'K', '6', 'F', 'Z', 'Z', 'M', '5', '9', 'L', 'J',
+    'W', 'Y', 'D', '5', 'W', 'J', 'W', '5', 'S', 'X', '2', '0', 'A', 'V', 'A', 'C', '9', '9', 'Q',
+    '2', '6', 'S', 'J', '7', 'W', 'C', '2', '9', 'V', 'N', 'L', 'D', 'S', 'F', 'W', 'S', 'W', 'G',
+    'Y',
 ];

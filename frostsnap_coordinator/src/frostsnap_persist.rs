@@ -6,7 +6,10 @@ use crate::{
     persist::{BincodeWrapper, Persist, TakeStaged},
 };
 use anyhow::Context;
-use frostsnap_core::{coordinator, DeviceId};
+use frostsnap_core::{
+    coordinator::{self, restoration::RestorationMutation},
+    DeviceId,
+};
 use rusqlite::params;
 use std::collections::{HashMap, VecDeque};
 use tracing::{event, Level};
@@ -25,6 +28,7 @@ impl Persist<rusqlite::Connection> for FrostCoordinator {
                id INTEGER PRIMARY KEY AUTOINCREMENT,
                mutation BLOB NOT NULL,
                tied_to_key TEXT,
+               tied_to_restoration TEXT,
                version INTEGER NOT NULL
              )",
             [],
@@ -64,11 +68,18 @@ impl Persist<rusqlite::Connection> for FrostCoordinator {
                         params![key_id],
                     )?;
                 }
-                mutation => {
-                    let tied_to_key = mutation.tied_to_key();
+                coordinator::Mutation::Restoration(RestorationMutation::DeleteRestoration {
+                    restoration_id,
+                }) => {
                     conn.execute(
-                        "INSERT INTO fs_coordinator_mutations (mutation, tied_to_key, version) VALUES (?1, ?2, 0)",
-                        params![BincodeWrapper(mutation), tied_to_key],
+                        "DELETE FROM fs_coordinator_mutations WHERE tied_to_restoration=?1",
+                        params![restoration_id],
+                    )?;
+                }
+                mutation => {
+                    conn.execute(
+                        "INSERT INTO fs_coordinator_mutations (tied_to_key, tied_to_restoration, mutation, version) VALUES (?1, ?2, ?3, 0)",
+                        params![mutation.tied_to_key(), mutation.tied_to_restoration(), BincodeWrapper(mutation)],
                     )?;
                 }
             }

@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use super::*;
 use crate::{fail, EnterPhysicalId, RestorationId};
 
@@ -7,8 +9,106 @@ pub struct RestorationState {
     pub key_name: String,
     pub access_structure_ref: Option<AccessStructureRef>,
     pub access_structure: RecoveringAccessStructure,
-    pub need_to_consolidate: BTreeSet<DeviceId>,
+    pub need_to_consolidate: HashSet<DeviceId>,
     pub key_purpose: KeyPurpose,
+}
+
+impl RestorationState {
+    pub fn status(&self) -> RestorationStatus {
+        let shared_key = self
+            .access_structure
+            .interpolate_subset(&self.need_to_consolidate);
+
+        let shares = self
+            .access_structure
+            .share_images
+            .iter()
+            .map(|&(device_id, share_image)| {
+                let validity = if self.need_to_consolidate.contains(&device_id) {
+                    if let Some(shared_key) = &shared_key {
+                        let expected = shared_key.share_image(share_image.share_index);
+                        if expected == share_image.point {
+                            RestorationShareValidity::Valid
+                        } else {
+                            RestorationShareValidity::Invalid
+                        }
+                    } else {
+                        RestorationShareValidity::Unknown
+                    }
+                } else {
+                    RestorationShareValidity::Valid
+                };
+
+                RestorationShare {
+                    device_id,
+                    index: share_image.share_index_u16(),
+                    validity,
+                }
+            })
+            .collect();
+
+        RestorationStatus {
+            threshold: self.access_structure.threshold,
+            shares,
+            shared_key,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RestorationStatus {
+    pub threshold: u16,
+    pub shares: Vec<RestorationShare>,
+    pub shared_key: Option<SharedKey>,
+}
+
+impl RestorationStatus {
+    pub fn problem(&self) -> Option<RestorationProblem> {
+        let (valid, invalid) = self
+            .shares
+            .iter()
+            .partition::<Vec<_>, _>(|share| share.validity != RestorationShareValidity::Invalid);
+
+        if !invalid.is_empty() {
+            return Some(RestorationProblem::InvalidShares);
+        }
+
+        let valid_unique: u16 = valid
+            .into_iter()
+            .map(|share: RestorationShare| share.index)
+            .collect::<BTreeSet<_>>()
+            .len()
+            .try_into()
+            .expect("must be small");
+
+        if valid_unique < self.threshold {
+            return Some(RestorationProblem::NotEnoughShares {
+                need_more: self.threshold - valid_unique,
+            });
+        }
+
+        None
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RestorationProblem {
+    NotEnoughShares { need_more: u16 },
+    InvalidShares,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RestorationShare {
+    pub device_id: DeviceId,
+    pub index: u16,
+    pub validity: RestorationShareValidity,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RestorationShareValidity {
+    Valid,
+    Invalid,
+    Unknown,
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
@@ -64,14 +164,17 @@ impl State {
                 share_image,
             } => {
                 if let Some(state) = self.restorations.get_mut(&restoration_id) {
-                    let already_existing = state
+                    if state
                         .access_structure
-                        .share_images
-                        .insert(device_id, share_image);
-
-                    if already_existing == Some(share_image) {
+                        .has_got_share_image(device_id, share_image)
+                    {
                         return None;
                     }
+
+                    state
+                        .access_structure
+                        .share_images
+                        .push((device_id, share_image));
 
                     match (state.access_structure_ref, access_structure_ref) {
                         (Some(existing), Some(new)) => {
@@ -83,6 +186,8 @@ impl State {
                             state.access_structure_ref = Some(new);
                         }
                         (_, None) => {
+                            // Not knowing the access_structure_ref means the share is being held as
+                            // a loaded physical backup and needs to be consolidated later.
                             state.need_to_consolidate.insert(device_id);
                         }
                     }
@@ -90,37 +195,10 @@ impl State {
                     fail!("restoration id didn't exist")
                 }
             }
-            CancelRestoration { restoration_id } => {
+            DeleteRestoration { restoration_id } => {
                 let existed = self.restorations.remove(&restoration_id).is_some();
                 if !existed {
                     return None;
-                }
-            }
-            DeviceFinishedConsolidation(consolidation) => {
-                if !self.pending_physical_consolidations.remove(&consolidation) {
-                    fail!("pending physical restoration did not exist");
-                }
-            }
-            FinishRestoration {
-                restoration_id,
-                access_structure_ref,
-            } => {
-                if let Some(mut restoration) = self.restorations.remove(&restoration_id) {
-                    for device_id in restoration.need_to_consolidate {
-                        self.pending_physical_consolidations
-                            .insert(PendingConsolidation {
-                                device_id,
-                                access_structure_ref,
-                                share_index: restoration
-                                    .access_structure
-                                    .share_images
-                                    .remove(&device_id)
-                                    .expect("invariant")
-                                    .share_index,
-                            });
-                    }
-                } else {
-                    fail!("no restoration to finish with this restoration_id");
                 }
             }
             DeviceNeedsConsolidation(consolidation) => {
@@ -129,31 +207,31 @@ impl State {
                     return None;
                 }
             }
+            DeviceFinishedConsolidation(consolidation) => {
+                if !self.pending_physical_consolidations.remove(&consolidation) {
+                    fail!("pending physical restoration did not exist");
+                }
+            }
+            DeleteRestorationShare {
+                restoration_id,
+                device_id,
+                share_image,
+            } => {
+                if let Some(restoration) = self.restorations.get_mut(&restoration_id) {
+                    let pos = restoration
+                        .access_structure
+                        .share_images
+                        .iter()
+                        .position(|&(id, image)| id == device_id && image == share_image)?;
+                    restoration.access_structure.share_images.remove(pos);
+                    restoration.need_to_consolidate.remove(&device_id);
+                } else {
+                    fail!("restoration id didn't exist");
+                }
+            }
         }
 
         Some(mutation.clone())
-    }
-
-    pub fn is_restoring(
-        &self,
-        device_id: DeviceId,
-        access_structure_ref: AccessStructureRef,
-        share_index: PartyIndex,
-    ) -> bool {
-        self.restorations
-            .iter()
-            .find(|(_, state)| state.access_structure_ref == Some(access_structure_ref))
-            .and_then(|(_, state)| {
-                Some(
-                    state
-                        .access_structure
-                        .share_images
-                        .get(&device_id)?
-                        .share_index
-                        == share_index,
-                )
-            })
-            .unwrap_or(false)
     }
 
     pub fn clear_up_key_deletion(&mut self, key_id: KeyId) {
@@ -341,12 +419,10 @@ impl FrostCoordinator {
     ) -> Result<(), RestoreRecoverShareError> {
         match self.restoration.restorations.get(&restoration_id) {
             Some(restoration) => {
-                let already_existing = restoration
-                    .access_structure
-                    .share_images
-                    .get(&recover_share.held_by);
-
-                if already_existing == Some(&recover_share.held_share.share_image) {
+                if restoration.access_structure.has_got_share_image(
+                    recover_share.held_by,
+                    recover_share.held_share.share_image,
+                ) {
                     return Err(RestoreRecoverShareError::AlreadyGotThisShare);
                 }
 
@@ -363,8 +439,46 @@ impl FrostCoordinator {
                 if restoration.key_name != recover_share.held_share.key_name {
                     return Err(RestoreRecoverShareError::NameMismatch);
                 }
+
+                if let Some(device_id) = restoration
+                    .access_structure
+                    .contradicts(recover_share.held_share.share_image)
+                {
+                    return Err(RestoreRecoverShareError::ConflictingShareImage {
+                        conflicts_with: device_id,
+                    });
+                }
             }
             None => return Err(RestoreRecoverShareError::UnknownRestorationId),
+        }
+
+        Ok(())
+    }
+
+    pub fn check_physical_backup_compatible_with_restoration(
+        &self,
+        restoration_id: RestorationId,
+        phase: PhysicalBackupPhase,
+    ) -> Result<(), RestorePhysicalBackupError> {
+        match self.restoration.restorations.get(&restoration_id) {
+            Some(restoration) => {
+                if restoration
+                    .access_structure
+                    .has_got_share_image(phase.from, phase.backup.share_image)
+                {
+                    return Err(RestorePhysicalBackupError::AlreadyGotThisShare);
+                }
+
+                if let Some(device_id) = restoration
+                    .access_structure
+                    .contradicts(phase.backup.share_image)
+                {
+                    return Err(RestorePhysicalBackupError::ConflictingShareImage {
+                        conflicts_with: device_id,
+                    });
+                }
+            }
+            None => return Err(RestorePhysicalBackupError::UnknownRestorationId),
         }
 
         Ok(())
@@ -380,6 +494,7 @@ impl FrostCoordinator {
             .restoration
             .restorations
             .get(&restoration_id)
+            .cloned()
             .ok_or(RestorationError::UnknownRestorationId)?;
 
         let root_shared_key = state
@@ -410,7 +525,7 @@ impl FrostCoordinator {
             .access_structure
             .share_images
             .iter()
-            .map(|(&device_id, &share_image)| (device_id, share_image.share_index))
+            .map(|&(device_id, share_image)| (device_id, share_image.share_index))
             .collect();
 
         self.mutate_new_key(
@@ -422,11 +537,22 @@ impl FrostCoordinator {
             rng,
         );
 
+        for device_id in state.need_to_consolidate {
+            self.mutate(Mutation::Restoration(
+                RestorationMutation::DeviceNeedsConsolidation(PendingConsolidation {
+                    device_id,
+                    access_structure_ref,
+                    share_index: state
+                        .access_structure
+                        .get_device_contribution(device_id)
+                        .expect("invariant")
+                        .share_index,
+                }),
+            ))
+        }
+
         self.mutate(Mutation::Restoration(
-            RestorationMutation::FinishRestoration {
-                restoration_id,
-                access_structure_ref,
-            },
+            RestorationMutation::DeleteRestoration { restoration_id },
         ));
 
         Ok(access_structure_ref)
@@ -457,7 +583,9 @@ impl FrostCoordinator {
             share_index,
         });
 
-        if recover_share.held_share.access_structure_ref.is_none() {
+        let was_a_physical_backup = recover_share.held_share.access_structure_ref.is_none();
+
+        if was_a_physical_backup {
             self.mutate(Mutation::Restoration(
                 RestorationMutation::DeviceNeedsConsolidation(PendingConsolidation {
                     device_id: recover_share.held_by,
@@ -513,7 +641,7 @@ impl FrostCoordinator {
 
     pub fn cancel_restoration(&mut self, restoration_id: RestorationId) {
         self.mutate(Mutation::Restoration(
-            RestorationMutation::CancelRestoration { restoration_id },
+            RestorationMutation::DeleteRestoration { restoration_id },
         ))
     }
 
@@ -744,6 +872,28 @@ impl FrostCoordinator {
         }])
     }
 
+    /// Delete a restoration share. For now we refer to it by `device_id` but it would be better to
+    /// refer to the explicit share in the future (which is what the mutation does).
+    pub fn delete_restoration_share(&mut self, restoration_id: RestorationId, device_id: DeviceId) {
+        if let Some(restoration) = self.restoration.restorations.get(&restoration_id) {
+            if let Some((_, share_image)) = restoration
+                .access_structure
+                .share_images
+                .iter()
+                .find(|&&(id, _)| id == device_id)
+                .copied()
+            {
+                self.mutate(Mutation::Restoration(
+                    RestorationMutation::DeleteRestorationShare {
+                        device_id,
+                        restoration_id,
+                        share_image,
+                    },
+                ));
+            }
+        }
+    }
+
     pub fn restoring(&self) -> impl Iterator<Item = RestorationState> + '_ {
         self.restoration.restorations.values().cloned()
     }
@@ -763,16 +913,45 @@ pub enum RestorationMutation {
         share_image: ShareImage,
         access_structure_ref: Option<AccessStructureRef>,
     },
-    FinishRestoration {
+    DeleteRestorationShare {
         restoration_id: RestorationId,
-        /// the restoration has become this access structure
-        access_structure_ref: AccessStructureRef,
+        device_id: DeviceId,
+        share_image: ShareImage,
     },
-    DeviceFinishedConsolidation(PendingConsolidation),
-    CancelRestoration {
+    /// Can be used to cancel a restoration or indicate its data can be purged after a restoration
+    /// is finished.
+    DeleteRestoration {
         restoration_id: RestorationId,
     },
+    /// A device was restored with a physical backup -- the next time it connects we need to
+    /// consolidate the physical backup.
     DeviceNeedsConsolidation(PendingConsolidation),
+    DeviceFinishedConsolidation(PendingConsolidation),
+}
+
+impl RestorationMutation {
+    pub fn tied_to_key(&self) -> Option<KeyId> {
+        use RestorationMutation::*;
+        Some(match self {
+            DeviceFinishedConsolidation(pending) | DeviceNeedsConsolidation(pending) => {
+                pending.access_structure_ref.key_id
+            }
+            _ => {
+                return None;
+            }
+        })
+    }
+
+    pub fn tied_to_restoration(&self) -> Option<RestorationId> {
+        use RestorationMutation::*;
+        match self {
+            &NewRestoration { restoration_id, .. }
+            | &RestorationProgress { restoration_id, .. }
+            | &DeleteRestoration { restoration_id }
+            | &DeleteRestorationShare { restoration_id, .. } => Some(restoration_id),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -876,9 +1055,9 @@ impl fmt::Display for RestorationError {
     }
 }
 
-#[cfg(feature = "std")]
 impl std::error::Error for RestorationError {}
 
+/// An error occuring when you try and an a "recover share" to a restoration session
 #[derive(Debug, Clone)]
 pub enum RestoreRecoverShareError {
     /// The name of the key doesn't match
@@ -889,9 +1068,36 @@ pub enum RestoreRecoverShareError {
     PurposeNotCompatible,
     /// Access structure doesn't match one of the other shares
     AcccessStructureMismatch,
-    /// Already got this share
+    /// Already know this device has this share
     AlreadyGotThisShare,
+    /// The share image that this device claims exists at this index contradicts another device in the restoration.
+    ConflictingShareImage { conflicts_with: DeviceId },
 }
+
+#[derive(Debug, Clone)]
+pub enum RestorePhysicalBackupError {
+    UnknownRestorationId,
+    AlreadyGotThisShare,
+    ConflictingShareImage { conflicts_with: DeviceId },
+}
+
+impl fmt::Display for RestorePhysicalBackupError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RestorePhysicalBackupError::UnknownRestorationId => {
+                write!(f, "cooridnator didn't have the restoration id")
+            }
+            RestorePhysicalBackupError::AlreadyGotThisShare => {
+                write!(f, "Already know this device has this share")
+            }
+            RestorePhysicalBackupError::ConflictingShareImage { conflicts_with } => {
+                write!(f, "The device {conflicts_with} has already submitted that index in the restoration and has a different share image")
+            }
+        }
+    }
+}
+
+impl std::error::Error for RestorePhysicalBackupError {}
 
 impl fmt::Display for RestoreRecoverShareError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -906,7 +1112,7 @@ impl fmt::Display for RestoreRecoverShareError {
                 write!(f, "Access structure doesn't match one of the other shares")
             }
             RestoreRecoverShareError::AlreadyGotThisShare => {
-                write!(f, "Already got this share")
+                write!(f, "Already know this device has this share")
             }
             RestoreRecoverShareError::NameMismatch => {
                 write!(
@@ -914,13 +1120,16 @@ impl fmt::Display for RestoreRecoverShareError {
                     "The name of the key being restored and the one in the share is not the same"
                 )
             }
+            RestoreRecoverShareError::ConflictingShareImage { conflicts_with } => {
+                write!(f, "The device {conflicts_with} has already submitted that index in the restoration and has a different share image")
+            }
         }
     }
 }
 
-#[cfg(feature = "std")]
 impl std::error::Error for RestoreRecoverShareError {}
 
+/// An error when you try to recover a share to a known access structure
 #[derive(Debug, Clone)]
 pub enum RecoverShareError {
     /// The coordinator already knows about this share
@@ -961,5 +1170,75 @@ impl fmt::Display for RecoverShareError {
     }
 }
 
-#[cfg(feature = "std")]
 impl std::error::Error for RecoverShareError {}
+
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq)]
+pub struct RecoveringAccessStructure {
+    pub threshold: u16,
+    pub share_images: Vec<(DeviceId, ShareImage)>,
+}
+
+impl RecoveringAccessStructure {
+    pub fn progress(&self) -> u16 {
+        self.share_images
+            .iter()
+            .map(|(_, share_image)| share_image.share_index)
+            .collect::<BTreeSet<_>>()
+            .len()
+            .try_into()
+            .unwrap()
+    }
+    pub fn is_restorable(&self) -> bool {
+        self.interpolate().is_some()
+    }
+
+    pub fn interpolate(&self) -> Option<SharedKey<Normal>> {
+        self.interpolate_subset(&Default::default())
+    }
+
+    pub fn interpolate_subset(&self, exclude: &HashSet<DeviceId>) -> Option<SharedKey<Normal>> {
+        let share_images = self
+            .share_images
+            .iter()
+            .filter(|(id, _)| !exclude.contains(id))
+            .map(|(_, share_image)| (share_image.share_index, share_image.point))
+            // For deduplication
+            .collect::<BTreeMap<_, _>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        if share_images.len() >= self.threshold.into() {
+            Some(SharedKey::from_share_images(&share_images[..]).non_zero()?)
+        } else {
+            None
+        }
+    }
+
+    pub fn has_got_share_index(&self, share_index: PartyIndex) -> bool {
+        self.share_images
+            .iter()
+            .any(|(_, share_image)| share_image.share_index == share_index)
+    }
+
+    pub fn has_got_share_image(&self, device_id: DeviceId, share_image: ShareImage) -> bool {
+        self.share_images.contains(&(device_id, share_image))
+    }
+
+    pub fn has_got_from(&self, device_id: DeviceId) -> bool {
+        self.get_device_contribution(device_id).is_some()
+    }
+
+    pub fn get_device_contribution(&self, device_id: DeviceId) -> Option<ShareImage> {
+        let (_, share_image) = self.share_images.iter().find(|&&(id, _)| id == device_id)?;
+
+        Some(*share_image)
+    }
+
+    pub fn contradicts(&self, share_image: ShareImage) -> Option<DeviceId> {
+        let (device_id, _) = self.share_images.iter().find(|(_, expected)| {
+            expected.share_index == share_image.share_index && expected.point != share_image.point
+        })?;
+
+        Some(*device_id)
+    }
+}

@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/device_setup.dart';
 import 'package:frostsnapp/global.dart';
-import 'package:collection/collection.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/snackbar.dart';
 import 'ffi.dart';
@@ -19,21 +18,56 @@ class WalletRecoveryPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sharesNeeded =
-        restoringKey.threshold - restoringKey.sharesObtained.length;
-    final canFinish = sharesNeeded <= 0;
-    final progressDescription =
-        sharesNeeded > 0
-            ? (sharesNeeded == 1
-                ? '1 more key needed'
-                : '$sharesNeeded more keys needed')
-            : 'You have enough keys to restore the wallet. You can continue recovering more devices if you have more backups available, or add them at later time under settings.';
+    final theme = Theme.of(context);
+    final progressDescription = switch (restoringKey.problem) {
+      null => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check_circle, color: theme.colorScheme.primary),
+          SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              'You have enough keys to restore the wallet. You can continue recovering more keys if you have more backups available, or add them later under settings.',
+              softWrap: true,
+            ),
+          ),
+        ],
+      ),
+      RestorationProblem_NotEnoughShares(:final needMore) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.pending_rounded),
+          SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              needMore == 1
+                  ? '1 more key needed'
+                  : '$needMore more keys needed',
+              softWrap: true,
+            ),
+          ),
+        ],
+      ),
+      RestorationProblem_InvalidShares() => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.warning, color: theme.colorScheme.error),
+          SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              "Remove incompatible shares before continuing",
+              softWrap: true,
+            ),
+          ),
+        ],
+      ),
+    };
 
     return CustomScrollView(
       slivers: [
         SliverAppBar(
           pinned: true,
-          title: Text(restoringKey.name),
+          title: Text("Restoring Wallet “${restoringKey.name}”"),
           // Optionally add more configuration like flexibleSpace, actions, etc.
         ),
         SliverToBoxAdapter(
@@ -42,14 +76,10 @@ class WalletRecoveryPage extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  'Wallet Restoration',
-                  style: Theme.of(context).textTheme.headlineMedium,
-                  textAlign: TextAlign.center,
-                ),
                 const SizedBox(height: 20),
                 Text(
                   "At least ${restoringKey.threshold} keys are needed to restore this wallet.",
+                  style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const SizedBox(height: 10),
                 Text(
@@ -60,26 +90,95 @@ class WalletRecoveryPage extends StatelessWidget {
                 // Wrap the list in a Column; using ListView here would require shrinkWrap/physics adjustments.
                 Column(
                   children:
-                      restoringKey.sharesObtained.map((deviceId) {
+                      restoringKey.sharesObtained.map((share) {
+                        final deleteButton = IconButton(
+                          icon: const Icon(Icons.delete),
+                          tooltip: 'Remove share',
+                          onPressed: () async {
+                            await coord.deleteRestorationShare(
+                              restorationId: restoringKey.restorationId,
+                              deviceId: share.deviceId,
+                            );
+                          },
+                        );
                         final deviceName =
-                            coord.getDeviceName(id: deviceId) ?? '<empty>';
+                            coord.getDeviceName(id: share.deviceId) ??
+                            '<empty>';
                         return Card(
                           elevation: 2,
                           margin: const EdgeInsets.symmetric(vertical: 4.0),
                           child: ListTile(
-                            leading: const Icon(Icons.devices),
-                            title: Text(deviceName),
+                            leading: Icon(Icons.key),
+                            trailing: Row(
+                              mainAxisSize:
+                                  MainAxisSize.min, // keep row compact
+                              children: [
+                                ...switch (share.validity) {
+                                  RestorationShareValidity.Valid => [
+                                    Tooltip(
+                                      message: "valid key",
+                                      child: Icon(
+                                        Icons.check_circle,
+                                        color:
+                                            Theme.of(
+                                              context,
+                                            ).colorScheme.primary,
+                                      ),
+                                    ),
+                                  ],
+                                  RestorationShareValidity.Unknown => [
+                                    deleteButton,
+                                    const SizedBox(width: 8),
+                                    Tooltip(
+                                      message: "validity to be determined",
+                                      child: Icon(
+                                        Icons.pending_rounded,
+                                        color:
+                                            Theme.of(
+                                              context,
+                                            ).colorScheme.primary,
+                                      ),
+                                    ),
+                                  ],
+                                  RestorationShareValidity.Invalid => [
+                                    deleteButton,
+                                    const SizedBox(width: 8),
+                                    Tooltip(
+                                      message:
+                                          "this share is incompatible with the other shares",
+                                      child: Icon(
+                                        Icons.warning,
+                                        color:
+                                            Theme.of(context).colorScheme.error,
+                                      ),
+                                    ),
+                                  ],
+                                },
+                                // delete button
+                              ],
+                            ),
+                            title: Row(
+                              children: [
+                                Tooltip(
+                                  message: "the key number",
+                                  child: Text(
+                                    "#${share.index}",
+                                    style: TextStyle(
+                                      color:
+                                          Theme.of(context).colorScheme.primary,
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(width: 10),
+                                Text(deviceName),
+                              ],
+                            ),
                           ),
                         );
                       }).toList(),
                 ),
                 const SizedBox(height: 10),
-                Center(
-                  child: Text(
-                    progressDescription,
-                    style: Theme.of(context).textTheme.bodyLarge,
-                  ),
-                ),
+                Center(child: progressDescription),
                 const SizedBox(height: 10),
                 Center(
                   child: ElevatedButton.icon(
@@ -116,7 +215,7 @@ class WalletRecoveryPage extends StatelessWidget {
                       icon: const Icon(Icons.check_circle),
                       label: const Text('Restore'),
                       onPressed:
-                          canFinish
+                          restoringKey.problem == null
                               ? () async {
                                 try {
                                   final accessStructureRef = await coord
@@ -253,14 +352,26 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                   threshold: threshold!,
                   network: bitcoinNetwork!,
                 );
-                await coord.tellDeviceToSavePhysicalBackup(
-                  phase: backupPhase,
+
+                compatibility = coord.checkPhysicalBackupCompatible(
                   restorationId: restorationId!,
+                  phase: backupPhase,
                 );
+
+                if (compatibility == ShareCompatibility.compatible()) {
+                  await coord.tellDeviceToSavePhysicalBackup(
+                    phase: backupPhase,
+                    restorationId: restorationId!,
+                  );
+                  setState(() {
+                    currentStep = "physical_backup_success";
+                  });
+                } else {
+                  setState(() {
+                    currentStep = "physical_backup_fail";
+                  });
+                }
               }
-              setState(() {
-                currentStep = "physical_backup_success";
-              });
             } catch (e) {
               setState(() {
                 currentStep = "physical_backup_fail";
@@ -310,7 +421,8 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         break;
       case 'physical_backup_fail':
         child = _PhysicalBackupFailView(
-          errorMessage: error!,
+          errorMessage: error,
+          compatibility: compatibility,
           onRetry: () {
             setState(() {
               currentStep = 'enter_backup';
@@ -470,24 +582,27 @@ class _PlugInBlankView extends StatefulWidget {
 
 class _PlugInBlankViewState extends State<_PlugInBlankView> {
   StreamSubscription? _subscription;
-  ConnectedDevice? connectedDevice;
+  ConnectedDevice? _connectedDevice;
 
   @override
   void initState() {
     super.initState();
     _subscription = GlobalStreams.deviceListSubject.listen((update) {
-      final candidate = update.state.devices.firstWhereOrNull(
-        (device) => device.name == null,
-      );
-      if (candidate != null) {
-        widget.onBlankDeviceConnected?.call(candidate);
-        setState(() {
-          connectedDevice = candidate;
-        });
-      } else {
-        setState(() {
-          connectedDevice = update.state.devices.firstOrNull;
-        });
+      ConnectedDevice? connectedDevice;
+
+      for (final candidate in update.state.devices) {
+        connectedDevice = candidate;
+        if (connectedDevice.name == null) {
+          break;
+        }
+      }
+
+      setState(() {
+        _connectedDevice = connectedDevice;
+      });
+
+      if (connectedDevice != null && connectedDevice.name == null) {
+        widget.onBlankDeviceConnected?.call(connectedDevice);
       }
     });
   }
@@ -502,14 +617,23 @@ class _PlugInBlankViewState extends State<_PlugInBlankView> {
   Widget build(BuildContext context) {
     final List<Widget> children;
     final theme = Theme.of(context);
-    if (connectedDevice != null && connectedDevice!.name != null) {
+    if (_connectedDevice != null && _connectedDevice!.name != null) {
+      var name = _connectedDevice!.name!;
       children = [
         Icon(Icons.cancel, color: theme.colorScheme.error, size: 48),
         SizedBox(height: 16),
         Text(
-          "The device “${connectedDevice!.name!}” you've plugged in is not blank.\nYou must erase the device before loading a physical backup onto it.",
+          "The device “$name” you've plugged in is not blank.\nYou must erase the device before loading a physical backup onto it.",
           textAlign: TextAlign.center,
           style: theme.textTheme.titleMedium,
+        ),
+        SizedBox(height: 16),
+        ElevatedButton.icon(
+          icon: Icon(Icons.delete),
+          label: Text("erase “$name”"),
+          onPressed: () {
+            coord.wipeDeviceData(deviceId: _connectedDevice!.id);
+          },
         ),
         SizedBox(height: 16),
       ];
@@ -851,10 +975,13 @@ class _PlugInPromptViewState extends State<_PlugInPromptView> {
       waitForRecoverShareState,
     ) {
       ShareCompatibility? compatibility;
-      RecoverShare? found;
+      RecoverShare? last;
+      alreadyGot = null;
+      blankDeviceInserted = false;
 
       if (waitForRecoverShareState.shares.isNotEmpty) {
         for (final detectedShare in waitForRecoverShareState.shares) {
+          last = detectedShare;
           if (widget.continuing != null) {
             compatibility = coord.restorationCheckShareCompatible(
               restorationId: widget.continuing!,
@@ -866,22 +993,27 @@ class _PlugInPromptViewState extends State<_PlugInPromptView> {
               recoverShare: detectedShare,
             );
           } else {
-            compatibility = ShareCompatibility.Compatible;
+            compatibility = ShareCompatibility.compatible();
           }
 
-          if (compatibility == ShareCompatibility.Compatible) {
-            found = detectedShare;
+          if (compatibility == ShareCompatibility.compatible()) {
             break;
           }
+        }
+
+        if (compatibility == ShareCompatibility.alreadyGotIt()) {
+          setState(() {
+            alreadyGot = last!;
+          });
+        } else {
+          setState(() {
+            widget.onCandidateDetected(last!, compatibility!);
+          });
         }
       } else {
         setState(() {
           blankDeviceInserted = waitForRecoverShareState.blank.isNotEmpty;
         });
-      }
-
-      if (found != null) {
-        widget.onCandidateDetected(found, compatibility!);
       }
     });
   }
@@ -1007,12 +1139,12 @@ class _CandidateReadyView extends StatelessWidget {
     VoidCallback buttonAction;
 
     switch (compatibility) {
-      case ShareCompatibility.Compatible ||
+      case ShareCompatibility_Compatible() ||
           // we ignore the problem of different wallet names on the shares for now.
           // This happens when you eneter a physical backup and enter a different
           // name for the wallet than devices you later try to add to the wallet.
           // We just carry on with the cosmetic SNAFU.
-          ShareCompatibility.NameMismatch:
+          ShareCompatibility_NameMismatch():
         icon = const Icon(Icons.check_circle, size: 48, color: Colors.green);
 
         if (continuing != null || existing != null) {
@@ -1027,50 +1159,54 @@ class _CandidateReadyView extends StatelessWidget {
 
         buttonAction = () async {
           try {
+            RestorationId? restorationId;
             if (continuing != null) {
               await coord.continueRestoringWalletFromDeviceShare(
                 restorationId: continuing!,
                 recoverShare: candidate,
               );
-              if (context.mounted) {
-                Navigator.pop(context);
-              }
             } else if (existing != null) {
               await coord.recoverShare(
                 accessStructureRef: existing!,
                 recoverShare: candidate,
               );
-              if (context.mounted) {
-                Navigator.pop(context);
-              }
             } else {
-              final restorationId = await coord
-                  .startRestoringWalletFromDeviceShare(recoverShare: candidate);
+              restorationId = await coord.startRestoringWalletFromDeviceShare(
+                recoverShare: candidate,
+              );
+            }
 
-              if (context.mounted) {
-                Navigator.pop(context, restorationId);
-              }
+            if (context.mounted) {
+              Navigator.pop(context, restorationId);
             }
           } catch (e) {
             if (context.mounted) {
-              showErrorSnackbarBottom(context, "failed to recover wallet: $e");
+              showErrorSnackbarBottom(context, "failed to recover key: $e");
             }
           }
         };
 
         break;
 
-      case ShareCompatibility.AlreadyGotIt:
+      case ShareCompatibility_AlreadyGotIt():
         icon = const Icon(Icons.info, size: 48, color: Colors.blue);
         message = 'You’ve already recovered "$deviceName".';
         buttonText = 'Close';
         buttonAction = () => Navigator.pop(context);
         break;
 
-      case ShareCompatibility.Incompatible:
+      case ShareCompatibility_Incompatible():
         icon = const Icon(Icons.error, size: 48, color: Colors.red);
         message =
             'This key "$deviceName" is part of a different wallet called "${candidate.keyName()}"';
+        buttonText = 'Close';
+        buttonAction = () => Navigator.pop(context);
+        break;
+
+      case ShareCompatibility_ConflictsWith(:final deviceId, :final index):
+        icon = const Icon(Icons.error, size: 48, color: Colors.red);
+        message =
+            "You've already restored backup #$index on ‘${coord.getDeviceName(id: deviceId)!}’ and it doesn't match the one you just entered. Consider removing that key from the restoration first.";
         buttonText = 'Close';
         buttonAction = () => Navigator.pop(context);
         break;
@@ -1134,20 +1270,29 @@ class _PhysicalBackupSuccessView extends StatelessWidget {
 }
 
 class _PhysicalBackupFailView extends StatelessWidget {
-  final String errorMessage;
+  final String? errorMessage;
+  final ShareCompatibility? compatibility;
   final VoidCallback onRetry;
   final VoidCallback onClose;
 
   const _PhysicalBackupFailView({
-    Key? key,
     required this.errorMessage,
+    required this.compatibility,
     required this.onRetry,
     required this.onClose,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
+    final String compatMessage = switch (compatibility) {
+      ShareCompatibility_ConflictsWith(:final deviceId, :final index) =>
+        "You've already restored backup #$index on ‘${coord.getDeviceName(id: deviceId)!}’ and it doesn't match the one you just entered. Are you sure that this backup is for this wallet?",
+      _ => "Unknown error of kind: $compatibility",
+    };
+
+    final String message = errorMessage ?? compatMessage;
     return Column(
       key: const ValueKey('physicalBackupFail'),
       mainAxisSize: MainAxisSize.min,
@@ -1161,7 +1306,7 @@ class _PhysicalBackupFailView extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          errorMessage,
+          message,
           style: theme.textTheme.bodyMedium,
           textAlign: TextAlign.center,
         ),

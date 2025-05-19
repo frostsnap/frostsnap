@@ -34,8 +34,8 @@ pub use frostsnap_coordinator::{
     signing::SigningState, DeviceChange, PortDesc,
 };
 pub use frostsnap_core::coordinator::restoration::{
-    PhysicalBackupPhase as RPhysicalBackupPhase, RecoverShare as RRecoverShare,
-    RestorationState as RRestorationState,
+    PhysicalBackupPhase as RPhysicalBackupPhase, RecoverShare as RRecoverShare, RestorationProblem,
+    RestorationShare, RestorationShareValidity, RestorationState as RRestorationState,
 };
 
 pub use frostsnap_coordinator::backup_run::BackupState;
@@ -325,8 +325,29 @@ pub struct RestoringKey {
     pub restoration_id: RestorationId,
     pub name: String,
     pub threshold: u16,
-    pub shares_obtained: Vec<DeviceId>,
+    pub shares_obtained: Vec<RestorationShare>,
     pub bitcoin_network: Option<BitcoinNetwork>,
+    pub problem: Option<RestorationProblem>,
+}
+
+#[frb(mirror(RestorationProblem))]
+pub enum _RestorationProblem {
+    NotEnoughShares { need_more: u16 },
+    InvalidShares,
+}
+
+#[frb(mirror(RestorationShare))]
+pub struct _RestorationShare {
+    pub device_id: DeviceId,
+    pub index: u16,
+    pub validity: RestorationShareValidity,
+}
+
+#[frb(mirror(RestorationShareValidity))]
+pub enum _RestorationShareValidity {
+    Valid,
+    Invalid,
+    Unknown,
 }
 
 #[derive(Clone, Debug)]
@@ -1399,6 +1420,10 @@ impl Coordinator {
                         ShareCompatibility::Incompatible
                     }
                     AlreadyGotThisShare => ShareCompatibility::AlreadyGotIt,
+                    ConflictingShareImage { conflicts_with } => ShareCompatibility::ConflictsWith {
+                        device_id: conflicts_with,
+                        index: recover_share.0.held_share.share_image.share_index_u16(),
+                    },
                 },
             },
         )
@@ -1446,6 +1471,30 @@ impl Coordinator {
                     ShareCompatibility::Incompatible
                 }
                 RecoverShareError::AccessStructureMismatch => ShareCompatibility::Incompatible,
+            },
+        })
+    }
+
+    pub fn check_physical_backup_compatible(
+        &self,
+        restoration_id: RestorationId,
+        phase: PhysicalBackupPhase,
+    ) -> SyncReturn<ShareCompatibility> {
+        use frostsnap_core::coordinator::restoration::RestorePhysicalBackupError::*;
+        let res = self
+            .0
+            .inner()
+            .check_physical_backup_compatible_with_restoration(restoration_id, *phase.0);
+
+        SyncReturn(match res {
+            Ok(_) => ShareCompatibility::Compatible,
+            Err(e) => match e {
+                UnknownRestorationId => ShareCompatibility::Incompatible,
+                AlreadyGotThisShare => ShareCompatibility::AlreadyGotIt,
+                ConflictingShareImage { conflicts_with } => ShareCompatibility::ConflictsWith {
+                    device_id: conflicts_with,
+                    index: phase.0.backup.share_image.share_index_u16(),
+                },
             },
         })
     }
@@ -1512,8 +1561,12 @@ impl Coordinator {
         self.0.exit_recovery_mode(device_id, crate::TEMP_KEY);
     }
 
-    pub fn tmp_restoration_id(&self) -> SyncReturn<RestorationId> {
-        SyncReturn(RestorationId::new(&mut rand::thread_rng()))
+    pub fn delete_restoration_share(
+        &self,
+        restoration_id: RestorationId,
+        device_id: DeviceId,
+    ) -> Result<()> {
+        self.0.delete_restoration_share(restoration_id, device_id)
     }
 }
 
@@ -1522,6 +1575,7 @@ pub enum ShareCompatibility {
     AlreadyGotIt,
     Incompatible,
     NameMismatch,
+    ConflictsWith { device_id: DeviceId, index: u16 },
 }
 
 pub struct WaitForRecoveryShareState {

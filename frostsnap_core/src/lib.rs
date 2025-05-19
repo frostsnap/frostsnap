@@ -330,6 +330,11 @@ impl ShareImage {
             point: g!(secret_share.share * G).normalize(),
         }
     }
+
+    pub fn share_index_u16(&self) -> u16 {
+        // XXX: temporary HACK
+        u16::from_str_radix(&self.share_index.to_string(), 16).expect("share idnex index is small")
+    }
 }
 // Uniquely identifies an access structure for a particular `key_id`.
 #[derive(

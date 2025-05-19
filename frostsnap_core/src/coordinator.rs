@@ -7,8 +7,8 @@ use crate::{
     tweak::Xpub,
     AccessStructureId, AccessStructureKind, AccessStructureRef, ActionError,
     CoordShareDecryptionContrib, DeviceId, Error, Gist, KeyId, KeygenId, Kind, MasterAppkey,
-    MessageResult, SessionHash, ShareImage, SignItem, SignSessionId, SignTaskError, WireSignTask,
-    NONCE_BATCH_SIZE,
+    MessageResult, RestorationId, SessionHash, ShareImage, SignItem, SignSessionId, SignTaskError,
+    WireSignTask, NONCE_BATCH_SIZE,
 };
 use alloc::{
     borrow::ToOwned,
@@ -101,48 +101,6 @@ impl CompleteKey {
             MasterAppkey::derive_from_rootkey(rootkey) == access_structure.master_appkey()
         );
         Some(SharedKey::from_poly(poly).non_zero().expect("invariant"))
-    }
-}
-
-#[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq)]
-pub struct RecoveringAccessStructure {
-    pub threshold: u16,
-    pub share_images: BTreeMap<DeviceId, ShareImage>,
-}
-
-impl RecoveringAccessStructure {
-    pub fn progress(&self) -> u16 {
-        self.share_images
-            .values()
-            .map(|value| value.share_index)
-            .collect::<BTreeSet<_>>()
-            .len()
-            .try_into()
-            .unwrap()
-    }
-    pub fn is_finished(&self) -> bool {
-        self.progress() >= self.threshold
-    }
-
-    pub fn interpolate(self) -> Option<SharedKey<Normal>> {
-        let share_images = self
-            .share_images
-            .into_values()
-            .map(|share_image| (share_image.share_index, share_image.point))
-            // For deduplication
-            .collect::<BTreeMap<_, _>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-
-        if share_images.len() >= self.threshold.into() {
-            Some(SharedKey::from_share_images(&share_images[..]).non_zero()?)
-        } else {
-            None
-        }
-    }
-
-    pub fn has_got_share(&self, device_id: DeviceId, share_image: ShareImage) -> bool {
-        self.share_images.get(&device_id).copied() == Some(share_image)
     }
 }
 
@@ -270,9 +228,14 @@ impl FrostCoordinator {
                         .get_mut(&access_structure_ref.access_structure_id)
                     {
                         Some(access_structure) => {
-                            access_structure
+                            let changed = access_structure
                                 .device_to_share_index
-                                .insert(device_id, share_index);
+                                .insert(device_id, share_index)
+                                != Some(share_index);
+
+                            if !changed {
+                                return None;
+                            }
                         }
                         None => {
                             fail!(
@@ -1478,8 +1441,16 @@ impl Mutation {
                 ..
             } => access_structure_ref.key_id,
             Mutation::DeleteKey(key_id) => *key_id,
+            Mutation::Restoration(inner) => inner.tied_to_key()?,
             _ => return None,
         })
+    }
+
+    pub fn tied_to_restoration(&self) -> Option<RestorationId> {
+        match self {
+            Mutation::Restoration(mutation) => mutation.tied_to_restoration(),
+            _ => None,
+        }
     }
 }
 
