@@ -72,7 +72,7 @@ impl io::Read for FfiSerialPort {
                         std::thread::sleep(std::time::Duration::from_millis(1));
                     }
                 }
-                Err(e) => return Err(io::Error::new(io::ErrorKind::Other, e)),
+                Err(e) => return Err(io::Error::other(e)),
             }
         }
     }
@@ -93,7 +93,7 @@ impl std::io::Write for FfiSerialPort {
 
         match rx.recv().unwrap() {
             Ok(()) => Ok(buf.len()),
-            Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
+            Err(e) => Err(io::Error::other(e)),
         }
     }
 

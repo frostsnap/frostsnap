@@ -365,7 +365,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                 Ok(vec![DeviceSend::ToCoordinator(Box::new(
                     DeviceToCoordinatorMessage::KeyGenResponse(KeyGenResponse {
                         keygen_id,
-                        input: keygen_input,
+                        input: Box::new(keygen_input),
                     }),
                 ))])
             }
@@ -417,10 +417,11 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                     },
                 ))])
             }
-            RequestSign(self::RequestSign {
-                group_sign_req,
-                device_sign_req,
-            }) => {
+            RequestSign(request_sign) => {
+                let self::RequestSign {
+                    group_sign_req,
+                    device_sign_req,
+                } = *request_sign;
                 let session_id = group_sign_req.session_id();
                 let key_id = KeyId::from_rootkey(device_sign_req.rootkey);
                 let key_data = self
