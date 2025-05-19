@@ -37,7 +37,7 @@ pub enum CoordinatorToDeviceMessage {
         keygen_id: KeygenId,
         agg_input: encpedpop::AggKeygenInput,
     },
-    RequestSign(RequestSign),
+    RequestSign(Box<RequestSign>),
     OpenNonceStreams {
         streams: Vec<CoordNonceStreamState>,
     },
@@ -212,7 +212,7 @@ pub struct HeldShare {
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
 pub struct KeyGenResponse {
     pub keygen_id: KeygenId,
-    pub input: encpedpop::KeygenInput,
+    pub input: Box<encpedpop::KeygenInput>,
 }
 
 impl Gist for DeviceToCoordinatorMessage {
