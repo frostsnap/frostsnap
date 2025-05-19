@@ -60,28 +60,32 @@ serve *args='':
     flutter pub run flutter_rust_bridge:serve {{args}}
 
 build-appimage +ARGS="":
-   #!/bin/sh
-   dir="appimage/AppDir"
-   executable="$dir/usr/Frostsnapp"
-   rm -rf "$dir"
-   mkdir -p "$dir/usr"
-   cp -r appimage/assets/* "$dir/"
-   cp -rp build/linux/x64/release/bundle/* $dir/usr
-   # github actions caching loses the 'u+x'
-   chmod u+x "$executable"
+    #!/bin/sh
+    if [ ! -d "build/linux/x64/release/bundle" ]; then
+        echo "ERROR: Flutter build not found at build/linux/x64/release/bundle" >&2
+        echo "Run 'just build linux --release' first" >&2
+        exit 1
+    fi
+    dir="appimage/AppDir"
+    executable="$dir/usr/Frostsnapp"
+    rm -rf "$dir"
+    mkdir -p "$dir/usr"
+    cp -r appimage/assets/* "$dir/"
+    cp -rp build/linux/x64/release/bundle/* $dir/usr
+    # github actions caching loses the 'u+x'
+    chmod u+x "$executable"
 
-   echo "final bundled libs:" >&2;
-   ls -l $dir/usr/*
+    echo "final bundled libs:" >&2;
+    ls -l $dir/usr/*
+    just fetch https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20250213-2/linuxdeploy-x86_64.AppImage appimage/linuxdeploy
+    chmod u+x appimage/linuxdeploy
 
-   just fetch https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage appimage/linuxdeploy
-   chmod u+x appimage/linuxdeploy
-
-   export LD_LIBRARY_PATH="$dir/usr/lib:${LD_LIBRARY_PATH:-}"
-   appimage/linuxdeploy \
-   --appdir $dir \
-   --desktop-file "$dir/com.frostsnapp.app.desktop" \
-   --icon-file "$dir/Frostsnapp.png" \
-   --executable "$executable" \
-   --output appimage
+    export LD_LIBRARY_PATH="$dir/usr/lib:${LD_LIBRARY_PATH:-}"
+    appimage/linuxdeploy \
+    --appdir $dir \
+    --desktop-file "$dir/com.frostsnapp.app.desktop" \
+    --icon-file "$dir/Frostsnapp.png" \
+    --executable "$executable" \
+    --output appimage
 
 # vim:expandtab:sw=4:ts=4
