@@ -438,7 +438,7 @@ impl FrostCoordinator {
                                 // we use the share index as the input generator index. The input
                                 // generator at index 0 is the coordinator itself.
                                 (*share_index).into(),
-                                response.input,
+                                *response.input,
                             )
                             .map_err(|e| Error::coordinator_invalid_message(message_kind, e))?;
 
@@ -1507,7 +1507,7 @@ pub struct RequestDeviceSign {
 impl From<RequestDeviceSign> for CoordinatorSend {
     fn from(value: RequestDeviceSign) -> Self {
         CoordinatorSend::ToDevice {
-            message: CoordinatorToDeviceMessage::RequestSign(value.request_sign),
+            message: CoordinatorToDeviceMessage::RequestSign(Box::new(value.request_sign)),
             destinations: [value.device_id].into(),
         }
     }

@@ -80,7 +80,7 @@ pub type SyncResponse = spk_client::SyncResult<ConfirmationBlockTime>;
 /// The messages the client can send to the backend
 pub enum Message {
     ChangeUrlReq(ReqAndResponse<String, Result<()>>),
-    MonitorDescriptor(KeychainId, Descriptor<DescriptorPublicKey>),
+    MonitorDescriptor(KeychainId, Box<Descriptor<DescriptorPublicKey>>),
     BroadcastReq(ReqAndResponse<Transaction, Result<()>>),
     EstimateFee(ReqAndResponse<BTreeSet<usize>, Result<BTreeMap<usize, bitcoin::FeeRate>>>),
     SetStatusSink(Box<dyn Sink<ChainStatus>>),
@@ -112,7 +112,7 @@ impl ChainClient {
             bitcoin::NetworkKind::Main,
         );
         self.req_sender
-            .send(Message::MonitorDescriptor(keychain, descriptor))
+            .send(Message::MonitorDescriptor(keychain, Box::new(descriptor)))
             .unwrap();
     }
 
@@ -292,7 +292,7 @@ impl ConnectionHandler {
                     }
                     Message::MonitorDescriptor(keychain, descriptor) => {
                         cmd_sender
-                            .insert_descriptor(keychain, descriptor, lookahead)
+                            .insert_descriptor(keychain, *descriptor, lookahead)
                             .expect("must insert descriptor");
                     }
                     Message::BroadcastReq(ReqAndResponse { request, response }) => {
@@ -406,7 +406,7 @@ fn connect(url: &str) -> Result<Conn> {
             let dnsname = ServerName::try_from(host)?;
             let conn = async_std::net::TcpStream::connect(socket_addr).await?;
             let conn = connector.connect(dnsname, conn).await?;
-            anyhow::Ok(Conn::Ssl(conn))
+            anyhow::Ok(Conn::Ssl(Box::new(conn)))
         } else {
             let conn = async_std::net::TcpStream::connect(socket_addr).await?;
             anyhow::Ok(Conn::Tcp(conn))
@@ -418,7 +418,7 @@ fn connect(url: &str) -> Result<Conn> {
 
 enum Conn {
     Tcp(TcpStream),
-    Ssl(TlsStream<TcpStream>),
+    Ssl(Box<TlsStream<TcpStream>>),
 }
 
 struct TargetServer {
