@@ -1085,13 +1085,13 @@ impl fmt::Display for RestorePhysicalBackupError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RestorePhysicalBackupError::UnknownRestorationId => {
-                write!(f, "cooridnator didn't have the restoration id")
+                write!(f, "Coordinator didn't have the restoration id")
             }
             RestorePhysicalBackupError::AlreadyGotThisShare => {
                 write!(f, "Already know this device has this share")
             }
             RestorePhysicalBackupError::ConflictingShareImage { conflicts_with } => {
-                write!(f, "The device {conflicts_with} has already submitted that index in the restoration and has a different share image")
+                write!(f, "The device {conflicts_with} has already submitted a backup with that index but with a different share image")
             }
         }
     }
@@ -1103,7 +1103,7 @@ impl fmt::Display for RestoreRecoverShareError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RestoreRecoverShareError::UnknownRestorationId => {
-                write!(f, "cooridnator didn't have the restoration id")
+                write!(f, "Coordinator didn't have the restoration id")
             }
             RestoreRecoverShareError::PurposeNotCompatible => {
                 write!(f, "The key share is use by the device for a different purpose than the restoration session")
@@ -1121,7 +1121,7 @@ impl fmt::Display for RestoreRecoverShareError {
                 )
             }
             RestoreRecoverShareError::ConflictingShareImage { conflicts_with } => {
-                write!(f, "The device {conflicts_with} has already submitted that index in the restoration and has a different share image")
+                write!(f, "The device {conflicts_with} has already submitted a backup with that index but with a different share image")
             }
         }
     }

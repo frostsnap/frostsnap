@@ -157,7 +157,7 @@ const TEST_BACKUP_3: [char; 58] = [
     'E',
 ];
 
-/// incompatible with the other shares
+// incompatible with the other shares
 const TEST_BACKUP_1A: [char; 58] = [
     'R', 'R', '0', 'E', 'V', 'E', '0', 'L', 'E', 'K', '6', 'F', 'Z', 'Z', 'M', '5', '9', 'L', 'J',
     'W', 'Y', 'D', '5', 'W', 'J', 'W', '5', 'S', 'X', '2', '0', 'A', 'V', 'A', 'C', '9', '9', 'Q',

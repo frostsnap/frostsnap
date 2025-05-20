@@ -116,7 +116,7 @@ class WalletRecoveryPage extends StatelessWidget {
                                 ...switch (share.validity) {
                                   RestorationShareValidity.Valid => [
                                     Tooltip(
-                                      message: "valid key",
+                                      message: "Valid key",
                                       child: Icon(
                                         Icons.check_circle,
                                         color:
@@ -130,7 +130,7 @@ class WalletRecoveryPage extends StatelessWidget {
                                     deleteButton,
                                     const SizedBox(width: 8),
                                     Tooltip(
-                                      message: "validity to be determined",
+                                      message: "Validity to be determined",
                                       child: Icon(
                                         Icons.pending_rounded,
                                         color:
@@ -145,7 +145,7 @@ class WalletRecoveryPage extends StatelessWidget {
                                     const SizedBox(width: 8),
                                     Tooltip(
                                       message:
-                                          "this share is incompatible with the other shares",
+                                          "This share is incompatible with the other shares",
                                       child: Icon(
                                         Icons.warning,
                                         color:
@@ -627,7 +627,7 @@ class _PlugInBlankViewState extends State<_PlugInBlankView> {
         SizedBox(height: 16),
         ElevatedButton.icon(
           icon: Icon(Icons.delete),
-          label: Text("erase “$name”"),
+          label: Text("Erase “$name”"),
           onPressed: () {
             coord.wipeDeviceData(deviceId: _connectedDevice!.id);
           },
@@ -1178,7 +1178,7 @@ class _CandidateReadyView extends StatelessWidget {
             }
           } catch (e) {
             if (context.mounted) {
-              showErrorSnackbarBottom(context, "failed to recover key: $e");
+              showErrorSnackbarBottom(context, "Failed to recover key: $e");
             }
           }
         };
@@ -1203,7 +1203,7 @@ class _CandidateReadyView extends StatelessWidget {
       case ShareCompatibility_ConflictsWith(:final deviceId, :final index):
         icon = const Icon(Icons.error, size: 48, color: Colors.red);
         message =
-            "You've already restored backup #$index on ‘${coord.getDeviceName(id: deviceId)!}’ and it doesn't match the one you just entered. Consider removing that key from the restoration first.";
+            "You have already restored backup #$index on ‘${coord.getDeviceName(id: deviceId)!}’ and it doesn't match the one you just entered. Consider removing that key from the restoration first.";
         buttonText = 'Close';
         buttonAction = () => Navigator.pop(context);
         break;
@@ -1285,7 +1285,7 @@ class _PhysicalBackupFailView extends StatelessWidget {
 
     final String compatMessage = switch (compatibility) {
       ShareCompatibility_ConflictsWith(:final deviceId, :final index) =>
-        "You've already restored backup #$index on ‘${coord.getDeviceName(id: deviceId)!}’ and it doesn't match the one you just entered. Are you sure that this backup is for this wallet?",
+        "You have already restored backup #$index on ‘${coord.getDeviceName(id: deviceId)!}’ and it doesn't match the one you just entered. Are you sure that this backup is for this wallet?",
       _ => "Unknown error of kind: $compatibility",
     };
 
