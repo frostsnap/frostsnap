@@ -497,12 +497,11 @@ class _ChooseMethodView extends StatelessWidget {
 
     switch (kind) {
       case MethodChoiceKind.startRecovery:
-        title = "Start wallet recovery";
-        subtitle =
-            'What kind of key are you starting the wallet recovery from?';
+        title = "Start restoring wallet";
+        subtitle = 'What kind of key will you start restoring the wallet from?';
         break;
       case MethodChoiceKind.continueRecovery:
-        title = 'Continue wallet recovery';
+        title = 'Continue wallet Restoration';
         subtitle = 'Where is the next key coming from?';
         break;
 
@@ -543,7 +542,7 @@ class _ChooseMethodView extends StatelessWidget {
             ),
             title: const Text('Existing key'),
             subtitle: const Text(
-              "I have a Frostsnap which already has a key for the wallet.",
+              "I have a Frostsnap device with a key for the wallet.",
             ),
             onTap: onDeviceChosen,
           ),
@@ -557,11 +556,9 @@ class _ChooseMethodView extends StatelessWidget {
           clipBehavior: Clip.hardEdge,
           child: ListTile(
             minTileHeight: 80,
-            leading: const Icon(Icons.description, size: 30),
+            leading: const Icon(Icons.description_outlined, size: 30),
             title: const Text('Physical backup'),
-            subtitle: const Text(
-              'I have a physically recorded backup and blank Frostsnap device.',
-            ),
+            subtitle: const Text('I have a physically recorded key backup.'),
             onTap: onPhysicalBackupChosen,
           ),
         ),
@@ -792,7 +789,7 @@ class _EnterThresholdViewState extends State<_EnterThresholdView> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            "Enter Recovery Threshold",
+            "Enter Wallet Threshold",
             style: theme.textTheme.titleLarge,
             textAlign: TextAlign.center,
           ),
@@ -836,7 +833,7 @@ class _EnterThresholdViewState extends State<_EnterThresholdView> {
           const SizedBox(height: 24),
           ElevatedButton.icon(
             icon: const Icon(Icons.arrow_forward),
-            label: const Text('Begin Recovery'),
+            label: const Text('Begin restoring'),
             onPressed: () async {
               if (_formKey.currentState!.validate()) {
                 widget.onThresholdEntered(_threshold);
@@ -1085,7 +1082,7 @@ class _PlugInPromptViewState extends State<_PlugInPromptView> {
       final name = coord.getFrostKey(keyId: widget.existing!.keyId)!.keyName();
       prompt = 'Plug in a Frostsnap to add it to "$name"';
     } else {
-      prompt = 'Plug in your Frostsnap device\nto begin wallet recovery';
+      prompt = 'Plug in your Frostsnap device\nto begin wallet restoration';
     }
 
     return Column(
@@ -1154,7 +1151,7 @@ class _CandidateReadyView extends StatelessWidget {
         } else {
           message =
               'The key "$deviceName" is part of a wallet called "${candidate.keyName()}"!';
-          buttonText = 'Start recovery';
+          buttonText = 'Start restoring';
         }
 
         buttonAction = () async {

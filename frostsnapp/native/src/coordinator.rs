@@ -1132,7 +1132,7 @@ impl FfiCoordinator {
                 Level::ERROR,
                 id = device_id.to_string(),
                 name = device.name,
-                "device failed to exist recovery mode"
+                "device failed to exit recovery mode"
             );
         }
     }

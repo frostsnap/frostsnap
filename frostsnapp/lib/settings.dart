@@ -72,7 +72,6 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final walletCtx = WalletContext.of(context);
-    final keyCtx = KeyContext.of(context);
     final logCtx = FrostsnapContext.of(context);
 
     return Scaffold(
@@ -83,24 +82,22 @@ class SettingsPage extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.all(16.0),
             children: [
-              if (walletCtx != null || keyCtx != null)
+              if (walletCtx != null)
                 SettingsCategory(
                   title: "Wallet",
                   items: [
-                    if (walletCtx != null)
-                      SettingsItem(
-                        title: Text('External wallet'),
-                        icon: Icons.qr_code,
-                        bodyBuilder: (context) {
-                          final wallet = walletCtx.wallet;
-                          return ExportDescriptorPage(
-                            walletDescriptor: walletCtx.network
-                                .descriptorForKey(
-                                  masterAppkey: wallet.masterAppkey,
-                                ),
-                          );
-                        },
-                      ),
+                    SettingsItem(
+                      title: Text('External wallet'),
+                      icon: Icons.qr_code,
+                      bodyBuilder: (context) {
+                        final wallet = walletCtx.wallet;
+                        return ExportDescriptorPage(
+                          walletDescriptor: walletCtx.network.descriptorForKey(
+                            masterAppkey: wallet.masterAppkey,
+                          ),
+                        );
+                      },
+                    ),
                     SettingsItem(
                       title: Text("Keys"),
                       icon: Icons.key_sharp,
@@ -108,19 +105,18 @@ class SettingsPage extends StatelessWidget {
                         return KeysSettings();
                       },
                     ),
-                    if (walletCtx != null)
-                      SettingsItem(
-                        title: Text('Backup Checklist'),
-                        icon: Icons.assignment,
-                        bodyBuilder: (context) {
-                          final frostKey = walletCtx.wallet.frostKey();
-                          if (frostKey != null) {
-                            return BackupChecklist(
-                              accessStructure: frostKey.accessStructures()[0],
-                            );
-                          }
-                        },
-                      ),
+                    SettingsItem(
+                      title: Text('Backup Checklist'),
+                      icon: Icons.assignment,
+                      bodyBuilder: (context) {
+                        final frostKey = walletCtx.wallet.frostKey();
+                        if (frostKey != null) {
+                          return BackupChecklist(
+                            accessStructure: frostKey.accessStructures()[0],
+                          );
+                        }
+                      },
+                    ),
                     SettingsItem(
                       title: Text('Check address'),
                       icon: Icons.policy,
@@ -128,24 +124,21 @@ class SettingsPage extends StatelessWidget {
                         return CheckAddressPage();
                       },
                     ),
-                    if (keyCtx != null)
-                      SettingsItem(
-                        title: Text(
-                          walletCtx == null
-                              ? "Cancel recovery"
-                              : "Delete wallet",
-                          style: TextStyle(color: Colors.redAccent),
-                        ),
-                        icon: Icons.delete_forever,
-                        bodyBuilder: (context) {
-                          return DeleteWalletPage();
-                        },
-                        onClose: () {
-                          if (context.mounted) {
-                            Navigator.pop(context);
-                          }
-                        },
+                    SettingsItem(
+                      title: Text(
+                        "Delete wallet",
+                        style: TextStyle(color: Colors.redAccent),
                       ),
+                      icon: Icons.delete_forever,
+                      bodyBuilder: (context) {
+                        return DeleteWalletPage();
+                      },
+                      onClose: () {
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                        }
+                      },
+                    ),
                   ],
                 ),
               SettingsCategory(
@@ -598,9 +591,7 @@ class DeleteWalletPage extends StatelessWidget {
         children: [
           // Wallet Name
           Text(
-            walletCtx != null
-                ? "DELETE ‘$walletName’?"
-                : "Cancel recovery of ‘$walletName’?",
+            "DELETE ‘$walletName’?",
             style: Theme.of(context).textTheme.titleLarge,
           ),
           SizedBox(height: 8),
@@ -626,19 +617,17 @@ class DeleteWalletPage extends StatelessWidget {
           DefaultTextStyle(
             textAlign: TextAlign.left,
             style: Theme.of(context).textTheme.bodyLarge!,
-            child: BulletList([
-              walletCtx != null
-                  ? Text(
-                    'This only deletes the wallet from this app.',
-                    softWrap: true,
-                  )
-                  : Text('All recovery progress in this app will be lost'),
+            child: BulletList(const [
+              Text(
+                'This only deletes the wallet from this app.',
+                softWrap: true,
+              ),
               Text(
                 'No secret keys will be deleted from devices',
                 softWrap: true,
               ),
               Text(
-                'The wallet will still be recoverable from the signing devices and/or backups',
+                'The wallet will still can still be restored from Frostsnap devices and/or backups',
                 softWrap: true,
               ),
             ]),
@@ -651,9 +640,7 @@ class DeleteWalletPage extends StatelessWidget {
                 style: TextStyle(fontWeight: FontWeight.bold),
                 softWrap: true,
                 textAlign: TextAlign.center,
-                walletCtx != null
-                    ? "Hold to Delete"
-                    : "Hold to Cancel Recovery",
+                "Hold to Delete",
               ),
               onComplete: () async {
                 await coord.deleteKey(keyId: keyId);

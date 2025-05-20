@@ -98,7 +98,7 @@ class WalletHome extends StatelessWidget {
                     }
                   },
                   icon: Icon(Icons.history),
-                  label: Text('Recover Wallet'),
+                  label: Text('Restore Wallet'),
                 ),
                 SizedBox(height: 100.0),
               ],
@@ -613,7 +613,7 @@ class WalletDrawer extends StatelessWidget {
             },
             false,
             Icons.update,
-            'Recover Wallet',
+            'Restore Wallet',
           ),
           (
             () => Navigator.push(
