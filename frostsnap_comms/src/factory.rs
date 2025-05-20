@@ -1,6 +1,8 @@
+use crate::{Direction, HasMagicBytes, MagicBytesVersion, MAGIC_BYTES_LEN};
 use alloc::{string::String, vec::Vec};
-use crate::{Direction, HasMagicBytes, MAGIC_BYTES_LEN, MagicBytesVersion};
-use frostsnap_core::Gist;
+use frostsnap_core::{schnorr_fun::Signature, Gist};
+
+pub const REPRODUCING_TEST_VECTORS: bool = false;
 
 #[derive(Debug, Clone)]
 pub struct FactoryUpstream;
@@ -10,18 +12,28 @@ pub struct FactoryDownstream;
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
 pub enum DeviceFactorySend {
     InitEntropyOk,
+    SetDs { signature: Vec<u8> },
+    SavedGenuineCertificate,
 }
 
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
 pub enum FactorySend {
     InitEntropy([u8; 32]),
     SetEsp32DsKey(Esp32DsKey),
+    SetGenuineCertificate(GenuineCheckKey),
 }
 
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
 pub struct Esp32DsKey {
     pub encrypted_params: Vec<u8>,
     pub hmac_key: [u8; 32],
+    pub challenge: Vec<u8>,
+}
+
+#[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
+pub struct GenuineCheckKey {
+    pub genuine_key: [u8; 32],
+    pub certificate: Signature,
 }
 
 impl Gist for DeviceFactorySend {
@@ -35,6 +47,7 @@ impl Gist for FactorySend {
         match self {
             FactorySend::SetEsp32DsKey { .. } => "SetEsp32DsKey",
             FactorySend::InitEntropy(_) => "InitEntropy",
+            FactorySend::SetGenuineCertificate(_) => "GenuineCertificate",
         }
         .into()
     }
