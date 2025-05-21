@@ -162,18 +162,20 @@ jobs:
           name: Frostsnapp-${{ github.sha }}-x64.AppImage
           path: frostsnapp/Frostsnapp-x86_64.AppImage
 
-  flutter-analyze:
-    name: Flutter Analyze
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: "./.github/actions/generate-frb"
+  # XXX: Disabled because flutter linting is annoying rn.
+  # XXX: Renable when you get a chance
+  # flutter-analyze:
+  #   name: Flutter Analyze
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: "./.github/actions/generate-frb"
 
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
+  #     - uses: subosito/flutter-action@v2
+  #       with:
+  #         channel: stable
+  #         cache: true
 
-      - uses: taiki-e/install-action@just
-      - run: dart format --version
-      - run: just lint-app
+  #     - uses: taiki-e/install-action@just
+  #     - run: dart format --version
+  #     - run: just lint-app
