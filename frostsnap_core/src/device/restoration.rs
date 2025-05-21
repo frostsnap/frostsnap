@@ -346,12 +346,12 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
             symm_keygen,
             rng,
         );
-        self.save_complete_share(KeygenPendingFinalize {
+        self.save_complete_share(KeyGenPhase3 {
             key_name: phase.complete_share.key_name,
             key_purpose: phase.complete_share.purpose,
             access_structure_ref: phase.complete_share.access_structure_ref,
             access_structure_kind: AccessStructureKind::Master,
-            access_structure_threshold: phase.complete_share.threshold,
+            threshold: phase.complete_share.threshold,
             encrypted_secret_share,
         });
 

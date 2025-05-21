@@ -32,17 +32,17 @@ pub struct FrostSigner<S = MemoryNonceSlot> {
     nonce_slots: device_nonces::AbSlots<S>,
     mutations: VecDeque<Mutation>,
     tmp_keygen_phase1: BTreeMap<KeygenId, KeyGenPhase1>,
-    tmp_keygen_pending_finalize: BTreeMap<KeygenId, (SessionHash, KeygenPendingFinalize)>,
+    tmp_keygen_pending_finalize: BTreeMap<KeygenId, (SessionHash, KeyGenPhase3)>,
     restoration: restoration::State,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct KeygenPendingFinalize {
+pub struct KeyGenPhase3 {
     key_name: String,
     key_purpose: KeyPurpose,
     access_structure_ref: AccessStructureRef,
     access_structure_kind: AccessStructureKind,
-    access_structure_threshold: u16,
+    threshold: u16,
     encrypted_secret_share: EncryptedSecretShare,
 }
 
@@ -614,13 +614,13 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
             phase2.keygen_id,
             (
                 session_hash,
-                KeygenPendingFinalize {
+                KeyGenPhase3 {
                     // session_hash,
                     key_name,
                     key_purpose: phase2.key_purpose,
                     access_structure_ref,
                     access_structure_kind: AccessStructureKind::Master,
-                    access_structure_threshold: threshold,
+                    threshold,
                     encrypted_secret_share,
                 },
             ),
@@ -717,20 +717,20 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
         ))])
     }
 
-    pub fn save_complete_share(&mut self, tmp: KeygenPendingFinalize) {
+    fn save_complete_share(&mut self, phase: KeyGenPhase3) {
         self.mutate(Mutation::NewKey {
-            key_id: tmp.access_structure_ref.key_id,
-            key_name: tmp.key_name,
-            purpose: tmp.key_purpose,
+            key_id: phase.access_structure_ref.key_id,
+            key_name: phase.key_name,
+            purpose: phase.key_purpose,
         });
         self.mutate(Mutation::NewAccessStructure {
-            access_structure_ref: tmp.access_structure_ref,
-            threshold: tmp.access_structure_threshold,
-            kind: tmp.access_structure_kind,
+            access_structure_ref: phase.access_structure_ref,
+            threshold: phase.threshold,
+            kind: phase.access_structure_kind,
         });
         self.mutate(Mutation::SaveShare(Box::new(SaveShareMutation {
-            access_structure_ref: tmp.access_structure_ref,
-            encrypted_secret_share: tmp.encrypted_secret_share,
+            access_structure_ref: phase.access_structure_ref,
+            encrypted_secret_share: phase.encrypted_secret_share,
         })));
     }
 
