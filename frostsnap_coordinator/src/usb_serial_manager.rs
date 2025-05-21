@@ -320,7 +320,6 @@ impl UsbSerialManager {
                                     }
                                 }
                                 DeviceSendBody::SetName { name } => {
-                                    println!("WE GOT SetName: {name}");
                                     let existing_name = self.device_names.get(&message.from);
                                     if existing_name != Some(&name) {
                                         device_changes.push(DeviceChange::NameChange {

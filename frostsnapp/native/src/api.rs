@@ -1020,7 +1020,6 @@ fn _load(app_dir: PathBuf, usb_serial_manager: UsbSerialManager) -> Result<(Coor
         settings: Settings::new(db.clone(), app_dir)?,
         backup_manager: BackupManager::new(db.clone())?,
     };
-    println!("loaded db");
 
     Ok((coordinator, app_state))
 }
