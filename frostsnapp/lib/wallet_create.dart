@@ -82,12 +82,11 @@ class MaybeFullscreenDialog extends StatefulWidget {
       context: context,
       barrierDismissible: barrierDismissible,
       useSafeArea: false,
-      builder:
-          (context) => MaybeFullscreenDialog(
-            backgroundColor:
-                backgroundColor ?? Theme.of(context).colorScheme.surface,
-            child: child,
-          ),
+      builder: (context) => MaybeFullscreenDialog(
+        backgroundColor:
+            backgroundColor ?? Theme.of(context).colorScheme.surface,
+        child: child,
+      ),
     );
   }
 
@@ -137,28 +136,27 @@ class _MaybeFullscreenDialogState extends State<MaybeFullscreenDialog>
         constraints: const BoxConstraints(maxWidth: 640),
         child: widget.child,
       ),
-      builder:
-          (context, sizeClass, child) => WindowSizeContext(
-            windowSizeClass: _sizeClass.value,
-            child: BackdropFilter(
-              filter: switch (sizeClass) {
-                WindowSizeClass.compact => ImageFilter.blur(),
-                _ => blurFilter,
-              },
-              child: switch (_sizeClass.value) {
-                WindowSizeClass.compact => Dialog.fullscreen(
-                  backgroundColor: widget.backgroundColor,
-                  child: child,
-                ),
-                WindowSizeClass.medium || WindowSizeClass.expanded => Dialog(
-                  insetPadding: EdgeInsets.zero,
-                  clipBehavior: Clip.hardEdge,
-                  backgroundColor: widget.backgroundColor,
-                  child: child,
-                ),
-              },
+      builder: (context, sizeClass, child) => WindowSizeContext(
+        windowSizeClass: _sizeClass.value,
+        child: BackdropFilter(
+          filter: switch (sizeClass) {
+            WindowSizeClass.compact => ImageFilter.blur(),
+            _ => blurFilter,
+          },
+          child: switch (_sizeClass.value) {
+            WindowSizeClass.compact => Dialog.fullscreen(
+              backgroundColor: widget.backgroundColor,
+              child: child,
             ),
-          ),
+            WindowSizeClass.medium || WindowSizeClass.expanded => Dialog(
+              insetPadding: EdgeInsets.zero,
+              clipBehavior: Clip.hardEdge,
+              backgroundColor: widget.backgroundColor,
+              child: child,
+            ),
+          },
+        ),
+      ),
     );
   }
 }
@@ -226,101 +224,92 @@ class WalletCreateController extends ChangeNotifier {
     }
     _keygenController = FullscreenActionDialogController(
       title: 'Security Check',
-      body:
-          (context) => ListenableBuilder(
-            listenable: this,
-            builder: (context, _) {
-              final theme = Theme.of(context);
-              final state = _keygenState;
-              if (state == null) {
-                return SizedBox();
-              }
-              final sessionHash = state.sessionHash;
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                spacing: 12,
-                children: [
-                  Text(
-                    'Confirm that this code is shown on all devices',
-                    textAlign: TextAlign.center,
-                  ),
-                  Card.filled(
-                    child: Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: AnimatedCrossFade(
-                          firstChild: Padding(
-                            padding: EdgeInsets.all(8),
-                            child: Visibility(
-                              visible: sessionHash == null,
-                              child: CircularProgressIndicator(),
-                            ),
-                          ),
-                          secondChild: Text(
-                            keygenChecksum,
-                            style: theme.textTheme.headlineLarge?.copyWith(
-                              fontFamily: monospaceTextStyle.fontFamily,
-                            ),
-                          ),
-                          crossFadeState:
-                              sessionHash == null
-                                  ? CrossFadeState.showFirst
-                                  : CrossFadeState.showSecond,
-                          duration: Durations.medium1,
+      body: (context) => ListenableBuilder(
+        listenable: this,
+        builder: (context, _) {
+          final theme = Theme.of(context);
+          final state = _keygenState;
+          if (state == null) {
+            return SizedBox();
+          }
+          final sessionHash = state.sessionHash;
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: 12,
+            children: [
+              Text(
+                'Confirm that this code is shown on all devices',
+                textAlign: TextAlign.center,
+              ),
+              Card.filled(
+                child: Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: AnimatedCrossFade(
+                      firstChild: Padding(
+                        padding: EdgeInsets.all(8),
+                        child: Visibility(
+                          visible: sessionHash == null,
+                          child: CircularProgressIndicator(),
                         ),
                       ),
+                      secondChild: Text(
+                        keygenChecksum,
+                        style: theme.textTheme.headlineLarge?.copyWith(
+                          fontFamily: monospaceTextStyle.fontFamily,
+                        ),
+                      ),
+                      crossFadeState: sessionHash == null
+                          ? CrossFadeState.showFirst
+                          : CrossFadeState.showSecond,
+                      duration: Durations.medium1,
                     ),
                   ),
-                  Card.outlined(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children:
-                          _deviceList.devices.map((device) {
-                            final hasAck = state.sessionAcks.any(
-                              (id) => deviceIdEquals(id, device.id),
-                            );
-                            return ListTile(
-                              title: Text(
-                                form.deviceNames[device.id] ??
-                                    device.name ??
-                                    '',
-                                style: monospaceTextStyle,
-                              ),
-                              leading: Icon(Icons.key),
-                              trailing: AnimatedCrossFade(
-                                alignment: AlignmentDirectional.centerEnd,
-                                firstChild: Padding(
-                                  padding: const EdgeInsets.all(4),
-                                  child: AnimatedCheckCircle(),
-                                ),
-                                secondChild: Padding(
-                                  padding: const EdgeInsets.all(4),
-                                  child: Icon(Icons.touch_app_rounded),
-                                ),
-                                crossFadeState:
-                                    hasAck
-                                        ? CrossFadeState.showFirst
-                                        : CrossFadeState.showSecond,
-                                duration: Durations.short4,
-                              ),
-                              contentPadding: EdgeInsets.symmetric(
-                                horizontal: 16,
-                              ),
-                            );
-                          }).toList(),
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-      dismissButton:
-          (context) => OutlinedButton(
-            onPressed: () async => await coord.cancelProtocol(),
-            child: Text('Cancel'),
-          ),
+                ),
+              ),
+              Card.outlined(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: _deviceList.devices.map((device) {
+                    final hasAck = state.sessionAcks.any(
+                      (id) => deviceIdEquals(id, device.id),
+                    );
+                    return ListTile(
+                      title: Text(
+                        form.deviceNames[device.id] ?? device.name ?? '',
+                        style: monospaceTextStyle,
+                      ),
+                      leading: Icon(Icons.key),
+                      trailing: AnimatedCrossFade(
+                        alignment: AlignmentDirectional.centerEnd,
+                        firstChild: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: AnimatedCheckCircle(),
+                        ),
+                        secondChild: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: Icon(Icons.touch_app_rounded),
+                        ),
+                        crossFadeState: hasAck
+                            ? CrossFadeState.showFirst
+                            : CrossFadeState.showSecond,
+                        duration: Durations.short4,
+                      ),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 16),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+      dismissButton: (context) => OutlinedButton(
+        onPressed: () async => await coord.cancelProtocol(),
+        child: Text('Cancel'),
+      ),
     );
   }
 
@@ -422,15 +411,14 @@ class WalletCreateController extends ChangeNotifier {
         return true;
       case WalletCreateStep.threshold:
         final selectedDevices = form.selectedDevices.toList();
-        final stream =
-            coord
-                .generateNewKey(
-                  threshold: form.threshold!,
-                  devices: selectedDevices,
-                  keyName: form.name!,
-                  network: form.network,
-                )
-                .toBehaviorSubject();
+        final stream = coord
+            .generateNewKey(
+              threshold: form.threshold!,
+              devices: selectedDevices,
+              keyName: form.name!,
+              network: form.network,
+            )
+            .toBehaviorSubject();
         for (final id in selectedDevices) {
           _keygenController.addActionNeeded(context, id);
         }
@@ -644,6 +632,10 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
 
   @override
   void dispose() {
+    // dispose all dynamic controllers
+    for (final c in _nameControllers.values) {
+      c.dispose();
+    }
     _controller.dispose();
     super.dispose();
   }
@@ -671,26 +663,32 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     return MultiSliver(
       children: [
         SliverDeviceList(
-          deviceBuilder:
-              (context, device) => buildDevice(
-                context,
-                device,
-                trailing:
-                    device.name != null
-                        ? buildDeviceTrailingInfo(
-                          context,
-                          text: 'Used Device',
-                          subText: 'Unplug to continue',
-                          icon: Icons.warning_rounded,
-                          color: Theme.of(context).colorScheme.error,
-                        )
-                        : buildDeviceTrailingInfo(
-                          context,
-                          text: 'Fresh Device',
-                          icon: Icons.check_circle_rounded,
-                          color: Colors.green,
-                        ),
-              ),
+          deviceBuilder: (context, device) => buildDevice(
+            context,
+            device,
+            trailing: device.name != null
+                ? buildDeviceTrailingInfo(
+                    context,
+                    text: 'Used Device',
+                    subText: 'Unplug to continue',
+                    icon: Icons.warning_rounded,
+                    color: Theme.of(context).colorScheme.error,
+                  )
+                : device.needsFirmwareUpgrade()
+                ? buildDeviceTrailingInfo(
+                    context,
+                    text: 'Old firmware',
+                    subText: "Upgrade to continue",
+                    icon: Icons.warning,
+                    color: Colors.orange,
+                  )
+                : buildDeviceTrailingInfo(
+                    context,
+                    text: 'Fresh Device',
+                    icon: Icons.check_circle_rounded,
+                    color: Colors.green,
+                  ),
+          ),
         ),
         SliverToBoxAdapter(
           child: AnimatedGradientBorder(
@@ -728,7 +726,11 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                     Row(
                       spacing: 12,
                       children: [
-                        Icon(Icons.warning_rounded, size: 32),
+                        Icon(
+                          Icons.warning_rounded,
+                          size: 32,
+                          color: Colors.orange,
+                        ),
                         Expanded(
                           child: Text(
                             'One or more devices need firmware updates before continuing.',
@@ -740,8 +742,8 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                       ],
                     ),
                     FilledButton.tonalIcon(
-                      onPressed:
-                          () async => await FirmwareUpgradeDialog.show(context),
+                      onPressed: () async =>
+                          await FirmwareUpgradeDialog.show(context),
                       label: Text('Start upgrade'),
                       icon: Icon(Icons.system_update_alt_rounded),
                     ),
@@ -819,6 +821,8 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     ],
   );
 
+  final Map<DeviceId, TextEditingController> _nameControllers = deviceIdMap();
+
   void showRenameDeviceDialog(
     BuildContext context,
     ConnectedDevice device,
@@ -858,39 +862,45 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     );
   }
 
+  Widget _buildDeviceForNaming(BuildContext context, ConnectedDevice device) {
+    final form = _controller.form;
+    final isPart = form.selectedDevices.contains(device.id);
+    final currentName = form.deviceNames[device.id] ?? '';
+
+    // obtain or create controller for this device
+    final textController = _nameControllers.putIfAbsent(
+      device.id,
+      () => TextEditingController(text: currentName),
+    );
+
+    // keep text in sync when form updates
+    if (textController.text != currentName) {
+      textController.text = currentName;
+    }
+
+    return Card.filled(
+      margin: EdgeInsets.symmetric(vertical: 4),
+      color: Theme.of(context).colorScheme.surfaceContainerHigh,
+      clipBehavior: Clip.hardEdge,
+      child: ListTile(
+        leading: Icon(Icons.key),
+        title: TextField(
+          decoration: InputDecoration(hintText: 'Enter device name'),
+          controller: textController,
+          onChanged: isPart
+              ? (name) => _controller.setDeviceName(device.id, name)
+              : null,
+          enabled: isPart,
+        ),
+      ),
+    );
+  }
+
   Widget buildNameDevicesBody(BuildContext context) {
-    final theme = Theme.of(context);
-    final selectedDevices = _controller.form.selectedDevices;
     return MultiSliver(
       children: [
         SliverDeviceList(
-          deviceBuilder: (context, device) {
-            final isPartOfWallet = selectedDevices.contains(device.id);
-            final onPressed =
-                isPartOfWallet
-                    ? () => showRenameDeviceDialog(context, device)
-                    : null;
-            return buildDevice(
-              context,
-              device,
-              rightPadding: isPartOfWallet ? 4 : null,
-              onPressed: onPressed,
-              enabled: isPartOfWallet,
-              trailing:
-                  isPartOfWallet
-                      ? buildDeviceTrailingRename(
-                        context,
-                        device,
-                        onPressed: onPressed,
-                      )
-                      : buildDeviceTrailingInfo(
-                        context,
-                        text: 'Not part of this wallet',
-                        icon: Icons.warning_rounded,
-                        color: theme.colorScheme.error,
-                      ),
-            );
-          },
+          deviceBuilder: (ctx, device) => _buildDeviceForNaming(ctx, device),
         ),
         if (!_controller.allWalletDevicesConnected)
           SliverToBoxAdapter(child: buildDisconnectedWarningCard(context)),
@@ -921,8 +931,8 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
           Slider(
             value: (form.threshold!).toDouble(),
             label: '${form.threshold}',
-            onChanged:
-                (value) => setState(() => form.threshold = value.toInt()),
+            onChanged: (value) =>
+                setState(() => form.threshold = value.toInt()),
             min: 1,
             max: totalCount.toDouble(),
             divisions: max(totalCount - 1, 1),
@@ -985,8 +995,9 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     final windowSize = WindowSizeContext.of(context);
 
     final network = _controller.form.network;
-    final appBarTrailingText =
-        network.isMainnet() ? '' : ' (${network.name()})';
+    final appBarTrailingText = network.isMainnet()
+        ? ''
+        : ' (${network.name()})';
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1063,10 +1074,9 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                   children: [
                     Flexible(
                       child: TextButton(
-                        onPressed:
-                            _controller.canGoBack
-                                ? () => _controller.back(context)
-                                : null,
+                        onPressed: _controller.canGoBack
+                            ? () => _controller.back(context)
+                            : null,
                         child: Text(
                           _controller.backText ?? 'Back',
                           softWrap: false,
@@ -1079,10 +1089,9 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                       child: Align(
                         alignment: AlignmentDirectional.centerEnd,
                         child: FilledButton(
-                          onPressed:
-                              _controller.canGoNext
-                                  ? () => _controller.next(context)
-                                  : null,
+                          onPressed: _controller.canGoNext
+                              ? () => _controller.next(context)
+                              : null,
                           child: Text(
                             _controller.nextText ?? 'Next',
                             softWrap: false,
@@ -1122,19 +1131,18 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
             ),
             SegmentedButton<String>(
               showSelectedIcon: false,
-              segments:
-                  BitcoinNetwork.supportedNetworks(bridge: coord.bridge)
-                      .map(
-                        (network) => ButtonSegment(
-                          value: network.name(),
-                          label: Text(
-                            network.name(),
-                            overflow: TextOverflow.fade,
-                            softWrap: false,
-                          ),
-                        ),
-                      )
-                      .toList(),
+              segments: BitcoinNetwork.supportedNetworks(bridge: coord.bridge)
+                  .map(
+                    (network) => ButtonSegment(
+                      value: network.name(),
+                      label: Text(
+                        network.name(),
+                        overflow: TextOverflow.fade,
+                        softWrap: false,
+                      ),
+                    ),
+                  )
+                  .toList(),
               selected: {_controller.form.network.name()},
               onSelectionChanged: (selectedSet) {
                 _isAdvancedOptionsHidden = true;
@@ -1172,12 +1180,10 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                       },
                     ),
                   TextButton.icon(
-                    onPressed:
-                        () => setState(
-                          () =>
-                              _isAdvancedOptionsHidden =
-                                  !_isAdvancedOptionsHidden,
-                        ),
+                    onPressed: () => setState(
+                      () =>
+                          _isAdvancedOptionsHidden = !_isAdvancedOptionsHidden,
+                    ),
                     icon: Icon(
                       _isAdvancedOptionsHidden
                           ? Icons.arrow_drop_up_rounded
@@ -1194,10 +1200,9 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
               AnimatedCrossFade(
                 firstChild: SizedBox(),
                 secondChild: mayHide,
-                crossFadeState:
-                    _isAdvancedOptionsHidden
-                        ? CrossFadeState.showFirst
-                        : CrossFadeState.showSecond,
+                crossFadeState: _isAdvancedOptionsHidden
+                    ? CrossFadeState.showFirst
+                    : CrossFadeState.showSecond,
                 duration: Durations.medium2,
                 sizeCurve: Curves.easeInOutCubicEmphasized,
               ),

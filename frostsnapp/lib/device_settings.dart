@@ -86,47 +86,47 @@ class _DeviceSettingsState extends State<DeviceSettings> {
       );
     } else {
       final device_ = device!;
-      final relevantDeviceKeys = keys.where((key) {
-        final accessStructure = key.accessStructures().elementAtOrNull(0);
-        if (accessStructure == null) return false;
+      final relevantDeviceKeys =
+          keys.where((key) {
+            final accessStructure = key.accessStructures().elementAtOrNull(0);
+            if (accessStructure == null) return false;
 
-        final devices = accessStructure.devices();
-        return devices.any((d) => deviceIdEquals(d, device_.id));
-      }).toList();
+            final devices = accessStructure.devices();
+            return devices.any((d) => deviceIdEquals(d, device_.id));
+          }).toList();
 
       Widget keyList = ListView.builder(
         shrinkWrap: true,
         itemCount: relevantDeviceKeys.length,
         itemBuilder: (context, index) {
           final key = relevantDeviceKeys[index];
-          final accessStructureRef = key
-              .accessStructures()
-              .elementAtOrNull(0)
-              ?.accessStructureRef();
+          final accessStructureRef =
+              key.accessStructures().elementAtOrNull(0)?.accessStructureRef();
           final keyName = key.keyName();
           return Padding(
             padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
             child: ListTile(
               title: Text(keyName, style: const TextStyle(fontSize: 20.0)),
               trailing: ElevatedButton(
-                onPressed: accessStructureRef == null
-                    ? null
-                    : () async {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) {
-                              return BackupSettingsPage(
-                                context: context,
-                                id: device_.id,
-                                deviceName: device_.name ?? "??",
-                                accessStructureRef: accessStructureRef,
-                                keyName: keyName,
-                              );
-                            },
-                          ),
-                        );
-                      },
+                onPressed:
+                    accessStructureRef == null
+                        ? null
+                        : () async {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) {
+                                return BackupSettingsPage(
+                                  context: context,
+                                  id: device_.id,
+                                  deviceName: device_.name ?? "??",
+                                  accessStructureRef: accessStructureRef,
+                                  keyName: keyName,
+                                );
+                              },
+                            ),
+                          );
+                        },
                 child: Text("Backup"),
               ),
             ),
@@ -357,9 +357,10 @@ class _FirmwareUpgradeDialogState extends State<FirmwareUpgradeDialog> {
     }
     final confirmations = deviceIdSet(state!.confirmations);
     final needUpgrade = deviceIdSet(state!.needUpgrade);
-    final text = progress == null
-        ? "Confirm upgrade on devices"
-        : "Wait for upgrade to complete";
+    final text =
+        progress == null
+            ? "Confirm upgrade on devices"
+            : "Wait for upgrade to complete";
 
     return Column(
       children: [
@@ -410,18 +411,22 @@ class KeyValueListWidget extends StatelessWidget {
       padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: data.entries.map((entry) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(entry.key, style: TextStyle(fontWeight: FontWeight.bold)),
-                Text(entry.value),
-              ],
-            ),
-          );
-        }).toList(),
+        children:
+            data.entries.map((entry) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      entry.key,
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    Text(entry.value),
+                  ],
+                ),
+              );
+            }).toList(),
       ),
     );
   }
@@ -484,9 +489,8 @@ class BackupSettingsPage extends StatelessWidget {
                   await backupDeviceDialog(
                     context,
                     deviceId: id,
-                    accessStructure: coord.getAccessStructure(
-                      asRef: accessStructureRef,
-                    )!,
+                    accessStructure:
+                        coord.getAccessStructure(asRef: accessStructureRef)!,
                   );
                 },
                 child: Text("Show Backup"),
