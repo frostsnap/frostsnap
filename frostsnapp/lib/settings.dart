@@ -10,6 +10,7 @@ import 'package:frostsnapp/bullet_list.dart';
 import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/electrum_server_settings.dart';
 import 'package:frostsnapp/global.dart';
+import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/logs.dart';
 import 'package:frostsnapp/todo.dart';
 import 'package:frostsnapp/wallet.dart';
@@ -41,17 +42,11 @@ class SettingsContext extends InheritedWidget {
     return false;
   }
 
-  Stream<ChainStatus> chainStatusStream(BitcoinNetwork network) {
-    Stream<ChainStatus>? stream =
+  Stream<ChainStatus>? chainStatusStream(BitcoinNetwork network) {
+    final stream =
         chainStatuses.firstWhereOrNull((record) {
           return record.$1.name() == network.name();
         })?.$2;
-
-    if (stream == null) {
-      stream =
-          settings.subscribeChainStatus(network: network).toBehaviorSubject();
-      chainStatuses.add((network, stream));
-    }
 
     return stream;
   }
@@ -62,9 +57,6 @@ class SettingsContext extends InheritedWidget {
       return null;
     }
     final masterAppkey = frostKey.masterAppkey();
-    if (masterAppkey == null) {
-      return null;
-    }
     final network = frostKey.bitcoinNetwork();
     if (network == null) {
       return null;
@@ -80,7 +72,6 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final walletCtx = WalletContext.of(context);
-    final keyCtx = KeyContext.of(context);
     final logCtx = FrostsnapContext.of(context);
 
     return Scaffold(
@@ -91,44 +82,41 @@ class SettingsPage extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.all(16.0),
             children: [
-              if (walletCtx != null || keyCtx != null)
+              if (walletCtx != null)
                 SettingsCategory(
                   title: "Wallet",
                   items: [
-                    if (walletCtx != null)
-                      SettingsItem(
-                        title: Text('External wallet'),
-                        icon: Icons.qr_code,
-                        bodyBuilder: (context) {
-                          final wallet = walletCtx.wallet;
-                          return ExportDescriptorPage(
-                            walletDescriptor: walletCtx.network
-                                .descriptorForKey(
-                                  masterAppkey: wallet.masterAppkey,
-                                ),
-                          );
-                        },
-                      ),
                     SettingsItem(
-                      title: Text("Access"),
-                      icon: Icons.security,
+                      title: Text('External wallet'),
+                      icon: Icons.qr_code,
                       bodyBuilder: (context) {
-                        return AccessPage();
+                        final wallet = walletCtx.wallet;
+                        return ExportDescriptorPage(
+                          walletDescriptor: walletCtx.network.descriptorForKey(
+                            masterAppkey: wallet.masterAppkey,
+                          ),
+                        );
                       },
                     ),
-                    if (walletCtx != null)
-                      SettingsItem(
-                        title: Text('Backup Checklist'),
-                        icon: Icons.assignment,
-                        bodyBuilder: (context) {
-                          final frostKey = walletCtx.wallet.frostKey();
-                          if (frostKey != null) {
-                            return BackupChecklist(
-                              accessStructure: frostKey.accessStructures()[0],
-                            );
-                          }
-                        },
-                      ),
+                    SettingsItem(
+                      title: Text("Keys"),
+                      icon: Icons.key_sharp,
+                      bodyBuilder: (context) {
+                        return KeysSettings();
+                      },
+                    ),
+                    SettingsItem(
+                      title: Text('Backup Checklist'),
+                      icon: Icons.assignment,
+                      bodyBuilder: (context) {
+                        final frostKey = walletCtx.wallet.frostKey();
+                        if (frostKey != null) {
+                          return BackupChecklist(
+                            accessStructure: frostKey.accessStructures()[0],
+                          );
+                        }
+                      },
+                    ),
                     SettingsItem(
                       title: Text('Check address'),
                       icon: Icons.policy,
@@ -136,24 +124,21 @@ class SettingsPage extends StatelessWidget {
                         return CheckAddressPage();
                       },
                     ),
-                    if (keyCtx != null)
-                      SettingsItem(
-                        title: Text(
-                          walletCtx == null
-                              ? "Cancel recovery"
-                              : "Delete wallet",
-                          style: TextStyle(color: Colors.redAccent),
-                        ),
-                        icon: Icons.delete_forever,
-                        bodyBuilder: (context) {
-                          return DeleteWalletPage();
-                        },
-                        onClose: () {
-                          if (context.mounted) {
-                            Navigator.pop(context);
-                          }
-                        },
+                    SettingsItem(
+                      title: Text(
+                        "Delete wallet",
+                        style: TextStyle(color: Colors.redAccent),
                       ),
+                      icon: Icons.delete_forever,
+                      bodyBuilder: (context) {
+                        return DeleteWalletPage();
+                      },
+                      onClose: () {
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                        }
+                      },
+                    ),
                   ],
                 ),
               SettingsCategory(
@@ -606,9 +591,7 @@ class DeleteWalletPage extends StatelessWidget {
         children: [
           // Wallet Name
           Text(
-            walletCtx != null
-                ? "DELETE ‘$walletName’?"
-                : "Cancel recovery of ‘$walletName’?",
+            "DELETE ‘$walletName’?",
             style: Theme.of(context).textTheme.titleLarge,
           ),
           SizedBox(height: 8),
@@ -634,19 +617,17 @@ class DeleteWalletPage extends StatelessWidget {
           DefaultTextStyle(
             textAlign: TextAlign.left,
             style: Theme.of(context).textTheme.bodyLarge!,
-            child: BulletList([
-              walletCtx != null
-                  ? Text(
-                    'This only deletes the wallet from this app.',
-                    softWrap: true,
-                  )
-                  : Text('All recovery progress in this app will be lost'),
+            child: BulletList(const [
+              Text(
+                'This only deletes the wallet from this app.',
+                softWrap: true,
+              ),
               Text(
                 'No secret keys will be deleted from devices',
                 softWrap: true,
               ),
               Text(
-                'The wallet will still be recoverable from the signing devices and/or backups',
+                'The wallet will still can still be restored from Frostsnap devices and/or backups',
                 softWrap: true,
               ),
             ]),
@@ -659,9 +640,7 @@ class DeleteWalletPage extends StatelessWidget {
                 style: TextStyle(fontWeight: FontWeight.bold),
                 softWrap: true,
                 textAlign: TextAlign.center,
-                walletCtx != null
-                    ? "Hold to Delete"
-                    : "Hold to Cancel Recovery",
+                "Hold to Delete",
               ),
               onComplete: () async {
                 await coord.deleteKey(keyId: keyId);
@@ -799,27 +778,81 @@ class _HoldToDeleteButtonState extends State<HoldToDeleteButton> {
   }
 }
 
-class AccessPage extends StatelessWidget {
-  const AccessPage({super.key});
+class KeysSettings extends StatelessWidget {
+  const KeysSettings({super.key});
 
   @override
   Widget build(BuildContext context) {
     final keyCtx = KeyContext.of(context)!;
-    final frostKey = keyCtx.frostKey();
+    final keyName = keyCtx.name;
+    final keyId = keyCtx.keyId;
 
     return Container(
       padding: EdgeInsets.all(16.0),
       child: Column(
         children: [
           Text(
-            "The ‘${frostKey.keyName()}’ wallet can be spent by:",
-            style: Theme.of(context).textTheme.titleMedium,
+            "The ‘$keyName’ wallet can be unlocked with:",
+            style: Theme.of(context).textTheme.headlineMedium,
           ),
-          AccessStructureListWidget(
-            accessStructures: frostKey.accessStructureState().field0,
+          StreamBuilder(
+            stream: GlobalStreams.keyStateSubject,
+            builder: (context, snap) {
+              if (!snap.hasData) return SizedBox();
+              final frostKey = snap.data!.keys.firstWhereOrNull(
+                (frostkey) => keyIdEquals(frostkey.keyId(), keyId),
+              );
+              final accessStructures = frostKey?.accessStructures();
+              return AccessStructureListWidget(
+                accessStructures: accessStructures ?? [],
+              );
+            },
           ),
         ],
       ),
+    );
+  }
+}
+
+class BitcoinNetworkChooser extends StatelessWidget {
+  final BitcoinNetwork value;
+  final ValueChanged<BitcoinNetwork> onChanged;
+
+  const BitcoinNetworkChooser({
+    Key? key,
+    required this.value,
+    required this.onChanged,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const SizedBox(height: 20),
+        const Text("(developer) Choose the network:"),
+        const SizedBox(height: 10),
+        DropdownButton<String>(
+          hint: const Text('Choose a network'),
+          value: value.name(),
+          onChanged: (String? newValue) {
+            if (newValue != null) {
+              final network =
+                  BitcoinNetwork.fromString(string: newValue, bridge: api)!;
+              onChanged(network);
+            }
+          },
+          items:
+              BitcoinNetwork.supportedNetworks(bridge: api).map((network) {
+                final name = network.name();
+                return DropdownMenuItem<String>(
+                  value: name,
+                  child: Text(
+                    name == "bitcoin" ? "Bitcoin (BTC)" : network.name(),
+                  ),
+                );
+              }).toList(),
+        ),
+      ],
     );
   }
 }

@@ -34,6 +34,7 @@ pub use schnorr_fun;
 pub mod bitcoin_transaction;
 mod symmetric_encryption;
 pub use symmetric_encryption::*;
+use tweak::Xpub;
 
 #[cfg(feature = "rusqlite")]
 mod sqlite;
@@ -41,7 +42,6 @@ mod sqlite;
 #[macro_use]
 extern crate alloc;
 
-use crate::message::*;
 use alloc::{string::String, string::ToString, vec::Vec};
 // rexport hex module so serialization impl macros work outside this crate
 pub use schnorr_fun::fun::hex;
@@ -109,17 +109,14 @@ impl Error {
         }
     }
 
-    pub fn signer_invalid_message(
-        message: &CoordinatorToDeviceMessage,
-        reason: impl ToString,
-    ) -> Self {
+    pub fn signer_invalid_message(message: &impl Kind, reason: impl ToString) -> Self {
         Self::InvalidMessage {
             kind: message.kind(),
             reason: reason.to_string(),
         }
     }
 
-    pub fn signer_message_error(message: &CoordinatorToDeviceMessage, e: impl ToString) -> Self {
+    pub fn signer_message_error(message: &impl Kind, e: impl ToString) -> Self {
         Self::InvalidMessage {
             kind: message.kind(),
             reason: e.to_string(),
@@ -179,6 +176,10 @@ impl std::error::Error for ActionError {}
 /// Output very basic debug info about a type
 pub trait Gist {
     fn gist(&self) -> String;
+}
+
+pub trait Kind {
+    fn kind(&self) -> &'static str;
 }
 
 /// The hash of a threshold access structure for a particualr key
@@ -243,7 +244,7 @@ impl_fromstr_deserialize! {
 
 fn prefix_hash(prefix: &'static str) -> sha2::Sha256 {
     let mut hash = sha2::Sha256::default();
-    hash.update((prefix.len() as u32).to_be_bytes());
+    hash.update((prefix.len() as u8).to_be_bytes());
     hash.update(prefix);
     hash
 }
@@ -257,15 +258,18 @@ impl CoordShareDecryptionContrib {
     /// Master shares are not protected by much. Devices holding master shares are designed to have
     /// their backups stored right next them anyway. We nevertheless make the coordinator provide a
     /// hash of the root polynomial. The main benefit is to force the device to be talking to a
-    /// coordinator that knows about the share. This prevents us from inadvertently introducing
-    /// "features" that can be engaged without actual knowledge of the main polynomial.
+    /// coordinator that knows about the entire access structure (knows the polynomial). This
+    /// prevents us from inadvertently introducing "features" that can be engaged without actual
+    /// knowledge of the main polynomial.
     pub fn for_master_share(
         device_id: DeviceId,
+        share_index: PartyIndex,
         shared_key: &SharedKey<Normal, impl ZeroChoice>,
     ) -> Self {
         Self(
             prefix_hash("SHARE_DECRYPTION")
                 .add(device_id.0)
+                .add(share_index)
                 .add(shared_key.point_polynomial())
                 .finalize_fixed()
                 .into(),
@@ -326,8 +330,13 @@ impl ShareImage {
             point: g!(secret_share.share * G).normalize(),
         }
     }
+
+    pub fn share_index_u16(&self) -> u16 {
+        // XXX: temporary HACK
+        u16::from_str_radix(&self.share_index.to_string(), 16).expect("share index is small")
+    }
 }
-// Uniquely identifies an access structure for a particular `master_appkey`.
+// Uniquely identifies an access structure for a particular `key_id`.
 #[derive(
     Debug, Clone, Copy, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash, Ord, PartialOrd,
 )]
@@ -337,6 +346,17 @@ pub struct AccessStructureRef {
 }
 
 impl AccessStructureRef {
+    pub fn from_root_shared_key(root_shared_key: &SharedKey<Normal>) -> Self {
+        let app_shared_key = Xpub::from_rootkey(root_shared_key.clone()).rootkey_to_master_appkey();
+        let master_appkey = MasterAppkey::from_xpub_unchecked(&app_shared_key);
+        let access_structure_id =
+            AccessStructureId::from_app_poly(app_shared_key.into_key().point_polynomial());
+
+        AccessStructureRef {
+            key_id: master_appkey.key_id(),
+            access_structure_id,
+        }
+    }
     pub fn range_for_key(key_id: KeyId) -> impl RangeBounds<AccessStructureRef> {
         AccessStructureRef {
             key_id,
@@ -393,4 +413,61 @@ impl_fromstr_deserialize! {
     fn from_bytes(bytes: [u8;16]) -> KeygenId {
         KeygenId(bytes)
     }
+}
+
+/// short randomly sampled id for a coordinator to refer to a key generation session before the key
+/// generation is complete.
+#[derive(Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash, Default)]
+pub struct RestorationId(pub [u8; 16]);
+
+impl RestorationId {
+    pub fn new(rng: &mut impl rand_core::RngCore) -> Self {
+        let mut bytes = [0u8; 16];
+        rng.fill_bytes(&mut bytes);
+        Self(bytes)
+    }
+}
+
+impl_display_debug_serialize! {
+    fn to_bytes(val: &RestorationId) -> [u8;16] {
+        val.0
+    }
+}
+
+impl_fromstr_deserialize! {
+    name => "restoration id",
+    fn from_bytes(bytes: [u8;16]) -> RestorationId {
+        RestorationId(bytes)
+    }
+}
+
+/// short randomly sampled id for a coordinator to refer to a physical backup entry it asked a device to do.
+#[derive(Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash, Default)]
+pub struct EnterPhysicalId(pub [u8; 16]);
+
+impl EnterPhysicalId {
+    pub fn new(rng: &mut impl rand_core::RngCore) -> Self {
+        let mut bytes = [0u8; 16];
+        rng.fill_bytes(&mut bytes);
+        Self(bytes)
+    }
+}
+
+impl_display_debug_serialize! {
+    fn to_bytes(val: &EnterPhysicalId) -> [u8;16] {
+        val.0
+    }
+}
+
+impl_fromstr_deserialize! {
+    name => "restoration id",
+    fn from_bytes(bytes: [u8;16]) -> EnterPhysicalId {
+        EnterPhysicalId(bytes)
+    }
+}
+
+/// In case we add access structures with more restricted properties later on
+#[derive(Clone, Copy, Debug, PartialEq, bincode::Decode, bincode::Encode)]
+pub enum AccessStructureKind {
+    Master,
 }

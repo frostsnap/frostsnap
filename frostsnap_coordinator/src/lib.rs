@@ -1,6 +1,6 @@
 pub mod backup_run;
-pub mod check_share;
 pub mod display_backup;
+pub mod enter_physical_backup;
 pub mod firmware_upgrade;
 pub mod keygen;
 mod serial_port;
@@ -8,13 +8,14 @@ pub mod signing;
 mod ui_protocol;
 mod usb_serial_manager;
 pub mod verify_address;
+pub mod wait_for_recovery_share;
+mod wait_for_to_user_message;
+pub use wait_for_to_user_message::*;
 
 pub use frostsnap_comms;
 pub use frostsnap_core;
 pub use serial_port::*;
-mod settings;
-pub use backup_run::*;
-pub use settings::*;
+pub mod settings;
 pub use ui_protocol::*;
 pub use usb_serial_manager::*;
 pub mod bitcoin;

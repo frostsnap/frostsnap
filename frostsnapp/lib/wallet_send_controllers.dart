@@ -660,7 +660,7 @@ class SigningSessionController with ChangeNotifier {
   SigningState? _state;
 
   SigningSessionController() {
-    _deviceStateSub = deviceListSubject.listen((update) {
+    _deviceStateSub = GlobalStreams.deviceListSubject.listen((update) {
       _connectedDevices.clear();
       _connectedDevices.addAll(update.state.devices.map((device) => device.id));
       if (hasListeners) notifyListeners();

@@ -221,6 +221,7 @@ fn main() -> ! {
         last_touch: None,
         timer: &timer1,
         busy_task: Default::default(),
+        recovery_mode: false,
     };
 
     let run = esp32_run::Run {
@@ -264,6 +265,7 @@ pub struct FrostyUi<'t, T, DT, I2C, PINT, RST> {
     changes: bool,
     timer: &'t Timer<T, Blocking>,
     busy_task: Option<BusyTask>,
+    recovery_mode: bool,
 }
 
 impl<T, DT, I2C, PINT, RST, CommE, PinE> FrostyUi<'_, T, DT, I2C, PINT, RST>
@@ -309,14 +311,11 @@ where
                 }
             },
             Workflow::NamingDevice {
-                old_name: existing_name,
-                new_name: current_name,
-            } => match existing_name {
-                Some(existing_name) => self
-                    .display
-                    .print(format!("Renaming {}:\n> {}", existing_name, current_name)),
-                None => self.display.print(format!("Naming:\n> {}", current_name)),
-            },
+                old_name: _,
+                new_name,
+            } => {
+                self.display.ready_screen(new_name, self.recovery_mode);
+            }
             Workflow::WaitingFor(waiting_for) => match waiting_for {
                 WaitingFor::LookingForUpstream { jtag } => {
                     if *jtag {
@@ -331,7 +330,7 @@ where
                 WaitingFor::CoordinatorInstruction { completed_task: _ } => {
                     match &self.device_name {
                         Some(label) => {
-                            self.display.ready_screen(label);
+                            self.display.ready_screen(label, self.recovery_mode);
                         }
                         None => {
                             self.display.new_device();
@@ -404,7 +403,7 @@ where
                         "Confirm firmware upgrade to: \n{firmware_digest}\nsize: {:.2}KB",
                         *size as f32 / 1000.0
                     )),
-                    Prompt::ConfirmLoadBackup { share_backup, .. } => self
+                    Prompt::ConfirmEnterBackup { share_backup, .. } => self
                         .display
                         .show_backup(share_backup.to_bech32_backup(), false),
                     Prompt::WipeDevice => self.display.wipe_data_warning(),
@@ -561,7 +560,7 @@ where
                                     }
                                 }
                                 Prompt::ConfirmFirmwareUpgrade { .. } => UiEvent::UpgradeConfirm,
-                                Prompt::ConfirmLoadBackup {
+                                Prompt::ConfirmEnterBackup {
                                     phase,
                                     share_backup,
                                 } => UiEvent::EnteredShareBackup {
@@ -618,7 +617,7 @@ where
                                     match screen.try_create_share() {
                                         Ok(secret_share) => {
                                             self.set_workflow(Workflow::prompt(
-                                                Prompt::ConfirmLoadBackup {
+                                                Prompt::ConfirmEnterBackup {
                                                     share_backup: secret_share,
                                                     phase: phase.clone(),
                                                 },
@@ -664,6 +663,12 @@ where
 
     fn clear_busy_task(&mut self) {
         self.busy_task = None;
+        self.changes = true;
+    }
+
+    fn set_recovery_mode(&mut self, value: bool) {
+        self.recovery_mode = value;
+        self.changes = true;
     }
 }
 

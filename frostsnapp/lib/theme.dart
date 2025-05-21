@@ -123,6 +123,27 @@ String spacedHex(String input, {int groupSize = 4, int? groupsPerLine}) {
   return result.toString();
 }
 
+WidgetSpan buildTag(BuildContext context, {required String text}) {
+  final theme = Theme.of(context);
+  return WidgetSpan(
+    alignment: PlaceholderAlignment.middle,
+    child: Card.filled(
+      color: theme.colorScheme.surfaceContainerLowest.withAlpha(128),
+      margin: const EdgeInsets.all(12.0),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
+        child: Text(
+          text,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.error,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 class TopBar extends StatefulWidget implements PreferredSizeWidget {
   static const headerPadding = EdgeInsets.fromLTRB(20, 0, 20, 16);
   static const animationDuration = Durations.short3;

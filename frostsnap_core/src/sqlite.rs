@@ -1,4 +1,4 @@
-use crate::{DeviceId, KeyId};
+use crate::{DeviceId, KeyId, RestorationId};
 use alloc::boxed::Box;
 use alloc::str::FromStr;
 use alloc::string::ToString;
@@ -26,6 +26,12 @@ impl FromSql for KeyId {
 }
 
 impl ToSql for KeyId {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        Ok(ToSqlOutput::from(self.to_string()))
+    }
+}
+
+impl ToSql for RestorationId {
     fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
         Ok(ToSqlOutput::from(self.to_string()))
     }

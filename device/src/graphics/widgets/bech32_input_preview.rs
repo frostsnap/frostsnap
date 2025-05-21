@@ -129,6 +129,9 @@ impl Bech32InputPreview {
         self.update_progress();
     }
 
+    pub fn clear(&mut self) {
+        self.framebuf.clear();
+    }
     pub fn get_input(&self) -> &str {
         self.framebuf.characters.as_str()
     }
@@ -319,6 +322,12 @@ impl Bech32Framebuf {
 
         self.target_position = Self::chunk_end_for_character(self.characters.len());
         self.redraw = true;
+    }
+
+    pub fn clear(&mut self) {
+        while !self.characters.is_empty() {
+            self.backspace();
+        }
     }
 
     const fn position_for_character(index: usize) -> u32 {

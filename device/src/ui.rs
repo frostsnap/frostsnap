@@ -8,7 +8,10 @@ use alloc::{
 };
 use frostsnap_comms::Sha256Digest;
 use frostsnap_core::{
-    device::{BackupDisplayPhase, KeyGenPhase2, LoadKnownBackupPhase, SignPhase1},
+    device::{
+        restoration::{BackupDisplayPhase, EnterBackupPhase},
+        KeyGenPhase2, SignPhase1,
+    },
     schnorr_fun::frost::SecretShare,
 };
 
@@ -23,6 +26,8 @@ pub trait UserInteraction {
     fn set_workflow(&mut self, workflow: Workflow);
 
     fn set_busy_task(&mut self, task: BusyTask);
+
+    fn set_recovery_mode(&mut self, value: bool);
 
     fn clear_busy_task(&mut self);
 
@@ -109,6 +114,7 @@ pub enum Workflow {
 }
 
 impl Workflow {
+    #[must_use]
     pub fn prompt(prompt: Prompt) -> Self {
         let hold_duration = match prompt {
             Prompt::WipeDevice => LONG_HOLD_TO_CONFIRM_TIME_MS,
@@ -125,14 +131,14 @@ impl Workflow {
 pub enum EnteringBackupStage {
     //HACK So the creator of the workflow doesn't have to construct the screen
     Init {
-        phase: Box<frostsnap_core::device::LoadKnownBackupPhase>,
+        phase: EnterBackupPhase,
     },
     ShareIndex {
-        phase: Box<frostsnap_core::device::LoadKnownBackupPhase>,
+        phase: EnterBackupPhase,
         screen: EnterShareIndexScreen,
     },
     Share {
-        phase: Box<frostsnap_core::device::LoadKnownBackupPhase>,
+        phase: EnterBackupPhase,
         screen: EnterShareScreen,
     },
 }
@@ -162,9 +168,9 @@ pub enum Prompt {
         firmware_digest: Sha256Digest,
         size: u32,
     },
-    ConfirmLoadBackup {
+    ConfirmEnterBackup {
         share_backup: SecretShare,
-        phase: Box<frostsnap_core::device::LoadKnownBackupPhase>,
+        phase: EnterBackupPhase,
     },
     WipeDevice,
 }
@@ -195,7 +201,7 @@ pub enum UiEvent {
     },
     NameConfirm(String),
     EnteredShareBackup {
-        phase: Box<LoadKnownBackupPhase>,
+        phase: EnterBackupPhase,
         share_backup: SecretShare,
     },
     BackupRequestConfirm {

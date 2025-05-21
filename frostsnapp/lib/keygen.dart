@@ -15,7 +15,6 @@ import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/progress_indicator.dart';
 import 'package:frostsnapp/theme.dart';
-import 'package:frostsnapp/wallet_list_controller.dart';
 import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class KeyNamePage extends StatefulWidget {
@@ -102,39 +101,13 @@ class _KeyNamePageState extends State<KeyNamePage> {
               stream: settingsCtx.developerSettings,
               builder: (context, snap) {
                 if (snap.data?.developerMode == true) {
-                  return Column(
-                    children: [
-                      SizedBox(height: 20),
-                      Text("(developer) Choose the network:"),
-                      SizedBox(height: 10),
-                      DropdownButton<String>(
-                        hint: Text('Chose a network'),
-                        value: bitcoinNetwork.name(),
-                        onChanged: (String? network) {
-                          setState(() {
-                            if (network != null) {
-                              bitcoinNetwork =
-                                  BitcoinNetwork.fromString(
-                                    bridge: api,
-                                    string: network,
-                                  )!;
-                            }
-                          });
-                        },
-                        items:
-                            BitcoinNetwork.supportedNetworks(bridge: api).map((
-                              network,
-                            ) {
-                              final name = network.name();
-                              return DropdownMenuItem<String>(
-                                value: name,
-                                child: Text(
-                                  name == "bitcoin" ? "Bitcoin (BTC)" : name,
-                                ),
-                              );
-                            }).toList(),
-                      ),
-                    ],
+                  return BitcoinNetworkChooser(
+                    value: bitcoinNetwork,
+                    onChanged: (BitcoinNetwork network) {
+                      setState(() {
+                        bitcoinNetwork = network;
+                      });
+                    },
                   );
                 } else {
                   return SizedBox();
@@ -168,7 +141,7 @@ class DevicesPage extends StatelessWidget {
     return Scaffold(
       appBar: FsAppBar(title: Text('Devices')),
       body: StreamBuilder(
-        stream: deviceListSubject,
+        stream: GlobalStreams.deviceListSubject,
         builder: (context, snapshot) {
           final theme = Theme.of(context);
 
@@ -401,12 +374,8 @@ class _ThresholdPageState extends State<ThresholdPage> {
                   if (context.mounted) {
                     Navigator.popUntil(context, (r) => r.isFirst);
                     final homeCtx = HomeContext.of(context)!;
-                    final walletItem = homeCtx.openNewlyCreatedWallet(
-                      accessStructureRef.keyId,
-                    );
-                    if (walletItem != null) {
-                      showWalletCreatedDialog(context, walletItem);
-                    }
+                    homeCtx.openNewlyCreatedWallet(accessStructureRef.keyId);
+                    showWalletCreatedDialog(context, accessStructureRef);
                   }
                 },
                 icon: Icon(Icons.check),
@@ -420,11 +389,13 @@ class _ThresholdPageState extends State<ThresholdPage> {
   }
 }
 
-void showWalletCreatedDialog(BuildContext context, WalletItem walletItem) {
-  final homeCtx = HomeContext.of(context)!;
-  final accessStructure = walletItem.key.accessStructures().first;
-  homeCtx.isShowingCreatedWalletDialog.value = true;
-  showDialog(
+showWalletCreatedDialog(
+  BuildContext context,
+  AccessStructureRef accessStructureRef,
+) async {
+  final accessStructure = coord.getAccessStructure(asRef: accessStructureRef)!;
+  final backupManager = FrostsnapContext.of(context)!.backupManager;
+  await showDialog(
     context: context,
     barrierDismissible: false,
     builder: (BuildContext context) {
@@ -496,27 +467,26 @@ void showWalletCreatedDialog(BuildContext context, WalletItem walletItem) {
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                homeCtx.isShowingCreatedWalletDialog.value = false;
               },
               child: const Text('Later'),
             ),
             FilledButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                homeCtx.isShowingCreatedWalletDialog.value = false;
                 showBottomSheetOrDialog(
                   context,
                   titleText: 'Backup Checklist',
                   builder:
-                      (context, scrollController) =>
-                          walletItem.tryWrapInWalletContext(
-                            context: context,
-                            child: BackupChecklist(
-                              scrollController: scrollController,
-                              accessStructure: accessStructure,
-                              showAppBar: false,
-                            ),
-                          ),
+                      (context, scrollController) => SuperWalletContext.of(
+                        context,
+                      )!.tryWrapInWalletContext(
+                        keyId: accessStructureRef.keyId,
+                        child: BackupChecklist(
+                          accessStructure: accessStructure,
+                          scrollController: scrollController,
+                          showAppBar: true,
+                        ),
+                      ),
                 );
               },
               child: const Text('Secure Wallet'),
@@ -526,6 +496,7 @@ void showWalletCreatedDialog(BuildContext context, WalletItem walletItem) {
       );
     },
   );
+  await backupManager.startBackupRun(accessStructure: accessStructure);
 }
 
 // Utility function for creating the page transition

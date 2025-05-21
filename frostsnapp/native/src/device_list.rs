@@ -58,6 +58,7 @@ impl DeviceList {
                     latest_digest: Default::default(),
                     name: None,
                     id,
+                    recovery_mode: false,
                 });
 
                 connected.firmware_digest = firmware_digest.to_string();
@@ -141,6 +142,20 @@ impl DeviceList {
                 index: self.devices.len() - 1,
                 device: self.get_device(id).expect("invariant"),
             });
+        }
+    }
+
+    pub fn set_recovery_mode(&mut self, id: DeviceId, recovery_mode: bool) {
+        if let Some(connected_device) = self.connected.get_mut(&id) {
+            if connected_device.recovery_mode != recovery_mode {
+                connected_device.recovery_mode = recovery_mode;
+                let connected_device = connected_device.clone();
+                self.outbox.push(crate::api::DeviceListChange {
+                    kind: api::DeviceListChangeKind::RecoveryMode,
+                    index: self.index_of(id).expect("invariant"),
+                    device: connected_device,
+                })
+            }
         }
     }
 }

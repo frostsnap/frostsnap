@@ -26,6 +26,7 @@ frostsnap_comms = { path = "frostsnap_comms", default-features = false }
 frostsnap_coordinator = { path = "frostsnap_coordinator" }
 frostsnap_device = { path = "device" }
 frostsnap_embedded = { path = "frostsnap_embedded", default-features = false }
+frostsnap_macros = { path = "macros", default-features = false }
 tracing = { version = "0.1", default-features = false }
 rusqlite = { version = "0.31.0", features = ["bundled"] }
 rand_chacha = { version = "0.3", default-features = false }
@@ -33,6 +34,7 @@ sha2 = { version = "0.10", default-features = false }
 bitcoin = { version = "0.32", features = ["serde"], default-features = false }
 bdk_coin_select = { version = "0.3" }
 rand_core = "0.6"
+rand = "0.8"
 futures = "0.3.31"
 embedded-storage = "0.3.1"
 

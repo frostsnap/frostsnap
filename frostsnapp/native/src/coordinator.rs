@@ -1,47 +1,51 @@
-use crate::api;
+use crate::api::{self};
 use crate::device_list::DeviceList;
 use crate::sink_wrap::SinkWrap;
 use crate::TEMP_KEY;
 use anyhow::{anyhow, Result};
 use flutter_rust_bridge::{RustOpaque, StreamSink};
-use frostsnap_coordinator::check_share::CheckShareState;
+use frostsnap_coordinator::display_backup::DisplayBackupProtocol;
+use frostsnap_coordinator::enter_physical_backup::{EnterPhysicalBackup, EnterPhysicalBackupState};
 use frostsnap_coordinator::firmware_upgrade::{
     FirmwareUpgradeConfirmState, FirmwareUpgradeProtocol,
 };
 use frostsnap_coordinator::frostsnap_comms::{
     CoordinatorSendBody, CoordinatorSendMessage, Destination, Sha256Digest,
 };
+use frostsnap_coordinator::frostsnap_core::coordinator::restoration::{
+    PhysicalBackupPhase, ToUserRestoration,
+};
 use frostsnap_coordinator::frostsnap_core::coordinator::{
-    CoordAccessStructure, CoordFrostKey, CoordinatorSend,
+    CoordAccessStructure, CoordFrostKey, CoordinatorSend, CoordinatorToUserMessage,
 };
 use frostsnap_coordinator::frostsnap_core::device::KeyPurpose;
-use frostsnap_coordinator::frostsnap_core::message::{
-    CoordinatorToUserMessage, DoKeyGen, RecoverShare,
-};
-use frostsnap_coordinator::frostsnap_core::KeygenId;
-use frostsnap_coordinator::frostsnap_core::SymmetricKey;
-use frostsnap_coordinator::frostsnap_core::{self, SignSessionId};
+use frostsnap_coordinator::frostsnap_core::{self, message::DoKeyGen};
+use frostsnap_coordinator::frostsnap_core::{KeygenId, RestorationId, SignSessionId, SymmetricKey};
 use frostsnap_coordinator::frostsnap_persist::DeviceNames;
 use frostsnap_coordinator::persist::Persisted;
 use frostsnap_coordinator::signing::SigningState;
 use frostsnap_coordinator::verify_address::VerifyAddressProtocol;
-use frostsnap_coordinator::{
-    check_share::CheckShareProtocol, display_backup::DisplayBackupProtocol,
+use frostsnap_coordinator::wait_for_recovery_share::{
+    WaitForRecoveryShare, WaitForRecoveryShareState,
 };
+use frostsnap_coordinator::DeviceChange;
 use frostsnap_coordinator::{
-    AppMessageBody, FirmwareBin, Sink, UiProtocol, UsbSender, UsbSerialManager,
+    AppMessageBody, DeviceMode, FirmwareBin, Sink, UiProtocol, UiStack, UsbSender,
+    UsbSerialManager, WaitForToUserMessage,
 };
-use frostsnap_coordinator::{Completion, DeviceChange};
 use frostsnap_core::{
-    coordinator::FrostCoordinator, AccessStructureRef, DeviceId, KeyId, WireSignTask,
+    coordinator::{
+        restoration::{RecoverShare, RestorationState},
+        FrostCoordinator,
+    },
+    AccessStructureRef, DeviceId, KeyId, WireSignTask,
 };
-use rand::thread_rng;
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
-use std::ops::Deref;
+use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::ops::DerefMut;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
-use tracing::{event, span, Level};
+use tracing::{event, Level};
 const N_NONCE_STREAMS: usize = 4;
 
 pub struct FfiCoordinator {
@@ -49,11 +53,10 @@ pub struct FfiCoordinator {
     key_event_stream: Arc<Mutex<Option<StreamSink<api::KeyState>>>>,
     signing_session_signals: Arc<Mutex<HashMap<KeyId, Signal>>>,
     thread_handle: Mutex<Option<JoinHandle<()>>>,
-    ui_protocol: Arc<Mutex<Option<Box<dyn UiProtocol>>>>,
-    usb_sender: UsbSender,
+    ui_stack: Arc<Mutex<UiStack>>,
+    pub(crate) usb_sender: UsbSender,
     firmware_bin: Option<FirmwareBin>,
     firmware_upgrade_progress: Arc<Mutex<Option<StreamSink<f32>>>>,
-    recoverable_keys: Arc<Mutex<BTreeMap<AccessStructureRef, Vec<RecoverShare>>>>,
 
     device_list: Arc<Mutex<DeviceList>>,
     device_list_stream: Arc<Mutex<Option<StreamSink<api::DeviceListUpdate>>>>,
@@ -89,9 +92,8 @@ impl FfiCoordinator {
             thread_handle: Default::default(),
             key_event_stream: Default::default(),
             signing_session_signals: Default::default(),
-            ui_protocol: Default::default(),
+            ui_stack: Default::default(),
             firmware_upgrade_progress: Default::default(),
-            recoverable_keys: Default::default(),
             device_list: Default::default(),
             device_list_stream: Default::default(),
             usb_sender,
@@ -100,6 +102,10 @@ impl FfiCoordinator {
             coordinator: Arc::new(Mutex::new(coordinator)),
             device_names: Arc::new(Mutex::new(device_names)),
         })
+    }
+
+    pub fn inner(&self) -> impl DerefMut<Target = Persisted<FrostCoordinator>> + '_ {
+        self.coordinator.lock().unwrap()
     }
 
     pub fn start(&self) -> anyhow::Result<()> {
@@ -115,13 +121,11 @@ impl FfiCoordinator {
             .take()
             .expect("can only start once");
         let coordinator_loop = self.coordinator.clone();
-        let ui_protocol = self.ui_protocol.clone();
+        let ui_stack = self.ui_stack.clone();
         let db_loop = self.db.clone();
         let device_names = self.device_names.clone();
         let usb_sender = self.usb_sender.clone();
         let firmware_upgrade_progress = self.firmware_upgrade_progress.clone();
-        let key_event_stream = self.key_event_stream.clone();
-        let recoverable_keys = self.recoverable_keys.clone();
         let device_list = self.device_list.clone();
         let device_list_stream = self.device_list_stream.clone();
 
@@ -176,21 +180,29 @@ impl FfiCoordinator {
                 // be deadlocked.
                 let device_changes = usb_manager.poll_ports();
                 let mut coordinator = coordinator_loop.lock().unwrap();
-                let mut ui_protocol_loop = ui_protocol.lock().unwrap();
                 let mut coordinator_outbox = VecDeque::default();
                 let mut messages_from_devices = vec![];
                 let mut db = db_loop.lock().unwrap();
-                let mut device_list = device_list.lock().unwrap();
+                let mut ui_stack = ui_stack.lock().unwrap();
 
                 // process new messages from devices
                 {
+                    let mut device_list = device_list.lock().unwrap();
                     for change in device_changes {
                         device_list.consume_manager_event(change.clone());
                         match change {
                             DeviceChange::Registered { id, .. } => {
-                                if let Some(protocol) = &mut *ui_protocol_loop {
-                                    protocol.connected(id);
+                                if coordinator.has_backups_that_need_to_be_consolidated(id) {
+                                    device_list.set_recovery_mode(id, true);
                                 }
+
+                                ui_stack.connected(
+                                    id,
+                                    device_list
+                                        .get_device(id)
+                                        .expect("it was just registered")
+                                        .device_mode(),
+                                );
 
                                 if let Some(connected_device) = device_list.get_device(id) {
                                     // we only send some messages out if the device has up to date firmware
@@ -202,30 +214,11 @@ impl FfiCoordinator {
                                                 &mut rand::thread_rng(),
                                             ),
                                         );
-                                        coordinator_outbox
-                                            .extend(coordinator.request_held_shares(id));
                                     }
                                 }
                             }
                             DeviceChange::Disconnected { id } => {
-                                if let Some(protocol) = &mut *ui_protocol_loop {
-                                    protocol.disconnected(id);
-                                }
-                                let mut recoverable_keys = recoverable_keys.lock().unwrap();
-                                let mut recoverable_list_changed = false;
-                                for recoverable_shares in recoverable_keys.values_mut() {
-                                    recoverable_shares.retain(|recoverable_share| {
-                                        let remove = recoverable_share.held_by == id;
-                                        recoverable_list_changed |= remove;
-                                        !remove
-                                    });
-                                }
-
-                                if recoverable_list_changed {
-                                    if let Some(stream) = &*key_event_stream.lock().unwrap() {
-                                        stream.add(key_state(&recoverable_keys, &coordinator));
-                                    }
-                                }
+                                ui_stack.disconnected(id);
                             }
                             DeviceChange::NameChange { id, name } => {
                                 let mut device_names = device_names.lock().unwrap();
@@ -253,6 +246,9 @@ impl FfiCoordinator {
                             DeviceChange::AppMessage(message) => {
                                 messages_from_devices.push(message.clone());
                             }
+                            DeviceChange::NeedsName { id } => {
+                                ui_stack.connected(id, DeviceMode::Blank);
+                            }
                             _ => { /* ignore rest */ }
                         }
                     }
@@ -261,14 +257,6 @@ impl FfiCoordinator {
                         if let Some(device_list_stream) = &*device_list_stream.lock().unwrap() {
                             device_list_stream.add(device_list.take_update());
                         }
-                    }
-
-                    if let Some(ui_protocol) = &mut *ui_protocol_loop {
-                        for message in ui_protocol.poll() {
-                            usb_sender.send(message);
-                        }
-
-                        Self::try_finish_protocol(usb_sender.clone(), &mut ui_protocol_loop);
                     }
                 };
 
@@ -304,12 +292,13 @@ impl FfiCoordinator {
                             }
                         }
                         AppMessageBody::Misc(comms_misc) => {
-                            if let Some(ui_protocol) = &mut *ui_protocol_loop {
-                                ui_protocol.process_comms_message(app_message.from, comms_misc);
-                            }
+                            ui_stack.process_comms_message(app_message.from, comms_misc);
                         }
                     }
                 }
+
+                drop(coordinator);
+                drop(db);
 
                 while let Some(message) = coordinator_outbox.pop_front() {
                     match message {
@@ -325,94 +314,21 @@ impl FfiCoordinator {
                             usb_sender.send(send_message);
                         }
                         CoordinatorSend::ToUser(msg) => {
-                            match msg {
-                                // there is no UI protocol for share recovery because it happens in the background.
-                                CoordinatorToUserMessage::PromptRecoverShare(recover_share) => {
-                                    let span = span!(
-                                        Level::INFO,
-                                        "recovering share",
-                                        from = recover_share.held_by.to_string(),
-                                        key_name = recover_share.held_share.key_name,
-                                        access_structure_ref = format!(
-                                            "{:?}",
-                                            recover_share.held_share.access_structure_ref
-                                        ),
-                                    );
-                                    let _enter = span.enter();
-                                    let access_structure_ref =
-                                        recover_share.held_share.access_structure_ref;
-                                    let key_id = access_structure_ref.key_id;
-                                    if coordinator.get_frost_key(key_id).is_some() {
-                                        event!(Level::INFO, "share was for an existing key");
-                                        // we don't need to the user to do anything here if they've already agreed to recover this key
-                                        let result = coordinator.staged_mutate(
-                                            &mut *db,
-                                            |coordinator| {
-                                                // TODO We're going to have to fetch a fresh encryption key from secure element here.
-                                                // We can do this without bothering the user:
-                                                // - generate a ChaCha key here
-                                                // - generate a asymmetric key from phone secure element
-                                                // - encrypt the ChaCha key to asymmetri key
-                                                // - save the encrypted ChaCha key in our database
-                                                // - Now only when we want to decrypt we need to ask user to put in pin
-                                                coordinator
-                                                    .recover_share_and_maybe_recover_access_structure(*recover_share.clone(), TEMP_KEY, &mut thread_rng())?;
-                                                Ok(())
-                                            },
-                                        );
-
-                                        if let Err(e) = result {
-                                            event!(
-                                                Level::ERROR,
-                                                from = recover_share.held_by.to_string(),
-                                                share_index = recover_share
-                                                    .held_share
-                                                    .share_image
-                                                    .share_index
-                                                    .to_string(),
-                                                key_id = recover_share
-                                                    .held_share
-                                                    .access_structure_ref
-                                                    .key_id
-                                                    .to_string(),
-                                                error = e.to_string(),
-                                                "failed to recover share (or access structure)"
-                                            );
-                                        }
-                                    } else {
-                                        event!(
-                                            Level::INFO,
-                                            "recovery of this key has not been confirmed. Marking share as recoverable."
-                                        );
-                                        let mut recoverable_keys = recoverable_keys.lock().unwrap();
-                                        let shares = recoverable_keys
-                                            .entry(recover_share.held_share.access_structure_ref)
-                                            .or_default();
-
-                                        if !shares.contains(&recover_share) {
-                                            shares.push(*recover_share);
-                                        }
-                                    }
-
-                                    if let Some(stream) = &*key_event_stream.lock().unwrap() {
-                                        let recoverable_keys = recoverable_keys.lock().unwrap();
-                                        stream.add(key_state(&recoverable_keys, &coordinator));
-                                    }
-                                }
-                                _ => {
-                                    if let Some(ui_protocol) = &mut *ui_protocol_loop {
-                                        ui_protocol.process_to_user_message(msg);
-                                    } else {
-                                        event!(
-                                            Level::WARN,
-                                            kind = msg.kind(),
-                                            "ignoring protocol message we have no ui protoocl to handle"
-                                        );
-                                    }
-                                }
-                            }
+                            ui_stack.process_to_user_message(msg);
                         }
                     }
+                }
+
+                // poll the ui protocol first before locking anything else because of the potential
+                // for dead locks with callbacks activated on stream items trying to lock things.
+                for message in ui_stack.poll() {
+                    usb_sender.send(message);
+                }
+
+                if ui_stack.clean_finished() {
+                    // the UI stack ahs told us we need to cancel all since one of the protocols
+                    // completed with an abort.
+                    usb_sender.send_cancel_all();
                 }
             }
         });
@@ -544,12 +460,10 @@ impl FfiCoordinator {
         session_id: SignSessionId,
         encryption_key: SymmetricKey,
     ) -> anyhow::Result<()> {
-        let mut proto = self.ui_protocol.lock().unwrap();
-        let signing = proto
-            .as_mut()
-            .ok_or(anyhow!("No UI protocol running"))?
-            .as_mut_any()
-            .downcast_mut::<frostsnap_coordinator::signing::SigningDispatcher>()
+        let mut ui_stack = self.ui_stack.lock().unwrap();
+
+        let signing = ui_stack
+            .get_mut::<frostsnap_coordinator::signing::SigningDispatcher>()
             .ok_or(anyhow!("somehow UI was not in KeyGen state"))?;
 
         let mut db = self.db.lock().unwrap();
@@ -593,7 +507,6 @@ impl FfiCoordinator {
                 active_sign_session,
                 sink,
             );
-
         dispatcher.emit_state();
         self.start_protocol(dispatcher);
         Ok(())
@@ -658,64 +571,18 @@ impl FfiCoordinator {
     }
 
     fn start_protocol<P: UiProtocol + Send + 'static>(&self, mut protocol: P) {
-        event!(Level::INFO, "Starting UI protocol {}", protocol.name());
         for device in self.device_list.lock().unwrap().devices() {
-            protocol.connected(device.id);
+            protocol.connected(device.id, device.device_mode());
         }
-        let new_name = protocol.name();
-        if let Some(mut prev) = self.ui_protocol.lock().unwrap().replace(Box::new(protocol)) {
-            event!(
-                Level::WARN,
-                prev = prev.name(),
-                new = new_name,
-                "previous protocol wasn't shut down cleanly"
-            );
-            prev.cancel();
-        }
+
+        let mut stack = self.ui_stack.lock().unwrap();
+        stack.push(protocol);
     }
 
     pub fn cancel_protocol(&self) {
-        let mut proto_opt = self.ui_protocol.lock().unwrap();
-        if let Some(proto) = &mut *proto_opt {
-            proto.cancel();
-            assert!(
-                Self::try_finish_protocol(self.usb_sender.clone(), &mut proto_opt),
-                "protocol must be finished after cancel"
-            );
+        if self.ui_stack.lock().unwrap().cancel_all() {
+            self.usb_sender.send_cancel_all();
         }
-    }
-
-    fn try_finish_protocol(
-        usb_sender: UsbSender,
-        proto_opt: &mut Option<Box<dyn UiProtocol>>,
-    ) -> bool {
-        if let Some(proto) = proto_opt {
-            if let Some(completion) = proto.is_complete() {
-                event!(
-                    Level::INFO,
-                    "UI Protocol {} completed with {:?}",
-                    proto.name(),
-                    completion
-                );
-                match completion {
-                    Completion::Abort {
-                        send_cancel_to_all_devices,
-                    } => {
-                        if send_cancel_to_all_devices {
-                            usb_sender.send_cancel_all();
-                        }
-                        *proto_opt = None;
-                        return true;
-                    }
-                    Completion::Success => {
-                        *proto_opt = None;
-                        return true;
-                    }
-                }
-            }
-        }
-
-        false
     }
 
     pub fn enter_firmware_upgrade_mode(&self, sink: StreamSink<f32>) -> Result<()> {
@@ -741,13 +608,9 @@ impl FfiCoordinator {
     pub fn final_keygen_ack(&self, keygen_id: KeygenId) -> Result<AccessStructureRef> {
         let mut coordinator = self.coordinator.lock().unwrap();
         let mut db = self.db.lock().unwrap();
-
-        let mut proto = self.ui_protocol.lock().unwrap();
-        let keygen = proto
-            .as_mut()
-            .ok_or(anyhow!("No UI protocol running"))?
-            .as_mut_any()
-            .downcast_mut::<frostsnap_coordinator::keygen::KeyGen>()
+        let mut ui_stack = self.ui_stack.lock().unwrap();
+        let keygen = ui_stack
+            .get_mut::<frostsnap_coordinator::keygen::KeyGen>()
             .ok_or(anyhow!("somehow UI was not in KeyGen state"))?;
 
         let accs_ref = coordinator.staged_mutate(&mut db, |coordinator| {
@@ -757,16 +620,9 @@ impl FfiCoordinator {
         keygen.final_keygen_ack(accs_ref);
 
         if let Some(stream) = &*self.key_event_stream.lock().unwrap() {
-            stream.add(key_state(
-                &self.recoverable_keys.lock().unwrap(),
-                &coordinator,
-            ));
+            stream.add(key_state(&coordinator));
         }
 
-        assert!(
-            Self::try_finish_protocol(self.usb_sender.clone(), &mut proto),
-            "keygen must be finished after we call final ack"
-        );
         Ok(accs_ref)
     }
 
@@ -775,25 +631,6 @@ impl FfiCoordinator {
             .lock()
             .unwrap()
             .get_access_structure(as_ref)
-    }
-
-    pub fn check_share_on_device(
-        &self,
-        device_id: DeviceId,
-        access_structure_ref: AccessStructureRef,
-        stream: StreamSink<CheckShareState>,
-        encryption_key: SymmetricKey,
-    ) -> anyhow::Result<()> {
-        let check_share_protocol = CheckShareProtocol::new(
-            self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
-            device_id,
-            access_structure_ref,
-            SinkWrap(stream),
-            encryption_key,
-        );
-        check_share_protocol.emit_state();
-        self.start_protocol(check_share_protocol);
-        Ok(())
     }
 
     pub fn get_frost_key(&self, key_id: KeyId) -> Option<CoordFrostKey> {
@@ -824,40 +661,175 @@ impl FfiCoordinator {
     }
 
     pub fn key_state(&self) -> api::KeyState {
-        key_state(
-            &self.recoverable_keys.lock().unwrap(),
-            &self.coordinator.lock().unwrap(),
-        )
+        key_state(&self.coordinator.lock().unwrap())
     }
 
-    pub fn start_recovery(&self, key_id: KeyId) -> Result<()> {
-        let mut recoverable_keys = self.recoverable_keys.lock().unwrap();
-        let recover_shares_by_as = recoverable_keys
-            .range(AccessStructureRef::range_for_key(key_id))
-            .map(|(k, v)| (*k, v.clone()))
-            .collect::<Vec<_>>();
+    pub fn wait_for_recovery_share(&self, sink: impl Sink<WaitForRecoveryShareState>) {
+        let ui_protocol = WaitForRecoveryShare::new(sink);
+        ui_protocol.emit_state();
+        self.start_protocol(ui_protocol);
+    }
 
-        let mut coordinator = self.coordinator.lock().unwrap();
-        let mut db = self.db.lock().unwrap();
-        coordinator.staged_mutate(&mut *db, |coordinator| {
-            for (access_structure_ref, recover_shares) in recover_shares_by_as.clone() {
-                for recover_share in recover_shares {
-                    coordinator.recover_share_and_maybe_recover_access_structure(
-                        recover_share,
-                        TEMP_KEY,
-                        &mut rand::thread_rng(),
-                    )?;
-                }
-                recoverable_keys.remove(&access_structure_ref);
-            }
-            Ok(())
-        })?;
+    pub fn start_restoring_wallet(
+        &self,
+        name: String,
+        threshold: u16,
+        key_purpose: KeyPurpose,
+    ) -> Result<RestorationId> {
+        let restoration_id = {
+            let mut db = self.db.lock().unwrap();
+            let mut coordinator = self.coordinator.lock().unwrap();
+            coordinator.staged_mutate(&mut *db, |coordinator| {
+                let restoration_id = RestorationId::new(&mut rand::thread_rng());
+                coordinator.start_restoring_key(name, threshold, key_purpose, restoration_id);
+                Ok(restoration_id)
+            })?
+        };
 
         if let Some(stream) = &*self.key_event_stream.lock().unwrap() {
-            stream.add(key_state(&recoverable_keys, &coordinator));
+            stream.add(self.key_state());
         }
 
+        Ok(restoration_id)
+    }
+
+    pub fn start_restoring_wallet_from_device_share(
+        &self,
+        recover_share: RecoverShare,
+    ) -> Result<RestorationId> {
+        let restoration_id = {
+            let mut coordinator = self.coordinator.lock().unwrap();
+
+            if let Some(access_structure_ref) = recover_share.held_share.access_structure_ref {
+                if coordinator
+                    .get_access_structure(access_structure_ref)
+                    .is_some()
+                {
+                    return Err(anyhow!("we already know about this access structure"));
+                }
+            }
+            let mut db = self.db.lock().unwrap();
+            coordinator.staged_mutate(&mut *db, |coordinator| {
+                let restoration_id = RestorationId::new(&mut rand::thread_rng());
+                coordinator.start_restoring_key_from_recover_share(recover_share, restoration_id);
+                Ok(restoration_id)
+            })?
+        };
+
+        if let Some(stream) = &*self.key_event_stream.lock().unwrap() {
+            stream.add(self.key_state());
+        }
+
+        Ok(restoration_id)
+    }
+
+    pub fn continue_restoring_wallet_from_device_share(
+        &self,
+        restoration_id: RestorationId,
+        mut recover_share: RecoverShare,
+    ) -> Result<()> {
+        {
+            let mut db = self.db.lock().unwrap();
+            let mut coordinator = self.coordinator.lock().unwrap();
+            let restoration_state = coordinator
+                .get_restoration_state(restoration_id)
+                .ok_or(anyhow!("non-existent restoration"))?;
+
+            let held_share = &mut recover_share.held_share;
+
+            // HACK: We overwrite the name of the device share here to contrive compatibility.
+            if restoration_state.key_name != held_share.key_name {
+                event!(
+                    Level::WARN,
+                    recovery_name = restoration_state.key_name,
+                    device_name = held_share.key_name,
+                    "had to rename restoration share"
+                );
+                held_share.key_name = restoration_state.key_name.clone();
+            }
+            coordinator.staged_mutate(&mut *db, |coordinator| {
+                coordinator.add_recovery_share_to_restoration(restoration_id, recover_share)?;
+                Ok(())
+            })?;
+        }
+
+        if let Some(stream) = &*self.key_event_stream.lock().unwrap() {
+            stream.add(self.key_state());
+        }
         Ok(())
+    }
+
+    pub fn recover_share(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        recover_share: RecoverShare,
+        encryption_key: SymmetricKey,
+    ) -> Result<()> {
+        {
+            let held_by = recover_share.held_by;
+            {
+                let mut db = self.db.lock().unwrap();
+                let mut coordinator = self.coordinator.lock().unwrap();
+                coordinator.staged_mutate(&mut *db, |coordinator| {
+                    coordinator.recover_share(
+                        access_structure_ref,
+                        recover_share,
+                        encryption_key,
+                    )?;
+                    Ok(())
+                })?;
+            }
+
+            self.exit_recovery_mode(held_by, encryption_key);
+
+            if let Some(stream) = &*self.key_event_stream.lock().unwrap() {
+                stream.add(self.key_state());
+            }
+
+            Ok(())
+        }
+    }
+
+    pub fn get_restoration_state(&self, restoration_id: RestorationId) -> Option<RestorationState> {
+        self.coordinator
+            .lock()
+            .unwrap()
+            .get_restoration_state(restoration_id)
+    }
+
+    pub fn finish_restoring(
+        &self,
+        restoration_id: RestorationId,
+        encryption_key: SymmetricKey,
+    ) -> Result<AccessStructureRef> {
+        let (assid, needs_consolidation) = {
+            let mut db = self.db.lock().unwrap();
+            let mut coordinator = self.coordinator.lock().unwrap();
+            let restoration_state = coordinator
+                .get_restoration_state(restoration_id)
+                .ok_or(anyhow!("can't finish restoration that doesn't exist"))?;
+            let needs_consolidation = restoration_state.need_to_consolidate;
+            let assid = coordinator.staged_mutate(&mut *db, |coordinator| {
+                Ok(coordinator.finish_restoring(
+                    restoration_id,
+                    encryption_key,
+                    &mut rand::thread_rng(),
+                )?)
+            })?;
+
+            (assid, needs_consolidation)
+        };
+
+        for device_id in needs_consolidation {
+            // NOTE: This will only work for the devices that are plugged in otherwise it's a noop
+            self.exit_recovery_mode(device_id, encryption_key);
+        }
+
+        if let Some(stream) = &*self.key_event_stream.lock().unwrap() {
+            stream.add(self.key_state());
+        }
+
+        Ok(assid)
     }
 
     pub fn delete_key(&self, key_id: KeyId) -> Result<()> {
@@ -944,6 +916,21 @@ impl FfiCoordinator {
 
         Ok(())
     }
+    pub fn cancel_restoration(&self, restoration_id: RestorationId) -> anyhow::Result<()> {
+        let mut db = self.db.lock().unwrap();
+        let mut coordinator = self.coordinator.lock().unwrap();
+
+        coordinator.staged_mutate(&mut *db, |coordinator| {
+            coordinator.cancel_restoration(restoration_id);
+            Ok(())
+        })?;
+
+        if let Some(stream) = &*self.key_event_stream.lock().unwrap() {
+            stream.add(key_state(&coordinator));
+        }
+
+        Ok(())
+    }
 
     pub fn sub_signing_session_signals(&self, key_id: KeyId, new_stream: impl Sink<()>) {
         let mut signal_streams = self.signing_session_signals.lock().unwrap();
@@ -959,36 +946,244 @@ impl FfiCoordinator {
         }
     }
 
-    pub fn inner(&self) -> impl Deref<Target = Persisted<FrostCoordinator>> + '_ {
-        self.coordinator.lock().unwrap()
+    pub fn tell_device_to_enter_physical_backup(
+        &self,
+        device_id: DeviceId,
+        sink: impl Sink<EnterPhysicalBackupState>,
+    ) -> Result<()> {
+        let device_list = self.device_list.clone();
+        let coordinator = self.coordinator.clone();
+        let key_event_stream = self.key_event_stream.clone();
+        let sink = sink.inspect(move |state| {
+            if state.saved {
+                // When/if the physical backup has been saved on the device this means the device
+                // has entered recovery mode. We need to set recovery mode so that the device can be
+                // brought out of recovery mode when the time comes.
+                device_list
+                    .lock()
+                    .unwrap()
+                    .set_recovery_mode(device_id, true);
+
+                let coordinator = coordinator.lock().unwrap();
+                // We need to update the recovering key's state the ui gets updated
+                let state = key_state(&coordinator);
+                if let Some(key_event_stream) = &*key_event_stream.lock().unwrap() {
+                    key_event_stream.add(state);
+                }
+            }
+        });
+        let proto = EnterPhysicalBackup::new(sink, device_id);
+        self.start_protocol(proto);
+        Ok(())
+    }
+
+    // XXX: Cannot be called during another UI protocol
+    pub fn tell_device_to_save_physical_backup(
+        &self,
+        phase: PhysicalBackupPhase,
+        restoration_id: RestorationId,
+    ) {
+        {
+            let mut coord = self.coordinator.lock().unwrap();
+            let messages = coord
+                .MUTATE_NO_PERSIST()
+                .tell_device_to_save_physical_backup(phase, restoration_id);
+            self.usb_sender.send_from_core(messages);
+        }
+
+        // hook into to user messages to see when it is successfully saved
+        let success = self.block_for_to_user_message([phase.from], move |to_user| {
+            if let &CoordinatorToUserMessage::Restoration(
+                ToUserRestoration::PhysicalBackupSaved {
+                    device_id,
+                    restoration_id: rid,
+                    share_index,
+                },
+            ) = &to_user
+            {
+                return device_id == phase.from
+                    && rid == restoration_id
+                    && share_index == phase.backup.share_image.share_index;
+            }
+            false
+        });
+        if success {
+            self.device_list
+                .lock()
+                .unwrap()
+                .set_recovery_mode(phase.from, true);
+
+            self.emit_key_state();
+        }
+    }
+
+    /// This is for telling a device that a physical backup it just entered is ready to be used
+    /// right away. It never enters recovery mode.
+    // XXX: Cannot be called during another UI protocol
+    pub fn tell_device_to_consolidate_physical_backup(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        phase: PhysicalBackupPhase,
+        encryption_key: SymmetricKey,
+    ) -> Result<()> {
+        let msgs = {
+            let mut coordinator = self.coordinator.lock().unwrap();
+            coordinator
+                .MUTATE_NO_PERSIST()
+                .tell_device_to_consolidate_physical_backup(
+                    phase,
+                    access_structure_ref,
+                    encryption_key,
+                )?
+        };
+
+        self.usb_sender.send_from_core(msgs);
+
+        // hook into to user messages to see when it is successfully consolidated
+        let success = self.block_for_to_user_message([phase.from], move |to_user| {
+            if let &CoordinatorToUserMessage::Restoration(
+                ToUserRestoration::FinishedConsolidation {
+                    device_id,
+                    access_structure_ref: assid,
+                    share_index,
+                },
+            ) = &to_user
+            {
+                return device_id == phase.from
+                    && assid == access_structure_ref
+                    && share_index == phase.backup.share_image.share_index;
+            }
+            false
+        });
+
+        if success {
+            self.emit_key_state();
+        }
+
+        Ok(())
+    }
+
+    fn block_for_to_user_message(
+        &self,
+        devices: impl IntoIterator<Item = DeviceId>,
+        f: impl FnMut(CoordinatorToUserMessage) -> bool + Send + 'static,
+    ) -> bool {
+        let (proto, waiter) = WaitForToUserMessage::new(devices, f);
+        self.start_protocol(proto);
+
+        waiter.recv().expect("unreachable")
+    }
+
+    /// i.e. do a consolidation
+    pub fn exit_recovery_mode(&self, device_id: DeviceId, encryption_key: SymmetricKey) {
+        let device = match self.device_list.lock().unwrap().get_device(device_id) {
+            Some(device) => device,
+            None => return,
+        };
+
+        let msgs = {
+            let coord = self.coordinator.lock().unwrap();
+            coord
+                .consolidate_pending_physical_backups(device_id, encryption_key)
+                .into_iter()
+                .collect::<Vec<_>>()
+        };
+
+        if msgs.is_empty() {
+            return;
+        }
+
+        self.usb_sender.send_from_core(msgs);
+
+        event!(
+            Level::INFO,
+            id = device_id.to_string(),
+            name = device.name,
+            "asking device to exit recovery mode"
+        );
+
+        let success = self.block_for_to_user_message([device_id], move |to_user| match to_user {
+            CoordinatorToUserMessage::Restoration(ToUserRestoration::FinishedConsolidation {
+                device_id: got,
+                ..
+            }) => device_id == got,
+            _ => false,
+        });
+
+        if success {
+            event!(
+                Level::INFO,
+                id = device_id.to_string(),
+                name = device.name,
+                "device exited recovery mode"
+            );
+
+            self.device_list
+                .lock()
+                .unwrap()
+                .set_recovery_mode(device_id, false);
+
+            self.ui_stack
+                .lock()
+                .unwrap()
+                .connected(device_id, DeviceMode::Ready);
+        } else {
+            event!(
+                Level::ERROR,
+                id = device_id.to_string(),
+                name = device.name,
+                "device failed to exit recovery mode"
+            );
+        }
+    }
+
+    pub fn delete_restoration_share(
+        &self,
+        restoration_id: RestorationId,
+        device_id: DeviceId,
+    ) -> Result<()> {
+        {
+            let mut coord = self.coordinator.lock().unwrap();
+            let mut db = self.db.lock().unwrap();
+            coord.staged_mutate(&mut *db, |coord| {
+                coord.delete_restoration_share(restoration_id, device_id);
+                Ok(())
+            })?;
+        }
+        self.emit_key_state();
+        Ok(())
+    }
+
+    pub fn emit_key_state(&self) {
+        let coord = self.coordinator.lock().unwrap();
+        let state = key_state(&coord);
+        if let Some(key_event_stream) = &*self.key_event_stream.lock().unwrap() {
+            key_event_stream.add(state);
+        }
     }
 }
 
-fn key_state(
-    recoverable_keys: &BTreeMap<AccessStructureRef, Vec<RecoverShare>>,
-    coordinator: &FrostCoordinator,
-) -> api::KeyState {
+fn key_state(coordinator: &FrostCoordinator) -> api::KeyState {
     let keys = coordinator
         .iter_keys()
         .cloned()
         .map(|coord_key| api::FrostKey(RustOpaque::new(coord_key)))
         .collect();
 
-    let recoverable = recoverable_keys
-        .values()
-        .filter_map(|recover_shares| {
-            let first = &recover_shares.first()?.held_share;
-            Some(api::RecoverableKey {
-                name: first.key_name.clone(),
-                threshold: first.threshold,
-                access_structure_ref: first.access_structure_ref,
-                shares_obtained: recover_shares
-                    .iter()
-                    .map(|recover_share| recover_share.held_share.share_image.share_index)
-                    .collect::<BTreeSet<_>>()
-                    .len() as u16,
-            })
+    let restoring = coordinator
+        .restoring()
+        .map(|restoring| {
+            let status = restoring.status();
+            api::RestoringKey {
+                problem: status.problem(),
+                shares_obtained: status.shares,
+                restoration_id: restoring.restoration_id,
+                name: restoring.key_name,
+                threshold: restoring.access_structure.threshold,
+                bitcoin_network: restoring.key_purpose.bitcoin_network().map(From::from),
+            }
         })
         .collect();
-    api::KeyState { keys, recoverable }
+
+    api::KeyState { keys, restoring }
 }

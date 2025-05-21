@@ -111,31 +111,35 @@ Future<bool?> verifyBackup(
   DeviceId deviceId,
   AccessStructureRef accessStructureRef,
 ) async {
-  final shareRestoreStream =
+  final backupEntry =
       coord
-          .checkShareOnDevice(
-            deviceId: deviceId,
-            accessStructureRef: accessStructureRef,
-          )
+          .tellDeviceToEnterPhysicalBackup(deviceId: deviceId)
           .asBroadcastStream();
 
-  final aborted = shareRestoreStream
-      .firstWhere((state) => state.abort != null)
-      .then((state) {
-        if (context.mounted) {
-          showErrorSnackbarBottom(context, state.abort!);
-        }
-        return null;
-      });
+  final aborted = backupEntry.firstWhere((state) => state.abort != null).then((
+    state,
+  ) {
+    if (context.mounted) {
+      showErrorSnackbarBottom(context, state.abort!);
+    }
+    return null;
+  });
 
   final result = await showDeviceActionDialog<bool>(
     context: context,
     complete: aborted,
     builder: (BuildContext context) {
       return StreamBuilder(
-        stream: shareRestoreStream,
+        stream: backupEntry,
         builder: (context, snapshot) {
-          final outcome = snapshot.data?.outcome;
+          final entered = snapshot.data?.entered;
+          final outcome =
+              entered == null
+                  ? null
+                  : coord.checkPhysicalBackup(
+                    accessStructureRef: accessStructureRef,
+                    phase: entered,
+                  );
           return Column(
             children: [
               DialogHeader(child: Text("Enter the backup on the device.")),

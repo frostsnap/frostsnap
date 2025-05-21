@@ -1,13 +1,16 @@
 use frostsnap_comms::CoordinatorSendMessage;
 use frostsnap_core::{
-    coordinator::{ActiveSignSession, CoordinatorSend, RequestDeviceSign},
-    message::{CoordinatorToUserMessage, CoordinatorToUserSigningMessage, EncodedSignature},
+    coordinator::{
+        ActiveSignSession, CoordinatorSend, CoordinatorToUserMessage,
+        CoordinatorToUserSigningMessage, RequestDeviceSign,
+    },
+    message::EncodedSignature,
     DeviceId, KeyId, SignSessionId,
 };
 use std::collections::BTreeSet;
 use tracing::{event, Level};
 
-use crate::{Completion, UiProtocol};
+use crate::{Completion, DeviceMode, UiProtocol};
 
 /// Keeps track of when
 pub struct SigningDispatcher {
@@ -88,16 +91,12 @@ impl SigningDispatcher {
 }
 
 impl UiProtocol for SigningDispatcher {
-    fn process_to_user_message(&mut self, message: CoordinatorToUserMessage) {
+    fn process_to_user_message(&mut self, message: CoordinatorToUserMessage) -> bool {
         if let CoordinatorToUserMessage::Signing(message) = message {
             match message {
                 CoordinatorToUserSigningMessage::GotShare { from, session_id } => {
                     if session_id != self.session_id {
-                        event!(
-                            Level::WARN,
-                            "received signature share from a different signing session"
-                        );
-                        return;
+                        return false;
                     }
                     if self.got_signatures.insert(from) {
                         self.emit_state()
@@ -108,11 +107,7 @@ impl UiProtocol for SigningDispatcher {
                     session_id,
                 } => {
                     if session_id != self.session_id {
-                        event!(
-                            Level::WARN,
-                            "received signatures from a different singing session"
-                        );
-                        return;
+                        return false;
                     }
                     self.finished_signatures = Some(signatures);
                     event!(Level::INFO, "received signatures from all devices");
@@ -120,6 +115,9 @@ impl UiProtocol for SigningDispatcher {
                     self.sink.close();
                 }
             }
+            true
+        } else {
+            false
         }
     }
 
@@ -128,8 +126,11 @@ impl UiProtocol for SigningDispatcher {
         self.emit_state();
     }
 
-    fn connected(&mut self, device_id: DeviceId) {
-        if !self.got_signatures.contains(&device_id) && self.targets.contains(&device_id) {
+    fn connected(&mut self, device_id: DeviceId, state: DeviceMode) {
+        if !self.got_signatures.contains(&device_id)
+            && self.targets.contains(&device_id)
+            && state == DeviceMode::Ready
+        {
             self.connected_but_need_request.insert(device_id);
             self.emit_state();
         }

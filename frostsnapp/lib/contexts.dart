@@ -9,13 +9,11 @@ import 'package:frostsnapp/wallet_list_controller.dart';
 
 class FrostsnapContext extends InheritedWidget {
   final Stream<String> logStream;
-  final BackupManager backupManager;
   final AppCtx appCtx;
 
   const FrostsnapContext({
     Key? key,
     required this.logStream,
-    required this.backupManager,
     required this.appCtx,
     required Widget child,
   }) : super(key: key, child: child);
@@ -29,6 +27,8 @@ class FrostsnapContext extends InheritedWidget {
     // we never change the log stream
     return false;
   }
+
+  BackupManager get backupManager => appCtx.backupManager;
 }
 
 class SuperWalletContext extends InheritedWidget {
@@ -73,9 +73,6 @@ class SuperWalletContext extends InheritedWidget {
 
     final superWallet = appCtx.settings.getSuperWallet(network: bitcoinNetwork);
     final masterAppkey = frostKey.masterAppkey();
-    if (masterAppkey == null) {
-      return null;
-    }
     final wallet = Wallet(superWallet: superWallet, masterAppkey: masterAppkey);
 
     // Get or create tx stream
@@ -103,17 +100,6 @@ class SuperWalletContext extends InheritedWidget {
     }
     final wallet = record.$1;
     final txStream = record.$2;
-    final frostKey = wallet.frostKey();
-
-    if (frostKey != null) {
-      appCtx.backupManager.maybeStartBackupRun(
-        accessStructure:
-            frostKey
-                .accessStructures()
-                .first, // assuming one access structure for now.
-      );
-    }
-
     final backupStream = this.backupStream(keyId);
     final signingSessionSignals = signingSessionSignalStream(keyId);
 
@@ -199,6 +185,8 @@ class KeyContext extends InheritedWidget {
     return coord.getFrostKey(keyId: keyId)!;
   }
 
+  String get name => frostKey().keyName();
+
   @override
   bool updateShouldNotify(KeyContext oldWidget) {
     return false;
@@ -209,14 +197,12 @@ class HomeContext extends InheritedWidget {
   final GlobalKey<ScaffoldState> scaffoldKey;
   final WalletListController walletListController;
   final ConfettiController confettiController;
-  final ValueNotifier<bool> isShowingCreatedWalletDialog;
 
   const HomeContext({
     super.key,
     required this.scaffoldKey,
     required this.walletListController,
     required this.confettiController,
-    required this.isShowingCreatedWalletDialog,
     required Widget child,
   }) : super(child: child);
 
@@ -227,15 +213,13 @@ class HomeContext extends InheritedWidget {
     scaffoldKey: scaffoldKey,
     walletListController: walletListController,
     confettiController: confettiController,
-    isShowingCreatedWalletDialog: isShowingCreatedWalletDialog,
     child: child,
   );
 
-  WalletItem? openNewlyCreatedWallet(KeyId id) {
-    walletListController.selectedId = id;
+  openNewlyCreatedWallet(KeyId id) {
+    walletListController.selectWallet(id);
     scaffoldKey.currentState?.closeDrawer();
     confettiController.play();
-    return walletListController.selected;
   }
 
   @override

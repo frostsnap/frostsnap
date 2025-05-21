@@ -317,7 +317,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     txStateSub = widget.txStates.listen(onTxStateData);
 
     if (widget.isSigning) {
-      devicesSub = deviceListSubject.listen(onDeviceListData);
+      devicesSub = GlobalStreams.deviceListSubject.listen(onDeviceListData);
       broadcastDone = false;
       if (widget.isRestoreSigning) {
         signingSub = coord

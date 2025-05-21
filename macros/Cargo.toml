@@ -1,0 +1,13 @@
+[package]
+name = "frostsnap_macros"
+version = "0.0.1"
+authors = [ "lloyd <lloyd.fourn@gmail.com>" ]
+edition = "2024"
+
+[dependencies]
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = { version = "1.0", features = ["full"] }
+
+[lib]
+proc-macro = true

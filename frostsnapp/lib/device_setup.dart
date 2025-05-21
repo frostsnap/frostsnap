@@ -62,9 +62,9 @@ class _DeviceNameField extends State<DeviceNameField> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      onPopInvokedWithResult: (didPop, result) {
-        if (changed) {
-          coord.sendCancel(id: widget.id);
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) {
+          await coord.sendCancel(id: widget.id);
         }
       },
       child: ConstrainedBox(
@@ -85,7 +85,7 @@ class _DeviceNameField extends State<DeviceNameField> {
                     : "Rename “${widget.existingName}”",
           ),
           onSubmitted: (name) async {
-            final completeWhen = deviceListChangeStream
+            final completeWhen = GlobalStreams.deviceListChangeStream
                 .firstWhere(
                   (change) =>
                       change.kind == DeviceListChangeKind.Named &&
@@ -122,7 +122,6 @@ class _DeviceNameField extends State<DeviceNameField> {
                 );
               },
             );
-
             if (result == null) {
               await coord.sendCancel(id: widget.id);
             }

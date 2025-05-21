@@ -289,6 +289,7 @@ impl UsbSerialManager {
                         Ok(decoded) => {
                             event!(
                                 Level::DEBUG,
+                                from = message.from.to_string(),
                                 port = port_name,
                                 gist = decoded.gist(),
                                 "decoded message"
@@ -328,45 +329,11 @@ impl UsbSerialManager {
                                     }
                                 }
                                 DeviceSendBody::Announce { firmware_digest } => {
-                                    match self.device_ports.insert(
+                                    self.handle_announce(
+                                        &port_name,
                                         message.from,
-                                        DevicePort {
-                                            port: port_name.clone(),
-                                            firmware_digest,
-                                        },
-                                    ) {
-                                        Some(old_port_name) => {
-                                            self.reverse_device_ports
-                                                .entry(old_port_name.port)
-                                                .or_default()
-                                                .retain(|device_id| *device_id != message.from);
-                                        }
-                                        None => device_changes.push(DeviceChange::Connected {
-                                            id: message.from,
-                                            firmware_digest,
-                                            latest_firmware_digest: self.firmware_bin.map(
-                                                |mut firmware_bin| firmware_bin.cached_digest(),
-                                            ),
-                                        }),
-                                    }
-
-                                    self.outbox_sender
-                                        .send(CoordinatorSendMessage {
-                                            message_body: CoordinatorSendBody::AnnounceAck {},
-                                            target_destinations: Destination::from([message.from]),
-                                        })
-                                        .unwrap();
-
-                                    self.reverse_device_ports
-                                        .entry(port_name.clone())
-                                        .or_default()
-                                        .push(message.from);
-
-                                    event!(
-                                        Level::DEBUG,
-                                        port = port_name,
-                                        id = message.from.to_string(),
-                                        "Announced!"
+                                        firmware_digest,
+                                        &mut device_changes,
                                     );
                                 }
                                 DeviceSendBody::Debug { message: _ } => {
@@ -523,6 +490,55 @@ impl UsbSerialManager {
         device_changes
     }
 
+    fn handle_announce(
+        &mut self,
+        port_name: &str,
+        from: DeviceId,
+        firmware_digest: Sha256Digest,
+        device_changes: &mut Vec<DeviceChange>,
+    ) {
+        match self.device_ports.insert(
+            from,
+            DevicePort {
+                port: port_name.to_string(),
+                firmware_digest,
+            },
+        ) {
+            Some(old_port_name) => {
+                self.reverse_device_ports
+                    .entry(old_port_name.port)
+                    .or_default()
+                    .retain(|device_id| *device_id != from);
+            }
+            None => device_changes.push(DeviceChange::Connected {
+                id: from,
+                firmware_digest,
+                latest_firmware_digest: self
+                    .firmware_bin
+                    .map(|mut firmware_bin| firmware_bin.cached_digest()),
+            }),
+        }
+
+        self.outbox_sender
+            .send(CoordinatorSendMessage::to(
+                from,
+                CoordinatorSendBody::AnnounceAck,
+            ))
+            .unwrap();
+
+        self.reverse_device_ports
+            .entry(port_name.to_string())
+            .or_default()
+            .push(from);
+
+        event!(
+            Level::DEBUG,
+            port = port_name,
+            id = from.to_string(),
+            "Announced!"
+        );
+    }
+
     pub fn registered_devices(&self) -> &BTreeSet<DeviceId> {
         &self.registered_devices
     }
@@ -628,6 +644,7 @@ impl UsbSerialManager {
                         return Some(Err(e.into()));
                     }
                 }
+
                 Some(Ok(
                     ((port_index as u32 * n_chunks) + i as u32) as f32 / (total_chunks - 1) as f32
                 ))
@@ -655,21 +672,19 @@ impl UsbSender {
 
     pub fn send_cancel(&self, device_id: DeviceId) {
         self.sender
-            .send(CoordinatorSendMessage {
-                target_destinations: frostsnap_comms::Destination::Particular([device_id].into()),
-                message_body: frostsnap_comms::CoordinatorSendBody::Cancel,
-            })
+            .send(CoordinatorSendMessage::to(
+                device_id,
+                frostsnap_comms::CoordinatorSendBody::Cancel,
+            ))
             .expect("receiver exists");
     }
 
     pub fn update_name_preview(&self, device_id: DeviceId, name: &str) {
         self.sender
-            .send(CoordinatorSendMessage {
-                target_destinations: [device_id].into(),
-                message_body: CoordinatorSendBody::Naming(frostsnap_comms::NameCommand::Preview(
-                    name.into(),
-                )),
-            })
+            .send(CoordinatorSendMessage::to(
+                device_id,
+                CoordinatorSendBody::Naming(frostsnap_comms::NameCommand::Preview(name.into())),
+            ))
             .expect("receiver exists");
     }
 
@@ -681,12 +696,10 @@ impl UsbSender {
             "Named device"
         );
         self.sender
-            .send(CoordinatorSendMessage {
-                target_destinations: [device_id].into(),
-                message_body: CoordinatorSendBody::Naming(frostsnap_comms::NameCommand::Finish(
-                    name.into(),
-                )),
-            })
+            .send(CoordinatorSendMessage::to(
+                device_id,
+                CoordinatorSendBody::Naming(frostsnap_comms::NameCommand::Finish(name.into())),
+            ))
             .expect("receiver exists");
     }
 
@@ -701,11 +714,40 @@ impl UsbSender {
             "Wiping device"
         );
         self.sender
+            .send(CoordinatorSendMessage::to(
+                device_id,
+                CoordinatorSendBody::DataWipe,
+            ))
+            .expect("receiver exists");
+    }
+
+    pub fn wipe_all(&self) {
+        self.sender
             .send(CoordinatorSendMessage {
-                target_destinations: [device_id].into(),
+                target_destinations: Destination::All,
                 message_body: CoordinatorSendBody::DataWipe,
             })
             .expect("receiver exists");
+    }
+
+    pub fn send_from_core(
+        &self,
+        messages: impl IntoIterator<Item = frostsnap_core::coordinator::CoordinatorSend>,
+    ) {
+        for message in messages {
+            match CoordinatorSendMessage::try_from(message) {
+                Ok(m) => {
+                    self.sender.send(m).expect("receiver exists");
+                }
+                Err(e) => {
+                    event!(
+                        Level::WARN,
+                        error = e.to_string(),
+                        "tried to send a non-usb message over usb"
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -782,6 +824,7 @@ impl FirmwareBin {
     pub fn digest(&self) -> Sha256Digest {
         use frostsnap_core::sha2::digest::Digest;
         let mut state = sha2::Sha256::default();
+
         state.update(self.bin);
         let mut len = self.bin.len();
 

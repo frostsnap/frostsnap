@@ -4,9 +4,8 @@ use frostsnap_comms::{CoordinatorSendBody, CoordinatorSendMessage, Destination};
 use frostsnap_core::{
     coordinator::VerifyAddress, message::CoordinatorToDeviceMessage, DeviceId, MasterAppkey,
 };
-use tracing::{event, Level};
 
-use crate::{Completion, Sink, UiProtocol};
+use crate::{Completion, DeviceMode, Sink, UiProtocol};
 
 #[derive(Clone, Debug, Default)]
 pub struct VerifyAddressProtocolState {
@@ -55,8 +54,8 @@ impl UiProtocol for VerifyAddressProtocol {
         self.is_complete.clone()
     }
 
-    fn connected(&mut self, id: frostsnap_core::DeviceId) {
-        if self.state.target_devices.contains(&id) {
+    fn connected(&mut self, id: frostsnap_core::DeviceId, state: DeviceMode) {
+        if self.state.target_devices.contains(&id) && state == DeviceMode::Ready {
             self.need_to_send_to.insert(id);
             self.emit_state()
         }
@@ -66,17 +65,6 @@ impl UiProtocol for VerifyAddressProtocol {
         if self.need_to_send_to.remove(&device_id) {
             self.emit_state()
         };
-    }
-
-    fn process_to_user_message(
-        &mut self,
-        message: frostsnap_core::message::CoordinatorToUserMessage,
-    ) {
-        event!(
-            Level::ERROR,
-            "Unexpected message sent during verifying address {:?}",
-            message
-        );
     }
 
     fn poll(&mut self) -> Vec<CoordinatorSendMessage> {

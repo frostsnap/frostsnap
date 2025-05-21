@@ -435,8 +435,23 @@ where
             .unwrap();
     }
 
-    pub fn ready_screen(&mut self, name: &str) {
+    pub fn ready_screen(&mut self, name: &str, recovery_mode: bool) {
         let mut body = self.body();
+
+        if recovery_mode {
+            Text::with_alignment(
+                "Restoration Mode",
+                Point::new(
+                    (body.size().width / 2) as i32,
+                    (body.size().height / 3) as i32,
+                ),
+                U8g2TextStyle::new(FONT_MED, COLORS.warning),
+                Alignment::Center,
+            )
+            .draw(&mut body)
+            .unwrap();
+        }
+
         Text::with_alignment(
             name,
             Point::new(

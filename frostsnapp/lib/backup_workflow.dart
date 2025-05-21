@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/global.dart';
@@ -186,9 +187,15 @@ class BackupChecklist extends StatelessWidget {
             final completedDevices =
                 allDevices
                     .where(
-                      (deviceId) => backupRun.devices.any(
-                        (d) => deviceIdEquals(d.$1, deviceId) && d.$2 != null,
-                      ),
+                      (deviceId) =>
+                          backupRun.devices.any(
+                            (d) =>
+                                deviceIdEquals(d.$1, deviceId) && d.$2 != null,
+                          ) ||
+                          // if the device is not mentioned in the list assume it's completed
+                          backupRun.devices.none(
+                            (d) => deviceIdEquals(d.$1, deviceId),
+                          ),
                     )
                     .toList();
 

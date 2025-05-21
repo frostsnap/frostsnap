@@ -459,7 +459,7 @@ class _ReceiverPageState extends State<ReceivePage> {
                     );
 
                     return StreamBuilder(
-                      stream: deviceListSubject,
+                      stream: GlobalStreams.deviceListSubject,
                       builder: (context, deviceListSnapshot) {
                         final connectedDevices = deviceIdSet(
                           deviceListSnapshot.data?.state.devices

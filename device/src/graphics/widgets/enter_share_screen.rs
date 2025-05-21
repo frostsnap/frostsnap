@@ -64,6 +64,20 @@ impl EnterShareScreen {
                     } else {
                         self.backup_input_preview.set_input_color(COLORS.primary);
                     }
+
+                    for (magic_string, backup) in [
+                        ("00000", TEST_BACKUP_1),
+                        ("00002", TEST_BACKUP_1A),
+                        ("22220", TEST_BACKUP_2),
+                        ("33330", TEST_BACKUP_3),
+                    ] {
+                        if self.backup_input_preview.get_input() == magic_string {
+                            self.backup_input_preview.clear();
+                            for c in backup {
+                                self.backup_input_preview.add_character(c);
+                            }
+                        }
+                    }
                 }
             }
         } else {
@@ -120,3 +134,33 @@ impl EnterShareScreen {
         self.bech32_keyboard.handle_vertical_drag(prev_y, new_y);
     }
 }
+
+// 2-of-3 test backups that can easily be entered by pressing magic keys
+const TEST_BACKUP_1: [char; 58] = [
+    '6', 'L', '6', '8', 'R', '6', 'E', '7', 'Q', '3', 'H', '8', 'H', '2', 'D', 'F', 'J', 'C', 'X',
+    'Z', 'Q', 'D', 'K', 'Q', '2', 'F', 'Y', 'A', '2', 'J', 'K', 'Y', '2', 'D', 'T', 'T', '7', 'G',
+    'Z', 'G', 'Y', 'A', 'R', 'T', '8', 'Q', '8', 'X', '7', 'S', 'Q', 'Q', '6', '0', 'C', 'Z', 'D',
+    'S',
+];
+
+const TEST_BACKUP_2: [char; 58] = [
+    'Y', 'J', 'X', 'P', 'Z', '3', 'N', 'S', 'V', '8', 'W', 'E', 'A', 'E', 'V', 'S', 'R', '0', 'V',
+    'N', 'C', 'X', '2', 'S', '5', '8', 'K', '3', '8', 'U', '5', 'Q', 'T', '3', 'W', '6', '7', 'S',
+    'S', '3', '3', 'S', 'X', 'R', '9', 'Q', 'H', 'M', 'L', '5', '9', 'S', 'U', 'Y', 'T', 'W', 'C',
+    'Z',
+];
+
+const TEST_BACKUP_3: [char; 58] = [
+    'W', 'Y', '3', 'M', 'P', 'G', 'D', 'Z', 'H', 'A', 'X', 'V', 'Y', 'G', 'T', 'K', '5', 'X', 'N',
+    '9', '0', '7', 'L', 'Q', '7', 'P', '9', 'S', 'Z', 'A', 'E', 'R', 'Z', 'J', 'K', 'N', 'L', '8',
+    'U', '6', 'C', 'V', 'C', 'R', 'U', '4', '2', '8', 'G', 'A', 'T', 'S', '9', 'Q', 'K', 'L', 'N',
+    'E',
+];
+
+// incompatible with the other shares
+const TEST_BACKUP_1A: [char; 58] = [
+    'R', 'R', '0', 'E', 'V', 'E', '0', 'L', 'E', 'K', '6', 'F', 'Z', 'Z', 'M', '5', '9', 'L', 'J',
+    'W', 'Y', 'D', '5', 'W', 'J', 'W', '5', 'S', 'X', '2', '0', 'A', 'V', 'A', 'C', '9', '9', 'Q',
+    '2', '6', 'S', 'J', '7', 'W', 'C', '2', '9', 'V', 'N', 'L', 'D', 'S', 'F', 'W', 'S', 'W', 'G',
+    'Y',
+];

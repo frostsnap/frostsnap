@@ -1,10 +1,11 @@
-use frostsnap_core::device::{DeviceSymmetricKeyGen, KeyPurpose};
+use frostsnap_core::device::{DeviceSymmetricKeyGen, DeviceToUserMessage, KeyPurpose};
 use frostsnap_core::message::{
-    CoordinatorToDeviceMessage, CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage,
-    DeviceSend, DeviceToCoordinatorMessage, DeviceToUserMessage, DoKeyGen,
+    CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, DoKeyGen,
 };
 use frostsnap_core::{
-    coordinator::{CoordinatorSend, FrostCoordinator},
+    coordinator::{
+        CoordinatorSend, CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, FrostCoordinator,
+    },
     device::FrostSigner,
     DeviceId, SymmetricKey,
 };
@@ -127,12 +128,26 @@ pub trait Env {
                     .unwrap();
                 run.extend_from_device(from, sign_ack);
             }
-            DeviceToUserMessage::DisplayBackupRequest { phase } => {
-                let backup_ack = run
-                    .device(from)
-                    .display_backup_ack(*phase, &mut TestDeviceKeyGen)
-                    .unwrap();
-                run.extend_from_device(from, backup_ack);
+            DeviceToUserMessage::Restoration(restoration) => {
+                use frostsnap_core::device::restoration::ToUserRestoration::*;
+                match restoration {
+                    DisplayBackupRequest { phase } => {
+                        let backup_ack = run
+                            .device(from)
+                            .display_backup_ack(*phase, &mut TestDeviceKeyGen)
+                            .unwrap();
+                        run.extend_from_device(from, backup_ack);
+                    }
+                    ConsolidateBackup(phase) => {
+                        let ack = run.device(from).finish_consolidation(
+                            &mut TestDeviceKeyGen,
+                            phase,
+                            rng,
+                        );
+                        run.extend_from_device(from, ack);
+                    }
+                    _ => { /* do nothing */ }
+                };
             }
             DeviceToUserMessage::VerifyAddress { .. } => {
                 // we dont actually confirm on the device
@@ -348,7 +363,7 @@ impl Run {
         let mutations = self.coordinator.take_staged_mutations();
 
         for mutation in mutations {
-            self.start_coordinator.apply_mutation(&mutation);
+            self.start_coordinator.apply_mutation(mutation);
         }
         assert_eq!(
             self.start_coordinator,
@@ -367,7 +382,7 @@ impl Run {
             let start_device = self.start_devices.get_mut(device_id).unwrap();
             *start_device.nonce_slots() = device.nonce_slots().clone();
             for mutation in mutations {
-                start_device.apply_mutation(&mutation);
+                start_device.apply_mutation(mutation);
             }
 
             assert_eq!(

@@ -1,17 +1,18 @@
 use bitcoin::Address;
 use common::{TestDeviceKeyGen, TEST_ENCRYPTION_KEY};
 use frostsnap_core::bitcoin_transaction::{LocalSpk, TransactionTemplate};
-use frostsnap_core::device::KeyPurpose;
-use frostsnap_core::message::{
-    CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, CoordinatorToUserSigningMessage,
-    DeviceToUserMessage, EncodedSignature,
-};
+use frostsnap_core::coordinator::restoration::{PhysicalBackupPhase, RecoverShare};
+use frostsnap_core::device::{self, DeviceToUserMessage, KeyPurpose};
+use frostsnap_core::message::EncodedSignature;
 use frostsnap_core::tweak::BitcoinBip32Path;
 use frostsnap_core::{
-    coordinator::FrostCoordinator, CheckedSignTask, DeviceId, MasterAppkey, SessionHash,
-    WireSignTask,
+    coordinator::{
+        CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, CoordinatorToUserSigningMessage,
+        FrostCoordinator,
+    },
+    CheckedSignTask, DeviceId, MasterAppkey, SessionHash, WireSignTask,
 };
-use frostsnap_core::{KeyId, SignSessionId};
+use frostsnap_core::{EnterPhysicalId, KeyId, RestorationId, SignSessionId};
 use rand::seq::IteratorRandom;
 use rand::RngCore;
 use rand_chacha::rand_core::SeedableRng;
@@ -35,7 +36,7 @@ struct TestEnv {
 
     // backups
     pub backups: BTreeMap<DeviceId, (String, String)>,
-    pub valid_backups_on_coordinator: BTreeSet<DeviceId>,
+    pub physical_backups_entered: Vec<PhysicalBackupPhase>,
 
     // signing
     pub received_signing_shares: BTreeMap<SignSessionId, BTreeSet<DeviceId>>,
@@ -118,21 +119,81 @@ impl common::Env for TestEnv {
                     );
                 }
             },
-            CoordinatorToUserMessage::EnteredKnownBackup {
-                valid, device_id, ..
-            } => {
-                if valid {
-                    self.valid_backups_on_coordinator.insert(device_id);
+            CoordinatorToUserMessage::Restoration(msg) => {
+                use frostsnap_core::coordinator::restoration::ToUserRestoration::*;
+                match msg {
+                    GotHeldShares {
+                        held_by, shares, ..
+                    } => {
+                        // This logic here is just about doing something sensible in the context of a test.
+                        // We start a new restoration if we get a new share but don't already know about it.
+                        for held_share in shares {
+                            let recover_share = RecoverShare {
+                                held_by,
+                                held_share: held_share.clone(),
+                            };
+
+                            match held_share.access_structure_ref {
+                                Some(access_structure_ref)
+                                    if run
+                                        .coordinator
+                                        .get_access_structure(access_structure_ref)
+                                        .is_some() =>
+                                {
+                                    if !run.coordinator.knows_about_share(
+                                        held_by,
+                                        access_structure_ref,
+                                        held_share.share_image.share_index,
+                                    ) {
+                                        run.coordinator
+                                            .recover_share(
+                                                access_structure_ref,
+                                                recover_share.clone(),
+                                                TEST_ENCRYPTION_KEY,
+                                            )
+                                            .unwrap();
+                                    }
+                                }
+                                _ => {
+                                    let existing_restoration =
+                                        run.coordinator.restoring().find(|state| {
+                                            state.access_structure_ref
+                                                == held_share.access_structure_ref
+                                        });
+
+                                    match existing_restoration {
+                                        Some(existing_restoration) => {
+                                            if !existing_restoration
+                                                .access_structure
+                                                .has_got_share_image(
+                                                    recover_share.held_by,
+                                                    recover_share.held_share.share_image,
+                                                )
+                                            {
+                                                run.coordinator
+                                                    .add_recovery_share_to_restoration(
+                                                        existing_restoration.restoration_id,
+                                                        recover_share,
+                                                    )
+                                                    .unwrap();
+                                            }
+                                        }
+                                        None => {
+                                            run.coordinator.start_restoring_key_from_recover_share(
+                                                recover_share,
+                                                RestorationId::new(rng),
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    PhysicalBackupEntered(physical_backup_phase) => {
+                        self.physical_backups_entered.push(*physical_backup_phase);
+                    }
+                    _ => { /* ignored */ }
                 }
-            }
-            CoordinatorToUserMessage::PromptRecoverShare(recover_share) => {
-                run.coordinator
-                    .recover_share_and_maybe_recover_access_structure(
-                        *recover_share,
-                        TEST_ENCRYPTION_KEY,
-                        rng,
-                    )
-                    .unwrap();
             }
         }
     }
@@ -161,26 +222,40 @@ impl common::Env for TestEnv {
                     .unwrap();
                 run.extend_from_device(from, sign_ack);
             }
-            DeviceToUserMessage::DisplayBackupRequest { phase } => {
-                let backup_ack = run
-                    .device(from)
-                    .display_backup_ack(*phase, &mut TestDeviceKeyGen)
-                    .unwrap();
-                run.extend_from_device(from, backup_ack);
-            }
-            DeviceToUserMessage::DisplayBackup { key_name, backup } => {
-                self.backups.insert(from, (key_name, backup));
-            }
-            DeviceToUserMessage::EnterBackup { phase } => {
-                let device = run.device(from);
-                let (_, backup) = self.backups.get(&from).unwrap();
-                let mut secret_share = SecretShare::from_bech32_backup(backup).unwrap();
-                if self.enter_invalid_backup {
-                    secret_share.share += s!(42);
+            DeviceToUserMessage::Restoration(restoration) => {
+                use device::restoration::ToUserRestoration::*;
+                match restoration {
+                    DisplayBackup { key_name, backup } => {
+                        self.backups.insert(from, (key_name, backup));
+                    }
+                    EnterBackup { phase } => {
+                        let device = run.device(from);
+                        let (_, backup) = self.backups.get(&from).unwrap();
+                        let mut secret_share = SecretShare::from_bech32_backup(backup).unwrap();
+                        if self.enter_invalid_backup {
+                            secret_share.share += s!(42);
+                        }
+                        let response =
+                            device.tell_coordinator_about_backup_load_result(phase, secret_share);
+                        run.extend_from_device(from, response);
+                    }
+                    DisplayBackupRequest { phase } => {
+                        let backup_ack = run
+                            .device(from)
+                            .display_backup_ack(*phase, &mut TestDeviceKeyGen)
+                            .unwrap();
+                        run.extend_from_device(from, backup_ack);
+                    }
+                    ConsolidateBackup(phase) => {
+                        let ack = run.device(from).finish_consolidation(
+                            &mut TestDeviceKeyGen,
+                            phase,
+                            rng,
+                        );
+                        run.extend_from_device(from, ack);
+                    }
+                    BackupSaved { .. } => { /* informational */ }
                 }
-                let response =
-                    device.tell_coordinator_about_backup_load_result(*phase, secret_share);
-                run.extend_from_device(from, response);
             }
             DeviceToUserMessage::VerifyAddress {
                 address,
@@ -239,7 +314,7 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
         let task = WireSignTask::Test {
             message: message.into(),
         };
-        let complete_key = key_data.complete_key.as_ref().unwrap();
+        let complete_key = key_data.complete_key.clone();
         let checked_task = task
             .clone()
             .check(complete_key.master_appkey, KeyPurpose::Test)
@@ -377,7 +452,7 @@ fn test_display_backup() {
         .unwrap();
     assert_eq!(
         MasterAppkey::derive_from_rootkey(g!(interpolated_joint_secret * G).normalize()),
-        key_data.complete_key.as_ref().unwrap().master_appkey
+        key_data.complete_key.master_appkey
     );
 }
 
@@ -495,7 +570,7 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
         .unwrap();
     let mut tx_template = TransactionTemplate::new();
 
-    let master_appkey = key_data.complete_key.as_ref().unwrap().master_appkey;
+    let master_appkey = key_data.complete_key.master_appkey;
 
     tx_template.push_imaginary_owned_input(
         LocalSpk {
@@ -562,6 +637,7 @@ fn check_share_for_valid_share_works() {
         KeyPurpose::Test,
     );
     let device_set = run.device_set();
+    let enter_physical_id = EnterPhysicalId::new(&mut test_rng);
 
     let access_structure_ref = run
         .coordinator
@@ -577,15 +653,20 @@ fn check_share_for_valid_share_works() {
             .unwrap();
         run.extend(display_backup);
         run.run_until_finished(&mut env, &mut test_rng).unwrap();
-        let check_share = run
+        let enter_backup = run
             .coordinator
-            .check_share(access_structure_ref, device_id, TEST_ENCRYPTION_KEY)
-            .unwrap();
-        run.extend(check_share);
+            .tell_device_to_load_physical_backup(enter_physical_id, device_id);
+        run.extend(enter_backup);
         run.run_until_finished(&mut env, &mut test_rng).unwrap();
     }
 
-    assert_eq!(env.valid_backups_on_coordinator.len(), n_parties);
+    assert_eq!(env.physical_backups_entered.len(), n_parties);
+
+    for physical_backup in env.physical_backups_entered {
+        run.coordinator
+            .check_physical_backup(access_structure_ref, physical_backup, TEST_ENCRYPTION_KEY)
+            .unwrap();
+    }
 }
 
 #[test]
@@ -604,6 +685,7 @@ fn check_share_for_invalid_share_fails() {
         &mut test_rng,
         KeyPurpose::Test,
     );
+    let enter_physical_id = EnterPhysicalId::new(&mut test_rng);
     let device_set = run.device_set();
 
     let access_structure_ref = run
@@ -620,15 +702,20 @@ fn check_share_for_invalid_share_fails() {
             .unwrap();
         run.extend(display_backup);
         run.run_until_finished(&mut env, &mut test_rng).unwrap();
-        let check_share = run
+        let enter_backup = run
             .coordinator
-            .check_share(access_structure_ref, device_id, TEST_ENCRYPTION_KEY)
-            .unwrap();
-        run.extend(check_share);
+            .tell_device_to_load_physical_backup(enter_physical_id, device_id);
+        run.extend(enter_backup);
         run.run_until_finished(&mut env, &mut test_rng).unwrap();
     }
 
-    assert_eq!(env.valid_backups_on_coordinator.len(), 0);
+    assert_eq!(env.physical_backups_entered.len(), n_parties);
+
+    for physical_backup in env.physical_backups_entered {
+        run.coordinator
+            .check_physical_backup(access_structure_ref, physical_backup, TEST_ENCRYPTION_KEY)
+            .unwrap_err();
+    }
 }
 
 #[test]
@@ -660,6 +747,14 @@ fn restore_a_share_by_connecting_devices_to_a_new_coordinator() {
     }
 
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
+    let restoration = run.coordinator.restoring().next().unwrap();
+    run.coordinator
+        .finish_restoring(
+            restoration.restoration_id,
+            TEST_ENCRYPTION_KEY,
+            &mut test_rng,
+        )
+        .unwrap();
     let restored_access_structure = run
         .coordinator
         .iter_access_structures()
@@ -698,18 +793,13 @@ fn restore_a_share_by_connecting_devices_to_a_new_coordinator() {
 }
 
 #[test]
-fn delete_then_restore_a_share_by_connecting_devices_to_coordinator() {
+fn delete_then_restore_a_key_by_connecting_devices_to_coordinator() {
     let n_parties = 3;
     let threshold = 2;
-    let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
+    let mut rng = ChaCha20Rng::from_seed([42u8; 32]);
     let mut env = TestEnv::default();
-    let mut run = Run::start_after_keygen(
-        n_parties,
-        threshold,
-        &mut env,
-        &mut test_rng,
-        KeyPurpose::Test,
-    );
+    let mut run =
+        Run::start_after_keygen(n_parties, threshold, &mut env, &mut rng, KeyPurpose::Test);
     let device_set = run.device_set();
 
     run.check_mutations();
@@ -724,77 +814,73 @@ fn delete_then_restore_a_share_by_connecting_devices_to_coordinator() {
         None
     );
 
-    let mut recover_next_share = |run: &mut Run, i: usize| {
+    let mut recover_next_share = |run: &mut Run, i: usize, rng: &mut ChaCha20Rng| {
         let device_id = device_set.iter().cloned().skip(i).take(1).next().unwrap();
         let messages = run.coordinator.request_held_shares(device_id);
         run.extend(messages);
-        run.run_until_finished(&mut env, &mut test_rng).unwrap();
+        run.run_until_finished(&mut env, rng).unwrap();
     };
 
-    recover_next_share(&mut run, 0);
+    recover_next_share(&mut run, 0, &mut rng);
     assert!(
         !run.coordinator.staged_mutations().is_empty(),
         "recovering share should mutate something"
     );
     run.check_mutations(); // this clears mutations
 
-    recover_next_share(&mut run, 0);
+    recover_next_share(&mut run, 0, &mut rng);
 
     assert!(
         run.coordinator.staged_mutations().is_empty(),
         "recovering share again should not mutate"
     );
 
-    let coord_key = run
+    let restoration = run
         .coordinator
-        .iter_keys()
+        .restoring()
         .next()
         .expect("one device should be enough to restore the key");
+    let restoration_id = restoration.restoration_id;
 
-    assert_eq!(coord_key.complete_key, None);
-    assert_eq!(coord_key.key_id, access_structure_ref.key_id);
+    assert!(!restoration.access_structure.is_restorable());
+    assert_eq!(restoration.access_structure_ref, Some(access_structure_ref));
 
-    recover_next_share(&mut run, 1);
+    recover_next_share(&mut run, 1, &mut rng);
 
     assert!(
         !run.coordinator.staged_mutations().is_empty(),
         "recovering share should mutate something"
     );
 
-    let restored_access_structure = run
+    let restoration = run
         .coordinator
-        .iter_access_structures()
-        .next()
-        .expect("two devices should have restored the access structure");
+        .get_restoration_state(restoration_id)
+        .unwrap();
 
+    assert!(restoration.access_structure.is_restorable());
+    run.coordinator
+        .finish_restoring(restoration.restoration_id, TEST_ENCRYPTION_KEY, &mut rng)
+        .unwrap();
+
+    assert_eq!(run.coordinator.restoring().count(), 0);
+
+    recover_next_share(&mut run, 2, &mut rng);
+
+    let restored_access_structure = run.coordinator.iter_access_structures().next().unwrap();
     assert_eq!(
-        restored_access_structure.access_structure_ref(),
-        access_structure_ref
+        restored_access_structure, access_structure,
+        "should have fully recovered the access structure now"
     );
-    assert_eq!(
-        restored_access_structure.device_to_share_indicies().len(),
-        2
-    );
-
-    recover_next_share(&mut run, 2);
-
-    let restored_access_structure = run
-        .coordinator
-        .iter_access_structures()
-        .next()
-        .expect("should still be restored");
-
-    assert_eq!(restored_access_structure, access_structure);
 
     run.check_mutations();
 
-    recover_next_share(&mut run, 0);
+    recover_next_share(&mut run, 0, &mut rng);
     assert!(
         run.coordinator.staged_mutations().is_empty(),
         "receiving same shares again should not mutate"
     );
-    recover_next_share(&mut run, 1);
-    recover_next_share(&mut run, 2);
+    recover_next_share(&mut run, 1, &mut rng);
+    recover_next_share(&mut run, 2, &mut rng);
 }
 
 #[test]
