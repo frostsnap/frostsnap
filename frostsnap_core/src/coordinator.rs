@@ -496,17 +496,14 @@ impl FrostCoordinator {
                 keygen_id,
                 ack_session_hash,
             }) => {
-                let wrong_state_err = Error::coordinator_invalid_message(
-                    message_kind,
-                    "received ACK for keygen but this keygen wasn't in WaitingForAcks state",
-                );
-
                 let mut outgoing = vec![];
                 let mut all_acks_received_state = Option::<KeyGenState>::None;
-                let keygen_state = self
-                    .pending_keygens
-                    .get_mut(&keygen_id)
-                    .ok_or(wrong_state_err.clone())?;
+                let keygen_state = self.pending_keygens.get_mut(&keygen_id).ok_or(
+                    Error::coordinator_invalid_message(
+                        message_kind,
+                        "Received KeyGenAck for unknown keygen_id",
+                    ),
+                )?;
 
                 if let KeyGenState::WaitingForAcks {
                     agg_input,
@@ -555,7 +552,10 @@ impl FrostCoordinator {
                         }));
                     }
                 } else {
-                    return Err(wrong_state_err);
+                    return Err(Error::coordinator_invalid_message(
+                        message_kind,
+                        "received ACK for keygen but this keygen wasn't in WaitingForAcks state",
+                    ));
                 }
 
                 if let Some(new_keygen_state) = all_acks_received_state {
