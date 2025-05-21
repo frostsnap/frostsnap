@@ -4,3 +4,4 @@
 tmp/
 target/
 .vscode
+/riscv

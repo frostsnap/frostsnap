@@ -58,3 +58,7 @@ jniLibs
 
 # Used so we can check if we need to re-run bindings regeneration
 binding-rerun.sha256
+
+*.AppImage
+appimage/AppDir/*
+appimage/linuxdeploy

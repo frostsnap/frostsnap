@@ -1,3 +1,5 @@
+import 'fetch.just'
+
 default_board := "v2"
 ordinary_crates := "-p frostsnap_core -p frostsnap_coordinator -p frostsnap_comms -p native -p frostsnap_embedded -p frostsnap_macros"
 
@@ -53,6 +55,12 @@ fix: fix-dart
 
 run +ARGS="": build-device save-image
     just frostsnapp/run {{ARGS}}
+
+fetch-riscv VERSION="2024.09.03-nightly":
+    #!/bin/sh
+    version="riscv32-elf-ubuntu-22.04-gcc-nightly-{{VERSION}}.tar.gz"
+    just fetch https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2024.09.03/$version "$version"
+    tar -zxf "$version" && rm "$version"
 
 check: check-ordinary check-device
 lint: lint-ordinary lint-device lint-app
