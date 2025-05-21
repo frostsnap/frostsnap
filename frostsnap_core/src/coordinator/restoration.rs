@@ -282,7 +282,7 @@ impl FrostCoordinator {
         }]
     }
 
-    /// Check a physical backup loaded by a device that you know belongs to a certain access structure.
+    /// Check a physical backup loaded by a device belongs to a certain access structure.
     pub fn check_physical_backup(
         &self,
         access_structure_ref: AccessStructureRef,
@@ -314,6 +314,23 @@ impl FrostCoordinator {
         }
 
         Ok(share_index)
+    }
+
+    /// Check a physical backup matches what is expected for that device
+    pub fn check_physical_backup_matches_expected(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        phase: PhysicalBackupPhase,
+        device_id: DeviceId,
+        encryption_key: SymmetricKey,
+    ) -> Result<bool, CheckBackupError> {
+        let loaded_index =
+            self.check_physical_backup(access_structure_ref, phase, encryption_key)?;
+        let access_structure = self
+            .get_access_structure(access_structure_ref)
+            .expect("checked access structure exists in check_physical_backup");
+        let expected_index = access_structure.device_to_share_index.get(&device_id);
+        Ok(expected_index.is_some_and(|expected| *expected == loaded_index))
     }
 
     pub fn tell_device_to_save_physical_backup(

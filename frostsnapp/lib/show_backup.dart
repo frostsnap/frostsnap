@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/device.dart';
 import 'package:frostsnapp/device_action.dart';
@@ -133,13 +135,29 @@ Future<bool?> verifyBackup(
         stream: backupEntry,
         builder: (context, snapshot) {
           final entered = snapshot.data?.entered;
-          final outcome =
-              entered == null
-                  ? null
-                  : coord.checkPhysicalBackup(
-                    accessStructureRef: accessStructureRef,
-                    phase: entered,
-                  );
+
+          if (entered != null) {
+            bool isExpected = coord.checkPhysicalBackupIsExpected(
+              accessStructureRef: accessStructureRef,
+              phase: entered,
+              deviceId: deviceId,
+            );
+            bool isValid =
+                isExpected ||
+                coord.checkPhysicalBackup(
+                  accessStructureRef: accessStructureRef,
+                  phase: entered,
+                );
+
+            Future.microtask(() async {
+              if (context.mounted) {
+                await showVerifyBackupResult(context, isExpected, isValid);
+              }
+            });
+            if (context.mounted) {
+              Navigator.of(context).pop();
+            }
+          }
           return Column(
             children: [
               DialogHeader(child: Text("Enter the backup on the device.")),
@@ -147,34 +165,13 @@ Future<bool?> verifyBackup(
                 child: DeviceListWithIcons(
                   iconAssigner: (context, deviceId) {
                     if (deviceIdEquals(deviceId, deviceId)) {
-                      const icon = DevicePrompt(
-                        icon: Icon(Icons.keyboard),
-                        text: "",
+                      return (
+                        null,
+                        DevicePrompt(icon: Icon(Icons.keyboard), text: ""),
                       );
-                      return (null, icon);
-                    } else {
-                      return (null, null);
                     }
+                    return (null, null);
                   },
-                ),
-              ),
-              DialogFooter(
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context, outcome);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: switch (outcome) {
-                      true => Colors.green,
-                      false => Colors.red,
-                      null => null,
-                    },
-                  ),
-                  child: Text(switch (outcome) {
-                    true => "Your backup is valid. Done!",
-                    false => "Your backup is invalid. Display again.",
-                    null => "Cancel",
-                  }),
                 ),
               ),
             ],
@@ -187,7 +184,68 @@ Future<bool?> verifyBackup(
   if (result == null) {
     await coord.cancelProtocol();
   }
+
   return result;
+}
+
+Future<void> showVerifyBackupResult(
+  BuildContext context,
+  bool isExpected,
+  bool isValid,
+) async {
+  IconData icon;
+  String title;
+  String content;
+
+  if (isExpected) {
+    icon = Icons.check_circle_outline;
+    title = "Valid Backup";
+    content =
+        "This backup belongs to this wallet and is associated with this device.";
+  } else if (isValid) {
+    icon = Icons.warning;
+    title = "Valid but Unexpected Backup";
+    content =
+        "This backup is valid and belongs to this wallet, but is associated with a different device to the one you entered it on.";
+  } else {
+    icon = Icons.error;
+    title = "Unrelated Backup";
+    content =
+        "The backup you have entered is not valid for this wallet. This backup belongs to a different wallet.";
+  }
+
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (BuildContext context) {
+      return BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+        child: AlertDialog(
+          title: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Flexible(
+                child: Text(
+                  title,
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+              ),
+              Icon(icon, size: 40),
+            ],
+          ),
+          content: Text(content),
+          actions: [
+            FilledButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text("OK"),
+            ),
+          ],
+        ),
+      );
+    },
+  );
 }
 
 class BackupInstructions extends StatelessWidget {
