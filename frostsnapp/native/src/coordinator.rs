@@ -19,8 +19,9 @@ use frostsnap_coordinator::frostsnap_core::coordinator::{
     CoordAccessStructure, CoordFrostKey, CoordinatorSend, CoordinatorToUserMessage,
 };
 use frostsnap_coordinator::frostsnap_core::device::KeyPurpose;
-use frostsnap_coordinator::frostsnap_core::{self, message::DoKeyGen};
-use frostsnap_coordinator::frostsnap_core::{KeygenId, RestorationId, SignSessionId, SymmetricKey};
+use frostsnap_coordinator::frostsnap_core::{
+    self, message, KeygenId, RestorationId, SignSessionId, SymmetricKey,
+};
 use frostsnap_coordinator::frostsnap_persist::DeviceNames;
 use frostsnap_coordinator::persist::Persisted;
 use frostsnap_coordinator::signing::SigningState;
@@ -375,7 +376,7 @@ impl FfiCoordinator {
             .map(|device| device.id)
             .collect();
 
-        let do_keygen = DoKeyGen::new(
+        let begin_keygen = message::keygen::Begin::new(
             devices,
             threshold,
             key_name,
@@ -387,7 +388,7 @@ impl FfiCoordinator {
             SinkWrap(sink),
             self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
             currently_connected,
-            do_keygen,
+            begin_keygen,
             &mut rand::thread_rng(),
         );
 
@@ -605,7 +606,7 @@ impl FfiCoordinator {
         self.device_names.lock().unwrap().get(id)
     }
 
-    pub fn final_keygen_ack(&self, keygen_id: KeygenId) -> Result<AccessStructureRef> {
+    pub fn finalize_keygen(&self, keygen_id: KeygenId) -> Result<AccessStructureRef> {
         let mut coordinator = self.coordinator.lock().unwrap();
         let mut db = self.db.lock().unwrap();
         let mut ui_stack = self.ui_stack.lock().unwrap();
@@ -613,17 +614,19 @@ impl FfiCoordinator {
             .get_mut::<frostsnap_coordinator::keygen::KeyGen>()
             .ok_or(anyhow!("somehow UI was not in KeyGen state"))?;
 
-        let accs_ref = coordinator.staged_mutate(&mut db, |coordinator| {
-            Ok(coordinator.final_keygen_ack(keygen_id, TEMP_KEY, &mut rand::thread_rng())?)
+        let finalized_keygen = coordinator.staged_mutate(&mut db, |coordinator| {
+            Ok(coordinator.finalize_keygen(keygen_id, TEMP_KEY, &mut rand::thread_rng())?)
         })?;
+        let access_structure_ref = finalized_keygen.access_structure_ref;
 
-        keygen.final_keygen_ack(accs_ref);
+        self.usb_sender.send_from_core(finalized_keygen);
+        keygen.keygen_finalized(access_structure_ref);
 
         if let Some(stream) = &*self.key_event_stream.lock().unwrap() {
             stream.add(key_state(&coordinator));
         }
 
-        Ok(accs_ref)
+        Ok(access_structure_ref)
     }
 
     pub fn get_access_structure(&self, as_ref: AccessStructureRef) -> Option<CoordAccessStructure> {

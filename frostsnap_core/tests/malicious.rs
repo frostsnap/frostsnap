@@ -3,7 +3,7 @@ use common::{DefaultTestEnv, TEST_ENCRYPTION_KEY};
 use frostsnap_core::coordinator::CoordinatorSend;
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::message::{
-    CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, DoKeyGen,
+    keygen, CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, Keygen,
 };
 use frostsnap_core::WireSignTask;
 use rand_chacha::rand_core::SeedableRng;
@@ -25,8 +25,8 @@ fn keygen_maliciously_replace_public_poly() {
 
     let keygen_init = run
         .coordinator
-        .do_keygen(
-            DoKeyGen::new(
+        .begin_keygen(
+            keygen::Begin::new(
                 device_set,
                 1,
                 "test".into(),
@@ -41,7 +41,7 @@ fn keygen_maliciously_replace_public_poly() {
         .into_iter()
         .find_map(|msg| match msg {
             CoordinatorSend::ToDevice {
-                message: dokeygen @ CoordinatorToDeviceMessage::DoKeyGen { .. },
+                message: dokeygen @ CoordinatorToDeviceMessage::KeyGen(Keygen::Begin(_)),
                 ..
             } => Some(dokeygen),
             _ => None,

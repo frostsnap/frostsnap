@@ -177,22 +177,16 @@ where
     }
 
     pub fn button(&mut self) {
+        self.button_with_image(&OpenSelectHandGesture::new(COLORS.primary));
+    }
+
+    pub fn button_with_image<IMG: ImageDrawable<Color = Rgb565>>(&mut self, img: &IMG) {
         let mut body = self.body();
         let y = 20;
         let p = Point::new(body.size().width as i32 / 2, body.size().height as i32 - y);
         let rect = Rectangle::with_center(p, Size::new_equal(40));
 
-        // rect.into_styled(
-        //     PrimitiveStyleBuilder::new()
-        //         .stroke_width(1)
-        //         .stroke_color(Rgb565::CSS_DARK_GRAY)
-        //         .build(),
-        // )
-        // .draw(&mut self.framebuf)
-        // .unwrap();
-
-        let icon = OpenSelectHandGesture::new(COLORS.primary);
-        Image::with_center(&icon, rect.center())
+        Image::with_center(img, rect.center())
             .draw(&mut body)
             .unwrap();
     }
@@ -356,6 +350,12 @@ where
         )
         .draw(&mut body)
         .unwrap();
+    }
+
+    pub fn show_keygen_pending_finalize(&mut self, name: &str, t_of_n: (u16, u16), check: &str) {
+        self.show_keygen_check(name, t_of_n, check);
+        let img = embedded_iconoir::icons::size32px::actions::CheckCircle::new(COLORS.info);
+        self.button_with_image(&img);
     }
 
     pub fn new_device(&mut self) {

@@ -1295,8 +1295,8 @@ impl Coordinator {
         SyncReturn(self.0.get_device_name(id))
     }
 
-    pub fn final_keygen_ack(&self, keygen_id: KeygenId) -> Result<AccessStructureRef> {
-        self.0.final_keygen_ack(keygen_id)
+    pub fn finalize_keygen(&self, keygen_id: KeygenId) -> Result<AccessStructureRef> {
+        self.0.finalize_keygen(keygen_id)
     }
 
     pub fn request_device_sign(
@@ -2382,6 +2382,7 @@ pub struct _KeyGenState {
     pub threshold: usize,
     pub devices: Vec<DeviceId>, // not a set for frb compat
     pub got_shares: Vec<DeviceId>,
+    pub all_shares: bool,
     pub session_acks: Vec<DeviceId>,
     pub all_acks: bool,
     pub session_hash: Option<SessionHash>,

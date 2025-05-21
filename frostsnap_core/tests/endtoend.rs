@@ -87,11 +87,13 @@ impl common::Env for TestEnv {
                             self.coordinator_got_keygen_acks.len(),
                             self.received_keygen_shares.len()
                         );
-                        let access_structure_ref = run
+                        let send_finalize_keygen = run
                             .coordinator
-                            .final_keygen_ack(keygen_id, TEST_ENCRYPTION_KEY, rng)
+                            .finalize_keygen(keygen_id, TEST_ENCRYPTION_KEY, rng)
                             .unwrap();
-                        self.keygen_acks.insert(access_structure_ref.key_id);
+                        self.keygen_acks
+                            .insert(send_finalize_keygen.access_structure_ref.key_id);
+                        run.extend(send_finalize_keygen);
                     }
                 }
             },
@@ -206,6 +208,7 @@ impl common::Env for TestEnv {
         rng: &mut impl RngCore,
     ) {
         match message {
+            DeviceToUserMessage::FinalizeKeyGen => {}
             DeviceToUserMessage::CheckKeyGen { phase, .. } => {
                 self.keygen_checks.insert(from, phase.session_hash());
                 let ack = run

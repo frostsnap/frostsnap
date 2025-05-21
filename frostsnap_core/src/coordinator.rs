@@ -453,10 +453,11 @@ impl FrostCoordinator {
                             let session_hash = SessionHash::from_agg_input(&agg_input);
                             outgoing.push(CoordinatorSend::ToDevice {
                                 destinations: device_to_share_index.keys().cloned().collect(),
-                                message: CoordinatorToDeviceMessage::FinishKeyGen {
+                                message: Keygen::Check {
                                     keygen_id,
                                     agg_input: agg_input.clone(),
-                                },
+                                }
+                                .into(),
                             });
 
                             outgoing.push(CoordinatorSend::ToUser(
@@ -496,52 +497,72 @@ impl FrostCoordinator {
                 ack_session_hash,
             }) => {
                 let mut outgoing = vec![];
-                match self.pending_keygens.get_mut(&keygen_id) {
-                    Some(KeyGenState::WaitingForAcks {
-                        agg_input,
-                        device_to_share_index,
-                        acks,
-                        ..
-                    }) => {
-                        let session_hash = SessionHash::from_agg_input(agg_input);
+                let mut all_acks_received_state = Option::<KeyGenState>::None;
+                let keygen_state = self.pending_keygens.get_mut(&keygen_id).ok_or(
+                    Error::coordinator_invalid_message(
+                        message_kind,
+                        "Received KeyGenAck for unknown keygen_id",
+                    ),
+                )?;
 
-                        if ack_session_hash != session_hash {
-                            return Err(Error::coordinator_invalid_message(
-                                message_kind,
-                                "Device acked wrong keygen session hash",
-                            ));
-                        }
+                if let KeyGenState::WaitingForAcks {
+                    agg_input,
+                    device_to_share_index,
+                    acks,
+                    pending_key_name,
+                    purpose,
+                } = keygen_state
+                {
+                    let session_hash = SessionHash::from_agg_input(agg_input);
 
-                        if !device_to_share_index.contains_key(&from) {
-                            return Err(Error::coordinator_invalid_message(
-                                message_kind,
-                                "Received ack from device not a member of keygen",
-                            ));
-                        }
-
-                        if acks.insert(from) {
-                            let all_acks_received = acks.len() == device_to_share_index.len();
-
-                            outgoing.push(CoordinatorSend::ToUser(
-                                CoordinatorToUserMessage::KeyGen {
-                                    inner: CoordinatorToUserKeyGenMessage::KeyGenAck {
-                                        from,
-                                        all_acks_received,
-                                    },
-                                    keygen_id,
-                                },
-                            ));
-                        }
-
-                        Ok(outgoing)
+                    if ack_session_hash != session_hash {
+                        return Err(Error::coordinator_invalid_message(
+                            message_kind,
+                            "Device acked wrong keygen session hash",
+                        ));
                     }
-                    _ => Err(Error::coordinator_invalid_message(
+
+                    if !device_to_share_index.contains_key(&from) {
+                        return Err(Error::coordinator_invalid_message(
+                            message_kind,
+                            "Received ack from device not a member of keygen",
+                        ));
+                    }
+
+                    if acks.insert(from) {
+                        let all_acks_received = acks.len() == device_to_share_index.len();
+                        if all_acks_received {
+                            let root_shared_key = agg_input
+                                .shared_key()
+                                .non_zero()
+                                .expect("this should have already been checked");
+                            all_acks_received_state = Some(KeyGenState::NeedsFinalize {
+                                root_shared_key,
+                                device_to_share_index: device_to_share_index.clone(),
+                                pending_key_name: pending_key_name.clone(),
+                                purpose: *purpose,
+                            });
+                        }
+                        outgoing.push(CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen {
+                            inner: CoordinatorToUserKeyGenMessage::KeyGenAck {
+                                from,
+                                all_acks_received,
+                            },
+                            keygen_id,
+                        }));
+                    }
+                } else {
+                    return Err(Error::coordinator_invalid_message(
                         message_kind,
                         "received ACK for keygen but this keygen wasn't in WaitingForAcks state",
-                    )),
+                    ));
                 }
-            }
 
+                if let Some(new_keygen_state) = all_acks_received_state {
+                    *keygen_state = new_keygen_state;
+                }
+                Ok(outgoing)
+            }
             DeviceToCoordinatorMessage::SignatureShare {
                 session_id,
                 ref signature_shares,
@@ -630,20 +651,20 @@ impl FrostCoordinator {
         }
     }
 
-    pub fn do_keygen(
+    pub fn begin_keygen(
         &mut self,
-        do_keygen: DoKeyGen,
+        begin_keygen: keygen::Begin,
         rng: &mut impl rand_core::RngCore,
-    ) -> Result<SendDokeygen, ActionError> {
-        let DoKeyGen {
+    ) -> Result<SendBeginKeygen, ActionError> {
+        let keygen::Begin {
             device_to_share_index,
             threshold,
             key_name,
             purpose,
             keygen_id,
-        } = &do_keygen;
+        } = &begin_keygen;
 
-        if self.pending_keygens.contains_key(&do_keygen.keygen_id) {
+        if self.pending_keygens.contains_key(&begin_keygen.keygen_id) {
             return Err(ActionError::StateInconsistent(
                 "keygen with that id already in progress".into(),
             ));
@@ -690,46 +711,36 @@ impl FrostCoordinator {
             },
         );
 
-        Ok(SendDokeygen(do_keygen.clone()))
+        Ok(SendBeginKeygen(begin_keygen.clone()))
     }
 
-    /// This is called when the user has checked every device agrees and finally confirms this with
-    /// the coordinator.
-    pub fn final_keygen_ack(
+    pub fn finalize_keygen(
         &mut self,
         keygen_id: KeygenId,
         encryption_key: SymmetricKey,
         rng: &mut impl rand_core::RngCore,
-    ) -> Result<AccessStructureRef, ActionError> {
-        match self.pending_keygens.get(&keygen_id) {
-            Some(KeyGenState::WaitingForAcks {
+    ) -> Result<SendFinalizeKeygen, ActionError> {
+        match self.pending_keygens.remove(&keygen_id) {
+            // TODO: We need to send something to devices!
+            Some(KeyGenState::NeedsFinalize {
+                root_shared_key,
                 device_to_share_index,
-                agg_input,
-                acks,
                 pending_key_name,
                 purpose,
             }) => {
-                let all_acks = acks.len() == device_to_share_index.len();
-                if all_acks {
-                    let root_shared_key = agg_input
-                        .shared_key()
-                        .non_zero()
-                        .expect("this should have already been checked");
-                    let access_structure_ref = self.mutate_new_key(
-                        pending_key_name.clone(),
-                        root_shared_key,
-                        device_to_share_index.clone(),
-                        encryption_key,
-                        *purpose,
-                        rng,
-                    );
-                    self.pending_keygens.remove(&keygen_id);
-                    Ok(access_structure_ref)
-                } else {
-                    Err(ActionError::StateInconsistent(
-                        "all device acks have not been received yet".into(),
-                    ))
-                }
+                let as_ref = self.mutate_new_key(
+                    pending_key_name,
+                    root_shared_key,
+                    device_to_share_index.clone(),
+                    encryption_key,
+                    purpose,
+                    rng,
+                );
+                Ok(SendFinalizeKeygen {
+                    devices: device_to_share_index.into_keys().collect(),
+                    access_structure_ref: as_ref,
+                    keygen_id,
+                })
             }
             _ => Err(ActionError::StateInconsistent("no such keygen".into())),
         }
@@ -1281,6 +1292,12 @@ pub enum KeyGenState {
         pending_key_name: String,
         purpose: KeyPurpose,
     },
+    NeedsFinalize {
+        root_shared_key: SharedKey,
+        device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
+        pending_key_name: String,
+        purpose: KeyPurpose,
+    },
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
@@ -1524,16 +1541,37 @@ impl IntoIterator for RequestDeviceSign {
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
-pub struct SendDokeygen(pub DoKeyGen);
+pub struct SendBeginKeygen(pub keygen::Begin);
 
-impl IntoIterator for SendDokeygen {
+impl IntoIterator for SendBeginKeygen {
     type Item = CoordinatorSend;
     type IntoIter = core::iter::Once<CoordinatorSend>;
 
     fn into_iter(self) -> Self::IntoIter {
         core::iter::once(CoordinatorSend::ToDevice {
             destinations: self.0.device_to_share_index.keys().cloned().collect(),
-            message: CoordinatorToDeviceMessage::DoKeyGen(self.0),
+            message: self.0.into(),
+        })
+    }
+}
+
+pub struct SendFinalizeKeygen {
+    pub devices: Vec<DeviceId>,
+    pub access_structure_ref: AccessStructureRef,
+    pub keygen_id: KeygenId,
+}
+
+impl IntoIterator for SendFinalizeKeygen {
+    type Item = CoordinatorSend;
+    type IntoIter = core::iter::Once<CoordinatorSend>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        core::iter::once(CoordinatorSend::ToDevice {
+            message: keygen::Keygen::Finalize {
+                keygen_id: self.keygen_id,
+            }
+            .into(),
+            destinations: self.devices.into_iter().collect(),
         })
     }
 }
