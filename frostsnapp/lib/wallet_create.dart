@@ -432,25 +432,6 @@ class WalletCreateController extends ChangeNotifier {
           }
 
           if (state.aborted != null) {
-            await showDialog(
-              context: context,
-              barrierDismissible: false,
-              builder: (context) {
-                return BackdropFilter(
-                  filter: blurFilter,
-                  child: AlertDialog(
-                    title: Text('Failed'),
-                    content: Text(state.aborted ?? ''),
-                    actions: [
-                      FilledButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: Text('Close'),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            );
             await resetKeygenState(_deviceList.devices);
             return false;
           }
