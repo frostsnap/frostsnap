@@ -2,28 +2,39 @@ use alloc::vec::Vec;
 use esp_hal::peripherals::DS;
 use frostsnap_comms::factory::pad_message_for_rsa;
 use frostsnap_comms::factory::ETS_DS_MAX_BITS;
-use num_bigint::BigUint;
 use sha2::Digest;
 
-pub fn sign_like_test_vectors(ds: DS, encrypted_params: Vec<u8>, challenge: Vec<u8>) -> Vec<u8> {
-    // note: it is probably possible to do these padding
-    // and endianess operations without BigUint
-    let message_int = BigUint::from_bytes_le(&challenge);
-    let mask = (BigUint::from(1u32) << ETS_DS_MAX_BITS) - BigUint::from(1u32);
-    let masked_message = message_int & mask;
-    let challenge_be = masked_message.to_bytes_be();
-    let sig = ds_sign(ds, encrypted_params, challenge_be);
+pub fn sign_like_test_vectors(ds: DS, encrypted_params: Vec<u8>, challenge: Vec<u8>) -> [u32; 96] {
+    let challenge_be: [u8; 384] = challenge.try_into().unwrap();
+    let sig = private_exponentiation(ds, encrypted_params, challenge_be);
     sig
 }
 
-pub fn standard_rsa_sign(ds: DS, encrypted_params: Vec<u8>, message: Vec<u8>) -> Vec<u8> {
+pub fn standard_rsa_sign(ds: DS, encrypted_params: Vec<u8>, message: &[u8]) -> [u32; 96] {
+    // Calculate message digest and apply padding
     let message_digest = sha2::Sha256::digest(message);
-    let padded_message = pad_message_for_rsa(&message_digest);
-    let sig_raw = ds_sign(ds, encrypted_params, padded_message);
-    sig_raw
+    let mut padded_message = pad_message_for_rsa(&message_digest);
+    let sig = private_exponentiation(ds, encrypted_params, padded_message);
+    sig
 }
 
-pub fn ds_sign(ds: DS, encrypted_params: Vec<u8>, challenge: Vec<u8>) -> Vec<u8> {
+pub fn ds_words_to_bytes(words: &[u32; 96]) -> [u8; 384] {
+    let mut result = [0u8; 384];
+    for (i, &word) in words.iter().rev().enumerate() {
+        let bytes = word.to_be_bytes();
+        let start = i * 4;
+        result[start..start + 4].copy_from_slice(&bytes);
+    }
+    result
+}
+
+pub fn private_exponentiation(
+    ds: DS,
+    encrypted_params: Vec<u8>,
+    mut challenge: [u8; 384],
+) -> [u32; 96] {
+    challenge.reverse();
+
     let iv = &encrypted_params[..16];
     let ciph = &encrypted_params[16..];
     let y_ciph = &ciph[0..384];
@@ -76,14 +87,12 @@ pub fn ds_sign(ds: DS, encrypted_params: Vec<u8>, challenge: Vec<u8>) -> Vec<u8>
 
     ds.set_continue().write(|w| w.set_continue().set_bit());
     while ds.query_busy().read().query_busy().bit_is_set() {}
-    let mut sig = Vec::new();
+
+    let mut sig = [0u32; 96];
     if ds.query_check().read().bits() == 0 {
-        // read each 32-bit word and convert to bytes
         for i in 0..(ETS_DS_MAX_BITS / 32) {
             let word = ds.z_mem(i).read().bits();
-
-            // convert u32 to bytes and extend our vector
-            sig.extend_from_slice(&word.to_be_bytes());
+            sig[i] = word;
         }
     } else {
         panic!("Failed to read signature from DS!")
