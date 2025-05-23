@@ -2,7 +2,8 @@ use aes::cipher::BlockEncryptMut as _;
 use clap::Parser;
 use core::fmt;
 use frostsnap_comms::factory::{
-    pad_message_for_rsa, DeviceFactorySend, Esp32DsKey, FactoryDownstream, FactorySend, GenuineCheckKey, ETS_DS_MAX_BITS, REPRODUCING_TEST_VECTORS
+    pad_message_for_rsa, DeviceFactorySend, Esp32DsKey, FactoryDownstream, FactorySend,
+    GenuineCheckKey, ETS_DS_MAX_BITS, REPRODUCING_TEST_VECTORS,
 };
 use frostsnap_comms::{ReceiveSerial, MAGIC_BYTES_PERIOD};
 use frostsnap_coordinator::{DesktopSerial, FramedSerialPort, Serial};
@@ -142,12 +143,11 @@ fn main() -> ! {
                         if let Some(ReceiveSerial::Message(DeviceFactorySend::InitEntropyOk)) =
                             connection.port.try_read_message().unwrap()
                         {
-                            let ds_key = if REPRODUCING_TEST_VECTORS {
+                            if REPRODUCING_TEST_VECTORS {
                                 ds_key_tests()
-                            } else {
-                                generate_ds_key() 
-                            };
-                   
+                            }
+
+                            let ds_key = generate_ds_key();
                             connection
                                 .port
                                 .raw_send(ReceiveSerial::Message(FactorySend::SetEsp32DsKey(
@@ -170,21 +170,17 @@ fn main() -> ! {
                             let priv_key = RsaPrivateKey::from_pkcs8_der(&rsa_pcks8).unwrap();
                             let pub_key = priv_key.to_public_key();
 
-                            dbg!(&hex::encode(&signature));
-                            
-                            let challenge = frostsnap_core::hex::decode(DS_CHALLENGE).unwrap();
-                            let message_digest = sha2::Sha256::digest(challenge);
+                            // same challenge as before..
+                            let challenge = hex::decode(DS_CHALLENGE).unwrap();
+                            let message_digest: [u8; 32] = sha2::Sha256::digest(challenge).into();
+
                             let padding = rsa::Pkcs1v15Sign::new::<Sha256>();
+                            let _ = pub_key
+                                .verify(padding, &message_digest, &signature)
+                                .expect("Signature from device failed to verify!");
 
+                            println!("Device RSA signature verifcation succeeded!");
 
-                            // HERE
-                            // For some reason the signature is invalid when created by the DS signer preripheral modular exponentiation.
-                            // Trying to get it to match what we have here in ds_key_tests
-                            let _ =
-                                pub_key.verify(padding, &message_digest, &signature).expect("DS signature verification failed.\nThis signature fails under normal ESP32 signing.\nI think we need to do a modified ds.rs for raw exponent sign for a standard rsa signature.");
-                            
-                            
-                            println!("RSA signature verifcation succeeded!");
                             // create genuine certificate
                             let genuine_certificate = generate_genuine_key();
                             connection
@@ -210,21 +206,56 @@ fn main() -> ! {
     }
 }
 
-fn raw_exponent_rsa_sign(padded_int: BigUint, private_key: &RsaPrivateKey) -> BigUint {
-    let d = BigUint::from_bytes_be(&private_key.d().to_bytes_be());
-    let n = BigUint::from_bytes_be(&private_key.n().to_bytes_be());
-    let signature_int = padded_int.modpow(&d, &n);
-
-    signature_int
+pub fn sign_like_test_vectors(priv_key: &RsaPrivateKey, challenge: &Vec<u8>) -> Vec<u8> {
+    let sig = raw_exponent_rsa_sign(challenge.clone(), priv_key);
+    sig
 }
 
-fn esp_32_test_vec_sign(message: &[u8], private_key: &RsaPrivateKey) -> BigUint {
-    let message_int = BigUint::from_bytes_be(message);
-
-    let mask = (BigUint::from(1u32) << ETS_DS_MAX_BITS) - BigUint::from(1u32);
-    let masked_message = message_int & mask;
-    let sig = raw_exponent_rsa_sign(masked_message, private_key);
+pub fn standard_rsa_sign(priv_key: &RsaPrivateKey, message: &[u8]) -> Vec<u8> {
+    let message_digest: [u8; 32] = sha2::Sha256::digest(message).into();
+    let padded_message = pad_message_for_rsa(&message_digest);
+    let sig = raw_exponent_rsa_sign(padded_message.into(), &priv_key);
     sig
+}
+
+fn raw_exponent_rsa_sign(padded_int: Vec<u8>, private_key: &RsaPrivateKey) -> Vec<u8> {
+    let d = BigUint::from_bytes_be(&private_key.d().to_bytes_be());
+    let n = BigUint::from_bytes_be(&private_key.n().to_bytes_be());
+    let challenge_uint = BigUint::from_bytes_be(&padded_int);
+    let signature_int = challenge_uint.modpow(&d, &n);
+
+    signature_int.to_bytes_be()
+}
+
+fn ds_key_tests() {
+    let rsa_pcks8 = hex::decode(&TESTING_RSA_KEY).unwrap();
+    let priv_key = RsaPrivateKey::from_pkcs8_der(&rsa_pcks8).unwrap();
+    let pub_key = RsaPublicKey::from(&priv_key);
+
+    // SIGNING TESTS
+    let message = hex::decode(DS_CHALLENGE).unwrap();
+
+    // // Reproduce ESP32 Test Vectors
+    let sig = sign_like_test_vectors(&priv_key, &message);
+
+    // Print out in format of esp-idf
+    let sig_vec = big_number_to_words(&BigUint::from_bytes_be(&sig));
+    let sig_arr = vec_to_fixed(&sig_vec, DS_MAX_WORDS);
+    println!("Signature (esp32 test vector format):");
+    for &word in &sig_arr {
+        print!("0x{:08x}, ", word);
+    }
+
+    println!("\n\n");
+
+    // Normal RSA signing
+    let sig = standard_rsa_sign(&priv_key, &message);
+
+    // Verify
+    let padding = rsa::Pkcs1v15Sign::new::<Sha256>();
+    let message_digest: [u8; 32] = sha2::Sha256::digest(message).into();
+    let verified = pub_key.verify(padding, &message_digest, &sig).is_ok();
+    println!("Standard signature verification: {}", verified);
 }
 
 fn generate_genuine_key() -> GenuineCheckKey {
@@ -264,84 +295,10 @@ fn generate_ds_key() -> Esp32DsKey {
     ];
 
     let plaintext_data = EspDsPData::new(&priv_key).unwrap();
-
     let encrypted_params =
         encrypt_private_key_material(&plaintext_data, &aes_key[..], &iv[..]).unwrap();
 
-    let challenge = frostsnap_core::hex::decode(DS_CHALLENGE).unwrap();
-
-    Esp32DsKey {
-        encrypted_params,
-        hmac_key,
-        challenge,
-    }
-}
-
-fn ds_key_tests() -> Esp32DsKey {
-    let rsa_pcks8 = hex::decode(&TESTING_RSA_KEY).unwrap();
-    let priv_key = RsaPrivateKey::from_pkcs8_der(&rsa_pcks8).unwrap();
-
-    println!("{:?}", priv_key);
-    let pub_key = RsaPublicKey::from(&priv_key);
-    // println!(
-    //     "{}",
-    //     pub_key.to_public_key_pem(LineEnding::default()).unwrap()
-    // );
-    let hmac_key = TESTING_KEY;
-
-    type HmacSha256 = Hmac<Sha256>;
-
-    let mut mac = HmacSha256::new_from_slice(&hmac_key[..]).expect("HMAC can take key of any size");
-    mac.update([0xffu8; 32].as_slice());
-    let aes_key: [u8; 32] = mac.finalize().into_bytes().into();
-    let iv = [
-        0xb8, 0xb4, 0x69, 0x18, 0x28, 0xa3, 0x91, 0xd9, 0xd6, 0x62, 0x85, 0x8c, 0xc9, 0x79, 0x48,
-        0x86,
-    ];
-
-    // SIGNING TESTS
-    let message = hex::decode(DS_CHALLENGE).unwrap();
-
-    // // Reproduce ESP32 Test Vectors
-    let sig = esp_32_test_vec_sign(&message, &priv_key);
-    let sig_vec = big_number_to_words(&sig);
-    let sig_arr = vec_to_fixed(&sig_vec, DS_MAX_WORDS);
-    println!("Signature (esp32 test vector format):");
-    for &word in &sig_arr {
-        print!("0x{:08x}, ", word);
-    }
-    println!("\n");
-
-    println!(
-        "Signature hex big endian:\n{}\n",
-        hex::encode(&sig.to_bytes_be())
-    );
-
-    // Normal RSA signing
-    let message_digest = sha2::Sha256::digest(message);
-    let padded_message = pad_message_for_rsa(&message_digest);
-    let sig = raw_exponent_rsa_sign(BigUint::from_bytes_be(&padded_message), &priv_key);
-    let standard_signature = sig.to_bytes_be();
-    println!(
-        "Standard-compliant signature (hex):\n{}",
-        hex::encode(&standard_signature)
-    );
-
-    // Verify
-    let padding = rsa::Pkcs1v15Sign::new::<Sha256>();
-    let verified = pub_key
-        .verify(padding, &message_digest, &standard_signature)
-        .is_ok();
-    println!("Standard signature verification: {}", verified);
-
-    // FINISH SIGNING TESTS
-
-    let plaintext_data = EspDsPData::new(&priv_key).unwrap();
-
-    let encrypted_params =
-        encrypt_private_key_material(&plaintext_data, &aes_key[..], &iv[..]).unwrap();
-
-    let challenge = frostsnap_core::hex::decode(DS_CHALLENGE).unwrap();
+    let challenge = hex::decode(DS_CHALLENGE).unwrap();
 
     Esp32DsKey {
         encrypted_params,
