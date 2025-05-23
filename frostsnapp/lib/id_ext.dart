@@ -1,8 +1,6 @@
-import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
-
 import 'dart:collection';
 import 'package:flutter/foundation.dart';
-import 'package:frostsnapp/bridge_definitions.dart';
+import 'package:frostsnapp/src/rust/api.dart';
 
 HashSet<DeviceId> deviceIdSet(Iterable<DeviceId> devices) {
   final set = HashSet<DeviceId>(
@@ -12,6 +10,11 @@ HashSet<DeviceId> deviceIdSet(Iterable<DeviceId> devices) {
   set.addAll(devices);
   return set;
 }
+
+Map<DeviceId, T> deviceIdMap<T>() => HashMap<DeviceId, T>(
+  equals: deviceIdEquals,
+  hashCode: (a) => Object.hashAll(a.field0),
+);
 
 Map<KeyId, T> keyIdMap<T>() {
   final map = HashMap<KeyId, T>(

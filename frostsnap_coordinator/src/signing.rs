@@ -112,7 +112,6 @@ impl UiProtocol for SigningDispatcher {
                     self.finished_signatures = Some(signatures);
                     event!(Level::INFO, "received signatures from all devices");
                     self.emit_state();
-                    self.sink.close();
                 }
             }
             true

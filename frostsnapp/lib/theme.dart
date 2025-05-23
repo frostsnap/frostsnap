@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 final monospaceTextStyle = GoogleFonts.notoSansMono();
-final blurFilter = ImageFilter.blur(sigmaX: 2.1, sigmaY: 2.1);
+final blurFilter = ImageFilter.blur(sigmaX: 21, sigmaY: 21);
 const seedColor = Color(0xFF1595B2);
 
 Color tintSurfaceContainer(
@@ -81,16 +81,12 @@ Future<T?> showBottomSheetOrDialog<T>(
             showDragHandle: false,
             builder: (context) => column,
           );
-  return result.then<T?>(
-    (r) {
-      scrollController.dispose();
-      return r;
-    },
-    onError: (r) {
-      scrollController.dispose();
-      return r;
-    },
-  );
+
+  // FIXME: Actually this is not quite right since showDialog returns before the
+  // route has been disposed in the lifecycle according to ChatGPT. The solution
+  // is to make a stateful widget that handles this.
+  result.whenComplete(scrollController.dispose);
+  return result;
 }
 
 String spacedHex(String input, {int groupSize = 4, int? groupsPerLine}) {

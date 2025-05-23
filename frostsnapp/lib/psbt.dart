@@ -11,9 +11,13 @@ import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/sign_message.dart';
 import 'package:frostsnapp/snackbar.dart';
+import 'package:frostsnapp/src/rust/api.dart';
+import 'package:frostsnapp/src/rust/api/qr.dart';
+import 'package:frostsnapp/src/rust/api/signing.dart';
+import 'package:frostsnapp/src/rust/api/super_wallet.dart';
+import 'package:frostsnapp/src/rust/api/bitcoin.dart';
 import 'package:frostsnapp/wallet.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
-import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class LoadPsbtPage extends StatefulWidget {
   final Wallet wallet;
@@ -149,8 +153,8 @@ Future<void> runPsbtSigningWorkflow(
   final UnsignedTx unsignedTx;
 
   try {
-    psbt = api.psbtBytesToPsbt(psbtBytes: psbtBytes);
-    unsignedTx = wallet.superWallet.psbtToUnsignedTx(
+    psbt = Psbt.deserialize(bytes: psbtBytes);
+    unsignedTx = await wallet.superWallet.psbtToUnsignedTx(
       psbt: psbt,
       masterAppkey: wallet.masterAppkey,
     );
@@ -224,7 +228,7 @@ Future<void> saveOrBroadcastSignedPsbtDialog(
           await showDialog(
             context: context,
             builder: (BuildContext context) {
-              return AnimatedQr(input: psbt.toBytes());
+              return AnimatedQr(input: psbt.serialize());
             },
           );
         },
@@ -242,7 +246,7 @@ Future<void> saveOrBroadcastSignedPsbtDialog(
             // user canceled the picker
           } else {
             final newFile = File(outputFile);
-            final psbtBytes = psbt.toBytes();
+            final psbtBytes = psbt.serialize();
             await newFile.writeAsBytes(psbtBytes);
           }
         },
@@ -273,7 +277,7 @@ Future<void> saveOrBroadcastSignedPsbtDialog(
                       ClipboardData(
                         text:
                             psbt
-                                .toBytes()
+                                .serialize()
                                 .map(
                                   (byte) =>
                                       byte.toRadixString(16).padLeft(2, '0'),
@@ -324,7 +328,7 @@ Future<void> savePsbt(BuildContext context, Psbt psbt) async {
     final file = File(outputFile);
 
     // Convert your PSBT object to bytes (assuming psbt.toBytes() returns Uint8List)
-    final psbtBytes = psbt.toBytes();
+    final psbtBytes = psbt.serialize();
 
     // Write the bytes to the selected file
     await file.writeAsBytes(psbtBytes);
@@ -356,14 +360,15 @@ class _AnimatedQrState extends State<AnimatedQr> {
   }
 
   Future<void> _initQrEncoder() async {
-    _qrEncoder = await api.newQrEncoder(bytes: widget.input);
-    _updateQr();
+    _qrEncoder = QrEncoder(bytes: widget.input);
+    await _updateQr();
   }
 
-  void _updateQr() {
+  Future<void> _updateQr() async {
     if (mounted) {
+      final next = await _qrEncoder.next();
       setState(() {
-        currentQrData = _qrEncoder.next();
+        currentQrData = next;
       });
       Future.delayed(Duration(milliseconds: 100), _updateQr);
     }

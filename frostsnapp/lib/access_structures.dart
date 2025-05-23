@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/bridge_definitions.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/restoration.dart';
+import 'package:frostsnapp/src/rust/api.dart';
+import 'package:frostsnapp/src/rust/api/coordinator.dart';
 
 class AccessStructureListWidget extends StatelessWidget {
   final List<AccessStructure> accessStructures;

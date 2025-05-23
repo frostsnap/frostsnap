@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/bridge_definitions.dart';
 import 'package:frostsnapp/contexts.dart';
+import 'package:frostsnapp/src/rust/api/super_wallet.dart';
 import 'package:frostsnapp/theme.dart';
 import 'package:frostsnapp/wallet_receive.dart';
 
@@ -177,7 +177,7 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
 
 class SearchResult {
   final int depth;
-  final Address? address;
+  final AddressInfo? address;
 
   const SearchResult({required this.depth, required this.address});
 }

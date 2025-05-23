@@ -86,6 +86,7 @@ where
         let mut signer = FrostSigner::new(header.device_keypair(), nonce_slots);
 
         let mut name = None;
+
         for change in mutation_log.seek_iter() {
             match change {
                 Ok(change) => match change {
@@ -138,7 +139,6 @@ where
         let mut conch_is_downstream = false;
 
         ui.clear_busy_task();
-
         loop {
             let mut has_conch = false;
             if soft_reset {
@@ -151,6 +151,7 @@ where
                 upstream_connection.set_state(UpstreamConnectionState::PowerOn, &mut ui);
                 next_write_magic_bytes_downstream = Instant::from_ticks(0);
                 upgrade = None;
+                ui.set_device_name(name.clone());
                 outbox.clear();
                 ui.cancel();
             }
@@ -388,6 +389,9 @@ where
                         CoordinatorSendBody::Cancel => {
                             signer.clear_tmp_data();
                             ui.cancel();
+                            // This either resets to the previous name, or clears it (if prev name does
+                            // not exist).
+                            ui.set_device_name(name.clone());
                             upgrade = None;
                         }
                         CoordinatorSendBody::AnnounceAck => {
@@ -398,12 +402,9 @@ where
                         }
                         CoordinatorSendBody::Naming(naming) => match naming {
                             frostsnap_comms::NameCommand::Preview(preview_name) => {
-                                ui.set_workflow(ui::Workflow::NamingDevice {
-                                    old_name: name.clone(),
-                                    new_name: preview_name.clone(),
-                                });
+                                ui.set_device_name(Some(preview_name));
                             }
-                            frostsnap_comms::NameCommand::Finish(new_name) => {
+                            frostsnap_comms::NameCommand::Prompt(new_name) => {
                                 ui.set_workflow(ui::Workflow::prompt(ui::Prompt::NewName {
                                     old_name: name.clone(),
                                     new_name: new_name.clone(),
@@ -475,6 +476,18 @@ where
                         DeviceSend::ToUser(boxed) => {
                             match *boxed {
                                 DeviceToUserMessage::FinalizeKeyGen => {
+                                    let new_name = ui
+                                        .get_device_name()
+                                        .expect("must have set name before starting keygen")
+                                        .to_string();
+                                    // Save the device's name now that it's finished
+                                    name = Some(new_name.clone());
+                                    mutation_log
+                                        .push(Mutation::Name(new_name.clone()))
+                                        .expect("flash write fail");
+                                    upstream_connection.send_to_coordinator([
+                                        DeviceSendBody::SetName { name: new_name },
+                                    ]);
                                     ui.clear_busy_task();
                                     ui.clear_workflow();
                                 }

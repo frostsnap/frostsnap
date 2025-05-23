@@ -6,7 +6,8 @@ import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/show_backup.dart';
-import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
+import 'package:frostsnapp/src/rust/api.dart';
+import 'package:frostsnapp/src/rust/api/coordinator.dart';
 
 class BackupChecklist extends StatelessWidget {
   final ScrollController? scrollController;

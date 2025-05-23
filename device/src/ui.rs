@@ -20,9 +20,9 @@ pub trait UserInteraction {
     fn set_downstream_connection_state(&mut self, state: crate::DownstreamConnectionState);
     fn set_upstream_connection_state(&mut self, state: crate::UpstreamConnectionState);
 
-    fn set_device_name(&mut self, name: String);
+    fn set_device_name(&mut self, name: Option<impl Into<String>>);
 
-    fn get_device_label(&self) -> Option<&str>;
+    fn get_device_name(&self) -> Option<&str>;
 
     fn set_workflow(&mut self, workflow: Workflow);
 
