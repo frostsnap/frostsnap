@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:frostsnapp/device.dart';
 import 'package:frostsnapp/device_settings.dart';
 import 'package:frostsnapp/device_setup.dart';
-import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
+import 'package:frostsnapp/src/rust/api.dart';
+import 'package:frostsnapp/src/rust/api/device_list.dart';
 import 'global.dart';
 
 typedef RemovedDeviceBuilder =
@@ -58,14 +59,14 @@ class _DeviceListState extends State<DeviceList> {
       } else {
         for (final change in update.changes) {
           switch (change.kind) {
-            case DeviceListChangeKind.Added:
+            case DeviceListChangeKind.added:
               {
                 deviceListKey.currentState!.insertItem(
                   change.index,
                   duration: const Duration(milliseconds: 800),
                 );
               }
-            case DeviceListChangeKind.Removed:
+            case DeviceListChangeKind.removed:
               {
                 deviceListKey.currentState!.removeItem(change.index, (
                   BuildContext context,

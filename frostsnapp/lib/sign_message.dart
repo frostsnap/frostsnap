@@ -8,8 +8,10 @@ import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/settings.dart';
+import 'package:frostsnapp/src/rust/api.dart';
+import 'package:frostsnapp/src/rust/api/coordinator.dart';
+import 'package:frostsnapp/src/rust/api/signing.dart';
 import 'package:frostsnapp/stream_ext.dart';
-import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'hex.dart';
 
 class SignMessagePage extends StatelessWidget {

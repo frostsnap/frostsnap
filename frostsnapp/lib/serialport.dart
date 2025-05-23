@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:frostsnapp/src/rust/api/port.dart';
 import 'package:usb_serial/usb_serial.dart';
 import 'package:collection/collection.dart';
-import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class HostPortHandler {
   Map<String, SerialPort> openPorts = {};
@@ -22,7 +22,7 @@ class HostPortHandler {
       debugPrint("Scanning devices because of new USB event");
       scanDevices();
     });
-    subscription = api.subPortEvents().listen((event) async {
+    subscription = subPortEvents().listen((event) async {
       switch (event) {
         case PortEvent_Open(:final request):
           {

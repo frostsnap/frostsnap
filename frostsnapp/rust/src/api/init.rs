@@ -1,0 +1,91 @@
+use super::{
+    backup_manager::BackupManager, coordinator::Coordinator, log::LogLevel, port::FfiSerial,
+    settings::Settings,
+};
+use crate::{
+    coordinator::FfiCoordinator,
+    frb_generated::{RustAutoOpaque, StreamSink},
+};
+use anyhow::{Context as _, Result};
+use frostsnap_coordinator::{DesktopSerial, UsbSerialManager};
+use std::{
+    path::PathBuf,
+    str::FromStr,
+    sync::{Arc, Mutex},
+};
+use tracing::{event, Level};
+use tracing_subscriber::layer::SubscriberExt as _;
+
+impl super::Api {
+    pub fn turn_logging_on(&self, level: LogLevel, log_stream: StreamSink<String>) -> Result<()> {
+        // Global default subscriber must only be set once.
+        if crate::logger::set_dart_logger(log_stream) {
+            let subscriber = tracing_subscriber::fmt()
+                .with_max_level(tracing::Level::from(level))
+                .without_time()
+                .pretty()
+                .finish()
+                .with(crate::logger::dart_logger());
+            let _ = tracing::subscriber::set_global_default(subscriber);
+        }
+        event!(Level::INFO, "logging to stderr and Dart logger");
+
+        Ok(())
+    }
+
+    pub fn load_host_handles_serial(
+        &self,
+        app_dir: String,
+    ) -> Result<(Coordinator, AppCtx, FfiSerial)> {
+        let app_dir = PathBuf::from_str(&app_dir)?;
+        let ffi_serial = FfiSerial::default();
+        let usb_manager = UsbSerialManager::new(Box::new(ffi_serial.clone()), crate::FIRMWARE);
+        let (coord, app_state) = _load(app_dir, usb_manager)?;
+        Ok((coord, app_state, ffi_serial))
+    }
+
+    pub fn load(&self, app_dir: String) -> anyhow::Result<(Coordinator, AppCtx)> {
+        let app_dir = PathBuf::from_str(&app_dir)?;
+        let usb_manager = UsbSerialManager::new(Box::new(DesktopSerial), crate::FIRMWARE);
+        _load(app_dir, usb_manager)
+    }
+}
+
+fn _load(app_dir: PathBuf, usb_serial_manager: UsbSerialManager) -> Result<(Coordinator, AppCtx)> {
+    let db_file = app_dir.join("frostsnap.sqlite");
+    event!(
+        Level::INFO,
+        path = db_file.display().to_string(),
+        "initializing database"
+    );
+    let db = rusqlite::Connection::open(&db_file).with_context(|| {
+        event!(
+            Level::ERROR,
+            path = db_file.display().to_string(),
+            "failed to load database"
+        );
+        format!("failed to load database from {}", db_file.display())
+    })?;
+    let db = Arc::new(Mutex::new(db));
+
+    let coordinator = FfiCoordinator::new(db.clone(), usb_serial_manager)?;
+    let coordinator = Coordinator(coordinator);
+    let app_state = AppCtx {
+        settings: RustAutoOpaque::new(Settings::new(db.clone(), app_dir)?),
+        backup_manager: RustAutoOpaque::new(BackupManager::new(db.clone())?),
+    };
+    println!("loaded db");
+
+    Ok((coordinator, app_state))
+}
+
+pub struct AppCtx {
+    pub settings: RustAutoOpaque<Settings>,
+    pub backup_manager: RustAutoOpaque<BackupManager>,
+}
+
+#[flutter_rust_bridge::frb(init)]
+pub fn init_app() {
+    // Default utilities - feel free to customize
+    flutter_rust_bridge::setup_default_user_utils();
+}
