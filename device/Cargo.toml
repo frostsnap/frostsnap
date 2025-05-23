@@ -45,8 +45,6 @@ reed-solomon = "0.2.1"
 hmac = { version = "0.12", default-features = false }
 sha2 = { version = "0.10", default-features = false }
 
-num-bigint = { version = "0.4", default-features = false }
-
 [[bin]]
 name = "v2"
 required-features = ["v2"]
