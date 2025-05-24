@@ -486,12 +486,15 @@ where
         }
     }
 
-    fn set_device_name(&mut self, name: String) {
-        self.device_name = Some(name);
-        self.changes = true;
+    fn set_device_name(&mut self, name: Option<impl Into<String>>) {
+        let name: Option<String> = name.map(Into::into);
+        if name != self.device_name {
+            self.device_name = name;
+            self.changes = true;
+        }
     }
 
-    fn get_device_label(&self) -> Option<&str> {
+    fn get_device_name(&self) -> Option<&str> {
         self.device_name.as_deref()
     }
 

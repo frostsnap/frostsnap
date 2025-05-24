@@ -13,6 +13,11 @@ HashSet<DeviceId> deviceIdSet(Iterable<DeviceId> devices) {
   return set;
 }
 
+Map<DeviceId, T> deviceIdMap<T>() => HashMap<DeviceId, T>(
+  equals: deviceIdEquals,
+  hashCode: (a) => Object.hashAll(a.field0),
+);
+
 Map<KeyId, T> keyIdMap<T>() {
   final map = HashMap<KeyId, T>(
     equals: (a, b) => keyIdEquals(a, b),

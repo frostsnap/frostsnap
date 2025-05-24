@@ -5,12 +5,13 @@ import 'package:frostsnapp/device.dart';
 import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/theme.dart';
 
-class FullscreenActionDialogController extends ChangeNotifier {
+class FullscreenActionDialogController<T> extends ChangeNotifier {
   String? title;
   Function(BuildContext)? body;
   final Set<DeviceId> _actionNeeded = deviceIdSet([]);
   Function(BuildContext)? dismissButton;
   Function()? onDismissed;
+  Future<T?>? _fut;
 
   FullscreenActionDialogController({
     this.title,
@@ -19,18 +20,29 @@ class FullscreenActionDialogController extends ChangeNotifier {
     this.onDismissed,
   });
 
-  addActionNeeded(BuildContext context, DeviceId deviceId) {
+  void addActionNeeded(BuildContext context, DeviceId deviceId) {
     final hadActionsNeeded = _actionNeeded.isNotEmpty;
     _actionNeeded.add(deviceId);
     if (!hadActionsNeeded) {
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => showFullscreenActionDialog(context, controller: this),
-      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _fut = showFullscreenActionDialog(context, controller: this);
+      });
     }
   }
 
-  removeActionNeeded(DeviceId deviceId) {
+  Future<T?> removeActionNeeded(DeviceId deviceId) async {
     if (_actionNeeded.remove(deviceId)) _safeNotify();
+    final fut = _fut;
+    if (_actionNeeded.isEmpty && fut != null) {
+      return await fut;
+    }
+    return null;
+  }
+
+  void clearAllActionsNeeded() {
+    if (_actionNeeded.isEmpty) return;
+    _actionNeeded.clear();
+    _safeNotify();
   }
 
   bool get hasActionsNeeded => _actionNeeded.isNotEmpty;
@@ -71,7 +83,7 @@ void showCannotDismissDialog(BuildContext context) async {
 
 Future<T?> showFullscreenActionDialog<T>(
   BuildContext context, {
-  required FullscreenActionDialogController controller,
+  required FullscreenActionDialogController<T> controller,
 }) async {
   // Use
   final res = await showGeneralDialog<T>(
@@ -96,6 +108,7 @@ Future<T?> showFullscreenActionDialog<T>(
               appBar: AppBar(
                 elevation: 0,
                 forceMaterialTransparency: true,
+                automaticallyImplyLeading: false,
                 leading:
                     controller.onDismissed != null
                         ? IconButton(
@@ -173,7 +186,7 @@ Future<T?> showFullscreenActionDialog<T>(
         canPop: controller.onDismissed != null,
         onPopInvokedWithResult: (didPop, result) {
           if (didPop) return;
-          showCannotDismissDialog(ctx);
+          showCannotDismissDialog(context);
         },
         child: BackdropFilter(filter: blurFilter, child: dialog),
       );

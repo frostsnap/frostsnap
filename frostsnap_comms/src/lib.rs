@@ -243,7 +243,7 @@ pub enum CoordinatorUpgradeMessage {
 #[derive(Encode, Decode, Debug, Clone)]
 pub enum NameCommand {
     Preview(String),
-    Finish(String),
+    Prompt(String),
 }
 
 impl Gist for CoordinatorSendBody {

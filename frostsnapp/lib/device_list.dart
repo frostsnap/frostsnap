@@ -16,11 +16,12 @@ typedef RemovedDeviceBuilder =
 
 typedef DeviceBuilder =
     Widget Function(
-      BuildContext context,
-      ConnectedDevice device,
-      Orientation orientation,
-      Animation<double> animation,
-    );
+      BuildContext context, {
+      required ConnectedDevice device,
+      required Orientation orientation,
+      required Animation<double> animation,
+      String? previewName,
+    });
 
 const double iconSize = 20.0;
 
@@ -34,7 +35,8 @@ class DeviceList extends StatefulWidget {
   State<StatefulWidget> createState() => _DeviceListState();
 }
 
-class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
+class _DeviceListState extends State<DeviceList> {
+  // with WidgetsBindingObserver
   GlobalKey<AnimatedListState> deviceListKey = GlobalKey<AnimatedListState>();
   StreamSubscription? _subscription;
   late DeviceListState currentListState;
@@ -42,7 +44,7 @@ class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
+    // WidgetsBinding.instance.addObserver(this);
     currentListState = coord.deviceListState();
     _subscription = GlobalStreams.deviceListUpdateStream.listen((update) async {
       if (update.state.stateId != currentListState.stateId + 1) {
@@ -71,9 +73,9 @@ class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
                 ) {
                   return widget.deviceBuilder(
                     context,
-                    change.device,
-                    effectiveOrientation(context),
-                    animation,
+                    device: change.device,
+                    orientation: effectiveOrientation(context),
+                    animation: animation,
                   );
                 });
               }
@@ -92,19 +94,19 @@ class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
+    // WidgetsBinding.instance.removeObserver(this);
     _subscription?.cancel();
     super.dispose();
   }
 
-  // This is meant to make sure we catch any devices plugged in while the app
-  // wasn't in foreground but for some reason it doesn't work.
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      globalHostPortHandler.scanDevices();
-    }
-  }
+  // // This is meant to make sure we catch any devices plugged in while the app
+  // // wasn't in foreground but for some reason it doesn't work.
+  // @override
+  // void didChangeAppLifecycleState(AppLifecycleState state) {
+  //   if (state == AppLifecycleState.resumed) {
+  //     globalHostPortHandler.scanDevices();
+  //   }
+  // }
 
   @override
   Widget build(BuildContext context) {
@@ -132,7 +134,12 @@ class _DeviceListState extends State<DeviceList> with WidgetsBindingObserver {
       key: deviceListKey,
       itemBuilder: (context, index, animation) {
         final device = currentListState.devices[index];
-        return widget.deviceBuilder(context, device, orientation, animation);
+        return widget.deviceBuilder(
+          context,
+          device: device,
+          orientation: orientation,
+          animation: animation,
+        );
       },
       initialItemCount: currentListState.devices.length,
       scrollDirection:
@@ -223,11 +230,12 @@ class DeviceListWithIcons extends StatelessWidget {
   }
 
   Widget _builder(
-    BuildContext context,
-    ConnectedDevice device,
-    Orientation orientation,
-    Animation<double> animation,
-  ) {
+    BuildContext context, {
+    required ConnectedDevice device,
+    required Orientation orientation,
+    required Animation<double> animation,
+    String? previewName,
+  }) {
     final (overrideLabel, icon) = iconAssigner.call(context, device.id);
     final label = overrideLabel ?? LabeledDeviceText(device.name);
     return DeviceBoxContainer(
@@ -251,11 +259,12 @@ class DeviceListWithIcons extends StatelessWidget {
 }
 
 Widget buildInteractiveDevice(
-  BuildContext context,
-  ConnectedDevice device,
-  Orientation orientation,
-  Animation<double> animation,
-) {
+  BuildContext context, {
+  required ConnectedDevice device,
+  required Orientation orientation,
+  required Animation<double> animation,
+  String? previewName,
+}) {
   final theme = Theme.of(context);
   final List<Widget> children = [];
   final upToDate = device.firmwareDigest == coord.upgradeFirmwareDigest();

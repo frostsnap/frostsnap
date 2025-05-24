@@ -11,6 +11,7 @@ import 'package:frostsnapp/psbt.dart';
 import 'package:frostsnapp/restoration.dart';
 import 'package:frostsnapp/sign_message.dart';
 import 'package:frostsnapp/theme.dart';
+import 'package:frostsnapp/wallet_create.dart';
 import 'package:frostsnapp/wallet_list_controller.dart';
 import 'package:frostsnapp/wallet_receive.dart';
 import 'package:frostsnapp/wallet_send.dart';
@@ -76,13 +77,18 @@ class WalletHome extends StatelessWidget {
                   ),
                 ),
                 OutlinedButton.icon(
-                  onPressed:
-                      () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => homeCtx.wrap(KeyNamePage()),
-                        ),
-                      ),
+                  onPressed: () async {
+                    final asRef =
+                        await MaybeFullscreenDialog.show<AccessStructureRef>(
+                          context: context,
+                          barrierDismissible: false,
+                          child: WalletCreatePage(),
+                        );
+                    if (context.mounted && asRef != null) {
+                      homeCtx.openNewlyCreatedWallet(asRef.keyId);
+                      showWalletCreatedDialog(context, asRef);
+                    }
+                  },
                   icon: Icon(Icons.add_circle),
                   label: Text('Create Wallet'),
                 ),
@@ -592,12 +598,18 @@ class WalletDrawer extends StatelessWidget {
         final List<(void Function(), bool, IconData, String)>
         actionableDestinations = [
           (
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => homeCtx.wrap(KeyNamePage()),
-              ),
-            ),
+            () async {
+              final asRef =
+                  await MaybeFullscreenDialog.show<AccessStructureRef>(
+                    context: context,
+                    barrierDismissible: false,
+                    child: WalletCreatePage(),
+                  );
+              if (context.mounted && asRef != null) {
+                homeCtx.openNewlyCreatedWallet(asRef.keyId);
+                showWalletCreatedDialog(context, asRef);
+              }
+            },
             true,
             Icons.add_circle,
             'Create Wallet',
