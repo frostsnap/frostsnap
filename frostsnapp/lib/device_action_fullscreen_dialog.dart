@@ -109,72 +109,65 @@ Future<T?> showFullscreenActionDialog<T>(
                 elevation: 0,
                 forceMaterialTransparency: true,
                 automaticallyImplyLeading: false,
-                leading:
-                    controller.onDismissed != null
-                        ? IconButton(
-                          icon: Icon(
-                            Icons.close,
-                            color: theme.colorScheme.onSurface,
-                          ),
-                          onPressed: () => Navigator.pop(ctx),
-                        )
-                        : null,
+                leading: controller.onDismissed != null
+                    ? IconButton(
+                        icon: Icon(
+                          Icons.close,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                        onPressed: () => Navigator.pop(ctx),
+                      )
+                    : null,
               ),
               body: Padding(
                 padding: EdgeInsets.all(20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.max,
-                  spacing: 20,
-                  children: [
-                    Spacer(flex: 10),
-                    Center(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(maxWidth: 580),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SvgPicture.string(
-                              DeviceWidget.deviceSvg,
-                              width: 162,
-                              height: 134,
-                              colorFilter: ColorFilter.mode(
-                                theme.colorScheme.onSurface,
-                                BlendMode.srcATop,
-                              ),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: 580),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Spacer(flex: 9),
+                        SvgPicture.string(
+                          DeviceWidget.deviceSvg,
+                          width: 162,
+                          height: 134,
+                          colorFilter: ColorFilter.mode(
+                            theme.colorScheme.onSurface,
+                            BlendMode.srcATop,
+                          ),
+                        ),
+                        SizedBox(height: 32),
+                        if (controller.title != null)
+                          Text(
+                            controller.title!,
+                            style: theme.textTheme.headlineSmall,
+                            textAlign: TextAlign.center,
+                          ),
+                        SizedBox(height: 20),
+                        if (controller.body != null)
+                          DefaultTextStyle(
+                            style: theme.textTheme.bodyLarge!,
+                            child: controller.body!.call(ctx),
+                          ),
+                        Spacer(flex: 3),
+                        if (controller.dismissButton == null) ...[
+                          Spacer(flex: 3),
+                          Text(
+                            'complete the action on the device or unplug it',
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
                             ),
-                            SizedBox(height: 32),
-                            if (controller.title != null)
-                              Text(
-                                controller.title!,
-                                style: theme.textTheme.headlineSmall,
-                                textAlign: TextAlign.center,
-                              ),
-                            SizedBox(height: 20),
-                            if (controller.body != null)
-                              DefaultTextStyle(
-                                style: theme.textTheme.bodyLarge!,
-                                child: controller.body!.call(ctx),
-                              ),
-                          ],
-                        ),
-                      ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                        if (controller.dismissButton != null) ...[
+                          Center(child: controller.dismissButton!(context)),
+                          Spacer(flex: 3),
+                        ],
+                      ],
                     ),
-                    Spacer(flex: 3),
-                    if (controller.dismissButton == null) ...[
-                      Spacer(flex: 3),
-                      Text(
-                        'complete the action on the device or unplug it',
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                    if (controller.dismissButton != null) ...[
-                      Center(child: controller.dismissButton!(context)),
-                      Spacer(flex: 3),
-                    ],
-                  ],
+                  ),
                 ),
               ),
             ),

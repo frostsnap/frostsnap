@@ -82,12 +82,11 @@ class MaybeFullscreenDialog extends StatefulWidget {
       context: context,
       barrierDismissible: barrierDismissible,
       useSafeArea: false,
-      builder:
-          (context) => MaybeFullscreenDialog(
-            backgroundColor:
-                backgroundColor ?? Theme.of(context).colorScheme.surface,
-            child: child,
-          ),
+      builder: (context) => MaybeFullscreenDialog(
+        backgroundColor:
+            backgroundColor ?? Theme.of(context).colorScheme.surface,
+        child: child,
+      ),
     );
   }
 
@@ -137,28 +136,27 @@ class _MaybeFullscreenDialogState extends State<MaybeFullscreenDialog>
         constraints: const BoxConstraints(maxWidth: 640),
         child: widget.child,
       ),
-      builder:
-          (context, sizeClass, child) => WindowSizeContext(
-            windowSizeClass: _sizeClass.value,
-            child: BackdropFilter(
-              filter: switch (sizeClass) {
-                WindowSizeClass.compact => ImageFilter.blur(),
-                _ => blurFilter,
-              },
-              child: switch (_sizeClass.value) {
-                WindowSizeClass.compact => Dialog.fullscreen(
-                  backgroundColor: widget.backgroundColor,
-                  child: child,
-                ),
-                WindowSizeClass.medium || WindowSizeClass.expanded => Dialog(
-                  insetPadding: EdgeInsets.zero,
-                  clipBehavior: Clip.hardEdge,
-                  backgroundColor: widget.backgroundColor,
-                  child: child,
-                ),
-              },
+      builder: (context, sizeClass, child) => WindowSizeContext(
+        windowSizeClass: _sizeClass.value,
+        child: BackdropFilter(
+          filter: switch (sizeClass) {
+            WindowSizeClass.compact => ImageFilter.blur(),
+            _ => blurFilter,
+          },
+          child: switch (_sizeClass.value) {
+            WindowSizeClass.compact => Dialog.fullscreen(
+              backgroundColor: widget.backgroundColor,
+              child: child,
             ),
-          ),
+            WindowSizeClass.medium || WindowSizeClass.expanded => Dialog(
+              insetPadding: EdgeInsets.zero,
+              clipBehavior: Clip.hardEdge,
+              backgroundColor: widget.backgroundColor,
+              child: child,
+            ),
+          },
+        ),
+      ),
     );
   }
 }
@@ -226,101 +224,58 @@ class WalletCreateController extends ChangeNotifier {
     }
     _keygenController = FullscreenActionDialogController(
       title: 'Security Check',
-      body:
-          (context) => ListenableBuilder(
-            listenable: this,
-            builder: (context, _) {
-              final theme = Theme.of(context);
-              final state = _keygenState;
-              if (state == null) {
-                return SizedBox();
-              }
-              final sessionHash = state.sessionHash;
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                spacing: 12,
-                children: [
-                  Text(
-                    'Confirm that this code is shown on all devices',
-                    textAlign: TextAlign.center,
-                  ),
-                  Card.filled(
-                    child: Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: AnimatedCrossFade(
-                          firstChild: Padding(
-                            padding: EdgeInsets.all(8),
-                            child: Visibility(
-                              visible: sessionHash == null,
-                              child: CircularProgressIndicator(),
-                            ),
-                          ),
-                          secondChild: Text(
-                            keygenChecksum,
-                            style: theme.textTheme.headlineLarge?.copyWith(
-                              fontFamily: monospaceTextStyle.fontFamily,
-                            ),
-                          ),
-                          crossFadeState:
-                              sessionHash == null
-                                  ? CrossFadeState.showFirst
-                                  : CrossFadeState.showSecond,
-                          duration: Durations.medium1,
+      body: (context) => ListenableBuilder(
+        listenable: this,
+        builder: (context, _) {
+          final theme = Theme.of(context);
+          final state = _keygenState;
+          if (state == null) return const SizedBox();
+
+          final sessionHash = state.sessionHash;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: 12,
+            children: [
+              const Text(
+                'Confirm that this code is shown on all devices',
+                textAlign: TextAlign.center,
+              ),
+              Card.filled(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: AnimatedCrossFade(
+                      firstChild: const Padding(
+                        padding: EdgeInsets.all(8),
+                        child: CircularProgressIndicator(),
+                      ),
+                      secondChild: Text(
+                        keygenChecksum,
+                        style: theme.textTheme.headlineLarge?.copyWith(
+                          fontFamily: monospaceTextStyle.fontFamily,
                         ),
                       ),
+                      crossFadeState: sessionHash == null
+                          ? CrossFadeState.showFirst
+                          : CrossFadeState.showSecond,
+                      duration: Durations.medium1,
                     ),
                   ),
-                  Card.outlined(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children:
-                          _deviceList.devices.map((device) {
-                            final hasAck = state.sessionAcks.any(
-                              (id) => deviceIdEquals(id, device.id),
-                            );
-                            return ListTile(
-                              title: Text(
-                                form.deviceNames[device.id] ??
-                                    device.name ??
-                                    '',
-                                style: monospaceTextStyle,
-                              ),
-                              leading: Icon(Icons.key),
-                              trailing: AnimatedCrossFade(
-                                alignment: AlignmentDirectional.centerEnd,
-                                firstChild: Padding(
-                                  padding: const EdgeInsets.all(4),
-                                  child: AnimatedCheckCircle(),
-                                ),
-                                secondChild: Padding(
-                                  padding: const EdgeInsets.all(4),
-                                  child: Icon(Icons.touch_app_rounded),
-                                ),
-                                crossFadeState:
-                                    hasAck
-                                        ? CrossFadeState.showFirst
-                                        : CrossFadeState.showSecond,
-                                duration: Durations.short4,
-                              ),
-                              contentPadding: EdgeInsets.symmetric(
-                                horizontal: 16,
-                              ),
-                            );
-                          }).toList(),
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-      dismissButton:
-          (context) => OutlinedButton(
-            onPressed: () async => await coord.cancelProtocol(),
-            child: Text('Cancel'),
-          ),
+                ),
+              ),
+              LargeCircularProgressIndicator(
+                size: 70,
+                progress: state.sessionAcks.length,
+                total: state.devices.length,
+              ),
+            ],
+          );
+        },
+      ),
+      dismissButton: (context) => OutlinedButton(
+        onPressed: () async => await coord.cancelProtocol(),
+        child: Text('Cancel'),
+      ),
     );
   }
 
@@ -422,15 +377,14 @@ class WalletCreateController extends ChangeNotifier {
         return true;
       case WalletCreateStep.threshold:
         final selectedDevices = form.selectedDevices.toList();
-        final stream =
-            coord
-                .generateNewKey(
-                  threshold: form.threshold!,
-                  devices: selectedDevices,
-                  keyName: form.name!,
-                  network: form.network,
-                )
-                .toBehaviorSubject();
+        final stream = coord
+            .generateNewKey(
+              threshold: form.threshold!,
+              devices: selectedDevices,
+              keyName: form.name!,
+              network: form.network,
+            )
+            .toBehaviorSubject();
         for (final id in selectedDevices) {
           _keygenController.addActionNeeded(context, id);
         }
@@ -464,7 +418,7 @@ class WalletCreateController extends ChangeNotifier {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           spacing: 16,
                           children: [
-                            Text('Do all devices show the following code?'),
+                            Text('Do all devices show this code?'),
                             Card.filled(
                               child: Center(
                                 child: Padding(
@@ -575,13 +529,7 @@ class WalletCreateController extends ChangeNotifier {
       ],
     ),
     WalletCreateStep.deviceNames => TextSpan(
-      text: 'Names will be used to identify each device of ',
-      children: [
-        TextSpan(
-          text: _form.name ?? '',
-          style: TextStyle(fontStyle: FontStyle.italic),
-        ),
-      ],
+      text: 'Each device needs a name to idenitfy it.',
     ),
     WalletCreateStep.threshold => TextSpan(
       text:
@@ -656,34 +604,32 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     return MultiSliver(
       children: [
         SliverDeviceList(
-          deviceBuilder:
-              (context, device) => buildDevice(
-                context,
-                device,
-                trailing:
-                    device.name != null
-                        ? buildDeviceTrailingInfo(
-                          context,
-                          text: 'Already holds a key',
-                          subText: 'Unplug to continue',
-                          icon: Icons.warning_rounded,
-                          color: Theme.of(context).colorScheme.error,
-                        )
-                        : device.needsFirmwareUpgrade()
-                        ? buildDeviceTrailingInfo(
-                          context,
-                          text: 'Old firmware',
-                          subText: "Upgrade to continue",
-                          icon: Icons.warning,
-                          color: Colors.orange,
-                        )
-                        : buildDeviceTrailingInfo(
-                          context,
-                          text: 'Ready',
-                          icon: Icons.check_circle_rounded,
-                          color: Colors.green,
-                        ),
-              ),
+          deviceBuilder: (context, device) => buildDevice(
+            context,
+            device,
+            trailing: device.name != null
+                ? buildDeviceTrailingInfo(
+                    context,
+                    text: 'Already holds a key',
+                    subText: 'Unplug to continue',
+                    icon: Icons.warning_rounded,
+                    color: Theme.of(context).colorScheme.error,
+                  )
+                : device.needsFirmwareUpgrade()
+                ? buildDeviceTrailingInfo(
+                    context,
+                    text: 'Old firmware',
+                    subText: "Upgrade to continue",
+                    icon: Icons.warning,
+                    color: Colors.orange,
+                  )
+                : buildDeviceTrailingInfo(
+                    context,
+                    text: 'Ready',
+                    icon: Icons.check_circle_rounded,
+                    color: Colors.green,
+                  ),
+          ),
         ),
         SliverToBoxAdapter(
           child: AnimatedGradientBorder(
@@ -737,8 +683,8 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                       ],
                     ),
                     FilledButton.tonalIcon(
-                      onPressed:
-                          () async => await FirmwareUpgradeDialog.show(context),
+                      onPressed: () async =>
+                          await FirmwareUpgradeDialog.show(context),
                       label: Text('Start upgrade'),
                       icon: Icon(Icons.system_update_alt_rounded),
                     ),
@@ -882,10 +828,9 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
         title: TextField(
           decoration: InputDecoration(hintText: 'Enter device name'),
           controller: textController,
-          onChanged:
-              isPart
-                  ? (name) => _controller.setDeviceName(device.id, name)
-                  : null,
+          onChanged: isPart
+              ? (name) => _controller.setDeviceName(device.id, name)
+              : null,
           enabled: isPart,
         ),
       ),
@@ -927,8 +872,8 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
           Slider(
             value: (form.threshold!).toDouble(),
             label: '${form.threshold}',
-            onChanged:
-                (value) => setState(() => form.threshold = value.toInt()),
+            onChanged: (value) =>
+                setState(() => form.threshold = value.toInt()),
             min: 1,
             max: totalCount.toDouble(),
             divisions: max(totalCount - 1, 1),
@@ -991,8 +936,9 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     final windowSize = WindowSizeContext.of(context);
 
     final network = _controller.form.network;
-    final appBarTrailingText =
-        network.isMainnet() ? '' : ' (${network.name()})';
+    final appBarTrailingText = network.isMainnet()
+        ? ''
+        : ' (${network.name()})';
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1069,10 +1015,9 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                   children: [
                     Flexible(
                       child: TextButton(
-                        onPressed:
-                            _controller.canGoBack
-                                ? () => _controller.back(context)
-                                : null,
+                        onPressed: _controller.canGoBack
+                            ? () => _controller.back(context)
+                            : null,
                         child: Text(
                           _controller.backText ?? 'Back',
                           softWrap: false,
@@ -1085,10 +1030,9 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                       child: Align(
                         alignment: AlignmentDirectional.centerEnd,
                         child: FilledButton(
-                          onPressed:
-                              _controller.canGoNext
-                                  ? () => _controller.next(context)
-                                  : null,
+                          onPressed: _controller.canGoNext
+                              ? () => _controller.next(context)
+                              : null,
                           child: Text(
                             _controller.nextText ?? 'Next',
                             softWrap: false,
@@ -1128,19 +1072,18 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
             ),
             SegmentedButton<String>(
               showSelectedIcon: false,
-              segments:
-                  BitcoinNetwork.supportedNetworks(bridge: coord.bridge)
-                      .map(
-                        (network) => ButtonSegment(
-                          value: network.name(),
-                          label: Text(
-                            network.name(),
-                            overflow: TextOverflow.fade,
-                            softWrap: false,
-                          ),
-                        ),
-                      )
-                      .toList(),
+              segments: BitcoinNetwork.supportedNetworks(bridge: coord.bridge)
+                  .map(
+                    (network) => ButtonSegment(
+                      value: network.name(),
+                      label: Text(
+                        network.name(),
+                        overflow: TextOverflow.fade,
+                        softWrap: false,
+                      ),
+                    ),
+                  )
+                  .toList(),
               selected: {_controller.form.network.name()},
               onSelectionChanged: (selectedSet) {
                 _isAdvancedOptionsHidden = true;
@@ -1178,12 +1121,10 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                       },
                     ),
                   TextButton.icon(
-                    onPressed:
-                        () => setState(
-                          () =>
-                              _isAdvancedOptionsHidden =
-                                  !_isAdvancedOptionsHidden,
-                        ),
+                    onPressed: () => setState(
+                      () =>
+                          _isAdvancedOptionsHidden = !_isAdvancedOptionsHidden,
+                    ),
                     icon: Icon(
                       _isAdvancedOptionsHidden
                           ? Icons.arrow_drop_up_rounded
@@ -1200,10 +1141,9 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
               AnimatedCrossFade(
                 firstChild: SizedBox(),
                 secondChild: mayHide,
-                crossFadeState:
-                    _isAdvancedOptionsHidden
-                        ? CrossFadeState.showFirst
-                        : CrossFadeState.showSecond,
+                crossFadeState: _isAdvancedOptionsHidden
+                    ? CrossFadeState.showFirst
+                    : CrossFadeState.showSecond,
                 duration: Durations.medium2,
                 sizeCurve: Curves.easeInOutCubicEmphasized,
               ),
@@ -1212,5 +1152,106 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
         );
       },
     );
+  }
+}
+
+class LargeCircularProgressIndicator extends StatefulWidget {
+  final int progress;
+  final int total;
+  final double size;
+
+  const LargeCircularProgressIndicator({
+    super.key,
+    required this.progress,
+    required this.total,
+    this.size = 70,
+  });
+
+  @override
+  State<LargeCircularProgressIndicator> createState() =>
+      _LargeCircularProgressIndicatorState();
+}
+
+class _LargeCircularProgressIndicatorState
+    extends State<LargeCircularProgressIndicator>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+  double _oldFraction = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _initAnimation();
+  }
+
+  void _initAnimation() {
+    final newFraction = widget.total == 0
+        ? 0.0
+        : (widget.progress / widget.total).clamp(0.0, 1.0);
+    _animation = Tween<double>(begin: _oldFraction, end: newFraction).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    )..addListener(() => setState(() {}));
+    _controller.forward(from: 0);
+    _oldFraction = newFraction;
+  }
+
+  @override
+  void didUpdateWidget(covariant LargeCircularProgressIndicator oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.progress != widget.progress ||
+        oldWidget.total != widget.total)
+      _initAnimation();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final complete = widget.total > 0 && widget.progress >= widget.total;
+    final fraction = complete ? 1.0 : _animation.value;
+
+    return UnconstrainedBox(
+      child: SizedBox.square(
+        dimension: widget.size,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            AspectRatio(
+              aspectRatio: 1,
+              child: CircularProgressIndicator(
+                value: fraction,
+                strokeWidth: widget.size * 0.07,
+                backgroundColor: cs.surfaceContainerHighest,
+                color: cs.primary,
+              ),
+            ),
+            complete
+                ? Icon(Icons.check, size: widget.size * 0.5, color: cs.primary)
+                : SizedBox(
+                    width: widget.size * 0.6,
+                    height: widget.size * 0.6,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        '${widget.progress}/${widget.total}',
+                        style: Theme.of(context).textTheme.titleLarge,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 }

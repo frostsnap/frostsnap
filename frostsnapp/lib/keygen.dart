@@ -40,25 +40,24 @@ class _KeyNamePageState extends State<KeyNamePage> {
   @override
   Widget build(BuildContext context) {
     final homeCtx = HomeContext.of(context)!;
-    final nextPage =
-        _keyNameController.text.isNotEmpty
-            ? () async {
-              final masterAppkey = await Navigator.push(
-                context,
-                createRoute(
-                  homeCtx.wrap(
-                    DevicesPage(
-                      keyName: _keyNameController.text,
-                      network: bitcoinNetwork,
-                    ),
+    final nextPage = _keyNameController.text.isNotEmpty
+        ? () async {
+            final masterAppkey = await Navigator.push(
+              context,
+              createRoute(
+                homeCtx.wrap(
+                  DevicesPage(
+                    keyName: _keyNameController.text,
+                    network: bitcoinNetwork,
                   ),
                 ),
-              );
-              if (context.mounted && masterAppkey != null) {
-                Navigator.pop(context, masterAppkey);
-              }
+              ),
+            );
+            if (context.mounted && masterAppkey != null) {
+              Navigator.pop(context, masterAppkey);
             }
-            : null;
+          }
+        : null;
 
     final settingsCtx = SettingsContext.of(context)!;
 
@@ -222,26 +221,25 @@ class DevicesPage extends StatelessWidget {
                     Align(
                       alignment: Alignment.center,
                       child: ElevatedButton.icon(
-                        onPressed:
-                            allDevicesReady
-                                ? () async {
-                                  final masterAppkey = await Navigator.push(
-                                    context,
-                                    createRoute(
-                                      homeCtx.wrap(
-                                        ThresholdPage(
-                                          network: network,
-                                          keyName: keyName,
-                                          selectedDevices: devices,
-                                        ),
+                        onPressed: allDevicesReady
+                            ? () async {
+                                final masterAppkey = await Navigator.push(
+                                  context,
+                                  createRoute(
+                                    homeCtx.wrap(
+                                      ThresholdPage(
+                                        network: network,
+                                        keyName: keyName,
+                                        selectedDevices: devices,
                                       ),
                                     ),
-                                  );
-                                  if (context.mounted && masterAppkey != null) {
-                                    Navigator.pop(context, masterAppkey);
-                                  }
+                                  ),
+                                );
+                                if (context.mounted && masterAppkey != null) {
+                                  Navigator.pop(context, masterAppkey);
                                 }
-                                : null,
+                              }
+                            : null,
                         icon: Icon(Icons.arrow_forward),
                         label: Text('Next'),
                       ),
@@ -344,24 +342,23 @@ class _ThresholdPageState extends State<ThresholdPage> {
               child: ElevatedButton.icon(
                 onPressed: () async {
                   // Generate key
-                  final stream =
-                      coord
-                          .generateNewKey(
-                            threshold: _selectedThreshold,
-                            devices:
-                                widget.selectedDevices
-                                    .map((device) => device.id)
-                                    .toList(),
-                            keyName: widget.keyName,
-                            network: widget.network,
-                          )
-                          .toBehaviorSubject();
+                  final stream = coord
+                      .generateNewKey(
+                        threshold: _selectedThreshold,
+                        devices: widget.selectedDevices
+                            .map((device) => device.id)
+                            .toList(),
+                        keyName: widget.keyName,
+                        network: widget.network,
+                      )
+                      .toBehaviorSubject();
 
                   final accessStructureRef = await showCheckKeyGenDialog(
                     context: context,
                     stream: stream,
                     network: widget.network,
                   );
+                  debugPrint("$accessStructureRef");
 
                   if (!context.mounted) return;
 
@@ -372,6 +369,7 @@ class _ThresholdPageState extends State<ThresholdPage> {
                   }
 
                   if (context.mounted) {
+                    debugPrint("here");
                     Navigator.popUntil(context, (r) => r.isFirst);
                     final homeCtx = HomeContext.of(context)!;
                     homeCtx.openNewlyCreatedWallet(accessStructureRef.keyId);
@@ -476,10 +474,8 @@ showWalletCreatedDialog(
                 showBottomSheetOrDialog(
                   context,
                   titleText: 'Backup Checklist',
-                  builder:
-                      (context, scrollController) => SuperWalletContext.of(
-                        context,
-                      )!.tryWrapInWalletContext(
+                  builder: (context, scrollController) =>
+                      SuperWalletContext.of(context)!.tryWrapInWalletContext(
                         keyId: accessStructureRef.keyId,
                         child: BackupChecklist(
                           accessStructure: accessStructure,
@@ -577,10 +573,10 @@ Future<AccessStructureRef?> showCheckKeyGenDialog({
                 state.sessionHash == null
                     ? ""
                     : toSpacedHex(
-                      Uint8List.fromList(
-                        state.sessionHash!.field0.sublist(0, 4),
+                        Uint8List.fromList(
+                          state.sessionHash!.field0.sublist(0, 4),
+                        ),
                       ),
-                    ),
                 style: TextStyle(
                   fontFamily: monospaceTextStyle.fontFamily,
                   fontWeight: FontWeight.bold,
@@ -596,9 +592,8 @@ Future<AccessStructureRef?> showCheckKeyGenDialog({
                       coord.cancelProtocol();
                     },
                     style: ElevatedButton.styleFrom(
-                      tapTargetSize:
-                          MaterialTapTargetSize
-                              .shrinkWrap, // Reduce button tap target size
+                      tapTargetSize: MaterialTapTargetSize
+                          .shrinkWrap, // Reduce button tap target size
                       backgroundColor: Theme.of(context).colorScheme.error,
                     ),
                     child: Text(
@@ -646,16 +641,15 @@ Future<AccessStructureRef?> showCheckKeyGenDialog({
                     ),
                     SizedBox(height: 10),
                     FilledButton(
-                      onPressed:
-                          state.allAcks
-                              ? () async {
-                                final accessStructureRef = await coord
-                                    .finalizeKeygen(keygenId: state.keygenId);
-                                if (context.mounted) {
-                                  Navigator.pop(context, accessStructureRef);
-                                }
+                      onPressed: state.allAcks
+                          ? () async {
+                              final accessStructureRef = await coord
+                                  .finalizeKeygen(keygenId: state.keygenId);
+                              if (context.mounted) {
+                                Navigator.pop(context, accessStructureRef);
                               }
-                              : null,
+                            }
+                          : null,
                       child: Text("Confirm"),
                     ),
                     SizedBox(height: MediaQuery.of(context).padding.bottom),
