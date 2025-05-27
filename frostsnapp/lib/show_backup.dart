@@ -3,9 +3,10 @@ import 'package:frostsnapp/device.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/device_list.dart';
-import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/snackbar.dart';
+import 'package:frostsnapp/src/rust/api.dart';
+import 'package:frostsnapp/src/rust/api/coordinator.dart';
 
 Future<bool> backupDeviceDialog(
   BuildContext context, {

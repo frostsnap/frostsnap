@@ -3,24 +3,26 @@ import 'dart:collection';
 
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/bridge_definitions.dart';
 import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/device_action_fullscreen_dialog.dart';
 import 'package:frostsnapp/id_ext.dart';
-import 'package:frostsnapp/stream_ext.dart';
+import 'package:frostsnapp/src/rust/api/coordinator.dart';
+import 'package:frostsnapp/src/rust/api/super_wallet.dart';
 import 'package:frostsnapp/theme.dart';
 import 'package:frostsnapp/wallet.dart';
+import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/wallet_tx_details.dart';
 import 'package:glowy_borders/glowy_borders.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:rxdart/rxdart.dart';
+import 'package:frostsnapp/src/rust/api/bitcoin.dart';
 
 import 'global.dart';
 
 class AddressList extends StatefulWidget {
   final ScrollController? scrollController;
   final bool showUsed;
-  final Function(BuildContext, Address) onTap;
+  final Function(BuildContext, AddressInfo) onTap;
   final int? scrollToDerivationIndex;
 
   const AddressList({
@@ -36,8 +38,8 @@ class AddressList extends StatefulWidget {
 }
 
 class _AddressListState extends State<AddressList> {
-  List<Address> _addresses = [];
-  List<Address> get addresses => _addresses;
+  List<AddressInfo> _addresses = [];
+  List<AddressInfo> get addresses => _addresses;
 
   final _firstAddrKey = GlobalKey();
   late final ScrollController? _scrollController;
@@ -59,8 +61,9 @@ class _AddressListState extends State<AddressList> {
   @override
   void initState() {
     super.initState();
-    _scrollController =
-        widget.scrollController == null ? ScrollController() : null;
+    _scrollController = widget.scrollController == null
+        ? ScrollController()
+        : null;
 
     update(context);
 
@@ -98,7 +101,7 @@ class _AddressListState extends State<AddressList> {
     super.dispose();
   }
 
-  Widget buildAddressItem(BuildContext context, Address addr, {Key? key}) {
+  Widget buildAddressItem(BuildContext context, AddressInfo addr, {Key? key}) {
     final theme = Theme.of(context);
     final usedTag = Card.outlined(
       color: Colors.transparent,
@@ -116,9 +119,9 @@ class _AddressListState extends State<AddressList> {
       },
       tileColor:
           widget.scrollToDerivationIndex != null &&
-                  widget.scrollToDerivationIndex == addr.index
-              ? theme.colorScheme.surfaceContainerHighest
-              : null,
+              widget.scrollToDerivationIndex == addr.index
+          ? theme.colorScheme.surfaceContainerHighest
+          : null,
       leading: Text(
         '#${addr.index}',
         style: theme.textTheme.labelLarge?.copyWith(
@@ -129,7 +132,7 @@ class _AddressListState extends State<AddressList> {
         ),
       ),
       title: Text(
-        spacedHex(addr.address()),
+        spacedHex(addr.address.toString()),
         style: monospaceTextStyle.copyWith(
           color: addr.used ? theme.colorScheme.onSurfaceVariant : null,
         ),
@@ -156,23 +159,22 @@ class _AddressListState extends State<AddressList> {
           sliver: SliverPadding(
             padding: const EdgeInsets.symmetric(vertical: 8.0),
             sliver: SliverList.list(
-              children:
-                  addresses
-                      .map(
-                        (addr) => buildAddressItem(
-                          context,
-                          addr,
-                          key: () {
-                            if (first) {
-                              first = false;
-                              return _firstAddrKey;
-                            } else {
-                              return null;
-                            }
-                          }(),
-                        ),
-                      )
-                      .toList(),
+              children: addresses
+                  .map(
+                    (addr) => buildAddressItem(
+                      context,
+                      addr,
+                      key: () {
+                        if (first) {
+                          first = false;
+                          return _firstAddrKey;
+                        } else {
+                          return null;
+                        }
+                      }(),
+                    ),
+                  )
+                  .toList(),
             ),
           ),
         ),
@@ -214,13 +216,12 @@ class _ReceiverPageState extends State<ReceivePage> {
   set focus(ReceivePageFocus v) {
     if (v == _focus || _address == null) return;
     if (v == ReceivePageFocus.verify) {
-      final stream =
-          coord
-              .verifyAddress(
-                keyId: widget.wallet.keyId(),
-                addressIndex: _address!.index,
-              )
-              .toBehaviorSubject();
+      final stream = coord
+          .verifyAddress(
+            keyId: widget.wallet.keyId(),
+            addressIndex: _address!.index,
+          )
+          .toBehaviorSubject();
       setState(() {
         _verifyStream = stream;
         _focus = v;
@@ -237,7 +238,7 @@ class _ReceiverPageState extends State<ReceivePage> {
   bool get isRevealed => _address?.revealed ?? false;
   bool get isUsed => _address?.used ?? false;
 
-  Address? _address;
+  AddressInfo? _address;
   bool get isReady => _address != null;
   Wallet get wallet => widget.wallet;
 
@@ -249,9 +250,9 @@ class _ReceiverPageState extends State<ReceivePage> {
   static const sectionHideDuration = Durations.medium4;
   static const sectionHideCurve = Curves.easeInOutCubicEmphasized;
 
-  QrImage addressQrImage(Address address) {
+  QrImage addressQrImage(AddressInfo address) {
     final qrCode = QrCode(8, QrErrorCorrectLevel.L);
-    qrCode.addData(address.address());
+    qrCode.addData(address.address.toString());
     return QrImage(qrCode);
   }
 
@@ -278,10 +279,10 @@ class _ReceiverPageState extends State<ReceivePage> {
 
     txStreamSub = widget.txStream.listen((txState) {
       if (context.mounted) {
-        Address? addr;
+        AddressInfo? addr;
         final index = _address?.index;
         if (index != null) {
-          addr = wallet.addressState(index);
+          addr = wallet.getAddressInfo(index);
         }
         setState(() {
           allTxs = txState.txs;
@@ -302,7 +303,7 @@ class _ReceiverPageState extends State<ReceivePage> {
   }
 
   void updateToIndex(int index, {ReceivePageFocus? next}) {
-    final addr = wallet.addressState(index);
+    final addr = wallet.getAddressInfo(index);
     if (mounted) {
       setState(() {
         _address = addr;
@@ -337,10 +338,9 @@ class _ReceiverPageState extends State<ReceivePage> {
       contentPadding: tilePadding.copyWith(right: 8),
       title: Text('Share'),
       trailing: TextButton.icon(
-        onPressed:
-            _address == null
-                ? null
-                : () => openAddressPicker(context, _address!),
+        onPressed: _address == null
+            ? null
+            : () => openAddressPicker(context, _address!),
         label: Text(
           '#${_address?.index}',
           style: monospaceTextStyle.copyWith(
@@ -356,7 +356,7 @@ class _ReceiverPageState extends State<ReceivePage> {
       },
     );
     final addressText = Text(
-      spacedHex(_address?.address() ?? ''),
+      spacedHex(_address?.address.toString() ?? ''),
       style: theme.textTheme.labelLarge?.copyWith(
         fontFamily: monospaceTextStyle.fontFamily,
         color: theme.colorScheme.onSurfaceVariant,
@@ -378,20 +378,18 @@ class _ReceiverPageState extends State<ReceivePage> {
             children: [
               Expanded(
                 child: FilledButton.tonalIcon(
-                  onPressed:
-                      _address == null
-                          ? null
-                          : () => copyAddress(context, _address!),
+                  onPressed: _address == null
+                      ? null
+                      : () => copyAddress(context, _address!),
                   label: Text('Copy'),
                   icon: Icon(Icons.copy_rounded),
                 ),
               ),
               Expanded(
                 child: FilledButton.tonalIcon(
-                  onPressed:
-                      _address == null
-                          ? null
-                          : () async => showAddressQr(context, _address!),
+                  onPressed: _address == null
+                      ? null
+                      : () async => showAddressQr(context, _address!),
                   label: Text('QR Code'),
                   icon: Icon(Icons.qr_code_2_rounded),
                 ),
@@ -418,8 +416,9 @@ class _ReceiverPageState extends State<ReceivePage> {
     return AnimatedCrossFade(
       firstChild: activeCard,
       secondChild: inactiveCard,
-      crossFadeState:
-          isFocused ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+      crossFadeState: isFocused
+          ? CrossFadeState.showFirst
+          : CrossFadeState.showSecond,
       duration: sectionHideDuration,
       sizeCurve: sectionHideCurve,
     );
@@ -443,86 +442,84 @@ class _ReceiverPageState extends State<ReceivePage> {
       child: Card.filled(
         margin: EdgeInsets.zero,
         color: theme.colorScheme.surfaceContainerHigh,
-        child:
-            _verifyStream == null
-                ? null
-                : StreamBuilder(
-                  stream: _verifyStream,
-                  builder: (context, targetDevicesSnapshot) {
-                    final targetDevices = deviceIdSet(
-                      targetDevicesSnapshot.data?.targetDevices ?? [],
-                    );
+        child: _verifyStream == null
+            ? null
+            : StreamBuilder(
+                stream: _verifyStream,
+                builder: (context, targetDevicesSnapshot) {
+                  final targetDevices = deviceIdSet(
+                    targetDevicesSnapshot.data?.targetDevices ?? [],
+                  );
 
-                    final dismissButton = OutlinedButton(
-                      onPressed: () => focus = ReceivePageFocus.awaitTx,
-                      child: Text('Skip'),
-                    );
+                  final dismissButton = OutlinedButton(
+                    onPressed: () => focus = ReceivePageFocus.awaitTx,
+                    child: Text('Skip'),
+                  );
 
-                    return StreamBuilder(
-                      stream: GlobalStreams.deviceListSubject,
-                      builder: (context, deviceListSnapshot) {
-                        final connectedDevices = deviceIdSet(
-                          deviceListSnapshot.data?.state.devices
-                                  .map((dev) => dev.id)
-                                  .toList() ??
-                              [],
+                  return StreamBuilder(
+                    stream: GlobalStreams.deviceListSubject,
+                    builder: (context, deviceListSnapshot) {
+                      final connectedDevices = deviceIdSet(
+                        deviceListSnapshot.data?.state.devices
+                                .map((dev) => dev.id)
+                                .toList() ??
+                            [],
+                      );
+
+                      final displayingDevices = targetDevices.intersection(
+                        connectedDevices,
+                      );
+                      for (var deviceId in displayingDevices) {
+                        fullscreenDialogController.addActionNeeded(
+                          context,
+                          deviceId,
                         );
+                      }
 
-                        final displayingDevices = targetDevices.intersection(
-                          connectedDevices,
-                        );
-                        for (var deviceId in displayingDevices) {
-                          fullscreenDialogController.addActionNeeded(
-                            context,
-                            deviceId,
+                      // collect the list first because we're going to mutate it
+                      fullscreenDialogController.actionsNeeded
+                          .toList()
+                          .whereNot(
+                            (deviceId) => displayingDevices.contains(deviceId),
+                          )
+                          .forEach(
+                            (deviceId) => fullscreenDialogController
+                                .removeActionNeeded(deviceId),
                           );
-                        }
 
-                        // collect the list first because we're going to mutate it
-                        fullscreenDialogController.actionsNeeded
-                            .toList()
-                            .whereNot(
-                              (deviceId) =>
-                                  displayingDevices.contains(deviceId),
-                            )
-                            .forEach(
-                              (deviceId) => fullscreenDialogController
-                                  .removeActionNeeded(deviceId),
-                            );
-
-                        return Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            ListTile(
-                              shape: tileShape,
-                              title: Text('Verify'),
-                              contentPadding: tilePadding,
-                              minVerticalPadding: 16,
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          ListTile(
+                            shape: tileShape,
+                            title: Text('Verify'),
+                            contentPadding: tilePadding,
+                            minVerticalPadding: 16,
+                          ),
+                          Padding(
+                            padding: sectionPadding.copyWith(
+                              top: 20,
+                              bottom: 36,
                             ),
-                            Padding(
-                              padding: sectionPadding.copyWith(
-                                top: 20,
-                                bottom: 36,
-                              ),
-                              child: Text(
-                                'Plug in a device to verify the address on a device screen.',
-                                softWrap: true,
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
+                            child: Text(
+                              'Plug in a device to verify the address on a device screen.',
+                              softWrap: true,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
                               ),
                             ),
-                            Padding(
-                              padding: sectionPadding,
-                              child: dismissButton,
-                            ),
-                          ],
-                        );
-                      },
-                    );
-                  },
-                ),
+                          ),
+                          Padding(
+                            padding: sectionPadding,
+                            child: dismissButton,
+                          ),
+                        ],
+                      );
+                    },
+                  );
+                },
+              ),
       ),
     );
     final inactiveCard = Card.outlined(
@@ -545,21 +542,20 @@ class _ReceiverPageState extends State<ReceivePage> {
   }
 
   Widget activityCard(BuildContext context) {
-    final thisAddr = _address?.address();
-    final thisSpk = _address?.spk();
+    final thisAddr = _address?.address;
+    final thisSpk = _address?.address.spk();
     final walletCtx = WalletContext.of(context)!;
     final isFocused = focus == ReceivePageFocus.awaitTx;
     final theme = Theme.of(context);
     final now = DateTime.now();
     final chainTipHeight = walletCtx.wallet.superWallet.height();
 
-    final relevantTxs =
-        allTxs.where((tx) {
-          if (thisAddr == null || thisSpk == null) return false;
-          final netSpent = (tx.sumInputsSpendingSpk(spk: thisSpk) ?? 0);
-          final netReceived = tx.sumOutputsToSpk(spk: thisSpk);
-          return (netSpent > 0 || netReceived > 0);
-        }).toList();
+    final relevantTxs = allTxs.where((tx) {
+      if (thisAddr == null || thisSpk == null) return false;
+      final netSpent = (tx.sumInputsSpendingSpk(spk: thisSpk) ?? 0);
+      final netReceived = tx.sumOutputsToSpk(spk: thisSpk);
+      return (netSpent > 0 || netReceived > 0);
+    }).toList();
     final txTiles = relevantTxs.map((tx) {
       final txDetails = TxDetailsModel(
         tx: tx,
@@ -568,19 +564,17 @@ class _ReceiverPageState extends State<ReceivePage> {
       );
       return TxSentOrReceivedTile(
         txDetails: txDetails,
-        onTap:
-            () => showBottomSheetOrDialog(
-              context,
-              titleText: 'Transaction Details',
-              builder:
-                  (context, scrollController) => walletCtx.wrap(
-                    TxDetailsPage(
-                      scrollController: scrollController,
-                      txStates: walletCtx.txStream,
-                      txDetails: txDetails,
-                    ),
-                  ),
+        onTap: () => showBottomSheetOrDialog(
+          context,
+          titleText: 'Transaction Details',
+          builder: (context, scrollController) => walletCtx.wrap(
+            TxDetailsPage(
+              scrollController: scrollController,
+              txStates: walletCtx.txStream,
+              txDetails: txDetails,
             ),
+          ),
+        ),
       );
     });
     final subtitle = Text(switch (relevantTxs.length) {
@@ -634,26 +628,27 @@ class _ReceiverPageState extends State<ReceivePage> {
     return AnimatedCrossFade(
       firstChild: activeCard,
       secondChild: inactiveCard,
-      crossFadeState:
-          isFocused ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+      crossFadeState: isFocused
+          ? CrossFadeState.showFirst
+          : CrossFadeState.showSecond,
       duration: sectionHideDuration,
       sizeCurve: sectionHideCurve,
     );
   }
 
-  void markAddressShared(BuildContext context, Address address) async {
+  void markAddressShared(BuildContext context, AddressInfo address) async {
     final walletCtx = WalletContext.of(context)!;
     await walletCtx.wallet.markAddressShared(address.index);
     updateToIndex(address.index);
   }
 
-  void copyAddress(BuildContext context, Address address) {
-    copyAction(context, 'Address', address.address());
+  void copyAddress(BuildContext context, AddressInfo address) {
+    copyAction(context, 'AddressInfo', address.address.toString());
     markAddressShared(context, address);
     focus = ReceivePageFocus.verify;
   }
 
-  void showAddressQr(BuildContext context, Address address) async {
+  void showAddressQr(BuildContext context, AddressInfo address) async {
     if (mounted) focus = ReceivePageFocus.share;
     final theme = Theme.of(context).copyWith(
       colorScheme: ColorScheme.fromSeed(
@@ -705,7 +700,7 @@ class _ReceiverPageState extends State<ReceivePage> {
     if (mounted) focus = ReceivePageFocus.verify;
   }
 
-  void openAddressPicker(BuildContext context, Address address) {
+  void openAddressPicker(BuildContext context, AddressInfo address) {
     final walletCtx = WalletContext.of(context)!;
     showBottomSheetOrDialog(
       context,
@@ -713,9 +708,8 @@ class _ReceiverPageState extends State<ReceivePage> {
       builder: (context, scrollController) {
         return walletCtx.wrap(
           AddressList(
-            onTap:
-                (context, addr) =>
-                    updateToIndex(addr.index, next: ReceivePageFocus.share),
+            onTap: (context, addr) =>
+                updateToIndex(addr.index, next: ReceivePageFocus.share),
             showUsed: address.used,
             scrollToDerivationIndex: address.index,
             scrollController: scrollController,

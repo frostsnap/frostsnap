@@ -1,51 +1,32 @@
 import '../fetch.just'
 
-default: gen lint
+default: gen run
 
-gen:
-    #!/bin/sh
-    input=./native/src/api.rs;
-    canary_file=./binding-rerun.sha256
-    flutter_rust_bridge_codegen \
-        --rust-input native/src/api.rs \
-        --dart-output lib/bridge_generated.dart \
-        --c-output ios/Runner/bridge_generated.h \
-        --extra-c-output-path macos/Runner/ \
-        --dart-decl-output lib/bridge_definitions.dart \
-        --wasm
-    shasum -a256 $input > $canary_file
+API_DIR := "rust/src/api"
+CANARY  := "binding-rerun.sha256"
+
+gen +ARGS="":
+    flutter_rust_bridge_codegen generate {{ARGS}}
+    find {{API_DIR}} -type f -exec shasum -a256 {} + > {{CANARY}}
 
 build TARGET="linux" +ARGS="":
     BUNDLE_FIRMWARE=1 flutter build {{TARGET}} {{ARGS}}
 
-run +ARGS="": maybe-gen
-    BUNDLE_FIRMWARE=1 flutter run {{ARGS}}
+run +ARGS="":
+    just ../run {{ARGS}}
 
 maybe-gen:
     #!/bin/sh
-    input=./native/src/api.rs;
-    canary_file=./binding-rerun.sha256
-    if ! shasum -a256 --check $canary_file >/dev/null 2>&1 ; then
+    if ! shasum -a256 --check {{CANARY}} >/dev/null 2>&1 ; then
        echo "$input changed so re-running bindgen">&2;
        just gen
     fi
 
-lint:
-    cd native && cargo fmt
-    dart format .
-
-clean:
-    flutter clean
-    cd native && cargo clean
-
 flutter_rust_bridge_version:
     #!/bin/sh
-    flutter_rust_bridge_version=$(perl -0777 -nE '/name = "flutter_rust_bridge".*?version = "(.*?)"/s && print $1' < ../Cargo.lock)
+    flutter_rust_bridge_version=$(cargo tree --prefix none  | sed -n 's/flutter_rust_bridge v//p')
     echo $flutter_rust_bridge_version
 
-install-flutter-deps:
-    #!/bin/sh
-    flutter pub get
 
 install-cargo-bins:
     #!/bin/sh
@@ -56,9 +37,6 @@ install-cargo-bins:
     fi
     cargo install cargo-ndk@3.5.4 espflash@3.2.0 cargo-expand@1.0.95 "flutter_rust_bridge_codegen@$flutter_rust_bridge_version"
 
-serve *args='':
-    flutter pub run flutter_rust_bridge:serve {{args}}
-
 build-appimage +ARGS="":
     #!/bin/sh
     if [ ! -d "build/linux/x64/release/bundle" ]; then
@@ -67,16 +45,16 @@ build-appimage +ARGS="":
         exit 1
     fi
     dir="appimage/AppDir"
-    executable="$dir/usr/Frostsnapp"
+    executable="$dir/usr/Frostsnap"
     rm -rf "$dir"
     mkdir -p "$dir/usr"
     cp -r appimage/assets/* "$dir/"
     cp -rp build/linux/x64/release/bundle/* $dir/usr
     # github actions caching loses the 'u+x'
-    chmod u+x "$executable"
+    chmod u+x "$executable" || exit 1;
 
     echo "final bundled libs:" >&2;
-    ls -l $dir/usr/*
+    ls -l $dir/usr/* >&2
     just fetch https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20250213-2/linuxdeploy-x86_64.AppImage appimage/linuxdeploy
     chmod u+x appimage/linuxdeploy
 
@@ -88,4 +66,6 @@ build-appimage +ARGS="":
     --executable "$executable" \
     --output appimage
 
-# vim:expandtab:sw=4:ts=4
+clean:
+    flutter clean
+    cd rust && cargo clean

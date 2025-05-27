@@ -5,9 +5,12 @@
 *.swp
 .DS_Store
 .atom/
+.build/
 .buildlog/
 .history
 .svn/
+.swiftpm/
+migrate_working_dir/
 
 # IntelliJ related
 *.iml
@@ -26,12 +29,9 @@
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
-.packages
 .pub-cache/
 .pub/
 /build/
-
-# Web related
 
 # Symbolication related
 app.*.symbols
@@ -43,18 +43,12 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
-native/target
-xcuserdata
-jniLibs
 
-# We actually want to commit these to use for CI caching
-#Cargo.lock
-#pubspec.lock
+# avoid commiting the generated code
+lib/src/rust/*
+!lib/src/rust/.gitkeep
+rust/src/frb_generated.rs
 
-**/bridge_generated*.dart
-**/bridge_generated*.h
-**/bridge_generated*.rs
-**/bridge_definitions*.dart
 
 # Used so we can check if we need to re-run bindings regeneration
 binding-rerun.sha256

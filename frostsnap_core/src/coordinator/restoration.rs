@@ -397,7 +397,7 @@ impl FrostCoordinator {
     pub fn add_recovery_share_to_restoration(
         &mut self,
         restoration_id: RestorationId,
-        recover_share: RecoverShare,
+        recover_share: &RecoverShare,
     ) -> Result<(), RestoreRecoverShareError> {
         self.check_recover_share_compatible_with_restoration(restoration_id, &recover_share)?;
         self.mutate(Mutation::Restoration(
@@ -566,12 +566,12 @@ impl FrostCoordinator {
     pub fn recover_share(
         &mut self,
         access_structure_ref: AccessStructureRef,
-        recover_share: RecoverShare,
+        recover_share: &RecoverShare,
         encryption_key: SymmetricKey,
     ) -> Result<(), RecoverShareError> {
         self.check_recover_share_compatible_with_key(
             access_structure_ref,
-            recover_share.clone(),
+            recover_share,
             encryption_key,
         )?;
 
@@ -601,7 +601,7 @@ impl FrostCoordinator {
     pub fn check_recover_share_compatible_with_key(
         &self,
         access_structure_ref: AccessStructureRef,
-        recover_share: RecoverShare,
+        recover_share: &RecoverShare,
         encryption_key: SymmetricKey,
     ) -> Result<(), RecoverShareError> {
         let access_structure = self
@@ -647,10 +647,10 @@ impl FrostCoordinator {
 
     pub fn start_restoring_key_from_recover_share(
         &mut self,
-        recover_share: RecoverShare,
+        recover_share: &RecoverShare,
         restoration_id: RestorationId,
     ) {
-        let held_share = recover_share.held_share;
+        let held_share = &recover_share.held_share;
         assert!(!self.restoration.restorations.contains_key(&restoration_id));
         if let Some(access_structure_ref) = held_share.access_structure_ref {
             assert!(self.get_access_structure(access_structure_ref).is_none());
@@ -658,7 +658,7 @@ impl FrostCoordinator {
 
         self.mutate(Mutation::Restoration(RestorationMutation::NewRestoration {
             restoration_id,
-            key_name: held_share.key_name,
+            key_name: held_share.key_name.clone(),
             threshold: held_share.threshold,
             key_purpose: held_share.purpose,
         }));

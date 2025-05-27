@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/progress_indicator.dart';
+import 'package:frostsnapp/src/rust/api/bitcoin.dart';
+import 'package:frostsnapp/src/rust/api/settings.dart';
 import 'package:rxdart/rxdart.dart';
 
 class ElectrumServerSettingsPage extends StatelessWidget {
@@ -13,7 +14,7 @@ class ElectrumServerSettingsPage extends StatelessWidget {
     final settingsStream = Rx.combineLatest2(
       settings.electrumSettings,
       settings.developerSettings,
-      (electrum, developer) {
+      (ElectrumSettings electrum, DeveloperSettings developer) {
         return (
           developerMode: developer.developerMode,
           servers: electrum.electrumServers,

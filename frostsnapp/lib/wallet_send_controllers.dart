@@ -5,9 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
 import 'package:frostsnapp/contexts.dart';
-import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/id_ext.dart';
+import 'package:frostsnapp/src/rust/api.dart';
+import 'package:frostsnapp/src/rust/api/coordinator.dart';
+import 'package:frostsnapp/src/rust/api/device_list.dart';
+import 'package:frostsnapp/src/rust/api/signing.dart';
 import 'package:frostsnapp/theme.dart';
 
 const satoshisInOneBtc = 100000000;
@@ -38,8 +41,7 @@ class AddressInputController with ChangeNotifier {
 
   bool submit(WalletContext walletContext) {
     _lastSubmitted = controller.text;
-    _errorText = api.validateDestinationAddressMethodBitcoinNetwork(
-      that: walletContext.network,
+    _errorText = walletContext.network.validateDestinationAddress(
       address: controller.text,
     );
     // We always notify listeners on submit (dont' check for changes) for simplicity and safety.
@@ -86,13 +88,12 @@ class AddressInput extends StatelessWidget {
           decoration: (decoration ?? InputDecoration()).copyWith(
             //border: defaultTextInputBorder,
             errorText: controller.errorText,
-            suffixIcon:
-                controller.controller.text.isEmpty
-                    ? null
-                    : IconButton(
-                      onPressed: () => controller.controller.clear(),
-                      icon: Icon(Icons.clear),
-                    ),
+            suffixIcon: controller.controller.text.isEmpty
+                ? null
+                : IconButton(
+                    onPressed: () => controller.controller.clear(),
+                    icon: Icon(Icons.clear),
+                  ),
           ),
           keyboardType: TextInputType.text,
           textCapitalization: TextCapitalization.none,
@@ -181,7 +182,7 @@ class FeeRateController with ChangeNotifier {
       // Map of feerate(sat/vB) to target blocks.
       var priorityMap = HashMap<int, int>();
       final list = await walletContext.wallet.superWallet.estimateFee(
-        targetBlocks: Uint64List.fromList([1, 2, 3]),
+        targetBlocks: [1, 2, 3],
       );
       for (final elem in list) {
         final (target, feerate) = elem;
@@ -535,28 +536,27 @@ class AmountInput extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: model,
-      builder:
-          (context, child) => TextField(
-            controller: model.textEditingController,
-            style: TextStyle(fontFamily: monospaceTextStyle.fontFamily),
-            decoration: (decoration ?? InputDecoration()).copyWith(
-              errorText: model.error,
-              //hintText: model.unit.hintText,
-              suffixText: model.unit.suffixText,
-              suffixIcon: IconButton(
-                onPressed: onUnitButtonPressed,
-                icon: Icon(Icons.swap_vert),
-              ),
-              border: defaultTextInputBorder,
-            ),
-            keyboardType: TextInputType.numberWithOptions(
-              signed: false,
-              decimal: model.unit.hasDecimal,
-            ),
-            inputFormatters: [model.unit.formatter],
-            autofocus: true,
-            onSubmitted: onSubmitted,
+      builder: (context, child) => TextField(
+        controller: model.textEditingController,
+        style: TextStyle(fontFamily: monospaceTextStyle.fontFamily),
+        decoration: (decoration ?? InputDecoration()).copyWith(
+          errorText: model.error,
+          //hintText: model.unit.hintText,
+          suffixText: model.unit.suffixText,
+          suffixIcon: IconButton(
+            onPressed: onUnitButtonPressed,
+            icon: Icon(Icons.swap_vert),
           ),
+          border: defaultTextInputBorder,
+        ),
+        keyboardType: TextInputType.numberWithOptions(
+          signed: false,
+          decimal: model.unit.hasDecimal,
+        ),
+        inputFormatters: [model.unit.formatter],
+        autofocus: true,
+        onSubmitted: onSubmitted,
+      ),
     );
   }
 }
@@ -614,10 +614,9 @@ class SelectedDevicesController with ChangeNotifier {
   Iterable<DeviceModel> get selectedDevices =>
       devices.where((device) => device.selected);
 
-  int get threshold =>
-      (_frostKey == null)
-          ? 0
-          : _frostKey!.accessStructures()[accessStructureIndex].threshold();
+  int get threshold => (_frostKey == null)
+      ? 0
+      : _frostKey!.accessStructures()[accessStructureIndex].threshold();
   bool get isThresholdMet => _frostKey != null && _selected.length >= threshold;
   int get remaining => threshold - _selected.length;
 

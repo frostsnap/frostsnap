@@ -1,7 +1,7 @@
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/image_converter.dart';
+import 'package:frostsnapp/src/rust/api/qr.dart';
 
 class SendScanBody extends StatefulWidget {
   final List<CameraDescription> cameras;
@@ -56,7 +56,7 @@ class _SendScanBodyState extends State<SendScanBody> {
     );
     newController.initialize().then((_) async {
       setState(() => controller = newController);
-      final qrReader = await api.newQrReader();
+      final qrReader = QrReader();
       controller?.startImageStream((image) async {
         late final String? newScanData;
         try {

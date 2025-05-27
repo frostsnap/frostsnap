@@ -12,12 +12,14 @@ import 'package:frostsnapp/electrum_server_settings.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/logs.dart';
+import 'package:frostsnapp/src/rust/api.dart';
+import 'package:frostsnapp/src/rust/api/bitcoin.dart';
+import 'package:frostsnapp/src/rust/api/settings.dart';
 import 'package:frostsnapp/todo.dart';
 import 'package:frostsnapp/wallet.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/icons.dart';
-import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class SettingsContext extends InheritedWidget {
   final Settings settings;
@@ -531,7 +533,7 @@ class ChainStatusIcon extends StatelessWidget {
     final VoidCallback? onPressed;
     final theme = Theme.of(context);
 
-    if (chainStatus.state == ChainStatusState.Connected) {
+    if (chainStatus.state == ChainStatusState.connected) {
       onPressed = () {
         WalletContext.of(context)?.superWallet.reconnect();
       };
@@ -540,13 +542,13 @@ class ChainStatusIcon extends StatelessWidget {
     }
 
     switch (chainStatus.state) {
-      case ChainStatusState.Connected:
+      case ChainStatusState.connected:
         statusName = "Connected";
         iconData = Icons.link_rounded;
         iconColor = theme.colorScheme.primary;
         break;
-      case ChainStatusState.Connecting:
-      case ChainStatusState.Disconnected:
+      case ChainStatusState.connecting:
+      case ChainStatusState.disconnected:
         statusName = "Disconnected";
         iconData = Icons.link_off_rounded;
         iconColor = theme.colorScheme.error;
@@ -562,7 +564,7 @@ class ChainStatusIcon extends StatelessWidget {
             icon: Icon(iconData, color: iconColor),
             onPressed: onPressed,
           ),
-          if (chainStatus.state == ChainStatusState.Connecting)
+          if (chainStatus.state == ChainStatusState.connecting)
             Positioned(
               bottom: 0,
               right: 0,
@@ -836,13 +838,12 @@ class BitcoinNetworkChooser extends StatelessWidget {
           value: value.name(),
           onChanged: (String? newValue) {
             if (newValue != null) {
-              final network =
-                  BitcoinNetwork.fromString(string: newValue, bridge: api)!;
+              final network = BitcoinNetwork.fromString(string: newValue)!;
               onChanged(network);
             }
           },
           items:
-              BitcoinNetwork.supportedNetworks(bridge: api).map((network) {
+              BitcoinNetwork.supportedNetworks().map((network) {
                 final name = network.name();
                 return DropdownMenuItem<String>(
                   value: name,

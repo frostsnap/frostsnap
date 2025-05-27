@@ -7,12 +7,12 @@ use frostsnap_core::{
     message::{CoordinatorRestoration, CoordinatorToDeviceMessage},
     DeviceId,
 };
-use std::collections::BTreeSet;
+use std::collections::HashSet;
 
 use crate::{DeviceMode, Sink, UiProtocol};
 
 pub struct WaitForRecoveryShare {
-    sent_request_to: BTreeSet<DeviceId>,
+    sent_request_to: HashSet<DeviceId>,
     state: WaitForRecoveryShareState,
     sink: Box<dyn Sink<WaitForRecoveryShareState>>,
     abort: bool,
@@ -121,6 +121,6 @@ impl UiProtocol for WaitForRecoveryShare {
 #[derive(Clone, Debug, Default)]
 pub struct WaitForRecoveryShareState {
     pub shares: Vec<RecoverShare>,
-    pub connected: BTreeSet<DeviceId>,
-    pub blank: BTreeSet<DeviceId>,
+    pub connected: HashSet<DeviceId>,
+    pub blank: HashSet<DeviceId>,
 }

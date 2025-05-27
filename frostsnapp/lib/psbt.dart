@@ -11,9 +11,13 @@ import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/sign_message.dart';
 import 'package:frostsnapp/snackbar.dart';
+import 'package:frostsnapp/src/rust/api.dart';
+import 'package:frostsnapp/src/rust/api/qr.dart';
+import 'package:frostsnapp/src/rust/api/signing.dart';
+import 'package:frostsnapp/src/rust/api/super_wallet.dart';
+import 'package:frostsnapp/src/rust/api/bitcoin.dart';
 import 'package:frostsnapp/wallet.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
-import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class LoadPsbtPage extends StatefulWidget {
   final Wallet wallet;
@@ -41,36 +45,35 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
       scanPsbtButton = Padding(
         padding: const EdgeInsets.symmetric(vertical: 5),
         child: ElevatedButton(
-          onPressed:
-              !enoughSelected
-                  ? null
-                  : () async {
-                    WidgetsFlutterBinding.ensureInitialized();
-                    final cameras = await availableCameras();
+          onPressed: !enoughSelected
+              ? null
+              : () async {
+                  WidgetsFlutterBinding.ensureInitialized();
+                  final cameras = await availableCameras();
+                  if (context.mounted) {
+                    final psbtBytes = await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) {
+                          return PsbtCameraReader(cameras: cameras);
+                        },
+                      ),
+                    );
                     if (context.mounted) {
-                      final psbtBytes = await Navigator.push(
+                      await runPsbtSigningWorkflow(
                         context,
-                        MaterialPageRoute(
-                          builder: (context) {
-                            return PsbtCameraReader(cameras: cameras);
-                          },
-                        ),
+                        psbtBytes: psbtBytes,
+                        selectedDevices: selectedDevices.toList(),
+                        accessStructureRef: accessStructure
+                            .accessStructureRef(),
+                        wallet: widget.wallet,
                       );
-                      if (context.mounted) {
-                        await runPsbtSigningWorkflow(
-                          context,
-                          psbtBytes: psbtBytes,
-                          selectedDevices: selectedDevices.toList(),
-                          accessStructureRef:
-                              accessStructure.accessStructureRef(),
-                          wallet: widget.wallet,
-                        );
-                      }
-                      if (context.mounted) {
-                        Navigator.pop(context);
-                      }
                     }
-                  },
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                    }
+                  }
+                },
           child: Text("Scan 📷"),
         ),
       );
@@ -81,29 +84,27 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
     final loadPsbtFileButton = Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: ElevatedButton(
-        onPressed:
-            !enoughSelected
-                ? null
-                : () async {
-                  FilePickerResult? fileResult =
-                      await FilePicker.platform.pickFiles();
-                  if (fileResult != null) {
-                    File file = File(fileResult.files.single.path!);
-                    Uint8List psbtBytes = await file.readAsBytes();
-                    if (context.mounted) {
-                      await runPsbtSigningWorkflow(
-                        context,
-                        wallet: widget.wallet,
-                        psbtBytes: psbtBytes,
-                        selectedDevices: selectedDevices.toList(),
-                        accessStructureRef:
-                            accessStructure.accessStructureRef(),
-                      );
-                    }
-                  } else {
-                    // User canceled the file picker
+        onPressed: !enoughSelected
+            ? null
+            : () async {
+                FilePickerResult? fileResult = await FilePicker.platform
+                    .pickFiles();
+                if (fileResult != null) {
+                  File file = File(fileResult.files.single.path!);
+                  Uint8List psbtBytes = await file.readAsBytes();
+                  if (context.mounted) {
+                    await runPsbtSigningWorkflow(
+                      context,
+                      wallet: widget.wallet,
+                      psbtBytes: psbtBytes,
+                      selectedDevices: selectedDevices.toList(),
+                      accessStructureRef: accessStructure.accessStructureRef(),
+                    );
                   }
-                },
+                } else {
+                  // User canceled the file picker
+                }
+              },
         child: Text("Open File 📂"),
       ),
     );
@@ -149,8 +150,8 @@ Future<void> runPsbtSigningWorkflow(
   final UnsignedTx unsignedTx;
 
   try {
-    psbt = api.psbtBytesToPsbt(psbtBytes: psbtBytes);
-    unsignedTx = wallet.superWallet.psbtToUnsignedTx(
+    psbt = Psbt.deserialize(bytes: psbtBytes);
+    unsignedTx = await wallet.superWallet.psbtToUnsignedTx(
       psbt: psbt,
       masterAppkey: wallet.masterAppkey,
     );
@@ -224,7 +225,7 @@ Future<void> saveOrBroadcastSignedPsbtDialog(
           await showDialog(
             context: context,
             builder: (BuildContext context) {
-              return AnimatedQr(input: psbt.toBytes());
+              return AnimatedQr(input: psbt.serialize());
             },
           );
         },
@@ -242,7 +243,7 @@ Future<void> saveOrBroadcastSignedPsbtDialog(
             // user canceled the picker
           } else {
             final newFile = File(outputFile);
-            final psbtBytes = psbt.toBytes();
+            final psbtBytes = psbt.serialize();
             await newFile.writeAsBytes(psbtBytes);
           }
         },
@@ -271,14 +272,12 @@ Future<void> saveOrBroadcastSignedPsbtDialog(
                   onPressed: () {
                     Clipboard.setData(
                       ClipboardData(
-                        text:
-                            psbt
-                                .toBytes()
-                                .map(
-                                  (byte) =>
-                                      byte.toRadixString(16).padLeft(2, '0'),
-                                )
-                                .join(),
+                        text: psbt
+                            .serialize()
+                            .map(
+                              (byte) => byte.toRadixString(16).padLeft(2, '0'),
+                            )
+                            .join(),
                       ),
                     );
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -324,7 +323,7 @@ Future<void> savePsbt(BuildContext context, Psbt psbt) async {
     final file = File(outputFile);
 
     // Convert your PSBT object to bytes (assuming psbt.toBytes() returns Uint8List)
-    final psbtBytes = psbt.toBytes();
+    final psbtBytes = psbt.serialize();
 
     // Write the bytes to the selected file
     await file.writeAsBytes(psbtBytes);
@@ -356,14 +355,15 @@ class _AnimatedQrState extends State<AnimatedQr> {
   }
 
   Future<void> _initQrEncoder() async {
-    _qrEncoder = await api.newQrEncoder(bytes: widget.input);
-    _updateQr();
+    _qrEncoder = QrEncoder(bytes: widget.input);
+    await _updateQr();
   }
 
-  void _updateQr() {
+  Future<void> _updateQr() async {
     if (mounted) {
+      final next = await _qrEncoder.nextPart();
       setState(() {
-        currentQrData = _qrEncoder.next();
+        currentQrData = next;
       });
       Future.delayed(Duration(milliseconds: 100), _updateQr);
     }
@@ -407,32 +407,32 @@ class EffectTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    List<TableRow> transactionRows =
-        effect.foreignReceivingAddresses.map((entry) {
-          final (address, value) = entry;
-          return TableRow(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Text('Send to $address'),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: SatoshiText.withSign(value: -value),
-              ),
-            ],
-          );
-        }).toList();
+    List<TableRow> transactionRows = effect.foreignReceivingAddresses.map((
+      entry,
+    ) {
+      final (address, value) = entry;
+      return TableRow(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Text('Send to $address'),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: SatoshiText.withSign(value: -value),
+          ),
+        ],
+      );
+    }).toList();
 
     transactionRows.add(
       TableRow(
         children: [
           Padding(
             padding: const EdgeInsets.all(8.0),
-            child:
-                effect.feerate != null
-                    ? Text("${effect.feerate!.toStringAsFixed(1)} (sats/vb))")
-                    : Text("unknown"),
+            child: effect.feerate != null
+                ? Text("${effect.feerate!.toStringAsFixed(1)} (sats/vb))")
+                : Text("unknown"),
           ),
           Padding(
             padding: const EdgeInsets.all(8.0),

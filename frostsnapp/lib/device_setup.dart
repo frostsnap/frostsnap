@@ -4,9 +4,10 @@ import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/device_list.dart';
 
-import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/settings.dart';
+import 'package:frostsnapp/src/rust/api.dart';
+import 'package:frostsnapp/src/rust/api/device_list.dart';
 
 class DeviceSetup extends StatelessWidget {
   final DeviceId id;
@@ -92,7 +93,7 @@ class _DeviceNameField extends State<DeviceNameField> {
     final completeWhen = GlobalStreams.deviceListChangeStream
         .firstWhere(
           (change) =>
-              change.kind == DeviceListChangeKind.Named &&
+              change.kind == DeviceListChangeKind.named &&
               deviceIdEquals(widget.id, change.device.id),
         )
         .then((change) => change.device.name!);
@@ -151,8 +152,10 @@ class _DeviceNameField extends State<DeviceNameField> {
             labelText: 'Name',
           ),
           onSubmitted: switch (widget.mode) {
-            DeviceNameMode.rename =>
-              (name) => _renameOnSubmitted(context, name),
+            DeviceNameMode.rename => (name) => _renameOnSubmitted(
+              context,
+              name,
+            ),
             DeviceNameMode.preview => (name) => _previewOnSubmitted(name),
           },
           onChanged: (value) {

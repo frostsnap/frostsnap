@@ -2,18 +2,19 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/animated_check.dart';
-import 'package:frostsnapp/bridge_definitions.dart';
 import 'package:frostsnapp/device.dart';
 import 'package:frostsnapp/device_action.dart';
 import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/device_setup.dart';
-import 'package:frostsnapp/ffi.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/show_backup.dart';
 import 'package:frostsnapp/snackbar.dart';
 import 'package:frostsnapp/progress_indicator.dart';
+import 'package:frostsnapp/src/rust/api.dart';
+import 'package:frostsnapp/src/rust/api/device_list.dart';
+import 'package:frostsnapp/src/rust/api/firmware_upgrade.dart';
 import 'package:frostsnapp/theme.dart';
 
 class DeviceSettingsPage extends StatelessWidget {
@@ -49,7 +50,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
 
       final unplugged = event.changes.any(
         (change) =>
-            change.kind == DeviceListChangeKind.Removed &&
+            change.kind == DeviceListChangeKind.removed &&
             deviceIdEquals(change.device.id, widget.id),
       );
       if (unplugged) {
@@ -86,47 +87,47 @@ class _DeviceSettingsState extends State<DeviceSettings> {
       );
     } else {
       final device_ = device!;
-      final relevantDeviceKeys =
-          keys.where((key) {
-            final accessStructure = key.accessStructures().elementAtOrNull(0);
-            if (accessStructure == null) return false;
+      final relevantDeviceKeys = keys.where((key) {
+        final accessStructure = key.accessStructures().elementAtOrNull(0);
+        if (accessStructure == null) return false;
 
-            final devices = accessStructure.devices();
-            return devices.any((d) => deviceIdEquals(d, device_.id));
-          }).toList();
+        final devices = accessStructure.devices();
+        return devices.any((d) => deviceIdEquals(d, device_.id));
+      }).toList();
 
       Widget keyList = ListView.builder(
         shrinkWrap: true,
         itemCount: relevantDeviceKeys.length,
         itemBuilder: (context, index) {
           final key = relevantDeviceKeys[index];
-          final accessStructureRef =
-              key.accessStructures().elementAtOrNull(0)?.accessStructureRef();
+          final accessStructureRef = key
+              .accessStructures()
+              .elementAtOrNull(0)
+              ?.accessStructureRef();
           final keyName = key.keyName();
           return Padding(
             padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
             child: ListTile(
               title: Text(keyName, style: const TextStyle(fontSize: 20.0)),
               trailing: ElevatedButton(
-                onPressed:
-                    accessStructureRef == null
-                        ? null
-                        : () async {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) {
-                                return BackupSettingsPage(
-                                  context: context,
-                                  id: device_.id,
-                                  deviceName: device_.name ?? "??",
-                                  accessStructureRef: accessStructureRef,
-                                  keyName: keyName,
-                                );
-                              },
-                            ),
-                          );
-                        },
+                onPressed: accessStructureRef == null
+                    ? null
+                    : () async {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) {
+                              return BackupSettingsPage(
+                                context: context,
+                                id: device_.id,
+                                deviceName: device_.name ?? "??",
+                                accessStructureRef: accessStructureRef,
+                                keyName: keyName,
+                              );
+                            },
+                          ),
+                        );
+                      },
                 child: Text("Backup"),
               ),
             ),
@@ -357,10 +358,9 @@ class _FirmwareUpgradeDialogState extends State<FirmwareUpgradeDialog> {
     }
     final confirmations = deviceIdSet(state!.confirmations);
     final needUpgrade = deviceIdSet(state!.needUpgrade);
-    final text =
-        progress == null
-            ? "Confirm upgrade on devices"
-            : "Wait for upgrade to complete";
+    final text = progress == null
+        ? "Confirm upgrade on devices"
+        : "Wait for upgrade to complete";
 
     return Column(
       children: [
@@ -411,22 +411,18 @@ class KeyValueListWidget extends StatelessWidget {
       padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children:
-            data.entries.map((entry) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      entry.key,
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    Text(entry.value),
-                  ],
-                ),
-              );
-            }).toList(),
+        children: data.entries.map((entry) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(entry.key, style: TextStyle(fontWeight: FontWeight.bold)),
+                Text(entry.value),
+              ],
+            ),
+          );
+        }).toList(),
       ),
     );
   }
@@ -489,8 +485,9 @@ class BackupSettingsPage extends StatelessWidget {
                   await backupDeviceDialog(
                     context,
                     deviceId: id,
-                    accessStructure:
-                        coord.getAccessStructure(asRef: accessStructureRef)!,
+                    accessStructure: coord.getAccessStructure(
+                      asRef: accessStructureRef,
+                    )!,
                   );
                 },
                 child: Text("Show Backup"),

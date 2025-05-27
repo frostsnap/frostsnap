@@ -12,10 +12,13 @@ import 'package:frostsnapp/device_list.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/hex.dart';
 import 'package:frostsnapp/settings.dart';
+import 'package:frostsnapp/src/rust/api.dart';
+import 'package:frostsnapp/src/rust/api/bitcoin.dart';
+import 'package:frostsnapp/src/rust/api/device_list.dart';
+import 'package:frostsnapp/src/rust/api/keygen.dart';
 import 'package:frostsnapp/stream_ext.dart';
 import 'package:frostsnapp/progress_indicator.dart';
 import 'package:frostsnapp/theme.dart';
-import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class KeyNamePage extends StatefulWidget {
   const KeyNamePage({super.key});
@@ -27,7 +30,7 @@ class KeyNamePage extends StatefulWidget {
 class _KeyNamePageState extends State<KeyNamePage> {
   final TextEditingController _keyNameController = TextEditingController();
   final FocusNode _keyNameFocusNode = FocusNode();
-  BitcoinNetwork bitcoinNetwork = BitcoinNetwork.mainnet(bridge: api);
+  BitcoinNetwork bitcoinNetwork = BitcoinNetwork.bitcoin;
 
   @override
   void initState() {

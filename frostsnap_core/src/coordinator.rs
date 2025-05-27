@@ -28,7 +28,7 @@ use schnorr_fun::{
     Schnorr, Signature,
 };
 use sha2::Sha256;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tracing::{event, Level};
 
 mod coordinator_to_user;
@@ -1244,7 +1244,7 @@ pub struct ActiveSignSession {
     pub progress: Vec<SignSessionProgress>,
     pub init: StartSign,
     pub key_id: KeyId,
-    pub sent_req_to_device: BTreeSet<DeviceId>,
+    pub sent_req_to_device: HashSet<DeviceId>,
 }
 
 impl ActiveSignSession {
