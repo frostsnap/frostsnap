@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:frostsnapp/bridge_definitions.dart';
 import 'package:frostsnapp/device.dart';
 import 'package:frostsnapp/id_ext.dart';
+import 'package:frostsnapp/src/rust/api.dart';
 import 'package:frostsnapp/theme.dart';
 
 class FullscreenActionDialogController<T> extends ChangeNotifier {

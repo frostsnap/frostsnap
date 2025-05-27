@@ -1,24 +1,33 @@
 import 'dart:async';
 import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
 import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/global.dart';
-import 'package:flutter/services.dart';
-import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/serialport.dart';
+import 'package:frostsnapp/settings.dart';
+import 'package:frostsnapp/src/rust/api.dart';
+import 'package:frostsnapp/src/rust/api/device_list.dart';
+import 'package:frostsnapp/src/rust/api/init.dart';
 import 'package:frostsnapp/stream_ext.dart';
-import 'package:frostsnapp/theme.dart';
-import 'package:frostsnapp/wallet.dart';
-import 'package:frostsnapp/wallet_list_controller.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
-import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'dart:io';
 import 'package:flutter/rendering.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:flutter/material.dart';
+import 'package:frostsnapp/src/rust/api/coordinator.dart';
+import 'package:frostsnapp/src/rust/api/bitcoin.dart';
+import 'package:frostsnapp/src/rust/api/log.dart';
+import 'package:frostsnapp/src/rust/api/super_wallet.dart';
+import 'package:frostsnapp/src/rust/frb_generated.dart';
+import 'package:frostsnapp/theme.dart';
+import 'package:frostsnapp/wallet.dart';
+import 'package:frostsnapp/wallet_list_controller.dart';
+import 'package:flutter/foundation.dart';
 
-void main() async {
+Future<void> main() async {
   // enable this if you're trying to figure out why things are displaying in
   // certain positions/sizes
   debugPaintSizeEnabled = false;
@@ -26,20 +35,24 @@ void main() async {
   // https://stackoverflow.com/questions/57689492/flutter-unhandled-exception-servicesbinding-defaultbinarymessenger-was-accesse
   WidgetsFlutterBinding.ensureInitialized();
 
+  // 💡 renable if you want to mess around with different fonts
+  GoogleFonts.config.allowRuntimeFetching = false;
+  // 🖕 to all intellectual property but I am doing what I am told.
+  LicenseRegistry.addLicense(() async* {
+    final license = await rootBundle.loadString('assets/google_fonts/OFL.txt');
+    yield LicenseEntryWithLineBreaks(['google_fonts'], license);
+  });
+
+  await RustLib.init();
+  api = Api();
+
   String? startupError;
-  final Stream<String> logStream;
+  // // set logging up first before doing anything else
+  final Stream<String> logStream = api
+      .turnLoggingOn(level: LogLevel.debug)
+      .toReplaySubject();
 
-  // set logging up first before doing anything else
-
-  if (Platform.isAndroid) {
-    logStream =
-        api.turnLogcatLoggingOn(level: LogLevel.Debug).toReplaySubject();
-  } else {
-    logStream =
-        api.turnStderrLoggingOn(level: LogLevel.Debug).toReplaySubject();
-  }
-
-  // wait for first message to appear so that logging is working before we carry on
+  // // wait for first message to appear so that logging is working before we carry on
   await logStream.first;
   AppCtx? appCtx;
 
@@ -53,8 +66,6 @@ void main() async {
       globalHostPortHandler = HostPortHandler(ffiserial);
       coord = coord_;
       appCtx = appCtx_;
-      // check for devices that were plugged in before the app even started
-      globalHostPortHandler.scanDevices();
     } else {
       final (coord_, appCtx_) = await api.load(appDir: appDirPath);
       coord = coord_;
@@ -63,13 +74,12 @@ void main() async {
     }
     coord.startThread();
   } on PanicException catch (e) {
-    startupError = "rust panic'd with: ${e.error}";
-  } on FrbAnyhowException catch (e, stacktrace) {
-    startupError = "rust error: ${e.anyhow}\n$stacktrace";
+    startupError = "rust panic'd with: ${e.message}";
+  } on AnyhowException catch (e, stacktrace) {
+    startupError = "rust error: ${e.message}\n$stacktrace";
   } catch (error, stacktrace) {
     startupError = "$error\n$stacktrace";
-    api.log(level: LogLevel.Info, message: "startup failed with $startupError");
-    runApp(MyApp(startupError: startupError));
+    log(level: LogLevel.info, message: "startup failed with $startupError");
   }
 
   if (startupError != null) {
@@ -80,7 +90,7 @@ void main() async {
       // ASAP. Right now we don't confirm with the user this action but maybe in
       // the future we will.
       for (var change in update.changes) {
-        if (change.kind == DeviceListChangeKind.RecoveryMode &&
+        if (change.kind == DeviceListChangeKind.recoveryMode &&
             change.device.recoveryMode) {
           coord.exitRecoveryMode(deviceId: change.device.id);
         }
@@ -135,11 +145,10 @@ class _MyAppState extends State<MyApp> {
   late final Future<List<void>> googleFontsPending;
   late ColorScheme colorScheme;
 
-  void _setColorTheme() =>
-      colorScheme = ColorScheme.fromSeed(
-        brightness: Brightness.dark,
-        seedColor: seedColor,
-      );
+  void _setColorTheme() => colorScheme = ColorScheme.fromSeed(
+    brightness: Brightness.dark,
+    seedColor: seedColor,
+  );
 
   @override
   void initState() {
@@ -176,10 +185,9 @@ class _MyAppState extends State<MyApp> {
             colorScheme: colorScheme,
             textTheme: textTheme,
           ),
-          home:
-              widget.startupError == null
-                  ? const MyHomePage()
-                  : StartupErrorWidget(error: widget.startupError!),
+          home: widget.startupError == null
+              ? const MyHomePage()
+              : StartupErrorWidget(error: widget.startupError!),
           debugShowCheckedModeBanner: false,
         );
       },

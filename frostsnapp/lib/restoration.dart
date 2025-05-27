@@ -4,7 +4,11 @@ import 'package:frostsnapp/device_setup.dart';
 import 'package:frostsnapp/global.dart';
 import 'package:frostsnapp/settings.dart';
 import 'package:frostsnapp/snackbar.dart';
-import 'ffi.dart';
+import 'package:frostsnapp/src/rust/api.dart';
+import 'package:frostsnapp/src/rust/api/bitcoin.dart';
+import 'package:frostsnapp/src/rust/api/coordinator.dart';
+import 'package:frostsnapp/src/rust/api/device_list.dart';
+import 'package:frostsnapp/src/rust/api/recovery.dart';
 
 class WalletRecoveryPage extends StatelessWidget {
   final RestoringKey restoringKey;
@@ -89,93 +93,86 @@ class WalletRecoveryPage extends StatelessWidget {
                 const SizedBox(height: 10),
                 // Wrap the list in a Column; using ListView here would require shrinkWrap/physics adjustments.
                 Column(
-                  children:
-                      restoringKey.sharesObtained.map((share) {
-                        final deleteButton = IconButton(
-                          icon: const Icon(Icons.delete),
-                          tooltip: 'Remove share',
-                          onPressed: () async {
-                            await coord.deleteRestorationShare(
-                              restorationId: restoringKey.restorationId,
-                              deviceId: share.deviceId,
-                            );
-                          },
+                  children: restoringKey.sharesObtained.map((share) {
+                    final deleteButton = IconButton(
+                      icon: const Icon(Icons.delete),
+                      tooltip: 'Remove share',
+                      onPressed: () async {
+                        await coord.deleteRestorationShare(
+                          restorationId: restoringKey.restorationId,
+                          deviceId: share.deviceId,
                         );
-                        final deviceName =
-                            coord.getDeviceName(id: share.deviceId) ??
-                            '<empty>';
-                        return Card(
-                          elevation: 2,
-                          margin: const EdgeInsets.symmetric(vertical: 4.0),
-                          child: ListTile(
-                            leading: Icon(Icons.key),
-                            trailing: Row(
-                              mainAxisSize:
-                                  MainAxisSize.min, // keep row compact
-                              children: [
-                                ...switch (share.validity) {
-                                  RestorationShareValidity.Valid => [
-                                    Tooltip(
-                                      message: "Valid key",
-                                      child: Icon(
-                                        Icons.check_circle,
-                                        color:
-                                            Theme.of(
-                                              context,
-                                            ).colorScheme.primary,
-                                      ),
-                                    ),
-                                  ],
-                                  RestorationShareValidity.Unknown => [
-                                    deleteButton,
-                                    const SizedBox(width: 8),
-                                    Tooltip(
-                                      message: "Validity to be determined",
-                                      child: Icon(
-                                        Icons.pending_rounded,
-                                        color:
-                                            Theme.of(
-                                              context,
-                                            ).colorScheme.primary,
-                                      ),
-                                    ),
-                                  ],
-                                  RestorationShareValidity.Invalid => [
-                                    deleteButton,
-                                    const SizedBox(width: 8),
-                                    Tooltip(
-                                      message:
-                                          "This share is incompatible with the other shares",
-                                      child: Icon(
-                                        Icons.warning,
-                                        color:
-                                            Theme.of(context).colorScheme.error,
-                                      ),
-                                    ),
-                                  ],
-                                },
-                                // delete button
-                              ],
-                            ),
-                            title: Row(
-                              children: [
+                      },
+                    );
+                    final deviceName =
+                        coord.getDeviceName(id: share.deviceId) ?? '<empty>';
+                    return Card(
+                      elevation: 2,
+                      margin: const EdgeInsets.symmetric(vertical: 4.0),
+                      child: ListTile(
+                        leading: Icon(Icons.key),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min, // keep row compact
+                          children: [
+                            ...switch (share.validity) {
+                              RestorationShareValidity.valid => [
                                 Tooltip(
-                                  message: "the key number",
-                                  child: Text(
-                                    "#${share.index}",
-                                    style: TextStyle(
-                                      color:
-                                          Theme.of(context).colorScheme.primary,
-                                    ),
+                                  message: "Valid key",
+                                  child: Icon(
+                                    Icons.check_circle,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
                                   ),
                                 ),
-                                SizedBox(width: 10),
-                                Text(deviceName),
                               ],
+                              RestorationShareValidity.unknown => [
+                                deleteButton,
+                                const SizedBox(width: 8),
+                                Tooltip(
+                                  message: "Validity to be determined",
+                                  child: Icon(
+                                    Icons.pending_rounded,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                  ),
+                                ),
+                              ],
+                              RestorationShareValidity.invalid => [
+                                deleteButton,
+                                const SizedBox(width: 8),
+                                Tooltip(
+                                  message:
+                                      "This share is incompatible with the other shares",
+                                  child: Icon(
+                                    Icons.warning,
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
+                                ),
+                              ],
+                            },
+                            // delete button
+                          ],
+                        ),
+                        title: Row(
+                          children: [
+                            Tooltip(
+                              message: "the key number",
+                              child: Text(
+                                "#${share.index}",
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                              ),
                             ),
-                          ),
-                        );
-                      }).toList(),
+                            SizedBox(width: 10),
+                            Text(deviceName),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
                 ),
                 const SizedBox(height: 10),
                 Center(child: progressDescription),
@@ -214,26 +211,24 @@ class WalletRecoveryPage extends StatelessWidget {
                     FilledButton.icon(
                       icon: const Icon(Icons.check_circle),
                       label: const Text('Restore'),
-                      onPressed:
-                          restoringKey.problem == null
-                              ? () async {
-                                try {
-                                  final accessStructureRef = await coord
-                                      .finishRestoring(
-                                        restorationId:
-                                            restoringKey.restorationId,
-                                      );
-                                  onWalletRecovered(accessStructureRef);
-                                } catch (e) {
-                                  if (context.mounted) {
-                                    showErrorSnackbarBottom(
-                                      context,
-                                      "failed to recover wallet: $e",
+                      onPressed: restoringKey.problem == null
+                          ? () async {
+                              try {
+                                final accessStructureRef = await coord
+                                    .finishRestoring(
+                                      restorationId: restoringKey.restorationId,
                                     );
-                                  }
+                                onWalletRecovered(accessStructureRef);
+                              } catch (e) {
+                                if (context.mounted) {
+                                  showErrorSnackbarBottom(
+                                    context,
+                                    "failed to recover wallet: $e",
+                                  );
                                 }
                               }
-                              : null,
+                            }
+                          : null,
                     ),
                   ],
                 ),
@@ -276,10 +271,10 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
       kind = MethodChoiceKind.continueRecovery;
       restorationId = widget.continuing!;
       final state = coord.getRestorationState(restorationId: restorationId!)!;
-      threshold = state.threshold();
-      walletName = state.keyName();
+      threshold = state.accessStructure.threshold;
+      walletName = state.keyName;
       bitcoinNetwork =
-          state.bitcoinNetwork() ?? BitcoinNetwork.mainnet(bridge: api);
+          state.keyPurpose.bitcoinNetwork() ?? BitcoinNetwork.bitcoin;
     } else if (widget.existing != null) {
       kind = MethodChoiceKind.addToWallet;
     } else {
@@ -669,7 +664,7 @@ class _EnterWalletNameView extends StatefulWidget {
 class _EnterWalletNameViewState extends State<_EnterWalletNameView> {
   final _formKey = GlobalKey<FormState>();
   final _walletNameController = TextEditingController();
-  BitcoinNetwork bitcoinNetwork = BitcoinNetwork.mainnet(bridge: api);
+  BitcoinNetwork bitcoinNetwork = BitcoinNetwork.bitcoin;
   bool _isButtonEnabled = false;
 
   @override
@@ -700,8 +695,9 @@ class _EnterWalletNameViewState extends State<_EnterWalletNameView> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final developerMode =
-        SettingsContext.of(context)!.settings.isInDeveloperMode();
+    final developerMode = SettingsContext.of(
+      context,
+    )!.settings.isInDeveloperMode();
 
     return Form(
       key: _formKey,
@@ -807,15 +803,14 @@ class _EnterThresholdViewState extends State<_EnterThresholdView> {
               border: OutlineInputBorder(),
               hintText: 'Number of keys needed',
             ),
-            items:
-                List.generate(5, (index) => index + 1)
-                    .map(
-                      (number) => DropdownMenuItem<int>(
-                        value: number,
-                        child: Text('$number key${number > 1 ? 's' : ''}'),
-                      ),
-                    )
-                    .toList(),
+            items: List.generate(5, (index) => index + 1)
+                .map(
+                  (number) => DropdownMenuItem<int>(
+                    value: number,
+                    child: Text('$number key${number > 1 ? 's' : ''}'),
+                  ),
+                )
+                .toList(),
             onChanged: (value) {
               if (value != null) {
                 setState(() {
@@ -1042,7 +1037,7 @@ class _PlugInPromptViewState extends State<_PlugInPromptView> {
           SizedBox(height: 16),
           // Warning text for the alreadyGot error case
           Text(
-            "The connected device “${coord.getDeviceName(id: alreadyGot!.deviceId())}” is already part of the wallet “${alreadyGot!.keyName()}”",
+            "The connected device “${coord.getDeviceName(id: alreadyGot!.heldBy)}” is already part of the wallet “${alreadyGot!.heldShare.keyName}”",
             style: theme.textTheme.bodyLarge,
             textAlign: TextAlign.center,
           ),
@@ -1074,10 +1069,9 @@ class _PlugInPromptViewState extends State<_PlugInPromptView> {
     final String prompt;
 
     if (widget.continuing != null) {
-      final name =
-          coord
-              .getRestorationState(restorationId: widget.continuing!)!
-              .keyName();
+      final name = coord
+          .getRestorationState(restorationId: widget.continuing!)!
+          .keyName;
       prompt = 'Plug in a Frostsnap to continue recovering "$name"';
     } else if (widget.existing != null) {
       final name = coord.getFrostKey(keyId: widget.existing!.keyId)!.keyName();
@@ -1128,8 +1122,7 @@ class _CandidateReadyView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final deviceName =
-        coord.getDeviceName(id: candidate.deviceId()) ?? '<empty>';
+    final deviceName = coord.getDeviceName(id: candidate.heldBy) ?? '<empty>';
 
     Widget icon;
     String message;
@@ -1147,11 +1140,11 @@ class _CandidateReadyView extends StatelessWidget {
 
         if (continuing != null || existing != null) {
           message =
-              'The key "$deviceName" can be added to "${candidate.keyName()}"!';
-          buttonText = 'Add key to ${candidate.keyName()}';
+              'The key "$deviceName" can be added to "${candidate.heldShare.keyName}"!';
+          buttonText = 'Add key to ${candidate.heldShare.keyName}';
         } else {
           message =
-              'The key "$deviceName" is part of a wallet called "${candidate.keyName()}"!';
+              'The key "$deviceName" is part of a wallet called "${candidate.heldShare.keyName}"!';
           buttonText = 'Start restoring';
         }
 
@@ -1196,7 +1189,7 @@ class _CandidateReadyView extends StatelessWidget {
       case ShareCompatibility_Incompatible():
         icon = const Icon(Icons.error, size: 48, color: Colors.red);
         message =
-            'This key "$deviceName" is part of a different wallet called "${candidate.keyName()}"';
+            'This key "$deviceName" is part of a different wallet called "${candidate.heldShare.keyName}"';
         buttonText = 'Close';
         buttonAction = () => Navigator.pop(context);
         break;

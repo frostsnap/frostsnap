@@ -4,7 +4,10 @@ import 'dart:core';
 import 'package:flutter/material.dart';
 import 'package:frostsnapp/contexts.dart';
 import 'package:frostsnapp/id_ext.dart';
-import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
+import 'package:frostsnapp/src/rust/api.dart';
+import 'package:frostsnapp/src/rust/api/bitcoin.dart';
+import 'package:frostsnapp/src/rust/api/coordinator.dart';
+import 'package:frostsnapp/src/rust/api/recovery.dart';
 
 class AccessStructureSummaryItem {
   final FrostKey key;
@@ -30,15 +33,14 @@ class WalletListController extends ChangeNotifier {
   WalletListController({required Stream<KeyState> keyStream}) {
     _sub = keyStream.listen((state) {
       _gotInitialData = true;
-      _wallets =
-          state.keys
-              .map<WalletItem>((key) => WalletItemKey(key))
-              .followedBy(
-                state.restoring.map(
-                  (restoring) => WalletItemRestoration(restoring),
-                ),
-              )
-              .toList();
+      _wallets = state.keys
+          .map<WalletItem>((key) => WalletItemKey(key))
+          .followedBy(
+            state.restoring.map(
+              (restoring) => WalletItemRestoration(restoring),
+            ),
+          )
+          .toList();
       if (_selectedIndex == null || _selectedIndex! >= wallets.length) {
         _selectedIndex = _wallets.isNotEmpty ? 0 : null;
       }
@@ -58,10 +60,10 @@ class WalletListController extends ChangeNotifier {
 
   int? get selectedIndex =>
       (_selectedIndex != null &&
-              _selectedIndex! < _wallets.length &&
-              _selectedIndex! >= 0)
-          ? _selectedIndex
-          : null;
+          _selectedIndex! < _wallets.length &&
+          _selectedIndex! >= 0)
+      ? _selectedIndex
+      : null;
   set selectedIndex(int? index) {
     if (index == _selectedIndex) return;
     if (index != null && index >= _wallets.length) return;

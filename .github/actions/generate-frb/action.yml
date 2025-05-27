@@ -13,18 +13,10 @@ runs:
       uses: actions/cache@v4
       with:
         path: |
-          ./frostsnapp/native/src/bridge_generated.web.rs
-          ./frostsnapp/native/src/bridge_generated.io.rs
-          ./frostsnapp/native/src/bridge_generated.rs
-          ./frostsnapp/macos/Runner/bridge_generated.h
-          ./frostsnapp/lib/bridge_generated.io.dart
-          ./frostsnapp/lib/bridge_generated.dart
-          ./frostsnapp/lib/bridge_generated.web.dart
-          ./frostsnapp/ios/Runner/bridge_generated.h
-          ./frostsnapp/lib/bridge_definitions.freezed.dart
-          ./frostsnapp/lib/bridge_definitions.dart
           ./frostsnapp/binding-rerun.sha256
-        key: frb-files-${{ inputs.version }}-${{ hashFiles('frostsnapp/native/src/**/*') }}
+          ./frostsnapp/lib/src/rust
+          ./frostsnapp/rust/src/frb_generated.rs
+        key: frb-files-${{ inputs.version }}-${{ hashFiles('frostsnapp/rust/src/api/**') }}
 
     - uses: dtolnay/rust-toolchain@stable
       if: steps.generate-frb.outputs.cache-hit != 'true'

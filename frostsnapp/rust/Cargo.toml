@@ -1,0 +1,33 @@
+[package]
+name = "rust_lib_frostsnapp"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+flutter_rust_bridge = "=2.10.0"
+
+anyhow = "1"
+frostsnap_coordinator = { workspace = true }
+frostsnap_core = { workspace = true }
+lazy_static = "1.4"
+tracing-subscriber = { version = "0.3" }
+tracing = { workspace = true, features = ["std"] }
+bincode.workspace = true
+bardecoder = "0.5.0"
+bitcoin.workspace = true
+image = "0.24"
+ur = { git = "https://github.com/nickfarrow/ur-rs", rev = "2e267e5e019b6c8129f66efba00327ff3d0ae5a4" }
+rusqlite = "0.31.0"
+sha2.workspace = true
+rand = "0.8"
+time = { version = "0.3.36", features = ["formatting"] }
+
+
+[target.'cfg(target_os = "android")'.dependencies]
+tracing-logcat = "0.1"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

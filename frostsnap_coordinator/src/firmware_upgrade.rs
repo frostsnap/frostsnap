@@ -63,7 +63,6 @@ impl UiProtocol for FirmwareUpgradeProtocol {
         if self.state.devices.contains(&id) {
             self.state.abort = true;
             self.emit_state();
-            self.sink.close();
         }
     }
 
