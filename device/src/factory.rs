@@ -1,5 +1,6 @@
 use crate::ds::{ds_words_to_bytes, sign_like_test_vectors, standard_rsa_sign};
-use crate::factory::REPRODUCING_TEST_VECTORS;
+use crate::factory::DEVICE_SHOW_TEST_VECTOR;
+use crate::flash::{Blob, FlashBlob};
 use alloc::vec::Vec;
 use cst816s::CST816S;
 use embedded_graphics::{
@@ -11,8 +12,8 @@ use embedded_graphics::{
 use embedded_hal as hal;
 use embedded_text::{alignment::HorizontalAlignment, style::TextBoxStyleBuilder, TextBox};
 use esp_hal::{hmac::Hmac, peripherals::DS, timer, usb_serial_jtag::UsbSerialJtag, Blocking};
+use esp_storage::FlashStorage;
 use frostsnap_comms::{factory::*, ReceiveSerial};
-use rand_core::RngCore;
 use rand_core::SeedableRng;
 
 // mod screen_test;
@@ -101,7 +102,7 @@ where
         challenge,
     } = read_message!(upstream, FactorySend::SetEsp32DsKey);
 
-    if REPRODUCING_TEST_VECTORS {
+    if DEVICE_SHOW_TEST_VECTOR {
         // don't panic if already burned
         let _ = efuse.set_efuse_key(RSA_EFUSE_KEY_SLOT, KeyPurpose::Ds, false, hmac_key);
         let signature = sign_like_test_vectors(ds, encrypted_params, challenge);
@@ -116,14 +117,13 @@ where
 
     let _ = efuse.set_efuse_key(RSA_EFUSE_KEY_SLOT, KeyPurpose::Ds, true, hmac_key);
     let signature = standard_rsa_sign(ds, encrypted_params, &challenge);
-    let debug_hex = signature
-        .iter()
-        .map(|byte| format!("{:02x}", byte))
-        .collect::<alloc::string::String>();
 
     let signature = ds_words_to_bytes(&signature);
     upstream
-        .send(DeviceFactorySend::SetDs { signature })
+        .send(DeviceFactorySend::SetDs {
+            signature,
+            hmac_key,
+        })
         .unwrap();
     text_display!(display, "Set DS and signed");
 
@@ -132,18 +132,17 @@ where
         certificate,
     } = read_message!(upstream, FactorySend::SetGenuineCertificate);
 
-    // TODO:
-    // Persist encrypted blob:
-    // (encrypted params & STATIC_ENTROPY_HMAC )
-    //
-    // Persist genuine check certificate and key.
-    // Maybe it against factory key.
+    // let blob = Blob::new(encrypted_params, hmac_key, genuine_key, certificate);
+    // let flash = RefCell::new(FlashStorage::new());
+    // let mut partitions = crate::partitions::Partitions::load(&flash);
+    // let mut flash_blob = FlashBlob::new(partitions.blob);
+    // flash_blob.write_blob(&blob);
 
     upstream
         .send(DeviceFactorySend::SavedGenuineCertificate)
         .unwrap();
 
-    text_display!(display, "Saved genuine check");
+    text_display!(display, "Pretended to save blob");
 
     // Burn EFUSES
 

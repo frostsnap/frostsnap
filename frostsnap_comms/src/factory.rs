@@ -2,26 +2,27 @@ use crate::{Direction, HasMagicBytes, MagicBytesVersion, MAGIC_BYTES_LEN};
 use alloc::{string::String, vec::Vec};
 use frostsnap_core::{schnorr_fun::Signature, Gist};
 
-pub const ETS_DS_MAX_BITS: usize = 3072;
-pub const KEY_SIZE_BYTES: usize = 384;
+pub const DS_KEY_SIZE_BITS: usize = 3072;
+pub const DS_KEY_SIZE_BYTES: usize = 384;
 
-pub const REPRODUCING_TEST_VECTORS: bool = false;
+pub const DEVICE_SHOW_TEST_VECTOR: bool = false;
+pub const FACTORY_SEND_TEST_KEY: bool = true;
 
-pub fn pad_message_for_rsa(message_digest: &[u8]) -> [u8; KEY_SIZE_BYTES] {
+pub fn pad_message_for_rsa(message_digest: &[u8]) -> [u8; DS_KEY_SIZE_BYTES] {
     // Hard-code the ASN.1 DigestInfo prefix for SHA-256
     const SHA256_ASN1_PREFIX: &[u8] = &[
         0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01,
         0x05, 0x00, 0x04, 0x20,
     ];
 
-    let mut padded_block = [0; KEY_SIZE_BYTES];
+    let mut padded_block = [0; DS_KEY_SIZE_BYTES];
 
     // PKCS#1 v1.5 format: 0x00 || 0x01 || PS || 0x00 || T
     padded_block[0] = 0x00;
     padded_block[1] = 0x01;
 
     // Calculate padding length
-    let padding_len = KEY_SIZE_BYTES - SHA256_ASN1_PREFIX.len() - message_digest.len() - 3;
+    let padding_len = DS_KEY_SIZE_BYTES - SHA256_ASN1_PREFIX.len() - message_digest.len() - 3;
 
     // Fill with 0xFF bytes
     for i in 0..padding_len {
@@ -52,7 +53,10 @@ pub struct FactoryDownstream;
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
 pub enum DeviceFactorySend {
     InitEntropyOk,
-    SetDs { signature: [u8; 384] },
+    SetDs {
+        signature: [u8; 384],
+        hmac_key: [u8; 32], // send this back so the coordinator can lookup the RSA public key
+    },
     SavedGenuineCertificate,
 }
 
