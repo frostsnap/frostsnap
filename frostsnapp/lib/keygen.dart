@@ -65,7 +65,7 @@ class _KeyNamePageState extends State<KeyNamePage> {
     final settingsCtx = SettingsContext.of(context)!;
 
     return Scaffold(
-      appBar: FsAppBar(title: Text('Key Name')),
+      appBar: FsAppBar(title: Text('Wallet Name')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -73,7 +73,7 @@ class _KeyNamePageState extends State<KeyNamePage> {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text(
-              "This is the human readable name the device and app will use to refer to the key. The name can never be changed.",
+              "Choose a name for this wallet",
               style: TextStyle(fontSize: 18),
               textAlign: TextAlign.center,
             ),
@@ -87,7 +87,7 @@ class _KeyNamePageState extends State<KeyNamePage> {
                 focusNode: _keyNameFocusNode,
                 textAlign: TextAlign.center,
                 maxLength: 20, // Limit the number of characters
-                decoration: InputDecoration(labelText: 'Key name'),
+                decoration: InputDecoration(labelText: 'Wallet name'),
                 onChanged: (value) {
                   setState(() {}); // Update the UI when the text changes
                 },
@@ -295,7 +295,7 @@ class _ThresholdPageState extends State<ThresholdPage> {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text(
-              "How many devices will be needed to sign under this key?",
+              "How many devices will need to sign to spend from this wallet?",
               style: TextStyle(fontSize: 18),
               softWrap: true,
               textAlign: TextAlign.center,
@@ -407,7 +407,7 @@ showWalletCreatedDialog(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: const [
               Text(
-                'Wallet created! Now let\'s secure it',
+                'Wallet created!\nNow let\'s secure it.',
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
               Icon(Icons.checklist, size: 40),
