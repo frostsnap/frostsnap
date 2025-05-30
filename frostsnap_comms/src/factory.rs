@@ -1,27 +1,31 @@
 use crate::{Direction, HasMagicBytes, MagicBytesVersion, MAGIC_BYTES_LEN};
 use alloc::{string::String, vec::Vec};
-use frostsnap_core::{schnorr_fun::Signature, Gist};
+use frostsnap_core::{
+    schnorr_fun::{
+        fun::{marker::EvenY, Point},
+        Signature,
+    },
+    Gist,
+};
 
-pub const ETS_DS_MAX_BITS: usize = 3072;
-pub const KEY_SIZE_BYTES: usize = 384;
+pub const DS_KEY_SIZE_BITS: usize = 3072;
+pub const DS_KEY_SIZE_BYTES: usize = DS_KEY_SIZE_BITS / 8;
 
-pub const REPRODUCING_TEST_VECTORS: bool = false;
-
-pub fn pad_message_for_rsa(message_digest: &[u8]) -> [u8; KEY_SIZE_BYTES] {
+pub fn pad_message_for_rsa(message_digest: &[u8]) -> [u8; DS_KEY_SIZE_BYTES] {
     // Hard-code the ASN.1 DigestInfo prefix for SHA-256
     const SHA256_ASN1_PREFIX: &[u8] = &[
         0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01,
         0x05, 0x00, 0x04, 0x20,
     ];
 
-    let mut padded_block = [0; KEY_SIZE_BYTES];
+    let mut padded_block = [0; DS_KEY_SIZE_BYTES];
 
     // PKCS#1 v1.5 format: 0x00 || 0x01 || PS || 0x00 || T
     padded_block[0] = 0x00;
     padded_block[1] = 0x01;
 
     // Calculate padding length
-    let padding_len = KEY_SIZE_BYTES - SHA256_ASN1_PREFIX.len() - message_digest.len() - 3;
+    let padding_len = DS_KEY_SIZE_BYTES - SHA256_ASN1_PREFIX.len() - message_digest.len() - 3;
 
     // Fill with 0xFF bytes
     for i in 0..padding_len {
@@ -52,33 +56,45 @@ pub struct FactoryDownstream;
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
 pub enum DeviceFactorySend {
     InitEntropyOk,
-    SetDs { signature: [u8; 384] },
-    SavedGenuineCertificate,
+    ReceivedDsKey,
+    SavedGenuineCertificate(Certificate),
+    SignedChallenge { signature: [u8; 384] },
 }
 
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
 pub enum FactorySend {
     InitEntropy([u8; 32]),
     SetEsp32DsKey(Esp32DsKey),
-    SetGenuineCertificate(GenuineCheckKey),
+    SetGenuineCertificate(Certificate),
+    RequestCertificate,
+    Challenge(Vec<u8>),
 }
 
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
 pub struct Esp32DsKey {
     pub encrypted_params: Vec<u8>,
-    pub hmac_key: [u8; 32],
-    pub challenge: Vec<u8>,
+    pub ds_hmac_key: [u8; 32],
 }
 
-#[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
-pub struct GenuineCheckKey {
-    pub genuine_key: [u8; 32],
-    pub certificate: Signature,
+#[derive(bincode::Encode, bincode::Decode, Debug, Clone, PartialEq)]
+pub struct Certificate {
+    pub rsa_key: Vec<u8>,
+    pub serial_number: u32,
+    pub timestamp: u64,
+    pub case_color: String,
+    pub signature: Signature,
+    pub factory_key: Point<EvenY>,
 }
 
 impl Gist for DeviceFactorySend {
     fn gist(&self) -> String {
-        todo!()
+        match self {
+            DeviceFactorySend::InitEntropyOk => "InitEntropyOk",
+            DeviceFactorySend::ReceivedDsKey { .. } => "SetDs",
+            DeviceFactorySend::SavedGenuineCertificate(_) => "SavedGenuineCertificate",
+            DeviceFactorySend::SignedChallenge { .. } => "SignedChallenge",
+        }
+        .into()
     }
 }
 
@@ -88,6 +104,8 @@ impl Gist for FactorySend {
             FactorySend::SetEsp32DsKey { .. } => "SetEsp32DsKey",
             FactorySend::InitEntropy(_) => "InitEntropy",
             FactorySend::SetGenuineCertificate(_) => "GenuineCertificate",
+            FactorySend::RequestCertificate => "RequestCertificate",
+            FactorySend::Challenge(_) => "Challenge",
         }
         .into()
     }
