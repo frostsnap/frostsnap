@@ -2055,7 +2055,8 @@ impl Settings {
     }
 
     pub fn is_in_developer_mode(&self) -> SyncReturn<bool> {
-        SyncReturn(self.settings.lock().unwrap().developer_mode)
+        SyncReturn(true)
+        // SyncReturn(self.settings.lock().unwrap().developer_mode)
     }
 
     pub fn check_and_set_electrum_server(
