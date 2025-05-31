@@ -211,7 +211,10 @@ class _DeviceSettingsState extends State<DeviceSettings> {
 
       final settings = SettingsSection(
         settings: [
-          ("Name", DeviceNameField(id: device_.id, existingName: device_.name)),
+          (
+            "Name",
+            DeviceNameField(id: device_.id, mode: DeviceNameMode.rename),
+          ),
           ("Key Shares", keyList),
           ("Nonces", NonceCounterDisplay(id: device_.id)),
           ("Update Firmware", firmwareSettings),
@@ -288,17 +291,12 @@ class FirmwareUpgradeDialog extends StatefulWidget {
   @override
   State<FirmwareUpgradeDialog> createState() => _FirmwareUpgradeDialogState();
 
-  static void show(BuildContext context) {
-    showDeviceActionDialog(
+  static Future<void> show(BuildContext context) async {
+    final result = await showDeviceActionDialog(
       context: context,
-      builder: (context) {
-        return FirmwareUpgradeDialog();
-      },
-    ).then((result) {
-      if (result == null) {
-        coord.cancelProtocol();
-      }
-    });
+      builder: (context) => FirmwareUpgradeDialog(),
+    );
+    if (result == null) await coord.cancelProtocol();
   }
 }
 

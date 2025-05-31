@@ -5,12 +5,13 @@ import 'package:frostsnapp/device.dart';
 import 'package:frostsnapp/id_ext.dart';
 import 'package:frostsnapp/theme.dart';
 
-class FullscreenActionDialogController extends ChangeNotifier {
+class FullscreenActionDialogController<T> extends ChangeNotifier {
   String? title;
   Function(BuildContext)? body;
   final Set<DeviceId> _actionNeeded = deviceIdSet([]);
   Function(BuildContext)? dismissButton;
   Function()? onDismissed;
+  Future<T?>? _fut;
 
   FullscreenActionDialogController({
     this.title,
@@ -19,18 +20,29 @@ class FullscreenActionDialogController extends ChangeNotifier {
     this.onDismissed,
   });
 
-  addActionNeeded(BuildContext context, DeviceId deviceId) {
+  void addActionNeeded(BuildContext context, DeviceId deviceId) {
     final hadActionsNeeded = _actionNeeded.isNotEmpty;
     _actionNeeded.add(deviceId);
     if (!hadActionsNeeded) {
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => showFullscreenActionDialog(context, controller: this),
-      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _fut = showFullscreenActionDialog(context, controller: this);
+      });
     }
   }
 
-  removeActionNeeded(DeviceId deviceId) {
+  Future<T?> removeActionNeeded(DeviceId deviceId) async {
     if (_actionNeeded.remove(deviceId)) _safeNotify();
+    final fut = _fut;
+    if (_actionNeeded.isEmpty && fut != null) {
+      return await fut;
+    }
+    return null;
+  }
+
+  void clearAllActionsNeeded() {
+    if (_actionNeeded.isEmpty) return;
+    _actionNeeded.clear();
+    _safeNotify();
   }
 
   bool get hasActionsNeeded => _actionNeeded.isNotEmpty;
@@ -71,7 +83,7 @@ void showCannotDismissDialog(BuildContext context) async {
 
 Future<T?> showFullscreenActionDialog<T>(
   BuildContext context, {
-  required FullscreenActionDialogController controller,
+  required FullscreenActionDialogController<T> controller,
 }) async {
   // Use
   final res = await showGeneralDialog<T>(
@@ -96,72 +108,66 @@ Future<T?> showFullscreenActionDialog<T>(
               appBar: AppBar(
                 elevation: 0,
                 forceMaterialTransparency: true,
-                leading:
-                    controller.onDismissed != null
-                        ? IconButton(
-                          icon: Icon(
-                            Icons.close,
-                            color: theme.colorScheme.onSurface,
-                          ),
-                          onPressed: () => Navigator.pop(ctx),
-                        )
-                        : null,
+                automaticallyImplyLeading: false,
+                leading: controller.onDismissed != null
+                    ? IconButton(
+                        icon: Icon(
+                          Icons.close,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                        onPressed: () => Navigator.pop(ctx),
+                      )
+                    : null,
               ),
               body: Padding(
                 padding: EdgeInsets.all(20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.max,
-                  spacing: 20,
-                  children: [
-                    Spacer(flex: 10),
-                    Center(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(maxWidth: 580),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SvgPicture.string(
-                              DeviceWidget.deviceSvg,
-                              width: 162,
-                              height: 134,
-                              colorFilter: ColorFilter.mode(
-                                theme.colorScheme.onSurface,
-                                BlendMode.srcATop,
-                              ),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: 580),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Spacer(flex: 9),
+                        SvgPicture.string(
+                          DeviceWidget.deviceSvg,
+                          width: 162,
+                          height: 134,
+                          colorFilter: ColorFilter.mode(
+                            theme.colorScheme.onSurface,
+                            BlendMode.srcATop,
+                          ),
+                        ),
+                        SizedBox(height: 32),
+                        if (controller.title != null)
+                          Text(
+                            controller.title!,
+                            style: theme.textTheme.headlineSmall,
+                            textAlign: TextAlign.center,
+                          ),
+                        SizedBox(height: 20),
+                        if (controller.body != null)
+                          DefaultTextStyle(
+                            style: theme.textTheme.bodyLarge!,
+                            child: controller.body!.call(ctx),
+                          ),
+                        Spacer(flex: 3),
+                        if (controller.dismissButton == null) ...[
+                          Spacer(flex: 3),
+                          Text(
+                            'complete the action on the device or unplug it',
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
                             ),
-                            SizedBox(height: 32),
-                            if (controller.title != null)
-                              Text(
-                                controller.title!,
-                                style: theme.textTheme.headlineSmall,
-                                textAlign: TextAlign.center,
-                              ),
-                            SizedBox(height: 20),
-                            if (controller.body != null)
-                              DefaultTextStyle(
-                                style: theme.textTheme.bodyLarge!,
-                                child: controller.body!.call(ctx),
-                              ),
-                          ],
-                        ),
-                      ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                        if (controller.dismissButton != null) ...[
+                          Center(child: controller.dismissButton!(context)),
+                          Spacer(flex: 3),
+                        ],
+                      ],
                     ),
-                    Spacer(flex: 3),
-                    if (controller.dismissButton == null) ...[
-                      Spacer(flex: 3),
-                      Text(
-                        'complete the action on the device or unplug it',
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                    if (controller.dismissButton != null) ...[
-                      Center(child: controller.dismissButton!(context)),
-                      Spacer(flex: 3),
-                    ],
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -173,7 +179,7 @@ Future<T?> showFullscreenActionDialog<T>(
         canPop: controller.onDismissed != null,
         onPopInvokedWithResult: (didPop, result) {
           if (didPop) return;
-          showCannotDismissDialog(ctx);
+          showCannotDismissDialog(context);
         },
         child: BackdropFilter(filter: blurFilter, child: dialog),
       );

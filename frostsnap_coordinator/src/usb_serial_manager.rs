@@ -698,7 +698,7 @@ impl UsbSender {
         self.sender
             .send(CoordinatorSendMessage::to(
                 device_id,
-                CoordinatorSendBody::Naming(frostsnap_comms::NameCommand::Finish(name.into())),
+                CoordinatorSendBody::Naming(frostsnap_comms::NameCommand::Prompt(name.into())),
             ))
             .expect("receiver exists");
     }
