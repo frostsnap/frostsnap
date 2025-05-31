@@ -95,15 +95,10 @@ class _DeviceNameField extends State<DeviceNameField> {
               change.kind == DeviceListChangeKind.Named &&
               deviceIdEquals(widget.id, change.device.id),
         )
-        .then((change) {
-          widget.onNamed?.call(change.device.name!);
-          // changed = false;
-          return;
-        });
-    await completeWhen;
+        .then((change) => change.device.name!);
     coord.finishNaming(id: widget.id, name: name);
     if (context.mounted) {
-      await showDeviceActionDialog(
+      final confirmedName = await showDeviceActionDialog(
         context: context,
         complete: completeWhen,
         builder: (context) {
@@ -128,6 +123,12 @@ class _DeviceNameField extends State<DeviceNameField> {
           );
         },
       );
+
+      if (confirmedName != null) {
+        widget.onNamed?.call(confirmedName);
+      } else {
+        coord.sendCancel(id: widget.id);
+      }
     }
   }
 
