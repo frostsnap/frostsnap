@@ -202,8 +202,8 @@ impl State {
                 }
             }
             DeviceNeedsConsolidation(consolidation) => {
-                let already_exists = self.pending_physical_consolidations.insert(consolidation);
-                if already_exists {
+                let changed = self.pending_physical_consolidations.insert(consolidation);
+                if !changed {
                     return None;
                 }
             }
