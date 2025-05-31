@@ -2,12 +2,12 @@ import 'dart:async';
 import 'dart:core';
 
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/contexts.dart';
-import 'package:frostsnapp/id_ext.dart';
-import 'package:frostsnapp/src/rust/api.dart';
-import 'package:frostsnapp/src/rust/api/bitcoin.dart';
-import 'package:frostsnapp/src/rust/api/coordinator.dart';
-import 'package:frostsnapp/src/rust/api/recovery.dart';
+import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/bitcoin.dart';
+import 'package:frostsnap/src/rust/api/coordinator.dart';
+import 'package:frostsnap/src/rust/api/recovery.dart';
 
 class AccessStructureSummaryItem {
   final FrostKey key;

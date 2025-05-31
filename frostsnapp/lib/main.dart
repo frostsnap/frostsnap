@@ -3,28 +3,28 @@ import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
-import 'package:frostsnapp/contexts.dart';
-import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/serialport.dart';
-import 'package:frostsnapp/settings.dart';
-import 'package:frostsnapp/src/rust/api.dart';
-import 'package:frostsnapp/src/rust/api/device_list.dart';
-import 'package:frostsnapp/src/rust/api/init.dart';
-import 'package:frostsnapp/stream_ext.dart';
+import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/global.dart';
+import 'package:frostsnap/serialport.dart';
+import 'package:frostsnap/settings.dart';
+import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/device_list.dart';
+import 'package:frostsnap/src/rust/api/init.dart';
+import 'package:frostsnap/stream_ext.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:flutter/rendering.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/src/rust/api/coordinator.dart';
-import 'package:frostsnapp/src/rust/api/bitcoin.dart';
-import 'package:frostsnapp/src/rust/api/log.dart';
-import 'package:frostsnapp/src/rust/api/super_wallet.dart';
-import 'package:frostsnapp/src/rust/frb_generated.dart';
-import 'package:frostsnapp/theme.dart';
-import 'package:frostsnapp/wallet.dart';
-import 'package:frostsnapp/wallet_list_controller.dart';
+import 'package:frostsnap/src/rust/api/coordinator.dart';
+import 'package:frostsnap/src/rust/api/bitcoin.dart';
+import 'package:frostsnap/src/rust/api/log.dart';
+import 'package:frostsnap/src/rust/api/super_wallet.dart';
+import 'package:frostsnap/src/rust/frb_generated.dart';
+import 'package:frostsnap/theme.dart';
+import 'package:frostsnap/wallet.dart';
+import 'package:frostsnap/wallet_list_controller.dart';
 import 'package:flutter/foundation.dart';
 
 Future<void> main() async {
@@ -180,7 +180,7 @@ class _MyAppState extends State<MyApp> {
         final textTheme = GoogleFonts.notoSansTextTheme(baseTheme.textTheme);
 
         return MaterialApp(
-          title: 'Frostsnapp',
+          title: 'Frostsnap',
           theme: baseTheme.copyWith(
             colorScheme: colorScheme,
             textTheme: textTheme,

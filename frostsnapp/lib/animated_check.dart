@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 
-import 'package:frostsnapp/device_list.dart';
+import 'package:frostsnap/device_list.dart';
 
 class CirclePainter extends CustomPainter {
   final double progress;

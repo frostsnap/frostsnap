@@ -9,7 +9,7 @@ gen +ARGS="":
     flutter_rust_bridge_codegen generate {{ARGS}}
     find {{API_DIR}} -type f -exec shasum -a256 {} + > {{CANARY}}
 
-build TARGET="linux" +ARGS="":
+build TARGET="linux" +ARGS="": maybe-gen
     BUNDLE_FIRMWARE=1 flutter build {{TARGET}} {{ARGS}}
 
 run +ARGS="":
@@ -62,7 +62,7 @@ build-appimage +ARGS="":
     appimage/linuxdeploy \
     --appdir $dir \
     --desktop-file "$dir/com.frostsnapp.app.desktop" \
-    --icon-file "$dir/Frostsnapp.png" \
+    --icon-file "$dir/Frostsnap.png" \
     --executable "$executable" \
     --output appimage
 

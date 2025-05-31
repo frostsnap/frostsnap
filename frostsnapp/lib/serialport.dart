@@ -3,7 +3,7 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // Required for MethodChannel
-import 'package:frostsnapp/src/rust/api/port.dart'; // Assuming PortDesc is here
+import 'package:frostsnap/src/rust/api/port.dart'; // Assuming PortDesc is here
 import 'package:usb_serial/usb_serial.dart'; // Assuming UsbDevice and UsbEvent are here
 import 'package:collection/collection.dart';
 
@@ -16,7 +16,7 @@ class HostPortHandler {
   // MethodChannel for communication from MainActivity.kt
   // Make sure this string EXACTLY matches the one in MainActivity.kt
   static const _usbDeviceChannel = MethodChannel(
-    'com.example.frostsnapp/usb_device_channel',
+    'com.frostsnap/usb_device_channel',
   );
 
   // Stores devices that have been explicitly approved via MainActivity's notification
@@ -24,9 +24,6 @@ class HostPortHandler {
 
   HostPortHandler(this.ffiserial) {
     if (ffiserial == null) {
-      debugPrint(
-        "HostPortHandler: FfiSerial is null, USB functionality will be limited.",
-      );
       return;
     }
 

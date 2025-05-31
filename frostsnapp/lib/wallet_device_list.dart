@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/src/rust/api/device_list.dart';
+import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'global.dart';
 
 typedef OnDeviceListChange = Function(DeviceListState);

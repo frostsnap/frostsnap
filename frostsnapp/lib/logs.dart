@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:frostsnapp/theme.dart';
+import 'package:frostsnap/theme.dart';
 
 class LogPane extends StatefulWidget {
   final Stream<String> logStream;

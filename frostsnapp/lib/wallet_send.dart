@@ -1,15 +1,15 @@
-import 'package:frostsnapp/contexts.dart';
+import 'package:frostsnap/contexts.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/services.dart';
-import 'package:frostsnapp/cached_future.dart';
+import 'package:frostsnap/cached_future.dart';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/src/rust/api/signing.dart';
-import 'package:frostsnapp/theme.dart';
-import 'package:frostsnapp/wallet.dart';
-import 'package:frostsnapp/wallet_send_controllers.dart';
-import 'package:frostsnapp/wallet_send_feerate_picker.dart';
-import 'package:frostsnapp/wallet_send_scan.dart';
-import 'package:frostsnapp/wallet_tx_details.dart';
+import 'package:frostsnap/src/rust/api/signing.dart';
+import 'package:frostsnap/theme.dart';
+import 'package:frostsnap/wallet.dart';
+import 'package:frostsnap/wallet_send_controllers.dart';
+import 'package:frostsnap/wallet_send_feerate_picker.dart';
+import 'package:frostsnap/wallet_send_scan.dart';
+import 'package:frostsnap/wallet_tx_details.dart';
 
 enum SendPageIndex { recipient, amount, signers }
 

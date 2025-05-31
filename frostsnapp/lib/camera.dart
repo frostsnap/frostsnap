@@ -3,11 +3,11 @@ import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/image_converter.dart';
-import 'package:frostsnapp/settings.dart';
-import 'package:frostsnapp/snackbar.dart';
-import 'package:frostsnapp/progress_indicator.dart';
-import 'package:frostsnapp/src/rust/api/qr.dart';
+import 'package:frostsnap/image_converter.dart';
+import 'package:frostsnap/settings.dart';
+import 'package:frostsnap/snackbar.dart';
+import 'package:frostsnap/progress_indicator.dart';
+import 'package:frostsnap/src/rust/api/qr.dart';
 
 class PsbtCameraReader extends StatefulWidget {
   const PsbtCameraReader({required this.cameras, super.key});

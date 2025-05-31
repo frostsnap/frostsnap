@@ -1,6 +1,6 @@
 import 'dart:collection';
 import 'package:flutter/foundation.dart';
-import 'package:frostsnapp/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api.dart';
 
 HashSet<DeviceId> deviceIdSet(Iterable<DeviceId> devices) {
   final set = HashSet<DeviceId>(

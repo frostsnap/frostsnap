@@ -3,19 +3,19 @@ import 'dart:collection';
 
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/contexts.dart';
-import 'package:frostsnapp/device_action_fullscreen_dialog.dart';
-import 'package:frostsnapp/id_ext.dart';
-import 'package:frostsnapp/src/rust/api/coordinator.dart';
-import 'package:frostsnapp/src/rust/api/super_wallet.dart';
-import 'package:frostsnapp/theme.dart';
-import 'package:frostsnapp/wallet.dart';
-import 'package:frostsnapp/stream_ext.dart';
-import 'package:frostsnapp/wallet_tx_details.dart';
+import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/device_action_fullscreen_dialog.dart';
+import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/src/rust/api/coordinator.dart';
+import 'package:frostsnap/src/rust/api/super_wallet.dart';
+import 'package:frostsnap/theme.dart';
+import 'package:frostsnap/wallet.dart';
+import 'package:frostsnap/stream_ext.dart';
+import 'package:frostsnap/wallet_tx_details.dart';
 import 'package:glowy_borders/glowy_borders.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:rxdart/rxdart.dart';
-import 'package:frostsnapp/src/rust/api/bitcoin.dart';
+import 'package:frostsnap/src/rust/api/bitcoin.dart';
 
 import 'global.dart';
 

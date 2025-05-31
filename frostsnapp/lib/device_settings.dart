@@ -1,21 +1,21 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/animated_check.dart';
-import 'package:frostsnapp/device.dart';
-import 'package:frostsnapp/device_action.dart';
-import 'package:frostsnapp/id_ext.dart';
-import 'package:frostsnapp/device_list.dart';
-import 'package:frostsnapp/device_setup.dart';
-import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/settings.dart';
-import 'package:frostsnapp/show_backup.dart';
-import 'package:frostsnapp/snackbar.dart';
-import 'package:frostsnapp/progress_indicator.dart';
-import 'package:frostsnapp/src/rust/api.dart';
-import 'package:frostsnapp/src/rust/api/device_list.dart';
-import 'package:frostsnapp/src/rust/api/firmware_upgrade.dart';
-import 'package:frostsnapp/theme.dart';
+import 'package:frostsnap/animated_check.dart';
+import 'package:frostsnap/device.dart';
+import 'package:frostsnap/device_action.dart';
+import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/device_list.dart';
+import 'package:frostsnap/device_setup.dart';
+import 'package:frostsnap/global.dart';
+import 'package:frostsnap/settings.dart';
+import 'package:frostsnap/show_backup.dart';
+import 'package:frostsnap/snackbar.dart';
+import 'package:frostsnap/progress_indicator.dart';
+import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/device_list.dart';
+import 'package:frostsnap/src/rust/api/firmware_upgrade.dart';
+import 'package:frostsnap/theme.dart';
 
 class DeviceSettingsPage extends StatelessWidget {
   const DeviceSettingsPage({super.key});

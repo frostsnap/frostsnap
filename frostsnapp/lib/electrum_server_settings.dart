@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/settings.dart';
-import 'package:frostsnapp/progress_indicator.dart';
-import 'package:frostsnapp/src/rust/api/bitcoin.dart';
-import 'package:frostsnapp/src/rust/api/settings.dart';
+import 'package:frostsnap/settings.dart';
+import 'package:frostsnap/progress_indicator.dart';
+import 'package:frostsnap/src/rust/api/bitcoin.dart';
+import 'package:frostsnap/src/rust/api/settings.dart';
 import 'package:rxdart/rxdart.dart';
 
 class ElectrumServerSettingsPage extends StatelessWidget {
