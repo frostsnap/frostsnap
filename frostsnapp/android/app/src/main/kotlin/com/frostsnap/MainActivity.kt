@@ -1,4 +1,4 @@
-package com.example.frostsnapp
+package com.frostsnap
 
 import android.content.Context
 import android.content.Intent
@@ -17,7 +17,7 @@ class MainActivity : FlutterActivity() { // Or your actual base class
 
     // Define a unique name for your method channel.
     // This string must be EXACTLY THE SAME on the Dart side.
-    private val USB_DEVICE_CHANNEL = "com.example.frostsnapp/usb_device_channel"
+    private val USB_DEVICE_CHANNEL = "com.frostsnap/usb_device_channel"
     private var methodChannel: MethodChannel? = null
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {

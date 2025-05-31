@@ -1,7 +1,7 @@
-import 'package:frostsnapp/src/rust/api.dart';
-import 'package:frostsnapp/src/rust/api/coordinator.dart';
-import 'package:frostsnapp/src/rust/api/device_list.dart';
-import 'package:frostsnapp/stream_ext.dart';
+import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/coordinator.dart';
+import 'package:frostsnap/src/rust/api/device_list.dart';
+import 'package:frostsnap/stream_ext.dart';
 import 'serialport.dart';
 
 late Coordinator coord;

@@ -2,7 +2,7 @@ import 'dart:typed_data';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/theme.dart';
+import 'package:frostsnap/theme.dart';
 
 String toHex(Uint8List data) {
   return data.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join('');

@@ -6,7 +6,7 @@
     <!-- llfourn removed allowBackup. Seems like we wouldn't want it. -->
     <!-- evanlinjin added enableOnBackInvokedCallback because some android build warning told him too -->
     <application
-        android:label="frostsnapp"
+        android:label="Frostsnap"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"

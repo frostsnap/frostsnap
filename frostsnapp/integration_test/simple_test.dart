@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:frostsnapp/main.dart';
-import 'package:frostsnapp/src/rust/frb_generated.dart';
+import 'package:frostsnap/main.dart';
+import 'package:frostsnap/src/rust/frb_generated.dart';
 import 'package:integration_test/integration_test.dart';
 
 void main() {

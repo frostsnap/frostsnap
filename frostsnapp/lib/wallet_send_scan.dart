@@ -1,7 +1,7 @@
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/image_converter.dart';
-import 'package:frostsnapp/src/rust/api/qr.dart';
+import 'package:frostsnap/image_converter.dart';
+import 'package:frostsnap/src/rust/api/qr.dart';
 
 class SendScanBody extends StatefulWidget {
   final List<CameraDescription> cameras;

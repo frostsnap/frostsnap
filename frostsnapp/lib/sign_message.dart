@@ -2,16 +2,16 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/animated_check.dart';
-import 'package:frostsnapp/device_action.dart';
-import 'package:frostsnapp/id_ext.dart';
-import 'package:frostsnapp/device_list.dart';
-import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/settings.dart';
-import 'package:frostsnapp/src/rust/api.dart';
-import 'package:frostsnapp/src/rust/api/coordinator.dart';
-import 'package:frostsnapp/src/rust/api/signing.dart';
-import 'package:frostsnapp/stream_ext.dart';
+import 'package:frostsnap/animated_check.dart';
+import 'package:frostsnap/device_action.dart';
+import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/device_list.dart';
+import 'package:frostsnap/global.dart';
+import 'package:frostsnap/settings.dart';
+import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/coordinator.dart';
+import 'package:frostsnap/src/rust/api/signing.dart';
+import 'package:frostsnap/stream_ext.dart';
 import 'hex.dart';
 
 class SignMessagePage extends StatelessWidget {

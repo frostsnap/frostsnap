@@ -14,6 +14,9 @@ erase-device +ARGS="nvs":
 build-device BOARD=default_board +ARGS="":
     cd device && cargo build --release --features {{BOARD}} --bin {{BOARD}} {{ARGS}}
 
+build +ARGS="":
+   (cd frostsnapp; just build {{ARGS}})
+
 save-image BOARD=default_board +ARGS="":
     espflash save-image --chip=esp32c3 target/riscv32imc-unknown-none-elf/release/{{BOARD}} target/riscv32imc-unknown-none-elf/release/firmware.bin {{ARGS}}
 

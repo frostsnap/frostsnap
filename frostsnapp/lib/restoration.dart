@@ -1,14 +1,14 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/device_setup.dart';
-import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/settings.dart';
-import 'package:frostsnapp/snackbar.dart';
-import 'package:frostsnapp/src/rust/api.dart';
-import 'package:frostsnapp/src/rust/api/bitcoin.dart';
-import 'package:frostsnapp/src/rust/api/coordinator.dart';
-import 'package:frostsnapp/src/rust/api/device_list.dart';
-import 'package:frostsnapp/src/rust/api/recovery.dart';
+import 'package:frostsnap/device_setup.dart';
+import 'package:frostsnap/global.dart';
+import 'package:frostsnap/settings.dart';
+import 'package:frostsnap/snackbar.dart';
+import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/bitcoin.dart';
+import 'package:frostsnap/src/rust/api/coordinator.dart';
+import 'package:frostsnap/src/rust/api/device_list.dart';
+import 'package:frostsnap/src/rust/api/recovery.dart';
 
 class WalletRecoveryPage extends StatelessWidget {
   final RestoringKey restoringKey;

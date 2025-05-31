@@ -1,17 +1,17 @@
 import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/id_ext.dart';
-import 'package:frostsnapp/src/rust/api.dart';
-import 'package:frostsnapp/src/rust/api/backup_manager.dart';
-import 'package:frostsnapp/src/rust/api/bitcoin.dart';
-import 'package:frostsnapp/src/rust/api/coordinator.dart';
-import 'package:frostsnapp/src/rust/api/init.dart';
-import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/id_ext.dart';
-import 'package:frostsnapp/src/rust/api/super_wallet.dart';
-import 'package:frostsnapp/stream_ext.dart';
-import 'package:frostsnapp/wallet.dart';
-import 'package:frostsnapp/wallet_list_controller.dart';
+import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/backup_manager.dart';
+import 'package:frostsnap/src/rust/api/bitcoin.dart';
+import 'package:frostsnap/src/rust/api/coordinator.dart';
+import 'package:frostsnap/src/rust/api/init.dart';
+import 'package:frostsnap/global.dart';
+import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/src/rust/api/super_wallet.dart';
+import 'package:frostsnap/stream_ext.dart';
+import 'package:frostsnap/wallet.dart';
+import 'package:frostsnap/wallet_list_controller.dart';
 
 class FrostsnapContext extends InheritedWidget {
   final Stream<String> logStream;

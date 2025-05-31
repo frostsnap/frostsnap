@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:frostsnapp/contexts.dart';
-import 'package:frostsnapp/wallet_send_controllers.dart';
+import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/wallet_send_controllers.dart';
 
 enum FeeRatePage { eta, feerate }
 

@@ -2,12 +2,12 @@ import 'dart:async';
 import 'dart:io';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/contexts.dart';
-import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/id_ext.dart';
-import 'package:frostsnapp/show_backup.dart';
-import 'package:frostsnapp/src/rust/api.dart';
-import 'package:frostsnapp/src/rust/api/coordinator.dart';
+import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/global.dart';
+import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/show_backup.dart';
+import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/coordinator.dart';
 
 class BackupChecklist extends StatelessWidget {
   final ScrollController? scrollController;

@@ -4,14 +4,14 @@ import 'dart:collection';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
-import 'package:frostsnapp/contexts.dart';
-import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/id_ext.dart';
-import 'package:frostsnapp/src/rust/api.dart';
-import 'package:frostsnapp/src/rust/api/coordinator.dart';
-import 'package:frostsnapp/src/rust/api/device_list.dart';
-import 'package:frostsnapp/src/rust/api/signing.dart';
-import 'package:frostsnapp/theme.dart';
+import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/global.dart';
+import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/coordinator.dart';
+import 'package:frostsnap/src/rust/api/device_list.dart';
+import 'package:frostsnap/src/rust/api/signing.dart';
+import 'package:frostsnap/theme.dart';
 
 const satoshisInOneBtc = 100000000;
 

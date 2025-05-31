@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/contexts.dart';
-import 'package:frostsnapp/src/rust/api/super_wallet.dart';
-import 'package:frostsnapp/theme.dart';
-import 'package:frostsnapp/wallet_receive.dart';
+import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/src/rust/api/super_wallet.dart';
+import 'package:frostsnap/theme.dart';
+import 'package:frostsnap/wallet_receive.dart';
 
 class CheckAddressPage extends StatefulWidget {
   const CheckAddressPage({Key? key}) : super(key: key);

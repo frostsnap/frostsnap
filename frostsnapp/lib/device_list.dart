@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/device.dart';
-import 'package:frostsnapp/device_settings.dart';
-import 'package:frostsnapp/device_setup.dart';
-import 'package:frostsnapp/src/rust/api.dart';
-import 'package:frostsnapp/src/rust/api/device_list.dart';
+import 'package:frostsnap/device.dart';
+import 'package:frostsnap/device_settings.dart';
+import 'package:frostsnap/device_setup.dart';
+import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'global.dart';
 
 typedef RemovedDeviceBuilder =

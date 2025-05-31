@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/device.dart';
-import 'package:frostsnapp/device_action.dart';
-import 'package:frostsnapp/id_ext.dart';
-import 'package:frostsnapp/device_list.dart';
-import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/snackbar.dart';
-import 'package:frostsnapp/src/rust/api.dart';
-import 'package:frostsnapp/src/rust/api/coordinator.dart';
+import 'package:frostsnap/device.dart';
+import 'package:frostsnap/device_action.dart';
+import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/device_list.dart';
+import 'package:frostsnap/global.dart';
+import 'package:frostsnap/snackbar.dart';
+import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/coordinator.dart';
 
 Future<bool> backupDeviceDialog(
   BuildContext context, {
