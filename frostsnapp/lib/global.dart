@@ -1,9 +1,11 @@
-import 'package:frostsnapp/stream_ext.dart';
-
-import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
+import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/coordinator.dart';
+import 'package:frostsnap/src/rust/api/device_list.dart';
+import 'package:frostsnap/stream_ext.dart';
 import 'serialport.dart';
 
 late Coordinator coord;
+late Api api;
 late HostPortHandler globalHostPortHandler;
 
 class GlobalStreams {

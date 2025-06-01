@@ -1,23 +1,28 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:frostsnapp/backup_workflow.dart';
-import 'package:frostsnapp/contexts.dart';
-import 'package:frostsnapp/device_settings.dart';
-import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/id_ext.dart';
-import 'package:frostsnapp/keygen.dart';
-import 'package:frostsnapp/psbt.dart';
-import 'package:frostsnapp/restoration.dart';
-import 'package:frostsnapp/sign_message.dart';
-import 'package:frostsnapp/theme.dart';
-import 'package:frostsnapp/wallet_create.dart';
-import 'package:frostsnapp/wallet_list_controller.dart';
-import 'package:frostsnapp/wallet_receive.dart';
-import 'package:frostsnapp/wallet_send.dart';
-import 'package:frostsnapp/settings.dart';
-import 'package:frostsnapp/wallet_tx_details.dart';
-import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
+import 'package:frostsnap/backup_workflow.dart';
+import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/device_settings.dart';
+import 'package:frostsnap/global.dart';
+import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/keygen.dart';
+import 'package:frostsnap/psbt.dart';
+import 'package:frostsnap/restoration.dart';
+import 'package:frostsnap/sign_message.dart';
+import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/backup_manager.dart';
+import 'package:frostsnap/src/rust/api/bitcoin.dart';
+import 'package:frostsnap/src/rust/api/coordinator.dart';
+import 'package:frostsnap/src/rust/api/signing.dart';
+import 'package:frostsnap/src/rust/api/super_wallet.dart';
+import 'package:frostsnap/theme.dart';
+import 'package:frostsnap/wallet_create.dart';
+import 'package:frostsnap/wallet_list_controller.dart';
+import 'package:frostsnap/wallet_receive.dart';
+import 'package:frostsnap/wallet_send.dart';
+import 'package:frostsnap/settings.dart';
+import 'package:frostsnap/wallet_tx_details.dart';
 
 class Wallet {
   final SuperWallet superWallet;
@@ -30,18 +35,18 @@ class Wallet {
   }
 
   KeyId keyId() {
-    return api.masterAppkeyExtToKeyId(masterAppkey: masterAppkey);
+    return masterAppkey.keyId();
   }
 
-  Address nextAddress() {
+  AddressInfo nextAddress() {
     return superWallet.nextAddress(masterAppkey: masterAppkey);
   }
 
-  Address? addressState(int index) {
-    return superWallet.addressState(masterAppkey: masterAppkey, index: index);
+  AddressInfo? getAddressInfo(int index) {
+    return superWallet.getAddressInfo(masterAppkey: masterAppkey, index: index);
   }
 
-  List<Address> addressesState() {
+  List<AddressInfo> addressesState() {
     return superWallet.addressesState(masterAppkey: masterAppkey);
   }
 

@@ -1,7 +1,7 @@
 import 'fetch.just'
 
 default_board := "v2"
-ordinary_crates := "-p frostsnap_core -p frostsnap_coordinator -p frostsnap_comms -p native -p frostsnap_embedded -p frostsnap_macros"
+ordinary_crates := "-p frostsnap_core -p frostsnap_coordinator -p frostsnap_comms -p rust_lib_frostsnapp -p frostsnap_embedded -p frostsnap_macros"
 
 alias erase := erase-device
 
@@ -13,6 +13,9 @@ erase-device +ARGS="nvs":
 
 build-device BOARD=default_board +ARGS="":
     cd device && cargo build --release --features {{BOARD}} --bin {{BOARD}} {{ARGS}}
+
+build +ARGS="":
+   (cd frostsnapp; just build {{ARGS}})
 
 save-image BOARD=default_board +ARGS="":
     espflash save-image --chip=esp32c3 target/riscv32imc-unknown-none-elf/release/{{BOARD}} target/riscv32imc-unknown-none-elf/release/firmware.bin {{ARGS}}
@@ -47,14 +50,16 @@ fix-dart:
 gen:
     just "frostsnapp/gen"
 
-fix: fix-dart
+fix: fix-dart fix-rust
+
+fix-rust:
     cargo clippy --fix --allow-dirty --allow-staged {{ordinary_crates}} --all-features --tests --bins
     ( cd device && cargo clippy --fix --allow-dirty --allow-staged --all-features --bins; )
     cargo fmt --all
 
 
 run +ARGS="": build-device save-image
-    just frostsnapp/run {{ARGS}}
+    (cd frostsnapp; BUNDLE_FIRMWARE=1 flutter run {{ARGS}})
 
 fetch-riscv VERSION="2024.09.03-nightly":
     #!/bin/sh
@@ -64,3 +69,6 @@ fetch-riscv VERSION="2024.09.03-nightly":
 
 check: check-ordinary check-device
 lint: lint-ordinary lint-device lint-app
+
+install-cargo-bins:
+    just frostsnapp/install-cargo-bins
