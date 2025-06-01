@@ -1,4 +1,4 @@
-# frostsnapp
+# Frostsnap
 
 Flutter GUI app for Frostsnap
 
