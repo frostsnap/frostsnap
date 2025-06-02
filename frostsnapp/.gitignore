@@ -43,12 +43,19 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+/android/app/.cxx/
+
+# Gradle build reports
+/android/build/
 
 # avoid commiting the generated code
 lib/src/rust/*
 !lib/src/rust/.gitkeep
 rust/src/frb_generated.rs
 
+/rust_builder/build/
+/rust_builder/.dart_tool/
+/rust_builder/pubspec.lock
 
 # Used so we can check if we need to re-run bindings regeneration
 binding-rerun.sha256

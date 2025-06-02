@@ -13,8 +13,7 @@ class HostPortHandler {
   StreamSubscription<PortEvent>? _rustPortEventsSubscription;
   StreamSubscription<UsbEvent>? _usbSystemEventsSubscription;
 
-  // MethodChannel for communication from MainActivity.kt
-  // Make sure this string EXACTLY matches the one in MainActivity.kt
+  // Must match the one in MainActivity.kt
   static const _usbDeviceChannel = MethodChannel(
     'com.frostsnap/usb_device_channel',
   );
@@ -27,13 +26,13 @@ class HostPortHandler {
       return;
     }
 
-    // 1. Listen for native calls from MainActivity
+    // Listen for native calls from MainActivity
     _usbDeviceChannel.setMethodCallHandler(_handleNativeDeviceAttached);
     debugPrint(
       "HostPortHandler: MethodCallHandler set up for USB device attachments from native.",
     );
 
-    // 2. Listen for general USB attach/detach events from the usb_serial plugin
+    // Listen for general USB attach/detach events from the usb_serial plugin
     _usbSystemEventsSubscription = UsbSerial.usbEventStream?.listen((
       UsbEvent msg,
     ) {
@@ -47,11 +46,9 @@ class HostPortHandler {
 
       if (msg.event == UsbEvent.ACTION_USB_DETACHED) {
         debugPrint("HostPortHandler: USB DETACHED event for $deviceName");
-        openPorts
-            .remove(deviceName)
-            ?.close(); // Close and remove from open ports
-        _approvedDevices.remove(deviceName); // Remove from approved list
-        _updateFfiAvailablePorts(); // Update FFI layer
+        openPorts.remove(deviceName)?.close();
+        _approvedDevices.remove(deviceName);
+        _updateFfiAvailablePorts();
       } else if (msg.event == UsbEvent.ACTION_USB_ATTACHED) {
         // We DON'T automatically add this device.
         // We wait for MainActivity to notify us via MethodChannel if this device
@@ -65,7 +62,7 @@ class HostPortHandler {
       }
     });
 
-    // 3. Listen to port events from Rust/FFI
+    // Listen to port events from Rust/FFI
     _rustPortEventsSubscription = subPortEvents().listen((event) async {
       switch (event) {
         case PortEvent_Open(:final request):
@@ -94,8 +91,8 @@ class HostPortHandler {
             }
           }
         case PortEvent_Read(
-          :final request,
-        ): // Your existing Read, Write, BytesToRead logic
+            :final request,
+          ):
           {
             try {
               var port = _getPort(request.id);
@@ -109,7 +106,7 @@ class HostPortHandler {
           {
             try {
               var port = _getPort(request.id);
-              await port.write(request.bytes); // Assuming write can be async
+              await port.write(request.bytes);
               request.satisfy();
             } catch (e) {
               request.satisfy(err: e.toString());
@@ -157,8 +154,7 @@ class HostPortHandler {
         if (deviceDetails != null) {
           final int? vid = deviceDetails['vid'] as int?;
           final int? pid = deviceDetails['pid'] as int?;
-          final String? deviceName =
-              deviceDetails['deviceName'] as String?; // This is used as 'id'
+          final String? deviceName = deviceDetails['deviceName'] as String?;
 
           if (vid != null && pid != null && deviceName != null) {
             debugPrint(
@@ -166,7 +162,7 @@ class HostPortHandler {
             );
 
             final newPortDesc = PortDesc(
-              id: deviceName, // device.deviceName is used as the ID
+              id: deviceName,
               pid: pid,
               vid: vid,
             );
@@ -235,7 +231,7 @@ class HostPortHandler {
 }
 
 class SerialPort {
-  UsbPort? _flutterUsbPort; // Renamed from 'port' to be more specific
+  UsbPort? _flutterUsbPort;
   Uint8List buffer = Uint8List(0);
   final PortDesc _portDesc; // Store the original PortDesc for reference
 
@@ -295,13 +291,10 @@ class SerialPort {
 
     inputStream.listen(
       (Uint8List bytes) {
-        // A more robust way to concatenate Uint8List
         var newBuffer = Uint8List(serialPort.buffer.length + bytes.length);
         newBuffer.setAll(0, serialPort.buffer);
         newBuffer.setAll(serialPort.buffer.length, bytes);
         serialPort.buffer = newBuffer;
-        // You might want to notify your FFI/Rust layer here that new data is available
-        // if it doesn't poll `BytesToRead`.
       },
       onError: (error) {
         debugPrint("SerialPort: Error on input stream for '$id': $error");
@@ -333,7 +326,6 @@ class SerialPort {
       await _flutterUsbPort!.write(bytes);
     } catch (e) {
       debugPrint("SerialPort: Error writing to port '$id': $e");
-      // Rethrow or handle as appropriate
       rethrow;
     }
   }
@@ -354,6 +346,5 @@ class SerialPort {
     buffer = Uint8List(0); // Clear buffer
   }
 
-  // Helper to get the ID, useful for error messages if _portDesc is available
   String get id => _portDesc.id;
 }

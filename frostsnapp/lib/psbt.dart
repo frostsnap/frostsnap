@@ -322,7 +322,6 @@ Future<void> savePsbt(BuildContext context, Psbt psbt) async {
 
     final file = File(outputFile);
 
-    // Convert your PSBT object to bytes (assuming psbt.toBytes() returns Uint8List)
     final psbtBytes = psbt.serialize();
 
     // Write the bytes to the selected file

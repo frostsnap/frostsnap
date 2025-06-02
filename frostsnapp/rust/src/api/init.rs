@@ -35,9 +35,9 @@ impl super::Api {
             let subscriber = {
                 event!(Level::INFO, "logging to logcat and dart logger");
                 use tracing_logcat::{LogcatMakeWriter, LogcatTag};
-                use tracing_subscriber::fmt::format::Format; // For configuring event formatting
+                use tracing_subscriber::fmt::format::Format;
 
-                let writer = LogcatMakeWriter::new(LogcatTag::Fixed("frostsnap/rust".to_owned())) // <--- Corrected!
+                let writer = LogcatMakeWriter::new(LogcatTag::Fixed("frostsnap/rust".to_owned()))
                     .expect("Failed to initialize logcat writer");
 
                 tracing_subscriber::fmt()
@@ -46,13 +46,13 @@ impl super::Api {
                             .with_level(true) // Keep level in message (e.g., "[INFO]")
                             .with_target(true) // Keep target in message (e.g., "my_module::function")
                             .without_time() // Logcat adds its own time, so avoid duplication
-                            .compact(), // Or .pretty() for multi-line details in complex events
+                            .compact(),
                     )
-                    .with_writer(writer) // This sends the formatted output to Android's Logcat via LogcatMakeWriter
-                    .with_ansi(false) // Logcat doesn't process ANSI escape codes for colors
-                    .with_max_level(tracing::Level::from(level)) // Apply the desired max level to this formatter
-                    .finish() // This completes the FmtSubscriber
-                    .with(crate::logger::dart_logger()) // Chain your Dart logger as another layer
+                    .with_writer(writer)
+                    .with_ansi(false)
+                    .with_max_level(tracing::Level::from(level))
+                    .finish()
+                    .with(crate::logger::dart_logger())
             };
 
             tracing::subscriber::set_global_default(subscriber)
