@@ -150,7 +150,7 @@ impl common::Env for TestEnv {
                                         run.coordinator
                                             .recover_share(
                                                 access_structure_ref,
-                                                recover_share.clone(),
+                                                &recover_share,
                                                 TEST_ENCRYPTION_KEY,
                                             )
                                             .unwrap();
@@ -175,14 +175,14 @@ impl common::Env for TestEnv {
                                                 run.coordinator
                                                     .add_recovery_share_to_restoration(
                                                         existing_restoration.restoration_id,
-                                                        recover_share,
+                                                        &recover_share,
                                                     )
                                                     .unwrap();
                                             }
                                         }
                                         None => {
                                             run.coordinator.start_restoring_key_from_recover_share(
-                                                recover_share,
+                                                &recover_share,
                                                 RestorationId::new(rng),
                                             )
                                         }

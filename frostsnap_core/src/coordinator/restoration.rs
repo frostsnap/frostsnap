@@ -399,7 +399,7 @@ impl FrostCoordinator {
         restoration_id: RestorationId,
         recover_share: &RecoverShare,
     ) -> Result<(), RestoreRecoverShareError> {
-        self.check_recover_share_compatible_with_restoration(restoration_id, &recover_share)?;
+        self.check_recover_share_compatible_with_restoration(restoration_id, recover_share)?;
         self.mutate(Mutation::Restoration(
             RestorationMutation::RestorationProgress {
                 restoration_id,
