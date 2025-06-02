@@ -39,7 +39,7 @@ lint-device +ARGS="":
     cd device && cargo clippy {{ARGS}} --all-features --bins -- -Dwarnings
 
 dart-format-check-app:
-    ( cd frostsnapp; dart format --set-exit-if-changed --output=none $(find ./lib -type f -name "*.dart" -not -name "bridge_*") )
+    ( cd frostsnapp; dart format --set-exit-if-changed --output=none  $(find ./lib -type f -name "*.dart" -not -path "./lib/src/rust/*") )
 
 lint-app +ARGS="": dart-format-check-app
     ( cd frostsnapp; flutter analyze {{ARGS}} )

@@ -31,7 +31,7 @@ class DeviceSettingsPage extends StatelessWidget {
 
 class DeviceSettings extends StatefulWidget {
   final DeviceId id;
-  const DeviceSettings({Key? key, required this.id}) : super(key: key);
+  const DeviceSettings({super.key, required this.id});
 
   @override
   State<DeviceSettings> createState() => _DeviceSettingsState();
@@ -259,7 +259,7 @@ class NonceCounterDisplay extends StatelessWidget {
 class SettingsSection extends StatelessWidget {
   final List<(String, Widget)> settings;
 
-  const SettingsSection({Key? key, required this.settings}) : super(key: key);
+  const SettingsSection({super.key, required this.settings});
 
   @override
   Widget build(BuildContext context) {

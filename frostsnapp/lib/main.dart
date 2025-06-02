@@ -248,7 +248,7 @@ class _MyHomePageState extends State<MyHomePage> {
 class StartupErrorWidget extends StatefulWidget {
   final String error;
 
-  const StartupErrorWidget({Key? key, required this.error}) : super(key: key);
+  const StartupErrorWidget({super.key, required this.error});
 
   @override
   State<StartupErrorWidget> createState() => _StartupErrorWidgetState();

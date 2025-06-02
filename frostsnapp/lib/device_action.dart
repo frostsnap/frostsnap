@@ -129,10 +129,9 @@ class DialogFooter extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color:
-            theme
-                .colorScheme
-                .surfaceContainer, // Background color of the header
+        color: theme
+            .colorScheme
+            .surfaceContainer, // Background color of the header
         border: Border(
           top: BorderSide(
             color: Theme.of(context).dividerColor, // Color of the divider

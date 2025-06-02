@@ -1193,8 +1193,9 @@ class _LargeCircularProgressIndicatorState
   void didUpdateWidget(covariant LargeCircularProgressIndicator oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.progress != widget.progress ||
-        oldWidget.total != widget.total)
+        oldWidget.total != widget.total) {
       _initAnimation();
+    }
   }
 
   @override

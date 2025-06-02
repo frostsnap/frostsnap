@@ -30,21 +30,20 @@ class ElectrumServerSettingsPage extends StatelessWidget {
           final servers = snap.data?.servers ?? [];
           final developerMode = snap.data?.developerMode ?? false;
           return ListView(
-            children:
-                servers.map((record) {
-                  final (network, url) = record;
-                  return Column(
-                    children: [
-                      if (network.isMainnet() || developerMode) ...[
-                        SizedBox(height: 10),
-                        ElectrumServerSettingWidget(
-                          network: network,
-                          initialUrl: url,
-                        ),
-                      ],
-                    ],
-                  );
-                }).toList(),
+            children: servers.map((record) {
+              final (network, url) = record;
+              return Column(
+                children: [
+                  if (network.isMainnet() || developerMode) ...[
+                    SizedBox(height: 10),
+                    ElectrumServerSettingWidget(
+                      network: network,
+                      initialUrl: url,
+                    ),
+                  ],
+                ],
+              );
+            }).toList(),
           );
         },
       ),
@@ -146,13 +145,12 @@ class _ElectrumServerSettingWidgetState
               controller: _controller,
               decoration: InputDecoration(
                 border: OutlineInputBorder(),
-                suffixIcon:
-                    _controller.text != _originalUrl
-                        ? IconButton(
-                          icon: Icon(Icons.undo),
-                          onPressed: _resetToOriginal,
-                        )
-                        : null,
+                suffixIcon: _controller.text != _originalUrl
+                    ? IconButton(
+                        icon: Icon(Icons.undo),
+                        onPressed: _resetToOriginal,
+                      )
+                    : null,
               ),
             ),
             SizedBox(height: 8),

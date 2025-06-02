@@ -564,8 +564,7 @@ class _ChooseMethodView extends StatelessWidget {
 class _PlugInBlankView extends StatefulWidget {
   final Function(ConnectedDevice)? onBlankDeviceConnected;
 
-  const _PlugInBlankView({Key? key, this.onBlankDeviceConnected})
-    : super(key: key);
+  const _PlugInBlankView({this.onBlankDeviceConnected});
 
   @override
   State<_PlugInBlankView> createState() => _PlugInBlankViewState();
@@ -653,8 +652,7 @@ class _PlugInBlankViewState extends State<_PlugInBlankView> {
 class _EnterWalletNameView extends StatefulWidget {
   final Function(String walletName, BitcoinNetwork network) onWalletNameEntered;
 
-  const _EnterWalletNameView({Key? key, required this.onWalletNameEntered})
-    : super(key: key);
+  const _EnterWalletNameView({required this.onWalletNameEntered});
 
   @override
   State<_EnterWalletNameView> createState() => _EnterWalletNameViewState();
@@ -759,11 +757,10 @@ class _EnterThresholdView extends StatefulWidget {
   final Function(int threshold) onThresholdEntered;
 
   const _EnterThresholdView({
-    Key? key,
     required this.walletName,
     required this.onThresholdEntered,
     required this.network,
-  }) : super(key: key);
+  });
 
   @override
   State<_EnterThresholdView> createState() => _EnterThresholdViewState();
@@ -881,12 +878,7 @@ class _EnterBackupView extends StatefulWidget {
   final Function(PhysicalBackupPhase)? onFinished;
   final Function(String)? onError;
 
-  const _EnterBackupView({
-    Key? key,
-    required this.stream,
-    this.onFinished,
-    this.onError,
-  }) : super(key: key);
+  const _EnterBackupView({required this.stream, this.onFinished, this.onError});
 
   @override
   State<_EnterBackupView> createState() => _EnterBackupViewState();
@@ -944,11 +936,10 @@ class _PlugInPromptView extends StatefulWidget {
   onCandidateDetected;
 
   const _PlugInPromptView({
-    Key? key,
     this.continuing,
     this.existing,
     required this.onCandidateDetected,
-  }) : super(key: key);
+  });
 
   @override
   State<_PlugInPromptView> createState() => _PlugInPromptViewState();
@@ -1229,10 +1220,9 @@ class _PhysicalBackupSuccessView extends StatelessWidget {
   final String deviceName;
 
   const _PhysicalBackupSuccessView({
-    Key? key,
     required this.onClose,
     required this.deviceName,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

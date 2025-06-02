@@ -11,11 +11,10 @@ class CirclePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint =
-        Paint()
-          ..color = theme.colorScheme.primary
-          ..strokeWidth = 2.0
-          ..style = PaintingStyle.stroke;
+    final paint = Paint()
+      ..color = theme.colorScheme.primary
+      ..strokeWidth = 2.0
+      ..style = PaintingStyle.stroke;
 
     canvas.drawArc(
       Rect.fromCenter(

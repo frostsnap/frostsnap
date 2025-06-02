@@ -45,14 +45,12 @@ class _WalletSendPageState extends State<WalletSendPage> {
   _initRecipientDoneButton() {
     _recipientDoneButton = ListenableBuilder(
       listenable: addressModel,
-      builder:
-          (context, _) => IconButton.filled(
-            onPressed:
-                addressModel.errorText != null
-                    ? null
-                    : () => recipientDone(context),
-            icon: Icon(Icons.done),
-          ),
+      builder: (context, _) => IconButton.filled(
+        onPressed: addressModel.errorText != null
+            ? null
+            : () => recipientDone(context),
+        icon: Icon(Icons.done),
+      ),
     );
   }
 
@@ -60,17 +58,16 @@ class _WalletSendPageState extends State<WalletSendPage> {
   _initAmountDoneButton() {
     _amountDoneButton = ListenableBuilder(
       listenable: amountModel,
-      builder:
-          (context, _) => IconButton.filled(
-            // TODO: Create a getter for this.
-            onPressed:
-                (amountModel.error != null ||
-                        amountModel.amount == null ||
-                        amountModel.textEditingController.text.isEmpty)
-                    ? null
-                    : () => amountDone(context),
-            icon: Icon(Icons.done),
-          ),
+      builder: (context, _) => IconButton.filled(
+        // TODO: Create a getter for this.
+        onPressed:
+            (amountModel.error != null ||
+                amountModel.amount == null ||
+                amountModel.textEditingController.text.isEmpty)
+            ? null
+            : () => amountDone(context),
+        icon: Icon(Icons.done),
+      ),
     );
   }
 
@@ -81,13 +78,13 @@ class _WalletSendPageState extends State<WalletSendPage> {
       builder: (context, child) {
         final isThresholdMet = selectedDevicesModel.isThresholdMet;
         final remaining = selectedDevicesModel.remaining;
-        final nextText =
-            (isThresholdMet) ? 'Sign Transaction' : 'Select $remaining more';
+        final nextText = (isThresholdMet)
+            ? 'Sign Transaction'
+            : 'Select $remaining more';
         return FilledButton(
-          onPressed:
-              (unsignedTx == null || !isThresholdMet)
-                  ? null
-                  : () => signersDone(context),
+          onPressed: (unsignedTx == null || !isThresholdMet)
+              ? null
+              : () => signersDone(context),
           child: Text(nextText),
         );
       },
@@ -173,13 +170,12 @@ class _WalletSendPageState extends State<WalletSendPage> {
               leading: completedCardLabel(context, 'Recipient'),
               title: ListenableBuilder(
                 listenable: addressModel,
-                builder:
-                    (ctx, _) => Text(
-                      addressModel.formattedAddress,
-                      textWidthBasis: TextWidthBasis.longestLine,
-                      textAlign: TextAlign.right,
-                      style: monospaceTextStyle,
-                    ),
+                builder: (ctx, _) => Text(
+                  addressModel.formattedAddress,
+                  textWidthBasis: TextWidthBasis.longestLine,
+                  textAlign: TextAlign.right,
+                  style: monospaceTextStyle,
+                ),
               ),
             ),
           if (pageIndex.index > SendPageIndex.amount.index)
@@ -240,10 +236,9 @@ class _WalletSendPageState extends State<WalletSendPage> {
       listenable: feeRateModel,
       builder: (context, _) {
         return TextButton.icon(
-          onPressed:
-              pageIndex.index < SendPageIndex.signers.index
-                  ? () => showFeeRateDialog(context)
-                  : null,
+          onPressed: pageIndex.index < SendPageIndex.signers.index
+              ? () => showFeeRateDialog(context)
+              : null,
           icon: Stack(
             alignment: AlignmentDirectional.bottomCenter,
             children: [
@@ -265,10 +260,9 @@ class _WalletSendPageState extends State<WalletSendPage> {
                     children: [
                       TextSpan(text: 'Confirms in '),
                       TextSpan(
-                        text:
-                            feeRateModel.targetTime == null
-                                ? '...'
-                                : '~${feeRateModel.targetTime} min',
+                        text: feeRateModel.targetTime == null
+                            ? '...'
+                            : '~${feeRateModel.targetTime} min',
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ],
@@ -358,28 +352,26 @@ class _WalletSendPageState extends State<WalletSendPage> {
               children: [
                 ListenableBuilder(
                   listenable: Listenable.merge([amountModel, amountAvaliable]),
-                  builder:
-                      (context, _) => TextButton.icon(
-                        onPressed:
-                            (amountAvaliable.value == null ||
-                                    amountAvaliable.value! == 0)
-                                ? null
-                                : () =>
-                                    amountModel.sendMax = !amountModel.sendMax,
-                        label: Row(
-                          spacing: 4.0,
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text('Send Max'),
-                            SatoshiText(value: amountAvaliable.value),
-                          ],
-                        ),
-                        icon: Icon(
-                          amountModel.sendMax
-                              ? Icons.check_box
-                              : Icons.check_box_outline_blank,
-                        ),
-                      ),
+                  builder: (context, _) => TextButton.icon(
+                    onPressed:
+                        (amountAvaliable.value == null ||
+                            amountAvaliable.value! == 0)
+                        ? null
+                        : () => amountModel.sendMax = !amountModel.sendMax,
+                    label: Row(
+                      spacing: 4.0,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Send Max'),
+                        SatoshiText(value: amountAvaliable.value),
+                      ],
+                    ),
+                    icon: Icon(
+                      amountModel.sendMax
+                          ? Icons.check_box
+                          : Icons.check_box_outline_blank,
+                    ),
+                  ),
                 ),
                 _amountDoneButton,
               ],
@@ -402,40 +394,29 @@ class _WalletSendPageState extends State<WalletSendPage> {
           ),
           ListenableBuilder(
             listenable: selectedDevicesModel,
-            builder:
-                (context, child) => Column(
-                  children:
-                      selectedDevicesModel.devices.map((device) {
-                        if (device.nonces == 0) {
-                          selectedDevicesModel.deselect(device.id);
-                        }
-                        return CheckboxListTile(
-                          value: device.selected,
-                          onChanged:
-                              device.canSelect
-                                  ? (selected) =>
-                                      selected ?? false
-                                          ? selectedDevicesModel.select(
-                                            device.id,
-                                          )
-                                          : selectedDevicesModel.deselect(
-                                            device.id,
-                                          )
-                                  : null,
-                          secondary: Icon(Icons.key),
-                          title: Text(device.name ?? '<unknown>'),
-                          subtitle:
-                              device.nonces == 0
-                                  ? Text(
-                                    'no nonces remaining or too many signing sessions',
-                                    style: TextStyle(
-                                      color: theme.colorScheme.error,
-                                    ),
-                                  )
-                                  : null,
-                        );
-                      }).toList(),
-                ),
+            builder: (context, child) => Column(
+              children: selectedDevicesModel.devices.map((device) {
+                if (device.nonces == 0) {
+                  selectedDevicesModel.deselect(device.id);
+                }
+                return CheckboxListTile(
+                  value: device.selected,
+                  onChanged: device.canSelect
+                      ? (selected) => selected ?? false
+                            ? selectedDevicesModel.select(device.id)
+                            : selectedDevicesModel.deselect(device.id)
+                      : null,
+                  secondary: Icon(Icons.key),
+                  title: Text(device.name ?? '<unknown>'),
+                  subtitle: device.nonces == 0
+                      ? Text(
+                          'no nonces remaining or too many signing sessions',
+                          style: TextStyle(color: theme.colorScheme.error),
+                        )
+                      : null,
+                );
+              }).toList(),
+            ),
           ),
           Padding(
             padding: const EdgeInsets.all(12.0),
@@ -541,16 +522,15 @@ class _WalletSendPageState extends State<WalletSendPage> {
     await showBottomSheetOrDialog(
       context,
       titleText: 'Transaction Details',
-      builder:
-          (context, scrollController) => walletCtx.wrap(
-            TxDetailsPage.startSigning(
-              txStates: walletCtx.txStream,
-              txDetails: txDetails,
-              accessStructureRef: access.accessStructureRef(),
-              unsignedTx: unsignedTx!,
-              devices: selectedDevicesModel.selected.toList(),
-            ),
-          ),
+      builder: (context, scrollController) => walletCtx.wrap(
+        TxDetailsPage.startSigning(
+          txStates: walletCtx.txStream,
+          txDetails: txDetails,
+          accessStructureRef: access.accessStructureRef(),
+          unsignedTx: unsignedTx!,
+          devices: selectedDevicesModel.selected.toList(),
+        ),
+      ),
     );
   }
 
@@ -571,12 +551,10 @@ class _WalletSendPageState extends State<WalletSendPage> {
         this.unsignedTx = unsignedTx;
         nextPageOrPop(null);
       },
-      onError:
-          (e) =>
-              amountModel.customError = e.toString().replaceFirst(
-                'FrbAnyhowException(',
-                '',
-              ),
+      onError: (e) => amountModel.customError = e.toString().replaceFirst(
+        'FrbAnyhowException(',
+        '',
+      ),
     );
   }
 
@@ -598,23 +576,21 @@ class _WalletSendPageState extends State<WalletSendPage> {
   recipientScan(BuildContext context) async {
     final addressResult = await showDialog<String>(
       context: context,
-      builder:
-          (context) => FutureBuilder<List<CameraDescription>>(
-            future: cameras.value,
-            builder:
-                (context, snapshot) => BackdropFilter(
-                  filter: blurFilter,
-                  child: Dialog(
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(maxWidth: 580),
-                      child: SendScanBody(
-                        cameras: snapshot.data ?? [],
-                        initialSelected: 0,
-                      ),
-                    ),
-                  ),
-                ),
+      builder: (context) => FutureBuilder<List<CameraDescription>>(
+        future: cameras.value,
+        builder: (context, snapshot) => BackdropFilter(
+          filter: blurFilter,
+          child: Dialog(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: 580),
+              child: SendScanBody(
+                cameras: snapshot.data ?? [],
+                initialSelected: 0,
+              ),
+            ),
           ),
+        ),
+      ),
     );
     if (!context.mounted || addressResult == null) return;
     addressModel.controller.text = addressResult;

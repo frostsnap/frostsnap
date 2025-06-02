@@ -14,13 +14,12 @@ Future<bool> backupDeviceDialog(
   required AccessStructure accessStructure,
 }) async {
   Future<bool> displayBackupOnDevice() async {
-    final displayStream =
-        coord
-            .displayBackup(
-              id: deviceId,
-              accessStructureRef: accessStructure.accessStructureRef(),
-            )
-            .asBroadcastStream();
+    final displayStream = coord
+        .displayBackup(
+          id: deviceId,
+          accessStructureRef: accessStructure.accessStructureRef(),
+        )
+        .asBroadcastStream();
     final deviceName = coord.getDeviceName(id: deviceId);
     final confirmed = await showDeviceActionDialog<bool>(
       context: context,
@@ -112,10 +111,9 @@ Future<bool?> verifyBackup(
   DeviceId deviceId,
   AccessStructureRef accessStructureRef,
 ) async {
-  final backupEntry =
-      coord
-          .tellDeviceToEnterPhysicalBackup(deviceId: deviceId)
-          .asBroadcastStream();
+  final backupEntry = coord
+      .tellDeviceToEnterPhysicalBackup(deviceId: deviceId)
+      .asBroadcastStream();
 
   final aborted = backupEntry.firstWhere((state) => state.abort != null).then((
     state,
@@ -134,13 +132,12 @@ Future<bool?> verifyBackup(
         stream: backupEntry,
         builder: (context, snapshot) {
           final entered = snapshot.data?.entered;
-          final outcome =
-              entered == null
-                  ? null
-                  : coord.checkPhysicalBackup(
-                    accessStructureRef: accessStructureRef,
-                    phase: entered,
-                  );
+          final outcome = entered == null
+              ? null
+              : coord.checkPhysicalBackup(
+                  accessStructureRef: accessStructureRef,
+                  phase: entered,
+                );
           return Column(
             children: [
               DialogHeader(child: Text("Enter the backup on the device.")),

@@ -679,9 +679,7 @@ class SigningSessionController with ChangeNotifier {
       if (state.gotShares.length == state.neededFrom.length &&
           state.finishedSignatures.isNotEmpty &&
           _unsignedTx != null) {
-        _signedTx = await _unsignedTx!.complete(
-          signatures: state.finishedSignatures,
-        );
+        _signedTx = _unsignedTx!.complete(signatures: state.finishedSignatures);
       }
       _state = state;
       if (hasListeners) notifyListeners();

@@ -36,7 +36,7 @@ class SignMessagePage extends StatelessWidget {
 class SignMessageForm extends StatefulWidget {
   final FrostKey frostKey;
 
-  const SignMessageForm({Key? key, required this.frostKey}) : super(key: key);
+  const SignMessageForm({super.key, required this.frostKey});
 
   @override
   State<SignMessageForm> createState() => _SignMessageFormState();
@@ -68,14 +68,13 @@ class _SignMessageFormState extends State<SignMessageForm> {
     if (buttonReady) {
       submitButtonOnPressed = () async {
         final message = _messageController.text;
-        final signingStream =
-            coord
-                .startSigning(
-                  accessStructureRef: accessStructure.accessStructureRef(),
-                  devices: selected.toList(),
-                  message: message,
-                )
-                .toBehaviorSubject();
+        final signingStream = coord
+            .startSigning(
+              accessStructureRef: accessStructure.accessStructureRef(),
+              devices: selected.toList(),
+              message: message,
+            )
+            .toBehaviorSubject();
 
         await signMessageWorkflowDialog(context, signingStream, message);
         if (context.mounted) {
@@ -105,10 +104,9 @@ class _SignMessageFormState extends State<SignMessageForm> {
           Expanded(
             child: SigningDeviceSelector(
               frostKey: widget.frostKey,
-              onChanged:
-                  (selectedDevices) => setState(() {
-                    selected = selectedDevices;
-                  }),
+              onChanged: (selectedDevices) => setState(() {
+                selected = selectedDevices;
+              }),
             ),
           ),
           ElevatedButton(
@@ -126,10 +124,10 @@ class SigningDeviceSelector extends StatefulWidget {
   final Function(Set<DeviceId>)? onChanged;
 
   const SigningDeviceSelector({
-    Key? key,
+    super.key,
     required this.frostKey,
     this.onChanged,
-  }) : super(key: key);
+  });
 
   @override
   State<SigningDeviceSelector> createState() => _SigningDeviceSelectorState();

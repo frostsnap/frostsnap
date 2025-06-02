@@ -45,10 +45,9 @@ class SettingsContext extends InheritedWidget {
   }
 
   Stream<ChainStatus>? chainStatusStream(BitcoinNetwork network) {
-    final stream =
-        chainStatuses.firstWhereOrNull((record) {
-          return record.$1.name() == network.name();
-        })?.$2;
+    final stream = chainStatuses.firstWhereOrNull((record) {
+      return record.$1.name() == network.name();
+    })?.$2;
 
     return stream;
   }
@@ -316,26 +315,22 @@ class SettingsCategory extends StatelessWidget {
                         body: body,
                       );
                     },
-                    transitionsBuilder: (
-                      context,
-                      animation,
-                      secondaryAnimation,
-                      child,
-                    ) {
-                      const begin = Offset(1.0, 0.0);
-                      const end = Offset.zero;
-                      const curve = Curves.ease;
+                    transitionsBuilder:
+                        (context, animation, secondaryAnimation, child) {
+                          const begin = Offset(1.0, 0.0);
+                          const end = Offset.zero;
+                          const curve = Curves.ease;
 
-                      var tween = Tween(
-                        begin: begin,
-                        end: end,
-                      ).chain(CurveTween(curve: curve));
+                          var tween = Tween(
+                            begin: begin,
+                            end: end,
+                          ).chain(CurveTween(curve: curve));
 
-                      return SlideTransition(
-                        position: animation.drive(tween),
-                        child: child,
-                      );
-                    },
+                          return SlideTransition(
+                            position: animation.drive(tween),
+                            child: child,
+                          );
+                        },
                   ),
                 );
                 item.onClose?.call();
@@ -442,14 +437,13 @@ class _ExportDescriptorPageState extends State<ExportDescriptorPage>
                   : "This app is managing a wallet in addition to the external wallet",
             ),
             value: _signingOnly,
-            onChanged:
-                _showQrCode
-                    ? (value) {
-                      setState(() {
-                        _signingOnly = value;
-                      });
-                    }
-                    : null,
+            onChanged: _showQrCode
+                ? (value) {
+                    setState(() {
+                      _signingOnly = value;
+                    });
+                  }
+                : null,
           ),
           SizedBox(height: 16.0),
           if (_showQrCode)
@@ -607,9 +601,8 @@ class DeleteWalletPage extends StatelessWidget {
                   const Text('Balance: '),
                   StreamBuilder(
                     stream: walletCtx.txStream,
-                    builder:
-                        (context, snapshot) =>
-                            SatoshiText(value: snapshot.data?.balance ?? 0),
+                    builder: (context, snapshot) =>
+                        SatoshiText(value: snapshot.data?.balance ?? 0),
                   ),
                   //UpdatingBalance(txStream: walletCtx.txStream),
                 ],
@@ -650,22 +643,21 @@ class DeleteWalletPage extends StatelessWidget {
                   showDialog(
                     context: context,
                     barrierDismissible: false,
-                    builder:
-                        (context) => AlertDialog(
-                          title: Text('Wallet Deleted'),
-                          content: Text(
-                            'The wallet has been successfully deleted.',
-                          ),
-                          actions: [
-                            ElevatedButton(
-                              onPressed: () {
-                                Navigator.pop(context); // close popup
-                                Navigator.pop(context); // close delete page
-                              },
-                              child: Text('OK'),
-                            ),
-                          ],
+                    builder: (context) => AlertDialog(
+                      title: Text('Wallet Deleted'),
+                      content: Text(
+                        'The wallet has been successfully deleted.',
+                      ),
+                      actions: [
+                        ElevatedButton(
+                          onPressed: () {
+                            Navigator.pop(context); // close popup
+                            Navigator.pop(context); // close delete page
+                          },
+                          child: Text('OK'),
                         ),
+                      ],
+                    ),
                   );
                 }
               },
@@ -744,21 +736,19 @@ class _HoldToDeleteButtonState extends State<HoldToDeleteButton> {
         width: 120,
         height: 120,
         decoration: BoxDecoration(
-          color:
-              _isPressed
-                  ? theme.colorScheme.secondary
-                  : theme.colorScheme.tertiary,
+          color: _isPressed
+              ? theme.colorScheme.secondary
+              : theme.colorScheme.tertiary,
           shape: BoxShape.circle,
-          boxShadow:
-              _isPressed
-                  ? []
-                  : [
-                    BoxShadow(
-                      color: Colors.black26,
-                      offset: Offset(0, 4),
-                      blurRadius: 4.0,
-                    ),
-                  ],
+          boxShadow: _isPressed
+              ? []
+              : [
+                  BoxShadow(
+                    color: Colors.black26,
+                    offset: Offset(0, 4),
+                    blurRadius: 4.0,
+                  ),
+                ],
         ),
         child: Stack(
           alignment: Alignment.center,
@@ -821,10 +811,10 @@ class BitcoinNetworkChooser extends StatelessWidget {
   final ValueChanged<BitcoinNetwork> onChanged;
 
   const BitcoinNetworkChooser({
-    Key? key,
+    super.key,
     required this.value,
     required this.onChanged,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -842,16 +832,13 @@ class BitcoinNetworkChooser extends StatelessWidget {
               onChanged(network);
             }
           },
-          items:
-              BitcoinNetwork.supportedNetworks().map((network) {
-                final name = network.name();
-                return DropdownMenuItem<String>(
-                  value: name,
-                  child: Text(
-                    name == "bitcoin" ? "Bitcoin (BTC)" : network.name(),
-                  ),
-                );
-              }).toList(),
+          items: BitcoinNetwork.supportedNetworks().map((network) {
+            final name = network.name();
+            return DropdownMenuItem<String>(
+              value: name,
+              child: Text(name == "bitcoin" ? "Bitcoin (BTC)" : network.name()),
+            );
+          }).toList(),
         ),
       ],
     );

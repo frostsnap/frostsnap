@@ -5,7 +5,7 @@ import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet_receive.dart';
 
 class CheckAddressPage extends StatefulWidget {
-  const CheckAddressPage({Key? key}) : super(key: key);
+  const CheckAddressPage({super.key});
 
   @override
   State<CheckAddressPage> createState() => _CheckAddressPageState();
@@ -67,20 +67,18 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
         ),
         const SizedBox(height: 16),
         ElevatedButton(
-          onPressed:
-              () => showBottomSheetOrDialog(
-                context,
-                titleText: 'Receive',
-                builder:
-                    (context, scrollController) => walletCtx.wrap(
-                      ReceivePage(
-                        wallet: walletCtx.wallet,
-                        txStream: walletCtx.txStream,
-                        scrollController: scrollController,
-                        derivationIndex: result.address?.index,
-                      ),
-                    ),
+          onPressed: () => showBottomSheetOrDialog(
+            context,
+            titleText: 'Receive',
+            builder: (context, scrollController) => walletCtx.wrap(
+              ReceivePage(
+                wallet: walletCtx.wallet,
+                txStream: walletCtx.txStream,
+                scrollController: scrollController,
+                derivationIndex: result.address?.index,
               ),
+            ),
+          ),
           child: const Text("Address info"),
         ),
       ]);

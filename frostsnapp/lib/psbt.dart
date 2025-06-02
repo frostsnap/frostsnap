@@ -156,7 +156,9 @@ Future<void> runPsbtSigningWorkflow(
       masterAppkey: wallet.masterAppkey,
     );
   } catch (e) {
-    showErrorSnackbarTop(context, "Error loading PSBT: $e");
+    if (context.mounted) {
+      showErrorSnackbarTop(context, "Error loading PSBT: $e");
+    }
     return;
   }
 
@@ -171,25 +173,28 @@ Future<void> runPsbtSigningWorkflow(
     network: wallet.superWallet.network,
   );
 
-  final signatures = await showSigningProgressDialog(
-    context,
-    signingStream,
-    describeEffect(context, effect),
-  );
-  if (signatures != null) {
-    final signedPsbt = await unsignedTx.attachSignaturesToPsbt(
-      signatures: signatures,
-      psbt: psbt,
+  if (context.mounted) {
+    final signatures = await showSigningProgressDialog(
+      context,
+      signingStream,
+      describeEffect(context, effect),
     );
-    final signedTx = await unsignedTx.complete(signatures: signatures);
 
-    if (context.mounted) {
-      await saveOrBroadcastSignedPsbtDialog(
-        context,
-        wallet: wallet,
-        tx: signedTx,
-        psbt: signedPsbt,
+    if (signatures != null) {
+      final signedPsbt = unsignedTx.attachSignaturesToPsbt(
+        signatures: signatures,
+        psbt: psbt,
       );
+      final signedTx = unsignedTx.complete(signatures: signatures);
+
+      if (context.mounted) {
+        await saveOrBroadcastSignedPsbtDialog(
+          context,
+          wallet: wallet,
+          tx: signedTx,
+          psbt: signedPsbt,
+        );
+      }
     }
   }
 }
@@ -337,7 +342,7 @@ Future<void> savePsbt(BuildContext context, Psbt psbt) async {
 
 class AnimatedQr extends StatefulWidget {
   final Uint8List input;
-  const AnimatedQr({Key? key, required this.input}) : super(key: key);
+  const AnimatedQr({super.key, required this.input});
 
   @override
   State<AnimatedQr> createState() => _AnimatedQrState();

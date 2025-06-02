@@ -119,11 +119,10 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
     } catch (e) {
       if (context.mounted) {
         setState(
-          () =>
-              _feeAmountError = e
-                  .toString()
-                  .replaceAll('FrbAnyhowException(', '')
-                  .replaceAll(')', ''),
+          () => _feeAmountError = e
+              .toString()
+              .replaceAll('FrbAnyhowException(', '')
+              .replaceAll(')', ''),
         );
       }
     }
@@ -196,23 +195,21 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
       color: theme.colorScheme.surfaceContainerHigh,
       child: ListenableBuilder(
         listenable: widget.feeRateModel,
-        builder:
-            (context, _) =>
-                Column(children: _buildEtaTiles().toList().reversed.toList()),
+        builder: (context, _) =>
+            Column(children: _buildEtaTiles().toList().reversed.toList()),
       ),
     );
 
     final feeRateField = TextField(
       controller: _feeRateEditingController,
-      onSubmitted:
-          _feeRateEditingError == null ? (_) => _onTapSubmitButton() : null,
+      onSubmitted: _feeRateEditingError == null
+          ? (_) => _onTapSubmitButton()
+          : null,
       // Highlight on tap.
-      onTap:
-          () =>
-              _feeRateEditingController.selection = TextSelection(
-                baseOffset: 0,
-                extentOffset: _feeRateEditingController.text.length,
-              ),
+      onTap: () => _feeRateEditingController.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _feeRateEditingController.text.length,
+      ),
       decoration: InputDecoration(
         labelText: 'Fee Rate',
         prefixIcon: Icon(Icons.edit_rounded),
@@ -232,8 +229,9 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
     );
 
     final submitButton = IconButton.filled(
-      onPressed:
-          _feeRateEditingError == null ? () => _onTapSubmitButton() : null,
+      onPressed: _feeRateEditingError == null
+          ? () => _onTapSubmitButton()
+          : null,
       icon: Icon(Icons.done),
       style: IconButton.styleFrom(
         elevation: 3.0,
@@ -252,22 +250,20 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
         child: Center(
           child: ListenableBuilder(
             listenable: widget.feeRateModel,
-            builder:
-                (context, _) => AnimatedCrossFade(
-                  firstChild: LinearProgressIndicator(
-                    borderRadius: BorderRadius.circular(4.0),
-                  ),
-                  secondChild: Text(
-                    'Pull down or tap to refresh.',
-                    softWrap: true,
-                    style: theme.textTheme.labelSmall,
-                  ),
-                  crossFadeState:
-                      widget.feeRateModel.estimateRunning
-                          ? CrossFadeState.showFirst
-                          : CrossFadeState.showSecond,
-                  duration: Durations.medium2,
-                ),
+            builder: (context, _) => AnimatedCrossFade(
+              firstChild: LinearProgressIndicator(
+                borderRadius: BorderRadius.circular(4.0),
+              ),
+              secondChild: Text(
+                'Pull down or tap to refresh.',
+                softWrap: true,
+                style: theme.textTheme.labelSmall,
+              ),
+              crossFadeState: widget.feeRateModel.estimateRunning
+                  ? CrossFadeState.showFirst
+                  : CrossFadeState.showSecond,
+              duration: Durations.medium2,
+            ),
           ),
         ),
       ),

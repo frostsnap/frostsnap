@@ -31,11 +31,10 @@ class AccessStructureWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final devices =
-        accessStructure
-            .devices()
-            .map((id) => coord.getDeviceName(id: id) ?? "??")
-            .toList();
+    final devices = accessStructure
+        .devices()
+        .map((id) => coord.getDeviceName(id: id) ?? "??")
+        .toList();
     final threshold = accessStructure.threshold();
     final theme = Theme.of(context);
     return Stack(

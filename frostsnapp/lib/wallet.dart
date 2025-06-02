@@ -325,49 +325,44 @@ class _TxListState extends State<TxList> {
     final appBarMenu = MenuAnchor(
       menuChildren: [
         MenuItemButton(
-          onPressed:
-              () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => LoadPsbtPage(wallet: walletCtx.wallet),
-                ),
-              ),
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => LoadPsbtPage(wallet: walletCtx.wallet),
+            ),
+          ),
           leadingIcon: Icon(Icons.key),
           child: Text('Sign PSBT'),
         ),
         MenuItemButton(
-          onPressed:
-              (frostKey == null)
-                  ? null
-                  : () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => SignMessagePage(frostKey: frostKey),
-                    ),
+          onPressed: (frostKey == null)
+              ? null
+              : () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => SignMessagePage(frostKey: frostKey),
                   ),
+                ),
           leadingIcon: Icon(Icons.key),
           child: Text('Sign Message'),
         ),
         Divider(),
         MenuItemButton(
-          onPressed:
-              () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => walletCtx.wrap(SettingsPage()),
-                ),
-              ),
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => walletCtx.wrap(SettingsPage()),
+            ),
+          ),
           leadingIcon: Icon(Icons.settings),
           child: Text('Settings'),
         ),
       ],
-      builder:
-          (_, controller, child) => IconButton(
-            onPressed:
-                () =>
-                    controller.isOpen ? controller.close() : controller.open(),
-            icon: Icon(Icons.more_vert),
-          ),
+      builder: (_, controller, child) => IconButton(
+        onPressed: () =>
+            controller.isOpen ? controller.close() : controller.open(),
+        icon: Icon(Icons.more_vert),
+      ),
     );
 
     return CustomScrollView(
@@ -418,20 +413,18 @@ class _TxListState extends State<TxList> {
                     now: now,
                   );
                   return TxSentOrReceivedTile(
-                    onTap:
-                        () => showBottomSheetOrDialog(
-                          context,
-                          titleText: 'Transaction Details',
-                          builder:
-                              (context, scrollController) => walletCtx.wrap(
-                                TxDetailsPage.needsBroadcast(
-                                  scrollController: scrollController,
-                                  txStates: walletCtx.txStream,
-                                  txDetails: txDetails,
-                                  finishedSigningSessionId: tx.sessionId,
-                                ),
-                              ),
+                    onTap: () => showBottomSheetOrDialog(
+                      context,
+                      titleText: 'Transaction Details',
+                      builder: (context, scrollController) => walletCtx.wrap(
+                        TxDetailsPage.needsBroadcast(
+                          scrollController: scrollController,
+                          txStates: walletCtx.txStream,
+                          txDetails: txDetails,
+                          finishedSigningSessionId: tx.sessionId,
                         ),
+                      ),
+                    ),
                     txDetails: txDetails,
                   );
                 });
@@ -455,20 +448,18 @@ class _TxListState extends State<TxList> {
                     now: now,
                   );
                   return TxSentOrReceivedTile(
-                    onTap:
-                        () => showBottomSheetOrDialog(
-                          context,
-                          titleText: 'Transaction Details',
-                          builder:
-                              (context, scrollController) => walletCtx.wrap(
-                                TxDetailsPage.restoreSigning(
-                                  scrollController: scrollController,
-                                  txStates: walletCtx.txStream,
-                                  txDetails: txDetails,
-                                  signingSessionId: signingState.sessionId,
-                                ),
-                              ),
+                    onTap: () => showBottomSheetOrDialog(
+                      context,
+                      titleText: 'Transaction Details',
+                      builder: (context, scrollController) => walletCtx.wrap(
+                        TxDetailsPage.restoreSigning(
+                          scrollController: scrollController,
+                          txStates: walletCtx.txStream,
+                          txDetails: txDetails,
+                          signingSessionId: signingState.sessionId,
                         ),
+                      ),
+                    ),
                     txDetails: txDetails,
                     signingState: signingState,
                   );
@@ -505,19 +496,17 @@ class _TxListState extends State<TxList> {
                   );
                   return TxSentOrReceivedTile(
                     txDetails: txDetails,
-                    onTap:
-                        () => showBottomSheetOrDialog(
-                          context,
-                          titleText: 'Transaction Details',
-                          builder:
-                              (context, scrollController) => walletCtx.wrap(
-                                TxDetailsPage(
-                                  scrollController: scrollController,
-                                  txStates: walletCtx.txStream,
-                                  txDetails: txDetails,
-                                ),
-                              ),
+                    onTap: () => showBottomSheetOrDialog(
+                      context,
+                      titleText: 'Transaction Details',
+                      builder: (context, scrollController) => walletCtx.wrap(
+                        TxDetailsPage(
+                          scrollController: scrollController,
+                          txStates: walletCtx.txStream,
+                          txDetails: txDetails,
                         ),
+                      ),
+                    ),
                   );
                 },
               );
@@ -659,18 +648,17 @@ class WalletDrawer extends StatelessWidget {
             return NavigationDrawerDestination(
               enabled: false,
               icon: SizedBox.shrink(),
-              label:
-                  isFilled
-                      ? FilledButton.icon(
-                        onPressed: onPressed,
-                        icon: icon,
-                        label: label,
-                      )
-                      : TextButton.icon(
-                        onPressed: onPressed,
-                        icon: icon,
-                        label: label,
-                      ),
+              label: isFilled
+                  ? FilledButton.icon(
+                      onPressed: onPressed,
+                      icon: icon,
+                      label: label,
+                    )
+                  : TextButton.icon(
+                      onPressed: onPressed,
+                      icon: icon,
+                      label: label,
+                    ),
             );
           }),
         ]);
@@ -687,9 +675,9 @@ class WalletDrawer extends StatelessWidget {
         return isRounded
             ? drawer
             : Container(
-              color: theme.colorScheme.surfaceContainerLow,
-              child: drawer,
-            );
+                color: theme.colorScheme.surfaceContainerLow,
+                child: drawer,
+              );
       },
     );
   }
@@ -718,19 +706,17 @@ class WalletBottomBar extends StatelessWidget {
             children: [
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed:
-                      () => showBottomSheetOrDialog(
-                        context,
-                        titleText: 'Receive',
-                        builder:
-                            (context, scrollController) => walletCtx.wrap(
-                              ReceivePage(
-                                wallet: walletCtx.wallet,
-                                txStream: walletCtx.txStream,
-                                scrollController: scrollController,
-                              ),
-                            ),
+                  onPressed: () => showBottomSheetOrDialog(
+                    context,
+                    titleText: 'Receive',
+                    builder: (context, scrollController) => walletCtx.wrap(
+                      ReceivePage(
+                        wallet: walletCtx.wallet,
+                        txStream: walletCtx.txStream,
+                        scrollController: scrollController,
                       ),
+                    ),
+                  ),
                   label: Text('Receive'),
                   icon: Icon(Icons.south_east),
                   style: ElevatedButton.styleFrom(
@@ -742,17 +728,13 @@ class WalletBottomBar extends StatelessWidget {
               ),
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed:
-                      () => showBottomSheetOrDialog(
-                        context,
-                        titleText: 'Send',
-                        builder:
-                            (context, scrollController) => walletCtx.wrap(
-                              WalletSendPage(
-                                scrollController: scrollController,
-                              ),
-                            ),
-                      ),
+                  onPressed: () => showBottomSheetOrDialog(
+                    context,
+                    titleText: 'Send',
+                    builder: (context, scrollController) => walletCtx.wrap(
+                      WalletSendPage(scrollController: scrollController),
+                    ),
+                  ),
                   label: Text('Send'),
                   icon: Icon(Icons.north_east),
                   style: ElevatedButton.styleFrom(
@@ -777,12 +759,12 @@ class UpdatingBalance extends StatefulWidget {
   final double expandedHeight;
 
   const UpdatingBalance({
-    Key? key,
+    super.key,
     required this.txStream,
     required this.atTopNotifier,
     this.scrolledUnderElevation,
     this.expandedHeight = 180.0,
-  }) : super(key: key);
+  });
 
   @override
   State<UpdatingBalance> createState() => _UpdatingBalanceState();
@@ -841,66 +823,64 @@ class _UpdatingBalanceState extends State<UpdatingBalance> {
 
     final stack = ValueListenableBuilder(
       valueListenable: widget.atTopNotifier,
-      builder:
-          (context, atTop, _) => Stack(
-            children: [
-              Align(
-                alignment: Alignment.topCenter,
-                child: AnimatedContainer(
-                  duration: duration,
-                  curve: curve,
-                  height: atTop ? widget.expandedHeight / 2 : 0,
-                  color: atTop ? null : scrolledColor,
-                ),
-              ),
-              AnimatedAlign(
-                duration: duration,
-                curve: curve,
-                alignment: atTop ? Alignment.center : Alignment.topCenter,
-                child: Container(
-                  color: atTop ? null : scrolledColor,
-                  padding: EdgeInsets.symmetric(horizontal: 24.0).copyWith(
-                    bottom: atTop ? (widget.expandedHeight / 10) : 20.0,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.start,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      SatoshiText(
-                        key: UniqueKey(),
-                        value: avaliableBalance,
-                        style:
-                            atTop
-                                ? balanceTextStyle
-                                : theme.textTheme.headlineSmall,
-                        showSign: false,
-                      ),
-                      if (pendingIncomingBalance > 0)
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.hourglass_top,
-                              size: pendingBalanceTextStyle?.fontSize,
-                              color: theme.disabledColor,
-                            ),
-                            SatoshiText(
-                              value: pendingIncomingBalance,
-                              showSign: true,
-                              style: pendingBalanceTextStyle,
-                              disabledColor: theme.colorScheme.outlineVariant,
-                            ),
-                          ],
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+      builder: (context, atTop, _) => Stack(
+        children: [
+          Align(
+            alignment: Alignment.topCenter,
+            child: AnimatedContainer(
+              duration: duration,
+              curve: curve,
+              height: atTop ? widget.expandedHeight / 2 : 0,
+              color: atTop ? null : scrolledColor,
+            ),
           ),
+          AnimatedAlign(
+            duration: duration,
+            curve: curve,
+            alignment: atTop ? Alignment.center : Alignment.topCenter,
+            child: Container(
+              color: atTop ? null : scrolledColor,
+              padding: EdgeInsets.symmetric(
+                horizontal: 24.0,
+              ).copyWith(bottom: atTop ? (widget.expandedHeight / 10) : 20.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SatoshiText(
+                    key: UniqueKey(),
+                    value: avaliableBalance,
+                    style: atTop
+                        ? balanceTextStyle
+                        : theme.textTheme.headlineSmall,
+                    showSign: false,
+                  ),
+                  if (pendingIncomingBalance > 0)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.hourglass_top,
+                          size: pendingBalanceTextStyle?.fontSize,
+                          color: theme.disabledColor,
+                        ),
+                        SatoshiText(
+                          value: pendingIncomingBalance,
+                          showSign: true,
+                          style: pendingBalanceTextStyle,
+                          disabledColor: theme.colorScheme.outlineVariant,
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
 
     return SizedBox(height: widget.expandedHeight, child: stack);
@@ -917,7 +897,7 @@ class SatoshiText extends StatelessWidget {
   final TextAlign align;
 
   const SatoshiText({
-    Key? key,
+    super.key,
     required this.value,
     this.showSign = false,
     this.hideLeadingWhitespace = false,
@@ -925,7 +905,7 @@ class SatoshiText extends StatelessWidget {
     this.style,
     this.disabledColor,
     this.align = TextAlign.right,
-  }) : super(key: key);
+  });
 
   const SatoshiText.withSign({Key? key, required int value})
     : this(key: key, value: value, showSign: true);
@@ -981,24 +961,23 @@ class SatoshiText extends StatelessWidget {
       return activeIndex;
     }();
 
-    final List<TextSpan> spans =
-        unformatted.characters.indexed.map((elem) {
-          final (i, char) = elem;
-          if (char == ' ') {
-            return TextSpan(
-              text: ' ',
-              style: TextStyle(letterSpacing: wordSpacing),
-            );
-          }
-          if (char == '+' || char == '-') {
-            return TextSpan(text: char, style: activeStyle);
-          }
-          if (i < activeIndex) {
-            return TextSpan(text: char, style: inactiveStyle);
-          } else {
-            return TextSpan(text: char, style: activeStyle);
-          }
-        }).toList();
+    final List<TextSpan> spans = unformatted.characters.indexed.map((elem) {
+      final (i, char) = elem;
+      if (char == ' ') {
+        return TextSpan(
+          text: ' ',
+          style: TextStyle(letterSpacing: wordSpacing),
+        );
+      }
+      if (char == '+' || char == '-') {
+        return TextSpan(text: char, style: activeStyle);
+      }
+      if (i < activeIndex) {
+        return TextSpan(text: char, style: inactiveStyle);
+      } else {
+        return TextSpan(text: char, style: activeStyle);
+      }
+    }).toList();
 
     return Text.rich(
       TextSpan(children: spans),
@@ -1056,14 +1035,13 @@ class BackupWarningBanner extends StatelessWidget {
     showBottomSheetOrDialog(
       context,
       titleText: 'Backup Checklist',
-      builder:
-          (context, scrollController) => walletContext.wrap(
-            BackupChecklist(
-              scrollController: scrollController,
-              accessStructure: frostKey.accessStructures()[0],
-              showAppBar: false,
-            ),
-          ),
+      builder: (context, scrollController) => walletContext.wrap(
+        BackupChecklist(
+          scrollController: scrollController,
+          accessStructure: frostKey.accessStructures()[0],
+          showAppBar: false,
+        ),
+      ),
     );
   }
 

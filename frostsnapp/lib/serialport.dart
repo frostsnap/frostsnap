@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // Required for MethodChannel
 import 'package:frostsnap/src/rust/api/port.dart'; // Assuming PortDesc is here
@@ -90,9 +89,7 @@ class HostPortHandler {
               request.satisfy(err: e.toString());
             }
           }
-        case PortEvent_Read(
-            :final request,
-          ):
+        case PortEvent_Read(:final request):
           {
             try {
               var port = _getPort(request.id);
@@ -161,11 +158,7 @@ class HostPortHandler {
               "HostPortHandler: USB Device Attached via native call: Name: $deviceName, VID: $vid, PID: $pid",
             );
 
-            final newPortDesc = PortDesc(
-              id: deviceName,
-              pid: pid,
-              vid: vid,
-            );
+            final newPortDesc = PortDesc(id: deviceName, pid: pid, vid: vid);
 
             // Add to our list of approved devices and update FFI
             _approvedDevices[deviceName] = newPortDesc;
@@ -311,8 +304,9 @@ class SerialPort {
   }
 
   Uint8List read(int len) {
-    if (_flutterUsbPort == null)
+    if (_flutterUsbPort == null) {
       throw "SerialPort: Port '$id' not open for read.";
+    }
     len = min(len, buffer.length);
     var res = buffer.sublist(0, len);
     buffer = buffer.sublist(len);
@@ -320,8 +314,9 @@ class SerialPort {
   }
 
   Future<void> write(Uint8List bytes) async {
-    if (_flutterUsbPort == null)
+    if (_flutterUsbPort == null) {
       throw "SerialPort: Port '$id' not open for write.";
+    }
     try {
       await _flutterUsbPort!.write(bytes);
     } catch (e) {

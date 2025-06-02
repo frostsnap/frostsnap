@@ -2,6 +2,7 @@
 /// Also see https://github.com/flutter/flutter/issues/26348
 ///
 /// Should work on android and IOS.
+library;
 
 // imgLib -> Image package from https://pub.dartlang.org/packages/image
 import 'dart:typed_data';

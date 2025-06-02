@@ -17,11 +17,11 @@ class FrostsnapContext extends InheritedWidget {
   final AppCtx appCtx;
 
   const FrostsnapContext({
-    Key? key,
+    super.key,
     required this.logStream,
     required this.appCtx,
-    required Widget child,
-  }) : super(key: key, child: child);
+    required super.child,
+  });
 
   static FrostsnapContext? of(BuildContext context) {
     return context.dependOnInheritedWidgetOfExactType<FrostsnapContext>();
@@ -209,8 +209,8 @@ class HomeContext extends InheritedWidget {
     required this.scaffoldKey,
     required this.walletListController,
     required this.confettiController,
-    required Widget child,
-  }) : super(child: child);
+    required super.child,
+  });
 
   static HomeContext? of(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<HomeContext>();

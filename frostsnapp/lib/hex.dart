@@ -55,14 +55,13 @@ Widget chunkedAddressFormat(
     alignment: Alignment.center,
     child: Container(
       padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration:
-          backgroundColor != null
-              ? BoxDecoration(
-                color: backgroundColor,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.white.withValues(alpha: 26)),
-              )
-              : null,
+      decoration: backgroundColor != null
+          ? BoxDecoration(
+              color: backgroundColor,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.white.withValues(alpha: 26)),
+            )
+          : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [

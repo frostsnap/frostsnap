@@ -29,8 +29,7 @@ const double iconSize = 20.0;
 class DeviceList extends StatefulWidget {
   final DeviceBuilder deviceBuilder;
 
-  const DeviceList({Key? key, this.deviceBuilder = buildInteractiveDevice})
-    : super(key: key);
+  const DeviceList({super.key, this.deviceBuilder = buildInteractiveDevice});
 
   @override
   State<StatefulWidget> createState() => _DeviceListState();
@@ -143,10 +142,9 @@ class _DeviceListState extends State<DeviceList> {
         );
       },
       initialItemCount: currentListState.devices.length,
-      scrollDirection:
-          orientation == Orientation.landscape
-              ? Axis.horizontal
-              : Axis.vertical,
+      scrollDirection: orientation == Orientation.landscape
+          ? Axis.horizontal
+          : Axis.vertical,
     );
 
     return Stack(
@@ -175,10 +173,9 @@ class DeviceBoxContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final animationBegin =
-        orientation == Orientation.landscape
-            ? const Offset(8.0, 0.0)
-            : const Offset(0.0, 8.0);
+    final animationBegin = orientation == Orientation.landscape
+        ? const Offset(8.0, 0.0)
+        : const Offset(0.0, 8.0);
     return SlideTransition(
       position: animation.drive(
         Tween(begin: animationBegin, end: const Offset(0.0, 0.0)),
@@ -245,15 +242,14 @@ class DeviceListWithIcons extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.center,
-        children:
-            icon != null
-                ? [
-                  label,
-                  SizedBox(height: 4),
-                  SizedBox(height: iconSize, child: icon),
-                  SizedBox(height: 4),
-                ]
-                : [label],
+        children: icon != null
+            ? [
+                label,
+                SizedBox(height: 4),
+                SizedBox(height: iconSize, child: icon),
+                SizedBox(height: 4),
+              ]
+            : [label],
       ),
     );
   }
