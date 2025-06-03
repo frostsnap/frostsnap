@@ -146,21 +146,21 @@ impl super::coordinator::Coordinator {
 
     pub fn tell_device_to_save_physical_backup(
         &self,
-        phase: PhysicalBackupPhase,
+        phase: &PhysicalBackupPhase,
         restoration_id: RestorationId,
     ) {
         self.0
-            .tell_device_to_save_physical_backup(phase, restoration_id)
+            .tell_device_to_save_physical_backup(*phase, restoration_id)
     }
 
     pub fn tell_device_to_consolidate_physical_backup(
         &self,
         access_structure_ref: AccessStructureRef,
-        phase: PhysicalBackupPhase,
+        phase: &PhysicalBackupPhase,
     ) -> anyhow::Result<()> {
         self.0.tell_device_to_consolidate_physical_backup(
             access_structure_ref,
-            phase,
+            *phase,
             crate::TEMP_KEY,
         )?;
         Ok(())
@@ -170,11 +170,11 @@ impl super::coordinator::Coordinator {
     pub fn check_physical_backup(
         &self,
         access_structure_ref: AccessStructureRef,
-        phase: PhysicalBackupPhase,
+        phase: &PhysicalBackupPhase,
     ) -> bool {
         self.0
             .inner()
-            .check_physical_backup(access_structure_ref, phase, crate::TEMP_KEY)
+            .check_physical_backup(access_structure_ref, *phase, crate::TEMP_KEY)
             .is_ok()
     }
 
@@ -194,13 +194,13 @@ impl super::coordinator::Coordinator {
     pub fn check_physical_backup_compatible(
         &self,
         restoration_id: RestorationId,
-        phase: PhysicalBackupPhase,
+        phase: &PhysicalBackupPhase,
     ) -> ShareCompatibility {
         use frostsnap_core::coordinator::restoration::RestorePhysicalBackupError::*;
         let res = self
             .0
             .inner()
-            .check_physical_backup_compatible_with_restoration(restoration_id, phase);
+            .check_physical_backup_compatible_with_restoration(restoration_id, *phase);
 
         match res {
             Ok(_) => ShareCompatibility::Compatible,
